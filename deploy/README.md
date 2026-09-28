@@ -1,10 +1,9 @@
 # Deploying Qualor
 
 Three images, all built from this repository. `qualor/server`, `qualor/scanner` and
-`qualor/scanner-dotnet` will be released on Docker Hub as `qualor/server:<tag>`,
+`qualor/scanner-dotnet` are released on Docker Hub as `qualor/server:<tag>`,
 `qualor/scanner:<tag>` and `qualor/scanner-dotnet:<tag>` (the source repository is
-<https://github.com/qualor-dev/qualor>), but nothing is published yet, so build
-them yourself:
+<https://github.com/qualor-dev/qualor>). To build them yourself:
 
 | Image                   | Dockerfile                         | What it is                                                                                                                                                                                                                       |
 | ----------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,8 +30,8 @@ docker build -f deploy/scanner-dotnet/Dockerfile --build-arg SCANNER_IMAGE=qualo
 required build argument: `docker build -f deploy/scanner-dotnet/Dockerfile .` alone fails at once,
 before any layer runs, since the base image name is left invalid on purpose), so
 `docker build -f deploy/scanner/Dockerfile .` on its own still produces a plain `qualor/scanner`
-with no C# tooling. Nothing is published yet, for any of the three: build them locally and
-name them where the examples say `qualor/scanner:<tag>` or `qualor/scanner-dotnet:<tag>`.
+with no C# tooling. A local build of any of the three can stand in where the examples say
+`qualor/scanner:<tag>` or `qualor/scanner-dotnet:<tag>`.
 
 `pnpm deploy:scanner-dotnet-check [image]` (default `qualor/scanner-dotnet:dev`) checks a built
 `qualor/scanner-dotnet` in one `docker run`: `dotnet --list-sdks` lists the SDK versions of
@@ -314,8 +313,8 @@ chart. Its version is the server's version (`pnpm release:version` sets both).
   k3s instead of pulling.
 
 The chart is published only by `release.yml`, to
-`oci://registry-1.docker.io/qualor`, signed and with the server pinned by digest. Nothing is
-published yet: the first release is `0.1.0`.
+`oci://registry-1.docker.io/qualor`, signed and with the server pinned by digest. The first
+release is `0.1.0`.
 
 ## Releasing the images
 
@@ -361,7 +360,7 @@ written offers. So every release of `qualor/<image>:<tag>` also publishes
    before its image, and the scanner before `qualor/scanner-dotnet`. Each image goes up first
    under the non-moving tag `staging-<version>` only, is signed and verified by digest, and only
    then gets its version and moving tags, so no release tag is ever unsigned.
-   Nothing has been pushed yet. The repository descriptions are in [dockerhub/](dockerhub/).
+   The repository descriptions are in [dockerhub/](dockerhub/).
 4. Attach every file of `.tmp/scanner-sources/` and `.tmp/server-sources/` to the release page of
    the tag (the archives, the `debian/` directory, `SOURCES.md`, `SHA256SUMS`,
    `README.md`, `sources.json` and `debian-sources.json`) as one tar per image,

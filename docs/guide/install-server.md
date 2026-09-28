@@ -19,10 +19,8 @@ an [external PostgreSQL](#external-postgresql) instead. On Kubernetes, install t
 
 ## Images
 
-The images are published on Docker Hub, for `linux/amd64`, and the Helm chart next to them.
-**Not yet:** the first release, `0.1.0`, is not out, so nothing is published yet, and the commands
-below that pull an image or the chart work only from that release on. Until then, build the images
-from source as [`deploy/README.md`](../../deploy/README.md) shows.
+The images are published on Docker Hub, for `linux/amd64`, and the Helm chart next to them. The
+first release is `0.1.0`.
 
 | Image | What it is | Size |
 |---|---|---|
@@ -37,8 +35,7 @@ tagged with their major version (`1`). The examples use `0.1`. Pin the full vers
 every pipeline to run exactly the same analyzers. Keep the server and the scanner on the same
 release. Never use `latest`.
 
-**Signatures.** Signed releases are not published yet: the first one will be 0.1.0. From then on,
-every release signs its images, the Helm chart and its files with cosign. Verify them with the
+**Signatures.** Every release, from 0.1.0 on, signs its images, the Helm chart and its files with cosign. Verify them with the
 published `cosign.pub`, as [`SECURITY.md`](../../SECURITY.md#verifying-a-release) shows, and pin
 what you verified by digest. The signatures are not recorded in the public Rekor transparency log,
 so cosign needs `--insecure-ignore-tlog=true` (without it, it looks for a log entry and fails):
@@ -170,8 +167,8 @@ example `QUALOR_UPLOAD_MAX_COMPRESSED_BYTES: '104857600'`.
 ## Kubernetes (Helm)
 
 The Helm chart `qualor` runs the same `qualor/server` image. Its version is the server's version.
-It needs Kubernetes 1.29 or later, and a default StorageClass for its volume. **Not yet:** the chart
-is published with the first release (`0.1.0`), which is not out. Until then, install it from a
+It needs Kubernetes 1.29 or later, and a default StorageClass for its volume. The chart
+is published with every release since `0.1.0`; to try a change of your own, install it from a
 checkout (`./deploy/helm/qualor` in place of the `oci://` name) with an image you built yourself.
 
 Create the namespace and the secrets:

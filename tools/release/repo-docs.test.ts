@@ -80,7 +80,7 @@ describe('CONTRIBUTING.md and SECURITY.md (release.md §13)', () => {
     for (const f of ['SECURITY.md', 'docs/guide/install-server.md']) {
       expect(read(f), f).toMatch(/not recorded in the public Rekor transparency log/);
     }
-    expect(read('docs/guide/install-server.md')).toMatch(/Signed releases are not published yet/);
+    expect(read('docs/guide/install-server.md')).toMatch(/Every release, from 0\.1\.0 on, signs/);
   });
 
   it('neither has a placeholder left', () => {
