@@ -30,9 +30,8 @@ const COMPONENTS: readonly Component[] = ['opengrep', 'spotbugs', 'pmd', 'bun', 
 
 /** Where the manifest may download from: the SCM and each component's own upstream. */
 export const ALLOWED_HOSTS = [
-  'github.com', // archives and release assets (OpenGrep, SpotBugs, Bun, TinyCC, Temurin)
+  'github.com', // archives and release assets (OpenGrep, SpotBugs, Bun, TinyCC, Temurin), Alpine aports' mirror
   'ftp.gnu.org', // GMP releases (the GNU distribution server; gmplib.org refuses cloud runners)
-  'gitlab.alpinelinux.org', // Alpine aports (build recipes)
   'vault.almalinux.org', // AlmaLinux source RPMs
   'files.pythonhosted.org', // PyPI source distributions
   'repo1.maven.org', // Maven Central source jars

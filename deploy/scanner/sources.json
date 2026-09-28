@@ -625,7 +625,7 @@
       "licence": "MIT (Alpine aports)",
       "fetch": {
         "type": "https",
-        "url": "https://gitlab.alpinelinux.org/alpine/aports/-/raw/187e3f7791d3390e18bc06969a5f34c385fd883e/main/gmp/APKBUILD"
+        "url": "https://github.com/alpinelinux/aports/raw/187e3f7791d3390e18bc06969a5f34c385fd883e/main/gmp/APKBUILD"
       },
       "sha256": "66338372c68d766924dd517cde70dca76722becfb63102a4f1b1f7d29a413a88",
       "pinnedAt": "the last aports commit touching main/gmp on the 3.22-stable branch",
