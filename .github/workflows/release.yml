@@ -107,3 +107,7 @@ jobs:
           COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}'
           COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}'
           GH_TOKEN: '${{ github.token }}'
+      # On a failure, what the Docker daemon logged about pushes and registry authorization (no
+      # secrets: the daemon never logs credentials or tokens).
+      - if: failure()
+        run: sudo journalctl -u docker --no-pager --since '-4h' | grep -iE 'push|mount|scope|unauthori|denied|error' | tail -n 120 || true

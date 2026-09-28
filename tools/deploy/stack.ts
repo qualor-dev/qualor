@@ -60,9 +60,12 @@ export function run(command: string, args: readonly string[], o: RunOptions = {}
 
 export function must(result: RunResult, what: string): RunResult {
   if (result.code !== 0) {
-    // Some tools (pnpm) report their errors on stdout.
-    const output = result.stderr.trim() === '' ? result.stdout : result.stderr;
-    throw new Error(`${what} failed (exit ${result.code}):\n${output.slice(-4000)}`);
+    // Some tools (pnpm) report their errors on stdout, and docker push its progress (which layer
+    // it was on) there; so the tail of both.
+    const output = [result.stdout.slice(-3000), result.stderr.slice(-3000)]
+      .filter((s) => s.trim() !== '')
+      .join('\n');
+    throw new Error(`${what} failed (exit ${result.code}):\n${output}`);
   }
   return result;
 }
