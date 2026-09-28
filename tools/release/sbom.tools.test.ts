@@ -56,9 +56,12 @@ describe('Syft with no network (release.md §8)', () => {
     expect(names).not.toContain('junit');
     expect(names).not.toContain('deps-web');
 
-    // The control: the default directory catalogers read lock files only, and miss them all.
+    // The control: on the same node_modules, the default directory catalogers read lock files
+    // only, and miss them all. (The deploy directory's root holds the workspace's lockfile.)
     const plain = path.join(dir, 'cli-plain.spdx.json');
-    expect(runTool('syft', syftArgs(`dir:${toWork(deps)}`, toWork(plain))).code).toBe(0);
+    expect(runTool('syft', syftArgs(`dir:${toWork(deps)}/node_modules`, toWork(plain))).code).toBe(
+      0,
+    );
     expect(packagesOf(plain)).not.toContain('zod');
   }, 120_000);
 });
