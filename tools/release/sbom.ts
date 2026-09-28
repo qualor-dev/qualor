@@ -34,15 +34,18 @@ export const cliSbomArgs = (depsDir: string, out: string, version: string): stri
 ];
 
 /**
- * pnpm 10 needs --legacy to deploy without inject-workspace-packages. --offline: only the
- * lockfile and the local store, which `pnpm install` filled; nothing is fetched.
+ * A deploy from the lockfile: pnpm 10 deploys from it only with inject-workspace-packages, set
+ * here for this command alone. (`--legacy` resolves the version ranges again, which needs the
+ * registry's metadata: it fails offline on a fresh runner, and could list versions that are not
+ * the lockfile's.) --offline: only the lockfile and the local store, which `pnpm install`
+ * filled; nothing is fetched.
  */
 export const cliDepsArgs = (dir: string): string[] => [
+  '--config.inject-workspace-packages=true',
   '--filter',
   '@qualor/cli',
   'deploy',
   '--prod',
-  '--legacy',
   '--offline',
   dir,
 ];

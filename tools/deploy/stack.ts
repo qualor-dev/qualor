@@ -60,7 +60,9 @@ export function run(command: string, args: readonly string[], o: RunOptions = {}
 
 export function must(result: RunResult, what: string): RunResult {
   if (result.code !== 0) {
-    throw new Error(`${what} failed (exit ${result.code}):\n${result.stderr.slice(-4000)}`);
+    // Some tools (pnpm) report their errors on stdout.
+    const output = result.stderr.trim() === '' ? result.stdout : result.stderr;
+    throw new Error(`${what} failed (exit ${result.code}):\n${output.slice(-4000)}`);
   }
   return result;
 }

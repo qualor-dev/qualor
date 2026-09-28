@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
   appendFileSync,
+  existsSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
@@ -20,7 +21,10 @@ import { afterAll, describe, expect, it } from 'vitest';
  * one of tools/analyzers/install.sh) over a copy of the tracked files; skipped where Gitleaks is
  * not installed, unless QUALOR_REQUIRE_ANALYZERS=1 (the CI test jobs, plan 1B ruling T4).
  */
-const installed = spawnSync('gitleaks', ['version']).status === 0;
+// The pinned Gitleaks of tools/analyzers/install.sh lives in /opt/qualor/bin, which is not always
+// on PATH (the CI test job); otherwise the one on PATH.
+const GITLEAKS = existsSync('/opt/qualor/bin/gitleaks') ? '/opt/qualor/bin/gitleaks' : 'gitleaks';
+const installed = spawnSync(GITLEAKS, ['version']).status === 0;
 const required = process.env['QUALOR_REQUIRE_ANALYZERS'] === '1';
 const work = mkdtempSync(path.join(os.tmpdir(), 'qualor-gitleaks-'));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
@@ -46,7 +50,7 @@ function trackedCopy(): string {
 function leaks(root: string): Leak[] {
   const report = path.join(work, 'report.json');
   const r = spawnSync(
-    'gitleaks',
+    GITLEAKS,
     [
       'dir',
       '.',

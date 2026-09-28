@@ -18,11 +18,11 @@ describe('SBOMs (release.md §8)', () => {
 
   it('installs only the CLI production dependencies for its SBOM, from the store only', () => {
     expect(cliDepsArgs('/tmp/d')).toEqual([
+      '--config.inject-workspace-packages=true',
       '--filter',
       '@qualor/cli',
       'deploy',
       '--prod',
-      '--legacy',
       '--offline',
       '/tmp/d',
     ]);
