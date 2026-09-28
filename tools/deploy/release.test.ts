@@ -7,6 +7,7 @@ import {
   NAMESPACE,
   release,
   releaseArgs,
+  dotnetBaseRef,
   STAGING,
   type ReleaseDocker,
   type ReleaseInputs,
@@ -69,7 +70,9 @@ describe('pnpm deploy:release-images (rulings L1 and L2)', () => {
       `build ${s}scanner:0.1.0 scanner-args`,
       `drift ${s}scanner:0.1.0`,
       `build ${s}scanner-sources:0.1.0 scanner-sources-args`,
-      `build ${s}scanner-dotnet:0.1.0 dotnet-args SCANNER_IMAGE=${s}scanner:0.1.0`,
+      `tag ${s}scanner:0.1.0 localhost:1/${STAGING}-scanner:0.1.0`,
+      `build ${s}scanner-dotnet:0.1.0 dotnet-args SCANNER_IMAGE=localhost:1/${STAGING}-scanner:0.1.0`,
+      `untag localhost:1/${STAGING}-scanner:0.1.0`,
       `build ${s}server:0.1.0 server-args`,
       `drift ${s}server:0.1.0`,
       `build ${s}server-sources:0.1.0 server-sources-args`,
@@ -94,7 +97,9 @@ describe('pnpm deploy:release-images (rulings L1 and L2)', () => {
       ).toThrow(`${image} ${STAGING}/${image}:0.1.0: git`);
       // Nothing under qualor/ exists: no image can be pushed without its sources image.
       expect(docker.calls.filter((c) => /\bqualor\//.test(c))).toEqual([]);
-      expect(docker.calls.some((c) => c.startsWith('tag ') || c.startsWith('untag '))).toBe(false);
+      // No tag and no untag but scanner-dotnet's local-only base (the staging names stay).
+      const retags = docker.calls.filter((c) => /^(un)?tag /.test(c));
+      expect(retags.filter((c) => !c.endsWith(dotnetBaseRef('0.1.0')))).toEqual([]);
     }
   });
 
@@ -107,7 +112,8 @@ describe('pnpm deploy:release-images (rulings L1 and L2)', () => {
     expect(() => release({ tag: '1', also: [], namespace: 'qualor' }, inputs, docker)).toThrow(
       'docker build failed',
     );
-    expect(docker.calls.some((c) => c.startsWith('tag '))).toBe(false);
+    const tags = docker.calls.filter((c) => c.startsWith('tag '));
+    expect(tags.filter((c) => !c.endsWith(dotnetBaseRef('1')))).toEqual([]);
   });
 
   it('reads --also for the moving tags, each a valid tag', () => {
@@ -152,16 +158,18 @@ describe('pnpm deploy:release-images (rulings L1 and L2)', () => {
       'qualor/server:1.2',
     ]);
     const s = `${STAGING}/`;
-    expect(docker.calls.slice(0, 7)).toEqual([
+    expect(docker.calls.slice(0, 9)).toEqual([
       `build ${s}scanner:1.2.3 scanner-args`,
       `drift ${s}scanner:1.2.3`,
       `build ${s}scanner-sources:1.2.3 scanner-sources-args`,
-      `build ${s}scanner-dotnet:1.2.3 dotnet-args SCANNER_IMAGE=${s}scanner:1.2.3`,
+      `tag ${s}scanner:1.2.3 localhost:1/${STAGING}-scanner:1.2.3`,
+      `build ${s}scanner-dotnet:1.2.3 dotnet-args SCANNER_IMAGE=localhost:1/${STAGING}-scanner:1.2.3`,
+      `untag localhost:1/${STAGING}-scanner:1.2.3`,
       `build ${s}server:1.2.3 server-args`,
       `drift ${s}server:1.2.3`,
       `build ${s}server-sources:1.2.3 server-sources-args`,
     ]);
-    expect(docker.calls.filter((c) => c.startsWith('untag '))).toHaveLength(5);
+    expect(docker.calls.filter((c) => c.startsWith('untag '))).toHaveLength(6);
   });
 
   it('never builds scanner-dotnet from a scanner whose Debian check failed', () => {

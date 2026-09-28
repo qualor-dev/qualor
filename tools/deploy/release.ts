@@ -103,6 +103,14 @@ export const RELEASE_ORDER: readonly Flavour[] = [
 export const releaseRef = (namespace: string, image: Flavour, tag: string): string =>
   `${namespace}/${image}:${tag}`;
 export const stagingRef = (image: Flavour, tag: string): string => `${STAGING}/${image}:${tag}`;
+/**
+ * The name scanner-dotnet is built FROM: the checked staging scanner under a local-only name on
+ * an unreachable host. BuildKit looks a base image up on its registry first; under a docker.io
+ * name it records Docker Hub's (non-existent) qualor-release-staging repository as the source of
+ * the scanner's layers, and pushing qualor/scanner then tries to mount them from there and fails
+ * with insufficient_scope. A lookup of localhost:1 fails at once and never reaches Docker Hub.
+ */
+export const dotnetBaseRef = (tag: string): string => `localhost:1/${STAGING}-scanner:${tag}`;
 
 /** What the release needs from Docker; release-images.ts implements it with the CLI. */
 export interface ReleaseDocker {
@@ -147,8 +155,12 @@ export function release(
     const problems = docker.drift(ref, image);
     if (problems.length > 0) throw new Error(inputs.driftMessage(image, ref, problems));
     docker.build(stagingRef(`${image}-sources`, tag), inputs.sourcesArgs[image]);
-    if (image === 'scanner')
-      docker.build(stagingRef('scanner-dotnet', tag), inputs.dotnetArgs(ref));
+    if (image === 'scanner') {
+      const base = dotnetBaseRef(tag);
+      docker.tag(ref, base);
+      docker.build(stagingRef('scanner-dotnet', tag), inputs.dotnetArgs(base));
+      docker.untag(base);
+    }
   }
   const released: string[] = [];
   for (const flavour of RELEASE_ORDER) {
