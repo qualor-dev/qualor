@@ -7,7 +7,7 @@ import {
 } from './public-keys';
 
 describe('accepted public keys (enterprise.md §4.1)', () => {
-  it('ships no test key and no production key before the maintainer adds one', () => {
+  it('ships no test key among the production keys', () => {
     expect(Object.keys(PRODUCTION_KEYS).filter((kid) => kid.startsWith('test-'))).toEqual([]);
     // Without the esbuild define (vitest, the release build) only the production keys count.
     expect(LICENSE_PUBLIC_KEYS).toEqual(PRODUCTION_KEYS);

@@ -296,20 +296,20 @@ describe('pnpm license:sign and license:inspect', () => {
 
   it('signs only with a test- kid or a compiled production key (Task 10 I-2)', () => {
     const dir = scratch();
-    const made = keygen({ kid: 'prod-2026', outDir: dir, passphrase: PASS });
+    // A production-style kid that is not compiled in (PRODUCTION_KEYS holds the released ones).
+    const made = keygen({ kid: 'prod-unlisted', outDir: dir, passphrase: PASS });
     const base = {
       keyFile: made.privateKeyPath,
       passphrase: PASS,
-      kid: 'prod-2026',
+      kid: 'prod-unlisted',
       customer: 'A',
       expires: '2099-10-01',
       features: [],
     };
-    // The compiled PRODUCTION_KEYS are empty until the maintainer releases the first public key.
     expect(() => signKey(base)).toThrow(/not in PRODUCTION_KEYS/);
-    expect(() => signKey({ ...base, productionKeys: { 'prod-2026': made.x } })).not.toThrow();
+    expect(() => signKey({ ...base, productionKeys: { 'prod-unlisted': made.x } })).not.toThrow();
     const other = String(generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x);
-    expect(() => signKey({ ...base, productionKeys: { 'prod-2026': other } })).toThrow(
+    expect(() => signKey({ ...base, productionKeys: { 'prod-unlisted': other } })).toThrow(
       /not the private key/,
     );
   });
