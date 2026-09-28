@@ -1914,37 +1914,37 @@
     },
     {
       "source": "openssl",
-      "version": "3.0.20-1~deb12u2",
+      "version": "3.0.22-1~deb12u1",
       "binaries": [
         "libssl3",
         "openssl"
       ],
-      "archive": "debian",
-      "directory": "pool/main/o/openssl",
+      "archive": "debian-security",
+      "directory": "pool/updates/main/o/openssl",
       "files": [
         {
-          "name": "openssl_3.0.20-1~deb12u2.dsc",
-          "size": 2539,
-          "sha256": "a614474a2773c23b10c0d65f4eccbcf93fdac4749afb7c26d76e1b0340154d3d",
-          "sha1": "884dc3fb411b10fc188f685967a74bc1f6174702"
+          "name": "openssl_3.0.22-1~deb12u1.dsc",
+          "size": 2742,
+          "sha256": "9eb196075ff65fed9512c743d5ccf918b77c3c637f6d518e4be550cf9065c655",
+          "sha1": "5efe5bc7a8ce18afcdcf6f1e7e554a89249b8f4e"
         },
         {
-          "name": "openssl_3.0.20.orig.tar.gz",
-          "size": 15292815,
-          "sha256": "c80a01dfc70ece4dc21168932c37739042d404d46ccc81a5986dd75314ecda6f",
-          "sha1": "9d6f88429036d592b5ef5648f4e163c4ad507d6d"
+          "name": "openssl_3.0.22.orig.tar.gz",
+          "size": 15330396,
+          "sha256": "67ebca7e50d17383028045486653492195b83db95f8558709701bb47b5c1ef81",
+          "sha1": "35825835dccec008fa886601c3b4d1e52a32544b"
         },
         {
-          "name": "openssl_3.0.20.orig.tar.gz.asc",
-          "size": 833,
-          "sha256": "07669568ab34cf3a4dcf8fd8e0d85cacdacfaa10d5ab51bdc6fc47c22fa6b33a",
-          "sha1": "f5c47fe31f17e8c59e5652e8316c8390a04bac39"
+          "name": "openssl_3.0.22.orig.tar.gz.asc",
+          "size": 931,
+          "sha256": "b0cc4a379a7731c3a74c349f6756d85253d83099fd63352cf12407bce4395d19",
+          "sha1": "51e4e8ce6452a32a2a800cc933befafcec6e7199"
         },
         {
-          "name": "openssl_3.0.20-1~deb12u2.debian.tar.xz",
-          "size": 72332,
-          "sha256": "7279efe85c359500c95aa88347e3395dd303d7566e2bb818d80d96e0c3bb9629",
-          "sha1": "ef97c292c04e053b4f5100d58580de371c0129c4"
+          "name": "openssl_3.0.22-1~deb12u1.debian.tar.xz",
+          "size": 56848,
+          "sha256": "08ee68527218d6d9a0fa4741ec8ffef47646cdcad0ed0822b84bf11677c66108",
+          "sha1": "f884f096035976115beaea7d3c52d1a9d88cb03d"
         }
       ]
     },
