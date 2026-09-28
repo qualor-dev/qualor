@@ -265,6 +265,17 @@ export async function publish(
     must(exec('docker', args, { env: dockerEnv }), what);
   const cosign = (args: string[], what: string): RunResult =>
     must(exec('cosign', args, { env: cosignEnv }), what);
+  // Docker Hub lists a signature or attestation among an artifact's referrers a little after it
+  // was pushed; a verification right away can find none. Retried while that is the only problem,
+  // for up to two minutes; any other failure fails at once.
+  const verifyListed = (args: string[], what: string): RunResult => {
+    for (let attempt = 1; ; attempt++) {
+      const r = exec('cosign', args, { env: cosignEnv });
+      const notYet = /no (signatures|attestations|matching attestations) found/i.test(r.stderr);
+      if (r.code === 0 || !notYet || attempt === 12) return must(r, what);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10_000);
+    }
+  };
 
   // A directory left by a crashed run may hold an old key with other permissions: start clean.
   rmSync(secrets, { recursive: true, force: true });
@@ -321,9 +332,12 @@ export async function publish(
     }
     for (const img of m.images) {
       const signed = `docker.io/${NAMESPACE}/${img.image}@${img.digest}`;
-      cosign(verifyImageArgs(toWork(pub), signed, PUBLISH_OPTIONS), `cosign verify ${img.image}`);
+      verifyListed(
+        verifyImageArgs(toWork(pub), signed, PUBLISH_OPTIONS),
+        `cosign verify ${img.image}`,
+      );
       if (img.sbom) {
-        cosign(
+        verifyListed(
           verifyAttestationArgs(toWork(pub), signed, PUBLISH_OPTIONS),
           `cosign verify-attestation ${img.image}`,
         );
@@ -347,7 +361,7 @@ export async function publish(
     // docker.io, like the images: the name docker login stored the credentials under.
     const chartRef = `docker.io/${NAMESPACE}/qualor@${chartDigest}`;
     cosign(signImageArgs(key, chartRef, PUBLISH_OPTIONS), 'cosign sign chart');
-    cosign(verifyImageArgs(toWork(pub), chartRef, PUBLISH_OPTIONS), 'cosign verify chart');
+    verifyListed(verifyImageArgs(toWork(pub), chartRef, PUBLISH_OPTIONS), 'cosign verify chart');
 
     // 7. The release assets (release.md §3, I-2): flat, their own SHA256SUMS, signed, verified.
     const published: ReleaseManifest = {
