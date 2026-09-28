@@ -610,7 +610,7 @@
       "licence": "LGPL-3.0-or-later OR GPL-2.0-or-later",
       "fetch": {
         "type": "https",
-        "url": "https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz"
+        "url": "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz"
       },
       "sha256": "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898",
       "pinnedAt": "OpenGrep v1.30.0 builds opengrep-core in alpine:3.22 with `make install-deps-ALPINE-for-semgrep-core` (gmp-static) and links it -static; Alpine 3.22 ships gmp-static 6.3.0-r3 (aports main/gmp unchanged on 3.22-stable since 2025-02-10), whose APKBUILD builds this upstream tarball (its sha512 matches the APKBUILD)",

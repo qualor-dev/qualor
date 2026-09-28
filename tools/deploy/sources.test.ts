@@ -213,7 +213,7 @@ describe('manifest validation', () => {
     );
     expect(ALLOWED_HOSTS).toEqual([
       'github.com',
-      'gmplib.org',
+      'ftp.gnu.org',
       'gitlab.alpinelinux.org',
       'vault.almalinux.org',
       'files.pythonhosted.org',
