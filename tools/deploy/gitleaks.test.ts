@@ -163,10 +163,10 @@ describe.runIf(installed || required)('the repository Gitleaks allowlist', () =>
         .map((l) => `${l.RuleID} ${l.File}`)
         .sort();
       expect(found).toEqual([
+        'aws-access-token packages/shared/src/sarif/normalize.test.ts',
         'generic-api-key cli/src/analyzers/gitleaks.test.ts',
         'generic-api-key fixtures/llm-prompts/src/compare.ts',
         'generic-api-key server/scripts/e2e/serve.ts',
-        'aws-access-token packages/shared/src/sarif/normalize.test.ts',
         'private-key cli/test/tls.ts',
       ]);
     },
