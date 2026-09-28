@@ -75,7 +75,15 @@ describe('the publish gate (release.md §11, §15 item 7)', () => {
     expect(Object.keys(release.jobs)).toEqual(['dry-run', 'publish']);
     const p = release.jobs['publish'];
     expect(p?.environment).toBe('release');
-    expect(p?.needs).toBe('dry-run');
+    // One build per run: the dry-run job runs only without publish, and the publish job runs the
+    // same checks itself, deploy:sources and release:dry-run, before release:publish.
+    expect(p?.needs).toBeUndefined();
+    expect(release.jobs['dry-run']?.if).toBe('${{ !inputs.publish }}');
+    const order = (p?.steps ?? []).map((s) => s.run ?? '');
+    const at = (cmd: string): number => order.findIndex((r) => r.startsWith(cmd));
+    expect(at('pnpm deploy:sources')).toBeGreaterThan(-1);
+    expect(at('pnpm deploy:sources')).toBeLessThan(at('pnpm release:dry-run'));
+    expect(at('pnpm release:dry-run')).toBeLessThan(at('pnpm release:publish'));
     // The whole condition, exactly: nothing added (no "||", no "|| true") and nothing dropped.
     expect(p?.if?.replace(/\s+/g, ' ').trim()).toBe(PUBLISH_IF);
     expect(p?.permissions).toEqual({ contents: 'write' });

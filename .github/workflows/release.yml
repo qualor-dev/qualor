@@ -1,6 +1,6 @@
 name: release
-# Publishing. Started only by a person (workflow_dispatch). The dry run
-# needs no secret. The publish job needs publish: true, the tag v<version> as the ref, the typed
+# Publishing. Started only by a person (workflow_dispatch). A run either dry-runs (no secret) or
+# publishes; the publish job runs the full dry run itself before it pushes. The publish job needs publish: true, the tag v<version> as the ref, the typed
 # confirmation "publish v<version>", and the protected environment "release" with its reviewers
 # and secrets, which do not exist until the maintainer creates them. pnpm release:publish
 # checks all of it again before it runs any command. Nothing goes to the Rekor transparency log
@@ -14,7 +14,7 @@ on:
         required: true
         type: string
       publish:
-        description: 'Publish after the dry run (needs the release environment)'
+        description: 'Publish: build, dry-run check and push in one job (needs the release environment)'
         required: true
         type: boolean
         default: false
@@ -32,7 +32,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Without publish: the dry run alone. With publish: only the publish job, which runs the same
+  # dry run itself before it pushes anything, so the images are built once per run.
   dry-run:
+    if: ${{ !inputs.publish }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -58,6 +61,16 @@ jobs:
           sudo mv /tmp/daemon.json /etc/docker/daemon.json
           sudo systemctl restart docker
           docker info -f '{{.DriverStatus}}' | grep -q containerd.snapshotter
+      # The pinned corresponding sources (about 2 GB). deploy:sources keeps a cached file only when
+      # it verifies against its pin, so a stale or tampered cache costs a download, never a release.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            .tmp/scanner-sources
+            .tmp/server-sources
+            .tmp/scanner-sources-work
+          key: release-sources-${{ hashFiles('deploy/scanner/sources.json', 'deploy/*/debian-sources.json') }}
+          restore-keys: release-sources-
       - run: pnpm deploy:sources
       - run: pnpm release:dry-run --version "$VERSION"
         env: { VERSION: '${{ inputs.version }}' }
@@ -65,7 +78,6 @@ jobs:
         with: { name: release-dry-run, path: .tmp/release/, retention-days: 7 }
 
   publish:
-    needs: dry-run
     if: >-
       github.event_name == 'workflow_dispatch' && inputs.publish &&
       github.ref_type == 'tag' && github.ref_name == format('v{0}', inputs.version) &&
@@ -96,6 +108,16 @@ jobs:
           sudo mv /tmp/daemon.json /etc/docker/daemon.json
           sudo systemctl restart docker
           docker info -f '{{.DriverStatus}}' | grep -q containerd.snapshotter
+      # The pinned corresponding sources (about 2 GB). deploy:sources keeps a cached file only when
+      # it verifies against its pin, so a stale or tampered cache costs a download, never a release.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            .tmp/scanner-sources
+            .tmp/server-sources
+            .tmp/scanner-sources-work
+          key: release-sources-${{ hashFiles('deploy/scanner/sources.json', 'deploy/*/debian-sources.json') }}
+          restore-keys: release-sources-
       - run: pnpm deploy:sources
       - run: pnpm release:dry-run --version "$VERSION"
         env: { VERSION: '${{ inputs.version }}' }
