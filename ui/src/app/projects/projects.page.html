@@ -1,0 +1,168 @@
+<header class="hero-band compact">
+  <div class="page-header">
+    <div>
+      <span class="eyebrow">{{ org.current()?.name }}</span>
+      <h1 i18n="@@projects.title">Projects</h1>
+    </div>
+    <form role="search" class="row" (submit)="submitSearch($event)">
+      <label for="projects-search" class="visually-hidden" i18n="@@projects.search.label"
+        >Search projects</label
+      >
+      <input
+        id="projects-search"
+        type="search"
+        placeholder="Key or name"
+        i18n-placeholder="@@projects.search.placeholder"
+        [attr.maxlength]="maxText"
+        [value]="search()"
+        (input)="search.set(inputValue($event))"
+      />
+      <button type="submit" class="btn" i18n="@@projects.search.submit">Search</button>
+    </form>
+  </div>
+</header>
+
+<div role="status">
+  @if (announcement(); as message) {
+    <p class="alert alert-success">{{ message }}</p>
+  }
+</div>
+@if (list.error(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+}
+
+<div class="table-wrap">
+  <table [attr.aria-busy]="list.loading()">
+    <caption class="visually-hidden" i18n="@@projects.caption">
+      Projects with their quality gate and main-branch measures
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col" i18n="@@projects.col.project">Project</th>
+        <th scope="col" i18n="@@projects.col.gate">Quality gate</th>
+        <th scope="col" class="num" i18n="@@projects.col.issues">Issues</th>
+        <th scope="col" class="num" i18n="@@projects.col.coverage">Coverage</th>
+        <th scope="col" class="num" i18n="@@projects.col.duplications">Duplications</th>
+        <th scope="col" class="num" i18n="@@projects.col.ncloc">Lines of code</th>
+        <th scope="col" i18n="@@projects.col.lastAnalysis">Last analysis</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (project of list.items(); track project.id) {
+        <tr>
+          <td>
+            <a [routerLink]="['/projects', project.id]">{{ project.name }}</a>
+            <div class="muted">
+              <code>{{ project.key }}</code>
+            </div>
+          </td>
+          <td><q-gate-badge [status]="project.mainBranch?.gateStatus" /></td>
+          @for (metric of columns; track metric) {
+            <td class="num">{{ project.mainBranch?.measures?.[metric] | measure: metric }}</td>
+          }
+          <td class="nowrap">
+            @if (project.mainBranch?.lastAnalyzedAt; as at) {
+              {{ at | dateTime }}
+            } @else {
+              <span class="muted" i18n="@@projects.never">Never</span>
+            }
+          </td>
+        </tr>
+      } @empty {
+        @if (list.loaded()) {
+          <tr>
+            @if (org.canChange('org.projects.create')) {
+              <td colspan="7">
+                <div class="empty-state">
+                  <img src="art/empty.webp" alt="" width="900" height="675" />
+                  <p i18n="@@projects.emptyAdmin">
+                    No projects match. Create one below, then run qualor scan in its CI pipeline.
+                  </p>
+                </div>
+              </td>
+            } @else {
+              <td colspan="7">
+                <div class="empty-state">
+                  <img src="art/empty.webp" alt="" width="900" height="675" />
+                  <p i18n="@@projects.empty">No projects match.</p>
+                </div>
+              </td>
+            }
+          </tr>
+        }
+      }
+    </tbody>
+  </table>
+</div>
+
+@if (list.nextCursor()) {
+  <p>
+    <button
+      type="button"
+      class="btn"
+      [attr.aria-disabled]="list.loading() ? true : null"
+      (click)="list.more()"
+      i18n="@@list.more"
+    >
+      Load more
+    </button>
+  </p>
+}
+
+@if (org.canChange('org.projects.create')) {
+  <details class="card">
+    <summary i18n="@@projects.create.title">New project</summary>
+    <form novalidate (submit)="create($event)">
+      @if (createError(); as message) {
+        <p class="alert alert-error" role="alert">{{ message }}</p>
+      }
+      <div class="field">
+        <label for="project-key" i18n="@@projects.create.key">Key</label>
+        <input
+          #keyField
+          id="project-key"
+          required
+          autocomplete="off"
+          [attr.aria-invalid]="keyError() ? true : null"
+          [attr.aria-describedby]="
+            keyError() ? 'project-key-error project-key-hint' : 'project-key-hint'
+          "
+          [attr.maxlength]="maxText"
+          [value]="newKey()"
+          (input)="setKey($event)"
+        />
+        @if (keyError(); as message) {
+          <span id="project-key-error" class="field-error" role="alert">{{ message }}</span>
+        }
+        <span id="project-key-hint" class="hint" i18n="@@projects.create.keyHint"
+          >The key the scanner reports, for example acme/payments-api.</span
+        >
+      </div>
+      <div class="field">
+        <label for="project-name" i18n="@@projects.create.name">Name</label>
+        <input
+          #nameField
+          id="project-name"
+          required
+          autocomplete="off"
+          [attr.aria-invalid]="nameError() ? true : null"
+          [attr.aria-describedby]="nameError() ? 'project-name-error' : null"
+          [attr.maxlength]="maxText"
+          [value]="newName()"
+          (input)="setName($event)"
+        />
+        @if (nameError(); as message) {
+          <span id="project-name-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </div>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [attr.aria-disabled]="creating() ? true : null"
+        i18n="@@projects.create.submit"
+      >
+        Create project
+      </button>
+    </form>
+  </details>
+}

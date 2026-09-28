@@ -1,0 +1,104 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+/** The Docker Hub repositories, one description file each in deploy/dockerhub/. */
+const REPOSITORIES = [
+  'server',
+  'scanner',
+  'scanner-dotnet',
+  'scanner-sources',
+  'server-sources',
+] as const;
+const read = (repository: string): string =>
+  readFileSync(`deploy/dockerhub/${repository}.md`, 'utf8');
+
+/** Docker Hub's limit for a repository's short description. */
+const SHORT_MAX = 100;
+
+describe('the Docker Hub descriptions', () => {
+  it('have a short description of at most 100 characters and an overview', () => {
+    for (const repository of REPOSITORIES) {
+      const text = read(repository);
+      expect(text.startsWith(`# qualor/${repository}\n`), repository).toBe(true);
+      const short = /^Short description: (.+)$/m.exec(text)?.[1] ?? '';
+      expect(short.length, repository).toBeGreaterThan(20);
+      expect(short.length, `${repository}: "${short}"`).toBeLessThanOrEqual(SHORT_MAX);
+      expect(text, repository).toMatch(/^## Overview$/m);
+      expect(text, repository).toContain('https://github.com/qualor-dev/qualor');
+    }
+  });
+
+  it('carry the trademark notice of the README in the server and scanner descriptions', () => {
+    const readme = readFileSync('README.md', 'utf8');
+    const notice = /## Trademarks\n\n([\s\S]+?)(?:\n## |\n?$)/.exec(readme)?.[1]?.trim() ?? '';
+    expect(notice).toContain('SonarSource');
+    for (const repository of ['server', 'scanner', 'scanner-dotnet']) {
+      expect(read(repository), repository).toContain(notice);
+    }
+  });
+
+  it('name the same analyzer versions, entrypoint and user as the scanner image', () => {
+    const text = read('scanner');
+    const installSh = readFileSync('tools/analyzers/install.sh', 'utf8');
+    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS']) {
+      const version = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh)?.[1] ?? '';
+      expect(version, tool).not.toBe('');
+      expect(text, tool).toContain(version);
+    }
+    const dockerfile = readFileSync('deploy/scanner/Dockerfile', 'utf8');
+    expect(dockerfile).toContain('ENTRYPOINT ["qualor"]');
+    expect(dockerfile).toMatch(/^USER node$/m);
+    expect(text).toContain('entrypoint `qualor`');
+    expect(text).toContain('`node` (uid 1000)');
+  });
+
+  it('name the same .NET SDK and Roslynator versions as the scanner-dotnet image', () => {
+    const text = read('scanner-dotnet');
+    const installSh = readFileSync('tools/analyzers/install-dotnet.sh', 'utf8');
+    for (const tool of ['DOTNET8', 'DOTNET10', 'ROSLYNATOR']) {
+      const version = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh)?.[1] ?? '';
+      expect(version, tool).not.toBe('');
+      expect(text, tool).toContain(version);
+    }
+    // Its copyleft sources are the scanner's (release.md §5): it names that companion.
+    expect(text).toContain('qualor/scanner-sources');
+    expect(text).toContain('https://qualor.dev/docs/languages-and-analyzers');
+  });
+
+  it('name the same port and user as the server image', () => {
+    const text = read('server');
+    const dockerfile = readFileSync('deploy/server/Dockerfile', 'utf8');
+    expect(dockerfile).toMatch(/^USER 65532:65532$/m);
+    expect(dockerfile).toMatch(/^EXPOSE 8080$/m);
+    expect(text).toContain('user 65532');
+    expect(text).toContain('port 8080');
+  });
+});
+
+describe('placeholder image names', () => {
+  // This file names the patterns.
+  const DELIBERATE = [/^tools\/deploy\/dockerhub\.test\.ts$/];
+  const PLACEHOLDER = /registry\.example\.com|<namespace>|<registry>/;
+
+  it('are gone from the repository', () => {
+    const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    })
+      .split('\n')
+      .filter((file) => file !== '' && !DELIBERATE.some((re) => re.test(file)));
+    expect(files.length).toBeGreaterThan(100);
+    const found: string[] = [];
+    for (const file of files) {
+      let text: string;
+      try {
+        text = readFileSync(file, 'utf8');
+      } catch {
+        continue; // listed but deleted in the working tree
+      }
+      if (PLACEHOLDER.test(text)) found.push(file);
+    }
+    expect(found).toEqual([]);
+  });
+});

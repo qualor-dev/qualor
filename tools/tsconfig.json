@@ -1,0 +1,6 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "outDir": "../node_modules/.cache/tsc/tools", "rootDir": ".." },
+  "include": ["**/*.ts", "../vitest.config.ts", "../ui/e2e/docker-seed.ts"],
+  "references": [{ "path": "../packages/shared" }, { "path": "../cli" }, { "path": "../server" }]
+}

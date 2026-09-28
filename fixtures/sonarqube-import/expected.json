@@ -1,0 +1,17 @@
+{
+  "description": "TypeScript repo for qualor import sonarqube: 2 eqeqeq and 1 no-console finding, plus SonarQube data (sonarqube/) whose statuses map onto them",
+  "engines": ["eslint"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "eslint:eqeqeq", "path": "src/app.ts", "startLine": 3, "severity": "high" },
+    { "ruleKey": "eslint:no-console", "path": "src/app.ts", "startLine": 6, "severity": "medium" },
+    { "ruleKey": "eslint:eqeqeq", "path": "src/app.ts", "startLine": 7, "severity": "high" }
+  ],
+  "files": { "src/app.ts": { "language": "typescript", "kind": "main", "lines": 8, "functions": 1 } },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "sonarqube": "sonarqube/data.json is the fake SonarQube's data (invented keys and names); sonarqube-expected.json is what the import must plan and match (tools/fixtures/sonarqube-check.ts)",
+    "sonarqube#hashes": "SonarQube's line hash (MD5 without spaces and tabs): 'if(a==1){' = aa9e0a0e87b7b225e6bf25381f699909, 'console.log(b);' = bc72383ba50db96914509b76df7ada48"
+  }
+}

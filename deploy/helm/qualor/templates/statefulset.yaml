@@ -1,0 +1,35 @@
+{{- if eq .Values.database.mode "embedded" }}
+{{/* One server per volume: the pod keeps its name, so the lease stays its own. */}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "qualor.fullname" . }}
+  labels:
+    {{- include "qualor.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ include "qualor.fullname" . }}-headless
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      {{- include "qualor.selectorLabels" . | nindent 6 }}
+  template:
+    {{- include "qualor.podTemplate" . | nindent 4 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- with .Values.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size | quote }}
+{{- end }}

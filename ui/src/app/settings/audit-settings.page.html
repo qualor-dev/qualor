@@ -1,0 +1,241 @@
+<h2 #heading tabindex="-1" i18n="@@auditSettings.title">Audit settings</h2>
+@if (infoError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (infoLoaded() && !licensed()) {
+  <p class="muted" i18n="@@audit.notLicensed">
+    The audit log needs an enterprise licence with the audit-log feature.
+  </p>
+} @else if (licensed() && !instanceAdmin()) {
+  <p class="muted" i18n="@@auditSettings.adminsOnly">
+    Only instance administrators change the audit settings.
+  </p>
+} @else if (loadError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (current(); as settings) {
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  @if (secret(); as value) {
+    <q-secret-once
+      [value]="value"
+      label="Stream secret"
+      i18n-label="@@auditSettings.secret"
+      (done)="forget()"
+    />
+  }
+
+  <form class="card" novalidate (submit)="save($event)">
+    <h3 i18n="@@auditSettings.retention">Retention</h3>
+    <div class="field">
+      <label for="audit-retention" i18n="@@auditSettings.retentionDays"
+        >Keep events for (days)</label
+      >
+      <input
+        id="audit-retention"
+        type="number"
+        inputmode="numeric"
+        required
+        [attr.min]="minDays"
+        [attr.max]="maxDays"
+        step="1"
+        [value]="retention()"
+        [attr.aria-invalid]="retentionError() ? true : null"
+        [attr.aria-describedby]="
+          retentionError() ? 'audit-retention-hint audit-retention-error' : 'audit-retention-hint'
+        "
+        (input)="setRetention($event)"
+      />
+      <span id="audit-retention-hint" class="hint" i18n="@@auditSettings.retentionHint"
+        >From 30 to 36 500 days. Older events are removed once a day; the chain keeps an anchor so
+        the rest still verifies.</span
+      >
+      @if (retentionError(); as message) {
+        <span id="audit-retention-error" class="field-error" role="alert">{{ message }}</span>
+      }
+    </div>
+
+    <h3 i18n="@@auditSettings.stream">SIEM stream</h3>
+    <p class="muted" i18n="@@auditSettings.streamIntro">
+      Qualor posts new events in signed batches to this address, in order, and retries while the
+      receiver fails. Leave it empty to send nothing.
+    </p>
+    @if (!streamLicensed()) {
+      <p
+        id="audit-stream-not-licensed"
+        class="alert alert-info"
+        i18n="@@auditSettings.streamNotLicensed"
+      >
+        Streaming the audit log to a SIEM needs the Enterprise plan.
+      </p>
+    }
+    <div class="field">
+      <label for="audit-stream-url" i18n="@@auditSettings.url">Stream URL</label>
+      <input
+        id="audit-stream-url"
+        type="url"
+        maxlength="2048"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="https://"
+        i18n-placeholder="@@auditSettings.urlPlaceholder"
+        [value]="url()"
+        [disabled]="!streamLicensed()"
+        [attr.aria-invalid]="urlError() ? true : null"
+        [attr.aria-describedby]="
+          !streamLicensed()
+            ? 'audit-stream-not-licensed'
+            : urlError()
+              ? 'audit-stream-url-error'
+              : null
+        "
+        (input)="setUrl($event)"
+      />
+      @if (urlError(); as message) {
+        <span id="audit-stream-url-error" class="field-error" role="alert">{{ message }}</span>
+      }
+    </div>
+    <label class="row">
+      <input
+        id="audit-stream-active"
+        type="checkbox"
+        [checked]="active()"
+        [disabled]="!streamLicensed()"
+        [attr.aria-describedby]="streamLicensed() ? null : 'audit-stream-not-licensed'"
+        (change)="setActive($event)"
+      />
+      <span i18n="@@auditSettings.active">Active</span>
+    </label>
+    @if (!settings.stream && streamLicensed()) {
+      <p class="hint" i18n="@@auditSettings.secretHint">
+        Qualor generates the signing secret and shows it once.
+      </p>
+    }
+    <button
+      type="submit"
+      class="btn btn-primary"
+      [attr.aria-disabled]="busy() ? true : null"
+      i18n="@@auditSettings.save"
+    >
+      Save
+    </button>
+  </form>
+
+  @if (settings.stream; as stream) {
+    <section class="card" aria-labelledby="audit-stream-title">
+      <h3 id="audit-stream-title" i18n="@@auditSettings.streamStatus">Stream status</h3>
+      @if (!streamLicensed()) {
+        <p id="audit-stream-paused" class="hint" i18n="@@auditSettings.streamPaused">
+          The stream is paused: streaming the audit log to a SIEM needs the Enterprise plan. Press
+          Remove to delete it.
+        </p>
+      }
+      <p class="muted">
+        @if (stream.secretSet) {
+          <span i18n="@@auditSettings.secretSet"
+            >A signing secret is set; it is never shown again.</span
+          >
+        }
+      </p>
+      <dl id="audit-stream-status" class="facts">
+        <dt i18n="@@auditSettings.lastSuccess">Last success</dt>
+        <dd>
+          @if (stream.status.lastSuccessAt) {
+            {{ stream.status.lastSuccessAt | dateTime }}
+          } @else {
+            <span i18n="@@auditSettings.never">Never</span>
+          }
+        </dd>
+        <dt i18n="@@auditSettings.lastError">Last error</dt>
+        <dd class="prose-text">
+          @if (stream.status.lastError) {
+            {{ stream.status.lastError }}
+          } @else {
+            <span i18n="@@auditSettings.none">None</span>
+          }
+        </dd>
+        @if (stream.status.failingSince) {
+          <dt i18n="@@auditSettings.failingSince">Failing since</dt>
+          <dd>{{ stream.status.failingSince | dateTime }}</dd>
+        }
+        @if (stream.status.nextAttemptAt) {
+          <dt i18n="@@auditSettings.nextAttempt">Next attempt</dt>
+          <dd>{{ stream.status.nextAttemptAt | dateTime }}</dd>
+        }
+        <dt i18n="@@auditSettings.pending">Waiting to be sent</dt>
+        <dd>
+          <span i18n="@@auditSettings.pendingCount">{stream.status.pending, plural,
+            =1 {1 event}
+            other {{{ stream.status.pending }} events}
+          }</span>
+        </dd>
+        <dt i18n="@@auditSettings.skipped">Removed by retention before they were sent</dt>
+        <dd>
+          <span i18n="@@auditSettings.skippedCount">{stream.status.skipped, plural,
+            =1 {1 event}
+            other {{{ stream.status.skipped }} events}
+          }</span>
+        </dd>
+      </dl>
+      <div class="row">
+        <button
+          type="button"
+          class="btn"
+          [disabled]="!streamLicensed()"
+          [attr.aria-disabled]="busy() ? true : null"
+          [attr.aria-describedby]="streamLicensed() ? null : 'audit-stream-paused'"
+          (click)="sendTest()"
+          i18n="@@auditSettings.test"
+        >
+          Send test
+        </button>
+        <button
+          type="button"
+          class="btn"
+          [disabled]="!streamLicensed()"
+          [attr.aria-disabled]="busy() ? true : null"
+          [attr.aria-describedby]="streamLicensed() ? null : 'audit-stream-paused'"
+          (click)="regenerate()"
+          i18n="@@auditSettings.regenerate"
+        >
+          Regenerate the secret
+        </button>
+        @if (!streamLicensed()) {
+          <button
+            type="button"
+            class="btn btn-danger"
+            [attr.aria-disabled]="busy() ? true : null"
+            (click)="removeStream()"
+            i18n="@@auditSettings.removeStream"
+          >
+            Remove
+          </button>
+        }
+      </div>
+      <div id="audit-stream-test" aria-live="polite">
+        @if (test(); as t) {
+          @if (t.ok) {
+            <p class="alert alert-success" i18n="@@auditSettings.testOk">
+              The receiver answered HTTP {{ t.status }}: the test passed.
+            </p>
+          } @else if (t.status !== null) {
+            <p class="alert alert-error" i18n="@@auditSettings.testFailed">
+              The receiver answered HTTP {{ t.status }}, so the test failed.
+            </p>
+          } @else {
+            <p class="alert alert-error" i18n="@@auditSettings.testUnreachable">
+              The receiver could not be reached, so the test failed.
+            </p>
+          }
+          @if (t.excerpt) {
+            <pre class="excerpt">{{ t.excerpt }}</pre>
+          }
+        }
+      </div>
+    </section>
+  }
+}

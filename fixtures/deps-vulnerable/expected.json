@@ -1,0 +1,30 @@
+{
+  "description": "Lockfiles with known vulnerable dependencies (plan 2B): 4 Trivy findings, against the Trivy database pinned in tools/analyzers/install.sh",
+  "engines": ["trivy"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "trivy:CVE-2021-44906", "path": "web/package-lock.json", "startLine": 15, "severity": "blocker", "quality": "security" },
+    { "ruleKey": "trivy:CVE-2021-44906", "path": "tools/pnpm-lock.yaml", "startLine": 17, "severity": "blocker", "quality": "security" },
+    { "ruleKey": "trivy:CVE-2015-7501", "path": "java/gradle.lockfile", "startLine": 4, "severity": "blocker", "quality": "security" },
+    { "ruleKey": "trivy:CVE-2015-6420", "path": "java/gradle.lockfile", "startLine": 4, "severity": "high", "quality": "security" }
+  ],
+  "files": {
+    "web/package.json": { "language": "other", "kind": "main", "lines": 8 },
+    "web/package-lock.json": { "language": "other", "kind": "main", "lines": 21 },
+    "tools/package.json": { "language": "other", "kind": "main", "lines": 8 },
+    "tools/pnpm-lock.yaml": { "language": "other", "kind": "main", "lines": 22 },
+    "java/gradle.lockfile": { "language": "other", "kind": "main", "lines": 7 }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "database": "captured with Trivy 0.74.0 and the database snapshot pinned in tools/analyzers/install.sh (TRIVY_DB_DIGEST sha256:7d0ae3ee…, built 2026-09-25T06:36:11Z), offline (docker run --network none), with the adapter's own flags (config.md §6); the raw output is cli/test/analyzer-output/trivy-deps-vulnerable.json, over a byte-for-byte copy of these lockfiles. A newer database can know more vulnerabilities of these versions: the packages were chosen for stable, years-old advisories (minimist 1.2.5 has one, commons-collections 3.2.1 two), but moving the pin (pnpm trivy-db:pin) must re-run this fixture and update it when the database learned something new",
+    "web/package-lock.json:15": "npm lockfile v3: Trivy places minimist 1.2.5 at its entry \"node_modules/minimist\", lines 14-19; the CLI locates it at the entry's \"version\": \"1.2.5\" line, 15, so an upgrade that changes the version is new code (ruling T3)",
+    "tools/pnpm-lock.yaml:17": "pnpm lockfile v9: Trivy gives no position, so the CLI takes the first line holding minimist@1.2.5 as a whole word, the packages entry at line 17 (the snapshots entry at line 22 comes later)",
+    "java/gradle.lockfile:4": "Gradle lockfile: Trivy places commons-collections 3.2.1 at line 4, which holds its version; junit 4.12 (CVE-2020-15250) and hamcrest are test-only configurations, development dependencies Trivy leaves out",
+    "trivy:CVE-2021-44906#severity": "Trivy's severity CRITICAL (GHSA) -> blocker (report-format.md §7.1)",
+    "trivy:CVE-2015-7501#severity": "CRITICAL -> blocker",
+    "trivy:CVE-2015-6420#severity": "HIGH -> high",
+    "files": "package.json, lockfiles and manifests are files of language other (config.md §3.1 includes them); each line count is the file's own (wc -l)"
+  }
+}

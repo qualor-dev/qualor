@@ -1,0 +1,300 @@
+@if (shown() && orgAi(); as ai) {
+  <section class="card stack" aria-labelledby="ai-heading">
+    <div>
+      <h3 id="ai-heading" i18n="@@ai.panel.title">AI assistant</h3>
+      @if (canAsk() && ai.provider; as provider) {
+        <p class="hint" i18n="@@ai.panel.notice">
+          Asking sends the rule, the message, the file path, the language and the code around the
+          issue to {{ provider.host }} ({{ provider.model }}), after secrets are redacted.
+        </p>
+      }
+    </div>
+    <div role="status">
+      @if (working()) {
+        <p class="muted" i18n="@@ai.panel.working">Asking the model…</p>
+      } @else if (announcement(); as message) {
+        <p class="muted">{{ message }}</p>
+      }
+    </div>
+    @if (error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    @if (canAsk()) {
+      <div class="row">
+        @if (ai.features.explain && !explain()) {
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-disabled]="busy('explain') ? true : null"
+            (click)="ask('explain')"
+            i18n="@@ai.panel.explain"
+          >
+            Explain
+          </button>
+        }
+        @if (ai.features.triage && open() && !triage()) {
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-disabled]="busy('triage') ? true : null"
+            (click)="ask('triage')"
+            i18n="@@ai.panel.triage"
+          >
+            Suggest triage
+          </button>
+        }
+        @if (ai.features.fix && open() && !fix()) {
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-disabled]="busy('fix') ? true : null"
+            (click)="ask('fix')"
+            i18n="@@ai.panel.fix"
+          >
+            Suggest a fix
+          </button>
+        }
+      </div>
+    }
+
+    @if (ai.features.explain && explain(); as r) {
+      <section class="stack" aria-labelledby="ai-explain-heading">
+        <h4 id="ai-explain-heading" i18n="@@ai.panel.explainTitle">Explanation</h4>
+        @if (r.status === 'succeeded') {
+          <p class="row">
+            <span class="badge badge-accent" i18n="@@ai.panel.label"
+              >AI-generated, may be wrong</span
+            >
+            <span class="muted" i18n="@@ai.panel.meta"
+              >{{ r.model }} · {{ r.finishedAt | dateTime }}</span
+            >
+          </p>
+          @if (explainResult(r); as e) {
+            <p class="ai-text">{{ e.summary }}</p>
+            <p class="ai-text">{{ e.explanation }}</p>
+            @if (e.howToFix) {
+              <p class="ai-text">{{ e.howToFix }}</p>
+            }
+          }
+        } @else if (failure(r); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        @if (canAsk() && !pending(r)) {
+          <p>
+            <button
+              type="button"
+              class="btn"
+              [attr.aria-disabled]="busy('explain') ? true : null"
+              aria-label="Ask again for an explanation"
+              i18n-aria-label="@@ai.panel.explainAgainLabel"
+              (click)="ask('explain', true)"
+              i18n="@@ai.panel.askAgain"
+            >
+              Ask again
+            </button>
+          </p>
+        }
+      </section>
+    }
+
+    @if (ai.features.triage && triage(); as r) {
+      <section class="stack" aria-labelledby="ai-triage-heading">
+        <h4 id="ai-triage-heading" i18n="@@ai.panel.triageTitle">Triage suggestion</h4>
+        @if (r.status === 'succeeded') {
+          <p class="row">
+            <span class="badge badge-accent" i18n="@@ai.panel.label"
+              >AI-generated, may be wrong</span
+            >
+            <span class="muted" i18n="@@ai.panel.meta"
+              >{{ r.model }} · {{ r.finishedAt | dateTime }}</span
+            >
+          </p>
+          @if (triageResult(r); as t) {
+            <p>
+              <strong>{{ verdictText(t) }}</strong> ·
+              <span>{{ confidenceText(t) }}</span>
+            </p>
+            <ul>
+              @for (reason of t.reasons; track $index) {
+                <li class="ai-text">{{ reason }}</li>
+              }
+            </ul>
+            @if (t.verdict === 'likely_false_positive' && open() && ownAnswer(r) && canTriage()) {
+              <p>
+                <button
+                  type="button"
+                  class="btn"
+                  (click)="acceptTriage.emit(r.id)"
+                  i18n="@@ai.panel.markFalsePositive"
+                >
+                  Mark as false positive…
+                </button>
+                <span class="hint" i18n="@@ai.panel.markHint">
+                  Opens the status change with an empty comment; you decide and write why.
+                </span>
+              </p>
+            }
+          }
+        } @else if (failure(r); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        @if (canAsk() && !pending(r) && open()) {
+          <p>
+            <button
+              type="button"
+              class="btn"
+              [attr.aria-disabled]="busy('triage') ? true : null"
+              aria-label="Ask again for a triage suggestion"
+              i18n-aria-label="@@ai.panel.triageAgainLabel"
+              (click)="ask('triage', true)"
+              i18n="@@ai.panel.askAgain"
+            >
+              Ask again
+            </button>
+          </p>
+        }
+      </section>
+    }
+
+    @if (ai.features.fix && fix(); as r) {
+      <section class="stack" aria-labelledby="ai-fix-heading">
+        <h4 id="ai-fix-heading" i18n="@@ai.panel.fixTitle">Fix suggestion</h4>
+        @if (r.status === 'succeeded') {
+          <p class="row">
+            <span class="badge badge-accent" i18n="@@ai.panel.label"
+              >AI-generated, may be wrong</span
+            >
+            <span class="muted" i18n="@@ai.panel.meta"
+              >{{ r.model }} · {{ r.finishedAt | dateTime }}</span
+            >
+          </p>
+          @if (fixResult(r); as f) {
+            @if (f.status === 'fixed') {
+              <h5 id="ai-fix-before-heading" i18n="@@ai.panel.before">Before</h5>
+              <pre
+                id="ai-fix-before"
+                class="snippet"
+                tabindex="0"
+                aria-labelledby="ai-fix-before-heading"
+              ><code>@for (line of f.original; track $index) {<span class="snippet-line"><span class="ln">{{ f.startLine + $index }}</span>{{ line }}</span>}</code></pre>
+              <h5 id="ai-fix-after-heading" i18n="@@ai.panel.after">After</h5>
+              <pre
+                id="ai-fix-after"
+                class="snippet"
+                tabindex="0"
+                aria-labelledby="ai-fix-after-heading"
+              ><code>@for (line of f.replacement; track $index) {<span class="snippet-line"><span class="ln">{{ f.startLine + $index }}</span>{{ line }}</span>}</code></pre>
+              @if (f.replacement.length === 0) {
+                <p class="muted" i18n="@@ai.panel.deleteLines">
+                  The suggestion deletes these lines.
+                </p>
+              }
+            } @else {
+              <p class="muted" i18n="@@ai.panel.notApplicable">
+                The model found no safe change within the lines shown.
+              </p>
+            }
+            @if (f.explanation) {
+              <p class="ai-text">{{ f.explanation }}</p>
+            }
+          }
+          @if (r.post; as p) {
+            @if (p.status === 'posted') {
+              <p class="row">
+                <span class="badge badge-passed" i18n="@@ai.panel.posted">Posted</span>
+                @if (postLink(r); as href) {
+                  <a
+                    [href]="href"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    i18n="@@ai.panel.postedLink"
+                    >See it on the merge request</a
+                  >
+                }
+              </p>
+            } @else if (p.status === 'queued') {
+              <p class="muted" i18n="@@ai.panel.queued">Queued</p>
+            } @else {
+              <p class="alert alert-error">{{ postFailure(r) }}</p>
+            }
+          }
+          @if (canAsk() && postable(r) && target(); as to) {
+            @if (confirming() === r.id) {
+              <div class="alert alert-info stack">
+                <p>
+                  @if (to.kind === 'pull_request') {
+                    @if (to.title; as title) {
+                      <span i18n="@@ai.panel.confirmPullTitled"
+                        >Post this suggestion as a comment on pull request {{ to.reference }} “{{
+                          title
+                        }}”?</span
+                      >
+                    } @else {
+                      <span i18n="@@ai.panel.confirmPull"
+                        >Post this suggestion as a comment on pull request {{ to.reference }}?</span
+                      >
+                    }
+                  } @else {
+                    @if (to.title; as title) {
+                      <span i18n="@@ai.panel.confirmMergeTitled"
+                        >Post this suggestion as a comment on merge request {{ to.reference }} “{{
+                          title
+                        }}”?</span
+                      >
+                    } @else {
+                      <span i18n="@@ai.panel.confirmMerge"
+                        >Post this suggestion as a comment on merge request
+                        {{ to.reference }}?</span
+                      >
+                    }
+                  }
+                  {{ ' '
+                  }}<span i18n="@@ai.panel.confirmText"
+                    >Reviewers see it labelled as AI-generated; nothing is committed.</span
+                  >
+                </p>
+                <p class="row">
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    [attr.aria-disabled]="posting() ? true : null"
+                    (click)="post(r)"
+                    i18n="@@ai.panel.confirmPost"
+                  >
+                    Confirm: post as a suggestion
+                  </button>
+                  <button type="button" class="btn" (click)="cancelPost()" i18n="@@ai.panel.cancel">
+                    Cancel
+                  </button>
+                </p>
+              </div>
+            } @else {
+              <p>
+                <button type="button" class="btn" (click)="askPost(r)" i18n="@@ai.panel.post">
+                  Post to merge request
+                </button>
+              </p>
+            }
+          }
+        } @else if (failure(r); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        @if (canAsk() && !pending(r) && open()) {
+          <p>
+            <button
+              type="button"
+              class="btn"
+              [attr.aria-disabled]="busy('fix') ? true : null"
+              aria-label="Ask again for a fix suggestion"
+              i18n-aria-label="@@ai.panel.fixAgainLabel"
+              (click)="ask('fix', true)"
+              i18n="@@ai.panel.askAgain"
+            >
+              Ask again
+            </button>
+          </p>
+        }
+      </section>
+    }
+  </section>
+}

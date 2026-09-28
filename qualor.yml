@@ -1,0 +1,32 @@
+# Qualor scans itself with this configuration (brief rule 4, plan 1G): `pnpm dogfood` and the
+# `dogfood` CI jobs run the qualor/scanner image with it against the default "Qualor way" gate.
+version: 1
+
+project:
+  key: qualor/qualor
+  name: Qualor
+
+sources:
+  exclude:
+    # The reference repositories with known findings; the fixture suite checks each of them.
+    - fixtures/**
+    # Generated from server/openapi.json (CI checks it is current).
+    - ui/src/app/api/schema.ts
+    # Recorded analyzer output and SARIF samples: test data.
+    - cli/test/analyzer-output/**
+    - packages/shared/test/sarif-samples/**
+
+tests:
+  include:
+    - '**/*.test.*'
+    - '**/*.spec.*'
+    - '**/__tests__/**'
+    - '**/src/test/**'
+    - '**/test/**'
+    - 'ui/e2e/**'
+
+coverage:
+  reports:
+    # Written by `pnpm test:coverage` (the CI test job hands it to the dogfood job).
+    - path: coverage/lcov.info
+      format: lcov

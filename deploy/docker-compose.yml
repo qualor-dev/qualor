@@ -1,0 +1,83 @@
+# Qualor: the server (API, web UI and analysis worker in one container) and PostgreSQL 16.
+#   cp deploy/.env.example deploy/.env    # then fill in the three secrets (see the file)
+#   docker compose -f deploy/docker-compose.yml up -d
+# The server listens on 127.0.0.1:8080 only; put a TLS reverse proxy in front of it to reach it
+# from other machines (deploy/README.md). PostgreSQL has no published port at all, but processes
+# on the Docker host itself can still reach it at its container's bridge IP (Linux), so it keeps a
+# password: POSTGRES_PASSWORD is required and must be a strong one.
+# The health checks only report: nothing restarts an `unhealthy` container (restart: unless-stopped
+# acts when a process exits). Watch `docker compose ps` or /readyz from your monitoring.
+name: qualor
+
+services:
+  postgres:
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qualor
+      POSTGRES_DB: qualor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env (see .env.example)}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U qualor -d qualor']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt: ['no-new-privileges:true']
+    networks: [internal]
+
+  server:
+    image: ${QUALOR_SERVER_IMAGE:-qualor/server:dev}
+    # Never pulled: `qualor/server:dev` is this checkout's build and is not published, so
+    # `up` builds it when it is missing (`up --build` rebuilds it) without asking Docker Hub first.
+    # A released image (`qualor/server:<version>` on Docker Hub): `docker pull` it, set
+    # QUALOR_SERVER_IMAGE in deploy/.env, and start with `up -d --no-build`, which fails on a
+    # missing image instead of building this checkout under the release's name (deploy/README.md).
+    pull_policy: never
+    build:
+      context: ..
+      dockerfile: deploy/server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://qualor:${POSTGRES_PASSWORD}@postgres:5432/qualor
+      QUALOR_SECRET_KEY: ${QUALOR_SECRET_KEY:?set QUALOR_SECRET_KEY in deploy/.env (see .env.example)}
+      QUALOR_BOOTSTRAP_ADMIN_USERNAME: ${QUALOR_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      QUALOR_BOOTSTRAP_ADMIN_PASSWORD: ${QUALOR_BOOTSTRAP_ADMIN_PASSWORD:?set QUALOR_BOOTSTRAP_ADMIN_PASSWORD in deploy/.env (see .env.example)}
+      QUALOR_TRUST_PROXY: ${QUALOR_TRUST_PROXY:-}
+      QUALOR_LOG_LEVEL: ${QUALOR_LOG_LEVEL:-info}
+      # The AI assistant with a local model (off by default; deploy/README.md, "A local model with
+      # Ollama"): list the model host so its plain-http URL is allowed.
+      # QUALOR_LLM_INTERNAL_HOSTS: ollama:11434
+      # Single sign-on (enterprise, docs/guide/sso-and-scim.md): an identity provider on the internal
+      # network (or on plain http), and the emergency switch that re-enables password sign-in for
+      # everyone with a password while the identity provider is down (remove it again afterwards).
+      # QUALOR_SSO_INTERNAL_HOSTS: keycloak.corp.example.com:8443
+      # QUALOR_FORCE_PASSWORD_SIGN_IN: 'true'
+    ports:
+      - '${QUALOR_BIND_ADDRESS:-127.0.0.1}:${QUALOR_PORT:-8080}:8080'
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/bin/node
+        - -e
+        - "fetch('http://127.0.0.1:8080/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    networks: [internal, default]
+
+networks:
+  # PostgreSQL is reachable only from the server.
+  internal:
+    internal: true
+
+volumes:
+  pgdata:

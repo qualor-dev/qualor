@@ -1,0 +1,56 @@
+# Qualor for a C# project in GitHub Actions. Copy this
+# file to .github/workflows/qualor.yml (instead of integrations/github/qualor.yml).
+#
+# Set, in the repository's (or organisation's) Actions settings:
+#   - variable QUALOR_URL: your Qualor server;
+#   - variable QUALOR_SCANNER_DOTNET_IMAGE: qualor/scanner-dotnet:<tag> (a fixed tag: nothing floats);
+#   - secret QUALOR_TOKEN: a project analysis token of the Qualor project.
+# The job needs no GitHub write permission: pull requests are decorated by the Qualor GitHub App,
+# which an administrator connects in Qualor (Settings, GitHub) and installs on this repository.
+# It checks out the pull request's head, not GitHub's merge commit, so Qualor's annotations land on
+# the lines of the pull request, with the full history (the new-code baseline) and without leaving
+# the job's token in .git/config, where the analysed code could read it.
+# The job is skipped for pull requests from forks: GitHub gives them no secrets, so the scan could
+# not upload. Never switch to pull_request_target, which would run a fork's code with the token.
+# Change `main` below if your default branch has another name.
+#
+# The C# analyzers run inside the project's own build: `qualor dotnet begin` installs an MSBuild
+# hook, the build writes Roslyn's logs, `qualor dotnet end` reads them and scans. The token is in
+# the `end` step's environment only: the build runs the repository's code (MSBuild targets, source
+# generators), which must never see it. When a step fails or the run is cancelled, `qualor dotnet
+# abort` removes the hook and the session without scanning.
+# `begin` writes the hook under $HOME/.local/share/Microsoft/MSBuild (or $XDG_DATA_HOME) and NuGet
+# keeps its packages in $HOME/.nuget. GitHub sets HOME=/github/home in a container job, writable by
+# the runner user; a job that overrides HOME or XDG_DATA_HOME must keep them writable.
+name: qualor
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  qualor:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ vars.QUALOR_SCANNER_DOTNET_IMAGE }}
+      options: --user 1001
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - run: qualor dotnet begin
+      # Replace with the project's own build (restore, feeds, configuration); keep --no-incremental,
+      # so every project is compiled and writes its Roslyn log.
+      - run: dotnet build --no-incremental
+      - run: qualor dotnet end
+        env:
+          QUALOR_URL: ${{ vars.QUALOR_URL }}
+          QUALOR_TOKEN: ${{ secrets.QUALOR_TOKEN }}
+      # A failed build never reaches `end`: remove the MSBuild hook and .qualor/dotnet anyway. A
+      # cancelled run too, which matters on a persistent self-hosted runner (abort is idempotent).
+      - if: failure() || cancelled()
+        run: qualor dotnet abort

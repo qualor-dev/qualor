@@ -1,0 +1,28 @@
+[
+  {
+    "id": 1,
+    "node_id": "IC_kwDOAAABc0",
+    "url": "https://api.github.com/repos/acme/api/issues/comments/1",
+    "html_url": "https://github.com/acme/api/pull/7#issuecomment-1",
+    "body": "<!-- qualor:summary 0190c3b2-7a00-7000-8000-000000000001 -->\n### Qualor: quality gate failed",
+    "user": { "login": "qualor-acme[bot]", "id": 41898282, "type": "Bot" },
+    "created_at": "2026-09-25T10:00:00Z",
+    "updated_at": "2026-09-25T10:00:00Z",
+    "issue_url": "https://api.github.com/repos/acme/api/issues/7",
+    "author_association": "NONE",
+    "performed_via_github_app": { "id": 123456, "slug": "qualor-acme" }
+  },
+  {
+    "id": 2,
+    "node_id": "IC_kwDOAAABc1",
+    "url": "https://api.github.com/repos/acme/api/issues/comments/2",
+    "html_url": "https://github.com/acme/api/pull/7#issuecomment-2",
+    "body": "Looks good to me.",
+    "user": { "login": "dev", "id": 5, "type": "User" },
+    "created_at": "2026-09-25T10:30:00Z",
+    "updated_at": "2026-09-25T10:30:00Z",
+    "issue_url": "https://api.github.com/repos/acme/api/issues/7",
+    "author_association": "MEMBER",
+    "performed_via_github_app": null
+  }
+]

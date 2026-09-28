@@ -1,0 +1,39 @@
+{
+  "profiles": {
+    "Fixture TS": {
+      "skip": "no_mapped_rules",
+      "rows": [],
+      "pendingReview": ["typescript:S3504"],
+      "statusOnly": ["typescript:S1440"],
+      "unmapped": ["typescript:S3776"]
+    },
+    "Fixture Java": {
+      "skip": null,
+      "rows": [
+        { "ruleKey": "pmd:EmptyCatchBlock", "active": false, "severityOverride": null },
+        { "ruleKey": "pmd:SystemPrintln", "active": true, "severityOverride": "blocker" }
+      ],
+      "pendingReview": [],
+      "statusOnly": [],
+      "unmapped": []
+    }
+  },
+  "gates": {
+    "Sonar way": {
+      "skip": null,
+      "mapped": [
+        { "metric": "new_issues", "operator": "gt", "threshold": 0 },
+        { "metric": "new_coverage", "operator": "lt", "threshold": 80 },
+        { "metric": "new_duplicated_lines_density", "operator": "gt", "threshold": 3 }
+      ],
+      "unmapped": ["new_security_hotspots_reviewed"]
+    }
+  },
+  "statuses": {
+    "AYf-1": { "ruleKey": "eslint:eqeqeq", "line": 3 },
+    "AYf-2": { "ruleKey": "eslint:eqeqeq", "line": 7 },
+    "AYf-3": "unmappedRule",
+    "AYf-4": { "ruleKey": "eslint:no-console", "line": 6 },
+    "AYf-5": "unmatched"
+  }
+}

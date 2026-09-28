@@ -1,0 +1,36 @@
+<div class="field">
+  <label [for]="fieldId()">{{ label() }}</label>
+  <div class="row">
+    <input
+      #field
+      readonly
+      size="60"
+      autocomplete="off"
+      spellcheck="false"
+      [id]="fieldId()"
+      [value]="value()"
+      (focus)="field.select()"
+    />
+    <button
+      type="button"
+      class="btn"
+      [attr.aria-describedby]="fieldId()"
+      (click)="copy()"
+      i18n="@@copyValue.copy"
+    >
+      Copy
+    </button>
+    <span aria-live="polite">
+      @switch (copyState()) {
+        @case ('copied') {
+          <span i18n="@@copyValue.copied">Copied.</span>
+        }
+        @case ('failed') {
+          <span i18n="@@copyValue.failed"
+            >Copying failed: select the text and copy it yourself.</span
+          >
+        }
+      }
+    </span>
+  </div>
+</div>

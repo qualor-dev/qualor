@@ -1,0 +1,37 @@
+{
+  "comment": "Ruling R-MAC (release.md §4), extended to every release target: the Bun runtimes the release compiles with, pinned by the npm registry's SHA-512 integrity and our own SHA-256. tools/release/runtimes.ts downloads, checks and extracts them for bun build --compile-executable-path, and refuses a target without a pin; tools/release/check-pins.py re-checks them against the registry. The version must equal BUN_VERSION (cli/scripts/targets.ts).",
+  "version": "1.3.13",
+  "runtimes": {
+    "linux-x64": {
+      "package": "@oven/bun-linux-x64",
+      "url": "https://registry.npmjs.org/@oven/bun-linux-x64/-/bun-linux-x64-1.3.13.tgz",
+      "integrity": "sha512-UwttIUXoe9fS+40OcjoaRHgZw+HCPFqBVWEXkXqAJ3W7wA0XPZrWsoMAD9sGh3TaLqrwdiMo5xPogwpXhOtVXA==",
+      "sha256": "9b4cb9580f21a220f90b39b62ff97a5c6cbb2078e734e66d6877bb71cae07b4e"
+    },
+    "linux-arm64": {
+      "package": "@oven/bun-linux-aarch64",
+      "url": "https://registry.npmjs.org/@oven/bun-linux-aarch64/-/bun-linux-aarch64-1.3.13.tgz",
+      "integrity": "sha512-NbLOJdr+RBFO1vFZ2YUFg4oVJ+2ua6zrwo4ZWRs0jKKcGJWtbY2wY5uz+i0PkwH6b9HYaYDgVTzE4ev06ncYZw==",
+      "sha256": "eb0b8e1c99f2ec199357edad2fe71a654a935bd5087e7b40bd9aecef5223f23f"
+    },
+    "darwin-x64": {
+      "package": "@oven/bun-darwin-x64",
+      "url": "https://registry.npmjs.org/@oven/bun-darwin-x64/-/bun-darwin-x64-1.3.13.tgz",
+      "integrity": "sha512-kGePeDD4IN4imo+H4uLjQGZLmvyYQg+nKr2P0nt4ksXXrWA4HE+mb0/TUPHfRI127DocXQpew+fvrHuHR5mpJQ==",
+      "sha256": "650c643c54a8dbb8ab678f2fe904a1b4d37a72764d4356f697f0663a90525302"
+    },
+    "darwin-arm64": {
+      "package": "@oven/bun-darwin-aarch64",
+      "url": "https://registry.npmjs.org/@oven/bun-darwin-aarch64/-/bun-darwin-aarch64-1.3.13.tgz",
+      "integrity": "sha512-qAS6Hg8Q14ckfBuqJ2Zh7gBQSVSUHeibSq4OFqBTv6DzyJuxYlr0sdYQzmYmnbPxbqobekqUDTa/4XEaqRi7vg==",
+      "sha256": "6c2ac79ac1120b103da58363824eda14a7c4be731d5a989b35d42370f05e47c0"
+    },
+    "windows-x64": {
+      "package": "@oven/bun-windows-x64",
+      "url": "https://registry.npmjs.org/@oven/bun-windows-x64/-/bun-windows-x64-1.3.13.tgz",
+      "integrity": "sha512-vqDEFX63ZZQF3YstPSpPD+RxNm5AILPdUuuKpNwsj7ld4NjhdHUYkAmLXDtKNWt9JMRL10bop//W8faY/LV+RQ==",
+      "sha256": "707fa4171c42b279ff0446cb2dfe4b4852f8435b55f44c3bea89252dbba75e32",
+      "entry": "package/bin/bun.exe"
+    }
+  }
+}

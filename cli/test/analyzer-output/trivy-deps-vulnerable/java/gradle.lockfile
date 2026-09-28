@@ -1,0 +1,7 @@
+# This is a Gradle generated file for dependency locking.
+# Manual edits can break the build and are not advised.
+# This file is expected to be part of source control.
+commons-collections:commons-collections:3.2.1=compileClasspath,runtimeClasspath
+junit:junit:4.12=testCompileClasspath,testRuntimeClasspath
+org.hamcrest:hamcrest-core:1.3=testCompileClasspath,testRuntimeClasspath
+empty=annotationProcessor

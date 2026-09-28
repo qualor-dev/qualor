@@ -1,0 +1,433 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {
+    "Version": "0.74.0"
+  },
+  "ReportID": "01a0d87d-d848-799b-98ef-828da13a43df",
+  "CreatedAt": "2026-09-25T12:15:21.160632202Z",
+  "ArtifactName": ".",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "java/gradle.lockfile",
+      "Class": "lang-pkgs",
+      "Type": "gradle",
+      "Packages": [
+        {
+          "ID": "commons-collections:commons-collections:3.2.1",
+          "Name": "commons-collections:commons-collections",
+          "Identifier": {
+            "PURL": "pkg:maven/commons-collections/commons-collections@3.2.1",
+            "UID": "416dea8511addf94"
+          },
+          "Version": "3.2.1",
+          "Locations": [
+            {
+              "StartLine": 4,
+              "EndLine": 4
+            }
+          ],
+          "AnalyzedBy": "gradle-lockfile"
+        }
+      ],
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2015-7501",
+          "VendorIDs": [
+            "GHSA-fjq5-5j5f-mvxh"
+          ],
+          "PkgID": "commons-collections:commons-collections:3.2.1",
+          "PkgName": "commons-collections:commons-collections",
+          "PkgIdentifier": {
+            "PURL": "pkg:maven/commons-collections/commons-collections@3.2.1",
+            "UID": "416dea8511addf94"
+          },
+          "InstalledVersion": "3.2.1",
+          "FixedVersion": "3.2.2",
+          "Status": "fixed",
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2015-7501",
+          "DataSource": {
+            "ID": "ghsa",
+            "Name": "GitHub Security Advisory Maven",
+            "URL": "https://github.com/advisories?query=type%3Areviewed+ecosystem%3Amaven"
+          },
+          "Fingerprint": "sha256:447359b54be3543789660840611910dc9c4a8564ee99a6e6f4c3cd243a002450",
+          "Title": "apache-commons-collections: InvokerTransformer code execution during deserialisation",
+          "Description": "Red Hat JBoss A-MQ 6.x; BPM Suite (BPMS) 6.x; BRMS 6.x and 5.x; Data Grid (JDG) 6.x; Data Virtualization (JDV) 6.x and 5.x; Enterprise Application Platform 6.x, 5.x, and 4.3.x; Fuse 6.x; Fuse Service Works (FSW) 6.x; Operations Network (JBoss ON) 3.x; Portal 6.x; SOA Platform (SOA-P) 5.x; Web Server (JWS) 3.x; Red Hat OpenShift/xPAAS 3.x; and Red Hat Subscription Asset Manager 1.3 allow remote attackers to execute arbitrary commands via a crafted serialized Java object, related to the Apache Commons Collections (ACC) library.",
+          "Severity": "CRITICAL",
+          "CweIDs": [
+            "CWE-502"
+          ],
+          "VendorSeverity": {
+            "amazon": 3,
+            "ghsa": 4,
+            "nvd": 4,
+            "oracle-oval": 3,
+            "redhat": 4
+          },
+          "CVSS": {
+            "ghsa": {
+              "V3Vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 9.8
+            },
+            "nvd": {
+              "V2Vector": "AV:N/AC:L/Au:N/C:C/I:C/A:C",
+              "V3Vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V2Score": 10,
+              "V3Score": 9.8
+            },
+            "redhat": {
+              "V2Vector": "AV:N/AC:L/Au:N/C:P/I:P/A:P",
+              "V2Score": 7.5
+            }
+          },
+          "References": [
+            "http://foxglovesecurity.com/2015/11/06/what-do-weblogic-websphere-jboss-jenkins-opennms-and-your-application-have-in-common-this-vulnerability/",
+            "http://rhn.redhat.com/errata/RHSA-2015-2500.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2501.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2502.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2514.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2516.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2517.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2521.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2522.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2524.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2670.html",
+            "http://rhn.redhat.com/errata/RHSA-2015-2671.html",
+            "http://rhn.redhat.com/errata/RHSA-2016-0040.html",
+            "http://rhn.redhat.com/errata/RHSA-2016-1773.html",
+            "http://www.oracle.com/technetwork/security-advisory/cpuapr2018-3678067.html",
+            "http://www.oracle.com/technetwork/security-advisory/cpujan2018-3236628.html",
+            "http://www.oracle.com/technetwork/security-advisory/cpujul2018-4258247.html",
+            "http://www.oracle.com/technetwork/security-advisory/cpuoct2018-4428296.html",
+            "http://www.securityfocus.com/bid/78215",
+            "http://www.securitytracker.com/id/1034097",
+            "http://www.securitytracker.com/id/1037052",
+            "http://www.securitytracker.com/id/1037053",
+            "http://www.securitytracker.com/id/1037640",
+            "https://access.redhat.com/security/cve/CVE-2015-7501",
+            "https://access.redhat.com/security/vulnerabilities/2059393",
+            "https://access.redhat.com/solutions/2045023",
+            "https://arxiv.org/pdf/2306.05534.pdf",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=1279330",
+            "https://commons.apache.org/proper/commons-collections/release_4_1.html",
+            "https://foxglovesecurity.com/2015/11/06/what-do-weblogic-websphere-jboss-jenkins-opennms-and-your-application-have-in-common-this-vulnerability",
+            "https://github.com/apache/commons-collections",
+            "https://github.com/jensdietrich/xshady-release/tree/main/CVE-2015-7501",
+            "https://issues.apache.org/jira/browse/COLLECTIONS-580.",
+            "https://linux.oracle.com/cve/CVE-2015-7501.html",
+            "https://linux.oracle.com/errata/ELSA-2015-2671.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2015-7501",
+            "https://rhn.redhat.com/errata/RHSA-2015-2536.html",
+            "https://security.netapp.com/advisory/ntap-20240216-0010/",
+            "https://sourceforge.net/p/collections/code/HEAD/tree",
+            "https://www.cve.org/CVERecord?id=CVE-2015-7501",
+            "https://www.oracle.com/security-alerts/cpujul2020.html"
+          ],
+          "PublishedDate": "2017-11-09T17:29:00.203Z",
+          "LastModifiedDate": "2025-04-20T01:37:25.86Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2015-6420",
+          "VendorIDs": [
+            "GHSA-6hgm-866r-3cjv"
+          ],
+          "PkgID": "commons-collections:commons-collections:3.2.1",
+          "PkgName": "commons-collections:commons-collections",
+          "PkgIdentifier": {
+            "PURL": "pkg:maven/commons-collections/commons-collections@3.2.1",
+            "UID": "416dea8511addf94"
+          },
+          "InstalledVersion": "3.2.1",
+          "FixedVersion": "3.2.2",
+          "Status": "fixed",
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2015-6420",
+          "DataSource": {
+            "ID": "ghsa",
+            "Name": "GitHub Security Advisory Maven",
+            "URL": "https://github.com/advisories?query=type%3Areviewed+ecosystem%3Amaven"
+          },
+          "Fingerprint": "sha256:765f877bd8903ca201221b1fda277820746f92679f0ae4acab9a04d951fa52b6",
+          "Title": "Insecure Deserialization in Apache Commons Collection",
+          "Description": "Serialized-object interfaces in certain Cisco Collaboration and Social Media; Endpoint Clients and Client Software; Network Application, Service, and Acceleration; Network and Content Security Devices; Network Management and Provisioning; Routing and Switching - Enterprise and Service Provider; Unified Computing; Voice and Unified Communications Devices; Video, Streaming, TelePresence, and Transcoding Devices; Wireless; and Cisco Hosted Services products allow remote attackers to execute arbitrary commands via a crafted serialized Java object, related to the Apache Commons Collections (ACC) library.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-502"
+          ],
+          "VendorSeverity": {
+            "ghsa": 3,
+            "nvd": 4
+          },
+          "CVSS": {
+            "nvd": {
+              "V2Vector": "AV:N/AC:L/Au:N/C:P/I:P/A:P",
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V2Score": 7.5,
+              "V3Score": 9.8
+            }
+          },
+          "References": [
+            "http://tools.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20151209-java-deserialization",
+            "http://www.oracle.com/technetwork/security-advisory/cpujul2018-4258247.html",
+            "http://www.securityfocus.com/bid/78872",
+            "https://arxiv.org/pdf/2306.05534",
+            "https://foxglovesecurity.com/2015/11/06/what-do-weblogic-websphere-jboss-jenkins-opennms-and-your-application-have-in-common-this-vulnerability/",
+            "https://github.com/apache/commons-collections",
+            "https://h20566.www2.hpe.com/portal/site/hpsc/public/kb/docDisplay?docId=emr_na-c05376917",
+            "https://h20566.www2.hpe.com/portal/site/hpsc/public/kb/docDisplay?docId=emr_na-c05390722",
+            "https://lists.apache.org/thread.html/r352e40ca9874d1beb4ad95403792adca7eb295e6bc3bd7b65fabcc21@%3Ccommits.samza.apache.org%3E",
+            "https://news.apache.org/foundation/entry/apache_commons_statement_to_widespread",
+            "https://nvd.nist.gov/vuln/detail/CVE-2015-6420",
+            "https://www.kb.cert.org/vuls/id/576313",
+            "https://www.kb.cert.org/vuls/id/581311",
+            "https://www.tenable.com/security/research/tra-2017-14",
+            "https://www.tenable.com/security/research/tra-2017-23"
+          ],
+          "PublishedDate": "2015-12-15T05:59:07.823Z",
+          "LastModifiedDate": "2026-02-24T19:36:10.86Z"
+        }
+      ]
+    },
+    {
+      "Target": "tools/pnpm-lock.yaml",
+      "Class": "lang-pkgs",
+      "Type": "pnpm",
+      "Packages": [
+        {
+          "ID": "minimist@1.2.5",
+          "Name": "minimist",
+          "Identifier": {
+            "PURL": "pkg:npm/minimist@1.2.5",
+            "UID": "e8f99004192da091"
+          },
+          "Version": "1.2.5",
+          "Relationship": "direct",
+          "AnalyzedBy": "pnpm"
+        }
+      ],
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2021-44906",
+          "VendorIDs": [
+            "GHSA-xvch-5gv4-984h"
+          ],
+          "PkgID": "minimist@1.2.5",
+          "PkgName": "minimist",
+          "PkgIdentifier": {
+            "PURL": "pkg:npm/minimist@1.2.5",
+            "UID": "e8f99004192da091"
+          },
+          "InstalledVersion": "1.2.5",
+          "FixedVersion": "1.2.6, 0.2.4",
+          "Status": "fixed",
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-44906",
+          "DataSource": {
+            "ID": "ghsa",
+            "Name": "GitHub Security Advisory npm",
+            "URL": "https://github.com/advisories?query=type%3Areviewed+ecosystem%3Anpm"
+          },
+          "Fingerprint": "sha256:896a0f1b24306279d1c78724f23a5d70f57ed86be1b91b4b98f5c295114a6f33",
+          "Title": "minimist: prototype pollution",
+          "Description": "Minimist \u003c=1.2.5 is vulnerable to Prototype Pollution via file index.js, function setKey() (lines 69-95).",
+          "Severity": "CRITICAL",
+          "CweIDs": [
+            "CWE-1321"
+          ],
+          "VendorSeverity": {
+            "alma": 2,
+            "ghsa": 4,
+            "nvd": 4,
+            "oracle-oval": 2,
+            "redhat": 2,
+            "rocky": 2
+          },
+          "CVSS": {
+            "ghsa": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 9.8
+            },
+            "nvd": {
+              "V2Vector": "AV:N/AC:L/Au:N/C:P/I:P/A:P",
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V2Score": 7.5,
+              "V3Score": 9.8
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:L/A:N",
+              "V3Score": 3.1
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2023:0321",
+            "https://access.redhat.com/security/cve/CVE-2021-44906",
+            "https://bugzilla.redhat.com/2066009",
+            "https://bugzilla.redhat.com/2130518",
+            "https://bugzilla.redhat.com/2134609",
+            "https://bugzilla.redhat.com/2140911",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2066009",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2130518",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2134609",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2140911",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2142808",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-44906",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-3517",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-35256",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-43548",
+            "https://errata.almalinux.org/9/ALSA-2023-0321.html",
+            "https://errata.rockylinux.org/RLSA-2023:0321",
+            "https://github.com/Marynk/JavaScript-vulnerability-detection/blob/main/minimist%20PoC.zip",
+            "https://github.com/advisories/GHSA-xvch-5gv4-984h",
+            "https://github.com/minimistjs/minimist/commit/34e20b8461118608703d6485326abbb8e35e1703",
+            "https://github.com/minimistjs/minimist/commit/bc8ecee43875261f4f17eb20b1243d3ed15e70eb",
+            "https://github.com/minimistjs/minimist/commit/c2b981977fa834b223b408cfb860f933c9811e4d",
+            "https://github.com/minimistjs/minimist/commit/ef9153fc52b6cea0744b2239921c5dcae4697f11",
+            "https://github.com/minimistjs/minimist/commits/v0.2.4",
+            "https://github.com/minimistjs/minimist/issues/11",
+            "https://github.com/minimistjs/minimist/pull/24",
+            "https://github.com/substack/minimist",
+            "https://github.com/substack/minimist/blob/master/index.js#L69",
+            "https://github.com/substack/minimist/issues/164",
+            "https://linux.oracle.com/cve/CVE-2021-44906.html",
+            "https://linux.oracle.com/errata/ELSA-2023-0321.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2021-44906",
+            "https://security.netapp.com/advisory/ntap-20240621-0006",
+            "https://security.netapp.com/advisory/ntap-20240621-0006/",
+            "https://snyk.io/vuln/SNYK-JS-MINIMIST-559764",
+            "https://stackoverflow.com/questions/8588563/adding-custom-properties-to-a-function/20278068#20278068",
+            "https://www.cve.org/CVERecord?id=CVE-2021-44906"
+          ],
+          "PublishedDate": "2022-03-17T16:15:07.51Z",
+          "LastModifiedDate": "2026-06-17T04:12:57.03Z"
+        }
+      ]
+    },
+    {
+      "Target": "web/package-lock.json",
+      "Class": "lang-pkgs",
+      "Type": "npm",
+      "Packages": [
+        {
+          "ID": "minimist@1.2.5",
+          "Name": "minimist",
+          "Identifier": {
+            "PURL": "pkg:npm/minimist@1.2.5",
+            "UID": "8834241363b08761"
+          },
+          "Version": "1.2.5",
+          "Licenses": [
+            "MIT"
+          ],
+          "Relationship": "direct",
+          "Locations": [
+            {
+              "StartLine": 14,
+              "EndLine": 19
+            }
+          ],
+          "AnalyzedBy": "npm"
+        }
+      ],
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2021-44906",
+          "VendorIDs": [
+            "GHSA-xvch-5gv4-984h"
+          ],
+          "PkgID": "minimist@1.2.5",
+          "PkgName": "minimist",
+          "PkgIdentifier": {
+            "PURL": "pkg:npm/minimist@1.2.5",
+            "UID": "8834241363b08761"
+          },
+          "InstalledVersion": "1.2.5",
+          "FixedVersion": "1.2.6, 0.2.4",
+          "Status": "fixed",
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-44906",
+          "DataSource": {
+            "ID": "ghsa",
+            "Name": "GitHub Security Advisory npm",
+            "URL": "https://github.com/advisories?query=type%3Areviewed+ecosystem%3Anpm"
+          },
+          "Fingerprint": "sha256:eb4cb749d7442d379030cf39ef8151363f0813d549725ab7c407c95d6779c94d",
+          "Title": "minimist: prototype pollution",
+          "Description": "Minimist \u003c=1.2.5 is vulnerable to Prototype Pollution via file index.js, function setKey() (lines 69-95).",
+          "Severity": "CRITICAL",
+          "CweIDs": [
+            "CWE-1321"
+          ],
+          "VendorSeverity": {
+            "alma": 2,
+            "ghsa": 4,
+            "nvd": 4,
+            "oracle-oval": 2,
+            "redhat": 2,
+            "rocky": 2
+          },
+          "CVSS": {
+            "ghsa": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V3Score": 9.8
+            },
+            "nvd": {
+              "V2Vector": "AV:N/AC:L/Au:N/C:P/I:P/A:P",
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+              "V2Score": 7.5,
+              "V3Score": 9.8
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:L/A:N",
+              "V3Score": 3.1
+            }
+          },
+          "References": [
+            "https://access.redhat.com/errata/RHSA-2023:0321",
+            "https://access.redhat.com/security/cve/CVE-2021-44906",
+            "https://bugzilla.redhat.com/2066009",
+            "https://bugzilla.redhat.com/2130518",
+            "https://bugzilla.redhat.com/2134609",
+            "https://bugzilla.redhat.com/2140911",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2066009",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2130518",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2134609",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2140911",
+            "https://bugzilla.redhat.com/show_bug.cgi?id=2142808",
+            "https://creativecommons.org/licenses/by/4.0/",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-44906",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-3517",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-35256",
+            "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-43548",
+            "https://errata.almalinux.org/9/ALSA-2023-0321.html",
+            "https://errata.rockylinux.org/RLSA-2023:0321",
+            "https://github.com/Marynk/JavaScript-vulnerability-detection/blob/main/minimist%20PoC.zip",
+            "https://github.com/advisories/GHSA-xvch-5gv4-984h",
+            "https://github.com/minimistjs/minimist/commit/34e20b8461118608703d6485326abbb8e35e1703",
+            "https://github.com/minimistjs/minimist/commit/bc8ecee43875261f4f17eb20b1243d3ed15e70eb",
+            "https://github.com/minimistjs/minimist/commit/c2b981977fa834b223b408cfb860f933c9811e4d",
+            "https://github.com/minimistjs/minimist/commit/ef9153fc52b6cea0744b2239921c5dcae4697f11",
+            "https://github.com/minimistjs/minimist/commits/v0.2.4",
+            "https://github.com/minimistjs/minimist/issues/11",
+            "https://github.com/minimistjs/minimist/pull/24",
+            "https://github.com/substack/minimist",
+            "https://github.com/substack/minimist/blob/master/index.js#L69",
+            "https://github.com/substack/minimist/issues/164",
+            "https://linux.oracle.com/cve/CVE-2021-44906.html",
+            "https://linux.oracle.com/errata/ELSA-2023-0321.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2021-44906",
+            "https://security.netapp.com/advisory/ntap-20240621-0006",
+            "https://security.netapp.com/advisory/ntap-20240621-0006/",
+            "https://snyk.io/vuln/SNYK-JS-MINIMIST-559764",
+            "https://stackoverflow.com/questions/8588563/adding-custom-properties-to-a-function/20278068#20278068",
+            "https://www.cve.org/CVERecord?id=CVE-2021-44906"
+          ],
+          "PublishedDate": "2022-03-17T16:15:07.51Z",
+          "LastModifiedDate": "2026-06-17T04:12:57.03Z"
+        }
+      ]
+    }
+  ]
+}

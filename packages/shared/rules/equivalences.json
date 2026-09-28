@@ -1,0 +1,18 @@
+{
+  "$comment": "Curated cross-engine rule equivalences. Two issues on the same path and start line from different engines are duplicates when their rules share a CWE or are listed here. Keep this small and reviewed: every entry states why it is safe.",
+  "engineCwe": {
+    "gitleaks": {
+      "cwe": [798],
+      "reason": "Every Gitleaks rule detects a hard-coded credential (CWE-798: Use of Hard-coded Credentials), but Gitleaks SARIF carries no CWE, so without this a Gitleaks finding could never share a CWE with the Semgrep secret rules that report the same line."
+    }
+  },
+  "pairs": [
+    {
+      "rules": [
+        "eslint:no-eval",
+        "semgrep:javascript.browser.security.eval-detected.eval-detected"
+      ],
+      "reason": "Both flag a direct eval() call; ESLint's rule metadata carries no CWE. PENDING VERIFICATION: a person must confirm the Semgrep rule id against the Semgrep registry before this entry is relied on."
+    }
+  ]
+}

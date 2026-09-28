@@ -1,0 +1,14 @@
+{
+  "paging": { "pageIndex": 1, "pageSize": 1, "total": 10500 },
+  "issues": [],
+  "components": [],
+  "facets": [
+    {
+      "property": "rules",
+      "values": [
+        { "val": "external_eslint_repo:eqeqeq", "count": 10400 },
+        { "val": "typescript:S1440", "count": 100 }
+      ]
+    }
+  ]
+}

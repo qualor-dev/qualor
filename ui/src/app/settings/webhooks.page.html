@@ -1,0 +1,168 @@
+<h2 #heading tabindex="-1" i18n="@@webhooks.title">Webhooks</h2>
+@if (!canRead()) {
+  <p class="muted" i18n="@@webhooks.adminsOnly">
+    Only organization administrators manage webhooks.
+  </p>
+} @else {
+  <p class="muted" i18n="@@webhooks.intro">
+    Qualor posts a signed JSON message to each active webhook when an analysis completes or a
+    quality gate status changes, for every project of the organization.
+  </p>
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (list.error() ?? error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  @if (secret(); as value) {
+    <q-secret-once
+      [value]="value"
+      label="Webhook secret"
+      i18n-label="@@webhooks.secret"
+      (done)="forget()"
+    />
+  }
+  <div class="stack" #hooks>
+    @for (w of list.items(); track w.id) {
+      <section class="card" [attr.data-key]="w.id" [attr.aria-label]="w.url">
+        <div class="page-header">
+          <code class="prose-text">{{ w.url }}</code>
+          <div class="row">
+            @if (canManage()) {
+              <label class="row">
+                <input
+                  type="checkbox"
+                  [checked]="w.active"
+                  [attr.aria-disabled]="busy() ? true : null"
+                  (change)="setActive(w, $event)"
+                />
+                <span i18n="@@webhooks.active">Active</span>
+              </label>
+              <button
+                type="button"
+                class="btn btn-danger"
+                [attr.aria-disabled]="busy() ? true : null"
+                (click)="remove(w)"
+                i18n="@@webhooks.delete"
+              >
+                Delete
+              </button>
+            } @else if (w.active) {
+              <span i18n="@@webhooks.isActive">Active</span>
+            } @else {
+              <span i18n="@@webhooks.isOff">Switched off</span>
+            }
+          </div>
+        </div>
+        <p class="muted">{{ eventsText(w) }}</p>
+        <details (toggle)="loadDeliveries(w, $event)">
+          <summary i18n="@@webhooks.deliveries">Recent deliveries</summary>
+          @switch (deliveries()[w.id]) {
+            @case ('loading') {
+              <p class="muted" i18n="@@webhooks.deliveriesLoading">Loading…</p>
+            }
+            @case ('failed') {
+              <p class="alert alert-error" i18n="@@webhooks.deliveriesFailed">
+                The deliveries could not be loaded. Close and open this list to try again.
+              </p>
+            }
+            @default {
+              @if (loaded(w); as items) {
+                <ul class="deliveries">
+                  @for (d of items; track d.id) {
+                    <li>
+                      {{ d.createdAt | dateTime }} · {{ eventLabel(d.event) }} ·
+                      {{ deliveryStatusLabel(d.status) }}
+                      @if (d.responseCode !== null) {
+                        <ng-container i18n="@@webhooks.httpStatus"
+                          >· HTTP {{ d.responseCode }}</ng-container
+                        >
+                      }
+                      @if (excerptText(d.responseExcerpt); as excerpt) {
+                        <pre class="excerpt">{{ excerpt }}</pre>
+                      }
+                    </li>
+                  } @empty {
+                    <li class="muted" i18n="@@webhooks.noDeliveries">No deliveries yet.</li>
+                  }
+                </ul>
+              }
+            }
+          }
+        </details>
+      </section>
+    } @empty {
+      @if (list.loaded()) {
+        <p class="muted" i18n="@@webhooks.empty">No webhooks yet.</p>
+      }
+    }
+  </div>
+  @if (list.nextCursor()) {
+    <p>
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-disabled]="list.loading() ? true : null"
+        (click)="list.more()"
+        i18n="@@list.more"
+      >
+        Load more
+      </button>
+    </p>
+  }
+
+  @if (canManage()) {
+    <form class="card" novalidate (submit)="create($event)">
+      <h3 i18n="@@webhooks.new">New webhook for every project</h3>
+      <div class="field">
+        <label for="webhook-url" i18n="@@webhooks.url">URL</label>
+        <input
+          #urlField
+          id="webhook-url"
+          type="url"
+          required
+          maxlength="2048"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="https://"
+          i18n-placeholder="@@webhooks.urlPlaceholder"
+          [attr.aria-invalid]="urlError() ? true : null"
+          [attr.aria-describedby]="urlError() ? 'webhook-url-error' : null"
+          [value]="url()"
+          (input)="setUrl($event)"
+        />
+        @if (urlError(); as message) {
+          <span id="webhook-url-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </div>
+      <fieldset
+        class="facet"
+        [attr.aria-describedby]="eventsError() ? 'webhook-events-error' : null"
+      >
+        <legend i18n="@@webhooks.events">Events</legend>
+        @for (e of allEvents; track e) {
+          <label>
+            <input type="checkbox" [checked]="events().has(e)" (change)="toggleEvent(e, $event)" />
+            <span>{{ eventLabel(e) }}</span>
+          </label>
+        }
+        @if (eventsError(); as message) {
+          <span id="webhook-events-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </fieldset>
+      <p class="hint" i18n="@@webhooks.secretHint">
+        Qualor generates the signing secret and shows it once.
+      </p>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [attr.aria-disabled]="busy() ? true : null"
+        i18n="@@webhooks.create"
+      >
+        Add webhook
+      </button>
+    </form>
+  }
+}

@@ -1,0 +1,10 @@
+replicaCount: 2
+database:
+  mode: external
+  external:
+    existingSecret: qualor-database
+secrets:
+  existingSecret: qualor-secrets
+config:
+  publicUrl: https://qualor.example.test
+  trustProxy: '1'

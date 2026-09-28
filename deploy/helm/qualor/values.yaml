@@ -1,0 +1,112 @@
+# Qualor server chart. values.schema.json checks every value.
+
+image:
+  repository: qualor/server
+  # Empty: the chart's appVersion. Never latest.
+  tag: ''
+  # sha256:… — when set, the image is pulled by digest and the tag is ignored (recommended).
+  digest: ''
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# external and bundled modes only; embedded mode always runs one server.
+replicaCount: 1
+
+database:
+  # embedded: the server's own PostgreSQL 18 on a PersistentVolumeClaim (one replica).
+  # external: your PostgreSQL 16+ (DATABASE_URL from database.external.existingSecret).
+  # bundled: a PostgreSQL 18 StatefulSet in this release.
+  mode: embedded
+  external:
+    existingSecret: ''
+    urlKey: DATABASE_URL
+    # A Secret with the certificate of a private CA that signed the database's certificate. It is
+    # mounted read-only and set as NODE_EXTRA_CA_CERTS, so Node trusts it for every TLS connection.
+    caSecret: ''
+    caKey: ca.crt
+  bundled:
+    # Pinned by digest; the chart refuses to render the bundled PostgreSQL without one.
+    image:
+      repository: postgres
+      tag: 18.6-alpine
+      digest: sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    # A Secret with the key POSTGRES_PASSWORD (hex: it goes into a URL), or the password itself.
+    existingSecret: ''
+    password: ''
+    persistence:
+      size: 10Gi
+      storageClass: ''
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+
+# The data volume of embedded mode.
+persistence:
+  size: 10Gi
+  storageClass: ''
+  accessModes: [ReadWriteOnce]
+
+secrets:
+  # A Secret with QUALOR_SECRET_KEY and QUALOR_BOOTSTRAP_ADMIN_PASSWORD, or both values below.
+  existingSecret: ''
+  secretKey: ''
+  bootstrapAdminPassword: ''
+
+config:
+  bootstrapAdminUsername: admin
+  publicUrl: ''
+  trustProxy: ''
+  scmInternalHosts: ''
+  llmInternalHosts: ''
+  # Single sign-on (enterprise): an identity provider on the internal network, and the emergency
+  # switch QUALOR_FORCE_PASSWORD_SIGN_IN (https://qualor.dev/docs/sso-and-scim). Remove it once SSO works.
+  ssoInternalHosts: ''
+  forcePasswordSignIn: false
+  workerConcurrency: 1
+  logLevel: info
+extraEnv: []
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ''
+  host: ''
+  tls:
+    secretName: ''
+  # Helm merges your annotations with these: set a key to null to remove one of them.
+  annotations:
+    # ingress-nginx: QUALOR_UPLOAD_MAX_COMPRESSED_BYTES, the CLI's 100 Continue, long uploads.
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+    nginx.ingress.kubernetes.io/proxy-request-buffering: 'off'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '300'
+
+# Off by default. Needs a CNI that enforces NetworkPolicy.
+networkPolicy:
+  enabled: false
+  # Who may reach the server's port (NetworkPolicy peers). Empty: any source.
+  ingressFrom: []
+  # Egress rules for the server. Empty: its egress is not restricted. With rules, only DNS, the
+  # bundled PostgreSQL and these are allowed: add your SCM, model, webhook and database hosts.
+  egress: []
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1536Mi
+  limits:
+    memory: 4Gi
+
+serviceAccount:
+  create: true
+  name: ''
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

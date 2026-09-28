@@ -1,0 +1,142 @@
+<p><a class="back-link" routerLink="/gates" i18n="@@gate.back">All quality gates</a></p>
+@if (gate.error(); as err) {
+  <p class="alert alert-error" role="alert">{{ problemMessage(err) }}</p>
+} @else if (current(); as g) {
+  <div class="page-header">
+    <h1>{{ g.name }}</h1>
+    <div class="row">
+      @if (g.isDefault) {
+        <span class="badge badge-accent" i18n="@@gate.default">Default</span>
+      }
+      @if (g.isBuiltin) {
+        <span class="badge badge-tag" i18n="@@gate.builtin">Built-in</span>
+      }
+    </div>
+  </div>
+  @if (g.isBuiltin) {
+    <p class="alert alert-info" i18n="@@gate.builtinHint">
+      The built-in gate cannot change. Copy it from the list of gates to make your own.
+    </p>
+  }
+  <h2 #conditionsHeading tabindex="-1" i18n="@@gate.conditions">Conditions</h2>
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  <div class="table-wrap">
+    <table #table>
+      <caption class="visually-hidden" i18n="@@gate.caption">
+        The gate fails when any of these conditions is true
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col" i18n="@@gate.col.condition">Fails when</th>
+          @if (editable()) {
+            <th scope="col">
+              <span class="visually-hidden" i18n="@@gate.col.actions">Actions</span>
+            </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (c of g.conditions; track c.id; let i = $index) {
+          <tr [attr.data-key]="c.id">
+            <td>
+              {{ c.metric | label: 'metric' }} {{ operatorLabel(c.operator) }}
+              {{ c.threshold | measure: c.metric }}
+            </td>
+            @if (editable()) {
+              <td class="actions">
+                <button
+                  type="button"
+                  class="btn btn-danger"
+                  [attr.aria-disabled]="busy() ? true : null"
+                  (click)="remove(c, i)"
+                  i18n="@@gate.removeCondition"
+                >
+                  Remove
+                </button>
+              </td>
+            }
+          </tr>
+        } @empty {
+          <tr>
+            <td [attr.colspan]="editable() ? 2 : 1" class="muted" i18n="@@gate.noConditions">
+              No conditions: this gate always passes.
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  @if (editable()) {
+    <form class="card" (submit)="add($event)">
+      <h2 i18n="@@gate.addCondition">Add a condition</h2>
+      @if (catalogError(); as message) {
+        <p class="alert alert-error" role="alert" i18n="@@gate.metricsFailed">
+          The metrics could not be loaded: {{ message }}
+        </p>
+      }
+      <div class="row fields">
+        <div class="field">
+          <label for="condition-metric" i18n="@@gate.metric">Metric</label>
+          <select
+            id="condition-metric"
+            required
+            [attr.aria-invalid]="metricError() ? true : null"
+            [attr.aria-describedby]="metricError() ? 'condition-metric-error' : null"
+            (change)="chooseMetric($event)"
+          >
+            <option value="" [selected]="metric() === ''" i18n="@@gate.chooseMetric">
+              Choose a metric
+            </option>
+            @for (m of options(); track m.key) {
+              <option [value]="m.key" [selected]="m.key === metric()">{{ m.label }}</option>
+            }
+          </select>
+          @if (metricError(); as message) {
+            <span id="condition-metric-error" class="field-error">{{ message }}</span>
+          }
+        </div>
+        <div class="field">
+          <label for="condition-operator" i18n="@@gate.operator">Fails when the value</label>
+          <select id="condition-operator" (change)="chooseOperator($event)">
+            @for (o of operators; track o) {
+              <option [value]="o" [selected]="operator() === o">{{ operatorLabel(o) }}</option>
+            }
+          </select>
+        </div>
+        <div class="field">
+          <label for="condition-threshold" i18n="@@gate.threshold">Threshold</label>
+          <input
+            id="condition-threshold"
+            type="number"
+            step="any"
+            required
+            [attr.aria-invalid]="thresholdError() ? true : null"
+            [attr.aria-describedby]="thresholdError() ? 'condition-threshold-error' : null"
+            [value]="threshold()"
+            (input)="setThreshold($event)"
+          />
+          @if (thresholdError(); as message) {
+            <span id="condition-threshold-error" class="field-error">{{ message }}</span>
+          }
+        </div>
+      </div>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [disabled]="!metric()"
+        [attr.aria-disabled]="busy() ? true : null"
+        i18n="@@gate.addSubmit"
+      >
+        Add condition
+      </button>
+    </form>
+  }
+}

@@ -1,0 +1,156 @@
+<h2 #heading tabindex="-1" i18n="@@access.title">Access</h2>
+@if (project() && !allowed()) {
+  <p class="muted" i18n="@@access.adminsOnly">
+    Only organization administrators manage project access.
+  </p>
+} @else if (project()) {
+  <p class="muted" i18n="@@access.intro">
+    A role given here applies to this project only. Organization roles apply on top of these.
+  </p>
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (list.error() ?? error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  <div class="table-wrap">
+    <table #table>
+      <caption class="visually-hidden" i18n="@@access.caption">
+        People with a role on this project
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col" i18n="@@access.col.user">User</th>
+          <th scope="col" i18n="@@access.col.role">Role on this project</th>
+          @if (canManage()) {
+            <th scope="col">
+              <span class="visually-hidden" i18n="@@access.col.actions">Actions</span>
+            </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (g of list.items(); track g.userId) {
+          <tr [attr.data-key]="g.userId">
+            <th scope="row">
+              {{ g.username }}
+              @if (g.displayName) {
+                <div class="muted">{{ g.displayName }}</div>
+              }
+            </th>
+            <td>
+              @if (canManage()) {
+                <label
+                  class="visually-hidden"
+                  [attr.for]="'grant-role-' + g.userId"
+                  i18n="@@access.roleOf"
+                  >Role of {{ g.username }} on this project</label
+                >
+                <select [id]="'grant-role-' + g.userId" (change)="choose(g, $event)">
+                  @for (r of roles; track r) {
+                    <option [value]="r" [selected]="r === chosenRole(g)">{{ roleText(r) }}</option>
+                  }
+                </select>
+              } @else {
+                {{ roleText(g.role) }}
+              }
+            </td>
+            @if (canManage()) {
+              <td class="actions">
+                <button
+                  type="button"
+                  class="btn"
+                  [attr.aria-disabled]="busy() || chosenRole(g) === g.role ? true : null"
+                  (click)="changeRole(g)"
+                  i18n="@@access.changeRole"
+                >
+                  Change role
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-danger"
+                  [attr.aria-disabled]="busy() ? true : null"
+                  (click)="remove(g)"
+                  i18n="@@access.remove"
+                >
+                  Remove
+                </button>
+              </td>
+            }
+          </tr>
+        } @empty {
+          @if (list.loaded()) {
+            <tr>
+              <td [attr.colspan]="canManage() ? 3 : 2" class="muted" i18n="@@access.empty">
+                No one has a role on this project alone yet.
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+  @if (list.loaded() && !list.nextCursor() && list.items().length > 0) {
+    <p class="muted">
+      <span i18n="@@access.count">{list.items().length, plural,
+        =1 {1 grant}
+        other {{{ list.items().length }} grants}
+      }</span>
+    </p>
+  }
+  @if (list.nextCursor()) {
+    <p>
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-disabled]="list.loading() ? true : null"
+        (click)="list.more()"
+        i18n="@@list.more"
+      >
+        Load more
+      </button>
+    </p>
+  }
+
+  @if (canManage()) {
+    <form class="card" novalidate (submit)="add($event)">
+      <h3 i18n="@@access.add">Give someone a role on this project</h3>
+      <div class="field">
+        <label for="grant-username" i18n="@@access.username">User name</label>
+        <input
+          #usernameField
+          id="grant-username"
+          required
+          autocomplete="off"
+          spellcheck="false"
+          [attr.maxlength]="usernameMax"
+          [attr.aria-invalid]="usernameError() ? true : null"
+          [attr.aria-describedby]="usernameError() ? 'grant-username-error' : null"
+          [value]="username()"
+          (input)="setUsername($event)"
+        />
+        @if (usernameError(); as message) {
+          <span id="grant-username-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </div>
+      <div class="field">
+        <label for="grant-role" i18n="@@access.role">Role</label>
+        <select id="grant-role" (change)="setRole($event)">
+          @for (r of roles; track r) {
+            <option [value]="r" [selected]="r === role()">{{ roleText(r) }}</option>
+          }
+        </select>
+      </div>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [attr.aria-disabled]="busy() ? true : null"
+        i18n="@@access.addSubmit"
+      >
+        Give the role
+      </button>
+    </form>
+  }
+}

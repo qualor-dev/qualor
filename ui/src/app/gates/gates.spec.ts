@@ -1,0 +1,626 @@
+import { TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
+import {
+  FakeServer,
+  me,
+  ORG_ADMIN_PERMISSIONS,
+  ORG_ID,
+  page,
+  problem,
+  provideFakeServer,
+  settle,
+} from '../../testing/fake-server';
+import { SessionStore } from '../auth/session';
+import { copyName } from '../shared/names';
+import { GatePage, metricOptions, thresholdRange } from './gate.page';
+import { type Gate, GatesPage } from './gates.page';
+
+function gate(id: string, name: string, overrides: Partial<Gate> = {}): Gate {
+  return {
+    id,
+    organizationId: ORG_ID,
+    name,
+    isDefault: false,
+    isBuiltin: false,
+    conditions: [{ id: 'c1', metric: 'new_issues', operator: 'gt', threshold: 0 }],
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  };
+}
+
+function setup(admin: boolean): FakeServer {
+  const server = new FakeServer();
+  server.on('GET', '/api/v0/organizations', {
+    body: page([{ id: ORG_ID, key: 'default', name: 'Default', createdAt: '', updatedAt: '' }]),
+  });
+  TestBed.configureTestingModule({
+    providers: [provideRouter([{ path: '**', children: [] }]), provideFakeServer(server)],
+  });
+  TestBed.inject(SessionStore).set(me({ admin }));
+  return server;
+}
+
+const COVERAGE = {
+  key: 'coverage',
+  name: 'Coverage',
+  type: 'percent' as const,
+  direction: 'higher_is_better' as const,
+  scopes: ['overall' as const, 'new' as const],
+  domain: 'coverage',
+};
+
+describe('GatesPage', () => {
+  it('lists the gates and lets an admin copy the built-in one', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates', {
+      body: page([
+        gate('g1', 'Qualor way', { isBuiltin: true, isDefault: true }),
+        gate('g2', 'Strict'),
+      ]),
+    });
+    server.on('POST', '/api/v0/quality-gates/g1/copy', {
+      status: 201,
+      body: gate('g3', 'Qualor way (copy)'),
+    });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const rows = [...root.querySelectorAll('tbody tr')];
+    expect(rows[0]?.textContent).toContain('Default');
+    expect(rows[0]?.textContent).toContain('Built-in');
+    // The built-in gate can be copied, not deleted; the default is not offered as default again.
+    const buttons = (row: Element | undefined) =>
+      [...(row?.querySelectorAll('button') ?? [])].map((b) => b.textContent?.trim());
+    expect(buttons(rows[0])).toEqual(['Copy']);
+    expect(buttons(rows[1])).toEqual(['Copy', 'Make default', 'Delete']);
+    rows[0]?.querySelector('button')?.click();
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/quality-gates/g1/copy')[0]?.body).toEqual({
+      name: 'Qualor way (copy)',
+    });
+    expect(TestBed.inject(Router).url).toBe('/gates/g3');
+  });
+
+  it('offers no change to a member', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-gates', { body: page([gate('g2', 'Strict')]) });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelectorAll('button')).toHaveLength(0);
+    expect(root.querySelector('#gate-name')).toBeNull();
+  });
+
+  it('offers the changes to an organization admin by the permissions of their membership', async () => {
+    const server = setup(false);
+    const base = me();
+    TestBed.inject(SessionStore).set({
+      ...base,
+      memberships: [
+        { ...base.memberships[0]!, role: 'admin', permissions: [...ORG_ADMIN_PERMISSIONS] },
+      ],
+    });
+    server.on('GET', '/api/v0/quality-gates', { body: page([gate('g2', 'Strict')]) });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('#gate-name')).not.toBeNull();
+  });
+
+  it('asks before deleting, and deletes nothing when the question is dismissed', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates', { body: page([gate('g2', 'Strict <b>')]) });
+    server.on('DELETE', '/api/v0/quality-gates/g2', { status: 204 });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const remove = () =>
+      [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Delete')!;
+    remove().click();
+    await settle(fixture);
+    expect(confirm).toHaveBeenCalledWith(
+      'Delete the quality gate "Strict <b>"? Its projects fall back to the default gate.',
+    );
+    expect(server.requestsTo('DELETE', '/api/v0/quality-gates/g2')).toHaveLength(0);
+    confirm.mockReturnValueOnce(true);
+    remove().click();
+    await settle(fixture);
+    expect(server.requestsTo('DELETE', '/api/v0/quality-gates/g2')).toHaveLength(1);
+    // The list is loaded again after the change.
+    expect(server.requestsTo('GET', '/api/v0/quality-gates')).toHaveLength(2);
+    confirm.mockRestore();
+  });
+
+  it('makes a gate the default and shows a refusal as a localized alert', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates', { body: page([gate('g2', 'Strict')]) });
+    server.on('POST', '/api/v0/quality-gates/g2/set-default', {
+      status: 403,
+      body: problem(403, 'FORBIDDEN'),
+    });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    [...root.querySelectorAll('button')]
+      .find((b) => b.textContent?.trim() === 'Make default')!
+      .click();
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/quality-gates/g2/set-default')).toHaveLength(1);
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+      'You are not allowed to do this.',
+    );
+  });
+
+  it('creates a gate with the trimmed name and opens it', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates', { body: page([]) });
+    server.on('POST', '/api/v0/quality-gates', { status: 201, body: gate('g9', 'Release') });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const name = root.querySelector<HTMLInputElement>('#gate-name')!;
+    name.value = '  Release ';
+    name.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/quality-gates')[0]?.body).toEqual({
+      organizationId: ORG_ID,
+      name: 'Release',
+    });
+    expect(TestBed.inject(Router).url).toBe('/gates/g9');
+  });
+});
+
+describe('GatePage', () => {
+  it('adds a condition with the operator the metric direction suggests', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict') });
+    server.on('GET', '/api/v0/metrics', {
+      body: [
+        {
+          key: 'coverage',
+          name: 'Coverage',
+          type: 'percent',
+          direction: 'higher_is_better',
+          scopes: ['overall', 'new'],
+          domain: 'coverage',
+        },
+      ],
+    });
+    server.on('POST', '/api/v0/quality-gates/g2/conditions', {
+      status: 201,
+      body: { id: 'c2', metric: 'new_coverage', operator: 'lt', threshold: 80 },
+    });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('tbody td')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Issues on new code is greater than 0',
+    );
+    const metric = root.querySelector<HTMLSelectElement>('#condition-metric')!;
+    metric.value = 'new_coverage';
+    metric.dispatchEvent(new Event('change'));
+    const threshold = root.querySelector<HTMLInputElement>('#condition-threshold')!;
+    threshold.value = '80';
+    threshold.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    expect(root.querySelector<HTMLSelectElement>('#condition-operator')!.value).toBe('lt');
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/quality-gates/g2/conditions')[0]?.body).toEqual({
+      metric: 'new_coverage',
+      operator: 'lt',
+      threshold: 80,
+    });
+    expect(server.requestsTo('GET', '/api/v0/quality-gates/g2')).toHaveLength(2);
+  });
+
+  it('keeps the built-in gate read-only', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g1', {
+      body: gate('g1', 'Qualor way', { isBuiltin: true }),
+    });
+    server.on('GET', '/api/v0/metrics', { body: [] });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g1');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('The built-in gate cannot change.');
+    expect(root.querySelector('form')).toBeNull();
+  });
+
+  it('offers no editing to a member', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict') });
+    server.on('GET', '/api/v0/metrics', { body: [COVERAGE] });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('form')).toBeNull();
+    expect(root.querySelectorAll('button')).toHaveLength(0);
+  });
+
+  it('refuses a threshold outside the range of the metric before asking the server', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict') });
+    server.on('GET', '/api/v0/metrics', { body: [COVERAGE] });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const metric = root.querySelector<HTMLSelectElement>('#condition-metric')!;
+    metric.value = 'coverage';
+    metric.dispatchEvent(new Event('change'));
+    const threshold = root.querySelector<HTMLInputElement>('#condition-threshold')!;
+    for (const value of ['150', '-1', '', 'abc']) {
+      threshold.value = value;
+      threshold.dispatchEvent(new Event('input'));
+      await settle(fixture);
+      root.querySelector('form')!.dispatchEvent(new Event('submit'));
+      await settle(fixture);
+      expect(root.querySelector('#condition-threshold-error')?.textContent?.trim()).toMatch(
+        value === '150' || value === '-1' ? 'Enter a number from 0 to 100.' : /^Enter a number/,
+      );
+      expect(threshold.getAttribute('aria-invalid')).toBe('true');
+    }
+    expect(server.requestsTo('POST', '/api/v0/quality-gates/g2/conditions')).toHaveLength(0);
+  });
+
+  it('shows a 422 on the threshold next to the field, and a taken metric as an alert', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict') });
+    server.on('GET', '/api/v0/metrics', { body: [COVERAGE] });
+    let answer = {
+      status: 422,
+      body: problem(422, 'VALIDATION_FAILED', [
+        { path: 'body.threshold', message: 'Must be between 0 and 100 for coverage' },
+      ]),
+    };
+    server.on('POST', '/api/v0/quality-gates/g2/conditions', () => answer);
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const metric = root.querySelector<HTMLSelectElement>('#condition-metric')!;
+    metric.value = 'coverage';
+    metric.dispatchEvent(new Event('change'));
+    const threshold = root.querySelector<HTMLInputElement>('#condition-threshold')!;
+    threshold.value = '50';
+    threshold.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    const error = root.querySelector('#condition-threshold-error')?.textContent ?? '';
+    expect(error).toContain('outside what the metric allows');
+    // The server's English message is never shown.
+    expect(root.textContent).not.toContain('Must be between');
+    answer = { status: 409, body: problem(409, 'CONDITION_EXISTS') };
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+      'This gate already has a condition on that metric.',
+    );
+    expect(root.querySelector('#condition-threshold-error')).toBeNull();
+  });
+
+  it('removes a condition and loads the gate again', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict') });
+    server.on('GET', '/api/v0/metrics', { body: [] });
+    server.on('DELETE', '/api/v0/quality-gates/g2/conditions/c1', { status: 204 });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    root.querySelector<HTMLButtonElement>('tbody button')!.click();
+    await settle(fixture);
+    expect(server.requestsTo('DELETE', '/api/v0/quality-gates/g2/conditions/c1')).toHaveLength(1);
+    expect(server.requestsTo('GET', '/api/v0/quality-gates/g2')).toHaveLength(2);
+  });
+
+  it('shows a missing gate as a localized alert', async () => {
+    setup(true);
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'nope');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+      'This item does not exist, or you cannot see it.',
+    );
+  });
+});
+
+describe('metricOptions', () => {
+  it('lists each scope of each metric under its localized label', () => {
+    expect(
+      metricOptions([
+        {
+          key: 'issues',
+          name: 'Issues',
+          type: 'int',
+          direction: 'lower_is_better',
+          scopes: ['overall', 'new'],
+          domain: 'issues',
+        },
+      ]),
+    ).toEqual([
+      { key: 'issues', label: 'Issues', operator: 'gt' },
+      { key: 'new_issues', label: 'Issues on new code', operator: 'gt' },
+    ]);
+  });
+});
+
+describe('thresholdRange', () => {
+  it('follows the server: ratings 1–5, percentages 0–100, counts from 0', () => {
+    const catalog = [
+      COVERAGE,
+      { ...COVERAGE, key: 'security_rating', type: 'rating' as const },
+      { ...COVERAGE, key: 'issues', type: 'int' as const },
+    ];
+    expect(thresholdRange(catalog, 'new_coverage')).toEqual({ min: 0, max: 100 });
+    expect(thresholdRange(catalog, 'security_rating')).toEqual({ min: 1, max: 5 });
+    expect(thresholdRange(catalog, 'new_issues')).toEqual({
+      min: 0,
+      max: Number.MAX_SAFE_INTEGER,
+    });
+    expect(thresholdRange(catalog, 'unknown')).toBeNull();
+  });
+});
+
+describe('gates: focus, announcements and route reuse (fix round 1)', () => {
+  function button(root: ParentNode, text: string): HTMLButtonElement {
+    return [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent?.trim() === text,
+    )!;
+  }
+
+  function chooseCoverage(root: HTMLElement, value: string): void {
+    const metric = root.querySelector<HTMLSelectElement>('#condition-metric')!;
+    metric.value = 'coverage';
+    metric.dispatchEvent(new Event('change'));
+    const threshold = root.querySelector<HTMLInputElement>('#condition-threshold')!;
+    threshold.value = value;
+    threshold.dispatchEvent(new Event('input'));
+  }
+
+  it('makes a gate the default in place, announces it and keeps focus in its row', async () => {
+    const server = setup(true);
+    let isDefault = false;
+    server.on('GET', '/api/v0/quality-gates', () => ({
+      body: page([
+        gate('g1', 'Qualor way', { isBuiltin: true, isDefault: !isDefault }),
+        gate('g2', 'Strict', { isDefault }),
+      ]),
+    }));
+    server.on('POST', '/api/v0/quality-gates/g2/set-default', () => {
+      isDefault = true;
+      return { body: gate('g2', 'Strict', { isDefault: true }) };
+    });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const row = root.querySelector('tr[data-key="g2"]')!;
+    const makeDefault = button(row, 'Make default');
+    makeDefault.focus();
+    makeDefault.click();
+    await settle(fixture);
+    // The row kept its element; its "Make default" button is gone, so its first button has focus.
+    expect(root.querySelector('tr[data-key="g2"]')).toBe(row);
+    expect(button(row, 'Make default')).toBeUndefined();
+    expect(document.activeElement).toBe(button(row, 'Copy'));
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(
+      'Strict is now the default quality gate.',
+    );
+  });
+
+  it('warns that deleting the default gate stops gating the projects using the default', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates', {
+      body: page([gate('g2', 'Strict', { isDefault: true })]),
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    button(root, 'Delete').click();
+    await settle(fixture);
+    expect(confirm).toHaveBeenCalledWith(
+      'Delete the default quality gate "Strict"? The organization is then left without a default gate: every project that uses the default is no longer gated until you make another gate the default.',
+    );
+    confirm.mockRestore();
+  });
+
+  it('after a delete, focus goes to the next row and the result is announced', async () => {
+    const server = setup(true);
+    let deleted = false;
+    server.on('GET', '/api/v0/quality-gates', () => ({
+      body: page([
+        gate('g1', 'Alpha'),
+        ...(deleted ? [] : [gate('g2', 'Beta')]),
+        gate('g3', 'Gamma'),
+      ]),
+    }));
+    server.on('DELETE', '/api/v0/quality-gates/g2', () => {
+      deleted = true;
+      return { status: 204 };
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const gamma = root.querySelector('tr[data-key="g3"]')!;
+    const remove = button(root.querySelector('tr[data-key="g2"]')!, 'Delete');
+    remove.focus();
+    remove.click();
+    await settle(fixture);
+    expect(root.querySelector('tr[data-key="g2"]')).toBeNull();
+    expect(root.querySelector('tr[data-key="g3"]')).toBe(gamma);
+    expect(document.activeElement).toBe(button(gamma, 'Copy'));
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(
+      'Quality gate Beta deleted.',
+    );
+    confirm.mockRestore();
+  });
+
+  it('reports a refused copy name as the copy failing, and keeps copy names within 100 characters', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates', { body: page([gate('g2', 'L'.repeat(98))]) });
+    server.on('POST', '/api/v0/quality-gates/g2/copy', {
+      status: 422,
+      body: problem(422, 'VALIDATION_FAILED', [{ path: 'body.name', message: 'Too long' }]),
+    });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    button(root, 'Copy').click();
+    await settle(fixture);
+    const sent = server.requestsTo('POST', '/api/v0/quality-gates/g2/copy')[0]?.body as {
+      name: string;
+    };
+    expect(sent.name.length).toBeLessThanOrEqual(100);
+    expect(sent.name.endsWith('… (copy)')).toBe(true);
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+      'The copy could not be named after this gate.',
+    );
+    expect(root.querySelector('#gate-name-error')).toBeNull();
+  });
+
+  it('removes a condition, announces it and moves focus to the next Remove button', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', {
+      body: gate('g2', 'Strict', {
+        conditions: [
+          { id: 'c1', metric: 'coverage', operator: 'lt', threshold: 80 },
+          { id: 'c2', metric: 'new_issues', operator: 'gt', threshold: 0 },
+        ],
+      }),
+    });
+    server.on('GET', '/api/v0/metrics', { body: [] });
+    let release: () => void = () => undefined;
+    server.on('DELETE', '/api/v0/quality-gates/g2/conditions/c1', async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return { status: 204 };
+    });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const first = root.querySelector<HTMLButtonElement>('tr[data-key="c1"] button')!;
+    first.focus();
+    first.click();
+    await settle(fixture);
+    // While the change runs the buttons stay enabled and focused, only marked busy.
+    expect(first.disabled).toBe(false);
+    expect(first.getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(first);
+    release();
+    await settle(fixture);
+    expect(document.activeElement).toBe(root.querySelector('tr[data-key="c2"] button'));
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(
+      'Condition removed: Coverage.',
+    );
+  });
+
+  it('focuses the Conditions heading when the last condition is removed', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict') });
+    server.on('GET', '/api/v0/metrics', { body: [] });
+    server.on('DELETE', '/api/v0/quality-gates/g2/conditions/c1', { status: 204 });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const only = root.querySelector<HTMLButtonElement>('tbody button')!;
+    only.focus();
+    only.click();
+    await settle(fixture);
+    expect(document.activeElement?.textContent?.trim()).toBe('Conditions');
+  });
+
+  it('shows a refused metric on the metric field', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict') });
+    server.on('GET', '/api/v0/metrics', { body: [COVERAGE] });
+    server.on('POST', '/api/v0/quality-gates/g2/conditions', {
+      status: 422,
+      body: problem(422, 'VALIDATION_FAILED', [{ path: 'body.metric', message: 'Unknown' }]),
+    });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    chooseCoverage(root, '50');
+    await settle(fixture);
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(root.querySelector('#condition-metric-error')?.textContent).toContain(
+      'This server does not know this metric.',
+    );
+    expect(root.querySelector('#condition-metric')?.getAttribute('aria-invalid')).toBe('true');
+    expect(root.textContent).not.toContain('Check the highlighted fields');
+  });
+
+  it('says so when the metric catalog cannot be loaded', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict') });
+    server.on('GET', '/api/v0/metrics', { status: 500, body: problem(500, 'INTERNAL') });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const alert = (fixture.nativeElement as HTMLElement).querySelector('form [role="alert"]');
+    expect(alert?.textContent).toContain('The metrics could not be loaded:');
+  });
+
+  it('resets the form when another gate opens, and ignores the late answer for the old one', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict') });
+    server.on('GET', '/api/v0/quality-gates/g3', { body: gate('g3', 'Other') });
+    server.on('GET', '/api/v0/metrics', { body: [COVERAGE] });
+    let release: () => void = () => undefined;
+    server.on('POST', '/api/v0/quality-gates/g2/conditions', async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return {
+        status: 422,
+        body: problem(422, 'VALIDATION_FAILED', [{ path: 'body.threshold', message: 'x' }]),
+      };
+    });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    chooseCoverage(root, '50');
+    await settle(fixture);
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    fixture.componentRef.setInput('gateId', 'g3');
+    await settle(fixture);
+    release();
+    await settle(fixture);
+    expect(root.querySelector('h1')?.textContent).toBe('Other');
+    expect(root.querySelector<HTMLSelectElement>('#condition-metric')!.value).toBe('');
+    expect(root.querySelector<HTMLInputElement>('#condition-threshold')!.value).toBe('');
+    expect(root.querySelector('#condition-threshold-error')).toBeNull();
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    // The new gate is usable at once (the old change no longer holds the page busy).
+    expect(root.querySelector('tbody button')?.getAttribute('aria-disabled')).toBeNull();
+  });
+});
+
+describe('copyName', () => {
+  it('shortens the original so the copy fits 100 characters', () => {
+    const format = (n: string) => `${n} (copy)`;
+    expect(copyName('Strict', format)).toBe('Strict (copy)');
+    const long = copyName('x'.repeat(100), format);
+    expect(long).toHaveLength(100);
+    expect(long.endsWith('x… (copy)')).toBe(true);
+    // A surrogate pair is never cut in half.
+    const emoji = copyName('😀'.repeat(50), format);
+    expect(emoji.length).toBeLessThanOrEqual(100);
+    expect(() => encodeURIComponent(emoji)).not.toThrow();
+  });
+});

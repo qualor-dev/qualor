@@ -1,0 +1,94 @@
+# Qualor as a GitLab CI/CD component, published in the CI/CD catalog as gitlab.com/qualor/qualor:
+#
+#   include:
+#     - component: gitlab.com/qualor/qualor/qualor@<version>
+#       inputs:
+#         image-tag: <qualor/scanner tag>
+#
+# On self-managed GitLab, mirror https://gitlab.com/qualor/qualor into your instance and include it
+# from there: `component: $CI_SERVER_FQDN/<path of the mirror>/qualor@<version>`.
+#
+# For C#, set `dotnet: true` and `image: qualor/scanner-dotnet`.
+#
+# Set QUALOR_URL and QUALOR_TOKEN (masked, not protected) as CI/CD variables; the component never
+# holds them and takes no secret as an input. Not protected: GitLab gives a protected variable only
+# to pipelines of protected branches, so merge request pipelines would get no token. The job runs
+# in merge request pipelines and on the default branch, uploads the analysis, fails with the
+# quality gate and keeps GitLab's Code Quality, SAST and Dependency Scanning reports
+# as artifacts, so findings show in the merge request widget and the security tab (vulnerable
+# dependencies, found by Trivy, in Dependency Scanning). GitLab reads the SAST and Dependency
+# Scanning reports (the security widget and the vulnerability report) on GitLab Ultimate only; the
+# Code Quality report, which lists every finding, works on every tier. The job runs from the
+# repository root (the report paths are relative to it). Artifacts keep the instance's default
+# expiry, so the target branch's reports stay available for the merge request comparison.
+spec:
+  inputs:
+    stage:
+      type: string
+      default: test
+      description: The stage the Qualor job runs in.
+    image:
+      type: string
+      default: qualor/scanner
+      description: The scanner image, without its tag.
+    image-tag:
+      type: string
+      description: The tag of the scanner image to run (required; nothing floats).
+    job-name:
+      type: string
+      default: qualor
+      description: The name of the job.
+    args:
+      type: string
+      default: ''
+      description: Extra arguments for `qualor scan`, for example `--sarif osv.sarif`.
+    allow-failure:
+      type: boolean
+      default: false
+      description: Let the pipeline pass when the quality gate fails.
+    dotnet:
+      type: boolean
+      default: false
+      description: C# - run qualor dotnet begin, the build command and qualor dotnet end instead of qualor scan. Set image to qualor/scanner-dotnet too.
+    build-command:
+      type: string
+      default: dotnet build --no-incremental
+      description: The project's own build, run between qualor dotnet begin and end when dotnet is true.
+---
+'$[[ inputs.job-name ]]':
+  stage: $[[ inputs.stage ]]
+  image:
+    name: $[[ inputs.image ]]:$[[ inputs.image-tag ]]
+    entrypoint: ['']
+  variables:
+    GIT_DEPTH: '0'
+  script:
+    - |
+      if [ "$[[ inputs.dotnet ]]" = "true" ]; then
+        qualor dotnet begin
+        $[[ inputs.build-command ]]
+        qualor dotnet end --gitlab-code-quality gl-code-quality-report.json --gitlab-sast gl-sast-report.json --gitlab-dependency-scanning gl-dependency-scanning-report.json $[[ inputs.args ]]
+      else
+        qualor scan --gitlab-code-quality gl-code-quality-report.json --gitlab-sast gl-sast-report.json --gitlab-dependency-scanning gl-dependency-scanning-report.json $[[ inputs.args ]]
+      fi
+  # A failed build never reaches `qualor dotnet end`: after_script (which runs whatever the script
+  # did) then removes the MSBuild hook, the lease and .qualor/dotnet. After a
+  # successful end the directory is gone, and without dotnet the guard is never true. Because this
+  # job defines after_script itself, a pipeline's `default: after_script` does not apply to it
+  # (job-level keywords replace defaults); add your own cleanup to a separate job if you need it.
+  after_script:
+    - |
+      if [ "$[[ inputs.dotnet ]]" = "true" ] && [ -d .qualor/dotnet ]; then
+        qualor dotnet abort
+      fi
+  allow_failure: $[[ inputs.allow-failure ]]
+  interruptible: true
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+      sast: gl-sast-report.json
+      dependency_scanning: gl-dependency-scanning-report.json
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

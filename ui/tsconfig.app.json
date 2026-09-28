@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "outDir": "./node_modules/.cache/tsc/app", "types": ["@angular/localize"] },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/testing/**"]
+}

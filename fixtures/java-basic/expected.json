@@ -1,0 +1,48 @@
+{
+  "description": "Java repo: 4 PMD findings, 2 SpotBugs findings, one duplicated method, JaCoCo coverage",
+  "engines": ["pmd", "spotbugs"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "pmd:UnusedPrivateField", "path": "src/main/java/com/acme/Calculator.java", "startLine": 4, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "pmd:EmptyCatchBlock", "path": "src/main/java/com/acme/Calculator.java", "startLine": 9, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "pmd:UseEqualsToCompareStrings", "path": "src/main/java/com/acme/Calculator.java", "startLine": 15, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "pmd:UnusedLocalVariable", "path": "src/main/java/com/acme/Calculator.java", "startLine": 19, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "spotbugs:ES_COMPARING_PARAMETER_STRING_WITH_EQ", "path": "src/main/java/com/acme/Calculator.java", "startLine": 15, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "spotbugs:UUF_UNUSED_FIELD", "path": "src/main/java/com/acme/Calculator.java", "startLine": 1, "severity": "low", "quality": "maintainability" }
+  ],
+  "files": {
+    "src/main/java/com/acme/Calculator.java": { "language": "java", "kind": "main", "lines": 25, "functions": 3, "classes": 1, "complexity": 5, "cognitiveComplexity": 2 },
+    "src/main/java/com/acme/Names.java": { "language": "java", "kind": "main", "lines": 19, "classes": 1, "functions": 2 },
+    "src/main/java/com/acme/Labels.java": { "language": "java", "kind": "main", "lines": 20, "classes": 1, "functions": 2 },
+    "src/test/java/com/acme/CalculatorTest.java": { "language": "java", "kind": "test", "lines": 9 }
+  },
+  "duplications": [
+    { "blocks": [ { "path": "src/main/java/com/acme/Names.java", "startLine": 6, "endLine": 18 }, { "path": "src/main/java/com/acme/Labels.java", "startLine": 7, "endLine": 19 } ] }
+  ],
+  "coverage": { "lines_to_cover": 9, "uncovered_lines": 3, "conditions_to_cover": 4, "uncovered_conditions": 2, "coverage": 61.5 },
+  "notes": {
+    "src/main/java/com/acme/Calculator.java#functions": "divide, sameName, max are the explicit methods; the implicit default constructor is not counted -> 3",
+    "src/main/java/com/acme/Calculator.java#complexity": "divide 1+catch=2; sameName 1; max 1+if=2; total 5",
+    "src/main/java/com/acme/Calculator.java#cognitiveComplexity": "divide: catch +1 = 1; sameName 0; max: if +1 = 1; total 2",
+    "src/main/java/com/acme/Names.java#functions": "the private constructor plus describe -> 2",
+    "src/main/java/com/acme/Labels.java#functions": "the private constructor plus describe -> 2",
+    "src/main/java/com/acme/Labels.java#lines": "package(1) blank(2) comment(3) class-decl(4) private-ctor(5) blank(6) + describe copied verbatim from Names.java lines 6-18 (13 lines, placed at Labels 7-19) + closing brace(20) = 20 lines (verified with awk 'END{print NR}')",
+    "duplications": "Names.java 6-18 and Labels.java 7-19 are byte-for-byte identical (verified with diff); the describe method body (signature through closing brace) tokenizes to 124 tokens (identifiers, keywords, literals, punctuation), above the 100-token CPD-style minimum",
+    "coverage": "9 DA lines in jacoco.xml (nr 3,8,9,11,15,19,20,21,23); 3 have ci=0 (9,11,23) -> uncovered_lines=3; branches (mb+cb) only on nr=15 (1+1) and nr=20 (1+1) -> conditions_to_cover=4, uncovered_conditions=2 (the two mb=1); coverage = ((9-3)+(4-2))/(9+4)*100 = 8/13*100 = 61.538... -> 61.5",
+    "pmd:UnusedPrivateField#severity": "captured sample rule.properties.priority = 3 -> medium (1=high, 2/3=medium, 4=low, 5=info)",
+    "pmd:UnusedLocalVariable#severity": "captured sample rule.properties.priority = 3 -> medium",
+    "pmd:EmptyCatchBlock#severity": "captured sample rule.properties.priority = 3 -> medium",
+    "pmd:UseEqualsToCompareStrings#severity": "captured sample rule.properties.priority = 3 -> medium",
+    "pmd:UnusedPrivateField#quality": "rule.properties.ruleset = 'Best Practices' -> maintainability",
+    "pmd:UnusedLocalVariable#quality": "rule.properties.ruleset = 'Best Practices' -> maintainability",
+    "pmd:EmptyCatchBlock#quality": "rule.properties.ruleset = 'Error Prone' -> reliability",
+    "pmd:UseEqualsToCompareStrings#quality": "rule.properties.ruleset = 'Error Prone' -> reliability",
+    "pmd:UnusedLocalVariable#notFalsePositive": "the variable in Calculator.max was originally named 'unused'; PMD's UnusedLocalVariable rule explicitly filters out names starting with 'ignored' or 'unused' (see the rule's description in the captured sample), so it never fired. Renamed to 'temp' (same line, same line count) and recaptured; it now fires at line 19 as expected",
+    "spotbugs:ES_COMPARING_PARAMETER_STRING_WITH_EQ#quality": "rule.properties.tags = ['BAD_PRACTICE'] in the captured sample -> not CORRECTNESS/SECURITY -> maintainability",
+    "spotbugs:UUF_UNUSED_FIELD#quality": "rule.properties.tags = ['PERFORMANCE'] in the captured sample -> not CORRECTNESS/SECURITY -> maintainability",
+    "spotbugs:ES_COMPARING_PARAMETER_STRING_WITH_EQ#severity": "captured sample result.level = 'warning' -> levelToSeverity('warning') = medium (packages/shared/src/sarif/normalize.ts); verified by running normalizeSarif on the committed sample, which produced severity 'medium' for this finding",
+    "spotbugs:UUF_UNUSED_FIELD#severity": "captured sample result.level = 'note' -> levelToSeverity('note') = low; verified by running normalizeSarif on the committed sample, which produced severity 'low' for this finding",
+    "spotbugs:UUF_UNUSED_FIELD#startLine": "the captured SARIF result for this field-level bug has no 'region' at all (only artifactLocation, no startLine) because SpotBugs does not attach a source line to field-only bug patterns. The already-implemented normaliser (packages/shared/src/sarif/normalize.ts, resolveLocation) defaults a missing region's startLine to 1 (Math.max(1, r?.startLine ?? 1)); startLine 1 pins that real, already-shipped pipeline behaviour, verified by running normalizeSarif on the committed sample (no FINDING_PATH_INVALID warning; findings[1].location.startLine === 1). Mapping field-level bugs to their real declaration line (Calculator.java:4) instead of defaulting to 1 would require SpotBugs-specific enhancement (e.g. resolving the field's line from source/bytecode debug info) that the normaliser does not do today; that is left as a Phase 1 CLI/SpotBugs-mapping enhancement, not something this fixture should assert",
+    "spotbugs:UUF_UNUSED_FIELD#overlap": "the same field (unusedCounter) is also reported by PMD's UnusedPrivateField at the same path (line 4, since PMD's own SARIF does carry a real region for this rule); both are genuine, independently-verified findings from different engines and both are listed since findingsExhaustive is true"
+  }
+}

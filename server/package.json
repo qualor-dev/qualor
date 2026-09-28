@@ -1,0 +1,48 @@
+{
+  "name": "@qualor/server",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./plugin-contract": "./src/plugins/contract.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsx scripts/build.ts",
+    "start": "node dist/main.js",
+    "openapi": "tsx scripts/openapi.ts",
+    "e2e:serve": "tsx scripts/e2e/serve.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/swagger": "^9.9.0",
+    "@node-rs/argon2": "^2.2.1",
+    "@node-saml/node-saml": "5.1.0",
+    "@xmldom/xmldom": "0.8.15",
+    "@qualor/shared": "workspace:*",
+    "drizzle-orm": "^0.45.3",
+    "fastify": "^5.12.5",
+    "fastify-type-provider-zod": "^7.0.0",
+    "openid-client": "6.8.8",
+    "pg": "^8.23.0",
+    "picomatch": "^4.0.7",
+    "pino": "^10.3.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@readme/openapi-parser": "^9.0.0",
+    "@testcontainers/postgresql": "^12.1.0",
+    "@types/pg": "^8.23.1",
+    "@types/picomatch": "^4.0.3",
+    "drizzle-kit": "^0.31.11",
+    "esbuild": "^0.28.2",
+    "jose": "6.2.12",
+    "xml-crypto": "6.3.2"
+  }
+}

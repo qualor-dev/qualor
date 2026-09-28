@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.angular/
+/coverage/
+.tmp/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.superpowers/
+*.private.pem

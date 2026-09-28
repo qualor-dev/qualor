@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "cli" },
+    { "path": "server" },
+    { "path": "tools" },
+    { "path": "enterprise" }
+  ]
+}

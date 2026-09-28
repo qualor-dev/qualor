@@ -1,0 +1,43 @@
+{
+  "description": "C# solution: a library targeting net8.0 and net10.0 with TreatWarningsAsErrors, a test project, Roslyn findings (SDK rules and Roslynator), one suppressed finding, one duplicated method, Cobertura coverage",
+  "engines": ["roslyn"],
+  "findingsExhaustive": false,
+  "findings": [
+    { "ruleKey": "roslyn:CA5351", "path": "src/Acme.Store/Hashing.cs", "startLine": 9, "severity": "medium", "quality": "security" },
+    { "ruleKey": "roslyn:CA1850", "path": "src/Acme.Store/Hashing.cs", "startLine": 10, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "roslyn:CA2000", "path": "src/Acme.Store/Reader.cs", "startLine": 9, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "roslyn:RCS1118", "path": "src/Acme.Store/Pricing.cs", "startLine": 13, "severity": "low", "quality": "maintainability" },
+    { "ruleKey": "roslyn:CA1062", "path": "src/Acme.Store/Names.cs", "startLine": 9, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "roslyn:CA1062", "path": "src/Acme.Store/Labels.cs", "startLine": 10, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "roslyn:CA1845", "path": "src/Acme.Store/Names.cs", "startLine": 18, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "roslyn:CA1845", "path": "src/Acme.Store/Labels.cs", "startLine": 19, "severity": "medium", "quality": "maintainability" }
+  ],
+  "files": {
+    "src/Acme.Store/Hashing.cs": { "language": "csharp", "kind": "main", "lines": 12, "functions": 1, "classes": 1, "complexity": 1, "cognitiveComplexity": 0 },
+    "src/Acme.Store/Reader.cs": { "language": "csharp", "kind": "main", "lines": 12, "functions": 1, "classes": 1, "complexity": 1, "cognitiveComplexity": 0 },
+    "src/Acme.Store/Pricing.cs": { "language": "csharp", "kind": "main", "lines": 28, "functions": 3, "classes": 1, "complexity": 6, "cognitiveComplexity": 3 },
+    "src/Acme.Store/Names.cs": { "language": "csharp", "kind": "main", "lines": 30, "functions": 2, "classes": 1, "complexity": 5, "cognitiveComplexity": 5 },
+    "src/Acme.Store/Labels.cs": { "language": "csharp", "kind": "main", "lines": 31, "functions": 2, "classes": 1, "complexity": 5, "cognitiveComplexity": 5 },
+    "tests/Acme.Store.Tests/PricingChecks.cs": { "language": "csharp", "kind": "test", "lines": 6 }
+  },
+  "duplications": [
+    { "blocks": [ { "path": "src/Acme.Store/Labels.cs", "startLine": 8, "endLine": 28 }, { "path": "src/Acme.Store/Names.cs", "startLine": 7, "endLine": 27 } ] }
+  ],
+  "coverage": { "lines_to_cover": 7, "uncovered_lines": 2, "conditions_to_cover": 4, "uncovered_conditions": 2, "coverage": 63.6 },
+  "notes": {
+    "findings": "a probe build with SDK 10.0.401 inside the hook produced these 8 in each of the net8.0 and net10.0 logs (16 results); the report must hold each once (ruling D5). findingsExhaustive is false because a newer SDK in the 10.0 band may add rules (D13)",
+    "roslyn:CA1822#suppressed": "Pricing.Zero (line 26) is flagged by CA1822 inside #pragma warning disable; the log marks it suppressions:[{kind:inSource}] and it must not appear",
+    "roslyn:*#quality": "rule properties.category: CA5351 Security -> security; CA2000 Reliability -> reliability; CA1062 Design, CA1845 and CA1850 Performance, RCS1118 Roslynator -> maintainability",
+    "roslyn:*#severity": "result.level warning -> medium; RCS1118 level note -> low",
+    "src/Acme.Store/Pricing.cs#functions": "Calls (expression-bodied property), Discount, Zero -> 3 (the field is not a function)",
+    "src/Acme.Store/Pricing.cs#complexity": "3 functions + if + && + else-if (an if_statement) = 6",
+    "src/Acme.Store/Pricing.cs#cognitiveComplexity": "if +1 (nesting 0), the && run +1, else if +1 (hybrid, no nesting); no plain else -> 3",
+    "src/Acme.Store/Names.cs#functions": "Describe and Count (expression-bodied property); the const field is not a function -> 2",
+    "src/Acme.Store/Names.cs#complexity": "Describe 1 + if + foreach + inner if = 4; Count 1 -> 5",
+    "src/Acme.Store/Names.cs#cognitiveComplexity": "if +1, foreach +1, inner if +1+1 (nesting 1), else +1 -> 5",
+    "src/Acme.Store/Hashing.cs#complexity": "one method, no decisions -> 1",
+    "src/Acme.Store/Reader.cs#complexity": "one method; ?? is not a decision (report-format §6) -> 1",
+    "duplications": "Names.cs 7-27 and Labels.cs 8-28 are the Describe method, identical line for line (diff); the lines before (Limit vs Width) and after (Count vs Size) differ, so the block is exactly the method: 21 lines, well over 100 tokens",
+    "coverage": "7 line entries for Pricing.cs (12,13,14,16,18,20,22), hits 0 on 18 and 20 -> uncovered 2; line 14 condition-coverage 2/4 -> conditions_to_cover 4, uncovered 2; coverage = ((7-2)+(4-2))/(7+4)*100 = 63.636... -> 63.6"
+  }
+}

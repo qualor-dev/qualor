@@ -1,0 +1,142 @@
+<h2 #heading tabindex="-1" i18n="@@signIn.title">Sign-in</h2>
+@if (infoError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (infoLoaded() && !licensed()) {
+  <p class="muted" i18n="@@sso.notLicensed">
+    Single sign-on needs an enterprise licence with the sso feature.
+  </p>
+} @else if (licensed() && !instanceAdmin()) {
+  <p class="muted" i18n="@@signIn.adminsOnly">
+    Only instance administrators change how people sign in.
+  </p>
+} @else if (loadError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (current(); as settings) {
+  @if (settings.forced) {
+    <p id="sign-in-forced" class="alert alert-warn" i18n="@@signIn.forced">
+      Password sign-in is forced on for everyone by QUALOR_FORCE_PASSWORD_SIGN_IN. This setting
+      takes effect again once the variable is removed and the server restarted.
+    </p>
+  }
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+
+  <section class="card" aria-labelledby="sign-in-rules-title">
+    <h3 id="sign-in-rules-title" i18n="@@signIn.rulesTitle">
+      How Qualor keeps you from being locked out
+    </h3>
+    <ul id="sign-in-rules">
+      <li i18n="@@signIn.rule.tokens">API and CI tokens keep working whatever you choose here.</li>
+      <li i18n="@@signIn.rule.needs">
+        Limiting password sign-in needs at least one break-glass administrator who is an active
+        instance administrator with a password, and at least one enabled single sign-on connection.
+      </li>
+      <li i18n="@@signIn.rule.others">
+        Everyone else signs in with single sign-on. Their password, if they have one, is kept and
+        works again when you set password sign-in back to everyone.
+      </li>
+      <li i18n="@@signIn.rule.last">
+        While password sign-in is limited, the last break-glass administrator who can still use a
+        password cannot be deactivated or lose the instance administrator role. Set password sign-in
+        back to everyone first.
+      </li>
+      <li i18n="@@signIn.rule.emergency">
+        If the identity provider fails, set QUALOR_FORCE_PASSWORD_SIGN_IN=true and restart the
+        server: everyone with a password can sign in with it until you remove the variable.
+      </li>
+    </ul>
+  </section>
+
+  <form class="card" novalidate (submit)="save($event)">
+    <fieldset
+      [attr.aria-invalid]="policyError() ? true : null"
+      [attr.aria-describedby]="policyError() ? 'sign-in-policy-error' : null"
+    >
+      <legend i18n="@@signIn.policy">Password sign-in</legend>
+      <label class="row">
+        <input
+          id="sign-in-everyone"
+          type="radio"
+          name="passwordSignIn"
+          value="everyone"
+          [checked]="policy() === 'everyone'"
+          (change)="setPolicy('everyone')"
+        />
+        <span i18n="@@signIn.everyone">Everyone with a password</span>
+      </label>
+      <label class="row">
+        <input
+          id="sign-in-limited"
+          type="radio"
+          name="passwordSignIn"
+          value="break_glass_only"
+          [checked]="policy() === 'break_glass_only'"
+          (change)="setPolicy('break_glass_only')"
+        />
+        <span i18n="@@signIn.limited">Only the break-glass administrators</span>
+      </label>
+      @if (policyError(); as message) {
+        <span id="sign-in-policy-error" class="field-error" role="alert">{{ message }}</span>
+      }
+    </fieldset>
+
+    <fieldset
+      id="sign-in-picker"
+      tabindex="-1"
+      [attr.aria-invalid]="pickerError() ? true : null"
+      [attr.aria-describedby]="
+        pickerError() ? 'sign-in-picker-hint sign-in-picker-error' : 'sign-in-picker-hint'
+      "
+    >
+      <legend i18n="@@signIn.breakGlass">Break-glass administrators</legend>
+      <p id="sign-in-picker-hint" class="hint" i18n="@@signIn.pickerHint">
+        Up to 10 instance administrators who may always sign in with a password. Someone without a
+        password cannot be picked: set one on the Users page first.
+      </p>
+      @for (c of candidates(); track c.id) {
+        <label class="row" [attr.data-key]="c.id">
+          <input
+            type="checkbox"
+            [checked]="selected().has(c.id)"
+            [disabled]="!pickable(c)"
+            (change)="toggle(c, $event)"
+          />
+          <span>
+            {{ c.username }}
+            @if (c.displayName) {
+              <span class="muted">({{ c.displayName }})</span>
+            }
+          </span>
+          @if (c.reason) {
+            <span class="badge">{{ reasonText(c.reason) }}</span>
+          }
+        </label>
+      } @empty {
+        <p class="muted" i18n="@@signIn.noAdmins">No instance administrators found.</p>
+      }
+      @if (pickerError(); as message) {
+        <span id="sign-in-picker-error" class="field-error" role="alert">{{ message }}</span>
+      }
+    </fieldset>
+
+    @if (selfNotListed()) {
+      <p id="sign-in-self-warning" class="alert alert-warn" i18n="@@signIn.selfWarning">
+        You are not a break-glass administrator: you will sign in with SSO from now on.
+      </p>
+    }
+    <button
+      type="submit"
+      class="btn btn-primary"
+      [attr.aria-disabled]="busy() ? true : null"
+      i18n="@@signIn.save"
+    >
+      Save
+    </button>
+  </form>
+}

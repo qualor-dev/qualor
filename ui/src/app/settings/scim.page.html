@@ -1,0 +1,171 @@
+<h2 #heading tabindex="-1" i18n="@@scim.title">SCIM</h2>
+@if (infoError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (infoLoaded() && !licensed()) {
+  <p class="muted" i18n="@@scim.notLicensed">
+    SCIM provisioning needs an enterprise licence with the scim feature.
+  </p>
+} @else if (infoLoaded() && !ssoActive()) {
+  <p class="muted" i18n="@@scim.needsSso">
+    SCIM provisions the people of a single sign-on connection: the licence must also list the sso
+    feature.
+  </p>
+} @else if (!instanceAdmin()) {
+  @if (infoLoaded()) {
+    <p class="muted" i18n="@@scim.adminsOnly">Only instance administrators manage SCIM tokens.</p>
+  }
+} @else if (loadError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (connections(); as list) {
+  <p class="muted" i18n="@@scim.intro">
+    An identity provider such as Entra ID or Okta creates, updates and deactivates the people of a
+    connection through SCIM 2.0. Give it the base URL and a token of that connection.
+  </p>
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  @if (secret(); as value) {
+    <q-secret-once
+      [value]="value"
+      label="SCIM token"
+      i18n-label="@@scim.secret"
+      (done)="forget()"
+    />
+  }
+  @for (c of list; track c.id) {
+    <section class="card" [attr.data-key]="c.id" [attr.aria-labelledby]="'scim-title-' + c.id">
+      <h3 [id]="'scim-title-' + c.id">{{ c.name }}</h3>
+      <p class="muted">{{ c.protocol | label: 'ssoProtocol' }}</p>
+      @if (baseUrl(c); as url) {
+        <q-copy-value
+          [fieldId]="'scim-url-' + c.id"
+          label="SCIM base URL"
+          i18n-label="@@scim.baseUrl"
+          [value]="url"
+        />
+      } @else {
+        <p class="alert alert-warn" i18n="@@scim.noPublicUrl">
+          QUALOR_PUBLIC_URL is not set, so there is no SCIM address to give the identity provider.
+          Set it and restart the server.
+        </p>
+      }
+      @if (c.groupSource !== 'scim') {
+        <p class="hint" i18n="@@scim.groupsHint">
+          Groups from SCIM give roles only when the connection's groups come from SCIM provisioning
+          (Single sign-on settings).
+        </p>
+      }
+
+      <div class="table-wrap">
+        <table [id]="'scim-tokens-' + c.id">
+          <caption class="visually-hidden" i18n="@@scim.tokens">
+            Tokens
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" i18n="@@scim.col.name">Name</th>
+              <th scope="col" i18n="@@scim.col.prefix">Starts with</th>
+              <th scope="col" i18n="@@scim.col.created">Created</th>
+              <th scope="col" i18n="@@scim.col.expires">Expires</th>
+              <th scope="col" i18n="@@scim.col.lastUsed">Last used</th>
+              <th scope="col">
+                <span class="visually-hidden" i18n="@@scim.col.actions">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of tokensOf(c); track t.id) {
+              <tr [attr.data-key]="t.id">
+                <th scope="row">{{ t.name }}</th>
+                <td>
+                  <code>{{ t.prefix }}…</code>
+                </td>
+                <td>{{ t.createdAt | dateTime }}</td>
+                <td>
+                  @if (t.expiresAt) {
+                    {{ t.expiresAt | dateTime }}
+                  } @else {
+                    <span class="muted" i18n="@@scim.never">Never</span>
+                  }
+                </td>
+                <td>
+                  @if (t.lastUsedAt) {
+                    {{ t.lastUsedAt | dateTime }}
+                  } @else {
+                    <span class="muted" i18n="@@scim.notUsed">Not used yet</span>
+                  }
+                </td>
+                <td>
+                  @if (t.revokedAt) {
+                    <span class="badge" i18n="@@scim.revokedOn"
+                      >Revoked {{ t.revokedAt | dateTime }}</span
+                    >
+                  } @else {
+                    <button
+                      type="button"
+                      class="btn btn-danger"
+                      [attr.aria-label]="revokeLabel(t)"
+                      [attr.aria-disabled]="busy() ? true : null"
+                      (click)="revoke(t)"
+                      i18n="@@scim.revoke"
+                    >
+                      Revoke
+                    </button>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="6" class="muted" i18n="@@scim.noTokens">No tokens yet.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <form class="row fields" novalidate (submit)="create(c, $event)">
+        <div class="field">
+          <label [for]="'scim-name-' + c.id" i18n="@@scim.name">Token name</label>
+          <input
+            [id]="'scim-name-' + c.id"
+            maxlength="200"
+            autocomplete="off"
+            [value]="names()[c.id] ?? ''"
+            [attr.aria-invalid]="nameError(c) ? true : null"
+            [attr.aria-describedby]="nameError(c) ? 'scim-name-error-' + c.id : null"
+            (input)="setName(c, $event)"
+          />
+        </div>
+        <div class="field">
+          <label [for]="'scim-expiry-' + c.id" i18n="@@scim.expiry">Expires on (optional)</label>
+          <input
+            type="date"
+            [id]="'scim-expiry-' + c.id"
+            [value]="expiries()[c.id] ?? ''"
+            (input)="setExpiry(c, $event)"
+          />
+        </div>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          i18n="@@scim.create"
+        >
+          Create token
+        </button>
+      </form>
+      @if (nameError(c); as message) {
+        <p [id]="'scim-name-error-' + c.id" class="field-error" role="alert">{{ message }}</p>
+      }
+    </section>
+  } @empty {
+    <p class="muted" i18n="@@scim.noConnections">
+      No single sign-on connections yet. Add one under Single sign-on first.
+    </p>
+  }
+}

@@ -1,0 +1,96 @@
+<main class="auth-page">
+  <aside class="auth-art">
+    <span class="brand">
+      <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="#1f5fbf" />
+        <path
+          d="M16 7a9 9 0 1 0 5.3 16.3l3.2 3.2 2.1-2.1-3.2-3.2A9 9 0 0 0 16 7zm0 3a6 6 0 1 1 0 12 6 6 0 0 1 0-12z"
+          fill="#fff"
+        />
+      </svg>
+      <span i18n="@@auth.brand">Qualor</span>
+    </span>
+    <p class="tagline" i18n="@@auth.tagline">
+      Open-source code quality for teams that host their own GitLab or GitHub.
+    </p>
+  </aside>
+  <div class="auth-main">
+    <div class="card auth-card">
+      <h1 i18n="@@login.title">Sign in to Qualor</h1>
+      @if (ssoErrorMessage(); as message) {
+        <p class="alert alert-error" role="alert" data-test="sso-error">{{ message }}</p>
+      }
+      @if (providers().length > 0) {
+        <div class="stack auth-providers">
+          @for (p of providers(); track p.id) {
+            <a class="btn" [href]="startHref(p)" [attr.data-test]="'sso-' + p.id" i18n="@@login.sso"
+              >Sign in with {{ p.name }}</a
+            >
+          }
+        </div>
+      }
+      @if (folded()) {
+        <p class="auth-alt">
+          <button
+            type="button"
+            class="btn btn-link"
+            aria-controls="login-password-form"
+            [attr.aria-expanded]="unfolded()"
+            data-test="emergency-sign-in"
+            (click)="toggleForm()"
+            i18n="@@login.emergency"
+          >
+            Emergency administrator sign-in
+          </button>
+        </p>
+      }
+      @if (showForm()) {
+        @if (providers().length > 0) {
+          <p class="auth-or muted" i18n="@@login.or">or sign in with a password</p>
+        }
+        <form
+          id="login-password-form"
+          method="post"
+          data-test="password-form"
+          (submit)="submit($event)"
+        >
+          @if (error(); as message) {
+            <p class="alert alert-error" role="alert">{{ message }}</p>
+          }
+          <div class="field">
+            <label for="login-username" i18n="@@login.username">Username</label>
+            <input
+              #usernameField
+              id="login-username"
+              name="username"
+              autocomplete="username"
+              required
+              [value]="username()"
+              (input)="username.set(inputValue($event))"
+            />
+          </div>
+          <div class="field">
+            <label for="login-password" i18n="@@login.password">Password</label>
+            <input
+              id="login-password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              [value]="password()"
+              (input)="password.set(inputValue($event))"
+            />
+          </div>
+          <button
+            type="submit"
+            class="btn btn-primary"
+            [attr.aria-disabled]="busy() ? true : null"
+            i18n="@@login.submit"
+          >
+            Sign in
+          </button>
+        </form>
+      }
+    </div>
+  </div>
+</main>

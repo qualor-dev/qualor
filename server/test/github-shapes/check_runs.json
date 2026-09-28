@@ -1,0 +1,29 @@
+{
+  "total_count": 1,
+  "check_runs": [
+    {
+      "id": 4,
+      "head_sha": "1111111111111111111111111111111111111111",
+      "node_id": "CR_kwDOAAABc0",
+      "external_id": "qualor:v1:0190c3b2-7a00-7000-8000-000000000001:0123456789abcdef",
+      "url": "https://api.github.com/repos/acme/api/check-runs/4",
+      "html_url": "https://github.com/acme/api/runs/4",
+      "details_url": "https://qualor.example.com/projects/p/branches/b",
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-09-25T10:00:00Z",
+      "completed_at": "2026-09-25T10:00:00Z",
+      "output": {
+        "title": "Quality gate failed: new_issues 1 > 0",
+        "summary": "### Qualor: quality gate failed",
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/acme/api/check-runs/4/annotations"
+      },
+      "name": "qualor/acme-api",
+      "check_suite": { "id": 5 },
+      "app": { "id": 123456, "slug": "qualor-acme", "name": "Qualor (acme)" },
+      "pull_requests": []
+    }
+  ]
+}

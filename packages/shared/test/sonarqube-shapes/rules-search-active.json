@@ -1,0 +1,54 @@
+{
+  "total": 2,
+  "p": 1,
+  "ps": 500,
+  "paging": { "pageIndex": 1, "pageSize": 500, "total": 2 },
+  "rules": [
+    {
+      "key": "typescript:S1440",
+      "repo": "typescript",
+      "name": "Rule S1440",
+      "lang": "ts",
+      "langName": "TypeScript",
+      "severity": "MAJOR",
+      "impacts": [{ "softwareQuality": "MAINTAINABILITY", "severity": "MEDIUM" }],
+      "params": []
+    },
+    {
+      "key": "typescript:S107",
+      "repo": "typescript",
+      "name": "Rule S107",
+      "lang": "ts",
+      "langName": "TypeScript",
+      "severity": "MAJOR",
+      "impacts": [{ "softwareQuality": "MAINTAINABILITY", "severity": "MEDIUM" }],
+      "params": [
+        {
+          "key": "maximumFunctionParameters",
+          "htmlDesc": "",
+          "defaultValue": "7",
+          "type": "INTEGER"
+        }
+      ]
+    }
+  ],
+  "actives": {
+    "typescript:S1440": [
+      {
+        "qProfile": "AYp-ts-1",
+        "inherit": "OVERRIDES",
+        "severity": "CRITICAL",
+        "impacts": [{ "softwareQuality": "MAINTAINABILITY", "severity": "HIGH" }],
+        "params": []
+      }
+    ],
+    "typescript:S107": [
+      {
+        "qProfile": "AYp-ts-1",
+        "inherit": "INHERITED",
+        "severity": "MAJOR",
+        "params": [{ "key": "maximumFunctionParameters", "value": "5" }]
+      }
+    ]
+  }
+}

@@ -1,0 +1,138 @@
+# Gitleaks configuration of Qualor's own repository (plan 1G). Qualor scans
+# itself with Gitleaks (brief rule 4); these files hold fake secrets on purpose. Each allowlist
+# pins the exact fake values (regexTarget = "secret", anchored) AND the files that may hold them
+# AND the rules they trigger (condition = "AND"), so a real secret added to one of those files, or
+# a fake value copied anywhere else, is still found. A new fake secret in a test needs its own
+# entry here, which a reviewer sees in the merge request. The fixtures keep their secret: the
+# fixture suite scans each fixture as its own repository, where this file does not apply.
+# tools/deploy/gitleaks.test.ts checks all of this with the real Gitleaks.
+[extend]
+useDefault = true
+
+# Qualor's own tokens (server/src/auth/tokens.ts, server/src/scim/tokens.ts; sso-scim.md §12.2):
+# `qlr_pat_`, `qlr_prj_` or `qlr_scim_` and exactly 32 base62 characters, found with or without a
+# keyword nearby.
+[[rules]]
+id = "qualor-token"
+description = "A Qualor personal, project or SCIM token"
+regex = '''\bqlr_(?:pat|prj|scim)_[0-9A-Za-z]{32}\b'''
+keywords = ["qlr_"]
+
+[[allowlists]]
+description = "the all-zero project token of the tests that present a well-formed but unknown token"
+condition = "AND"
+targetRules = ["qualor-token"]
+regexTarget = "secret"
+regexes = ['''^qlr_prj_0{32}$''']
+paths = [
+  '''^server/src/routes/analyses\.socket\.db\.test\.ts$''',
+  '''^server/test/cli-e2e\.db\.test\.ts$''',
+]
+
+[[allowlists]]
+description = "fake tokens, keys and passwords of the tests, the mixed-secrets fixture and the e2e server"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = [
+  # The fake secret of the mixed-secrets fixture, reused by the secret-detection and redaction tests.
+  '''^Zx9Qe4Lr8Tn2Vb7Mk3Hs6Jp1$''',
+  # A false positive: a project key ("key: from/explicit") in a qualor.yml the test writes.
+  '''^from/explicit$''',
+  # Fake Qualor tokens.
+  '''^qlr_(pat|prj|scim)_0123456789(abcdef)?$''',
+  # QUALOR_SECRET_KEY of the e2e server and of the server start-up test.
+  '''^(e2e|smoke-test)-secret-key-that-is-at-least-32-characters(-long)?$''',
+]
+paths = [
+  '''^fixtures/mixed-secrets/src/config\.ts$''',
+  '''^cli/src/analyzers/gitleaks\.test\.ts$''',
+  '''^cli/src/analyzers/redaction\.test\.ts$''',
+  '''^cli/src/analyzers/semgrep\.test\.ts$''',
+  '''^cli/src/config/settings\.test\.ts$''',
+  '''^cli/src/scan/report\.test\.ts$''',
+  '''^cli/src/scan/run\.test\.ts$''',
+  '''^cli/src/server/http\.test\.ts$''',
+  '''^server/scripts/e2e/serve\.ts$''',
+  '''^server/src/main\.db\.test\.ts$''',
+  # The fixture harness's check that no source line reaches the GitLab report files (plan 2A).
+  '''^tools/fixtures/run\.test\.ts$''',
+]
+
+[[allowlists]]
+description = "the fake AWS key of the SARIF normalisation tests (it must be redacted)"
+condition = "AND"
+targetRules = ["aws-access-token"]
+regexTarget = "secret"
+regexes = ['''^AKIAABCDEFGHIJKLMNOP$''']
+paths = ['''^packages/shared/src/sarif/normalize\.test\.ts$''']
+
+[[allowlists]]
+description = "the test certificate authority's key, published on purpose (cli/test/tls.ts)"
+condition = "AND"
+targetRules = ["private-key"]
+regexTarget = "secret"
+# A line of that exact key.
+regexes = ['''MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgN3lQy3RnVGeqbu0h''']
+paths = ['''^cli/test/tls\.ts$''']
+
+[[allowlists]]
+description = "the SAML tests' throwaway RSA keys (plan 4D Task 5), pinned also in tools/license/license-tool.ts"
+condition = "AND"
+targetRules = ["private-key"]
+regexTarget = "secret"
+# A line of each exact key.
+regexes = [
+  '''MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDK3POCZslP7FsC''',
+  '''MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCn1pyh63QrPIQM''',
+  '''MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDPQl4ad\+/4d7QU''',
+]
+paths = ['''^server/test/fixtures/saml/(idp|stranger|sp)\.key\.pem$''']
+
+[[allowlists]]
+description = "the fake API key of the llm-prompts fixture (plan 3B), which the fixture's own scan must find"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^Qf7Lz2Wm9Rt4Xc8Vb1Nd6Hs3Kp5J$''']
+paths = ['''^fixtures/llm-prompts/src/compare\.ts$''']
+
+[[allowlists]]
+description = "the installation token of GitHub's documented example response, recorded for the fake GitHub (plan 2C)"
+condition = "AND"
+# generic-api-key reports the same value once github-app-token allows it.
+targetRules = ["github-app-token", "generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^ghs_16C7e42F292c6912E7710c838347Ae178B4a$''']
+paths = [
+  '''^server/test/github-shapes/installation_token\.json$''',
+]
+
+[[allowlists]]
+description = "ids and hashes of the audit, licence and release tests and tools that generic-api-key takes for keys (plans 4B, 4C): a token id (a UUID), the SHA-256 of a test licence key, and the fingerprint of Helm's public signing key"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = [
+  '''^0192f5a4-7c1e-7d3a-9b2e-5f1a2c3d4e61$''',
+  '''^9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08$''',
+  '''^208DD36ED5BB3745A16743A4C7C6FBB5B91C1155$''',
+]
+paths = [
+  '''^server/src/audit/guide-verify\.db\.test\.ts$''',
+  '''^server/src/audit/recorder\.test\.ts$''',
+  '''^server/src/license/boot-log\.test\.ts$''',
+  '''^tools/release/check-pins\.py$''',
+]
+
+[[allowlists]]
+description = "a PEM header without a key: the licence tool's refusal of a disguised block (tools/license/license-tool.test.ts)"
+condition = "AND"
+targetRules = ["private-key"]
+regexTarget = "secret"
+# It pins the header and the text after it, which is no key material; `\x5cn` is the source's
+# escaped newline (a backslash and an n), `\n` a real one.
+regexes = [
+  '''^-----BEGIN ENCRYPTED PRIVATE KEY-----\x5cn`\);\n    expect\(\(\) => signKey\(\{ \.\.\.base, keyFile: disguised \}\)\)\.toThrow\(sameError\);\n''',
+]
+paths = ['''^tools/license/license-tool\.test\.ts$''']

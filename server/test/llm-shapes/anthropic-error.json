@@ -1,0 +1,4 @@
+{
+  "type": "error",
+  "error": { "type": "invalid_request_error", "message": "Fake error text; never logged or shown." }
+}

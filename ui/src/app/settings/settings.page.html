@@ -1,0 +1,52 @@
+<h1 i18n="@@settings.title">Settings</h1>
+<nav class="tabs" aria-label="Settings" i18n-aria-label="@@settings.tabs">
+  <a routerLink="tokens" routerLinkActive="active" i18n="@@settings.tab.tokens">Access tokens</a>
+  @if (linkedAccounts()) {
+    <a
+      routerLink="ee/linked-accounts"
+      routerLinkActive="active"
+      i18n="@@settings.tab.linkedAccounts"
+      >Linked accounts</a
+    >
+  }
+  @if (instanceAdmin()) {
+    <a routerLink="users" routerLinkActive="active" i18n="@@settings.tab.users">Users</a>
+    <a routerLink="ai" routerLinkActive="active" i18n="@@settings.tab.ai">AI assistant</a>
+    <a routerLink="license" routerLinkActive="active" i18n="@@settings.tab.license">Licence</a>
+  }
+  @if (auditLog()) {
+    <a routerLink="ee/audit-log" routerLinkActive="active" i18n="@@settings.tab.auditLog"
+      >Audit log</a
+    >
+  }
+  @if (auditSettings()) {
+    <a routerLink="ee/audit-settings" routerLinkActive="active" i18n="@@settings.tab.auditSettings"
+      >Audit settings</a
+    >
+  }
+  @if (sso()) {
+    <a routerLink="ee/sso" routerLinkActive="active" i18n="@@settings.tab.sso">Single sign-on</a>
+  }
+  @if (signIn()) {
+    <a routerLink="ee/sign-in" routerLinkActive="active" i18n="@@settings.tab.signIn">Sign-in</a>
+  }
+  @if (scim()) {
+    <a routerLink="ee/scim" routerLinkActive="active" i18n="@@settings.tab.scim">SCIM</a>
+  }
+  @if (instanceAdmin()) {
+    @for (e of otherExtensions(); track e.id) {
+      <a [routerLink]="['ee', e.id]" routerLinkActive="active">{{ e.label }}</a>
+    }
+  }
+  @if (org.can('org.members.read')) {
+    <a routerLink="members" routerLinkActive="active" i18n="@@settings.tab.members">Members</a>
+  }
+  @if (org.can('org.webhooks.manage')) {
+    <a routerLink="webhooks" routerLinkActive="active" i18n="@@settings.tab.webhooks">Webhooks</a>
+  }
+  @if (org.can('org.scm.manage')) {
+    <a routerLink="gitlab" routerLinkActive="active" i18n="@@settings.tab.gitlab">GitLab</a>
+    <a routerLink="github" routerLinkActive="active" i18n="@@settings.tab.github">GitHub</a>
+  }
+</nav>
+<router-outlet />

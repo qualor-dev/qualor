@@ -1,0 +1,36 @@
+{{- include "qualor.validate" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "qualor.fullname" . }}
+  labels:
+    {{- include "qualor.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "qualor.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
+{{- if eq .Values.database.mode "embedded" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "qualor.fullname" . }}-headless
+  labels:
+    {{- include "qualor.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "qualor.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- end }}

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Acme.Store/Acme.Store.csproj" />
+  <Project Path="tests/Acme.Store.Tests/Acme.Store.Tests.csproj" />
+</Solution>

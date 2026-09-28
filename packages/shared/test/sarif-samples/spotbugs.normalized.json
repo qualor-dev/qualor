@@ -1,0 +1,82 @@
+{
+  "version": "4.10.4",
+  "rules": [
+    {
+      "id": "ES_COMPARING_PARAMETER_STRING_WITH_EQ",
+      "shortDescription": "Comparison of String parameter using == or !=.",
+      "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#ES_COMPARING_PARAMETER_STRING_WITH_EQ",
+      "quality": "maintainability",
+      "kind": "issue",
+      "tags": [
+        "BAD_PRACTICE"
+      ],
+      "cwe": [
+        595
+      ]
+    },
+    {
+      "id": "UUF_UNUSED_FIELD",
+      "shortDescription": "Unused field.",
+      "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#UUF_UNUSED_FIELD",
+      "quality": "maintainability",
+      "kind": "issue",
+      "tags": [
+        "PERFORMANCE"
+      ],
+      "cwe": [
+        563
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "engineId": "spotbugs",
+      "ruleId": "ES_COMPARING_PARAMETER_STRING_WITH_EQ",
+      "message": "Comparison of String parameter using == or !=",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/Calculator.java",
+        "startLine": 15,
+        "endLine": 15
+      },
+      "lineHash": "b8d4150b4edec70032761c3ff1a5ae47",
+      "contextHash": "4013bccfd95acb15c80c6941b9478017",
+      "snippet": {
+        "startLine": 12,
+        "lines": [
+          "    }",
+          "",
+          "    public boolean sameName(String a, String b) {",
+          "        return a == b;",
+          "    }",
+          "",
+          "    public int max(int a, int b) {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "UUF_UNUSED_FIELD",
+      "message": "Unused field",
+      "severity": "low",
+      "location": {
+        "path": "src/main/java/com/acme/Calculator.java",
+        "startLine": 1,
+        "endLine": 1
+      },
+      "lineHash": "5511263a4920eb6e5037040c598ac285",
+      "contextHash": "add62b96f5a4bea7ff2278a8fa785aea",
+      "snippet": {
+        "startLine": 1,
+        "lines": [
+          "package com.acme;",
+          "",
+          "public class Calculator {",
+          "    private int unusedCounter;"
+        ]
+      }
+    }
+  ],
+  "warnings": [],
+  "secretRegions": []
+}

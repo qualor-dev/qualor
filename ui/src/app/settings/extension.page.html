@@ -1,0 +1,17 @@
+@if (!instanceAdmin()) {
+  <p class="muted" i18n="@@extension.adminsOnly">
+    Only instance administrators manage enterprise features.
+  </p>
+} @else if (loadError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (extension(); as e) {
+  <h2>{{ e.label }}</h2>
+  <p class="muted" i18n="@@extension.unavailable">
+    This feature's screen is not available in this version of the web UI.
+  </p>
+} @else if (loaded()) {
+  <h2 i18n="@@extension.notFound">Not found</h2>
+  <p class="muted" i18n="@@extension.notFoundHint">
+    No enabled enterprise feature has a settings page with this address.
+  </p>
+}

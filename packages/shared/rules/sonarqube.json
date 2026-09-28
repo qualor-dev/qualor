@@ -1,0 +1,151 @@
+{
+  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. A curated entry stays reviewed:false until a person has compared both rules' public documentation; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses; cs profiles stay unsupported and csharpsquid unmapped.",
+  "languages": {
+    "js": { "language": "javascript", "engines": ["eslint"] },
+    "ts": { "language": "typescript", "engines": ["eslint"] },
+    "java": { "language": "java", "engines": ["pmd", "spotbugs"] }
+  },
+  "aliases": { "squid": "java" },
+  "repositories": [
+    {
+      "repository": "external_eslint_repo",
+      "engine": "eslint",
+      "reason": "ESLint reports imported into SonarQube keep ESLint's rule ids."
+    },
+    {
+      "repository": "external_pmd",
+      "engine": "pmd",
+      "reason": "PMD reports imported by the Java analyzer keep PMD's rule names."
+    },
+    {
+      "repository": "external_spotbugs",
+      "engine": "spotbugs",
+      "reason": "SpotBugs reports imported by the Java analyzer keep the bug pattern types."
+    },
+    {
+      "repository": "external_roslyn",
+      "engine": "roslyn",
+      "reason": "Roslyn analyzer issues imported into SonarQube keep the analyzer's diagnostic ids."
+    },
+    {
+      "repository": "pmd",
+      "engine": "pmd",
+      "reason": "The community PMD plugin uses PMD's rule names as rule ids."
+    },
+    {
+      "repository": "findbugs",
+      "engine": "spotbugs",
+      "reason": "The community SpotBugs plugin uses bug pattern types as rule ids."
+    },
+    {
+      "repository": "fb-contrib",
+      "engine": "spotbugs",
+      "reason": "The fb-contrib patterns of the community SpotBugs plugin keep their pattern types."
+    },
+    {
+      "repository": "findsecbugs",
+      "engine": "spotbugs",
+      "reason": "The Find Security Bugs patterns of the community SpotBugs plugin keep their pattern types."
+    },
+    {
+      "repository": "findsecbugs-jsp",
+      "engine": "spotbugs",
+      "reason": "The JSP patterns of Find Security Bugs in the community SpotBugs plugin keep their pattern types."
+    },
+    {
+      "repository": "pmd-unit-tests",
+      "engine": "pmd",
+      "reason": "The unit-test rules of the community PMD plugin use PMD's rule names as rule ids."
+    }
+  ],
+  "rules": [
+    {
+      "sonar": ["javascript:S1440", "typescript:S1440"],
+      "qualor": ["eslint:eqeqeq"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both ask for strict equality; SonarQube allows == null, eqeqeq by default does not."
+    },
+    {
+      "sonar": ["javascript:S3504", "typescript:S3504"],
+      "qualor": ["eslint:no-var"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag var declarations."
+    },
+    {
+      "sonar": ["javascript:S1186"],
+      "qualor": ["eslint:no-empty-function"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag functions with an empty body."
+    },
+    {
+      "sonar": ["typescript:S1186"],
+      "qualor": ["eslint:@typescript-eslint/no-empty-function"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag functions with an empty body; the typescript-eslint rule knows TypeScript syntax."
+    },
+    {
+      "sonar": ["javascript:S1143", "typescript:S1143"],
+      "qualor": ["eslint:no-unsafe-finally"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag jumps out of a finally block."
+    },
+    {
+      "sonar": ["javascript:S108", "typescript:S108"],
+      "qualor": ["eslint:no-empty"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag empty blocks; the two rules' exceptions differ."
+    },
+    {
+      "sonar": ["javascript:S1481", "typescript:S1481"],
+      "qualor": ["eslint:no-unused-vars", "eslint:@typescript-eslint/no-unused-vars"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag unused local variables; the ESLint rules also cover parameters and more."
+    },
+    {
+      "sonar": ["java:S1481"],
+      "qualor": ["pmd:UnusedLocalVariable"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag unused local variables; the two rules count a variable as used differently."
+    },
+    {
+      "sonar": ["java:S1068"],
+      "qualor": ["pmd:UnusedPrivateField"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag unused private fields; the two rules exempt different fields."
+    },
+    {
+      "sonar": ["java:S106"],
+      "qualor": ["pmd:SystemPrintln"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag writing to the standard output streams."
+    },
+    {
+      "sonar": ["java:S4973"],
+      "qualor": [
+        "pmd:UseEqualsToCompareStrings",
+        "spotbugs:ES_COMPARING_STRINGS_WITH_EQ",
+        "spotbugs:ES_COMPARING_PARAMETER_STRING_WITH_EQ"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "All flag comparing strings by reference; the SonarQube rule also covers boxed types."
+    },
+    {
+      "sonar": ["java:S108"],
+      "qualor": ["pmd:EmptyCatchBlock", "pmd:EmptyControlStatement"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "All flag empty blocks; each PMD rule covers only some kinds of block."
+    }
+  ]
+}

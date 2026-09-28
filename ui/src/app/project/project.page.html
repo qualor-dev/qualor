@@ -1,0 +1,48 @@
+@if (errorMessage(); as message) {
+  <h1 i18n="@@project.unavailable">Project unavailable</h1>
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (current(); as p) {
+  <header class="hero-band">
+    <div class="page-header">
+      <div>
+        <span class="eyebrow" i18n="@@project.eyebrow">Project</span>
+        <h1>{{ p.name }}</h1>
+        <code>{{ p.key }}</code>
+      </div>
+    </div>
+    <nav class="tabs" aria-label="Project" i18n-aria-label="@@project.tabs">
+      <a
+        routerLink="."
+        routerLinkActive="active"
+        ariaCurrentWhenActive="page"
+        [routerLinkActiveOptions]="{ exact: true }"
+        i18n="@@project.tab.overview"
+        >Overview</a
+      >
+      <a
+        routerLink="branches"
+        routerLinkActive="active"
+        ariaCurrentWhenActive="page"
+        i18n="@@project.tab.branches"
+        >Branches and merge requests</a
+      >
+      <a
+        routerLink="issues"
+        routerLinkActive="active"
+        ariaCurrentWhenActive="page"
+        i18n="@@project.tab.issues"
+        >Issues</a
+      >
+      @if (showAccess()) {
+        <a
+          routerLink="access"
+          routerLinkActive="active"
+          ariaCurrentWhenActive="page"
+          i18n="@@project.tab.access"
+          >Access</a
+        >
+      }
+    </nav>
+  </header>
+  <router-outlet />
+}

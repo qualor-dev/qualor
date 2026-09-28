@@ -1,0 +1,17 @@
+{{- if ne .Values.database.mode "embedded" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qualor.fullname" . }}
+  labels:
+    {{- include "qualor.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "qualor.selectorLabels" . | nindent 6 }}
+  template:
+    {{- include "qualor.podTemplate" . | nindent 4 }}
+{{- end }}

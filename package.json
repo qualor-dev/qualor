@@ -1,0 +1,91 @@
+{
+  "name": "qualor",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@xmldom/xmldom": "0.8.15"
+    },
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "ignoredBuiltDependencies": [
+      "@parcel/watcher",
+      "cpu-features",
+      "lmdb",
+      "msgpackr-extract",
+      "protobufjs",
+      "ssh2",
+      "tree-sitter-java",
+      "tree-sitter-javascript",
+      "tree-sitter-typescript"
+    ],
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "openapi-typescript>typescript": "6"
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -b && pnpm --filter @qualor/ui typecheck",
+    "test": "vitest run && pnpm --filter @qualor/ui test",
+    "test:coverage": "vitest run --coverage && pnpm --filter @qualor/ui test",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "schemas": "pnpm --filter @qualor/shared schemas",
+    "fixtures": "tsx tools/fixtures/run.ts",
+    "gitlab:real": "tsx tools/gitlab/real.ts",
+    "sonar:live": "vitest run --project sonar-live",
+    "llm:live": "vitest run --project llm-live",
+    "sso:keycloak": "vitest run --project keycloak",
+    "bench": "pnpm --filter @qualor/cli bench",
+    "openapi": "pnpm --filter @qualor/server openapi",
+    "ui:build": "pnpm --filter @qualor/ui build",
+    "ui:e2e": "pnpm --filter @qualor/ui e2e",
+    "ui:screenshots": "pnpm --filter @qualor/ui screenshots",
+    "deploy:smoke": "tsx tools/deploy/smoke.ts",
+    "dogfood": "tsx tools/deploy/dogfood.ts",
+    "deploy:exit-test": "tsx tools/deploy/dogfood.ts --exit-test",
+    "deploy:screenshots": "tsx tools/deploy/screenshots.ts",
+    "deploy:sources": "tsx tools/deploy/sources-fetch.ts",
+    "trivy-db:pin": "tsx tools/analyzers/trivy-db-pin.ts",
+    "deploy:debian-sources": "tsx tools/deploy/debian-sources-gen.ts",
+    "deploy:release-images": "tsx tools/deploy/release-images.ts",
+    "deploy:scanner-dotnet-check": "tsx tools/deploy/scanner-dotnet-check.ts",
+    "deploy:embedded-check": "tsx tools/deploy/embedded-check.ts",
+    "release:tools": "tsx tools/release/probe.ts",
+    "release:version": "tsx tools/release/set-version.ts",
+    "helm:test": "tsx tools/release/test-tools.ts tools/helm",
+    "helm:smoke": "tsx tools/helm/smoke.ts",
+    "release:test": "tsx tools/release/test-tools.ts",
+    "release:verify": "tsx tools/release/verify-cli.ts",
+    "release:dry-run": "tsx tools/release/dry-run.ts",
+    "release:publish": "tsx tools/release/publish.ts",
+    "license:keygen": "tsx tools/license/cli.ts keygen",
+    "license:sign": "tsx tools/license/cli.ts sign",
+    "license:inspect": "tsx tools/license/cli.ts inspect"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@microsoft/eslint-formatter-sarif": "^3.1.0",
+    "@qualor/shared": "workspace:*",
+    "@types/node": "^22",
+    "@vitest/coverage-v8": "^5.0.1",
+    "ajv": "8.20.0",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.8",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^5.0.1",
+    "yaml": "^2.9.1"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "paging": { "pageIndex": 1, "pageSize": 500, "total": 1 },
+  "components": [{ "key": "acme:shop", "name": "Shop", "qualifier": "TRK", "project": "acme:shop" }]
+}

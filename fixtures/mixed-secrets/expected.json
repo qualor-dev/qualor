@@ -1,0 +1,37 @@
+{
+  "description": "Mixed TS/Java repo with a fake secret: 1 Gitleaks finding, 3 Semgrep findings, Cobertura coverage",
+  "engines": ["gitleaks", "semgrep"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "gitleaks:generic-api-key", "path": "src/config.ts", "startLine": 2, "severity": "blocker", "quality": "security" },
+    { "ruleKey": "semgrep:ts-eval", "path": "src/run.ts", "startLine": 2, "severity": "high", "quality": "security" },
+    { "ruleKey": "semgrep:java-runtime-exec", "path": "java/src/main/java/com/acme/Shell.java", "startLine": 7, "severity": "medium", "quality": "security" },
+    { "ruleKey": "semgrep:hardcoded-api-key", "path": "src/config.ts", "startLine": 2, "severity": "high", "quality": "security" }
+  ],
+  "files": {
+    "src/config.ts": { "language": "typescript", "kind": "main", "lines": 5, "functions": 1 },
+    "src/run.ts": { "language": "typescript", "kind": "main", "lines": 3, "functions": 1, "complexity": 1 },
+    "java/src/main/java/com/acme/Shell.java": { "language": "java", "kind": "main", "lines": 9, "classes": 1, "functions": 1 }
+  },
+  "duplications": [],
+  "coverage": { "lines_to_cover": 4, "uncovered_lines": 1, "conditions_to_cover": 0, "uncovered_conditions": 0, "coverage": 75.0 },
+  "notes": {
+    "cross-engine-duplicate": "gitleaks + semgrep hardcoded-api-key on config.ts:2 are the cross-engine duplicate pair used by data-model §8.5 (the server dedupes it in Phase 1)",
+    "secret-redaction": "the secret must never appear in the report bytes (report-format §10.4; the CLI test lands in Phase 1)",
+    "src/config.ts#functions": "authHeader is the only function -> 1",
+    "src/run.ts#functions": "run is the only function -> 1",
+    "src/run.ts#complexity": "run has no branches -> 1",
+    "java/src/main/java/com/acme/Shell.java#functions": "start is the only method (the implicit default constructor is not counted) -> 1",
+    "java/src/main/java/com/acme/Shell.java#classes": "Shell -> 1",
+    "coverage": "cobertura.xml: src/config.ts lines 1,2,4 (hits 1,1,0), src/run.ts line 2 (hits 1); lines_to_cover = 3+1 = 4, uncovered_lines = 1 (config.ts line 4); no branch data anywhere -> conditions_to_cover=0, uncovered_conditions=0; coverage = 3/4*100 = 75.0",
+    "gitleaks-rule-ids": "captured with ghcr.io/gitleaks/gitleaks:latest (gitleaks version v8.30.1) via `dir /src --report-format sarif`; exactly one result, ruleId 'generic-api-key' on src/config.ts:2 (region startColumn 8, endColumn 42) -- verified with the committed sample",
+    "gitleaks:generic-api-key#severity": "the captured result has no 'level' and its rule has no defaultConfiguration.level; Task 14's ENGINE_MAPPINGS.gitleaks (packages/shared/src/sarif/mappings.ts) always maps gitleaks findings to quality 'security' and severity 'blocker' regardless of SARIF level, so this pins that mapping rather than levelToSeverity",
+    "semgrep-rule-ids": "recaptured with semgrep/semgrep:1.178.0 (and OpenGrep 1.30.0, same ids) via `semgrep scan --config semgrep/rules.yml --sarif --metrics=off --disable-version-check --no-rewrite-rule-ids .`; with --no-rewrite-rule-ids (plan 1D ruling A3) a rule id is exactly the `id:` in rules.yml, independent of where the rule file lives, so the findings use semgrep:ts-eval, semgrep:java-runtime-exec and semgrep:hardcoded-api-key (the Phase 0 capture used the default rule-id rewriting, which prefixed the rule file's directory: semgrep.ts-eval)",
+    "semgrep:ts-eval#severity": "rules.yml sets severity: ERROR -> captured sample rule.defaultConfiguration.level = 'error' -> levelToSeverity('error') = high",
+    "semgrep:java-runtime-exec#severity": "rules.yml sets severity: WARNING -> captured sample rule.defaultConfiguration.level = 'warning' -> levelToSeverity('warning') = medium",
+    "semgrep:hardcoded-api-key#severity": "rules.yml sets severity: ERROR -> captured sample rule.defaultConfiguration.level = 'error' -> levelToSeverity('error') = high",
+    "semgrep#quality": "the captured sample stores category/CWE metadata in rule.properties.tags (e.g. ['CWE-798: Use of Hard-coded Credentials', 'security']) for all three rules, not in rule.properties.category or a top-level field; Task 14's ENGINE_MAPPINGS.semgrep reads tags from there and maps the 'security' tag (or any CWE-* tag) to quality 'security'",
+    "semgrep-uris": "the captured sample's artifactLocation.uri values are repo-relative (e.g. 'src/run.ts', 'java/src/main/java/com/acme/Shell.java') with uriBaseId '%SRCROOT%' and no originalUriBaseIds entry for it, so the normaliser resolves them as plain relative paths without needing repoRoot",
+    "secret-in-samples": "the fake secret string appears verbatim in the raw captured gitleaks.sarif and semgrep.sarif samples (only in each result's locations[0].physicalLocation.region.snippet.text; neither tool's result message contains it) because these are real, unmodified tool output over the fixture's fake secret; running normalizeSarif on the committed gitleaks.sarif with mapping: { redactRegion: true } and repoRoot '/fixture-root' confirms the secret string is absent from JSON.stringify(out), and both samples produce no FINDING_PATH_INVALID or HASH_FALLBACK warnings"
+  }
+}

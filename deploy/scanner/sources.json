@@ -1,0 +1,959 @@
+{
+  "$comment": "Pinned corresponding source of the copyleft components of the qualor/scanner image (rulings L1 and L2). pnpm deploy:sources downloads and verifies them into .tmp/scanner-sources; deploy/scanner/SOURCES.md is generated from this file and debian-sources.json (pnpm deploy:sources --index). OpenGrep's tests/semgrep-rules submodule is test data and is left out. On a version bump, re-derive every entry of that component: the tag archive, the commits Bun pins, the OpenGrep submodule gitlinks, and what the release binaries link or bundle (see deploy/README.md). For Trivy (Apache-2.0), only the copyleft (MPL-2.0) Go modules its binary compiles in are pinned.",
+  "sources": [
+    {
+      "file": "opengrep-1.30.0.tar.gz",
+      "name": "OpenGrep",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "v1.30.0",
+      "licence": "LGPL-2.1",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/opengrep/archive/refs/tags/v1.30.0.tar.gz"
+      },
+      "sha256": "076ce654391f1164ca3752be5936c8287194ce06a99b9d4aad0c6d58d18283e4",
+      "pinnedAt": "tools/analyzers/install.sh OPENGREP_VERSION; the tag is commit acf67b45c97c4b63626536605c77064ef536806d",
+      "why": "The scanner image ships the upstream opengrep 1.30.0 binary (tools/analyzers/install.sh). This is the source tree of its tag; GitHub's tag archive leaves the git submodules out, so they follow as separate archives."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-interfaces-5e705660dc73.tar.gz",
+      "name": "OpenGrep submodule cli/src/semgrep/semgrep_interfaces",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "5e705660dc7381d4c4c247fa83c4c5860e61d555",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-interfaces/archive/5e705660dc7381d4c4c247fa83c4c5860e61d555.tar.gz"
+      },
+      "sha256": "60a283e9a840f1be891ff0ab4794ba7555b443b8415be12bdcf4f92433329e66",
+      "pinnedAt": "the gitlink cli/src/semgrep/semgrep_interfaces in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule cli/src/semgrep/semgrep_interfaces at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-apex-f2a235f99737.tar.gz",
+      "name": "OpenGrep submodule languages/apex/tree-sitter/semgrep-apex",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "f2a235f997379033a8c64f0962d5ef1252629a0a",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-apex/archive/f2a235f997379033a8c64f0962d5ef1252629a0a.tar.gz"
+      },
+      "sha256": "93fcafc1fcf0a4648befffdac5d300fb312329e16913ba1f73a8cd31af90e90b",
+      "pinnedAt": "the gitlink languages/apex/tree-sitter/semgrep-apex in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/apex/tree-sitter/semgrep-apex at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-bash-e6f3944f59b6.tar.gz",
+      "name": "OpenGrep submodule languages/bash/tree-sitter/semgrep-bash",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "e6f3944f59b684b212a37bdec6b113621a1ad9ea",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-bash/archive/e6f3944f59b684b212a37bdec6b113621a1ad9ea.tar.gz"
+      },
+      "sha256": "b48d2337e20cdf7fd30b315d294ae09f25a23ff53ef5964842ee9ca122ea6ef6",
+      "pinnedAt": "the gitlink languages/bash/tree-sitter/semgrep-bash in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/bash/tree-sitter/semgrep-bash at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-cairo-3e4d0ded8fc6.tar.gz",
+      "name": "OpenGrep submodule languages/cairo/tree-sitter/semgrep-cairo",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "3e4d0ded8fc62dbb03232193721bf6bb376bfc62",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-cairo/archive/3e4d0ded8fc62dbb03232193721bf6bb376bfc62.tar.gz"
+      },
+      "sha256": "54cf37ada41e30352b63b45a2a044dd2c755f6b25a6604d6c031943fabd0312a",
+      "pinnedAt": "the gitlink languages/cairo/tree-sitter/semgrep-cairo in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/cairo/tree-sitter/semgrep-cairo at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-circom-66a0ff265c38.tar.gz",
+      "name": "OpenGrep submodule languages/circom/tree-sitter/semgrep-circom",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "66a0ff265c38a31240162d0011190b5bdd85efd5",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-circom/archive/66a0ff265c38a31240162d0011190b5bdd85efd5.tar.gz"
+      },
+      "sha256": "d8d00a4ad0e368ea854549741974719b78fd075ce2ac3d177dc9f6f757f6c1d0",
+      "pinnedAt": "the gitlink languages/circom/tree-sitter/semgrep-circom in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/circom/tree-sitter/semgrep-circom at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-cpp-8625a5341aeb.tar.gz",
+      "name": "OpenGrep submodule languages/cpp/tree-sitter/semgrep-cpp",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "8625a5341aebb93c62eb953f6a66fc1083dffe84",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-cpp/archive/8625a5341aebb93c62eb953f6a66fc1083dffe84.tar.gz"
+      },
+      "sha256": "a6acad0e1d95487fc69c97c77896c0a252b04f0e401d798ba4659f298df1af1c",
+      "pinnedAt": "the gitlink languages/cpp/tree-sitter/semgrep-cpp in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/cpp/tree-sitter/semgrep-cpp at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-opengrep-crystal-f279484792c2.tar.gz",
+      "name": "OpenGrep submodule languages/crystal/tree-sitter/opengrep-crystal",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "f279484792c259278c4e135e8f1048bbcea7c358",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/opengrep-crystal/archive/f279484792c259278c4e135e8f1048bbcea7c358.tar.gz"
+      },
+      "sha256": "10522b30596a5d7893fa659ab4a2a028bd9f8e510424304228e7a557a2d1c479",
+      "pinnedAt": "the gitlink languages/crystal/tree-sitter/opengrep-crystal in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/crystal/tree-sitter/opengrep-crystal at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-c-sharp-e507514adbbc.tar.gz",
+      "name": "OpenGrep submodule languages/csharp/tree-sitter/semgrep-c-sharp",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "e507514adbbcd443d05deb6db78022a9aec065f2",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-c-sharp/archive/e507514adbbcd443d05deb6db78022a9aec065f2.tar.gz"
+      },
+      "sha256": "6e85407129a1bd53c9e5053a0c281ff94aa98ab42b5a5e1c3e0ba8fad7285f0c",
+      "pinnedAt": "the gitlink languages/csharp/tree-sitter/semgrep-c-sharp in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/csharp/tree-sitter/semgrep-c-sharp at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-dart-cb3c48321fda.tar.gz",
+      "name": "OpenGrep submodule languages/dart/tree-sitter/semgrep-dart",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "cb3c48321fdab5485d2c1f92c99c78425543e59d",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-dart/archive/cb3c48321fdab5485d2c1f92c99c78425543e59d.tar.gz"
+      },
+      "sha256": "5b2dd4aee608ecbfa57ff837a829e7c546fbf809c55af61e370d2af7d7a43067",
+      "pinnedAt": "the gitlink languages/dart/tree-sitter/semgrep-dart in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/dart/tree-sitter/semgrep-dart at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-dockerfile-e3a773f20c7f.tar.gz",
+      "name": "OpenGrep submodule languages/dockerfile/tree-sitter/semgrep-dockerfile",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "e3a773f20c7fee9558529e6442e164c2cced9fb9",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-dockerfile/archive/e3a773f20c7fee9558529e6442e164c2cced9fb9.tar.gz"
+      },
+      "sha256": "9ccebcb7da26a37a0c14331aeeacb9e6a62b153d1043cabbfa4aaaa73fe4cd49",
+      "pinnedAt": "the gitlink languages/dockerfile/tree-sitter/semgrep-dockerfile in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/dockerfile/tree-sitter/semgrep-dockerfile at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-elixir-681f90052720.tar.gz",
+      "name": "OpenGrep submodule languages/elixir/tree-sitter/semgrep-elixir",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "681f90052720f4bc1c2fd2c2547771f6029917f0",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-elixir/archive/681f90052720f4bc1c2fd2c2547771f6029917f0.tar.gz"
+      },
+      "sha256": "822df03fa3504bb78a08d39b620747c4ed8884880ae6c1d98e261b024aaba381",
+      "pinnedAt": "the gitlink languages/elixir/tree-sitter/semgrep-elixir in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/elixir/tree-sitter/semgrep-elixir at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-go-b36632089866.tar.gz",
+      "name": "OpenGrep submodule languages/go/tree-sitter/semgrep-go",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "b36632089866c9223ce5bd31a0353627a48f50f9",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-go/archive/b36632089866c9223ce5bd31a0353627a48f50f9.tar.gz"
+      },
+      "sha256": "1e6a70e79125d549f3ee6e26d0831f656383be49092606c83d900395b0ce09f7",
+      "pinnedAt": "the gitlink languages/go/tree-sitter/semgrep-go in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/go/tree-sitter/semgrep-go at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-hack-f1adb0ae2b0e.tar.gz",
+      "name": "OpenGrep submodule languages/hack/tree-sitter/semgrep-hack",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "f1adb0ae2b0e77a5181de5a98f55055435b0aa57",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-hack/archive/f1adb0ae2b0e77a5181de5a98f55055435b0aa57.tar.gz"
+      },
+      "sha256": "ca76745b615188585e52b796e320d92033c4c44859010d13124420db90038a6b",
+      "pinnedAt": "the gitlink languages/hack/tree-sitter/semgrep-hack in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/hack/tree-sitter/semgrep-hack at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-html-827d34d59301.tar.gz",
+      "name": "OpenGrep submodule languages/html/tree-sitter/semgrep-html",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "827d34d593016cd34324f3a3b46248022cf613b6",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-html/archive/827d34d593016cd34324f3a3b46248022cf613b6.tar.gz"
+      },
+      "sha256": "743f55b5ae21846b60d73cccfbb4df04dd530ddb07c2705c9f72b33bf1467c55",
+      "pinnedAt": "the gitlink languages/html/tree-sitter/semgrep-html in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/html/tree-sitter/semgrep-html at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-java-7b6cb9d41b74.tar.gz",
+      "name": "OpenGrep submodule languages/java/tree-sitter/semgrep-java",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "7b6cb9d41b74a6f21133cc9a9cc0a2e60ff2af6f",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-java/archive/7b6cb9d41b74a6f21133cc9a9cc0a2e60ff2af6f.tar.gz"
+      },
+      "sha256": "bc1b18dc45655f579f39d510f2247ee6d4831088ab81bf13f6382269f706b17a",
+      "pinnedAt": "the gitlink languages/java/tree-sitter/semgrep-java in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/java/tree-sitter/semgrep-java at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-jsonnet-a9e8d4c35acf.tar.gz",
+      "name": "OpenGrep submodule languages/jsonnet/tree-sitter/semgrep-jsonnet",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "a9e8d4c35acfa457e6649f4f54c467f5575e6777",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-jsonnet/archive/a9e8d4c35acfa457e6649f4f54c467f5575e6777.tar.gz"
+      },
+      "sha256": "b10d7a5df72e14f18b47553ea780ab3fde8cea2f26b932a70342b224e3bc249e",
+      "pinnedAt": "the gitlink languages/jsonnet/tree-sitter/semgrep-jsonnet in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/jsonnet/tree-sitter/semgrep-jsonnet at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-julia-31bcd2dcaa9b.tar.gz",
+      "name": "OpenGrep submodule languages/julia/tree-sitter/semgrep-julia",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "31bcd2dcaa9beb1580f60c81a133037f7fad0a40",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-julia/archive/31bcd2dcaa9beb1580f60c81a133037f7fad0a40.tar.gz"
+      },
+      "sha256": "0c0ad32377bc72f3ede2b331a544f7c200a8ed41e14a2f66576404e099f73d6a",
+      "pinnedAt": "the gitlink languages/julia/tree-sitter/semgrep-julia in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/julia/tree-sitter/semgrep-julia at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-kotlin-97203482e0aa.tar.gz",
+      "name": "OpenGrep submodule languages/kotlin/tree-sitter/semgrep-kotlin",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "97203482e0aa1a88f25bfe4880fc05230524eb5a",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-kotlin/archive/97203482e0aa1a88f25bfe4880fc05230524eb5a.tar.gz"
+      },
+      "sha256": "18a9e511d9510494b91835b337266a0284517f2a7f86ab56aa4e0b2da85c252b",
+      "pinnedAt": "the gitlink languages/kotlin/tree-sitter/semgrep-kotlin in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/kotlin/tree-sitter/semgrep-kotlin at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-clojure-0c4985d4f26c.tar.gz",
+      "name": "OpenGrep submodule languages/lisp/tree-sitter/semgrep-clojure",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "0c4985d4f26c019ca15ff5ea7b8b525f4128e0df",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-clojure/archive/0c4985d4f26c019ca15ff5ea7b8b525f4128e0df.tar.gz"
+      },
+      "sha256": "b24f6f316d91b0493d65098b716c5c04799768fb1a86770d10bea9d8df5818e7",
+      "pinnedAt": "the gitlink languages/lisp/tree-sitter/semgrep-clojure in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/lisp/tree-sitter/semgrep-clojure at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-lua-073f283a0fa4.tar.gz",
+      "name": "OpenGrep submodule languages/lua/tree-sitter/semgrep-lua",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "073f283a0fa4144f941199e869fd787d8e3ce338",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-lua/archive/073f283a0fa4144f941199e869fd787d8e3ce338.tar.gz"
+      },
+      "sha256": "be3287ccf09b24b3658d2b88b24c0afe05b8bbdc51a0c2aed6ba19f2f4d4ac36",
+      "pinnedAt": "the gitlink languages/lua/tree-sitter/semgrep-lua in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/lua/tree-sitter/semgrep-lua at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-move-on-aptos-74276d40735c.tar.gz",
+      "name": "OpenGrep submodule languages/move_on_aptos/tree-sitter/semgrep-move-on-aptos",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "74276d40735ccb584d341144308f84c31b0384f9",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-move-on-aptos/archive/74276d40735ccb584d341144308f84c31b0384f9.tar.gz"
+      },
+      "sha256": "aff20c85cb8a8b1e63f08797dff9c06f8b22486efad013fd19e24f992cafb3e3",
+      "pinnedAt": "the gitlink languages/move_on_aptos/tree-sitter/semgrep-move-on-aptos in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/move_on_aptos/tree-sitter/semgrep-move-on-aptos at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-move-on-sui-f1fc8f468c21.tar.gz",
+      "name": "OpenGrep submodule languages/move_on_sui/tree-sitter/semgrep-move-on-sui",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "f1fc8f468c21e26d0c3dfafdea7e9888bdfb97e8",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-move-on-sui/archive/f1fc8f468c21e26d0c3dfafdea7e9888bdfb97e8.tar.gz"
+      },
+      "sha256": "0e3ba41e98c0e21c14b78fdb2302b83d01d8afbc5653343059e914594cb50d8d",
+      "pinnedAt": "the gitlink languages/move_on_sui/tree-sitter/semgrep-move-on-sui in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/move_on_sui/tree-sitter/semgrep-move-on-sui at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-ocaml-ee015c07fc8b.tar.gz",
+      "name": "OpenGrep submodule languages/ocaml/tree-sitter/semgrep-ocaml",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "ee015c07fc8b99250875d796da5aec0888eaa8fe",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-ocaml/archive/ee015c07fc8b99250875d796da5aec0888eaa8fe.tar.gz"
+      },
+      "sha256": "1b11b9510fb263ef13c54c7cba8b433edfa7018463a1bca91f0a63f9790770d7",
+      "pinnedAt": "the gitlink languages/ocaml/tree-sitter/semgrep-ocaml in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/ocaml/tree-sitter/semgrep-ocaml at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-php-0b9dd47725c1.tar.gz",
+      "name": "OpenGrep submodule languages/php/tree-sitter/semgrep-php",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "0b9dd47725c12481017485d9882e375fda26e142",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-php/archive/0b9dd47725c12481017485d9882e375fda26e142.tar.gz"
+      },
+      "sha256": "2ff026d37d4280ecea12a2a89051e4c639db40be32eed15a875dc9e05cdbfd55",
+      "pinnedAt": "the gitlink languages/php/tree-sitter/semgrep-php in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/php/tree-sitter/semgrep-php at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-promql-a6ac8bf5a35e.tar.gz",
+      "name": "OpenGrep submodule languages/promql/tree-sitter/semgrep-promql",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "a6ac8bf5a35e2078b50098cbb5f64bf259c31875",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-promql/archive/a6ac8bf5a35e2078b50098cbb5f64bf259c31875.tar.gz"
+      },
+      "sha256": "e26752a60165765d45b72a1706d4adaa0fbe0263526fd8391dc427c7585ab1e0",
+      "pinnedAt": "the gitlink languages/promql/tree-sitter/semgrep-promql in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/promql/tree-sitter/semgrep-promql at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-proto-25bae8f9d0b9.tar.gz",
+      "name": "OpenGrep submodule languages/protobuf/tree-sitter/semgrep-proto",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "25bae8f9d0b9f56f4914fd3d2adcee754fd241d8",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-proto/archive/25bae8f9d0b9f56f4914fd3d2adcee754fd241d8.tar.gz"
+      },
+      "sha256": "ad30f15e3e905fdbb06cd71b6443fbea9a7717b67fae8cf63b84dc51e7365a79",
+      "pinnedAt": "the gitlink languages/protobuf/tree-sitter/semgrep-proto in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/protobuf/tree-sitter/semgrep-proto at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-python-444327263390.tar.gz",
+      "name": "OpenGrep submodule languages/python/tree-sitter/semgrep-python",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "444327263390b07b66bb13c0a91848c7767d9af2",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-python/archive/444327263390b07b66bb13c0a91848c7767d9af2.tar.gz"
+      },
+      "sha256": "2de3e3975edd887f67b5f436c1ae650563c9a98b6e4216030950caef5c1c429b",
+      "pinnedAt": "the gitlink languages/python/tree-sitter/semgrep-python in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/python/tree-sitter/semgrep-python at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-ql-853a990a50b7.tar.gz",
+      "name": "OpenGrep submodule languages/ql/tree-sitter/semgrep-ql",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "853a990a50b71f0ca24e3732dccff5c8c54e874d",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-ql/archive/853a990a50b71f0ca24e3732dccff5c8c54e874d.tar.gz"
+      },
+      "sha256": "1826157041e56f5acc0198e81870c6481c15a0680edae1eacbcc2391fb36089f",
+      "pinnedAt": "the gitlink languages/ql/tree-sitter/semgrep-ql in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/ql/tree-sitter/semgrep-ql at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-r-2c556b67422a.tar.gz",
+      "name": "OpenGrep submodule languages/r/tree-sitter/semgrep-r",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "2c556b67422a627e0325589f71fc1394b5750c98",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-r/archive/2c556b67422a627e0325589f71fc1394b5750c98.tar.gz"
+      },
+      "sha256": "579065d0c33dcede54f0839a39767e669d8955886a3c9452d5832f61564fd170",
+      "pinnedAt": "the gitlink languages/r/tree-sitter/semgrep-r in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/r/tree-sitter/semgrep-r at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-ruby-bf09252137a2.tar.gz",
+      "name": "OpenGrep submodule languages/ruby/tree-sitter/semgrep-ruby",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "bf09252137a27dc29a8d9da82d4d5a4527bda46b",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-ruby/archive/bf09252137a27dc29a8d9da82d4d5a4527bda46b.tar.gz"
+      },
+      "sha256": "96a0b79ea6ec04e1525ad65d7db94beacc15198a3ea23da953f41bc42a88f398",
+      "pinnedAt": "the gitlink languages/ruby/tree-sitter/semgrep-ruby in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/ruby/tree-sitter/semgrep-ruby at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-rust-fb6c73fbe4f3.tar.gz",
+      "name": "OpenGrep submodule languages/rust/tree-sitter/semgrep-rust",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "fb6c73fbe4f34592fbbd0ce0f825e224533d47e7",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-rust/archive/fb6c73fbe4f34592fbbd0ce0f825e224533d47e7.tar.gz"
+      },
+      "sha256": "460d3dc01073a8879f021fae4d38a747e970cd09933db1ed8aadb169f1767561",
+      "pinnedAt": "the gitlink languages/rust/tree-sitter/semgrep-rust in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/rust/tree-sitter/semgrep-rust at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-solidity-e101c0c6c8c8.tar.gz",
+      "name": "OpenGrep submodule languages/solidity/tree-sitter/semgrep-solidity",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "e101c0c6c8c86bd5ff02f1d3a737cb3e3bebe498",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-solidity/archive/e101c0c6c8c86bd5ff02f1d3a737cb3e3bebe498.tar.gz"
+      },
+      "sha256": "88b333c8fbdbf656d2883206463c20824e12d6724d0b83e0c934518ec43b54d6",
+      "pinnedAt": "the gitlink languages/solidity/tree-sitter/semgrep-solidity in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/solidity/tree-sitter/semgrep-solidity at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-swift-61d1550d1b4a.tar.gz",
+      "name": "OpenGrep submodule languages/swift/tree-sitter/semgrep-swift",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "61d1550d1b4aee70f7e00457d3121e4f1d3c0d47",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-swift/archive/61d1550d1b4aee70f7e00457d3121e4f1d3c0d47.tar.gz"
+      },
+      "sha256": "32036d15e101073b91dee6ae92962f21719ef8994844af2a0c8f499fe6bb8fd3",
+      "pinnedAt": "the gitlink languages/swift/tree-sitter/semgrep-swift in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/swift/tree-sitter/semgrep-swift at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-hcl-e42e9d924de8.tar.gz",
+      "name": "OpenGrep submodule languages/terraform/tree-sitter/semgrep-hcl",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "e42e9d924de848c784e4ab46c571bff5145d245e",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-hcl/archive/e42e9d924de848c784e4ab46c571bff5145d245e.tar.gz"
+      },
+      "sha256": "4a7c1c6c2077a059df673455d5b37476448c3fed6b61b6dd190d002fcc55ef81",
+      "pinnedAt": "the gitlink languages/terraform/tree-sitter/semgrep-hcl in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/terraform/tree-sitter/semgrep-hcl at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-tsx-a5799ce5d762.tar.gz",
+      "name": "OpenGrep submodule languages/typescript/tree-sitter/semgrep-tsx",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "a5799ce5d762168fe17c94b86ad5f77ee13d2138",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-tsx/archive/a5799ce5d762168fe17c94b86ad5f77ee13d2138.tar.gz"
+      },
+      "sha256": "70e47ce48ea93e45e2d7f04f4aa7aee2e64ce824eecbe326ca47211e595b7a09",
+      "pinnedAt": "the gitlink languages/typescript/tree-sitter/semgrep-tsx in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/typescript/tree-sitter/semgrep-tsx at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-semgrep-typescript-6c288cd9c2fe.tar.gz",
+      "name": "OpenGrep submodule languages/typescript/tree-sitter/semgrep-typescript",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "6c288cd9c2fecf05556be02d540814aa5456ad2b",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/semgrep-typescript/archive/6c288cd9c2fecf05556be02d540814aa5456ad2b.tar.gz"
+      },
+      "sha256": "ceb6c932ef7eec0a749fc82113f90c4f73f7bf35cff0471b326e6bc954ec1b6a",
+      "pinnedAt": "the gitlink languages/typescript/tree-sitter/semgrep-typescript in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule languages/typescript/tree-sitter/semgrep-typescript at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-ocaml-tree-sitter-core-1392efc21e60.tar.gz",
+      "name": "OpenGrep submodule libs/ocaml-tree-sitter-core",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "1392efc21e60d5acde72d0d1c6586f5692fedace",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/opengrep/ocaml-tree-sitter-core/archive/1392efc21e60d5acde72d0d1c6586f5692fedace.tar.gz"
+      },
+      "sha256": "e7d6a605945331e145cb353a28c50a948547bcc52954481b96e59e8be4bda39f",
+      "pinnedAt": "the gitlink libs/ocaml-tree-sitter-core in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule libs/ocaml-tree-sitter-core at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-pcre2-ocaml-4e0a44486bb5.tar.gz",
+      "name": "OpenGrep submodule libs/pcre2",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "4e0a44486bb518b7a24ca11286c4b03a8d51e17e",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/semgrep/pcre2-ocaml/archive/4e0a44486bb518b7a24ca11286c4b03a8d51e17e.tar.gz"
+      },
+      "sha256": "eae7b493875118103166e77731f671dc1ea388ff3b3da8e845660150de9eef44",
+      "pinnedAt": "the gitlink libs/pcre2 in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule libs/pcre2 at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "opengrep-1.30.0-testo-99a0d4f08d9c.tar.gz",
+      "name": "OpenGrep submodule libs/testo",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "99a0d4f08d9cbabc87d10da94a534ce8a1220cd9",
+      "licence": "part of OpenGrep (LGPL-2.1) unless the archive carries its own licence",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/semgrep/testo/archive/99a0d4f08d9cbabc87d10da94a534ce8a1220cd9.tar.gz"
+      },
+      "sha256": "2516b56663afa212cbb0ffdd11cd0cdd9e9512e884a495c18a7d13be2dba8b2c",
+      "pinnedAt": "the gitlink libs/testo in opengrep v1.30.0",
+      "why": "Part of OpenGrep's source tree: the git submodule libs/testo at the commit the v1.30.0 tag records."
+    },
+    {
+      "file": "gmp-6.3.0.tar.xz",
+      "name": "GMP (linked into opengrep-core)",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "6.3.0",
+      "licence": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+      "fetch": {
+        "type": "https",
+        "url": "https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz"
+      },
+      "sha256": "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898",
+      "pinnedAt": "OpenGrep v1.30.0 builds opengrep-core in alpine:3.22 with `make install-deps-ALPINE-for-semgrep-core` (gmp-static) and links it -static; Alpine 3.22 ships gmp-static 6.3.0-r3 (aports main/gmp unchanged on 3.22-stable since 2025-02-10), whose APKBUILD builds this upstream tarball (its sha512 matches the APKBUILD)",
+      "why": "The opengrep-core binary inside the opengrep release statically links GMP: its strings include GMP assertion messages from mu_div_qr.c, mu_divappr_q.c and \"GNU MP: Cannot allocate memory\", and __gmpn_ symbols."
+    },
+    {
+      "file": "gmp-6.3.0-r3.APKBUILD",
+      "name": "Alpine build recipe of GMP 6.3.0-r3",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "187e3f7791d3390e18bc06969a5f34c385fd883e",
+      "licence": "MIT (Alpine aports)",
+      "fetch": {
+        "type": "https",
+        "url": "https://gitlab.alpinelinux.org/alpine/aports/-/raw/187e3f7791d3390e18bc06969a5f34c385fd883e/main/gmp/APKBUILD"
+      },
+      "sha256": "66338372c68d766924dd517cde70dca76722becfb63102a4f1b1f7d29a413a88",
+      "pinnedAt": "the last aports commit touching main/gmp on the 3.22-stable branch",
+      "why": "How Alpine configured and built the static GMP that opengrep-core links (no patches are applied)."
+    },
+    {
+      "file": "readline-7.0-10.el8.src.rpm",
+      "name": "GNU Readline (bundled by the opengrep launcher)",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "7.0-10.el8",
+      "licence": "GPL-3.0-or-later",
+      "fetch": {
+        "type": "https",
+        "url": "https://vault.almalinux.org/8.10/BaseOS/Source/Packages/readline-7.0-10.el8.src.rpm"
+      },
+      "sha256": "0114c765f8592cfa4ebe79561cf45dccd53e110adbb1661b6e395384ef973cdf",
+      "pinnedAt": "the ELF build ID of the bundled libreadline.so.7 (cd1bc007ec2e558d662585bf8c5bbcd2b9526faa) equals that of /usr/lib64/libreadline.so.7.0 of readline-7.0-10.el8 in quay.io/pypa/manylinux_2_28_x86_64:2026.09.05-1 (AlmaLinux 8.10), where OpenGrep builds its release binary",
+      "why": "The opengrep release binary is a Nuitka one-file Python program; it unpacks CPython's readline module and the AlmaLinux 8 libreadline.so.7 it links. This is the AlmaLinux source RPM of that library."
+    },
+    {
+      "file": "certifi-2026.7.22.tar.gz",
+      "name": "certifi (Python package in the opengrep launcher)",
+      "component": "opengrep",
+      "componentVersion": "1.30.0",
+      "ref": "2026.7.22",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz"
+      },
+      "sha256": "741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55",
+      "pinnedAt": "the bundled certifi/cacert.pem is byte-identical to the one of the certifi 2026.7.22 sdist (and to no other 2026 release)",
+      "why": "The opengrep launcher bundles certifi, the one weak-copyleft (MPL-2.0) Python package it contains. This is its source distribution on PyPI."
+    },
+    {
+      "file": "spotbugs-4.10.4-source.zip",
+      "name": "SpotBugs",
+      "component": "spotbugs",
+      "componentVersion": "4.10.4",
+      "ref": "4.10.4",
+      "licence": "LGPL-2.1",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/spotbugs/spotbugs/releases/download/4.10.4/spotbugs-4.10.4-source.zip"
+      },
+      "sha256": "990b8b2cb2e959a772f0ab8503dd1150751f0ff222a449276a35a43aab004fd2",
+      "pinnedAt": "tools/analyzers/install.sh SPOTBUGS_VERSION; the source archive SpotBugs attaches to its release",
+      "why": "The scanner image ships the upstream SpotBugs 4.10.4 distribution (tools/analyzers/install.sh). This is the source archive SpotBugs publishes with that release."
+    },
+    {
+      "file": "Saxon-HE-12.10-sources.jar",
+      "name": "Saxon-HE (bundled by SpotBugs and PMD)",
+      "component": "spotbugs",
+      "componentVersion": "4.10.4",
+      "ref": "12.10",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://repo1.maven.org/maven2/net/sf/saxon/Saxon-HE/12.10/Saxon-HE-12.10-sources.jar"
+      },
+      "sha256": "967e316e399138d286941641826c5100d8d8400171d426a446fd36ca943b626b",
+      "pinnedAt": "the Saxon-HE-12.10.jar in the lib/ directories of SpotBugs 4.10.4 and PMD 7.27.0; Maven Central's .sha1 of this file matches",
+      "why": "SpotBugs and PMD ship the unmodified Saxon-HE jar, which is under the MPL-2.0; this is its source jar on Maven Central."
+    },
+    {
+      "file": "rhino-1.7.15.1-sources.jar",
+      "name": "Rhino (bundled by PMD)",
+      "component": "pmd",
+      "componentVersion": "7.27.0",
+      "ref": "1.7.15.1",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.15.1/rhino-1.7.15.1-sources.jar"
+      },
+      "sha256": "bb6c4b860ea690199b5da29789244eba2f82c4ced9e11ffa4f1b23e386161e94",
+      "pinnedAt": "the rhino-1.7.15.1.jar in PMD 7.27.0's lib/ directory; Maven Central's .sha1 of this file matches",
+      "why": "PMD ships the unmodified Rhino jar, which is under the MPL-2.0; this is its source jar on Maven Central."
+    },
+    {
+      "file": "jsr250-api-1.0-sources.jar",
+      "name": "JSR-250 annotations API (bundled by PMD)",
+      "component": "pmd",
+      "componentVersion": "7.27.0",
+      "ref": "1.0",
+      "licence": "CDDL-1.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://repo1.maven.org/maven2/javax/annotation/jsr250-api/1.0/jsr250-api-1.0-sources.jar"
+      },
+      "sha256": "025c47d76c60199381be07012a0c5f9e74661aac5bd67f5aec847741c5b7f838",
+      "pinnedAt": "the jsr250-api-1.0.jar in PMD 7.27.0's lib/ directory; Maven Central's .sha1 of this file matches",
+      "why": "PMD ships the unmodified jsr250-api jar, which is under the CDDL-1.0; this is its source jar on Maven Central."
+    },
+    {
+      "file": "webkit-4d5e75ebd84a.tar",
+      "name": "WebKit (JavaScriptCore), oven-sh fork",
+      "component": "bun",
+      "componentVersion": "1.3.13",
+      "ref": "4d5e75ebd84a14edbc7ae264245dcd77fe597c10",
+      "licence": "LGPL-2.0 (JavaScriptCore), BSD-2-Clause and others",
+      "fetch": {
+        "type": "git-archive",
+        "repository": "https://github.com/oven-sh/WebKit.git",
+        "commit": "4d5e75ebd84a14edbc7ae264245dcd77fe597c10",
+        "exclude": [
+          "JSTests",
+          "LayoutTests",
+          "ManualTests",
+          "PerformanceTests",
+          "WebDriverTests",
+          "Websites"
+        ]
+      },
+      "sha256": "c66cff4d1a04c4051d11c2f10b7b6cf98f20450c3ef10675008e726b831625c9",
+      "pinnedAt": "WEBKIT_VERSION in scripts/build/deps/webkit.ts of oven-sh/bun at bun-v1.3.13",
+      "why": "The qualor binary is Bun 1.3.13, which links JavaScriptCore built from oven-sh/WebKit at this commit. GitHub refuses to generate archives of this repository, so this is `git archive` of the commit without the test suites, benchmarks and website."
+    },
+    {
+      "file": "tinycc-12882eee073c.tar.gz",
+      "name": "TinyCC, oven-sh fork",
+      "component": "bun",
+      "componentVersion": "1.3.13",
+      "ref": "12882eee073cfe5c7621bcfadf679e1372d4537b",
+      "licence": "LGPL-2.1",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/oven-sh/tinycc/archive/12882eee073cfe5c7621bcfadf679e1372d4537b.tar.gz"
+      },
+      "sha256": "6b50485fcbbfa90a99c56e8e2b6a92014dcd34377d5edb23e1938dc9ec96f0aa",
+      "pinnedAt": "TINYCC_COMMIT in scripts/build/deps/tinycc.ts of oven-sh/bun at bun-v1.3.13",
+      "why": "Bun 1.3.13 links libtcc (for bun:ffi) built from oven-sh/tinycc at this commit, with Bun's patches/tinycc/tcc.h.patch (in the Bun archive)."
+    },
+    {
+      "file": "bun-1.3.13.tar.gz",
+      "name": "Bun",
+      "component": "bun",
+      "componentVersion": "1.3.13",
+      "ref": "bun-v1.3.13",
+      "licence": "MIT (its LICENSE.md lists the bundled parts)",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/oven-sh/bun/archive/refs/tags/bun-v1.3.13.tar.gz"
+      },
+      "sha256": "8cd7b2fd45df28546155f921541c35d2df265a591483853c7c54961ddfbcef7c",
+      "pinnedAt": "BUN_VERSION in cli/scripts/targets.ts; the scanner Dockerfile installs bun@1.3.13",
+      "why": "The runtime of the qualor binary. Its build scripts pin the WebKit and TinyCC commits above, carry the TinyCC patch and tie them into the runtime."
+    },
+    {
+      "file": "OpenJDK17U-jdk-sources_17.0.20_8.tar.gz",
+      "name": "Eclipse Temurin 17 (the JRE)",
+      "component": "temurin",
+      "componentVersion": "17.0.20+8",
+      "ref": "jdk-17.0.20+8",
+      "licence": "GPL-2.0-only WITH Classpath-exception-2.0, and the licences of its bundled parts (legal/ in the JRE)",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20%2B8/OpenJDK17U-jdk-sources_17.0.20_8.tar.gz"
+      },
+      "sha256": "a9fadd969738666d59a241bc6fb01d0963154489d934ee387630dd4dca5e8f54",
+      "pinnedAt": "the eclipse-temurin:17.0.20_8-jre-noble base of deploy/scanner/Dockerfile; Adoptium's own .sha256.txt for this asset has the same digest",
+      "why": "The scanner image copies the Temurin JRE from that image. Adoptium publishes this source archive with the release: the OpenJDK source the binaries were built from."
+    },
+    {
+      "file": "trivy-0.74.0-go-cyphar-filepath-securejoin-v0.6.1.zip",
+      "name": "Go module github.com/cyphar/filepath-securejoin (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v0.6.1",
+      "licence": "BSD-3-Clause, with MPL-2.0 files (its pathrs-lite)",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/cyphar/filepath-securejoin/@v/v0.6.1.zip"
+      },
+      "sha256": "bb04848c968a45eb74ca7e9236d10579c4612b40cf5cd78203ee3f604b05f9e9",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-aws-sdk-go-base-v2-v2.0.0-beta.72.zip",
+      "name": "Go module github.com/hashicorp/aws-sdk-go-base/v2 (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v2.0.0-beta.72",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/aws-sdk-go-base/v2/@v/v2.0.0-beta.72.zip"
+      },
+      "sha256": "333c0532fbe98f3911930257569ea9748f739831c2f05d2d7e799ed9f8e98879",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-errwrap-v1.1.0.zip",
+      "name": "Go module github.com/hashicorp/errwrap (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v1.1.0",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/errwrap/@v/v1.1.0.zip"
+      },
+      "sha256": "209ae99bc039443e28e4d6bb66517d1756d9468b7578d31f1b63a28103d8e18c",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-go-cleanhttp-v0.5.2.zip",
+      "name": "Go module github.com/hashicorp/go-cleanhttp (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v0.5.2",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/go-cleanhttp/@v/v0.5.2.zip"
+      },
+      "sha256": "e9f3dcfcb33172ba499b4f8e888169252d7f1e072082182124a6e2053523f7df",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-go-getter-v1.8.6.zip",
+      "name": "Go module github.com/hashicorp/go-getter (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v1.8.6",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/go-getter/@v/v1.8.6.zip"
+      },
+      "sha256": "668b2f495498b03ad6c89533c3ffc7348d59a13d4312fa1b941cadc8a2df286d",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-go-multierror-v1.1.1.zip",
+      "name": "Go module github.com/hashicorp/go-multierror (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v1.1.1",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/go-multierror/@v/v1.1.1.zip"
+      },
+      "sha256": "972cd841ee51fdeac69c5a301e57f8ea27aebf15fddd7f621d5c240f28c3000c",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-go-retryablehttp-v0.7.8.zip",
+      "name": "Go module github.com/hashicorp/go-retryablehttp (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v0.7.8",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/go-retryablehttp/@v/v0.7.8.zip"
+      },
+      "sha256": "9e2c175e4af37cdfeba28ed89250ad1fd691eda0fab167fafa9928222646b71e",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-go-uuid-v1.0.3.zip",
+      "name": "Go module github.com/hashicorp/go-uuid (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v1.0.3",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/go-uuid/@v/v1.0.3.zip"
+      },
+      "sha256": "5e9dc2bb3785d69a65d287a4b3fa7e9f583a127e41c6a2fd095ac862fed71dad",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-go-version-v1.9.0.zip",
+      "name": "Go module github.com/hashicorp/go-version (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v1.9.0",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/go-version/@v/v1.9.0.zip"
+      },
+      "sha256": "b6c05489bf11a28c81cf38119782284c859d6c2d193b811d3f0117592eb31fcb",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-golang-lru-v2-v2.0.7.zip",
+      "name": "Go module github.com/hashicorp/golang-lru/v2 (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v2.0.7",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/golang-lru/v2/@v/v2.0.7.zip"
+      },
+      "sha256": "2eb92ff13970bccd460efae14255bfc03bb51474da0137e477a60f95561acc30",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "trivy-0.74.0-go-hashicorp-hcl-v2-v2.24.0.zip",
+      "name": "Go module github.com/hashicorp/hcl/v2 (compiled into Trivy)",
+      "component": "trivy",
+      "componentVersion": "0.74.0",
+      "ref": "v2.24.0",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/hcl/v2/@v/v2.24.0.zip"
+      },
+      "sha256": "53fd4e96ac9c190e192759daf49b63397865214d337ab5f6dbf6e68c1b0f4810",
+      "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
+      "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "version": "1.178.0",
+  "rules": [
+    {
+      "id": "hardcoded-api-key",
+      "name": "hardcoded-api-key",
+      "shortDescription": "Semgrep Finding: hardcoded-api-key",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "CWE-798: Use of Hard-coded Credentials",
+        "security"
+      ],
+      "cwe": [
+        798
+      ]
+    },
+    {
+      "id": "java-runtime-exec",
+      "name": "java-runtime-exec",
+      "shortDescription": "Semgrep Finding: java-runtime-exec",
+      "defaultSeverity": "medium",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "CWE-78: Improper Neutralization of Special Elements used in an OS Command",
+        "security"
+      ],
+      "cwe": [
+        78
+      ]
+    },
+    {
+      "id": "ts-eval",
+      "name": "ts-eval",
+      "shortDescription": "Semgrep Finding: ts-eval",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code",
+        "security"
+      ],
+      "cwe": [
+        95
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "engineId": "semgrep",
+      "ruleId": "java-runtime-exec",
+      "message": "Runtime.exec with a non-constant command may allow command injection.",
+      "severity": "medium",
+      "location": {
+        "path": "java/src/main/java/com/acme/Shell.java",
+        "startLine": 7,
+        "startColumn": 16,
+        "endLine": 7,
+        "endColumn": 49
+      },
+      "lineHash": "0ba12c966e5c2c367fb8cf9ebf281184",
+      "contextHash": "9717fdc611627afd7cfb62cc638efcd2",
+      "snippet": {
+        "startLine": 4,
+        "lines": [
+          "",
+          "public class Shell {",
+          "    public Process start(String command) throws IOException {",
+          "        return Runtime.getRuntime().exec(command);",
+          "    }",
+          "}"
+        ]
+      },
+      "properties": {}
+    },
+    {
+      "engineId": "semgrep",
+      "ruleId": "hardcoded-api-key",
+      "message": "Hard-coded API key.",
+      "severity": "high",
+      "location": {
+        "path": "src/config.ts",
+        "startLine": 2,
+        "startColumn": 1,
+        "endLine": 2,
+        "endColumn": 41
+      },
+      "lineHash": "86b99237b9c086c73f1116b8b09a4efb",
+      "contextHash": "43406bf768d53d8e49e64ba59305b8d1",
+      "snippet": {
+        "startLine": 1,
+        "lines": [
+          "export const endpoint = 'https://api.example.com';",
+          "«redacted»",
+          "export function authHeader(): string {",
+          "  return `Bearer ${apiKey}`;",
+          "}"
+        ]
+      }
+    },
+    {
+      "engineId": "semgrep",
+      "ruleId": "ts-eval",
+      "message": "Avoid eval(); it executes arbitrary code.",
+      "severity": "high",
+      "location": {
+        "path": "src/run.ts",
+        "startLine": 2,
+        "startColumn": 10,
+        "endLine": 2,
+        "endColumn": 25
+      },
+      "lineHash": "a73477f1482c0e336560b159055fd77d",
+      "contextHash": "88b72538b637ad0e18a86bcb87add215",
+      "snippet": {
+        "startLine": 1,
+        "lines": [
+          "export function run(expression: string): unknown {",
+          "  return eval(expression);",
+          "}"
+        ]
+      },
+      "properties": {}
+    }
+  ],
+  "warnings": [],
+  "secretRegions": [
+    {
+      "path": "src/config.ts",
+      "startLine": 2,
+      "endLine": 2,
+      "startColumn": 1,
+      "endColumn": 41
+    }
+  ]
+}

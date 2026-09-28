@@ -1,0 +1,111 @@
+{{- if eq .Values.database.mode "bundled" }}
+{{- $pg := .Values.database.bundled }}
+{{/* Headless: the StatefulSet's governing Service; <fullname>-postgres resolves to its pod. */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "qualor.fullname" . }}-postgres
+  labels:
+    {{- include "qualor.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "qualor.postgresSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "qualor.fullname" . }}-postgres
+  labels:
+    {{- include "qualor.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ include "qualor.fullname" . }}-postgres
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      {{- include "qualor.postgresSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "qualor.postgresSelectorLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: {{ include "qualor.postgresImage" . | quote }}
+          env:
+            - name: POSTGRES_USER
+              value: qualor
+            - name: POSTGRES_DB
+              value: qualor
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "qualor.postgresSecretName" . }}
+                  key: POSTGRES_PASSWORD
+          ports:
+            - name: postgres
+              containerPort: 5432
+          # The first start creates the cluster, so up to 300 s before liveness.
+          startupProbe:
+            exec:
+              command: [pg_isready, -U, qualor, -d, qualor]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, qualor, -d, qualor]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: [pg_isready, -U, qualor, -d, qualor]
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          securityContext:
+            {{- include "qualor.containerSecurity" . | nindent 12 }}
+          resources:
+            {{- toYaml $pg.resources | nindent 12 }}
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: run
+          emptyDir:
+            sizeLimit: 16Mi
+        {{- include "qualor.tmpVolume" "64Mi" | nindent 8 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $pg.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $pg.persistence.size | quote }}
+{{- end }}

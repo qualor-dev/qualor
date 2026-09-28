@@ -1,0 +1,85 @@
+{
+  "kind": "server",
+  "version": "10.7.0.96327",
+  "token": "fixture-not-a-secret",
+  "rules": [
+    { "key": "typescript:S1440", "name": "Rule S1440", "lang": "ts", "severity": "MAJOR" },
+    { "key": "typescript:S3504", "name": "Rule S3504", "lang": "ts", "severity": "MAJOR" },
+    { "key": "typescript:S3776", "name": "Rule S3776", "lang": "ts", "severity": "CRITICAL" },
+    { "key": "pmd:SystemPrintln", "name": "Rule SystemPrintln", "lang": "java", "severity": "MAJOR" },
+    { "key": "pmd:EmptyCatchBlock", "name": "Rule EmptyCatchBlock", "lang": "java", "severity": "MAJOR" }
+  ],
+  "profiles": [
+    {
+      "key": "fx-ts",
+      "name": "Fixture TS",
+      "language": "ts",
+      "active": { "typescript:S1440": {}, "typescript:S3504": {}, "typescript:S3776": {} }
+    },
+    { "key": "fx-java", "name": "Fixture Java", "language": "java", "active": { "pmd:SystemPrintln": { "severity": "BLOCKER" } } }
+  ],
+  "gates": [
+    {
+      "name": "Sonar way",
+      "isDefault": true,
+      "isBuiltIn": true,
+      "conditions": [
+        { "metric": "new_violations", "op": "GT", "error": "0" },
+        { "metric": "new_coverage", "op": "LT", "error": "80" },
+        { "metric": "new_duplicated_lines_density", "op": "GT", "error": "3" },
+        { "metric": "new_security_hotspots_reviewed", "op": "LT", "error": "100" }
+      ]
+    }
+  ],
+  "projects": [{ "key": "fixture:sonarqube-import", "name": "Fixture" }],
+  "issues": [
+    {
+      "key": "AYf-1",
+      "rule": "external_eslint_repo:eqeqeq",
+      "project": "fixture:sonarqube-import",
+      "path": "src/app.ts",
+      "line": 3,
+      "hash": "aa9e0a0e87b7b225e6bf25381f699909",
+      "message": "Expected '===' and instead saw '=='.",
+      "status": "FALSE_POSITIVE",
+      "comments": ["checked"]
+    },
+    {
+      "key": "AYf-2",
+      "rule": "typescript:S1440",
+      "project": "fixture:sonarqube-import",
+      "path": "src/app.ts",
+      "line": 7,
+      "message": "Use strict equality.",
+      "status": "ACCEPTED"
+    },
+    {
+      "key": "AYf-3",
+      "rule": "typescript:S3776",
+      "project": "fixture:sonarqube-import",
+      "path": "src/app.ts",
+      "line": 2,
+      "message": "Too complex.",
+      "status": "FALSE_POSITIVE"
+    },
+    {
+      "key": "AYf-4",
+      "rule": "external_eslint_repo:no-console",
+      "project": "fixture:sonarqube-import",
+      "path": "src/app.ts",
+      "line": 20,
+      "hash": "bc72383ba50db96914509b76df7ada48",
+      "message": "Unexpected console statement.",
+      "status": "WONTFIX"
+    },
+    {
+      "key": "AYf-5",
+      "rule": "external_eslint_repo:eqeqeq",
+      "project": "fixture:sonarqube-import",
+      "path": "src/gone.ts",
+      "line": 1,
+      "message": "Expected '===' and instead saw '=='.",
+      "status": "FALSE_POSITIVE"
+    }
+  ]
+}

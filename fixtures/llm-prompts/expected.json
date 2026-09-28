@@ -1,0 +1,20 @@
+{
+  "description": "TypeScript repo for the AI assistant (plan 3B): one ESLint finding next to a fake secret, a forged prompt marker and an unquoted password",
+  "engines": ["eslint", "gitleaks"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "gitleaks:generic-api-key", "path": "src/compare.ts", "startLine": 3, "severity": "blocker", "quality": "security" },
+    { "ruleKey": "eslint:eqeqeq", "path": "src/compare.ts", "startLine": 6, "severity": "high", "quality": "maintainability" }
+  ],
+  "files": {
+    "src/compare.ts": { "language": "typescript", "kind": "main", "lines": 9, "functions": 1 }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "llm": "llm/expected.json pins what the server would send for these findings (tools/fixtures/llm-check.ts); llm/answers.json how it judges canned answers",
+    "src/compare.ts#functions": "same is the only function -> 1",
+    "gitleaks:generic-api-key": "the fake apiKey literal on line 3; allowed in the repository's own .gitleaks.toml by value, path and rule",
+    "eslint:eqeqeq#severity": "eqeqeq: 'error' -> SARIF error -> high"
+  }
+}

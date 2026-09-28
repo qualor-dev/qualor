@@ -1,0 +1,20 @@
+{
+  "qualitygates": [
+    {
+      "name": "Sonar way",
+      "isDefault": true,
+      "isBuiltIn": true,
+      "actions": {
+        "rename": false,
+        "setAsDefault": false,
+        "copy": true,
+        "associateProjects": false,
+        "delete": false,
+        "manageConditions": false
+      },
+      "caycStatus": "compliant"
+    },
+    { "name": "Strict", "isDefault": false, "isBuiltIn": false, "caycStatus": "non-compliant" }
+  ],
+  "actions": { "create": false }
+}

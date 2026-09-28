@@ -1,0 +1,250 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Actions are pinned to commit SHAs (the tag each one had is in the comment), as in nightly.yml.
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint && pnpm format:check
+      - run: pnpm --filter @qualor/server db:check
+      - run: pnpm --filter @qualor/server db:generate
+      - run: git diff --exit-code -- server/drizzle && test -z "$(git status --porcelain -- server/drizzle)"
+      - run: pnpm --filter @qualor/ui i18n:extract
+      - run: git diff --exit-code -- ui/src/locale
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with: { distribution: temurin, java-version: '17.0.20+8' }
+      # Trivy's release archive and database layer, cached by their pins (plan 2B).
+      - id: trivy-pins
+        run: echo "key=trivy-$(sed -n 's/^TRIVY_VERSION=//p' tools/analyzers/install.sh)-$(sed -n 's/^TRIVY_DB_DIGEST=sha256://p' tools/analyzers/install.sh)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: '${{ runner.temp }}/qualor-downloads'
+          key: '${{ steps.trivy-pins.outputs.key }}'
+      - run: sudo --preserve-env=QUALOR_DOWNLOAD_CACHE sh tools/analyzers/install.sh
+        env: { QUALOR_DOWNLOAD_CACHE: '${{ runner.temp }}/qualor-downloads' }
+      - run: sudo sh tools/analyzers/install-dotnet.sh
+      - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
+      - run: pnpm test:coverage
+        env: { QUALOR_REQUIRE_ANALYZERS: '1' }
+      # The dogfood job imports it with the scan (qualor.yml).
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: coverage, path: coverage/lcov.info, retention-days: 7 }
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level high
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with: { distribution: temurin, java-version: '17.0.20+8' }
+      # Trivy's release archive and database layer, cached by their pins (plan 2B).
+      - id: trivy-pins
+        run: echo "key=trivy-$(sed -n 's/^TRIVY_VERSION=//p' tools/analyzers/install.sh)-$(sed -n 's/^TRIVY_DB_DIGEST=sha256://p' tools/analyzers/install.sh)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: '${{ runner.temp }}/qualor-downloads'
+          key: '${{ steps.trivy-pins.outputs.key }}'
+      - run: sudo --preserve-env=QUALOR_DOWNLOAD_CACHE sh tools/analyzers/install.sh
+        env: { QUALOR_DOWNLOAD_CACHE: '${{ runner.temp }}/qualor-downloads' }
+      - run: sudo sh tools/analyzers/install-dotnet.sh
+      - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
+      - run: pnpm fixtures
+        env: { QUALOR_REQUIRE_ANALYZERS: '1' }
+  cli-binary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: 1.3.13 }
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with: { distribution: temurin, java-version: '17.0.20+8' }
+      # Trivy's release archive and database layer, cached by their pins (plan 2B).
+      - id: trivy-pins
+        run: echo "key=trivy-$(sed -n 's/^TRIVY_VERSION=//p' tools/analyzers/install.sh)-$(sed -n 's/^TRIVY_DB_DIGEST=sha256://p' tools/analyzers/install.sh)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: '${{ runner.temp }}/qualor-downloads'
+          key: '${{ steps.trivy-pins.outputs.key }}'
+      - run: sudo --preserve-env=QUALOR_DOWNLOAD_CACHE sh tools/analyzers/install.sh
+        env: { QUALOR_DOWNLOAD_CACHE: '${{ runner.temp }}/qualor-downloads' }
+      - run: sudo sh tools/analyzers/install-dotnet.sh
+      - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
+      - run: pnpm --filter @qualor/cli build
+      - run: pnpm --filter @qualor/cli smoke
+      - run: pnpm --filter @qualor/cli smoke:process
+      - run: pnpm --filter @qualor/cli smoke:upload
+      - run: pnpm --filter @qualor/cli smoke:autoload
+      - run: pnpm fixtures
+        env: { QUALOR_BIN: cli/dist/qualor-linux-x64, QUALOR_REQUIRE_ANALYZERS: '1' }
+      - run: pnpm exec vitest run --project db server/test/cli-e2e.db.test.ts
+        env: { QUALOR_BIN: cli/dist/qualor-linux-x64 }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: qualor-cli, path: cli/dist/, retention-days: 7 }
+  # DCO (CONTRIBUTING.md): every commit of a pull request, merges excepted, carries a
+  # Signed-off-by line naming its author. It only reads git and needs no secret. Not yet run on
+  # GitHub: unverified until the first push.
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx tools/release/dco.ts "$BASE" "$HEAD"
+        env:
+          BASE: '${{ github.event.pull_request.base.sha }}'
+          HEAD: '${{ github.event.pull_request.head.sha }}'
+  # Plan 4A: the chart's render tests and the release tools' offline tests (signing, SBOMs, a
+  # dry run without images) in the local toolbox image (tools/release/Dockerfile). No secret: the
+  # dry run signs with a throwaway key and pushes nothing.
+  helm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: 1.3.13 }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm release:test
+  # Plan 4A: the chart on k3s in one privileged container, GitHub-hosted runners only
+  # (GitLab's job containers cannot start one). Sized for a standard ubuntu-latest runner (2 vCPU
+  # and 7 GB for a private repository, 14 GB of disk): the toolbox, server, k3s and PostgreSQL
+  # images take about 4 GB of disk; one mode runs at a time, and the busiest (bundled: two servers
+  # requesting 512 Mi and limited to 2 Gi each, plus PostgreSQL) fits in memory. Locally the smoke
+  # takes about 2.5 min once the images are built. It uses no secret.
+  helm-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: docker build -f deploy/server/Dockerfile -t qualor/server:dev .
+      - run: pnpm helm:smoke
+  # Plan 1F: the UI against a real server with seeded data (Playwright 1.63.0, its pinned
+  # Chromium), then one PNG per screen.
+  ui-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @qualor/ui exec playwright install --with-deps chromium
+      - run: pnpm ui:e2e
+        env: { QUALOR_TEST_DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres' }
+      - run: pnpm ui:screenshots
+        env: { QUALOR_TEST_DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with: { name: ui-e2e, path: .tmp/, retention-days: 7, include-hidden-files: true }
+
+  # Plan 1G (brief rule 4): Qualor scans itself with the images this commit builds, against a
+  # throwaway server (the compose stack with secrets generated for this run, the project and its
+  # token created through the API; GitHub masks both), with the default gate. A pull request is
+  # scanned as a merge request against its base (the checkout's merge commit, whose first parent
+  # is the base); a push to main as the next main-branch analysis. The job's exit code is the head
+  # scan's, so it fails when the gate fails. It also runs the compose smoke test (brief: "docker
+  # compose up"). The last step removes whatever a failed or cancelled run left behind.
+  dogfood:
+    needs: [test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: coverage, path: coverage }
+      - run: docker build -f deploy/server/Dockerfile -t qualor/server:dev .
+      - run: docker build -f deploy/scanner/Dockerfile -t qualor/scanner:dev .
+      - run: pnpm deploy:smoke
+      - if: github.event_name == 'pull_request'
+        run: pnpm dogfood --base HEAD^1 --mr "$PR" --mr-target "$TARGET" --coverage coverage/lcov.info
+        env: { PR: '${{ github.event.pull_request.number }}', TARGET: '${{ github.base_ref }}' }
+      - if: github.event_name == 'push'
+        run: pnpm dogfood --base HEAD^1 --coverage coverage/lcov.info
+      # Only the qualor-* stacks and what carries the qualor.deploy label, never other compose
+      # projects (a self-hosted runner may host some).
+      - if: always()
+        run: sh tools/deploy/teardown.sh

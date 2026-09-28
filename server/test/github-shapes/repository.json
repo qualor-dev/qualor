@@ -1,0 +1,13 @@
+{
+  "id": 424242,
+  "node_id": "R_kgDOAAABc0",
+  "name": "api",
+  "full_name": "acme/api",
+  "private": true,
+  "owner": { "login": "acme", "id": 9001, "type": "Organization" },
+  "html_url": "https://github.com/acme/api",
+  "default_branch": "main",
+  "visibility": "private",
+  "archived": false,
+  "disabled": false
+}

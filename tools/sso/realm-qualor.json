@@ -1,0 +1,131 @@
+{
+  "realm": "qualor",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "verifyEmail": false,
+  "groups": [
+    { "name": "qualor-admins", "path": "/qualor-admins" },
+    { "name": "qualor-devs", "path": "/qualor-devs" }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@acme.example",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Acme",
+      "groups": ["/qualor-admins"],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "alice-password-1", "temporary": false }]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@acme.example",
+      "emailVerified": false,
+      "firstName": "Bob",
+      "lastName": "Acme",
+      "groups": ["/qualor-devs"],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "bob-password-1", "temporary": false }]
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "email": "carol@acme.example",
+      "emailVerified": true,
+      "firstName": "Carol",
+      "lastName": "Acme",
+      "groups": [],
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "carol-password-1", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "qualor-oidc",
+      "name": "Qualor (OIDC)",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "keycloak-test-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://127.0.0.1:QUALOR_PORT/api/v0/ee/sso/oidc/*"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "http://127.0.0.1:QUALOR_PORT/api/v0/ee/sso/saml/CONNECTION/metadata",
+      "name": "Qualor (SAML)",
+      "protocol": "saml",
+      "enabled": true,
+      "frontchannelLogout": true,
+      "redirectUris": ["http://127.0.0.1:QUALOR_PORT/api/v0/ee/sso/saml/CONNECTION/acs"],
+      "attributes": {
+        "saml.assertion.signature": "true",
+        "saml.server.signature": "true",
+        "saml.signature.algorithm": "RSA_SHA256",
+        "saml_name_id_format": "persistent",
+        "saml.client.signature": "false",
+        "saml.authnstatement": "true",
+        "saml_assertion_consumer_url_post": "http://127.0.0.1:QUALOR_PORT/api/v0/ee/sso/saml/CONNECTION/acs"
+      },
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "email",
+            "attribute.name": "email",
+            "attribute.nameformat": "Basic"
+          }
+        },
+        {
+          "name": "displayName",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "firstName",
+            "attribute.name": "displayName",
+            "attribute.nameformat": "Basic"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "saml",
+          "protocolMapper": "saml-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "attribute.name": "groups",
+            "full.path": "false",
+            "single": "false",
+            "attribute.nameformat": "Basic"
+          }
+        }
+      ]
+    }
+  ]
+}

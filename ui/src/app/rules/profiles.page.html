@@ -1,0 +1,167 @@
+<div class="page-header">
+  <h1 #heading tabindex="-1" i18n="@@profiles.title">Quality profiles</h1>
+  <a routerLink="/rules" i18n="@@profiles.allRules">All rules</a>
+</div>
+<div role="status">
+  @if (announcement(); as message) {
+    <p class="alert alert-success">{{ message }}</p>
+  }
+</div>
+@if (list.error() ?? error(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+}
+@for (group of groups(); track group.language) {
+  <section class="section" [attr.aria-labelledby]="'profiles-' + group.language">
+    <h2 [id]="'profiles-' + group.language">{{ group.language | label: 'language' }}</h2>
+    <div class="table-wrap fixed-cols">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@profiles.col.name">Name</th>
+            <th scope="col" i18n="@@profiles.col.parent">Inherits from</th>
+            <th scope="col">
+              <span class="visually-hidden" i18n="@@profiles.col.actions">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of group.profiles; track p.id) {
+            <tr [attr.data-key]="p.id">
+              <td>
+                <a [routerLink]="['/profiles', p.id]">{{ p.name }}</a>
+                @if (p.isDefault) {
+                  <span class="badge badge-accent" i18n="@@profiles.default">Default</span>
+                }
+                @if (p.isBuiltin) {
+                  <span class="badge badge-tag" i18n="@@profiles.builtin">Built-in</span>
+                }
+              </td>
+              <td>{{ p.parentId ? (names().get(p.parentId) ?? '–') : '–' }}</td>
+              <td class="actions">
+                @if (org.canChange('org.profiles.manage')) {
+                  <div class="row">
+                    <button
+                      type="button"
+                      class="btn"
+                      [attr.aria-disabled]="busy() ? true : null"
+                      (click)="copy(p)"
+                      i18n="@@profiles.copy"
+                    >
+                      Copy
+                    </button>
+                    @if (!p.isDefault) {
+                      <button
+                        type="button"
+                        class="btn"
+                        [attr.aria-disabled]="busy() ? true : null"
+                        (click)="setDefault(p)"
+                        i18n="@@profiles.setDefault"
+                      >
+                        Make default
+                      </button>
+                    }
+                    @if (!p.isBuiltin) {
+                      <button
+                        type="button"
+                        class="btn btn-danger"
+                        [attr.aria-disabled]="busy() ? true : null"
+                        (click)="remove(p)"
+                        i18n="@@profiles.delete"
+                      >
+                        Delete
+                      </button>
+                    }
+                  </div>
+                }
+              </td>
+            </tr>
+          } @empty {
+            @if (list.loaded()) {
+              <tr>
+                <td colspan="3" class="muted" i18n="@@profiles.empty">
+                  No profile for this language.
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+}
+@if (list.nextCursor()) {
+  <p>
+    <button
+      type="button"
+      class="btn"
+      [attr.aria-disabled]="list.loading() ? true : null"
+      (click)="list.more()"
+      i18n="@@list.more"
+    >
+      Load more
+    </button>
+  </p>
+}
+
+@if (org.canChange('org.profiles.manage')) {
+  <form class="card" (submit)="create($event)">
+    <h2 i18n="@@profiles.new">New profile</h2>
+    <div class="row fields">
+      <div class="field">
+        <label for="profile-name" i18n="@@profiles.name">Name</label>
+        <input
+          id="profile-name"
+          required
+          maxlength="100"
+          [attr.aria-invalid]="nameError() ? true : null"
+          [attr.aria-describedby]="nameError() ? 'profile-name-error' : null"
+          [value]="newName()"
+          (input)="setName($event)"
+        />
+        @if (nameError(); as message) {
+          <span id="profile-name-error" class="field-error">{{ message }}</span>
+        }
+      </div>
+      <div class="field">
+        <label for="profile-language" i18n="@@profiles.language">Language</label>
+        <select id="profile-language" (change)="setLanguage($event)">
+          @for (l of languages; track l) {
+            <option [value]="l" [selected]="l === newLanguage()">
+              {{ l | label: 'language' }}
+            </option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label for="profile-parent" i18n="@@profiles.parent">Inherits from</label>
+        <select
+          id="profile-parent"
+          [attr.aria-invalid]="parentError() ? true : null"
+          [attr.aria-describedby]="parentError() ? 'profile-parent-error' : null"
+          (change)="setParent($event)"
+        >
+          <option value="" [selected]="newParent() === ''" i18n="@@profiles.noParent">
+            Nothing
+          </option>
+          @for (p of parents(); track p.id) {
+            <option [value]="p.id" [selected]="p.id === newParent()">{{ p.name }}</option>
+          }
+        </select>
+        @if (parentError(); as message) {
+          <span id="profile-parent-error" class="field-error">{{ message }}</span>
+        }
+      </div>
+    </div>
+    <p class="hint" i18n="@@profiles.parentHint">
+      A profile keeps its parent. Profiles inherit at most three levels deep.
+    </p>
+    <button
+      type="submit"
+      class="btn btn-primary"
+      [disabled]="!newName().trim()"
+      i18n="@@profiles.create"
+    >
+      Create profile
+    </button>
+  </form>
+}

@@ -1,0 +1,162 @@
+{
+  "version": "7.27.0",
+  "rules": [
+    {
+      "id": "UnusedPrivateField",
+      "shortDescription": "Avoid unused private fields such as 'unusedCounter'.",
+      "helpUri": "https://docs.pmd-code.org/snapshot/pmd_rules_java_bestpractices.html#unusedprivatefield",
+      "defaultSeverity": "medium",
+      "quality": "maintainability",
+      "kind": "issue",
+      "tags": [
+        "Best Practices"
+      ]
+    },
+    {
+      "id": "EmptyCatchBlock",
+      "shortDescription": "Avoid empty catch blocks",
+      "helpUri": "https://docs.pmd-code.org/snapshot/pmd_rules_java_errorprone.html#emptycatchblock",
+      "defaultSeverity": "medium",
+      "quality": "reliability",
+      "kind": "issue",
+      "tags": [
+        "Error Prone"
+      ]
+    },
+    {
+      "id": "UseEqualsToCompareStrings",
+      "shortDescription": "Use equals() to compare strings instead of '==' or '!='",
+      "helpUri": "https://docs.pmd-code.org/snapshot/pmd_rules_java_errorprone.html#useequalstocomparestrings",
+      "defaultSeverity": "medium",
+      "quality": "reliability",
+      "kind": "issue",
+      "tags": [
+        "Error Prone"
+      ]
+    },
+    {
+      "id": "UnusedLocalVariable",
+      "shortDescription": "Avoid unused local variables such as 'temp'.",
+      "helpUri": "https://docs.pmd-code.org/snapshot/pmd_rules_java_bestpractices.html#unusedlocalvariable",
+      "defaultSeverity": "medium",
+      "quality": "maintainability",
+      "kind": "issue",
+      "tags": [
+        "Best Practices"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "engineId": "pmd",
+      "ruleId": "UnusedPrivateField",
+      "message": "Avoid unused private fields such as 'unusedCounter'.",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/Calculator.java",
+        "startLine": 4,
+        "startColumn": 17,
+        "endLine": 4,
+        "endColumn": 29
+      },
+      "lineHash": "9c41eefed31263ba8953dc1f1402262d",
+      "contextHash": "68541f1af5a05472cc70004face3099c",
+      "snippet": {
+        "startLine": 1,
+        "lines": [
+          "package com.acme;",
+          "",
+          "public class Calculator {",
+          "    private int unusedCounter;",
+          "",
+          "    public int divide(int a, int b) {",
+          "        try {"
+        ]
+      }
+    },
+    {
+      "engineId": "pmd",
+      "ruleId": "EmptyCatchBlock",
+      "message": "Avoid empty catch blocks",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/Calculator.java",
+        "startLine": 9,
+        "startColumn": 11,
+        "endLine": 10,
+        "endColumn": 9
+      },
+      "lineHash": "e80c4acf15dc1cfdeca131f4c08145bd",
+      "contextHash": "ca79cb2b687e0f18ec3fc60f935eb459",
+      "snippet": {
+        "startLine": 6,
+        "lines": [
+          "    public int divide(int a, int b) {",
+          "        try {",
+          "            return a / b;",
+          "        } catch (ArithmeticException e) {",
+          "        }",
+          "        return 0;",
+          "    }",
+          ""
+        ]
+      }
+    },
+    {
+      "engineId": "pmd",
+      "ruleId": "UseEqualsToCompareStrings",
+      "message": "Use equals() to compare strings instead of '==' or '!='",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/Calculator.java",
+        "startLine": 15,
+        "startColumn": 16,
+        "endLine": 15,
+        "endColumn": 21
+      },
+      "lineHash": "b8d4150b4edec70032761c3ff1a5ae47",
+      "contextHash": "4013bccfd95acb15c80c6941b9478017",
+      "snippet": {
+        "startLine": 12,
+        "lines": [
+          "    }",
+          "",
+          "    public boolean sameName(String a, String b) {",
+          "        return a == b;",
+          "    }",
+          "",
+          "    public int max(int a, int b) {"
+        ]
+      }
+    },
+    {
+      "engineId": "pmd",
+      "ruleId": "UnusedLocalVariable",
+      "message": "Avoid unused local variables such as 'temp'.",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/Calculator.java",
+        "startLine": 19,
+        "startColumn": 13,
+        "endLine": 19,
+        "endColumn": 16
+      },
+      "lineHash": "02c2aeacb640677f2571afa1fbe9cb9c",
+      "contextHash": "e1836348291fa793eb81761302ee0b0b",
+      "snippet": {
+        "startLine": 16,
+        "lines": [
+          "    }",
+          "",
+          "    public int max(int a, int b) {",
+          "        int temp = 42;",
+          "        if (a > b) {",
+          "            return a;",
+          "        }"
+        ]
+      }
+    }
+  ],
+  "warnings": [],
+  "secretRegions": []
+}

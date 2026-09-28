@@ -1,0 +1,12 @@
+{
+  "name": "Sonar way",
+  "isBuiltIn": true,
+  "caycStatus": "compliant",
+  "conditions": [
+    { "id": "AYg-1", "metric": "new_violations", "op": "GT", "error": "0" },
+    { "id": "AYg-2", "metric": "new_coverage", "op": "LT", "error": "80" },
+    { "id": "AYg-3", "metric": "new_duplicated_lines_density", "op": "GT", "error": "3" },
+    { "id": "AYg-4", "metric": "new_security_hotspots_reviewed", "op": "LT", "error": "100" }
+  ],
+  "actions": { "rename": false }
+}

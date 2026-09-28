@@ -1,0 +1,295 @@
+{
+  "results": [
+    {
+      "filePath": "/fixture-root/eslint.config.js",
+      "messages": [],
+      "suppressedMessages": [],
+      "errorCount": 0,
+      "fatalErrorCount": 0,
+      "warningCount": 0,
+      "fixableErrorCount": 0,
+      "fixableWarningCount": 0,
+      "usedDeprecatedRules": []
+    },
+    {
+      "filePath": "/fixture-root/src/dup-a.ts",
+      "messages": [],
+      "suppressedMessages": [],
+      "errorCount": 0,
+      "fatalErrorCount": 0,
+      "warningCount": 0,
+      "fixableErrorCount": 0,
+      "fixableWarningCount": 0,
+      "usedDeprecatedRules": []
+    },
+    {
+      "filePath": "/fixture-root/src/dup-b.ts",
+      "messages": [],
+      "suppressedMessages": [],
+      "errorCount": 0,
+      "fatalErrorCount": 0,
+      "warningCount": 0,
+      "fixableErrorCount": 0,
+      "fixableWarningCount": 0,
+      "usedDeprecatedRules": []
+    },
+    {
+      "filePath": "/fixture-root/src/math.test.ts",
+      "messages": [],
+      "suppressedMessages": [],
+      "errorCount": 0,
+      "fatalErrorCount": 0,
+      "warningCount": 0,
+      "fixableErrorCount": 0,
+      "fixableWarningCount": 0,
+      "usedDeprecatedRules": []
+    },
+    {
+      "filePath": "/fixture-root/src/math.ts",
+      "messages": [
+        {
+          "ruleId": "eqeqeq",
+          "severity": 2,
+          "message": "Expected '===' and instead saw '=='.",
+          "line": 12,
+          "column": 16,
+          "messageId": "unexpected",
+          "endLine": 12,
+          "endColumn": 18,
+          "suggestions": [
+            {
+              "messageId": "replaceOperator",
+              "data": {
+                "expectedOperator": "===",
+                "actualOperator": "=="
+              },
+              "fix": {
+                "range": [293, 295],
+                "text": "==="
+              },
+              "desc": "Use '===' instead of '=='."
+            }
+          ]
+        },
+        {
+          "ruleId": "@typescript-eslint/no-unused-vars",
+          "severity": 2,
+          "message": "'unused' is assigned a value but never used.",
+          "line": 16,
+          "column": 9,
+          "messageId": "unusedVar",
+          "endLine": 16,
+          "endColumn": 15
+        },
+        {
+          "ruleId": "no-console",
+          "severity": 1,
+          "message": "Unexpected console statement.",
+          "line": 23,
+          "column": 3,
+          "messageId": "unexpected",
+          "endLine": 23,
+          "endColumn": 14,
+          "suggestions": [
+            {
+              "fix": {
+                "range": [496, 515],
+                "text": ""
+              },
+              "messageId": "removeConsole",
+              "data": {
+                "propertyName": "log"
+              },
+              "desc": "Remove the console.log()."
+            }
+          ]
+        }
+      ],
+      "suppressedMessages": [],
+      "errorCount": 2,
+      "fatalErrorCount": 0,
+      "warningCount": 1,
+      "fixableErrorCount": 0,
+      "fixableWarningCount": 0,
+      "source": "// Small math helpers used by the ts-basic fixture.\nexport function clamp(value: number, min: number, max: number): number {\n  if (value < min) {\n    return min;\n  } else if (value > max) {\n    return max;\n  }\n  return value;\n}\n\nexport function isZero(value: number): boolean {\n  return value == 0;\n}\n\nexport function sum(values: number[]): number {\n  const unused = values.length;\n  let total = 0;\n  for (const v of values) {\n    if (v > 0 && Number.isFinite(v)) {\n      total += v;\n    }\n  }\n  console.log(total);\n  return total;\n}\n",
+      "usedDeprecatedRules": []
+    }
+  ],
+  "metadata": {
+    "color": false,
+    "cwd": "/fixture-root/",
+    "rulesMeta": {
+      "eqeqeq": {
+        "type": "suggestion",
+        "hasSuggestions": true,
+        "docs": {
+          "description": "Require the use of `===` and `!==`",
+          "recommended": false,
+          "url": "https://eslint.org/docs/latest/rules/eqeqeq"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": [
+                {
+                  "enum": ["always"]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "null": {
+                      "enum": ["always", "never", "ignore"]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ],
+              "additionalItems": false
+            },
+            {
+              "type": "array",
+              "items": [
+                {
+                  "enum": ["smart", "allow-null"]
+                }
+              ],
+              "additionalItems": false
+            }
+          ]
+        },
+        "defaultOptions": ["always"],
+        "fixable": "code",
+        "messages": {
+          "unexpected": "Expected '{{expectedOperator}}' and instead saw '{{actualOperator}}'.",
+          "replaceOperator": "Use '{{expectedOperator}}' instead of '{{actualOperator}}'."
+        }
+      },
+      "@typescript-eslint/no-unused-vars": {
+        "type": "problem",
+        "docs": {
+          "description": "Disallow unused variables",
+          "extendsBaseRule": true,
+          "recommended": "recommended",
+          "url": "https://typescript-eslint.io/rules/no-unused-vars"
+        },
+        "fixable": "code",
+        "hasSuggestions": true,
+        "messages": {
+          "removeUnusedImportDeclaration": "Remove unused import declaration.",
+          "removeUnusedVar": "Remove unused variable \"{{varName}}\".",
+          "unusedVar": "'{{varName}}' is {{action}} but never used{{additional}}.",
+          "usedIgnoredVar": "'{{varName}}' is marked as ignored but is used{{additional}}.",
+          "usedOnlyAsType": "'{{varName}}' is {{action}} but only used as a type{{additional}}."
+        },
+        "schema": [
+          {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Broad setting for unused variables to target.",
+                "enum": ["all", "local"]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "args": {
+                    "type": "string",
+                    "description": "Whether to check all, some, or no arguments.",
+                    "enum": ["all", "after-used", "none"]
+                  },
+                  "argsIgnorePattern": {
+                    "type": "string",
+                    "description": "Regular expressions of argument names to not check for usage."
+                  },
+                  "caughtErrors": {
+                    "type": "string",
+                    "description": "Whether to check catch block arguments.",
+                    "enum": ["all", "none"]
+                  },
+                  "caughtErrorsIgnorePattern": {
+                    "type": "string",
+                    "description": "Regular expressions of catch block argument names to not check for usage."
+                  },
+                  "destructuredArrayIgnorePattern": {
+                    "type": "string",
+                    "description": "Regular expressions of destructured array variable names to not check for usage."
+                  },
+                  "enableAutofixRemoval": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Configurable automatic fixes for different types of unused variables.",
+                    "properties": {
+                      "imports": {
+                        "type": "boolean",
+                        "description": "Whether to enable automatic removal of unused imports."
+                      }
+                    }
+                  },
+                  "ignoreClassWithStaticInitBlock": {
+                    "type": "boolean",
+                    "description": "Whether to ignore classes with at least one static initialization block."
+                  },
+                  "ignoreRestSiblings": {
+                    "type": "boolean",
+                    "description": "Whether to ignore sibling properties in `...` destructuring."
+                  },
+                  "ignoreUsingDeclarations": {
+                    "type": "boolean",
+                    "description": "Whether to ignore using or await using declarations."
+                  },
+                  "reportUsedIgnorePattern": {
+                    "type": "boolean",
+                    "description": "Whether to report variables that match any of the valid ignore pattern options if they have been used."
+                  },
+                  "vars": {
+                    "type": "string",
+                    "description": "Whether to check all variables or only locally-declared variables.",
+                    "enum": ["all", "local"]
+                  },
+                  "varsIgnorePattern": {
+                    "type": "string",
+                    "description": "Regular expressions of variable names to not check for usage."
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "no-console": {
+        "type": "suggestion",
+        "defaultOptions": [{}],
+        "docs": {
+          "description": "Disallow the use of `console`",
+          "recommended": false,
+          "url": "https://eslint.org/docs/latest/rules/no-console"
+        },
+        "schema": [
+          {
+            "type": "object",
+            "properties": {
+              "allow": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          }
+        ],
+        "hasSuggestions": true,
+        "messages": {
+          "unexpected": "Unexpected console statement.",
+          "limited": "Unexpected console statement. Only these console methods are allowed: {{ allowed }}.",
+          "removeConsole": "Remove the console.{{ propertyName }}().",
+          "removeMethodCall": "Remove the console method call."
+        }
+      }
+    }
+  }
+}

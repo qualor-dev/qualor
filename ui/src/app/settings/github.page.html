@@ -1,0 +1,422 @@
+<h2 #heading tabindex="-1" i18n="@@github.title">GitHub</h2>
+@if (!canRead()) {
+  <p class="muted" i18n="@@github.adminsOnly">Only organization administrators connect GitHub.</p>
+} @else {
+  <p class="muted" i18n="@@github.intro">
+    Qualor creates a check run for every analysis (with annotations on the changed lines of pull
+    requests) and a summary comment on pull requests, as a GitHub App you create and install on the
+    repositories. Give the App Checks and Pull requests (read and write) and Metadata (read-only).
+    Projects are mapped to their repositories in the Projects list of the
+    <a routerLink="/settings/gitlab">GitLab settings</a>, which holds the mappings of both
+    providers.
+  </p>
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (connections.error() ?? error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+
+  <h3 class="subhead" i18n="@@github.apps">Apps</h3>
+  <div class="stack">
+    @for (c of apps(); track c.id) {
+      <section class="card" [attr.data-key]="c.id" [attr.aria-label]="label(c)">
+        <div class="page-header">
+          <div>
+            <code class="prose-text">{{ c.baseUrl }}</code>
+            <p i18n="@@github.appId">App id {{ c.github?.appId }}</p>
+          </div>
+          <div class="row">
+            @if (canManage()) {
+              <button
+                type="button"
+                class="btn btn-danger"
+                [attr.aria-disabled]="busy() ? true : null"
+                (click)="remove(c)"
+                i18n="@@github.delete"
+              >
+                Delete
+              </button>
+            }
+          </div>
+        </div>
+        <p class="muted" i18n="@@github.addedAt">Added {{ c.createdAt | dateTime }}</p>
+        @if (c.github; as gh) {
+          @if (!gh.keyReadable) {
+            <p class="alert alert-error" i18n="@@github.keyUnreadable">
+              The private key can no longer be read: set it again.
+            </p>
+          }
+          @if (gh.webhookSecretSet && !gh.webhookSecretReadable) {
+            <p class="alert alert-error" i18n="@@github.secretUnreadable">
+              The webhook secret can no longer be read: set it again.
+            </p>
+          }
+          @if (!gh.webhookSecretSet) {
+            <p class="muted" i18n="@@github.noSecret">
+              No webhook secret: the Re-run button does nothing.
+            </p>
+          } @else if (gh.webhookUrl) {
+            <p i18n="@@github.webhookUrl">
+              Webhook URL: <code class="prose-text">{{ gh.webhookUrl }}</code>
+            </p>
+            <p class="hint" i18n="@@github.webhookUrlHint">
+              Paste this and the secret into the App's webhook settings.
+            </p>
+          } @else {
+            <p class="muted" i18n="@@github.noPublicUrl">
+              No webhook URL: the server has no QUALOR_PUBLIC_URL.
+            </p>
+          }
+        }
+
+        <form class="row" novalidate (submit)="test(c, $event)">
+          <div class="field">
+            <label [attr.for]="'test-ref-' + c.id" i18n="@@github.testRef">
+              Repository to test (optional)
+            </label>
+            <input
+              [id]="'test-ref-' + c.id"
+              type="text"
+              maxlength="140"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="owner/repo"
+              i18n-placeholder="@@github.testRefPlaceholder"
+              [attr.aria-invalid]="rowError(c, 'ref') ? true : null"
+              [attr.aria-describedby]="rowError(c, 'ref') ? 'test-ref-error-' + c.id : null"
+              (input)="clearRowError(c)"
+            />
+            @if (rowError(c, 'ref'); as message) {
+              <span [id]="'test-ref-error-' + c.id" class="field-error" role="alert">{{
+                message
+              }}</span>
+            }
+          </div>
+          <button
+            type="submit"
+            class="btn"
+            [attr.aria-disabled]="busy() ? true : null"
+            i18n="@@github.test"
+          >
+            Test
+          </button>
+        </form>
+        @if (results()[c.id]; as result) {
+          <p class="prose-text">{{ result }}</p>
+        }
+
+        @if (canManage()) {
+          <details>
+            <summary i18n="@@github.replaceKey">
+              Replace the private key or change the address
+            </summary>
+            <form #rowForm class="stack" novalidate (submit)="replaceKey(c, $event)">
+              <div class="field">
+                <label [attr.for]="'url-' + c.id" i18n="@@github.address">API address</label>
+                <input
+                  [id]="'url-' + c.id"
+                  type="url"
+                  required
+                  maxlength="2048"
+                  autocomplete="off"
+                  spellcheck="false"
+                  [value]="c.baseUrl"
+                  [attr.aria-invalid]="rowError(c, 'url') ? true : null"
+                  [attr.aria-describedby]="rowError(c, 'url') ? 'url-error-' + c.id : null"
+                  (input)="clearRowError(c)"
+                />
+                @if (rowError(c, 'url'); as message) {
+                  <span [id]="'url-error-' + c.id" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+              </div>
+              <div class="field">
+                <label [attr.for]="'key-' + c.id" i18n="@@github.newKey">New private key</label>
+                <textarea
+                  #rowKey
+                  [id]="'key-' + c.id"
+                  rows="4"
+                  required
+                  autocomplete="off"
+                  spellcheck="false"
+                  [attr.aria-invalid]="rowError(c, 'key') ? true : null"
+                  [attr.aria-describedby]="
+                    rowError(c, 'key')
+                      ? 'key-error-' + c.id + ' key-hint-' + c.id
+                      : 'key-hint-' + c.id
+                  "
+                  (input)="clearRowError(c)"
+                ></textarea>
+                <label [attr.for]="'key-file-' + c.id" i18n="@@github.keyFile">
+                  Or choose the .pem file
+                </label>
+                <input
+                  [id]="'key-file-' + c.id"
+                  type="file"
+                  accept=".pem"
+                  (change)="loadKey($event, rowKey, refuseRowKey(c, rowForm))"
+                />
+                <span [id]="'key-hint-' + c.id" class="hint" i18n="@@github.newKeyHint">
+                  Changing the address needs the private key again: Qualor sends a stored key only
+                  to the address it was saved for.
+                </span>
+                @if (rowError(c, 'key'); as message) {
+                  <span [id]="'key-error-' + c.id" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+              </div>
+              <div class="field">
+                <label [attr.for]="'new-secret-' + c.id" i18n="@@github.newSecret">
+                  Webhook secret (optional)
+                </label>
+                <input
+                  [id]="'new-secret-' + c.id"
+                  type="password"
+                  maxlength="256"
+                  autocomplete="new-password"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  spellcheck="false"
+                  [attr.aria-invalid]="rowError(c, 'newSecret') ? true : null"
+                  [attr.aria-describedby]="
+                    rowError(c, 'newSecret')
+                      ? 'new-secret-error-' + c.id + ' new-secret-hint-' + c.id
+                      : 'new-secret-hint-' + c.id
+                  "
+                  (input)="clearRowError(c)"
+                />
+                <span [id]="'new-secret-hint-' + c.id" class="hint" i18n="@@github.newSecretHint">
+                  A new address with a stored webhook secret needs the secret again, or dropping it.
+                </span>
+                @if (rowError(c, 'newSecret'); as message) {
+                  <span [id]="'new-secret-error-' + c.id" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+              </div>
+              @if (c.github?.webhookSecretSet) {
+                <label class="row">
+                  <input type="checkbox" [id]="'drop-secret-' + c.id" />
+                  <span i18n="@@github.dropSecret">Drop the webhook secret</span>
+                </label>
+              }
+              <p>
+                <button
+                  type="submit"
+                  class="btn"
+                  [attr.aria-disabled]="busy() ? true : null"
+                  i18n="@@github.saveKey"
+                >
+                  Save private key
+                </button>
+              </p>
+            </form>
+          </details>
+        }
+
+        @if (canManage()) {
+          <details>
+            <summary i18n="@@github.settings">App id and webhook secret</summary>
+            <form class="row" novalidate (submit)="changeAppId(c, $event)">
+              <div class="field">
+                <label [attr.for]="'app-id-' + c.id" i18n="@@github.changeAppId">App id</label>
+                <input
+                  [id]="'app-id-' + c.id"
+                  type="text"
+                  inputmode="numeric"
+                  required
+                  maxlength="16"
+                  autocomplete="off"
+                  spellcheck="false"
+                  [value]="c.github?.appId ?? ''"
+                  [attr.aria-invalid]="rowError(c, 'appId') ? true : null"
+                  [attr.aria-describedby]="rowError(c, 'appId') ? 'app-id-error-' + c.id : null"
+                  (input)="clearRowError(c)"
+                />
+                @if (rowError(c, 'appId'); as message) {
+                  <span [id]="'app-id-error-' + c.id" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+              </div>
+              <button
+                type="submit"
+                class="btn"
+                [attr.aria-disabled]="busy() ? true : null"
+                i18n="@@github.saveAppId"
+              >
+                Save App id
+              </button>
+            </form>
+            <form class="row" novalidate (submit)="setSecret(c, $event)">
+              <div class="field">
+                <label [attr.for]="'secret-' + c.id" i18n="@@github.secret">Webhook secret</label>
+                <input
+                  [id]="'secret-' + c.id"
+                  type="password"
+                  required
+                  maxlength="256"
+                  autocomplete="new-password"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  spellcheck="false"
+                  [attr.aria-invalid]="rowError(c, 'secret') ? true : null"
+                  [attr.aria-describedby]="rowError(c, 'secret') ? 'secret-error-' + c.id : null"
+                  (input)="clearRowError(c)"
+                />
+                @if (rowError(c, 'secret'); as message) {
+                  <span [id]="'secret-error-' + c.id" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+              </div>
+              <button
+                type="submit"
+                class="btn"
+                [attr.aria-disabled]="busy() ? true : null"
+                i18n="@@github.setSecret"
+              >
+                Set the webhook secret
+              </button>
+              @if (c.github?.webhookSecretSet) {
+                <button
+                  type="button"
+                  class="btn"
+                  [attr.aria-disabled]="busy() ? true : null"
+                  (click)="removeSecret(c)"
+                  i18n="@@github.removeSecret"
+                >
+                  Remove the webhook secret
+                </button>
+              }
+            </form>
+          </details>
+        }
+      </section>
+    } @empty {
+      @if (connections.loaded()) {
+        <p class="muted" i18n="@@github.empty">No GitHub App yet.</p>
+      }
+    }
+  </div>
+
+  @if (canManage()) {
+    <form class="card" novalidate (submit)="create($event)">
+      <h3 i18n="@@github.new">New GitHub App</h3>
+      <div class="field">
+        <label for="github-url" i18n="@@github.url">API address</label>
+        <input
+          #urlField
+          id="github-url"
+          type="url"
+          required
+          maxlength="2048"
+          autocomplete="off"
+          spellcheck="false"
+          [attr.aria-invalid]="createError('url') ? true : null"
+          [attr.aria-describedby]="
+            createError('url') ? 'github-url-error github-url-hint' : 'github-url-hint'
+          "
+          [value]="url()"
+          (input)="setUrl($event)"
+        />
+        <span id="github-url-hint" class="hint" i18n="@@github.urlHint">
+          https://api.github.com for github.com; https://api.&lt;subdomain&gt;.ghe.com; or your
+          GitHub Enterprise Server's address ending in /api/v3.
+        </span>
+        @if (createError('url'); as message) {
+          <span id="github-url-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </div>
+      <div class="field">
+        <label for="github-app-id" i18n="@@github.appIdLabel">App id</label>
+        <input
+          #appIdField
+          id="github-app-id"
+          type="text"
+          inputmode="numeric"
+          required
+          maxlength="16"
+          autocomplete="off"
+          spellcheck="false"
+          [attr.aria-invalid]="createError('appId') ? true : null"
+          [attr.aria-describedby]="createError('appId') ? 'github-app-id-error' : null"
+          [value]="appId()"
+          (input)="setAppId($event)"
+        />
+        @if (createError('appId'); as message) {
+          <span id="github-app-id-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </div>
+      <div class="field">
+        <label for="github-key" i18n="@@github.key">Private key</label>
+        <textarea
+          #keyField
+          id="github-key"
+          rows="6"
+          required
+          autocomplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          spellcheck="false"
+          [attr.aria-invalid]="createError('key') ? true : null"
+          [attr.aria-describedby]="
+            createError('key') ? 'github-key-error github-key-hint' : 'github-key-hint'
+          "
+          (input)="clearCreateError('key')"
+        ></textarea>
+        <label for="github-key-file" i18n="@@github.keyFileNew">Or choose the .pem file</label>
+        <input
+          id="github-key-file"
+          type="file"
+          accept=".pem"
+          (change)="loadKey($event, keyField, refuseCreateKey)"
+        />
+        <span id="github-key-hint" class="hint" i18n="@@github.keyHint">
+          The .pem file GitHub generated for the App. Stored encrypted; Qualor never shows it again.
+        </span>
+        @if (createError('key'); as message) {
+          <span id="github-key-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </div>
+      <div class="field">
+        <label for="github-secret" i18n="@@github.secretLabel">Webhook secret (optional)</label>
+        <input
+          #secretField
+          id="github-secret"
+          type="password"
+          maxlength="256"
+          autocomplete="new-password"
+          data-1p-ignore
+          data-lpignore="true"
+          spellcheck="false"
+          [attr.aria-invalid]="createError('secret') ? true : null"
+          [attr.aria-describedby]="
+            createError('secret') ? 'github-secret-error github-secret-hint' : 'github-secret-hint'
+          "
+          (input)="clearCreateError('secret')"
+        />
+        <span id="github-secret-hint" class="hint" i18n="@@github.secretHint">
+          The same secret as in the App's webhook settings, for the Re-run button. Stored encrypted;
+          Qualor never shows it again.
+        </span>
+        @if (createError('secret'); as message) {
+          <span id="github-secret-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </div>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [attr.aria-disabled]="busy() ? true : null"
+        i18n="@@github.create"
+      >
+        Add App
+      </button>
+    </form>
+  }
+}

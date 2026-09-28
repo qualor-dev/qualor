@@ -1,0 +1,33 @@
+{
+  "id": 7,
+  "description": "Payments API",
+  "name": "api",
+  "name_with_namespace": "acme / payments / api",
+  "path": "api",
+  "path_with_namespace": "acme/payments/api",
+  "created_at": "2026-01-10T08:00:00.000Z",
+  "default_branch": "main",
+  "tag_list": [],
+  "topics": [],
+  "ssh_url_to_repo": "git@gitlab.example.com:acme/payments/api.git",
+  "http_url_to_repo": "https://gitlab.example.com/acme/payments/api.git",
+  "web_url": "https://gitlab.example.com/acme/payments/api",
+  "readme_url": "https://gitlab.example.com/acme/payments/api/-/blob/main/README.md",
+  "forks_count": 0,
+  "avatar_url": null,
+  "star_count": 0,
+  "last_activity_at": "2026-09-25T09:00:00.000Z",
+  "namespace": {
+    "id": 3,
+    "name": "payments",
+    "path": "payments",
+    "kind": "group",
+    "full_path": "acme/payments",
+    "parent_id": 2,
+    "avatar_url": null,
+    "web_url": "https://gitlab.example.com/groups/acme/payments"
+  },
+  "visibility": "private",
+  "archived": false,
+  "empty_repo": false
+}

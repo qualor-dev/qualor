@@ -1,0 +1,235 @@
+{
+  "image": "qualor/server",
+  "base": "gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f",
+  "aptPackages": [],
+  "sourcesIndexes": [
+    "https://deb.debian.org/debian/dists/bookworm/main/source/Sources.xz",
+    "https://deb.debian.org/debian/dists/bookworm-updates/main/source/Sources.xz",
+    "https://deb.debian.org/debian-security/dists/bookworm-security/main/source/Sources.xz"
+  ],
+  "packages": [
+    {
+      "source": "base-files",
+      "version": "12.4+deb12u15",
+      "binaries": [
+        "base-files"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/b/base-files",
+      "files": [
+        {
+          "name": "base-files_12.4+deb12u15.dsc",
+          "size": 1137,
+          "sha256": "e531274d0c3916dacfe55bbd27148d775b004e1836bc2fbb01549f142d524e8c",
+          "sha1": "a2dfca2be471e1e28f49da7b6ce756e9e32c888c"
+        },
+        {
+          "name": "base-files_12.4+deb12u15.tar.xz",
+          "size": 66280,
+          "sha256": "9fb369194365fe9da74621da247ea70884fc3d1d9c063db310764ef0e43c02c5",
+          "sha1": "487829abce4c6694e40b97bfbabe57d8ebed2aeb"
+        }
+      ]
+    },
+    {
+      "source": "ca-certificates",
+      "version": "20250419~deb12u1",
+      "binaries": [
+        "ca-certificates"
+      ],
+      "archive": "debian-security",
+      "directory": "pool/updates/main/c/ca-certificates",
+      "files": [
+        {
+          "name": "ca-certificates_20250419~deb12u1.dsc",
+          "size": 1769,
+          "sha256": "72339e810ef8237a4c346540b52baf49607172cc849c2680328a608ce0f6a34b",
+          "sha1": "6c83f0c83f6589e5137f5000e2108c9a0f7912b3"
+        },
+        {
+          "name": "ca-certificates_20250419~deb12u1.tar.xz",
+          "size": 277244,
+          "sha256": "b2a431cbab9a0ece921cffacbe238dc27a3e382ad4a1806dc8968c5eff30471d",
+          "sha1": "ab7ed787f56c6ca86d0022213279936ddd2af735"
+        }
+      ]
+    },
+    {
+      "source": "gcc-12",
+      "version": "12.2.0-14+deb12u1",
+      "binaries": [
+        "gcc-12-base",
+        "libgcc-s1",
+        "libgomp1",
+        "libstdc++6"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/g/gcc-12",
+      "files": [
+        {
+          "name": "gcc-12_12.2.0-14+deb12u1.dsc",
+          "size": 27330,
+          "sha256": "3aed0b189189c744dc9f4b74798a51d3e512ea85e492568db788a927c88e20ba",
+          "sha1": "c371dc79be26e25d38c65ae287f8a38f5eeb6b92"
+        },
+        {
+          "name": "gcc-12_12.2.0.orig.tar.gz",
+          "size": 87090343,
+          "sha256": "b8298be16aeeb96a889c6afed0a8e2241b47452e89cc81fe65ea849d5c740fcb",
+          "sha1": "c67d8293ff2f0298cc233b1055f92b531fd64873"
+        },
+        {
+          "name": "gcc-12_12.2.0-14+deb12u1.debian.tar.xz",
+          "size": 1675204,
+          "sha256": "59f7f7763a0c355e3f27ff9e7ac80d06382b29939361a87e7b139226bfe7402e",
+          "sha1": "5357d3d159f6a261431477528b91e2ab6e1080b2"
+        }
+      ]
+    },
+    {
+      "source": "glibc",
+      "version": "2.36-9+deb12u14",
+      "binaries": [
+        "libc6"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/g/glibc",
+      "files": [
+        {
+          "name": "glibc_2.36-9+deb12u14.dsc",
+          "size": 9765,
+          "sha256": "cfe1f0b8dc1fa211ce5a45b3725cc38b29f88667f1140ebdca6de35cf9c6f1fd",
+          "sha1": "702906fdb0f1b37205a2000b6715025fed8018cb"
+        },
+        {
+          "name": "glibc_2.36.orig.tar.xz",
+          "size": 19363988,
+          "sha256": "a543c02070d46ccaf866957efd13f10c924daa74c86a90a0254db09a92a708ee",
+          "sha1": "d034128a6116dcf9e76c92f898ec63f4f4e65786"
+        },
+        {
+          "name": "glibc_2.36-9+deb12u14.debian.tar.xz",
+          "size": 918488,
+          "sha256": "cf4ac9cd98185452cae3ef34e2e4ee12753e3d93fd0c62c61396d4a47eec902f",
+          "sha1": "42404623ac3ac7cb1bcce7dc7441ef3782c13871"
+        }
+      ]
+    },
+    {
+      "source": "media-types",
+      "version": "10.0.0",
+      "binaries": [
+        "media-types"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/m/media-types",
+      "files": [
+        {
+          "name": "media-types_10.0.0.dsc",
+          "size": 1624,
+          "sha256": "d2e34e90508ac2c21c3cc6c01e2cf186093a8d2edcdc279e7d280a0a4ffe132d",
+          "sha1": "f55601ca3571e0bfdba994f69a5c651ce0818e2c"
+        },
+        {
+          "name": "media-types_10.0.0.tar.xz",
+          "size": 57912,
+          "sha256": "fe0f5adcb153e642c5e3295b811cddf6ba12bf3df5e7c6c012f3b98dfae1d245",
+          "sha1": "54b22ef1ab7117a7881b2e4cbdda0de27a3d2c0b"
+        }
+      ]
+    },
+    {
+      "source": "netbase",
+      "version": "6.4",
+      "binaries": [
+        "netbase"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/n/netbase",
+      "files": [
+        {
+          "name": "netbase_6.4.dsc",
+          "size": 898,
+          "sha256": "dc26cfcaa49fd874cc27c65216b2f8b6d3ad62845b78da4bdf0aea55592af756",
+          "sha1": "66c74bb2deb9285d044701e86fa37123d4e03c1d"
+        },
+        {
+          "name": "netbase_6.4.tar.xz",
+          "size": 32712,
+          "sha256": "fa6621826ff1150e581bd90bc3c8a4ecafe5df90404f207db6dcdf2c75f26ad7",
+          "sha1": "b0eab45df5c3f31b1e454957f21beba3d3d93d61"
+        }
+      ]
+    },
+    {
+      "source": "openssl",
+      "version": "3.0.20-1~deb12u2",
+      "binaries": [
+        "libssl3"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/o/openssl",
+      "files": [
+        {
+          "name": "openssl_3.0.20-1~deb12u2.dsc",
+          "size": 2539,
+          "sha256": "a614474a2773c23b10c0d65f4eccbcf93fdac4749afb7c26d76e1b0340154d3d",
+          "sha1": "884dc3fb411b10fc188f685967a74bc1f6174702"
+        },
+        {
+          "name": "openssl_3.0.20.orig.tar.gz",
+          "size": 15292815,
+          "sha256": "c80a01dfc70ece4dc21168932c37739042d404d46ccc81a5986dd75314ecda6f",
+          "sha1": "9d6f88429036d592b5ef5648f4e163c4ad507d6d"
+        },
+        {
+          "name": "openssl_3.0.20.orig.tar.gz.asc",
+          "size": 833,
+          "sha256": "07669568ab34cf3a4dcf8fd8e0d85cacdacfaa10d5ab51bdc6fc47c22fa6b33a",
+          "sha1": "f5c47fe31f17e8c59e5652e8316c8390a04bac39"
+        },
+        {
+          "name": "openssl_3.0.20-1~deb12u2.debian.tar.xz",
+          "size": 72332,
+          "sha256": "7279efe85c359500c95aa88347e3395dd303d7566e2bb818d80d96e0c3bb9629",
+          "sha1": "ef97c292c04e053b4f5100d58580de371c0129c4"
+        }
+      ]
+    },
+    {
+      "source": "tzdata",
+      "version": "2026b-0+deb12u1",
+      "binaries": [
+        "tzdata"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/t/tzdata",
+      "files": [
+        {
+          "name": "tzdata_2026b-0+deb12u1.dsc",
+          "size": 2396,
+          "sha256": "1a6e7b80823607130b79a12e5dff0d03ed81feb14faf5fffad94841e54cfe988",
+          "sha1": "942d8453813f3d9d869802794c97cea1582c067c"
+        },
+        {
+          "name": "tzdata_2026b.orig.tar.gz",
+          "size": 473703,
+          "sha256": "114543d9f19a6bfeb5bca43686aea173d38755a3db1f2eec112647ae92c6f544",
+          "sha1": "35296933a6e1eb3e1fc2e53bdca217e9876dc578"
+        },
+        {
+          "name": "tzdata_2026b.orig.tar.gz.asc",
+          "size": 833,
+          "sha256": "b69ac9d9c926cb5ef80ab0b4bbc2a462eb9b4b36167e4aac649d87b744f7ca8b",
+          "sha1": "79760359e3ac03c15a70dc394f6f01ac08ca782e"
+        },
+        {
+          "name": "tzdata_2026b-0+deb12u1.debian.tar.xz",
+          "size": 122084,
+          "sha256": "a5b70ea0b5ffe7905e0e8bb5ac45196131ce235d3a0cf5665b4b3ac96caa2c35",
+          "sha1": "eef7ddd93cd589469dfc44a4632eb2113734e828"
+        }
+      ]
+    }
+  ]
+}

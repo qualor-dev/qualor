@@ -1,0 +1,6 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "outDir": "../node_modules/.cache/tsc/enterprise", "rootDir": ".." },
+  "include": ["src", "scripts", "test"],
+  "references": [{ "path": "../server" }]
+}

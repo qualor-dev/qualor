@@ -1,0 +1,184 @@
+<h2 #heading tabindex="-1" i18n="@@license.title">Licence</h2>
+@if (!instanceAdmin()) {
+  <p class="muted" i18n="@@license.adminsOnly">Only instance administrators manage the licence.</p>
+} @else if (loadError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (status(); as s) {
+  <p class="license-state">
+    @switch (s.state) {
+      @case ('active') {
+        <span class="badge badge-passed" i18n="@@license.state.active"
+          >Enterprise edition, active until {{ s.license?.expires | dateTime: 'date' }}</span
+        >
+      }
+      @case ('grace') {
+        <span class="badge badge-warn" i18n="@@license.state.grace"
+          >Grace period: enterprise features stop on
+          {{ s.license?.graceEndsAt | dateTime: 'date' }}</span
+        >
+      }
+      @case ('expired') {
+        <span class="badge badge-failed" i18n="@@license.state.expired"
+          >Expired: running as the community edition</span
+        >
+      }
+      @case ('invalid') {
+        @if (rejectedReason(); as reason) {
+          <span class="badge badge-failed" i18n="@@license.state.invalid"
+            >The key was rejected: {{ reason }}</span
+          >
+        } @else {
+          <span class="badge badge-failed">{{ texts.rejectedAtStart() }}</span>
+        }
+      }
+      @default {
+        <span class="badge badge-none" i18n="@@license.state.none">Community edition</span>
+      }
+    }
+  </p>
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  @if (s.restartRequired) {
+    <p id="license-restart" class="alert alert-warn">
+      <strong i18n="@@license.restartRequired">Restart required.</strong>
+      <ng-container i18n="@@license.restartRequiredHint">
+        The saved change applies when the server next starts. Until then it runs as shown on this
+        page.
+      </ng-container>
+    </p>
+  }
+
+  <dl class="facts">
+    @if (s.license; as l) {
+      <dt i18n="@@license.customer">Customer</dt>
+      <dd>{{ l.customer }}</dd>
+      <dt i18n="@@license.id">Licence ID</dt>
+      <dd>
+        <code>{{ l.id }}</code>
+      </dd>
+      <dt i18n="@@license.keyId">Signing key</dt>
+      <dd>
+        <code>{{ l.keyId }}</code>
+        @if (l.test) {
+          <span class="badge badge-warn" i18n="@@license.testKey">test key</span>
+        }
+      </dd>
+      <dt i18n="@@license.issued">Issued</dt>
+      <dd>{{ l.issued | dateTime: 'date' }}</dd>
+      <dt i18n="@@license.expires">Expires</dt>
+      <dd>{{ l.expires | dateTime: 'date' }}</dd>
+      <dt i18n="@@license.graceEnds">Grace period ends</dt>
+      <dd>{{ l.graceEndsAt | dateTime: 'date' }}</dd>
+    }
+    <dt i18n="@@license.features">Enterprise features</dt>
+    <dd>
+      @for (f of s.activeFeatures; track f) {
+        <code class="feature">{{ f }}</code>
+      } @empty {
+        <span class="muted" i18n="@@license.noFeatures">None</span>
+      }
+    </dd>
+    @if (s.plugins.length > 0) {
+      <dt i18n="@@license.plugins">Plugins</dt>
+      <dd>
+        <ul>
+          @for (p of s.plugins; track p.name) {
+            <li>
+              <code>{{ p.name }}</code>
+              @if (p.state === 'loaded') {
+                <span class="badge badge-passed" i18n="@@license.plugin.loaded">loaded</span>
+              } @else {
+                <span class="badge badge-failed" i18n="@@license.plugin.failed">failed</span>
+                <span>{{ p.error }}</span>
+              }
+            </li>
+          }
+        </ul>
+      </dd>
+    }
+    <dt i18n="@@license.source">Where the key comes from</dt>
+    <dd>
+      @switch (s.source) {
+        @case ('environment') {
+          <ng-container i18n="@@license.source.environment"
+            >The <code>QUALOR_LICENSE</code> variable</ng-container
+          >
+        }
+        @case ('file') {
+          <ng-container i18n="@@license.source.file"
+            >The file named in <code>QUALOR_LICENSE_FILE</code></ng-container
+          >
+        }
+        @case ('uploaded') {
+          <ng-container i18n="@@license.source.uploaded">Saved in Qualor</ng-container>
+        }
+        @default {
+          <ng-container i18n="@@license.source.none">No key was set at the last start</ng-container>
+        }
+      }
+    </dd>
+  </dl>
+
+  @if (managedBy(); as variable) {
+    <p class="alert alert-info" id="license-managed" i18n="@@license.fromEnvironment">
+      The key comes from <code>{{ variable }}</code
+      >. Change it there and restart the server.
+    </p>
+  } @else {
+    <form id="license-form" class="card" novalidate (submit)="save($event)">
+      <h3 i18n="@@license.formTitle">Add or replace the key</h3>
+      <div class="field">
+        <label for="license-key" i18n="@@license.keyLabel">Licence key</label>
+        <textarea
+          #keyField
+          id="license-key"
+          rows="4"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          data-1p-ignore
+          data-lpignore="true"
+          [attr.aria-invalid]="keyError() ? true : null"
+          [attr.aria-describedby]="
+            keyError() ? 'license-key-hint license-key-error' : 'license-key-hint'
+          "
+          (input)="setKey($event)"
+        ></textarea>
+        <span id="license-key-hint" class="hint" i18n="@@license.keyHint"
+          >Paste the whole key. Spaces and line breaks are ignored. The key is checked before it is
+          saved, applies at the next start, and is not shown again.</span
+        >
+        @if (keyError(); as message) {
+          <span id="license-key-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </div>
+      <div class="row">
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          i18n="@@license.save"
+        >
+          Save
+        </button>
+        @if (canRemove()) {
+          <button
+            type="button"
+            class="btn btn-danger"
+            [attr.aria-disabled]="busy() ? true : null"
+            (click)="remove()"
+            i18n="@@license.remove"
+          >
+            Remove
+          </button>
+        }
+      </div>
+    </form>
+  }
+}

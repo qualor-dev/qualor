@@ -1,0 +1,44 @@
+{
+  "name": "@qualor/ui",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "test": "ng test --watch=false",
+    "typecheck": "ngc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
+    "api": "openapi-typescript ../server/openapi.json --output src/app/api/schema.ts",
+    "api:ee": "openapi-typescript ../enterprise/openapi.json --output src/app/api/schema-ee.ts",
+    "i18n:extract": "ng extract-i18n --format json --output-path src/locale",
+    "e2e": "playwright test --project=setup --project=e2e --project=enterprise-setup --project=enterprise --project=business",
+    "screenshots": "playwright test --project=screenshots"
+  },
+  "dependencies": {
+    "@angular/common": "22.2.0",
+    "@angular/compiler": "22.2.0",
+    "@angular/core": "22.2.0",
+    "@angular/localize": "22.2.0",
+    "@angular/platform-browser": "22.2.0",
+    "@angular/router": "22.2.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/schibsted-grotesk": "^5.3.0",
+    "openapi-fetch": "0.17.0",
+    "rxjs": "7.8.2",
+    "tslib": "2.8.1"
+  },
+  "devDependencies": {
+    "@angular/build": "22.2.0",
+    "@angular/cli": "22.2.0",
+    "@angular/compiler-cli": "22.2.0",
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22",
+    "jsdom": "30.1.1",
+    "openapi-typescript": "7.13.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: qualor
+description: Qualor server (API, web UI, worker), with its own PostgreSQL or yours
+type: application
+# The chart version equals the app version (pnpm release:version sets both).
+version: 0.0.0
+appVersion: '0.0.0'
+kubeVersion: '>=1.29.0-0'
+home: https://qualor.dev
+sources:
+  - https://github.com/qualor-dev/qualor
+keywords: [code-quality, static-analysis, sonarqube-alternative]

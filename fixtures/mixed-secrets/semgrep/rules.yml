@@ -1,0 +1,27 @@
+rules:
+  - id: ts-eval
+    languages: [typescript]
+    severity: ERROR
+    message: Avoid eval(); it executes arbitrary code.
+    pattern: eval(...)
+    metadata:
+      category: security
+      cwe: ['CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code']
+  - id: java-runtime-exec
+    languages: [java]
+    severity: WARNING
+    message: Runtime.exec with a non-constant command may allow command injection.
+    patterns:
+      - pattern: Runtime.getRuntime().exec($CMD)
+      - pattern-not: Runtime.getRuntime().exec("...")
+    metadata:
+      category: security
+      cwe: ['CWE-78: Improper Neutralization of Special Elements used in an OS Command']
+  - id: hardcoded-api-key
+    languages: [typescript]
+    severity: ERROR
+    message: Hard-coded API key.
+    pattern: const apiKey = "...";
+    metadata:
+      category: security
+      cwe: ['CWE-798: Use of Hard-coded Credentials']

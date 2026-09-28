@@ -1,0 +1,10 @@
+{
+  "component": {
+    "key": "acme:shop",
+    "name": "Shop",
+    "qualifier": "TRK",
+    "analysisDate": "2026-09-20T10:00:00+0000",
+    "visibility": "private"
+  },
+  "ancestors": []
+}

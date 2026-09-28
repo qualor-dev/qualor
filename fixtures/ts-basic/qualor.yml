@@ -1,0 +1,4 @@
+version: 1
+coverage:
+  reports:
+    - path: coverage/lcov.info

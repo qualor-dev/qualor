@@ -1,0 +1,3 @@
+secrets:
+  secretKey: not-a-secret-not-a-secret-not-a-secret
+  bootstrapAdminPassword: not-a-password

@@ -1,0 +1,147 @@
+@if (branch.error(); as error) {
+  <p class="alert alert-error" role="alert">{{ problemMessage(error) }}</p>
+} @else if (current(); as b) {
+  <div class="stack">
+    @if (loadError(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    <section class="card" aria-labelledby="gate-heading">
+      <div class="page-header">
+        <h2 id="gate-heading">
+          <span i18n="@@overview.gate">Quality gate</span>
+          @if (gate()?.gateName; as name) {
+            <span class="muted"> · {{ name }}</span>
+          }
+        </h2>
+        <q-gate-badge [status]="b.gateStatus" />
+      </div>
+      <p class="muted row">
+        <span class="badge badge-tag branch-name">{{ b.title }}</span>
+        @if (latest(); as a) {
+          <ng-container i18n="@@overview.analyzed"
+            >Analyzed {{ a.analysisDate | dateTime }}, revision
+            <code>{{ a.revision | slice: 0 : 8 }}</code></ng-container
+          >
+        } @else if (latest() === null) {
+          <ng-container i18n="@@overview.neverAnalyzed"
+            >This branch has no analysis yet. Run qualor scan in its CI pipeline.</ng-container
+          >
+        }
+      </p>
+      @if (gateStatus() === 'none') {
+        <p class="gate-explanation" i18n="@@overview.gateNone">
+          No quality gate applies to this project, so nothing was checked.
+        </p>
+      } @else if (gateStatus() === 'error') {
+        <p class="gate-explanation" i18n="@@overview.gateError">
+          The gate could not be evaluated, so it does not pass. The warnings below say why.
+        </p>
+      }
+      @if (gate(); as g) {
+        @if (g.conditions.length > 0) {
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col" i18n="@@overview.condition">Condition</th>
+                  <th scope="col" class="num" i18n="@@overview.actual">Actual value</th>
+                  <th scope="col" i18n="@@overview.result">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of g.conditions; track $index) {
+                  <tr>
+                    <td>
+                      {{ c.metric | label: 'metric' }} {{ operatorLabel(c.operator) }}
+                      {{ c.threshold | measure: c.metric }}
+                    </td>
+                    <td class="num">{{ c.value | measure: c.metric }}</td>
+                    <td>
+                      <span class="badge badge-{{ conditionTone(c.status) }}">{{
+                        conditionStatusLabel(c.status)
+                      }}</span>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+        @for (i of g.ignored; track $index) {
+          <p class="hint">{{ i.metric | label: 'metric' }}: {{ ignoredReasonLabel(i.reason) }}</p>
+        }
+        @if (g.warnings.length > 0) {
+          <h3 id="gate-warnings" class="label" i18n="@@overview.warnings">Warnings</h3>
+          <ul class="alert alert-info" aria-labelledby="gate-warnings">
+            @for (w of g.warnings; track $index) {
+              <li>{{ w | label: 'gateWarning' }}</li>
+            }
+          </ul>
+        }
+      }
+    </section>
+
+    <div class="overview-columns">
+      <section class="card" aria-labelledby="new-code-heading">
+        <h2 id="new-code-heading" i18n="@@overview.newCode">New code</h2>
+        <div class="metric-grid">
+          @for (m of newCode(); track m.metric) {
+            <div class="metric">
+              <span class="metric-value">{{ m.value | measure: m.metric }}</span>
+              <span class="metric-label">{{ m.key | label: 'metric' }}</span>
+            </div>
+          }
+        </div>
+      </section>
+      <section class="card" aria-labelledby="overall-heading">
+        <h2 id="overall-heading" i18n="@@overview.overall">Overall code</h2>
+        <div class="metric-grid">
+          @for (m of overall(); track m.metric) {
+            <div class="metric">
+              <span
+                class="metric-value"
+                [attr.data-rating]="
+                  m.value !== null && m.metric.endsWith('_rating')
+                    ? (m.value | measure: m.metric)
+                    : null
+                "
+                >{{ m.value | measure: m.metric }}</span
+              >
+              <span class="metric-label">{{ m.metric | label: 'metric' }}</span>
+            </div>
+          }
+        </div>
+      </section>
+      <section class="card" aria-labelledby="issues-heading">
+        <h2 id="issues-heading" i18n="@@overview.issuesLinks">Issues</h2>
+        <ul class="link-list">
+          <li>
+            <a
+              [routerLink]="['/projects', projectId(), 'issues']"
+              [queryParams]="{ branch: b.id, inNewCode: 'true' }"
+              i18n="@@overview.newIssuesLink"
+              >Open issues in new code</a
+            >
+          </li>
+          <li>
+            <a
+              [routerLink]="['/projects', projectId(), 'issues']"
+              [queryParams]="{ branch: b.id }"
+              i18n="@@overview.allIssuesLink"
+              >All open issues</a
+            >
+          </li>
+        </ul>
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="trends-heading">
+      <h2 id="trends-heading" i18n="@@overview.trends">Trends</h2>
+      <div class="grid-cards">
+        @for (t of trends(); track t.metric) {
+          <q-trend-chart [metric]="t.metric" [points]="t.points" />
+        }
+      </div>
+    </section>
+  </div>
+}

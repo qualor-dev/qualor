@@ -1,0 +1,16 @@
+{
+  "sources": [
+    {
+      "line": 2,
+      "code": "<span class=\"k\">if</span> (a == <span class=\"c\">1</span>) {}",
+      "scmRevision": "0000000000000000000000000000000000000000",
+      "scmAuthor": "someone",
+      "scmDate": "2026-09-01T10:00:00+0000",
+      "duplicated": false,
+      "isNew": false,
+      "lineHits": 1,
+      "conditions": 2,
+      "coveredConditions": 1
+    }
+  ]
+}

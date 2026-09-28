@@ -1,0 +1,930 @@
+{
+  "$id": "https://qualor.dev/schema/import-report.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "format": {
+      "type": "string",
+      "const": "qualor-import-report"
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "sonarqube"
+        },
+        "edition": {
+          "type": "string",
+          "enum": [
+            "server",
+            "cloud"
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "organization": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "edition",
+        "origin",
+        "organization",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "finishedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "organization": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "key": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id",
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "profiles": {
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sonarKey": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "sonarLanguage": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "created",
+              "would_create",
+              "updated",
+              "would_update",
+              "unchanged",
+              "conflict",
+              "skipped",
+              "failed"
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qualorProfileId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultChange": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "set",
+                  "would_set"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rules": {
+            "type": "object",
+            "properties": {
+              "active": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "mapped": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "deactivated": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "severityOverrides": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "pendingReview": {
+                "maxItems": 10000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              },
+              "statusOnly": {
+                "maxItems": 10000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              },
+              "unmapped": {
+                "maxItems": 2000,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "maxLength": 1024
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 1000
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "unmappedCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "parametersNotImported": {
+                "maxItems": 10000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              }
+            },
+            "required": [
+              "active",
+              "mapped",
+              "deactivated",
+              "severityOverrides",
+              "pendingReview",
+              "statusOnly",
+              "unmapped",
+              "unmappedCount",
+              "parametersNotImported"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "sonarKey",
+          "name",
+          "sonarLanguage",
+          "language",
+          "outcome",
+          "reason",
+          "qualorProfileId",
+          "defaultChange",
+          "rules"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "gates": {
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "created",
+              "would_create",
+              "updated",
+              "would_update",
+              "unchanged",
+              "conflict",
+              "skipped",
+              "failed"
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qualorGateId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultChange": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "set",
+                  "would_set"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "conditions": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "metric": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "op": {
+                      "type": "string",
+                      "maxLength": 16
+                    },
+                    "error": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "const": "mapped"
+                    },
+                    "qualor": {
+                      "type": "object",
+                      "properties": {
+                        "metric": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "operator": {
+                          "type": "string",
+                          "enum": [
+                            "gt",
+                            "lt"
+                          ]
+                        },
+                        "threshold": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "metric",
+                        "operator",
+                        "threshold"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "approximate": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "metric",
+                    "op",
+                    "error",
+                    "outcome",
+                    "qualor",
+                    "approximate",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "metric": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "op": {
+                      "type": "string",
+                      "maxLength": 16
+                    },
+                    "error": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "const": "unmapped"
+                    },
+                    "qualor": {
+                      "type": "null"
+                    },
+                    "approximate": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "metric",
+                        "operator",
+                        "threshold",
+                        "threshold_out_of_range",
+                        "duplicate_metric",
+                        "operator_conflict"
+                      ]
+                    },
+                    "qualorMetric": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "metric",
+                    "op",
+                    "error",
+                    "outcome",
+                    "qualor",
+                    "approximate",
+                    "reason",
+                    "qualorMetric"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "name",
+          "outcome",
+          "reason",
+          "qualorGateId",
+          "defaultChange",
+          "conditions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "projects": {
+      "maxItems": 11000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "found",
+              "created",
+              "would_create",
+              "missing",
+              "key_invalid",
+              "failed"
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qualorProjectId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "profiles": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "assigned",
+                    "would_assign",
+                    "unchanged",
+                    "conflict",
+                    "skipped",
+                    "failed"
+                  ]
+                },
+                "reason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "language": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "profile": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "outcome",
+                "reason",
+                "language",
+                "profile"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "gate": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "assigned",
+                      "would_assign",
+                      "unchanged",
+                      "conflict",
+                      "skipped",
+                      "failed"
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "gate": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "outcome",
+                  "reason",
+                  "gate"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issues": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "done",
+                      "not_analysed",
+                      "skipped",
+                      "failed"
+                    ]
+                  },
+                  "read": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "applied": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "wouldApply": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "alreadySet": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "conflict": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "unmatched": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "ambiguous": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "competitorsUnknown": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "notSent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "changed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "failed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "unmappedRule": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "pathInvalid": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "invalid": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "notRead": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "hotspotsNotImported": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "unmappedRules": {
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        "issues": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "issues"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "items": {
+                    "maxItems": 10000,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "sonarKey": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "rule": {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 1024
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "line": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 10000000
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "applied",
+                            "would_apply",
+                            "already_set",
+                            "conflict",
+                            "unmatched",
+                            "ambiguous",
+                            "competitors_unknown",
+                            "not_sent",
+                            "changed",
+                            "failed"
+                          ]
+                        },
+                        "qualorIssueId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "sonarKey",
+                        "rule",
+                        "path",
+                        "line",
+                        "outcome",
+                        "qualorIssueId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "outcome",
+                  "read",
+                  "applied",
+                  "wouldApply",
+                  "alreadySet",
+                  "conflict",
+                  "unmatched",
+                  "ambiguous",
+                  "competitorsUnknown",
+                  "notSent",
+                  "changed",
+                  "failed",
+                  "unmappedRule",
+                  "pathInvalid",
+                  "invalid",
+                  "notRead",
+                  "hotspotsNotImported",
+                  "unmappedRules",
+                  "items"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "outcome",
+          "reason",
+          "qualorProjectId",
+          "profiles",
+          "gate",
+          "issues"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "maxItems": 100000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "SONARQUBE_ISSUE_WINDOW",
+              "SONARQUBE_RULE_WINDOW",
+              "SONARQUBE_ACTIVATION_MISSING",
+              "SONARQUBE_PROJECT_WINDOW",
+              "SONARQUBE_RESULTS_CHANGED",
+              "SONARQUBE_INACTIVE_RULES_TRUNCATED",
+              "ISSUES_NOT_READ",
+              "HOTSPOTS_NOT_COUNTED",
+              "PATH_PREFIX_HINT",
+              "ISSUE_STATUSES_NOT_SENT",
+              "ISSUE_STATUSES_FAILED",
+              "TOKEN_ON_COMMAND_LINE",
+              "INSECURE_URL"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "aborted": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "source",
+    "dryRun",
+    "startedAt",
+    "finishedAt",
+    "organization",
+    "profiles",
+    "gates",
+    "projects",
+    "warnings",
+    "aborted"
+  ],
+  "additionalProperties": false
+}

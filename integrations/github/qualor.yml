@@ -1,0 +1,40 @@
+# Qualor in GitHub Actions. Copy this file to .github/workflows/qualor.yml.
+#
+# Set, in the repository's (or organisation's) Actions settings:
+#   - variable QUALOR_URL: your Qualor server;
+#   - variable QUALOR_SCANNER_IMAGE: qualor/scanner:<tag> (a fixed tag: nothing floats);
+#   - secret QUALOR_TOKEN: a project analysis token of the Qualor project.
+# The job needs no GitHub write permission: pull requests are decorated by the Qualor GitHub App,
+# which an administrator connects in Qualor (Settings, GitHub) and installs on this repository.
+# It checks out the pull request's head, not GitHub's merge commit, so Qualor's annotations land on
+# the lines of the pull request, with the full history (the new-code baseline) and without leaving
+# the job's token in .git/config, where the analysed code could read it.
+# The job is skipped for pull requests from forks: GitHub gives them no secrets, so the scan could
+# not upload. Never switch to pull_request_target, which would run a fork's code with the token.
+# Change `main` below if your default branch has another name.
+name: qualor
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  qualor:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ vars.QUALOR_SCANNER_IMAGE }}
+      options: --user 1001
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # Analyzers that load the project's own plugins or classes (ESLint plugins, compiled Java
+      # classes for SpotBugs) need its dependencies: install or build them here, before the scan.
+      - run: qualor scan
+        env:
+          QUALOR_URL: ${{ vars.QUALOR_URL }}
+          QUALOR_TOKEN: ${{ secrets.QUALOR_TOKEN }}

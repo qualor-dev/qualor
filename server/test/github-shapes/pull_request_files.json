@@ -1,0 +1,14 @@
+[
+  {
+    "sha": "bbcd538c8e72b8c175046e27cc8f907076331401",
+    "filename": "src/a.ts",
+    "status": "modified",
+    "additions": 3,
+    "deletions": 0,
+    "changes": 3,
+    "blob_url": "https://github.com/acme/api/blob/1111111111111111111111111111111111111111/src%2Fa.ts",
+    "raw_url": "https://github.com/acme/api/raw/1111111111111111111111111111111111111111/src%2Fa.ts",
+    "contents_url": "https://api.github.com/repos/acme/api/contents/src%2Fa.ts?ref=1111111111111111111111111111111111111111",
+    "patch": "@@ -1,2 +1,5 @@\n a\n b\n+c\n+d\n+e"
+  }
+]

@@ -1,0 +1,16 @@
+Qualor {{ .Chart.AppVersion }} is installed as "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+Database: {{ .Values.database.mode }}{{ if eq .Values.database.mode "embedded" }} (one server; its claim "data-{{ include "qualor.fullname" . }}-0" is kept on uninstall){{ end }}.
+
+Wait until it is ready:
+  kubectl -n {{ .Release.Namespace }} rollout status {{ if eq .Values.database.mode "embedded" }}statefulset{{ else }}deployment{{ end }}/{{ include "qualor.fullname" . }}
+{{- if .Values.ingress.enabled }}
+
+Open {{ if .Values.ingress.tls.secretName }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }} and sign in as "{{ .Values.config.bootstrapAdminUsername }}" with the bootstrap password.
+{{- else }}
+
+Try it without an ingress:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "qualor.fullname" . }} 8080:{{ .Values.service.port }}
+then open http://127.0.0.1:8080 and sign in as "{{ .Values.config.bootstrapAdminUsername }}" with the bootstrap password.
+{{- end }}
+The bootstrap password is the key QUALOR_BOOTSTRAP_ADMIN_PASSWORD of the Secret "{{ include "qualor.secretName" . }}" (these notes never print it).
+Change that password at the first sign-in, and set config.publicUrl to the address users open.

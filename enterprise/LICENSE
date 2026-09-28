@@ -1,0 +1,48 @@
+Qualor Enterprise Licence
+
+Copyright (c) 2026 Qualor contributors
+
+This licence covers the files in the enterprise/ directory of the Qualor repository and the
+compiled form of them that ships in the qualor/server image at /app/enterprise ("the Software").
+Everything outside enterprise/ is licensed under the MIT licence in the root LICENSE file.
+
+1. Source-available, not open source. You may read the Software, and copy and modify it for
+   development and testing, without a subscription.
+
+2. Copies that are not in use. Every copy of Qualor carries the Software, and the Qualor server
+   loads it only while a licence key is configured. While no licence key is configured and the
+   server does not load the Software, possessing it, running Qualor, building Qualor from
+   unmodified source, and mirroring or redistributing the unmodified Software is not use of the
+   Software under this licence and needs no subscription.
+
+3. Production use. You may use the Software in production only if you (and any organisation you
+   act for) have a valid, paid Qualor Enterprise subscription, evidenced by a licence key issued
+   for you, and you comply with the subscription terms. "Production" means any use other than
+   development and testing. Production use is limited to what that key enables:
+   a. the features the key lists;
+   b. the period in which the key is valid, including the 14-day grace period after it expires,
+      during which the server keeps the licensed features on. After the grace period the server
+      turns them off, and production use of the Software ends until a valid key is configured.
+
+4. Modifications. You may make and publish patches to the Software. Modified versions may be used
+   in production only under a valid subscription, as in section 3.
+
+5. The licence key. You may not remove, disable, bypass or circumvent the licence-key check or
+   the limits it enforces (section 3), or make the licensed features available to anyone without
+   a subscription.
+
+6. Redistribution. You may redistribute the Software as part of a complete copy of the Qualor
+   repository (a fork, with or without your published patches) or of a Qualor release or image
+   as published by its maintainers (a mirror). Redistributing it this way gives nobody the right
+   to use it in production without a subscription. You may not otherwise distribute, sublicense
+   or sell the Software or modified versions of it.
+
+7. Third-party components keep their own licences.
+
+8. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+   BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Questions about subscriptions: https://qualor.dev/enterprise

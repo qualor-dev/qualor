@@ -1,0 +1,39 @@
+{
+  "profiles": [
+    {
+      "key": "AYp-ts-1",
+      "name": "Team TS",
+      "language": "ts",
+      "languageName": "TypeScript",
+      "isInherited": true,
+      "parentKey": "AYp-ts-sonar",
+      "parentName": "Sonar way",
+      "isDefault": false,
+      "activeRuleCount": 3,
+      "activeDeprecatedRuleCount": 0,
+      "isBuiltIn": false,
+      "rulesUpdatedAt": "2026-09-01T10:00:00+0000",
+      "lastUsed": "2026-09-20T10:00:00+0000",
+      "actions": {
+        "edit": false,
+        "setAsDefault": false,
+        "copy": false,
+        "associateProjects": false,
+        "delete": false
+      }
+    },
+    {
+      "key": "AYp-ts-sonar",
+      "name": "Sonar way",
+      "language": "ts",
+      "languageName": "TypeScript",
+      "isInherited": false,
+      "isDefault": true,
+      "activeRuleCount": 2,
+      "activeDeprecatedRuleCount": 0,
+      "isBuiltIn": true,
+      "rulesUpdatedAt": "2026-08-01T10:00:00+0000"
+    }
+  ],
+  "actions": { "create": false }
+}

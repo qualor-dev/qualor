@@ -1,0 +1,26 @@
+[
+  {
+    "id": 9001,
+    "sha": "1111111111111111111111111111111111111111",
+    "ref": "feature/refund-limits",
+    "status": "success",
+    "name": "qualor/quality-gate",
+    "target_url": "https://qualor.example.com/projects/01920000-0000-7000-8000-000000000000/branches/01920000-0000-7000-8000-000000000002",
+    "description": "Quality gate passed",
+    "created_at": "2026-09-25T09:01:02.000Z",
+    "started_at": null,
+    "finished_at": "2026-09-25T09:01:02.000Z",
+    "allow_failure": false,
+    "coverage": null,
+    "pipeline_id": 99001,
+    "author": {
+      "id": 42,
+      "username": "project_7_bot_4b1e2c",
+      "name": "qualor",
+      "state": "active",
+      "locked": false,
+      "avatar_url": null,
+      "web_url": "https://gitlab.example.com/project_7_bot_4b1e2c"
+    }
+  }
+]

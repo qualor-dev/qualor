@@ -1,0 +1,16 @@
+{
+  "id": "chatcmpl-fake0000000000000000000000",
+  "object": "chat.completion",
+  "created": 1767225600,
+  "model": "fake-openai-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": { "role": "assistant", "content": "{}", "refusal": null },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": { "prompt_tokens": 412, "completion_tokens": 96, "total_tokens": 508 },
+  "system_fingerprint": "fp_fake"
+}

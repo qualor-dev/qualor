@@ -1,0 +1,72 @@
+{{- /* Off by default; needs a CNI that enforces NetworkPolicy. */}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "qualor.fullname" . }}
+  labels:
+    {{- include "qualor.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "qualor.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    {{- if $np.egress }}
+    - Egress
+    {{- end }}
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+      {{- with $np.ingressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+        - podSelector:
+            matchLabels:
+              {{- include "qualor.testSelectorLabels" $ | nindent 14 }}
+      {{- end }}
+  {{- if $np.egress }}
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- if eq .Values.database.mode "bundled" }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "qualor.postgresSelectorLabels" . | nindent 14 }}
+      ports:
+        - port: 5432
+          protocol: TCP
+    {{- end }}
+    {{- toYaml $np.egress | nindent 4 }}
+  {{- end }}
+{{- if eq .Values.database.mode "bundled" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "qualor.fullname" . }}-postgres
+  labels:
+    {{- include "qualor.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "qualor.postgresSelectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "qualor.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 5432
+          protocol: TCP
+{{- end }}
+{{- end }}

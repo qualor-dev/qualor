@@ -1,0 +1,16 @@
+{
+  "name": "@qualor/shared",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "schemas": "tsx scripts/export-schemas.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<coverage line-rate="0.7142" branch-rate="0.5" version="1.9" timestamp="1790000000" lines-covered="5" lines-valid="7" branches-covered="2" branches-valid="4">
+  <sources><source>.</source></sources>
+  <packages>
+    <package name="Acme.Store" line-rate="0.7142" branch-rate="0.5" complexity="3">
+      <classes>
+        <class name="Acme.Store.Pricing" filename="src/Acme.Store/Pricing.cs" line-rate="0.7142" branch-rate="0.5" complexity="3">
+          <methods />
+          <lines>
+            <line number="12" hits="1" branch="False" />
+            <line number="13" hits="1" branch="False" />
+            <line number="14" hits="1" branch="True" condition-coverage="50% (2/4)" />
+            <line number="16" hits="1" branch="False" />
+            <line number="18" hits="0" branch="False" />
+            <line number="20" hits="0" branch="False" />
+            <line number="22" hits="1" branch="False" />
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

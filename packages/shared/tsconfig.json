@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "../../node_modules/.cache/tsc/shared", "rootDir": "." },
+  "include": ["src", "test", "scripts", "rules/*.json"]
+}

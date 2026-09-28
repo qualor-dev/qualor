@@ -1,0 +1,12 @@
+{
+  "name": "Qualor (<your organisation>)",
+  "url": "https://<your Qualor server>",
+  "description": "Quality gate checks and pull request comments from Qualor.",
+  "public": false,
+  "hook_attributes": {
+    "url": "https://<your Qualor server>/api/v0/github/webhooks/<connection id>",
+    "active": false
+  },
+  "default_permissions": { "checks": "write", "pull_requests": "write", "metadata": "read" },
+  "default_events": ["check_run"]
+}

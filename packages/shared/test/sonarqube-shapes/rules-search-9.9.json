@@ -1,0 +1,19 @@
+{
+  "total": 1,
+  "p": 1,
+  "ps": 500,
+  "rules": [
+    {
+      "key": "java:S1481",
+      "repo": "java",
+      "name": "Rule S1481",
+      "lang": "java",
+      "severity": "MINOR"
+    }
+  ],
+  "actives": {
+    "java:S1481": [
+      { "qProfile": "AYp-java-1", "inherit": "NONE", "severity": "MINOR", "params": [] }
+    ]
+  }
+}

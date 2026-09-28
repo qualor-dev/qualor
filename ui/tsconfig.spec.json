@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./node_modules/.cache/tsc/spec",
+    "types": ["vitest/globals", "@angular/localize"]
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -1,0 +1,213 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "extensions": [
+          {
+            "version": "4.10.4",
+            "name": "edu.umd.cs.findbugs.plugins.core",
+            "shortDescription": {
+              "text": "Core SpotBugs plugin"
+            },
+            "informationUri": "https://github.com/spotbugs",
+            "organization": "SpotBugs project"
+          }
+        ],
+        "driver": {
+          "name": "SpotBugs",
+          "version": "4.10.4",
+          "language": "en",
+          "informationUri": "https://spotbugs.github.io/",
+          "rules": [
+            {
+              "id": "ES_COMPARING_PARAMETER_STRING_WITH_EQ",
+              "shortDescription": {
+                "text": "Comparison of String parameter using == or !=."
+              },
+              "fullDescription": {
+                "text": "This code compares a java.lang.String parameter for reference equality using \nthe == or != operators. Requiring callers to pass only String constants or \ninterned strings to a method is unnecessarily fragile, and rarely leads to \nmeasurable performance gains. Consider using the equals(Object) method instead. \n\nSee CWE-595: Comparison of Object References Instead of Object Contents."
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "Comparison of String parameter using == or != in {0}."
+                }
+              },
+              "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#ES_COMPARING_PARAMETER_STRING_WITH_EQ",
+              "properties": {
+                "tags": ["BAD_PRACTICE"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "595",
+                    "guid": "08ab604b-e79e-5d94-9bc9-a10ec48774f1",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "UUF_UNUSED_FIELD",
+              "shortDescription": {
+                "text": "Unused field."
+              },
+              "fullDescription": {
+                "text": "This field is never used.  Consider removing it from the class. \nSee CWE-563: Assignment to Variable without Use."
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "Unused field: {0}."
+                }
+              },
+              "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#UUF_UNUSED_FIELD",
+              "properties": {
+                "tags": ["PERFORMANCE"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "563",
+                    "guid": "9a63821a-d035-5c3f-baa7-c6c0f6b6f67f",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            }
+          ],
+          "supportedTaxonomies": [
+            {
+              "name": "CWE",
+              "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "exitCode": 1,
+          "exitCodeDescription": "BUGS FOUND",
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ES_COMPARING_PARAMETER_STRING_WITH_EQ",
+          "ruleIndex": 0,
+          "message": {
+            "id": "default",
+            "text": "Comparison of String parameter using == or !=",
+            "arguments": ["com.acme.Calculator.sameName(String, String)"]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/Calculator.java",
+                  "uriBaseId": "20475445"
+                },
+                "region": {
+                  "startLine": 15
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "a",
+                  "kind": "variable",
+                  "fullyQualifiedName": "com.acme.Calculator.sameName(String, String)#a"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "UUF_UNUSED_FIELD",
+          "ruleIndex": 1,
+          "message": {
+            "id": "default",
+            "text": "Unused field",
+            "arguments": ["com.acme.Calculator.unusedCounter"]
+          },
+          "level": "note",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/Calculator.java",
+                  "uriBaseId": "20475445"
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "Calculator.unusedCounter",
+                  "kind": "member",
+                  "fullyQualifiedName": "com.acme.Calculator.unusedCounter"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "originalUriBaseIds": {
+        "20475445": {
+          "uri": "file:///fixture-root/src/main/java/"
+        }
+      },
+      "taxonomies": [
+        {
+          "name": "CWE",
+          "version": "4.10",
+          "minimumRequiredLocalizedDataSemanticVersion": "4.10",
+          "releaseDateUtc": "2023-01-31",
+          "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310",
+          "informationUri": "https://cwe.mitre.org/data/published/cwe_v4.10.pdf/",
+          "downloadUri": "https://cwe.mitre.org/data/xml/cwec_v4.10.xml.zip",
+          "isComprehensive": true,
+          "organization": "MITRE",
+          "language": "en",
+          "shortDescription": {
+            "text": "The MITRE Common Weakness Enumeration"
+          },
+          "taxa": [
+            {
+              "id": "563",
+              "guid": "9a63821a-d035-5c3f-baa7-c6c0f6b6f67f",
+              "shortDescription": {
+                "text": "Assignment to Variable without Use"
+              },
+              "fullDescription": {
+                "text": "The variable's value is assigned but never used, making it a dead store."
+              },
+              "defaultConfiguration": {
+                "level": "none"
+              }
+            },
+            {
+              "id": "595",
+              "guid": "08ab604b-e79e-5d94-9bc9-a10ec48774f1",
+              "shortDescription": {
+                "text": "Comparison of Object References Instead of Object Contents"
+              },
+              "fullDescription": {
+                "text": "The product compares object references instead of the contents of the objects themselves, preventing it from detecting equivalent objects."
+              },
+              "defaultConfiguration": {
+                "level": "none"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

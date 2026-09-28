@@ -1,0 +1,14 @@
+{
+  "isLoggedIn": true,
+  "id": "AYx1",
+  "login": "importer",
+  "name": "Importer",
+  "email": "importer@example.invalid",
+  "local": true,
+  "externalIdentity": "importer",
+  "externalProvider": "sonarqube",
+  "groups": [],
+  "scmAccounts": [],
+  "permissions": { "global": [] },
+  "homepage": { "type": "PROJECTS" }
+}

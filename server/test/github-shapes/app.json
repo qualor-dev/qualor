@@ -1,0 +1,16 @@
+{
+  "id": 123456,
+  "slug": "qualor-acme",
+  "client_id": "Iv23liExample000001",
+  "node_id": "A_kwDOAAABc0",
+  "owner": { "login": "acme", "id": 9001, "type": "Organization" },
+  "name": "Qualor (acme)",
+  "description": "Quality gate",
+  "external_url": "https://qualor.example.com",
+  "html_url": "https://github.com/apps/qualor-acme",
+  "created_at": "2026-09-01T10:00:00Z",
+  "updated_at": "2026-09-01T10:00:00Z",
+  "permissions": { "checks": "write", "metadata": "read", "pull_requests": "write" },
+  "events": ["check_run"],
+  "installations_count": 1
+}

@@ -1,0 +1,20 @@
+# Build context of deploy/server/Dockerfile and deploy/scanner/Dockerfile (the repository root).
+# Everything a build produces or a developer keeps locally stays out, so the images never carry a
+# local secret (.env) and the layer cache only changes when sources do.
+**/node_modules
+**/dist
+**/.angular
+**/.tmp
+/coverage
+**/*.tsbuildinfo
+.git
+.superpowers
+.env
+.env.*
+**/.env
+**/.env.*
+deploy/.env
+.pnpm-store
+**/.pnpm-store
+# A licence signing key never enters a build context (.gitignore has the same).
+**/*.private.pem

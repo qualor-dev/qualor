@@ -1,0 +1,14 @@
+replicaCount: 2
+database:
+  mode: bundled
+  bundled:
+    password: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+secrets:
+  secretKey: not-a-secret-not-a-secret-not-a-secret
+  bootstrapAdminPassword: not-a-password
+ingress:
+  enabled: true
+  className: nginx
+  host: qualor.example.test
+  tls:
+    secretName: qualor-tls

@@ -1,0 +1,71 @@
+{
+  "total": 2,
+  "p": 1,
+  "ps": 500,
+  "paging": { "pageIndex": 1, "pageSize": 500, "total": 2 },
+  "effortTotal": 10,
+  "issues": [
+    {
+      "key": "AYi-fp-1",
+      "rule": "external_eslint_repo:eqeqeq",
+      "severity": "MAJOR",
+      "component": "acme:shop:src/a.ts",
+      "project": "acme:shop",
+      "line": 2,
+      "hash": "0e0f51ecd7d6c8e8e2d8a2b1c0f3a9d1",
+      "textRange": { "startLine": 2, "endLine": 2, "startOffset": 4, "endOffset": 10 },
+      "flows": [],
+      "status": "RESOLVED",
+      "resolution": "FALSE-POSITIVE",
+      "issueStatus": "FALSE_POSITIVE",
+      "message": "Expected '===' and instead saw '=='.",
+      "effort": "5min",
+      "author": "",
+      "tags": [],
+      "comments": [
+        {
+          "key": "c1",
+          "login": "alice",
+          "htmlText": "safe",
+          "markdown": "safe here",
+          "updatable": false,
+          "createdAt": "2026-09-10T10:00:00+0000"
+        }
+      ],
+      "creationDate": "2026-09-01T10:00:00+0000",
+      "updateDate": "2026-09-10T10:00:00+0000",
+      "type": "CODE_SMELL",
+      "scope": "MAIN",
+      "impacts": [{ "softwareQuality": "MAINTAINABILITY", "severity": "MEDIUM" }],
+      "cleanCodeAttribute": "CONVENTIONAL",
+      "cleanCodeAttributeCategory": "CONSISTENT"
+    },
+    {
+      "key": "AYi-ac-1",
+      "rule": "typescript:S1440",
+      "severity": "MAJOR",
+      "component": "acme:shop:src/a.ts",
+      "project": "acme:shop",
+      "line": 3,
+      "textRange": { "startLine": 3, "endLine": 3, "startOffset": 0, "endOffset": 8 },
+      "status": "RESOLVED",
+      "resolution": "WONTFIX",
+      "issueStatus": "ACCEPTED",
+      "message": "Use '===' here.",
+      "comments": [],
+      "creationDate": "2026-09-01T10:00:00+0000",
+      "updateDate": "2026-09-11T10:00:00+0000",
+      "type": "CODE_SMELL"
+    }
+  ],
+  "components": [
+    {
+      "key": "acme:shop:src/a.ts",
+      "enabled": true,
+      "qualifier": "FIL",
+      "name": "a.ts",
+      "path": "src/a.ts"
+    }
+  ],
+  "facets": []
+}

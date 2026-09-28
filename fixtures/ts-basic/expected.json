@@ -1,0 +1,27 @@
+{
+  "description": "TypeScript repo: 3 ESLint findings, one duplicated function, LCOV coverage",
+  "engines": ["eslint"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "eslint:eqeqeq", "path": "src/math.ts", "startLine": 12, "severity": "high", "quality": "maintainability" },
+    { "ruleKey": "eslint:@typescript-eslint/no-unused-vars", "path": "src/math.ts", "startLine": 16, "severity": "high", "quality": "maintainability" },
+    { "ruleKey": "eslint:no-console", "path": "src/math.ts", "startLine": 23, "severity": "medium", "quality": "maintainability" }
+  ],
+  "files": {
+    "src/math.ts": { "language": "typescript", "kind": "main", "lines": 25, "ncloc": 22, "commentLines": 1, "functions": 3, "classes": 0, "complexity": 8, "cognitiveComplexity": 6 },
+    "src/math.test.ts": { "language": "typescript", "kind": "test", "lines": 3 },
+    "src/dup-a.ts": { "language": "typescript", "kind": "main", "lines": 15, "functions": 1 },
+    "src/dup-b.ts": { "language": "typescript", "kind": "main", "lines": 17, "functions": 1 }
+  },
+  "duplications": [
+    { "blocks": [ { "path": "src/dup-a.ts", "startLine": 1, "endLine": 15 }, { "path": "src/dup-b.ts", "startLine": 3, "endLine": 17 } ] }
+  ],
+  "coverage": { "lines_to_cover": 13, "uncovered_lines": 2, "conditions_to_cover": 8, "uncovered_conditions": 2, "coverage": 81.0 },
+  "notes": {
+    "src/math.ts#ncloc": "25 lines - 1 comment line (1) - 2 blank lines (10, 14) = 22",
+    "src/math.ts#complexity": "clamp 1+if+else-if = 3; isZero 1; sum 1+for+if+&& = 4; total 8",
+    "src/math.ts#cognitiveComplexity": "clamp: if +1, else if +1 = 2; isZero 0; sum: for +1, nested if +2, && +1 = 4; total 6",
+    "coverage": "13 DA lines, 2 with 0 hits; 8 BRDA, 2 with 0 hits; (11+6)/(13+8) = 80.95 -> 81.0",
+    "eslint:@typescript-eslint/no-unused-vars#severity": "typescript-eslint recommended sets 'error' -> SARIF error -> high"
+  }
+}

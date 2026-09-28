@@ -1,0 +1,110 @@
+{
+  "version": "10.11.0",
+  "rules": [
+    {
+      "id": "eqeqeq",
+      "shortDescription": "Require the use of `===` and `!==`",
+      "helpUri": "https://eslint.org/docs/latest/rules/eqeqeq",
+      "quality": "maintainability",
+      "kind": "issue"
+    },
+    {
+      "id": "@typescript-eslint/no-unused-vars",
+      "shortDescription": "Disallow unused variables",
+      "helpUri": "https://typescript-eslint.io/rules/no-unused-vars",
+      "quality": "maintainability",
+      "kind": "issue"
+    },
+    {
+      "id": "no-console",
+      "shortDescription": "Disallow the use of `console`",
+      "helpUri": "https://eslint.org/docs/latest/rules/no-console",
+      "quality": "maintainability",
+      "kind": "issue"
+    }
+  ],
+  "findings": [
+    {
+      "engineId": "eslint",
+      "ruleId": "eqeqeq",
+      "message": "Expected '===' and instead saw '=='.",
+      "severity": "high",
+      "location": {
+        "path": "src/math.ts",
+        "startLine": 12,
+        "startColumn": 16,
+        "endLine": 12,
+        "endColumn": 17
+      },
+      "lineHash": "4e444cec37718ae4a4571499e85b9005",
+      "contextHash": "7b6aa72409e7464e3f90d3c52bf851a8",
+      "snippet": {
+        "startLine": 9,
+        "lines": [
+          "}",
+          "",
+          "export function isZero(value: number): boolean {",
+          "  return value == 0;",
+          "}",
+          "",
+          "export function sum(values: number[]): number {"
+        ]
+      }
+    },
+    {
+      "engineId": "eslint",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "message": "'unused' is assigned a value but never used.",
+      "severity": "high",
+      "location": {
+        "path": "src/math.ts",
+        "startLine": 16,
+        "startColumn": 9,
+        "endLine": 16,
+        "endColumn": 14
+      },
+      "lineHash": "63fa70d2c13319349f8014fce8aa9ccd",
+      "contextHash": "72d49c71afe5e9b37317e1342f32cc05",
+      "snippet": {
+        "startLine": 13,
+        "lines": [
+          "}",
+          "",
+          "export function sum(values: number[]): number {",
+          "  const unused = values.length;",
+          "  let total = 0;",
+          "  for (const v of values) {",
+          "    if (v > 0 && Number.isFinite(v)) {"
+        ]
+      }
+    },
+    {
+      "engineId": "eslint",
+      "ruleId": "no-console",
+      "message": "Unexpected console statement.",
+      "severity": "medium",
+      "location": {
+        "path": "src/math.ts",
+        "startLine": 23,
+        "startColumn": 3,
+        "endLine": 23,
+        "endColumn": 13
+      },
+      "lineHash": "d11af49b1a0a9d7a158e7720b786bc44",
+      "contextHash": "283edbca09c16ec2ffa6a61b2412c41d",
+      "snippet": {
+        "startLine": 20,
+        "lines": [
+          "      total += v;",
+          "    }",
+          "  }",
+          "  console.log(total);",
+          "  return total;",
+          "}"
+        ]
+      }
+    }
+  ],
+  "warnings": [],
+  "secretRegions": []
+}

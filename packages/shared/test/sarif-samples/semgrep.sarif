@@ -1,0 +1,180 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "fingerprints": {
+            "matchBasedId/v1": "requires login"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "java/src/main/java/com/acme/Shell.java",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 50,
+                  "endLine": 7,
+                  "snippet": {
+                    "text": "        return Runtime.getRuntime().exec(command);"
+                  },
+                  "startColumn": 16,
+                  "startLine": 7
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Runtime.exec with a non-constant command may allow command injection."
+          },
+          "properties": {},
+          "ruleId": "java-runtime-exec"
+        },
+        {
+          "fingerprints": {
+            "matchBasedId/v1": "requires login"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/config.ts",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 42,
+                  "endLine": 2,
+                  "snippet": {
+                    "text": "const apiKey = \"Zx9Qe4Lr8Tn2Vb7Mk3Hs6Jp1\";"
+                  },
+                  "startColumn": 1,
+                  "startLine": 2
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Hard-coded API key."
+          },
+          "properties": {},
+          "ruleId": "hardcoded-api-key"
+        },
+        {
+          "fingerprints": {
+            "matchBasedId/v1": "requires login"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/run.ts",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 26,
+                  "endLine": 2,
+                  "snippet": {
+                    "text": "  return eval(expression);"
+                  },
+                  "startColumn": 10,
+                  "startLine": 2
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Avoid eval(); it executes arbitrary code."
+          },
+          "properties": {},
+          "ruleId": "ts-eval"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "Semgrep OSS",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Hard-coded API key."
+              },
+              "help": {
+                "markdown": "Hard-coded API key.",
+                "text": "Hard-coded API key."
+              },
+              "id": "hardcoded-api-key",
+              "name": "hardcoded-api-key",
+              "properties": {
+                "precision": "very-high",
+                "tags": ["CWE-798: Use of Hard-coded Credentials", "security"]
+              },
+              "shortDescription": {
+                "text": "Semgrep Finding: hardcoded-api-key"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "Runtime.exec with a non-constant command may allow command injection."
+              },
+              "help": {
+                "markdown": "Runtime.exec with a non-constant command may allow command injection.",
+                "text": "Runtime.exec with a non-constant command may allow command injection."
+              },
+              "id": "java-runtime-exec",
+              "name": "java-runtime-exec",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-78: Improper Neutralization of Special Elements used in an OS Command",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Semgrep Finding: java-runtime-exec"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Avoid eval(); it executes arbitrary code."
+              },
+              "help": {
+                "markdown": "Avoid eval(); it executes arbitrary code.",
+                "text": "Avoid eval(); it executes arbitrary code."
+              },
+              "id": "ts-eval",
+              "name": "ts-eval",
+              "properties": {
+                "precision": "very-high",
+                "tags": [
+                  "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code",
+                  "security"
+                ]
+              },
+              "shortDescription": {
+                "text": "Semgrep Finding: ts-eval"
+              }
+            }
+          ],
+          "semanticVersion": "1.178.0"
+        }
+      }
+    }
+  ],
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json"
+}

@@ -1,0 +1,3 @@
+ALTER TABLE "scm_connections" ADD COLUMN "app_id" text;--> statement-breakpoint
+ALTER TABLE "scm_connections" ADD COLUMN "webhook_secret_enc" jsonb;--> statement-breakpoint
+ALTER TABLE "scm_connections" ADD CONSTRAINT "scm_connections_github_app_check" CHECK ((provider = 'gitlab' AND app_id IS NULL AND webhook_secret_enc IS NULL) OR (provider = 'github' AND app_id IS NOT NULL AND app_id ~ '^[0-9]{1,20}$'));

@@ -1,0 +1,10 @@
+version: 1
+analyzers:
+  pmd:
+    rulesets: [config/pmd.xml]
+  spotbugs:
+    classDirs: [target/classes]
+coverage:
+  reports:
+    - path: reports/jacoco.xml
+      format: jacoco

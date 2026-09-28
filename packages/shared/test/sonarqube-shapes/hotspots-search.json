@@ -1,0 +1,19 @@
+{
+  "paging": { "pageIndex": 1, "pageSize": 1, "total": 3 },
+  "hotspots": [
+    {
+      "key": "AYh-1",
+      "component": "acme:shop:src/a.ts",
+      "project": "acme:shop",
+      "securityCategory": "others",
+      "vulnerabilityProbability": "LOW",
+      "status": "REVIEWED",
+      "resolution": "SAFE",
+      "line": 9,
+      "message": "Check this.",
+      "creationDate": "2026-09-01T10:00:00+0000",
+      "updateDate": "2026-09-02T10:00:00+0000"
+    }
+  ],
+  "components": []
+}

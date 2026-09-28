@@ -1,0 +1,8 @@
+version: 1
+analyzers:
+  semgrep:
+    configs: [semgrep/rules.yml]
+coverage:
+  reports:
+    - path: coverage/cobertura.xml
+      format: cobertura

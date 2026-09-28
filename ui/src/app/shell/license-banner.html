@@ -1,0 +1,30 @@
+@if (status(); as s) {
+  @if (notice(); as n) {
+    <div class="license-banner" role="status" [class.license-banner-bad]="n === 'expired'">
+      <p>
+        @switch (n) {
+          @case ('expiresSoon') {
+            <ng-container i18n="@@licenseBanner.expiresSoon"
+              >The Qualor licence expires on {{ s.license?.expires | dateTime: 'date' }}. Renew it
+              to keep the enterprise features.</ng-container
+            >
+          }
+          @case ('grace') {
+            <ng-container i18n="@@licenseBanner.grace"
+              >The Qualor licence expired on {{ s.license?.expires | dateTime: 'date' }}. Enterprise
+              features stop on {{ s.license?.graceEndsAt | dateTime: 'date' }}, at the end of the
+              grace period.</ng-container
+            >
+          }
+          @default {
+            <ng-container i18n="@@licenseBanner.expired"
+              >The Qualor licence has expired. Enterprise features are off: Qualor runs as the
+              community edition until the licence is renewed. Nothing was deleted.</ng-container
+            >
+          }
+        }
+        <a routerLink="/settings/license" i18n="@@licenseBanner.link">Open the licence page</a>
+      </p>
+    </div>
+  }
+}
