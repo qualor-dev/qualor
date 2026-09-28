@@ -344,7 +344,8 @@ export async function publish(
     );
     const chartDigest = /Digest: (sha256:[0-9a-f]{64})/.exec(pushed.stdout + pushed.stderr)?.[1];
     if (!chartDigest) throw new Error('helm push printed no digest');
-    const chartRef = `registry-1.docker.io/${NAMESPACE}/qualor@${chartDigest}`;
+    // docker.io, like the images: the name docker login stored the credentials under.
+    const chartRef = `docker.io/${NAMESPACE}/qualor@${chartDigest}`;
     cosign(signImageArgs(key, chartRef, PUBLISH_OPTIONS), 'cosign sign chart');
     cosign(verifyImageArgs(toWork(pub), chartRef, PUBLISH_OPTIONS), 'cosign verify chart');
 

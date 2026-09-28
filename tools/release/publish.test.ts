@@ -426,7 +426,7 @@ describe('the order of publishing (ruling R-ORDER)', () => {
     const helm = at((c) => c.command === 'helm');
     expect(calls[helm]?.args).toEqual(['push', expect.any(String) as unknown, CHART_REPOSITORY]);
     expect(helm).toBeGreaterThan(last((c) => isPush(c)));
-    const chartRef = `registry-1.docker.io/qualor/qualor@${CHART_DIGEST}`;
+    const chartRef = `docker.io/qualor/qualor@${CHART_DIGEST}`;
     const chartSign = at((c) => isSign(c) && c.args.at(-1) === chartRef);
     const chartVerify = at((c) => isVerify(c) && c.args.at(-1) === chartRef);
     expect(helm).toBeLessThan(chartSign);

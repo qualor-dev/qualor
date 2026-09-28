@@ -4,7 +4,9 @@
  * creates the production key pair with `pnpm license:keygen`: until then no key
  * validates in a release build. Removing a kid invalidates every licence it signed.
  */
-export const PRODUCTION_KEYS: Readonly<Record<string, string>> = Object.freeze({});
+export const PRODUCTION_KEYS: Readonly<Record<string, string>> = Object.freeze({
+  'prod-2026': 'qgiQzK48aO2zkbQN6dYmbAZ562_Q-REh6V7mRJwn4Ac',
+});
 
 /** Licence ids revoked in this release (enterprise.md §4.1). */
 export const REVOKED_LICENSE_IDS: readonly string[] = Object.freeze([]);
