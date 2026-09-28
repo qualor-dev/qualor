@@ -42,6 +42,8 @@ export interface RunOptions {
   cwd?: string;
   /** Show the command's output live instead of capturing it (long builds). */
   inherit?: boolean;
+  /** Kill the command after this long; it then fails with exit code 124 and says so. */
+  timeoutMs?: number;
 }
 
 /** Runs a program without a shell and captures its output. */
@@ -53,7 +55,19 @@ export function run(command: string, args: readonly string[], o: RunOptions = {}
     encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
     stdio: o.inherit ? ['pipe', 'inherit', 'inherit'] : 'pipe',
+    ...(o.timeoutMs === undefined ? {} : { timeout: o.timeoutMs, killSignal: 'SIGKILL' as const }),
   });
+  if (
+    o.timeoutMs !== undefined &&
+    (r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'
+  ) {
+    const minutes = Math.round(o.timeoutMs / 60_000);
+    return {
+      code: 124,
+      stdout: r.stdout ?? '',
+      stderr: `${r.stderr ?? ''}\n${command} timed out after ${minutes} min and was killed`,
+    };
+  }
   if (r.error) throw r.error;
   return { code: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }

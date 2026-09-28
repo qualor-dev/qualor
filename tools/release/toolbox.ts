@@ -32,6 +32,8 @@ export interface ToolboxOptions {
   plainEnv?: Record<string, string>;
   /** Inside the container; default /work. */
   workdir?: string;
+  /** Kill the tool after this long (run's timeoutMs). */
+  timeoutMs?: number;
   /** uid:gid; default hostUser(). */
   user?: string;
 }
@@ -165,12 +167,13 @@ export function runTool(tool: Tool, args: readonly string[], o: ToolboxOptions =
     return run(tool, mapWorkPaths(args, REPO_ROOT), {
       cwd: workdir,
       env: directEnv({ ...plain, ...o.env }),
+      timeoutMs: o.timeoutMs,
     });
   }
   const argv = toolboxArgs(tool, args, o);
   if (o.network?.startsWith(DRY_RUN_NETWORK_PREFIX)) assertInternalNetwork(o.network);
   mkdirSync(path.join(REPO_ROOT, '.tmp'), { recursive: true });
-  return run('docker', argv, { env: o.env });
+  return run('docker', argv, { env: o.env, timeoutMs: o.timeoutMs });
 }
 
 /** A host path inside the repository, as the toolbox sees it. */

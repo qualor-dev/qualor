@@ -450,7 +450,16 @@ export function takeSecrets(
 
 /** cosign and Helm run in the toolbox; only the registry calls get the bridge network. */
 const OFFLINE_COSIGN = new Set(['public-key', 'verify-blob']);
+/**
+ * How long one command may run before it is killed: pushes and uploads move gigabytes, the rest
+ * is quick. A command that hangs then fails the run with a message instead of holding it for hours.
+ */
+const TIMEOUT_MIN: Record<Command, number> = { docker: 60, gh: 60, tar: 30, cosign: 15, helm: 15 };
 const realExec: Exec = (command, args, o = {}) => {
+  // One line per command, so a stuck run shows where it is (the subcommand only, never a value).
+  const what = command === 'gh' ? args.slice(0, 2).join(' ') : (args[0] ?? '');
+  process.stdout.write(`[publish ${new Date().toISOString().slice(11, 19)}] ${command} ${what}\n`);
+  const timeoutMs = TIMEOUT_MIN[command] * 60_000;
   if (command === 'cosign' || command === 'helm') {
     const byName: Record<string, string> = {};
     const plain: Record<string, string> = {};
@@ -463,9 +472,10 @@ const realExec: Exec = (command, args, o = {}) => {
       ...(offline ? {} : { network: 'bridge', allowPublishNetwork: true }),
       env: byName,
       plainEnv: plain,
+      timeoutMs,
     });
   }
-  return run(command, args, { input: o.input, env: o.env });
+  return run(command, args, { input: o.input, env: o.env, timeoutMs });
 };
 
 if (process.argv[1]?.endsWith('publish.ts')) {
