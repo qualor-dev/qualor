@@ -259,15 +259,16 @@ describe('POST /analyses over a real socket (S11/S12)', () => {
     // dumped-by-Node case, see lingering-close.ts) would fall through to LINGER_TOTAL_MS instead.
     expect(Date.now() - startedAt).toBeLessThan(LINGER_TOTAL_MS / 2);
     // And the cap bounds what the server read: its compressed-body limit plus the linger margin,
-    // plus slack for the headers and whatever arrives within one poll interval. The body never
-    // ends, so without a working cap this would be whatever arrives in LINGER_TOTAL_MS: gigabytes
-    // on loopback.
+    // plus slack for the headers and whatever arrives within one poll interval (on a slow CI runner
+    // with coverage the interval fires late, and loopback delivers tens of MiB meanwhile). The
+    // body never ends, so without a working cap this would be whatever arrives in LINGER_TOTAL_MS:
+    // gigabytes on loopback.
     const serverSocket = serverSockets[before];
     expect(serverSocket).toBeDefined();
     await serverSocketClosed(serverSocket!);
     expect(serverSocket!.bytesRead).toBeGreaterThan(DEFAULT_MAX_COMPRESSED_BYTES);
     expect(serverSocket!.bytesRead).toBeLessThanOrEqual(
-      DEFAULT_MAX_COMPRESSED_BYTES + LINGER_EXTRA_BYTES_MARGIN + 64 * MiB,
+      DEFAULT_MAX_COMPRESSED_BYTES + LINGER_EXTRA_BYTES_MARGIN + 128 * MiB,
     );
   }, 30_000);
 
