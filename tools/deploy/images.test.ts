@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 /** Every `FROM` of a Dockerfile: an exact version tag and a digest (plan 1G ruling D1). */
 function baseImages(dockerfile: string): string[] {
@@ -80,6 +81,37 @@ describe('image definitions (plan 1G)', () => {
     expect(text).toMatch(/^ENTRYPOINT \["qualor"\]$/m);
     expect(text).toContain('sh /tmp/install.sh');
     expect(text).toContain('install -d /opt/qualor/rules/semgrep');
+  });
+
+  it("builds Gitleaks from install.sh's version, its source checked before it is unpacked", () => {
+    const text = readFileSync('deploy/scanner/Dockerfile', 'utf8');
+    const installSh = readFileSync('tools/analyzers/install.sh', 'utf8');
+    const version = /^GITLEAKS_VERSION=(\S+)$/m.exec(installSh)?.[1];
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(text).toContain(`ARG GITLEAKS_VERSION=${version}`);
+    expect(text).toMatch(/^ARG GITLEAKS_SOURCE_SHA256=[0-9a-f]{64}$/m);
+    expect(text.indexOf('sha256sum -c -')).toBeLessThan(
+      text.indexOf('tar -xzf /tmp/gitleaks.tar.gz'),
+    );
+    // The stage's binary replaces install.sh's in the tools stage the final image copies.
+    const copy = text.indexOf('COPY --from=gitleaks /gitleaks /opt/qualor/bin/gitleaks');
+    expect(copy).toBeGreaterThan(text.indexOf('RUN sh /tmp/install.sh'));
+    expect(copy).toBeLessThan(text.lastIndexOf('\nFROM '));
+  });
+
+  it('accepts image vulnerabilities only with a reason and a review date', () => {
+    const file = parse(readFileSync('deploy/scanner/.trivyignore.yaml', 'utf8')) as {
+      vulnerabilities: { id: string; statement?: string; expired_at?: string }[];
+    };
+    expect(file.vulnerabilities.length).toBeGreaterThan(0);
+    const ids = file.vulnerabilities.map((v) => v.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const v of file.vulnerabilities) {
+      expect(v.id).toMatch(/^CVE-\d{4}-\d+$/);
+      expect(v.statement, v.id).toBeTruthy();
+      // Trivy reports an entry again from its expiry date: the review date, never open-ended.
+      expect(v.expired_at, v.id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
   });
 
   it('builds qualor/scanner-dotnet from a named qualor/scanner, failing fast without one (plan 2D)', () => {
