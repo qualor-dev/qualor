@@ -15,6 +15,7 @@
   text-decoration: underline;
 }
 .summary {
+  min-width: 10rem;
   color: var(--text-2);
 }
 .actions-col {
