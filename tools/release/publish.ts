@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statfsSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -363,6 +364,11 @@ export async function publish(
     cosign(signImageArgs(key, chartRef, PUBLISH_OPTIONS), 'cosign sign chart');
     verifyListed(verifyImageArgs(toWork(pub), chartRef, PUBLISH_OPTIONS), 'cosign verify chart');
 
+    // Every image and the chart are pushed, signed and verified: the local images and the build
+    // cache are no longer needed, and the release assets below copy gigabytes of sources onto a
+    // runner disk that the images have nearly filled.
+    docker(['system', 'prune', '--all', '--force'], 'docker system prune');
+
     // 7. The release assets (release.md §3, I-2): flat, their own SHA256SUMS, signed, verified.
     const published: ReleaseManifest = {
       ...m,
@@ -458,7 +464,11 @@ const TIMEOUT_MIN: Record<Command, number> = { docker: 60, gh: 60, tar: 30, cosi
 const realExec: Exec = (command, args, o = {}) => {
   // One line per command, so a stuck run shows where it is (the subcommand only, never a value).
   const what = command === 'gh' ? args.slice(0, 2).join(' ') : (args[0] ?? '');
-  process.stdout.write(`[publish ${new Date().toISOString().slice(11, 19)}] ${command} ${what}\n`);
+  const disk = statfsSync(REPO_ROOT);
+  const freeGiB = ((disk.bavail * disk.bsize) / 1024 ** 3).toFixed(1);
+  process.stdout.write(
+    `[publish ${new Date().toISOString().slice(11, 19)}] ${command} ${what} (${freeGiB} GiB free)\n`,
+  );
   const timeoutMs = TIMEOUT_MIN[command] * 60_000;
   if (command === 'cosign' || command === 'helm') {
     const byName: Record<string, string> = {};
