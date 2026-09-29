@@ -23,7 +23,10 @@ import {
 } from './session';
 
 const tmp = useTempDirs();
-const info = (root: string, analyzers: string[] = []): SessionInfo => ({
+const info = (
+  root: string,
+  analyzers: SessionInfo['analyzers'] = { roslynator: [], sonar: [] },
+): SessionInfo => ({
   version: 1,
   id: 'a'.repeat(32),
   root,
@@ -37,12 +40,27 @@ describe('session files (config.md §6.1, rulings D1–D3)', () => {
     const root = tmp();
     mkdirSync(path.join(root, SESSION_DIR, 'sarif'), { recursive: true });
     writeFileSync(path.join(root, SESSION_DIR, 'sarif', 'old.sarif'), '{}');
-    createSession(root, info(root, ['/opt/a;b/R.dll']));
-    expect(readSession(root)).toEqual(info(root, ['/opt/a;b/R.dll']));
+    const analyzers = { roslynator: ['/opt/a;b/R.dll'], sonar: ['/opt/S.dll'] };
+    createSession(root, info(root, analyzers));
+    expect(readSession(root)).toEqual(info(root, analyzers));
     expect(listLogs(root)).toEqual([]);
     expect(existsSync(path.join(root, SESSION_DIR, 'projects'))).toBe(true);
     const props = readFileSync(path.join(root, SESSION_DIR, 'session.props'), 'utf8');
     expect(props).toContain('<QualorBundledAnalyzer Include="/opt/a%3Bb/R.dll" />');
+    expect(props).toContain('<QualorBundledSonarAnalyzer Include="/opt/S.dll" />');
+  });
+
+  it('refuses a session.json from an older CLI (a flat analyzers array) as though there were none (Task 4)', () => {
+    const root = tmp();
+    createSession(root, info(root));
+    // Before Task 4, `analyzers` was a flat array of Roslynator paths; a CLI upgraded mid-build
+    // must not read that shape as this session's own (config.md §6.1): `end` then reports no
+    // session, rather than misreading the old array as today's `{ roslynator, sonar }` object.
+    writeFileSync(
+      path.join(root, SESSION_DIR, 'session.json'),
+      `${JSON.stringify({ ...info(root), analyzers: ['/opt/a/Roslynator.dll'] }, null, 2)}\n`,
+    );
+    expect(readSession(root)).toBeNull();
   });
 
   it('refuses a .qualor that is a link or not a directory', () => {

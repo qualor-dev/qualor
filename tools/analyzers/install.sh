@@ -31,6 +31,17 @@ TRIVY_SHA256_ARM64=b94ce1976bbf3c15b514b605ee88be7c6d94a29be2302847ff01cb794d47a
 # TRIVY_DB_CREATED; architecture-independent.
 TRIVY_DB_DIGEST=sha256:7d0ae3ee84ece1ecae274d9ac146c7241ae483c981f68aeb3f4953f6c2fbc6b0
 TRIVY_DB_CREATED=2026-09-25T06:43:29Z
+# Qualor's sonarjs pass (tools/analyzers/sonarjs, plan 8A/8B), which this script does not install:
+# the qualor/scanner and tools/analyzers Dockerfiles run `npm ci` from its package-lock.json and
+# read these pins. SONARJS_VERSION must equal that package.json's eslint-plugin-sonarjs (the last
+# LGPL-3.0 release; never a later one). SONARJS_COMMIT is that release's npm gitHead in
+# SonarSource/SonarJS; its source archive, checked against SONARJS_SOURCE_SHA256, holds the RSPEC
+# metadata that categories.mjs turns into categories.json at image build.
+# Regenerate tools/analyzers/sonarjs/package-lock.json with npm >= 11 only: a lockfile written by
+# npm 10 fails its own `npm ci` with package.json's minimatch override.
+SONARJS_VERSION=2.0.4
+SONARJS_COMMIT=273825f98b35b29b409fbf4f89efce075c651d96
+SONARJS_SOURCE_SHA256=17af65bcc0c8b631da9f135afb0a9ef1da82eb31049e9ce7d90dc40e04e83dc1
 
 PREFIX="${QUALOR_TOOLS:-/opt/qualor}"
 GH=https://github.com

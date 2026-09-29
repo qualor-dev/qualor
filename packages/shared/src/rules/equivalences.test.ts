@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import sonarjsKeys from '../../rules/sonarjs-keys.json' with { type: 'json' };
 import {
   effectiveCwe,
   enginePriority,
@@ -55,5 +56,41 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
   it('ranks roslyn between spotbugs and pmd (data-model.md §5.3)', () => {
     expect(enginePriority('spotbugs')).toBeGreaterThan(enginePriority('roslyn'));
     expect(enginePriority('roslyn')).toBeGreaterThan(enginePriority('pmd'));
+  });
+
+  it('ranks sonarjs right below eslint, still above any external engine (config.md §6)', () => {
+    expect(enginePriority('eslint')).toBeGreaterThan(enginePriority('sonarjs'));
+    expect(enginePriority('sonarjs')).toBeGreaterThan(enginePriority('my-tool'));
+  });
+
+  it('pairs every sonarjs rule that decorates an ESLint rule with that rule', () => {
+    expect(equivalentPartners('sonarjs:S2376')).toContain('eslint:accessor-pairs');
+    expect(equivalentPartners('sonarjs:S1186')).toEqual(
+      expect.arrayContaining([
+        'eslint:no-empty-function',
+        'eslint:@typescript-eslint/no-empty-function',
+      ]),
+    );
+    const pairs = EQUIVALENCES.pairs.filter((p) => p.rules.some((r) => r.startsWith('sonarjs:')));
+    expect(pairs.length).toBeGreaterThanOrEqual(50);
+  });
+
+  it("pairs every sonarjs key with the project's own eslint-plugin-sonarjs rule, ESLint first", () => {
+    // A project whose ESLint config already runs eslint-plugin-sonarjs reports the same problem as
+    // eslint:sonarjs/<name>; the pair dedupes it with the ESLint issue primary (ENGINE_PRIORITY).
+    const own = EQUIVALENCES.pairs.filter((p) => p.rules[0].startsWith('eslint:sonarjs/'));
+    expect(own).toHaveLength(sonarjsKeys.length);
+    for (const key of sonarjsKeys) {
+      const partners = equivalentPartners(`sonarjs:${key}`).filter((r) =>
+        r.startsWith('eslint:sonarjs/'),
+      );
+      expect(partners, key).toHaveLength(1);
+    }
+    for (const p of own) expect(sonarjsKeys).toContain(p.rules[1].replace(/^sonarjs:/, ''));
+    expect(equivalentPartners('eslint:sonarjs/no-duplicated-branches')).toEqual(['sonarjs:S1871']);
+    expect(
+      rulesEquivalent(rule('eslint:sonarjs/cognitive-complexity'), rule('sonarjs:S3776')),
+    ).toBe(true);
+    expect(enginePriority('eslint')).toBeGreaterThan(enginePriority('sonarjs'));
   });
 });

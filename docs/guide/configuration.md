@@ -49,12 +49,13 @@ languages: auto                     # or [typescript, javascript, java, csharp]
 
 analyzers:
   eslint:   { enabled: auto, configFile: null, args: [], timeoutSeconds: 900 }
+  sonarjs:  { enabled: auto, timeoutSeconds: 900, typeChecking: auto }
   pmd:      { enabled: auto, rulesets: [qualor-default], timeoutSeconds: 900 }
   spotbugs: { enabled: auto, classDirs: [target/classes, build/classes/java/main], auxClasspathFile: null, timeoutSeconds: 1200 }
   semgrep:  { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
   gitleaks: { enabled: true, configFile: null, timeoutSeconds: 300 }
   trivy:    { enabled: auto, timeoutSeconds: 600 }
-  roslyn:   { enabled: auto, bundledAnalyzers: true }
+  roslyn:   { enabled: auto, bundledAnalyzers: true, sonarAnalyzer: true }
 
 sarif:
   - path: reports/osv.sarif
@@ -114,6 +115,7 @@ The server's variables (such as `QUALOR_PUBLIC_URL`, `QUALOR_SCM_INTERNAL_HOSTS`
 | `QUALOR_LOG_LEVEL` | `error`, `warn`, `info` (default) or `debug` |
 | `QUALOR_CACHE_DIR` | cache directory (default `~/.cache/qualor`) |
 | `QUALOR_TRIVY_CACHE_DIR` | another Trivy database directory (absolute, outside the checkout) |
+| `QUALOR_SONARJS_DIR` | another location for Qualor's sonarjs pass (absolute, outside the checkout; default `/opt/qualor/sonarjs`, set in `qualor/scanner`) |
 | `QUALOR_DOTNET_ANALYZERS` | directory of the bundled Roslyn analyzer DLLs (set in `qualor/scanner-dotnet`) |
 | `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | a proxy between the runner and the server (`http://` proxies) |
 

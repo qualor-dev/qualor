@@ -89,6 +89,8 @@ const profileReport = z.strictObject({
     unmapped: z.array(z.strictObject({ key: sonarKey, name: sonarName })).max(2000),
     unmappedCount: z.number().int().min(0),
     parametersNotImported: ruleKeys,
+    /** Mapped, but not run by Qualor's bundled configuration (import-sonarqube.md §7.1). */
+    mappedNotRun: ruleKeys,
   }),
 });
 

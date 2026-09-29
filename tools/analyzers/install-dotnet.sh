@@ -1,9 +1,10 @@
 #!/bin/sh
-# Installs the .NET SDKs and the bundled Roslyn analyzers of plan 2D (config.md §6.1) into
-# $QUALOR_TOOLS (default /opt/qualor): the .NET 8 and .NET 10 SDKs side by side in share/dotnet
-# (so SDK 10 finds the net8.0 targeting pack locally), `dotnet` linked into bin, and
-# Roslynator.Analyzers' roslyn4.7/cs DLLs in dotnet/analyzers. Every download is checked against
-# its pinned hash before it is unpacked. The SDK hashes are Microsoft's SHA-512 from
+# Installs the .NET SDKs and the bundled Roslyn analyzers of plan 2D (config.md §6.1) and phase 8A
+# into $QUALOR_TOOLS (default /opt/qualor): the .NET 8 and .NET 10 SDKs side by side in share/dotnet
+# (so SDK 10 finds the net8.0 targeting pack locally), `dotnet` linked into bin, Roslynator.Analyzers'
+# roslyn4.7/cs DLLs in dotnet/analyzers, and SonarAnalyzer.CSharp's analyzers/ DLLs in their own
+# dotnet/analyzers/sonar subdirectory. Every download is checked against its pinned hash before it
+# is unpacked. The SDK hashes are Microsoft's SHA-512 from
 # https://builds.dotnet.microsoft.com/dotnet/release-metadata/<channel>/releases.json.
 # Debian or Ubuntu with curl, tar, unzip; the SDK's native dependencies are installed with apt.
 set -eu
@@ -16,6 +17,10 @@ DOTNET10_SHA512_X64=51c8b999af9e8dd9998c9edc5944e19a90788862068acd38694e09888905
 DOTNET10_SHA512_ARM64=58ace73ced6b4360754689a686bdfb8a317f4da6cb8bb416dbc7d0ba9f47e43e3c09f5eb1f1a1cfaacbd10df9558da4882bf2a5e195d6ab56a02c1f9f76102ed
 ROSLYNATOR_VERSION=5.0.0
 ROSLYNATOR_SHA256=e5623ec990957c5ab9fd8ff23992d63c0d4c5571f4383f913d8af9886e18277b
+# SonarAnalyzer.CSharp 9.32.0.97167 is the last LGPL-3.0 release; 10.x is under the SONAR
+# Source-Available License, which forbids use in a product competing with SonarQube. Never bump.
+SONARANALYZER_VERSION=9.32.0.97167
+SONARANALYZER_SHA256=17c7fd6230597a4c08a30226e8b29f8e8c2a982ca12d4b9315021c8c41150cf8
 
 PREFIX="${QUALOR_TOOLS:-/opt/qualor}"
 case "$(uname -m)" in
@@ -58,5 +63,20 @@ echo "$ROSLYNATOR_SHA256  $TMP/roslynator.nupkg" | sha256sum -c - >/dev/null || 
 unzip -q -j -o "$TMP/roslynator.nupkg" 'analyzers/dotnet/roslyn4.7/cs/*.dll' -d "$PREFIX/dotnet/analyzers"
 chmod 0644 "$PREFIX"/dotnet/analyzers/*.dll
 
+# SonarAnalyzer.CSharp's DLLs go in their own subdirectory, not next to Roslynator's: `qualor
+# dotnet begin` reads every *.dll directly in dotnet/analyzers as the Roslynator family, and reads
+# dotnet/analyzers/sonar as its own family.
+get "https://api.nuget.org/v3-flatcontainer/sonaranalyzer.csharp/$SONARANALYZER_VERSION/sonaranalyzer.csharp.$SONARANALYZER_VERSION.nupkg" sonar.nupkg
+echo "$SONARANALYZER_SHA256  $TMP/sonar.nupkg" | sha256sum -c - >/dev/null || { echo "checksum mismatch: SonarAnalyzer.CSharp $SONARANALYZER_VERSION" >&2; exit 1; }
+mkdir -p "$PREFIX/dotnet/analyzers/sonar"
+unzip -q -j -o "$TMP/sonar.nupkg" 'analyzers/*.dll' -d "$PREFIX/dotnet/analyzers/sonar"
+chmod 0644 "$PREFIX"/dotnet/analyzers/sonar/*.dll
+# The package's own third-party notices (Google.Protobuf, BSD-3-Clause; the StyleCop Lightup, MIT,
+# and Roslyn, Apache-2.0, code in its ShimLayer), verbatim from the checked nupkg, next to the
+# other licence files. deploy/scanner/licenses/SONARANALYZER-CSHARP-LICENSE.txt quotes them too.
+mkdir -p "$PREFIX/licenses"
+unzip -q -p "$TMP/sonar.nupkg" 'license/THIRD-PARTY-NOTICES.txt' > "$PREFIX/licenses/SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt"
+chmod 0644 "$PREFIX/licenses/SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt"
+
 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 "$PREFIX/bin/dotnet" --list-sdks
-echo "installed .NET SDK $DOTNET8_VERSION and $DOTNET10_VERSION into $DOTNET_ROOT, Roslynator $ROSLYNATOR_VERSION into $PREFIX/dotnet/analyzers"
+echo "installed .NET SDK $DOTNET8_VERSION and $DOTNET10_VERSION into $DOTNET_ROOT, Roslynator $ROSLYNATOR_VERSION and SonarAnalyzer.CSharp $SONARANALYZER_VERSION into $PREFIX/dotnet/analyzers"

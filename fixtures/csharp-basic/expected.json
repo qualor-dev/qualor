@@ -1,5 +1,5 @@
 {
-  "description": "C# solution: a library targeting net8.0 and net10.0 with TreatWarningsAsErrors, a test project, Roslyn findings (SDK rules and Roslynator), one suppressed finding, one duplicated method, Cobertura coverage",
+  "description": "C# solution: a library targeting net8.0 and net10.0 with TreatWarningsAsErrors, a test project, Roslyn findings (SDK rules, Roslynator and the bundled SonarAnalyzer.CSharp), one suppressed finding, one duplicated method, Cobertura coverage",
   "engines": ["roslyn"],
   "findingsExhaustive": false,
   "findings": [
@@ -10,7 +10,10 @@
     { "ruleKey": "roslyn:CA1062", "path": "src/Acme.Store/Names.cs", "startLine": 9, "severity": "medium", "quality": "maintainability" },
     { "ruleKey": "roslyn:CA1062", "path": "src/Acme.Store/Labels.cs", "startLine": 10, "severity": "medium", "quality": "maintainability" },
     { "ruleKey": "roslyn:CA1845", "path": "src/Acme.Store/Names.cs", "startLine": 18, "severity": "medium", "quality": "maintainability" },
-    { "ruleKey": "roslyn:CA1845", "path": "src/Acme.Store/Labels.cs", "startLine": 19, "severity": "medium", "quality": "maintainability" }
+    { "ruleKey": "roslyn:CA1845", "path": "src/Acme.Store/Labels.cs", "startLine": 19, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "roslyn:S2325", "path": "src/Acme.Store/Pricing.cs", "startLine": 26, "severity": "low", "quality": "maintainability" },
+    { "ruleKey": "roslyn:S2930", "path": "src/Acme.Store/Reader.cs", "startLine": 9, "severity": "blocker", "quality": "reliability" },
+    { "ruleKey": "roslyn:S3400", "path": "src/Acme.Store/Pricing.cs", "startLine": 26, "severity": "low", "quality": "maintainability" }
   ],
   "files": {
     "src/Acme.Store/Hashing.cs": { "language": "csharp", "kind": "main", "lines": 12, "functions": 1, "classes": 1, "complexity": 1, "cognitiveComplexity": 0 },
@@ -29,6 +32,9 @@
     "roslyn:CA1822#suppressed": "Pricing.Zero (line 26) is flagged by CA1822 inside #pragma warning disable; the log marks it suppressions:[{kind:inSource}] and it must not appear",
     "roslyn:*#quality": "rule properties.category: CA5351 Security -> security; CA2000 Reliability -> reliability; CA1062 Design, CA1845 and CA1850 Performance, RCS1118 Roslynator -> maintainability",
     "roslyn:*#severity": "result.level warning -> medium; RCS1118 level note -> low",
+    "roslyn:S*#findings": "Phase 8A/8B Task 5: the same build with the bundled SonarAnalyzer.CSharp 9.32.0.97167 (config.md §6.1) added, run in qualor/scanner-dotnet:8ab-t4 (built at commit 6703cd1) on 2026-09-29, produced S2325, S2930 and S3400 in each of the net8.0 and net10.0 logs (462 Sonar rules loaded, only SonarWay-tagged ones enabled); mergeRoslynLogs deduplicates the two frameworks' identical results down to one each",
+    "roslyn:S*#quality": "the SonarQube category mapping (report-format.md §7.1): properties.category is the real value the bundled analyzer wrote, '<Severity> <Type>' — S2325 'Minor Code Smell', S3400 'Minor Code Smell' -> maintainability; S2930 'Blocker Bug' -> reliability. Note: S2930's real category is 'Blocker Bug', not 'Major Bug' as an earlier probe note (task-5-brief.md) said; report-format.md §7.1 itself already uses 'a Blocker Bug stays blocker' as its worked example",
+    "roslyn:S*#severity": "quality/kind/severity for a rule with a SonarQube category all come from that category, never from result.level (report-format.md §7.1): Minor -> low (S2325, S3400); Blocker -> blocker (S2930), even though SonarAnalyzer reports both at SARIF level 'warning'",
     "src/Acme.Store/Pricing.cs#functions": "Calls (expression-bodied property), Discount, Zero -> 3 (the field is not a function)",
     "src/Acme.Store/Pricing.cs#complexity": "3 functions + if + && + else-if (an if_statement) = 6",
     "src/Acme.Store/Pricing.cs#cognitiveComplexity": "if +1 (nesting 0), the && run +1, else if +1 (hybrid, no nesting); no plain else -> 3",

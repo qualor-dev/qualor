@@ -245,6 +245,14 @@
                   "type": "string",
                   "maxLength": 1024
                 }
+              },
+              "mappedNotRun": {
+                "maxItems": 10000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
               }
             },
             "required": [
@@ -256,7 +264,8 @@
               "statusOnly",
               "unmapped",
               "unmappedCount",
-              "parametersNotImported"
+              "parametersNotImported",
+              "mappedNotRun"
             ],
             "additionalProperties": false
           }

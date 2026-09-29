@@ -1,0 +1,200 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Microsoft (R) Visual C# Compiler",
+          "semanticVersion": "5.9.0",
+          "rules": [
+            {
+              "id": "S2325",
+              "shortDescription": {
+                "text": "S2325"
+              },
+              "fullDescription": {
+                "text": "S2325"
+              },
+              "helpUri": "https://rules.sonarsource.com/csharp/RSPEC-2325",
+              "properties": {
+                "category": "Minor Code Smell",
+                "tags": ["C#", "MainSourceScope", "TestSourceScope", "SonarWay"]
+              }
+            },
+            {
+              "id": "S2930",
+              "shortDescription": {
+                "text": "S2930"
+              },
+              "fullDescription": {
+                "text": "S2930"
+              },
+              "helpUri": "https://rules.sonarsource.com/csharp/RSPEC-2930",
+              "properties": {
+                "category": "Blocker Bug",
+                "tags": ["C#", "MainSourceScope", "TestSourceScope", "SonarWay"]
+              }
+            },
+            {
+              "id": "S3400",
+              "shortDescription": {
+                "text": "S3400"
+              },
+              "fullDescription": {
+                "text": "S3400"
+              },
+              "helpUri": "https://rules.sonarsource.com/csharp/RSPEC-3400",
+              "properties": {
+                "category": "Minor Code Smell",
+                "tags": ["C#", "MainSourceScope", "SonarWay"]
+              }
+            },
+            {
+              "id": "CA5351",
+              "shortDescription": {
+                "text": "Do Not Use Broken Cryptographic Algorithms"
+              },
+              "fullDescription": {
+                "text": "An attack making it computationally feasible to break this algorithm exists. This allows attackers to break the cryptographic guarantees it is designed to provide. Depending on the type and application of this cryptographic algorithm, this may allow attackers to read enciphered messages, tamper with enciphered  messages, forge digital signatures, tamper with hashed content, or otherwise compromise any cryptosystem based on this algorithm. Replace encryption uses with the AES algorithm (AES-256, AES-192 and AES-128 are acceptable) with a key length greater than or equal to 128 bits. Replace hashing uses with a hashing function in the SHA-2 family, such as SHA512, SHA384, or SHA256. Replace digital signature uses with RSA with a key length greater than or equal to 2048-bits, or ECDSA with a key length greater than or equal to 256 bits."
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "helpUri": "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca5351",
+              "properties": {
+                "category": "Security",
+                "tags": ["Telemetry", "EnabledRuleInAggressiveMode"]
+              }
+            },
+            {
+              "id": "RCS1118",
+              "shortDescription": {
+                "text": "Mark local variable as const"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "helpUri": "https://josefpihrt.github.io/docs/roslynator/analyzers/RCS1118",
+              "properties": {
+                "category": "Roslynator"
+              }
+            }
+          ]
+        }
+      },
+      "columnKind": "utf16CodeUnits",
+      "results": [
+        {
+          "ruleId": "S2930",
+          "level": "warning",
+          "message": {
+            "text": "S2930"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/src/Acme.Store/Reader.cs"
+                },
+                "region": {
+                  "startLine": 9,
+                  "startColumn": 13,
+                  "endLine": 9,
+                  "endColumn": 44
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "S2325",
+          "level": "warning",
+          "message": {
+            "text": "S2325"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/src/Acme.Store/Pricing.cs"
+                },
+                "region": {
+                  "startLine": 26,
+                  "startColumn": 16,
+                  "endLine": 26,
+                  "endColumn": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "S3400",
+          "level": "warning",
+          "message": {
+            "text": "S3400"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/src/Acme.Store/Pricing.cs"
+                },
+                "region": {
+                  "startLine": 26,
+                  "startColumn": 16,
+                  "endLine": 26,
+                  "endColumn": 20
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CA5351",
+          "level": "warning",
+          "message": {
+            "text": "Fingerprint uses a broken cryptographic algorithm MD5"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/src/Acme.Store/Hashing.cs"
+                },
+                "region": {
+                  "startLine": 9,
+                  "startColumn": 25,
+                  "endLine": 9,
+                  "endColumn": 37
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "RCS1118",
+          "level": "note",
+          "message": {
+            "text": "Mark local variable as const"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/src/Acme.Store/Pricing.cs"
+                },
+                "region": {
+                  "startLine": 13,
+                  "startColumn": 9,
+                  "endLine": 13,
+                  "endColumn": 12
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

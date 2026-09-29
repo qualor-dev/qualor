@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # The qualor/scanner image: the `qualor` CLI binary plus the pinned analyzer toolchain
 # of tools/analyzers/install.sh (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with a snapshot of its
-# vulnerability database in /opt/qualor/share/trivy) and what they need to run:
+# vulnerability database in /opt/qualor/share/trivy), Qualor's sonarjs pass in /opt/qualor/sonarjs
+# (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9, tools/analyzers/sonarjs) and what they need to run:
 # Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs) and git.
 # Build from the repository root:
 #   docker build -f deploy/scanner/Dockerfile -t qualor/scanner:dev .
@@ -60,10 +61,17 @@ RUN curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o /t
 
 FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS tools
 RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
-COPY tools/analyzers/install.sh /tmp/install.sh
+COPY tools/analyzers/install.sh tools/analyzers/install-sonarjs.sh /tmp/
 RUN sh /tmp/install.sh
 # The Gitleaks built above replaces install.sh's release binary of the same version.
 COPY --from=gitleaks /gitleaks /opt/qualor/bin/gitleaks
+# Qualor's sonarjs pass (config.md §6): install-sonarjs.sh installs eslint-plugin-sonarjs on
+# Qualor's own ESLint 9 from its lockfile without install scripts, and builds categories.json from
+# the RSPEC metadata of the SonarJS source archive at the plugin's commit (install.sh's SONARJS_*
+# pins), checked against its SHA-256 before it is unpacked; only the rule metadata is unpacked, and
+# the archive is deleted. The same script installs it in CI (tools/ci.test.ts checks that).
+COPY --chmod=0644 tools/analyzers/sonarjs/package.json tools/analyzers/sonarjs/package-lock.json tools/analyzers/sonarjs/run.mjs tools/analyzers/sonarjs/categories.mjs /tmp/sonarjs/
+RUN sh /tmp/install-sonarjs.sh && rm -rf /tmp/sonarjs /tmp/install-sonarjs.sh
 
 FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3db8ea4ae263ab4d0c3805933e5355f45 AS jre
 

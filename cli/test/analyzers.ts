@@ -1,14 +1,19 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, readdirSync, readFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   engineMapping,
   parseConfig,
   splitSourceLines,
+  type NormalizeWarning,
+  type Quality,
   type QualorConfig,
   type QualorConfigInput,
+  type ReportEngine,
+  type ReportFinding,
 } from '@qualor/shared';
 import { parse } from 'yaml';
 import { describe, expect } from 'vitest';
@@ -264,4 +269,90 @@ export async function startListener(): Promise<{
     hits,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
+}
+
+/**
+ * A stand-in repository root and analyzer work directory for `prepare()` unit tests that assert
+ * exact command lines (sonarjs.test.ts): fixed, so the expected `args` arrays can name them
+ * literally. Neither is created on disk — `prepare()` never stats `ctx.root` or `ctx.workDir`
+ * themselves, only paths built from them.
+ */
+export const ROOT = path.resolve('/fixture-root');
+export const WORK = path.join(ROOT, '.work');
+
+/** A temporary directory with an empty `run.mjs`, standing in for `/opt/qualor/sonarjs`. */
+export function fakeSonarjsDir(): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'qualor-sonarjs-'));
+  writeFileSync(path.join(dir, 'run.mjs'), '');
+  return dir;
+}
+
+/** A recorded finding, with the `ruleKey` (`engineId:ruleId`) and `quality` its rule carries
+ * (report.findings itself only carries `ruleId`/`severity`; `quality` lives on the rule, as
+ * `compareFixture` in packages/shared/src/fixtures.ts also looks it up). */
+export interface RecordedIssue extends ReportFinding {
+  ruleKey: string;
+  quality: Quality | undefined;
+}
+
+/** Every `artifactLocation.uri` a recorded SARIF log's results point at. */
+function urisIn(sarif: unknown): Set<string> {
+  const out = new Set<string>();
+  const runs = (sarif as { runs?: unknown[] } | null)?.runs ?? [];
+  for (const run of runs) {
+    const results = (run as { results?: unknown[] }).results ?? [];
+    for (const result of results) {
+      const locations = (result as { locations?: unknown[] }).locations ?? [];
+      for (const location of locations) {
+        const uri = (location as { physicalLocation?: { artifactLocation?: { uri?: unknown } } })
+          .physicalLocation?.artifactLocation?.uri;
+        if (typeof uri === 'string') out.add(uri);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Normalises a recorded SARIF log (a repo-relative path, e.g.
+ * `cli/test/analyzer-output/sonarjs/basic.sarif`) through the same pipeline `runScan` uses, with
+ * `engineId`'s own mapping. Every result's own `artifactLocation.uri` counts as in scope (there is
+ * no fixture checkout to read source lines from), so a finding's location and rule mapping are
+ * exactly as the engine mapping computes them; only the source text (snippet, line hash) is a
+ * fallback, which these tests do not assert on.
+ */
+export function scanWithRecordedSarif(
+  engineId: string,
+  sarifPathFromRepoRoot: string,
+): { issues: RecordedIssue[]; warnings: NormalizeWarning[]; engines: ReportEngine[] } {
+  const repoRoot = path.resolve(here, '..', '..');
+  const sarif = JSON.parse(
+    readFileSync(path.join(repoRoot, sarifPathFromRepoRoot), 'utf8'),
+  ) as unknown;
+  const mapping = engineMapping(engineId);
+  const capture: SarifCapture = {
+    engineId,
+    kind: 'builtin',
+    status: 'ok',
+    reason: null,
+    durationMs: 1,
+    version: null,
+    required: false,
+    sarif,
+    ...(mapping !== undefined && { mapping }),
+  };
+  const out = normalizeCaptures([capture], {
+    repoRoot: '/recorded',
+    readLines: () => null,
+    knownPaths: urisIn(sarif),
+    log: silentLogger,
+  });
+  const quality = new Map<string, Quality>();
+  for (const e of out.engines)
+    for (const r of e.rules) if (r.quality) quality.set(`${e.id}:${r.id}`, r.quality);
+  const issues = out.findings.map((f) => {
+    const ruleKey = `${f.engineId}:${f.ruleId}`;
+    return { ...f, ruleKey, quality: quality.get(ruleKey) };
+  });
+  return { issues, warnings: out.warnings, engines: out.engines };
 }

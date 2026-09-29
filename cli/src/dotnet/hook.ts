@@ -5,7 +5,13 @@ import path from 'node:path';
 import { CliError, EXIT } from '../errors';
 
 /** config.md §6.1: the first line of the only file Qualor ever writes to or removes there. */
-export const HOOK_MARKER = '<!-- qualor-dotnet-hook v1 -->';
+export const HOOK_MARKER = '<!-- qualor-dotnet-hook v2 -->';
+/**
+ * Task 4: v1 (no Sonar family) is still recognised as Qualor's own, so `installHook` still
+ * replaces it (with the current version) and `removeHook` still removes it, instead of treating a
+ * hook left by an earlier CLI as a foreign file.
+ */
+const HOOK_MARKER_V1 = '<!-- qualor-dotnet-hook v1 -->';
 export const HOOK_FILE = 'Qualor.ImportBefore.targets';
 
 /**
@@ -91,6 +97,7 @@ export function hookText(): string {
   <Target Name="_QualorBeforeCompile" BeforeTargets="CoreCompile" Condition="'$(_QualorActive)' == 'true'">
     <ItemGroup>
       <_QualorOwnRoslynator Include="@(Analyzer)" Condition="$([System.String]::Copy('%(Filename)').StartsWith('Roslynator.'))" />
+      <_QualorOwnSonar Include="@(Analyzer)" Condition="$([System.String]::Copy('%(Filename)').StartsWith('SonarAnalyzer.'))" />
     </ItemGroup>
     <PropertyGroup>
       <ErrorLog>$(_QualorLog),version=2.1</ErrorLog>
@@ -102,6 +109,9 @@ export function hookText(): string {
     </PropertyGroup>
     <ItemGroup Condition="'@(_QualorOwnRoslynator)' == ''">
       <Analyzer Include="@(QualorBundledAnalyzer)" />
+    </ItemGroup>
+    <ItemGroup Condition="'@(_QualorOwnSonar)' == ''">
+      <Analyzer Include="@(QualorBundledSonarAnalyzer)" />
     </ItemGroup>
   </Target>
   <Target Name="_QualorRecord" AfterTargets="CoreCompile" Condition="'$(_QualorActive)' == 'true'">
@@ -128,7 +138,8 @@ function isOurs(file: string): boolean | null {
   try {
     const stat = lstatSync(file);
     if (!stat.isFile()) return false;
-    return readFileSync(file, 'utf8').startsWith(HOOK_MARKER);
+    const text = readFileSync(file, 'utf8');
+    return text.startsWith(HOOK_MARKER) || text.startsWith(HOOK_MARKER_V1);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     return code === 'ENOENT' || code === 'ENOTDIR' ? null : false;

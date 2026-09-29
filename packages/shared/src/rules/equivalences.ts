@@ -39,6 +39,7 @@ export const ENGINE_PRIORITY: readonly string[] = [
   'roslyn',
   'pmd',
   'eslint',
+  'sonarjs',
 ];
 
 export function enginePriority(engineId: string): number {

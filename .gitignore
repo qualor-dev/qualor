@@ -9,3 +9,6 @@ dist/
 !.env.example
 .superpowers/
 *.private.pem
+# Built from SonarSource's RSPEC metadata at image build (tools/analyzers/sonarjs/categories.mjs);
+# no SonarSource text is committed.
+tools/analyzers/sonarjs/categories.json

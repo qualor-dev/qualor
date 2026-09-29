@@ -3,6 +3,7 @@ import { gitleaksAnalyzer } from './gitleaks';
 import { pmdAnalyzer } from './pmd';
 import { roslynAnalyzer } from './roslyn';
 import { semgrepAnalyzer } from './semgrep';
+import { sonarjsAnalyzer } from './sonarjs';
 import { spotbugsAnalyzer } from './spotbugs';
 import { trivyAnalyzer } from './trivy';
 import type { Analyzer } from './types';
@@ -11,6 +12,7 @@ import type { Analyzer } from './types';
 export function builtinAnalyzers(): Analyzer[] {
   return [
     eslintAnalyzer,
+    sonarjsAnalyzer,
     pmdAnalyzer,
     spotbugsAnalyzer,
     semgrepAnalyzer,

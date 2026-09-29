@@ -643,7 +643,7 @@ export function sampleSonarData(over: Partial<FakeSonarData> = {}): FakeSonarDat
     rules: [
       { key: 'typescript:S1440', name: 'Rule S1440', lang: 'ts', severity: 'MAJOR' },
       { key: 'typescript:S3504', name: 'Rule S3504', lang: 'ts', severity: 'MAJOR' },
-      { key: 'typescript:S3776', name: 'Rule S3776', lang: 'ts', severity: 'CRITICAL' },
+      { key: 'typescript:S9999', name: 'Rule S9999', lang: 'ts', severity: 'CRITICAL' },
       { key: 'java:S1481', name: 'Rule S1481', lang: 'java', severity: 'MINOR' },
       { key: 'pmd:SystemPrintln', name: 'Rule SystemPrintln', lang: 'java', severity: 'MAJOR' },
       { key: 'pmd:EmptyCatchBlock', name: 'Rule EmptyCatchBlock', lang: 'java', severity: 'MAJOR' },
@@ -653,7 +653,7 @@ export function sampleSonarData(over: Partial<FakeSonarData> = {}): FakeSonarDat
         key: 'p-ts',
         name: 'Team TS',
         language: 'ts',
-        active: { 'typescript:S1440': { severity: 'CRITICAL' }, 'typescript:S3776': {} },
+        active: { 'typescript:S1440': { severity: 'CRITICAL' }, 'typescript:S9999': {} },
       },
       {
         key: 'p-ts-default',
@@ -709,7 +709,7 @@ export function sampleSonarData(over: Partial<FakeSonarData> = {}): FakeSonarDat
       },
       {
         key: 'AYi-um-1',
-        rule: 'typescript:S3776',
+        rule: 'typescript:S9999',
         project: 'acme:shop',
         path: 'src/a.ts',
         line: 9,

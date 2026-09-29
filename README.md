@@ -2,9 +2,10 @@
 
 Open-source, self-hosted code quality platform: a SonarQube alternative without lines-of-code
 licensing, for GitLab, GitHub and any other CI. Qualor runs existing open-source analyzers
-(ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, OpenGrep, Gitleaks, Trivy, or any SARIF),
-tracks their issues across commits, measures coverage, duplication and complexity, and applies a
-quality gate to new code.
+(ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, OpenGrep, Gitleaks, Trivy,
+SonarQube-compatible rules for C#, JavaScript and TypeScript, or any SARIF), tracks their issues
+across commits, measures coverage, duplication and complexity, and applies a quality gate to new
+code.
 MIT, except `enterprise/`: source-available under the Qualor Enterprise Licence, and inert
 without a licence key ([licence keys](https://qualor.dev/enterprise)).
 
@@ -139,8 +140,10 @@ into the App's webhook settings and activate the webhook.
 Roslyn analyzers need the project's own build (its SDK, restored packages and arguments), so
 Qualor hooks into that build instead of building anything itself: `qualor dotnet begin`, the
 project's own `dotnet build`, then `qualor dotnet end`. Use the
-`qualor/scanner-dotnet` image, which adds the .NET 8 and .NET 10 SDKs and the bundled Roslynator
-analyzers on top of `qualor/scanner`:
+`qualor/scanner-dotnet` image, which adds the .NET 8 and .NET 10 SDKs, the bundled Roslynator
+analyzers and SonarAnalyzer.CSharp 9.32 (SonarQube-compatible rules, LGPL-3.0) on top of
+`qualor/scanner`; a project's own reference to SonarAnalyzer.CSharp or Roslynator replaces the
+bundled one:
 
 ```yaml
 qualor:
@@ -185,11 +188,11 @@ repository commits generated coverage output, add it to `sources.exclude` in `qu
 `qualor import sonarqube` copies a SonarQube Server (9.9 LTA or later, Community Build included) or
 SonarQube Cloud organisation's setup into one Qualor organisation: quality gates (for conditions on
 metrics Qualor has), which gate each project uses (with `--create-projects`, the projects
-themselves), and the main branch's issues marked false positive, won't fix or accepted. Quality
-profiles for JavaScript, TypeScript and Java are listed in the plan; their rules move as the
-SonarSource-to-analyzer rule mappings are reviewed, and until then they are reported as skipped.
-It only reads SonarQube (`GET` requests), and `--dry-run` shows what would change without writing
-anything:
+themselves), quality profiles for JavaScript, TypeScript, C# and Java, and the main branch's issues
+marked false positive, won't fix or accepted. C#, JavaScript and TypeScript rules map one to one to
+Qualor's bundled SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs
+2.0.4, LGPL-3.0) wherever the bundled version has the rule key SonarQube reports. It only reads
+SonarQube (`GET` requests), and `--dry-run` shows what would change without writing anything:
 
 ```sh
 SONAR_TOKEN=… QUALOR_URL=https://qualor.example.com QUALOR_TOKEN=… qualor import sonarqube --url https://sonar.example.com --dry-run

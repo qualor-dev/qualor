@@ -8,22 +8,24 @@ vulnerability database pinned by digest), compiled into the
 `deploy/scanner/Dockerfile`. The licence texts are in `/opt/qualor/licenses/` of the image
 (`deploy/scanner/licenses/` in the repository) unless the table names another place.
 
-| Component                                                       | Version                                        | Licence                                                                                                                                                                              | Source                                              |
-| --------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
-| OpenGrep                                                        | 1.30.0                                         | LGPL-2.1 (`OPENGREP-LICENSE.txt`)                                                                                                                                                    | https://github.com/opengrep/opengrep/tree/v1.30.0   |
-| SpotBugs                                                        | 4.10.4                                         | LGPL-2.1 (`SPOTBUGS-LICENSE.txt`; its libraries: `/opt/qualor/lib/spotbugs-4.10.4/LICENSE-*.txt`)                                                                                    | https://github.com/spotbugs/spotbugs/tree/4.10.4    |
-| PMD                                                             | 7.27.0                                         | BSD-style, with Apache-2.0 parts (`PMD-LICENSE.txt`); its bundled libraries: see below                                                                                               | https://github.com/pmd/pmd/tree/pmd_releases/7.27.0 |
-| Gitleaks                                                        | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`); its MPL-2.0 Go modules: see below                                                                                                                      | https://github.com/gitleaks/gitleaks/tree/v8.30.1   |
-| Trivy                                                           | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                              | https://github.com/aquasecurity/trivy/tree/v0.74.0  |
-| Trivy vulnerability database (a snapshot)                       | see `/opt/qualor/share/trivy/db/metadata.json` | the advisories' own terms: see below                                                                                                                                                 | https://github.com/aquasecurity/trivy-db            |
-| Eclipse Temurin JRE                                             | 17.0.20+8                                      | GPL-2.0 with the Classpath Exception (`/opt/java/openjdk/legal/`)                                                                                                                    | `qualor/scanner-sources`                            |
-| Node.js                                                         | 22.23.3                                        | MIT and bundled licences (`NODE-LICENSE.txt`)                                                                                                                                        | https://github.com/nodejs/node/tree/v22.23.3        |
-| npm, Corepack and Yarn (from the Node.js image)                 | 10.9.9, 0.36.0, 1.22.22                        | Artistic-2.0, MIT, BSD-2-Clause (the `LICENSE` in each package's directory)                                                                                                          | https://github.com/nodejs/docker-node               |
-| Bun runtime (inside the `qualor` binary)                        | 1.3.13                                         | MIT; it links JavaScriptCore/WebKit (LGPL-2), tinycc (LGPL-2.1) and others (`BUN-LICENSE.txt`)                                                                                       | https://github.com/oven-sh/bun/tree/bun-v1.3.13     |
-| npm packages inside the `qualor` binary (below)                 | as locked                                      | MIT or ISC (`qualor/npm/<package>@<version>/`; saxes: `SAXES-LICENSE.txt`; tree-sitter-c-sharp: `TREE-SITTER-C-SHARP-LICENSE.txt`)                                                   | https://www.npmjs.com/                              |
-| Debian packages (git, ca-certificates, base system)             | bookworm                                       | per package, `/usr/share/doc/*/copyright`                                                                                                                                            | `qualor/scanner-sources` (`debian/`)                |
-| .NET SDK (software only in `qualor/scanner-dotnet`)             | 8.0.425 and 10.0.401                           | MIT (`DOTNET-LICENSE.txt`, identical for both versions); their own third-party notices, per version: `DOTNET-8.0.425-ThirdPartyNotices.txt`, `DOTNET-10.0.401-ThirdPartyNotices.txt` | https://github.com/dotnet/sdk                       |
-| Roslynator.Analyzers (software only in `qualor/scanner-dotnet`) | 5.0.0                                          | Apache-2.0, Josef Pihrt and contributors (`ROSLYNATOR-LICENSE.txt`)                                                                                                                  | https://github.com/dotnet/roslynator/tree/v5.0.0    |
+| Component                                                       | Version                                        | Licence                                                                                                                                                                              | Source                                                                               |
+| --------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| OpenGrep                                                        | 1.30.0                                         | LGPL-2.1 (`OPENGREP-LICENSE.txt`)                                                                                                                                                    | https://github.com/opengrep/opengrep/tree/v1.30.0                                    |
+| SpotBugs                                                        | 4.10.4                                         | LGPL-2.1 (`SPOTBUGS-LICENSE.txt`; its libraries: `/opt/qualor/lib/spotbugs-4.10.4/LICENSE-*.txt`)                                                                                    | https://github.com/spotbugs/spotbugs/tree/4.10.4                                     |
+| PMD                                                             | 7.27.0                                         | BSD-style, with Apache-2.0 parts (`PMD-LICENSE.txt`); its bundled libraries: see below                                                                                               | https://github.com/pmd/pmd/tree/pmd_releases/7.27.0                                  |
+| Gitleaks                                                        | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`); its MPL-2.0 Go modules: see below                                                                                                                      | https://github.com/gitleaks/gitleaks/tree/v8.30.1                                    |
+| Trivy                                                           | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                              | https://github.com/aquasecurity/trivy/tree/v0.74.0                                   |
+| Trivy vulnerability database (a snapshot)                       | see `/opt/qualor/share/trivy/db/metadata.json` | the advisories' own terms: see below                                                                                                                                                 | https://github.com/aquasecurity/trivy-db                                             |
+| eslint-plugin-sonarjs (Qualor's own `sonarjs` pass)             | 2.0.4                                          | LGPL-3.0 (`ESLINT-PLUGIN-SONARJS-LICENSE.txt`); its npm dependency tree, axe-core (MPL-2.0) included: see below (`SONARJS-DEPENDENCIES.txt`)                                         | https://github.com/SonarSource/SonarJS/tree/273825f98b35b29b409fbf4f89efce075c651d96 |
+| Eclipse Temurin JRE                                             | 17.0.20+8                                      | GPL-2.0 with the Classpath Exception (`/opt/java/openjdk/legal/`)                                                                                                                    | `qualor/scanner-sources`                                                             |
+| Node.js                                                         | 22.23.3                                        | MIT and bundled licences (`NODE-LICENSE.txt`)                                                                                                                                        | https://github.com/nodejs/node/tree/v22.23.3                                         |
+| npm, Corepack and Yarn (from the Node.js image)                 | 10.9.9, 0.36.0, 1.22.22                        | Artistic-2.0, MIT, BSD-2-Clause (the `LICENSE` in each package's directory)                                                                                                          | https://github.com/nodejs/docker-node                                                |
+| Bun runtime (inside the `qualor` binary)                        | 1.3.13                                         | MIT; it links JavaScriptCore/WebKit (LGPL-2), tinycc (LGPL-2.1) and others (`BUN-LICENSE.txt`)                                                                                       | https://github.com/oven-sh/bun/tree/bun-v1.3.13                                      |
+| npm packages inside the `qualor` binary (below)                 | as locked                                      | MIT or ISC (`qualor/npm/<package>@<version>/`; saxes: `SAXES-LICENSE.txt`; tree-sitter-c-sharp: `TREE-SITTER-C-SHARP-LICENSE.txt`)                                                   | https://www.npmjs.com/                                                               |
+| Debian packages (git, ca-certificates, base system)             | bookworm                                       | per package, `/usr/share/doc/*/copyright`                                                                                                                                            | `qualor/scanner-sources` (`debian/`)                                                 |
+| .NET SDK (software only in `qualor/scanner-dotnet`)             | 8.0.425 and 10.0.401                           | MIT (`DOTNET-LICENSE.txt`, identical for both versions); their own third-party notices, per version: `DOTNET-8.0.425-ThirdPartyNotices.txt`, `DOTNET-10.0.401-ThirdPartyNotices.txt` | https://github.com/dotnet/sdk                                                        |
+| Roslynator.Analyzers (software only in `qualor/scanner-dotnet`) | 5.0.0                                          | Apache-2.0, Josef Pihrt and contributors (`ROSLYNATOR-LICENSE.txt`)                                                                                                                  | https://github.com/dotnet/roslynator/tree/v5.0.0                                     |
+| SonarAnalyzer.CSharp (software only in `qualor/scanner-dotnet`) | 9.32.0.97167                                   | LGPL-3.0 (`SONARANALYZER-CSHARP-LICENSE.txt`)                                                                                                                                        | https://github.com/SonarSource/sonar-dotnet/tree/9.32.0.97167                        |
 
 `deploy/scanner/Dockerfile` copies the whole `deploy/scanner/licenses/` directory, so the .NET SDK
 and Roslynator licence files above ship in the plain `qualor/scanner` image too, unused; only
@@ -104,19 +106,30 @@ versions `pnpm-lock.yaml` locks. The `qualor` binary, and so this grammar, is th
 Roslynator around it. The image keeps the licence files of every production dependency
 of the CLI, as installed, in `/opt/qualor/licenses/qualor/npm/`.
 
-## The .NET SDK and Roslynator (software only in `qualor/scanner-dotnet`)
+Qualor's own `sonarjs` pass (`/opt/qualor/sonarjs`) runs eslint-plugin-sonarjs 2.0.4 (LGPL-3.0, the
+last release before the SONAR Source-Available License) on its own ESLint 9, installed at image
+build with `npm ci --omit=dev` from `tools/analyzers/sonarjs/package-lock.json`. Its installed npm
+tree is otherwise permissively licensed (MIT, ISC, BSD, Apache-2.0 and others,
+`SONARJS-DEPENDENCIES.txt`) except axe-core 4.13.0 (MPL-2.0), a dependency of
+eslint-plugin-jsx-a11y, which eslint-plugin-sonarjs itself depends on; its source is in
+`qualor/scanner-sources`, same as eslint-plugin-sonarjs's own.
+
+## The .NET SDK, Roslynator and SonarAnalyzer.CSharp (software only in `qualor/scanner-dotnet`)
 
 `qualor/scanner-dotnet` (`deploy/scanner-dotnet/Dockerfile`) is `qualor/scanner` plus the
 .NET SDKs and analyzers `tools/analyzers/install-dotnet.sh` installs into `/opt/qualor`, for C#
-projects (`qualor dotnet begin` and `end`). Their licence files ship in both images (see above); the SDKs and
-Roslynator themselves only in `qualor/scanner-dotnet`:
+projects (`qualor dotnet begin` and `end`). Their licence files ship in both images (see above); the SDKs,
+Roslynator and SonarAnalyzer.CSharp themselves only in `qualor/scanner-dotnet`:
 
-| Component            | Version              | Licence                                                                                                                                                                                                     | Source                                           |
-| -------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| .NET SDK             | 8.0.425 and 10.0.401 | MIT (`DOTNET-LICENSE.txt`, Microsoft, identical for both versions); their own third-party notices, per version (see below): `DOTNET-8.0.425-ThirdPartyNotices.txt`, `DOTNET-10.0.401-ThirdPartyNotices.txt` | https://github.com/dotnet/sdk                    |
-| Roslynator.Analyzers | 5.0.0                | Apache-2.0, Josef Pihrt and contributors (`ROSLYNATOR-LICENSE.txt`)                                                                                                                                         | https://github.com/dotnet/roslynator/tree/v5.0.0 |
+| Component            | Version              | Licence                                                                                                                                                                                                                                                                                                                              | Source                                                        |
+| -------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| .NET SDK             | 8.0.425 and 10.0.401 | MIT (`DOTNET-LICENSE.txt`, Microsoft, identical for both versions); their own third-party notices, per version (see below): `DOTNET-8.0.425-ThirdPartyNotices.txt`, `DOTNET-10.0.401-ThirdPartyNotices.txt`                                                                                                                          | https://github.com/dotnet/sdk                                 |
+| Roslynator.Analyzers | 5.0.0                | Apache-2.0, Josef Pihrt and contributors (`ROSLYNATOR-LICENSE.txt`)                                                                                                                                                                                                                                                                  | https://github.com/dotnet/roslynator/tree/v5.0.0              |
+| SonarAnalyzer.CSharp | 9.32.0.97167         | LGPL-3.0 (`SONARANALYZER-CSHARP-LICENSE.txt`), the last release before the SONAR Source-Available License; its bundled third-party code (Google.Protobuf, BSD-3-Clause; StyleCop Lightup, MIT; Roslyn, Apache-2.0) under the package's own notices, `SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt` (only in `qualor/scanner-dotnet`) | https://github.com/SonarSource/sonar-dotnet/tree/9.32.0.97167 |
 
-Both are unmodified upstream releases, pinned by hash in `tools/analyzers/install-dotnet.sh`. Both
+All three are unmodified upstream releases, pinned by hash in `tools/analyzers/install-dotnet.sh`; a
+project that already references SonarAnalyzer.CSharp itself builds with its own version only, so
+this adds no duplicate analyzer. Both
 SDKs share one `DOTNET_ROOT` (`/opt/qualor/share/dotnet`), so the second tarball's
 top-level `LICENSE.txt`/`ThirdPartyNotices.txt` would silently overwrite the first's; the install
 script now keeps a per-version copy of each (`LICENSE-<version>.txt`,
@@ -136,15 +149,22 @@ repository names its own rule files.
 
 ## Source code
 
-The complete corresponding source of every copyleft component of this image is published next
-to it, in the same registry, as the image `qualor/scanner-sources:<same tag>` (the files are in
-its `/sources/` directory), and as files attached to the Qualor release page of the same tag:
+The complete corresponding source of every copyleft component of `qualor/scanner`, and of what
+`qualor/scanner-dotnet` adds on top of it, is published next to them, in the same registry, as the
+one image `qualor/scanner-sources:<same tag>` (the files are in its `/sources/` directory), and as
+files attached to the Qualor release page of the same tag:
 
 - OpenGrep 1.30.0 (LGPL-2.1): its tag's source tree and each of its git submodules at the commit
   the tag records; and what its release binary links or bundles: GMP 6.3.0 (the upstream tarball
   and Alpine's build recipe), GNU Readline (the AlmaLinux source RPM `readline-7.0-10.el8`) and
   certifi 2026.7.22 (its PyPI sdist);
 - SpotBugs 4.10.4 (LGPL-2.1): the source archive of its release;
+- eslint-plugin-sonarjs 2.0.4 (LGPL-3.0), Qualor's own sonarjs pass: the source tree of the commit
+  its release was published from, without its integration-test project sources; and axe-core 4.13.0
+  (MPL-2.0), the one copyleft package its installed npm tree carries (a dependency of
+  eslint-plugin-jsx-a11y): its source on GitHub's own release tag archive;
+- SonarAnalyzer.CSharp 9.32.0.97167 (LGPL-3.0), software only in `qualor/scanner-dotnet`: the
+  source tree of its tag's commit, without its integration-test harness;
 - the eleven MPL-2.0 Go modules compiled into Trivy 0.74.0 and the five compiled into Gitleaks
   8.30.1: each module's source zip from the Go module proxy (`proxy.golang.org`) at the version the
   binary names;

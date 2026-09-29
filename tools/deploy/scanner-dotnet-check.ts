@@ -6,8 +6,9 @@ import { REPO_ROOT, run } from './stack';
 /**
  * `pnpm deploy:scanner-dotnet-check [image]` (deploy/README.md): runs one probe in a built
  * qualor/scanner-dotnet image (default `qualor/scanner-dotnet:dev`) and fails unless it has the
- * .NET SDKs of tools/analyzers/install-dotnet.sh, the Roslynator analyzers, their licence files
- * and a CLI that parses C#. It starts nothing else and needs no network.
+ * .NET SDKs of tools/analyzers/install-dotnet.sh, the Roslynator and SonarAnalyzer.CSharp
+ * analyzers, their licence files and a CLI that parses C#. It starts nothing else and needs no
+ * network.
  */
 function main(): void {
   const args = process.argv.slice(2);
@@ -29,7 +30,8 @@ function main(): void {
   }
   process.stdout.write(
     `ok ${image}: .NET SDK ${expected.sdks.join(' and ')}, ${expected.analyzers} Roslynator ` +
-      `analyzers, ${expected.licenses.length} licence files, csharp grammar\n`,
+      `analyzers, ${expected.sonarAnalyzers} SonarAnalyzer analyzers, ${expected.licenses.length} ` +
+      `licence files, csharp grammar\n`,
   );
 }
 

@@ -293,6 +293,10 @@ describe('install-dotnet.sh (plan 2D, ruling D11)', () => {
     }
     expect(script).toMatch(/^ROSLYNATOR_VERSION=\d+\.\d+\.\d+$/m);
     expect(script).toMatch(/^ROSLYNATOR_SHA256=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^SONARANALYZER_VERSION=9\.32\.0\.97167$/m);
+    expect(script).toMatch(
+      /^SONARANALYZER_SHA256=17c7fd6230597a4c08a30226e8b29f8e8c2a982ca12d4b9315021c8c41150cf8$/m,
+    );
   });
 
   it('checks every download before unpacking it, over https only', () => {
@@ -313,6 +317,87 @@ describe('install-dotnet.sh (plan 2D, ruling D11)', () => {
         name,
       ).toBe(true);
     }
+  });
+});
+
+describe('install-sonarjs.sh (plan 8A/8B, controller ruling 14)', () => {
+  const script = readFileSync('tools/analyzers/install-sonarjs.sh', 'utf8');
+
+  it('reads the SONARJS_* pins from install.sh instead of duplicating them, and hardcodes no "latest"', () => {
+    expect(script).toContain('grep -E \'^SONARJS_[A-Z0-9_]+=\' "$INSTALL_SH"');
+    expect(script).not.toMatch(/^SONARJS_VERSION=/m);
+    expect(script).not.toMatch(/^SONARJS_COMMIT=/m);
+    expect(script).not.toMatch(/^SONARJS_SOURCE_SHA256=/m);
+    expect(script).not.toMatch(/latest/);
+  });
+
+  it('checks the SonarJS source archive against its pinned SHA-256 before it is unpacked, over https only', () => {
+    expect(script).toContain("--proto '=https' --proto-redir '=https' --tlsv1.2");
+    expect(script.indexOf('sha256sum -c -')).toBeLessThan(script.indexOf('tar -xzf'));
+    // Only the rule metadata directory is extracted, like the recipe it replaced.
+    expect(script).toContain(
+      "'*/sonar-plugin/javascript-checks/src/main/resources/org/sonar/l10n/javascript/rules/javascript/S*.json'",
+    );
+  });
+
+  it('checks the installed plugin version against the pin and uses the ambient npm >= 10, never a fetched one', () => {
+    expect(script).toContain('$SONARJS_VERSION');
+    expect(script).toContain('[ "${npm_major:-0}" -ge 10 ]');
+    expect(script).toContain('(cd "$DEST" && npm ci --omit=dev --ignore-scripts');
+    expect(script).not.toMatch(/npx|npm@|NPM_FALLBACK/);
+  });
+
+  it('runs in every job that requires the analyzers, alongside install.sh and install-dotnet.sh (GitHub)', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const requiresAnalyzers = job.steps.some((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (!requiresAnalyzers) continue;
+      expect(
+        job.steps.some((s) => s.run?.endsWith('sh tools/analyzers/install-sonarjs.sh') === true),
+        name,
+      ).toBe(true);
+      // install-sonarjs.sh runs unprivileged (actions/setup-node's node/npm stay on PATH; sudo's
+      // secure_path would hide them), after root hands it just /opt/qualor/sonarjs.
+      const install = job.steps.findIndex(
+        (s) => s.run?.endsWith('sh tools/analyzers/install-sonarjs.sh') === true,
+      );
+      expect(job.steps[install - 1]?.run, name).toContain(
+        'chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs',
+      );
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template, after install.sh and before every job's own before_script", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    const before = gitlab['.analyzers']?.before_script ?? [];
+    expect(before).toContain('sh tools/analyzers/install-sonarjs.sh');
+    expect(before.indexOf('sh tools/analyzers/install.sh')).toBeLessThan(
+      before.indexOf('sh tools/analyzers/install-sonarjs.sh'),
+    );
+  });
+
+  it("runs the pass's own tests (run.test.ts) where it is installed and required", () => {
+    // run.test.ts finds the pass in /opt/qualor/sonarjs and fails instead of skipping under
+    // QUALOR_REQUIRE_ANALYZERS=1, so its security and licence tests run in both test jobs.
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    const steps = github.jobs['test']?.steps ?? [];
+    const install = steps.findIndex(
+      (s) => s.run?.endsWith('sh tools/analyzers/install-sonarjs.sh') === true,
+    );
+    const tests = steps.findIndex((s) => s.run === 'pnpm test:coverage');
+    expect(install).toBeGreaterThanOrEqual(0);
+    expect(tests).toBeGreaterThan(install);
+    expect(steps[tests]?.env?.['QUALOR_REQUIRE_ANALYZERS']).toBe('1');
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { extends?: string; script?: string[]; variables?: Record<string, string> }
+    >;
+    expect(gitlab['test']?.extends).toBe('.analyzers');
+    expect(gitlab['test']?.script).toContain('pnpm test:coverage');
+    expect(gitlab['test']?.variables?.['QUALOR_REQUIRE_ANALYZERS']).toBe('1');
   });
 });
 

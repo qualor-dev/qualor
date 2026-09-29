@@ -10,14 +10,28 @@ import { normalizeSarif } from '../src/sarif/normalize';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../../..');
 
-const SAMPLE_FIXTURE = {
+interface SampleFixture {
+  fixture: string;
+  sourceRoots: readonly string[];
+  /**
+   * The engine id to normalise and build rule keys with, when it differs from this sample's own
+   * key (Phase 8A: `roslyn-sonar` is a second, separate sample of the `roslyn` engine — the
+   * bundled SonarAnalyzer.CSharp's rules — rather than a bigger `roslyn.sarif`, so each sample
+   * keeps its own `.sarif`/`.normalized.json` and the "contains exactly" check below only ever
+   * answers for the rules its own sample defines). Defaults to the sample's own key.
+   */
+  engineId?: string;
+}
+
+const SAMPLE_FIXTURE: Record<string, SampleFixture> = {
   eslint: { fixture: 'ts-basic', sourceRoots: [] },
   pmd: { fixture: 'java-basic', sourceRoots: ['src/main/java'] },
   spotbugs: { fixture: 'java-basic', sourceRoots: ['src/main/java'] },
   gitleaks: { fixture: 'mixed-secrets', sourceRoots: [] },
   semgrep: { fixture: 'mixed-secrets', sourceRoots: [] },
   roslyn: { fixture: 'csharp-basic', sourceRoots: [] },
-} as const;
+  'roslyn-sonar': { fixture: 'csharp-basic', sourceRoots: [], engineId: 'roslyn' },
+};
 
 function readLines(fixture: string) {
   return (p: string): string[] | null => {
@@ -31,9 +45,10 @@ function readLines(fixture: string) {
 
 describe.each(Object.entries(SAMPLE_FIXTURE))(
   'golden SARIF: %s',
-  (engine, { fixture, sourceRoots }) => {
+  (sampleId, { fixture, sourceRoots, engineId }) => {
+    const engine = engineId ?? sampleId;
     const sample = JSON.parse(
-      readFileSync(path.join(here, 'sarif-samples', `${engine}.sarif`), 'utf8'),
+      readFileSync(path.join(here, 'sarif-samples', `${sampleId}.sarif`), 'utf8'),
     ) as unknown;
     const out = normalizeSarif(sample, {
       engineId: engine,
@@ -53,7 +68,13 @@ describe.each(Object.entries(SAMPLE_FIXTURE))(
       severity: f.severity,
       quality: quality.get(f.ruleId),
     }));
-    const mine = expected.findings.filter((f) => f.ruleKey.startsWith(`${engine}:`));
+    // Scoped to the rules this sample actually defines: when two samples share an engine id
+    // (roslyn / roslyn-sonar), each one's expected.json findings are its own rules' only, never
+    // the other sample's.
+    const ruleIds = new Set(out.rules.map((r) => r.id));
+    const mine = expected.findings.filter(
+      (f) => f.ruleKey.startsWith(`${engine}:`) && ruleIds.has(f.ruleKey.slice(engine.length + 1)),
+    );
 
     it('normalises without warnings', () => {
       expect(out.warnings).toEqual([]);
@@ -61,7 +82,7 @@ describe.each(Object.entries(SAMPLE_FIXTURE))(
 
     it('matches the reviewed snapshot', async () => {
       await expect(`${JSON.stringify(out, null, 2)}\n`).toMatchFileSnapshot(
-        path.join(here, 'sarif-samples', `${engine}.normalized.json`),
+        path.join(here, 'sarif-samples', `${sampleId}.normalized.json`),
       );
     });
 
@@ -79,7 +100,7 @@ describe.each(Object.entries(SAMPLE_FIXTURE))(
       }
     });
 
-    if (engine === 'gitleaks' || engine === 'semgrep') {
+    if (sampleId === 'gitleaks' || sampleId === 'semgrep') {
       it('never contains the fixture secret', () => {
         expect(JSON.stringify(out)).not.toContain('Zx9Qe4Lr8Tn2Vb7Mk3Hs6Jp1');
       });

@@ -63,6 +63,12 @@ export interface ProfileStats {
   statusOnly: string[];
   unmapped: { key: string; name: string }[];
   parametersNotImported: string[];
+  /**
+   * Mapped rules (counted in `mapped`) whose every Qualor target is a bundled SonarQube-compatible
+   * rule the bundled configuration does not run (`SonarMapping.runByBundledConfig`): the profile
+   * row is written, but no issue will come from it until that rule is enabled.
+   */
+  mappedNotRun: string[];
 }
 
 export interface PlannedProfile {
@@ -161,6 +167,7 @@ export function planProfile(
     statusOnly: [],
     unmapped: [],
     parametersNotImported: [],
+    mappedNotRun: [],
   };
   const planned = (skip: ProfileSkip | null, rows: PlannedRow[]): PlannedProfile => ({
     sonarKey: p.key,
@@ -200,6 +207,7 @@ export function planProfile(
     }
     stats.mapped += 1;
     if (r.paramsCustomised) stats.parametersNotImported.push(r.key);
+    if (reviewed.every((t) => !mapping.runByBundledConfig(t.key))) stats.mappedNotRun.push(r.key);
     const override = severityOverride(r);
     for (const t of reviewed) {
       const prev = rows.get(t.key);

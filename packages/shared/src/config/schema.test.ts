@@ -34,6 +34,27 @@ describe('parseConfig', () => {
     expect(c.server.timeoutSeconds).toBe(30);
   });
 
+  it('has analyzers.sonarjs and roslyn.sonarAnalyzer with their defaults', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.sonarjs).toEqual({
+      enabled: 'auto',
+      timeoutSeconds: 900,
+      typeChecking: 'auto',
+    });
+    expect(c.analyzers.roslyn.sonarAnalyzer).toBe(true);
+    expect(() => parseConfig({ version: 1, analyzers: { sonarjs: { rules: {} } } })).toThrow();
+  });
+
+  // The CLI's analyzer runner reads a timeout only when the key is literally named
+  // `timeoutSeconds` (cli/src/analyzers/runner.ts): `'timeoutSeconds' in settings ? … : 0`. A
+  // differently-named key (the spec's earlier `timeout` typo) would silently give sonarjs no
+  // timeout at all.
+  it("names sonarjs's timeout key timeoutSeconds, like every other analyzer, so the runner sees it", () => {
+    const sonarjs = parseConfig({ version: 1 }).analyzers.sonarjs;
+    expect('timeoutSeconds' in sonarjs).toBe(true);
+    expect(sonarjs.timeoutSeconds).toBe(900);
+  });
+
   it('requires version 1', () => {
     expect(errorPaths({})).toEqual(['version']);
     expect(errorPaths({ version: 2 })).toEqual(['version']);
@@ -161,7 +182,11 @@ describe('parseConfig', () => {
 
   it('knows C#: the language, the roslyn analyzer and the .NET excludes (config.md §3, §6.1)', () => {
     const config = parseConfig({ version: 1 });
-    expect(config.analyzers.roslyn).toEqual({ enabled: 'auto', bundledAnalyzers: true });
+    expect(config.analyzers.roslyn).toEqual({
+      enabled: 'auto',
+      bundledAnalyzers: true,
+      sonarAnalyzer: true,
+    });
     expect(parseConfig({ version: 1, languages: ['csharp'] }).languages).toEqual(['csharp']);
     expect(config.tests.include).toContain('**/*Tests/**');
     for (const glob of [

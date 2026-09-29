@@ -305,22 +305,33 @@ describe('qualor import sonarqube against a real server and the fake SonarQube',
       sql`SELECT id, name, language, unknown_rules FROM quality_profiles
            WHERE organization_id = ${org} AND NOT is_builtin ORDER BY name`,
     );
-    // "Team TS" maps only through an overlap (status only), so it has no row and is not created;
-    // "Sonar way" (TypeScript) likewise; "Team Python" is a language Qualor does not analyse.
+    // "Team Java" is created as before. "Team TS" and "Sonar way" (TypeScript) are also created
+    // now (Phase 8): each leaves S3504 inactive, and S3504 is a real sonarjs 2.0.4 key (a
+    // repository target, always reviewed), so each gets that one deactivation row even though
+    // none of its *active* rules is mapped (S1440 is curated overlap only; S9999 is unmapped).
+    // "Team Python" is a language Qualor does not analyse.
     expect(profiles.map((p) => [p.name, p.language, p.unknown_rules])).toEqual([
+      ['Sonar way', 'typescript', 'activate'],
       ['Team Java', 'java', 'activate'],
+      ['Team TS', 'typescript', 'activate'],
     ]);
+    const javaProfile = profiles.find((p) => p.name === 'Team Java')!;
     const javaRows = await rows<{
       key: string;
       active: boolean;
       severity_override: string | null;
     }>(sql`
       SELECT r.key, pr.active, pr.severity_override FROM profile_rules pr
-        JOIN rules r ON r.id = pr.rule_id WHERE pr.profile_id = ${profiles[0]!.id} ORDER BY r.key`);
+        JOIN rules r ON r.id = pr.rule_id WHERE pr.profile_id = ${javaProfile.id} ORDER BY r.key`);
     expect(javaRows).toEqual([
       { key: 'pmd:EmptyCatchBlock', active: false, severity_override: null },
       { key: 'pmd:SystemPrintln', active: true, severity_override: null },
     ]);
+    const teamTsProfile = profiles.find((p) => p.name === 'Team TS')!;
+    const teamTsRows = await rows<{ key: string; active: boolean }>(sql`
+      SELECT r.key, pr.active FROM profile_rules pr
+        JOIN rules r ON r.id = pr.rule_id WHERE pr.profile_id = ${teamTsProfile.id} ORDER BY r.key`);
+    expect(teamTsRows).toEqual([{ key: 'sonarjs:S3504', active: false }]);
 
     const gates = await rows<{ id: string; name: string; conditions: string[] }>(sql`
       SELECT g.id, g.name,
@@ -359,7 +370,7 @@ describe('qualor import sonarqube against a real server and the fake SonarQube',
     expect(shop.outcome).toBe('found');
     expect(shop.gate).toMatchObject({ outcome: 'assigned', gate: 'Strict' });
     expect(shop.issues).toMatchObject({ outcome: 'done', applied: 2, unmappedRule: 1 });
-    expect(shop.issues?.unmappedRules).toEqual([{ key: 'typescript:S3776', issues: 1 }]);
+    expect(shop.issues?.unmappedRules).toEqual([{ key: 'typescript:S9999', issues: 1 }]);
     expect(itemsOf(r1, 'acme:shop').map((i) => [i.sonarKey, i.rule, i.outcome])).toEqual([
       ['AYi-fp-1', 'external_eslint_repo:eqeqeq', 'applied'],
       ['AYi-ac-1', 'typescript:S1440', 'applied'],
@@ -367,9 +378,11 @@ describe('qualor import sonarqube against a real server and the fake SonarQube',
     const created = r1.report.projects.find((p) => p.key === 'acme:new')!;
     expect(created.outcome).toBe('created');
     expect(created.issues?.outcome).toBe('not_analysed');
+    // Phase 8: S3504 (left inactive) is now a real sonarjs key, so "Team TS" gets that one
+    // deactivation row and is created, even though its active rules (S1440, S9999) are not mapped.
     expect(r1.report.profiles.find((p) => p.name === 'Team TS')).toMatchObject({
-      outcome: 'skipped',
-      reason: expect.stringContaining('no_mapped_rules') as unknown,
+      outcome: 'created',
+      reason: null,
     });
     afterFirst = await counts();
   }, 180_000);

@@ -9,13 +9,17 @@ export interface ExpectedContent {
   sdks: string[];
   /** How many `Roslynator*.dll` the analyzers directory holds (Roslynator.Analyzers' roslyn4.7/cs). */
   analyzers: number;
-  /** Files `/opt/qualor/licenses/` must have for the .NET SDKs, Roslynator and C# parsing. */
+  /** How many SonarAnalyzer DLLs the analyzers/sonar directory holds (sonaranalyzer.csharp's analyzers/). */
+  sonarAnalyzers: number;
+  /** Files `/opt/qualor/licenses/` must have for the .NET SDKs, Roslynator, SonarAnalyzer.CSharp and C# parsing. */
   licenses: string[];
 }
 
 const ANALYZERS_DIR = '/opt/qualor/dotnet/analyzers';
+const SONAR_DIR = `${ANALYZERS_DIR}/sonar`;
 const LICENSES_DIR = '/opt/qualor/licenses';
 const ROSLYNATOR_DLLS = 8;
+const SONAR_DLLS = 5;
 
 /** The SDK versions come from install-dotnet.sh itself, so they are written down once. */
 export function expectedContent(installScript: string): ExpectedContent {
@@ -28,10 +32,13 @@ export function expectedContent(installScript: string): ExpectedContent {
   return {
     sdks,
     analyzers: ROSLYNATOR_DLLS,
+    sonarAnalyzers: SONAR_DLLS,
     licenses: [
       'DOTNET-LICENSE.txt',
       ...sdks.map((v) => `DOTNET-${v}-ThirdPartyNotices.txt`),
       'ROSLYNATOR-LICENSE.txt',
+      'SONARANALYZER-CSHARP-LICENSE.txt',
+      'SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt',
       'TREE-SITTER-C-SHARP-LICENSE.txt',
     ],
   };
@@ -44,6 +51,7 @@ export function expectedContent(installScript: string): ExpectedContent {
 export const PROBE = [
   'echo "== sdks"; dotnet --list-sdks 2>&1',
   `echo "== analyzers"; ls ${ANALYZERS_DIR} 2>&1`,
+  `echo "== sonar"; ls ${SONAR_DIR} 2>&1`,
   `echo "== licenses"; ls ${LICENSES_DIR} 2>&1`,
   'echo "== version"; qualor version 2>&1',
   'echo "== end"',
@@ -76,6 +84,16 @@ export function imageProblems(output: string, expected: ExpectedContent): string
   const dlls = (found.get('analyzers') ?? []).filter((n) => /^Roslynator.*\.dll$/.test(n)).length;
   if (dlls !== expected.analyzers) {
     problems.push(`${ANALYZERS_DIR} holds ${dlls} Roslynator*.dll, not ${expected.analyzers}`);
+  }
+  // `SonarAnalyzer.dll` itself is one of the five bundled DLLs (no second dot before `.dll`), so
+  // the SonarAnalyzer alternative can't require one.
+  const sonarDlls = (found.get('sonar') ?? []).filter((n) =>
+    /^(SonarAnalyzer.*|Google\.Protobuf)\.dll$/.test(n),
+  ).length;
+  if (sonarDlls !== expected.sonarAnalyzers) {
+    problems.push(
+      `expected ${expected.sonarAnalyzers} SonarAnalyzer DLLs in ${SONAR_DIR}, found ${sonarDlls}`,
+    );
   }
   const licenses = new Set(found.get('licenses') ?? []);
   for (const file of expected.licenses) {

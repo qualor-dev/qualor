@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { engineMapping, ENGINE_MAPPINGS } from './mappings';
+import { engineMapping, ENGINE_MAPPINGS, sonarCategory } from './mappings';
 import type { SarifResult, SarifRule } from './types';
 
 const rule = (id: string, properties: Record<string, unknown> = {}): SarifRule => ({
@@ -182,10 +182,66 @@ describe('roslyn (plan 2D)', () => {
     }
   });
 
-  it('reports issues and leaves the severity to the result level', () => {
+  it('reports issues; a non-SonarAnalyzer rule leaves severity to the result level', () => {
     const m = engineMapping('roslyn')!;
     expect(m.rule!(rule('Security')).kind).toBe('issue');
-    expect(m.severity).toBeUndefined();
+    expect(m.severity!(result(), rule('Security'))).toBeUndefined();
     expect(m.redactRegion).toBeUndefined();
+  });
+});
+
+describe('sonarCategory (report-format.md §7.1)', () => {
+  it.each([
+    ['Blocker Bug', 'reliability', 'issue', 'blocker'],
+    ['Critical Bug', 'reliability', 'issue', 'high'],
+    ['Major Code Smell', 'maintainability', 'issue', 'medium'],
+    ['Minor Code Smell', 'maintainability', 'issue', 'low'],
+    ['Info Code Smell', 'maintainability', 'issue', 'info'],
+    ['Critical Vulnerability', 'security', 'issue', 'high'],
+    ['Major Security Hotspot', 'security', 'hotspot', 'medium'],
+  ])('%s → %s %s %s', (category, quality, kind, defaultSeverity) => {
+    expect(sonarCategory(category)).toEqual({ quality, kind, defaultSeverity });
+  });
+
+  it('is null for anything else (a Microsoft or Roslynator category)', () => {
+    for (const c of ['Security', 'Reliability', 'Roslynator', '', 'Major', 'Bug', 'Major  Bug'])
+      expect(sonarCategory(c)).toBeNull();
+  });
+
+  it('roslyn uses it for SonarAnalyzer rules and keeps the Microsoft mapping otherwise', () => {
+    const roslyn = engineMapping('roslyn')!;
+    expect(roslyn.rule!({ id: 'S2930', properties: { category: 'Major Bug' } })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(roslyn.rule!({ id: 'CA5351', properties: { category: 'Security' } })).toEqual({
+      quality: 'security',
+      kind: 'issue',
+    });
+  });
+
+  it('sonarjs uses it, and defaults to maintainability without a category', () => {
+    const sonarjs = engineMapping('sonarjs')!;
+    expect(
+      sonarjs.rule!({ id: 'S5332', properties: { category: 'Critical Security Hotspot' } }),
+    ).toEqual({ quality: 'security', kind: 'hotspot', defaultSeverity: 'high' });
+    expect(sonarjs.rule!({ id: 'S9999' })).toEqual({ quality: 'maintainability', kind: 'issue' });
+  });
+
+  it('a SonarAnalyzer result takes its severity from the category, not the SARIF level', () => {
+    const roslyn = engineMapping('roslyn')!;
+    expect(
+      roslyn.severity!({ ruleId: 'S2930', level: 'warning' } as never, {
+        id: 'S2930',
+        properties: { category: 'Blocker Bug' },
+      }),
+    ).toBe('blocker');
+    expect(
+      roslyn.severity!({ ruleId: 'CA5351', level: 'warning' } as never, {
+        id: 'CA5351',
+        properties: { category: 'Security' },
+      }),
+    ).toBeUndefined();
   });
 });

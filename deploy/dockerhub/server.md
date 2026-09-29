@@ -16,7 +16,8 @@ makes the code worse. MIT licensed, with no limit on lines, users or projects.
   every GitLab merge request and GitHub pull request, and new issues marked on the lines that
   caused them.
 - **Your analyzers, one list.** ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, OpenGrep,
-  Gitleaks, Trivy or any SARIF. The same finding from two tools shows once.
+  Gitleaks, Trivy, SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs
+  2.0.4, LGPL-3.0) or any SARIF. The same finding from two tools shows once.
 - **Issues that survive a refactor.** Qualor recognises an issue by its code, not its line number,
   so the issue keeps its history and its status when the code moves.
 - **Coverage, duplication, complexity.** Coverage from LCOV, Cobertura and JaCoCo, cognitive
