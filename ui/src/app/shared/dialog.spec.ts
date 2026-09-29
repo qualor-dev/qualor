@@ -17,4 +17,16 @@ describe('openModal and closeModal', () => {
       dialog.remove();
     }
   });
+
+  it('opens nothing once the dialog has left the document (its page was left)', () => {
+    const dialog = document.createElement('dialog');
+    // The browser throws InvalidStateError for showModal() on a detached dialog.
+    const showModal = vi.fn(() => {
+      throw new DOMException('The element is not in a Document.', 'InvalidStateError');
+    });
+    Object.assign(dialog, { showModal });
+    expect(() => openModal(dialog)).not.toThrow();
+    expect(showModal).not.toHaveBeenCalled();
+    expect(dialog.open).toBe(false);
+  });
 });

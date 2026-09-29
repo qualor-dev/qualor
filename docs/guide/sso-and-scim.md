@@ -517,10 +517,11 @@ connection.
 https://qualor.example.com/api/v0/ee/scim/v2
 ```
 
-**The token.** In **Settings → SCIM**, in the connection's section, give a **Token name**
-(and optionally **Expires on (optional)**) and press **Create token**. The **SCIM token** looks
-like `qlr_scim_…`, is **shown once**, and is stored only as a hash; the list then shows only how
-it **Starts with**, and when it was **Last used**. A connection has **at most 5** active tokens (409
+**The token.** In **Settings → SCIM**, press **New token** in the connection's panel, give a
+**Token name** (and optionally **Expires on (optional)**) and press **Create token**. The **SCIM
+token** looks like `qlr_scim_…` and is **shown once**, in **Your new SCIM token**: copy it, then
+press **Done**. It is stored only as a hash; the list then shows only how it **Starts with**, and
+when it was **Last used**. A connection has **at most 5** active tokens (409
 `SCIM_TOKEN_LIMIT_REACHED`); a token may have an expiry (none by default); revoke one when you
 replace it (**Revoke**). Qualor's Gitleaks rule (`qualor-token`) finds `qlr_scim_` tokens like the
 other `qlr_` tokens, so a leaked one is reported as a secret. The IdP sends it as

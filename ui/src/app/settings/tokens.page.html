@@ -113,6 +113,7 @@
   id="create-dialog"
   class="dialog"
   aria-labelledby="create-token-title"
+  (cancel)="keepSecret($event)"
   (close)="forget()"
 >
   @if (created(); as token) {

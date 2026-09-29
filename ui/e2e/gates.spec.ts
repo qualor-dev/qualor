@@ -106,7 +106,14 @@ test('an admin makes a new gate the default, then deletes it after a confirmatio
   const ask = page.getByRole('dialog', { name: 'Delete the quality gate' });
   await expect(ask).toContainText(question);
   await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  // A dialog's close event comes a task after close(): wait for it, as a person always does, or
+  // it would cancel the question asked again at machine speed.
+  const closed = ask.evaluate(
+    (dialog) =>
+      new Promise<void>((done) => dialog.addEventListener('close', () => done(), { once: true })),
+  );
   await ask.getByRole('button', { name: 'Cancel' }).click();
+  await closed;
   await expect(created).toBeVisible();
   await created.getByRole('button', { name: 'Delete' }).press('Enter');
   await ask.getByRole('button', { name: 'Delete' }).click();

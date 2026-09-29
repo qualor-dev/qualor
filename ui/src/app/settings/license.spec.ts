@@ -340,6 +340,22 @@ describe('LicensePage (enterprise.md §11)', () => {
       );
     });
 
+    it('claims no time for a key the server rejected (revoked, not yet valid)', async () => {
+      for (const reason of ['revoked', 'not-yet-valid'] as const) {
+        setup({
+          ...COMMUNITY,
+          state: 'invalid',
+          reason,
+          source: 'uploaded',
+          license: licence(100, 265),
+        });
+        const { root } = await render();
+        expect(meter(root), reason).toBeNull();
+        expect(root.textContent, reason).not.toContain('days left');
+        TestBed.resetTestingModule();
+      }
+    });
+
     it('draws no meter without a licence', async () => {
       setup(COMMUNITY);
       const { root } = await render();

@@ -48,6 +48,23 @@ test.describe('on a phone', () => {
     });
   }
 
+  test('audit targets keep their words; the events table scrolls instead', async ({ page }) => {
+    await page.goto('/settings/ee/audit-log');
+    const target = page.locator('td', { hasText: /^user: admin$/ }).first();
+    await expect(target).toBeAttached();
+    const { width, need } = await target.evaluate((el) => {
+      const style = getComputedStyle(el);
+      const context = document.createElement('canvas').getContext('2d')!;
+      context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      const words = (el.textContent ?? '').trim().split(/\s+/);
+      return {
+        width: el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        need: Math.max(...words.map((word) => context.measureText(word).width)),
+      };
+    });
+    expect(width).toBeGreaterThanOrEqual(need - 1);
+  });
+
   test('dates in the SCIM and linked-account tables keep to one line; the table scrolls', async ({
     page,
   }) => {

@@ -169,6 +169,7 @@
       id="create-dialog"
       class="dialog"
       aria-labelledby="create-webhook-title"
+      (cancel)="keepSecret($event)"
       (close)="forget()"
     >
       @if (secret(); as value) {

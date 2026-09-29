@@ -216,7 +216,7 @@ describe('ScimPage (sso-scim.md §12, §18)', () => {
     expect(again.querySelector<HTMLInputElement>('#scim-token-name')?.value).toBe('');
   });
 
-  it('forgets the token when its dialog is closed with Escape', async () => {
+  it('forgets the token when its dialog closes', async () => {
     const server = setup({ tokens: [] });
     server.on('POST', TOKENS, { status: 201, body: { ...token(), token: TOKEN } });
     const { fixture, root } = await render();
@@ -252,6 +252,46 @@ describe('ScimPage (sso-scim.md §12, §18)', () => {
     await settle(fixture);
     expect(dialog.open).toBe(true);
     expect(dialog.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(TOKEN);
+  });
+
+  it('keeps its dialog open on Escape while the token shows', async () => {
+    const server = setup({ tokens: [] });
+    server.on('POST', TOKENS, { status: 201, body: { ...token(), token: TOKEN } });
+    const { fixture, root } = await render();
+    const dialog = await openCreate(fixture, root);
+    type(dialog, '#scim-token-name', 'Okta');
+    await submit(fixture, dialog);
+    const onSecret = new Event('cancel', { cancelable: true });
+    dialog.dispatchEvent(onSecret);
+    await settle(fixture);
+    expect(onSecret.defaultPrevented).toBe(true);
+    expect(dialog.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(TOKEN);
+  });
+
+  it('drops a token that arrives after the page was left', async () => {
+    const server = setup({ tokens: [] });
+    let reply = (): void => undefined;
+    server.on(
+      'POST',
+      TOKENS,
+      () =>
+        new Promise((resolve) => {
+          reply = () => resolve({ status: 201, body: { ...token(), token: TOKEN } });
+        }),
+    );
+    const { fixture, root } = await render();
+    const dialog = await openCreate(fixture, root);
+    type(dialog, '#scim-token-name', 'Okta');
+    await submit(fixture, dialog);
+    // Closed, then the page left, while the server makes the token: nothing opens again.
+    dialog.removeAttribute('open');
+    dialog.dispatchEvent(new Event('close'));
+    const page_ = fixture.componentInstance as unknown as { secret: () => unknown };
+    fixture.destroy();
+    reply();
+    await settle();
+    expect(page_.secret()).toBeNull();
+    expect(dialog.open).toBe(false);
   });
 
   it('sends an expiry date as the end of that day in UTC', async () => {

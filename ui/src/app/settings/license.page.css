@@ -1,7 +1,13 @@
 /* Licence (spec §7.8): a plan panel, then the key form in a setting row. */
 .license-panels {
   display: grid;
+  /* A definite column: a long state or key never widens the page on a phone. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+}
+/* The state's words may be long ("The key was rejected: …"): they wrap inside the pill. */
+.license-state .badge {
+  white-space: normal;
 }
 .license-panels > * {
   margin: 0;

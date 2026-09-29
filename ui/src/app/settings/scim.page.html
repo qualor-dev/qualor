@@ -165,6 +165,7 @@
     id="create-dialog"
     class="dialog"
     aria-labelledby="scim-create-title"
+    (cancel)="keepSecret($event)"
     (close)="forget()"
   >
     @if (secret(); as value) {

@@ -77,6 +77,8 @@ export class ScimPage {
   protected readonly error = signal<string | null>(null);
   protected readonly announcement = signal<string | null>(null);
   protected readonly busy = signal(false);
+  /** The page was left: a late answer keeps no secret and opens no dialog. */
+  private destroyed = false;
   /** The token the server just created, until "Done", the next change or leaving the page. */
   protected readonly secret = signal<string | null>(null);
   /** The connection "New token" was opened for. */
@@ -106,7 +108,18 @@ export class ScimPage {
         if (allowed) void this.load();
       });
     });
-    inject(DestroyRef).onDestroy(() => this.secret.set(null));
+    inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
+      this.secret.set(null);
+    });
+  }
+
+  /**
+   * Escape does not close the dialog while it shows the secret (step 9 review): one reflexive key
+   * would lose a secret shown only once. Done closes it; Escape still closes the form.
+   */
+  protected keepSecret(event: Event): void {
+    if (this.secret()) event.preventDefault();
   }
 
   private async load(): Promise<void> {
@@ -195,6 +208,8 @@ export class ScimPage {
               },
             }),
           );
+          // The page was left meanwhile: its token is not kept.
+          if (this.destroyed) return;
           const { token, ...view } = created;
           this.tokens.update((all) => [...all, view]);
           this.name.set('');
@@ -213,6 +228,7 @@ export class ScimPage {
       },
       (err) => this.createError.set(ssoProblem(err)),
     );
+    if (this.destroyed) return;
     // Closed while the server answered (Escape, Cancel): the dialog opens again on the outcome, or
     // a token it made could never be copied.
     const outcome = this.secret() ?? this.createError() ?? this.nameError();

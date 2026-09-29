@@ -97,7 +97,10 @@ export class LicensePage {
   protected readonly timeLeft = computed(() => {
     const s = this.status();
     const l = s?.license;
-    if (!s || !l) return null;
+    // A key the server rejected (revoked, not yet valid) runs nothing: it has no time to show.
+    if (!s || !l || !(s.state === 'active' || s.state === 'grace' || s.state === 'expired')) {
+      return null;
+    }
     const now = Date.now();
     const expires = Date.parse(l.expires);
     const graceEnds = Date.parse(l.graceEndsAt);

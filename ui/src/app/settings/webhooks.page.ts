@@ -114,6 +114,8 @@ export class WebhooksPage {
   protected readonly eventsError = signal<string | null>(null);
   protected readonly announcement = signal<string | null>(null);
   protected readonly busy = signal(false);
+  /** The page was left: a late answer keeps no secret and opens no dialog. */
+  private destroyed = false;
   /** The deletion the confirmation dialog asks about; null while it is closed. */
   protected readonly pendingDelete = signal<{ webhook: Webhook; question: string } | null>(null);
   protected readonly allEvents = EVENTS;
@@ -155,7 +157,18 @@ export class WebhooksPage {
         }
       });
     });
-    inject(DestroyRef).onDestroy(() => this.secret.set(null));
+    inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
+      this.secret.set(null);
+    });
+  }
+
+  /**
+   * Escape does not close the dialog while it shows the secret (step 9 review): one reflexive key
+   * would lose a secret shown only once. Done closes it; Escape still closes the form.
+   */
+  protected keepSecret(event: Event): void {
+    if (this.secret()) event.preventDefault();
   }
 
   protected setUrl(event: Event): void {
@@ -211,8 +224,9 @@ export class WebhooksPage {
         const created = await ok(
           this.api.client.POST('/api/v0/webhooks', { body: { organizationId, url, events } }),
         );
-        // Added to the organisation that was current when asked: never shown under another one.
-        if (generation !== this.orgGeneration) return;
+        // Added to the organisation that was current when asked: never shown under another one,
+        // nor kept by a page that was left meanwhile.
+        if (generation !== this.orgGeneration || this.destroyed) return;
         this.secret.set(created.secret ?? null);
         clearField(this.urlField(), this.url);
         this.announcement.set(
@@ -222,7 +236,7 @@ export class WebhooksPage {
       },
       (err) => this.createError.set(problemMessage(err)),
     );
-    if (generation !== this.orgGeneration) return;
+    if (generation !== this.orgGeneration || this.destroyed) return;
     // Closed while the server answered (Escape, Cancel): the dialog opens again on the outcome, or
     // the secret of a webhook it made could never be copied.
     const outcome = this.secret() ?? this.createError() ?? this.urlError() ?? this.eventsError();

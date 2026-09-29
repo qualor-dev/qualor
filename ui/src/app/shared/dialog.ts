@@ -7,7 +7,8 @@ type Modal = HTMLDialogElement & Partial<Pick<HTMLDialogElement, 'showModal' | '
 
 export function openModal(dialog: HTMLDialogElement): void {
   const modal = dialog as Modal;
-  if (modal.open) return;
+  // Not in the document any more (its page was left, an answer came late): nothing to open.
+  if (modal.open || !modal.isConnected) return;
   if (modal.showModal) modal.showModal();
   else modal.setAttribute('open', '');
 }

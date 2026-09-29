@@ -77,6 +77,8 @@ export class TokensPage {
   protected readonly expiryError = signal<string | null>(null);
   protected readonly announcement = signal<string | null>(null);
   protected readonly busy = signal(false);
+  /** The page was left: a late answer keeps no secret and opens no dialog. */
+  private destroyed = false;
   /** A refused creation other than its fields, shown in the dialog that is still open. */
   protected readonly createError = signal<string | null>(null);
   /** The token the confirmation dialog asks about; null while it is closed. */
@@ -94,7 +96,18 @@ export class TokensPage {
 
   constructor() {
     void this.list.reset(null);
-    inject(DestroyRef).onDestroy(() => this.created.set(null));
+    inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
+      this.created.set(null);
+    });
+  }
+
+  /**
+   * Escape does not close the dialog while it shows the secret (step 9 review): one reflexive key
+   * would lose a secret shown only once. Done closes it; Escape still closes the form.
+   */
+  protected keepSecret(event: Event): void {
+    if (this.created()) event.preventDefault();
   }
 
   protected setName(event: Event): void {
@@ -180,6 +193,8 @@ export class TokensPage {
           body: { name, scopes, ...(days === null ? {} : { expiresInDays: days }) },
         }),
       );
+      // The page was left meanwhile: its secret is not kept.
+      if (this.destroyed) return;
       this.created.set(token.token);
       clearField(this.nameField(), this.name);
       this.announcement.set(
@@ -187,6 +202,7 @@ export class TokensPage {
       );
       await this.list.refresh();
     }, true);
+    if (this.destroyed) return;
     // Closed while the server answered (Escape, Cancel): the dialog opens again on the outcome, or
     // the secret of a token it made could never be copied.
     const outcome =

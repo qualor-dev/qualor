@@ -9,6 +9,8 @@ import { describe, expect, it } from 'vitest';
 const REMOVED = [
   // Step 8: the form under Settings → Users became "Reset password" on the user's row.
   'Settings → Users → Reset a password',
+  // Step 9: SCIM tokens are made in the "New token" dialog of the connection's panel.
+  "in the connection's section, give a Token name",
 ];
 
 const guide = new URL('../../docs/guide/', import.meta.url);

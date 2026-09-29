@@ -244,7 +244,7 @@ describe('TokensPage', () => {
     expect(create.querySelector<HTMLInputElement>('#token-name')?.value).toBe('');
   });
 
-  it('forgets a shown secret when its dialog is closed with Escape', async () => {
+  it('forgets a shown secret when its dialog closes', async () => {
     const server = setup();
     server.on('GET', '/api/v0/tokens', { body: page([]) });
     server.on('POST', '/api/v0/tokens', {
@@ -333,6 +333,71 @@ describe('TokensPage', () => {
     await settle(fixture);
     expect(create.open).toBe(true);
     expect(create.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('keeps its dialog open on Escape while the secret shows; Escape still closes the form', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/tokens', { body: page([]) });
+    server.on('POST', '/api/v0/tokens', {
+      status: 201,
+      body: { ...TOKEN, id: 't2', name: 'ci', token: 'qlr_pat_secret-value' },
+    });
+    const fixture = TestBed.createComponent(TokensPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New token').click();
+    await settle(fixture);
+    const onForm = new Event('cancel', { cancelable: true });
+    create.dispatchEvent(onForm);
+    expect(onForm.defaultPrevented).toBe(false);
+    type(root, '#token-name', 'ci');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    const onSecret = new Event('cancel', { cancelable: true });
+    create.dispatchEvent(onSecret);
+    await settle(fixture);
+    // Done is the way out, once the token is copied.
+    expect(onSecret.defaultPrevented).toBe(true);
+    expect(create.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(
+      'qlr_pat_secret-value',
+    );
+  });
+
+  it('drops a token that arrives after the page was left', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/tokens', { body: page([]) });
+    let answer = (): void => undefined;
+    server.on(
+      'POST',
+      '/api/v0/tokens',
+      () =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve({
+              status: 201,
+              body: { ...TOKEN, id: 't2', name: 'ci', token: 'qlr_pat_secret-value' },
+            });
+        }),
+    );
+    const fixture = TestBed.createComponent(TokensPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New token').click();
+    await settle(fixture);
+    type(root, '#token-name', 'ci');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    // Closed, then the page left, while the server makes the token: nothing opens again.
+    create.removeAttribute('open');
+    create.dispatchEvent(new Event('close'));
+    const page_ = fixture.componentInstance as unknown as { created: () => unknown };
+    fixture.destroy();
+    answer();
+    await settle();
+    expect(page_.created()).toBeNull();
+    expect(create.open).toBe(false);
   });
 
   it('describes the secret field by its shown-once warning, which the dialog hides from the page', async () => {
@@ -784,6 +849,81 @@ describe('WebhooksPage', () => {
     await settle(fixture);
     expect(create.open).toBe(true);
     expect(create.querySelector<HTMLInputElement>('#secret-once')?.value).toBe('whsec_generated');
+  });
+
+  it('keeps its dialog open on Escape while the webhook secret shows', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/webhooks', { body: page([]) });
+    server.on('POST', '/api/v0/webhooks', {
+      status: 201,
+      body: {
+        id: 'w2',
+        organizationId: ORG_ID,
+        projectId: null,
+        url: 'https://ci.example.com/hook',
+        events: ['analysis.completed'],
+        active: true,
+        createdAt: '',
+        updatedAt: '',
+        secret: 'whsec_generated',
+      },
+    });
+    const fixture = TestBed.createComponent(WebhooksPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New webhook').click();
+    await settle(fixture);
+    type(root, '#webhook-url', 'https://ci.example.com/hook');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    const onSecret = new Event('cancel', { cancelable: true });
+    create.dispatchEvent(onSecret);
+    await settle(fixture);
+    expect(onSecret.defaultPrevented).toBe(true);
+    expect(create.querySelector<HTMLInputElement>('#secret-once')?.value).toBe('whsec_generated');
+  });
+
+  it('drops a webhook secret that arrives after the page was left', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/webhooks', { body: page([]) });
+    let answer = (): void => undefined;
+    server.on(
+      'POST',
+      '/api/v0/webhooks',
+      () =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve({
+              status: 201,
+              body: {
+                id: 'w2',
+                organizationId: ORG_ID,
+                projectId: null,
+                url: 'https://ci.example.com/hook',
+                events: ['analysis.completed'],
+                active: true,
+                createdAt: '',
+                updatedAt: '',
+                secret: 'whsec_generated',
+              },
+            });
+        }),
+    );
+    const fixture = TestBed.createComponent(WebhooksPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New webhook').click();
+    await settle(fixture);
+    type(root, '#webhook-url', 'https://ci.example.com/hook');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    const page_ = fixture.componentInstance as unknown as { secret: () => unknown };
+    fixture.destroy();
+    answer();
+    await settle();
+    expect(page_.secret()).toBeNull();
   });
 
   it('maps a refused URL (the SSRF checks, 422 body.url) to the URL field', async () => {

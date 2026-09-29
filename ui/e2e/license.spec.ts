@@ -98,3 +98,52 @@ test.describe('the licence page (enterprise.md §11)', () => {
     await expect(page.getByText('Community edition', { exact: true })).toBeVisible();
   });
 });
+
+test.describe('the licence page on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  // The seed runs the community edition: the states with the longest words are answered in the
+  // browser (step 9 review). The page never scrolls sideways; a long state wraps in its pill.
+  const LICENSE = {
+    id: '01a0eecc-0000-7000-8000-00000000c0de',
+    keyId: 'test-e2e',
+    customer: 'E2E Corporation with a rather long legal name',
+    issued: '2025-09-01T00:00:00.000Z',
+    expires: '2026-09-20T00:00:00.000Z',
+    graceEndsAt: '2026-10-04T00:00:00.000Z',
+    features: ['llm.fix-quota', 'audit-log', 'audit-log.stream', 'sso', 'sso.multi', 'scim'],
+    test: true,
+  };
+  const STATES = [
+    ['grace', { state: 'grace', reason: null, license: LICENSE }],
+    ['a rejected key', { state: 'invalid', reason: 'bad-signature', license: null }],
+    [
+      'a reason this UI does not know',
+      { state: 'invalid', reason: 'a-newer-reason', license: null },
+    ],
+  ] as const;
+  for (const [name, state] of STATES) {
+    test(`fits the screen for ${name}`, async ({ page }) => {
+      await page.route('**/api/v0/license', (route) =>
+        route.request().method() === 'GET'
+          ? route.fulfill({
+              json: {
+                edition: 'enterprise',
+                source: 'uploaded',
+                expiresSoon: false,
+                restartRequired: false,
+                activeFeatures: [],
+                plugins: [],
+                ...state,
+              },
+            })
+          : route.continue(),
+      );
+      await page.goto('/settings/license');
+      await expect(page.locator('.license-state')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        390,
+      );
+    });
+  }
+});
