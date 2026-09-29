@@ -256,6 +256,8 @@ export class AccessPage {
   protected openAdd(): void {
     this.addError.set(null);
     this.usernameError.set(null);
+    // Each grant starts from the least role (the last one chosen may have been Project admin).
+    this.role.set('viewer');
     const dialog = this.addDialog()?.nativeElement;
     if (dialog) openModal(dialog);
   }

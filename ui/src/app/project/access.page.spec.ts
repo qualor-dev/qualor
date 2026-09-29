@@ -142,12 +142,19 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     expect(root.textContent).toContain('2 grants');
   });
 
-  it('shows since when each person has the role, and what each role allows', async () => {
+  it('shows when each role was added, and what each role allows', async () => {
     setup();
     const { root } = await render();
+    // Intended change (step 5 review): the date is the grant's creation, kept when the role
+    // changes, so the column says "Added", not "Since".
+    expect([...root.querySelectorAll('thead th')].map((th) => th.textContent?.trim())).toContain(
+      'Added',
+    );
     const since = row(root, BOB).querySelector('td.since span');
     expect(since?.textContent?.trim()).toBe('Sep 1, 2026');
     expect(since?.getAttribute('title')).toBe('Sep 1, 2026, 12:00 AM UTC');
+    // The avatar keeps its circle when a long name wraps beside it.
+    expect(getComputedStyle(row(root, BOB).querySelector('.avatar')!).flexShrink).toBe('0');
     const legend = root.querySelector('[aria-labelledby="roles-legend-heading"]');
     expect(legend?.querySelector('h2')?.textContent?.trim()).toBe('Roles on a project');
     expect([...(legend?.querySelectorAll('dt') ?? [])].map((d) => d.textContent?.trim())).toEqual([
@@ -155,6 +162,10 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
       'Maintainer',
       'Viewer',
     ]);
+    // As the guide's roles table: not the repository mapping, and the SonarQube status import.
+    expect(legend?.querySelector('dd')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      "Changes the project's settings (not its repository mapping) and analysis tokens, deletes branches and merge requests, and runs the SonarQube status import. And all a Maintainer does.",
+    );
   });
 
   it('adds a grant: looks the name up, then sends PUT with the chosen role', async () => {
@@ -272,6 +283,22 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
       'The role of bob on this project was removed.',
     );
     confirm.mockRestore();
+  });
+
+  it('offers Viewer again each time the Add member dialog opens (least privilege)', async () => {
+    const server = setup({ grants: [] });
+    server.on('GET', '/api/v0/users/lookup', {
+      body: { id: CAROL, username: 'carol', displayName: null },
+    });
+    server.on('PUT', `${MEMBERS}/${CAROL}`, { body: grant(CAROL, 'carol', 'project_admin') });
+    const { fixture, root } = await render();
+    const add = await openAdd(root, fixture);
+    type(root, '#grant-username', 'carol');
+    choose(root, '#grant-role', 'project_admin');
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    await openAdd(root, fixture);
+    expect(root.querySelector<HTMLSelectElement>('#grant-role')?.value).toBe('viewer');
   });
 
   it('puts the role back when a change is cancelled', async () => {

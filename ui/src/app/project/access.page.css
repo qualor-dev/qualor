@@ -33,6 +33,10 @@
   gap: 10px;
   min-width: 12rem;
 }
+/* The avatar keeps its circle when a long name wraps beside it. */
+.grant-user .avatar {
+  flex-shrink: 0;
+}
 .grant-names {
   display: grid;
   min-width: 0;

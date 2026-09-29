@@ -39,7 +39,7 @@
             <tr>
               <th scope="col" i18n="@@access.col.user">User</th>
               <th scope="col" i18n="@@access.col.role">Role on this project</th>
-              <th scope="col" i18n="@@access.col.since">Since</th>
+              <th scope="col" i18n="@@access.col.added">Added</th>
               @if (canManage()) {
                 <th scope="col" class="actions-col">
                   <span class="visually-hidden" i18n="@@access.col.actions">Actions</span>
@@ -152,8 +152,9 @@
       <dl class="panel-body">
         <dt i18n="@@access.legend.projectAdmin">Project admin</dt>
         <dd i18n="@@access.legend.projectAdminText">
-          Changes the project's settings and analysis tokens, and deletes branches and merge
-          requests. And all a Maintainer does.
+          Changes the project's settings (not its repository mapping) and analysis tokens, deletes
+          branches and merge requests, and runs the SonarQube status import. And all a Maintainer
+          does.
         </dd>
         <dt i18n="@@access.legend.maintainer">Maintainer</dt>
         <dd i18n="@@access.legend.maintainerText">

@@ -676,6 +676,8 @@ label.row {
   color: var(--bad);
   font-size: 13px;
   font-weight: 550;
+  /* It may quote a name without a break point ("a.very.long.user_name"). */
+  overflow-wrap: anywhere;
 }
 .hint {
   color: var(--text-muted);
@@ -727,6 +729,8 @@ h3.subhead {
   margin: 0 0 var(--space-4);
   border: 1px solid var(--border);
   border-left-width: 4px;
+  /* It may quote a name without a break point: it wraps rather than widen the page. */
+  overflow-wrap: anywhere;
 }
 .table-wrap + .hint,
 .table-wrap + p {
