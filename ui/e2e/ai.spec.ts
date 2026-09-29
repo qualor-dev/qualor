@@ -15,6 +15,11 @@ const FAKE_LLM_KEY = ['fake', 'llm', 'key', '0123456789'].join('-');
 const EQEQEQ_MESSAGE = "Expected '===' and instead saw '=='.";
 /** The issue serve.ts answers as a hostile model would, with a false-positive triage. */
 const HOSTILE_ISSUE_MESSAGE = "Assignment to function parameter 'amount'.";
+/**
+ * An answer comes from a queued job (the worker, the fake model, then the panel's next poll): on a
+ * loaded machine that outlasts the default 5 s, so the first check after each ask waits longer.
+ */
+const ANSWER = { timeout: 30_000 };
 
 async function openIssue(page: Page, message: string, mergeRequest = false): Promise<void> {
   await page.goto('/projects');
@@ -86,15 +91,20 @@ test.describe('AI assistant (llm.md §18)', () => {
     await expect(panel).toContainText(/127\.0\.0\.1:\d+ \(fake-model\)/);
 
     await panel.getByRole('button', { name: 'Explain' }).click();
-    await expect(panel.getByText('Loose equality compares after type coercion.')).toBeVisible();
+    await expect(panel.getByText('Loose equality compares after type coercion.')).toBeVisible(
+      ANSWER,
+    );
     await expect(panel.getByText('AI-generated, may be wrong').first()).toBeVisible();
 
     await panel.getByRole('button', { name: 'Suggest triage' }).click();
-    await expect(panel.getByText('Likely a true positive')).toBeVisible();
+    await expect(panel.getByText('Likely a true positive')).toBeVisible(ANSWER);
     await expect(panel.getByRole('button', { name: 'Mark as false positive…' })).toHaveCount(0);
 
     await panel.getByRole('button', { name: 'Suggest a fix' }).click();
-    await expect(page.locator('#ai-fix-before')).toContainText('if (order.currency == "EUR") {');
+    await expect(page.locator('#ai-fix-before')).toContainText(
+      'if (order.currency == "EUR") {',
+      ANSWER,
+    );
     await expect(page.locator('#ai-fix-after')).toContainText('if (order.currency === "EUR") {');
     await expectAccessible(page);
 
@@ -133,6 +143,7 @@ test.describe('AI assistant (llm.md §18)', () => {
     // HTML, a link, Markdown and a fence of the model's: shown as the characters they are.
     await expect(panel).toContainText(
       'Hostile <img src=x onerror="alert(1)"> <a href="https://evil.example/">click me</a>',
+      ANSWER,
     );
     await expect(panel).toContainText('See [the docs](https://evil.example/docs)');
     await expect(panel).toContainText('</p><script>alert(2)</script>');
@@ -145,7 +156,7 @@ test.describe('AI assistant (llm.md §18)', () => {
     await expectAccessible(page);
 
     await panel.getByRole('button', { name: 'Suggest triage' }).click();
-    await expect(panel.getByText('Likely a false positive')).toBeVisible();
+    await expect(panel.getByText('Likely a false positive')).toBeVisible(ANSWER);
     await expect(panel).toContainText('The parameter is a local copy <em>on purpose</em>.');
     await expect(panel.locator('a, img, iframe, script')).toHaveCount(0);
     await expect(panel.locator('.ai-text *')).toHaveCount(0);
