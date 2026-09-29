@@ -654,15 +654,17 @@ textarea {
   min-height: 5rem;
   resize: vertical;
 }
-input[type='checkbox'] {
+/* A checkbox or a radio: the size of a line of text, not of a text field. */
+input:is([type='checkbox'], [type='radio']) {
   min-height: 0;
   width: 1.05rem;
   height: 1.05rem;
   margin: 0;
+  padding: 0;
   accent-color: var(--accent);
   cursor: pointer;
 }
-input[type='checkbox']:disabled {
+input:is([type='checkbox'], [type='radio']):disabled {
   cursor: not-allowed;
 }
 input[readonly] {
@@ -1693,6 +1695,8 @@ details[open] > summary {
 /* A panel per connection (GitLab, GitHub, single sign-on): its name or address, then its state. */
 .connection-list {
   display: grid;
+  /* A definite column: a panel's field or table never widens the page on a phone. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   margin-bottom: 8px;
 }

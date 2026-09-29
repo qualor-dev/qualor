@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { expect, expectAccessible, test } from './fixtures';
 import { OLGA, PAYMENTS, SIEM_URL } from './seed-data';
 
@@ -23,6 +23,50 @@ async function signIn(page: Page, user: { username: string; password: string }):
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  // Each enterprise settings page fits the screen once its data is in (redesign step 9 review):
+  // a wide table scrolls in its panel, never the page.
+  for (const path of [
+    '/settings/license',
+    '/settings/ee/audit-log',
+    '/settings/ee/audit-settings',
+    '/settings/ee/sso',
+    '/settings/ee/sign-in',
+    '/settings/ee/scim',
+    '/settings/ee/linked-accounts',
+  ]) {
+    test(`${path} never scrolls sideways`, async ({ page }) => {
+      await page.goto(path);
+      await expect(page.locator('.settings-head h2')).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        390,
+      );
+    });
+  }
+
+  test('dates in the SCIM and linked-account tables keep to one line; the table scrolls', async ({
+    page,
+  }) => {
+    const lines = (cell: Locator) =>
+      cell.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      });
+    await page.goto('/settings/ee/scim');
+    const token = page.locator('tr', { hasText: 'Entra ID provisioning' });
+    expect(await lines(token.locator('td').nth(1))).toBe(1);
+    expect(await lines(token.locator('td').nth(3))).toBe(1);
+    await page.goto('/settings/ee/linked-accounts');
+    const account = page.locator('tr', { hasText: 'Acme SSO' });
+    expect(await lines(account.locator('td').nth(0))).toBe(1);
+    expect(await lines(account.locator('td').nth(1))).toBe(1);
+  });
+});
 
 test.describe('as people other than the instance admin', () => {
   test.use({ storageState: { cookies: [], origins: [] } });

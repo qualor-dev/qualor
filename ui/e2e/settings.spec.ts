@@ -80,6 +80,26 @@ test.describe('on a phone', () => {
     await expectAccessible(page);
   });
 
+  // Each settings page fits the screen once its data is in: a wide table scrolls in its panel.
+  for (const path of [
+    '/settings/users',
+    '/settings/members',
+    '/settings/webhooks',
+    '/settings/gitlab',
+    '/settings/github',
+    '/settings/ai',
+    '/settings/license',
+  ]) {
+    test(`${path} never scrolls sideways`, async ({ page }) => {
+      await page.goto(path);
+      await expect(page.locator('.settings-head h2')).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        390,
+      );
+    });
+  }
+
   test('names in tables keep their words; a table scrolls in its panel instead', async ({
     page,
   }) => {

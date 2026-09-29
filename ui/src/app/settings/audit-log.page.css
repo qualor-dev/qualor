@@ -1,6 +1,8 @@
 /* The audit log (spec §7.8): the chain head, the filters and the events, each a panel. */
 .audit-panels {
   display: grid;
+  /* A definite column: the events table scrolls in its panel instead of widening the page. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .audit-panels > * {

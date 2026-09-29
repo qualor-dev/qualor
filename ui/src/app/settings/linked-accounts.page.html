@@ -56,8 +56,8 @@
                   <span class="muted">{{ i.protocol | label: 'ssoProtocol' }}</span>
                 </div>
               </th>
-              <td>{{ i.createdAt | dateTime: 'date' }}</td>
-              <td>
+              <td class="nowrap">{{ i.createdAt | dateTime: 'date' }}</td>
+              <td class="nowrap">
                 @if (i.lastSignInAt; as at) {
                   {{ at | dateTime }}
                 } @else {

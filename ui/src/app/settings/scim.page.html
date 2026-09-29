@@ -108,15 +108,15 @@
                   <td>
                     <code>{{ t.prefix }}…</code>
                   </td>
-                  <td>{{ t.createdAt | dateTime }}</td>
-                  <td>
+                  <td class="nowrap">{{ t.createdAt | dateTime }}</td>
+                  <td class="nowrap">
                     @if (t.expiresAt) {
                       {{ t.expiresAt | dateTime }}
                     } @else {
                       <span class="muted" i18n="@@scim.never">Never</span>
                     }
                   </td>
-                  <td>
+                  <td class="nowrap">
                     @if (t.lastUsedAt) {
                       {{ t.lastUsedAt | dateTime }}
                     } @else {

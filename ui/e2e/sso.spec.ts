@@ -124,6 +124,14 @@ test('the Sign-in screen lists the instance admins and saves', async ({ page }) 
   await page.goto('/settings/ee/sign-in');
   await expect(page.getByRole('heading', { name: 'Sign-in', exact: true })).toBeVisible();
   await expect(page.getByLabel('Everyone with a password')).toBeChecked();
+  // Each option's box sits on its words' first line, the size of a checkbox.
+  for (const words of ['Everyone with a password', 'Only the break-glass administrators']) {
+    const option = page.locator('label', { hasText: words });
+    const box = (await option.getByRole('radio').boundingBox())!;
+    const text = (await option.locator('span').boundingBox())!;
+    expect(box.height, words).toBeLessThanOrEqual(20);
+    expect(Math.abs(box.y + box.height / 2 - (text.y + 10)), words).toBeLessThanOrEqual(4);
+  }
   const admin = page.locator('#sign-in-picker label', { hasText: 'admin' });
   await expect(admin.getByRole('checkbox')).toBeEnabled();
   // sso-user is not an instance admin, so it is not offered.
