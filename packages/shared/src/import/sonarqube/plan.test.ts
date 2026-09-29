@@ -92,6 +92,19 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     ]);
   });
 
+  it('activates only the equivalent sonarjs target when a curated overlap shares the rule (mixed case)', () => {
+    // S1481 is curated as overlap (eslint:no-unused-vars, @typescript-eslint/no-unused-vars) and,
+    // since Phase 8, also a real sonarjs key (equivalent, repository). usable() (plan.ts) filters
+    // to relation === 'equivalent', so only sonarjs:S1481 becomes a row; the curated overlap
+    // targets never do, whatever their review state.
+    const js = planProfile(profile({ active: [rule('javascript:S1481')] }), reviewed);
+    expect(js.rows).toEqual([{ ruleKey: 'sonarjs:S1481', active: true, severityOverride: null }]);
+    expect(js.stats).toMatchObject({ mapped: 1, statusOnly: [], pendingReview: [] });
+
+    const ts = planProfile(profile({ active: [rule('typescript:S1481')] }), reviewed);
+    expect(ts.rows).toEqual([{ ruleKey: 'sonarjs:S1481', active: true, severityOverride: null }]);
+  });
+
   it('gives a TypeScript profile the typescript-eslint rule of S1186, plus the shared sonarjs rule', () => {
     // S1186 is also a real sonarjs key (Phase 8), shared by both languages' repository rows.
     const ts = planProfile(profile({ active: [rule('typescript:S1186')] }), reviewed);

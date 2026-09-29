@@ -101,6 +101,16 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     ).toThrow();
   });
 
+  it('refuses a repository row whose keysFile names no shipped keys file', () => {
+    expect(() =>
+      table({
+        repositories: [
+          { repository: 'x', engine: 'roslyn', reason: 'r', keysFile: 'unknown-keys.json' },
+        ],
+      }),
+    ).toThrow(/unknown keysFile/);
+  });
+
   it('holds no SonarSource text: reasons are one short line each', () => {
     for (const entry of [...raw.repositories, ...raw.rules]) {
       expect(entry.reason.length).toBeLessThanOrEqual(120);
