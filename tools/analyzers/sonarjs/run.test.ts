@@ -473,8 +473,9 @@ describe('sonarjs pins', () => {
 
   it('install-sonarjs.sh installs it from the lockfile and checks the source archive before unpacking it', () => {
     const text = readFileSync('tools/analyzers/install-sonarjs.sh', 'utf8');
-    // $NPM, not a literal `npm`: the ambient npm, or a pinned npm >= 11 fallback (see below).
-    expect(text).toContain('$NPM ci --omit=dev --ignore-scripts');
+    // The ambient npm (>= 10), never one fetched at install time.
+    expect(text).toContain('npm ci --omit=dev --ignore-scripts');
+    expect(text).not.toMatch(/npx|npm@/);
     expect(text).toContain('"${SONARJS_SOURCE_SHA256}  $TMP/sonarjs.tar.gz" | sha256sum -c -');
     const check = text.indexOf('/sonarjs.tar.gz" | sha256sum -c -');
     expect(check).toBeGreaterThan(0);

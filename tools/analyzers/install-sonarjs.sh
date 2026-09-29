@@ -14,13 +14,11 @@
 # licences.mjs, decorated-pairs.mjs) this script leaves untouched in the checkout.
 # QUALOR_INSTALL_SH (default: install.sh next to this script) names the file the SONARJS_* pins are
 # read from.
-# node must already be on PATH. `npm ci` needs npm >= 11 for this lockfile's package.json
-# `minimatch@10.0.1` override (a lockfile npm 10 writes fails its own `npm ci` on it); the base
-# images this repository pins (deploy/scanner/Dockerfile, tools/analyzers/Dockerfile) ship an older
-# npm that reads the already-correct, committed lockfile without trouble, so this only matters when
-# writing a *new* lockfile. As a safety net for CI runners whose npm is not pinned by this
-# repository, this script checks the ambient npm and falls back to one pinned exact npm >= 11
-# (via `npx`, never installed globally) when it is too old.
+# node and npm (>= 10) must already be on PATH: the ambient npm installs the committed lockfile
+# (the pinned node base images ship npm 10, which reads it cleanly). Nothing else is fetched to run
+# npm itself. Regenerating the lockfile needs npm >= 11, for the package.json `minimatch@10.0.1`
+# override (a lockfile npm 10 writes fails its own `npm ci` on it); that is a maintainer step on a
+# workstation, never part of this script.
 set -eu
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -28,9 +26,6 @@ INSTALL_SH="${QUALOR_INSTALL_SH:-$SELF_DIR/install.sh}"
 SRC="${QUALOR_SONARJS_SRC:-$SELF_DIR/sonarjs}"
 PREFIX="${QUALOR_TOOLS:-/opt/qualor}"
 DEST="$PREFIX/sonarjs"
-# The one exact npm >= 11 release this script falls back to when the ambient npm is older
-# (registry.npmjs.org's current 11.x release when this was pinned; bump by hand).
-NPM_FALLBACK_VERSION=11.20.0
 
 eval "$(grep -E '^SONARJS_[A-Z0-9_]+=' "$INSTALL_SH")"
 
@@ -43,13 +38,11 @@ cp "$SRC/package.json" "$SRC/package-lock.json" "$SRC/run.mjs" "$SRC/categories.
 chmod 0644 "$DEST/package.json" "$DEST/package-lock.json" "$DEST/run.mjs" "$DEST/categories.mjs"
 
 npm_major="$(npm --version 2>/dev/null | cut -d. -f1)"
-if [ "${npm_major:-0}" -ge 11 ] 2>/dev/null; then
-  NPM="npm"
-else
-  echo "install-sonarjs.sh: ambient npm is $(npm --version 2>/dev/null || echo 'missing'), falling back to npm $NPM_FALLBACK_VERSION for npm ci" >&2
-  NPM="npx -y npm@$NPM_FALLBACK_VERSION"
-fi
-(cd "$DEST" && $NPM ci --omit=dev --ignore-scripts --no-audit --no-fund --cache "$TMP/npm-cache")
+[ "${npm_major:-0}" -ge 10 ] 2>/dev/null || {
+  echo "install-sonarjs.sh: npm >= 10 is required, found $(npm --version 2>/dev/null || echo 'none')" >&2
+  exit 1
+}
+(cd "$DEST" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund --cache "$TMP/npm-cache")
 
 installed="$(node -p 'require("'"$DEST"'/node_modules/eslint-plugin-sonarjs/package.json").version')"
 [ "$installed" = "$SONARJS_VERSION" ] || {

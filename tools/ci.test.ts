@@ -340,12 +340,11 @@ describe('install-sonarjs.sh (plan 8A/8B, controller ruling 14)', () => {
     );
   });
 
-  it('checks the installed plugin version against the pin and falls back to one pinned npm >= 11', () => {
+  it('checks the installed plugin version against the pin and uses the ambient npm >= 10, never a fetched one', () => {
     expect(script).toContain('$SONARJS_VERSION');
-    expect(script).toMatch(/^NPM_FALLBACK_VERSION=\d+\.\d+\.\d+$/m);
-    const fallback = /^NPM_FALLBACK_VERSION=(\d+)\.\d+\.\d+$/m.exec(script)?.[1];
-    expect(Number(fallback)).toBeGreaterThanOrEqual(11);
-    expect(script).toContain('npx -y npm@$NPM_FALLBACK_VERSION');
+    expect(script).toContain('[ "${npm_major:-0}" -ge 10 ]');
+    expect(script).toContain('(cd "$DEST" && npm ci --omit=dev --ignore-scripts');
+    expect(script).not.toMatch(/npx|npm@|NPM_FALLBACK/);
   });
 
   it('runs in every job that requires the analyzers, alongside install.sh and install-dotnet.sh (GitHub)', () => {
