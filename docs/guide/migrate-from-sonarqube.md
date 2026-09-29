@@ -12,18 +12,21 @@ stored anywhere.
 
 | Imported | As |
 |---|---|
-| Quality profiles for JavaScript, TypeScript and Java | Qualor profiles: rule activation and severity overrides, for rules with an analyzer counterpart |
-| Quality gates | Qualor gates, for conditions on metrics Qualor has |
-| Which profile and gate each project uses | project assignments. With `--create-projects`, the projects themselves |
 | Issues marked **False positive**, **Won't fix** or **Accepted** on the main branch | the same status on the matching Qualor issue, with the latest comment |
+| Quality gates | Qualor gates, for conditions on metrics Qualor has |
+| Projects, and which gate each one uses | project assignments. With `--create-projects`, the projects themselves |
+| Quality profiles for JavaScript, TypeScript and Java | listed in the plan. Rule activation and severity overrides move as the SonarSource-to-analyzer rule mappings are reviewed. Until a profile has reviewed mappings it is reported as skipped, and your Qualor profiles stay as they are |
+
+The statuses of issues that SonarQube imported from ESLint, PMD, SpotBugs or Roslyn (`external_*`
+rules) map one to one. SonarQube Server 9.9 does not let anyone resolve such external issues, so they
+have statuses to move from SonarQube Server 10.x and Community Build on.
 
 Not imported, and reported instead: rule parameters, SonarSource rules without an ESLint, PMD or
 SpotBugs counterpart, gate conditions on metrics Qualor lacks, security hotspot reviews, branches other
 than main, users and permissions, history, and new-code definitions.
 
 Qualor does not run SonarSource's own analyzers. Many SonarQube rules therefore have no counterpart,
-and the import says so. The **statuses** of issues that SonarQube imported from ESLint, PMD, SpotBugs
-or Roslyn (`external_*` rules) map one to one.
+and the import says so.
 
 ## Step by step
 
@@ -56,6 +59,12 @@ With the scanner image:
 docker run --rm -e SONAR_TOKEN -e QUALOR_URL -e QUALOR_TOKEN -v "$PWD":/out -w /out \
   qualor/scanner:<tag> import sonarqube --url https://sonar.example.com --dry-run --output import-plan.json
 ```
+
+The import sends both tokens, and the Qualor one has the Admin scope, so it uses plain `http` only to
+`localhost`, `127.0.0.0/8` or `[::1]`. From the container, a Qualor server on your machine is reachable
+that way with `--network host` and `QUALOR_URL=http://127.0.0.1:8080` (Linux). With Docker Desktop's
+`QUALOR_URL=http://host.docker.internal:8080`, add `--allow-insecure-http`. Use `https` for any other
+server.
 
 The summary lists what would be created, changed or left alone, the unmapped rules (the 20 with the
 most resolved issues), the unmapped gate conditions, and the conflicts. `--output` writes the full plan
