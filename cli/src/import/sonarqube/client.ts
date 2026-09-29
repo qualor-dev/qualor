@@ -315,6 +315,8 @@ export async function connectSonar(o: ConnectOptions): Promise<SonarConnection> 
     token: o.token,
     timeoutMs: o.timeoutMs,
     auth,
+    // Hundreds of small reads: one connection for them all (a reused one that fails is retried).
+    keepAlive: true,
     ...(o.ca !== undefined && { ca: o.ca }),
   });
   const base = {

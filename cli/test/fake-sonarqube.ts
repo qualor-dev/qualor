@@ -119,6 +119,8 @@ interface Fault {
 export interface FakeSonar {
   url: string;
   requests: FakeSonarRequest[];
+  /** The TCP connections the fake accepted (a client that reuses them opens few). */
+  connections: number;
   data: FakeSonarData;
   /** Answer a request differently (a fault, a redirect, garbage); null to serve normally. */
   fault: ((r: FakeSonarRequest) => Fault | null) | null;
@@ -223,7 +225,14 @@ export async function startFakeSonarQube(
   /** SonarQube Server 2025.5 added the sandbox (`IN_SANDBOX`); Community Builds are 24–99. */
   const sandbox = data.kind === 'server' && (major > 2025 || (major === 2025 && minor >= 5));
   const requests: FakeSonarRequest[] = [];
-  const fake: FakeSonar = { url: '', requests, data, fault: null, close: async () => {} };
+  const fake: FakeSonar = {
+    url: '',
+    requests,
+    connections: 0,
+    data,
+    fault: null,
+    close: async () => {},
+  };
 
   const authorised = (auth: string | undefined): boolean => {
     const bearer = auth === `Bearer ${data.token}`;
@@ -611,6 +620,9 @@ export async function startFakeSonarQube(
       }
       handle(path, query, res);
     });
+  });
+  server.on('connection', () => {
+    fake.connections += 1;
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   fake.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
