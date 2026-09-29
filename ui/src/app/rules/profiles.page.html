@@ -36,8 +36,8 @@
             <thead>
               <tr>
                 <th scope="col" i18n="@@profiles.col.name">Name</th>
-                <th scope="col" i18n="@@profiles.col.parent">Inherits from</th>
-                <th scope="col" i18n="@@profiles.col.newRules">New rules</th>
+                <th scope="col" class="col-parent" i18n="@@profiles.col.parent">Inherits from</th>
+                <th scope="col" class="col-rules" i18n="@@profiles.col.newRules">New rules</th>
                 @if (org.canChange('org.profiles.manage')) {
                   <th scope="col" class="actions-col">
                     <span class="visually-hidden" i18n="@@profiles.col.actions">Actions</span>

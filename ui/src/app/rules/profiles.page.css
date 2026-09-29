@@ -6,6 +6,20 @@
 .profile-groups > * {
   margin: 0;
 }
+/* The same columns in every language panel, so they line up down the page. */
+.profile-groups table {
+  table-layout: fixed;
+  min-width: 40rem;
+}
+.col-parent {
+  width: 24%;
+}
+.col-rules {
+  width: 12%;
+}
+.profile-groups .actions-col {
+  width: 17rem;
+}
 .profile-name {
   display: flex;
   flex-wrap: wrap;
