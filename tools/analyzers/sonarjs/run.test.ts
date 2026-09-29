@@ -10,18 +10,47 @@ import {
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Qualor's sonarjs pass (config.md §6). The real-tool tests run where the pass is installed
- * (`npm ci --omit=dev --ignore-scripts` in tools/analyzers/sonarjs, as in the qualor/scanner
- * image) and categories.json has been built next to run.mjs (`node categories.mjs <rules dir>`);
- * they are skipped elsewhere.
+ * Qualor's sonarjs pass (config.md §6). The real-tool tests run where the pass is installed: in
+ * QUALOR_SONARJS_DIR when it is set, else in /opt/qualor/sonarjs when install-sonarjs.sh put it
+ * there (CI, the qualor/scanner image, the analyzers toolbox), else in tools/analyzers/sonarjs
+ * (`npm ci --omit=dev --ignore-scripts` there, and categories.json built next to run.mjs with
+ * `node categories.mjs <rules dir>`). They are skipped where it is not installed, unless
+ * QUALOR_REQUIRE_ANALYZERS=1 (the CI test jobs), which turns a missing pass into a failure.
  */
-const DIR = path.resolve('tools/analyzers/sonarjs');
+const SOURCE = path.resolve('tools/analyzers/sonarjs');
+const INSTALLED = '/opt/qualor/sonarjs';
+function sonarjsDir(env: NodeJS.ProcessEnv, exists: (p: string) => boolean): string {
+  const configured = env['QUALOR_SONARJS_DIR'];
+  if (configured) return path.resolve(configured);
+  return exists(path.join(INSTALLED, 'run.mjs')) ? INSTALLED : SOURCE;
+}
+const DIR = sonarjsDir(process.env, existsSync);
 const RUN = path.join(DIR, 'run.mjs');
 const installed = existsSync(path.join(DIR, 'node_modules/eslint-plugin-sonarjs/package.json'));
 const have = installed && existsSync(path.join(DIR, 'categories.json'));
+const required = process.env['QUALOR_REQUIRE_ANALYZERS'] === '1';
+
+describe('sonarjs pass installation', () => {
+  it.runIf(required)('is installed where QUALOR_REQUIRE_ANALYZERS=1 requires it', () => {
+    expect(have, `the sonarjs pass is not installed in ${DIR} (install-sonarjs.sh)`).toBe(true);
+  });
+
+  it.runIf(have && DIR !== SOURCE)("runs this checkout's run.mjs, not a stale install", () => {
+    expect(readFileSync(RUN, 'utf8')).toBe(readFileSync(path.join(SOURCE, 'run.mjs'), 'utf8'));
+  });
+
+  it('looks in QUALOR_SONARJS_DIR, then /opt/qualor/sonarjs, then the source directory', () => {
+    expect(sonarjsDir({ QUALOR_SONARJS_DIR: '/x/sonarjs' }, () => true)).toBe(
+      path.resolve('/x/sonarjs'),
+    );
+    expect(sonarjsDir({}, (p) => p === path.join(INSTALLED, 'run.mjs'))).toBe(INSTALLED);
+    expect(sonarjsDir({}, () => false)).toBe(SOURCE);
+  });
+});
 
 function repo(files: Record<string, string>): string {
   const root = mkdtempSync(path.join(os.tmpdir(), 'sonarjs-'));
@@ -61,7 +90,7 @@ const TSCONFIG = '{ "compilerOptions": { "strict": true }, "include": ["*.ts"] }
 const ruleIds = (log: { runs: { results: { ruleId: string }[] }[] }) =>
   log.runs[0]!.results.map((r) => r.ruleId);
 
-describe.skipIf(!have)('sonarjs run.mjs', { timeout: 120_000 }, () => {
+describe.skipIf(!have && !required)('sonarjs run.mjs', { timeout: 120_000 }, () => {
   it('reports a finding under its RSPEC key, with the plugin rule name and a category', () => {
     const root = repo({ 'a.js': BRANCHES });
     const { log, info } = run(root);
@@ -351,7 +380,7 @@ describe('sonarjs licences.mjs', () => {
     expect(licenceProblem('other', undefined)).toMatch(/no licence/);
   });
 
-  it.skipIf(!installed)(
+  it.skipIf(!installed && !required)(
     'the committed SONARJS-DEPENDENCIES.txt matches the installed tree',
     async () => {
       // @ts-expect-error: a plain ES module of the image, without type declarations
@@ -363,7 +392,7 @@ describe('sonarjs licences.mjs', () => {
 });
 
 describe('sonarjs pins', () => {
-  const pkg = JSON.parse(readFileSync(path.join(DIR, 'package.json'), 'utf8')) as {
+  const pkg = JSON.parse(readFileSync(path.join(SOURCE, 'package.json'), 'utf8')) as {
     license: string;
     private: boolean;
     dependencies: Record<string, string>;
@@ -404,10 +433,9 @@ describe('sonarjs pins', () => {
   );
 });
 
-describe.skipIf(!installed)('sonarjs run.mjs helpers', () => {
+describe.skipIf(!installed && !required)('sonarjs run.mjs helpers', () => {
   const load = async () => {
-    // @ts-expect-error: a plain ES module of the image, without type declarations
-    return (await import('./run.mjs')) as {
+    return (await import(pathToFileURL(RUN).href)) as {
       usableExcludes: (g: string[], warn: (l: string) => void) => string[];
       lintGuarded: <T>(
         lint: () => Promise<T>,

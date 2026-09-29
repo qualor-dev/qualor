@@ -362,7 +362,9 @@ describe('install-sonarjs.sh (plan 8A/8B, controller ruling 14)', () => {
       const install = job.steps.findIndex(
         (s) => s.run?.endsWith('sh tools/analyzers/install-sonarjs.sh') === true,
       );
-      expect(job.steps[install - 1]?.run, name).toContain('chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs');
+      expect(job.steps[install - 1]?.run, name).toContain(
+        'chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs',
+      );
     }
   });
 
@@ -376,6 +378,27 @@ describe('install-sonarjs.sh (plan 8A/8B, controller ruling 14)', () => {
     expect(before.indexOf('sh tools/analyzers/install.sh')).toBeLessThan(
       before.indexOf('sh tools/analyzers/install-sonarjs.sh'),
     );
+  });
+
+  it("runs the pass's own tests (run.test.ts) where it is installed and required", () => {
+    // run.test.ts finds the pass in /opt/qualor/sonarjs and fails instead of skipping under
+    // QUALOR_REQUIRE_ANALYZERS=1, so its security and licence tests run in both test jobs.
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    const steps = github.jobs['test']?.steps ?? [];
+    const install = steps.findIndex(
+      (s) => s.run?.endsWith('sh tools/analyzers/install-sonarjs.sh') === true,
+    );
+    const tests = steps.findIndex((s) => s.run === 'pnpm test:coverage');
+    expect(install).toBeGreaterThanOrEqual(0);
+    expect(tests).toBeGreaterThan(install);
+    expect(steps[tests]?.env?.['QUALOR_REQUIRE_ANALYZERS']).toBe('1');
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { extends?: string; script?: string[]; variables?: Record<string, string> }
+    >;
+    expect(gitlab['test']?.extends).toBe('.analyzers');
+    expect(gitlab['test']?.script).toContain('pnpm test:coverage');
+    expect(gitlab['test']?.variables?.['QUALOR_REQUIRE_ANALYZERS']).toBe('1');
   });
 });
 
