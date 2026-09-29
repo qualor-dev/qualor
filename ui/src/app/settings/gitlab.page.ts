@@ -17,8 +17,10 @@ import { fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf, ResponseBody } from '../api/types';
 import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
+import { closeModal, openModal } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { githubTestText } from './github-text';
 
@@ -114,11 +116,17 @@ interface RowError {
  * (422 on `body.token`) and checks the project reference against the connection's provider (422
  * on `body.scmProjectRef`). Test answers are shown in the page's own words per code (§4.4); the
  * GitHub tab lists and changes GitHub connections.
+ *
+ * Step 8 of the redesign (spec §7.8): each connection a panel whose pill says how its last test
+ * here went (Not tested, Connected, Test failed: the server keeps no state), with Test and a quiet
+ * Delete; its own form in setting rows; "New connection" (a short create form) in a dialog; the
+ * mapping table in a panel; a deletion asks in the page's dialog instead of `confirm()`.
  */
 @Component({
   selector: 'q-gitlab-page',
-  imports: [DateTimePipe],
+  imports: [DateTimePipe, Icon],
   templateUrl: './gitlab.page.html',
+  styleUrl: './scm.page.css',
 })
 export class GitLabPage {
   private readonly api = inject(Api);
@@ -155,6 +163,14 @@ export class GitLabPage {
   protected readonly busy = signal(false);
   /** Test results and project messages, by connection or project id. */
   protected readonly results = signal<Record<string, string>>({});
+  /** How each connection's last test on this page went, for its pill. */
+  protected readonly outcomes = signal<Record<string, 'ok' | 'failed'>>({});
+  /** A refused addition other than its fields, shown in the dialog that is still open. */
+  protected readonly createError = signal<string | null>(null);
+  /** The deletion the confirmation dialog asks about; null while it is closed. */
+  protected readonly pendingDelete = signal<{ connection: Connection; question: string } | null>(
+    null,
+  );
   protected readonly drafts = signal<Record<string, Draft>>({});
   protected readonly refErrors = signal<Record<string, string>>({});
   protected readonly connErrors = signal<Record<string, string>>({});
@@ -163,6 +179,8 @@ export class GitLabPage {
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly urlField = viewChild<ElementRef<HTMLInputElement>>('urlField');
   private readonly tokenField = viewChild<ElementRef<HTMLInputElement>>('tokenField');
+  private readonly createDialog = viewChild<ElementRef<HTMLDialogElement>>('createDialog');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
   /** Counts organisation changes: an answer for an earlier organisation is dropped. */
   private orgGeneration = 0;
 
@@ -178,6 +196,8 @@ export class GitLabPage {
         this.urlError.set(null);
         this.tokenError.set(null);
         this.results.set({});
+        this.outcomes.set({});
+        this.createError.set(null);
         this.drafts.set({});
         this.refErrors.set({});
         this.connErrors.set({});
@@ -260,6 +280,24 @@ export class GitLabPage {
     this.results.update((all) => without(all, project.id));
   }
 
+  /** Opens "New connection" on an empty address and token, with no message. */
+  protected openCreate(): void {
+    this.url.set('');
+    clearField(this.tokenField(), this.token);
+    this.urlError.set(null);
+    this.tokenError.set(null);
+    this.createError.set(null);
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
+  }
+
+  /** Cancel, or Escape: the dialog closes and the token typed in it goes. */
+  protected closeCreate(): void {
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+    clearField(this.tokenField(), this.token);
+  }
+
   protected async create(event: Event): Promise<void> {
     event.preventDefault();
     const organizationId = this.org.currentId();
@@ -268,23 +306,37 @@ export class GitLabPage {
     const token = this.token();
     this.urlError.set(baseUrl ? null : badUrl());
     this.tokenError.set(token ? null : badToken());
+    this.createError.set(null);
     if (!baseUrl || !token) {
       this.focusFirstInvalid();
       return;
     }
     const generation = this.orgGeneration;
     try {
-      await this.run(async () => {
-        await ok(
-          this.api.client.POST('/api/v0/scm-connections', {
-            body: { organizationId, provider: 'gitlab', baseUrl, token },
-          }),
-        );
-        if (generation !== this.orgGeneration) return;
-        clearField(this.urlField(), this.url);
-        this.announcement.set($localize`:@@gitlab.created:GitLab connection added.`);
-        await this.connections.refresh();
-      });
+      await this.run(
+        async () => {
+          await ok(
+            this.api.client.POST('/api/v0/scm-connections', {
+              body: { organizationId, provider: 'gitlab', baseUrl, token },
+            }),
+          );
+          if (generation !== this.orgGeneration) return;
+          clearField(this.urlField(), this.url);
+          this.announcement.set($localize`:@@gitlab.created:GitLab connection added.`);
+          this.closeCreate();
+          await this.connections.refresh();
+        },
+        (err) => {
+          // A refused address or token goes to its field (run's own mapping); the rest shows in
+          // the dialog that is still open.
+          const fields = fieldErrors(err);
+          if (fields['body.baseUrl'] !== undefined || fields['body.token'] !== undefined) {
+            return false;
+          }
+          this.createError.set(problemMessage(err));
+          return true;
+        },
+      );
     } finally {
       // The token never stays on the page after a submission, whatever the answer was.
       clearField(this.tokenField(), this.token);
@@ -333,6 +385,8 @@ export class GitLabPage {
           items.map((c) => (c.id === updated.id ? updated : c)),
         );
         this.results.update((all) => without(all, connection.id));
+        // A new token or address has not been tested yet.
+        this.outcomes.update((all) => without(all, connection.id));
         this.announcement.set(
           changed
             ? $localize`:@@gitlab.urlChanged:The connection now points at ${updated.baseUrl}:url:.`
@@ -363,19 +417,44 @@ export class GitLabPage {
       if (generation !== this.orgGeneration) return;
       const text = testText(result);
       this.results.update((all) => ({ ...all, [connection.id]: text }));
+      this.outcomes.update((all) => ({
+        ...all,
+        [connection.id]: result.ok && result.user ? 'ok' : 'failed',
+      }));
       this.announcement.set(text);
     });
   }
 
-  protected async remove(connection: Connection): Promise<void> {
+  /** Asks in the page's dialog; nothing is sent until its Delete. */
+  protected remove(connection: Connection): void {
     if (this.busy()) return;
-    if (
-      !window.confirm(
-        $localize`:@@gitlab.confirmDelete:Delete the GitLab connection to ${connection.baseUrl}:url:? Its projects stop being decorated.`,
-      )
-    ) {
-      return;
-    }
+    this.pendingDelete.set({
+      connection,
+      question: $localize`:@@gitlab.confirmDelete:Delete the GitLab connection to ${connection.baseUrl}:url:? Its projects stop being decorated.`,
+    });
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
+  }
+
+  protected async confirmDelete(): Promise<void> {
+    const pending = this.pendingDelete();
+    if (!pending) return;
+    // Cleared first: the dialog's close event then finds nothing to cancel.
+    this.pendingDelete.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    await this.applyDelete(pending.connection);
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing is deleted. */
+  protected cancelDelete(): void {
+    this.pendingDelete.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  private async applyDelete(connection: Connection): Promise<void> {
+    if (this.busy()) return;
     const generation = this.orgGeneration;
     await this.run(async () => {
       await done(
@@ -388,6 +467,7 @@ export class GitLabPage {
       await this.projects.refresh();
       this.rowErrors.update((all) => without(all, connection.id));
       this.results.update((all) => without(all, connection.id));
+      this.outcomes.update((all) => without(all, connection.id));
       this.announcement.set(
         $localize`:@@gitlab.deleted:GitLab connection ${connection.baseUrl}:url: deleted.`,
       );

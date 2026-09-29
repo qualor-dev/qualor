@@ -142,8 +142,8 @@ A C# project uses `qualor/scanner-dotnet` and wraps its own build. See
 
 In Qualor, an **org admin** opens **Settings → GitLab**:
 
-1. **New GitLab connection.** Enter the GitLab address (`https://gitlab.example.com`; a path such as
-   `/gitlab` is allowed) and an access token:
+1. **New connection** opens the **New GitLab connection** dialog. Enter the GitLab address
+   (`https://gitlab.example.com`; a path such as `/gitlab` is allowed) and an access token:
    - scope **`api`** and role **Maintainer**. Developer is enough for the merge request comments,
      but GitLab refuses a Developer's commit status on a protected branch, such as the default
      branch;

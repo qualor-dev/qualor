@@ -1,12 +1,25 @@
-<h2 #heading tabindex="-1" i18n="@@gitlab.title">GitLab</h2>
-@if (!canRead()) {
-  <p class="muted" i18n="@@gitlab.adminsOnly">Only organization administrators connect GitLab.</p>
-} @else {
-  <p class="muted" i18n="@@gitlab.intro">
-    Qualor sets a commit status for every analysis and comments on merge requests (a summary and a
-    discussion on each new issue) in the GitLab projects mapped below. Use a project access token
-    with the api scope and the Developer role.
-  </p>
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@gitlab.title">GitLab</h2>
+    @if (!canRead()) {
+      <p class="muted" i18n="@@gitlab.adminsOnly">
+        Only organization administrators connect GitLab.
+      </p>
+    } @else {
+      <p class="muted" i18n="@@gitlab.intro">
+        Qualor sets a commit status for every analysis and comments on merge requests (a summary and
+        a discussion on each new issue) in the GitLab projects mapped below. Use a project access
+        token with the api scope and the Developer role.
+      </p>
+    }
+  </div>
+  @if (canManage()) {
+    <button type="button" class="btn btn-primary" (click)="openCreate()">
+      <q-icon name="plus" /><ng-container i18n="@@gitlab.newOpen">New connection</ng-container>
+    </button>
+  }
+</div>
+@if (canRead()) {
   <div role="status">
     @if (announcement(); as message) {
       <p class="alert alert-success">{{ message }}</p>
@@ -17,12 +30,38 @@
   }
 
   <h3 class="subhead" i18n="@@gitlab.connections">Connections</h3>
-  <div class="stack">
+  <div class="connection-list">
     @for (c of gitlabConnections(); track c.id) {
-      <section class="card" [attr.data-key]="c.id" [attr.aria-label]="c.baseUrl">
-        <div class="page-header">
-          <code class="prose-text">{{ c.baseUrl }}</code>
-          <div class="row">
+      <section class="card panel" [attr.data-key]="c.id" [attr.aria-label]="c.baseUrl">
+        <div class="panel-head connection-head">
+          <div class="connection-title">
+            <code class="connection-url">{{ c.baseUrl }}</code>
+            <span class="muted" i18n="@@gitlab.addedAt">Added {{ c.createdAt | dateTime }}</span>
+          </div>
+          <div class="connection-side">
+            @switch (outcomes()[c.id]) {
+              @case ('ok') {
+                <span class="badge badge-passed connection-state"
+                  ><q-icon name="check" /><ng-container i18n="@@scm.state.connected"
+                    >Connected</ng-container
+                  ></span
+                >
+              }
+              @case ('failed') {
+                <span class="badge badge-failed connection-state"
+                  ><q-icon name="cross" /><ng-container i18n="@@scm.state.failed"
+                    >Test failed</ng-container
+                  ></span
+                >
+              }
+              @default {
+                <span class="badge badge-none connection-state"
+                  ><q-icon name="minus" /><ng-container i18n="@@scm.state.untested"
+                    >Not tested</ng-container
+                  ></span
+                >
+              }
+            }
             <button
               type="button"
               class="btn"
@@ -35,7 +74,7 @@
             @if (canManage()) {
               <button
                 type="button"
-                class="btn btn-danger"
+                class="btn-quiet danger"
                 [attr.aria-disabled]="busy() ? true : null"
                 (click)="remove(c)"
                 i18n="@@gitlab.delete"
@@ -45,76 +84,89 @@
             }
           </div>
         </div>
-        <p class="muted" i18n="@@gitlab.addedAt">Added {{ c.createdAt | dateTime }}</p>
-        @if (results()[c.id]; as result) {
-          <p class="prose-text">{{ result }}</p>
-        }
-        @if (canManage()) {
-          <details>
-            <summary i18n="@@gitlab.replaceToken">Replace the token or change the address</summary>
-            <form class="stack" novalidate (submit)="update(c, $event)">
-              <p i18n="@@gitlab.replacing">
-                Replacing <code class="prose-text">{{ c.baseUrl }}</code> (token and address)
-              </p>
-              <div class="field">
-                <label [attr.for]="'url-' + c.id" i18n="@@gitlab.address">Address</label>
-                <input
-                  [id]="'url-' + c.id"
-                  type="url"
-                  required
-                  maxlength="2048"
-                  autocomplete="off"
-                  spellcheck="false"
-                  [value]="c.baseUrl"
-                  [attr.aria-invalid]="rowError(c, 'url') ? true : null"
-                  [attr.aria-describedby]="rowError(c, 'url') ? 'url-error-' + c.id : null"
-                  (input)="clearRowError(c)"
-                />
-                @if (rowError(c, 'url'); as message) {
-                  <span [id]="'url-error-' + c.id" class="field-error" role="alert">{{
-                    message
-                  }}</span>
-                }
-              </div>
-              <div class="field">
-                <label [attr.for]="'token-' + c.id" i18n="@@gitlab.newToken">New token</label>
-                <input
-                  [id]="'token-' + c.id"
-                  type="password"
-                  required
-                  autocomplete="new-password"
-                  data-1p-ignore
-                  data-lpignore="true"
-                  spellcheck="false"
-                  maxlength="1024"
-                  [attr.aria-invalid]="rowError(c, 'token') ? true : null"
-                  [attr.aria-describedby]="
-                    rowError(c, 'token') ? 'token-error-' + c.id : 'token-hint-' + c.id
-                  "
-                  (input)="clearRowError(c)"
-                />
-                <span [id]="'token-hint-' + c.id" class="hint" i18n="@@gitlab.newTokenHint">
-                  Changing the address needs the token again: Qualor sends a stored token only to
-                  the address it was saved for.
-                </span>
-                @if (rowError(c, 'token'); as message) {
-                  <span [id]="'token-error-' + c.id" class="field-error" role="alert">{{
-                    message
-                  }}</span>
-                }
-              </div>
-              <p>
-                <button
-                  type="submit"
-                  class="btn"
-                  [attr.aria-disabled]="busy() ? true : null"
-                  i18n="@@gitlab.saveToken"
-                >
-                  Save token
-                </button>
-              </p>
-            </form>
-          </details>
+        @if (results()[c.id] || canManage()) {
+          <div class="panel-body connection-body">
+            @if (results()[c.id]; as result) {
+              <p class="prose-text connection-result">{{ result }}</p>
+            }
+            @if (canManage()) {
+              <details class="connection-edit">
+                <summary i18n="@@gitlab.replaceToken">
+                  Replace the token or change the address
+                </summary>
+                <form novalidate (submit)="update(c, $event)">
+                  <p class="connection-replacing" i18n="@@gitlab.replacing">
+                    Replacing <code class="prose-text">{{ c.baseUrl }}</code> (token and address)
+                  </p>
+                  <div class="setting-row">
+                    <div class="setting-text">
+                      <label [attr.for]="'url-' + c.id" i18n="@@gitlab.address">Address</label>
+                    </div>
+                    <div class="setting-field">
+                      <input
+                        [id]="'url-' + c.id"
+                        type="url"
+                        required
+                        maxlength="2048"
+                        autocomplete="off"
+                        spellcheck="false"
+                        [value]="c.baseUrl"
+                        [attr.aria-invalid]="rowError(c, 'url') ? true : null"
+                        [attr.aria-describedby]="rowError(c, 'url') ? 'url-error-' + c.id : null"
+                        (input)="clearRowError(c)"
+                      />
+                      @if (rowError(c, 'url'); as message) {
+                        <span [id]="'url-error-' + c.id" class="field-error" role="alert">{{
+                          message
+                        }}</span>
+                      }
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-text">
+                      <label [attr.for]="'token-' + c.id" i18n="@@gitlab.newToken">New token</label>
+                      <p [id]="'token-hint-' + c.id" i18n="@@gitlab.newTokenHint">
+                        Changing the address needs the token again: Qualor sends a stored token only
+                        to the address it was saved for.
+                      </p>
+                    </div>
+                    <div class="setting-field">
+                      <input
+                        [id]="'token-' + c.id"
+                        type="password"
+                        required
+                        autocomplete="new-password"
+                        data-1p-ignore
+                        data-lpignore="true"
+                        spellcheck="false"
+                        maxlength="1024"
+                        [attr.aria-invalid]="rowError(c, 'token') ? true : null"
+                        [attr.aria-describedby]="
+                          rowError(c, 'token') ? 'token-error-' + c.id : 'token-hint-' + c.id
+                        "
+                        (input)="clearRowError(c)"
+                      />
+                      @if (rowError(c, 'token'); as message) {
+                        <span [id]="'token-error-' + c.id" class="field-error" role="alert">{{
+                          message
+                        }}</span>
+                      }
+                    </div>
+                  </div>
+                  <div class="setting-actions">
+                    <button
+                      type="submit"
+                      class="btn"
+                      [attr.aria-disabled]="busy() ? true : null"
+                      i18n="@@gitlab.saveToken"
+                    >
+                      Save token
+                    </button>
+                  </div>
+                </form>
+              </details>
+            }
+          </div>
         }
       </section>
     } @empty {
@@ -124,217 +176,275 @@
     }
   </div>
 
-  @if (canManage()) {
-    <form class="card" novalidate (submit)="create($event)">
-      <h3 i18n="@@gitlab.new">New GitLab connection</h3>
-      <div class="field">
-        <label for="gitlab-url" i18n="@@gitlab.url">GitLab address</label>
-        <input
-          #urlField
-          id="gitlab-url"
-          type="url"
-          required
-          maxlength="2048"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="https://gitlab.example.com"
-          i18n-placeholder="@@gitlab.urlPlaceholder"
-          [attr.aria-invalid]="urlError() ? true : null"
-          [attr.aria-describedby]="urlError() ? 'gitlab-url-error' : null"
-          [value]="url()"
-          (input)="setUrl($event)"
-        />
-        @if (urlError(); as message) {
-          <span id="gitlab-url-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <div class="field">
-        <label for="gitlab-token" i18n="@@gitlab.token">Access token</label>
-        <input
-          #tokenField
-          id="gitlab-token"
-          type="password"
-          required
-          maxlength="1024"
-          autocomplete="new-password"
-          data-1p-ignore
-          data-lpignore="true"
-          spellcheck="false"
-          [attr.aria-invalid]="tokenError() ? true : null"
-          [attr.aria-describedby]="
-            tokenError() ? 'gitlab-token-error gitlab-token-hint' : 'gitlab-token-hint'
-          "
-          [value]="token()"
-          (input)="setToken($event)"
-        />
-        <span id="gitlab-token-hint" class="hint" i18n="@@gitlab.tokenHint">
-          Stored encrypted; Qualor never shows it again.
-        </span>
-        @if (tokenError(); as message) {
-          <span id="gitlab-token-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <button
-        type="submit"
-        class="btn btn-primary"
-        [attr.aria-disabled]="busy() ? true : null"
-        i18n="@@gitlab.create"
-      >
-        Add connection
-      </button>
-    </form>
-  }
-
   <h3 class="subhead" i18n="@@gitlab.projects">Projects</h3>
-  <div class="table-wrap">
-    <table [attr.aria-busy]="projects.loading()">
-      <caption class="visually-hidden" i18n="@@gitlab.projectsCaption">
-        Projects and the GitLab projects or GitHub repositories they are decorated in
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col" i18n="@@gitlab.col.project">Project</th>
-          <th scope="col" i18n="@@gitlab.col.connection">Connection</th>
-          <th scope="col" i18n="@@gitlab.col.ref">GitLab project or GitHub repository</th>
-          <th scope="col">
-            <span class="visually-hidden" i18n="@@gitlab.col.actions">Actions</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (p of projects.items(); track p.id) {
-          <tr [attr.data-key]="p.id">
-            <th scope="row">
-              {{ p.name }}
-              <div class="muted">
-                <code>{{ p.key }}</code>
-              </div>
+  <section class="card panel" aria-labelledby="gitlab-projects-caption">
+    <div class="panel-scroll">
+      <table [attr.aria-busy]="projects.loading()">
+        <caption
+          id="gitlab-projects-caption"
+          class="visually-hidden"
+          i18n="@@gitlab.projectsCaption"
+        >
+          Projects and the GitLab projects or GitHub repositories they are decorated in
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@gitlab.col.project">Project</th>
+            <th scope="col" i18n="@@gitlab.col.connection">Connection</th>
+            <th scope="col" i18n="@@gitlab.col.ref">GitLab project or GitHub repository</th>
+            <th scope="col" class="actions-col">
+              <span class="visually-hidden" i18n="@@gitlab.col.actions">Actions</span>
             </th>
-            <td>
-              <label
-                class="visually-hidden"
-                [attr.for]="'conn-' + p.id"
-                i18n="@@gitlab.connectionOf"
-              >
-                Connection of {{ p.name }}
-              </label>
-              <select
-                [id]="'conn-' + p.id"
-                [attr.aria-invalid]="connErrors()[p.id] ? true : null"
-                [attr.aria-describedby]="connErrors()[p.id] ? 'conn-error-' + p.id : null"
-                [disabled]="!canManage()"
-                (change)="setConnection(p, $event)"
-              >
-                <option value="" [selected]="draft(p).connectionId === ''" i18n="@@gitlab.none">
-                  None
-                </option>
-                @for (c of connections.items(); track c.id) {
-                  <option [value]="c.id" [selected]="draft(p).connectionId === c.id">
-                    {{ connectionLabel(c) }}
-                  </option>
-                }
-              </select>
-              @if (connErrors()[p.id]; as message) {
-                <span [id]="'conn-error-' + p.id" class="field-error" role="alert">{{
-                  message
-                }}</span>
-              }
-            </td>
-            <td>
-              @if (providerOf(p) === 'github') {
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of projects.items(); track p.id) {
+            <tr [attr.data-key]="p.id">
+              <th scope="row">
+                <div class="name-stack">
+                  <span>{{ p.name }}</span>
+                  <code class="muted">{{ p.key }}</code>
+                </div>
+              </th>
+              <td class="conn-cell">
                 <label
                   class="visually-hidden"
-                  [attr.for]="'ref-' + p.id"
-                  i18n="@@gitlab.githubRefOf"
+                  [attr.for]="'conn-' + p.id"
+                  i18n="@@gitlab.connectionOf"
                 >
-                  GitHub repository of {{ p.name }}
+                  Connection of {{ p.name }}
                 </label>
-              } @else {
-                <label class="visually-hidden" [attr.for]="'ref-' + p.id" i18n="@@gitlab.refOf">
-                  GitLab project of {{ p.name }}
-                </label>
-              }
-              <input
-                [id]="'ref-' + p.id"
-                type="text"
-                maxlength="255"
-                autocomplete="off"
-                spellcheck="false"
-                [attr.placeholder]="refPlaceholder(p)"
-                [attr.aria-invalid]="refErrors()[p.id] ? true : null"
-                [attr.aria-describedby]="
-                  refErrors()[p.id] ? 'ref-error-' + p.id + ' ref-hint-' + p.id : 'ref-hint-' + p.id
-                "
-                [value]="draft(p).ref"
-                [disabled]="!canManage()"
-                (input)="setRef(p, $event)"
-              />
-              @if (providerOf(p) === 'github') {
-                <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.githubRefHint"
-                  >owner/repo</span
+                <select
+                  [id]="'conn-' + p.id"
+                  [attr.aria-invalid]="connErrors()[p.id] ? true : null"
+                  [attr.aria-describedby]="connErrors()[p.id] ? 'conn-error-' + p.id : null"
+                  [disabled]="!canManage()"
+                  (change)="setConnection(p, $event)"
                 >
-              } @else {
-                <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.refHint"
-                  >group/project or its id</span
-                >
-              }
-              @if (refErrors()[p.id]; as message) {
-                <span [id]="'ref-error-' + p.id" class="field-error" role="alert">{{
-                  message
-                }}</span>
-              }
-              @if (results()[p.id]; as result) {
-                <span class="hint">{{ result }}</span>
-              }
-            </td>
-            <td class="actions">
-              <div class="row">
-                @if (canManage()) {
+                  <option value="" [selected]="draft(p).connectionId === ''" i18n="@@gitlab.none">
+                    None
+                  </option>
+                  @for (c of connections.items(); track c.id) {
+                    <option [value]="c.id" [selected]="draft(p).connectionId === c.id">
+                      {{ connectionLabel(c) }}
+                    </option>
+                  }
+                </select>
+                @if (connErrors()[p.id]; as message) {
+                  <span [id]="'conn-error-' + p.id" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+              </td>
+              <td class="ref-cell">
+                @if (providerOf(p) === 'github') {
+                  <label
+                    class="visually-hidden"
+                    [attr.for]="'ref-' + p.id"
+                    i18n="@@gitlab.githubRefOf"
+                  >
+                    GitHub repository of {{ p.name }}
+                  </label>
+                } @else {
+                  <label class="visually-hidden" [attr.for]="'ref-' + p.id" i18n="@@gitlab.refOf">
+                    GitLab project of {{ p.name }}
+                  </label>
+                }
+                <input
+                  [id]="'ref-' + p.id"
+                  type="text"
+                  maxlength="255"
+                  autocomplete="off"
+                  spellcheck="false"
+                  [attr.placeholder]="refPlaceholder(p)"
+                  [attr.aria-invalid]="refErrors()[p.id] ? true : null"
+                  [attr.aria-describedby]="
+                    refErrors()[p.id]
+                      ? 'ref-error-' + p.id + ' ref-hint-' + p.id
+                      : 'ref-hint-' + p.id
+                  "
+                  [value]="draft(p).ref"
+                  [disabled]="!canManage()"
+                  (input)="setRef(p, $event)"
+                />
+                @if (providerOf(p) === 'github') {
+                  <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.githubRefHint"
+                    >owner/repo</span
+                  >
+                } @else {
+                  <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.refHint"
+                    >group/project or its id</span
+                  >
+                }
+                @if (refErrors()[p.id]; as message) {
+                  <span [id]="'ref-error-' + p.id" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+                @if (results()[p.id]; as result) {
+                  <span class="hint">{{ result }}</span>
+                }
+              </td>
+              <td class="actions-col">
+                <div class="row-actions">
+                  @if (canManage()) {
+                    <button
+                      type="button"
+                      class="btn-quiet"
+                      [attr.aria-disabled]="busy() ? true : null"
+                      (click)="save(p)"
+                      i18n="@@gitlab.saveMapping"
+                    >
+                      Save
+                    </button>
+                  }
                   <button
                     type="button"
-                    class="btn"
-                    [attr.aria-disabled]="busy() ? true : null"
-                    (click)="save(p)"
-                    i18n="@@gitlab.saveMapping"
+                    class="btn-quiet"
+                    [attr.aria-disabled]="
+                      busy() || !draft(p).connectionId || !draft(p).ref.trim() ? true : null
+                    "
+                    (click)="check(p)"
+                    i18n="@@gitlab.check"
                   >
-                    Save
+                    Check
                   </button>
-                }
-                <button
-                  type="button"
-                  class="btn"
-                  [attr.aria-disabled]="
-                    busy() || !draft(p).connectionId || !draft(p).ref.trim() ? true : null
-                  "
-                  (click)="check(p)"
-                  i18n="@@gitlab.check"
-                >
-                  Check
-                </button>
-              </div>
-            </td>
-          </tr>
-        } @empty {
-          @if (projects.loaded()) {
-            <tr>
-              <td colspan="4" class="muted" i18n="@@gitlab.noProjects">No projects yet.</td>
+                </div>
+              </td>
             </tr>
+          } @empty {
+            @if (projects.loaded()) {
+              <tr>
+                <td colspan="4" class="muted" i18n="@@gitlab.noProjects">No projects yet.</td>
+              </tr>
+            }
           }
-        }
-      </tbody>
-    </table>
-  </div>
-  @if (projects.nextCursor()) {
-    <p>
-      <button
-        type="button"
-        class="btn"
-        [attr.aria-disabled]="projects.loading() ? true : null"
-        (click)="projects.more()"
-        i18n="@@list.more"
-      >
-        Load more
-      </button>
-    </p>
+        </tbody>
+      </table>
+    </div>
+    @if (projects.nextCursor()) {
+      <p class="panel-foot">
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-disabled]="projects.loading() ? true : null"
+          (click)="projects.more()"
+          i18n="@@list.more"
+        >
+          Load more
+        </button>
+      </p>
+    }
+  </section>
+
+  @if (canManage()) {
+    <dialog
+      #createDialog
+      id="create-dialog"
+      class="dialog"
+      aria-labelledby="create-gitlab-title"
+      (close)="closeCreate()"
+    >
+      <form novalidate (submit)="create($event)">
+        <div class="dialog-head">
+          <h2 id="create-gitlab-title" i18n="@@gitlab.new">New GitLab connection</h2>
+        </div>
+        <div class="dialog-body">
+          @if (createError(); as message) {
+            <p class="alert alert-error" role="alert">{{ message }}</p>
+          }
+          <div class="field">
+            <label for="gitlab-url" i18n="@@gitlab.url">GitLab address</label>
+            <input
+              #urlField
+              id="gitlab-url"
+              type="url"
+              required
+              autofocus
+              maxlength="2048"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://gitlab.example.com"
+              i18n-placeholder="@@gitlab.urlPlaceholder"
+              [attr.aria-invalid]="urlError() ? true : null"
+              [attr.aria-describedby]="urlError() ? 'gitlab-url-error' : null"
+              [value]="url()"
+              (input)="setUrl($event)"
+            />
+            @if (urlError(); as message) {
+              <span id="gitlab-url-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+          <div class="field">
+            <label for="gitlab-token" i18n="@@gitlab.token">Access token</label>
+            <input
+              #tokenField
+              id="gitlab-token"
+              type="password"
+              required
+              maxlength="1024"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              spellcheck="false"
+              [attr.aria-invalid]="tokenError() ? true : null"
+              [attr.aria-describedby]="
+                tokenError() ? 'gitlab-token-error gitlab-token-hint' : 'gitlab-token-hint'
+              "
+              [value]="token()"
+              (input)="setToken($event)"
+            />
+            <span id="gitlab-token-hint" class="hint" i18n="@@gitlab.tokenHint">
+              Stored encrypted; Qualor never shows it again.
+            </span>
+            @if (tokenError(); as message) {
+              <span id="gitlab-token-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn" (click)="closeCreate()" i18n="@@dialog.cancel">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-primary"
+            [attr.aria-disabled]="busy() ? true : null"
+            i18n="@@gitlab.create"
+          >
+            Add connection
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      #confirmDialog
+      id="confirm-dialog"
+      class="dialog"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-text"
+      (close)="cancelDelete()"
+    >
+      <div class="dialog-head">
+        <h2 id="confirm-title" i18n="@@gitlab.deleteTitle">Delete the connection</h2>
+      </div>
+      <div class="dialog-body">
+        <p id="confirm-text">{{ pendingDelete()?.question }}</p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" autofocus (click)="cancelDelete()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-danger-solid"
+          (click)="confirmDelete()"
+          i18n="@@gitlab.delete"
+        >
+          Delete
+        </button>
+      </div>
+    </dialog>
   }
 }

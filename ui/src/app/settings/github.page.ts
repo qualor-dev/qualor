@@ -16,8 +16,10 @@ import { Api, done, ok } from '../api/api';
 import { fieldErrors, problemMessage } from '../api/errors';
 import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
+import { closeModal, openModal } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { githubTestText } from './github-text';
 import type { Connection } from './gitlab.page';
@@ -55,11 +57,17 @@ interface RowError {
  * allows (a new key, and with it a new address; the App id; the webhook secret set or removed).
  * Test answers and refusals are shown in the page's own words (§5.4). Projects are mapped on the
  * GitLab tab, which maps to either provider.
+ *
+ * Step 8 of the redesign (spec §7.8): each App a panel whose pill says how its last test here went
+ * (the server keeps no state), with its facts, the test and a quiet Delete; its forms and the new
+ * App's form (a long configuration form, so on the page) in setting rows; a deletion asks in the
+ * page's dialog instead of `confirm()`.
  */
 @Component({
   selector: 'q-github-page',
-  imports: [DateTimePipe, RouterLink],
+  imports: [DateTimePipe, Icon, RouterLink],
   templateUrl: './github.page.html',
+  styleUrl: './scm.page.css',
 })
 export class GitHubPage {
   private readonly api = inject(Api);
@@ -89,9 +97,16 @@ export class GitHubPage {
   protected readonly busy = signal(false);
   /** Test results, by connection id. */
   protected readonly results = signal<Record<string, string>>({});
+  /** How each App's last test on this page went, for its pill. */
+  protected readonly outcomes = signal<Record<string, 'ok' | 'failed'>>({});
+  /** The deletion the confirmation dialog asks about; null while it is closed. */
+  protected readonly pendingDelete = signal<{ connection: Connection; question: string } | null>(
+    null,
+  );
   /** Refused fields of the connections' own forms, by connection id. */
   protected readonly rowErrors = signal<Record<string, RowError>>({});
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
   private readonly urlField = viewChild<ElementRef<HTMLInputElement>>('urlField');
   private readonly appIdField = viewChild<ElementRef<HTMLInputElement>>('appIdField');
   private readonly keyField = viewChild<ElementRef<HTMLTextAreaElement>>('keyField');
@@ -109,6 +124,7 @@ export class GitHubPage {
         this.error.set(null);
         this.createErrors.set({});
         this.results.set({});
+        this.outcomes.set({});
         this.rowErrors.set({});
         this.emptySecrets();
         if (organizationId && admin) void this.connections.reset(organizationId);
@@ -442,6 +458,7 @@ export class GitHubPage {
         if (generation !== this.orgGeneration) return;
         const text = githubTestText(result);
         this.results.update((all) => ({ ...all, [connection.id]: text }));
+        this.outcomes.update((all) => ({ ...all, [connection.id]: result.ok ? 'ok' : 'failed' }));
         this.announcement.set(text);
       },
       (err) => {
@@ -456,16 +473,38 @@ export class GitHubPage {
     );
   }
 
-  protected async remove(connection: Connection): Promise<void> {
+  /** Asks in the page's dialog; nothing is sent until its Delete. */
+  protected remove(connection: Connection): void {
     if (this.busy()) return;
     const appId = connection.github?.appId ?? '';
-    if (
-      !window.confirm(
-        $localize`:@@github.confirmDelete:Delete the GitHub App ${appId}:appId: at ${connection.baseUrl}:url:? Its projects stop being decorated.`,
-      )
-    ) {
-      return;
-    }
+    this.pendingDelete.set({
+      connection,
+      question: $localize`:@@github.confirmDelete:Delete the GitHub App ${appId}:appId: at ${connection.baseUrl}:url:? Its projects stop being decorated.`,
+    });
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
+  }
+
+  protected async confirmDelete(): Promise<void> {
+    const pending = this.pendingDelete();
+    if (!pending) return;
+    // Cleared first: the dialog's close event then finds nothing to cancel.
+    this.pendingDelete.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    await this.applyDelete(pending.connection);
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing is deleted. */
+  protected cancelDelete(): void {
+    this.pendingDelete.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  private async applyDelete(connection: Connection): Promise<void> {
+    if (this.busy()) return;
+    const appId = connection.github?.appId ?? '';
     const generation = this.orgGeneration;
     await this.run(async () => {
       await done(
@@ -477,6 +516,7 @@ export class GitHubPage {
       await this.connections.refresh();
       this.rowErrors.update((all) => without(all, connection.id));
       this.results.update((all) => without(all, connection.id));
+      this.outcomes.update((all) => without(all, connection.id));
       this.announcement.set(
         $localize`:@@github.deleted:GitHub App ${appId}:appId: at ${connection.baseUrl}:url: deleted.`,
       );
@@ -501,6 +541,8 @@ export class GitHubPage {
     );
     this.connections.items.update((items) => items.map((c) => (c.id === updated.id ? updated : c)));
     this.results.update((all) => without(all, connection.id));
+    // Changed settings have not been tested yet.
+    this.outcomes.update((all) => without(all, connection.id));
     return updated;
   }
 

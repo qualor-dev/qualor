@@ -1618,6 +1618,69 @@ details[open] > summary {
 .settings-head .btn q-icon {
   margin-right: 6px;
 }
+/*
+ * Setting rows (spec §5): a settings form's name and explanation at the left (at most 20rem),
+ * its field at the right; one column on a narrow screen. Fields keep their content's width.
+ */
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+  gap: 8px 32px;
+  padding: 18px 22px;
+  border-top: 1px solid var(--hairline);
+}
+.setting-row:first-child {
+  border-top: 0;
+}
+.setting-text {
+  min-width: 0;
+}
+.setting-text > :is(label, .setting-name) {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.setting-text > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.setting-field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+.setting-field > :is(input:not([type='checkbox'], [type='radio'], [type='file']), select) {
+  width: 100%;
+  max-width: 36rem;
+}
+.setting-field > textarea {
+  width: 100%;
+  max-width: 44rem;
+}
+.setting-field > input.short {
+  max-width: 12rem;
+}
+.setting-field > input[type='file'] {
+  justify-self: start;
+  max-width: 100%;
+}
+.setting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--hairline);
+}
+@media (max-width: 48rem) {
+  .setting-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 /* A filter row above a settings table ("No password"). */
 .settings-toolbar {
   display: flex;

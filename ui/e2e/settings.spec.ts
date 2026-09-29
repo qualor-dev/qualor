@@ -243,11 +243,16 @@ test('an organization admin connects GitLab and maps a project (scm.md §2)', as
   await page.goto('/settings/gitlab');
   await expect(page).toHaveTitle('GitLab · Qualor');
   await expect(page.getByRole('region', { name: 'https://gitlab.example.com' })).toHaveCount(0);
-  await page.getByLabel('GitLab address').fill('https://gitlab.example.com');
-  await page.getByLabel('Access token').fill('glpat-e2e-token-value');
-  await page.getByRole('button', { name: 'Add connection' }).click();
+  // The short create form is in the "New connection" dialog (step 8).
+  await page.getByRole('button', { name: 'New connection' }).click();
+  const create = page.getByRole('dialog', { name: 'New GitLab connection' });
+  await expect(create.getByLabel('GitLab address')).toBeFocused();
+  await create.getByLabel('GitLab address').fill('https://gitlab.example.com');
+  await create.getByLabel('Access token').fill('glpat-e2e-token-value');
+  await create.getByRole('button', { name: 'Add connection' }).click();
   await expect(page.getByRole('status')).toHaveText('GitLab connection added.');
-  await expect(page.getByLabel('Access token')).toHaveValue('');
+  await expect(create).toBeHidden();
+  await expect(page.locator('#gitlab-token')).toHaveValue('');
   await expect(page.getByRole('region', { name: 'https://gitlab.example.com' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('glpat-e2e-token-value');
 
@@ -265,13 +270,16 @@ test('an organization admin connects GitLab and maps a project (scm.md §2)', as
       .getByLabel(`GitLab project of ${PAYMENTS.name}`),
   ).toHaveValue('acme/payments-api');
 
-  // The server's SSRF rules refuse a loopback GitLab the operator did not list.
-  await page.getByLabel('GitLab address').fill('https://localhost');
-  await page.getByLabel('Access token').fill('glpat-x');
-  await page.getByRole('button', { name: 'Add connection' }).click();
-  await expect(page.getByLabel('GitLab address')).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.getByText('QUALOR_SCM_INTERNAL_HOSTS').first()).toBeVisible();
+  // The server's SSRF rules refuse a loopback GitLab the operator did not list: in the dialog.
+  await page.getByRole('button', { name: 'New connection' }).click();
+  await create.getByLabel('GitLab address').fill('https://localhost');
+  await create.getByLabel('Access token').fill('glpat-x');
+  await create.getByRole('button', { name: 'Add connection' }).click();
+  await expect(create.getByLabel('GitLab address')).toHaveAttribute('aria-invalid', 'true');
+  await expect(create.getByText('QUALOR_SCM_INTERNAL_HOSTS')).toBeVisible();
   await expectAccessible(page);
+  await create.getByRole('button', { name: 'Cancel' }).click();
+  await expect(create).toBeHidden();
 
   // The connection's own form (token and address), open, is accessible too.
   const connection = page.getByRole('region', { name: 'https://gitlab.example.com' });
@@ -279,12 +287,14 @@ test('an organization admin connects GitLab and maps a project (scm.md §2)', as
   await expect(connection.getByLabel('New token')).toBeVisible();
   await expectAccessible(page);
 
-  // Clean up the shared e2e database: deleting the connection unmaps Payments API again.
-  guard.expectConfirm(
-    true,
+  // Clean up the shared e2e database: deleting the connection unmaps Payments API again. The
+  // page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
+  await connection.getByRole('button', { name: 'Delete' }).click();
+  const ask = page.getByRole('dialog', { name: 'Delete the connection' });
+  await expect(ask).toContainText(
     'Delete the GitLab connection to https://gitlab.example.com? Its projects stop being decorated.',
   );
-  await connection.getByRole('button', { name: 'Delete' }).click();
+  await ask.getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByRole('status')).toHaveText(
     'GitLab connection https://gitlab.example.com deleted.',
   );
@@ -302,7 +312,6 @@ test('an organization admin connects GitLab and maps a project (scm.md §2)', as
 
 test('an organization admin adds a GitHub App and deletes it (github.md §2.2)', async ({
   page,
-  guard,
 }) => {
   // Creating a connection makes no request to GitHub; only Test would, and it is not pressed.
   const { privateKey } = generateKeyPairSync('rsa', {
@@ -353,11 +362,12 @@ test('an organization admin adds a GitHub App and deletes it (github.md §2.2)',
   );
   await page.getByRole('link', { name: 'GitHub', exact: true }).click();
 
-  guard.expectConfirm(
-    true,
+  await app.getByRole('button', { name: 'Delete' }).click();
+  const ask = page.getByRole('dialog', { name: 'Delete the GitHub App' });
+  await expect(ask).toContainText(
     'Delete the GitHub App 424242 at https://github.qualor.invalid/api/v3? Its projects stop being decorated.',
   );
-  await app.getByRole('button', { name: 'Delete' }).click();
+  await ask.getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByRole('status')).toHaveText(
     'GitHub App 424242 at https://github.qualor.invalid/api/v3 deleted.',
   );
