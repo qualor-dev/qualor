@@ -282,17 +282,25 @@ describe('sonarjs pins', () => {
     expect(installSh).toMatch(/^SONARJS_SOURCE_SHA256=[0-9a-f]{64}$/m);
   });
 
+  it('install-sonarjs.sh installs it from the lockfile and checks the source archive before unpacking it', () => {
+    const text = readFileSync('tools/analyzers/install-sonarjs.sh', 'utf8');
+    // $NPM, not a literal `npm`: the ambient npm, or a pinned npm >= 11 fallback (see below).
+    expect(text).toContain('$NPM ci --omit=dev --ignore-scripts');
+    expect(text).toContain('"${SONARJS_SOURCE_SHA256}  $TMP/sonarjs.tar.gz" | sha256sum -c -');
+    const check = text.indexOf('/sonarjs.tar.gz" | sha256sum -c -');
+    expect(check).toBeGreaterThan(0);
+    expect(check).toBeLessThan(text.indexOf('tar -xzf "$TMP/sonarjs.tar.gz"'));
+    expect(text).toContain('node "$DEST/categories.mjs"');
+    expect(text).toContain('chmod -R a+rX "$DEST"');
+  });
+
   it.each(['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile'])(
-    '%s installs it from the lockfile and checks the source archive before unpacking it',
+    '%s delegates to install-sonarjs.sh instead of duplicating its recipe (controller ruling 14)',
     (file) => {
       const text = readFileSync(file, 'utf8');
-      expect(text).toContain('npm ci --omit=dev --ignore-scripts');
-      expect(text).toContain('"${SONARJS_SOURCE_SHA256}  /tmp/sonarjs.tar.gz" | sha256sum -c -');
-      const check = text.indexOf('/tmp/sonarjs.tar.gz" | sha256sum -c -');
-      expect(check).toBeGreaterThan(0);
-      expect(check).toBeLessThan(text.indexOf('tar -xzf /tmp/sonarjs.tar.gz'));
-      expect(text).toContain('node categories.mjs /tmp/sonarjs-rules');
-      expect(text).toContain('chmod -R a+rX /opt/qualor/sonarjs');
+      expect(text).toContain('install-sonarjs.sh');
+      expect(text).not.toContain('npm ci --omit=dev --ignore-scripts');
+      expect(text).not.toMatch(/SONARJS_SOURCE_SHA256\}\s+\/tmp\/sonarjs\.tar\.gz/);
     },
   );
 });

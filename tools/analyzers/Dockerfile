@@ -8,24 +8,13 @@ FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openjdk-17-jdk-headless unzip \
   && rm -rf /var/lib/apt/lists/*
-COPY install.sh /tmp/install.sh
+COPY install.sh install-sonarjs.sh /tmp/
 RUN sh /tmp/install.sh
 ENV PATH=/opt/qualor/bin:$PATH
-# Qualor's sonarjs pass into /opt/qualor/sonarjs, as deploy/scanner/Dockerfile installs it (plan 8A/8B).
-COPY --chmod=0644 sonarjs/package.json sonarjs/package-lock.json sonarjs/run.mjs sonarjs/categories.mjs /opt/qualor/sonarjs/
-RUN eval "$(grep -E '^SONARJS_[A-Z0-9_]+=' /tmp/install.sh)" \
-  && cd /opt/qualor/sonarjs \
-  && npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
-  && test "$(node -p 'require("eslint-plugin-sonarjs/package.json").version')" = "$SONARJS_VERSION" \
-  && curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o /tmp/sonarjs.tar.gz \
-    "https://github.com/SonarSource/SonarJS/archive/${SONARJS_COMMIT}.tar.gz" \
-  && echo "${SONARJS_SOURCE_SHA256}  /tmp/sonarjs.tar.gz" | sha256sum -c - \
-  && mkdir /tmp/sonarjs-rules \
-  && tar -xzf /tmp/sonarjs.tar.gz -C /tmp/sonarjs-rules --no-same-owner --strip-components=12 --wildcards \
-    '*/sonar-plugin/javascript-checks/src/main/resources/org/sonar/l10n/javascript/rules/javascript/S*.json' \
-  && node categories.mjs /tmp/sonarjs-rules \
-  && rm -rf /tmp/sonarjs.tar.gz /tmp/sonarjs-rules /tmp/install.sh /root/.npm \
-  && chmod -R a+rX /opt/qualor/sonarjs
+# Qualor's sonarjs pass into /opt/qualor/sonarjs, as deploy/scanner/Dockerfile and CI install it
+# (plan 8A/8B; tools/analyzers/install-sonarjs.sh, tools/ci.test.ts).
+COPY --chmod=0644 sonarjs/package.json sonarjs/package-lock.json sonarjs/run.mjs sonarjs/categories.mjs /tmp/sonarjs/
+RUN sh /tmp/install-sonarjs.sh && rm -rf /tmp/sonarjs /tmp/install-sonarjs.sh /tmp/install.sh
 COPY install-dotnet.sh /tmp/install-dotnet.sh
 RUN sh /tmp/install-dotnet.sh && rm /tmp/install-dotnet.sh
 ENV DOTNET_ROOT=/opt/qualor/share/dotnet \

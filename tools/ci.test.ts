@@ -320,6 +320,65 @@ describe('install-dotnet.sh (plan 2D, ruling D11)', () => {
   });
 });
 
+describe('install-sonarjs.sh (plan 8A/8B, controller ruling 14)', () => {
+  const script = readFileSync('tools/analyzers/install-sonarjs.sh', 'utf8');
+
+  it('reads the SONARJS_* pins from install.sh instead of duplicating them, and hardcodes no "latest"', () => {
+    expect(script).toContain('grep -E \'^SONARJS_[A-Z0-9_]+=\' "$INSTALL_SH"');
+    expect(script).not.toMatch(/^SONARJS_VERSION=/m);
+    expect(script).not.toMatch(/^SONARJS_COMMIT=/m);
+    expect(script).not.toMatch(/^SONARJS_SOURCE_SHA256=/m);
+    expect(script).not.toMatch(/latest/);
+  });
+
+  it('checks the SonarJS source archive against its pinned SHA-256 before it is unpacked, over https only', () => {
+    expect(script).toContain("--proto '=https' --proto-redir '=https' --tlsv1.2");
+    expect(script.indexOf('sha256sum -c -')).toBeLessThan(script.indexOf('tar -xzf'));
+    // Only the rule metadata directory is extracted, like the recipe it replaced.
+    expect(script).toContain(
+      "'*/sonar-plugin/javascript-checks/src/main/resources/org/sonar/l10n/javascript/rules/javascript/S*.json'",
+    );
+  });
+
+  it('checks the installed plugin version against the pin and falls back to one pinned npm >= 11', () => {
+    expect(script).toContain('$SONARJS_VERSION');
+    expect(script).toMatch(/^NPM_FALLBACK_VERSION=\d+\.\d+\.\d+$/m);
+    const fallback = /^NPM_FALLBACK_VERSION=(\d+)\.\d+\.\d+$/m.exec(script)?.[1];
+    expect(Number(fallback)).toBeGreaterThanOrEqual(11);
+    expect(script).toContain('npx -y npm@$NPM_FALLBACK_VERSION');
+  });
+
+  it('runs in every job that requires the analyzers, alongside install.sh and install-dotnet.sh (GitHub)', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const requiresAnalyzers = job.steps.some((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (!requiresAnalyzers) continue;
+      expect(
+        job.steps.some((s) => s.run?.endsWith('sh tools/analyzers/install-sonarjs.sh') === true),
+        name,
+      ).toBe(true);
+      // install-sonarjs.sh runs unprivileged (actions/setup-node's node/npm stay on PATH; sudo's
+      // secure_path would hide them), after root hands it just /opt/qualor/sonarjs.
+      const install = job.steps.findIndex(
+        (s) => s.run?.endsWith('sh tools/analyzers/install-sonarjs.sh') === true,
+      );
+      expect(job.steps[install - 1]?.run, name).toContain('chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs');
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template, after install.sh and before every job's own before_script", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    const before = gitlab['.analyzers']?.before_script ?? [];
+    expect(before).toContain('sh tools/analyzers/install-sonarjs.sh');
+    expect(before.indexOf('sh tools/analyzers/install.sh')).toBeLessThan(
+      before.indexOf('sh tools/analyzers/install-sonarjs.sh'),
+    );
+  });
+});
+
 describe("the CI cache of Trivy's downloads (plan 2B)", () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
   const pin = (name: string) => new RegExp(`^${name}=(.*)$`, 'm').exec(script)?.[1];

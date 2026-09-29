@@ -1,9 +1,9 @@
 // Writes categories.json next to run.mjs: each RSPEC key's SonarQube category, e.g.
 // { "S1192": "Critical Code Smell" }, from the rule metadata (S<N>.json: `type`,
 // `defaultSeverity`) of the SonarJS source at the commit eslint-plugin-sonarjs 2.0.4 was published
-// from. Run at image build only, over the rules directory unpacked from the archive pinned in
-// tools/analyzers/install.sh; the metadata itself is never copied, and categories.json is not
-// committed (only keys and category words are kept).
+// from. Run by tools/analyzers/install-sonarjs.sh (image build and CI alike), over the rules
+// directory unpacked from the archive pinned in tools/analyzers/install.sh; the metadata itself is
+// never copied, and categories.json is not committed (only keys and category words are kept).
 //   node categories.mjs <rules dir> [out file]
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

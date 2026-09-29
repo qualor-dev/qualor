@@ -56,6 +56,11 @@ jobs:
         env: { QUALOR_DOWNLOAD_CACHE: '${{ runner.temp }}/qualor-downloads' }
       - run: sudo sh tools/analyzers/install-dotnet.sh
       - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
+      # /opt/qualor already exists (root, from install.sh above); hand this one subdirectory to the
+      # runner user so install-sonarjs.sh runs unprivileged, with actions/setup-node's node/npm on
+      # PATH as normal (sudo's secure_path would hide them from a step run under sudo).
+      - run: sudo mkdir -p /opt/qualor/sonarjs && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs
+      - run: sh tools/analyzers/install-sonarjs.sh
       - run: pnpm test:coverage
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
       # The dogfood job imports it with the scan (qualor.yml).
@@ -93,6 +98,8 @@ jobs:
         env: { QUALOR_DOWNLOAD_CACHE: '${{ runner.temp }}/qualor-downloads' }
       - run: sudo sh tools/analyzers/install-dotnet.sh
       - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
+      - run: sudo mkdir -p /opt/qualor/sonarjs && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs
+      - run: sh tools/analyzers/install-sonarjs.sh
       - run: pnpm fixtures
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
   cli-binary:
@@ -119,6 +126,8 @@ jobs:
         env: { QUALOR_DOWNLOAD_CACHE: '${{ runner.temp }}/qualor-downloads' }
       - run: sudo sh tools/analyzers/install-dotnet.sh
       - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
+      - run: sudo mkdir -p /opt/qualor/sonarjs && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs
+      - run: sh tools/analyzers/install-sonarjs.sh
       - run: pnpm --filter @qualor/cli build
       - run: pnpm --filter @qualor/cli smoke
       - run: pnpm --filter @qualor/cli smoke:process
