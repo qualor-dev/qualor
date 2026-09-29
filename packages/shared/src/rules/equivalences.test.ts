@@ -61,4 +61,13 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(enginePriority('eslint')).toBeGreaterThan(enginePriority('sonarjs'));
     expect(enginePriority('sonarjs')).toBeGreaterThan(enginePriority('my-tool'));
   });
+
+  it('pairs every sonarjs rule that decorates an ESLint rule with that rule', () => {
+    expect(equivalentPartners('sonarjs:S2376')).toContain('eslint:accessor-pairs');
+    expect(equivalentPartners('sonarjs:S1186')).toEqual(
+      expect.arrayContaining(['eslint:no-empty-function', 'eslint:@typescript-eslint/no-empty-function']),
+    );
+    const pairs = EQUIVALENCES.pairs.filter((p) => p.rules.some((r) => r.startsWith('sonarjs:')));
+    expect(pairs.length).toBeGreaterThanOrEqual(50);
+  });
 });

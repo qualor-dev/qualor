@@ -191,4 +191,26 @@ describe('cross-engine dedupe (data-model.md §5.3)', () => {
     expect(await byRule(p, 'eslint:no-eval')).toMatchObject({ duplicateOfIssueId: primary!.id });
     expect(await byRule(p, 'eslint:no-console')).toMatchObject({ duplicateOfIssueId: null });
   });
+
+  it('dedupes the ESLint rule a decorated sonarjs rule wraps, ESLint primary (Task 8)', async () => {
+    const p = await h.project('dedupe/sonarjs-decorated');
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('eslint'), engine('sonarjs')],
+        files: [file('src/a.ts')],
+        findings: [
+          finding({ ruleId: 'no-empty-function', line: 4 }),
+          finding({ engineId: 'sonarjs', ruleId: 'S1186', line: 4 }),
+          finding({ ruleId: 'no-console', line: 4 }),
+        ],
+      }),
+    );
+    const primary = await byRule(p, 'eslint:no-empty-function');
+    expect(await byRule(p, 'sonarjs:S1186')).toMatchObject({
+      status: 'open',
+      duplicateOfIssueId: primary!.id,
+    });
+    expect(await byRule(p, 'eslint:no-console')).toMatchObject({ duplicateOfIssueId: null });
+  });
 });

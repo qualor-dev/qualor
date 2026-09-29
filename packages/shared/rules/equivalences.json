@@ -13,6 +13,454 @@
         "semgrep:javascript.browser.security.eval-detected.eval-detected"
       ],
       "reason": "Both flag a direct eval() call; ESLint's rule metadata carries no CWE. PENDING VERIFICATION: a person must confirm the Semgrep rule id against the Semgrep registry before this entry is relied on."
+    },
+    {
+      "rules": [
+        "eslint:accessor-pairs",
+        "sonarjs:S2376"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule accessor-pairs as S2376"
+    },
+    {
+      "rules": [
+        "eslint:jsx-a11y/alt-text",
+        "sonarjs:S1077"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule jsx-a11y/alt-text as S1077"
+    },
+    {
+      "rules": [
+        "eslint:jsx-a11y/anchor-has-content",
+        "sonarjs:S6827"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule jsx-a11y/anchor-has-content as S6827"
+    },
+    {
+      "rules": [
+        "eslint:jsx-a11y/anchor-is-valid",
+        "sonarjs:S6844"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule jsx-a11y/anchor-is-valid as S6844"
+    },
+    {
+      "rules": [
+        "eslint:brace-style",
+        "sonarjs:S1105"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule brace-style as S1105"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/default-param-last",
+        "sonarjs:S1788"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/default-param-last as S1788"
+    },
+    {
+      "rules": [
+        "eslint:default-param-last",
+        "sonarjs:S1788"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule default-param-last as S1788"
+    },
+    {
+      "rules": [
+        "eslint:jsx-a11y/lang",
+        "sonarjs:S5254"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule jsx-a11y/lang as S5254"
+    },
+    {
+      "rules": [
+        "eslint:jsx-a11y/html-has-lang",
+        "sonarjs:S5254"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule jsx-a11y/html-has-lang as S5254"
+    },
+    {
+      "rules": [
+        "eslint:react/jsx-no-useless-fragment",
+        "sonarjs:S6749"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule react/jsx-no-useless-fragment as S6749"
+    },
+    {
+      "rules": [
+        "eslint:jsx-a11y/label-has-associated-control",
+        "sonarjs:S6853"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule jsx-a11y/label-has-associated-control as S6853"
+    },
+    {
+      "rules": [
+        "eslint:jsx-a11y/media-has-caption",
+        "sonarjs:S4084"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule jsx-a11y/media-has-caption as S4084"
+    },
+    {
+      "rules": [
+        "eslint:new-cap",
+        "sonarjs:S2430"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule new-cap as S2430"
+    },
+    {
+      "rules": [
+        "eslint:getter-return",
+        "sonarjs:S4275"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule getter-return as S4275"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-base-to-string",
+        "sonarjs:S6551"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-base-to-string as S6551"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-empty-function",
+        "sonarjs:S1186"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-empty-function as S1186"
+    },
+    {
+      "rules": [
+        "eslint:no-empty-function",
+        "sonarjs:S1186"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-empty-function as S1186"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-empty-interface",
+        "sonarjs:S4023"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-empty-interface as S4023"
+    },
+    {
+      "rules": [
+        "eslint:no-extend-native",
+        "sonarjs:S6643"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-extend-native as S6643"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-extra-semi",
+        "sonarjs:S1116"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-extra-semi as S1116"
+    },
+    {
+      "rules": [
+        "eslint:no-extra-semi",
+        "sonarjs:S1116"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-extra-semi as S1116"
+    },
+    {
+      "rules": [
+        "eslint:react/no-find-dom-node",
+        "sonarjs:S6788"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule react/no-find-dom-node as S6788"
+    },
+    {
+      "rules": [
+        "eslint:no-unmodified-loop-condition",
+        "sonarjs:S2189"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-unmodified-loop-condition as S2189"
+    },
+    {
+      "rules": [
+        "eslint:no-lonely-if",
+        "sonarjs:S6660"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-lonely-if as S6660"
+    },
+    {
+      "rules": [
+        "eslint:no-async-promise-executor",
+        "sonarjs:S6544"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-async-promise-executor as S6544"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-misused-promises",
+        "sonarjs:S6544"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-misused-promises as S6544"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-redeclare",
+        "sonarjs:S2814"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-redeclare as S2814"
+    },
+    {
+      "rules": [
+        "eslint:no-redeclare",
+        "sonarjs:S2814"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-redeclare as S2814"
+    },
+    {
+      "rules": [
+        "eslint:react-hooks/rules-of-hooks",
+        "sonarjs:S6440"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule react-hooks/rules-of-hooks as S6440"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-redundant-type-constituents",
+        "sonarjs:S6571"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-redundant-type-constituents as S6571"
+    },
+    {
+      "rules": [
+        "eslint:no-self-compare",
+        "sonarjs:S6679"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-self-compare as S6679"
+    },
+    {
+      "rules": [
+        "eslint:import/no-self-import",
+        "sonarjs:S7060"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule import/no-self-import as S7060"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-this-alias",
+        "sonarjs:S4327"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-this-alias as S4327"
+    },
+    {
+      "rules": [
+        "eslint:no-throw-literal",
+        "sonarjs:S3696"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-throw-literal as S3696"
+    },
+    {
+      "rules": [
+        "eslint:react/no-unknown-property",
+        "sonarjs:S6747"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule react/no-unknown-property as S6747"
+    },
+    {
+      "rules": [
+        "eslint:jsx-a11y/aria-props",
+        "sonarjs:S6747"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule jsx-a11y/aria-props as S6747"
+    },
+    {
+      "rules": [
+        "eslint:no-unreachable",
+        "sonarjs:S1763"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-unreachable as S1763"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-unused-expressions",
+        "sonarjs:S905"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-unused-expressions as S905"
+    },
+    {
+      "rules": [
+        "eslint:no-unused-expressions",
+        "sonarjs:S905"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-unused-expressions as S905"
+    },
+    {
+      "rules": [
+        "eslint:no-unused-private-class-members",
+        "sonarjs:S1068"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-unused-private-class-members as S1068"
+    },
+    {
+      "rules": [
+        "eslint:no-useless-call",
+        "sonarjs:S6676"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-useless-call as S6676"
+    },
+    {
+      "rules": [
+        "eslint:no-useless-constructor",
+        "sonarjs:S6647"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-useless-constructor as S6647"
+    },
+    {
+      "rules": [
+        "eslint:no-var",
+        "sonarjs:S3504"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-var as S3504"
+    },
+    {
+      "rules": [
+        "eslint:object-shorthand",
+        "sonarjs:S3498"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule object-shorthand as S3498"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/prefer-enum-initializers",
+        "sonarjs:S6572"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/prefer-enum-initializers as S6572"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/prefer-for-of",
+        "sonarjs:S4138"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/prefer-for-of as S4138"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/prefer-function-type",
+        "sonarjs:S6598"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/prefer-function-type as S6598"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/prefer-namespace-keyword",
+        "sonarjs:S4156"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/prefer-namespace-keyword as S4156"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/prefer-nullish-coalescing",
+        "sonarjs:S6606"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/prefer-nullish-coalescing as S6606"
+    },
+    {
+      "rules": [
+        "eslint:prefer-object-spread",
+        "sonarjs:S6661"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule prefer-object-spread as S6661"
+    },
+    {
+      "rules": [
+        "eslint:prefer-spread",
+        "sonarjs:S6666"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule prefer-spread as S6666"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/prefer-string-starts-ends-with",
+        "sonarjs:S6557"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/prefer-string-starts-ends-with as S6557"
+    },
+    {
+      "rules": [
+        "eslint:prefer-template",
+        "sonarjs:S3512"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule prefer-template as S3512"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/semi",
+        "sonarjs:S1438"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/semi as S1438"
+    },
+    {
+      "rules": [
+        "eslint:semi",
+        "sonarjs:S1438"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule semi as S1438"
+    },
+    {
+      "rules": [
+        "eslint:max-params",
+        "sonarjs:S107"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule max-params as S107"
+    },
+    {
+      "rules": [
+        "eslint:no-dupe-keys",
+        "sonarjs:S1534"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-dupe-keys as S1534"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/no-dupe-class-members",
+        "sonarjs:S1534"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/no-dupe-class-members as S1534"
+    },
+    {
+      "rules": [
+        "eslint:no-dupe-class-members",
+        "sonarjs:S1534"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-dupe-class-members as S1534"
+    },
+    {
+      "rules": [
+        "eslint:react/jsx-no-duplicate-props",
+        "sonarjs:S1534"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule react/jsx-no-duplicate-props as S1534"
+    },
+    {
+      "rules": [
+        "eslint:@typescript-eslint/switch-exhaustiveness-check",
+        "sonarjs:S131"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule @typescript-eslint/switch-exhaustiveness-check as S131"
+    },
+    {
+      "rules": [
+        "eslint:no-useless-escape",
+        "sonarjs:S6535"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-useless-escape as S6535"
+    },
+    {
+      "rules": [
+        "eslint:no-nonoctal-decimal-escape",
+        "sonarjs:S6535"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule no-nonoctal-decimal-escape as S6535"
+    },
+    {
+      "rules": [
+        "eslint:use-isnan",
+        "sonarjs:S2688"
+      ],
+      "reason": "eslint-plugin-sonarjs decorates the ESLint rule use-isnan as S2688"
     }
   ]
 }
