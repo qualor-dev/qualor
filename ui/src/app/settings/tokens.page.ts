@@ -79,6 +79,8 @@ export class TokensPage {
   protected readonly busy = signal(false);
   /** The page was left: a late answer keeps no secret and opens no dialog. */
   private destroyed = false;
+  /** The name of the token whose secret the dialog shows, until the dialog closes. */
+  private createdName: string | null = null;
   /** A refused creation other than its fields, shown in the dialog that is still open. */
   protected readonly createError = signal<string | null>(null);
   /** The token the confirmation dialog asks about; null while it is closed. */
@@ -158,6 +160,12 @@ export class TokensPage {
 
   protected forget(): void {
     this.created.set(null);
+    // The secret is gone: the page no longer asks to copy it.
+    const name = this.createdName;
+    if (name !== null) {
+      this.createdName = null;
+      this.announcement.set($localize`:@@tokens.createdDone:Token ${name}:name: created.`);
+    }
   }
 
   protected async create(event: Event): Promise<void> {
@@ -195,6 +203,7 @@ export class TokensPage {
       // The page was left meanwhile: its secret is not kept.
       if (this.destroyed) return;
       this.created.set(token.token);
+      this.createdName = token.name;
       clearField(this.nameField(), this.name);
       this.announcement.set(
         $localize`:@@tokens.created:Token ${token.name}:name: created. Copy it now: it is shown only this once.`,

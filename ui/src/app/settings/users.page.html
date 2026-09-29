@@ -166,7 +166,13 @@
     }
   </section>
 
-  <dialog #createDialog id="create-dialog" class="dialog" aria-labelledby="create-user-title">
+  <dialog
+    #createDialog
+    id="create-dialog"
+    class="dialog"
+    aria-labelledby="create-user-title"
+    (close)="forgetPassword()"
+  >
     <form novalidate (submit)="create($event)">
       <div class="dialog-head">
         <h2 id="create-user-title" i18n="@@users.new">New user</h2>

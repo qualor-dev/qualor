@@ -159,6 +159,11 @@ export class UsersPage {
   protected closeCreate(): void {
     const dialog = this.createDialog()?.nativeElement;
     if (dialog) closeModal(dialog);
+    this.forgetPassword();
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: a typed initial password never stays. */
+  protected forgetPassword(): void {
     clearField(this.passwordField(), this.password);
   }
 

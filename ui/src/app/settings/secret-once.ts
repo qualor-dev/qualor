@@ -21,6 +21,8 @@ import {
 export class SecretOnce {
   readonly value = input.required<string>();
   readonly label = input.required<string>();
+  /** False in a dialog: Done sits in the dialog's footer, as every dialog's actions do (spec §5). */
+  readonly showDone = input(true);
   /** The user has copied the secret (or given up on it): the page forgets it. */
   readonly done = output();
   protected readonly copyState = signal<'idle' | 'copied' | 'failed'>('idle');

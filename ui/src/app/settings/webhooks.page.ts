@@ -116,6 +116,8 @@ export class WebhooksPage {
   protected readonly busy = signal(false);
   /** The page was left: a late answer keeps no secret and opens no dialog. */
   private destroyed = false;
+  /** The dialog shows a new webhook's secret, until it closes. */
+  private secretShown = false;
   /** The deletion the confirmation dialog asks about; null while it is closed. */
   protected readonly pendingDelete = signal<{ webhook: Webhook; question: string } | null>(null);
   protected readonly allEvents = EVENTS;
@@ -204,6 +206,11 @@ export class WebhooksPage {
 
   protected forget(): void {
     this.secret.set(null);
+    // The secret is gone: the page no longer asks to copy it.
+    if (this.secretShown) {
+      this.secretShown = false;
+      this.announcement.set($localize`:@@webhooks.createdDone:Webhook added.`);
+    }
   }
 
   protected async create(event: Event): Promise<void> {
@@ -227,6 +234,7 @@ export class WebhooksPage {
         // nor kept by a page that was left meanwhile.
         if (generation !== this.orgGeneration || this.destroyed) return;
         this.secret.set(created.secret ?? null);
+        this.secretShown = created.secret !== undefined && created.secret !== null;
         clearField(this.urlField(), this.url);
         this.announcement.set(
           $localize`:@@webhooks.created:Webhook added. Copy its secret now: it is shown only this once.`,

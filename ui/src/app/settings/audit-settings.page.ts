@@ -288,6 +288,12 @@ export class AuditSettingsPage {
     this.secret.set(null);
   }
 
+  /** Done: the secret goes, and with it the button; focus stays in the page, on its heading. */
+  protected doneWithSecret(): void {
+    this.forget();
+    keepFocus(this.injector, this.document, () => this.heading().nativeElement);
+  }
+
   private retentionText(): string {
     return $localize`:@@auditSettings.retentionInvalid:Keep events between 30 and 36 500 days.`;
   }

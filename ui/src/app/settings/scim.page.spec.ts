@@ -204,6 +204,12 @@ describe('ScimPage (sso-scim.md §12, §18)', () => {
     expect(dialog.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(TOKEN);
     expect(dialog.querySelector('#scim-token-name')).toBeNull();
     expect(root.querySelector(`#scim-tokens-${CONNECTION}`)?.textContent).toContain('Okta');
+    // Done closes the dialog from its footer, once (the secret box has none of its own).
+    const dones = [...dialog.querySelectorAll('button')].filter(
+      (b) => b.textContent?.trim() === 'Done',
+    );
+    expect(dones).toHaveLength(1);
+    expect(dones[0]!.closest('.dialog-actions')).not.toBeNull();
     button(dialog, 'Done').click();
     await settle(fixture);
     expect(dialog.open).toBe(false);

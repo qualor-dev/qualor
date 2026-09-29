@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
-import { problemMessage } from '../api/errors';
+import { ApiError, problemMessage } from '../api/errors';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { closeModal, openAfterRender } from '../shared/dialog';
 import { GateBadge } from '../shared/gate-badge';
@@ -128,16 +128,44 @@ export class BranchesPage {
       await ok(
         this.api.client.DELETE('/api/v0/branches/{id}', { params: { path: { id: branch.id } } }),
       );
-      this.closeDelete();
-      this.toDelete.set(null);
-      this.announcement.set($localize`:@@branches.deleted:Deleted ${branchTitle(branch)}:branch:.`);
-      await this.list.reload();
-      this.status()?.nativeElement.focus();
+      await this.finishDelete(
+        $localize`:@@branches.deleted:Deleted ${branchTitle(branch)}:branch:.`,
+      );
     } catch (err) {
-      this.deleteError.set(problemMessage(err));
+      if (err instanceof ApiError && err.status === 404) {
+        // Someone else deleted it meanwhile: the page treats it as deleted.
+        await this.finishDelete(
+          $localize`:@@branches.alreadyDeleted:${branchTitle(branch)}:branch: was already deleted.`,
+        );
+        return;
+      }
+      if (err instanceof ApiError && err.code === 'MAIN_BRANCH') {
+        // The project's main branch changed since the list was read: its Delete goes too.
+        this.deleteError.set(
+          $localize`:@@branches.nowMain:It is now the project's main branch, which cannot be deleted.`,
+        );
+        await this.list.refresh();
+      } else {
+        this.deleteError.set(problemMessage(err));
+      }
+      // Closed while the server answered (Escape): the dialog opens again on the refusal.
+      openAfterRender(
+        this.injector,
+        () => this.deleteDialog()?.nativeElement,
+        () => this.toDelete() !== null,
+      );
     } finally {
       this.deleting.set(false);
     }
+  }
+
+  /** The branch is gone: the dialog closes, the page says so, and the pages loaded stay. */
+  private async finishDelete(message: string): Promise<void> {
+    this.closeDelete();
+    this.toDelete.set(null);
+    this.announcement.set(message);
+    await this.list.refresh();
+    this.status()?.nativeElement.focus();
   }
 
   /** The filter's choices, in the segmented control's order. */

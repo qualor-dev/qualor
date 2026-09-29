@@ -170,10 +170,14 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
     ]);
     const field = root.querySelector<HTMLInputElement>('#secret-once')!;
     expect(field.value).toBe(SECRET);
-    button(root, 'Done').click();
+    const done = button(root, 'Done');
+    done.focus();
+    done.click();
     await settle(fixture);
     expect(root.querySelector('#secret-once')).toBeNull();
     expect(root.textContent).not.toContain(SECRET);
+    // The button went with the secret: focus stays in the page, on its heading.
+    expect(document.activeElement).toBe(root.querySelector('h2'));
   });
 
   it("shows the server's 422 on the stream URL field", async () => {

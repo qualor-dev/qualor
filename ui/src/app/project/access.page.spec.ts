@@ -333,6 +333,38 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     );
   });
 
+  it('opens Add member again on a refusal that came after it was closed', async () => {
+    const server = setup({ grants: [] });
+    server.on('GET', '/api/v0/users/lookup', {
+      body: { id: CAROL, username: 'carol', displayName: null },
+    });
+    let answer = (): void => undefined;
+    server.on(
+      'PUT',
+      `${MEMBERS}/${CAROL}`,
+      () =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve({ status: 409, body: problem(409, 'PROJECT_GRANT_LIMIT_REACHED') });
+        }),
+    );
+    const { fixture, root } = await render();
+    const add = await openAdd(root, fixture);
+    type(root, '#grant-username', 'carol');
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    // Escape while the server answers.
+    add.removeAttribute('open');
+    add.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    answer();
+    await settle(fixture);
+    expect(add.open).toBe(true);
+    expect(add.querySelector('[role="alert"]')?.textContent).toContain(
+      'This project has as many role grants as it can have',
+    );
+  });
+
   it('lists, adds, changes and removes grants through the core API without any feature', async () => {
     const server = setup({ features: [] });
     server.on('GET', '/api/v0/users/lookup', {

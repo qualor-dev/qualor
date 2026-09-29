@@ -228,6 +228,98 @@ describe('BranchesPage', () => {
       expect(document.activeElement).toBe(status);
     });
 
+    it('opens its dialog again on a refusal that came after it was closed', async () => {
+      server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
+      server.on('GET', `/api/v0/projects/${PROJECT}/branches`, { body: page([MAIN, FEATURE]) });
+      let answer = (): void => undefined;
+      server.on(
+        'DELETE',
+        '/api/v0/branches/b-x',
+        () =>
+          new Promise((resolve) => {
+            answer = () => resolve({ status: 403, body: problem(403, 'FORBIDDEN') });
+          }),
+      );
+      const { fixture, root } = await render();
+      const dialog = root.querySelector<HTMLDialogElement>('dialog')!;
+      root.querySelector<HTMLButtonElement>('tbody button.row-delete')!.click();
+      await settle(fixture);
+      buttonIn(dialog, 'Delete').click();
+      await settle(fixture);
+      // Escape while the server answers.
+      dialog.removeAttribute('open');
+      dialog.dispatchEvent(new Event('close'));
+      await settle(fixture);
+      answer();
+      await settle(fixture);
+      expect(dialog.open).toBe(true);
+      expect(text(dialog.querySelector('[role="alert"]'))).toBeTruthy();
+    });
+
+    it('says in words that the branch became the main one (409 MAIN_BRANCH), and refreshes', async () => {
+      server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
+      server.on('GET', `/api/v0/projects/${PROJECT}/branches`, { body: page([MAIN, FEATURE]) });
+      server.on('DELETE', '/api/v0/branches/b-x', {
+        status: 409,
+        body: problem(409, 'MAIN_BRANCH'),
+      });
+      const { fixture, root } = await render();
+      const dialog = root.querySelector<HTMLDialogElement>('dialog')!;
+      const reads = server.requestsTo('GET', `/api/v0/projects/${PROJECT}/branches`).length;
+      root.querySelector<HTMLButtonElement>('tbody button.row-delete')!.click();
+      await settle(fixture);
+      buttonIn(dialog, 'Delete').click();
+      await settle(fixture);
+      expect(text(dialog.querySelector('[role="alert"]'))).toBe(
+        "It is now the project's main branch, which cannot be deleted.",
+      );
+      expect(server.requestsTo('GET', `/api/v0/projects/${PROJECT}/branches`).length).toBe(
+        reads + 1,
+      );
+    });
+
+    it('treats a branch someone else deleted meanwhile (404) as deleted', async () => {
+      let deleted = false;
+      server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
+      server.on('GET', `/api/v0/projects/${PROJECT}/branches`, () => ({
+        body: page(deleted ? [MAIN] : [MAIN, FEATURE]),
+      }));
+      server.on('DELETE', '/api/v0/branches/b-x', () => {
+        deleted = true;
+        return { status: 404, body: problem(404, 'NOT_FOUND') };
+      });
+      const { fixture, root } = await render();
+      const dialog = root.querySelector<HTMLDialogElement>('dialog')!;
+      root.querySelector<HTMLButtonElement>('tbody button.row-delete')!.click();
+      await settle(fixture);
+      buttonIn(dialog, 'Delete').click();
+      await settle(fixture);
+      expect(dialog.open).toBe(false);
+      expect(text(root.querySelector('[role="status"]'))).toBe('feature/x was already deleted.');
+      expect(rows(root)).toHaveLength(1);
+    });
+
+    it('keeps the pages loaded with Load more after a delete', async () => {
+      const more = branch('b-y', { name: 'feature/y' });
+      server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
+      server.on('GET', `/api/v0/projects/${PROJECT}/branches`, (request) => {
+        const cursor = request.query.get('cursor');
+        return { body: cursor ? page([more]) : page([MAIN, FEATURE], 'next') };
+      });
+      server.on('DELETE', '/api/v0/branches/b-x', { status: 204 });
+      const { fixture, root } = await render();
+      buttonIn(root, 'Load more').click();
+      await settle(fixture);
+      expect(rows(root)).toHaveLength(3);
+      const dialog = root.querySelector<HTMLDialogElement>('dialog')!;
+      root.querySelector<HTMLButtonElement>('tbody button.row-delete')!.click();
+      await settle(fixture);
+      buttonIn(dialog, 'Delete').click();
+      await settle(fixture);
+      // Both pages were read again: feature/y, from the second page, is still listed.
+      expect(text(root.querySelector('tbody'))).toContain('feature/y');
+    });
+
     it('keeps the dialog open with the reason when the server refuses', async () => {
       server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
       server.on('GET', `/api/v0/projects/${PROJECT}/branches`, { body: page([MAIN, MR]) });

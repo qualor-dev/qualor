@@ -320,6 +320,10 @@ export class AccessPage {
       },
       (message) => this.addError.set(message),
     );
+    // Closed while the server answered (Escape, Cancel): the dialog opens again on a refusal.
+    if (this.usernameError() !== null || this.addError() !== null) {
+      openAfterRender(this.injector, () => this.addDialog()?.nativeElement);
+    }
   }
 
   private grantedText(grant: ProjectGrant): string {

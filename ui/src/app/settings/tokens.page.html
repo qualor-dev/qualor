@@ -125,8 +125,14 @@
         [value]="token"
         label="New token"
         i18n-label="@@tokens.newToken"
+        [showDone]="false"
         (done)="closeCreate()"
       />
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-primary" (click)="closeCreate()" i18n="@@secret.done">
+        Done
+      </button>
     </div>
   } @else {
     <form novalidate (submit)="create($event)">

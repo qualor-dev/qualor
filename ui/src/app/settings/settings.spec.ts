@@ -109,6 +109,8 @@ describe('TokensPage', () => {
     button(root, 'Done').click();
     await settle(fixture);
     expect(root.querySelector('#secret-once')).toBeNull();
+    // The page no longer asks to copy a secret it no longer shows.
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('Token ci created.');
     // The form is back, its name emptied for the next token.
     expect(root.querySelector<HTMLInputElement>('#token-name')?.value).toBe('');
 
@@ -233,6 +235,12 @@ describe('TokensPage', () => {
     );
     expect(create.querySelector('#token-name')).toBeNull();
     expect(button(create, 'Copy')).toBeDefined();
+    // Done closes the dialog from its footer, once (the secret box has none of its own).
+    const dones = [...create.querySelectorAll('button')].filter(
+      (b) => b.textContent?.trim() === 'Done',
+    );
+    expect(dones).toHaveLength(1);
+    expect(dones[0]!.closest('.dialog-actions')).not.toBeNull();
     button(create, 'Done').click();
     await settle(fixture);
     expect(create.open).toBe(false);
@@ -529,6 +537,24 @@ describe('UsersPage', () => {
     expect(server.requestsTo('PATCH', '/api/v0/users/u1')[0]?.body).toEqual({ active: false });
   });
 
+  it('forgets a typed initial password when the New user dialog is closed with Escape', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/users', { body: page([]) });
+    const fixture = TestBed.createComponent(UsersPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New user').click();
+    await settle(fixture);
+    type(root, '#user-password', 'typed secret passphrase 123');
+    create.removeAttribute('open');
+    create.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    expect(root.querySelector<HTMLInputElement>('#user-password')?.value).toBe('');
+    const page_ = fixture.componentInstance as unknown as { password: () => string };
+    expect(page_.password()).toBe('');
+  });
+
   it('creates a user in the New user dialog, which stays open on a refusal and closes once the user exists', async () => {
     const server = setup();
     let refuse = true;
@@ -804,10 +830,17 @@ describe('WebhooksPage', () => {
     expect(create.open).toBe(true);
     expect(create.querySelector<HTMLInputElement>('#secret-once')?.value).toBe('whsec_generated');
     expect(create.querySelector('#webhook-url')).toBeNull();
+    // Done closes the dialog from its footer, once (the secret box has none of its own).
+    const dones = [...create.querySelectorAll('button')].filter(
+      (b) => b.textContent?.trim() === 'Done',
+    );
+    expect(dones).toHaveLength(1);
+    expect(dones[0]!.closest('.dialog-actions')).not.toBeNull();
     button(create, 'Done').click();
     await settle(fixture);
     expect(create.open).toBe(false);
     expect(root.querySelector('#secret-once')).toBeNull();
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('Webhook added.');
   });
 
   it('opens its dialog again on the secret when the dialog was closed while the webhook was made', async () => {

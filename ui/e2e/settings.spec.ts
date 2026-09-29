@@ -178,9 +178,8 @@ test('a personal token is shown once in its dialog, then only by its prefix, and
   const value = await secret.inputValue();
   await shown.getByRole('button', { name: 'Done' }).click();
   await expect(page.locator('#secret-once')).toHaveCount(0);
-  await expect(page.getByRole('status')).toHaveText(
-    'Token e2e-script created. Copy it now: it is shown only this once.',
-  );
+  // The page no longer asks to copy a secret it no longer shows.
+  await expect(page.getByRole('status')).toHaveText('Token e2e-script created.');
   const row = page.getByRole('row', { name: /e2e-script/ });
   await expect(row).toContainText('Read');
   await expect(row).toContainText('Upload analyses');
