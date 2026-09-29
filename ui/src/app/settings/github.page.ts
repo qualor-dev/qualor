@@ -16,7 +16,7 @@ import { Api, done, ok } from '../api/api';
 import { fieldErrors, problemMessage } from '../api/errors';
 import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -481,8 +481,11 @@ export class GitHubPage {
       connection,
       question: $localize`:@@github.confirmDelete:Delete the GitHub App ${appId}:appId: at ${connection.baseUrl}:url:? Its projects stop being decorated.`,
     });
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingDelete() !== null,
+    );
   }
 
   protected async confirmDelete(): Promise<void> {

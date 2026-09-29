@@ -17,7 +17,7 @@ import { ApiError, fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
 import { SessionStore } from '../auth/session';
 import { SystemInfo } from '../shell/system-info';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { isChecked } from '../shared/forms';
 import { ssoProblem } from './sso-settings-text';
@@ -215,8 +215,11 @@ export class SignInSettingsPage {
         question: $localize`:@@signIn.confirmLimit:Limit password sign-in? Only these administrators will be able to sign in with a password: ${names}:names:. Everyone else signs in with single sign-on.`,
         ids,
       });
-      const dialog = this.confirmDialog()?.nativeElement;
-      if (dialog) openModal(dialog);
+      openAfterRender(
+        this.injector,
+        () => this.confirmDialog()?.nativeElement,
+        () => this.pendingLimit() !== null,
+      );
       return;
     }
     await this.applySave(ids);

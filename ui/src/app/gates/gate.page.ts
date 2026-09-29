@@ -13,7 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { copyName } from '../shared/names';
 import { type Crumb, PageHeader } from '../shared/page-header';
 import { Api, done, ok } from '../api/api';
@@ -435,8 +435,7 @@ export class GatePage {
   protected openRename(): void {
     this.newName.set(this.current()?.name ?? '');
     this.renameError.set(null);
-    const dialog = this.renameDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.renameDialog()?.nativeElement);
   }
 
   protected closeRename(): void {
@@ -480,8 +479,7 @@ export class GatePage {
   }
 
   protected askDelete(): void {
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.confirmDialog()?.nativeElement);
   }
 
   protected closeDelete(): void {

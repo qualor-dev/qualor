@@ -16,7 +16,7 @@ import { fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
 import { SessionStore } from '../auth/session';
 import { OrgContext } from '../org/org-context';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus, rowAt, rowByKey } from '../shared/focus';
 import { inputValue } from '../shared/forms';
 import { KeysetList } from '../shared/keyset';
@@ -153,8 +153,7 @@ export class GatesPage {
   protected openCreate(): void {
     this.nameError.set(null);
     this.createError.set(null);
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
   }
 
   protected closeCreate(): void {
@@ -219,8 +218,11 @@ export class GatesPage {
       ? $localize`:@@gates.confirmDeleteDefault:Delete the default quality gate "${gate.name}:name:"? The organization is then left without a default gate: every project that uses the default is no longer gated until you make another gate the default.`
       : $localize`:@@gates.confirmDelete:Delete the quality gate "${gate.name}:name:"? Its projects fall back to the default gate.`;
     this.pendingDelete.set({ gate, question });
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingDelete() !== null,
+    );
   }
 
   /** Cancel, Escape or the dialog closing otherwise: nothing is deleted. */

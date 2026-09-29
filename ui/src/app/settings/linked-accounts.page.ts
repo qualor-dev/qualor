@@ -21,7 +21,7 @@ import { ssoErrorText } from '../auth/sso-text';
 import { LabelPipe } from '../i18n/label.pipe';
 import { SystemInfo } from '../shell/system-info';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 
 /**
@@ -165,8 +165,11 @@ export class LinkedAccountsPage {
       identity,
       question: $localize`:@@linkedAccounts.confirmUnlink:Unlink ${identity.connectionName}:connection:? You can no longer sign in with it until you link it again.`,
     });
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingUnlink() !== null,
+    );
   }
 
   protected async confirmUnlink(): Promise<void> {

@@ -19,7 +19,7 @@ import { SessionStore } from '../auth/session';
 import { LabelPipe } from '../i18n/label.pipe';
 import { SystemInfo } from '../shell/system-info';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -162,8 +162,7 @@ export class ScimPage {
     this.expiry.set('');
     this.nameError.set(null);
     this.createError.set(null);
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
   }
 
   /** Cancel, or Done after the token: the dialog closes, and its close forgets the token. */
@@ -232,8 +231,9 @@ export class ScimPage {
     // Closed while the server answered (Escape, Cancel): the dialog opens again on the outcome, or
     // a token it made could never be copied.
     const outcome = this.secret() ?? this.createError() ?? this.nameError();
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog && outcome !== null) openModal(dialog);
+    if (outcome !== null) {
+      openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
+    }
   }
 
   /** Asks in the page's dialog; nothing is sent until its Revoke. */
@@ -243,8 +243,11 @@ export class ScimPage {
       token,
       question: $localize`:@@scim.confirmRevoke:Revoke the SCIM token ${token.name}:name:? The identity provider can no longer provision people with it.`,
     });
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingRevoke() !== null,
+    );
   }
 
   protected async confirmRevoke(): Promise<void> {

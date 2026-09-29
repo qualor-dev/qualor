@@ -17,7 +17,7 @@ import { fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf, ResponseBody } from '../api/types';
 import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -287,8 +287,7 @@ export class GitLabPage {
     this.urlError.set(null);
     this.tokenError.set(null);
     this.createError.set(null);
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
   }
 
   /** Cancel, or Escape: the dialog closes and the token typed in it goes. */
@@ -432,8 +431,11 @@ export class GitLabPage {
       connection,
       question: $localize`:@@gitlab.confirmDelete:Delete the GitLab connection to ${connection.baseUrl}:url:? Its projects stop being decorated.`,
     });
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingDelete() !== null,
+    );
   }
 
   protected async confirmDelete(): Promise<void> {

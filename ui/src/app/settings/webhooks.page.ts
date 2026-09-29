@@ -18,7 +18,7 @@ import { DeliveryStrip, deliveryStatusLabel, type StripDelivery } from '../chart
 import { clip } from '../shared/text';
 import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { clearField, inputValue, isChecked } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -192,8 +192,7 @@ export class WebhooksPage {
     this.urlError.set(null);
     this.eventsError.set(null);
     this.createError.set(null);
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
   }
 
   /** Cancel, or Done after the secret: the dialog closes, and its close forgets the secret. */
@@ -240,8 +239,9 @@ export class WebhooksPage {
     // Closed while the server answered (Escape, Cancel): the dialog opens again on the outcome, or
     // the secret of a webhook it made could never be copied.
     const outcome = this.secret() ?? this.createError() ?? this.urlError() ?? this.eventsError();
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog && outcome !== null) openModal(dialog);
+    if (outcome !== null) {
+      openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
+    }
   }
 
   /** Switches a webhook on or off; the panel and its button stay, the button says what is next. */
@@ -271,8 +271,11 @@ export class WebhooksPage {
       webhook,
       question: $localize`:@@webhooks.confirmDelete:Delete the webhook to ${webhook.url}:url:? Its delivery history goes too.`,
     });
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingDelete() !== null,
+    );
   }
 
   protected async confirmDelete(): Promise<void> {

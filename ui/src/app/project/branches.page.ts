@@ -4,6 +4,7 @@ import {
   effect,
   type ElementRef,
   inject,
+  Injector,
   input,
   linkedSignal,
   signal,
@@ -14,7 +15,7 @@ import { RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { problemMessage } from '../api/errors';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { GateBadge } from '../shared/gate-badge';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
@@ -40,6 +41,7 @@ const PAGE_SIZE = 50;
 })
 export class BranchesPage {
   private readonly api = inject(Api);
+  private readonly injector = inject(Injector);
   private readonly project = inject(CurrentProject);
   readonly projectId = input.required<string>();
 
@@ -105,8 +107,11 @@ export class BranchesPage {
   protected askDelete(branch: Branch): void {
     this.toDelete.set(branch);
     this.deleteError.set(null);
-    const dialog = this.deleteDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.deleteDialog()?.nativeElement,
+      () => this.toDelete() !== null,
+    );
   }
 
   protected closeDelete(): void {

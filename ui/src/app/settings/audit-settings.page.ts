@@ -18,7 +18,7 @@ import { ApiError, fieldErrors, problemMessage } from '../api/errors';
 import { SessionStore } from '../auth/session';
 import { SystemInfo } from '../shell/system-info';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { inputValue, isChecked } from '../shared/forms';
 import { SecretOnce } from './secret-once';
@@ -209,8 +209,11 @@ export class AuditSettingsPage {
 
   private ask(pending: Pending): void {
     this.pending.set(pending);
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pending() !== null,
+    );
   }
 
   protected async confirmPending(): Promise<void> {

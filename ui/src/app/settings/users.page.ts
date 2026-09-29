@@ -16,7 +16,7 @@ import type { ItemOf } from '../api/types';
 import { PASSWORD_MIN_LENGTH } from '../auth/change-password.page';
 import { SessionStore } from '../auth/session';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus, rowByKey } from '../shared/focus';
 import { clearField, inputValue, isChecked } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -153,8 +153,7 @@ export class UsersPage {
     this.admin.set(false);
     this.errors.set({});
     this.dialogError.set(null);
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
   }
 
   protected closeCreate(): void {
@@ -235,8 +234,11 @@ export class UsersPage {
 
   private ask(pending: Pending): void {
     this.pending.set(pending);
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pending() !== null,
+    );
   }
 
   protected async confirmPending(): Promise<void> {
@@ -264,8 +266,11 @@ export class UsersPage {
     this.resetPassword.set('');
     this.resetError.set(null);
     this.dialogError.set(null);
-    const dialog = this.resetDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.resetDialog()?.nativeElement,
+      () => this.resetTarget() !== null,
+    );
   }
 
   protected closeReset(): void {

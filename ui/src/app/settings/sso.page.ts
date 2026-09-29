@@ -28,7 +28,7 @@ import { LabelPipe } from '../i18n/label.pipe';
 import { OrgContext } from '../org/org-context';
 import { SystemInfo } from '../shell/system-info';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { inputValue, isChecked } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -744,8 +744,11 @@ export class SsoPage {
         : $localize`:@@sso.confirmDeleteTokens:Delete ${connection.name}:name:? Its linked identities, its ${mappings}:mappings: group mappings and its ${tokens}:tokens: active SCIM tokens are deleted: people who sign in only through it cannot sign in until an administrator sets a password. Memberships its group sync granted stay, as manual memberships.`;
     // Asked in the page's dialog (step 9); nothing is sent until its Delete.
     this.pendingDelete.set({ connection, question });
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingDelete() !== null,
+    );
   }
 
   protected async confirmDelete(): Promise<void> {

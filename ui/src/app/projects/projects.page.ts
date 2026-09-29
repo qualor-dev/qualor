@@ -4,6 +4,7 @@ import {
   effect,
   type ElementRef,
   inject,
+  Injector,
   input,
   signal,
   untracked,
@@ -18,7 +19,7 @@ import { Lens } from '../charts/lens';
 import { label } from '../i18n/labels';
 import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { inputValue } from '../shared/forms';
 import { GateBadge } from '../shared/gate-badge';
 import { Icon } from '../shared/icon';
@@ -46,6 +47,7 @@ const MAX_TEXT = 255;
 })
 export class ProjectsPage {
   private readonly api = inject(Api);
+  private readonly injector = inject(Injector);
   private readonly router = inject(Router);
   protected readonly org = inject(OrgContext);
 
@@ -155,8 +157,7 @@ export class ProjectsPage {
   }
 
   protected openCreate(): void {
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
   }
 
   protected closeCreate(): void {

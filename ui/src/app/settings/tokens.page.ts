@@ -13,7 +13,7 @@ import { Api, done, ok } from '../api/api';
 import { fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus, rowAt } from '../shared/focus';
 import { clearField, inputValue, isChecked } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -146,8 +146,7 @@ export class TokensPage {
     this.scopesError.set(null);
     this.expiryError.set(null);
     this.createError.set(null);
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
   }
 
   /** Cancel, or Done after the secret: the dialog closes, and its close forgets the secret. */
@@ -211,8 +210,9 @@ export class TokensPage {
       this.nameError() ??
       this.scopesError() ??
       this.expiryError();
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog && outcome !== null) openModal(dialog);
+    if (outcome !== null) {
+      openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
+    }
   }
 
   /** Asks in the page's dialog; nothing is sent until its Revoke. */
@@ -222,8 +222,11 @@ export class TokensPage {
       token,
       question: $localize`:@@tokens.confirmRevoke:Revoke the token "${token.name}:name:"? Scripts using it stop working.`,
     });
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingRevoke() !== null,
+    );
   }
 
   protected async confirmRevoke(): Promise<void> {

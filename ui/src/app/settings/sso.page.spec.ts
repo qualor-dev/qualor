@@ -645,6 +645,20 @@ describe('SsoPage (sso-scim.md §4, §9, §18)', () => {
     expect(alert).not.toContain('Enable another connection');
   });
 
+  it('opens the confirmation with its question already written', async () => {
+    setup();
+    const { fixture, root } = await render();
+    await openRow(fixture, root, OIDC_ID);
+    const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+    let words: string | null = null;
+    new MutationObserver(() => {
+      if (ask.open && words === null) words = ask.querySelector('#confirm-text')?.textContent ?? '';
+    }).observe(ask, { attributes: true, attributeFilter: ['open'] });
+    await click(fixture, button(root, 'Delete'));
+    expect(ask.open).toBe(true);
+    expect(words).toContain('Delete Acme SSO?');
+  });
+
   it('deletes nothing when the confirmation is cancelled', async () => {
     const server = setup();
     const { fixture, root } = await render();

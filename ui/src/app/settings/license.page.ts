@@ -14,7 +14,7 @@ import { ApiError, fieldErrors, problemMessage } from '../api/errors';
 import { SessionStore } from '../auth/session';
 import { Meter } from '../charts/meter';
 import { DateTimePipe, formatDate } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -202,8 +202,7 @@ export class LicensePage {
   /** Asks in the page's dialog; nothing is sent until its Remove. */
   protected remove(): void {
     if (this.busy()) return;
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.confirmDialog()?.nativeElement);
   }
 
   /** Cancel, Escape or the dialog closing otherwise: the key stays. */

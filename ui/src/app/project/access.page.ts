@@ -18,7 +18,7 @@ import { ApiError, problemMessage } from '../api/errors';
 import { roleLabel } from '../auth/permissions';
 import { SessionStore } from '../auth/session';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus, rowAt, rowByKey } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -202,8 +202,11 @@ export class AccessPage {
 
   private ask(pending: Pending): void {
     this.pending.set(pending);
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pending() !== null,
+    );
   }
 
   protected async confirmPending(): Promise<void> {
@@ -258,8 +261,7 @@ export class AccessPage {
     this.usernameError.set(null);
     // Each grant starts from the least role (the last one chosen may have been Project admin).
     this.role.set('viewer');
-    const dialog = this.addDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.addDialog()?.nativeElement);
   }
 
   protected closeAdd(): void {

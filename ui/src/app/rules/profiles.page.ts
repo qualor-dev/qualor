@@ -16,7 +16,7 @@ import type { ItemOf } from '../api/types';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { OrgContext } from '../org/org-context';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus, rowAt, rowByKey } from '../shared/focus';
 import { inputValue } from '../shared/forms';
 import { KeysetList } from '../shared/keyset';
@@ -138,8 +138,7 @@ export class ProfilesPage {
     this.nameError.set(null);
     this.parentError.set(null);
     this.createError.set(null);
-    const dialog = this.createDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
   }
 
   protected closeCreate(): void {
@@ -228,8 +227,11 @@ export class ProfilesPage {
   protected remove(profile: Profile): void {
     if (this.busy()) return;
     this.pendingDelete.set(profile);
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingDelete() !== null,
+    );
   }
 
   /** Cancel, Escape or the dialog closing otherwise: nothing is deleted. */

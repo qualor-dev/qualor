@@ -18,7 +18,7 @@ import { AuthService } from '../auth/auth.service';
 import { type Role, ROLES, roleLabel } from '../auth/permissions';
 import { SessionStore } from '../auth/session';
 import { OrgContext } from '../org/org-context';
-import { closeModal, openModal } from '../shared/dialog';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus, rowAt, rowByKey } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -143,8 +143,7 @@ export class MembersPage {
     this.role.set(DEFAULT_ROLE);
     this.usernameError.set(null);
     this.addError.set(null);
-    const dialog = this.addDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(this.injector, () => this.addDialog()?.nativeElement);
   }
 
   protected closeAdd(): void {
@@ -181,8 +180,11 @@ export class MembersPage {
 
   private ask(pending: Pending): void {
     this.pending.set(pending);
-    const dialog = this.confirmDialog()?.nativeElement;
-    if (dialog) openModal(dialog);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pending() !== null,
+    );
   }
 
   protected async confirmPending(): Promise<void> {
