@@ -18,12 +18,23 @@ import { ApiError, fieldErrors, problemMessage } from '../api/errors';
 import { SessionStore } from '../auth/session';
 import { SystemInfo } from '../shell/system-info';
 import { DateTimePipe } from '../shared/date-time.pipe';
+import { closeModal, openModal } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { inputValue, isChecked } from '../shared/forms';
 import { SecretOnce } from './secret-once';
 
 /** What `PUT /ee/audit/settings` answers: the settings, with a secret it just generated. */
 type AuditSettingsSaved = EeResponse<'/api/v0/ee/audit/settings', 'put'>;
+
+/** A change the confirmation dialog asks about: a save that drops the stream, a removal, a new secret. */
+interface Pending {
+  kind: 'save' | 'remove' | 'regenerate';
+  question: string;
+}
+
+function removeQuestion(): string {
+  return $localize`:@@auditSettings.confirmRemoveStream:Remove the SIEM stream? Events are no longer sent; they stay in the audit log.`;
+}
 
 /** rbac-audit.md §11.1: retention is a whole number of days, 30 to 36 500. */
 const MIN_DAYS = 30;
@@ -40,11 +51,16 @@ const MAX_DAYS = 36_500;
  * buttons are disabled with a licence note, a stream kept from before is shown read-only with its
  * status and a **Remove** button (`stream: null`), **Save** sends the retention alone, and no stream
  * route is called.
+ *
+ * Step 9 of the redesign (spec §7.8): retention and the stream in panels of setting rows, the
+ * stream's status in a panel with its actions; each confirmation asks in the page's dialog instead
+ * of the browser's `confirm()`, with the same words.
  */
 @Component({
   selector: 'q-audit-settings-page',
   imports: [DateTimePipe, SecretOnce],
   templateUrl: './audit-settings.page.html',
+  styleUrl: './audit-settings.page.css',
 })
 export class AuditSettingsPage {
   private readonly ee = inject(EeApi);
@@ -82,7 +98,10 @@ export class AuditSettingsPage {
   protected readonly busy = signal(false);
   protected readonly minDays = MIN_DAYS;
   protected readonly maxDays = MAX_DAYS;
+  /** The change the confirmation dialog asks about; null while it is closed. */
+  protected readonly pending = signal<Pending | null>(null);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
 
   constructor() {
     effect(() => {
@@ -138,9 +157,13 @@ export class AuditSettingsPage {
     const streamLicensed = this.streamLicensed();
     const url = this.url().trim();
     if (streamLicensed && !url && this.current()?.stream) {
-      const question = $localize`:@@auditSettings.confirmRemoveStream:Remove the SIEM stream? Events are no longer sent; they stay in the audit log.`;
-      if (!window.confirm(question)) return;
+      this.ask({ kind: 'save', question: removeQuestion() });
+      return;
     }
+    await this.applySave(days, streamLicensed, url);
+  }
+
+  private async applySave(days: number, streamLicensed: boolean, url: string): Promise<void> {
     await this.run(async () => {
       try {
         const saved = await ok(
@@ -178,11 +201,47 @@ export class AuditSettingsPage {
     this.secret.set(secret ?? null);
   }
 
-  /** Without `audit-log.stream`: removes a stream kept from before (`stream: null` alone). */
-  protected async removeStream(): Promise<void> {
+  /** Without `audit-log.stream`: removes a stream kept from before, once the dialog is answered. */
+  protected removeStream(): void {
     if (this.busy() || !this.current()?.stream) return;
-    const question = $localize`:@@auditSettings.confirmRemoveStream:Remove the SIEM stream? Events are no longer sent; they stay in the audit log.`;
-    if (!window.confirm(question)) return;
+    this.ask({ kind: 'remove', question: removeQuestion() });
+  }
+
+  private ask(pending: Pending): void {
+    this.pending.set(pending);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
+  }
+
+  protected async confirmPending(): Promise<void> {
+    const pending = this.pending();
+    if (!pending) return;
+    // Cleared first: the dialog's close event then finds nothing to cancel.
+    this.pending.set(null);
+    this.closeConfirm();
+    if (pending.kind === 'save') {
+      await this.applySave(Number(this.retention()), this.streamLicensed(), this.url().trim());
+    } else if (pending.kind === 'remove') {
+      await this.applyRemove();
+    } else {
+      await this.applyRegenerate();
+    }
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing changes. */
+  protected cancelPending(): void {
+    this.pending.set(null);
+    this.closeConfirm();
+  }
+
+  private closeConfirm(): void {
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  /** `stream: null` alone: the stream kept from before goes. */
+  private async applyRemove(): Promise<void> {
+    if (this.busy()) return;
     await this.run(async () => {
       this.showSaved(
         await ok(this.ee.client.PUT('/api/v0/ee/audit/settings', { body: { stream: null } })),
@@ -193,10 +252,16 @@ export class AuditSettingsPage {
     });
   }
 
-  protected async regenerate(): Promise<void> {
+  protected regenerate(): void {
     if (this.busy() || !this.streamLicensed()) return;
-    const question = $localize`:@@auditSettings.confirmRegenerate:Regenerate the stream secret? The receiver must be given the new secret: batches signed with it fail the old check.`;
-    if (!window.confirm(question)) return;
+    this.ask({
+      kind: 'regenerate',
+      question: $localize`:@@auditSettings.confirmRegenerate:Regenerate the stream secret? The receiver must be given the new secret: batches signed with it fail the old check.`,
+    });
+  }
+
+  private async applyRegenerate(): Promise<void> {
+    if (this.busy()) return;
     await this.run(async () => {
       const { secret } = await ok(
         this.ee.client.POST('/api/v0/ee/audit/settings/stream/regenerate-secret'),

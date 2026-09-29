@@ -81,6 +81,7 @@ function queryString(applied: Applied): string {
   selector: 'q-audit-log-page',
   imports: [DateTimePipe],
   templateUrl: './audit-log.page.html',
+  styleUrl: './audit-log.page.css',
 })
 export class AuditLogPage {
   private readonly api = inject(Api);
