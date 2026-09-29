@@ -26,7 +26,7 @@ import {
 import { releaseRefs } from './images';
 import { readManifest, type ReleaseManifest } from './manifest';
 import { parsePushDigest } from './registry';
-import { runTool, toWork } from './toolbox';
+import { runTool, toWork, TOOLBOX_IMAGE } from './toolbox';
 import { gitTracks, verifyRelease } from './verify';
 import { currentVersion, gitTag, releasedVersions, type Version } from './version';
 
@@ -366,8 +366,13 @@ export async function publish(
 
     // Every image and the chart are pushed, signed and verified: the local images and the build
     // cache are no longer needed, and the release assets below copy gigabytes of sources onto a
-    // runner disk that the images have nearly filled.
-    docker(['system', 'prune', '--all', '--force'], 'docker system prune');
+    // runner disk that the images have nearly filled. The toolbox stays: cosign runs in it.
+    const local = docker(['image', 'ls', '--format', '{{.Repository}}:{{.Tag}}'], 'docker image ls')
+      .stdout.split('\n')
+      .map((l) => l.trim())
+      .filter((ref) => ref !== '' && !ref.includes('<none>') && ref !== TOOLBOX_IMAGE);
+    if (local.length > 0) docker(['image', 'rm', '--force', ...local], 'docker image rm');
+    docker(['builder', 'prune', '--all', '--force'], 'docker builder prune');
 
     // 7. The release assets (release.md §3, I-2): flat, their own SHA256SUMS, signed, verified.
     const published: ReleaseManifest = {

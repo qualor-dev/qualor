@@ -25,7 +25,7 @@ import {
   type Exec,
   type RepoFacts,
 } from './publish';
-import { toWork } from './toolbox';
+import { toWork, TOOLBOX_IMAGE } from './toolbox';
 import { imageTags, parseVersion, type Version } from './version';
 
 const v = parseVersion('0.1.0');
@@ -157,6 +157,9 @@ function recorder(fake: Fake = {}): { exec: Exec; calls: Call[] } {
       return ok(`x: digest: ${fake.pushDigest?.(ref) ?? DIGEST} size: 1\n`);
     }
     if (command === 'cosign' && args[0] === 'public-key') return ok(fake.publicKey ?? PUBLIC_KEY);
+    if (command === 'docker' && args[0] === 'image' && args[1] === 'ls') {
+      return ok(['qualor/server:0.1.0', TOOLBOX_IMAGE, '<none>:<none>', 'node:22'].join('\n'));
+    }
     if (command === 'helm') return ok('', `Pushed: x\nDigest: ${CHART_DIGEST}\n`);
     if (command === 'cosign' && args[0] === 'sign-blob') {
       // cosign writes the bundle (a /work path) next to SHA256SUMS.
@@ -455,6 +458,28 @@ describe('the order of publishing (ruling R-ORDER)', () => {
     for (const c of calls.filter((x) => isSign(x) || isVerify(x))) {
       expect(c.args.at(-1)).toMatch(/@sha256:[0-9a-f]{64}$/);
     }
+  });
+
+  it('frees the disk after the chart, before the assets, and keeps the toolbox cosign runs in', async () => {
+    const { exec, calls } = recorder();
+    await run(exec);
+    const rm = calls.findIndex(
+      (c) => c.command === 'docker' && c.args[0] === 'image' && c.args[1] === 'rm',
+    );
+    expect(calls[rm]?.args).toEqual(['image', 'rm', '--force', 'qualor/server:0.1.0', 'node:22']);
+    const chartVerify = calls.findLastIndex(
+      (c) => c.command === 'cosign' && c.args[0] === 'verify',
+    );
+    const firstTar = calls.findIndex((c) => c.command === 'tar');
+    expect(rm).toBeGreaterThan(chartVerify);
+    expect(rm).toBeLessThan(firstTar);
+    const prune = calls.findIndex((c) => c.command === 'docker' && c.args[0] === 'builder');
+    expect(prune).toBeGreaterThan(rm);
+    expect(prune).toBeLessThan(firstTar);
+    // Nothing removes every image at once.
+    expect(
+      calls.some((c) => c.command === 'docker' && c.args.join(' ').includes('system prune')),
+    ).toBe(false);
   });
 
   it('tags nothing user-facing when a staged digest differs (R-DIGEST)', async () => {
