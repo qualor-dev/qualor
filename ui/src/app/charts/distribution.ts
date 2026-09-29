@@ -11,6 +11,7 @@ export interface DistributionItem {
 /**
  * `q-distribution` (spec §6.5): a 10px stacked bar of the non-empty items (decoration: the rows
  * carry every number) and one row per item with its dot, label, count and a proportional bar.
+ * The inline layout keeps the bar and names its items on one line (the issues list's head).
  */
 @Component({
   selector: 'q-distribution',
@@ -20,6 +21,7 @@ export interface DistributionItem {
 export class Distribution {
   readonly items = input.required<readonly DistributionItem[]>();
   readonly bar = input(true);
+  readonly layout = input<'rows' | 'inline'>('rows');
   protected readonly filled = computed(() => this.items().filter((i) => i.value > 0));
   private readonly max = computed(() => Math.max(0, ...this.items().map((i) => i.value)));
 

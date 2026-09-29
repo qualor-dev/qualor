@@ -1,9 +1,11 @@
 import {
   apiQuery,
   branchFromParams,
+  clearFilter,
   facetValues,
   filtersFromParams,
   filtersToParams,
+  isFiltered,
   toggle,
 } from './issue-filters';
 
@@ -46,6 +48,23 @@ describe('issue filters', () => {
     expect(f.includeDuplicates).toBe(false);
     expect(f.inNewCode).toBe(false);
     expect(filtersFromParams({ includeDuplicates: 'true' }).includeDuplicates).toBe(true);
+  });
+
+  it('clears a group back to its default: Open for the status, nothing for the others', () => {
+    const f = filtersFromParams({ status: ['resolved', 'closed'], severity: 'high', path: 'src/' });
+    expect(isFiltered(f, 'status')).toBe(true);
+    expect(isFiltered(f, 'severity')).toBe(true);
+    expect(isFiltered(f, 'quality')).toBe(false);
+    const status = clearFilter(f, 'status');
+    expect(status.status).toEqual(['open']);
+    expect(isFiltered(status, 'status')).toBe(false);
+    expect(filtersToParams(status).status).toBeNull();
+    // Clearing one group leaves the others as they were.
+    expect(status.severity).toEqual(['high']);
+    expect(clearFilter(f, 'severity').severity).toEqual([]);
+    expect(clearFilter(f, 'severity').status).toEqual(['resolved', 'closed']);
+    expect(filtersToParams(clearFilter(f, 'path')).path).toBeNull();
+    expect(isFiltered(filtersFromParams({}), 'status')).toBe(false);
   });
 
   it('accepts only a UUID as the branch', () => {

@@ -17,22 +17,26 @@ import { ActivatedRoute, type Params, Router, RouterLink } from '@angular/router
 import { Api, ok } from '../api/api';
 import { isRetryable, problemMessage } from '../api/errors';
 import type { ItemOf, RequestBody, ResponseBody } from '../api/types';
+import { Distribution, type DistributionItem } from '../charts/distribution';
 import { LabelPipe } from '../i18n/label.pipe';
-import type { LabelKind } from '../i18n/labels';
+import { label, type LabelKind } from '../i18n/labels';
 import { branchTitle, branchView, findBranch, mainBranchView } from '../project/branches';
 import { CurrentProject } from '../project/current-project';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { inputValue, isChecked } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { RetryOffer } from '../shared/retry';
 import {
   apiQuery,
   branchFromParams,
+  clearFilter,
   facetValues,
   filtersFromParams,
   filtersToParams,
   type IssueFilters,
   type IssueSort,
+  isFiltered,
   KINDS,
   type ListFilter,
   Q_MAX_LENGTH,
@@ -56,6 +60,17 @@ type BulkRequest = RequestBody<'/api/v0/issues/bulk-transition', 'post'>;
 type BulkResult = ResponseBody<'/api/v0/issues/bulk-transition', 'post'>;
 /** The branch list's first page; a branch past it is looked up on its own. */
 const BRANCH_PAGE = 500;
+
+/** The facet groups' names, in the column's order. */
+const GROUP_TITLES: Record<ListFilter, () => string> = {
+  severity: () => $localize`:@@issues.facet.severity:Severity`,
+  status: () => $localize`:@@issues.facet.status:Status`,
+  quality: () => $localize`:@@issues.facet.quality:Software quality`,
+  engine: () => $localize`:@@issues.facet.engine:Analyzer`,
+  rule: () => $localize`:@@issues.facet.rule:Rule`,
+  path: () => $localize`:@@issues.facet.path:File path`,
+  kind: () => $localize`:@@issues.facet.kind:Type`,
+};
 
 /** "2 issues changed. 1 issue cannot change to this status; it stays selected." */
 function bulkSummary(result: BulkResult): string {
@@ -109,7 +124,7 @@ function bulkSummary(result: BulkResult): string {
  */
 @Component({
   selector: 'q-issues-page',
-  imports: [DateTimePipe, LabelPipe, RouterLink],
+  imports: [DateTimePipe, Distribution, Icon, LabelPipe, RouterLink],
   templateUrl: './issues.page.html',
   styleUrl: './issues.page.css',
 })
@@ -205,26 +220,73 @@ export class IssuesPage {
   protected readonly retryOffer = new RetryOffer<BulkRequest>();
   private readonly bulkStatus = viewChild<ElementRef<HTMLElement>>('bulkStatus');
 
+  /** Facet groups the person folded away, for this visit. */
+  protected readonly collapsed = signal<ReadonlySet<ListFilter>>(new Set());
+  /**
+   * The facet column: per group its values with their counts and a bar scaled to the group's
+   * largest count (none where the count is not meaningful), and whether "Clear" has anything to do.
+   */
   protected readonly facetGroups = computed(() => {
     const f = this.filters();
     const facets: Partial<Record<string, { value: string; count: number }[]>> = this.facets();
-    const group = (filter: ListFilter, known: string[], labelKind: LabelKind | null) => ({
-      filter,
-      labelKind,
-      values: facetValues(known, facets[filter], f[filter]),
-    });
+    const group = (
+      filter: ListFilter,
+      values: { value: string; count: number | null; selected: boolean }[],
+      labelKind: LabelKind | null,
+    ) => {
+      const max = Math.max(0, ...values.map((v) => v.count ?? 0));
+      const title = GROUP_TITLES[filter]();
+      return {
+        filter,
+        id: `facet-${filter}`,
+        title,
+        clearLabel: $localize`:@@issues.facet.clearLabel:Clear the ${title}:group: filter`,
+        filtered: isFiltered(f, filter),
+        labelKind,
+        values: values.map((v) => ({
+          ...v,
+          tone: filter === 'severity' ? v.value : null,
+          width: v.count && max > 0 ? Math.round((100 * v.count) / max) : 0,
+        })),
+      };
+    };
+    const faceted = (filter: ListFilter, known: string[], labelKind: LabelKind | null) =>
+      group(filter, facetValues(known, facets[filter], f[filter]), labelKind);
     return [
-      group('severity', SEVERITIES, 'severity'),
-      group('status', STATUSES, 'status'),
-      group('quality', QUALITIES, 'quality'),
-      group('engine', [], null),
-      group('rule', [], null),
+      faceted('severity', SEVERITIES, 'severity'),
+      faceted('status', STATUSES, 'status'),
+      faceted('quality', QUALITIES, 'quality'),
+      faceted('engine', [], null),
+      faceted('rule', [], null),
       // Paths have no facet here; a shared URL's path filters are listed so they can be removed.
-      ...(f.path.length > 0 ? [group('path', [], null)] : []),
+      ...(f.path.length > 0 ? [faceted('path', [], null)] : []),
+      // The type has no facet either: its values are offered without counts.
+      group(
+        'kind',
+        KINDS.map((value) => ({ value, count: null, selected: f.kind.includes(value) })),
+        'kind',
+      ),
     ];
   });
-  protected readonly kinds = computed(() =>
-    KINDS.map((value) => ({ value, selected: this.filters().kind.includes(value) })),
+  /** The matching issues' severities (each issue has one), once the first page answered. */
+  protected readonly severityItems = computed<DistributionItem[] | null>(() => {
+    const counts = this.facets().severity;
+    if (!counts) return null;
+    const byValue = new Map(counts.map((c) => [c.value, c.count]));
+    return SEVERITIES.map((s) => ({
+      key: s,
+      label: label('severity', s),
+      value: byValue.get(s) ?? 0,
+      tone: s,
+    }));
+  });
+  protected readonly total = computed(() => {
+    const items = this.severityItems();
+    return items ? items.reduce((sum, i) => sum + i.value, 0) : null;
+  });
+  /** The bulk bar shows while issues are selected, or a refused change waits to be sent again. */
+  protected readonly showBulk = computed(
+    () => this.selected().size > 0 || this.retryOffer.pending() !== null,
   );
   /** The statuses the listed issues can go to (table I2): no "Reopen" on an open-only list. */
   protected readonly targets = computed(() => {
@@ -286,6 +348,17 @@ export class IssuesPage {
 
   protected toggleFilter(filter: ListFilter, value: string): void {
     this.navigate(filtersToParams(toggle(this.filters(), filter, value)));
+  }
+
+  protected clearGroup(filter: ListFilter): void {
+    this.navigate(filtersToParams(clearFilter(this.filters(), filter)));
+  }
+
+  protected toggleGroup(filter: ListFilter): void {
+    const next = new Set(this.collapsed());
+    if (next.has(filter)) next.delete(filter);
+    else next.add(filter);
+    this.collapsed.set(next);
   }
 
   protected setNewCode(event: Event): void {

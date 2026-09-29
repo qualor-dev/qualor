@@ -1,175 +1,220 @@
-<div class="card toolbar issues-toolbar">
-  <label for="issues-branch" class="label" i18n="@@issues.branch">Branch</label>
-  <select id="issues-branch" (change)="setBranch($event)">
-    @for (b of branchOptions(); track b.id) {
-      <option [value]="b.id" [selected]="b.id === branchId()">{{ b.title }}</option>
-    }
-  </select>
-  <form role="search" class="row" (submit)="submitSearch($event)">
+<div class="issues-toolbar">
+  <div class="toolbar-field">
+    <label for="issues-branch" class="label" i18n="@@issues.branch">Branch</label>
+    <select id="issues-branch" (change)="setBranch($event)">
+      @for (b of branchOptions(); track b.id) {
+        <option [value]="b.id" [selected]="b.id === branchId()">{{ b.title }}</option>
+      }
+    </select>
+  </div>
+  <form role="search" class="issues-search" (submit)="submitSearch($event)">
     <label for="issues-search" class="visually-hidden" i18n="@@issues.search.label"
       >Search issue messages</label
     >
-    <input
-      id="issues-search"
-      type="search"
-      [attr.maxlength]="qMax"
-      placeholder="Search messages"
-      i18n-placeholder="@@issues.search.placeholder"
-      [value]="search()"
-      (input)="search.set(inputValue($event))"
-    />
+    <span class="search-field">
+      <q-icon name="search" />
+      <input
+        id="issues-search"
+        type="search"
+        [attr.maxlength]="qMax"
+        placeholder="Search messages"
+        i18n-placeholder="@@issues.search.placeholder"
+        [value]="search()"
+        (input)="search.set(inputValue($event))"
+      />
+    </span>
     <button type="submit" class="btn" i18n="@@issues.search.submit">Search</button>
   </form>
-  <label for="issues-sort" class="label" i18n="@@issues.sort">Sort by</label>
-  <select id="issues-sort" (change)="setSort($event)">
-    <option
-      value="severity"
-      [selected]="filters().sort === 'severity'"
-      i18n="@@issues.sort.severity"
-    >
-      Severity
-    </option>
-    <option
-      value="createdAt"
-      [selected]="filters().sort === 'createdAt'"
-      i18n="@@issues.sort.newest"
-    >
-      Newest first
-    </option>
-    <option value="path" [selected]="filters().sort === 'path'" i18n="@@issues.sort.path">
-      File and line
-    </option>
-  </select>
+  <div class="toolbar-field toolbar-end">
+    <label for="issues-sort" class="label" i18n="@@issues.sort">Sort by</label>
+    <select id="issues-sort" (change)="setSort($event)">
+      <option
+        value="severity"
+        [selected]="filters().sort === 'severity'"
+        i18n="@@issues.sort.severity"
+      >
+        Severity
+      </option>
+      <option
+        value="createdAt"
+        [selected]="filters().sort === 'createdAt'"
+        i18n="@@issues.sort.newest"
+      >
+        Newest first
+      </option>
+      <option value="path" [selected]="filters().sort === 'path'" i18n="@@issues.sort.path">
+        File and line
+      </option>
+    </select>
+  </div>
 </div>
 
 <div class="issues-layout">
-  <aside class="filters card" aria-label="Filters" i18n-aria-label="@@issues.filters">
-    <div class="stack toggles">
-      <label class="row">
-        <input type="checkbox" [checked]="filters().inNewCode" (change)="setNewCode($event)" />
-        <span i18n="@@issues.newCodeOnly">New code only</span>
-      </label>
-      <label class="row">
-        <input
-          id="issues-duplicates"
-          type="checkbox"
-          [checked]="filters().includeDuplicates"
-          (change)="setDuplicates($event)"
-        />
-        <span i18n="@@issues.includeDuplicates">Include duplicates</span>
-      </label>
+  <aside class="filters card panel" aria-labelledby="filters-heading">
+    <div class="panel-head">
+      <h2 id="filters-heading" i18n="@@issues.filters">Filters</h2>
     </div>
-    @for (group of facetGroups(); track group.filter) {
-      <fieldset class="facet" [attr.data-facet]="group.filter">
-        <legend>
-          @switch (group.filter) {
-            @case ('severity') {
-              <span i18n="@@issues.facet.severity">Severity</span>
-            }
-            @case ('status') {
-              <span i18n="@@issues.facet.status">Status</span>
-            }
-            @case ('quality') {
-              <span i18n="@@issues.facet.quality">Software quality</span>
-            }
-            @case ('engine') {
-              <span i18n="@@issues.facet.engine">Analyzer</span>
-            }
-            @case ('path') {
-              <span i18n="@@issues.facet.path">File path</span>
-            }
-            @default {
-              <span i18n="@@issues.facet.rule">Rule</span>
-            }
-          }
-        </legend>
-        @for (v of group.values; track v.value) {
-          <label>
-            <input
-              type="checkbox"
-              [checked]="v.selected"
-              (change)="toggleFilter(group.filter, v.value)"
-            />
-            <span>{{ group.labelKind ? (v.value | label: group.labelKind) : v.value }}</span>
-            @if (v.count !== null) {
-              <span class="count">{{ v.count }}</span>
-            }
-          </label>
-        }
-      </fieldset>
-    }
-    <fieldset class="facet" data-facet="kind">
-      <legend i18n="@@issues.facet.kind">Type</legend>
-      @for (k of kinds(); track k.value) {
+    <div class="panel-body filters-body">
+      <div class="toggles">
         <label>
-          <input type="checkbox" [checked]="k.selected" (change)="toggleFilter('kind', k.value)" />
-          <span>{{ k.value | label: 'kind' }}</span>
+          <input type="checkbox" [checked]="filters().inNewCode" (change)="setNewCode($event)" />
+          <span i18n="@@issues.newCodeOnly">New code only</span>
         </label>
+        <label>
+          <input
+            id="issues-duplicates"
+            type="checkbox"
+            [checked]="filters().includeDuplicates"
+            (change)="setDuplicates($event)"
+          />
+          <span i18n="@@issues.includeDuplicates">Include duplicates</span>
+        </label>
+      </div>
+      @for (group of facetGroups(); track group.filter) {
+        <div class="facet-group" [attr.data-group]="group.filter">
+          <div class="facet-head">
+            <button
+              type="button"
+              class="facet-toggle"
+              [attr.aria-expanded]="!collapsed().has(group.filter)"
+              [attr.aria-controls]="group.id"
+              (click)="toggleGroup(group.filter)"
+            >
+              <q-icon name="chevron-down" />{{ group.title }}
+            </button>
+            @if (group.filtered) {
+              <button
+                type="button"
+                class="facet-clear"
+                [attr.aria-label]="group.clearLabel"
+                (click)="clearGroup(group.filter)"
+                i18n="@@issues.facet.clear"
+              >
+                Clear
+              </button>
+            }
+          </div>
+          <fieldset
+            class="facet-values"
+            [id]="group.id"
+            [attr.data-facet]="group.filter"
+            [hidden]="collapsed().has(group.filter)"
+          >
+            <legend class="visually-hidden">{{ group.title }}</legend>
+            @for (v of group.values; track v.value) {
+              <div class="facet-value">
+                <label>
+                  <input
+                    type="checkbox"
+                    [checked]="v.selected"
+                    (change)="toggleFilter(group.filter, v.value)"
+                  />
+                  <span class="facet-name tone-{{ v.tone }}" [class.facet-dot]="v.tone !== null">{{
+                    group.labelKind ? (v.value | label: group.labelKind) : v.value
+                  }}</span>
+                  @if (v.count !== null) {
+                    <span class="count">{{ v.count }}</span>
+                  }
+                </label>
+                @if (v.count !== null) {
+                  <span class="facet-bar tone-{{ v.tone }}" aria-hidden="true"
+                    ><span class="facet-fill" [style.width.%]="v.width"></span
+                  ></span>
+                }
+              </div>
+            }
+          </fieldset>
+        </div>
       }
-    </fieldset>
-    <p class="hint" i18n="@@issues.facet.hint">
-      Counts follow every filter, including the facet's own: once a value is chosen, only the chosen
-      values show a count.
-    </p>
+      <p class="hint" i18n="@@issues.facet.hint">
+        Counts follow every filter, including the facet's own: once a value is chosen, only the
+        chosen values show a count.
+      </p>
+    </div>
   </aside>
 
-  <section class="stack" aria-labelledby="issues-heading">
-    <h2 id="issues-heading" class="visually-hidden" i18n="@@issues.heading">Issues</h2>
-    @if (branchError(); as message) {
-      <p class="alert alert-error" role="alert">{{ message }}</p>
-    }
-    @if (list.error(); as message) {
-      <p class="alert alert-error" role="alert">{{ message }}</p>
-    }
-
-    @if (canTriage()) {
-      <form class="card row bulk" (submit)="applyBulk($event)">
-        <span class="label" i18n="@@issues.bulk.selected">{selected().size, plural,
-          =0 {No issue selected}
-          =1 {1 issue selected}
-          other {{{ selected().size }} issues selected}
-        }</span>
-        @if (targets().length > 0) {
-          <label for="bulk-target" class="visually-hidden" i18n="@@issues.bulk.target"
-            >New status</label
-          >
-          <select id="bulk-target" (change)="setTarget($event)">
-            @for (t of targets(); track t) {
-              <option [value]="t" [selected]="t === bulkTarget()">
-                {{ t | label: 'transition' }}
-              </option>
-            }
-          </select>
-        } @else {
-          <span class="hint" i18n="@@issues.bulk.noTarget"
-            >Issues with these statuses cannot change status.</span
-          >
+  <div class="issues-main">
+    <section class="card panel issues-list" aria-labelledby="issues-heading">
+      <div class="panel-head issues-head">
+        <h2 id="issues-heading">
+          <ng-container i18n="@@issues.heading">Issues</ng-container>
+          @if (total() !== null) {
+            &ngsp;<span class="panel-count">{{ total() }}</span>
+          }
+        </h2>
+        @if (severityItems(); as items) {
+          <q-distribution class="issues-severities" [items]="items" layout="inline" />
         }
-        <label for="bulk-comment" class="visually-hidden" i18n="@@issues.bulk.comment"
-          >Comment</label
-        >
-        <input
-          id="bulk-comment"
-          [attr.maxlength]="commentMax"
-          [required]="commentRequired()"
-          placeholder="Comment"
-          i18n-placeholder="@@issues.bulk.commentPlaceholder"
-          [value]="comment()"
-          (input)="comment.set(inputValue($event))"
-        />
-        <button
-          type="submit"
-          class="btn btn-primary"
-          [disabled]="!canApply()"
-          [attr.aria-describedby]="overLimit() ? 'bulk-limit' : null"
-          i18n="@@issues.bulk.apply"
-        >
-          Change status
-        </button>
-        @if (overLimit()) {
-          <p id="bulk-limit" class="hint" i18n="@@issues.bulk.limit">
-            At most {{ bulkMax }} issues change status at once. Clear some of the selection.
-          </p>
+      </div>
+      @if (branchError(); as message) {
+        <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
+      }
+      @if (list.error(); as message) {
+        <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
+      }
+
+      @if (canTriage()) {
+        @if (showBulk()) {
+          <form class="bulk" (submit)="applyBulk($event)">
+            <span class="label" i18n="@@issues.bulk.selected">{selected().size, plural,
+              =0 {No issue selected}
+              =1 {1 issue selected}
+              other {{{ selected().size }} issues selected}
+            }</span>
+            @if (targets().length > 0) {
+              <label for="bulk-target" class="visually-hidden" i18n="@@issues.bulk.target"
+                >New status</label
+              >
+              <select id="bulk-target" (change)="setTarget($event)">
+                @for (t of targets(); track t) {
+                  <option [value]="t" [selected]="t === bulkTarget()">
+                    {{ t | label: 'transition' }}
+                  </option>
+                }
+              </select>
+            } @else {
+              <span class="hint" i18n="@@issues.bulk.noTarget"
+                >Issues with these statuses cannot change status.</span
+              >
+            }
+            <label for="bulk-comment" class="visually-hidden" i18n="@@issues.bulk.comment"
+              >Comment</label
+            >
+            <input
+              id="bulk-comment"
+              [attr.maxlength]="commentMax"
+              [required]="commentRequired()"
+              placeholder="Comment"
+              i18n-placeholder="@@issues.bulk.commentPlaceholder"
+              [value]="comment()"
+              (input)="comment.set(inputValue($event))"
+            />
+            <button
+              type="submit"
+              class="btn btn-primary"
+              [disabled]="!canApply()"
+              [attr.aria-describedby]="overLimit() ? 'bulk-limit' : null"
+              i18n="@@issues.bulk.apply"
+            >
+              Change status
+            </button>
+            @if (retryOffer.pending()) {
+              <button
+                type="button"
+                class="btn retry"
+                [disabled]="busy() || retryOffer.waiting()"
+                (click)="retry()"
+                i18n="@@issues.bulk.retry"
+              >
+                Try again
+              </button>
+            }
+            @if (overLimit()) {
+              <p id="bulk-limit" class="hint" i18n="@@issues.bulk.limit">
+                At most {{ bulkMax }} issues change status at once. Clear some of the selection.
+              </p>
+            }
+          </form>
         }
         <div #bulkStatus class="bulk-status" role="status" tabindex="-1">
           @if (bulkMessage(); as message) {
@@ -179,98 +224,93 @@
             <p class="alert alert-error">{{ message }}</p>
           }
         </div>
-        @if (retryOffer.pending()) {
-          <button
-            type="button"
-            class="btn retry"
-            [disabled]="busy() || retryOffer.waiting()"
-            (click)="retry()"
-            i18n="@@issues.bulk.retry"
-          >
-            Try again
-          </button>
-        }
-      </form>
-    }
+      }
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            @if (canTriage()) {
-              <th scope="col">
-                <input
-                  type="checkbox"
-                  aria-label="Select all issues on this page"
-                  i18n-aria-label="@@issues.selectAll"
-                  [checked]="allSelected()"
-                  (change)="toggleAll($event)"
-                />
-              </th>
-            }
-            <th scope="col" i18n="@@issues.col.severity">Severity</th>
-            <th scope="col" i18n="@@issues.col.issue">Issue</th>
-            <th scope="col" i18n="@@issues.col.status">Status</th>
-            <th scope="col" i18n="@@issues.col.firstSeen">First seen</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (issue of list.items(); track issue.id) {
+      <div class="panel-scroll">
+        <table>
+          <thead>
             <tr>
               @if (canTriage()) {
-                <td>
+                <th scope="col" class="select-col">
                   <input
                     type="checkbox"
-                    [attr.aria-label]="issue.message"
-                    [checked]="selected().has(issue.id)"
-                    (change)="toggleOne(issue.id, $event)"
+                    aria-label="Select all issues on this page"
+                    i18n-aria-label="@@issues.selectAll"
+                    [checked]="allSelected()"
+                    (change)="toggleAll($event)"
                   />
-                </td>
+                </th>
               }
-              <td class="nowrap">
-                <span class="badge badge-{{ issue.severity }}">{{
-                  issue.severity | label: 'severity'
-                }}</span>
-              </td>
-              <td>
-                <a [routerLink]="['/projects', projectId(), 'issues', issue.id]">{{
-                  issue.message
-                }}</a>
-                <div class="muted">
-                  <code>{{ issue.rule.key }}</code>
-                  @if (issue.path) {
-                    ·
-                    <code>{{ issue.path }}{{ issue.startLine ? ':' + issue.startLine : '' }}</code>
-                  }
-                  @if (issue.inNewCode) {
-                    <span class="badge badge-accent" i18n="@@issues.new">New code</span>
-                  }
-                  @if (issue.duplicateOfIssueId) {
-                    <span class="badge badge-tag" i18n="@@issues.duplicate">Duplicate</span>
-                  }
-                </div>
-              </td>
-              <td class="nowrap">{{ issue.status | label: 'status' }}</td>
-              <td class="nowrap">{{ issue.firstSeenAt | dateTime: 'date' }}</td>
+              <th scope="col" i18n="@@issues.col.severity">Severity</th>
+              <th scope="col" i18n="@@issues.col.issue">Issue</th>
+              <th scope="col" i18n="@@issues.col.status">Status</th>
+              <th scope="col" i18n="@@issues.col.firstSeen">First seen</th>
             </tr>
-          } @empty {
-            @if (list.loaded()) {
-              <tr>
-                <td [attr.colspan]="canTriage() ? 5 : 4">
-                  <div class="empty-state">
-                    <img src="art/clean.webp" alt="" width="900" height="675" />
-                    <p i18n="@@issues.empty">No issue matches.</p>
+          </thead>
+          <tbody>
+            @for (issue of list.items(); track issue.id) {
+              <tr [class.selected]="selected().has(issue.id)">
+                @if (canTriage()) {
+                  <td class="select-col">
+                    <input
+                      type="checkbox"
+                      [attr.aria-label]="issue.message"
+                      [checked]="selected().has(issue.id)"
+                      (change)="toggleOne(issue.id, $event)"
+                    />
+                  </td>
+                }
+                <td class="nowrap">
+                  <span class="badge badge-{{ issue.severity }}">{{
+                    issue.severity | label: 'severity'
+                  }}</span>
+                </td>
+                <td class="issue-cell">
+                  <a
+                    class="issue-message"
+                    [routerLink]="['/projects', projectId(), 'issues', issue.id]"
+                    >{{ issue.message }}</a
+                  >
+                  <div class="issue-meta">
+                    <code>{{ issue.rule.key }}</code>
+                    @if (issue.path) {
+                      <code class="issue-location"
+                        >{{ issue.path }}{{ issue.startLine ? ':' + issue.startLine : '' }}</code
+                      >
+                    }
+                    @if (issue.inNewCode) {
+                      <span class="badge badge-accent" i18n="@@issues.new">New code</span>
+                    }
+                    @if (issue.duplicateOfIssueId) {
+                      <span class="badge badge-tag" i18n="@@issues.duplicate">Duplicate</span>
+                    }
                   </div>
                 </td>
+                <td class="nowrap">{{ issue.status | label: 'status' }}</td>
+                <td class="nowrap">
+                  <span [title]="issue.firstSeenAt | dateTime">{{
+                    issue.firstSeenAt | dateTime: 'date'
+                  }}</span>
+                </td>
               </tr>
+            } @empty {
+              @if (list.loaded()) {
+                <tr>
+                  <td [attr.colspan]="canTriage() ? 5 : 4">
+                    <div class="empty-state">
+                      <img src="art/clean.webp" alt="" width="900" height="675" />
+                      <p i18n="@@issues.empty">No issue matches.</p>
+                    </div>
+                  </td>
+                </tr>
+              }
             }
-          }
-        </tbody>
-      </table>
-    </div>
-
+          </tbody>
+        </table>
+      </div>
+    </section>
     @if (list.nextCursor()) {
-      <p>
+      <p class="load-more">
         <button
           type="button"
           class="btn"
@@ -282,5 +322,5 @@
         </button>
       </p>
     }
-  </section>
+  </div>
 </div>

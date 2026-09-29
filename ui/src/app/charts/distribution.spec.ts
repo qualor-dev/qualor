@@ -9,10 +9,11 @@ const ITEMS: DistributionItem[] = [
 ];
 
 describe('Distribution', () => {
-  async function render(items: DistributionItem[]) {
+  async function render(items: DistributionItem[], layout?: 'rows' | 'inline') {
     TestBed.configureTestingModule({ imports: [Distribution] });
     const fixture = TestBed.createComponent(Distribution);
     fixture.componentRef.setInput('items', items);
+    if (layout) fixture.componentRef.setInput('layout', layout);
     await fixture.whenStable();
     return fixture.nativeElement as HTMLElement;
   }
@@ -37,5 +38,15 @@ describe('Distribution', () => {
   it('draws no bar when everything is zero', async () => {
     const root = await render([{ key: 'x', label: 'X', value: 0, tone: 'accent' }]);
     expect(root.querySelector('.dist-bar')).toBeNull();
+  });
+
+  it('inline, names the items of the bar on one line and leaves the empty ones out', async () => {
+    const root = await render(ITEMS, 'inline');
+    expect(root.querySelector('.dist-rows')).toBeNull();
+    const legend = [...root.querySelectorAll('.dist-legend li')].map((li) =>
+      li.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(legend).toEqual(['Blocker 1', 'High 2', 'Medium 4']);
+    expect(root.querySelectorAll('.dist-bar span')).toHaveLength(3);
   });
 });

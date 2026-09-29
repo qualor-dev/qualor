@@ -1,7 +1,49 @@
+/* The issues tab (spec §7.4): the filter bar, the facets column, the list panel. */
+.issues-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-bottom: 20px;
+}
+.toolbar-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toolbar-field .label {
+  margin: 0;
+}
+.toolbar-end {
+  margin-left: auto;
+}
+.issues-search {
+  display: flex;
+  flex: 1 1 18rem;
+  gap: 8px;
+  max-width: 34rem;
+}
+.search-field {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.search-field q-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search-field input {
+  width: 100%;
+  padding-left: 34px;
+}
 .issues-layout {
   display: grid;
-  gap: var(--space-6);
-  grid-template-columns: 16rem minmax(0, 1fr);
+  gap: 24px;
+  grid-template-columns: 17rem minmax(0, 1fr);
   align-items: start;
 }
 .issues-layout > * {
@@ -16,21 +58,86 @@
     order: 1;
   }
 }
-.issues-toolbar {
-  margin-bottom: var(--space-6);
+.issues-head h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
-.filters {
-  padding: var(--space-4) var(--space-4) var(--space-2);
+.panel-count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
-.toggles {
-  gap: var(--space-2);
+.issues-severities {
+  flex-basis: 100%;
+  margin-top: 2px;
 }
+/* The bulk bar: on selection, pinned under the header while the list scrolls. */
 .bulk {
-  padding: var(--space-3) var(--space-4);
+  position: sticky;
+  top: var(--sticky-top, 72px);
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 16px 22px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  box-shadow: var(--shadow);
 }
-.bulk .hint,
-.bulk .alert,
-.bulk-status {
+.bulk .label {
+  margin: 0 6px 0 2px;
+}
+.bulk input:not([type]) {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.bulk .hint {
   flex-basis: 100%;
   margin: 0;
+}
+.bulk-status:not(:empty) {
+  margin: 16px 22px 0;
+}
+.bulk-status .alert {
+  margin: 0;
+}
+.select-col {
+  width: 1px;
+}
+tr.selected td {
+  background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+}
+/* On a narrow screen the table scrolls sideways rather than squeezing the issue to a sliver. */
+.issue-cell {
+  min-width: 16rem;
+}
+.issue-message {
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: break-word;
+}
+.issue-message:hover {
+  text-decoration: underline;
+}
+.issue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.issue-meta code {
+  overflow-wrap: anywhere;
+}
+.load-more {
+  margin: 16px 0 0;
 }

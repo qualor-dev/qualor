@@ -27,6 +27,8 @@
   --radius-lg: 12px;
   --content-max: 1360px;
   --gutter: 40px;
+  /* Where sticky parts stop: under the sticky header (60px) with a gap. */
+  --sticky-top: 72px;
 
   /* The ink surfaces (header, sign-in panel, bands) stay dark in both schemes, as on the site. */
   --ink: #0a1b33;
@@ -1080,6 +1082,130 @@ tbody tr:has(.empty-state):hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* The issues list's facet column (spec §7.4): collapsible groups, Clear, a bar per count. */
+.filters-body {
+  display: grid;
+  gap: 16px;
+}
+.filters-body > .toggles {
+  display: grid;
+  gap: 6px;
+}
+.toggles label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.facet-group {
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+.facet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.facet-toggle,
+.facet-clear {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.facet-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  color: var(--text-2);
+  font-weight: 650;
+}
+.facet-toggle q-icon {
+  color: var(--text-muted);
+  transition: transform 0.15s;
+}
+.facet-toggle[aria-expanded='false'] q-icon {
+  transform: rotate(-90deg);
+}
+.facet-clear {
+  margin-right: -6px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-weight: 600;
+}
+.facet-clear:hover {
+  background: var(--surface-2);
+}
+.facet-values {
+  display: grid;
+  gap: 1px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+}
+.facet-values[hidden] {
+  display: none;
+}
+.facet-value {
+  display: grid;
+  gap: 4px;
+  margin: 0 -8px;
+  padding: 4px 8px 6px;
+  border-radius: var(--radius-sm);
+}
+.facet-value:hover {
+  background: var(--surface-2);
+}
+.facet-value label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.facet-name {
+  overflow-wrap: anywhere;
+}
+.facet-dot::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--tone);
+  vertical-align: 1px;
+}
+.facet-value .count {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.facet-bar {
+  display: block;
+  height: 3px;
+  margin-left: 24px;
+  border-radius: 2px;
+  background: var(--chart-track);
+  overflow: hidden;
+}
+.facet-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--tone, var(--chart-accent));
+}
+.filters-body > .hint {
+  margin: 0;
+  font-size: 12.5px;
+}
+
 details > summary {
   cursor: pointer;
   font-weight: 600;
@@ -2015,6 +2141,12 @@ details[open] > summary {
 @media (max-width: 64rem) {
   :root {
     --gutter: 24px;
+  }
+}
+/* The header scrolls away on narrow screens (see .app-header): sticky parts go to the top. */
+@media (max-width: 56rem) {
+  :root {
+    --sticky-top: 12px;
   }
 }
 @media (max-width: 40rem) {

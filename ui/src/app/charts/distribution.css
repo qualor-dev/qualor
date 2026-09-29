@@ -19,7 +19,7 @@
   padding: 0;
   list-style: none;
 }
-li {
+.dist-rows li {
   display: grid;
   grid-template-columns: 12px minmax(0, 1fr) 28px 88px;
   gap: 10px;
@@ -55,4 +55,26 @@ li {
 }
 .dist-zero {
   color: var(--text-muted);
+}
+/* The inline layout: the bar, then its items on one line. */
+.dist-bar:has(+ .dist-legend) {
+  margin-bottom: 10px;
+}
+.dist-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.dist-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dist-legend .dist-count {
+  color: var(--text);
 }

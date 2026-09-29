@@ -104,6 +104,11 @@ describe('IssuesPage', () => {
       [...l.querySelectorAll('span')].map((s) => s.textContent?.trim()).join(' '),
     );
 
+  async function selectAll(root: HTMLElement, fixture: { whenStable(): Promise<unknown> }) {
+    root.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!.click();
+    await settle(fixture);
+  }
+
   async function chooseTarget(root: HTMLElement, fixture: { whenStable(): Promise<unknown> }) {
     const target = root.querySelector<HTMLSelectElement>('#bulk-target')!;
     target.value = 'resolved';
@@ -158,7 +163,7 @@ describe('IssuesPage', () => {
       body: { succeeded: ['i1'], failed: [{ id: 'i2', code: 'INVALID_TRANSITION' }] },
     });
     const { fixture, root } = await render();
-    root.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!.click();
+    await selectAll(root, fixture);
     const target = root.querySelector<HTMLSelectElement>('#bulk-target')!;
     target.value = 'false_positive';
     target.dispatchEvent(new Event('change'));
@@ -195,7 +200,7 @@ describe('IssuesPage', () => {
       },
     });
     const { fixture, root } = await render();
-    root.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!.click();
+    await selectAll(root, fixture);
     await chooseTarget(root, fixture);
     const submit = root.querySelector<HTMLButtonElement>('form.bulk button[type="submit"]')!;
     expect(root.querySelector('form.bulk .label')?.textContent?.trim()).toBe('501 issues selected');
@@ -220,13 +225,12 @@ describe('IssuesPage', () => {
         : { body: { succeeded: ['i1', 'i2'], failed: [] } },
     );
     const { fixture, root } = await render();
-    root.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!.click();
+    await selectAll(root, fixture);
     await chooseTarget(root, fixture);
     root.querySelector<HTMLButtonElement>('form.bulk button[type="submit"]')!.click();
     await settle(fixture);
-    expect(root.querySelector('form.bulk [role="status"]')?.textContent).toContain(
-      'Try again in 1 s.',
-    );
+    // Intended change (step 4): the live region sits outside the bar, which shows on selection.
+    expect(root.querySelector('[role="status"]')?.textContent).toContain('Try again in 1 s.');
     const retry = root.querySelector<HTMLButtonElement>('form.bulk button.retry')!;
     expect(retry.textContent?.trim()).toBe('Try again');
     // Not before Retry-After has passed.
@@ -286,12 +290,16 @@ describe('IssuesPage', () => {
     const { fixture, root } = await render();
     const options = () =>
       [...root.querySelectorAll('#bulk-target option')].map((o) => o.textContent?.trim());
+    // The bar shows on selection, and a new query clears the selection.
+    await selectAll(root, fixture);
     expect(options()).toEqual(['Resolve', "Won't fix", 'False positive']);
     await TestBed.inject(Router).navigateByUrl('/?status=resolved');
     await settle(fixture);
+    await selectAll(root, fixture);
     expect(options()).toEqual(['Reopen']);
     await TestBed.inject(Router).navigateByUrl('/?status=closed');
     await settle(fixture);
+    await selectAll(root, fixture);
     expect(root.querySelector('#bulk-target')).toBeNull();
     expect(root.querySelector('form.bulk')?.textContent).toContain(
       'Issues with these statuses cannot change status.',
@@ -309,14 +317,16 @@ describe('IssuesPage', () => {
       },
     });
     const { fixture, root } = await render();
-    root.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!.click();
+    await selectAll(root, fixture);
     await chooseTarget(root, fixture);
     root.querySelector<HTMLButtonElement>('form.bulk button[type="submit"]')!.click();
     await settle(fixture);
     expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe(
       '0 issues changed. 2 issues no longer exist or are no longer visible to you.',
     );
-    expect(root.querySelector('form.bulk .label')?.textContent?.trim()).toBe('No issue selected');
+    // Intended change (step 4): nothing stays selected, so the bar goes; the result keeps focus.
+    expect(root.querySelector('form.bulk')).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector('[role="status"]'));
   });
 
   it("names issues the caller's role may not change (FORBIDDEN)", async () => {
@@ -330,13 +340,87 @@ describe('IssuesPage', () => {
       },
     });
     const { fixture, root } = await render();
-    root.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!.click();
+    await selectAll(root, fixture);
     await chooseTarget(root, fixture);
     root.querySelector<HTMLButtonElement>('form.bulk button[type="submit"]')!.click();
     await settle(fixture);
     expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe(
       '0 issues changed. 2 issues cannot be changed with your role in their project.',
     );
+  });
+
+  it('shows the bulk bar only while issues are selected', async () => {
+    const { fixture, root } = await render();
+    expect(root.querySelector('form.bulk')).toBeNull();
+    const row = root.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')!;
+    row.click();
+    await settle(fixture);
+    expect(root.querySelector('form.bulk .label')?.textContent?.trim()).toBe('1 issue selected');
+    row.click();
+    await settle(fixture);
+    expect(root.querySelector('form.bulk')).toBeNull();
+  });
+
+  it('heads the list with the number of matching issues and their severities', async () => {
+    const { root } = await render();
+    expect(root.querySelector('#issues-heading')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Issues 2',
+    );
+    const legend = [...root.querySelectorAll('.dist-legend li')].map((li) =>
+      li.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(legend).toEqual(['High 2']);
+  });
+
+  it('shows when each issue was first seen as the day, the full time in its title', async () => {
+    const { root } = await render();
+    const seen = root.querySelector('tbody tr td:last-child span');
+    expect(seen?.textContent?.trim()).toBe('Sep 15, 2026');
+    expect(seen?.getAttribute('title')).toBe('Sep 15, 2026, 9:00 AM UTC');
+  });
+
+  it('clears a facet group back to its default, offered only while the group is filtered', async () => {
+    await TestBed.inject(Router).navigateByUrl('/?severity=high&status=resolved');
+    const { fixture, root } = await render();
+    const clear = (group: string) =>
+      root.querySelector<HTMLButtonElement>(`[data-group="${group}"] .facet-clear`);
+    expect(clear('quality')).toBeNull();
+    expect(clear('severity')?.getAttribute('aria-label')).toBe('Clear the Severity filter');
+    clear('severity')!.click();
+    await settle(fixture);
+    expect(TestBed.inject(Router).url).toBe('/?status=resolved');
+    clear('status')!.click();
+    await settle(fixture);
+    // Open is the status filter's default: nothing to clear then.
+    expect(TestBed.inject(Router).url).toBe('/');
+    expect(clear('status')).toBeNull();
+  });
+
+  it('collapses and expands a facet group', async () => {
+    const { fixture, root } = await render();
+    const toggle = root.querySelector<HTMLButtonElement>('[data-group="rule"] .facet-toggle')!;
+    const fieldset = root.querySelector<HTMLFieldSetElement>('fieldset[data-facet="rule"]')!;
+    expect(toggle.textContent?.trim()).toBe('Rule');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-controls')).toBe(fieldset.id);
+    toggle.click();
+    await settle(fixture);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(fieldset.hidden).toBe(true);
+    toggle.click();
+    await settle(fixture);
+    expect(fieldset.hidden).toBe(false);
+  });
+
+  it('draws each facet count as a bar scaled to the largest count of its group', async () => {
+    const { root } = await render();
+    const fills = (group: string) =>
+      [...root.querySelectorAll<HTMLElement>(`fieldset[data-facet="${group}"] .facet-fill`)].map(
+        (f) => f.style.width,
+      );
+    expect(fills('severity')).toEqual(['0%', '100%', '0%', '0%', '0%']);
+    // The status filter is active: only its chosen value has a count, so only it has a bar.
+    expect(fills('status')).toEqual(['100%']);
   });
 
   it('offers no selection and no bulk change to a viewer (rbac-audit.md §17)', async () => {
