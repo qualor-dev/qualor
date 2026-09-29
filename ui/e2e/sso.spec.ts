@@ -39,10 +39,11 @@ test('the Single sign-on screen shows a connection and saves a mapping', async (
   await page.getByRole('link', { name: 'Single sign-on' }).click();
   await expect(page).toHaveURL(/\/settings\/ee\/sso$/);
   await expect(page).toHaveTitle('Single sign-on · Qualor');
-  const table = page.locator('#sso-connections');
-  await expect(table.getByRole('row', { name: /Acme SSO/ })).toContainText('Enabled');
-  await expect(table.getByRole('row', { name: /Staging OIDC/ })).toContainText('Disabled');
-  await expect(table.getByRole('row', { name: /Corp SAML/ })).toContainText('SAML');
+  // A panel per connection (step 9), named by the connection.
+  const list = page.locator('#sso-connections');
+  await expect(list.getByRole('region', { name: 'Acme SSO' })).toContainText('Enabled');
+  await expect(list.getByRole('region', { name: 'Staging OIDC' })).toContainText('Disabled');
+  await expect(list.getByRole('region', { name: 'Corp SAML' })).toContainText('SAML');
   // sso.multi: every enabled connection is in effect, and the page counts them against the 10.
   await expect(page.locator('#sso-count')).toHaveText('3 of 10 connections');
   await expect(page.locator('#sso-multi-not-licensed')).toHaveCount(0);
@@ -85,6 +86,38 @@ test('the Single sign-on screen shows a connection and saves a mapping', async (
   await expect(page.getByLabel('ACS URL')).toHaveValue(
     /\/api\/v0\/ee\/sso\/saml\/[0-9a-f-]{36}\/acs$/,
   );
+});
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("each kind of connection's form fits the screen: nothing scrolls sideways", async ({
+    page,
+  }) => {
+    await editConnection(page, 'Acme SSO');
+    await expect(page.getByLabel('Redirect URI')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+    // A long checkbox label wraps beside its box, not under it.
+    const option = page.locator('label', { hasText: 'Also read the userinfo endpoint' });
+    const box = await option.getByRole('checkbox').boundingBox();
+    const words = await option.locator('span').boundingBox();
+    expect(words!.x).toBeGreaterThan(box!.x + box!.width);
+    expect(words!.y).toBeLessThan(box!.y + box!.height);
+    // Group names keep their words: the mappings table scrolls in its panel instead.
+    const mappings = page.locator('#sso-mappings');
+    const long = await mappings.locator('code', { hasText: 'engineering' }).boundingBox();
+    const short = await mappings.locator('code', { hasText: /^qa$/ }).boundingBox();
+    expect(long!.height).toBeLessThanOrEqual(short!.height + 1);
+    await expectAccessible(page);
+
+    await editConnection(page, 'Corp SAML');
+    await expect(page.getByLabel('ACS URL')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+  });
 });
 
 test('the Sign-in screen lists the instance admins and saves', async ({ page }) => {

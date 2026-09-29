@@ -1,0 +1,6 @@
+/* The value takes the room there is, down to a phone's width; Copy stays beside it or wraps below. */
+input {
+  flex: 1 1 18rem;
+  min-width: 0;
+  max-width: 36rem;
+}

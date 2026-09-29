@@ -1,0 +1,137 @@
+/* Single sign-on (spec §7.8): a panel per connection, its form in setting rows, then its panels. */
+.sso-add {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.connection-name {
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.connection-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.connection-meta code,
+.certificates code {
+  overflow-wrap: anywhere;
+}
+.sso-connection.editing {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+/* A definite column: a panel's content never widens the grid past the screen. */
+.sso-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 24px;
+}
+.sso-editor > * {
+  margin: 0;
+}
+.sso-editor .panel-head {
+  padding-bottom: 14px;
+}
+.panel-head h3,
+.setting-text > h4 {
+  margin: 0;
+}
+.setting-text > h4 {
+  margin-bottom: 4px;
+}
+.form-section {
+  margin: 0;
+  padding: 10px 22px;
+  border-block: 1px solid var(--hairline);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 650;
+}
+.form-section + .setting-row {
+  border-top: 0;
+}
+.setting-field .field,
+.secret-state,
+.certificates {
+  margin: 0;
+}
+.setting-field .field > :is(input, textarea) {
+  width: 100%;
+  max-width: 44rem;
+}
+/* A long option wraps beside its box, not under it. */
+.setting-field label.row {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+.setting-field label.row > input {
+  flex: none;
+  margin-top: 3px;
+}
+.sso-claims {
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 12px 16px;
+  max-width: 36rem;
+}
+.certificates {
+  font-size: 13px;
+}
+.sso-check .panel-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 0;
+}
+/* On a phone the table scrolls in its panel rather than breaking group names apart. */
+#sso-mappings {
+  min-width: 34rem;
+}
+#sso-mappings th[scope='row'] {
+  min-width: 10rem;
+}
+.sso-mappings-intro {
+  padding: 0 22px 6px;
+}
+.sso-mappings-intro > :last-child {
+  margin-bottom: 0;
+}
+.sso-mapping-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 16px 22px;
+  border-top: 1px solid var(--hairline);
+}
+.sso-mapping-add > * {
+  margin: 0;
+}
+.sso-mapping-add .field-error {
+  flex-basis: 100%;
+}
+.sso-danger {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 32px;
+  padding: 18px 22px;
+}
+.sso-danger > div {
+  flex: 1 1 24rem;
+}
+.sso-danger h3 {
+  margin: 0 0 4px;
+}
+.sso-danger p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}

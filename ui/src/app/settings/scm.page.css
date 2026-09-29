@@ -1,38 +1,4 @@
-/* GitLab and GitHub (spec §7.8): a panel per connection, its forms in setting rows. */
-.connection-list {
-  display: grid;
-  gap: 16px;
-  margin-bottom: 8px;
-}
-.connection-list > * {
-  margin: 0;
-}
-.connection-head {
-  align-items: flex-start;
-  gap: 12px 24px;
-  padding-bottom: 18px;
-}
-.connection-title {
-  display: grid;
-  flex: 1 1 20rem;
-  gap: 4px;
-  min-width: 0;
-}
-.connection-title > * {
-  margin: 0;
-}
-.connection-url {
-  color: var(--text);
-  font-size: 13.5px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.connection-side {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
+/* GitLab and GitHub (spec §7.8): a panel per connection (global), its forms in setting rows. */
 .connection-body {
   display: grid;
   gap: 12px;

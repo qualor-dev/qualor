@@ -192,24 +192,60 @@ async function click(fixture: { whenStable(): Promise<unknown> }, target: HTMLEl
   await settle(fixture);
 }
 
+/**
+ * Answers the page's confirmation dialog (step 9: it replaces the browser's `confirm()`) with
+ * the button `choice`, and returns the question it asked.
+ */
+async function answer(
+  fixture: { whenStable(): Promise<unknown> },
+  root: HTMLElement,
+  choice: string,
+): Promise<string> {
+  const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+  expect(ask.open).toBe(true);
+  const question = ask.querySelector('#confirm-text')?.textContent?.trim() ?? '';
+  await click(fixture, button(ask, choice));
+  expect(ask.open).toBe(false);
+  return question;
+}
+
+/** A connection's panel in the list (step 9: a panel per connection, not a table row). */
+function panel(root: HTMLElement, id: string): HTMLElement | null {
+  return root.querySelector<HTMLElement>(`#sso-connections section.panel[data-key="${id}"]`);
+}
+
 async function openRow(fixture: { whenStable(): Promise<unknown> }, root: HTMLElement, id: string) {
-  await click(fixture, root.querySelector<HTMLButtonElement>(`tr[data-key="${id}"] button`)!);
+  await click(fixture, panel(root, id)!.querySelector<HTMLButtonElement>('button')!);
 }
 
 describe('SsoPage (sso-scim.md §4, §9, §18)', () => {
-  it('lists the connections with their protocol and whether they are enabled', async () => {
+  it('shows each connection as a panel with its protocol, its identity provider and its state', async () => {
     setup({ connections: [oidc(), saml({ configValid: false })] });
     const { root } = await render();
-    const rows = [...root.querySelectorAll('#sso-connections tbody tr')].map((r) =>
-      r.textContent?.replace(/\s+/g, ' ').trim(),
-    );
-    expect(rows[0]).toContain('Acme SSO');
-    expect(rows[0]).toContain('OpenID Connect');
-    expect(rows[0]).toContain('Enabled');
-    expect(rows[1]).toContain('Corp SAML');
-    expect(rows[1]).toContain('SAML');
-    expect(rows[1]).toContain('Disabled');
-    expect(rows[1]).toContain('Configuration not valid');
+    const panels = [...root.querySelectorAll<HTMLElement>('#sso-connections section.panel')];
+    const text = panels.map((p) => p.textContent?.replace(/\s+/g, ' ').trim());
+    expect(panels.map((p) => p.dataset['key'])).toEqual([OIDC_ID, SAML_ID]);
+    const first = panels[0]!;
+    expect(first.getAttribute('aria-labelledby')).toBe(first.querySelector('h4')?.id);
+    expect(first.querySelector('h4')?.textContent?.trim()).toBe('Acme SSO');
+    expect(text[0]).toContain('OpenID Connect');
+    expect(text[0]).toContain('https://idp.example.com/realms/acme');
+    expect(text[0]).toContain('Enabled');
+    expect(text[1]).toContain('Corp SAML');
+    expect(text[1]).toContain('SAML');
+    expect(text[1]).toContain('https://idp.corp.example/saml');
+    expect(text[1]).toContain('Disabled');
+    expect(text[1]).toContain('Configuration not valid');
+    // The state is a word with an icon, never a colour alone.
+    expect(first.querySelector('.connection-state q-icon')).not.toBeNull();
+  });
+
+  it('says so, with the ways to add one, when there is no connection', async () => {
+    setup({ connections: [] });
+    const { root } = await render();
+    expect(root.querySelector('#sso-connections')?.textContent).toContain('No connections yet.');
+    expect(button(root, 'Add an OpenID Connect connection')).toBeDefined();
+    expect(button(root, 'Add a SAML connection')).toBeDefined();
   });
 
   it('asks nothing of the enterprise API while sso is inactive', async () => {
@@ -433,7 +469,7 @@ describe('SsoPage (sso-scim.md §4, §9, §18)', () => {
       status: 422,
       body: {
         ...problem(422, 'VALIDATION_FAILED', [
-          { path: 'saml.metadataUrl', message: 'The metadata URL could not be read: idp.corp' },
+          { path: 'saml.metadataUrl', message: 'The metadata URL could not be read: 10.0.0.7' },
         ]),
         reason: 'fetch.not_public',
       },
@@ -444,7 +480,8 @@ describe('SsoPage (sso-scim.md §4, §9, §18)', () => {
     expect(root.querySelector('#sso-metadata-url-error')?.textContent).toContain(
       'The host is not public. List it in QUALOR_SSO_INTERNAL_HOSTS',
     );
-    expect(root.textContent).not.toContain('idp.corp');
+    // The server's own words (with the address it refused) are never shown.
+    expect(root.textContent).not.toContain('10.0.0.7');
   });
 
   it('Test shows the endpoints Qualor will contact', async () => {
@@ -563,11 +600,12 @@ describe('SsoPage (sso-scim.md §4, §9, §18)', () => {
       ],
     });
     server.on('DELETE', `${CONNECTIONS}/${OIDC_ID}`, { status: 204 });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
     await openRow(fixture, root, OIDC_ID);
     await click(fixture, button(root, 'Delete'));
-    const question = confirm.mock.calls[0]?.[0] ?? '';
+    const question = await answer(fixture, root, 'Delete');
+    expect(confirm).not.toHaveBeenCalled();
     expect(question).toContain('Delete Acme SSO?');
     expect(question).toContain('1 group mappings');
     expect(question).toContain('1 active SCIM tokens');
@@ -582,14 +620,13 @@ describe('SsoPage (sso-scim.md §4, §9, §18)', () => {
       status: 409,
       body: problem(409, 'LAST_SSO_CONNECTION'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     await openRow(fixture, root, OIDC_ID);
     await click(fixture, button(root, 'Delete'));
+    await answer(fixture, root, 'Delete');
     const alert = root.querySelector('[role="alert"]')?.textContent ?? '';
     expect(alert).toContain('This is the last enabled connection');
     expect(alert).toContain('Enable another connection');
-    confirm.mockRestore();
   });
 
   it('does not advise enabling another connection without sso.multi (409 LAST_SSO_CONNECTION on Business)', async () => {
@@ -598,25 +635,23 @@ describe('SsoPage (sso-scim.md §4, §9, §18)', () => {
       status: 409,
       body: problem(409, 'LAST_SSO_CONNECTION'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     await openRow(fixture, root, OIDC_ID);
     await click(fixture, button(root, 'Delete'));
+    await answer(fixture, root, 'Delete');
     const alert = root.querySelector('[role="alert"]')?.textContent ?? '';
     expect(alert).toContain('This is the last enabled connection');
     expect(alert).toContain('Set password sign-in back to everyone first (Settings → Sign-in).');
     expect(alert).not.toContain('Enable another connection');
-    confirm.mockRestore();
   });
 
-  it('deletes nothing when the confirmation is declined', async () => {
+  it('deletes nothing when the confirmation is cancelled', async () => {
     const server = setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, root } = await render();
     await openRow(fixture, root, OIDC_ID);
     await click(fixture, button(root, 'Delete'));
+    await answer(fixture, root, 'Cancel');
     expect(server.requestsTo('DELETE', `${CONNECTIONS}/${OIDC_ID}`)).toHaveLength(0);
-    confirm.mockRestore();
   });
 
   it("shows the server's 422 on the field it names", async () => {
@@ -743,8 +778,7 @@ describe('SsoPage without sso.multi, and with it (sso-scim.md §4.4, §18)', () 
   it('marks an enabled connection that is not in effect', async () => {
     setup({ connections: [oidc(), saml({ enabled: true, inEffect: false })] });
     const { root } = await render();
-    const row = (id: string) =>
-      root.querySelector(`tr[data-key="${id}"]`)?.textContent?.replace(/\s+/g, ' ') ?? '';
+    const row = (id: string) => panel(root, id)?.textContent?.replace(/\s+/g, ' ') ?? '';
     expect(row(SAML_ID)).toContain('Enabled');
     expect(row(SAML_ID)).toContain('Not in effect');
     expect(row(OIDC_ID)).not.toContain('Not in effect');
