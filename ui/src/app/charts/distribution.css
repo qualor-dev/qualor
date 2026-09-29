@@ -1,0 +1,58 @@
+:host {
+  display: block;
+}
+.dist-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  margin: 2px 0 16px;
+}
+.dist-bar span {
+  flex: 1 1 0;
+  border-radius: 3px;
+  background: var(--tone);
+}
+.dist-rows {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) 28px 88px;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 0;
+  font-size: 13.5px;
+}
+.dist-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.dist-label {
+  overflow-wrap: anywhere;
+}
+.dist-count {
+  text-align: right;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.dist-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.dist-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--tone);
+}
+.dist-zero {
+  color: var(--text-muted);
+}

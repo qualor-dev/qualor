@@ -1,0 +1,19 @@
+@if (bar() && filled().length > 0) {
+  <div class="dist-bar" aria-hidden="true">
+    @for (item of filled(); track item.key) {
+      <span class="tone-{{ item.tone }}" [style.flex-grow]="item.value"></span>
+    }
+  </div>
+}
+<ul class="dist-rows">
+  @for (item of items(); track item.key) {
+    <li class="tone-{{ item.tone }}" [class.dist-zero]="item.value === 0">
+      <span class="dist-dot" aria-hidden="true"></span>
+      <span class="dist-label">{{ item.label }}</span
+      >&ngsp;<span class="dist-count">{{ item.value }}</span>
+      <span class="dist-track" aria-hidden="true"
+        ><span class="dist-fill" [style.width.%]="width(item.value)"></span
+      ></span>
+    </li>
+  }
+</ul>

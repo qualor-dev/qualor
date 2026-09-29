@@ -1,0 +1,4 @@
+<span class="rating-letter" [attr.data-rating]="letter()">{{ letter() ?? '–' }}</span>
+@if (label()) {
+  <span class="rating-label">{{ label() }}</span>
+}

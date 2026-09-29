@@ -1,0 +1,14 @@
+<svg
+  [attr.width]="width()"
+  [attr.height]="height()"
+  [attr.viewBox]="viewBox()"
+  aria-hidden="true"
+  focusable="false"
+>
+  @if (s().points) {
+    <polyline class="spark-line" [attr.points]="s().points" />
+  }
+  @if (s().last; as last) {
+    <circle class="spark-end" [attr.cx]="last.x" [attr.cy]="last.y" r="3.5" />
+  }
+</svg>

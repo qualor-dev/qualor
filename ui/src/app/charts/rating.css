@@ -1,0 +1,37 @@
+:host {
+  display: inline-grid;
+  justify-items: start;
+  gap: 6px;
+}
+.rating-letter {
+  --r: var(--border-strong);
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  font-size: 17px;
+  font-weight: 750;
+  color: var(--r);
+  background: color-mix(in srgb, var(--r) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px var(--r);
+}
+.rating-letter[data-rating='A'] {
+  --r: var(--rating-a);
+}
+.rating-letter[data-rating='B'] {
+  --r: var(--rating-b);
+}
+.rating-letter[data-rating='C'] {
+  --r: var(--rating-c);
+}
+.rating-letter[data-rating='D'] {
+  --r: var(--rating-d);
+}
+.rating-letter[data-rating='E'] {
+  --r: var(--rating-e);
+}
+.rating-label {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
