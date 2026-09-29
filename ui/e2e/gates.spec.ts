@@ -15,17 +15,26 @@ test('an admin edits the conditions of a custom gate', async ({ page }) => {
   await page.goto('/gates');
   await page.getByRole('link', { name: 'Strict' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Strict');
-  await page.getByLabel('Metric').selectOption({ label: 'Duplicated lines (%)' });
-  await expect(page.getByLabel('Fails when the value')).toHaveValue('gt');
+  // The add row closes the conditions panel; each condition's own fields are "… of <metric>".
+  await page.getByLabel('Metric', { exact: true }).selectOption({ label: 'Duplicated lines (%)' });
+  await expect(page.getByLabel('Fails when the value', { exact: true })).toHaveValue('gt');
   // A percentage above 100 is refused before the server is asked.
-  await page.getByLabel('Threshold').fill('150');
+  await page.getByLabel('Threshold', { exact: true }).fill('150');
   await page.getByRole('button', { name: 'Add condition' }).click();
   await expect(page.getByText('Enter a number from 0 to 100.')).toBeVisible();
-  await expect(page.getByLabel('Threshold')).toHaveAttribute('aria-invalid', 'true');
-  await page.getByLabel('Threshold').fill('5');
+  await expect(page.getByLabel('Threshold', { exact: true })).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  );
+  await page.getByLabel('Threshold', { exact: true }).fill('5');
   await page.getByRole('button', { name: 'Add condition' }).click();
-  const row = page.getByRole('row', { name: /^Duplicated lines \(%\) is greater than 5 %/ });
-  await expect(row).toBeVisible();
+  // "Duplicated lines (%) on new code" has a row too: the exact labels tell them apart.
+  const threshold = page.getByLabel('Threshold of Duplicated lines (%)', { exact: true });
+  await expect(threshold).toHaveValue('5');
+  await expect(page.getByLabel('Operator of Duplicated lines (%)', { exact: true })).toHaveValue(
+    'gt',
+  );
+  const row = page.getByRole('row').filter({ has: threshold });
   await expect(page.getByRole('status')).toHaveText(
     'Condition added: Duplicated lines (%) is greater than 5 %.',
   );
@@ -34,6 +43,7 @@ test('an admin edits the conditions of a custom gate', async ({ page }) => {
   await row.getByRole('button', { name: 'Remove' }).press('Enter');
   await expect(row).toHaveCount(0);
   await expect(page.getByRole('status')).toHaveText('Condition removed: Duplicated lines (%).');
+  // (The in-place edit and its Save are covered by the unit tests of gates.spec.ts.)
   await expect(
     page
       .getByRole('row', { name: /^Coverage on new code/ })
@@ -64,7 +74,10 @@ test('an admin makes a new gate the default, then deletes it after a confirmatio
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Release candidate');
   await expect(page.getByText('No conditions: this gate always passes.')).toBeVisible();
 
-  await page.getByRole('link', { name: 'All quality gates' }).click();
+  await page
+    .getByRole('navigation', { name: 'Breadcrumb' })
+    .getByRole('link', { name: 'Quality gates' })
+    .click();
   const created = page.getByRole('row', { name: /^Release candidate/ });
   // Keyboard only: "Make default" disappears from the row, so focus moves to the row's Copy.
   await created.getByRole('button', { name: 'Make default' }).press('Enter');
