@@ -115,7 +115,7 @@ describe('ProjectPage', () => {
     expect(root.textContent).not.toContain('read-only');
   });
 
-  it('shows the main branch gate, the branch, the last analysis and the open issues on the band', async () => {
+  it('shows the main branch gate, the branch and the open issues on the band', async () => {
     server.on('GET', `/api/v0/projects/${ID}`, {
       body: {
         id: ID,
@@ -145,7 +145,6 @@ describe('ProjectPage', () => {
     );
     expect(root.querySelector('q-gate-badge')?.textContent?.trim()).toBe('Failed');
     expect(root.querySelector('.branch-chip')?.textContent?.trim()).toBe('main');
-    expect(root.textContent).toContain('Analyzed Sep 15, 2026, 9:00 AM UTC');
     expect(root.querySelector('.tab-count')?.textContent?.trim()).toBe('7');
     expect(root.querySelector('.tab-count')?.getAttribute('aria-hidden')).toBe('true');
   });

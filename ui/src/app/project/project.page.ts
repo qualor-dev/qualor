@@ -2,7 +2,6 @@ import { Component, computed, effect, inject, input } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ApiError, problemMessage } from '../api/errors';
 import { SessionStore } from '../auth/session';
-import { DateTimePipe } from '../shared/date-time.pipe';
 import { GateBadge } from '../shared/gate-badge';
 import { Icon } from '../shared/icon';
 import { type Crumb, PageHeader } from '../shared/page-header';
@@ -11,14 +10,14 @@ import { CurrentProject } from './current-project';
 
 /**
  * A project's frame on the ink page band (spec §7.1): its name with the main branch's gate, the
- * key, the main branch and its last analysis, and tabs for the overview, branches and issues, plus
+ * key and the main branch, and tabs for the overview, branches and issues, plus
  * Access for organisation admins, in every edition. The project (and the caller's `permissions` on
  * it, which the tabs use to hide what the caller may not do, rbac-audit.md §17) is read through
  * `CurrentProject`.
  */
 @Component({
   selector: 'q-project-page',
-  imports: [RouterLink, RouterLinkActive, RouterOutlet, DateTimePipe, GateBadge, Icon, PageHeader],
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, GateBadge, Icon, PageHeader],
   templateUrl: './project.page.html',
   host: { class: 'bleed' },
 })

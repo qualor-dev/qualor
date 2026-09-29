@@ -12,8 +12,23 @@ test('the project overview shows the failed gate, measures and trends', async ({
   await expect(
     gate.getByRole('row', { name: /Issues on new code is greater than 0/ }),
   ).toContainText('Failed');
-  await expect(page.getByRole('img', { name: /^Coverage went from 60\.8 %/ })).toBeVisible();
-  await expect(page.getByRole('img', { name: /^Lines of code went from/ })).toBeVisible();
+  // The history starts in June (the seed's earlier analyses) and switches between metrics.
+  const history = page.getByRole('region', { name: 'History' });
+  await expect(
+    history.getByRole('img', {
+      name: /^Issues went from \d+ on Jun 2, 2026 to \d+ on Sep 15, 2026$/,
+    }),
+  ).toBeVisible();
+  await history.getByRole('button', { name: 'Coverage' }).click();
+  await expect(history.getByRole('button', { name: 'Coverage' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(
+    history.getByRole('img', { name: /^Coverage went from [\d.]+ % on Jun 2, 2026/ }),
+  ).toBeVisible();
+  await history.getByRole('button', { name: 'Lines of code' }).click();
+  await expect(history.getByRole('img', { name: /^Lines of code went from/ })).toBeVisible();
   await expectAccessible(page);
 });
 

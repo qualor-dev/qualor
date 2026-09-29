@@ -268,13 +268,16 @@ export class BranchOverviewPage {
     const done = list.filter((a) => a.status === 'succeeded');
     return done.slice(0, RECENT).map((a, i) => {
       const older = done[i + 1];
+      const count = issues.get(a.id) ?? null;
+      const before = older ? (issues.get(older.id) ?? null) : null;
       return {
         id: a.id,
         date: a.analysisDate,
         revision: a.revision,
         gate: a.gateStatus,
-        issues: issues.get(a.id) ?? null,
-        issuesBefore: older ? (issues.get(older.id) ?? null) : null,
+        issues: count,
+        // A row shows a change only: "No change" on every quiet analysis is noise.
+        issuesBefore: before === count ? null : before,
         coverage: coverage.get(a.id) ?? null,
       };
     });

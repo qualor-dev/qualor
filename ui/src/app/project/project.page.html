@@ -18,13 +18,6 @@
       <a class="branch-chip" routerLink="branches"
         ><q-icon name="branch" />{{ p.mainBranchName }}</a
       >
-      @if (p.mainBranch?.lastAnalyzedAt; as at) {
-        <span
-          ><q-icon name="clock" /><ng-container i18n="@@project.analyzedAt"
-            >Analyzed {{ at | dateTime }}</ng-container
-          ></span
-        >
-      }
     </p>
     <nav pageTabs class="tabs" aria-label="Project" i18n-aria-label="@@project.tabs">
       <a

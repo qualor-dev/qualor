@@ -170,6 +170,7 @@
           [series]="historySeries()"
           [metric]="historyMetric()"
           [stacked]="view() === 'severity'"
+          [height]="310"
         />
       </div>
     </section>
@@ -207,40 +208,42 @@
       @if (recentError(); as message) {
         <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
       } @else {
-        <table>
-          <thead>
-            <tr>
-              <th scope="col" i18n="@@overview.recent.date">Date</th>
-              <th scope="col" i18n="@@overview.recent.revision">Revision</th>
-              <th scope="col" i18n="@@overview.recent.gate">Quality gate</th>
-              <th scope="col" class="num">{{ names.issues }}</th>
-              <th scope="col" class="num">{{ names.coverage }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (r of recent(); track r.id) {
+        <div class="panel-scroll">
+          <table>
+            <thead>
               <tr>
-                <td class="nowrap">{{ r.date | dateTime }}</td>
-                <td>
-                  <code class="chip">{{ r.revision | slice: 0 : 8 }}</code>
-                </td>
-                <td><q-gate-badge [status]="r.gate" /></td>
-                <td class="num">
-                  {{ r.issues | measure: 'issues' }}&ngsp;<q-delta
-                    metric="issues"
-                    [current]="r.issues"
-                    [previous]="r.issuesBefore"
-                  />
-                </td>
-                <td class="num">{{ r.coverage | measure: 'coverage' }}</td>
+                <th scope="col" i18n="@@overview.recent.date">Date</th>
+                <th scope="col" i18n="@@overview.recent.revision">Revision</th>
+                <th scope="col" i18n="@@overview.recent.gate">Quality gate</th>
+                <th scope="col" class="num">{{ names.issues }}</th>
+                <th scope="col" class="num">{{ names.coverage }}</th>
               </tr>
-            } @empty {
-              <tr>
-                <td colspan="5" class="muted" i18n="@@overview.recent.none">No analysis yet.</td>
-              </tr>
-            }
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              @for (r of recent(); track r.id) {
+                <tr>
+                  <td class="nowrap">{{ r.date | dateTime }}</td>
+                  <td>
+                    <code class="chip">{{ r.revision | slice: 0 : 8 }}</code>
+                  </td>
+                  <td><q-gate-badge [status]="r.gate" /></td>
+                  <td class="num">
+                    {{ r.issues | measure: 'issues' }}&ngsp;<q-delta
+                      metric="issues"
+                      [current]="r.issues"
+                      [previous]="r.issuesBefore"
+                    />
+                  </td>
+                  <td class="num">{{ r.coverage | measure: 'coverage' }}</td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="5" class="muted" i18n="@@overview.recent.none">No analysis yet.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
       }
     </section>
 
