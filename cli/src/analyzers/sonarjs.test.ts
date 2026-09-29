@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { BUILTIN_EXCLUDES } from '@qualor/shared';
+import { BUILTIN_EXCLUDES, parseConfig } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import {
   fakeContext,
@@ -8,8 +8,13 @@ import {
   scanWithRecordedSarif,
   WORK,
 } from '../../test/analyzers';
-import { createLogger } from '../log';
+import { useTempDirs } from '../../test/tmp';
+import type { ScopeFile } from '../discovery/discover';
+import { createLogger, silentLogger } from '../log';
 import { logSonarjsSummary, sonarjsAnalyzer } from './sonarjs';
+import { runAnalyzers } from './runner';
+
+const tmp = useTempDirs();
 
 /** A placeholder node command: `prepare()` only ever returns it as `run.command`, never runs it. */
 const NODE = path.join(path.dirname(ROOT), 'bin', 'node');
@@ -28,9 +33,55 @@ function indexOfSubsequence(args: readonly string[], seq: readonly string[]): nu
 }
 
 describe('sonarjsAnalyzer.prepare', () => {
-  it('is unavailable without /opt/qualor/sonarjs', async () => {
+  // Fix round 1 (controller ruling 12): a missing pass is a normal, image-bundled resource
+  // absent on a plain host — `skip`, not `unavailable`, like a missing Trivy database
+  // (trivy.ts) or Semgrep's missing `qualor-default` rules (semgrep.ts). `unavailable` would
+  // make ruling G6 count the engine incomplete (dropping the Code Quality file and failing the
+  // SAST scan) on every host run of a JS/TS project outside the qualor/scanner image.
+  it('is skipped, not unavailable, without /opt/qualor/sonarjs', async () => {
     const p = await sonarjsAnalyzer.prepare(ctx({ env: { QUALOR_SONARJS_DIR: '/nonexistent' } }));
-    expect(p).toEqual({ unavailable: 'the sonarjs pass is not installed (qualor/scanner image)' });
+    expect(p).toEqual({ skip: 'the sonarjs pass is not installed (qualor/scanner image)' });
+  });
+
+  it('still fails (not merely skips) under enabled: true when the pass is not installed', async () => {
+    const root = tmp();
+    const config = parseConfig({ version: 1, analyzers: { sonarjs: { enabled: true } } });
+    const [capture] = await runAnalyzers([sonarjsAnalyzer], {
+      root,
+      config,
+      files: [],
+      log: silentLogger,
+      env: { QUALOR_SONARJS_DIR: '/nonexistent' },
+    });
+    expect(capture).toMatchObject({
+      status: 'failed',
+      reason: 'the sonarjs pass is not installed (qualor/scanner image)',
+    });
+    expect(capture?.unavailable ?? false).toBe(false);
+  });
+
+  it('leaves the engine skipped and NOT unavailable under enabled: auto, a host-style context without the pass (ruling G6 completeness)', async () => {
+    const root = tmp();
+    const config = parseConfig({ version: 1 }); // analyzers.sonarjs.enabled defaults to 'auto'
+    const files: ScopeFile[] = [
+      {
+        path: 'src/a.ts',
+        absPath: path.join(root, 'src', 'a.ts'),
+        language: 'typescript',
+        grammar: 'typescript',
+        kind: 'main',
+        size: 1,
+      },
+    ];
+    const [capture] = await runAnalyzers([sonarjsAnalyzer], {
+      root,
+      config,
+      files,
+      log: silentLogger,
+      env: { QUALOR_SONARJS_DIR: '/nonexistent' },
+    });
+    expect(capture).toMatchObject({ engineId: 'sonarjs', status: 'skipped', required: false });
+    expect(capture?.unavailable ?? false).toBe(false);
   });
 
   it("runs Qualor's node on run.mjs with the root, the excludes and the type-checking mode", async () => {

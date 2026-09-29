@@ -62,9 +62,13 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   if (!path.isAbsolute(dir) || isInside(ctx.root, dir)) {
     return { unavailable: 'QUALOR_SONARJS_DIR must be an absolute path outside the repository' };
   }
+  // Unlike an invalid QUALOR_SONARJS_DIR (below) or a missing `node`, a missing pass is not a
+  // configuration problem: it is a normal, image-bundled resource absent on a plain host, the same
+  // as Trivy's vulnerability database (trivy.ts) or Semgrep's `qualor-default` rules (semgrep.ts).
+  // `skip`, not `unavailable`, so ruling G6 does not count the engine incomplete for it.
   const script = path.join(dir, 'run.mjs');
   if (!existsSync(script)) {
-    return { unavailable: 'the sonarjs pass is not installed (qualor/scanner image)' };
+    return { skip: 'the sonarjs pass is not installed (qualor/scanner image)' };
   }
   const node = ctx.resolveBinary('node');
   if (node === null) return { unavailable: 'the sonarjs pass needs node on PATH' };
