@@ -47,7 +47,7 @@ describe('reading SonarQube (import-sonarqube.md §4.4, §5)', () => {
     const { client } = await connect();
     const profiles = await fetchProfiles(client);
     const ts = profiles.find((p) => p.key === 'p-ts')!;
-    expect(ts.active.map((r) => r.key).sort()).toEqual(['typescript:S1440', 'typescript:S3776']);
+    expect(ts.active.map((r) => r.key).sort()).toEqual(['typescript:S1440', 'typescript:S9999']);
     expect(ts.active.find((r) => r.key === 'typescript:S1440')).toMatchObject({
       defaultSeverity: 'MAJOR',
       severity: 'CRITICAL',
@@ -67,7 +67,7 @@ describe('reading SonarQube (import-sonarqube.md §4.4, §5)', () => {
     fake = await startFakeSonarQube(data);
     const { client } = await connect();
     const ts = (await fetchProfiles(client)).find((p) => p.key === 'p-ts')!;
-    expect(ts.active.map((r) => r.key)).toEqual(['typescript:S3776']);
+    expect(ts.active.map((r) => r.key)).toEqual(['typescript:S9999']);
     expect(ts.complete).toBe(false);
     expect(client.warnings.map((w) => w.message).join('\n')).toMatch(
       /1 active rules whose activation/,

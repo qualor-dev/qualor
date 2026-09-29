@@ -1,11 +1,23 @@
 import { z } from 'zod';
 import data from '../../../rules/sonarqube.json' with { type: 'json' };
+import sonaranalyzerCsharpKeys from '../../../rules/sonaranalyzer-csharp-keys.json' with { type: 'json' };
+import sonarjsKeys from '../../../rules/sonarjs-keys.json' with { type: 'json' };
 import {
   BUILTIN_ENGINES,
   LANGUAGES,
   type BuiltinEngine,
   type Language,
 } from '../../report/taxonomy';
+
+/**
+ * Spec §6.2, §6.4 ("Keys files"): the bare rule ids a repository row's `keysFile` names, loaded
+ * with the same static-import style `sonarqube.json` itself uses so the Bun-compiled CLI binary
+ * bundles them (no runtime fs read). Each file is a sorted JSON array of `S####` ids only.
+ */
+const KEYS_FILES: Readonly<Record<string, readonly string[]>> = {
+  'sonaranalyzer-csharp-keys.json': sonaranalyzerCsharpKeys,
+  'sonarjs-keys.json': sonarjsKeys,
+};
 
 export type ProfileLanguage = Exclude<Language, 'other'>;
 
@@ -43,7 +55,15 @@ const tableSchema = z.strictObject({
   ),
   aliases: z.record(z.string().regex(REPOSITORY), z.string().regex(REPOSITORY)),
   repositories: z.array(
-    z.strictObject({ repository: z.string().regex(REPOSITORY), engine, reason }),
+    z.strictObject({
+      repository: z.string().regex(REPOSITORY),
+      engine,
+      reason,
+      keysFile: z
+        .string()
+        .regex(/^[a-z0-9-]+-keys\.json$/)
+        .optional(),
+    }),
   ),
   rules: z.array(
     z.strictObject({
@@ -65,7 +85,11 @@ export function engineOf(ruleKey: string): string {
 export class SonarMapping {
   readonly #languages: ReadonlyMap<string, SonarLanguage>;
   readonly #aliases: ReadonlyMap<string, string>;
-  readonly #repositories: ReadonlyMap<string, BuiltinEngine>;
+  /** A repository's engine and, for a row with `keysFile`, the set of rule ids it actually covers. */
+  readonly #repositories: ReadonlyMap<
+    string,
+    { engine: BuiltinEngine; keys: ReadonlySet<string> | null }
+  >;
   readonly #rules: ReadonlyMap<string, readonly RuleTarget[]>;
   /** Ruling S14: each Qualor target of the table's components → its component's key. */
   readonly #componentOf: ReadonlyMap<string, string>;
@@ -77,7 +101,17 @@ export class SonarMapping {
   constructor(table: z.infer<typeof tableSchema>) {
     this.#languages = new Map(Object.entries(table.languages));
     this.#aliases = new Map(Object.entries(table.aliases));
-    this.#repositories = new Map(table.repositories.map((r) => [r.repository, r.engine]));
+    this.#repositories = new Map(
+      table.repositories.map((r) => {
+        let keys: ReadonlySet<string> | null = null;
+        if (r.keysFile !== undefined) {
+          const list = KEYS_FILES[r.keysFile];
+          if (list === undefined) throw new Error(`sonarqube.json: unknown keysFile ${r.keysFile}`);
+          keys = new Set(list);
+        }
+        return [r.repository, { engine: r.engine, keys }] as const;
+      }),
+    );
     const rules = new Map<string, RuleTarget[]>();
     for (const entry of table.rules) {
       for (const key of entry.sonar) {
@@ -160,9 +194,14 @@ export class SonarMapping {
     const ruleId = sonarKey.slice(colon + 1);
     const canonical = `${this.#aliases.get(repository) ?? repository}:${ruleId}`;
     const out: RuleTarget[] = [...(this.#rules.get(canonical) ?? [])];
-    const engineId = this.#repositories.get(repository);
-    if (engineId !== undefined && ruleId.length > 0 && ruleId.length <= MAX_RULE_ID) {
-      const key = `${engineId}:${ruleId}`;
+    const repo = this.#repositories.get(repository);
+    if (
+      repo !== undefined &&
+      ruleId.length > 0 &&
+      ruleId.length <= MAX_RULE_ID &&
+      (repo.keys === null || repo.keys.has(ruleId))
+    ) {
+      const key = `${repo.engine}:${ruleId}`;
       if (!out.some((t) => t.key === key)) {
         out.push({ key, relation: 'equivalent', reviewed: true, source: 'repository' });
       }
@@ -191,8 +230,8 @@ export class SonarMapping {
       const e = engineOf(t);
       const id = t.slice(e.length + 1);
       if (e === '' || id.length === 0) continue;
-      for (const [repository, engineId] of this.#repositories) {
-        if (engineId === e) out.add(`${repository}:${id}`);
+      for (const [repository, repo] of this.#repositories) {
+        if (repo.engine === e) out.add(`${repository}:${id}`);
       }
     }
     // Every key listed maps to one of the wanted targets (a repository key also through the table).
@@ -236,8 +275,8 @@ export class SonarMapping {
       const e = engineOf(t);
       const id = t.slice(e.length + 1);
       if (e === '' || id.length === 0 || id.length > MAX_RULE_ID) continue;
-      for (const [repository, engineId] of this.#repositories) {
-        if (engineId === e) out.add(`${repository}:${id}`);
+      for (const [repository, repo] of this.#repositories) {
+        if (repo.engine === e) out.add(`${repository}:${id}`);
       }
     }
     return [...out].filter((k) => this.component(k) === key).sort();

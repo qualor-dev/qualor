@@ -7,14 +7,33 @@ const table = (patch: Record<string, unknown>) =>
 
 describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
   it('loads the shipped table', () => {
-    expect(SONAR_MAPPING.language('ts')).toEqual({ language: 'typescript', engines: ['eslint'] });
+    expect(SONAR_MAPPING.language('ts')).toEqual({
+      language: 'typescript',
+      engines: ['eslint', 'sonarjs'],
+    });
     expect(SONAR_MAPPING.language('java')?.engines).toEqual(['pmd', 'spotbugs']);
   });
 
-  it('knows no language it does not list: C# profiles stay unsupported, csharpsquid is unmapped', () => {
+  it('knows no language it does not list', () => {
     expect(SONAR_MAPPING.language('py')).toBeNull();
-    expect(SONAR_MAPPING.language('cs')).toBeNull();
-    expect(SONAR_MAPPING.targets('csharpsquid:S1481')).toEqual([]);
+  });
+
+  it('maps csharpsquid rules the bundled SonarAnalyzer has to roslyn, one to one', () => {
+    expect(SONAR_MAPPING.language('cs')).toEqual({ language: 'csharp', engines: ['roslyn'] });
+    expect(SONAR_MAPPING.targets('csharpsquid:S1481')).toEqual([
+      { key: 'roslyn:S1481', relation: 'equivalent', reviewed: true, source: 'repository' },
+    ]);
+    expect(SONAR_MAPPING.targets('csharpsquid:S9999')).toEqual([]); // not in 9.32
+  });
+
+  it('maps javascript and typescript rules sonarjs 2.0.4 has to sonarjs, and nothing else', () => {
+    expect(SONAR_MAPPING.targets('typescript:S1192')).toContainEqual({
+      key: 'sonarjs:S1192',
+      relation: 'equivalent',
+      reviewed: true,
+      source: 'repository',
+    });
+    expect(SONAR_MAPPING.targets('javascript:S1440').map((t) => t.key)).toEqual(['eslint:eqeqeq']); // not in the plugin
   });
 
   it('maps external_roslyn to the roslyn engine by the analyzer id, for issue statuses (§6.1)', () => {
@@ -49,8 +68,11 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
   });
 
   it('maps curated rules with their relation and review flag, and the squid alias', () => {
+    // S3504 is both curated (eslint:no-var) and, since Phase 8, a real sonarjs key: the union of
+    // both sources (§6.2).
     expect(SONAR_MAPPING.targets('typescript:S3504')).toEqual([
       { key: 'eslint:no-var', relation: 'equivalent', reviewed: false, source: 'table' },
+      { key: 'sonarjs:S3504', relation: 'equivalent', reviewed: true, source: 'repository' },
     ]);
     expect(SONAR_MAPPING.targets('squid:S1481')).toEqual(SONAR_MAPPING.targets('java:S1481'));
     expect(SONAR_MAPPING.targets('java:S4973').map((t) => t.relation)).toEqual([
@@ -61,7 +83,8 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
   });
 
   it('has no target for an unmapped rule or a key without a repository', () => {
-    expect(SONAR_MAPPING.targets('typescript:S3776')).toEqual([]);
+    // S9999 is in neither the curated table nor the bundled sonarjs plugin.
+    expect(SONAR_MAPPING.targets('typescript:S9999')).toEqual([]);
     expect(SONAR_MAPPING.targets('no-colon')).toEqual([]);
     expect(SONAR_MAPPING.targets(`external_eslint_repo:${'x'.repeat(513)}`)).toEqual([]);
   });
@@ -92,11 +115,14 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
   });
 
   it('maps S1186 per language: the TypeScript profile gets only the typescript-eslint rule', () => {
+    // S1186 is also a real sonarjs key (Phase 8), shared by both languages' repository rows.
     expect(SONAR_MAPPING.targets('javascript:S1186').map((t) => t.key)).toEqual([
       'eslint:no-empty-function',
+      'sonarjs:S1186',
     ]);
     expect(SONAR_MAPPING.targets('typescript:S1186').map((t) => t.key)).toEqual([
       'eslint:@typescript-eslint/no-empty-function',
+      'sonarjs:S1186',
     ]);
   });
 
@@ -122,15 +148,17 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     );
   });
 
-  /** The SonarQube repositories of the curated table, by the SonarQube language they analyse. */
+  /** The SonarQube repositories of the curated table and the analyser-owned rows, by the
+   * SonarQube language they analyse. */
   const REPOSITORY_LANGUAGE: Record<string, string> = {
     javascript: 'js',
     typescript: 'ts',
     java: 'java',
     squid: 'java',
+    csharpsquid: 'cs',
   };
 
-  it("keeps every curated target to an engine of its SonarQube rule's language", () => {
+  it("keeps every curated target, and every repository row's engine, to an engine of its SonarQube rule's language", () => {
     for (const entry of raw.rules) {
       for (const sonar of entry.sonar) {
         const language = REPOSITORY_LANGUAGE[engineOf(sonar)];
@@ -140,6 +168,12 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
           expect(engines as readonly string[], `${sonar} -> ${q}`).toContain(engineOf(q));
         }
       }
+    }
+    for (const row of raw.repositories) {
+      const language = REPOSITORY_LANGUAGE[row.repository];
+      if (language === undefined) continue; // external_* and community rows analyse no SonarQube language
+      const engines = SONAR_MAPPING.language(language)?.engines ?? [];
+      expect(engines as readonly string[], row.repository).toContain(row.engine);
     }
   });
 
@@ -187,7 +221,7 @@ describe('competing rules (import-sonarqube.md §10.1, ruling S7)', () => {
   });
 
   it('adds nothing for an unmapped rule, and every key it lists overlaps', () => {
-    expect(SONAR_MAPPING.competingRules(['typescript:S3776', 'nokey'])).toEqual([]);
+    expect(SONAR_MAPPING.competingRules(['typescript:S9999', 'nokey'])).toEqual([]);
     const keys = raw.rules.flatMap((e) => e.sonar);
     for (const k of keys) {
       const own = new Set(SONAR_MAPPING.targets(k).map((t) => t.key));

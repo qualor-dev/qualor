@@ -133,8 +133,10 @@ describe('qualor import sonarqube (import-sonarqube.md §3, §12)', () => {
       defaultChange: null,
     });
     expect(report.profiles.find((p) => p.name === 'Team TS')).toMatchObject({
-      outcome: 'skipped',
-      reason: 'no_mapped_rules',
+      // Phase 8: S3504 (left inactive) is a real sonarjs key, so the profile is created for its
+      // one deactivation row, even though its active rules are not mapped to a profile row.
+      outcome: 'created',
+      reason: null,
       // S1440 overlaps eslint:eqeqeq: it drives statuses only, never a profile (fix 4a).
       rules: { pendingReview: [], statusOnly: ['typescript:S1440'] },
     });

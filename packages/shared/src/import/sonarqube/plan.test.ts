@@ -43,6 +43,8 @@ const reviewed = loadSonarMapping({
 
 describe('planProfile (import-sonarqube.md §7)', () => {
   it('turns on reviewed equivalents of active rules and off those the profile leaves off', () => {
+    // S3504 and S3776 are also real sonarjs 2.0.4 keys (Phase 8), so each gets a repository row
+    // (always reviewed) alongside, or instead of, its curated table target (§6.2).
     const plan = planProfile(
       profile({
         active: [rule('typescript:S3504')],
@@ -55,44 +57,53 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.rows).toEqual([
       { ruleKey: 'eslint:no-unsafe-finally', active: false, severityOverride: null },
       { ruleKey: 'eslint:no-var', active: true, severityOverride: null },
+      { ruleKey: 'sonarjs:S3504', active: true, severityOverride: null },
+      { ruleKey: 'sonarjs:S3776', active: false, severityOverride: null },
     ]);
     expect(plan.stats).toMatchObject({
       active: 1,
       mapped: 1,
-      deactivated: 1,
+      deactivated: 2,
       severityOverrides: 0,
     });
   });
 
   it('never uses unreviewed entries for profiles, and lists them as pending review', () => {
-    const plan = planProfile(profile({ active: [rule('typescript:S3504')] }));
+    // S1143 is curated-table only (not a real sonarjs key), so it stays pending review here.
+    const plan = planProfile(profile({ active: [rule('typescript:S1143')] }));
     expect(plan.rows).toEqual([]);
     expect(plan.skip).toBe('no_mapped_rules');
-    expect(plan.stats.pendingReview).toEqual(['typescript:S3504']);
+    expect(plan.stats.pendingReview).toEqual(['typescript:S1143']);
   });
 
   it('keeps overlap targets out of profiles and lists unmapped rules with their names', () => {
+    // S108 and S1440 are curated-table only and stay overlap-only (neither is a real sonarjs
+    // key); S9999 is in neither source at all.
     const plan = planProfile(
       profile({
-        active: [rule('typescript:S1481'), rule('typescript:S1440'), rule('typescript:S3776')],
+        active: [rule('typescript:S108'), rule('typescript:S1440'), rule('typescript:S9999')],
       }),
       reviewed,
     );
     expect(plan.rows).toEqual([]);
-    expect(plan.stats.statusOnly).toEqual(['typescript:S1481', 'typescript:S1440']);
+    expect(plan.stats.statusOnly).toEqual(['typescript:S108', 'typescript:S1440']);
     expect(plan.stats.unmapped).toEqual([
-      { key: 'typescript:S3776', name: 'Rule typescript:S3776' },
+      { key: 'typescript:S9999', name: 'Rule typescript:S9999' },
     ]);
   });
 
-  it('gives a TypeScript profile the typescript-eslint rule of S1186 only', () => {
+  it('gives a TypeScript profile the typescript-eslint rule of S1186, plus the shared sonarjs rule', () => {
+    // S1186 is also a real sonarjs key (Phase 8), shared by both languages' repository rows.
     const ts = planProfile(profile({ active: [rule('typescript:S1186')] }), reviewed);
-    expect(ts.rows.map((r) => r.ruleKey)).toEqual(['eslint:@typescript-eslint/no-empty-function']);
+    expect(ts.rows.map((r) => r.ruleKey)).toEqual([
+      'eslint:@typescript-eslint/no-empty-function',
+      'sonarjs:S1186',
+    ]);
     const js = planProfile(
       profile({ language: 'js', active: [rule('javascript:S1186', { language: 'js' })] }),
       reviewed,
     );
-    expect(js.rows.map((r) => r.ruleKey)).toEqual(['eslint:no-empty-function']);
+    expect(js.rows.map((r) => r.ruleKey)).toEqual(['eslint:no-empty-function', 'sonarjs:S1186']);
   });
 
   it('lets an active rule win over one left off with the same target', () => {
@@ -172,11 +183,22 @@ describe('planProfile (import-sonarqube.md §7)', () => {
 
   it('skips unsupported languages, reserved or invalid names, and incompletely read profiles', () => {
     expect(planProfile(profile({ language: 'py' })).skip).toBe('language_unsupported');
-    expect(planProfile(profile({ language: 'cs' })).skip).toBe('language_unsupported');
     expect(planProfile(profile({ name: 'qualor  WAY' })).skip).toBe('name_reserved');
     expect(planProfile(profile({ name: 'x'.repeat(101) })).skip).toBe('name_invalid');
     expect(planProfile(profile({ name: '   ' })).skip).toBe('name_invalid');
     expect(planProfile(profile({ complete: false }), reviewed).skip).toBe('rules_not_all_read');
+  });
+
+  it('gives a C# profile the roslyn row, one to one (§6.1, Phase 8)', () => {
+    const plan = planProfile(
+      profile({
+        language: 'cs',
+        active: [rule('csharpsquid:S1481', { language: 'cs' })],
+      }),
+    );
+    expect(plan.language).toBe('csharp');
+    expect(plan.skip).toBeNull();
+    expect(plan.rows).toEqual([{ ruleKey: 'roslyn:S1481', active: true, severityOverride: null }]);
   });
 
   it('never turns off a target whose left-off rule is an unreviewed equivalent', () => {
@@ -208,10 +230,13 @@ describe('planProfile (import-sonarqube.md §7)', () => {
   });
 
   it('classifies the active rules of a skipped profile too, so its counts add up', () => {
+    // S1143 (curated only, unreviewed) -> pending review; S1440 (curated only, overlap) ->
+    // status only; S9999 (neither source) -> unmapped; external_eslint_repo:no-var (repository,
+    // always reviewed) -> mapped.
     const active = [
-      rule('typescript:S3504'),
+      rule('typescript:S1143'),
       rule('typescript:S1440'),
-      rule('typescript:S3776'),
+      rule('typescript:S9999'),
       rule('external_eslint_repo:no-var'),
     ];
     const add = (p: ReturnType<typeof planProfile>) =>
@@ -230,9 +255,9 @@ describe('planProfile (import-sonarqube.md §7)', () => {
       expect(add(p), JSON.stringify(over)).toBe(4);
       expect(p.stats).toMatchObject({
         mapped: 1,
-        pendingReview: ['typescript:S3504'],
+        pendingReview: ['typescript:S1143'],
         statusOnly: ['typescript:S1440'],
-        unmapped: [{ key: 'typescript:S3776', name: 'Rule typescript:S3776' }],
+        unmapped: [{ key: 'typescript:S9999', name: 'Rule typescript:S9999' }],
       });
       if (p.skip !== null) expect(p.rows).toEqual([]);
     }

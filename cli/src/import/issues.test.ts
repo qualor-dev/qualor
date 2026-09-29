@@ -173,7 +173,7 @@ describe('from SonarQube issues to import items (import-sonarqube.md §10.1-§10
       'acme:shop',
       [
         issue(),
-        issue({ key: 'AYi-2', rule: 'typescript:S3776' }),
+        issue({ key: 'AYi-2', rule: 'typescript:S9999' }),
         issue({ key: 'AYi-3', component: 'acme:shop:../x' }),
         issue({ key: 'AYi-4', issueStatus: undefined, resolution: 'FIXED' }),
         issue({ key: 'AYi-5', hash: 'not-a-hash', line: undefined, textRange: { startLine: 7 } }),
@@ -189,7 +189,7 @@ describe('from SonarQube issues to import items (import-sonarqube.md §10.1-§10
       status: 'false_positive',
     });
     expect(b.items[1]).toMatchObject({ line: 7, sonarLineHash: null });
-    expect(b.unmappedRules).toEqual(new Map([['typescript:S3776', 1]]));
+    expect(b.unmappedRules).toEqual(new Map([['typescript:S9999', 1]]));
     expect(b).toMatchObject({ pathInvalid: 1, ignored: 1 });
     expect(b.rules).toEqual(
       new Map([
@@ -267,7 +267,7 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
       open: [
         openIssue({ key: 'AYo-1', rule: 'typescript:S1440' }),
         openIssue({ key: 'AYo-2', component: 'acme:shop:src/other.ts' }),
-        openIssue({ key: 'AYo-3', rule: 'typescript:S3776' }),
+        openIssue({ key: 'AYo-3', rule: 'typescript:S9999' }),
         openIssue({ key: 'AYo-4', component: 'acme:shop:../x.ts' }),
       ],
       unreadRules: [],
@@ -306,7 +306,7 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
     const none = buildStatusItems('acme:shop', [issue({ rule: 'typescript:S1440' })], {
       pathPrefix: null,
       open: [],
-      unreadRules: ['typescript:S3776', 'external_eslint_repo:no-var'],
+      unreadRules: ['typescript:S9999', 'external_eslint_repo:no-var'],
     });
     expect(none.items[0]?.competitorsUnknown).toBeUndefined();
     expect(none.competitorsUnknownRules).toEqual([]);
@@ -447,7 +447,7 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
         // Unmapped: it competes for nothing, so it marks nothing.
         issue({
           key: 'AYi-um',
-          rule: 'typescript:S3776',
+          rule: 'typescript:S9999',
           issueStatus: 'FIXED',
           component: 'acme:shop:src/b.ts',
         }),
@@ -549,7 +549,7 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
       expect(resolved.issues.map((i) => i.key)).toEqual(['AYi-fp-1']);
       expect(resolved.unread).toEqual({
         kind: 'rules',
-        rules: ['typescript:S1440', 'typescript:S3776'],
+        rules: ['typescript:S1440', 'typescript:S9999'],
       });
       const b = await buildWithCompetitors(conn.client, conn, 'acme:shop', resolved.issues, {
         pathPrefix: null,
@@ -738,7 +738,7 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
         fake = await startFakeSonarQube(data);
         const conn = await connect();
         const resolved = await fetchResolvedIssues(conn.client, conn, 'acme:shop', 1000);
-        // Between the reads, AYi-open (S1440) is resolved and AYi-um-1 (S3776) reopened: the total
+        // Between the reads, AYi-open (S1440) is resolved and AYi-um-1 (S9999) reopened: the total
         // stays 4, the open read no longer sees AYi-open, and the resolved read never did.
         fake.data.issues.find((i) => i.key === 'AYi-open')!.status = 'FALSE_POSITIVE';
         fake.data.issues.find((i) => i.key === 'AYi-um-1')!.status = 'OPEN';
@@ -776,7 +776,7 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
         fake = await startFakeSonarQube(data);
         const conn = await connect();
         const resolved = await fetchResolvedIssues(conn.client, conn, 'acme:shop', 1000);
-        fake.data.issues.push({ ...extra('AYi-new', 'typescript:S3776', 40), status: 'ACCEPTED' });
+        fake.data.issues.push({ ...extra('AYi-new', 'typescript:S9999', 40), status: 'ACCEPTED' });
         const b = await buildWithCompetitors(conn.client, conn, 'acme:shop', resolved.issues, {
           pathPrefix: null,
           maxIssues: 1000,
@@ -825,9 +825,9 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
       });
 
       it('fails closed per component when a probe facet does not cover its total (fix 12c)', async () => {
-        // S3776 (unmapped) holds the one facet value a probe lists; J and U are never listed.
+        // S9999 (unmapped) holds the one facet value a probe lists; J and U are never listed.
         const s3776 = (key: string, line: number, status: FakeIssue['status']): FakeIssue => ({
-          ...probeIssue(key, 'typescript:S3776', line, 'x', status),
+          ...probeIssue(key, 'typescript:S9999', line, 'x', status),
         });
         fake = await startFakeSonarQube(
           sampleSonarData({
@@ -843,7 +843,7 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
         );
         const conn = await connect();
         const resolved = await fetchResolvedIssues(conn.client, conn, 'acme:shop', 1000);
-        expect(resolved.probe.counts).toEqual({ 'typescript:S3776': 3 });
+        expect(resolved.probe.counts).toEqual({ 'typescript:S9999': 3 });
         // Between the reads U is resolved and X3 reopened: the total stays 4, and U's count
         // change is in no facet.
         fake.data.issues.find((i) => i.key === 'U')!.status = 'FALSE_POSITIVE';
