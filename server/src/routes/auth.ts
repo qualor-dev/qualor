@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { RouteDeps } from '../app';
 import { actorOf, anonymousActor, userActor } from '../audit/recorder';
 import { accessOf, requirePrincipal, requireSession, requireUser } from '../auth/access';
+import { passwordChangeRequired } from '../auth/authenticate';
 import {
   grantInOrganization,
   memberOf,
@@ -312,7 +313,11 @@ export const authRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
         .orderBy(asc(projects.key))
         .limit(1000);
       return {
-        user: userDto(user, await userSsoSummary(deps.db, user.id)),
+        user: {
+          ...userDto(user, await userSsoSummary(deps.db, user.id)),
+          // For this session (ruling R7): an SSO session is not held up by the forced change.
+          passwordChangeRequired: passwordChangeRequired(principal, deps.config.secretKey),
+        },
         memberships: rows.map((row) => ({
           organizationId: row.organizationId,
           organizationKey: row.organizationKey,

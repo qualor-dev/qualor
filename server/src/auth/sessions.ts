@@ -44,18 +44,51 @@ export function safeEqual(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+/** An SSO session's secret: this many random bytes, then the first bytes of their HMAC. */
+const SSO_RANDOM_BYTES = 24;
+const SSO_TAG_BYTES = 8;
+
+function ssoTag(secretKey: string, random: Buffer): Buffer {
+  const key = Buffer.from(hkdfSync('sha256', secretKey, 'qualor', 'sso session v1', 32));
+  return createHmac('sha256', key).update(random).digest().subarray(0, SSO_TAG_BYTES);
+}
+
+/**
+ * A new session secret (32 bytes, base64url). An SSO sign-in's secret carries a mark only this
+ * server can make (like the CSRF token, an HMAC under the server's key; nothing extra stored), so
+ * the session knows it was not made with the password. The client cannot change the secret
+ * without losing the session, and a secret without the mark (every password sign-in, or any
+ * session once the server's key changed) is a password session.
+ */
+function newSessionSecret(ssoKey: string | undefined): string {
+  if (ssoKey === undefined) return randomBytes(32).toString('base64url');
+  const random = randomBytes(SSO_RANDOM_BYTES);
+  return Buffer.concat([random, ssoTag(ssoKey, random)]).toString('base64url');
+}
+
+/** True for the secret of a session an SSO sign-in made (newSessionSecret). */
+export function isSsoSession(secretKey: string, sessionSecret: string): boolean {
+  if (!SECRET_PATTERN.test(sessionSecret)) return false;
+  const bytes = Buffer.from(sessionSecret, 'base64url');
+  const random = bytes.subarray(0, SSO_RANDOM_BYTES);
+  const tag = bytes.subarray(SSO_RANDOM_BYTES);
+  return tag.length === SSO_TAG_BYTES && timingSafeEqual(tag, ssoTag(secretKey, random));
+}
+
 export interface NewSession {
   userId: string;
   ttlHours: number;
   ip: string | null;
   userAgent: string | null;
+  /** An SSO sign-in: the server's secret key, to mark the session as one (isSsoSession). */
+  ssoKey?: string;
 }
 
 export async function createSession(
   db: Executor,
   input: NewSession,
 ): Promise<{ secret: string; expiresAt: Date }> {
-  const secret = randomBytes(32).toString('base64url');
+  const secret = newSessionSecret(input.ssoKey);
   const expiresAt = new Date(Date.now() + input.ttlHours * 3_600_000);
   await db.insert(sessions).values({
     id: sessionIdFor(secret),
