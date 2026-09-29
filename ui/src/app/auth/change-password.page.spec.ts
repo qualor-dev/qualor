@@ -86,6 +86,17 @@ describe('ChangePasswordPage', () => {
     expect(username?.readOnly).toBe(true);
   });
 
+  it('sits in the auth layout, Sign out a quiet button under the form', async () => {
+    const { root } = await render();
+    expect(root.querySelector('q-auth-layout main.auth-page .auth-card h1')?.textContent).toContain(
+      'Change your password',
+    );
+    const signOut = [...root.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === 'Sign out',
+    );
+    expect(signOut?.classList.contains('btn-quiet')).toBe(true);
+  });
+
   it('lets a user who must change the password sign out instead', async () => {
     server.on('POST', '/api/v0/auth/logout', { status: 204 });
     const { fixture, root } = await render();

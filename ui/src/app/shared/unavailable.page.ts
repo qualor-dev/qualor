@@ -1,10 +1,12 @@
 import { Component, inject, input } from '@angular/core';
 import { Router } from '@angular/router';
 import { safeReturnUrl } from '../auth/guards';
+import { AuthLayout } from './auth-layout';
 
 /** The server could not say who is signed in (network error, 5xx): a retry, not a sign-in page. */
 @Component({
   selector: 'q-unavailable-page',
+  imports: [AuthLayout],
   templateUrl: './unavailable.page.html',
 })
 export class UnavailablePage {

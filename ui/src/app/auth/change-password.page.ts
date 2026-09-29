@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { fieldErrors, problemMessage } from '../api/errors';
+import { AuthLayout } from '../shared/auth-layout';
 import { inputValue } from '../shared/forms';
 import { AuthService } from './auth.service';
 import { SessionStore } from './session';
@@ -10,6 +11,7 @@ export const PASSWORD_MIN_LENGTH = 12;
 
 @Component({
   selector: 'q-change-password-page',
+  imports: [AuthLayout],
   templateUrl: './change-password.page.html',
 })
 export class ChangePasswordPage {
