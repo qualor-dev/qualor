@@ -43,6 +43,10 @@ describe('BranchesPage', () => {
   }
 
   const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim();
+  const kindButton = (root: HTMLElement, name: string) =>
+    [...root.querySelectorAll<HTMLButtonElement>('.segmented button')].find(
+      (b) => text(b) === name,
+    )!;
   const rows = (root: HTMLElement) =>
     [...root.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map(text));
 
@@ -65,9 +69,13 @@ describe('BranchesPage', () => {
     });
     const { root } = await render();
     expect(rows(root)).toEqual([
-      ['mainMain branch', 'Failed', '2', '81.3 %', 'Sep 15, 2026, 9:00 AM UTC'],
+      ['main Main branch', 'Failed', '2', '81.3 %', 'Sep 15, 2026'],
       ['!42 feature/x → main', 'Not analyzed', '–', '–', 'Never'],
     ]);
+    // The day in the table, the full time on hover.
+    expect(root.querySelector('tbody tr td:last-child span')?.getAttribute('title')).toBe(
+      'Sep 15, 2026, 9:00 AM UTC',
+    );
     expect(root.querySelector('tbody a')?.getAttribute('href')).toBe('/projects/p1/branches/main');
     const query = server.requestsTo('GET', `/api/v0/projects/${PROJECT}/branches`)[0]!.query;
     expect([...query.keys()]).toEqual(['limit']);
@@ -113,16 +121,15 @@ describe('BranchesPage', () => {
       body: page([branch('x', { projectId: 'p2' })]),
     });
     const { fixture, root } = await render();
-    const select = root.querySelector<HTMLSelectElement>('#branch-kind')!;
-    select.value = 'merge_request';
-    select.dispatchEvent(new Event('change'));
+    kindButton(root, 'Merge requests').click();
     await settle(fixture);
+    expect(kindButton(root, 'Merge requests').getAttribute('aria-pressed')).toBe('true');
     fixture.componentRef.setInput('projectId', 'p2');
     await settle(fixture);
     const requests = server.requestsTo('GET', '/api/v0/projects/p2/branches');
     expect(requests).toHaveLength(1);
     expect(requests[0]?.query.get('kind')).toBeNull();
-    expect(select.value).toBe('');
+    expect(kindButton(root, 'All').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('filters by kind, pages with "Load more", and says what is missing for the filter', async () => {
@@ -139,21 +146,20 @@ describe('BranchesPage', () => {
     await settle(fixture);
     expect(rows(root).map((r) => r[0])).toEqual(['a', 'b']);
 
-    const select = root.querySelector<HTMLSelectElement>('#branch-kind')!;
-    const choose = async (value: string) => {
-      select.value = value;
-      select.dispatchEvent(new Event('change'));
+    const choose = async (name: string) => {
+      kindButton(root, name).click();
       await settle(fixture);
     };
-    await choose('merge_request');
+    expect(root.querySelector('[role="group"][aria-label="Show"]')).not.toBeNull();
+    await choose('Merge requests');
     expect(
       server.requestsTo('GET', `/api/v0/projects/${PROJECT}/branches`).at(-1)?.query.get('kind'),
     ).toBe('merge_request');
     expect(text(root.querySelector('tbody td'))).toBe('No merge requests.');
-    await choose('branch');
+    await choose('Branches');
     expect(text(root.querySelector('tbody td'))).toBe('No branches.');
     server.on('GET', `/api/v0/projects/${PROJECT}/branches`, { body: page([]) });
-    await choose('');
+    await choose('All');
     expect(text(root.querySelector('tbody td'))).toBe('Nothing analyzed yet.');
   });
 });

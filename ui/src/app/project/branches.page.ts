@@ -2,8 +2,8 @@ import { Component, effect, inject, input, linkedSignal, untracked } from '@angu
 import { RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { inputValue } from '../shared/forms';
 import { GateBadge } from '../shared/gate-badge';
+import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { safeHelpUri } from '../shared/links';
 import { MeasurePipe } from '../shared/measure.pipe';
@@ -12,11 +12,15 @@ import { type Branch, branchTitle } from './branches';
 type Kind = 'branch' | 'merge_request' | '';
 const PAGE_SIZE = 50;
 
-/** A project's branches and merge requests with their gate and new-code measures. */
+/**
+ * A project's branches and merge requests with their gate and new-code measures (spec §7.3): a
+ * segmented filter by kind and the table in a panel.
+ */
 @Component({
   selector: 'q-branches-page',
-  imports: [DateTimePipe, GateBadge, MeasurePipe, RouterLink],
+  imports: [DateTimePipe, GateBadge, Icon, MeasurePipe, RouterLink],
   templateUrl: './branches.page.html',
+  styleUrl: './branches.page.css',
 })
 export class BranchesPage {
   private readonly api = inject(Api);
@@ -62,8 +66,10 @@ export class BranchesPage {
     });
   }
 
-  protected setKind(event: Event): void {
-    const value = inputValue(event);
-    this.kind.set(value === 'branch' || value === 'merge_request' ? value : '');
-  }
+  /** The filter's choices, in the segmented control's order. */
+  protected readonly kinds: { id: Kind; label: string }[] = [
+    { id: '', label: $localize`:@@branches.kind.every:All` },
+    { id: 'branch', label: $localize`:@@branches.kind.branch:Branches` },
+    { id: 'merge_request', label: $localize`:@@branches.kind.mr:Merge requests` },
+  ];
 }

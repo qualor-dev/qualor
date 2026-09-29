@@ -1701,6 +1701,23 @@ details[open] > summary {
   border-top: 1px solid var(--hairline);
 }
 
+/* A coverage value's bar, under the number in a table cell. */
+.cov-bar {
+  display: block;
+  margin: 5px 0 0 auto;
+  width: 64px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--chart-track);
+  overflow: hidden;
+}
+.cov-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--chart-accent);
+}
+
 /*
  * The ink page band (q-page-header, spec §4): what pages project into it. Global, because the
  * projected elements belong to the page's template, not to the band's.

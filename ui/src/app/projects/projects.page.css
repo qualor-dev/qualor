@@ -14,21 +14,6 @@
 .projects-panel td:first-child {
   min-width: 14rem;
 }
-.cov-bar {
-  display: block;
-  margin: 5px 0 0 auto;
-  width: 64px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--chart-track);
-  overflow: hidden;
-}
-.cov-bar > span {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--chart-accent);
-}
 .load-more {
   margin: 16px 0 0;
 }

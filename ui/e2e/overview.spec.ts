@@ -38,7 +38,10 @@ test('the branches tab lists the merge request, which has its own view', async (
   await page.getByRole('link', { name: 'Branches and merge requests' }).click();
   const title = `!${MERGE_REQUEST.id} ${MERGE_REQUEST.source} → main`;
   await expect(page.getByRole('row', { name: /main Main branch/ })).toContainText('Failed');
-  await page.getByLabel('Show').selectOption({ label: 'Merge requests' });
+  await page
+    .getByRole('group', { name: 'Show' })
+    .getByRole('button', { name: 'Merge requests' })
+    .click();
   await expect(page.getByRole('row', { name: /Main branch/ })).toHaveCount(0);
   await page.getByRole('link', { name: title }).click();
   await expect(page.locator('.branch-name')).toHaveText(title);

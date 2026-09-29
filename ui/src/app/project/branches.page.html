@@ -1,95 +1,111 @@
-<div class="card toolbar">
-  <label for="branch-kind" class="label" i18n="@@branches.show">Show</label>
-  <select id="branch-kind" (change)="setKind($event)">
-    <option value="" [selected]="kind() === ''" i18n="@@branches.kind.all">
-      Branches and merge requests
-    </option>
-    <option value="branch" [selected]="kind() === 'branch'" i18n="@@branches.kind.branch">
-      Branches
-    </option>
-    <option value="merge_request" [selected]="kind() === 'merge_request'" i18n="@@branches.kind.mr">
-      Merge requests
-    </option>
-  </select>
+<div class="branches-toolbar">
+  <div class="segmented" role="group" aria-label="Show" i18n-aria-label="@@branches.show">
+    @for (k of kinds; track k.id) {
+      <button type="button" [attr.aria-pressed]="kind() === k.id" (click)="kind.set(k.id)">
+        {{ k.label }}
+      </button>
+    }
+  </div>
 </div>
 
 @if (list.error(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
 }
 
-<div class="table-wrap">
-  <table [attr.aria-busy]="list.loading()">
-    <caption class="visually-hidden" i18n="@@branches.caption">
-      Branches and merge requests with their quality gate and new-code measures
-    </caption>
-    <thead>
-      <tr>
-        <th scope="col" i18n="@@branches.col.name">Branch or merge request</th>
-        <th scope="col" i18n="@@branches.col.gate">Quality gate</th>
-        <th scope="col" class="num" i18n="@@branches.col.newIssues">New issues</th>
-        <th scope="col" class="num" i18n="@@branches.col.newCoverage">Coverage on new code</th>
-        <th scope="col" i18n="@@branches.col.lastAnalysis">Last analysis</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (b of list.items(); track b.id) {
+<section class="card panel">
+  <div class="panel-scroll">
+    <table [attr.aria-busy]="list.loading()">
+      <caption class="visually-hidden" i18n="@@branches.caption">
+        Branches and merge requests with their quality gate and new-code measures
+      </caption>
+      <thead>
         <tr>
-          <td>
-            <a [routerLink]="['/projects', projectId(), 'branches', b.id]">{{ branchTitle(b) }}</a>
-            @if (b.isMain) {
-              <span class="badge badge-accent" i18n="@@branches.main">Main branch</span>
-            }
-            @if (b.mrTitle) {
-              <div class="muted prose-text">{{ b.mrTitle }}</div>
-            }
-            @if (gitlabLink(b); as href) {
-              <a
-                [href]="href"
-                target="_blank"
-                rel="noopener noreferrer"
-                [attr.aria-label]="gitlabLinkLabel(b)"
-                i18n="@@branches.openInGitLab"
-                >Open in GitLab</a
-              >
-            }
-          </td>
-          <td><q-gate-badge [status]="b.gateStatus" /></td>
-          @for (metric of columns; track metric) {
-            <td class="num">{{ b.measures[metric] | measure: metric }}</td>
-          }
-          <td class="nowrap">
-            @if (b.lastAnalyzedAt; as at) {
-              {{ at | dateTime }}
-            } @else {
-              <span class="muted" i18n="@@branches.never">Never</span>
-            }
-          </td>
+          <th scope="col" i18n="@@branches.col.name">Branch or merge request</th>
+          <th scope="col" i18n="@@branches.col.gate">Quality gate</th>
+          <th scope="col" class="num" i18n="@@branches.col.newIssues">New issues</th>
+          <th scope="col" class="num" i18n="@@branches.col.newCoverage">Coverage on new code</th>
+          <th scope="col" i18n="@@branches.col.lastAnalysis">Last analysis</th>
         </tr>
-      } @empty {
-        @if (list.loaded()) {
+      </thead>
+      <tbody>
+        @for (b of list.items(); track b.id) {
           <tr>
-            @switch (kind()) {
-              @case ('branch') {
-                <td colspan="5" class="muted" i18n="@@branches.emptyBranches">No branches.</td>
-              }
-              @case ('merge_request') {
-                <td colspan="5" class="muted" i18n="@@branches.emptyMergeRequests">
-                  No merge requests.
-                </td>
-              }
-              @default {
-                <td colspan="5" class="muted" i18n="@@branches.empty">Nothing analyzed yet.</td>
-              }
+            <td>
+              <div class="branch-cell">
+                <q-icon [name]="b.kind === 'merge_request' ? 'merge-request' : 'branch'" />
+                <div class="branch-text">
+                  <span class="branch-title"
+                    ><a [routerLink]="['/projects', projectId(), 'branches', b.id]">{{
+                      branchTitle(b)
+                    }}</a>
+                    @if (b.isMain) {
+                      &ngsp;<span class="badge badge-accent" i18n="@@branches.main"
+                        >Main branch</span
+                      >
+                    }
+                  </span>
+                  @if (b.mrTitle) {
+                    <div class="muted prose-text">{{ b.mrTitle }}</div>
+                  }
+                  @if (gitlabLink(b); as href) {
+                    <a
+                      class="external-link"
+                      [href]="href"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      [attr.aria-label]="gitlabLinkLabel(b)"
+                      ><ng-container i18n="@@branches.openInGitLab">Open in GitLab</ng-container
+                      ><q-icon name="external"
+                    /></a>
+                  }
+                </div>
+              </div>
+            </td>
+            <td><q-gate-badge [status]="b.gateStatus" /></td>
+            @for (metric of columns; track metric) {
+              <td class="num">
+                {{ b.measures[metric] | measure: metric }}
+                @if (metric === 'new_coverage' && b.measures[metric]; as value) {
+                  <span class="cov-bar" aria-hidden="true"
+                    ><span [style.width.%]="value"></span
+                  ></span>
+                }
+              </td>
             }
+            <td class="nowrap">
+              @if (b.lastAnalyzedAt; as at) {
+                <span [title]="at | dateTime">{{ at | dateTime: 'date' }}</span>
+              } @else {
+                <span class="muted" i18n="@@branches.never">Never</span>
+              }
+            </td>
           </tr>
+        } @empty {
+          @if (list.loaded()) {
+            <tr>
+              @switch (kind()) {
+                @case ('branch') {
+                  <td colspan="5" class="muted" i18n="@@branches.emptyBranches">No branches.</td>
+                }
+                @case ('merge_request') {
+                  <td colspan="5" class="muted" i18n="@@branches.emptyMergeRequests">
+                    No merge requests.
+                  </td>
+                }
+                @default {
+                  <td colspan="5" class="muted" i18n="@@branches.empty">Nothing analyzed yet.</td>
+                }
+              }
+            </tr>
+          }
         }
-      }
-    </tbody>
-  </table>
-</div>
+      </tbody>
+    </table>
+  </div>
+</section>
 
 @if (list.nextCursor()) {
-  <p>
+  <p class="load-more">
     <button
       type="button"
       class="btn"
