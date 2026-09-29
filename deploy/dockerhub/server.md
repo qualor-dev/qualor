@@ -20,7 +20,7 @@ process, plus its own PostgreSQL 18, which it starts itself and keeps on the vol
 ### The image
 
 - Distroless (`gcr.io/distroless/cc-debian12`, no shell, no package manager) with Node.js
-  22.23.2 and PostgreSQL 18, about 340 MB; every base image is pinned by digest.
+  22.23.3 and PostgreSQL 18, about 340 MB; every base image is pinned by digest.
 - Runs as the non-root user 65532. Nothing under `/app` is writable by it; its data is on the
   volume `/var/lib/qualor` (`QUALOR_DATA_DIR`).
 - Listens on port 8080 (`HOST=0.0.0.0`, `PORT=8080`) and serves the web UI from `/app/ui` on the

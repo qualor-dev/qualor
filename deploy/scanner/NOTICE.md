@@ -17,8 +17,8 @@ vulnerability database pinned by digest), compiled into the
 | Trivy                                                           | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                              | https://github.com/aquasecurity/trivy/tree/v0.74.0  |
 | Trivy vulnerability database (a snapshot)                       | see `/opt/qualor/share/trivy/db/metadata.json` | the advisories' own terms: see below                                                                                                                                                 | https://github.com/aquasecurity/trivy-db            |
 | Eclipse Temurin JRE                                             | 17.0.20+8                                      | GPL-2.0 with the Classpath Exception (`/opt/java/openjdk/legal/`)                                                                                                                    | `qualor/scanner-sources`                            |
-| Node.js                                                         | 22.23.2                                        | MIT and bundled licences (`NODE-LICENSE.txt`)                                                                                                                                        | https://github.com/nodejs/node/tree/v22.23.2        |
-| npm, Corepack and Yarn (from the Node.js image)                 | 10.9.8, 0.34.6, 1.22.22                        | Artistic-2.0, MIT, BSD-2-Clause (the `LICENSE` in each package's directory)                                                                                                          | https://github.com/nodejs/docker-node               |
+| Node.js                                                         | 22.23.3                                        | MIT and bundled licences (`NODE-LICENSE.txt`)                                                                                                                                        | https://github.com/nodejs/node/tree/v22.23.3        |
+| npm, Corepack and Yarn (from the Node.js image)                 | 10.9.9, 0.36.0, 1.22.22                        | Artistic-2.0, MIT, BSD-2-Clause (the `LICENSE` in each package's directory)                                                                                                          | https://github.com/nodejs/docker-node               |
 | Bun runtime (inside the `qualor` binary)                        | 1.3.13                                         | MIT; it links JavaScriptCore/WebKit (LGPL-2), tinycc (LGPL-2.1) and others (`BUN-LICENSE.txt`)                                                                                       | https://github.com/oven-sh/bun/tree/bun-v1.3.13     |
 | npm packages inside the `qualor` binary (below)                 | as locked                                      | MIT or ISC (`qualor/npm/<package>@<version>/`; saxes: `SAXES-LICENSE.txt`; tree-sitter-c-sharp: `TREE-SITTER-C-SHARP-LICENSE.txt`)                                                   | https://www.npmjs.com/                              |
 | Debian packages (git, ca-certificates, base system)             | bookworm                                       | per package, `/usr/share/doc/*/copyright`                                                                                                                                            | `qualor/scanner-sources` (`debian/`)                |
@@ -43,10 +43,11 @@ https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.15.1/ and
 https://repo1.maven.org/maven2/javax/annotation/jsr250-api/1.0/ (also
 https://github.com/Saxonica/Saxon-HE and https://github.com/mozilla/rhino).
 
-The Gitleaks binary is a statically linked upstream build with the Go standard library and its Go
-modules (listed in its `go.mod`), all under permissive licences.
+The Gitleaks binary is built in the image from the source of its release tag with Go 1.27, statically
+linked with the Go standard library and its Go modules (listed in its `go.mod`; `golang.org/x/crypto`
+and `golang.org/x/text` raised to fixed releases), all under permissive licences.
 
-The Trivy binary is a statically linked upstream build too (Go 1.26). Of the 375 Go modules it
+The Trivy binary is a statically linked upstream build (Go 1.26). Of the 375 Go modules it
 compiles in (`go version -m /opt/qualor/bin/trivy` lists them), eleven are under MPL-2.0 and have
 their source in `qualor/scanner-sources`: hashicorp's `aws-sdk-go-base/v2` v2.0.0-beta.72,
 `errwrap` 1.1.0, `go-cleanhttp` 0.5.2, `go-getter` 1.8.6, `go-multierror` 1.1.1,

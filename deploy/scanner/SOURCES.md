@@ -77,7 +77,7 @@ page. `sha256sum -c SHA256SUMS` checks them: every file must have exactly this S
 
 ## Debian source packages of `qualor/scanner`
 
-Every Debian binary package installed in `qualor/scanner` (base `node:22.23.2-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9`, plus `ca-certificates git`), by source package at the installed version, in `debian/`. Each `.dsc` was checked against the SHA-256 of the Debian Sources index, and every other file against its `.dsc`.
+Every Debian binary package installed in `qualor/scanner` (base `node:22.23.3-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c`, plus `ca-certificates git`), by source package at the installed version, in `debian/`. Each `.dsc` was checked against the SHA-256 of the Debian Sources index, and every other file against its `.dsc`.
 
 | Source | Version | Binary packages | Files (SHA-256) |
 | --- | --- | --- | --- |
