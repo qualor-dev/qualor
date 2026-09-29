@@ -1,9 +1,10 @@
 # Qualor
 
-Open-source, self-hosted, GitLab-first code quality platform: a SonarQube alternative without
-lines-of-code licensing. Qualor runs existing open-source analyzers (ESLint, PMD, SpotBugs,
-Roslyn and Roslynator for C#, OpenGrep, Gitleaks, or any SARIF), tracks their issues across
-commits, measures coverage, duplication and complexity, and applies a quality gate to new code.
+Open-source, self-hosted code quality platform: a SonarQube alternative without lines-of-code
+licensing, for GitLab, GitHub and any other CI. Qualor runs existing open-source analyzers
+(ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, OpenGrep, Gitleaks, Trivy, or any SARIF),
+tracks their issues across commits, measures coverage, duplication and complexity, and applies a
+quality gate to new code.
 MIT, except `enterprise/`: source-available under the Qualor Enterprise Licence, and inert
 without a licence key ([licence keys](https://qualor.dev/enterprise)).
 
@@ -36,8 +37,8 @@ docker compose ps          # wait until the server is "healthy"
 
 Open <http://127.0.0.1:8080> and sign in as `admin` with the bootstrap password from `.env`, then
 change it (_Change password_, top right). The server listens on 127.0.0.1 only; see
-[Install the server](docs/guide/install-server.md) for a reverse proxy with TLS, backups and
-upgrades. To build the images yourself instead, see [deploy/README.md](deploy/README.md).
+[Install the server](docs/guide/install-server.md) for a reverse proxy with TLS, backups,
+upgrades and the Helm chart for Kubernetes. To build the images yourself instead, see [deploy/README.md](deploy/README.md).
 
 Then create a project (Projects → New project; its key is what `qualor.yml` or
 `CI_PROJECT_PATH` names) and a token for the CI: either a personal token (Settings → Access
@@ -54,7 +55,7 @@ The answer's `token` is shown once.
 
 ## Scan in CI: one line
 
-The scanner image is `qualor/scanner:<tag>` on Docker Hub (`0.1`, or a full version such as `0.1.0`).
+The scanner image is `qualor/scanner:<tag>` on Docker Hub (`0.1`, or a full version such as `0.1.1`).
 It carries the `qualor` CLI and the pinned analyzers; its entrypoint is `qualor`. Set `QUALOR_URL`
 and `QUALOR_TOKEN` as CI variables (the token masked), then:
 
@@ -66,8 +67,12 @@ include:
     inputs: { image-tag: <tag> }
 ```
 
-A self-managed GitLab includes it from a mirror of `gitlab.com/qualor/qualor` on the same instance
-(`component: $CI_SERVER_FQDN/<path of the mirror>/qualor@<version>`). It runs in merge request
+A self-managed GitLab includes components only from its own instance: import
+`https://gitlab.com/qualor/qualor.git` into a project there once (New project → Import project →
+Repository by URL) and include it by its full version
+(`component: $CI_SERVER_FQDN/<path of the copy>/qualor@0.1.1`); a short version such as `@0.1`
+resolves only in a CI/CD catalog project with releases
+([docs/guide/gitlab.md](docs/guide/gitlab.md)). It runs in merge request
 pipelines and on the default branch, fails with the quality gate, and keeps GitLab's Code Quality,
 SAST and Dependency Scanning reports as artifacts, so findings show in the merge request widget and
 the security tab (vulnerable dependencies, found by Trivy, in Dependency Scanning)
@@ -177,14 +182,27 @@ repository commits generated coverage output, add it to `sources.exclude` in `qu
 
 ## Migrating from SonarQube
 
-`qualor import sonarqube` brings a SonarQube Server (9.9 LTA or later) or SonarQube Cloud organisation's setup into Qualor: quality profiles (JavaScript, TypeScript, Java), quality gates, the projects' profile and gate assignments, and the main branch's false positives and accepted issues. It only reads SonarQube (`GET` requests), and `--dry-run` shows what would change without writing anything:
+`qualor import sonarqube` copies a SonarQube Server (9.9 LTA or later, Community Build included) or
+SonarQube Cloud organisation's setup into one Qualor organisation: quality gates (for conditions on
+metrics Qualor has), which gate each project uses (with `--create-projects`, the projects
+themselves), and the main branch's issues marked false positive, won't fix or accepted. Quality
+profiles for JavaScript, TypeScript and Java are listed in the plan; their rules move as the
+SonarSource-to-analyzer rule mappings are reviewed, and until then they are reported as skipped.
+It only reads SonarQube (`GET` requests), and `--dry-run` shows what would change without writing
+anything:
 
 ```sh
-SONAR_TOKEN=… QUALOR_URL=https://qualor.example.com QUALOR_TOKEN=…   qualor import sonarqube --url https://sonar.example.com --dry-run
+SONAR_TOKEN=… QUALOR_URL=https://qualor.example.com QUALOR_TOKEN=… qualor import sonarqube --url https://sonar.example.com --dry-run
 # SonarQube Cloud: --url https://sonarcloud.io --organization <key>
 ```
 
-Drop `--dry-run` to import. Statuses can only be matched to issues Qualor has seen: run it again after the first Qualor scan (`--only issues`; a rerun changes nothing that is already imported). A status is applied only where the match is certain; everything else is reported. The Qualor token needs the `admin` scope. See [docs/guide/migrate-from-sonarqube.md](docs/guide/migrate-from-sonarqube.md).
+Drop `--dry-run` to import. Statuses can only be matched to issues Qualor has seen: run it again
+after the first Qualor scan (`--only issues`; a rerun changes nothing that is already imported). A
+status is applied only where the match is certain; everything else is reported. The SonarQube token
+is a user token (`squ_…`); the Qualor token needs the `admin` scope. Run from the scanner image
+against a Qualor on your machine through Docker Desktop's `host.docker.internal`, it needs
+`--allow-insecure-http`. See
+[docs/guide/migrate-from-sonarqube.md](docs/guide/migrate-from-sonarqube.md).
 
 ## AI assistant (optional)
 
