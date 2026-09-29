@@ -163,6 +163,10 @@ describe('ProfilesPage', () => {
       ),
     ).toEqual(['–', 'Qualor way']);
     expect(root.querySelector('[aria-labelledby="profiles-java"] tbody')?.children).toHaveLength(1);
+    // Intended change (step 7): the form is in the "New profile" dialog.
+    button(root, 'New profile').click();
+    await settle(fixture);
+    expect(root.querySelector<HTMLDialogElement>('dialog#create-dialog')?.open).toBe(true);
     const name = root.querySelector<HTMLInputElement>('#profile-name')!;
     name.value = 'Strict TS';
     name.dispatchEvent(new Event('input'));
@@ -271,22 +275,51 @@ describe('ProfilesPage', () => {
       status: 409,
       body: problem(409, 'PROFILE_HAS_CHILDREN'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    const confirm = vi.spyOn(window, 'confirm');
     const fixture = TestBed.createComponent(ProfilesPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    button(root, 'Delete').click();
+    const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+    button(root, 'Delete', root.querySelector('tbody')!).click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith('Delete the quality profile "Payments"?');
+    // Intended change (step 7): the page's own dialog asks, not the browser's.
+    expect(confirm).not.toHaveBeenCalled();
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
+      'Delete the quality profile "Payments"?',
+    );
+    button(root, 'Cancel', ask).click();
+    await settle(fixture);
     expect(server.requestsTo('DELETE', '/api/v0/quality-profiles/p2')).toHaveLength(0);
-    confirm.mockReturnValueOnce(true);
-    button(root, 'Delete').click();
+    button(root, 'Delete', root.querySelector('tbody')!).click();
+    await settle(fixture);
+    button(root, 'Delete', ask).click();
     await settle(fixture);
     expect(server.requestsTo('DELETE', '/api/v0/quality-profiles/p2')).toHaveLength(1);
     expect(root.querySelector('[role="alert"]')?.textContent).toContain(
       'Other profiles inherit from this one; delete them first.',
     );
     confirm.mockRestore();
+  });
+
+  it('heads each language with its count, and shows what each profile does with new rules', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-profiles', {
+      body: page([
+        profile('p1', 'Qualor way', { isBuiltin: true, isDefault: true }),
+        profile('p2', 'Payments', { unknownRules: 'ignore' }),
+      ]),
+    });
+    const fixture = TestBed.createComponent(ProfilesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const ts = root.querySelector('[aria-labelledby="profiles-typescript"]')!;
+    expect(ts.querySelector('h2')?.textContent?.trim()).toBe('TypeScript');
+    expect(ts.querySelector('.panel-sub')?.textContent?.trim()).toBe('2 profiles');
+    expect(
+      [...ts.querySelectorAll('tbody tr')].map((tr) => tr.children[2]?.textContent?.trim()),
+    ).toEqual(['Active', 'Ignored']);
+    // A language without a profile gets no empty panel.
+    expect(root.querySelector('[aria-labelledby="profiles-java"]')).toBeNull();
   });
 
   it('copies a built-in profile and offers no change to a member', async () => {

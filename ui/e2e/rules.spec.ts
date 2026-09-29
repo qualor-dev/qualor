@@ -112,6 +112,10 @@ test('a new profile inherits from a parent, which cannot be deleted while it has
   const parentId = (await parentLink.getAttribute('href'))?.split('/').at(-1);
   expect(parentId).toBeTruthy();
 
+  // The form is in the "New profile" dialog (step 7), which starts on the name.
+  await page.getByRole('button', { name: 'New profile' }).click();
+  await expect(page.getByLabel('Name', { exact: true })).toBeFocused();
+  await expectAccessible(page);
   // The built-in name is refused in any spelling, before the server is asked.
   await page.getByLabel('Name', { exact: true }).fill('qualor-WAY');
   await page.getByRole('button', { name: 'Create profile' }).click();
@@ -129,16 +133,18 @@ test('a new profile inherits from a parent, which cannot be deleted while it has
   const child = ts.getByRole('row', { name: /^Refunds TypeScript/ });
   await expect(child).toContainText('Payments TypeScript');
   guard.allowFailedLoad(`/api/v0/quality-profiles/${parentId}`, 409);
-  guard.expectConfirm();
+  // The page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
+  const ask = page.getByRole('dialog', { name: 'Delete the quality profile' });
   await ts
     .getByRole('row', { name: /^Payments TypeScript/ })
     .getByRole('button', { name: 'Delete' })
     .click();
+  await ask.getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByRole('alert')).toHaveText(
     'Other profiles inherit from this one; delete them first.',
   );
-  guard.expectConfirm();
   await child.getByRole('button', { name: 'Delete' }).click();
+  await ask.getByRole('button', { name: 'Delete' }).click();
   await expect(child).toHaveCount(0);
   await expect(ts.getByRole('link', { name: 'Payments TypeScript' })).toBeVisible();
   await expectAccessible(page);

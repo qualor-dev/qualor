@@ -1,0 +1,51 @@
+/* Quality profiles (spec §7.7): one panel per language, headed by its chip. */
+.profile-groups {
+  display: grid;
+  gap: 24px;
+}
+.profile-groups > * {
+  margin: 0;
+}
+.lang-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+}
+.profile-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 12rem;
+}
+.profile-name > a {
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.profile-name > a:hover {
+  text-decoration: underline;
+}
+.actions-col {
+  width: 1px;
+  text-align: right;
+}
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}
+.load-more {
+  margin: 16px 0 0;
+}
+#confirm-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
