@@ -6,6 +6,12 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `restore` (the embedded database) no longer drops the database before the dump has loaded. It
+  loads the dump into a new database and replaces the old one only on success; a truncated, empty or
+  wrong file now fails with "the existing database was not changed" and the data stays as it was.
+
 ## [0.1.0] - 2026-09-28
 
 The first public release.

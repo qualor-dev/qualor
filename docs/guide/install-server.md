@@ -440,8 +440,9 @@ secret. Back up `.env` as well (it holds `QUALOR_SECRET_KEY`), but **separately*
 Without that key, the restored SCM tokens, GitHub keys, webhook secrets and the AI provider's API key
 cannot be decrypted, and you have to enter them again.
 
-**Restore** with the server stopped. The `restore` command recreates the database and loads the
-dump into it:
+**Restore** with the server stopped. The `restore` command loads the dump into a new database and
+replaces the old one only when the whole dump loaded, so a truncated or wrong file leaves the data
+as it was:
 
 ```sh
 docker compose stop server
