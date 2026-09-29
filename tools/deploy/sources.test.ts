@@ -68,9 +68,9 @@ describe('the pinned source manifest of the scanner image (rulings L1 and L2)', 
     // Phase 8A/8B: the last LGPL-3.0 releases, pinned exactly (global-constraints.md).
     expect(byName('SonarAnalyzer.CSharp (SonarSource/sonar-dotnet)')?.licence).toBe('LGPL-3.0');
     expect(byName('SonarJS (eslint-plugin-sonarjs)')?.licence).toBe('LGPL-3.0');
-    expect(byName('axe-core (bundled by eslint-plugin-jsx-a11y in the sonarjs pass)')?.licence).toBe(
-      'MPL-2.0',
-    );
+    expect(
+      byName('axe-core (bundled by eslint-plugin-jsx-a11y in the sonarjs pass)')?.licence,
+    ).toBe('MPL-2.0');
   });
 
   it('pins SonarAnalyzer.CSharp and SonarJS by the exact commit their tag/release records, without ruling data a top-level exclude cannot reach', () => {

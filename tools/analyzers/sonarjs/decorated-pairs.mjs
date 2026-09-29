@@ -117,11 +117,16 @@ function extractNamespaceRefs(text, pathFragment, prop) {
 /** `const X = __importDefault(require("<pkg>")); const { rules[: alias] } = X.default;` then `<alias>['<name>']`. */
 function extractDefaultPluginRefs(text, pkg) {
   const names = new Set();
-  const reqRe = new RegExp(`const (\\w+) = __importDefault\\(require\\("${escapeRe(pkg)}"\\)\\);`, 'g');
+  const reqRe = new RegExp(
+    `const (\\w+) = __importDefault\\(require\\("${escapeRe(pkg)}"\\)\\);`,
+    'g',
+  );
   let rm;
   while ((rm = reqRe.exec(text))) {
     const ident = rm[1];
-    const destructRe = new RegExp(`const \\{\\s*rules(?::\\s*(\\w+))?\\s*\\} = ${ident}\\.default;`);
+    const destructRe = new RegExp(
+      `const \\{\\s*rules(?::\\s*(\\w+))?\\s*\\} = ${ident}\\.default;`,
+    );
     const dm = text.match(destructRe);
     if (!dm) continue;
     const localVar = dm[1] || 'rules';
@@ -150,8 +155,10 @@ let tsPlugin = null;
 try {
   tsPlugin = require('@typescript-eslint/eslint-plugin');
 } catch (err) {
-  console.error(`Warning: could not load @typescript-eslint/eslint-plugin (${err.message}); ` +
-    `typescript-eslint bases will not be checked for a core-rule extension.`);
+  console.error(
+    `Warning: could not load @typescript-eslint/eslint-plugin (${err.message}); ` +
+      `typescript-eslint bases will not be checked for a core-rule extension.`,
+  );
 }
 
 /** typescript-eslint's own documented convention for "this rule extends an ESLint core rule". */
@@ -193,7 +200,11 @@ for (const { sonarKey, hint } of entries) {
   for (const name of extractNamespaceRefs(logicSrc, '../core/index.js', 'eslintRules')) {
     candidates.push({ origin: 'core', name });
   }
-  for (const name of extractNamespaceRefs(logicSrc, '../typescript-eslint/index.js', 'tsEslintRules')) {
+  for (const name of extractNamespaceRefs(
+    logicSrc,
+    '../typescript-eslint/index.js',
+    'tsEslintRules',
+  )) {
     candidates.push({ origin: 'ts', name });
     // Step 4: does typescript-eslint itself say this extends an ESLint core rule?
     const coreName = coreNameExtendedBy(name);
@@ -214,7 +225,9 @@ for (const { sonarKey, hint } of entries) {
 
   if (candidates.length === 0) {
     unresolved += 1;
-    console.error(`WARNING: no base rule found for ${sonarKey} (hint: "${hint}", read ${logicFile}).`);
+    console.error(
+      `WARNING: no base rule found for ${sonarKey} (hint: "${hint}", read ${logicFile}).`,
+    );
     continue;
   }
 
@@ -232,5 +245,7 @@ for (const { sonarKey, hint } of entries) {
   console.error(`${sonarKey} (${hint}, ${logicFile}): ${[...seen].join(', ')}`);
 }
 
-console.error(`\n${pairs.length} pairs from ${entries.length} decorated rules (${unresolved} unresolved).`);
+console.error(
+  `\n${pairs.length} pairs from ${entries.length} decorated rules (${unresolved} unresolved).`,
+);
 console.log(JSON.stringify(pairs, null, 2));

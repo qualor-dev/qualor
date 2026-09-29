@@ -205,7 +205,10 @@ export function temurinVersionOf(dockerfile: string): string {
 export function pinnedVersions(root = REPO_ROOT): Pins {
   const installSh = readFileSync(path.join(root, 'tools/analyzers/install.sh'), 'utf8');
   // SonarAnalyzer.CSharp is pinned in the .NET install script, not this one (phase 8A/8B).
-  const installDotnetSh = readFileSync(path.join(root, 'tools/analyzers/install-dotnet.sh'), 'utf8');
+  const installDotnetSh = readFileSync(
+    path.join(root, 'tools/analyzers/install-dotnet.sh'),
+    'utf8',
+  );
   return {
     opengrep: installedVersion(installSh, 'OPENGREP'),
     spotbugs: installedVersion(installSh, 'SPOTBUGS'),

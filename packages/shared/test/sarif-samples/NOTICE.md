@@ -4,15 +4,15 @@ These are real SARIF logs captured from real analyzer runs (`fixtures/README.md`
 size, and used only as golden input to `sarif-golden.test.ts`. Each is an unmodified excerpt of
 that tool's own output (rule ids, messages, categories, tags, `helpUri`) except where noted below.
 
-| Sample                | Produced by                                                                 | Licence                          |
-| ---------------------- | ---------------------------------------------------------------------------- | --------------------------------- |
-| `eslint.sarif`         | ESLint, run over `fixtures/ts-basic`                                        | MIT                               |
-| `pmd.sarif`            | PMD, run over `fixtures/java-basic`                                         | BSD-style, with Apache-2.0 parts  |
-| `spotbugs.sarif`       | SpotBugs, run over `fixtures/java-basic`                                    | LGPL-2.1                          |
-| `gitleaks.sarif`       | Gitleaks, run over `fixtures/mixed-secrets`                                 | MIT                               |
-| `semgrep.sarif`        | Semgrep/OpenGrep, run over `fixtures/mixed-secrets`                         | LGPL-2.1                          |
-| `roslyn.sarif`         | the .NET compiler (Roslyn) and Roslynator.Analyzers, run over `fixtures/csharp-basic` | MIT (.NET SDK); Apache-2.0 (Roslynator) |
-| `roslyn-sonar.sarif`   | the .NET compiler (Roslyn), Roslynator.Analyzers and the bundled **SonarAnalyzer.CSharp 9.32.0.97167**, run over `fixtures/csharp-basic`, then merged with `mergeRoslynLogs` and trimmed | MIT (.NET SDK); Apache-2.0 (Roslynator); **LGPL-3.0-only (SonarAnalyzer.CSharp)** |
+| Sample               | Produced by                                                                                                                                                                              | Licence                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `eslint.sarif`       | ESLint, run over `fixtures/ts-basic`                                                                                                                                                     | MIT                                                                               |
+| `pmd.sarif`          | PMD, run over `fixtures/java-basic`                                                                                                                                                      | BSD-style, with Apache-2.0 parts                                                  |
+| `spotbugs.sarif`     | SpotBugs, run over `fixtures/java-basic`                                                                                                                                                 | LGPL-2.1                                                                          |
+| `gitleaks.sarif`     | Gitleaks, run over `fixtures/mixed-secrets`                                                                                                                                              | MIT                                                                               |
+| `semgrep.sarif`      | Semgrep/OpenGrep, run over `fixtures/mixed-secrets`                                                                                                                                      | LGPL-2.1                                                                          |
+| `roslyn.sarif`       | the .NET compiler (Roslyn) and Roslynator.Analyzers, run over `fixtures/csharp-basic`                                                                                                    | MIT (.NET SDK); Apache-2.0 (Roslynator)                                           |
+| `roslyn-sonar.sarif` | the .NET compiler (Roslyn), Roslynator.Analyzers and the bundled **SonarAnalyzer.CSharp 9.32.0.97167**, run over `fixtures/csharp-basic`, then merged with `mergeRoslynLogs` and trimmed | MIT (.NET SDK); Apache-2.0 (Roslynator); **LGPL-3.0-only (SonarAnalyzer.CSharp)** |
 
 **`roslyn-sonar.sarif` and SonarSource text.** Qualor's licence boundary (Phase 8A/8B) keeps
 SonarSource's own text — rule descriptions, RSPEC prose — out of this repository; the LGPL-3.0

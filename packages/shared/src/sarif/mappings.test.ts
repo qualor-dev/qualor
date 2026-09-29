@@ -211,25 +211,37 @@ describe('sonarCategory (report-format.md §7.1)', () => {
   it('roslyn uses it for SonarAnalyzer rules and keeps the Microsoft mapping otherwise', () => {
     const roslyn = engineMapping('roslyn')!;
     expect(roslyn.rule!({ id: 'S2930', properties: { category: 'Major Bug' } })).toEqual({
-      quality: 'reliability', kind: 'issue', defaultSeverity: 'medium',
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
     });
     expect(roslyn.rule!({ id: 'CA5351', properties: { category: 'Security' } })).toEqual({
-      quality: 'security', kind: 'issue',
+      quality: 'security',
+      kind: 'issue',
     });
   });
 
   it('sonarjs uses it, and defaults to maintainability without a category', () => {
     const sonarjs = engineMapping('sonarjs')!;
-    expect(sonarjs.rule!({ id: 'S5332', properties: { category: 'Critical Security Hotspot' } }))
-      .toEqual({ quality: 'security', kind: 'hotspot', defaultSeverity: 'high' });
+    expect(
+      sonarjs.rule!({ id: 'S5332', properties: { category: 'Critical Security Hotspot' } }),
+    ).toEqual({ quality: 'security', kind: 'hotspot', defaultSeverity: 'high' });
     expect(sonarjs.rule!({ id: 'S9999' })).toEqual({ quality: 'maintainability', kind: 'issue' });
   });
 
   it('a SonarAnalyzer result takes its severity from the category, not the SARIF level', () => {
     const roslyn = engineMapping('roslyn')!;
-    expect(roslyn.severity!({ ruleId: 'S2930', level: 'warning' } as never,
-      { id: 'S2930', properties: { category: 'Blocker Bug' } })).toBe('blocker');
-    expect(roslyn.severity!({ ruleId: 'CA5351', level: 'warning' } as never,
-      { id: 'CA5351', properties: { category: 'Security' } })).toBeUndefined();
+    expect(
+      roslyn.severity!({ ruleId: 'S2930', level: 'warning' } as never, {
+        id: 'S2930',
+        properties: { category: 'Blocker Bug' },
+      }),
+    ).toBe('blocker');
+    expect(
+      roslyn.severity!({ ruleId: 'CA5351', level: 'warning' } as never, {
+        id: 'CA5351',
+        properties: { category: 'Security' },
+      }),
+    ).toBeUndefined();
   });
 });
