@@ -97,7 +97,7 @@ qualor:
 
 For merge request comments, inline discussions and a commit status, connect the organisation to
 GitLab in Qualor (Settings, GitLab: the GitLab URL and a project access token with the `api` scope
-and the Developer role) and map each project to its GitLab project there.
+and the Maintainer role) and map each project to its GitLab project there.
 
 GitHub Actions: copy the whole workflow
 [integrations/github/qualor.yml](integrations/github/qualor.yml) to `.github/workflows/qualor.yml`
