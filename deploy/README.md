@@ -45,6 +45,19 @@ amd64 and arm64, so `docker buildx build --platform linux/arm64 …` should work
 been built so far; `deploy/scanner-dotnet/Dockerfile` detects its architecture itself
 (`tools/analyzers/install-dotnet.sh`, `uname -m`), so it needs no `TARGETARCH` build argument.
 
+Scan a built scanner image for known vulnerabilities with the accepted ones left out:
+
+```sh
+trivy image --severity HIGH,CRITICAL --ignorefile deploy/scanner/.trivyignore.yaml qualor/scanner:dev
+```
+
+`deploy/scanner/.trivyignore.yaml` (both scanner images) lists each accepted vulnerability with its
+reason and a review date (`expired_at`, after which Trivy reports it again): Debian packages
+without a fix yet, npm's own dependencies in the npm that Node.js 22 bundles, and parts of PMD,
+Trivy and the .NET 8 SDK that the latest releases still carry. A finding with a fix is a version
+bump, not an entry. Gitleaks is built from its release tag with a current Go in
+`deploy/scanner/Dockerfile`, because its release binaries use a Go with known vulnerabilities.
+
 `qualor/server` and `qualor/scanner` each have a companion image, `qualor/server-sources` and
 `qualor/scanner-sources`, which carries the source code of its copyleft components and is always
 released with the same tag (see [Releasing the images](#releasing-the-images)).
