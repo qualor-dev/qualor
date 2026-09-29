@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SSO_ERROR_REASONS } from '../server/src/audit/catalogue';
 import { SSO_TEST_PROBLEM_CODES } from '../server/src/sso/connections';
+import { SAML_METADATA_PROBLEM_CODES } from '../server/src/sso/saml';
 
 /**
  * The UI never imports the server (AGENTS.md rule 5), so it keeps its own copies of the single
@@ -43,5 +44,15 @@ describe('the UI and the server name the same SSO codes', () => {
     // And the UI names no code the server does not produce.
     const known: ReadonlySet<string> = new Set(SSO_TEST_PROBLEM_CODES);
     expect([...cases].filter((code) => !known.has(code!))).toEqual([]);
+  });
+
+  it('every reason of a refused Read metadata has a text in metadataProblemText', () => {
+    const settingsText = read('ui/src/app/settings/sso-settings-text.ts');
+    const fn = block(settingsText, 'export function metadataProblemText', '\n}\n');
+    const cases = new Set([...fn.matchAll(/case '([^']+)':/g)].map((m) => m[1]));
+    // A failed request is answered with the Test's text (checked above).
+    const own = SAML_METADATA_PROBLEM_CODES.filter((code) => !code.startsWith('fetch.'));
+    expect([...cases].sort()).toEqual([...own].sort());
+    expect(fn).toContain("reason?.startsWith('fetch.') ? testProblemText(reason)");
   });
 });

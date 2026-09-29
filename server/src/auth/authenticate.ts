@@ -1,11 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../app';
 import { ProblemError, unauthenticated } from '../http/problem';
-import { resolveRequestPrincipal } from './principal';
-import { csrfTokenFor, safeEqual, SESSION_COOKIE } from './sessions';
+import { resolveRequestPrincipal, type UserPrincipal } from './principal';
+import { csrfTokenFor, isSsoSession, safeEqual, SESSION_COOKIE } from './sessions';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-/** Ruling R7: a user who must change their password may do only that. */
+/**
+ * Ruling R7: a user who must change their password may do only that, on a session their password
+ * made or with a personal token. An SSO session was not made with that password: it is not held
+ * up, and the flag stays for their next password sign-in.
+ */
 const ALLOWED_BEFORE_PASSWORD_CHANGE = new Set([
   '/api/v0/auth/me',
   '/api/v0/auth/me/password',
@@ -17,7 +21,7 @@ const ALLOWED_BEFORE_PASSWORD_CHANGE = new Set([
  * { public: true }` routes skip authentication entirely, everything else needs a valid principal
  * (401 before the body is parsed), then cookie-authenticated mutations need a matching
  * X-Qualor-CSRF header (403), then users flagged `passwordChangeRequired` may only reach the
- * handful of routes that let them change it (403).
+ * handful of routes that let them change it (403), unless an SSO sign-in made the session.
  */
 export function installAuthentication(app: FastifyInstance, deps: RouteDeps): void {
   app.decorateRequest('principal', null);
@@ -39,7 +43,7 @@ export function installAuthentication(app: FastifyInstance, deps: RouteDeps): vo
     }
     if (
       principal.kind !== 'project' &&
-      principal.user.passwordChangeRequired &&
+      passwordChangeRequired(principal, deps.config.secretKey) &&
       !ALLOWED_BEFORE_PASSWORD_CHANGE.has(request.routeOptions.url ?? '')
     ) {
       throw new ProblemError(
@@ -49,4 +53,10 @@ export function installAuthentication(app: FastifyInstance, deps: RouteDeps): vo
       );
     }
   });
+}
+
+/** Ruling R7 for this request: the user's flag, unless an SSO sign-in made the session. */
+export function passwordChangeRequired(principal: UserPrincipal, secretKey: string): boolean {
+  if (!principal.user.passwordChangeRequired) return false;
+  return !(principal.kind === 'session' && isSsoSession(secretKey, principal.sessionSecret));
 }

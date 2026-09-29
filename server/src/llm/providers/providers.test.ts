@@ -209,6 +209,26 @@ describe('callProvider (llm.md §2, §4, §14)', () => {
     expect(fake.requests).toHaveLength(1);
   });
 
+  it.each([
+    ['openai', 401, 'The provider refused the API key (HTTP 401)'],
+    ['anthropic', 401, 'The provider refused the API key (HTTP 401)'],
+    [
+      'openai',
+      403,
+      'The provider refused the request (HTTP 403): the key lacks access to this model, or the account has no credit',
+    ],
+    [
+      'anthropic',
+      403,
+      'The provider refused the request (HTTP 403): the key lacks access to this model, or the account has no credit',
+    ],
+  ])('names the status of a refused %s key (HTTP %i)', async (kind, status, message) => {
+    fake.enqueue({ status, body: llmShape('openai-error') });
+    const config = kind === 'anthropic' ? anthropic : openai;
+    const err = await callProvider(config, fake.apiKey, call, http).catch((e: unknown) => e);
+    expect(err).toMatchObject({ failure: 'refused_key', status, message });
+  });
+
   it('refuses an answer that is not the provider shape', async () => {
     fake.enqueue({ status: 200, body: { choices: [] } });
     await expect(callProvider(openai, fake.apiKey, call, http)).rejects.toMatchObject({

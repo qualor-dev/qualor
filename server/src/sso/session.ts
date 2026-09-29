@@ -28,7 +28,7 @@ import { safeReturnTo } from './return-to';
  * for the caller's `failSsoFlow`.
  */
 export async function issueSsoSession(
-  deps: { db: Db; config: Pick<Config, 'sessionTtlHours'>; audit: AuditRecorder },
+  deps: { db: Db; config: Pick<Config, 'sessionTtlHours' | 'secretKey'>; audit: AuditRecorder },
   request: FastifyRequest,
   reply: FastifyReply,
   input: { user: UserRow; connectionId: string; protocol: 'oidc' | 'saml'; returnTo: string },
@@ -62,6 +62,8 @@ export async function issueSsoSession(
       ttlHours: deps.config.sessionTtlHours,
       ip: request.ip,
       userAgent: request.headers['user-agent'] ?? null,
+      // Marked as an SSO session: a forced password change does not hold it up (authenticate.ts).
+      ssoKey: deps.config.secretKey,
     });
     const now = new Date();
     await tx.update(users).set({ lastLoginAt: now }).where(eq(users.id, input.user.id));

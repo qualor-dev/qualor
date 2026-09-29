@@ -7,6 +7,7 @@ import {
   csrfTokenFor,
   deleteSession,
   deleteUserSessions,
+  isSsoSession,
   resolveSession,
   safeEqual,
   sessionIdFor,
@@ -37,6 +38,27 @@ describe('sessions (data-model.md §4.1)', () => {
       .where(eq(sessions.id, sessionIdFor(secret)));
     expect(row?.id.equals(Buffer.from(secret))).toBe(false);
     expect((await resolveSession(t.db, secret))?.id).toBe(userId);
+  });
+
+  it('marks an SSO session so that only this server can tell, and never a password one', async () => {
+    const key = 'k'.repeat(32);
+    const sso = await createSession(t.db, {
+      userId,
+      ttlHours: 1,
+      ip: null,
+      userAgent: null,
+      ssoKey: key,
+    });
+    expect(sso.secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect((await resolveSession(t.db, sso.secret))?.id).toBe(userId);
+    expect(isSsoSession(key, sso.secret)).toBe(true);
+    // Another server key, a password session, a changed secret, a malformed one: not SSO.
+    expect(isSsoSession('j'.repeat(32), sso.secret)).toBe(false);
+    expect(isSsoSession(key, (await newSession()).secret)).toBe(false);
+    const flipped = Buffer.from(sso.secret, 'base64url');
+    flipped[0] = flipped[0]! ^ 1;
+    expect(isSsoSession(key, flipped.toString('base64url'))).toBe(false);
+    expect(isSsoSession(key, 'not a session')).toBe(false);
   });
 
   it('rejects malformed, unknown, expired and deactivated sessions', async () => {

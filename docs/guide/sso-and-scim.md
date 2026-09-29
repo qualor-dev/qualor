@@ -286,6 +286,11 @@ A new account whose **verified** email already belongs to another Qualor user is
 account with its password and links it under **Settings → Linked accounts**, or an admin turns on
 linking by verified email.
 
+**A password an admin set.** When an admin sets a user's password, that user must choose their
+own at their next password sign-in. Signing in with single sign-on does not ask for it: the
+session did not use that password. The request stays, so the next sign-in with the password
+still asks for a new one first.
+
 **Linking by email trusts every connection.** An account's email can come from any enabled
 connection (a verified email at sign-in) or from its SCIM, and linking looks at every account,
 whichever connection gave it its email. If a less trusted IdP (a partner's tenant, say) gives one

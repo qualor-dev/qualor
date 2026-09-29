@@ -16,7 +16,7 @@ const PROBLEM_SCHEMA = {
     reason: {
       type: 'string',
       description:
-        'LICENSE_INVALID only: why the key was rejected (malformed, unknown-key, bad-signature, bad-payload, revoked, not-yet-valid); map the code, not the text',
+        'LICENSE_INVALID: why the key was rejected (malformed, unknown-key, bad-signature, bad-payload, revoked, not-yet-valid). VALIDATION_FAILED of POST /ee/sso/connections/{id}/saml/metadata: what failed (a fetch.<reason> code of the connection Test, or config_invalid, metadata.no_url, metadata.not_saml, metadata.incomplete, metadata.sso_url). Map the code, not the text',
     },
     errors: {
       type: 'array',

@@ -223,7 +223,7 @@ describe('AiSettingsPage (llm.md §3, §18)', () => {
         ok: false,
         model: null,
         latencyMs: 12,
-        problem: { code: 'PROVIDER_REJECTED_REQUEST', message: 'server text' },
+        problem: { code: 'PROVIDER_REJECTED_REQUEST', message: 'server text', providerStatus: 404 },
       },
     });
     const { fixture, root } = await render();
@@ -236,6 +236,28 @@ describe('AiSettingsPage (llm.md §3, §18)', () => {
     );
     expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
     expect(root.textContent).not.toContain('server text');
+  });
+
+  it.each([
+    [401, 'The provider refused the API key (HTTP 401).'],
+    [
+      403,
+      'The provider refused the request (HTTP 403): the key lacks access to this model, or the account has no credit.',
+    ],
+  ])('tells a refused key (HTTP %i) apart by the provider status', async (status, text) => {
+    const server = setup(CONFIGURED);
+    server.on('POST', '/api/v0/system/llm/test', {
+      body: {
+        ok: false,
+        model: null,
+        latencyMs: 12,
+        problem: { code: 'PROVIDER_REFUSED_KEY', message: 'server text', providerStatus: status },
+      },
+    });
+    const { fixture, root } = await render();
+    [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Test')!.click();
+    await settle(fixture);
+    expect(root.querySelector('.alert-error[role="alert"]')?.textContent).toContain(text);
   });
 
   it('shows a successful Test in the status region', async () => {

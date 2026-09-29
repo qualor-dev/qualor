@@ -12,6 +12,7 @@ import { IssueChangeLimiter } from '../issues/rate-limit';
 import type { Limits } from '../limits';
 import { issueForUser } from '../projects/access';
 import { enqueue } from '../queue/queue';
+import type { LlmErrorCode } from './errors';
 import { baseUrlHash, buildIssueInput, cacheKeyOf } from './input';
 import type { LlmJobPayload } from './job';
 import {
@@ -105,8 +106,37 @@ export interface AiUsage {
   costMicroUsd: number;
 }
 
-/** llm.md §12.1: the organisation's requests, tokens and estimated cost of the current UTC day. */
+/**
+ * Failed requests the organisation's daily counts leave out, when no token was used: the job's
+ * own checks refused them before anything was sent, or the provider refused the key (401, 403)
+ * before doing any work. Every other failure counts (a timeout or an unavailable provider may
+ * still have used the provider; a refused request may follow from what was sent). The per-user
+ * hourly bound counts every request, so leaving these out cannot be used to send more.
+ */
+export const UNCOUNTED_FAILURES = [
+  'PROVIDER_REFUSED_KEY',
+  'URL_NOT_ALLOWED',
+  'KEY_UNDECRYPTABLE',
+  'AI_DISABLED',
+  'SETTINGS_CHANGED',
+  'ISSUE_CHANGED',
+  'ISSUE_GONE',
+] as const satisfies readonly LlmErrorCode[];
+
+/**
+ * llm.md §12.1: the organisation's requests, tokens and estimated cost of the current UTC day.
+ * A request queued or running counts (it holds its unit of the budget); a failed one that used
+ * nothing does not (UNCOUNTED_FAILURES).
+ */
 export async function todayUsage(db: Executor, organizationId: string): Promise<AiUsage> {
+  const uncounted = sql.join(
+    UNCOUNTED_FAILURES.map((code) => sql`${code}`),
+    sql`, `,
+  );
+  const counted = sql`NOT (status = 'failed'
+             AND coalesce(error_code, '') IN (${uncounted})
+             AND coalesce(input_tokens, 0) = 0
+             AND coalesce(output_tokens, 0) = 0)`;
   const { rows } = await db.execute<{
     explain: number;
     triage: number;
@@ -114,9 +144,9 @@ export async function todayUsage(db: Executor, organizationId: string): Promise<
     tokens: string;
     cost: string;
   }>(sql`
-    SELECT count(*) FILTER (WHERE feature = 'explain')::int AS explain,
-           count(*) FILTER (WHERE feature = 'triage')::int AS triage,
-           count(*) FILTER (WHERE feature = 'fix')::int AS fix,
+    SELECT count(*) FILTER (WHERE feature = 'explain' AND ${counted})::int AS explain,
+           count(*) FILTER (WHERE feature = 'triage' AND ${counted})::int AS triage,
+           count(*) FILTER (WHERE feature = 'fix' AND ${counted})::int AS fix,
            coalesce(sum(coalesce(input_tokens, 0) + coalesce(output_tokens, 0)), 0)::bigint AS tokens,
            coalesce(sum(cost_micro_usd), 0)::bigint AS cost
       FROM llm_requests
