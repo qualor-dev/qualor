@@ -2360,8 +2360,8 @@ details[open] > summary {
 }
 
 /*
- * The pages outside the shell (sign-in, change password, server unavailable): the site's ink panel
- * with an illustration next to the form.
+ * The pages outside the shell (spec §7.9: sign-in, change password, server unavailable,
+ * `q-auth-layout`): the site's ink panel with an illustration next to the form's card.
  */
 .auth-page {
   display: grid;
@@ -2395,13 +2395,14 @@ details[open] > summary {
 .auth-art .brand {
   font-size: 19px;
 }
+/* The page-title scale (30/750), in three lines clear of the illustration. */
 .auth-art .tagline {
-  max-width: 22rem;
+  max-width: 30rem;
   margin: var(--space-8) 0 0;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  font-size: 30px;
+  font-weight: 750;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
   color: #fff;
 }
 .auth-main {
@@ -2413,14 +2414,17 @@ details[open] > summary {
   width: min(25rem, 100%);
   padding: var(--space-8);
 }
+/* The dialog-title scale (24). */
 .auth-card h1 {
-  font-size: 24px;
   margin-bottom: var(--space-6);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
+/* The system's controls, full width in the card: a field's height, not a hero button. */
 .auth-card .btn {
   width: 100%;
-  min-height: 42px;
-  font-size: 14px;
+  min-height: 36px;
 }
 .auth-card input {
   width: 100%;
@@ -2429,27 +2433,53 @@ details[open] > summary {
   margin: var(--space-4) 0 0;
   text-align: center;
 }
-.auth-card .auth-alt .btn-link {
+.auth-card .auth-alt .btn-link,
+.auth-card .btn-quiet {
   width: auto;
 }
 .auth-providers {
-  margin-bottom: var(--space-4);
+  display: grid;
+  gap: var(--space-2);
 }
+/* "or sign in with a password" between two hairlines. */
 .auth-or {
-  margin: var(--space-4) 0;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 var(--space-4);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.auth-or::before,
+.auth-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
 }
 @media (max-width: 52rem) {
   .auth-page {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
   }
+  /* A band of ink: the words on flat ink at the left, the illustration faded in at the right. */
   .auth-art {
-    min-height: 13rem;
-    padding: var(--space-6);
+    gap: var(--space-3);
+    padding: var(--space-5) var(--space-4) var(--space-6);
+    background:
+      linear-gradient(90deg, var(--ink) 50%, rgb(10 27 51 / 0.6) 78%, rgb(10 27 51 / 0.3)),
+      url('/art/signin.webp') right -4rem center / auto 190% no-repeat,
+      var(--ink);
+  }
+  .auth-art.offline {
+    background:
+      linear-gradient(90deg, var(--ink) 50%, rgb(10 27 51 / 0.6) 78%, rgb(10 27 51 / 0.3)),
+      url('/art/offline.webp') right -6rem center / auto 150% no-repeat,
+      var(--ink);
   }
   .auth-art .tagline {
-    margin-top: var(--space-4);
+    max-width: 14rem;
+    margin-top: var(--space-2);
     font-size: 18px;
   }
   .auth-main {

@@ -18,6 +18,22 @@ test.describe('signed out', () => {
     await expect(page).toHaveURL(/\/gates$/);
   });
 
+  test.describe('on a phone', () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    test('sign-in fits the screen, its form in the first screen', async ({ page }) => {
+      await page.goto('/login');
+      const password = page.getByLabel('Password');
+      await expect(password).toBeVisible();
+      const box = (await password.boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(844);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        390,
+      );
+      await expectAccessible(page);
+    });
+  });
+
   test('a wrong password is refused with an alert', async ({ page, guard }) => {
     // The refused sign-in answers 401, which the browser logs; the alert is what the user sees.
     guard.allowFailedLoad('/api/v0/auth/login', 401);
@@ -116,5 +132,20 @@ test.describe('signed in', () => {
         cacheControl: 'public, max-age=31536000, immutable',
       });
     }
+  });
+});
+
+test.describe('on a phone, signed in', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('change password fits the screen, its first field in the first screen', async ({ page }) => {
+    await page.goto('/change-password');
+    const current = page.getByLabel('Current password');
+    await expect(current).toBeVisible();
+    const box = (await current.boundingBox())!;
+    expect(box.y + box.height).toBeLessThanOrEqual(844);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
   });
 });
