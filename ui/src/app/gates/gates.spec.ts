@@ -50,6 +50,34 @@ const COVERAGE = {
   domain: 'coverage',
 };
 
+/** A project of the organisation, using gate `qualityGateId` (null: the default gate). */
+function project(id: string, qualityGateId: string | null) {
+  return {
+    id,
+    organizationId: ORG_ID,
+    key: `acme/${id}`,
+    name: id,
+    mainBranchName: 'main',
+    qualityGateId,
+    newCodeDefinition: null,
+    scmConnectionId: null,
+    scmProjectRef: null,
+    createdAt: '',
+    updatedAt: '',
+    mainBranch: null,
+  };
+}
+
+function dialogIn(root: HTMLElement, id: string): HTMLDialogElement {
+  return root.querySelector<HTMLDialogElement>(`dialog#${id}`)!;
+}
+
+function buttonIn(root: ParentNode, text: string): HTMLButtonElement {
+  return [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+    (b) => b.textContent?.trim() === text,
+  )!;
+}
+
 describe('GatesPage', () => {
   it('lists the gates and lets an admin copy the built-in one', async () => {
     const server = setup(true);
@@ -106,26 +134,34 @@ describe('GatesPage', () => {
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
     expect(root.querySelector('#gate-name')).not.toBeNull();
+    expect(buttonIn(root, 'New gate')).toBeDefined();
   });
 
   it('asks before deleting, and deletes nothing when the question is dismissed', async () => {
     const server = setup(true);
     server.on('GET', '/api/v0/quality-gates', { body: page([gate('g2', 'Strict <b>')]) });
     server.on('DELETE', '/api/v0/quality-gates/g2', { status: 204 });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    const confirm = vi.spyOn(window, 'confirm');
     const fixture = TestBed.createComponent(GatesPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    const remove = () =>
-      [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Delete')!;
+    const ask = dialogIn(root, 'confirm-dialog');
+    const remove = () => buttonIn(root.querySelector('tbody')!, 'Delete');
     remove().click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    // Intended change (step 6): the page's own dialog asks, not the browser's.
+    expect(confirm).not.toHaveBeenCalled();
+    expect(ask.open).toBe(true);
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
       'Delete the quality gate "Strict <b>"? Its projects fall back to the default gate.',
     );
+    buttonIn(ask, 'Cancel').click();
+    await settle(fixture);
+    expect(ask.open).toBe(false);
     expect(server.requestsTo('DELETE', '/api/v0/quality-gates/g2')).toHaveLength(0);
-    confirm.mockReturnValueOnce(true);
     remove().click();
+    await settle(fixture);
+    buttonIn(ask, 'Delete').click();
     await settle(fixture);
     expect(server.requestsTo('DELETE', '/api/v0/quality-gates/g2')).toHaveLength(1);
     // The list is loaded again after the change.
@@ -160,6 +196,10 @@ describe('GatesPage', () => {
     const fixture = TestBed.createComponent(GatesPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
+    // Intended change (step 6): the form is in the "New gate" dialog.
+    buttonIn(root, 'New gate').click();
+    await settle(fixture);
+    expect(dialogIn(root, 'create-dialog').open).toBe(true);
     const name = root.querySelector<HTMLInputElement>('#gate-name')!;
     name.value = '  Release ';
     name.dispatchEvent(new Event('input'));
@@ -171,6 +211,70 @@ describe('GatesPage', () => {
       name: 'Release',
     });
     expect(TestBed.inject(Router).url).toBe('/gates/g9');
+  });
+
+  it('sums up the conditions of each gate', async () => {
+    const server = setup(false);
+    const c = (id: string, metric: string) => ({
+      id,
+      metric,
+      operator: 'gt' as const,
+      threshold: 0,
+    });
+    server.on('GET', '/api/v0/quality-gates', {
+      body: page([
+        gate('g1', 'New code', { conditions: [c('a', 'new_issues'), c('b', 'new_coverage')] }),
+        gate('g2', 'Mixed', { conditions: [c('a', 'coverage'), c('b', 'new_issues')] }),
+        gate('g3', 'Empty', { conditions: [] }),
+        gate('g4', 'One overall', { conditions: [c('a', 'coverage')] }),
+      ]),
+    });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const summary = (id: string) =>
+      root.querySelector(`tr[data-key="${id}"] td.summary`)?.textContent?.trim();
+    expect(summary('g1')).toBe('2 conditions on new code');
+    expect(summary('g2')).toBe('2 conditions, 1 on new code');
+    expect(summary('g3')).toBe('No conditions');
+    expect(summary('g4')).toBe('1 condition');
+  });
+
+  it('counts the projects using each gate: the default one also counts projects without a gate', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-gates', {
+      body: page([
+        gate('g1', 'Qualor way', { isDefault: true }),
+        gate('g2', 'Strict'),
+        gate('g3', 'Unused'),
+      ]),
+    });
+    server.on('GET', '/api/v0/projects', {
+      body: page([project('a', null), project('b', 'g2'), project('c', 'g2'), project('d', 'g1')]),
+    });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const usage = (id: string) =>
+      root.querySelector(`tr[data-key="${id}"] td.usage`)?.textContent?.trim();
+    expect(usage('g1')).toBe('2');
+    expect(usage('g2')).toBe('2');
+    expect(usage('g3')).toBe('0');
+    const query = server.requestsTo('GET', '/api/v0/projects')[0]?.query;
+    expect(query?.get('organizationId')).toBe(ORG_ID);
+    expect(query?.get('limit')).toBe('500');
+    expect(root.querySelector('.usage-note')).toBeNull();
+  });
+
+  it('says so when the counts cover only the first 5 000 projects', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-gates', { body: page([gate('g2', 'Strict')]) });
+    server.on('GET', '/api/v0/projects', { body: page([project('b', 'g2')], 'more') });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(server.requestsTo('GET', '/api/v0/projects')).toHaveLength(10);
+    expect(root.querySelector('.usage-note')?.textContent).toContain('first 5,000 projects');
   });
 });
 
@@ -423,16 +527,14 @@ describe('gates: focus, announcements and route reuse (fix round 1)', () => {
     server.on('GET', '/api/v0/quality-gates', {
       body: page([gate('g2', 'Strict', { isDefault: true })]),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
     const fixture = TestBed.createComponent(GatesPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
     button(root, 'Delete').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(root.querySelector('#confirm-text')?.textContent?.trim()).toBe(
       'Delete the default quality gate "Strict"? The organization is then left without a default gate: every project that uses the default is no longer gated until you make another gate the default.',
     );
-    confirm.mockRestore();
   });
 
   it('after a delete, focus goes to the next row and the result is announced', async () => {
@@ -449,7 +551,6 @@ describe('gates: focus, announcements and route reuse (fix round 1)', () => {
       deleted = true;
       return { status: 204 };
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const fixture = TestBed.createComponent(GatesPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
@@ -458,13 +559,14 @@ describe('gates: focus, announcements and route reuse (fix round 1)', () => {
     remove.focus();
     remove.click();
     await settle(fixture);
+    button(root.querySelector('dialog#confirm-dialog')!, 'Delete').click();
+    await settle(fixture);
     expect(root.querySelector('tr[data-key="g2"]')).toBeNull();
     expect(root.querySelector('tr[data-key="g3"]')).toBe(gamma);
     expect(document.activeElement).toBe(button(gamma, 'Copy'));
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'Quality gate Beta deleted.',
     );
-    confirm.mockRestore();
   });
 
   it('reports a refused copy name as the copy failing, and keeps copy names within 100 characters', async () => {

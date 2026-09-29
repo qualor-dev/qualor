@@ -1,0 +1,36 @@
+/* Quality gates (spec §7.6): the list in a panel under the band. */
+.gate-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 12rem;
+}
+.gate-name > a {
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.gate-name > a:hover {
+  text-decoration: underline;
+}
+.summary {
+  color: var(--text-2);
+}
+.actions-col {
+  width: 1px;
+  text-align: right;
+}
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}
+.load-more {
+  margin: 16px 0 0;
+}
+#confirm-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

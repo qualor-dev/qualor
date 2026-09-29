@@ -2005,14 +2005,24 @@ details[open] > summary {
 .band-search input::placeholder {
   color: #4a5b73;
 }
-.page-band .btn:not(.btn-primary) {
+/* Secondary buttons on ink; a destructive one keeps its red (steps 6+ put Delete in a band). */
+.page-band .btn:not(.btn-primary, .btn-danger, .btn-danger-solid) {
   border-color: rgb(255 255 255 / 0.2);
   background: rgb(255 255 255 / 0.08);
   color: #fff;
 }
-.page-band .btn:not(.btn-primary):hover {
+.page-band .btn:not(.btn-primary, .btn-danger, .btn-danger-solid):hover {
   border-color: rgb(255 255 255 / 0.35);
   background: rgb(255 255 255 / 0.14);
+}
+.page-band .btn.btn-danger {
+  border-color: rgb(255 180 171 / 0.35);
+  background: rgb(255 255 255 / 0.04);
+  color: #ffb4ab;
+}
+.page-band .btn.btn-danger:hover {
+  border-color: rgb(255 180 171 / 0.6);
+  background: rgb(255 180 171 / 0.12);
 }
 .page-meta {
   display: flex;

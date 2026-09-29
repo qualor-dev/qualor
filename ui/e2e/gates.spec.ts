@@ -53,10 +53,13 @@ test('copying the built-in gate opens an editable copy', async ({ page }) => {
 
 test('an admin makes a new gate the default, then deletes it after a confirmation that says gating stops', async ({
   page,
-  guard,
 }) => {
   await page.goto('/gates');
-  await page.getByLabel('New gate').fill('Release candidate');
+  // The form is in the "New gate" dialog (step 6), which starts on the name.
+  await page.getByRole('button', { name: 'New gate' }).click();
+  await expect(page.getByLabel('Name', { exact: true })).toBeFocused();
+  await expectAccessible(page);
+  await page.getByLabel('Name', { exact: true }).fill('Release candidate');
   await page.getByRole('button', { name: 'Create gate' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Release candidate');
   await expect(page.getByText('No conditions: this gate always passes.')).toBeVisible();
@@ -75,11 +78,15 @@ test('an admin makes a new gate the default, then deletes it after a confirmatio
   // Deleting the default gate leaves the organization without one: the question says so.
   const question =
     'Delete the default quality gate "Release candidate"? The organization is then left without a default gate: every project that uses the default is no longer gated until you make another gate the default.';
-  guard.expectConfirm(false, question);
+  // The page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
   await created.getByRole('button', { name: 'Delete' }).click();
+  const ask = page.getByRole('dialog', { name: 'Delete the quality gate' });
+  await expect(ask).toContainText(question);
+  await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await ask.getByRole('button', { name: 'Cancel' }).click();
   await expect(created).toBeVisible();
-  guard.expectConfirm(true, question);
   await created.getByRole('button', { name: 'Delete' }).press('Enter');
+  await ask.getByRole('button', { name: 'Delete' }).click();
   await expect(created).toHaveCount(0);
   await expect(page.getByRole('status')).toHaveText('Quality gate Release candidate deleted.');
   await expect(page.locator('body')).not.toBeFocused();
