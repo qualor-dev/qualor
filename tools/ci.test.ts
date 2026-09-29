@@ -293,6 +293,10 @@ describe('install-dotnet.sh (plan 2D, ruling D11)', () => {
     }
     expect(script).toMatch(/^ROSLYNATOR_VERSION=\d+\.\d+\.\d+$/m);
     expect(script).toMatch(/^ROSLYNATOR_SHA256=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^SONARANALYZER_VERSION=9\.32\.0\.97167$/m);
+    expect(script).toMatch(
+      /^SONARANALYZER_SHA256=17c7fd6230597a4c08a30226e8b29f8e8c2a982ca12d4b9315021c8c41150cf8$/m,
+    );
   });
 
   it('checks every download before unpacking it, over https only', () => {

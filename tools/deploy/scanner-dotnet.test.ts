@@ -16,8 +16,23 @@ const ROSLYNATOR = [
   'Roslynator_Analyzers_Roslynator.Workspaces.Core.dll',
 ];
 
+/** What `ls /opt/qualor/dotnet/analyzers/sonar` printed in the image built for Task 3. */
+const SONAR = [
+  'Google.Protobuf.dll',
+  'SonarAnalyzer.CFG.dll',
+  'SonarAnalyzer.CSharp.dll',
+  'SonarAnalyzer.dll',
+  'SonarAnalyzer.ShimLayer.dll',
+];
+
 function output(
-  o: { sdks?: string[]; analyzers?: string[]; licenses?: string[]; version?: string } = {},
+  o: {
+    sdks?: string[];
+    analyzers?: string[];
+    sonar?: string[];
+    licenses?: string[];
+    version?: string;
+  } = {},
 ) {
   return [
     '== sdks',
@@ -27,6 +42,8 @@ function output(
     ]),
     '== analyzers',
     ...(o.analyzers ?? ROSLYNATOR),
+    '== sonar',
+    ...(o.sonar ?? SONAR),
     '== licenses',
     ...(o.licenses ?? [
       'DOTNET-10.0.401-ThirdPartyNotices.txt',
@@ -34,6 +51,7 @@ function output(
       'DOTNET-LICENSE.txt',
       'GITLEAKS-LICENSE.txt',
       'ROSLYNATOR-LICENSE.txt',
+      'SONARANALYZER-CSHARP-LICENSE.txt',
       'TREE-SITTER-C-SHARP-LICENSE.txt',
     ]),
     '== version',
@@ -54,9 +72,11 @@ describe('the qualor/scanner-dotnet content check (deploy/README.md)', () => {
       'DOTNET-LICENSE.txt',
       ...expected.sdks.map((v) => `DOTNET-${v}-ThirdPartyNotices.txt`),
       'ROSLYNATOR-LICENSE.txt',
+      'SONARANALYZER-CSHARP-LICENSE.txt',
       'TREE-SITTER-C-SHARP-LICENSE.txt',
     ]);
     expect(expected.analyzers).toBe(8);
+    expect(expected.sonarAnalyzers).toBe(5);
     expect(() => expectedContent('#!/bin/sh\n')).toThrow(/DOTNET8_VERSION/);
   });
 
@@ -64,6 +84,7 @@ describe('the qualor/scanner-dotnet content check (deploy/README.md)', () => {
     for (const part of [
       'dotnet --list-sdks',
       '/opt/qualor/dotnet/analyzers',
+      '/opt/qualor/dotnet/analyzers/sonar',
       '/opt/qualor/licenses',
       'qualor version',
     ]) {
@@ -91,6 +112,7 @@ describe('the qualor/scanner-dotnet content check (deploy/README.md)', () => {
       '/opt/qualor/licenses/ has no DOTNET-8.0.425-ThirdPartyNotices.txt',
       '/opt/qualor/licenses/ has no DOTNET-10.0.401-ThirdPartyNotices.txt',
       '/opt/qualor/licenses/ has no ROSLYNATOR-LICENSE.txt',
+      '/opt/qualor/licenses/ has no SONARANALYZER-CSHARP-LICENSE.txt',
       '/opt/qualor/licenses/ has no TREE-SITTER-C-SHARP-LICENSE.txt',
       'qualor version does not list the csharp grammar',
     ]);
@@ -102,5 +124,12 @@ describe('the qualor/scanner-dotnet content check (deploy/README.md)', () => {
       'dotnet --list-sdks does not list 10.0.401',
     ]);
     expect(imageProblems('', expected)).toContain('the probe printed no "== end" line');
+  });
+
+  it('names it when the sonar directory is short a SonarAnalyzer DLL', () => {
+    const expected = expectedContent(INSTALL);
+    expect(imageProblems(output({ sonar: SONAR.slice(1) }), expected)).toEqual([
+      'expected 5 SonarAnalyzer DLLs in /opt/qualor/dotnet/analyzers/sonar, found 4',
+    ]);
   });
 });
