@@ -1706,6 +1706,35 @@ details[open] > summary {
   gap: 8px 14px;
   min-width: 0;
 }
+.band-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.band-search {
+  display: flex;
+  gap: var(--space-2);
+}
+.band-search input {
+  width: 18rem;
+  max-width: 100%;
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.97);
+  color: #0a1b33;
+}
+.band-search input::placeholder {
+  color: #4a5b73;
+}
+.page-band .btn:not(.btn-primary) {
+  border-color: rgb(255 255 255 / 0.2);
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+.page-band .btn:not(.btn-primary):hover {
+  border-color: rgb(255 255 255 / 0.35);
+  background: rgb(255 255 255 / 0.14);
+}
 .page-meta {
   display: flex;
   flex-wrap: wrap;

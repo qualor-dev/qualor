@@ -1,5 +1,6 @@
 import {
   Component,
+  computed,
   effect,
   type ElementRef,
   inject,
@@ -12,12 +13,18 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { ApiError, fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
+import { Distribution, type DistributionItem } from '../charts/distribution';
+import { Lens } from '../charts/lens';
+import { label } from '../i18n/labels';
 import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
+import { closeModal, openModal } from '../shared/dialog';
 import { inputValue } from '../shared/forms';
 import { GateBadge } from '../shared/gate-badge';
+import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { MeasurePipe } from '../shared/measure.pipe';
+import { PageHeader } from '../shared/page-header';
 
 export type Project = ItemOf<'/api/v0/projects'>;
 const PAGE_SIZE = 50;
@@ -25,13 +32,17 @@ const PAGE_SIZE = 50;
 const MAX_TEXT = 255;
 
 /**
- * The current organisation's projects (brief §2.3) with their gate and main-branch measures:
- * a search that lives in the URL, keyset pages, and project creation for organisation admins.
+ * The current organisation's projects (brief §2.3, spec §7.2) on the ink band: a search that lives
+ * in the URL, a summary of the listed projects (gate outcomes, open issues, average coverage, lines
+ * of code, from the list itself), the table with keyset pages, and project creation in a dialog for
+ * organisation admins.
  */
 @Component({
   selector: 'q-projects-page',
-  imports: [DateTimePipe, GateBadge, MeasurePipe, RouterLink],
+  imports: [DateTimePipe, Distribution, GateBadge, Icon, Lens, MeasurePipe, PageHeader, RouterLink],
   templateUrl: './projects.page.html',
+  styleUrl: './projects.page.css',
+  host: { class: 'bleed' },
 })
 export class ProjectsPage {
   private readonly api = inject(Api);
@@ -61,6 +72,59 @@ export class ProjectsPage {
       ),
   );
 
+  /**
+   * The summary strip, over the projects listed so far (a next page may hold more: `partial`).
+   * A figure with no value anywhere is null, shown as a dash.
+   */
+  protected readonly summary = computed(() => {
+    const counts = { passed: 0, failed: 0, error: 0, none: 0, never: 0 };
+    let issues: number | null = null;
+    let ncloc: number | null = null;
+    let coverage = 0;
+    let covered = 0;
+    for (const project of this.list.items()) {
+      const status = project.mainBranch?.gateStatus;
+      if (status === 'passed' || status === 'failed' || status === 'error' || status === 'none') {
+        counts[status]++;
+      } else {
+        counts.never++;
+      }
+      const measures = project.mainBranch?.measures ?? {};
+      const [i, n, c] = [measures['issues'], measures['ncloc'], measures['coverage']];
+      if (typeof i === 'number') issues = (issues ?? 0) + i;
+      if (typeof n === 'number') ncloc = (ncloc ?? 0) + n;
+      if (typeof c === 'number') {
+        coverage += c;
+        covered++;
+      }
+    }
+    const gates: DistributionItem[] = [
+      { key: 'passed', label: label('gate', 'passed'), value: counts.passed, tone: 'passed' },
+      { key: 'failed', label: label('gate', 'failed'), value: counts.failed, tone: 'failed' },
+      ...(counts.error > 0
+        ? [{ key: 'error', label: label('gate', 'error'), value: counts.error, tone: 'failed' }]
+        : []),
+      ...(counts.none > 0
+        ? [{ key: 'none', label: label('gate', 'none'), value: counts.none, tone: 'none' }]
+        : []),
+      {
+        key: 'never',
+        label: $localize`:@@projects.summary.notAnalyzed:Not analyzed`,
+        value: counts.never,
+        tone: 'none',
+      },
+    ];
+    return {
+      gates,
+      issues,
+      ncloc,
+      coverage: covered > 0 ? coverage / covered : null,
+      partial: Boolean(this.list.nextCursor()),
+    };
+  });
+
+  private readonly createDialog = viewChild<ElementRef<HTMLDialogElement>>('createDialog');
+
   protected readonly newKey = signal('');
   protected readonly newName = signal('');
   protected readonly creating = signal(false);
@@ -88,6 +152,16 @@ export class ProjectsPage {
     event.preventDefault();
     const q = this.search().trim().slice(0, MAX_TEXT);
     void this.router.navigate([], { queryParams: { q: q || null }, replaceUrl: true });
+  }
+
+  protected openCreate(): void {
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
+  }
+
+  protected closeCreate(): void {
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
   }
 
   protected setKey(event: Event): void {

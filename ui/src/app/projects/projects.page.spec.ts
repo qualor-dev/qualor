@@ -38,6 +38,8 @@ function project(id: string, name: string, overrides: Partial<Project> = {}): Pr
   };
 }
 
+const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim();
+
 describe('ProjectsPage', () => {
   let server: FakeServer;
 
@@ -61,6 +63,10 @@ describe('ProjectsPage', () => {
     await settle(fixture);
     return { fixture, root: fixture.nativeElement as HTMLElement };
   }
+
+  const buttonNamed = (root: HTMLElement, name: string) =>
+    [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === name);
+  const openCreate = (root: HTMLElement) => buttonNamed(root, 'New project')!.click();
 
   const type = (root: HTMLElement, id: string, value: string) => {
     const input = root.querySelector<HTMLInputElement>(id)!;
@@ -99,6 +105,49 @@ describe('ProjectsPage', () => {
     expect(server.requestsTo('GET', '/api/v0/projects')[0]?.query.get('organizationId')).toBe(
       ORG_ID,
     );
+    // The last analysis is the day; its time is in the title.
+    const when = root.querySelector('tbody tr td:last-child span');
+    expect(when?.textContent?.trim()).toBe('Sep 15, 2026');
+    expect(when?.getAttribute('title')).toBe('Sep 15, 2026, 9:00 AM UTC');
+    // The summary of the listed projects.
+    const strip = root.querySelector('[aria-labelledby="portfolio-heading"]');
+    const cell = (name: string) =>
+      strip?.querySelector(`[data-kpi="${name}"] .kpi-value`)?.textContent?.trim();
+    expect([...(strip?.querySelectorAll('q-distribution li') ?? [])].map(text)).toEqual([
+      'Passed 0',
+      'Failed 1',
+      'Not analyzed 1',
+    ]);
+    expect([cell('issues'), cell('coverage'), cell('ncloc')]).toEqual(['9', '65.7 %', '12,345']);
+    expect(strip?.textContent).not.toContain('loaded so far');
+  });
+
+  it('says when the summary covers only the projects loaded so far, and never shows NaN', async () => {
+    server.on('GET', '/api/v0/projects', {
+      body: {
+        items: [project('legacy', 'Legacy Billing', { mainBranch: null })],
+        nextCursor: 'next',
+      },
+    });
+    const { root } = await render();
+    const strip = root.querySelector('[aria-labelledby="portfolio-heading"]');
+    expect(strip?.textContent).toContain('loaded so far');
+    expect(strip?.textContent).not.toContain('NaN');
+    expect(strip?.querySelector('[data-kpi="coverage"] .kpi-value')?.textContent?.trim()).toBe('–');
+  });
+
+  it('opens project creation in a dialog, and Cancel closes it', async () => {
+    server.on('GET', '/api/v0/projects', { body: page([]) });
+    const { fixture, root } = await render();
+    const dialog = root.querySelector('dialog')!;
+    expect(dialog.open).toBe(false);
+    openCreate(root);
+    await settle(fixture);
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector('h2')?.textContent?.trim()).toBe('New project');
+    buttonNamed(root, 'Cancel')!.click();
+    await settle(fixture);
+    expect(dialog.open).toBe(false);
   });
 
   it('pages with "Load more" and searches through the URL', async () => {
@@ -184,7 +233,7 @@ describe('ProjectsPage', () => {
     expect(root.textContent).toContain('No projects match.');
     type(root, '#project-key', 'acme/new');
     type(root, '#project-name', 'New Service');
-    root.querySelector('details form')!.dispatchEvent(new Event('submit'));
+    root.querySelector('dialog form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(server.requestsTo('POST', '/api/v0/projects')[0]?.body).toEqual({
       organizationId: ORG_ID,
@@ -203,9 +252,9 @@ describe('ProjectsPage', () => {
     const { fixture, root } = await render();
     type(root, '#project-key', 'acme/payments');
     type(root, '#project-name', 'Payments');
-    root.querySelector('details form')!.dispatchEvent(new Event('submit'));
+    root.querySelector('dialog form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
-    expect(root.querySelector('details [role="alert"]')?.textContent).toBe(
+    expect(root.querySelector('dialog [role="alert"]')?.textContent).toBe(
       'A project with this key already exists.',
     );
   });
@@ -215,8 +264,8 @@ describe('ProjectsPage', () => {
     let reply = { status: 409, body: problem(409, 'PROJECT_KEY_TAKEN') as unknown };
     server.on('POST', '/api/v0/projects', () => reply);
     const { fixture, root } = await render();
-    root.querySelector('details')!.open = true;
-    const submit = () => root.querySelector('details form')!.dispatchEvent(new Event('submit'));
+    openCreate(root);
+    const submit = () => root.querySelector('dialog form')!.dispatchEvent(new Event('submit'));
     type(root, '#project-key', 'acme/payments');
     type(root, '#project-name', 'Payments');
     submit();
@@ -263,13 +312,13 @@ describe('ProjectsPage', () => {
     const { fixture, root } = await render();
     type(root, '#project-key', 'acme/new');
     type(root, '#project-name', '   ');
-    root.querySelector('details form')!.dispatchEvent(new Event('submit'));
+    root.querySelector('dialog form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(server.requestsTo('POST', '/api/v0/projects')).toHaveLength(0);
     expect(root.querySelector('#project-name-error')?.textContent).toBe('Enter a name.');
     expect(root.querySelector('#project-key-error')).toBeNull();
     type(root, '#project-key', ' ');
-    root.querySelector('details form')!.dispatchEvent(new Event('submit'));
+    root.querySelector('dialog form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(root.querySelector('#project-key-error')?.textContent).toBe('Enter a key.');
   });
@@ -283,13 +332,13 @@ describe('ProjectsPage', () => {
     expect(status).not.toBeNull();
     type(root, '#project-key', 'acme/new');
     type(root, '#project-name', 'New Service');
-    const button = root.querySelector<HTMLButtonElement>('details form button[type="submit"]')!;
-    root.querySelector('details form')!.dispatchEvent(new Event('submit'));
+    const button = root.querySelector<HTMLButtonElement>('dialog form button[type="submit"]')!;
+    root.querySelector('dialog form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(button.disabled).toBe(false);
     expect(button.getAttribute('aria-disabled')).toBe('true');
     // A second submit while the first runs sends nothing.
-    root.querySelector('details form')!.dispatchEvent(new Event('submit'));
+    root.querySelector('dialog form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(server.requestsTo('POST', '/api/v0/projects')).toHaveLength(1);
     answer({ status: 201, body: project('new', 'New Service') });
@@ -305,7 +354,7 @@ describe('ProjectsPage', () => {
     server.on('GET', '/api/v0/projects', { body: page([project('a', 'Alpha')]) });
     const { root } = await render();
     expect(root.querySelector('tbody tr a')?.textContent).toBe('Alpha');
-    expect(root.querySelector('details')).toBeNull();
+    expect(root.querySelector('dialog')).toBeNull();
     expect(root.querySelector('#project-key')).toBeNull();
     expect(root.textContent).not.toContain('New project');
   });

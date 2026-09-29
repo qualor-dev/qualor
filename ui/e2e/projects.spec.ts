@@ -27,6 +27,9 @@ test('the list is usable with the keyboard alone', async ({ page }) => {
   await expect(search).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Search' })).toBeFocused();
+  // The admin's "New project" follows the search in the band, then the list.
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'New project' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: SHOP.name })).toBeFocused();
 });
@@ -53,7 +56,8 @@ test('an expired session sends the next request to the login page', async ({ pag
 
 test('an organization admin creates a project', async ({ page }) => {
   await page.goto('/projects');
-  await page.getByText('New project').click();
+  await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('dialog', { name: 'New project' })).toBeVisible();
   await page.getByLabel('Key').fill('acme/new-service');
   await page.getByLabel('Name').fill('New Service');
   await page.getByRole('button', { name: 'Create project' }).click();

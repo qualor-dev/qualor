@@ -16,6 +16,12 @@
     linear-gradient(90deg, var(--ink) 38%, rgb(10 27 51 / 0.72) 62%, rgb(10 27 51 / 0.15)),
     url('/art/band.webp') right 38% / 58% auto no-repeat;
 }
+/* A compact band carries its actions at the right: the art stays darker behind them. */
+:host(.compact)::before {
+  background:
+    linear-gradient(90deg, var(--ink) 40%, rgb(10 27 51 / 0.84) 72%, rgb(10 27 51 / 0.6)),
+    url('/art/band.webp') right 42% / 58% auto no-repeat;
+}
 .page-band-inner {
   max-width: calc(var(--content-max) + 2 * var(--gutter));
   margin: 0 auto;
