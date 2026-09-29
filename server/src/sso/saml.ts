@@ -10,7 +10,7 @@ import {
 import { decryptXml } from '@node-saml/node-saml/lib/xml.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { isStorableText } from '../audit/canonical';
-import { validationFailed } from '../http/problem';
+import { ProblemError } from '../http/problem';
 import type { SignInClaims } from './accounts';
 import { bindingMatches, newBinding, setBindingCookie, SSO_COOKIE } from './binding';
 import { requiredClaimsMet } from './claims';
@@ -19,13 +19,15 @@ import type { SamlConfig } from './connection-config';
 import {
   certificateInfo,
   isConnectionInEffect,
+  fetchRefusalText,
   loadConnection,
+  SSO_TEST_PROBLEM_CODES,
   UNDECRYPTABLE_SP_KEY,
   type LoadedConnection,
   type SsoCertificateView,
 } from './connections';
 import { failSsoFlow, SsoFailure } from './errors';
-import { createSsoFetch } from './fetch';
+import { createSsoFetch, SsoFetchRefused, ssoFetchRefusal } from './fetch';
 import { MAX_GROUP_VALUES } from './groups';
 import { safeReturnTo } from './return-to';
 import {
@@ -808,29 +810,78 @@ function pemOf(body: string): string {
 }
 
 const METADATA_PATH = 'saml.metadataUrl';
-const metadataProblem = (message: string) => validationFailed([{ path: METADATA_PATH, message }]);
+
+/**
+ * Every `reason` a refused **Read metadata** (422 on `saml.metadataUrl`) carries: the **Test**'s
+ * code for a request that failed (`fetch.<reason>`), else what was wrong with the document. The UI
+ * keeps a text for each (ui/src/app/settings/sso-settings-text.ts; tools/sso-codes.test.ts).
+ */
+export const SAML_METADATA_PROBLEM_CODES = [
+  'config_invalid',
+  'metadata.no_url',
+  'metadata.not_saml',
+  'metadata.incomplete',
+  'metadata.sso_url',
+  ...SSO_TEST_PROBLEM_CODES.filter((code) => code.startsWith('fetch.')),
+] as const;
+
+export type SamlMetadataProblemCode = (typeof SAML_METADATA_PROBLEM_CODES)[number];
+
+const metadataProblem = (reason: SamlMetadataProblemCode, message: string): ProblemError =>
+  new ProblemError(422, 'VALIDATION_FAILED', 'Request validation failed', {
+    errors: [{ path: METADATA_PATH, message }],
+    extensions: { reason },
+  });
+
+/** The host of a URL, for the log (never its path or query, which may carry an app id). */
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * sso-scim.md §4.3: reads the connection's metadata URL (only when an admin asks) through ssoFetch
  * (that URL only, at most 1 MiB), pre-checks it as an `EntityDescriptor` (comments allowed,
  * Ruling M-3), and returns the IdP's entity id, its HTTP-Redirect SingleSignOnService and its
  * signing certificates (`use="signing"` or unspecified, at most 3) for the admin to review.
- * Nothing is saved. Every problem is a 422 on `saml.metadataUrl`.
+ * Nothing is saved. Every problem is a 422 on `saml.metadataUrl` whose `reason` says what failed
+ * (SAML_METADATA_PROBLEM_CODES), logged as a warning with the host only.
  */
 export async function readSamlMetadata(
   connection: LoadedConnection,
-  deps: Pick<FlowDeps, 'config' | 'resolve'>,
+  deps: Pick<FlowDeps, 'config' | 'resolve' | 'log'>,
 ): Promise<{ idpEntityId: string; idpSsoUrl: string; certificates: SsoCertificateView[] }> {
-  if (connection.parsed.protocol !== 'saml') throw metadataProblem('Not a SAML connection');
-  const url = connection.parsed.config.metadataUrl;
-  if (!url) throw metadataProblem('Set a metadata URL first');
+  const url = connection.parsed.protocol === 'saml' ? connection.parsed.config.metadataUrl : null;
+  const refuse = (
+    reason: SamlMetadataProblemCode,
+    message: string,
+    more: { status?: number | null; code?: string | null; precheck?: string } = {},
+  ): ProblemError => {
+    deps.log.warn(
+      {
+        component: 'sso',
+        connectionId: connection.row.id,
+        host: url ? hostOf(url) : null,
+        reason,
+        ...more,
+      },
+      'the SAML metadata could not be read',
+    );
+    return metadataProblem(reason, message);
+  };
+  if (connection.parsed.protocol !== 'saml')
+    throw refuse('config_invalid', 'Not a SAML connection');
+  if (!url) throw refuse('metadata.no_url', 'Set a metadata URL first');
   const fetchMetadata = createSsoFetch({
     internalHosts: deps.config.ssoInternalHosts,
     allowed: new Set([url]),
     maxResponseBytes: SAML_METADATA_MAX_BYTES,
     ...(deps.resolve ? { resolve: deps.resolve } : {}),
   });
-  let text: string;
+  let body: ArrayBuffer;
   try {
     const res = await fetchMetadata(url, {
       method: 'GET',
@@ -839,29 +890,46 @@ export async function readSamlMetadata(
       redirect: 'manual',
       signal: AbortSignal.timeout(10_000),
     });
-    if (res.status !== 200) throw new Error('status');
-    text = new TextDecoder('utf-8', { fatal: true }).decode(await res.arrayBuffer());
+    if (res.status !== 200) throw new SsoFetchRefused('status', null, res.status);
+    body = await res.arrayBuffer();
+  } catch (err) {
+    const refused = ssoFetchRefusal(err) ?? new SsoFetchRefused('request');
+    throw refuse(
+      `fetch.${refused.reason}`,
+      `The metadata URL could not be read: ${fetchRefusalText(refused)}`,
+      { status: refused.status, code: refused.code },
+    );
+  }
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(body);
   } catch {
-    throw metadataProblem('The metadata URL could not be read');
+    throw refuse('metadata.not_saml', 'The metadata URL did not answer with SAML metadata');
   }
   const pre = samlPreCheck(text, { root: 'EntityDescriptor', hasSpKey: false });
-  if (!pre.ok) throw metadataProblem(`The metadata was refused (${pre.code})`);
+  if (!pre.ok) {
+    throw refuse(
+      'metadata.not_saml',
+      `The metadata URL did not answer with SAML metadata (${pre.code})`,
+      { precheck: pre.code },
+    );
+  }
   const root = pre.doc.documentElement;
   const idpEntityId = root?.getAttribute('entityID') ?? '';
   if (!root || idpEntityId === '' || idpEntityId.length > 1_024) {
-    throw metadataProblem('The metadata has no entityID');
+    throw refuse('metadata.incomplete', 'The metadata has no entityID');
   }
   const idp = kids(root, MD, 'IDPSSODescriptor')[0];
-  if (!idp) throw metadataProblem('The metadata has no IDPSSODescriptor');
+  if (!idp) throw refuse('metadata.incomplete', 'The metadata has no IDPSSODescriptor');
   const sso = kids(idp, MD, 'SingleSignOnService').find(
     (s) => s.getAttribute('Binding') === REDIRECT_BINDING,
   );
   const idpSsoUrl = sso?.getAttribute('Location') ?? '';
   if (idpSsoUrl === '') {
-    throw metadataProblem('The metadata has no HTTP-Redirect SingleSignOnService');
+    throw refuse('metadata.incomplete', 'The metadata has no HTTP-Redirect SingleSignOnService');
   }
   const urlProblem = idpUrlProblem(idpSsoUrl, deps.config.ssoInternalHosts);
-  if (urlProblem) throw metadataProblem(`The SingleSignOnService URL: ${urlProblem}`);
+  if (urlProblem) throw refuse('metadata.sso_url', `The SingleSignOnService URL: ${urlProblem}`);
 
   const bodies: string[] = [];
   for (const key of kids(idp, MD, 'KeyDescriptor')) {
@@ -876,9 +944,10 @@ export async function readSamlMetadata(
       }
     }
   }
-  if (bodies.length === 0) throw metadataProblem('The metadata lists no signing certificate');
+  if (bodies.length === 0)
+    throw refuse('metadata.incomplete', 'The metadata lists no signing certificate');
   if (bodies.length > 3)
-    throw metadataProblem('The metadata lists more than 3 signing certificates');
+    throw refuse('metadata.incomplete', 'The metadata lists more than 3 signing certificates');
   return {
     idpEntityId,
     idpSsoUrl: normalIdpUrl(idpSsoUrl),

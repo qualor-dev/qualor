@@ -427,6 +427,26 @@ describe('SsoPage (sso-scim.md §4, §9, §18)', () => {
     expect(root.textContent).not.toContain('doctype');
   });
 
+  it('says why Read metadata failed, from the reason the server gives', async () => {
+    const server = setup();
+    server.on('POST', `${CONNECTIONS}/${SAML_ID}/saml/metadata`, {
+      status: 422,
+      body: {
+        ...problem(422, 'VALIDATION_FAILED', [
+          { path: 'saml.metadataUrl', message: 'The metadata URL could not be read: idp.corp' },
+        ]),
+        reason: 'fetch.not_public',
+      },
+    });
+    const { fixture, root } = await render();
+    await openRow(fixture, root, SAML_ID);
+    await click(fixture, button(root, 'Read metadata'));
+    expect(root.querySelector('#sso-metadata-url-error')?.textContent).toContain(
+      'The host is not public. List it in QUALOR_SSO_INTERNAL_HOSTS',
+    );
+    expect(root.textContent).not.toContain('idp.corp');
+  });
+
   it('Test shows the endpoints Qualor will contact', async () => {
     const server = setup();
     server.on('POST', `${CONNECTIONS}/${OIDC_ID}/test`, {

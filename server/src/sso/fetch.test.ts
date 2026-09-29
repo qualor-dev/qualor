@@ -1,7 +1,9 @@
 import { createServer, type Server } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import { createServer as createTcpServer } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createSsoFetch, SsoFetchRefused } from './fetch';
+import { TEST_SP } from '../../test/saml';
+import { createSsoFetch, isTlsErrorCode, SsoFetchRefused, ssoFetchRefusal } from './fetch';
 
 let server: Server;
 let base: string;
@@ -145,9 +147,40 @@ describe('ssoFetch (sso-scim.md §14)', () => {
       });
       const failure = await f(`http://127.0.0.1:${port}/x`, opts()).catch((e: unknown) => e);
       expect(failure).toBeInstanceOf(SsoFetchRefused);
-      expect(failure).toMatchObject({ reason: 'status' });
+      // The status is kept for the log.
+      expect(failure).toMatchObject({ reason: 'status', status: 999 });
     } finally {
       await new Promise<void>((r) => odd.close(() => r()));
     }
+  });
+
+  it('says tls, with the system code, when the certificate is not trusted', async () => {
+    // A self-signed certificate for another name: never trusted, whatever the host is called.
+    const tls = createHttpsServer({ key: TEST_SP.keyPem, cert: TEST_SP.certPem }, (_req, res) => {
+      res.end('{}');
+    });
+    await new Promise<void>((r) => tls.listen(0, '127.0.0.1', r));
+    const port = (tls.address() as { port: number }).port;
+    try {
+      const url = `https://127.0.0.1:${port}/x`;
+      const f = createSsoFetch({
+        internalHosts: new Set([`127.0.0.1:${port}`]),
+        allowed: new Set([url]),
+      });
+      const failure = await f(url, opts()).catch((e: unknown) => e);
+      expect(failure).toMatchObject({ reason: 'tls', status: null });
+      expect(isTlsErrorCode((failure as SsoFetchRefused).code)).toBe(true);
+    } finally {
+      await new Promise<void>((r) => tls.close(() => r()));
+    }
+  });
+
+  it('finds a refusal however deep a library wrapped it', () => {
+    const refused = new SsoFetchRefused('unresolved', 'ENOTFOUND');
+    const wrapped = new Error('outer', { cause: new Error('inner', { cause: refused }) });
+    expect(ssoFetchRefusal(wrapped)).toBe(refused);
+    expect(ssoFetchRefusal(new Error('other'))).toBeNull();
+    expect(isTlsErrorCode('ECONNREFUSED')).toBe(false);
+    expect(isTlsErrorCode(null)).toBe(false);
   });
 });
