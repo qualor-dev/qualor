@@ -19,6 +19,7 @@ import {
   type GitLabClient,
   type GitLabCommitStatus,
   type GitLabDiscussion,
+  type GitLabNote,
 } from './gitlab/client';
 import { MAX_DISCUSSION_PAGES, reconcileInline } from './inline';
 import { markerOf } from './markdown';
@@ -66,16 +67,25 @@ export type DecorationOutcome =
       countsForCircuit: boolean;
     };
 
-/** Qualor's summary note for this project among the discussions, by author and marker (§5.3). */
-function ownSummary(discussions: readonly GitLabDiscussion[], botId: number, projectId: string) {
+/**
+ * The summary notes of this project among the discussions, by marker (§5.3): `own` is the token
+ * user's, the one Qualor edits; `foreign` are top-level notes with the marker by other users, such
+ * as the summary an earlier token's user posted before the token was replaced. GitLab lets only a
+ * note's author edit it, so those are never edited, only removed.
+ */
+function summaryNotes(discussions: readonly GitLabDiscussion[], botId: number, projectId: string) {
+  let own: GitLabNote | null = null;
+  const foreign: GitLabNote[] = [];
   for (const discussion of discussions) {
     for (const note of discussion.notes) {
-      if (note.author.id !== botId || note.system) continue;
+      if (note.system) continue;
       const marker = markerOf(note.body);
-      if (marker?.kind === 'summary' && marker.projectId === projectId) return note;
+      if (marker?.kind !== 'summary' || marker.projectId !== projectId) continue;
+      if (note.author.id === botId) own ??= note;
+      else if (discussion.individual_note) foreign.push(note);
     }
   }
-  return null;
+  return { own, foreign };
 }
 
 /**
@@ -209,10 +219,10 @@ async function decorateMergeRequest(
     branchUrl: branchUrl(deps.publicUrl, loaded),
     mergeRequestHead: head !== null && head !== revision ? head : null,
   });
-  const existing = ownSummary(listed.items, me.id, loaded.project.id);
-  if (existing) {
-    if (comparable(existing.body) !== comparable(body)) {
-      await client.updateNote(ref, iid, existing.id, body);
+  const { own, foreign } = summaryNotes(listed.items, me.id, loaded.project.id);
+  if (own) {
+    if (comparable(own.body) !== comparable(body)) {
+      await client.updateNote(ref, iid, own.id, body);
     }
   } else if (listed.complete) {
     await client.createNote(ref, iid, body);
@@ -222,6 +232,32 @@ async function decorateMergeRequest(
       { analysisId: loaded.analysis.id, connectionId: loaded.connection.id },
       'GitLab merge request has too many discussions to find the Qualor summary; not posting one',
     );
+    return;
+  }
+  await removeForeignSummaries(client, ref, iid, foreign);
+}
+
+/**
+ * Summaries of this project by another user (the token was replaced by one of another user) go
+ * once this token's own is in place, so the merge request shows one verdict. GitLab lets a
+ * Maintainer delete any note; with a lower role the old note stays (a 403, or a 404 when it is
+ * already gone, is not a failure of the job). Other failures are, so a retry removes it.
+ */
+async function removeForeignSummaries(
+  client: GitLabClient,
+  ref: string,
+  iid: string,
+  foreign: readonly GitLabNote[],
+): Promise<void> {
+  for (const note of foreign) {
+    try {
+      await client.deleteNote(ref, iid, note.id);
+    } catch (err) {
+      if (err instanceof GitLabError && err.status === 404) continue;
+      // Refused once, refused for the others too.
+      if (err instanceof GitLabError && err.status === 403) return;
+      throw err;
+    }
   }
 }
 

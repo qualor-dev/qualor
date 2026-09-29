@@ -84,7 +84,14 @@ const connectionSchema = z.object({
 const testResultSchema = z.object({
   ok: z.boolean(),
   user: z.object({ username: z.string() }).nullable(),
-  project: z.object({ id: z.number().int(), pathWithNamespace: z.string() }).nullable(),
+  project: z
+    .object({
+      id: z.number().int(),
+      pathWithNamespace: z.string(),
+      /** GitLab: the token's access level in the project (40 = Maintainer); null if unknown. */
+      accessLevel: z.number().int().nullable(),
+    })
+    .nullable(),
   problem: z.object({ code: z.enum(TEST_PROBLEM_CODES), message: z.string() }).nullable(),
 });
 

@@ -8101,6 +8101,7 @@ export interface paths {
                             project: {
                                 id: number;
                                 pathWithNamespace: string;
+                                accessLevel: number | null;
                             } | null;
                             problem: {
                                 /** @enum {string} */

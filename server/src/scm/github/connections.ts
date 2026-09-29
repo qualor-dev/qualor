@@ -105,7 +105,7 @@ export async function testGitHubConnection(
       const ref = parseRepoRef(projectRef);
       if (ref === null) return failed('not_found', GITHUB_TEXT.notFound);
       const repo = await found.client.useRepository(ref);
-      project = { id: repo.id, pathWithNamespace: repo.full_name };
+      project = { id: repo.id, pathWithNamespace: repo.full_name, accessLevel: null };
     }
     return { ok: true, user: { username: `${app.slug}[bot]` }, project, problem: null };
   } catch (err) {

@@ -174,6 +174,8 @@ describe('GitLabPage (scm.md §2)', () => {
     const text = root.querySelector('section')?.textContent;
     expect(text).toContain(testProblemText('token_refused'));
     expect(text).not.toContain('HTTP 401');
+    // A 403 is a missing permission of a valid token, in words of its own.
+    expect(testProblemText('permission_missing')).toContain('Maintainer role');
   });
 
   it('replaces a token without echoing it, and deletes a connection after a confirmation', async () => {
@@ -227,7 +229,7 @@ describe('GitLabPage (scm.md §2)', () => {
       body: {
         ok: true,
         user: { username: 'bot' },
-        project: { id: 7, pathWithNamespace: 'acme/api' },
+        project: { id: 7, pathWithNamespace: 'acme/api', accessLevel: 30 },
         problem: null,
       },
     });
@@ -244,6 +246,8 @@ describe('GitLabPage (scm.md §2)', () => {
       projectRef: 'acme/api',
     });
     expect(row.textContent).toContain('Connected as bot; the project acme/api is reachable.');
+    // A Developer's token: comments work, a status on a protected branch would be refused.
+    expect(row.textContent).toContain('The token is below Maintainer');
     button(root, 'Save', row).click();
     await settle(fixture);
     expect(server.requestsTo('PATCH', '/api/v0/projects/p1')[0]?.body).toEqual({
@@ -343,7 +347,7 @@ describe('GitLabPage (scm.md §2)', () => {
       body: {
         ok: true,
         user: { username: 'bot' },
-        project: { id: 7, pathWithNamespace: 'acme/api' },
+        project: { id: 7, pathWithNamespace: 'acme/api', accessLevel: 40 },
         problem: null,
       },
     });
@@ -373,7 +377,7 @@ describe('GitLabPage (scm.md §2)', () => {
       body: {
         ok: true,
         user: { username: 'bot' },
-        project: { id: 7, pathWithNamespace: 'acme/api' },
+        project: { id: 7, pathWithNamespace: 'acme/api', accessLevel: 40 },
         problem: null,
       },
     });
