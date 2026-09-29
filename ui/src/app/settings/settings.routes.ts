@@ -34,6 +34,11 @@ export const settingsRoutes: Routes = [
     loadComponent: () => import('./github.page').then((m) => m.GitHubPage),
   },
   {
+    path: 'repositories',
+    title: $localize`:@@title.repositories:Repositories`,
+    loadComponent: () => import('./repositories.page').then((m) => m.RepositoriesPage),
+  },
+  {
     path: 'ai',
     title: $localize`:@@title.ai:AI assistant`,
     loadComponent: () => import('./ai.page').then((m) => m.AiSettingsPage),

@@ -106,7 +106,7 @@ curl -fsS -X PATCH -H "Authorization: Bearer $QUALOR_ADMIN_TOKEN" -H 'Content-Ty
 | `mainBranchName` | the default branch |
 | `newCodeDefinition` | how new code is defined on the main branch; see [Quality gates](./quality-gates.md#new-code) |
 | `qualityGateId` | a gate for this project, or `null` for the organisation's default gate |
-| `scmConnectionId`, `scmProjectRef` | the GitLab/GitHub mapping. **Settings → GitLab** also sets it. Only an org admin can change it (403 `FORBIDDEN` otherwise, even for a Project admin) |
+| `scmConnectionId`, `scmProjectRef` | the GitLab/GitHub mapping. **Settings → Repositories** also sets it. Only an org admin can change it (403 `FORBIDDEN` otherwise, even for a Project admin) |
 
 To assign a quality profile to one project, use `PUT /api/v0/projects/<id>/quality-profiles/<language>`
 with the body `{"profileId": "..."}`. Send `null` to return that language to the organisation's

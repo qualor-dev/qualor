@@ -1,0 +1,193 @@
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@repositories.title">Repositories</h2>
+    @if (!canRead()) {
+      <p class="muted" i18n="@@repositories.adminsOnly">
+        Only organization administrators map projects to repositories.
+      </p>
+    } @else {
+      <p class="muted" i18n="@@repositories.intro">
+        Qualor reports each project's analyses to its repository: a commit status or a check run,
+        and comments on merge requests and pull requests. Choose each project's connection and its
+        GitLab project or GitHub repository.
+      </p>
+    }
+  </div>
+</div>
+@if (canRead()) {
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (connections.error() ?? projects.error() ?? error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  @if (connections.loaded() && connections.items().length === 0) {
+    <p id="repositories-no-connection" class="alert alert-info" i18n="@@repositories.noConnection">
+      Connect GitLab or GitHub first: add a connection under
+      <a routerLink="/settings/gitlab">GitLab</a> or a GitHub App under
+      <a routerLink="/settings/github">GitHub</a>.
+    </p>
+  }
+
+  <section class="card panel" aria-labelledby="gitlab-projects-caption">
+    <div class="panel-scroll">
+      <table [attr.aria-busy]="projects.loading()">
+        <caption
+          id="gitlab-projects-caption"
+          class="visually-hidden"
+          i18n="@@gitlab.projectsCaption"
+        >
+          Projects and the GitLab projects or GitHub repositories they are decorated in
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@gitlab.col.project">Project</th>
+            <th scope="col" i18n="@@gitlab.col.connection">Connection</th>
+            <th scope="col" i18n="@@gitlab.col.ref">GitLab project or GitHub repository</th>
+            <th scope="col" class="actions-col">
+              <span class="visually-hidden" i18n="@@gitlab.col.actions">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of projects.items(); track p.id) {
+            <tr [attr.data-key]="p.id">
+              <th scope="row">
+                <div class="name-stack">
+                  <span>{{ p.name }}</span>
+                  <code class="muted">{{ p.key }}</code>
+                </div>
+              </th>
+              <td class="conn-cell">
+                <label
+                  class="visually-hidden"
+                  [attr.for]="'conn-' + p.id"
+                  i18n="@@gitlab.connectionOf"
+                >
+                  Connection of {{ p.name }}
+                </label>
+                <select
+                  [id]="'conn-' + p.id"
+                  [attr.aria-invalid]="connErrors()[p.id] ? true : null"
+                  [attr.aria-describedby]="connErrors()[p.id] ? 'conn-error-' + p.id : null"
+                  [disabled]="!canManage()"
+                  (change)="setConnection(p, $event)"
+                >
+                  <option value="" [selected]="draft(p).connectionId === ''" i18n="@@gitlab.none">
+                    None
+                  </option>
+                  @for (c of connections.items(); track c.id) {
+                    <option [value]="c.id" [selected]="draft(p).connectionId === c.id">
+                      {{ connectionLabel(c) }}
+                    </option>
+                  }
+                </select>
+                @if (connErrors()[p.id]; as message) {
+                  <span [id]="'conn-error-' + p.id" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+              </td>
+              <td class="ref-cell">
+                @if (providerOf(p) === 'github') {
+                  <label
+                    class="visually-hidden"
+                    [attr.for]="'ref-' + p.id"
+                    i18n="@@gitlab.githubRefOf"
+                  >
+                    GitHub repository of {{ p.name }}
+                  </label>
+                } @else {
+                  <label class="visually-hidden" [attr.for]="'ref-' + p.id" i18n="@@gitlab.refOf">
+                    GitLab project of {{ p.name }}
+                  </label>
+                }
+                <input
+                  [id]="'ref-' + p.id"
+                  type="text"
+                  maxlength="255"
+                  autocomplete="off"
+                  spellcheck="false"
+                  [attr.placeholder]="refPlaceholder(p)"
+                  [attr.aria-invalid]="refErrors()[p.id] ? true : null"
+                  [attr.aria-describedby]="
+                    refErrors()[p.id]
+                      ? 'ref-error-' + p.id + ' ref-hint-' + p.id
+                      : 'ref-hint-' + p.id
+                  "
+                  [value]="draft(p).ref"
+                  [disabled]="!canManage()"
+                  (input)="setRef(p, $event)"
+                />
+                @if (providerOf(p) === 'github') {
+                  <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.githubRefHint"
+                    >owner/repo</span
+                  >
+                } @else {
+                  <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.refHint"
+                    >group/project or its id</span
+                  >
+                }
+                @if (refErrors()[p.id]; as message) {
+                  <span [id]="'ref-error-' + p.id" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+                @if (results()[p.id]; as result) {
+                  <span class="hint">{{ result }}</span>
+                }
+              </td>
+              <td class="actions-col">
+                <div class="row-actions">
+                  @if (canManage()) {
+                    <button
+                      type="button"
+                      class="btn-quiet"
+                      [attr.aria-disabled]="busy() ? true : null"
+                      (click)="save(p)"
+                      i18n="@@gitlab.saveMapping"
+                    >
+                      Save
+                    </button>
+                  }
+                  <button
+                    type="button"
+                    class="btn-quiet"
+                    [attr.aria-disabled]="
+                      busy() || !draft(p).connectionId || !draft(p).ref.trim() ? true : null
+                    "
+                    (click)="check(p)"
+                    i18n="@@gitlab.check"
+                  >
+                    Check
+                  </button>
+                </div>
+              </td>
+            </tr>
+          } @empty {
+            @if (projects.loaded()) {
+              <tr>
+                <td colspan="4" class="muted" i18n="@@gitlab.noProjects">No projects yet.</td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (projects.nextCursor()) {
+      <p class="panel-foot">
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-disabled]="projects.loading() ? true : null"
+          (click)="projects.more()"
+          i18n="@@list.more"
+        >
+          Load more
+        </button>
+      </p>
+    }
+  </section>
+}

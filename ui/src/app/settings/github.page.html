@@ -6,13 +6,12 @@
         Only organization administrators connect GitHub.
       </p>
     } @else {
-      <p class="muted" i18n="@@github.intro">
+      <p class="muted" i18n="@@github.introMapped">
         Qualor creates a check run for every analysis (with annotations on the changed lines of pull
         requests) and a summary comment on pull requests, as a GitHub App you create and install on
         the repositories. Give the App Checks and Pull requests (read and write) and Metadata
-        (read-only). Projects are mapped to their repositories in the Projects list of the
-        <a routerLink="/settings/gitlab">GitLab settings</a>, which holds the mappings of both
-        providers.
+        (read-only). Map each project to its repository under
+        <a routerLink="/settings/repositories">Repositories</a>.
       </p>
     }
   </div>

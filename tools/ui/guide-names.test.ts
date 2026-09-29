@@ -11,6 +11,13 @@ const REMOVED = [
   'Settings → Users → Reset a password',
   // Step 9: SCIM tokens are made in the "New token" dialog of the connection's panel.
   "in the connection's section, give a Token name",
+  // Step 11: the mapping of projects to repositories moved from the GitLab page to Repositories.
+  'Projects table of Settings → GitLab',
+  'Projects table on the same page',
+  'Settings → GitLab also sets it',
+  'has a test action per project',
+  'The test on Settings → GitLab says which',
+  'map it in Settings → GitLab or GitHub',
 ];
 
 const guide = new URL('../../docs/guide/', import.meta.url);

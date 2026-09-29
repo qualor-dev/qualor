@@ -78,6 +78,14 @@ function upload(root: HTMLElement, selector: string, file: File): void {
 }
 
 describe('GitHubPage (github.md §2)', () => {
+  it('points to Repositories for the mapping of projects to repositories', async () => {
+    setup();
+    const { root } = await render();
+    const link = root.querySelector('.settings-head a[href="/settings/repositories"]');
+    expect(link?.textContent?.trim()).toBe('Repositories');
+    expect(root.textContent).not.toContain('Projects list of the');
+  });
+
   it('lists only GitHub connections, with the App id and the webhook URL', async () => {
     setup();
     const { root } = await render();

@@ -87,6 +87,7 @@ test.describe('on a phone', () => {
     '/settings/webhooks',
     '/settings/gitlab',
     '/settings/github',
+    '/settings/repositories',
     '/settings/ai',
     '/settings/license',
   ]) {
@@ -121,7 +122,7 @@ test.describe('on a phone', () => {
     };
     await page.goto('/settings/tokens');
     await keepsWords('laptop');
-    await page.goto('/settings/gitlab');
+    await page.goto('/settings/repositories');
     await keepsWords('Payments API');
     await keepsWords('Legacy Billing');
   });
@@ -329,6 +330,9 @@ test('an organization admin connects GitLab and maps a project (scm.md §2)', as
   await expect(page.getByRole('region', { name: 'https://gitlab.example.com' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('glpat-e2e-token-value');
 
+  // Each project's repository is chosen under Repositories (step 11), which the page links to.
+  await page.locator('.settings-head').getByRole('link', { name: 'Repositories' }).click();
+  await expect(page).toHaveTitle('Repositories · Qualor');
   const row = page.getByRole('row', { name: new RegExp(PAYMENTS.name) });
   await row.getByLabel(`Connection of ${PAYMENTS.name}`).selectOption({
     label: 'GitLab · https://gitlab.example.com',
@@ -342,8 +346,10 @@ test('an organization admin connects GitLab and maps a project (scm.md §2)', as
       .getByRole('row', { name: new RegExp(PAYMENTS.name) })
       .getByLabel(`GitLab project of ${PAYMENTS.name}`),
   ).toHaveValue('acme/payments-api');
+  await expectAccessible(page);
 
   // The server's SSRF rules refuse a loopback GitLab the operator did not list: in the dialog.
+  await page.goto('/settings/gitlab');
   await page.getByRole('button', { name: 'New connection' }).click();
   await create.getByLabel('GitLab address').fill('https://localhost');
   await create.getByLabel('Access token').fill('glpat-x');
@@ -424,7 +430,7 @@ test('an organization admin adds a GitHub App and deletes it (github.md §2.2)',
 
   // The project mapping names the App by its address and its App id (two Apps may share an
   // address). Only chosen, not saved: nothing is mapped.
-  await page.getByRole('link', { name: 'GitLab settings' }).click();
+  await page.locator('.settings-head').getByRole('link', { name: 'Repositories' }).click();
   const row = page.getByRole('row', { name: new RegExp(PAYMENTS.name) });
   await row.getByLabel(`Connection of ${PAYMENTS.name}`).selectOption({
     label: 'GitHub · https://github.qualor.invalid/api/v3 (App 424242)',

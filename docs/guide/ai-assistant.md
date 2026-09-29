@@ -257,7 +257,7 @@ Today's use and budgets for an organisation are at `GET /api/v0/organizations/{i
 | "The request was interrupted; ask again" | the server restarted, or the request failed unexpectedly, while it ran |
 | "Not posted: the merge request has a newer commit" | analyse the latest commit, then ask for a new fix |
 | "Not posted: the lines are not added lines of the merge request" / "the code on the merge request differs" | suggestions can only replace lines the merge request added, unchanged. Fix it by hand |
-| "The project is not mapped to GitLab or GitHub" | map it in **Settings → GitLab** or **GitHub** ([GitLab](./gitlab.md), [GitHub](./github.md)) |
+| "The project is not mapped to GitLab or GitHub" | map it in **Settings → Repositories** ([GitLab](./gitlab.md), [GitHub](./github.md)) |
 
 Error codes in the API: `AI_DISABLED` (409), `AI_NOT_ELIGIBLE` (409, with the reason in `detail`),
 `AI_POST_NOT_POSSIBLE` (409, with the reason in `detail`), `AI_QUOTA_EXCEEDED` (429 with

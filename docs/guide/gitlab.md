@@ -150,9 +150,9 @@ In Qualor, an **org admin** opens **Settings → GitLab**:
    - best, a **project access token** of the GitLab project, because it can reach nothing else. For
      many projects, use a **group access token**, or a personal token of a dedicated bot user. Never
      use a person's own token: every comment would carry their name.
-2. In the **Projects** table on the same page, pick the connection for each Qualor project and enter
-   the GitLab project: its numeric id or its full path `group/project`. Use the test action to check
-   that the token can see the project. It also warns when the token's role is below Maintainer.
+2. In **Settings → Repositories**, pick the connection for each Qualor project and enter the GitLab
+   project: its numeric id or its full path `group/project`, then **Save**. **Check** tests that the
+   token can see the project; it also warns when the token's role is below Maintainer.
 3. Ask the server operator to set `QUALOR_PUBLIC_URL` so that comments link back to Qualor.
 
 **Self-managed GitLab on an internal network.** The server calls only hosts that resolve to public
@@ -199,7 +199,7 @@ Either:
 | Exit 5 | the token is wrong, revoked, or of another project |
 | `new code unavailable`, gate `error` | shallow clone: set `GIT_DEPTH: 0` |
 | The analysis appears as a branch, not a merge request | the job ran in a branch pipeline. Use `merge_request_event` rules |
-| No comments | no connection or mapping, `QUALOR_SCM_INTERNAL_HOSTS` missing, or the token lacks the `api` scope. The test on **Settings → GitLab** says which |
+| No comments | no connection or mapping, `QUALOR_SCM_INTERNAL_HOSTS` missing, or the token lacks the `api` scope. **Check** on **Settings → Repositories** says which |
 | Comments on merge requests, but no commit status on the default branch | the token's role is below Maintainer, and the branch is protected. Give the token the Maintainer role |
 | `@0.1` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.1.1`, or see the steps above |
 | Comments but no links | `QUALOR_PUBLIC_URL` is not set on the server |

@@ -26,19 +26,6 @@
   font-size: 13px;
   overflow-wrap: anywhere;
 }
-/* The mapping's fields keep their width, their hint and error under them. */
-.conn-cell select {
-  width: 18rem;
-  max-width: 100%;
-}
-.ref-cell input {
-  width: 16rem;
-  max-width: 100%;
-}
-.ref-cell :is(.hint, .field-error) {
-  display: block;
-  margin-top: 4px;
-}
 /* GitHub: an App's facts, its test, and the fields that sit beside their button. */
 .app-facts {
   margin: 0;

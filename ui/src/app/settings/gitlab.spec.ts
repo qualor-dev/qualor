@@ -11,7 +11,8 @@ import {
   settle,
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
-import { type Connection, GitLabPage, testProblemText } from './gitlab.page';
+import { testProblemText } from './gitlab-text';
+import { type Connection, GitLabPage } from './gitlab.page';
 
 const CONNECTION: Connection = {
   id: 'c1',
@@ -73,12 +74,6 @@ function type(root: HTMLElement, selector: string, value: string): void {
   const input = root.querySelector<HTMLInputElement>(selector)!;
   input.value = value;
   input.dispatchEvent(new Event('input'));
-}
-
-function choose(root: HTMLElement, selector: string, value: string): void {
-  const select = root.querySelector<HTMLSelectElement>(selector)!;
-  select.value = value;
-  select.dispatchEvent(new Event('change'));
 }
 
 function button(root: HTMLElement, text: string, within: ParentNode = root): HTMLButtonElement {
@@ -222,64 +217,6 @@ describe('GitLabPage (scm.md §2)', () => {
     confirm.mockRestore();
   });
 
-  it('maps a project to a connection and a GitLab project, checks it, and shows a refused path', async () => {
-    const server = setup();
-    let status = 200;
-    server.on('PATCH', '/api/v0/projects/p1', (request) =>
-      status === 200
-        ? {
-            body: project('p1', {
-              scmConnectionId: (request.body as { scmConnectionId: string }).scmConnectionId,
-              scmProjectRef: (request.body as { scmProjectRef: string }).scmProjectRef,
-            }),
-          }
-        : {
-            status,
-            body: problem(422, 'VALIDATION_FAILED', [
-              { path: 'body.scmProjectRef', message: 'Use the GitLab project id' },
-            ]),
-          },
-    );
-    server.on('POST', '/api/v0/scm-connections/c1/test', {
-      body: {
-        ok: true,
-        user: { username: 'bot' },
-        project: { id: 7, pathWithNamespace: 'acme/api', accessLevel: 30 },
-        problem: null,
-      },
-    });
-    const { fixture, root } = await render();
-    const row = root.querySelector('tbody tr')!;
-    // Check needs a connection and a project first.
-    expect(button(root, 'Check', row).getAttribute('aria-disabled')).toBe('true');
-    choose(root, '#conn-p1', 'c1');
-    type(root, '#ref-p1', 'acme/api');
-    await settle(fixture);
-    button(root, 'Check', row).click();
-    await settle(fixture);
-    expect(server.requestsTo('POST', '/api/v0/scm-connections/c1/test')[0]?.body).toEqual({
-      projectRef: 'acme/api',
-    });
-    expect(row.textContent).toContain('Connected as bot; the project acme/api is reachable.');
-    // A Developer's token: comments work, a status on a protected branch would be refused.
-    expect(row.textContent).toContain('The token is below Maintainer');
-    button(root, 'Save', row).click();
-    await settle(fixture);
-    expect(server.requestsTo('PATCH', '/api/v0/projects/p1')[0]?.body).toEqual({
-      scmConnectionId: 'c1',
-      scmProjectRef: 'acme/api',
-    });
-    expect(row.textContent).toContain('Decorated in GitLab.');
-    status = 422;
-    type(root, '#ref-p1', 'acme');
-    button(root, 'Save', row).click();
-    await settle(fixture);
-    expect(root.querySelector('#ref-p1')?.getAttribute('aria-invalid')).toBe('true');
-    expect(root.querySelector('#ref-error-p1')?.textContent).toContain(
-      'Use the GitLab project id or its full path',
-    );
-  });
-
   it('asks for the token again when the address changes, and names the address it replaces (scm.md §2.1)', async () => {
     const server = setup();
     let status = 422;
@@ -339,82 +276,6 @@ describe('GitLabPage (scm.md §2)', () => {
     );
   });
 
-  it('drops a check answer when the mapping changed while it was on its way', async () => {
-    const server = setup();
-    let answer: (reply: { body: unknown }) => void = () => undefined;
-    server.on(
-      'POST',
-      '/api/v0/scm-connections/c1/test',
-      () =>
-        new Promise((resolve) => {
-          answer = resolve;
-        }),
-    );
-    const { fixture, root } = await render();
-    const row = root.querySelector('tbody tr')!;
-    choose(root, '#conn-p1', 'c1');
-    type(root, '#ref-p1', 'acme/api');
-    await settle(fixture);
-    button(root, 'Check', row).click();
-    await settle(fixture);
-    type(root, '#ref-p1', 'acme/web');
-    answer({
-      body: {
-        ok: true,
-        user: { username: 'bot' },
-        project: { id: 7, pathWithNamespace: 'acme/api', accessLevel: 40 },
-        problem: null,
-      },
-    });
-    await settle(fixture);
-    expect(row.textContent).not.toContain('Connected as bot');
-  });
-
-  it('announces a check’s answer, and drops a refusal for a mapping edited while it was on its way', async () => {
-    const server = setup();
-    let answer: (reply: { status?: number; body: unknown }) => void = () => undefined;
-    server.on(
-      'POST',
-      '/api/v0/scm-connections/c1/test',
-      () =>
-        new Promise((resolve) => {
-          answer = resolve;
-        }),
-    );
-    const { fixture, root } = await render();
-    const row = root.querySelector('tbody tr')!;
-    choose(root, '#conn-p1', 'c1');
-    type(root, '#ref-p1', 'acme/api');
-    await settle(fixture);
-    button(root, 'Check', row).click();
-    await settle(fixture);
-    answer({
-      body: {
-        ok: true,
-        user: { username: 'bot' },
-        project: { id: 7, pathWithNamespace: 'acme/api', accessLevel: 40 },
-        problem: null,
-      },
-    });
-    await settle(fixture);
-    expect(root.querySelector('[role="status"]')?.textContent).toContain(
-      'Connected as bot; the project acme/api is reachable.',
-    );
-    // A refusal of a reference that is no longer the one on screen does not mark the field.
-    button(root, 'Check', row).click();
-    await settle(fixture);
-    type(root, '#ref-p1', 'acme/web');
-    answer({
-      status: 422,
-      body: problem(422, 'VALIDATION_FAILED', [
-        { path: 'body.projectRef', message: 'Use the GitLab project id' },
-      ]),
-    });
-    await settle(fixture);
-    expect(root.querySelector('#ref-p1')?.getAttribute('aria-invalid')).toBeNull();
-    expect(root.querySelector('#ref-error-p1')).toBeNull();
-  });
-
   it('says what a connection’s own form replaces: its token, and its address when changed', async () => {
     setup();
     const { root } = await render();
@@ -434,55 +295,13 @@ describe('GitLabPage (scm.md §2)', () => {
     expect(cards[0]?.textContent).not.toContain('api.github.com');
   });
 
-  it('maps a project to a GitHub connection with the owner/repo hint', async () => {
-    const server = setup();
-    server.on('GET', '/api/v0/scm-connections', { body: page([CONNECTION, GITHUB]) });
-    let status = 200;
-    server.on('PATCH', '/api/v0/projects/p1', (request) =>
-      status === 200
-        ? {
-            body: project('p1', {
-              scmConnectionId: (request.body as { scmConnectionId: string }).scmConnectionId,
-              scmProjectRef: (request.body as { scmProjectRef: string }).scmProjectRef,
-            }),
-          }
-        : {
-            status,
-            body: problem(422, 'VALIDATION_FAILED', [
-              { path: 'body.scmProjectRef', message: 'Use owner/repo' },
-            ]),
-          },
+  it('leaves the project mapping to Repositories, and links to it', async () => {
+    setup();
+    const { root } = await render();
+    expect(root.querySelector('table')).toBeNull();
+    expect(root.querySelector('a[href="/settings/repositories"]')?.textContent?.trim()).toBe(
+      'Repositories',
     );
-    const { fixture, root } = await render();
-    const options = [...root.querySelectorAll<HTMLOptionElement>('#conn-p1 option')].map((o) =>
-      o.textContent?.trim(),
-    );
-    expect(options).toEqual([
-      'None',
-      'GitLab · https://gitlab.example.com',
-      'GitHub · https://api.github.com (App 123456)',
-    ]);
-    const ref = root.querySelector<HTMLInputElement>('#ref-p1')!;
-    expect(ref.placeholder).toBe('group/project');
-    choose(root, '#conn-p1', 'g1');
-    await settle(fixture);
-    expect(ref.placeholder).toBe('owner/repo');
-    expect(root.querySelector('#ref-hint-p1')?.textContent).toContain('owner/repo');
-    expect(ref.getAttribute('aria-describedby')).toBe('ref-hint-p1');
-    type(root, '#ref-p1', 'acme/api');
-    const row = root.querySelector('tbody tr')!;
-    button(root, 'Save', row).click();
-    await settle(fixture);
-    expect(server.requestsTo('PATCH', '/api/v0/projects/p1')[0]?.body).toEqual({
-      scmConnectionId: 'g1',
-      scmProjectRef: 'acme/api',
-    });
-    expect(row.textContent).toContain('Decorated in GitHub.');
-    status = 422;
-    type(root, '#ref-p1', '42');
-    button(root, 'Save', row).click();
-    await settle(fixture);
-    expect(root.querySelector('#ref-error-p1')?.textContent).toContain('Use owner/repo');
   });
 
   it('tells a member who is not an organization admin, and asks the server nothing', async () => {
