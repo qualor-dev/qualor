@@ -75,24 +75,8 @@
   flex-basis: 100%;
   margin-top: 2px;
 }
-/* The bulk bar: on selection, pinned under the header while the list scrolls. */
-.bulk {
-  position: sticky;
-  top: var(--sticky-top, 72px);
-  z-index: 2;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-  margin: 16px 22px 0;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-  box-shadow: var(--shadow);
-}
 .bulk .label {
-  margin: 0 6px 0 2px;
+  margin: 0 8px 0 0;
 }
 .bulk input:not([type]) {
   flex: 1 1 12rem;
@@ -101,6 +85,10 @@
 .bulk .hint {
   flex-basis: 100%;
   margin: 0;
+}
+/* Room under the list's end, so the floating bar never covers the last rows. */
+.issues-main:has(.bulk) {
+  padding-bottom: 128px;
 }
 .bulk-status:not(:empty) {
   margin: 16px 22px 0;
@@ -121,7 +109,7 @@ tr.selected td {
 .issue-message {
   font-weight: 600;
   text-decoration: none;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 .issue-message:hover {
   text-decoration: underline;

@@ -83,6 +83,46 @@ test('an issue: rule text stays text, a status change needs its comment, history
   await expect(page.getByText('(set by a person)')).toBeVisible();
 });
 
+test('checking an issue never moves the list, and focus never hides under the bars', async ({
+  page,
+}) => {
+  const rows = page.locator('tbody tr');
+  const second = rows.nth(1);
+  const before = (await second.boundingBox())!.y;
+  await rows.nth(0).getByRole('checkbox').check();
+  const bar = page.locator('form.bulk');
+  await expect(bar).toBeVisible();
+  expect((await second.boundingBox())!.y).toBe(before);
+  // Scrolling to a focused control keeps it clear of the sticky header and the floating bar.
+  const padding = await page.evaluate(() => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      top: parseFloat(style.scrollPaddingTop),
+      bottom: parseFloat(style.scrollPaddingBottom),
+    };
+  });
+  expect(padding.top).toBe(72);
+  expect(padding.bottom).toBeGreaterThanOrEqual((await bar.boundingBox())!.height);
+});
+
+test('the right column of an issue keeps its end in reach on a short screen', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 });
+  await page.getByRole('link', { name: XSS_MESSAGE }).click();
+  await expect(page).toHaveTitle('Issue · Qualor');
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText(XSS_MESSAGE);
+  // A long story on the left keeps the right column stuck while the page scrolls.
+  await page.evaluate(() => {
+    const spacer = document.createElement('div');
+    spacer.style.height = '3000px';
+    document.querySelector('.issue-main')?.append(spacer);
+  });
+  await page.mouse.wheel(0, 900);
+  const severity = page.getByLabel('Severity', { exact: true });
+  await severity.focus();
+  await expect(severity).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('button', { name: 'Set severity' })).toBeInViewport({ ratio: 1 });
+});
+
 test('the issues of a merge request change status in bulk', async ({ page }) => {
   await page
     .getByLabel('Branch')

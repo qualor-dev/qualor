@@ -539,6 +539,48 @@ form.card > label.row {
   cursor: pointer;
 }
 
+/* A floating action bar (spec §7.4's bulk bar): on ink, over the page's bottom edge, so opening it
+   never moves the content under the pointer. */
+.float-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  width: min(60rem, calc(100vw - 32px));
+  margin: 0;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-lg);
+  background: var(--ink);
+  color: var(--ink-text);
+  box-shadow: 0 18px 48px -16px rgb(10 27 51 / 0.6);
+  transform: translateX(-50%);
+}
+.float-bar .label {
+  color: var(--ink-text);
+}
+.float-bar select,
+.float-bar input:not([type]) {
+  border-color: var(--ink-line);
+  background-color: var(--ink-2);
+  color: var(--ink-text);
+}
+.float-bar input::placeholder {
+  color: var(--ink-muted);
+}
+.float-bar .btn:not(.btn-primary) {
+  border-color: var(--ink-line);
+  background: transparent;
+  color: var(--ink-text);
+}
+.float-bar .hint {
+  color: var(--ink-muted);
+}
+
 /* Form fields */
 .field {
   display: grid;
@@ -1275,6 +1317,36 @@ details[open] > summary {
   margin-bottom: var(--space-3);
 }
 
+/* The code on ink, headed by its file and line. */
+.code-window {
+  overflow: hidden;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-lg);
+  background: var(--ink);
+  box-shadow: var(--shadow);
+}
+.code-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ink-line);
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+.code-head:empty {
+  display: none;
+}
+.code-head code {
+  color: var(--ink-text);
+  overflow-wrap: anywhere;
+}
+.code-window .snippet {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
 .snippet {
   background: var(--ink);
   color: #dbe6f7;
@@ -2166,6 +2238,18 @@ details[open] > summary {
 @media (max-width: 64rem) {
   :root {
     --gutter: 24px;
+  }
+}
+/* Scrolling to a control keeps it clear of the sticky header, and of a floating bar. */
+html {
+  scroll-padding-top: var(--sticky-top);
+}
+html:has(form.bulk) {
+  scroll-padding-bottom: 128px;
+}
+@media (max-width: 40rem) {
+  html:has(form.bulk) {
+    scroll-padding-bottom: 200px;
   }
 }
 /* The header scrolls away on narrow screens (see .app-header): sticky parts go to the top. */

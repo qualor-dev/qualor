@@ -52,7 +52,7 @@
 <div class="issues-layout">
   <aside class="filters card panel" aria-labelledby="filters-heading">
     <div class="panel-head">
-      <h2 id="filters-heading" i18n="@@issues.filters">Filters</h2>
+      <h2 id="filters-heading" tabindex="-1" i18n="@@issues.filters">Filters</h2>
     </div>
     <div class="panel-body filters-body">
       <div class="toggles">
@@ -155,7 +155,7 @@
 
       @if (canTriage()) {
         @if (showBulk()) {
-          <form class="bulk" (submit)="applyBulk($event)">
+          <form class="bulk float-bar" (submit)="applyBulk($event)">
             <span class="label" i18n="@@issues.bulk.selected">{selected().size, plural,
               =0 {No issue selected}
               =1 {1 issue selected}

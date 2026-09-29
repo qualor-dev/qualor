@@ -412,6 +412,33 @@ describe('IssuesPage', () => {
     expect(fieldset.hidden).toBe(false);
   });
 
+  it('floats the bulk bar over the page, so checking an issue never moves the list', async () => {
+    const { fixture, root } = await render();
+    root.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')!.click();
+    await settle(fixture);
+    // styles.css .float-bar floats it over the page's bottom edge; the e2e checks the list stays put.
+    expect(root.querySelector('form.bulk')?.classList).toContain('float-bar');
+  });
+
+  it('keeps focus on a group after Clear, or on the filters when the group goes', async () => {
+    await TestBed.inject(Router).navigateByUrl('/?severity=high&path=src%2F');
+    const { fixture, root } = await render();
+    root.querySelector<HTMLButtonElement>('[data-group="severity"] .facet-clear')!.click();
+    await settle(fixture);
+    expect(document.activeElement).toBe(
+      root.querySelector('[data-group="severity"] .facet-toggle'),
+    );
+    root.querySelector<HTMLButtonElement>('[data-group="path"] .facet-clear')!.click();
+    await settle(fixture);
+    expect(root.querySelector('[data-group="path"]')).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector('#filters-heading'));
+  });
+
+  it('lets a long unbroken word in a message wrap instead of widening the table', async () => {
+    const { root } = await render();
+    expect(getComputedStyle(root.querySelector('.issue-message')!).overflowWrap).toBe('anywhere');
+  });
+
   it('draws each facet count as a bar scaled to the largest count of its group', async () => {
     const { root } = await render();
     const fills = (group: string) =>

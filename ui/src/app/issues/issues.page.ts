@@ -1,11 +1,13 @@
 import { DOCUMENT } from '@angular/common';
 import {
+  afterNextRender,
   Component,
   computed,
   DestroyRef,
-  type ElementRef,
+  ElementRef,
   effect,
   inject,
+  Injector,
   input,
   resource,
   signal,
@@ -134,6 +136,8 @@ export class IssuesPage {
   private readonly route = inject(ActivatedRoute);
   private readonly document = inject(DOCUMENT);
   private readonly project = inject(CurrentProject);
+  private readonly injector = inject(Injector);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   readonly projectId = input.required<string>();
   /**
    * Whether the caller may change issue statuses here (`issue.triage`): otherwise the selection
@@ -337,8 +341,8 @@ export class IssuesPage {
     inject(DestroyRef).onDestroy(() => this.retryOffer.clear());
   }
 
-  private navigate(params: Params): void {
-    void this.router.navigate([], {
+  private navigate(params: Params): Promise<boolean> {
+    return this.router.navigate([], {
       relativeTo: this.route,
       queryParams: params,
       queryParamsHandling: 'merge',
@@ -347,11 +351,21 @@ export class IssuesPage {
   }
 
   protected toggleFilter(filter: ListFilter, value: string): void {
-    this.navigate(filtersToParams(toggle(this.filters(), filter, value)));
+    void this.navigate(filtersToParams(toggle(this.filters(), filter, value)));
   }
 
-  protected clearGroup(filter: ListFilter): void {
-    this.navigate(filtersToParams(clearFilter(this.filters(), filter)));
+  /** Clear goes with its group's filter (a path group goes whole): focus stays in the column. */
+  protected async clearGroup(filter: ListFilter): Promise<void> {
+    await this.navigate(filtersToParams(clearFilter(this.filters(), filter)));
+    afterNextRender(
+      () => {
+        const toggle = this.host.querySelector<HTMLElement>(
+          `[data-group="${filter}"] .facet-toggle`,
+        );
+        (toggle ?? this.host.querySelector<HTMLElement>('#filters-heading'))?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   protected toggleGroup(filter: ListFilter): void {
@@ -362,25 +376,25 @@ export class IssuesPage {
   }
 
   protected setNewCode(event: Event): void {
-    this.navigate(filtersToParams({ ...this.filters(), inNewCode: isChecked(event) }));
+    void this.navigate(filtersToParams({ ...this.filters(), inNewCode: isChecked(event) }));
   }
 
   protected setDuplicates(event: Event): void {
-    this.navigate(filtersToParams({ ...this.filters(), includeDuplicates: isChecked(event) }));
+    void this.navigate(filtersToParams({ ...this.filters(), includeDuplicates: isChecked(event) }));
   }
 
   protected setSort(event: Event): void {
     const sort = inputValue(event) as IssueSort;
-    this.navigate(filtersToParams({ ...this.filters(), sort }));
+    void this.navigate(filtersToParams({ ...this.filters(), sort }));
   }
 
   protected setBranch(event: Event): void {
-    this.navigate({ branch: inputValue(event) || null });
+    void this.navigate({ branch: inputValue(event) || null });
   }
 
   protected submitSearch(event: Event): void {
     event.preventDefault();
-    this.navigate(filtersToParams({ ...this.filters(), q: this.search() }));
+    void this.navigate(filtersToParams({ ...this.filters(), q: this.search() }));
   }
 
   protected toggleOne(id: string, event: Event): void {

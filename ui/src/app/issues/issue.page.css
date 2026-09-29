@@ -19,11 +19,19 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
-/* The column stays in view only where it fits the screen; otherwise its end would be unreachable. */
-@media (min-width: 64.01rem) and (min-height: 48rem) {
+/* The column stays in view; taller than the screen, it scrolls within itself, so its end is never
+   out of reach. The inset leaves room for the cards' focus rings and shadows. */
+@media (min-width: 64.01rem) {
   .issue-aside {
     position: sticky;
     top: var(--sticky-top);
+    max-height: calc(100vh - var(--sticky-top) - 16px);
+    margin: -4px;
+    padding: 4px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: 12px;
+    scrollbar-width: thin;
   }
 }
 .issue-main > *,
@@ -44,36 +52,6 @@
 }
 .issue-header > p + p {
   margin-top: 10px;
-}
-/* The code on ink, headed by its file and line. */
-.code-window {
-  overflow: hidden;
-  border: 1px solid var(--ink-line);
-  border-radius: var(--radius-lg);
-  background: var(--ink);
-  box-shadow: var(--shadow);
-}
-.code-head {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 4px 16px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--ink-line);
-  color: var(--ink-muted);
-  font-size: 12.5px;
-}
-.code-head:empty {
-  display: none;
-}
-.code-head code {
-  color: var(--ink-text);
-  overflow-wrap: anywhere;
-}
-.code-window .snippet {
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
 }
 .rule-meta {
   display: flex;
