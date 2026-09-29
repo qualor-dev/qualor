@@ -100,9 +100,9 @@ describe('qualor scan --dry-run', () => {
   it('main() scans with the default analyzer registry', { timeout: 60_000 }, async () => {
     // The other dry-run tests pass analyzers: [] so their results cannot depend on installed tools;
     // this one keeps main() wired to builtinAnalyzers(). The repository has no TypeScript,
-    // JavaScript, Java or C#, so ESLint, PMD, SpotBugs and roslyn are skipped wherever it runs;
-    // Gitleaks is auto so a missing binary is a skip, not exit 3; Trivy runs where its database is
-    // installed and finds no lockfile (plan 2B).
+    // JavaScript, Java or C#, so ESLint, sonarjs, PMD, SpotBugs and roslyn are skipped wherever it
+    // runs; Gitleaks is auto so a missing binary is a skip, not exit 3; Trivy runs where its
+    // database is installed and finds no lockfile (plan 2B).
     const repo = path.join(tmp(), 'repo');
     writeTree(repo, {
       'README.md': '# docs only\n',
@@ -119,6 +119,7 @@ describe('qualor scan --dry-run', () => {
     const report = readReport(path.join(repo, 'out', 'r.json.gz'));
     expect(report.engines.map((e) => e.id)).toEqual([
       'eslint',
+      'sonarjs',
       'pmd',
       'spotbugs',
       'semgrep',
@@ -128,9 +129,9 @@ describe('qualor scan --dry-run', () => {
     ]);
     expect(
       report.engines
-        .filter((e) => ['eslint', 'pmd', 'spotbugs'].includes(e.id))
+        .filter((e) => ['eslint', 'sonarjs', 'pmd', 'spotbugs'].includes(e.id))
         .map((e) => e.status),
-    ).toEqual(['skipped', 'skipped', 'skipped']);
+    ).toEqual(['skipped', 'skipped', 'skipped', 'skipped']);
   });
 
   it(
@@ -500,10 +501,11 @@ describe('qualor scan --dry-run', () => {
           '  key: acme/app\n' +
           '  version: "$${QUALOR_TOKEN}{QUALOR_TOKEN}"\n' +
           '  name: "x-${INDIRECT}"\n' +
-          // No analyzer runs (Gitleaks is required by default and may not be installed here), so
-          // the scan is complete and both GitLab files are always written (ruling G6).
+          // No analyzer runs (Gitleaks is required by default and may not be installed here, and
+          // sonarjs needs the qualor/scanner image), so the scan is complete and both GitLab
+          // files are always written (ruling G6).
           'analyzers:\n' +
-          ['eslint', 'pmd', 'spotbugs', 'semgrep', 'gitleaks']
+          ['eslint', 'sonarjs', 'pmd', 'spotbugs', 'semgrep', 'gitleaks']
             .map((id) => `  ${id}:\n    enabled: false\n`)
             .join(''),
         'src/a.ts': 'export const a = 1;\n',

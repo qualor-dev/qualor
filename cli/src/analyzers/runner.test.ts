@@ -340,6 +340,7 @@ describe('runAnalyzers', () => {
   it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D)', () => {
     expect(builtinAnalyzers().map((a) => a.id)).toEqual([
       'eslint',
+      'sonarjs',
       'pmd',
       'spotbugs',
       'semgrep',

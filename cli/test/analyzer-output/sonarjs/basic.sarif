@@ -1,0 +1,79 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "eslint-plugin-sonarjs",
+          "version": "2.0.4",
+          "informationUri": "https://github.com/SonarSource/SonarJS",
+          "rules": [
+            {
+              "id": "S3923",
+              "name": "no-all-duplicated-branches",
+              "shortDescription": { "text": "S3923" },
+              "helpUri": "https://rules.sonarsource.com/javascript/RSPEC-3923",
+              "properties": { "category": "Major Bug" }
+            },
+            {
+              "id": "S1871",
+              "name": "no-duplicated-branches",
+              "shortDescription": { "text": "S1871" },
+              "helpUri": "https://rules.sonarsource.com/javascript/RSPEC-1871",
+              "properties": { "category": "Major Code Smell" }
+            },
+            {
+              "id": "S1186",
+              "name": "no-empty-function",
+              "shortDescription": { "text": "S1186" },
+              "helpUri": "https://rules.sonarsource.com/javascript/RSPEC-1186",
+              "properties": { "category": "Critical Code Smell" }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "S3923",
+          "level": "warning",
+          "message": { "text": "S3923" },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/math.ts" },
+                "region": { "startLine": 2, "startColumn": 3, "endLine": 8, "endColumn": 4 }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "S1871",
+          "level": "warning",
+          "message": { "text": "S1871" },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/math.ts" },
+                "region": { "startLine": 5, "startColumn": 10, "endLine": 8, "endColumn": 4 }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "S1186",
+          "level": "warning",
+          "message": { "text": "S1186" },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/math.ts" },
+                "region": { "startLine": 11, "startColumn": 35, "endLine": 11, "endColumn": 37 }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

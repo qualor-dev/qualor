@@ -325,7 +325,7 @@ async function capture(
     if (run.transform === undefined) return { ...done('ok', null), sarif: sarif.value };
     let converted: unknown;
     try {
-      converted = run.transform(sarif.value);
+      converted = run.transform(sarif.value, result.stdout);
     } catch (err) {
       // Same rule as for invalid JSON: the detail (which may quote tool output) is debug-only.
       o.log.debug(

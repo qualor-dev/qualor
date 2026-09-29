@@ -80,9 +80,12 @@ export interface AnalyzerCommand {
   /**
    * Turns the tool's own JSON output (read from `sarifPath` with the same size bound) into a SARIF
    * 2.1.0 log, for tools without a usable SARIF writer (ESLint: `json-with-metadata`). A throw
-   * records the engine as failed with a fixed reason.
+   * records the engine as failed with a fixed reason. `stdout` is the run's captured stdout tail
+   * (same bound as `ProcessResult.stdout`), for a tool that reports extra detail there the SARIF
+   * itself does not carry (sonarjs's one-line JSON summary); most adapters ignore it and return
+   * `output` unchanged or converted, as before this parameter existed.
    */
-  transform?(output: unknown): unknown;
+  transform?(output: unknown, stdout: string): unknown;
 }
 
 export type Preparation =
