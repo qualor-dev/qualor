@@ -603,6 +603,7 @@
     "rules.severity": "Default severity",
     "rules.anySeverity": "Any",
     "rules.count": "{VAR_PLURAL, plural, =0 {No rule matches.} =1 {1 rule shown.} other {{INTERPOLATION} rules shown.}}",
+    "rules.caption": " The rules the organization's analyses reported ",
     "rules.col.rule": "Rule",
     "rules.col.quality": "Software quality",
     "rules.col.severity": "Default severity",

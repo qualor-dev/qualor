@@ -1,107 +1,137 @@
-<div class="page-header">
-  <h1 i18n="@@rules.title">Rules</h1>
-  <a routerLink="/profiles" i18n="@@rules.profiles">Quality profiles</a>
-</div>
-<form role="search" class="card toolbar" (submit)="search($event)">
-  <label for="rules-search" class="visually-hidden" i18n="@@rules.search.label">Search rules</label>
-  <input
-    id="rules-search"
-    type="search"
-    placeholder="Key or name"
-    i18n-placeholder="@@rules.search.placeholder"
-    [attr.maxlength]="qMax"
-    [value]="q()"
-    (input)="q.set(inputValue($event))"
-  />
-  <button type="submit" class="btn" i18n="@@rules.search.submit">Search</button>
-  <label for="rules-quality" class="label" i18n="@@rules.quality">Software quality</label>
-  <select id="rules-quality" (change)="setQuality($event)">
-    <option value="" i18n="@@rules.any">Any</option>
-    @for (q of qualities; track q) {
-      <option [value]="q">{{ q | label: 'quality' }}</option>
-    }
-  </select>
-  <label for="rules-severity" class="label" i18n="@@rules.severity">Default severity</label>
-  <select id="rules-severity" (change)="setSeverity($event)">
-    <option value="" i18n="@@rules.anySeverity">Any</option>
-    @for (s of severities; track s) {
-      <option [value]="s">{{ s | label: 'severity' }}</option>
-    }
-  </select>
-</form>
+<q-page-header [compact]="true">
+  <h1 pageTitle i18n="@@rules.title">Rules</h1>
+  <div pageActions class="band-actions">
+    <a class="btn" routerLink="/profiles" i18n="@@rules.profiles">Quality profiles</a>
+  </div>
+</q-page-header>
 
-<div role="status">
-  @if (list.loaded()) {
-    <span class="visually-hidden" i18n="@@rules.count">{list.items().length, plural,
-      =0 {No rule matches.}
-      =1 {1 rule shown.}
-      other {{{ list.items().length }} rules shown.}
-    }</span>
+<div class="page-body">
+  <form role="search" class="rules-toolbar" (submit)="search($event)">
+    <label for="rules-search" class="visually-hidden" i18n="@@rules.search.label"
+      >Search rules</label
+    >
+    <span class="search-field">
+      <q-icon name="search" />
+      <input
+        id="rules-search"
+        type="search"
+        placeholder="Key or name"
+        i18n-placeholder="@@rules.search.placeholder"
+        [attr.maxlength]="qMax"
+        [value]="q()"
+        (input)="q.set(inputValue($event))"
+      />
+    </span>
+    <button type="submit" class="btn" i18n="@@rules.search.submit">Search</button>
+    <div class="toolbar-field">
+      <label for="rules-quality" class="label" i18n="@@rules.quality">Software quality</label>
+      <select id="rules-quality" (change)="setQuality($event)">
+        <option value="" i18n="@@rules.any">Any</option>
+        @for (q of qualities; track q) {
+          <option [value]="q">{{ q | label: 'quality' }}</option>
+        }
+      </select>
+    </div>
+    <div class="toolbar-field">
+      <label for="rules-severity" class="label" i18n="@@rules.severity">Default severity</label>
+      <select id="rules-severity" (change)="setSeverity($event)">
+        <option value="" i18n="@@rules.anySeverity">Any</option>
+        @for (s of severities; track s) {
+          <option [value]="s">{{ s | label: 'severity' }}</option>
+        }
+      </select>
+    </div>
+  </form>
+
+  <div role="status">
+    @if (list.loaded()) {
+      <span class="visually-hidden" i18n="@@rules.count">{list.items().length, plural,
+        =0 {No rule matches.}
+        =1 {1 rule shown.}
+        other {{{ list.items().length }} rules shown.}
+      }</span>
+    }
+  </div>
+  @if (list.error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+
+  <section class="card panel" aria-labelledby="rules-caption">
+    <div class="panel-scroll">
+      <table>
+        <caption id="rules-caption" class="visually-hidden" i18n="@@rules.caption">
+          The rules the organization's analyses reported
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@rules.col.rule">Rule</th>
+            <th scope="col" i18n="@@rules.col.quality">Software quality</th>
+            <th scope="col" i18n="@@rules.col.severity">Default severity</th>
+            <th scope="col" i18n="@@rules.col.languages">Languages</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (rule of list.items(); track rule.key) {
+            <tr>
+              <td class="rule-cell">
+                <details>
+                  <summary>{{ rule.name }}</summary>
+                  <div class="rule-details">
+                    @if (rule.descriptionMd; as description) {
+                      <p class="prose-text">{{ description }}</p>
+                    }
+                    @if (helpUri(rule.helpUri); as href) {
+                      <a
+                        class="external-link"
+                        [href]="href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        ><ng-container i18n="@@rules.docs">Rule documentation</ng-container
+                        ><q-icon name="external"
+                      /></a>
+                    }
+                  </div>
+                </details>
+                <code class="rule-key">{{ rule.key }}</code>
+              </td>
+              <td class="nowrap">{{ rule.quality | label: 'quality' }}</td>
+              <td>
+                <span class="badge badge-{{ rule.defaultSeverity }}">{{
+                  rule.defaultSeverity | label: 'severity'
+                }}</span>
+              </td>
+              <td>
+                <div class="rule-languages">
+                  @for (language of rule.languages; track language) {
+                    <span class="lang-chip">{{ language | label: 'language' }}</span>
+                  }
+                </div>
+              </td>
+            </tr>
+          } @empty {
+            @if (list.loaded()) {
+              <tr>
+                <td colspan="4" class="muted" i18n="@@rules.empty">
+                  No rule matches. Rules appear once an analysis reports them.
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+  @if (list.nextCursor()) {
+    <p class="load-more">
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-disabled]="list.loading() ? true : null"
+        (click)="list.more()"
+        i18n="@@list.more"
+      >
+        Load more
+      </button>
+    </p>
   }
 </div>
-@if (list.error(); as message) {
-  <p class="alert alert-error" role="alert">{{ message }}</p>
-}
-
-<div class="table-wrap">
-  <table>
-    <thead>
-      <tr>
-        <th scope="col" i18n="@@rules.col.rule">Rule</th>
-        <th scope="col" i18n="@@rules.col.quality">Software quality</th>
-        <th scope="col" i18n="@@rules.col.severity">Default severity</th>
-        <th scope="col" i18n="@@rules.col.languages">Languages</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (rule of list.items(); track rule.key) {
-        <tr>
-          <td>
-            <details>
-              <summary>{{ rule.name }}</summary>
-              @if (rule.descriptionMd; as description) {
-                <p class="prose-text">{{ description }}</p>
-              }
-              @if (helpUri(rule.helpUri); as href) {
-                <p>
-                  <a [href]="href" target="_blank" rel="noopener noreferrer" i18n="@@rules.docs"
-                    >Rule documentation</a
-                  >
-                </p>
-              }
-            </details>
-            <code class="muted">{{ rule.key }}</code>
-          </td>
-          <td>{{ rule.quality | label: 'quality' }}</td>
-          <td>
-            <span class="badge badge-{{ rule.defaultSeverity }}">{{
-              rule.defaultSeverity | label: 'severity'
-            }}</span>
-          </td>
-          <td>{{ rule.languages.join(', ') }}</td>
-        </tr>
-      } @empty {
-        @if (list.loaded()) {
-          <tr>
-            <td colspan="4" class="muted" i18n="@@rules.empty">
-              No rule matches. Rules appear once an analysis reports them.
-            </td>
-          </tr>
-        }
-      }
-    </tbody>
-  </table>
-</div>
-@if (list.nextCursor()) {
-  <p>
-    <button
-      type="button"
-      class="btn"
-      [attr.aria-disabled]="list.loading() ? true : null"
-      (click)="list.more()"
-      i18n="@@list.more"
-    >
-      Load more
-    </button>
-  </p>
-}

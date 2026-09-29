@@ -114,6 +114,26 @@ describe('RulesPage', () => {
     );
   });
 
+  it('opens a rule in its row: name as the disclosure, key in mono, languages as chips', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/rules', {
+      body: page([
+        { ...rule('eslint:a', 'https://eslint.org/a'), languages: ['typescript', 'javascript'] },
+      ]),
+    });
+    const fixture = TestBed.createComponent(RulesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const row = root.querySelector('tbody tr')!;
+    expect(row.querySelector('details > summary')?.textContent?.trim()).toBe('Rule eslint:a');
+    expect(row.querySelector('code.rule-key')?.textContent?.trim()).toBe('eslint:a');
+    expect([...row.querySelectorAll('.lang-chip')].map((c) => c.textContent?.trim())).toEqual([
+      'TypeScript',
+      'JavaScript',
+    ]);
+    expect(row.querySelector('a.external-link')?.textContent?.trim()).toBe('Rule documentation');
+  });
+
   it('searches on submit and filters by quality and severity', async () => {
     const server = setup(false);
     server.on('GET', '/api/v0/rules', { body: page([]) });
