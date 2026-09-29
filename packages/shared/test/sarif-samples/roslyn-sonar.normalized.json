@@ -1,0 +1,203 @@
+{
+  "version": "5.9.0",
+  "rules": [
+    {
+      "id": "S2325",
+      "shortDescription": "S2325",
+      "helpUri": "https://rules.sonarsource.com/csharp/RSPEC-2325",
+      "defaultSeverity": "low",
+      "quality": "maintainability",
+      "kind": "issue",
+      "tags": [
+        "C#",
+        "MainSourceScope",
+        "TestSourceScope",
+        "SonarWay"
+      ]
+    },
+    {
+      "id": "S2930",
+      "shortDescription": "S2930",
+      "helpUri": "https://rules.sonarsource.com/csharp/RSPEC-2930",
+      "defaultSeverity": "blocker",
+      "quality": "reliability",
+      "kind": "issue",
+      "tags": [
+        "C#",
+        "MainSourceScope",
+        "TestSourceScope",
+        "SonarWay"
+      ]
+    },
+    {
+      "id": "S3400",
+      "shortDescription": "S3400",
+      "helpUri": "https://rules.sonarsource.com/csharp/RSPEC-3400",
+      "defaultSeverity": "low",
+      "quality": "maintainability",
+      "kind": "issue",
+      "tags": [
+        "C#",
+        "MainSourceScope",
+        "SonarWay"
+      ]
+    },
+    {
+      "id": "CA5351",
+      "shortDescription": "Do Not Use Broken Cryptographic Algorithms",
+      "helpUri": "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca5351",
+      "defaultSeverity": "low",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "Telemetry",
+        "EnabledRuleInAggressiveMode"
+      ]
+    },
+    {
+      "id": "RCS1118",
+      "shortDescription": "Mark local variable as const",
+      "helpUri": "https://josefpihrt.github.io/docs/roslynator/analyzers/RCS1118",
+      "defaultSeverity": "low",
+      "quality": "maintainability",
+      "kind": "issue"
+    }
+  ],
+  "findings": [
+    {
+      "engineId": "roslyn",
+      "ruleId": "S2930",
+      "message": "S2930",
+      "severity": "blocker",
+      "location": {
+        "path": "src/Acme.Store/Reader.cs",
+        "startLine": 9,
+        "startColumn": 13,
+        "endLine": 9,
+        "endColumn": 43
+      },
+      "lineHash": "1441e272678311aafb3f92f8922eb799",
+      "contextHash": "a952464a3dbcea71ddb830ae82eca504",
+      "snippet": {
+        "startLine": 6,
+        "lines": [
+          "{",
+          "    public static string FirstLine(string path)",
+          "    {",
+          "        var reader = new StreamReader(path);",
+          "        return reader.ReadLine() ?? string.Empty;",
+          "    }",
+          "}"
+        ]
+      }
+    },
+    {
+      "engineId": "roslyn",
+      "ruleId": "S2325",
+      "message": "S2325",
+      "severity": "low",
+      "location": {
+        "path": "src/Acme.Store/Pricing.cs",
+        "startLine": 26,
+        "startColumn": 16,
+        "endLine": 26,
+        "endColumn": 19
+      },
+      "lineHash": "cf19237b83ec85e1e128859efb0ca802",
+      "contextHash": "05d6ebf0453f78880661abb8cc3c5306",
+      "snippet": {
+        "startLine": 23,
+        "lines": [
+          "    }",
+          "",
+          "#pragma warning disable CA1822",
+          "    public int Zero() => 0;",
+          "#pragma warning restore CA1822",
+          "}"
+        ]
+      }
+    },
+    {
+      "engineId": "roslyn",
+      "ruleId": "S3400",
+      "message": "S3400",
+      "severity": "low",
+      "location": {
+        "path": "src/Acme.Store/Pricing.cs",
+        "startLine": 26,
+        "startColumn": 16,
+        "endLine": 26,
+        "endColumn": 19
+      },
+      "lineHash": "cf19237b83ec85e1e128859efb0ca802",
+      "contextHash": "05d6ebf0453f78880661abb8cc3c5306",
+      "snippet": {
+        "startLine": 23,
+        "lines": [
+          "    }",
+          "",
+          "#pragma warning disable CA1822",
+          "    public int Zero() => 0;",
+          "#pragma warning restore CA1822",
+          "}"
+        ]
+      }
+    },
+    {
+      "engineId": "roslyn",
+      "ruleId": "CA5351",
+      "message": "Fingerprint uses a broken cryptographic algorithm MD5",
+      "severity": "medium",
+      "location": {
+        "path": "src/Acme.Store/Hashing.cs",
+        "startLine": 9,
+        "startColumn": 25,
+        "endLine": 9,
+        "endColumn": 36
+      },
+      "lineHash": "420c7d22017af5702dbf296442f240be",
+      "contextHash": "c09a2338a7ad358ba6b0b7537a863531",
+      "snippet": {
+        "startLine": 6,
+        "lines": [
+          "{",
+          "    public static byte[] Fingerprint(byte[] data)",
+          "    {",
+          "        using var md5 = MD5.Create();",
+          "        return md5.ComputeHash(data);",
+          "    }",
+          "}"
+        ]
+      }
+    },
+    {
+      "engineId": "roslyn",
+      "ruleId": "RCS1118",
+      "message": "Mark local variable as const",
+      "severity": "low",
+      "location": {
+        "path": "src/Acme.Store/Pricing.cs",
+        "startLine": 13,
+        "startColumn": 9,
+        "endLine": 13,
+        "endColumn": 11
+      },
+      "lineHash": "bedc2213f91cf79a3d258fec423fb223",
+      "contextHash": "3fe0812b08152c4568e38a2803978150",
+      "snippet": {
+        "startLine": 10,
+        "lines": [
+          "    public int Discount(int total, bool member)",
+          "    {",
+          "        calls++;",
+          "        int rate = 5;",
+          "        if (total > 10000 && member)",
+          "        {",
+          "            return total * rate * 2 / 100;"
+        ]
+      }
+    }
+  ],
+  "warnings": [],
+  "secretRegions": []
+}
