@@ -31,7 +31,12 @@ import { DateTimePipe } from '../shared/date-time.pipe';
 import { keepFocus } from '../shared/focus';
 import { inputValue, isChecked } from '../shared/forms';
 import { CopyValue } from './copy-value';
-import { nameTakenText, ssoProblem, testProblemText } from './sso-settings-text';
+import {
+  metadataProblemText,
+  nameTakenText,
+  ssoProblem,
+  testProblemText,
+} from './sso-settings-text';
 
 type Protocol = SsoConnection['protocol'];
 type GroupSource = SsoConnection['groupSource'];
@@ -654,7 +659,10 @@ export class SsoPage {
         );
       } catch (err) {
         if (!(err instanceof ApiError) || err.status !== 422) throw err;
-        this.errors.set({ 'sso-metadata-url': fieldText('sso-metadata-url') });
+        this.errors.set({
+          'sso-metadata-url':
+            metadataProblemText(err.problem?.reason) ?? fieldText('sso-metadata-url'),
+        });
         this.focus('sso-metadata-url');
       }
     });

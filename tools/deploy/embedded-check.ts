@@ -7,7 +7,8 @@ import { Api, run } from './stack';
  * built qualor/server image (default `qualor/server:dev`) without DATABASE_URL and checks the
  * embedded PostgreSQL end to end: health and a sign-in on a fresh volume, data kept across a
  * restart, a second container refused on the same volume, a backup with pg_dump through exec,
- * and `restore` of that backup into a fresh volume. Everything it creates is removed afterwards.
+ * `restore` of that backup into a fresh volume, and a broken file that `restore` refuses without
+ * touching that data. Everything it creates is removed afterwards.
  */
 const PORT_A = 18_190;
 const PORT_B = 18_191;
@@ -168,6 +169,25 @@ async function main(): Promise<void> {
   check(
     restore.code === 0,
     `restore into a fresh volume succeeds${restore.code === 0 ? '' : `:\n${restore.stderr.slice(-2000)}`}`,
+  );
+  // A file that is not a dump (an empty, truncated or wrong backup) must leave the data as it was.
+  const broken = docker(
+    [
+      'run',
+      '--rm',
+      '-i',
+      '-v',
+      `${RESTORED}:/var/lib/qualor`,
+      '-e',
+      `QUALOR_SECRET_KEY=${secret}`,
+      image,
+      'restore',
+    ],
+    Buffer.from('this is not a pg_dump archive\n'),
+  );
+  check(
+    broken.code !== 0 && /the existing database was not changed/.test(broken.stderr),
+    `restore of a broken file fails and keeps the data (exit ${broken.code})`,
   );
   start(image, `qualor-embedded-b-${suffix}`, RESTORED, PORT_B);
   check(

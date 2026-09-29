@@ -19,6 +19,24 @@ describe('parseCommandLine', () => {
     }
   });
 
+  it('shows help for --help or -h after any command or subcommand, whatever else is given', () => {
+    for (const argv of [
+      ['scan', '--help'],
+      ['scan', '--branch', 'main', '-h'],
+      ['import', 'sonarqube', '--help'],
+      ['import', 'sonarqube', '--url', 'https://sonar.test', '-h'],
+      ['import', '--help'],
+      ['dotnet', 'begin', '--help'],
+      ['dotnet', 'end', '-h'],
+      ['dotnet', 'abort', '--help'],
+      ['dotnet', '--help'],
+      ['validate', '--help'],
+      ['version', '-h'],
+    ]) {
+      expect(parseCommandLine(argv)).toEqual({ name: 'help' });
+    }
+  });
+
   it('parses version and validate', () => {
     expect(parseCommandLine(['version'])).toEqual({ name: 'version' });
     expect(parseCommandLine(['--version'])).toEqual({ name: 'version' });

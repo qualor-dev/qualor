@@ -45,6 +45,19 @@ amd64 and arm64, so `docker buildx build --platform linux/arm64 …` should work
 been built so far; `deploy/scanner-dotnet/Dockerfile` detects its architecture itself
 (`tools/analyzers/install-dotnet.sh`, `uname -m`), so it needs no `TARGETARCH` build argument.
 
+Scan a built scanner image for known vulnerabilities with the accepted ones left out:
+
+```sh
+trivy image --severity HIGH,CRITICAL --ignorefile deploy/scanner/.trivyignore.yaml qualor/scanner:dev
+```
+
+`deploy/scanner/.trivyignore.yaml` (both scanner images) lists each accepted vulnerability with its
+reason and a review date (`expired_at`, after which Trivy reports it again): Debian packages
+without a fix yet, npm's own dependencies in the npm that Node.js 22 bundles, and parts of PMD,
+Trivy and the .NET 8 SDK that the latest releases still carry. A finding with a fix is a version
+bump, not an entry. Gitleaks is built from its release tag with a current Go in
+`deploy/scanner/Dockerfile`, because its release binaries use a Go with known vulnerabilities.
+
 `qualor/server` and `qualor/scanner` each have a companion image, `qualor/server-sources` and
 `qualor/scanner-sources`, which carries the source code of its copyleft components and is always
 released with the same tag (see [Releasing the images](#releasing-the-images)).
@@ -320,7 +333,7 @@ release is `0.1.0`.
 
 Both images contain copyleft software. The scanner: OpenGrep and SpotBugs (LGPL-2.1) and what
 OpenGrep's release binary links or bundles (GMP, GNU Readline, certifi), the MPL-2.0 and CDDL-1.0
-Java libraries of SpotBugs and PMD, the Temurin JRE (GPL-2.0 with the Classpath Exception), the
+Java libraries of SpotBugs and PMD, the MPL-2.0 Go modules compiled into Trivy and Gitleaks, the Temurin JRE (GPL-2.0 with the Classpath Exception), the
 JavaScriptCore/WebKit and TinyCC that Bun links into the `qualor` binary, and its Debian packages.
 The server: its Debian packages (glibc, the GCC runtime and others). Qualor publishes their complete corresponding source next to the images rather than rely on
 written offers. So every release of `qualor/<image>:<tag>` also publishes
@@ -388,7 +401,7 @@ whether the source is still "complete" without them is a judgement call, and the
 `sources.json`). OpenGrep's `tests/semgrep-rules` submodule (test data) is left out the same way.
 The written offers in the NOTICE files remain, as a courtesy only.
 
-**Updating the sources.** Bumping OpenGrep, SpotBugs, PMD or Trivy in `tools/analyzers/install.sh`, Bun
+**Updating the sources.** Bumping OpenGrep, SpotBugs, PMD, Trivy or Gitleaks in `tools/analyzers/install.sh`, Bun
 in `cli/scripts/targets.ts`, or the Temurin base of `deploy/scanner/Dockerfile`, fails
 `tools/deploy/sources.test.ts` until `sources.json` has the new sources. Every entry of the bumped
 component has to be re-derived, not only its tag archive:
@@ -410,6 +423,8 @@ component has to be re-derived, not only its tag archive:
   `go version -m trivy` (a `golang` container will do), look up each module's licence (its
   `LICENSE` in the module cache after `go mod download` of the tag), and pin the zip
   `https://proxy.golang.org/<module>/@v/<version>.zip` of every MPL, LGPL, GPL or EPL one. The
+  same for Gitleaks, which `deploy/scanner/Dockerfile` builds from its tag: list the modules of the
+  binary in the built image (`GITLEAKS_GO_UPGRADES` moves some of them off the tag's `go.sum`). The
   Trivy database pin (`TRIVY_DB_DIGEST`) is data, not a component, and moves on its own
   (`pnpm trivy-db:pin`, above).
 

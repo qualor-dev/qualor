@@ -219,7 +219,7 @@ describe('GitLab decoration: commit status and summary (scm.md §4, §5.1–§5.
     expect(statusesOf(gitlabId)).toHaveLength(2);
   });
 
-  it('ignores a summary marker in someone else’s note, and a stale analysis only sets its status', async () => {
+  it('never edits a summary marker in someone else’s note, and a stale analysis only sets its status', async () => {
     const { project, gitlabId } = await setup('scm/foreign');
     fake.addNote(gitlabId, 12, {
       body: `<!-- qualor:summary ${project.id} -->\nforged`,
@@ -229,10 +229,44 @@ describe('GitLab decoration: commit status and summary (scm.md §4, §5.1–§5.
     await project.ingestOk(mergeRequestReport(12, HEAD, { projectKey: project.key }));
     await runDecorations(h, decorationDeps(h));
     const notes = fake.discussions(gitlabId, 12).flatMap((d) => d.notes);
+    // A Developer token may not delete another user's note: it stays, and the job still succeeds.
     expect(notes.find((n) => n.authorId === 5)?.body).toContain('forged');
+    expect(fake.requests.some((r) => r.method === 'DELETE')).toBe(true);
+    expect(await queuedDecorations(h)).toHaveLength(0);
     const own = notes.filter((n) => n.authorId === fake.botUserId);
     expect(own).toHaveLength(1);
     expect(own[0]?.body).toContain('the merge request is now at ` ffffffffffff `');
+  });
+
+  it('replaces the summary an earlier token’s user posted when the token may delete it (Maintainer)', async () => {
+    const { project, gitlabId } = await setup('scm/replaced-token');
+    // The summary of the previous token's bot user, and a reply in a thread quoting its marker.
+    const old = fake.addNote(gitlabId, 12, {
+      body: `<!-- qualor:summary ${project.id} -->\n### Qualor: quality gate passed`,
+      authorId: 77,
+    });
+    const oldNoteId = old.notes[0]!.id;
+    const thread = fake.addNote(gitlabId, 12, { body: 'Why?', authorId: 5 });
+    thread.individualNote = false;
+    fake.reply(gitlabId, 12, thread.id, {
+      body: `<!-- qualor:summary ${project.id} -->\nquoted`,
+      authorId: 5,
+    });
+    fake.accessLevel = 40;
+    try {
+      await project.ingestOk(mergeRequestReport(12, HEAD, { projectKey: project.key }));
+      await runDecorations(h, decorationDeps(h));
+    } finally {
+      fake.accessLevel = 30;
+    }
+    // The old summary is gone, the reply in the thread is left alone, and one summary is new.
+    expect(fake.discussions(gitlabId, 12).some((d) => d.id === old.id)).toBe(false);
+    expect(summaries(gitlabId).map((n) => n.authorId)).toEqual([5, fake.botUserId]);
+    expect(summaries(gitlabId)[1]?.body).toContain('### Qualor: quality gate failed');
+    expect(writes().filter((w) => w.startsWith('DELETE'))).toEqual([
+      `DELETE/projects/${gitlabId}/merge_requests/12/notes/${oldNoteId}`,
+    ]);
+    expect(await queuedDecorations(h)).toHaveLength(0);
   });
 
   it('never says "now at" for a merged-results pipeline, whose merge commit is never the head (§5.2)', async () => {
@@ -312,6 +346,28 @@ describe('GitLab decoration: commit status and summary (scm.md §4, §5.1–§5.
     await runDecorations(h, deps);
     expect(await queuedDecorations(h)).toHaveLength(0);
     expect(statusesOf(refused.gitlabId)).toHaveLength(0);
+  });
+
+  it('says a 403 on the commit status is a missing permission, not a refused token', async () => {
+    const { project, gitlabId } = await setup('scm/protected');
+    // GitLab's answer to a Developer's status on a protected branch.
+    fake.inject('POST', new RegExp(`^/projects/${gitlabId}/statuses/`), {
+      status: 403,
+      body: { message: '403 Forbidden' },
+    });
+    const analysisId = await project.ingestOk(
+      reportWith({ projectKey: project.key, revision: 'e'.repeat(40) }),
+    );
+    await runDecorations(h, decorationDeps(h));
+    expect(statusesOf(gitlabId)).toHaveLength(0);
+    // Not retried: a role does not change by itself.
+    expect(await queuedDecorations(h)).toHaveLength(0);
+    const line = h.ctx.logs.find(
+      (l) => l.includes(analysisId) && l.includes('GitLab decoration stopped'),
+    );
+    expect(line).toContain('"status":403');
+    expect(line).toContain('a commit status on a protected branch needs the Maintainer role');
+    expect(line).not.toContain('refused the token');
   });
 
   it('goes on to the summary when the commit status fails, and sets the status on the retry', async () => {

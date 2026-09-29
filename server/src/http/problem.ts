@@ -20,7 +20,10 @@ export interface FieldError {
  * Problem schema, http/openapi.ts): a machine-readable detail a client maps to its own text.
  */
 export interface ProblemExtensions {
-  /** 422 LICENSE_INVALID: the verifier's reason code (enterprise.md §4, §9). */
+  /**
+   * 422 LICENSE_INVALID: the verifier's reason code (enterprise.md §4, §9). 422 VALIDATION_FAILED
+   * of **Read metadata** (SAML): what failed (sso/saml.ts SAML_METADATA_PROBLEM_CODES).
+   */
   reason?: string;
 }
 

@@ -58,8 +58,9 @@ secrets redacted.
 
 ## `qualor import sonarqube`
 
-It imports quality profiles, gates, project assignments and issue statuses from SonarQube Server or
-SonarQube Cloud. See [Migrating from SonarQube](./migrate-from-sonarqube.md).
+It imports issue statuses, quality gates and projects with their gate assignments from SonarQube
+Server or SonarQube Cloud, and quality profiles as their rule mappings are reviewed. See
+[Migrating from SonarQube](./migrate-from-sonarqube.md).
 
 ## `qualor version`
 

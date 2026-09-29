@@ -84,7 +84,14 @@ const connectionSchema = z.object({
 const testResultSchema = z.object({
   ok: z.boolean(),
   user: z.object({ username: z.string() }).nullable(),
-  project: z.object({ id: z.number().int(), pathWithNamespace: z.string() }).nullable(),
+  project: z
+    .object({
+      id: z.number().int(),
+      pathWithNamespace: z.string(),
+      /** GitLab: the token's access level in the project (40 = Maintainer); null if unknown. */
+      accessLevel: z.number().int().nullable(),
+    })
+    .nullable(),
   problem: z.object({ code: z.enum(TEST_PROBLEM_CODES), message: z.string() }).nullable(),
 });
 
@@ -116,7 +123,8 @@ function connectionDto(
 
 const baseUrl = noNul(z.string().min(1).max(2_048));
 /**
- * The GitLab access token (scm.md §2.1): the `api` scope and the Developer role, preferably a
+ * The GitLab access token (scm.md §2.1): the `api` scope and the Maintainer role (a Developer
+ * cannot set a commit status on a protected branch), preferably a
  * project access token of the mapped GitLab project (it reaches nothing else), else a group access
  * token or a bot user's personal token, never a human's. Stored encrypted (AAD
  * `scm_connections.token_enc`), never echoed or logged; the pattern keeps it header-safe.

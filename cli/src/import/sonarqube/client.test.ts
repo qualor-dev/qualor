@@ -46,6 +46,18 @@ const connect = (over: Partial<ConnectOptions> = {}) =>
     ...over,
   });
 
+describe('connections', () => {
+  it('reuses one connection for its reads instead of connecting for each', async () => {
+    fake = await startFakeSonarQube(sampleSonarData());
+    const { client } = await connect();
+    for (let n = 0; n < 20; n += 1) {
+      await client.get('api/qualityprofiles/search', {}, profilesSchema, 'profile list');
+    }
+    expect(fake.requests.length).toBe(22);
+    expect(fake.connections).toBe(1);
+  });
+});
+
 describe('read-only by construction (import-sonarqube.md §4.5)', () => {
   const opts = (transport: SonarClientOptions['transport']): SonarClientOptions => ({
     endpoint: {

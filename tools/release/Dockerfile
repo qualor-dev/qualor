@@ -2,7 +2,7 @@
 # A local image only, never pushed:
 #   docker build -t qualor-release-tools:local tools/release
 # Pinned by version and digest (multi-arch index), the same base as tools/analyzers/Dockerfile.
-FROM node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844
+FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7
 COPY install-tools.sh /tmp/install-tools.sh
 RUN sh /tmp/install-tools.sh && rm /tmp/install-tools.sh
 # The container runs with a read-only root and a tmpfs /tmp: every tool keeps its state there.

@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createUser, type TestContext } from '../../test/app';
+import { createUser, login, type TestContext } from '../../test/app';
 import { QUIET_AUDIT_LOG } from '../../test/audit-log';
 import { auditRows, oidcConnection, ssoContext } from '../../test/sso';
 import { createAuditRecorder } from '../audit/recorder';
@@ -98,6 +98,46 @@ describe('SSO sessions and failures (sso-scim.md §7.5, §7.7)', () => {
       targetId: userId,
       details: { method: 'oidc', connectionId },
     });
+  });
+
+  it('does not hold an SSO session up with a forced password change; a password session is', async () => {
+    const forced = await createUser(ctx, { username: 'forced', passwordChangeRequired: true });
+    await ctx.db
+      .insert(identities)
+      .values({ connectionId, userId: forced.id, subject: 'f', linkedBy: 'verified_email' });
+    const sam = userId;
+    userId = forced.id;
+    try {
+      const res = await ctx.app.inject({ method: 'GET', url: '/test/sso/issue' });
+      const cookie = res.cookies.find((c) => c.name === SESSION_COOKIE)!.value;
+      const viaSso = { [SESSION_COOKIE]: cookie };
+      const me = await ctx.app.inject({ method: 'GET', url: '/api/v0/auth/me', cookies: viaSso });
+      expect(me.json().user).toMatchObject({ username: 'forced', passwordChangeRequired: false });
+      const orgs = await ctx.app.inject({
+        method: 'GET',
+        url: '/api/v0/organizations',
+        cookies: viaSso,
+      });
+      expect(orgs.statusCode).toBe(200);
+      // The flag stays: the next password sign-in must still change the password first.
+      const [row] = await ctx.db.select().from(users).where(eq(users.id, forced.id));
+      expect(row!.passwordChangeRequired).toBe(true);
+      const password = await login(ctx, forced.username, forced.password);
+      const pwMe = await ctx.app.inject({
+        method: 'GET',
+        url: '/api/v0/auth/me',
+        headers: password.headers,
+      });
+      expect(pwMe.json().user.passwordChangeRequired).toBe(true);
+      const refused = await ctx.app.inject({
+        method: 'GET',
+        url: '/api/v0/organizations',
+        headers: password.headers,
+      });
+      expect([refused.statusCode, refused.json().code]).toEqual([403, 'PASSWORD_CHANGE_REQUIRED']);
+    } finally {
+      userId = sam;
+    }
   });
 
   it('fails a flow with a fixed code: 303 to /login, the event, a fixed log line', async () => {

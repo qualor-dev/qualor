@@ -199,7 +199,7 @@ ingress:
 Install, wait, and read the first admin password:
 
 ```sh
-helm install qualor oci://registry-1.docker.io/qualor/qualor --version 0.1.0 -n qualor -f values.yaml
+helm install qualor oci://registry-1.docker.io/qualor/qualor --version 0.1.1 -n qualor -f values.yaml
 kubectl -n qualor rollout status statefulset/qualor
 kubectl -n qualor get secret qualor-secrets -o jsonpath='{.data.QUALOR_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d
 ```
@@ -312,8 +312,8 @@ admits it:
 
 ```sh
 kubectl -n qualor scale statefulset/qualor --replicas=0
-kubectl -n qualor run qualor-restore --rm -i --restart=Never --image=qualor/server:0.1.0 \
-  --overrides='{"spec":{"automountServiceAccountToken":false,"enableServiceLinks":false,"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"runAsGroup":65532,"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch","seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"data-qualor-0"}},{"name":"tmp","emptyDir":{"sizeLimit":"64Mi"}}],"containers":[{"name":"qualor-restore","image":"qualor/server:0.1.0","imagePullPolicy":"IfNotPresent","args":["restore"],"stdin":true,"stdinOnce":true,"env":[{"name":"QUALOR_SECRET_KEY","valueFrom":{"secretKeyRef":{"name":"qualor-secrets","key":"QUALOR_SECRET_KEY"}}}],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"data","mountPath":"/var/lib/qualor"},{"name":"tmp","mountPath":"/tmp"}]}]}}' \
+kubectl -n qualor run qualor-restore --rm -i --restart=Never --image=qualor/server:0.1.1 \
+  --overrides='{"spec":{"automountServiceAccountToken":false,"enableServiceLinks":false,"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"runAsGroup":65532,"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch","seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"data-qualor-0"}},{"name":"tmp","emptyDir":{"sizeLimit":"64Mi"}}],"containers":[{"name":"qualor-restore","image":"qualor/server:0.1.1","imagePullPolicy":"IfNotPresent","args":["restore"],"stdin":true,"stdinOnce":true,"env":[{"name":"QUALOR_SECRET_KEY","valueFrom":{"secretKeyRef":{"name":"qualor-secrets","key":"QUALOR_SECRET_KEY"}}}],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"data","mountPath":"/var/lib/qualor"},{"name":"tmp","mountPath":"/tmp"}]}]}}' \
   < qualor-YYYY-MM-DD.dump
 kubectl -n qualor scale statefulset/qualor --replicas=1
 ```
@@ -440,8 +440,9 @@ secret. Back up `.env` as well (it holds `QUALOR_SECRET_KEY`), but **separately*
 Without that key, the restored SCM tokens, GitHub keys, webhook secrets and the AI provider's API key
 cannot be decrypted, and you have to enter them again.
 
-**Restore** with the server stopped. The `restore` command recreates the database and loads the
-dump into it:
+**Restore** with the server stopped. The `restore` command loads the dump into a new database and
+replaces the old one only when the whole dump loaded, so a truncated or wrong file leaves the data
+as it was:
 
 ```sh
 docker compose stop server

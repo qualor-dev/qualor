@@ -7,7 +7,7 @@
 #   docker build -f deploy/scanner/Dockerfile -t qualor/scanner:dev .
 # Every base image is pinned by version and digest (multi-arch index); bump both together.
 
-FROM node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844 AS cli
+FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS cli
 ARG TARGETARCH
 WORKDIR /src
 RUN corepack enable && npm install -g bun@1.3.13
@@ -34,14 +34,40 @@ RUN pnpm --filter @qualor/cli licenses list --prod --json > /tmp/npm-licenses.js
         for (const f of files) fs.copyFileSync(path.join(dir, f), path.join(out, f)); \
       });'
 
-FROM node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844 AS tools
+# Gitleaks' own release binaries of GITLEAKS_VERSION (the latest release) are built with Go 1.24.11
+# and golang.org/x/crypto 0.35.0, both with known vulnerabilities fixed since. The image builds the
+# same tag from its source archive (checked against its SHA-256) as the release does (tag
+# gore2regex, no cgo, -s -w, the version stamped in), with a current Go and the vulnerable
+# golang.org/x modules raised to fixed releases; every other module stays as the tag's go.sum pins
+# it, and `go get` checks what it adds against the Go checksum database. Keep GITLEAKS_VERSION equal
+# to tools/analyzers/install.sh's (tools/deploy/images.test.ts checks), and drop this stage for
+# install.sh's release binary once a release is built with a fixed Go.
+FROM golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195 AS gitleaks
+ARG GITLEAKS_VERSION=8.30.1
+ARG GITLEAKS_SOURCE_SHA256=e90fb266d75837e75894c778bf594ab8e2787f12dce5a62651f21b893eaf9abb
+ARG GITLEAKS_GO_UPGRADES="golang.org/x/crypto@v0.57.0 golang.org/x/text@v0.42.0"
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOFLAGS=-trimpath
+WORKDIR /src
+RUN curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o /tmp/gitleaks.tar.gz \
+    "https://github.com/gitleaks/gitleaks/archive/refs/tags/v${GITLEAKS_VERSION}.tar.gz" \
+  && echo "${GITLEAKS_SOURCE_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/gitleaks.tar.gz --strip-components=1 \
+  && go get $GITLEAKS_GO_UPGRADES \
+  && go build -tags gore2regex \
+    -ldflags "-s -w -X=github.com/zricethezav/gitleaks/v8/version.Version=${GITLEAKS_VERSION}" \
+    -o /gitleaks . \
+  && /gitleaks version
+
+FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS tools
 RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
 COPY tools/analyzers/install.sh /tmp/install.sh
 RUN sh /tmp/install.sh
+# The Gitleaks built above replaces install.sh's release binary of the same version.
+COPY --from=gitleaks /gitleaks /opt/qualor/bin/gitleaks
 
 FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3db8ea4ae263ab4d0c3805933e5355f45 AS jre
 
-FROM node:22.23.2-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9
+FROM node:22.23.3-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/* \

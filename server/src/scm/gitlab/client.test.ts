@@ -11,6 +11,8 @@ import {
   type FakeGitLab,
 } from '../../../test/fake-gitlab';
 import {
+  accessLevelOf,
+  GITLAB_FORBIDDEN,
   GITLAB_SHAPES,
   GitLabClient,
   GitLabError,
@@ -114,13 +116,31 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
     expect(mr.diff_refs).toEqual({ base_sha: BASE, head_sha: HEAD, start_sha: BASE });
   });
 
-  it('turns 401 and 403 into "GitLab refused the token", 404 into "not found"', async () => {
+  it('turns 401 into "GitLab refused the token", 403 into a missing permission, 404 into "not found"', async () => {
     const refused = await failure(client({ token: 'glpat-wrong' }).currentUser());
     expect(refused.kind).toBe('auth');
     expect(refused.message).toBe('GitLab refused the token (HTTP 401)');
+    // 403: the token is valid, its user may not do this; the text says what was refused.
     fake.inject('GET', /^\/user$/, { status: 403 });
-    expect((await failure(client().currentUser())).message).toBe(
-      'GitLab refused the token (HTTP 403)',
+    expect(await failure(client().currentUser())).toMatchObject({
+      kind: 'auth',
+      reason: 'permission_missing',
+      status: 403,
+      message: GITLAB_FORBIDDEN.request,
+    });
+    fake.inject('POST', /^\/projects\/7\/statuses\//, { status: 403 });
+    const status = await failure(
+      client().setCommitStatus('7', 'a'.repeat(40), {
+        state: 'success',
+        name: 'qualor/app',
+        description: 'Quality gate passed',
+        targetUrl: null,
+        pipelineId: null,
+        ref: 'main',
+      }),
+    );
+    expect(status.message).toBe(
+      'The GitLab token lacks the permission to set the commit status (HTTP 403); a commit status on a protected branch needs the Maintainer role',
     );
     const missing = await failure(client().project('nope/nope'));
     expect(missing.kind).toBe('not_found');
@@ -235,6 +255,63 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
     expect(await c.createDiscussion('7', '12', 'x', { ...position, newLine: 1 })).toBe(
       'position_rejected',
     );
+  });
+
+  it("deletes its own note, and another user's only as a Maintainer", async () => {
+    const c = client();
+    const own = await c.createNote('7', '12', 'mine');
+    await c.deleteNote('7', '12', own.id);
+    const notes = () => fake.discussions(7, 12).flatMap((d) => d.notes);
+    expect(notes().some((n) => n.id === own.id)).toBe(false);
+    const other = fake.addNote(7, 12, { body: 'theirs', authorId: 5 }).notes[0]!;
+    expect(await failure(c.deleteNote('7', '12', other.id))).toMatchObject({
+      kind: 'auth',
+      reason: 'permission_missing',
+      status: 403,
+      message: GITLAB_FORBIDDEN.deleteNote,
+    });
+    fake.accessLevel = 40;
+    try {
+      await c.deleteNote('7', '12', other.id);
+    } finally {
+      fake.accessLevel = 30;
+    }
+    expect(notes().some((n) => n.id === other.id)).toBe(false);
+    expect((await failure(c.deleteNote('7', '12', other.id))).kind).toBe('not_found');
+    expect((await failure(c.deleteNote('7', '12', 0))).reason).toBe('invalid_input');
+  });
+
+  it("reads the token's access level in the project, the higher of project and group", async () => {
+    expect(accessLevelOf(await client().project('7'))).toBe(30);
+    const base = { id: 1, path_with_namespace: 'a/b', web_url: 'https://x/a/b' };
+    expect(accessLevelOf(base)).toBeNull();
+    expect(accessLevelOf({ ...base, permissions: null })).toBeNull();
+    expect(
+      accessLevelOf({
+        ...base,
+        permissions: { project_access: null, group_access: { access_level: 40 } },
+      }),
+    ).toBe(40);
+    expect(
+      accessLevelOf({
+        ...base,
+        permissions: { project_access: { access_level: 50 }, group_access: { access_level: 30 } },
+      }),
+    ).toBe(50);
+  });
+
+  it('calls a host whose lookup does not finish in time unresolved, not a timeout', async () => {
+    const err = await failure(
+      new GitLabClient(
+        { baseUrl: 'https://gitlab-ce', token: fake.token, allowInternalHosts: true },
+        { timeoutMs: 1_000, connectTimeoutMs: 50, resolve: () => new Promise(() => undefined) },
+      ).currentUser(),
+    );
+    expect(err).toMatchObject({
+      kind: 'transient',
+      reason: 'unresolved',
+      message: 'The GitLab host could not be resolved',
+    });
   });
 
   it('adds a status row for a final state posted again, as GitLab does, and drops an unknown pipeline_id', async () => {

@@ -1,5 +1,5 @@
 {
-  "$comment": "Pinned corresponding source of the copyleft components of the qualor/scanner image (rulings L1 and L2). pnpm deploy:sources downloads and verifies them into .tmp/scanner-sources; deploy/scanner/SOURCES.md is generated from this file and debian-sources.json (pnpm deploy:sources --index). OpenGrep's tests/semgrep-rules submodule is test data and is left out. On a version bump, re-derive every entry of that component: the tag archive, the commits Bun pins, the OpenGrep submodule gitlinks, and what the release binaries link or bundle (see deploy/README.md). For Trivy (Apache-2.0), only the copyleft (MPL-2.0) Go modules its binary compiles in are pinned.",
+  "$comment": "Pinned corresponding source of the copyleft components of the qualor/scanner image (rulings L1 and L2). pnpm deploy:sources downloads and verifies them into .tmp/scanner-sources; deploy/scanner/SOURCES.md is generated from this file and debian-sources.json (pnpm deploy:sources --index). OpenGrep's tests/semgrep-rules submodule is test data and is left out. On a version bump, re-derive every entry of that component: the tag archive, the commits Bun pins, the OpenGrep submodule gitlinks, and what the release binaries link or bundle (see deploy/README.md). For Trivy (Apache-2.0) and Gitleaks (MIT), only the copyleft (MPL-2.0) Go modules their binaries compile in are pinned.",
   "sources": [
     {
       "file": "opengrep-1.30.0.tar.gz",
@@ -954,6 +954,81 @@
       "sha256": "53fd4e96ac9c190e192759daf49b63397865214d337ab5f6dbf6e68c1b0f4810",
       "pinnedAt": "the module list of the trivy 0.74.0 release binary (go version -m); its go.sum pins the same version",
       "why": "The scanner image ships the upstream trivy 0.74.0 binary (Apache-2.0), a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "gitleaks-8.30.1-go-hashicorp-errwrap-v1.1.0.zip",
+      "name": "Go module github.com/hashicorp/errwrap (compiled into Gitleaks)",
+      "component": "gitleaks",
+      "componentVersion": "8.30.1",
+      "ref": "v1.1.0",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/errwrap/@v/v1.1.0.zip"
+      },
+      "sha256": "209ae99bc039443e28e4d6bb66517d1756d9468b7578d31f1b63a28103d8e18c",
+      "pinnedAt": "the module list of the gitleaks 8.30.1 binary built in deploy/scanner/Dockerfile (go version -m); the v8.30.1 tag's go.sum pins the same version",
+      "why": "The scanner image builds gitleaks 8.30.1 (MIT) from its release tag, a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "gitleaks-8.30.1-go-hashicorp-go-multierror-v1.1.1.zip",
+      "name": "Go module github.com/hashicorp/go-multierror (compiled into Gitleaks)",
+      "component": "gitleaks",
+      "componentVersion": "8.30.1",
+      "ref": "v1.1.1",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/go-multierror/@v/v1.1.1.zip"
+      },
+      "sha256": "972cd841ee51fdeac69c5a301e57f8ea27aebf15fddd7f621d5c240f28c3000c",
+      "pinnedAt": "the module list of the gitleaks 8.30.1 binary built in deploy/scanner/Dockerfile (go version -m); the v8.30.1 tag's go.sum pins the same version",
+      "why": "The scanner image builds gitleaks 8.30.1 (MIT) from its release tag, a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "gitleaks-8.30.1-go-hashicorp-go-version-v1.7.0.zip",
+      "name": "Go module github.com/hashicorp/go-version (compiled into Gitleaks)",
+      "component": "gitleaks",
+      "componentVersion": "8.30.1",
+      "ref": "v1.7.0",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/go-version/@v/v1.7.0.zip"
+      },
+      "sha256": "341bd10080b7f7e0754bab07afb09f9a37e997b5fdb1a528266972a890309053",
+      "pinnedAt": "the module list of the gitleaks 8.30.1 binary built in deploy/scanner/Dockerfile (go version -m); the v8.30.1 tag's go.sum pins the same version",
+      "why": "The scanner image builds gitleaks 8.30.1 (MIT) from its release tag, a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "gitleaks-8.30.1-go-hashicorp-golang-lru-v2-v2.0.7.zip",
+      "name": "Go module github.com/hashicorp/golang-lru/v2 (compiled into Gitleaks)",
+      "component": "gitleaks",
+      "componentVersion": "8.30.1",
+      "ref": "v2.0.7",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/golang-lru/v2/@v/v2.0.7.zip"
+      },
+      "sha256": "2eb92ff13970bccd460efae14255bfc03bb51474da0137e477a60f95561acc30",
+      "pinnedAt": "the module list of the gitleaks 8.30.1 binary built in deploy/scanner/Dockerfile (go version -m); the v8.30.1 tag's go.sum pins the same version",
+      "why": "The scanner image builds gitleaks 8.30.1 (MIT) from its release tag, a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
+    },
+    {
+      "file": "gitleaks-8.30.1-go-hashicorp-hcl-v1.0.0.zip",
+      "name": "Go module github.com/hashicorp/hcl (compiled into Gitleaks)",
+      "component": "gitleaks",
+      "componentVersion": "8.30.1",
+      "ref": "v1.0.0",
+      "licence": "MPL-2.0",
+      "fetch": {
+        "type": "https",
+        "url": "https://proxy.golang.org/github.com/hashicorp/hcl/@v/v1.0.0.zip"
+      },
+      "sha256": "54149a2e5121b3e81f961c79210e63d6798eb63de28d2599ee59ade1fa76c82b",
+      "pinnedAt": "the module list of the gitleaks 8.30.1 binary built in deploy/scanner/Dockerfile (go version -m); the v8.30.1 tag's go.sum pins the same version",
+      "why": "The scanner image builds gitleaks 8.30.1 (MIT) from its release tag, a static Go program that compiles in this MPL-2.0 module; the module proxy's zip is the module's source at that version."
     }
   ]
 }

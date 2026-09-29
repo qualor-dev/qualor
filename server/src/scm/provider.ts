@@ -12,7 +12,8 @@ export type ScmErrorKind =
  * endpoint's codes, scm.md §2.1, github.md §2.2): `not_public` (an address the policy refuses),
  * `unresolved`, `timeout`, `unreachable` (a connection failure), `http` (the provider answered with
  * an error status), `bad_answer`, `budget`, `invalid_input` (an id, revision or ref Qualor would not
- * put into a path), `not_installed` and `permission_missing` (GitHub only), `other`.
+ * put into a path), `permission_missing` (a 403: the credentials are valid but lack a permission),
+ * `not_installed` (GitHub only), `other`.
  */
 export type ScmErrorReason =
   | 'not_public'

@@ -185,14 +185,14 @@ describe('sendWebhook (ruling W3)', () => {
     expect(received).toEqual([]);
   });
 
-  it('counts a lookup that never answers against the same deadline', async () => {
+  it('counts a lookup that never answers against the same deadline, as an unresolved host', async () => {
     const started = Date.now();
     const outcome = await sendWebhook(
       { url: 'https://slow-dns.test/', body: '{}', headers: {} },
       { ...open, timeoutMs: 300, resolve: () => new Promise(() => undefined) },
     );
     expect(outcome).toMatchObject({ ok: false, status: null });
-    expect(outcome.excerpt).toMatch(/^No response within/);
+    expect(outcome.excerpt).toBe('The webhook host could not be resolved within 300 ms');
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 
@@ -260,7 +260,8 @@ describe('sendWebhook (ruling W3)', () => {
       // The connect timeout decided, not the 30 s deadline (the test would time out first).
       expect(outcome).toEqual({ ok: false, status: null, excerpt: 'No connection within 200 ms' });
       expect(sockets).toHaveLength(1);
-      // A lookup that never answers counts against the connect timeout too.
+      // A lookup that never answers counts against the connect timeout too, as a host that does
+      // not resolve.
       const dns = await sendWebhook(
         { url: 'https://slow-dns.test/', body: '{}', headers: {} },
         {
@@ -270,7 +271,7 @@ describe('sendWebhook (ruling W3)', () => {
           resolve: () => new Promise(() => undefined),
         },
       );
-      expect(dns.excerpt).toBe('No connection within 200 ms');
+      expect(dns.excerpt).toBe('The webhook host could not be resolved within 200 ms');
     } finally {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => blackhole.close(() => resolve()));

@@ -327,11 +327,13 @@ export class AiSettingsPage {
     await this.run(async () => {
       const result = await ok(this.api.client.POST('/api/v0/system/llm/test'));
       // A failed Test is an error (role="alert"), a successful one a status.
-      if (result.problem) this.error.set(llmProblemText(result.problem.code));
-      else
+      if (result.problem) {
+        this.error.set(llmProblemText(result.problem.code, result.problem.providerStatus));
+      } else {
         this.announcement.set(
           $localize`:@@ai.settings.testOk:Connected to ${result.model ?? this.provider()?.model ?? ''}:model: in ${result.latencyMs}:latency: ms.`,
         );
+      }
     });
   }
 

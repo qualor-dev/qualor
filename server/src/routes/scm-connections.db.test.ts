@@ -21,6 +21,7 @@ import {
   WEBHOOK_SECRET_AAD,
 } from '../scm/github/credentials';
 import { githubWebBase } from '../scm/github/url';
+import { GITLAB_FORBIDDEN } from '../scm/gitlab/client';
 
 /** Polls until `n` backends of this file's own database wait on a lock (never a fixed sleep). */
 async function waitForLockWaiters(db: Db, n: number, timeoutMs = 5_000): Promise<void> {
@@ -199,7 +200,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
     expect(ok.json()).toEqual({
       ok: true,
       user: { username: 'project_7_bot_4b1e2c' },
-      project: { id: 7, pathWithNamespace: 'acme/payments/api' },
+      project: { id: 7, pathWithNamespace: 'acme/payments/api', accessLevel: 30 },
       problem: null,
     });
     const missing = await call('POST', `/scm-connections/${connection.id}/test`, h.orgAdmin, {
@@ -211,6 +212,24 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
         code: 'not_found',
         message: 'The GitLab project was not found, or the token cannot see it',
       },
+    });
+    // A Maintainer's token says so; a 403 is a missing permission, not a refused token.
+    fake.accessLevel = 40;
+    try {
+      const maintainer = await call('POST', `/scm-connections/${connection.id}/test`, h.orgAdmin, {
+        projectRef: '7',
+      });
+      expect(maintainer.json().project).toMatchObject({ id: 7, accessLevel: 40 });
+    } finally {
+      fake.accessLevel = 30;
+    }
+    fake.inject('GET', /^\/projects\/7$/, { status: 403 });
+    const forbidden = await call('POST', `/scm-connections/${connection.id}/test`, h.orgAdmin, {
+      projectRef: '7',
+    });
+    expect(forbidden.json().problem).toEqual({
+      code: 'permission_missing',
+      message: GITLAB_FORBIDDEN.request,
     });
     const badRef = await call('POST', `/scm-connections/${connection.id}/test`, h.orgAdmin, {
       projectRef: '../../user',
@@ -443,6 +462,17 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
       null,
     );
     expect(byName).toMatchObject({ ok: false, problem: { code: 'not_public' } });
+    // A single-label name whose lookup outlasts the connect deadline is unresolved, not a timeout.
+    const slowLookup = await testConnection(
+      { ...row!, baseUrl: 'https://gitlab-ce' },
+      {
+        secretKey: h.ctx.config.secretKey,
+        internalHosts: new Set(['gitlab-ce']),
+        clientOptions: { connectTimeoutMs: 50, resolve: () => new Promise(() => undefined) },
+      },
+      null,
+    );
+    expect(slowLookup).toMatchObject({ ok: false, problem: { code: 'unresolved' } });
     expect(fake.requests).toHaveLength(0);
     await call('DELETE', `/scm-connections/${connection.id}`);
   });
@@ -906,7 +936,7 @@ describe('GitHub App connections (github.md §2.2, §2.5, D1)', () => {
     expect((await test('acme/api')).json()).toEqual({
       ok: true,
       user: { username: `${fake.slug}[bot]` },
-      project: { id: 424242, pathWithNamespace: 'acme/api' },
+      project: { id: 424242, pathWithNamespace: 'acme/api', accessLevel: null },
       problem: null,
     });
     expect((await test('acme/bare')).json().problem.code).toBe('not_installed');

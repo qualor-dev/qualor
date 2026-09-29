@@ -8101,6 +8101,7 @@ export interface paths {
                             project: {
                                 id: number;
                                 pathWithNamespace: string;
+                                accessLevel: number | null;
                             } | null;
                             problem: {
                                 /** @enum {string} */
@@ -8443,6 +8444,7 @@ export interface paths {
                                 /** @enum {string} */
                                 code: "PROVIDER_TIMEOUT" | "PROVIDER_UNAVAILABLE" | "PROVIDER_RATE_LIMITED" | "PROVIDER_REFUSED_KEY" | "PROVIDER_REJECTED_REQUEST" | "PROVIDER_BAD_ANSWER" | "URL_NOT_ALLOWED" | "KEY_UNDECRYPTABLE" | "MALFORMED_OUTPUT" | "OUTPUT_TRUNCATED" | "MODEL_REFUSED" | "OUTPUT_REFUSED" | "AI_DISABLED" | "SETTINGS_CHANGED" | "ISSUE_CHANGED" | "ISSUE_GONE" | "REQUEST_ABANDONED";
                                 message: string;
+                                providerStatus: number | null;
                             } | null;
                         };
                     };
@@ -9617,7 +9619,7 @@ export interface components {
             /** @description Stable machine-readable error code */
             code: string;
             detail?: string;
-            /** @description LICENSE_INVALID only: why the key was rejected (malformed, unknown-key, bad-signature, bad-payload, revoked, not-yet-valid); map the code, not the text */
+            /** @description LICENSE_INVALID: why the key was rejected (malformed, unknown-key, bad-signature, bad-payload, revoked, not-yet-valid). VALIDATION_FAILED of POST /ee/sso/connections/{id}/saml/metadata: what failed (a fetch.<reason> code of the connection Test, or config_invalid, metadata.no_url, metadata.not_saml, metadata.incomplete, metadata.sso_url). Map the code, not the text */
             reason?: string;
             errors?: {
                 /** @description <body|query|params|headers>.<dotted path> */

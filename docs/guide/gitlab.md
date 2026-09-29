@@ -48,20 +48,34 @@ include:
       image-tag: '0.1'
 ```
 
-**Self-managed GitLab** can include components only from its own instance. Create a project there
-that mirrors `https://gitlab.com/qualor/qualor.git` (**New project → Import project → Repository by
-URL** with **Mirror repository**, or a pull mirror), for example at `tools/qualor`, and include from it:
+**Self-managed GitLab** can include components only from its own instance, never from
+`gitlab.com/...`. Copy the component into a project of your instance, for example `tools/qualor`:
+
+1. An administrator allows the import source once: **Admin → Settings → General → Import and export
+   settings**, tick **Repository by URL**. A new instance has it turned off.
+2. **New project → Import project → Repository by URL**, with
+   `https://gitlab.com/qualor/qualor.git`, at `tools/qualor`.
+3. Include the component by its full version tag:
 
 ```yaml
 include:
-  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.1
+  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.1.1
     inputs:
-      image-tag: '0.1'
+      image-tag: '0.1.1'
       # image: mirror.acme.internal/qualor/scanner   # your own copy of the image, without the tag
 ```
 
-Pin the component and the image to the same release. Use a full version (`@0.1.0`,
-`image-tag: '0.1.0'`) where every pipeline must run exactly the same analyzers.
+On GitLab Free and Community Edition, the import is a one-time copy: to get a new release, import
+again or push its tag to the copy. Pull mirroring (**Settings → Repository → Mirroring
+repositories**) keeps the copy up to date on its own, but needs GitLab Premium.
+
+A short version such as `@0.1` resolves only in a CI/CD catalog project with releases. To use it on
+your instance, turn on **Settings → General → Visibility → CI/CD Catalog project** in the copy, then
+run a pipeline for the release tag (**Build → Pipelines → Run pipeline**). That pipeline creates the
+release the catalog needs; an import alone runs none.
+
+Pin the component and the image to the same release. Use a full version (`@0.1.1`,
+`image-tag: '0.1.1'`) where every pipeline must run exactly the same analyzers.
 
 The job runs in merge request pipelines and on the default branch. It uploads the analysis, fails
 with the quality gate, and keeps GitLab's **Code Quality**, **SAST** and **Dependency Scanning**
@@ -130,13 +144,15 @@ In Qualor, an **org admin** opens **Settings → GitLab**:
 
 1. **New GitLab connection.** Enter the GitLab address (`https://gitlab.example.com`; a path such as
    `/gitlab` is allowed) and an access token:
-   - scope **`api`** and role **Developer**;
+   - scope **`api`** and role **Maintainer**. Developer is enough for the merge request comments,
+     but GitLab refuses a Developer's commit status on a protected branch, such as the default
+     branch;
    - best, a **project access token** of the GitLab project, because it can reach nothing else. For
      many projects, use a **group access token**, or a personal token of a dedicated bot user. Never
      use a person's own token: every comment would carry their name.
 2. In the **Projects** table on the same page, pick the connection for each Qualor project and enter
    the GitLab project: its numeric id or its full path `group/project`. Use the test action to check
-   that the token can see the project.
+   that the token can see the project. It also warns when the token's role is below Maintainer.
 3. Ask the server operator to set `QUALOR_PUBLIC_URL` so that comments link back to Qualor.
 
 **Self-managed GitLab on an internal network.** The server calls only hosts that resolve to public
@@ -153,9 +169,11 @@ If GitLab's certificate comes from a private CA, give the server that CA with `N
 
 - A **commit status** `qualor/<project key>`: *success* when the gate passes, *failed* with the failed
   conditions otherwise. It is posted for every analysed branch, not only for merge requests.
-- **One summary comment** per merge request, edited in place on every analysis and never posted
-  twice. It holds the verdict, the failed conditions, the new issues by severity, the ten most severe
-  ones and a link to Qualor.
+- **One summary comment** per merge request, edited in place on every analysis. It holds the
+  verdict, the failed conditions, the new issues by severity, the ten most severe ones and a link to
+  Qualor. GitLab lets only a comment's author edit it, so after the token is replaced by one of
+  another user, Qualor posts a new summary and deletes the old one. With a token below Maintainer the
+  old summary stays; delete it by hand.
 - **A discussion on each new issue** that sits on an added line, up to 50 per merge request. Qualor
   resolves the discussion when the issue is fixed. It never reopens a thread a person resolved, and
   it leaves alone a thread a person replied in.
@@ -181,7 +199,9 @@ Either:
 | Exit 5 | the token is wrong, revoked, or of another project |
 | `new code unavailable`, gate `error` | shallow clone: set `GIT_DEPTH: 0` |
 | The analysis appears as a branch, not a merge request | the job ran in a branch pipeline. Use `merge_request_event` rules |
-| No comments | no connection or mapping, `QUALOR_SCM_INTERNAL_HOSTS` missing, or the token lacks `api`/Developer. The test on **Settings → GitLab** says which |
+| No comments | no connection or mapping, `QUALOR_SCM_INTERNAL_HOSTS` missing, or the token lacks the `api` scope. The test on **Settings → GitLab** says which |
+| Comments on merge requests, but no commit status on the default branch | the token's role is below Maintainer, and the branch is protected. Give the token the Maintainer role |
+| `@0.1` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.1.1`, or see the steps above |
 | Comments but no links | `QUALOR_PUBLIC_URL` is not set on the server |
 
 More in [Troubleshooting](./troubleshooting.md).
