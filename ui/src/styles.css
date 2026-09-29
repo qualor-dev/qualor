@@ -1176,11 +1176,11 @@ details[open] > summary {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-6);
-  padding: var(--space-3) var(--space-6);
+  min-height: 60px;
+  padding: 0 var(--gutter);
   background: var(--ink);
   color: var(--ink-text);
-  border-bottom: 1px solid var(--ink-line);
-  box-shadow: 0 6px 20px -14px rgb(0 0 0 / 0.6);
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
 }
 .app-header a {
   color: var(--ink-muted);
@@ -1191,7 +1191,7 @@ details[open] > summary {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 10px;
   font-weight: 750;
   font-size: 17px;
   letter-spacing: -0.01em;
@@ -1208,8 +1208,8 @@ details[open] > summary {
   flex: 1;
 }
 .app-nav a {
-  padding: var(--space-2) var(--space-3);
-  border-radius: 999px;
+  padding: 7px 12px;
+  border-radius: var(--radius);
   text-decoration: none;
   font-weight: 550;
   transition:
@@ -1222,8 +1222,7 @@ details[open] > summary {
 }
 .app-nav a.active {
   color: #fff;
-  background: rgb(77 142 240 / 0.2);
-  box-shadow: inset 0 0 0 1px rgb(77 142 240 / 0.45);
+  background: rgb(255 255 255 / 0.09);
 }
 .org-switch,
 .user-menu {
@@ -1236,23 +1235,39 @@ details[open] > summary {
   color: var(--ink-muted);
 }
 .org-switch select {
-  min-height: 32px;
+  min-height: 34px;
   background-color: var(--ink-2);
   color: var(--ink-text);
-  border-color: var(--ink-line);
+  border-color: rgb(255 255 255 / 0.14);
 }
-.user-name {
+/* The account: a button with the avatar and name, opening the user menu popover. */
+.user-button {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  height: 36px;
+  padding: 0 10px 0 6px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: var(--radius);
+  background: transparent;
   color: var(--ink-text);
-  font-weight: 600;
+  font: 550 13.5px var(--font);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.user-button:hover {
+  background: rgb(255 255 255 / 0.06);
+}
+.user-button .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-muted);
 }
 .avatar {
   display: inline-grid;
   place-items: center;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--cobalt);
   color: #fff;
@@ -1260,15 +1275,49 @@ details[open] > summary {
   font-size: 12px;
   text-transform: uppercase;
 }
-.app-header .btn {
-  min-height: 32px;
-  background: transparent;
-  color: var(--ink-text);
-  border-color: rgb(255 255 255 / 0.28);
+.menu-panel {
+  position: fixed;
+  inset: auto;
+  top: 56px;
+  right: var(--gutter);
+  margin: 0;
+  min-width: 14rem;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 16px 40px -16px rgb(10 27 51 / 0.35);
 }
-.app-header .btn:hover {
-  background: rgb(255 255 255 / 0.08);
-  border-color: rgb(255 255 255 / 0.5);
+.menu-who {
+  display: grid;
+  margin: 0 0 4px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+}
+.menu-panel a,
+.menu-panel button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: 500 13.5px var(--font);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu-panel a:hover,
+.menu-panel button:hover {
+  background: var(--surface-2);
+}
+.menu-panel .icon {
+  color: var(--text-muted);
 }
 .app-main {
   display: block;
@@ -1289,6 +1338,8 @@ details[open] > summary {
   .app-header {
     position: static;
     justify-content: space-between;
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-2);
   }
   .app-nav {
     order: 3;
@@ -1303,10 +1354,7 @@ details[open] > summary {
   }
 }
 @media (max-width: 40rem) {
-  .app-header {
-    padding: var(--space-3) var(--space-4);
-  }
-  .user-name > span:last-child {
+  .user-name {
     display: none;
   }
 }

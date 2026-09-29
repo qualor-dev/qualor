@@ -54,6 +54,8 @@ test.describe('signed out', () => {
     await page.getByLabel('Password').fill(ADMIN.password);
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page).toHaveURL(/\/projects$/);
+    // The account's links are in the user menu, a popover opened by the user button.
+    await page.getByRole('button', { name: 'Administrator' }).click();
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/login$/);
     await page.goto('/projects');

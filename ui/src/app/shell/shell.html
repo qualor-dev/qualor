@@ -31,14 +31,27 @@
   }
   @if (session.user(); as user) {
     <div class="user-menu">
-      <span class="user-name">
+      <button type="button" class="user-button" popovertarget="user-menu">
         <span class="avatar" aria-hidden="true">{{
           (user.displayName || user.username).charAt(0)
         }}</span>
-        <span>{{ user.displayName || user.username }}</span>
-      </span>
-      <a routerLink="/change-password" i18n="@@shell.changePassword">Change password</a>
-      <button type="button" class="btn" (click)="logout()" i18n="@@shell.signOut">Sign out</button>
+        <span class="user-name">{{ user.displayName || user.username }}</span>
+        <q-icon name="chevron-down" />
+      </button>
+      <div id="user-menu" class="menu-panel" popover #menu>
+        <p class="menu-who">
+          <strong>{{ user.displayName || user.username }}</strong>
+          <span class="muted">{{ user.username }}</span>
+        </p>
+        <a routerLink="/change-password" (click)="closeMenu(menu)"
+          ><q-icon name="key" /><ng-container i18n="@@shell.changePassword"
+            >Change password</ng-container
+          ></a
+        >
+        <button type="button" (click)="closeMenu(menu); logout()">
+          <q-icon name="log-out" /><ng-container i18n="@@shell.signOut">Sign out</ng-container>
+        </button>
+      </div>
     </div>
   }
 </header>
