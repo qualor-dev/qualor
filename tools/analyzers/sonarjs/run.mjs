@@ -4,9 +4,12 @@
 // imported from this directory, and ESLint gets the config inline (overrideConfigFile: true).
 //   node run.mjs --root <dir> --out <file.sarif> [--type-checking on|off] [--exclude <glob>]...
 // Writes a SARIF 2.1.0 log keyed by RSPEC ids (S1192) and prints one JSON line
-// {"typeChecking":"on"|"off"|"fallback","files":N}. Exit 0 whenever the log is written, 2 on an
-// internal error.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+// {"typeChecking":"on"|"off"|"fallback","files":N,"parseErrors":N,"disabledRules":["S…"]}.
+// Exit 0 whenever the log is written, 2 on an internal error.
+// It lints only the regular files it finds itself under --root: symbolic links and junctions are
+// never followed or linted (as discovery treats them, cli/src/discovery/discover.ts), node_modules
+// and .git are never entered, and an --exclude can narrow that set but never widen it.
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
@@ -14,13 +17,11 @@ import sonarjs from 'eslint-plugin-sonarjs';
 import tsParser from '@typescript-eslint/parser';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const args = process.argv.slice(2);
-const opt = (name) => {
-  const i = args.indexOf(name);
-  return i < 0 ? undefined : args[i + 1];
-};
-const all = (name) =>
-  args.flatMap((a, i) => (a === name && args[i + 1] !== undefined ? [args[i + 1]] : []));
+
+/** Paths never linted and directories never entered, whatever the excludes say. */
+const NEVER = ['**/node_modules/**', '**/.git/**'];
+const NEVER_DIRS = new Set(['node_modules', '.git']);
+const SOURCE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 
 // A fatal parse message of the type-aware parse: the tsconfig does not parse, or a file is not
 // in the project it describes. Such files are linted again without type information.
@@ -45,8 +46,78 @@ const OPTIONS = {
   ],
 };
 
+const stderr = (line) => process.stderr.write(line);
+
+/**
+ * The excludes that only narrow the linted set. A negated (`!`) pattern would re-include what
+ * another ignore leaves out (node_modules among them), so it is dropped, with a note on stderr.
+ */
+export function usableExcludes(excludes, warn = stderr) {
+  return excludes.filter((glob) => {
+    if (!glob.trimStart().startsWith('!')) return true;
+    warn(
+      `sonarjs: ignoring the negated --exclude ${JSON.stringify(glob)}: an exclude never re-includes files\n`,
+    );
+    return false;
+  });
+}
+
+/**
+ * Every regular JS/TS file under `root`, found without following links: a symbolic link or a
+ * junction (to a file or a directory, inside the checkout or outside it) is neither linted nor
+ * entered, and node_modules and .git are never entered.
+ */
+export function sourceFiles(root) {
+  const out = [];
+  const visit = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!NEVER_DIRS.has(entry.name)) visit(full);
+      } else if (entry.isFile() && SOURCE.test(entry.name)) out.push(full);
+    }
+  };
+  visit(root);
+  return out.sort();
+}
+
+/**
+ * `lint()`, again with each rule that crashes turned off (`disabled` collects the rule ids, which
+ * `lint` must honour), so one rule failing on one file never loses the whole pass.
+ */
+export async function lintGuarded(lint, disabled, warn = stderr) {
+  for (;;) {
+    try {
+      return await lint();
+    } catch (err) {
+      const match = CRASHED_RULE.exec(String(err?.message));
+      const id = match?.[1] ?? match?.[2];
+      if (!id || disabled.has(id)) throw err;
+      disabled.add(id);
+      warn(
+        `sonarjs: ${id} crashed and is off for this run: ${String(err.message).split('\n')[0]}\n`,
+      );
+    }
+  }
+}
+
+/**
+ * The stdout line: besides the mode and the number of linted files, what a caller can act on
+ * without reading stderr: the files that did not parse (a fatal message, never a finding) and the
+ * RSPEC keys of the rules the crash guard turned off.
+ */
+export function summary(mode, results, disabled, keyOf) {
+  return {
+    typeChecking: mode,
+    files: results.length,
+    parseErrors: results.filter((r) => r.messages.some((m) => m.fatal)).length,
+    disabledRules: [...disabled].map((id) => keyOf.get(id.replace(/^sonarjs\//, '')) ?? id).sort(),
+  };
+}
+
 /** Plugin rule name → RSPEC key, from each rule's docs URL (…/rspec/#/rspec/S1192/javascript). */
-function rspecKeys() {
+export function rspecKeys() {
   const keyOf = new Map();
   for (const [name, rule] of Object.entries(sonarjs.rules)) {
     const key = rule.meta?.docs?.url?.match(/rspec\/(S\d+)\//)?.[1];
@@ -55,7 +126,13 @@ function rspecKeys() {
   return keyOf;
 }
 
-async function main() {
+async function main(args) {
+  const opt = (name) => {
+    const i = args.indexOf(name);
+    return i < 0 ? undefined : args[i + 1];
+  };
+  const all = (name) =>
+    args.flatMap((a, i) => (a === name && args[i + 1] !== undefined ? [args[i + 1]] : []));
   if (!opt('--root') || !opt('--out'))
     throw new Error(
       'usage: run.mjs --root <dir> --out <file> [--type-checking on|off] [--exclude <glob>]...',
@@ -75,6 +152,7 @@ async function main() {
   // The plugin's flat `recommended` config: { name, plugins: { sonarjs }, rules: { 'sonarjs/<name>': 'error' | 'off' }, settings }.
   const recommended = sonarjs.configs.recommended;
   const disabled = new Set(); // rules that crashed, turned off for the rest of the run
+  const excludes = usableExcludes(all('--exclude'));
 
   function config(types) {
     const rules = Object.fromEntries(
@@ -88,7 +166,9 @@ async function main() {
       ]),
     );
     return [
-      { ignores: ['**/node_modules/**', '**/.git/**', ...all('--exclude')] },
+      ...(excludes.length > 0 ? [{ ignores: excludes }] : []),
+      // The fixed ignores come last, so that nothing before them can re-include their paths.
+      { ignores: NEVER },
       {
         files: ['**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'],
         plugins: recommended.plugins,
@@ -108,35 +188,29 @@ async function main() {
     ];
   }
 
-  async function lint(types, patterns) {
-    for (;;) {
-      const eslint = new ESLint({
-        cwd: root,
-        overrideConfigFile: true,
-        overrideConfig: config(types),
-        errorOnUnmatchedPattern: false,
-        warnIgnored: false,
-      });
-      try {
-        return await eslint.lintFiles(patterns);
-      } catch (err) {
-        // One rule crashing on one file must not lose the whole pass: drop it and lint again.
-        const match = CRASHED_RULE.exec(String(err?.message));
-        const id = match?.[1] ?? match?.[2];
-        if (!id || disabled.has(id)) throw err;
-        disabled.add(id);
-        process.stderr.write(
-          `sonarjs: ${id} crashed and is off for this run: ${String(err.message).split('\n')[0]}\n`,
-        );
-      }
-    }
+  async function lint(types, files) {
+    if (files.length === 0) return [];
+    return lintGuarded(
+      () =>
+        new ESLint({
+          cwd: root,
+          overrideConfigFile: true,
+          overrideConfig: config(types),
+          errorOnUnmatchedPattern: false,
+          warnIgnored: false,
+        }).lintFiles(files),
+      disabled,
+    );
   }
 
+  // Explicit paths, never a glob ESLint expands itself (that would follow symbolic links); ESLint
+  // still applies the ignores above to each of them.
+  const files = sourceFiles(root);
   let mode = wantTypes ? 'on' : 'off';
   let results;
   if (wantTypes) {
     try {
-      results = await lint(true, ['.']);
+      results = await lint(true, files);
       const failed = results.filter((r) =>
         r.messages.some((m) => m.fatal && TYPE_FAILURE.test(m.message)),
       );
@@ -153,14 +227,14 @@ async function main() {
         results = results.map((r) => again.get(r.filePath) ?? r);
       }
     } catch (err) {
-      process.stderr.write(
+      stderr(
         `sonarjs: the type-aware pass failed, linting without type information: ${String(err?.message).split('\n')[0]}\n`,
       );
       mode = 'fallback';
       results = undefined;
     }
   }
-  results ??= await lint(false, ['.']);
+  results ??= await lint(false, files);
 
   const used = new Set();
   const sarifResults = [];
@@ -213,12 +287,14 @@ async function main() {
     ],
   };
   writeFileSync(out, JSON.stringify(log));
-  process.stdout.write(`${JSON.stringify({ typeChecking: mode, files: results.length })}\n`);
+  process.stdout.write(`${JSON.stringify(summary(mode, results, disabled, keyOf))}\n`);
 }
 
-try {
-  await main();
-} catch (err) {
-  process.stderr.write(`sonarjs: ${err?.stack ?? err}\n`);
-  process.exit(2);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    await main(process.argv.slice(2));
+  } catch (err) {
+    stderr(`sonarjs: ${err?.stack ?? err}\n`);
+    process.exit(2);
+  }
 }

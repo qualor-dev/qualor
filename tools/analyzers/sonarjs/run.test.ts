@@ -1,5 +1,12 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,11 +14,13 @@ import { describe, expect, it } from 'vitest';
 /**
  * Qualor's sonarjs pass (config.md §6). The real-tool tests run where the pass is installed
  * (`npm ci --omit=dev --ignore-scripts` in tools/analyzers/sonarjs, as in the qualor/scanner
- * image, with `node categories.mjs <rules dir>` run once); they are skipped elsewhere.
+ * image) and categories.json has been built next to run.mjs (`node categories.mjs <rules dir>`);
+ * they are skipped elsewhere.
  */
 const DIR = path.resolve('tools/analyzers/sonarjs');
 const RUN = path.join(DIR, 'run.mjs');
 const installed = existsSync(path.join(DIR, 'node_modules/eslint-plugin-sonarjs/package.json'));
+const have = installed && existsSync(path.join(DIR, 'categories.json'));
 
 function repo(files: Record<string, string>): string {
   const root = mkdtempSync(path.join(os.tmpdir(), 'sonarjs-'));
@@ -51,11 +60,11 @@ const TSCONFIG = '{ "compilerOptions": { "strict": true }, "include": ["*.ts"] }
 const ruleIds = (log: { runs: { results: { ruleId: string }[] }[] }) =>
   log.runs[0]!.results.map((r) => r.ruleId);
 
-describe.skipIf(!installed)('sonarjs run.mjs', { timeout: 120_000 }, () => {
+describe.skipIf(!have)('sonarjs run.mjs', { timeout: 120_000 }, () => {
   it('reports a finding under its RSPEC key, with the plugin rule name and a category', () => {
     const root = repo({ 'a.js': BRANCHES });
     const { log, info } = run(root);
-    expect(info).toEqual({ typeChecking: 'off', files: 1 });
+    expect(info).toEqual({ typeChecking: 'off', files: 1, parseErrors: 0, disabledRules: [] });
     expect(log.version).toBe('2.1.0');
     expect(log.runs[0].tool.driver).toMatchObject({
       name: 'eslint-plugin-sonarjs',
@@ -117,7 +126,7 @@ describe.skipIf(!installed)('sonarjs run.mjs', { timeout: 120_000 }, () => {
   it('runs type-aware rules with a valid tsconfig', () => {
     const root = repo({ 'tsconfig.json': TSCONFIG, 'a.ts': SORT });
     const { log, info } = run(root);
-    expect(info).toEqual({ typeChecking: 'on', files: 1 });
+    expect(info).toEqual({ typeChecking: 'on', files: 1, parseErrors: 0, disabledRules: [] });
     expect(ruleIds(log)).toContain('S2871');
   });
 
@@ -136,7 +145,7 @@ describe.skipIf(!installed)('sonarjs run.mjs', { timeout: 120_000 }, () => {
   it('lints a file outside the tsconfig without type information, and the rest with it', () => {
     const root = repo({ 'tsconfig.json': TSCONFIG, 'a.ts': SORT, 'tools/b.js': BRANCHES });
     const { log, info } = run(root);
-    expect(info).toEqual({ typeChecking: 'fallback', files: 2 });
+    expect(info).toEqual({ typeChecking: 'fallback', files: 2, parseErrors: 0, disabledRules: [] });
     expect(ruleIds(log)).toEqual(expect.arrayContaining(['S2871', 'S1871']));
   });
 
@@ -150,6 +159,56 @@ describe.skipIf(!installed)('sonarjs run.mjs', { timeout: 120_000 }, () => {
   it('runs without a tsconfig and reports typeChecking off', () => {
     const root = repo({ 'a.ts': 'const s: string = "x";\n' });
     expect(run(root).info.typeChecking).toBe('off');
+  });
+
+  it('drops a negated exclude, which would re-include node_modules', () => {
+    const root = repo({ 'node_modules/p/i.js': BRANCHES, 'src/a.js': 'export const a = 1;\n' });
+    const out = path.join(root, '..', path.basename(root) + '.sarif');
+    const r = spawnSync(
+      process.execPath,
+      [RUN, '--root', root, '--out', out, '--exclude', '!**/node_modules/**'],
+      { encoding: 'utf8' },
+    );
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('ignoring the negated --exclude "!**/node_modules/**"');
+    expect(JSON.parse(readFileSync(out, 'utf8')).runs[0].results).toEqual([]);
+    expect(JSON.parse(r.stdout.trim()).files).toBe(1);
+  });
+
+  it('never lints a symbolic link or junction, to a file or directory, inside or outside the root', () => {
+    const outside = repo({ 'x.js': BRANCHES, 'dir/y.js': BRANCHES });
+    const root = repo({
+      'src/a.js': 'export const a = 1;\n',
+      'vendor/b.js': BRANCHES,
+      'data/z.txt': BRANCHES,
+    });
+    // Directory junctions need no privilege on Windows; file links may (developer mode), so the
+    // file links are left out there when they cannot be made.
+    symlinkSync(path.join(outside, 'dir'), path.join(root, 'src/linked'), 'junction');
+    symlinkSync(path.join(root, 'vendor'), path.join(root, 'src/inner'), 'junction');
+    for (const [target, link] of [
+      [path.join(outside, 'x.js'), 'src/l.js'],
+      [path.join(root, 'data/z.txt'), 'src/m.js'],
+    ] as const) {
+      try {
+        symlinkSync(target, path.join(root, link), 'file');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EPERM') throw err;
+      }
+    }
+    // Every target reports when it is linted as a regular file.
+    expect(ruleIds(run(outside).log)).toEqual(['S1871', 'S1871']);
+    expect(ruleIds(run(root).log)).toEqual(['S1871']);
+    const { log, info } = run(root, ['--exclude', 'vendor/**']);
+    expect(log.runs[0].results).toEqual([]);
+    expect(info.files).toBe(1);
+  });
+
+  it('counts the files that did not parse in parseErrors', () => {
+    const root = repo({ 'bad.js': 'function (\n', 'a.js': BRANCHES });
+    const { log, info } = run(root);
+    expect(info).toEqual({ typeChecking: 'off', files: 2, parseErrors: 1, disabledRules: [] });
+    expect(ruleIds(log)).toEqual(['S1871']);
   });
 
   it('exits 2 on an internal error', () => {
@@ -236,4 +295,80 @@ describe('sonarjs pins', () => {
       expect(text).toContain('chmod -R a+rX /opt/qualor/sonarjs');
     },
   );
+});
+
+describe.skipIf(!installed)('sonarjs run.mjs helpers', () => {
+  const load = async () => {
+    // @ts-expect-error: a plain ES module of the image, without type declarations
+    return (await import('./run.mjs')) as {
+      usableExcludes: (g: string[], warn: (l: string) => void) => string[];
+      lintGuarded: <T>(
+        lint: () => Promise<T>,
+        disabled: Set<string>,
+        warn: (l: string) => void,
+      ) => Promise<T>;
+      summary: (
+        mode: string,
+        results: { messages: { fatal?: boolean }[] }[],
+        disabled: Set<string>,
+        keyOf: Map<string, string>,
+      ) => unknown;
+      rspecKeys: () => Map<string, string>;
+    };
+  };
+
+  it('usableExcludes keeps plain globs and drops negated ones with a note', async () => {
+    const { usableExcludes } = await load();
+    const notes: string[] = [];
+    expect(usableExcludes(['dist/**', '!**/node_modules/**', ' !x'], (l) => notes.push(l))).toEqual(
+      ['dist/**'],
+    );
+    expect(notes).toHaveLength(2);
+  });
+
+  it('lintGuarded turns a crashing rule off and lints again, once per rule', async () => {
+    const { lintGuarded } = await load();
+    const disabled = new Set<string>();
+    const notes: string[] = [];
+    let calls = 0;
+    const lint = async () => {
+      calls += 1;
+      if (!disabled.has('sonarjs/no-empty-function'))
+        throw new Error("Error while loading rule 'sonarjs/no-empty-function': boom");
+      if (!disabled.has('sonarjs/no-dead-store'))
+        throw new Error('boom\nOccurred while linting /r/a.js:1\nRule: "sonarjs/no-dead-store"');
+      return ['ok'];
+    };
+    expect(await lintGuarded(lint, disabled, (l) => notes.push(l))).toEqual(['ok']);
+    expect(calls).toBe(3);
+    expect([...disabled]).toEqual(['sonarjs/no-empty-function', 'sonarjs/no-dead-store']);
+    expect(notes).toHaveLength(2);
+    // Not a rule crash, or the same rule again: the error stands.
+    await expect(
+      lintGuarded(
+        async () => Promise.reject(new Error('disk full')),
+        new Set(),
+        () => {},
+      ),
+    ).rejects.toThrow('disk full');
+    await expect(
+      lintGuarded(
+        async () => Promise.reject(new Error('Rule: "sonarjs/no-dead-store"')),
+        disabled,
+        () => {},
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('summary reports parse errors and the disabled rules by RSPEC key', async () => {
+    const { summary, rspecKeys } = await load();
+    const results = [{ messages: [{ fatal: true }] }, { messages: [{}] }, { messages: [] }];
+    const disabled = new Set(['sonarjs/no-empty-function', 'sonarjs/no-dead-store']);
+    expect(summary('fallback', results, disabled, rspecKeys())).toEqual({
+      typeChecking: 'fallback',
+      files: 3,
+      parseErrors: 1,
+      disabledRules: ['S1186', 'S1854'],
+    });
+  });
 });
