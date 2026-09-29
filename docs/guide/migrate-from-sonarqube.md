@@ -25,7 +25,14 @@ C#, JavaScript and TypeScript issue statuses map one to one to SonarQube-compati
 bundles the same analysers SonarQube's own `csharpsquid`, `javascript` and `typescript` rules come
 from (SonarAnalyzer.CSharp 9.32 inside `roslyn`, eslint-plugin-sonarjs 2.0.4 as `sonarjs`), so a
 rule key SonarQube reports is a rule key Qualor reports too, wherever the bundled version still has
-it. A rule SonarQube retired since is reported unmapped, not guessed at.
+it. A rule the bundled versions do not have, mostly one SonarQube added in a later release, is
+reported unmapped, not guessed at.
+
+Qualor runs these bundled rules with their default configuration: eslint-plugin-sonarjs's
+`recommended` set, and the SonarAnalyzer.CSharp rules enabled by default. A profile can activate a
+rule outside it (S1192 is one). The import still maps and records it, but no issue comes from it,
+and the summary and the `--output` plan count such rules as **mapped but not run by the bundled
+configuration** (`mappedNotRun`).
 
 Not imported, and reported instead: rule parameters, SonarSource rules without an ESLint, PMD,
 SpotBugs or SonarQube-compatible-rules counterpart, gate conditions on metrics Qualor lacks, security
