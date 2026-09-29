@@ -60,9 +60,22 @@ const PROJECTS = [
   { id: 'p3', organizationId: 'other-org', key: 'other/api', name: 'Other API' },
 ];
 
+/** The organisation's view of the assistant (`GET /organizations/{id}/ai`): today's use and budgets. */
+function orgAi(overrides: { enabled?: boolean; usage?: object; budgets?: object } = {}) {
+  return {
+    enabled: overrides.enabled ?? true,
+    features: { explain: true, triage: true, fix: false },
+    provider: { kind: 'openai', host: 'ollama:11434', model: 'qwen2.5-coder' },
+    dataSent: ['rule', 'message', 'path', 'language', 'snippet'],
+    usage: { explain: 0, triage: 0, fix: 0, tokens: 0, costUsd: null, ...overrides.usage },
+    budgets: { ...EMPTY.budgets, ...overrides.budgets },
+  };
+}
+
 function setup(settings: object = EMPTY): FakeServer {
   const server = new FakeServer();
   server.on('GET', '/api/v0/system/llm', { body: settings });
+  server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, { body: orgAi({ enabled: false }) });
   server.on('GET', '/api/v0/projects', { body: page(PROJECTS) });
   server.on('GET', '/api/v0/organizations', {
     body: page([{ id: ORG_ID, key: 'default', name: 'Default', createdAt: '', updatedAt: '' }]),
@@ -380,6 +393,51 @@ describe('AiSettingsPage (llm.md §3, §18)', () => {
     expectNoPasswordManager(root.querySelector('#ai-key')!);
     expect(root.querySelector('[role="alert"]')).not.toBeNull();
     expect(root.textContent).not.toContain(KEY);
+  });
+
+  it("shows the current organisation's use of today against its budgets, as meters with words", async () => {
+    const server = setup(CONFIGURED);
+    server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, {
+      body: orgAi({
+        usage: { explain: 200, triage: 3, tokens: 1234, costUsd: 0.5 },
+        budgets: { costPerDayUsd: 2 },
+      }),
+    });
+    const { root } = await render();
+    const today = root.querySelector('#ai-today')!;
+    expect(today.querySelector('h3')?.textContent?.trim()).toBe('Today in Default (UTC)');
+    const meters = [...today.querySelectorAll('q-meter')].map((m) =>
+      m.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(meters).toEqual([
+      'Explanations 200 of 200 Budget reached for today',
+      'Triage suggestions 3 of 100',
+      'Fix suggestions 0 of 25',
+      'Tokens 1,234 of 1,000,000',
+      'Cost $0.50 of $2.00',
+    ]);
+  });
+
+  it("says when the assistant is off for the organisation, and when today's use cannot be read", async () => {
+    const off = setup(CONFIGURED);
+    const first = await render();
+    expect(first.root.querySelector('#ai-today')?.textContent).toContain(
+      'The assistant is off for Default: nothing is sent.',
+    );
+    expect(first.root.querySelector('#ai-today q-meter')).toBeNull();
+    expect(off.requestsTo('GET', `/api/v0/organizations/${ORG_ID}/ai`)).toHaveLength(1);
+    TestBed.resetTestingModule();
+    const failing = setup(CONFIGURED);
+    failing.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, {
+      status: 500,
+      body: problem(500, 'INTERNAL'),
+    });
+    const second = await render();
+    expect(second.root.querySelector('#ai-today .alert-error')?.textContent).toContain(
+      "Today's use could not be read.",
+    );
+    // The rest of the page renders.
+    expect(second.root.querySelector('form#ai-settings')).not.toBeNull();
   });
 
   it('asks nothing of the server for a user who is not an instance admin', async () => {

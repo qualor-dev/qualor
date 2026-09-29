@@ -1,18 +1,26 @@
-<h2 #heading tabindex="-1" i18n="@@ai.settings.title">AI assistant</h2>
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@ai.settings.title">AI assistant</h2>
+    @if (!instanceAdmin()) {
+      <p class="muted" i18n="@@ai.settings.adminsOnly">
+        Only instance administrators configure the AI assistant.
+      </p>
+    } @else if (settings()) {
+      <p class="muted" i18n="@@ai.settings.intro">
+        The AI assistant explains an issue, suggests whether it is a false positive, and suggests a
+        fix that a person may post to the merge request. It uses one model provider for the whole
+        instance, with your own key. Nothing is sent until an organisation and a feature are enabled
+        here and a person asks.
+      </p>
+    }
+  </div>
+</div>
 @if (!instanceAdmin()) {
-  <p class="muted" i18n="@@ai.settings.adminsOnly">
-    Only instance administrators configure the AI assistant.
-  </p>
+  <!-- Nothing more: the server is asked nothing. -->
 } @else if (loadError(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
 } @else if (settings(); as s) {
-  <p class="muted" i18n="@@ai.settings.intro">
-    The AI assistant explains an issue, suggests whether it is a false positive, and suggests a fix
-    that a person may post to the merge request. It uses one model provider for the whole instance,
-    with your own key. Nothing is sent until an organisation and a feature are enabled here and a
-    person asks.
-  </p>
-  <p class="row">
+  <p class="ai-state">
     @if (!s.provider) {
       <span class="badge badge-none" i18n="@@ai.settings.off">Off: no provider is configured</span>
     } @else if (enabledCount() === 0) {
@@ -35,604 +43,798 @@
     <p class="alert alert-error" role="alert">{{ message }}</p>
   }
 
-  <section id="ai-data-sent" class="card" aria-labelledby="ai-data-sent-heading">
-    <h3 id="ai-data-sent-heading" i18n="@@ai.settings.dataSentTitle">What is sent</h3>
-    @if (targetHost(); as host) {
-      <p i18n="@@ai.settings.dataSent">
-        What is sent: the rule, the finding's message, the file path, the language and the code
-        around the issue (±3 lines), after secrets are redacted, to {{ host }}. Nothing is sent
-        until an organisation and a feature are enabled and a person asks.
-      </p>
-    } @else {
-      <p i18n="@@ai.settings.dataSentNoHost">
-        What is sent: the rule, the finding's message, the file path, the language and the code
-        around the issue (±3 lines), after secrets are redacted, to the provider configured below.
-        Nothing is sent until an organisation and a feature are enabled and a person asks.
-      </p>
-    }
-    <p class="hint" i18n="@@ai.settings.neverSent">
-      Findings of secret rules and issues in credential files are never sent, nor are the excluded
-      paths and projects.
-    </p>
-  </section>
-
-  <form id="ai-settings" class="stack" novalidate (submit)="save($event)">
-    <fieldset class="card">
-      <legend class="label" i18n="@@ai.settings.provider">Provider</legend>
-      <div class="field">
-        <label for="ai-kind" i18n="@@ai.settings.kind">Kind</label>
-        <select
-          id="ai-kind"
-          [attr.aria-invalid]="fieldError('kind') ? true : null"
-          [attr.aria-describedby]="fieldError('kind') ? 'ai-kind-error' : 'ai-kind-hint'"
-          (change)="setKind($event)"
-        >
-          <option value="" [selected]="kind() === ''" i18n="@@ai.settings.kindNone">
-            None (the assistant is off)
-          </option>
-          <option value="openai" [selected]="kind() === 'openai'" i18n="@@ai.settings.kindOpenai">
-            OpenAI-compatible (OpenAI, Azure, vLLM, Ollama, LM Studio)
-          </option>
-          <option
-            value="anthropic"
-            [selected]="kind() === 'anthropic'"
-            i18n="@@ai.settings.kindAnthropic"
-          >
-            Anthropic
-          </option>
-        </select>
-        <span id="ai-kind-hint" class="hint" i18n="@@ai.settings.kindHint">
-          None removes the provider and its key.
-        </span>
-        @if (fieldError('kind'); as message) {
-          <span id="ai-kind-error" class="field-error" role="alert">{{ message }}</span>
-        }
+  <div class="ai-panels">
+    <section id="ai-today" class="card panel" aria-labelledby="ai-today-heading">
+      <div class="panel-head">
+        <h3 id="ai-today-heading" i18n="@@ai.today.title">
+          Today in {{ org.current()?.name }} (UTC)
+        </h3>
       </div>
-      <div class="field">
-        <label for="ai-url" i18n="@@ai.settings.url">Base URL</label>
-        <input
-          id="ai-url"
-          type="url"
-          maxlength="2048"
-          autocomplete="off"
-          spellcheck="false"
-          [value]="url()"
-          [attr.aria-invalid]="fieldError('url') ? true : null"
-          [attr.aria-describedby]="fieldError('url') ? 'ai-url-error ai-url-hint' : 'ai-url-hint'"
-          (input)="set('url', url, $event)"
-        />
-        <span id="ai-url-hint" class="hint" i18n="@@ai.settings.urlHint">
-          Such as https://api.openai.com/v1, https://api.anthropic.com or http://ollama:11434/v1. An
-          internal host must be listed by the operator in QUALOR_LLM_INTERNAL_HOSTS.
-        </span>
-        @if (fieldError('url'); as message) {
-          <span id="ai-url-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <div class="field">
-        <label for="ai-model" i18n="@@ai.settings.model">Model</label>
-        <input
-          id="ai-model"
-          type="text"
-          maxlength="200"
-          autocomplete="off"
-          spellcheck="false"
-          [value]="model()"
-          [attr.aria-invalid]="fieldError('model') ? true : null"
-          [attr.aria-describedby]="fieldError('model') ? 'ai-model-error' : null"
-          (input)="set('model', model, $event)"
-        />
-        @if (fieldError('model'); as message) {
-          <span id="ai-model-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <div class="field">
-        <label for="ai-key" i18n="@@ai.settings.key">API key</label>
-        <input
-          #keyField
-          id="ai-key"
-          type="password"
-          maxlength="4096"
-          autocomplete="new-password"
-          data-1p-ignore
-          data-lpignore="true"
-          spellcheck="false"
-          [attr.aria-invalid]="fieldError('key') ? true : null"
-          [attr.aria-describedby]="fieldError('key') ? 'ai-key-error ai-key-hint' : 'ai-key-hint'"
-          (input)="clearError('key')"
-        />
-        <span id="ai-key-hint" class="hint">
-          @if (provider()?.apiKeySet) {
-            <span i18n="@@ai.settings.keySet"
-              >An API key is set. Type a new one to replace it; leave the field empty to keep
-              it.</span
-            >
+      <div class="panel-body">
+        @if (today.error()) {
+          <p class="alert alert-error" i18n="@@ai.today.failed">Today's use could not be read.</p>
+        } @else if (todayValue(); as t) {
+          @if (!t.enabled) {
+            <p class="muted" i18n="@@ai.today.off">
+              The assistant is off for {{ org.current()?.name }}: nothing is sent.
+            </p>
           } @else {
-            <span i18n="@@ai.settings.keyNone"
-              >No API key. A local model may need none. Changing the base URL needs the key
-              again.</span
-            >
+            <div class="ai-meters">
+              <q-meter
+                label="Explanations"
+                i18n-label="@@ai.settings.budgetExplain"
+                [value]="t.usage.explain"
+                [max]="t.budgets.explainPerDay"
+              />
+              <q-meter
+                label="Triage suggestions"
+                i18n-label="@@ai.settings.budgetTriage"
+                [value]="t.usage.triage"
+                [max]="t.budgets.triagePerDay"
+              />
+              <q-meter
+                label="Fix suggestions"
+                i18n-label="@@ai.settings.budgetFix"
+                [value]="t.usage.fix"
+                [max]="t.budgets.fixPerDay"
+              />
+              <q-meter
+                label="Tokens"
+                i18n-label="@@ai.today.tokens"
+                [value]="t.usage.tokens"
+                [max]="t.budgets.tokensPerDay"
+              />
+              @if (t.usage.costUsd !== null) {
+                <q-meter
+                  label="Cost"
+                  i18n-label="@@ai.today.cost"
+                  unit="usd"
+                  [value]="t.usage.costUsd"
+                  [max]="t.budgets.costPerDayUsd"
+                />
+              }
+            </div>
           }
-          {{ ' '
-          }}<span i18n="@@ai.settings.keyStored"
-            >Stored encrypted; Qualor never shows it again.</span
-          >
-        </span>
-        @if (provider()?.apiKeySet && !provider()?.apiKeyReadable) {
-          <p class="alert alert-error" i18n="@@ai.settings.keyUnreadable">
-            The stored API key can no longer be read; set it again.
+        } @else {
+          <p class="muted" i18n="@@ai.today.loading">Loading…</p>
+        }
+      </div>
+    </section>
+
+    <section id="ai-data-sent" class="card panel" aria-labelledby="ai-data-sent-heading">
+      <div class="panel-head">
+        <h3 id="ai-data-sent-heading" i18n="@@ai.settings.dataSentTitle">What is sent</h3>
+      </div>
+      <div class="panel-body">
+        @if (targetHost(); as host) {
+          <p i18n="@@ai.settings.dataSent">
+            What is sent: the rule, the finding's message, the file path, the language and the code
+            around the issue (±3 lines), after secrets are redacted, to {{ host }}. Nothing is sent
+            until an organisation and a feature are enabled and a person asks.
+          </p>
+        } @else {
+          <p i18n="@@ai.settings.dataSentNoHost">
+            What is sent: the rule, the finding's message, the file path, the language and the code
+            around the issue (±3 lines), after secrets are redacted, to the provider configured
+            below. Nothing is sent until an organisation and a feature are enabled and a person
+            asks.
           </p>
         }
-        @if (fieldError('key'); as message) {
-          <span id="ai-key-error" class="field-error" role="alert">{{ message }}</span>
-        }
-        @if (provider()?.apiKeySet) {
-          <label class="row">
-            <input
-              id="ai-key-remove"
-              type="checkbox"
-              [checked]="removeKey()"
-              (change)="setRemoveKey($event)"
-            />
-            <span i18n="@@ai.settings.removeKey">Remove the key</span>
-          </label>
-        }
+        <p class="hint" i18n="@@ai.settings.neverSent">
+          Findings of secret rules and issues in credential files are never sent, nor are the
+          excluded paths and projects.
+        </p>
       </div>
-      @if (kind() !== 'anthropic') {
-        <div class="row fields">
-          <div class="field">
-            <label for="ai-auth" i18n="@@ai.settings.auth">Key header</label>
-            <select id="ai-auth" (change)="setAuth($event)">
-              <option
-                value="bearer"
-                [selected]="auth() === 'bearer'"
-                i18n="@@ai.settings.authBearer"
-              >
-                Authorization: Bearer
-              </option>
-              <option
-                value="api-key"
-                [selected]="auth() === 'api-key'"
-                i18n="@@ai.settings.authApiKey"
-              >
-                api-key (Azure)
-              </option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="ai-json" i18n="@@ai.settings.json">JSON mode</label>
-            <select id="ai-json" (change)="setJsonMode($event)">
-              <option
-                value="json_object"
-                [selected]="jsonMode() === 'json_object'"
-                i18n="@@ai.settings.jsonObject"
-              >
-                Ask for a JSON object
-              </option>
-              <option value="none" [selected]="jsonMode() === 'none'" i18n="@@ai.settings.jsonNone">
-                Off (the model does not support it)
-              </option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="ai-max-tokens-field" i18n="@@ai.settings.maxTokensField"
-              >Output limit field</label
-            >
-            <select id="ai-max-tokens-field" (change)="setMaxTokensField($event)">
-              <option
-                value="max_tokens"
-                [selected]="maxTokensField() === 'max_tokens'"
-                i18n="@@ai.settings.maxTokens"
-              >
-                max_tokens
-              </option>
-              <option
-                value="max_completion_tokens"
-                [selected]="maxTokensField() === 'max_completion_tokens'"
-                i18n="@@ai.settings.maxCompletionTokens"
-              >
-                max_completion_tokens
-              </option>
-            </select>
-          </div>
-        </div>
-      }
-      <div class="row fields">
-        <div class="field">
-          <label for="ai-timeout" i18n="@@ai.settings.timeout">Timeout (seconds)</label>
-          <input
-            id="ai-timeout"
-            type="number"
-            min="5"
-            max="600"
-            step="1"
-            inputmode="numeric"
-            [value]="timeout()"
-            [attr.aria-invalid]="fieldError('timeout') ? true : null"
-            [attr.aria-describedby]="fieldError('timeout') ? 'ai-timeout-error' : null"
-            (input)="set('timeout', timeout, $event)"
-          />
-          @if (fieldError('timeout'); as message) {
-            <span id="ai-timeout-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-        <div class="field">
-          <label for="ai-temperature" i18n="@@ai.settings.temperature"
-            >Temperature (optional)</label
-          >
-          <input
-            id="ai-temperature"
-            type="number"
-            min="0"
-            [max]="maxTemperature()"
-            step="0.1"
-            inputmode="decimal"
-            [value]="temperature()"
-            [attr.aria-invalid]="fieldError('temperature') ? true : null"
-            [attr.aria-describedby]="fieldError('temperature') ? 'ai-temperature-error' : null"
-            (input)="set('temperature', temperature, $event)"
-          />
-          @if (fieldError('temperature'); as message) {
-            <span id="ai-temperature-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-      </div>
-    </fieldset>
+    </section>
 
-    <fieldset class="card">
-      <legend class="label" i18n="@@ai.settings.organisations">Organisations</legend>
-      <p class="hint" i18n="@@ai.settings.organisationsHint">
-        Nothing of an organisation is sent while it is not enabled; each feature is off until
-        checked.
-      </p>
-      @for (o of organizations(); track o.id) {
-        <fieldset class="facet" [attr.data-key]="o.id">
-          <legend>{{ o.name }}</legend>
-          <label>
+    <form id="ai-settings" class="ai-panels" novalidate (submit)="save($event)">
+      <section class="card panel" aria-labelledby="ai-provider-heading">
+        <div class="panel-head">
+          <h3 id="ai-provider-heading" i18n="@@ai.settings.provider">Provider</h3>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-kind" i18n="@@ai.settings.kind">Kind</label>
+            <p id="ai-kind-hint" i18n="@@ai.settings.kindHint">
+              None removes the provider and its key.
+            </p>
+          </div>
+          <div class="setting-field">
+            <select
+              id="ai-kind"
+              [attr.aria-invalid]="fieldError('kind') ? true : null"
+              [attr.aria-describedby]="fieldError('kind') ? 'ai-kind-error' : 'ai-kind-hint'"
+              (change)="setKind($event)"
+            >
+              <option value="" [selected]="kind() === ''" i18n="@@ai.settings.kindNone">
+                None (the assistant is off)
+              </option>
+              <option
+                value="openai"
+                [selected]="kind() === 'openai'"
+                i18n="@@ai.settings.kindOpenai"
+              >
+                OpenAI-compatible (OpenAI, Azure, vLLM, Ollama, LM Studio)
+              </option>
+              <option
+                value="anthropic"
+                [selected]="kind() === 'anthropic'"
+                i18n="@@ai.settings.kindAnthropic"
+              >
+                Anthropic
+              </option>
+            </select>
+            @if (fieldError('kind'); as message) {
+              <span id="ai-kind-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-url" i18n="@@ai.settings.url">Base URL</label>
+            <p id="ai-url-hint" i18n="@@ai.settings.urlHint">
+              Such as https://api.openai.com/v1, https://api.anthropic.com or
+              http://ollama:11434/v1. An internal host must be listed by the operator in
+              QUALOR_LLM_INTERNAL_HOSTS.
+            </p>
+          </div>
+          <div class="setting-field">
             <input
-              type="checkbox"
-              [id]="'ai-org-' + o.id + '-enabled'"
-              [checked]="orgOf(o.id).enabled"
-              (change)="setOrgEnabled(o.id, $event)"
+              id="ai-url"
+              type="url"
+              maxlength="2048"
+              autocomplete="off"
+              spellcheck="false"
+              [value]="url()"
+              [attr.aria-invalid]="fieldError('url') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('url') ? 'ai-url-error ai-url-hint' : 'ai-url-hint'
+              "
+              (input)="set('url', url, $event)"
             />
-            <span i18n="@@ai.settings.orgEnabled">Enabled</span>
-          </label>
-          <label>
+            @if (fieldError('url'); as message) {
+              <span id="ai-url-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-model" i18n="@@ai.settings.model">Model</label>
+          </div>
+          <div class="setting-field">
             <input
-              type="checkbox"
-              [id]="'ai-org-' + o.id + '-explain'"
-              [checked]="orgOf(o.id).features.explain"
-              (change)="setOrgFeature(o.id, 'explain', $event)"
+              id="ai-model"
+              type="text"
+              maxlength="200"
+              autocomplete="off"
+              spellcheck="false"
+              [value]="model()"
+              [attr.aria-invalid]="fieldError('model') ? true : null"
+              [attr.aria-describedby]="fieldError('model') ? 'ai-model-error' : null"
+              (input)="set('model', model, $event)"
             />
-            <span i18n="@@ai.settings.featureExplain">Explain</span>
-          </label>
-          <label>
+            @if (fieldError('model'); as message) {
+              <span id="ai-model-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-key" i18n="@@ai.settings.key">API key</label>
+            <p id="ai-key-hint">
+              @if (provider()?.apiKeySet) {
+                <span i18n="@@ai.settings.keySet"
+                  >An API key is set. Type a new one to replace it; leave the field empty to keep
+                  it.</span
+                >
+              } @else {
+                <span i18n="@@ai.settings.keyNone"
+                  >No API key. A local model may need none. Changing the base URL needs the key
+                  again.</span
+                >
+              }
+              {{ ' '
+              }}<span i18n="@@ai.settings.keyStored"
+                >Stored encrypted; Qualor never shows it again.</span
+              >
+            </p>
+          </div>
+          <div class="setting-field">
             <input
-              type="checkbox"
-              [id]="'ai-org-' + o.id + '-triage'"
-              [checked]="orgOf(o.id).features.triage"
-              (change)="setOrgFeature(o.id, 'triage', $event)"
+              #keyField
+              id="ai-key"
+              type="password"
+              maxlength="4096"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              spellcheck="false"
+              [attr.aria-invalid]="fieldError('key') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('key') ? 'ai-key-error ai-key-hint' : 'ai-key-hint'
+              "
+              (input)="clearError('key')"
             />
-            <span i18n="@@ai.settings.featureTriage">Suggest triage</span>
-          </label>
-          <label>
+            @if (provider()?.apiKeySet && !provider()?.apiKeyReadable) {
+              <p class="alert alert-error" i18n="@@ai.settings.keyUnreadable">
+                The stored API key can no longer be read; set it again.
+              </p>
+            }
+            @if (fieldError('key'); as message) {
+              <span id="ai-key-error" class="field-error" role="alert">{{ message }}</span>
+            }
+            @if (provider()?.apiKeySet) {
+              <label class="row">
+                <input
+                  id="ai-key-remove"
+                  type="checkbox"
+                  [checked]="removeKey()"
+                  (change)="setRemoveKey($event)"
+                />
+                <span i18n="@@ai.settings.removeKey">Remove the key</span>
+              </label>
+            }
+          </div>
+        </div>
+        @if (kind() !== 'anthropic') {
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="ai-auth" i18n="@@ai.settings.auth">Key header</label>
+            </div>
+            <div class="setting-field">
+              <select id="ai-auth" (change)="setAuth($event)">
+                <option
+                  value="bearer"
+                  [selected]="auth() === 'bearer'"
+                  i18n="@@ai.settings.authBearer"
+                >
+                  Authorization: Bearer
+                </option>
+                <option
+                  value="api-key"
+                  [selected]="auth() === 'api-key'"
+                  i18n="@@ai.settings.authApiKey"
+                >
+                  api-key (Azure)
+                </option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="ai-json" i18n="@@ai.settings.json">JSON mode</label>
+            </div>
+            <div class="setting-field">
+              <select id="ai-json" (change)="setJsonMode($event)">
+                <option
+                  value="json_object"
+                  [selected]="jsonMode() === 'json_object'"
+                  i18n="@@ai.settings.jsonObject"
+                >
+                  Ask for a JSON object
+                </option>
+                <option
+                  value="none"
+                  [selected]="jsonMode() === 'none'"
+                  i18n="@@ai.settings.jsonNone"
+                >
+                  Off (the model does not support it)
+                </option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="ai-max-tokens-field" i18n="@@ai.settings.maxTokensField"
+                >Output limit field</label
+              >
+            </div>
+            <div class="setting-field">
+              <select id="ai-max-tokens-field" (change)="setMaxTokensField($event)">
+                <option
+                  value="max_tokens"
+                  [selected]="maxTokensField() === 'max_tokens'"
+                  i18n="@@ai.settings.maxTokens"
+                >
+                  max_tokens
+                </option>
+                <option
+                  value="max_completion_tokens"
+                  [selected]="maxTokensField() === 'max_completion_tokens'"
+                  i18n="@@ai.settings.maxCompletionTokens"
+                >
+                  max_completion_tokens
+                </option>
+              </select>
+            </div>
+          </div>
+        }
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-timeout" i18n="@@ai.settings.timeout">Timeout (seconds)</label>
+          </div>
+          <div class="setting-field">
             <input
-              type="checkbox"
-              [id]="'ai-org-' + o.id + '-fix'"
-              [checked]="orgOf(o.id).features.fix"
-              (change)="setOrgFeature(o.id, 'fix', $event)"
+              id="ai-timeout"
+              class="short"
+              type="number"
+              min="5"
+              max="600"
+              step="1"
+              inputmode="numeric"
+              [value]="timeout()"
+              [attr.aria-invalid]="fieldError('timeout') ? true : null"
+              [attr.aria-describedby]="fieldError('timeout') ? 'ai-timeout-error' : null"
+              (input)="set('timeout', timeout, $event)"
             />
-            <span i18n="@@ai.settings.featureFix">Suggest a fix</span>
-          </label>
-          <details class="stack">
-            <summary>
-              <span i18n="@@ai.settings.orgExcluded">{excludedCount(o.id), plural,
-                =0 {No project excluded}
-                =1 {1 project excluded}
-                other {{{ excludedCount(o.id) }} projects excluded}
-              }</span>
-            </summary>
-            <fieldset class="facet">
-              <legend i18n="@@ai.settings.orgExcludedLegend">
-                Never send issues of these projects
-              </legend>
-              @for (p of excludable(o.id); track p.id) {
-                <div class="row">
+            @if (fieldError('timeout'); as message) {
+              <span id="ai-timeout-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-temperature" i18n="@@ai.settings.temperature"
+              >Temperature (optional)</label
+            >
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-temperature"
+              class="short"
+              type="number"
+              min="0"
+              [max]="maxTemperature()"
+              step="0.1"
+              inputmode="decimal"
+              [value]="temperature()"
+              [attr.aria-invalid]="fieldError('temperature') ? true : null"
+              [attr.aria-describedby]="fieldError('temperature') ? 'ai-temperature-error' : null"
+              (input)="set('temperature', temperature, $event)"
+            />
+            @if (fieldError('temperature'); as message) {
+              <span id="ai-temperature-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+      </section>
+
+      <section class="card panel" aria-labelledby="ai-organisations-heading">
+        <div class="panel-head">
+          <h3 id="ai-organisations-heading" i18n="@@ai.settings.organisations">Organisations</h3>
+          <span class="panel-sub" i18n="@@ai.settings.organisationsHint">
+            Nothing of an organisation is sent while it is not enabled; each feature is off until
+            checked.
+          </span>
+        </div>
+        @for (o of organizations(); track o.id) {
+          <div class="setting-row" [attr.data-key]="o.id">
+            <div class="setting-text">
+              <span class="setting-name" [id]="'ai-org-' + o.id + '-name'">{{ o.name }}</span>
+            </div>
+            <div
+              class="setting-field ai-org"
+              role="group"
+              [attr.aria-labelledby]="'ai-org-' + o.id + '-name'"
+            >
+              <div class="ai-org-checks">
+                <label class="row">
                   <input
                     type="checkbox"
-                    [id]="'ai-org-' + o.id + '-exclude-' + p.id"
-                    [checked]="isExcluded(o.id, p.id)"
-                    (change)="setExcluded(o.id, p.id, $event)"
+                    [id]="'ai-org-' + o.id + '-enabled'"
+                    [checked]="orgOf(o.id).enabled"
+                    (change)="setOrgEnabled(o.id, $event)"
                   />
-                  <label [attr.for]="'ai-org-' + o.id + '-exclude-' + p.id">
-                    @if (p.name; as name) {
-                      {{ name }}
-                    } @else {
-                      <span i18n="@@ai.settings.orgExcludedUnlisted"
-                        >A project not listed here ({{ p.id }})</span
-                      >
-                    }
-                  </label>
-                </div>
-              } @empty {
-                <p class="muted" i18n="@@ai.settings.orgNoProjects">No project yet.</p>
-              }
-            </fieldset>
-          </details>
-        </fieldset>
-      } @empty {
-        <p class="muted" i18n="@@ai.settings.noOrganisations">No organisation yet.</p>
-      }
-    </fieldset>
-
-    <fieldset class="card">
-      <legend class="label" i18n="@@ai.settings.exclusions">Excluded paths</legend>
-      <div class="field">
-        <label for="ai-exclude" i18n="@@ai.settings.exclude">Never send these paths</label>
-        <textarea
-          id="ai-exclude"
-          rows="4"
-          spellcheck="false"
-          autocomplete="off"
-          [value]="exclude()"
-          [attr.aria-invalid]="fieldError('exclude') ? true : null"
-          [attr.aria-describedby]="
-            fieldError('exclude') ? 'ai-exclude-error ai-exclude-hint' : 'ai-exclude-hint'
-          "
-          (input)="set('exclude', exclude, $event)"
-        ></textarea>
-        <span id="ai-exclude-hint" class="hint" i18n="@@ai.settings.excludeHint">
-          One glob per line, relative to the repository root, such as config/** or **/*.pem. At most
-          100.
-        </span>
-        @if (fieldError('exclude'); as message) {
-          <span id="ai-exclude-error" class="field-error" role="alert">{{ message }}</span>
+                  <span i18n="@@ai.settings.orgEnabled">Enabled</span>
+                </label>
+                <label class="row">
+                  <input
+                    type="checkbox"
+                    [id]="'ai-org-' + o.id + '-explain'"
+                    [checked]="orgOf(o.id).features.explain"
+                    (change)="setOrgFeature(o.id, 'explain', $event)"
+                  />
+                  <span i18n="@@ai.settings.featureExplain">Explain</span>
+                </label>
+                <label class="row">
+                  <input
+                    type="checkbox"
+                    [id]="'ai-org-' + o.id + '-triage'"
+                    [checked]="orgOf(o.id).features.triage"
+                    (change)="setOrgFeature(o.id, 'triage', $event)"
+                  />
+                  <span i18n="@@ai.settings.featureTriage">Suggest triage</span>
+                </label>
+                <label class="row">
+                  <input
+                    type="checkbox"
+                    [id]="'ai-org-' + o.id + '-fix'"
+                    [checked]="orgOf(o.id).features.fix"
+                    (change)="setOrgFeature(o.id, 'fix', $event)"
+                  />
+                  <span i18n="@@ai.settings.featureFix">Suggest a fix</span>
+                </label>
+              </div>
+              <details class="ai-excluded">
+                <summary>
+                  <span i18n="@@ai.settings.orgExcluded">{excludedCount(o.id), plural,
+                    =0 {No project excluded}
+                    =1 {1 project excluded}
+                    other {{{ excludedCount(o.id) }} projects excluded}
+                  }</span>
+                </summary>
+                <fieldset class="facet">
+                  <legend i18n="@@ai.settings.orgExcludedLegend">
+                    Never send issues of these projects
+                  </legend>
+                  @for (p of excludable(o.id); track p.id) {
+                    <div class="row">
+                      <input
+                        type="checkbox"
+                        [id]="'ai-org-' + o.id + '-exclude-' + p.id"
+                        [checked]="isExcluded(o.id, p.id)"
+                        (change)="setExcluded(o.id, p.id, $event)"
+                      />
+                      <label [attr.for]="'ai-org-' + o.id + '-exclude-' + p.id">
+                        @if (p.name; as name) {
+                          {{ name }}
+                        } @else {
+                          <span i18n="@@ai.settings.orgExcludedUnlisted"
+                            >A project not listed here ({{ p.id }})</span
+                          >
+                        }
+                      </label>
+                    </div>
+                  } @empty {
+                    <p class="muted" i18n="@@ai.settings.orgNoProjects">No project yet.</p>
+                  }
+                </fieldset>
+              </details>
+            </div>
+          </div>
+        } @empty {
+          <p class="panel-body muted" i18n="@@ai.settings.noOrganisations">No organisation yet.</p>
         }
-      </div>
-    </fieldset>
+      </section>
 
-    <fieldset class="card">
-      <legend class="label" i18n="@@ai.settings.budgets">
-        Budgets per organisation and day (UTC)
-      </legend>
-      <div class="row fields">
-        <div class="field">
-          <label for="ai-budget-explain" i18n="@@ai.settings.budgetExplain">Explanations</label>
-          <input
-            id="ai-budget-explain"
-            type="number"
-            min="0"
-            max="100000"
-            step="1"
-            inputmode="numeric"
-            [value]="budget('explainPerDay')"
-            [attr.aria-invalid]="fieldError('budget-explain') ? true : null"
-            [attr.aria-describedby]="
-              fieldError('budget-explain') ? 'ai-budget-explain-error' : null
-            "
-            (input)="setBudget('explainPerDay', 'budget-explain', $event)"
-          />
-          @if (fieldError('budget-explain'); as message) {
-            <span id="ai-budget-explain-error" class="field-error" role="alert">{{ message }}</span>
-          }
+      <section class="card panel" aria-labelledby="ai-exclusions-heading">
+        <div class="panel-head">
+          <h3 id="ai-exclusions-heading" i18n="@@ai.settings.exclusions">Excluded paths</h3>
         </div>
-        <div class="field">
-          <label for="ai-budget-triage" i18n="@@ai.settings.budgetTriage">Triage suggestions</label>
-          <input
-            id="ai-budget-triage"
-            type="number"
-            min="0"
-            max="100000"
-            step="1"
-            inputmode="numeric"
-            [value]="budget('triagePerDay')"
-            [attr.aria-invalid]="fieldError('budget-triage') ? true : null"
-            [attr.aria-describedby]="fieldError('budget-triage') ? 'ai-budget-triage-error' : null"
-            (input)="setBudget('triagePerDay', 'budget-triage', $event)"
-          />
-          @if (fieldError('budget-triage'); as message) {
-            <span id="ai-budget-triage-error" class="field-error" role="alert">{{ message }}</span>
-          }
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-exclude" i18n="@@ai.settings.exclude">Never send these paths</label>
+            <p id="ai-exclude-hint" i18n="@@ai.settings.excludeHint">
+              One glob per line, relative to the repository root, such as config/** or **/*.pem. At
+              most 100.
+            </p>
+          </div>
+          <div class="setting-field">
+            <textarea
+              id="ai-exclude"
+              rows="4"
+              spellcheck="false"
+              autocomplete="off"
+              [value]="exclude()"
+              [attr.aria-invalid]="fieldError('exclude') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('exclude') ? 'ai-exclude-error ai-exclude-hint' : 'ai-exclude-hint'
+              "
+              (input)="set('exclude', exclude, $event)"
+            ></textarea>
+            @if (fieldError('exclude'); as message) {
+              <span id="ai-exclude-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
         </div>
-        <div class="field">
-          <label for="ai-budget-fix" i18n="@@ai.settings.budgetFix">Fix suggestions</label>
-          <input
-            id="ai-budget-fix"
-            type="number"
-            min="0"
-            [max]="maxFixAllowed()"
-            step="1"
-            inputmode="numeric"
-            [value]="budget('fixPerDay')"
-            [attr.aria-invalid]="fieldError('budget-fix') ? true : null"
-            [attr.aria-describedby]="
-              fieldError('budget-fix')
-                ? 'ai-budget-fix-error ai-budget-fix-hint'
-                : 'ai-budget-fix-hint'
-            "
-            (input)="setBudget('fixPerDay', 'budget-fix', $event)"
-          />
-          @if (storedFixPerDay() > maxFixPerDay()) {
-            <span id="ai-budget-fix-hint" class="hint" i18n="@@ai.settings.fixCeilingKept"
-              >At most {{ maxFixPerDay() }} a day in this edition. The saved
-              {{ storedFixPerDay() }} can be kept or lowered, not raised; the ceiling applies when
-              suggestions are made.</span
-            >
-          } @else {
-            <span id="ai-budget-fix-hint" class="hint" i18n="@@ai.settings.fixCeiling"
-              >At most {{ maxFixPerDay() }} a day in this edition</span
-            >
-          }
-          @if (fieldError('budget-fix'); as message) {
-            <span id="ai-budget-fix-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-      </div>
-      <div class="row fields">
-        <div class="field">
-          <label for="ai-budget-tokens" i18n="@@ai.settings.budgetTokens"
-            >Tokens (input and output)</label
-          >
-          <input
-            id="ai-budget-tokens"
-            type="number"
-            min="0"
-            max="1000000000"
-            step="1"
-            inputmode="numeric"
-            [value]="budget('tokensPerDay')"
-            [attr.aria-invalid]="fieldError('budget-tokens') ? true : null"
-            [attr.aria-describedby]="fieldError('budget-tokens') ? 'ai-budget-tokens-error' : null"
-            (input)="setBudget('tokensPerDay', 'budget-tokens', $event)"
-          />
-          @if (fieldError('budget-tokens'); as message) {
-            <span id="ai-budget-tokens-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-        <div class="field">
-          <label for="ai-budget-cost" i18n="@@ai.settings.budgetCost"
-            >Cost in US dollars (optional, needs prices)</label
-          >
-          <input
-            id="ai-budget-cost"
-            type="number"
-            min="0"
-            max="1000000"
-            step="0.01"
-            inputmode="decimal"
-            [value]="budget('costPerDayUsd')"
-            [attr.aria-invalid]="fieldError('budget-cost') ? true : null"
-            [attr.aria-describedby]="fieldError('budget-cost') ? 'ai-budget-cost-error' : null"
-            (input)="setBudget('costPerDayUsd', 'budget-cost', $event)"
-          />
-          @if (fieldError('budget-cost'); as message) {
-            <span id="ai-budget-cost-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-        <div class="field">
-          <label for="ai-budget-user" i18n="@@ai.settings.budgetUser"
-            >Requests per person and hour</label
-          >
-          <input
-            id="ai-budget-user"
-            type="number"
-            min="1"
-            max="10000"
-            step="1"
-            inputmode="numeric"
-            [value]="budget('perUserPerHour')"
-            [attr.aria-invalid]="fieldError('budget-user') ? true : null"
-            [attr.aria-describedby]="fieldError('budget-user') ? 'ai-budget-user-error' : null"
-            (input)="setBudget('perUserPerHour', 'budget-user', $event)"
-          />
-          @if (fieldError('budget-user'); as message) {
-            <span id="ai-budget-user-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-      </div>
-      <div class="row fields">
-        <div class="field">
-          <label for="ai-price-input" i18n="@@ai.settings.priceInput"
-            >Input price (US dollars per million tokens)</label
-          >
-          <input
-            id="ai-price-input"
-            type="number"
-            min="0"
-            max="10000"
-            step="0.01"
-            inputmode="decimal"
-            [value]="priceInput()"
-            [attr.aria-invalid]="fieldError('price-input') ? true : null"
-            [attr.aria-describedby]="fieldError('price-input') ? 'ai-price-input-error' : null"
-            (input)="set('price-input', priceInput, $event)"
-          />
-          @if (fieldError('price-input'); as message) {
-            <span id="ai-price-input-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-        <div class="field">
-          <label for="ai-price-output" i18n="@@ai.settings.priceOutput"
-            >Output price (US dollars per million tokens)</label
-          >
-          <input
-            id="ai-price-output"
-            type="number"
-            min="0"
-            max="10000"
-            step="0.01"
-            inputmode="decimal"
-            [value]="priceOutput()"
-            [attr.aria-invalid]="fieldError('price-output') ? true : null"
-            [attr.aria-describedby]="fieldError('price-output') ? 'ai-price-output-error' : null"
-            (input)="set('price-output', priceOutput, $event)"
-          />
-          @if (fieldError('price-output'); as message) {
-            <span id="ai-price-output-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-      </div>
-    </fieldset>
+      </section>
 
-    <fieldset class="card">
-      <legend class="label" i18n="@@ai.settings.audit">Stored prompts</legend>
-      <label class="row">
-        <input
-          id="ai-store-prompts"
-          type="checkbox"
-          [checked]="storePrompts()"
-          (change)="setStorePrompts($event)"
-        />
-        <span i18n="@@ai.settings.storePrompts">Store the prompts sent</span>
-      </label>
-      <div class="field">
-        <label for="ai-retention" i18n="@@ai.settings.retention">Days to keep them</label>
-        <input
-          id="ai-retention"
-          type="number"
-          min="1"
-          max="90"
-          step="1"
-          inputmode="numeric"
-          [value]="retention()"
-          [attr.aria-invalid]="fieldError('retention') ? true : null"
-          [attr.aria-describedby]="
-            fieldError('retention') ? 'ai-retention-error ai-retention-hint' : 'ai-retention-hint'
-          "
-          (input)="set('retention', retention, $event)"
-        />
-        <span id="ai-retention-hint" class="hint" i18n="@@ai.settings.retentionHint">
-          Keeps the exact data sent, after redaction, for this many days. Otherwise only metadata is
-          kept: the model, the tokens, the time and the answer.
+      <section class="card panel" aria-labelledby="ai-budgets-heading">
+        <div class="panel-head">
+          <h3 id="ai-budgets-heading" i18n="@@ai.settings.budgets">
+            Budgets per organisation and day (UTC)
+          </h3>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-budget-explain" i18n="@@ai.settings.budgetExplain">Explanations</label>
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-budget-explain"
+              class="short"
+              type="number"
+              min="0"
+              max="100000"
+              step="1"
+              inputmode="numeric"
+              [value]="budget('explainPerDay')"
+              [attr.aria-invalid]="fieldError('budget-explain') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('budget-explain') ? 'ai-budget-explain-error' : null
+              "
+              (input)="setBudget('explainPerDay', 'budget-explain', $event)"
+            />
+            @if (fieldError('budget-explain'); as message) {
+              <span id="ai-budget-explain-error" class="field-error" role="alert">{{
+                message
+              }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-budget-triage" i18n="@@ai.settings.budgetTriage"
+              >Triage suggestions</label
+            >
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-budget-triage"
+              class="short"
+              type="number"
+              min="0"
+              max="100000"
+              step="1"
+              inputmode="numeric"
+              [value]="budget('triagePerDay')"
+              [attr.aria-invalid]="fieldError('budget-triage') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('budget-triage') ? 'ai-budget-triage-error' : null
+              "
+              (input)="setBudget('triagePerDay', 'budget-triage', $event)"
+            />
+            @if (fieldError('budget-triage'); as message) {
+              <span id="ai-budget-triage-error" class="field-error" role="alert">{{
+                message
+              }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-budget-fix" i18n="@@ai.settings.budgetFix">Fix suggestions</label>
+            @if (storedFixPerDay() > maxFixPerDay()) {
+              <p id="ai-budget-fix-hint" i18n="@@ai.settings.fixCeilingKept">
+                At most {{ maxFixPerDay() }} a day in this edition. The saved
+                {{ storedFixPerDay() }} can be kept or lowered, not raised; the ceiling applies when
+                suggestions are made.
+              </p>
+            } @else {
+              <p id="ai-budget-fix-hint" i18n="@@ai.settings.fixCeiling">
+                At most {{ maxFixPerDay() }} a day in this edition
+              </p>
+            }
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-budget-fix"
+              class="short"
+              type="number"
+              min="0"
+              [max]="maxFixAllowed()"
+              step="1"
+              inputmode="numeric"
+              [value]="budget('fixPerDay')"
+              [attr.aria-invalid]="fieldError('budget-fix') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('budget-fix')
+                  ? 'ai-budget-fix-error ai-budget-fix-hint'
+                  : 'ai-budget-fix-hint'
+              "
+              (input)="setBudget('fixPerDay', 'budget-fix', $event)"
+            />
+            @if (fieldError('budget-fix'); as message) {
+              <span id="ai-budget-fix-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-budget-tokens" i18n="@@ai.settings.budgetTokens"
+              >Tokens (input and output)</label
+            >
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-budget-tokens"
+              class="short"
+              type="number"
+              min="0"
+              max="1000000000"
+              step="1"
+              inputmode="numeric"
+              [value]="budget('tokensPerDay')"
+              [attr.aria-invalid]="fieldError('budget-tokens') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('budget-tokens') ? 'ai-budget-tokens-error' : null
+              "
+              (input)="setBudget('tokensPerDay', 'budget-tokens', $event)"
+            />
+            @if (fieldError('budget-tokens'); as message) {
+              <span id="ai-budget-tokens-error" class="field-error" role="alert">{{
+                message
+              }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-budget-cost" i18n="@@ai.settings.budgetCost"
+              >Cost in US dollars (optional, needs prices)</label
+            >
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-budget-cost"
+              class="short"
+              type="number"
+              min="0"
+              max="1000000"
+              step="0.01"
+              inputmode="decimal"
+              [value]="budget('costPerDayUsd')"
+              [attr.aria-invalid]="fieldError('budget-cost') ? true : null"
+              [attr.aria-describedby]="fieldError('budget-cost') ? 'ai-budget-cost-error' : null"
+              (input)="setBudget('costPerDayUsd', 'budget-cost', $event)"
+            />
+            @if (fieldError('budget-cost'); as message) {
+              <span id="ai-budget-cost-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-budget-user" i18n="@@ai.settings.budgetUser"
+              >Requests per person and hour</label
+            >
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-budget-user"
+              class="short"
+              type="number"
+              min="1"
+              max="10000"
+              step="1"
+              inputmode="numeric"
+              [value]="budget('perUserPerHour')"
+              [attr.aria-invalid]="fieldError('budget-user') ? true : null"
+              [attr.aria-describedby]="fieldError('budget-user') ? 'ai-budget-user-error' : null"
+              (input)="setBudget('perUserPerHour', 'budget-user', $event)"
+            />
+            @if (fieldError('budget-user'); as message) {
+              <span id="ai-budget-user-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-price-input" i18n="@@ai.settings.priceInput"
+              >Input price (US dollars per million tokens)</label
+            >
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-price-input"
+              class="short"
+              type="number"
+              min="0"
+              max="10000"
+              step="0.01"
+              inputmode="decimal"
+              [value]="priceInput()"
+              [attr.aria-invalid]="fieldError('price-input') ? true : null"
+              [attr.aria-describedby]="fieldError('price-input') ? 'ai-price-input-error' : null"
+              (input)="set('price-input', priceInput, $event)"
+            />
+            @if (fieldError('price-input'); as message) {
+              <span id="ai-price-input-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-price-output" i18n="@@ai.settings.priceOutput"
+              >Output price (US dollars per million tokens)</label
+            >
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-price-output"
+              class="short"
+              type="number"
+              min="0"
+              max="10000"
+              step="0.01"
+              inputmode="decimal"
+              [value]="priceOutput()"
+              [attr.aria-invalid]="fieldError('price-output') ? true : null"
+              [attr.aria-describedby]="fieldError('price-output') ? 'ai-price-output-error' : null"
+              (input)="set('price-output', priceOutput, $event)"
+            />
+            @if (fieldError('price-output'); as message) {
+              <span id="ai-price-output-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+      </section>
+
+      <section class="card panel" aria-labelledby="ai-audit-heading">
+        <div class="panel-head">
+          <h3 id="ai-audit-heading" i18n="@@ai.settings.audit">Stored prompts</h3>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-store-prompts" i18n="@@ai.settings.storePrompts"
+              >Store the prompts sent</label
+            >
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-store-prompts"
+              type="checkbox"
+              [checked]="storePrompts()"
+              (change)="setStorePrompts($event)"
+            />
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="ai-retention" i18n="@@ai.settings.retention">Days to keep them</label>
+            <p id="ai-retention-hint" i18n="@@ai.settings.retentionHint">
+              Keeps the exact data sent, after redaction, for this many days. Otherwise only
+              metadata is kept: the model, the tokens, the time and the answer.
+            </p>
+          </div>
+          <div class="setting-field">
+            <input
+              id="ai-retention"
+              class="short"
+              type="number"
+              min="1"
+              max="90"
+              step="1"
+              inputmode="numeric"
+              [value]="retention()"
+              [attr.aria-invalid]="fieldError('retention') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('retention')
+                  ? 'ai-retention-error ai-retention-hint'
+                  : 'ai-retention-hint'
+              "
+              (input)="set('retention', retention, $event)"
+            />
+            @if (fieldError('retention'); as message) {
+              <span id="ai-retention-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+      </section>
+
+      <div class="ai-actions">
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          i18n="@@ai.settings.save"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-disabled]="busy() ? true : null"
+          aria-describedby="ai-test-hint"
+          (click)="test()"
+          i18n="@@ai.settings.test"
+        >
+          Test
+        </button>
+        <span id="ai-test-hint" class="hint" i18n="@@ai.settings.testHint">
+          Test sends a fixed prompt holding no repository data to the saved provider.
         </span>
-        @if (fieldError('retention'); as message) {
-          <span id="ai-retention-error" class="field-error" role="alert">{{ message }}</span>
-        }
       </div>
-    </fieldset>
-
-    <div class="row">
-      <button
-        type="submit"
-        class="btn btn-primary"
-        [attr.aria-disabled]="busy() ? true : null"
-        i18n="@@ai.settings.save"
-      >
-        Save
-      </button>
-      <button
-        type="button"
-        class="btn"
-        [attr.aria-disabled]="busy() ? true : null"
-        aria-describedby="ai-test-hint"
-        (click)="test()"
-        i18n="@@ai.settings.test"
-      >
-        Test
-      </button>
-      <span id="ai-test-hint" class="hint" i18n="@@ai.settings.testHint">
-        Test sends a fixed prompt holding no repository data to the saved provider.
-      </span>
-    </div>
-  </form>
+    </form>
+  </div>
 }
