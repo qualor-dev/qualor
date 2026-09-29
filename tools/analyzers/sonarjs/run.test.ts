@@ -394,6 +394,13 @@ describe.skipIf(!have && !required)('sonarjs run.mjs', { timeout: 120_000 }, () 
     expect(r.status).toBe(2);
   });
 
+  it('keeps a real syntax error a parse error in the type-aware pass, not a fallback', () => {
+    const root = repo({ 'tsconfig.json': TSCONFIG, 'a.ts': SORT, 'bad.ts': 'function (\n' });
+    const { log, info } = run(root);
+    expect(info).toEqual({ typeChecking: 'on', files: 2, parseErrors: 1, disabledRules: [] });
+    expect(ruleIds(log)).toContain('S2871');
+  });
+
   it('counts the files that did not parse in parseErrors', () => {
     const root = repo({ 'bad.js': 'function (\n', 'a.js': BRANCHES });
     const { log, info } = run(root);

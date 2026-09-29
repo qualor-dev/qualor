@@ -75,9 +75,6 @@ const NEVER = ['**/node_modules/**', '**/.git/**'];
 const NEVER_DIRS = new Set(['node_modules', '.git']);
 const SOURCE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 
-// A fatal parse message of the type-aware parse: the tsconfig does not parse, or a file is not
-// in the project it describes. Such files are linted again without type information.
-const TYPE_FAILURE = /tsconfig|parserOptions\.project|\bproject\b/i;
 // The rule named in the error ESLint throws when a rule crashes: "Error while loading rule
 // 'sonarjs/<name>'" (in create) or "Rule: \"sonarjs/<name>\"" (while linting a file).
 const CRASHED_RULE = /rule '(sonarjs\/[\w-]+)'|Rule: "(sonarjs\/[\w-]+)"/;
@@ -309,11 +306,14 @@ async function main(args) {
   if (wantTypes) {
     try {
       results = await lint(true, files);
-      const failed = results.filter((r) =>
-        r.messages.some((m) => m.fatal && TYPE_FAILURE.test(m.message)),
-      );
+      // Every file with a fatal message in the type-aware parse is linted again without type
+      // information: a tsconfig that does not parse, or a file outside the project it describes,
+      // fails the type-aware parse with a message that differs by platform and TypeScript version
+      // ("Expression expected." for a truncated tsconfig on Linux), so it is not matched by text.
+      // A file that parses without types was a type-aware failure (mode `fallback`); one that
+      // still does not parse keeps its parse error.
+      const failed = results.filter((r) => r.messages.some((m) => m.fatal));
       if (failed.length > 0) {
-        mode = 'fallback';
         const again = new Map(
           (
             await lint(
@@ -322,6 +322,7 @@ async function main(args) {
             )
           ).map((r) => [r.filePath, r]),
         );
+        if ([...again.values()].some((r) => !r.messages.some((m) => m.fatal))) mode = 'fallback';
         results = results.map((r) => again.get(r.filePath) ?? r);
       }
     } catch (err) {
