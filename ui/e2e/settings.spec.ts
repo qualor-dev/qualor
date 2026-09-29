@@ -43,6 +43,44 @@ async function deleteConnections(page: Page, provider?: 'gitlab' | 'github'): Pr
   }
 }
 
+test('the settings navigation groups its entries and marks the current page', async ({ page }) => {
+  await page.goto('/settings');
+  await expect(page).toHaveTitle('Access tokens · Qualor');
+  const nav = page.getByRole('navigation', { name: 'Settings' });
+  await expect(
+    nav.getByRole('group', { name: 'Your account' }).getByRole('link', { name: 'Access tokens' }),
+  ).toHaveAttribute('aria-current', 'page');
+  await expect(
+    nav.getByRole('group', { name: 'Organization' }).getByRole('link', { name: 'Members' }),
+  ).toBeVisible();
+  await nav.getByRole('group', { name: 'Instance' }).getByRole('link', { name: 'Users' }).click();
+  await expect(page).toHaveTitle('Users · Qualor');
+  await expect(nav.getByRole('link', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
+  await expect(nav.getByRole('link', { name: 'Access tokens' })).not.toHaveAttribute(
+    'aria-current',
+  );
+  await expectAccessible(page);
+});
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the settings navigation sits above the page, which never scrolls sideways', async ({
+    page,
+  }) => {
+    await page.goto('/settings/tokens');
+    const heading = page.getByRole('heading', { name: 'Your access tokens', level: 2 });
+    await expect(heading).toBeVisible();
+    const nav = await page.getByRole('navigation', { name: 'Settings' }).boundingBox();
+    const title = await heading.boundingBox();
+    expect(nav!.y + nav!.height).toBeLessThanOrEqual(title!.y);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+    await expectAccessible(page);
+  });
+});
+
 test('a personal token is shown once, then only by its prefix, and can be revoked', async ({
   page,
   guard,

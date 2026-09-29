@@ -1601,6 +1601,15 @@ details[open] > summary {
 .app-main:focus {
   outline: none;
 }
+/* A settings page (spec §7.8) opens with its title and a one-line intro, beside the navigation. */
+.settings-content > :not(router-outlet) > h2:first-child {
+  font-size: 22px;
+  margin-bottom: var(--space-2);
+}
+.settings-content > :not(router-outlet) > h2:first-child + p.muted {
+  max-width: 72ch;
+  margin-bottom: var(--space-6);
+}
 /* On a narrow screen the header scrolls away, and the navigation is one row that scrolls sideways. */
 @media (max-width: 56rem) {
   .app-header {

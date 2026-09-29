@@ -220,7 +220,7 @@ describe('LinkedAccountsPage (sso-scim.md §18)', () => {
 
 describe('Settings → Linked accounts tab', () => {
   function links(root: HTMLElement): string[] {
-    return [...root.querySelectorAll('nav.tabs a')].map((a) => a.textContent?.trim() ?? '');
+    return [...root.querySelectorAll('nav a')].map((a) => a.textContent?.trim() ?? '');
   }
 
   it('is listed for every user while sso is active, once', async () => {

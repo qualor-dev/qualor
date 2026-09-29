@@ -376,6 +376,28 @@ describe('SettingsPage navigation for members and enterprise entries (rbac-audit
     expect(links(other.nativeElement as HTMLElement)).not.toContain('Members');
   });
 
+  it('groups the entries under Your account, Organization and Instance, with no empty group', async () => {
+    const groups = (root: HTMLElement) =>
+      [...root.querySelectorAll('nav [role="group"]')].map((g) => ({
+        title: g.querySelector('.nav-group-title')?.textContent?.trim(),
+        links: [...g.querySelectorAll('a')].map((a) => a.textContent?.trim()),
+      }));
+    setup();
+    const admin = TestBed.createComponent(SettingsPage);
+    await settle(admin);
+    expect(groups(admin.nativeElement as HTMLElement)).toEqual([
+      { title: 'Your account', links: ['Access tokens'] },
+      { title: 'Organization', links: ['Members', 'Webhooks', 'GitLab', 'GitHub'] },
+    ]);
+    TestBed.resetTestingModule();
+    setup({ role: 'member' });
+    const other = TestBed.createComponent(SettingsPage);
+    await settle(other);
+    expect(groups(other.nativeElement as HTMLElement)).toEqual([
+      { title: 'Your account', links: ['Access tokens'] },
+    ]);
+  });
+
   it('hides the audit entries while audit-log is not active', async () => {
     const server = new FakeServer();
     server.on('GET', '/api/v0/organizations', { body: page([]) });

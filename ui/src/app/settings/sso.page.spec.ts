@@ -815,7 +815,7 @@ describe('Settings → Single sign-on, Sign-in and SCIM tabs (sso-scim.md §18)'
   const ALL = ['sso', 'sign-in', 'scim'];
 
   function links(root: HTMLElement): string[] {
-    return [...root.querySelectorAll('nav.tabs a')].map((a) => a.textContent?.trim() ?? '');
+    return [...root.querySelectorAll('nav a')].map((a) => a.textContent?.trim() ?? '');
   }
 
   it('lists the three screens with their own labels for instance admins, once', async () => {
