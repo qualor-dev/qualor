@@ -114,7 +114,14 @@ const testResult = z.object({
   ok: z.boolean(),
   model: z.string().nullable(),
   latencyMs: z.number().int(),
-  problem: z.object({ code: z.enum(LLM_ERROR_CODES), message: z.string() }).nullable(),
+  problem: z
+    .object({
+      code: z.enum(LLM_ERROR_CODES),
+      message: z.string(),
+      /** The provider's HTTP status when it answered with an error (401 and 403 read apart). */
+      providerStatus: z.number().int().nullable(),
+    })
+    .nullable(),
 });
 type TestResult = z.infer<typeof testResult>;
 
@@ -496,11 +503,16 @@ export const llmSettingsRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
     const settings = await readLlmSettings(deps.db);
     if (!settings.provider) throw conflict('AI_DISABLED', 'No LLM provider is configured');
     const apiKey = providerApiKey(settings, deps.config.secretKey);
-    const failed = (code: LlmErrorCode, message: string, latencyMs: number): TestResult => ({
+    const failed = (
+      code: LlmErrorCode,
+      message: string,
+      latencyMs: number,
+      providerStatus: number | null = null,
+    ): TestResult => ({
       ok: false,
       model: null,
       latencyMs,
-      problem: { code, message },
+      problem: { code, message, providerStatus },
     });
     if (!apiKey.ok) return failed('KEY_UNDECRYPTABLE', ERROR_TEXTS.KEY_UNDECRYPTABLE, 0);
     const started = Date.now();
@@ -527,7 +539,7 @@ export const llmSettingsRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
         ok: code === null,
         model,
         latencyMs,
-        problem: code === null ? null : { code, message: ERROR_TEXTS[code] },
+        problem: code === null ? null : { code, message: ERROR_TEXTS[code], providerStatus: null },
       };
     } catch (err) {
       if (!(err instanceof LlmError)) throw err;
@@ -535,6 +547,7 @@ export const llmSettingsRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
         errorCodeOf(err),
         err.message + missingV1Hint(settings.provider, err.status),
         Date.now() - started,
+        err.status,
       );
     }
   }

@@ -104,8 +104,17 @@ export async function postJson(
       retryAfter,
     );
   }
-  if (status === 401 || status === 403) {
-    throw new LlmError('refused_key', 'The provider refused the API key', status);
+  // Both keep the code `refused_key`; the status (in the text, the Test answer and the log) tells
+  // a wrong key (401) from a key that may not do this (403: the model, the workspace, billing).
+  if (status === 401) {
+    throw new LlmError('refused_key', 'The provider refused the API key (HTTP 401)', status);
+  }
+  if (status === 403) {
+    throw new LlmError(
+      'refused_key',
+      'The provider refused the request (HTTP 403): the key lacks access to this model, or the account has no credit',
+      status,
+    );
   }
   if (status >= 500) throw new LlmError('unavailable', UNREACHABLE, status, retryAfter);
   if (status < 200 || status >= 300) {

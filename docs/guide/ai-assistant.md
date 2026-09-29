@@ -220,7 +220,7 @@ it to:
   lines it replaces are kept with it, to check them against the merge request before posting.
 - Request records are deleted after **90 days**, or with their organisation or project.
 - Each finished request also writes one log line with the same details, never the content or the
-  key.
+  key. When the provider answered with an error, the line has its HTTP status (`providerStatus`).
 
 Today's use and budgets for an organisation are at `GET /api/v0/organizations/{id}/ai`.
 
@@ -231,7 +231,8 @@ Today's use and budgets for an organisation are at `GET /api/v0/organizations/{i
 | "The model did not answer in time" | raise the timeout in the settings; a local model on a CPU needs more |
 | "The model provider could not be reached" | check the base URL and that the server can reach the host. After 5 failures in a row Qualor pauses calls to that address for 10 minutes |
 | "The model provider is rate limiting Qualor; try later" | the provider's own limit. Qualor retries after the time the provider asks for; try again later, or lower the budgets |
-| "The provider refused the API key" | set a valid key; check the key header (`api-key` for Azure) |
+| "The provider refused the API key (HTTP 401)" | set a valid key; check the key header (`api-key` for Azure) |
+| "The provider refused the request (HTTP 403): the key lacks access to this model, or the account has no credit" | the key is valid but may not use this model: check the model's name, the key's project or workspace permissions, and the account's billing or credit |
 | "The provider refused the request; check the base URL and the model" | an OpenAI-compatible base URL usually needs `/v1`; check the model's name. OpenAI's newer models need the `max_completion_tokens` output limit field; some servers need JSON mode off |
 | "The provider's answer was not understood" | the address is not a chat completions or Anthropic Messages API, or the answer was over 1 MiB |
 | "The provider's address is not allowed" | the operator lists the host with its port in `QUALOR_LLM_INTERNAL_HOSTS`, or use an `https` address that resolves to public addresses |

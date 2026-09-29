@@ -8443,6 +8443,7 @@ export interface paths {
                                 /** @enum {string} */
                                 code: "PROVIDER_TIMEOUT" | "PROVIDER_UNAVAILABLE" | "PROVIDER_RATE_LIMITED" | "PROVIDER_REFUSED_KEY" | "PROVIDER_REJECTED_REQUEST" | "PROVIDER_BAD_ANSWER" | "URL_NOT_ALLOWED" | "KEY_UNDECRYPTABLE" | "MALFORMED_OUTPUT" | "OUTPUT_TRUNCATED" | "MODEL_REFUSED" | "OUTPUT_REFUSED" | "AI_DISABLED" | "SETTINGS_CHANGED" | "ISSUE_CHANGED" | "ISSUE_GONE" | "REQUEST_ABANDONED";
                                 message: string;
+                                providerStatus: number | null;
                             } | null;
                         };
                     };
