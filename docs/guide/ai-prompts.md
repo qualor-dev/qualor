@@ -90,7 +90,7 @@ appears in Qualor.
 
 Phase 4, merge request feedback. Connect the SCM in Qualor as
 gitlab.md or github.md describes: a project or group access token
-with the api scope and Developer role for GitLab, or a GitHub App
+with the api scope and Maintainer role for GitLab, or a GitHub App
 with Checks and Pull requests write for GitHub. Map each pilot
 project, run the connection test, and show me a merge request with
 Qualor's summary comment and inline findings.

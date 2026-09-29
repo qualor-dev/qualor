@@ -89,6 +89,26 @@ describe('the pinned source manifest of the scanner image (rulings L1 and L2)', 
     }
   });
 
+  it('carries the MPL-2.0 Go modules compiled into Gitleaks, which the image builds from source', () => {
+    const modules = manifest.filter((e) => e.component === 'gitleaks');
+    const modulePath = (e: SourceEntry): string => e.name.replace(/^Go module (\S+) .*$/, '$1');
+    expect(modules.map((e) => `${modulePath(e)}@${e.ref}`).sort()).toEqual([
+      'github.com/hashicorp/errwrap@v1.1.0',
+      'github.com/hashicorp/go-multierror@v1.1.1',
+      'github.com/hashicorp/go-version@v1.7.0',
+      'github.com/hashicorp/golang-lru/v2@v2.0.7',
+      'github.com/hashicorp/hcl@v1.0.0',
+    ]);
+    for (const e of modules) {
+      expect(e.licence, e.file).toBe('MPL-2.0');
+      expect(e.fetch, e.file).toEqual({
+        type: 'https',
+        url: `https://proxy.golang.org/${modulePath(e)}/@v/${e.ref}.zip`,
+      });
+      expect(e.componentVersion, e.file).toBe(installedVersion(installSh, 'GITLEAKS'));
+    }
+  });
+
   it('pins WebKit and TinyCC to the full commits Bun pins, and SpotBugs to its release asset', () => {
     const webkit = byName('WebKit (JavaScriptCore), oven-sh fork');
     expect(webkit?.ref).toMatch(/^[0-9a-f]{40}$/);
@@ -143,6 +163,7 @@ describe('consistency with the shipped versions', () => {
       bun: '1.3.13',
       temurin: '17.0.20+8',
       trivy: '0.74.0',
+      gitleaks: '8.30.1',
     });
   });
 
@@ -165,6 +186,7 @@ describe('consistency with the shipped versions', () => {
       { bun: '1.3.14' },
       { temurin: '17.0.21+9' },
       { trivy: '0.75.0' },
+      { gitleaks: '8.30.2' },
     ];
     for (const bump of bumps) {
       expect(versionProblems(manifest, { ...pinnedVersions(), ...bump })).not.toEqual([]);

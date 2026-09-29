@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { VERSION } from '@qualor/shared';
 import { CHART_REPOSITORY } from '../release/publish';
 import { BACKUP_COMMAND, restoreOverrides } from './smoke';
 
@@ -16,6 +17,6 @@ describe('install-server.md, Kubernetes (AGENTS.md rule 9)', () => {
 
   it('shows the backup and restore commands the smoke test ran', () => {
     expect(section).toContain(BACKUP_COMMAND);
-    expect(section).toContain(`--overrides='${restoreOverrides('qualor/server:0.1.0')}'`);
+    expect(section).toContain(`--overrides='${restoreOverrides(`qualor/server:${VERSION}`)}'`);
   });
 });

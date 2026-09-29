@@ -28,8 +28,8 @@ project role only adds to the organisation role. The full permission table is in
 
 Instance admins manage users in **Settings → Users**: create users, reset passwords, deactivate
 users, and make or remove instance admins. A new user and a user whose password was reset must
-choose a new password at their next sign-in. Passwords have at least 12 characters, and sign-in is
-rate-limited.
+choose a new password at their next password sign-in (a single sign-on sign-in does not ask).
+Passwords have at least 12 characters, and sign-in is rate-limited.
 
 Organization admins manage organisation membership and roles in **Settings → Members**: add
 someone by their exact user name, change their role, or remove them. An organisation always keeps

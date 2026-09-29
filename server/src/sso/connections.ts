@@ -928,7 +928,7 @@ export interface SsoTestResult {
 }
 
 /** A fixed text for each refusal of ssoFetch (never a library's or the IdP's message). */
-const FETCH_REFUSALS: Record<SsoFetchRefused['reason'], string> = {
+export const FETCH_REFUSALS: Record<SsoFetchRefused['reason'], string> = {
   not_allowed: 'The URL is not one the discovery document named',
   method: 'The request method is not allowed',
   status: 'The identity provider answered with an error status',
@@ -940,8 +940,15 @@ const FETCH_REFUSALS: Record<SsoFetchRefused['reason'], string> = {
   connect_timeout: 'The identity provider could not be reached in time',
   request: 'The request to the identity provider failed',
   connection: 'The connection to the identity provider failed',
+  tls: 'The TLS connection failed: the certificate of the identity provider is not trusted or not valid',
   too_large: 'The answer of the identity provider is too large',
 };
+
+/** The fixed text of a refusal of ssoFetch, with the HTTP status when one arrived. */
+export function fetchRefusalText(refused: SsoFetchRefused): string {
+  const text = FETCH_REFUSALS[refused.reason];
+  return refused.status === null ? text : `${text} (HTTP ${String(refused.status)})`;
+}
 
 /** A refusal of ssoFetch as the **Test** reports it: `fetch.<reason>`. */
 type FetchProblemCode = `fetch.${SsoFetchRefused['reason']}`;
@@ -976,7 +983,7 @@ function testProblem(err: unknown, fallback: TestProblem): TestProblem {
   let current: unknown = err;
   for (let depth = 0; depth < 5 && current !== null && typeof current === 'object'; depth++) {
     if (current instanceof SsoFetchRefused) {
-      return { code: `fetch.${current.reason}`, message: FETCH_REFUSALS[current.reason] };
+      return { code: `fetch.${current.reason}`, message: fetchRefusalText(current) };
     }
     const fields = current as { message?: unknown; code?: unknown; cause?: unknown };
     if (
@@ -1046,7 +1053,7 @@ async function testOidc(
       redirect: 'manual',
       signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
     });
-    if (res.status !== 200) throw new SsoFetchRefused('status');
+    if (res.status !== 200) throw new SsoFetchRefused('status', null, res.status);
     const body: unknown = JSON.parse(await res.text());
     if (!isRecord(body) || !Array.isArray(body['keys'])) {
       return { ...failedTest(jwksFailed), endpoints };

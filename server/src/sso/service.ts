@@ -169,11 +169,12 @@ export function createSsoService(deps: SsoServiceDeps): PluginSso {
       const c = await loadConnection(deps.db, connectionId(id), deps.config.secretKey);
       if (!c) {
         await getConnection(connectionDeps(), id); // 404 when unknown
-        throw validationFailed([
-          { path: 'saml.metadataUrl', message: 'The stored configuration is not valid' },
-        ]);
+        throw new ProblemError(422, 'VALIDATION_FAILED', 'Request validation failed', {
+          errors: [{ path: 'saml.metadataUrl', message: 'The stored configuration is not valid' }],
+          extensions: { reason: 'config_invalid' },
+        });
       }
-      return readSamlMetadata(c, { config: deps.config });
+      return readSamlMetadata(c, { config: deps.config, log: deps.log });
     },
     mappings: async (id) => {
       sso();

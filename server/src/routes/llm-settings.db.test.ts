@@ -401,6 +401,7 @@ describe('/system/llm (llm.md §3, §16)', () => {
       problem: {
         code: 'PROVIDER_REJECTED_REQUEST',
         message: 'The provider refused the request (HTTP 404); check the base URL and model',
+        providerStatus: 404,
       },
     });
   });
@@ -410,9 +411,26 @@ describe('/system/llm (llm.md §3, §16)', () => {
     const refused = await test();
     expect(refused.json()).toMatchObject({
       ok: false,
-      problem: { code: 'PROVIDER_REFUSED_KEY', message: 'The provider refused the API key' },
+      problem: {
+        code: 'PROVIDER_REFUSED_KEY',
+        message: 'The provider refused the API key (HTTP 401)',
+        providerStatus: 401,
+      },
     });
     expect(refused.body).not.toContain(fake.apiKey);
+    // A 403 keeps the code, and says the key may not do this rather than that it is wrong.
+    fake.enqueue({ status: 403, body: { error: { message: `no credit ${fake.apiKey}` } } });
+    const forbidden = await test();
+    expect(forbidden.json()).toMatchObject({
+      ok: false,
+      problem: {
+        code: 'PROVIDER_REFUSED_KEY',
+        message:
+          'The provider refused the request (HTTP 403): the key lacks access to this model, or the account has no credit',
+        providerStatus: 403,
+      },
+    });
+    expect(forbidden.body).not.toContain(fake.apiKey);
     fake.say('Sure! Here it is: {"ok": true}');
     expect((await test()).json()).toMatchObject({
       ok: false,

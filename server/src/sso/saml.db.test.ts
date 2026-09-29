@@ -35,7 +35,7 @@ import {
   ssoStates,
   users,
 } from '../db/schema';
-import { createConnection, loadConnection } from './connections';
+import { createConnection, loadConnection, type LoadedConnection } from './connections';
 import { replaceMappings } from './groups';
 import {
   FINISH_MAX_BYTES,
@@ -100,6 +100,14 @@ describe('SAML sign-in (sso-scim.md §6, §7)', () => {
 
   beforeAll(async () => {
     metadataServer = createServer((req, res) => {
+      if (req.url?.startsWith('/missing')) {
+        res.writeHead(404).end('no such page');
+        return;
+      }
+      if (req.url === '/html') {
+        res.writeHead(200, { 'content-type': 'text/html' }).end('<html><body>login</body></html>');
+        return;
+      }
       res
         .writeHead(200, { 'content-type': 'application/samlmetadata+xml' })
         .end(metadataXml([TEST_IDP.certPem, STRANGER.certPem]));
@@ -970,7 +978,57 @@ describe('SAML sign-in (sso-scim.md §6, §7)', () => {
     };
     await expect(readSamlMetadata(blocked, noInternal)).rejects.toMatchObject({
       status: 422,
-      errors: [{ path: 'saml.metadataUrl', message: 'The metadata URL could not be read' }],
+      errors: [
+        {
+          path: 'saml.metadataUrl',
+          message:
+            'The metadata URL could not be read: The host is not public; list it in QUALOR_SSO_INTERNAL_HOSTS',
+        },
+      ],
+      extensions: { reason: 'fetch.not_public' },
+    });
+    // The admin's reason is in the log too, with the host only.
+    const line = ctx.logs.filter((l) => l.includes('the SAML metadata could not be read')).at(-1);
+    expect(JSON.parse(line!)).toMatchObject({
+      level: 40,
+      component: 'sso',
+      connectionId: withMetadata,
+      host: new URL(metadataBase).host,
+      reason: 'fetch.not_public',
+    });
+  });
+
+  it('says why metadata was refused: the HTTP status, a document that is not SAML metadata', async () => {
+    const loaded = (await loadConnection(ctx.db, withMetadata, ctx.config.secretKey))!;
+    const at = (path: string): LoadedConnection => {
+      if (loaded.parsed.protocol !== 'saml') throw new Error('not SAML');
+      return {
+        ...loaded,
+        parsed: {
+          ...loaded.parsed,
+          config: { ...loaded.parsed.config, metadataUrl: `${metadataBase}${path}` },
+        },
+      };
+    };
+    await expect(
+      readSamlMetadata(at('/missing?token=s3cret'), flowDeps(ctx)),
+    ).rejects.toMatchObject({
+      status: 422,
+      errors: [
+        {
+          path: 'saml.metadataUrl',
+          message:
+            'The metadata URL could not be read: The identity provider answered with an error status (HTTP 404)',
+        },
+      ],
+      extensions: { reason: 'fetch.status' },
+    });
+    const line = ctx.logs.filter((l) => l.includes('the SAML metadata could not be read')).at(-1)!;
+    expect(JSON.parse(line)).toMatchObject({ reason: 'fetch.status', status: 404 });
+    expect(line).not.toContain('s3cret');
+    await expect(readSamlMetadata(at('/html'), flowDeps(ctx))).rejects.toMatchObject({
+      status: 422,
+      extensions: { reason: 'metadata.not_saml' },
     });
   });
 });

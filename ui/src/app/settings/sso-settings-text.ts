@@ -38,6 +38,8 @@ export function testProblemText(code: string): string {
       return $localize`:@@sso.test.timeout:The identity provider did not answer in time.`;
     case 'fetch.status':
       return $localize`:@@sso.test.status:The identity provider answered with an error status.`;
+    case 'fetch.tls':
+      return $localize`:@@sso.test.tls:The secure connection failed: the identity provider's certificate is not trusted or not valid.`;
     case 'fetch.too_large':
       return $localize`:@@sso.test.tooLarge:The identity provider's answer is too large.`;
     case 'fetch.not_allowed':
@@ -49,6 +51,27 @@ export function testProblemText(code: string): string {
     case 'fetch.method':
     default:
       return $localize`:@@sso.test.failed:The test failed: the identity provider could not be reached or its answer was refused.`;
+  }
+}
+
+/**
+ * §4.3: why **Read metadata** was refused, by the problem's `reason`: a request that failed has the
+ * **Test**'s text; null for a reason this app does not know (the field's general text then).
+ */
+export function metadataProblemText(reason: string | undefined): string | null {
+  switch (reason) {
+    case 'metadata.no_url':
+      return $localize`:@@sso.metadata.noUrl:Give the metadata URL and save the connection first.`;
+    case 'metadata.not_saml':
+      return $localize`:@@sso.metadata.notSaml:The metadata URL did not answer with SAML metadata (an EntityDescriptor). Check that it is the identity provider's metadata address.`;
+    case 'metadata.incomplete':
+      return $localize`:@@sso.metadata.incomplete:The metadata lacks what Qualor needs: an entity id, a single sign-on service for the HTTP-Redirect binding, and 1 to 3 signing certificates.`;
+    case 'metadata.sso_url':
+      return $localize`:@@sso.metadata.ssoUrl:The metadata names an SSO URL that is not allowed. It must use https, or http for a host in QUALOR_SSO_INTERNAL_HOSTS.`;
+    case 'config_invalid':
+      return testProblemText(reason);
+    default:
+      return reason?.startsWith('fetch.') ? testProblemText(reason) : null;
   }
 }
 

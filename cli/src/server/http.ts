@@ -22,6 +22,11 @@ export interface ServerEndpoint {
   env?: Readonly<Record<string, string | undefined>> | undefined;
   /** `bearer` (default), `basic` (`<token>:`, SonarQube before 10.0), or `none` (public requests). */
   auth?: 'bearer' | 'basic' | 'none' | undefined;
+  /**
+   * Reuse connections between requests without a body (the SonarQube reads: many small `GET`s,
+   * each retried when a reused connection fails). Off by default: every request connects anew.
+   */
+  keepAlive?: boolean | undefined;
 }
 
 const MAX_CA_FILE_BYTES = 1024 * 1024;
@@ -217,6 +222,27 @@ function masker(token: string): (text: string) => string {
   };
 }
 
+/** The keep-alive agents, one per scheme and timeout; Node keys their pooled sockets by TLS options. */
+const keepAliveAgents = new Map<string, http.Agent>();
+
+/**
+ * A request's agent, with the endpoint's timeout (the global agent's own socket timeout, 5 s
+ * since Node 19, would otherwise cut the connect phase short). Without `keepAlive`, a new agent
+ * that closes its connection after the request; with it, one shared agent that keeps the
+ * connection for the next request (an idle pooled socket does not keep the process alive).
+ */
+function agentFor(isHttps: boolean, ep: ServerEndpoint): http.Agent {
+  const Agent = isHttps ? https.Agent : http.Agent;
+  if (ep.keepAlive !== true) return new Agent({ keepAlive: false, timeout: ep.timeoutMs });
+  const key = `${isHttps ? 'https' : 'http'}:${ep.timeoutMs}`;
+  let agent = keepAliveAgents.get(key);
+  if (agent === undefined) {
+    agent = new Agent({ keepAlive: true, timeout: ep.timeoutMs });
+    keepAliveAgents.set(key, agent);
+  }
+  return agent;
+}
+
 /**
  * One HTTP request (ruling E1). Never follows redirects (a 3xx is returned like any other status,
  * so `Authorization` never reaches another URL), never retries, always verifies the TLS
@@ -225,8 +251,7 @@ function masker(token: string): (text: string) => string {
  *
  * - Without a body (the small JSON exchanges): `node:http`/`node:https`, answered completely
  *   within `timeoutMs`, connecting included, so a server that trickles bytes cannot hold the CLI.
- *   Each request has its own agent with that timeout: the global agent's own socket timeout (5 s
- *   since Node 19) would otherwise cut the connect phase short.
+ *   The agent has that timeout too (`agentFor`); it keeps the connection only for `keepAlive`.
  * - With a body (the upload, ruling E5): `rawRequestWithBody` on a plain socket, with
  *   `Content-Length` and `Expect: 100-continue`; the body goes only after `100 Continue` or after
  *   the continue wait without any answer, never after a final answer, and the request fails after
@@ -327,10 +352,7 @@ export function request(ep: ServerEndpoint, o: RequestOptions): Promise<HttpResp
         method: o.method,
         headers,
         timeout: ep.timeoutMs,
-        agent: new (isHttps ? https.Agent : http.Agent)({
-          keepAlive: false,
-          timeout: ep.timeoutMs,
-        }),
+        agent: agentFor(isHttps, ep),
         ...(isHttps && {
           // Explicit, so NODE_TLS_REJECT_UNAUTHORIZED=0 in the environment cannot switch it off.
           rejectUnauthorized: true,

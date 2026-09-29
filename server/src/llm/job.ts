@@ -160,6 +160,8 @@ type Outcome =
       inputTokens?: number | null;
       outputTokens?: number | null;
       costMicroUsd?: number | null;
+      /** The provider's HTTP status of a failed call, for the log (401 and 403 read apart). */
+      providerStatus?: number | null;
     };
 
 /**
@@ -208,6 +210,7 @@ async function finish(
       promptVersion: row.promptVersion,
       status: outcome.ok ? 'succeeded' : 'failed',
       errorCode: outcome.ok ? null : outcome.code,
+      providerStatus: outcome.ok ? null : (outcome.providerStatus ?? null),
       inputBytes: row.inputBytes,
       inputSha256: row.inputSha256,
       redactions: row.redactions,
@@ -433,12 +436,22 @@ async function retryOrFail(
     });
     if (!requeued) return;
     deps.logger?.info(
-      { requestId: row.id, attempt: next, waitSeconds: wait, errorCode: errorCodeOf(err) },
+      {
+        requestId: row.id,
+        attempt: next,
+        waitSeconds: wait,
+        errorCode: errorCodeOf(err),
+        providerStatus: err.status,
+      },
       'AI request retried',
     );
     return;
   }
-  await finish(deps, row, started, { ok: false, code: errorCodeOf(err) });
+  await finish(deps, row, started, {
+    ok: false,
+    code: errorCodeOf(err),
+    providerStatus: err.status,
+  });
 }
 
 /**

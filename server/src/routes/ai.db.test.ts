@@ -455,6 +455,39 @@ describe('AI requests (llm.md §5, §10, §12, §16)', () => {
     expect(Number(res.headers['retry-after'])).toBeLessThanOrEqual(86_400);
   });
 
+  it('does not count a request the provider refused without using tokens, but counts others', async () => {
+    await configure({ budgets: { ...DEFAULT_LLM_SETTINGS.budgets, explainPerDay: 2 } });
+    const first = (await ask(eqIssue, 'explain')).json();
+    const [template] = await h.ctx.db
+      .select()
+      .from(llmRequests)
+      .where(eq(llmRequests.id, first.id));
+    const copy = { ...template!, id: undefined };
+    // The first request, and five more, all refused at the key: none counts.
+    await h.ctx.db
+      .update(llmRequests)
+      .set({ status: 'failed', errorCode: 'PROVIDER_REFUSED_KEY' })
+      .where(eq(llmRequests.id, first.id));
+    await h.ctx.db.insert(llmRequests).values(
+      Array.from({ length: 5 }, () => ({
+        ...copy,
+        status: 'failed' as const,
+        errorCode: 'PROVIDER_REFUSED_KEY',
+      })),
+    );
+    const usage = async () =>
+      (await get(`/api/v0/organizations/${h.organizationId}/ai`)).json().usage;
+    expect(await usage()).toMatchObject({ explain: 0 });
+    // A timeout counts (the provider may have worked), and so does one that used tokens.
+    await h.ctx.db.insert(llmRequests).values([
+      { ...copy, status: 'failed' as const, errorCode: 'PROVIDER_TIMEOUT' },
+      { ...copy, status: 'failed' as const, errorCode: 'PROVIDER_REFUSED_KEY', inputTokens: 5 },
+    ]);
+    expect(await usage()).toMatchObject({ explain: 2 });
+    const res = await ask(eqIssue, 'explain', { refresh: true });
+    expect([res.statusCode, res.json().code]).toEqual([429, 'AI_QUOTA_EXCEEDED']);
+  });
+
   it('applies the token budget and the per-user bound', async () => {
     await configure({ budgets: { ...DEFAULT_LLM_SETTINGS.budgets, tokensPerDay: 100 } });
     const first = (await ask(eqIssue, 'explain')).json();

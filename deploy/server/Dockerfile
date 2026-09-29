@@ -6,7 +6,7 @@
 #   docker build -f deploy/server/Dockerfile -t qualor/server:dev .
 # Every base image is pinned by version and digest (multi-arch index); bump both together.
 
-FROM node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844 AS build
+FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS build
 WORKDIR /src
 RUN corepack enable
 # Manifests first, so the dependency layer is reused until the lockfile or a manifest changes.
@@ -41,7 +41,7 @@ RUN pnpm --filter @qualor/server build \
 # database listens on a Unix socket only), with the two extensions the migrations create. The
 # base has no shell, and initdb needs one, so the cluster is made here as a template the server
 # copies into its volume on first start.
-FROM node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844 AS postgres
+FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS postgres
 ARG PG_VERSION=18.6
 ARG PG_SHA256=555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f
 # bison and flex are build tools of this stage only (PostgreSQL 18 tarballs ship no generated parsers).
@@ -56,7 +56,7 @@ RUN mv /tmp/template /opt/postgresql/template   && rm -f /opt/postgresql/templat
 
 # Only the node binary is taken from here: the runtime is distroless (no shell, no package
 # manager), and its own Node 22 lags the engines floor of package.json.
-FROM node:22.23.2-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9 AS node
+FROM node:22.23.3-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS node
 
 FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
 COPY --from=node /usr/local/bin/node /usr/local/bin/node

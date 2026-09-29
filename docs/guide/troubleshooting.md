@@ -39,6 +39,7 @@ QUALOR_LOG_LEVEL=debug qualor scan     # every analyzer's command line, output a
 | Symptom | Cause | Fix |
 |---|---|---|
 | gate `error`, "new code unavailable" | shallow clone, and the baseline could not be fetched | `GIT_DEPTH: 0` (GitLab), `fetch-depth: 0` (GitHub), `git fetch --unshallow` elsewhere |
+| gate `error` on the main branch, "`<sha>` could not be fetched from origin", with the full history | the project holds analyses of another git history (the repository was re-created, or the project key reused), so the main branch's baseline is a commit this repository does not have. A 30-day new-code period does not help: its baseline is the oldest analysis of the last 30 days, still one of the old history | set the [new-code definition](./quality-gates.md#new-code) to an analysis of the new history (`{ "type": "analysis", "analysisId": "…" }`), or use a new project |
 | every MR analysis shows up as a branch | the job ran in a branch pipeline | GitLab: use `merge_request_event` rules. Other CI: pass `--mr` and `--mr-target` |
 | coverage condition shows "no value" | no coverage report was imported | run the tests with coverage before the scan and list the report in `coverage.reports` |
 | coverage is 0 % for files that are tested | the report's paths do not match the repository's | set `coverage.pathPrefixes`, or generate the report from the repository root |
@@ -55,7 +56,8 @@ mapping. Its message says what is wrong.
 |---|---|
 | nothing on GitLab | no connection or mapping, or the analysis did not come from GitLab CI (local scans are never decorated) |
 | "This GitLab is on an internal address" | the operator must list the host in `QUALOR_SCM_INTERNAL_HOSTS` |
-| "GitLab refused the token" | the token lacks the `api` scope or the Developer role, or it expired |
+| "GitLab refused the token" | the token is wrong, revoked or expired. Enter a new one |
+| "The token lacks a permission" | the token lacks the `api` scope or the Maintainer role. Developer is enough for comments, but not for a commit status on a protected branch |
 | "The stored token can no longer be read" | `QUALOR_SECRET_KEY` changed. Enter the token again |
 | comments have no links | `QUALOR_PUBLIC_URL` is not set |
 | no inline discussion for an issue | it is not on an added line of the diff, or it is past the 50 per MR. The summary counts both |

@@ -347,11 +347,12 @@ function parseImport(args: string[]): Command {
   return { name: 'import-sonarqube', flags };
 }
 
+const isHelp = (arg: string) => arg === '--help' || arg === '-h';
+
 export function parseCommandLine(argv: readonly string[]): Command {
   const [name, ...rest] = argv;
-  if (name === undefined || name === 'help' || name === '--help' || name === '-h') {
-    return { name: 'help' };
-  }
+  // `--help` or `-h` anywhere (`qualor import sonarqube --help`) asks for the usage, never an error.
+  if (name === undefined || name === 'help' || argv.some(isHelp)) return { name: 'help' };
   if (name === 'version' || name === '--version') {
     strict(() => parseArgs({ args: rest, strict: true, allowPositionals: false, options: {} }));
     return { name: 'version' };

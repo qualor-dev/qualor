@@ -27,6 +27,13 @@ describe('main', () => {
     expect(c.stdout()).toContain('qualor scan');
   });
 
+  it('prints the usage on stdout and exits 0 for a command with --help', async () => {
+    const c = captureIO();
+    expect(await main(['import', 'sonarqube', '--help'], c.io)).toBe(0);
+    expect(c.stdout()).toContain('qualor import sonarqube --url URL');
+    expect(c.stderr()).toBe('');
+  });
+
   it('exits 2 on an unknown command and explains why on stderr', async () => {
     const c = captureIO();
     expect(await main(['scna'], c.io)).toBe(2);

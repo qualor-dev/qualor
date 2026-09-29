@@ -51,3 +51,54 @@ it('sends PATCH with its body and content-length', async () => {
     await seen.close();
   }
 });
+
+it('sends DELETE without a body', async () => {
+  const seen = await echoServer();
+  try {
+    const result = await outboundRequest(
+      { url: seen.url, method: 'DELETE', headers: {} },
+      {
+        allowInternalHosts: true,
+        timeoutMs: 2_000,
+        maxResponseBytes: 1024,
+        overflow: 'fail',
+        names: { noun: 'test', target: 'test' },
+      },
+    );
+    expect(result.kind).toBe('response');
+    expect(seen.last()).toEqual({ method: 'DELETE', body: '', length: undefined });
+  } finally {
+    await seen.close();
+  }
+});
+
+it('calls a host unresolved, not a timeout, when its lookup fails or outlasts the connect deadline', async () => {
+  const options = {
+    allowInternalHosts: true,
+    timeoutMs: 30_000,
+    connectTimeoutMs: 100,
+    maxResponseBytes: 1024,
+    overflow: 'fail' as const,
+    names: { noun: 'test', target: 'test' },
+  };
+  const request = { url: 'https://gitlab-ce/api/v4/user', method: 'GET' as const, headers: {} };
+  // A single-label name the resolver keeps retrying: no answer before the connect deadline.
+  const slow = await outboundRequest(request, {
+    ...options,
+    resolve: () => new Promise(() => undefined),
+  });
+  expect(slow).toMatchObject({
+    kind: 'failed',
+    cause: 'unresolved',
+    unreachable: true,
+    reason: 'The test host could not be resolved within 100 ms',
+  });
+  // EAI_AGAIN (a temporary resolver failure) and ENOTFOUND alike.
+  for (const code of ['EAI_AGAIN', 'ENOTFOUND']) {
+    const failed = await outboundRequest(request, {
+      ...options,
+      resolve: () => Promise.reject(Object.assign(new Error(code), { code })),
+    });
+    expect(failed).toMatchObject({ kind: 'failed', cause: 'unresolved' });
+  }
+});

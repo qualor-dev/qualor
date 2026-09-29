@@ -8,10 +8,31 @@ export const SSO_FETCH_TIMEOUT_MS = 10_000;
 export const SSO_FETCH_MAX_BYTES = 512 * 1024;
 
 export class SsoFetchRefused extends Error {
-  constructor(readonly reason: 'not_allowed' | 'method' | 'status' | OutboundFailure) {
+  constructor(
+    readonly reason: 'not_allowed' | 'method' | 'status' | 'tls' | OutboundFailure,
+    /** For the log only: the system error code (`CERT_HAS_EXPIRED`), when there is one. */
+    readonly code: string | null = null,
+    /** For the log only: the HTTP status of a `status` refusal, when one arrived. */
+    readonly status: number | null = null,
+  ) {
     super(`identity provider request refused: ${reason}`);
     this.name = 'SsoFetchRefused';
   }
+}
+
+/** A system error code of a failed TLS handshake or certificate check (`CERT_HAS_EXPIRED`). */
+export function isTlsErrorCode(code: string | null): boolean {
+  return code !== null && /CERT|SSL|TLS|^EPROTO$/.test(code);
+}
+
+/** The first SsoFetchRefused in an error's cause chain (openid-client wraps it), or null. */
+export function ssoFetchRefusal(err: unknown): SsoFetchRefused | null {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current !== null && typeof current === 'object'; depth++) {
+    if (current instanceof SsoFetchRefused) return current;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
 }
 
 export interface SsoFetchPolicy {
@@ -119,9 +140,14 @@ export function createSsoFetch(policy: SsoFetchPolicy): SsoFetch {
       },
     );
     const result = await abortable(request, options.signal);
-    if (result.kind === 'failed') throw new SsoFetchRefused(result.cause);
+    if (result.kind === 'failed') {
+      const tls = result.cause === 'connection' && isTlsErrorCode(result.code);
+      throw new SsoFetchRefused(tls ? 'tls' : result.cause, result.code);
+    }
     // A Response carries only 200-599; anything else (a 1xx that ended the exchange, a 999) fails.
-    if (result.status < 200 || result.status > 599) throw new SsoFetchRefused('status');
+    if (result.status < 200 || result.status > 599) {
+      throw new SsoFetchRefused('status', null, result.status);
+    }
     const headers = new Headers();
     for (const [name, value] of Object.entries(result.headers)) {
       if (Array.isArray(value)) for (const v of value) headers.append(name, v);

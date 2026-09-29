@@ -13,6 +13,7 @@ import { MemoryQualor } from '../../test/memory-qualor';
 import {
   type FakeIssue,
   type FakeSonar,
+  fakeRules,
   sampleSonarData,
   startFakeSonarQube,
 } from '../../test/fake-sonarqube';
@@ -504,6 +505,8 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
     it('asks for the open issues of every rule of the components, not only the resolved ones (S7, S14)', async () => {
       const data = sampleSonarData();
       data.issues.push(extra('AYo-eq', 'external_eslint_repo:eqeqeq', 5));
+      const rules = SONAR_MAPPING.componentRules(SONAR_MAPPING.component('typescript:S1440')!);
+      data.rules.push(...fakeRules(rules.filter((r) => !data.rules.some((x) => x.key === r))));
       fake = await startFakeSonarQube(data);
       const conn = await connect();
       const resolved = await fetchResolvedIssues(conn.client, conn, 'acme:shop', 1000);
@@ -516,7 +519,6 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
           (r) => r.path === 'api/issues/search' && r.query['issueStatuses'] === 'OPEN,CONFIRMED',
         )
         .map((r) => r.query['rules']);
-      const rules = SONAR_MAPPING.componentRules(SONAR_MAPPING.component('typescript:S1440')!);
       expect(rules).toContain('external_eslint_repo:eqeqeq');
       expect(new Set(asked)).toEqual(new Set([rules.join(',')]));
       expect(b.items.map((i) => i.ref).sort()).toEqual(['AYi-ac-1', 'AYi-fp-1']);
@@ -683,6 +685,7 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
             probeIssue('A0', 'typescript:U', 25, 'n', 'OPEN'),
           ],
         });
+        data.rules.push(...fakeRules(chain.componentRules(chain.component('typescript:J')!)));
         fake = await startFakeSonarQube(data);
         const conn = await connect();
         const resolved = await fetchResolvedIssues(conn.client, conn, 'acme:shop', 1000);
@@ -811,9 +814,11 @@ describe('open competitors (import-sonarqube.md §10.1, rulings S3 and S7)', () 
         });
         expect(b.items.map((i) => [i.ref, i.competitorsUnknown])).toEqual([['AYi-nv', undefined]]);
         const after = fake.requests.slice(before);
-        // The open read's probe (no open issue: no page), then the resolved re-probe; nothing else.
+        // The repository's rule list, the open read's probe (no open issue: no page), then the
+        // resolved re-probe; nothing else.
         expect(openAsked()).toEqual(['external_eslint_repo:local/only-here']);
         expect(after.map((r) => [r.path, r.query['issueStatuses'], r.query['ps']])).toEqual([
+          ['api/rules/search', undefined, '500'],
           ['api/issues/search', 'OPEN,CONFIRMED', '1'],
           ['api/issues/search', 'ACCEPTED,FALSE_POSITIVE', '1'],
         ]);

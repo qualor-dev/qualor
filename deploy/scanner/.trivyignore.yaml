@@ -1,0 +1,182 @@
+# HIGH and CRITICAL vulnerabilities accepted in qualor/scanner and qualor/scanner-dotnet (built from
+# qualor/scanner), each with the reason and a review date: `expired_at` makes Trivy report it again
+# from that day, so a lapsed entry fails the scan instead of hiding a finding. Scan an image with:
+#   trivy image --severity HIGH,CRITICAL --ignorefile deploy/scanner/.trivyignore.yaml qualor/scanner:<tag>
+# (deploy/README.md). It is about the images only, so it stays out of the repository root, where
+# the ignore file of Qualor's own Trivy scan of this repository belongs.
+vulnerabilities:
+  # Debian bookworm packages of the base image (node:*-bookworm-slim) and of git, with no fixed
+  # package in Debian yet ("affected", "fix_deferred" or "will_not_fix"). They leave with the next
+  # base image digest that carries a fix.
+  - id: CVE-2026-13221
+    statement: perl (git's dependency); no Debian fix. Qualor never runs perl.
+    expired_at: 2026-12-31
+  - id: CVE-2026-8376
+    statement: perl; 32-bit builds only, the image is 64-bit; no Debian fix.
+    expired_at: 2026-12-31
+  - id: CVE-2026-42496
+    statement: perl Archive::Tar; no Debian fix. Qualor never runs perl.
+    expired_at: 2026-12-31
+  - id: CVE-2026-42497
+    statement: perl Archive::Tar; no Debian fix. Qualor never runs perl.
+    expired_at: 2026-12-31
+  - id: CVE-2026-9538
+    statement: perl Archive::Tar; no Debian fix. Qualor never runs perl.
+    expired_at: 2026-12-31
+  - id: CVE-2026-48962
+    statement: perl IO::Compress; no Debian fix. Qualor never runs perl.
+    expired_at: 2026-12-31
+  - id: CVE-2026-57432
+    statement: perl pack/unpack; no Debian fix. Qualor never runs perl.
+    expired_at: 2026-12-31
+  - id: CVE-2026-57433
+    statement: perl Storable; no Debian fix. Qualor never runs perl.
+    expired_at: 2026-12-31
+  - id: CVE-2023-45853
+    statement: zlib's MiniZip (zipOpenNewFileInZip4_6), not part of the zlib1g library; Debian will not fix.
+    expired_at: 2026-12-31
+  - id: CVE-2026-53613
+    statement: util-linux mount; no Debian fix. The scanner runs unprivileged and never mounts.
+    expired_at: 2026-12-31
+  - id: CVE-2026-76642
+    statement: util-linux mount helpers; no Debian fix. The scanner runs unprivileged and never mounts.
+    expired_at: 2026-12-31
+  - id: CVE-2026-78408
+    statement: util-linux nsenter; no Debian fix. The scanner never runs nsenter.
+    expired_at: 2026-12-31
+  - id: CVE-2026-78409
+    statement: util-linux mount; no Debian fix. The scanner runs unprivileged and never mounts.
+    expired_at: 2026-12-31
+  - id: CVE-2026-78410
+    statement: util-linux mount; no Debian fix. The scanner runs unprivileged and never mounts.
+    expired_at: 2026-12-31
+  - id: CVE-2026-41992
+    statement: gzip LZH decompression; no Debian fix. Qualor never runs gzip.
+    expired_at: 2026-12-31
+  - id: CVE-2026-54369
+    statement: libacl symlink traversal; no Debian fix. Qualor sets no ACLs.
+    expired_at: 2026-12-31
+  - id: CVE-2026-6276
+    statement: libcurl, git's https transport, which the scanner uses only to fetch the base from the project's own remote; no Debian fix.
+    expired_at: 2026-12-31
+  - id: CVE-2026-8286
+    statement: libcurl, git's https transport, which the scanner uses only to fetch the base from the project's own remote; no Debian fix.
+    expired_at: 2026-12-31
+  - id: CVE-2026-8458
+    statement: libcurl, git's https transport, which the scanner uses only to fetch the base from the project's own remote; no Debian fix.
+    expired_at: 2026-12-31
+  - id: CVE-2026-8927
+    statement: libcurl, git's https transport, which the scanner uses only to fetch the base from the project's own remote; no Debian fix.
+    expired_at: 2026-12-31
+  - id: CVE-2026-12064
+    statement: libcurl SFTP/SCP; no Debian fix. Qualor makes no SFTP or SCP transfers.
+    expired_at: 2026-12-31
+  - id: CVE-2025-59375
+    statement: expat (git); Debian will not fix. Qualor parses no XML with expat.
+    expired_at: 2026-12-31
+  - id: CVE-2026-25210
+    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    expired_at: 2026-12-31
+  - id: CVE-2026-45186
+    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    expired_at: 2026-12-31
+  - id: CVE-2026-66046
+    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    expired_at: 2026-12-31
+  - id: CVE-2026-93990
+    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    expired_at: 2026-12-31
+  - id: CVE-2023-2953
+    statement: openldap, a libcurl dependency used for ldap:// URLs only; no Debian fix. The scanner's git fetch never uses LDAP.
+    expired_at: 2026-12-31
+  - id: CVE-2026-16742
+    statement: systemd-homed; not in the image (only libsystemd0/libudev1 are); no Debian fix.
+    expired_at: 2026-12-31
+  - id: CVE-2025-69720
+    statement: ncurses; no Debian fix. The scanner runs non-interactively in CI.
+    expired_at: 2026-12-31
+
+  # npm, bundled with Node.js 22 (npm 10.9.9 in Node 22.23.3, the latest), is in the image only for
+  # the project's own `npm ci` before the scan; Qualor never runs it. Fixed in npm 11.
+  - id: CVE-2026-13149
+    paths: ['usr/local/lib/node_modules/npm/**']
+    statement: brace-expansion bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
+    expired_at: 2026-12-31
+  - id: CVE-2026-14257
+    paths: ['usr/local/lib/node_modules/npm/**']
+    statement: brace-expansion bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
+    expired_at: 2026-12-31
+  - id: CVE-2026-69152
+    paths: ['usr/local/lib/node_modules/npm/**']
+    statement: brace-expansion bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
+    expired_at: 2026-12-31
+  - id: CVE-2026-69192
+    paths: ['usr/local/lib/node_modules/npm/**']
+    statement: ip-address bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
+    expired_at: 2026-12-31
+  - id: CVE-2026-9496
+    paths: ['usr/local/lib/node_modules/npm/**']
+    statement: pacote bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
+    expired_at: 2026-12-31
+  - id: CVE-2026-33671
+    paths: ['usr/local/lib/node_modules/npm/**']
+    statement: picomatch bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
+    expired_at: 2026-12-31
+  - id: CVE-2026-48815
+    paths: ['usr/local/lib/node_modules/npm/**']
+    statement: sigstore bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
+    expired_at: 2026-12-31
+
+  # PMD 7.27.0 bundles the all-in-one jline 3.21.0 jar; PMD uses its terminal only, never the
+  # builtins or the telnet server. PMD 7.28.0 ships jline-terminal 3.29.0 alone (a bump that needs
+  # its sources re-derived, deploy/README.md).
+  - id: CVE-2026-77422
+    paths: ['opt/qualor/lib/pmd-bin-*/lib/jline-*.jar']
+    statement: jline-builtins in PMD's jline 3.21.0 jar; PMD never uses the builtins.
+    expired_at: 2026-12-31
+  - id: CVE-2026-56740
+    paths: ['opt/qualor/lib/pmd-bin-*/lib/jline-*.jar']
+    statement: jline-remote-telnet in PMD's jline 3.21.0 jar; PMD never starts a telnet server.
+    expired_at: 2026-12-31
+  - id: CVE-2026-56741
+    paths: ['opt/qualor/lib/pmd-bin-*/lib/jline-*.jar']
+    statement: jline-remote-telnet in PMD's jline 3.21.0 jar; PMD never starts a telnet server.
+    expired_at: 2026-12-31
+
+  # Trivy 0.74.0 (the latest release) compiles in gRPC 1.82.1; Qualor runs `trivy fs` offline,
+  # never Trivy's client/server mode, which is what speaks gRPC.
+  - id: CVE-2026-84304
+    paths: ['opt/qualor/bin/trivy']
+    statement: gRPC in Trivy 0.74.0, the latest release; Qualor never uses Trivy's client/server mode.
+    expired_at: 2026-12-31
+  - id: CVE-2026-84445
+    paths: ['opt/qualor/bin/trivy']
+    statement: gRPC in Trivy 0.74.0, the latest release; Qualor never uses Trivy's client/server mode.
+    expired_at: 2026-12-31
+
+  # qualor/scanner-dotnet: assemblies inside the .NET SDK 8.0.425, the latest .NET 8 SDK; only a
+  # new SDK from Microsoft replaces them (tools/analyzers/install-dotnet.sh).
+  - id: CVE-2025-26646
+    paths: ['opt/qualor/share/dotnet/sdk/8.0.*/**']
+    statement: Microsoft.Build.Tasks.Core 17.11.48 inside .NET SDK 8.0.425, the latest .NET 8 SDK.
+    expired_at: 2026-12-31
+  - id: CVE-2026-47302
+    paths: ['opt/qualor/share/dotnet/sdk/8.0.*/DotnetTools/dotnet-format/**']
+    statement: System.Security.Cryptography.Xml 8.0.3 of dotnet-format in .NET SDK 8.0.425, the latest .NET 8 SDK; Qualor never runs dotnet-format.
+    expired_at: 2026-12-31
+  - id: CVE-2026-47304
+    paths: ['opt/qualor/share/dotnet/sdk/8.0.*/DotnetTools/dotnet-format/**']
+    statement: System.Security.Cryptography.Xml 8.0.3 of dotnet-format in .NET SDK 8.0.425, the latest .NET 8 SDK; Qualor never runs dotnet-format.
+    expired_at: 2026-12-31
+  - id: CVE-2026-50525
+    paths: ['opt/qualor/share/dotnet/sdk/8.0.*/DotnetTools/dotnet-format/**']
+    statement: System.Security.Cryptography.Xml 8.0.3 of dotnet-format in .NET SDK 8.0.425, the latest .NET 8 SDK; Qualor never runs dotnet-format.
+    expired_at: 2026-12-31
+  - id: CVE-2026-50527
+    paths: ['opt/qualor/share/dotnet/sdk/8.0.*/DotnetTools/dotnet-format/**']
+    statement: System.Security.Cryptography.Xml 8.0.3 of dotnet-format in .NET SDK 8.0.425, the latest .NET 8 SDK; Qualor never runs dotnet-format.
+    expired_at: 2026-12-31
+  - id: CVE-2026-50648
+    paths: ['opt/qualor/share/dotnet/sdk/8.0.*/DotnetTools/dotnet-format/**']
+    statement: System.Security.Cryptography.Xml 8.0.3 of dotnet-format in .NET SDK 8.0.425, the latest .NET 8 SDK; Qualor never runs dotnet-format.
+    expired_at: 2026-12-31

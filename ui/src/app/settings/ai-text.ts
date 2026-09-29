@@ -5,8 +5,12 @@ type TestAnswer =
 /** llm.md §14's codes, from the Test answer's schema (Task 8), so this file needs no DM-1 route. */
 export type LlmErrorCode = NonNullable<TestAnswer['problem']>['code'];
 
-/** llm.md §14 in the UI's own words (plan 1F ruling Y3: the server's English text is never shown). */
-export function llmProblemText(code: LlmErrorCode): string {
+/**
+ * llm.md §14 in the UI's own words (plan 1F ruling Y3: the server's English text is never shown).
+ * `providerStatus`, the provider's HTTP status when the Test answer gives one, tells a wrong key
+ * (401) from a key that may not do this (403).
+ */
+export function llmProblemText(code: LlmErrorCode, providerStatus: number | null = null): string {
   switch (code) {
     case 'PROVIDER_TIMEOUT':
       return $localize`:@@ai.problem.timeout:The model did not answer in time; raise the timeout in the AI assistant settings.`;
@@ -15,7 +19,12 @@ export function llmProblemText(code: LlmErrorCode): string {
     case 'PROVIDER_RATE_LIMITED':
       return $localize`:@@ai.problem.rateLimited:The model provider is rate limiting Qualor; try later.`;
     case 'PROVIDER_REFUSED_KEY':
-      return $localize`:@@ai.problem.key:The provider refused the API key.`;
+      if (providerStatus === 403) {
+        return $localize`:@@ai.problem.keyForbidden:The provider refused the request (HTTP 403): the key lacks access to this model, or the account has no credit.`;
+      }
+      return providerStatus === null
+        ? $localize`:@@ai.problem.key:The provider refused the API key.`
+        : $localize`:@@ai.problem.keyStatus:The provider refused the API key (HTTP ${providerStatus}:status:).`;
     case 'PROVIDER_REJECTED_REQUEST':
       return $localize`:@@ai.problem.rejected:The provider refused the request; check the base URL and the model.`;
     case 'PROVIDER_BAD_ANSWER':

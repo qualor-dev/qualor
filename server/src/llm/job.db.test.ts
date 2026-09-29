@@ -245,6 +245,13 @@ describe('the llm worker (llm.md §9, §10, §14)', () => {
     expect(logs()).not.toContain('sk-provider-echo');
     expect(logs()).not.toContain(fake.apiKey);
     expect(fake.requests).toHaveLength(1);
+    // The provider's status is in the log line: a wrong key (401) reads apart from a 403.
+    const line = h.ctx.logs.filter((l) => l.includes('AI request finished')).at(-1)!;
+    expect(JSON.parse(line)).toMatchObject({
+      requestId: id,
+      errorCode: 'PROVIDER_REFUSED_KEY',
+      providerStatus: 401,
+    });
   });
 
   /**
