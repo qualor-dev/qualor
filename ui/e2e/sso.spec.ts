@@ -63,7 +63,9 @@ test('the Single sign-on screen shows a connection and saves a mapping', async (
   await expect(mappings).toContainText('acme/web-shop');
 
   await page.getByLabel('Group', { exact: true }).fill('platform');
-  await page.getByLabel('Organization', { exact: true }).selectOption({ label: 'Default' });
+  await page
+    .getByRole('combobox', { name: 'Organization', exact: true })
+    .selectOption({ label: 'Default' });
   await page.getByLabel('Role', { exact: true }).selectOption({ label: 'Maintainer' });
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await page.getByRole('button', { name: 'Save mappings' }).click();

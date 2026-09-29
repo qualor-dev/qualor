@@ -42,7 +42,8 @@ test.describe('as people other than the instance admin', () => {
     );
     await expect(page.getByRole('row', { name: /project_member\.added/ }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Verify chain' })).toHaveCount(0);
-    await expect(page.getByLabel('Organization')).toHaveCount(0);
+    // The organisation filter (instance admins only); the settings navigation has an Organization group.
+    await expect(page.getByRole('combobox', { name: 'Organization' })).toHaveCount(0);
     await expectAccessible(page);
   });
 });
