@@ -198,6 +198,13 @@ An organisation over a budget gets "The organisation's AI budget for today is us
 next UTC midnight. A person over the hourly bound gets "You asked too often; try again in a few
 minutes".
 
+**What counts.** A request counts against the daily budgets from the moment it is queued. If it
+then fails without using any tokens, because the provider refused the API key or because nothing
+was sent (the AI assistant was turned off, the settings or the issue changed, the key or the
+address can no longer be used), it stops counting. Every other failure, such as a timeout or a
+refused request, still counts. The hourly bound per person counts every request, whatever its
+outcome.
+
 **Cache.** An answer is kept for the issue for 30 days. Asking again for the same issue, with the
 same code, rule and model, shows the stored answer at once, sends nothing and costs no budget.
 **Ask again** sends a new request and counts against the budget.
