@@ -1,18 +1,67 @@
 # qualor/scanner
 
-Short description: Qualor CI scanner: the qualor CLI with ESLint, PMD, SpotBugs, OpenGrep, Gitleaks and Trivy.
+Short description: Code quality scanner for CI: ESLint, PMD, SpotBugs, OpenGrep, Gitleaks, Trivy, one quality gate
+
+Categories: Developer tools, Integration & delivery, Security
 
 ## Overview
 
-Qualor is an open-source, self-hosted, GitLab-first code quality platform: a SonarQube
-alternative without lines-of-code licensing. This image runs the analysis in your CI: the
-`qualor` CLI runs the analyzers on the checkout, uploads one report to your Qualor server
-([`qualor/server`](https://hub.docker.com/r/qualor/server)) and exits with the quality gate's
-verdict.
+The CI scanner of [Qualor](https://qualor.dev), the open-source, self-hosted SonarQube alternative
+with no lines-of-code licence. One job in your pipeline runs the analyzers on the checkout, works
+out which lines the merge request changed, and sends one report to your Qualor server
+([`qualor/server`](https://hub.docker.com/r/qualor/server)). It waits for the verdict and fails
+the job when the quality gate fails.
 
-- Source, documentation and issues: <https://github.com/qualor-dev/qualor>
-- Configuration reference (`qualor.yml`, environment, exit codes):
-  <https://qualor.dev/docs/configuration>
+Website: <https://qualor.dev> · Documentation: <https://qualor.dev/docs> · Source and issues:
+<https://github.com/qualor-dev/qualor> · Configuration reference (`qualor.yml`, environment, exit
+codes): <https://qualor.dev/docs/configuration>
+
+### Tags
+
+Every release has its full version tag, such as `0.1.0`, and a minor tag, such as `0.1`, that
+follows its patch releases. There is no `latest` tag. For C#, use
+[`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet) with the same tag.
+
+### GitLab CI
+
+The component from the GitLab CI/CD catalog is the shortest way, and it also shows the findings
+in GitLab's merge request widget:
+
+```yaml
+include:
+  - component: gitlab.com/qualor/qualor/qualor@0.1
+    inputs:
+      image-tag: '0.1'
+```
+
+Or run the image in a job of your own:
+
+```yaml
+qualor:
+  image: { name: qualor/scanner:0.1, entrypoint: [''] }
+  variables: { GIT_DEPTH: 0 }
+  script: [qualor scan]
+```
+
+Either way, add the CI/CD variables `QUALOR_URL` and `QUALOR_TOKEN` (masked, not protected, so
+that merge request pipelines get the token too). The GitLab guide: <https://qualor.dev/docs/gitlab>.
+
+### GitHub Actions
+
+```yaml
+qualor:
+  runs-on: ubuntu-latest
+  container: { image: qualor/scanner:0.1, options: --user 1001 }
+  steps:
+    - uses: actions/checkout@v4 # pin it to a commit SHA
+      with: { fetch-depth: 0 }
+    - run: qualor scan
+      env: { QUALOR_URL: '${{ vars.QUALOR_URL }}', QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}' }
+```
+
+The scan needs the full git history (`GIT_DEPTH: 0`, `fetch-depth: 0`). Install a JavaScript or
+TypeScript project's dependencies before `qualor scan`, and build a Java project first (SpotBugs
+analyses compiled classes).
 
 ### What is inside
 
@@ -26,32 +75,6 @@ verdict.
   empty): name your own rule files in `qualor.yml`, or that analyzer is skipped.
 - Runs as the user `node` (uid 1000) in `/src`; about 3.0 GB. Every base image is pinned by
   digest.
-
-### GitLab CI
-
-```yaml
-qualor:
-  image: { name: qualor/scanner:<tag>, entrypoint: [''] }
-  variables: { GIT_DEPTH: 0 }
-  script: [qualor scan]
-```
-
-### GitHub Actions
-
-```yaml
-qualor:
-  runs-on: ubuntu-latest
-  container: { image: qualor/scanner:<tag>, options: --user 1001 }
-  steps:
-    - uses: actions/checkout@v4 # pin it to a commit SHA
-      with: { fetch-depth: 0 }
-    - run: qualor scan
-      env: { QUALOR_URL: '${{ vars.QUALOR_URL }}', QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}' }
-```
-
-The scan needs the full git history (`GIT_DEPTH: 0`, `fetch-depth: 0`). Install a JavaScript or
-TypeScript project's dependencies before `qualor scan`, and build a Java project first (SpotBugs
-analyses compiled classes).
 
 ### Environment
 

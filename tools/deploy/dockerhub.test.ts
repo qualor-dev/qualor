@@ -9,6 +9,7 @@ const REPOSITORIES = [
   'scanner-dotnet',
   'scanner-sources',
   'server-sources',
+  'qualor', // the Helm chart
 ] as const;
 const read = (repository: string): string =>
   readFileSync(`deploy/dockerhub/${repository}.md`, 'utf8');
@@ -33,7 +34,7 @@ describe('the Docker Hub descriptions', () => {
     const readme = readFileSync('README.md', 'utf8');
     const notice = /## Trademarks\n\n([\s\S]+?)(?:\n## |\n?$)/.exec(readme)?.[1]?.trim() ?? '';
     expect(notice).toContain('SonarSource');
-    for (const repository of ['server', 'scanner', 'scanner-dotnet']) {
+    for (const repository of ['server', 'scanner', 'scanner-dotnet', 'qualor']) {
       expect(read(repository), repository).toContain(notice);
     }
   });

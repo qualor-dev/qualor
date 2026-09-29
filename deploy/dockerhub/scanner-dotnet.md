@@ -1,11 +1,13 @@
 # qualor/scanner-dotnet
 
-Short description: Qualor scanner for C#: qualor/scanner plus the .NET 8 and 10 SDKs and Roslynator
+Short description: Code quality scanner for C#: qualor/scanner plus the .NET 8 and 10 SDKs and Roslynator
+
+Categories: Developer tools, Integration & delivery, Security
 
 ## Overview
 
-Qualor is an open-source, self-hosted, GitLab-first code quality platform: a SonarQube
-alternative without lines-of-code licensing. This image is
+The C# scanner of [Qualor](https://qualor.dev), the open-source, self-hosted SonarQube alternative
+with no lines-of-code licence. This image is
 [`qualor/scanner`](https://hub.docker.com/r/qualor/scanner) with the tooling for C# projects
 added. Everything the scanner image does, this one does too; use it for repositories with C#
 code, and the smaller `qualor/scanner` for the rest.
@@ -13,6 +15,11 @@ code, and the smaller `qualor/scanner` for the rest.
 - Source, documentation and issues: <https://github.com/qualor-dev/qualor>
 - Languages and analyzers, with the C# workflow:
   <https://qualor.dev/docs/languages-and-analyzers>
+
+### Tags
+
+The same tags as `qualor/scanner`: the full version, such as `0.1.0`, and the minor tag, such as
+`0.1`. There is no `latest` tag.
 
 ### What it adds to qualor/scanner
 
@@ -35,11 +42,23 @@ dotnet build --no-incremental       # your build: its SDK, restore, feeds and ar
 qualor dotnet end                   # removes the hook, reads the Roslyn logs, runs qualor scan
 ```
 
-GitLab CI:
+GitLab CI, with the component from the GitLab CI/CD catalog:
+
+```yaml
+include:
+  - component: gitlab.com/qualor/qualor/qualor@0.1
+    inputs:
+      image: qualor/scanner-dotnet
+      image-tag: '0.1'
+      dotnet: true
+      build-command: dotnet build MySolution.sln --no-incremental
+```
+
+Or in a job of your own:
 
 ```yaml
 qualor:
-  image: { name: qualor/scanner-dotnet:<tag>, entrypoint: [''] }
+  image: { name: qualor/scanner-dotnet:0.1, entrypoint: [''] }
   variables: { GIT_DEPTH: 0 }
   script:
     - qualor dotnet begin
