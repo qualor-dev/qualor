@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   symlinkSync,
   writeFileSync,
@@ -105,6 +106,104 @@ describe.skipIf(!have)('sonarjs run.mjs', { timeout: 120_000 }, () => {
       'a.js': 'var x = 1;\n',
     });
     expect(() => run(root)).not.toThrow();
+  });
+
+  it('never executes code from the checkout: packages, parsers, resolvers or build config (untrusted checkout)', () => {
+    // Every module, plugin, parser or executable config file the pass, a rule or a parser could
+    // resolve relative to a linted file writes a marker when executed. None may run.
+    const markers = mkdtempSync(path.join(os.tmpdir(), 'sonarjs-markers-'));
+    const plant = (name: string) =>
+      `require('fs').writeFileSync(${JSON.stringify(path.join(markers, name.replace(/[/@.]/g, '_')))}, 'ran');\n`;
+    const pkg = (name: string, extra: object = {}) => ({
+      [`node_modules/${name}/package.json`]: JSON.stringify({ name, main: 'index.js', ...extra }),
+      [`node_modules/${name}/index.js`]: `${plant(name)}module.exports = {};\n`,
+    });
+    const packages = [
+      'eslint-import-resolver-node',
+      'eslint-import-resolver-typescript',
+      'eslint-plugin-import',
+      'eslint-module-utils',
+      'react',
+      'react-dom',
+      'typescript',
+      '@typescript-eslint/parser',
+      '@typescript-eslint/typescript-estree',
+      '@babel/core',
+      '@babel/eslint-parser',
+      '@babel/preset-env',
+      'eslint',
+      'eslint-plugin-sonarjs',
+      'eslint-plugin-react',
+      'eslint-plugin-jsx-a11y',
+      'vue-eslint-parser',
+      'browserslist-config-qualor-marker',
+      'babel-plugin-qualor-marker',
+      'ts-plugin-qualor-marker',
+    ];
+    const root = repo({
+      ...Object.assign({}, ...packages.map((p) => pkg(p))),
+      'node_modules/typescript/lib/typescript.js': plant('typescript-lib'),
+      'package.json': JSON.stringify({
+        name: 'untrusted',
+        dependencies: { react: '*' },
+        browserslist: ['extends browserslist-config-qualor-marker'],
+        babel: { plugins: ['babel-plugin-qualor-marker'] },
+      }),
+      '.browserslistrc': 'extends browserslist-config-qualor-marker\n',
+      'babel.config.js': plant('babel.config.js'),
+      'babel.config.cjs': plant('babel.config.cjs'),
+      '.babelrc.js': plant('.babelrc.js'),
+      '.babelrc': JSON.stringify({ plugins: ['./babel-plugin.js'] }),
+      'babel-plugin.js': `${plant('babel-plugin.js')}module.exports = () => ({});\n`,
+      'eslint.config.js': plant('eslint.config.js'),
+      'eslint.config.mjs': plant('eslint.config.mjs'),
+      '.eslintrc.js': plant('.eslintrc.js'),
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: {
+          allowJs: true,
+          jsx: 'react-jsx',
+          plugins: [{ name: 'ts-plugin-qualor-marker' }],
+        },
+        include: ['src'],
+      }),
+      // S7060 resolves the imports; S125 looks at commented-out code; JSX runs the React
+      // and jsx-a11y based rules; the TS files run the typescript-eslint parser and program.
+      'src/a.js': [
+        "import b from './b';",
+        "import React from 'react';",
+        "const self = require('./a');",
+        '// if (b) {',
+        '//   foo(b);',
+        '// }',
+        'export default [b, React, self];',
+        '',
+      ].join('\n'),
+      'src/b.jsx': "import a from './a';\nexport default () => <img src={a} onClick={a} />;\n",
+      'src/c.ts': "import { d } from './d';\nexport const c: number = d.length;\n",
+      'src/d.tsx':
+        'import React from \'react\';\nexport const d = [<div key="k">{React.version}</div>];\n',
+    });
+    for (const extra of [[], ['--type-checking', 'off']]) {
+      const { log, info } = run(root, extra);
+      expect(readdirSync(markers)).toEqual([]);
+      expect(info.files).toBeGreaterThanOrEqual(4);
+      // The resolver path did run: S7060 resolved the imports (src/a.js requires itself). The
+      // Babel markers guard S125, whose Babel parse passes babelrc/configFile false and explicit
+      // targets, but which never reaches Babel in 2.0.4 (its `__importDefault` of the ES-module
+      // @babel/eslint-parser yields no `parse`), so it cannot be asserted to run here.
+      expect(ruleIds(log)).toContain('S7060');
+    }
+  });
+
+  it('still reports a module that imports itself (S7060), with the bundled resolver', () => {
+    const root = repo({
+      'src/self.js': "import x from './self';\nexport default x;\n",
+      'src/other.js': "import x from './self';\nexport default x;\n",
+    });
+    const { log } = run(root);
+    const hits = log.runs[0].results.filter((r: { ruleId: string }) => r.ruleId === 'S7060');
+    expect(hits).toHaveLength(1);
+    expect(hits[0].locations[0].physicalLocation.artifactLocation.uri).toBe('src/self.js');
   });
 
   it('never lints node_modules or the given excludes', () => {

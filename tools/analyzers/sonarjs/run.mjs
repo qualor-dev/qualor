@@ -10,6 +10,7 @@
 // never followed or linted (as discovery treats them, cli/src/discovery/discover.ts), node_modules
 // and .git are never entered, and an --exclude can narrow that set but never widen it.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
@@ -17,6 +18,47 @@ import sonarjs from 'eslint-plugin-sonarjs';
 import tsParser from '@typescript-eslint/parser';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+// S7060 (no-self-import) decorates eslint-plugin-import's rule, whose resolver lookup
+// (eslint-module-utils resolve.js `requireResolver`) require()s `eslint-import-resolver-<name>`
+// resolved relative to the linted file first: a checkout committing
+// node_modules/eslint-import-resolver-node would run its code inside the scan, and no
+// `import/resolver` setting avoids that lookup. So the same rule is rebuilt here around the
+// bundled resolver, called in-process: it only reads package.json files to resolve a path, and
+// never loads a module from the checkout. The plugin's own S7060 decorator still wraps it.
+const requireHere = createRequire(import.meta.url);
+const requireSonarjs = createRequire(
+  requireHere.resolve('eslint-plugin-sonarjs/cjs/S7060/index.js'),
+);
+const requireImport = createRequire(requireSonarjs.resolve('eslint-plugin-import'));
+
+/** S7060 with the bundled eslint-import-resolver-node, never one found next to the linted file. */
+export function safeNoSelfImport() {
+  const original = requireImport('eslint-plugin-import').rules['no-self-import'];
+  const moduleVisitor = requireImport('eslint-module-utils/moduleVisitor').default;
+  const resolver = requireImport('eslint-import-resolver-node');
+  const { decorate } = requireSonarjs('./decorator.js');
+  return decorate({
+    meta: original.meta,
+    create(context) {
+      const file = context.physicalFilename ?? context.filename;
+      return moduleVisitor(
+        (source, node) => {
+          if (file === '<text>') return;
+          const resolved = resolver.resolve(source.value, file, {});
+          if (resolved.found && resolved.path === file)
+            context.report({ node, message: 'Module imports itself.' });
+        },
+        { commonjs: true },
+      );
+    },
+  });
+}
+
+/** The plugin, with S7060 replaced by `safeNoSelfImport()`: what the pass registers as `sonarjs`. */
+export function safePlugin() {
+  return { ...sonarjs, rules: { ...sonarjs.rules, 'no-self-import': safeNoSelfImport() } };
+}
 
 /** Paths never linted and directories never entered, whatever the excludes say. */
 const NEVER = ['**/node_modules/**', '**/.git/**'];
@@ -151,6 +193,7 @@ async function main(args) {
   );
   // The plugin's flat `recommended` config: { name, plugins: { sonarjs }, rules: { 'sonarjs/<name>': 'error' | 'off' }, settings }.
   const recommended = sonarjs.configs.recommended;
+  const plugin = safePlugin();
   const disabled = new Set(); // rules that crashed, turned off for the rest of the run
   const excludes = usableExcludes(all('--exclude'));
 
@@ -171,8 +214,13 @@ async function main(args) {
       { ignores: NEVER },
       {
         files: ['**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'],
-        plugins: recommended.plugins,
-        settings: recommended.settings,
+        plugins: { sonarjs: plugin },
+        // The plugin's own settings, written out rather than inherited: an explicit React version,
+        // so eslint-plugin-react never detects it by loading `react` from the checkout, and no
+        // `import/*` settings (S7060 above never reads them). The regression test in run.test.ts
+        // plants every package or config a parser or rule could load from the checkout and checks
+        // that none runs.
+        settings: { react: { version: '999.999.999' } },
         languageOptions: {
           parser: tsParser,
           parserOptions: {
