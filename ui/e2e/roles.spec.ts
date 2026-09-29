@@ -29,8 +29,13 @@ test.describe('as people other than the instance admin', () => {
     await expect(page.getByText('No one has a role on this project alone yet.')).toBeVisible();
     await expect(page.getByText(/enterprise licence/)).toHaveCount(0);
 
+    // The add form is in the "Add member" dialog (step 5), which starts on the user name.
+    await page.getByRole('button', { name: 'Add member' }).click();
+    const add = page.getByRole('dialog', { name: 'Give someone a role on this project' });
+    await expect(add.getByLabel('User name')).toBeFocused();
+    await expectAccessible(page);
     // The four-role select of the organization is not offered here: a grant is never admin.
-    const role = page.getByLabel('Role', { exact: true });
+    const role = add.getByLabel('Role', { exact: true });
     await expect(role.locator('option')).toHaveText(['Project admin', 'Maintainer', 'Viewer']);
     await expect(role).toHaveValue('viewer');
     await page.getByLabel('User name').fill(VICTOR.username);

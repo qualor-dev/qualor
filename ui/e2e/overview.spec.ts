@@ -136,4 +136,17 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('button', { name: 'Administrator' })).toBeVisible();
     await expectAccessible(page);
   });
+
+  test('a wide table scrolls inside its panel, never the page', async ({ page }) => {
+    await page.goto('/projects');
+    await page.getByRole('link', { name: PAYMENTS.name }).click();
+    await page.getByRole('link', { name: 'Branches and merge requests' }).click();
+    // The actions column has a visually hidden header, placed out of the flow.
+    await expect(page.getByRole('button', { name: /^Delete / })).toHaveCount(1);
+    const width = await page.evaluate(() => ({
+      page: document.documentElement.scrollWidth,
+      screen: document.documentElement.clientWidth,
+    }));
+    expect(width.page).toBeLessThanOrEqual(width.screen);
+  });
 });

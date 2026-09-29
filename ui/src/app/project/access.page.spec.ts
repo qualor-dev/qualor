@@ -118,6 +118,17 @@ function button(root: HTMLElement, text: string): HTMLButtonElement {
   return [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!;
 }
 
+function dialog(root: HTMLElement, id: string): HTMLDialogElement {
+  return root.querySelector<HTMLDialogElement>(`dialog#${id}`)!;
+}
+
+/** Opens the "Add member" dialog (step 5: the add form lives in it). */
+async function openAdd(root: HTMLElement, fixture: { whenStable(): Promise<unknown> }) {
+  button(root, 'Add member').click();
+  await settle(fixture);
+  return dialog(root, 'add-dialog');
+}
+
 describe('AccessPage (rbac-audit.md §16, §17)', () => {
   it("lists the project's grants with their role labels, and says organization roles apply on top", async () => {
     setup({ grants: [grant(BOB, 'bob', 'viewer'), grant(CAROL, 'carol', 'project_admin')] });
@@ -131,6 +142,21 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     expect(root.textContent).toContain('2 grants');
   });
 
+  it('shows since when each person has the role, and what each role allows', async () => {
+    setup();
+    const { root } = await render();
+    const since = row(root, BOB).querySelector('td.since span');
+    expect(since?.textContent?.trim()).toBe('Sep 1, 2026');
+    expect(since?.getAttribute('title')).toBe('Sep 1, 2026, 12:00 AM UTC');
+    const legend = root.querySelector('[aria-labelledby="roles-legend-heading"]');
+    expect(legend?.querySelector('h2')?.textContent?.trim()).toBe('Roles on a project');
+    expect([...(legend?.querySelectorAll('dt') ?? [])].map((d) => d.textContent?.trim())).toEqual([
+      'Project admin',
+      'Maintainer',
+      'Viewer',
+    ]);
+  });
+
   it('adds a grant: looks the name up, then sends PUT with the chosen role', async () => {
     const server = setup({ grants: [] });
     server.on('GET', '/api/v0/users/lookup', {
@@ -139,10 +165,14 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     server.on('PUT', `${MEMBERS}/${CAROL}`, { body: grant(CAROL, 'carol', 'member') });
     const { fixture, root } = await render();
     expect(root.textContent).toContain('No one has a role on this project alone yet.');
+    // Intended change (step 5): the form is in the "Add member" dialog.
+    const add = await openAdd(root, fixture);
+    expect(add.open).toBe(true);
     type(root, '#grant-username', ' carol ');
     choose(root, '#grant-role', 'member');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
+    expect(add.open).toBe(false);
     expect(
       server.requestsTo('GET', '/api/v0/users/lookup').map((r) => r.query.get('username')),
     ).toEqual(['carol']);
@@ -159,10 +189,12 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     const server = setup();
     server.on('GET', '/api/v0/users/lookup', { status: 404, body: problem(404, 'NOT_FOUND') });
     const { fixture, root } = await render();
+    const add = await openAdd(root, fixture);
     expect(root.querySelector<HTMLSelectElement>('#grant-role')?.value).toBe('viewer');
     type(root, '#grant-username', 'nobody');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
+    expect(add.open).toBe(true);
     const field = root.querySelector('#grant-username')!;
     expect(root.querySelector('#grant-username-error')?.textContent).toContain(
       'No active user has that name',
@@ -178,8 +210,9 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
       body: { id: BOB, username: 'bob', displayName: null },
     });
     const { fixture, root } = await render();
+    const add = await openAdd(root, fixture);
     type(root, '#grant-username', 'bob');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(root.querySelector('#grant-username-error')?.textContent).toContain(
       'bob already has a role on this project. Change it in the table.',
@@ -190,12 +223,21 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
   it('changes a grant with PUT after a confirmation', async () => {
     const server = setup();
     server.on('PUT', `${MEMBERS}/${BOB}`, { body: grant(BOB, 'bob', 'project_admin') });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
     choose(row(root, BOB), 'select', 'project_admin');
     button(row(root, BOB), 'Change role').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith('Change the role of bob on Payments to Project admin?');
+    // Intended change (step 5): the page's own dialog asks, not the browser's.
+    expect(confirm).not.toHaveBeenCalled();
+    const ask = dialog(root, 'confirm-dialog');
+    expect(ask.open).toBe(true);
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
+      'Change the role of bob on Payments to Project admin?',
+    );
+    button(ask, 'Change role').click();
+    await settle(fixture);
+    expect(ask.open).toBe(false);
     expect(server.requestsTo('PUT', `${MEMBERS}/${BOB}`).map((r) => r.body)).toEqual([
       { role: 'project_admin' },
     ]);
@@ -208,24 +250,40 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
   it('removes a grant with DELETE after a confirmation, and not without one', async () => {
     const server = setup();
     server.on('DELETE', `${MEMBERS}/${BOB}`, { status: 204 });
-    const confirm = vi
-      .spyOn(window, 'confirm')
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
+    const ask = dialog(root, 'confirm-dialog');
     button(row(root, BOB), 'Remove').click();
     await settle(fixture);
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
+      'Remove the role of bob on Payments? Their organization role, if they have one, still applies.',
+    );
+    button(ask, 'Cancel').click();
+    await settle(fixture);
+    expect(ask.open).toBe(false);
     expect(server.requestsTo('DELETE', `${MEMBERS}/${BOB}`)).toEqual([]);
     button(row(root, BOB), 'Remove').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenLastCalledWith(
-      'Remove the role of bob on Payments? Their organization role, if they have one, still applies.',
-    );
+    button(ask, 'Remove').click();
+    await settle(fixture);
+    expect(confirm).not.toHaveBeenCalled();
     expect(server.requestsTo('DELETE', `${MEMBERS}/${BOB}`)).toHaveLength(1);
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'The role of bob on this project was removed.',
     );
     confirm.mockRestore();
+  });
+
+  it('puts the role back when a change is cancelled', async () => {
+    const server = setup();
+    const { fixture, root } = await render();
+    choose(row(root, BOB), 'select', 'project_admin');
+    button(row(root, BOB), 'Change role').click();
+    await settle(fixture);
+    button(dialog(root, 'confirm-dialog'), 'Cancel').click();
+    await settle(fixture);
+    expect(server.requests.filter((r) => r.method === 'PUT')).toEqual([]);
+    expect(row(root, BOB).querySelector('select')?.value).toBe('viewer');
   });
 
   it('explains the grant limit when the server refuses one more', async () => {
@@ -238,10 +296,12 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
       body: problem(409, 'PROJECT_GRANT_LIMIT_REACHED'),
     });
     const { fixture, root } = await render();
+    const add = await openAdd(root, fixture);
     type(root, '#grant-username', 'carol');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
-    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(add.open).toBe(true);
+    expect(add.querySelector('[role="alert"]')?.textContent).toContain(
       'This project has as many role grants as it can have',
     );
   });
@@ -254,17 +314,22 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     server.on('PUT', `${MEMBERS}/${CAROL}`, { body: grant(CAROL, 'carol', 'viewer') });
     server.on('PUT', `${MEMBERS}/${BOB}`, { body: grant(BOB, 'bob', 'member') });
     server.on('DELETE', `${MEMBERS}/${BOB}`, { status: 204 });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     expect(row(root, BOB).textContent).toContain('bob');
     expect(root.textContent).not.toContain('enterprise licence');
+    const add = await openAdd(root, fixture);
     type(root, '#grant-username', 'carol');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
+    const ask = dialog(root, 'confirm-dialog');
     choose(row(root, BOB), 'select', 'member');
     button(row(root, BOB), 'Change role').click();
     await settle(fixture);
+    button(ask, 'Change role').click();
+    await settle(fixture);
     button(row(root, BOB), 'Remove').click();
+    await settle(fixture);
+    button(ask, 'Remove').click();
     await settle(fixture);
     expect(server.requestsTo('GET', MEMBERS).length).toBeGreaterThan(0);
     expect(server.requestsTo('PUT', `${MEMBERS}/${CAROL}`).map((r) => r.body)).toEqual([
@@ -275,7 +340,6 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     ]);
     expect(server.requestsTo('DELETE', `${MEMBERS}/${BOB}`)).toHaveLength(1);
     expect(server.requests.filter((r) => r.path.startsWith('/api/v0/ee/'))).toEqual([]);
-    confirm.mockRestore();
   });
 
   it('shows the grants when the server information cannot be loaded', async () => {
@@ -292,6 +356,7 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     expect(root.textContent).toContain('Only organization administrators manage project access.');
     expect(server.requestsTo('GET', MEMBERS)).toEqual([]);
     expect(root.querySelector('form')).toBeNull();
+    expect(root.querySelector('dialog')).toBeNull();
   });
 });
 

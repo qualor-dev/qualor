@@ -1,0 +1,78 @@
+/* Project → Access (spec §7.5): the grants beside the roles legend; add and confirm in dialogs. */
+.access-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 16px;
+}
+.access-head p {
+  margin: 0;
+}
+.access-head .btn q-icon {
+  margin-right: 6px;
+}
+.access-layout {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  align-items: start;
+}
+.access-layout > * {
+  margin: 0;
+}
+@media (max-width: 64rem) {
+  .access-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.grant-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 12rem;
+}
+.grant-names {
+  display: grid;
+  min-width: 0;
+  font-weight: 600;
+}
+.grant-names > span {
+  overflow-wrap: anywhere;
+}
+.grant-names .muted {
+  font-weight: 450;
+  font-size: 13px;
+}
+.actions-col {
+  width: 1px;
+  text-align: right;
+}
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}
+.roles-legend dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.roles-legend dt {
+  font-weight: 650;
+}
+.roles-legend dt + dd {
+  margin: 0 0 10px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.roles-legend dd:last-child {
+  margin-bottom: 0;
+}
+#confirm-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

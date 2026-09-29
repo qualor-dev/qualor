@@ -352,6 +352,8 @@ img {
 }
 /* A wide table inside a panel scrolls sideways instead of widening the page. */
 .panel-scroll {
+  /* Contains the absolutely positioned visually-hidden labels, which would widen the page. */
+  position: relative;
   overflow-x: auto;
 }
 
@@ -495,6 +497,13 @@ form.card > label.row {
 }
 .btn-quiet:hover {
   background: var(--surface-2);
+}
+.btn-quiet[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-quiet[aria-disabled='true']:hover {
+  background: none;
 }
 .btn-quiet.danger {
   color: var(--bad);
