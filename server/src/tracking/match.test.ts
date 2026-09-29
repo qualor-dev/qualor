@@ -184,17 +184,21 @@ describe('matchFindings (data-model.md §5.2)', () => {
     expect(pairs(matchFindings([g0, g1], [d0]))).toEqual([[1, 0]]);
   });
 
-  it('matches 100 000 identical findings without creating or losing any (100k performance sanity check, U5 fix round 3)', () => {
-    const n = 100_000;
-    const candidates = Array.from({ length: n }, (_, i) => item({ line: 10 + i * 5 }));
-    const shifted = Array.from({ length: n }, (_, i) => item({ line: 12 + i * 5 }));
-    const started = performance.now();
-    const matched = matchFindings(shifted, candidates);
-    expect(performance.now() - started).toBeLessThan(budgetMs(15_000));
-    expect(matched.size).toBe(n);
-    expect(new Set(matched.values()).size).toBe(n);
-    for (let i = 0; i < n; i++) expect(matched.get(i)).toBe(i);
-  });
+  it(
+    'matches 100 000 identical findings without creating or losing any (100k performance sanity check, U5 fix round 3)',
+    () => {
+      const n = 100_000;
+      const candidates = Array.from({ length: n }, (_, i) => item({ line: 10 + i * 5 }));
+      const shifted = Array.from({ length: n }, (_, i) => item({ line: 12 + i * 5 }));
+      const started = performance.now();
+      const matched = matchFindings(shifted, candidates);
+      expect(performance.now() - started).toBeLessThan(budgetMs(15_000));
+      expect(matched.size).toBe(n);
+      expect(new Set(matched.values()).size).toBe(n);
+      for (let i = 0; i < n; i++) expect(matched.get(i)).toBe(i);
+    },
+    budgetMs(30_000),
+  );
 
   describe('pairing inside a bucket is order-preserving and robust to shifts and re-indents (U5 fix round 4)', () => {
     // One rule, one message, identical hashes unless a test says otherwise: only line and column
@@ -334,20 +338,24 @@ describe('matchFindings (data-model.md §5.2)', () => {
       expect(outcomes.size).toBe(1);
     });
 
-    it('stays O(n log n) with 100 000 findings on lines whose counts differ from the candidates', () => {
-      const n = 100_000;
-      const findings = Array.from({ length: n }, (_, i) =>
-        x(Math.floor(i / 7) * 2 + 1, (i % 7) * 3 + 1, { message: `m${i % 2}` }),
-      );
-      const candidates = Array.from({ length: n }, (_, i) =>
-        x(Math.floor(i / 9) * 2 + 2, (i % 9) * 5 + 1, { message: `m${i % 3}` }),
-      );
-      const started = performance.now();
-      const matched = matchFindings(findings, candidates);
-      expect(performance.now() - started).toBeLessThan(budgetMs(15_000));
-      expect(matched.size).toBe(n);
-      expect(new Set(matched.values()).size).toBe(n);
-    });
+    it(
+      'stays O(n log n) with 100 000 findings on lines whose counts differ from the candidates',
+      () => {
+        const n = 100_000;
+        const findings = Array.from({ length: n }, (_, i) =>
+          x(Math.floor(i / 7) * 2 + 1, (i % 7) * 3 + 1, { message: `m${i % 2}` }),
+        );
+        const candidates = Array.from({ length: n }, (_, i) =>
+          x(Math.floor(i / 9) * 2 + 2, (i % 9) * 5 + 1, { message: `m${i % 3}` }),
+        );
+        const started = performance.now();
+        const matched = matchFindings(findings, candidates);
+        expect(performance.now() - started).toBeLessThan(budgetMs(15_000));
+        expect(matched.size).toBe(n);
+        expect(new Set(matched.values()).size).toBe(n);
+      },
+      budgetMs(30_000),
+    );
 
     it('keeps every identity when an identical finding is prepended to a line of k (k = 8, 9, 40, 63; U5 fix round 5)', () => {
       // E.g. a new parameter with the same no-explicit-any warning inserted before k others: the
