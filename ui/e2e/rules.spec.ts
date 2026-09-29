@@ -128,7 +128,10 @@ test('a new profile inherits from a parent, which cannot be deleted while it has
   // Inherited: the parent switched eqeqeq to Blocker in an earlier test.
   await expect(page.getByRole('row', { name: /eslint:eqeqeq/ })).toContainText('Inherited');
 
-  await page.getByRole('link', { name: 'All quality profiles' }).click();
+  await page
+    .getByRole('navigation', { name: 'Breadcrumb' })
+    .getByRole('link', { name: 'Quality profiles' })
+    .click();
   const ts = page.getByRole('region', { name: 'TypeScript' });
   const child = ts.getByRole('row', { name: /^Refunds TypeScript/ });
   await expect(child).toContainText('Payments TypeScript');

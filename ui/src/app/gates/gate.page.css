@@ -34,30 +34,8 @@
   gap: 4px;
   white-space: nowrap;
 }
-.add-row {
-  padding: 16px 22px 20px;
-  border-top: 1px solid var(--hairline);
-  background: var(--surface-2);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-}
-.add-row .add-title {
-  margin: 0 0 12px;
-  font-size: 14px;
-}
-.add-fields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 8px 16px;
-}
-.add-fields .field {
-  margin: 0;
-}
-.add-fields #condition-threshold {
+#condition-threshold {
   width: 8rem;
-}
-.add-fields .btn {
-  margin-top: 22px;
 }
 #confirm-text {
   margin: 0;

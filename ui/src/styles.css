@@ -1944,6 +1944,47 @@ details[open] > summary {
   border-top: 1px solid var(--hairline);
 }
 
+/* A language as a chip (spec §7.7); on the ink band it turns light. */
+.lang-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+}
+.page-band .lang-chip {
+  border: 1px solid rgb(255 255 255 / 0.16);
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+/* The last row of a panel that adds to its table (a gate's condition, a profile's rule). */
+.panel-add {
+  padding: 16px 22px 20px;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--surface-2);
+}
+.panel-add-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+.panel-add-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+}
+.panel-add-fields .field {
+  margin: 0;
+}
+.panel-add-fields > .btn {
+  margin-top: 22px;
+}
+
 /* A link that leaves Qualor: a small text link with the external icon. */
 .external-link {
   display: inline-flex;

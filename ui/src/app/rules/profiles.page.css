@@ -6,17 +6,6 @@
 .profile-groups > * {
   margin: 0;
 }
-.lang-chip {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 650;
-}
 .profile-name {
   display: flex;
   flex-wrap: wrap;

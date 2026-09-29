@@ -1,15 +1,14 @@
-<p>
-  <a class="back-link" routerLink="/profiles" i18n="@@profile.back">All quality profiles</a>
-</p>
 @if (profile.error(); as err) {
-  <p class="alert alert-error" role="alert">{{ problemMessage(err) }}</p>
+  <q-page-header [crumbs]="crumbs" [compact]="true">
+    <h1 pageTitle i18n="@@profile.unavailable">Quality profile unavailable</h1>
+  </q-page-header>
+  <div class="page-body">
+    <p class="alert alert-error" role="alert">{{ problemMessage(err) }}</p>
+  </div>
 } @else if (current(); as p) {
-  <div class="page-header">
-    <div>
+  <q-page-header [crumbs]="crumbs" [compact]="true">
+    <div pageTitle class="page-title">
       <h1>{{ p.name }}</h1>
-      <span class="muted">{{ p.language | label: 'language' }}</span>
-    </div>
-    <div class="row">
       @if (p.isDefault) {
         <span class="badge badge-accent" i18n="@@profile.default">Default</span>
       }
@@ -17,193 +16,216 @@
         <span class="badge badge-tag" i18n="@@profile.builtin">Built-in</span>
       }
     </div>
-  </div>
-  @if (p.isBuiltin) {
-    <p class="alert alert-info" i18n="@@profile.builtinHint">
-      A built-in profile cannot change. Copy it from the list of profiles to make your own.
-    </p>
-  }
-  <p class="hint">
-    @if (p.unknownRules === 'activate') {
-      <ng-container i18n="@@profile.unknownActivate"
-        >Rules this profile does not set are active.</ng-container
-      >
-    } @else {
-      <ng-container i18n="@@profile.unknownIgnore"
-        >Rules this profile does not set are ignored.</ng-container
-      >
-    }
-  </p>
-  <form role="search" class="card toolbar" (submit)="search($event)">
-    <label for="profile-rules-search" class="visually-hidden" i18n="@@profile.search.label"
-      >Search the rules of this profile</label
-    >
-    <input
-      id="profile-rules-search"
-      type="search"
-      placeholder="Key or name"
-      i18n-placeholder="@@profile.search.placeholder"
-      [attr.maxlength]="qMax"
-      [value]="q()"
-      (input)="q.set(inputValue($event))"
-    />
-    <button type="submit" class="btn" i18n="@@profile.search.submit">Search</button>
-    <label class="row">
-      <input type="checkbox" [checked]="scope() === 'all'" (change)="setScope($event)" />
-      <span i18n="@@profile.scopeAll">Every rule this profile could decide</span>
-    </label>
-  </form>
-
-  <h2 #rulesHeading tabindex="-1" i18n="@@profile.rules">Rules</h2>
-  <div role="status">
-    @if (announcement(); as message) {
-      <p class="alert alert-success">{{ message }}</p>
-    }
-  </div>
-  @if (error() || list.error(); as message) {
-    <p class="alert alert-error" role="alert">{{ message }}</p>
-  }
-  @if (editable()) {
-    <p class="hint" i18n="@@profile.severityHint">
-      Setting a rule here keeps the severity it has now, so it no longer follows the parent profile.
-      Choose "Inherit again" to follow the parent again.
-    </p>
-  }
-  <div class="table-wrap">
-    <table #table>
-      <thead>
-        <tr>
-          <th scope="col" i18n="@@profile.col.rule">Rule</th>
-          <th scope="col" i18n="@@profile.col.active">Active</th>
-          <th scope="col" i18n="@@profile.col.severity">Severity</th>
-          <th scope="col" i18n="@@profile.col.source">Setting</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (r of list.items(); track r.rule.key) {
-          <tr [attr.data-key]="r.rule.key">
-            <td>
-              {{ r.rule.name }}
-              <div class="muted">
-                <code>{{ r.rule.key }}</code>
-              </div>
-            </td>
-            <td>
-              <input
-                type="checkbox"
-                [attr.aria-label]="activeLabel(r)"
-                [checked]="r.active"
-                [disabled]="!editable()"
-                [attr.aria-disabled]="editable() && busy() ? true : null"
-                (change)="setActive(r, $event)"
-              />
-            </td>
-            <td>
-              @if (editable()) {
-                <select
-                  [attr.aria-label]="severityLabel(r)"
-                  [attr.aria-disabled]="busy() ? true : null"
-                  (change)="setSeverity(r, $event)"
-                >
-                  <option
-                    value=""
-                    [selected]="!r.severityOverride"
-                    i18n="@@profile.severityDefault"
-                  >
-                    Rule default
-                  </option>
-                  @for (s of severities; track s) {
-                    <option [value]="s" [selected]="s === r.severityOverride">
-                      {{ s | label: 'severity' }}
-                    </option>
-                  }
-                </select>
-              } @else {
-                {{ r.severityOverride ?? r.rule.defaultSeverity | label: 'severity' }}
-              }
-            </td>
-            <td>
-              {{ sourceLabel(r.source) }}
-              @if (editable() && r.source === 'profile') {
-                <button
-                  type="button"
-                  class="btn-link"
-                  [attr.aria-disabled]="busy() ? true : null"
-                  (click)="reset(r)"
-                  i18n="@@profile.reset"
-                >
-                  Inherit again
-                </button>
-              }
-            </td>
-          </tr>
-        } @empty {
-          @if (list.loaded()) {
-            <tr>
-              <td colspan="4" class="muted" i18n="@@profile.empty">No rule matches.</td>
-            </tr>
+    <p pageMeta class="page-meta">
+      <span class="lang-chip">{{ p.language | label: 'language' }}</span>
+      @if (p.parentId; as parentId) {
+        <span
+          ><ng-container i18n="@@profile.inheritsFrom">Inherits from</ng-container>&ngsp;
+          @if (parentName(); as name) {
+            <a class="profile-parent" [routerLink]="['/profiles', parentId]">{{ name }}</a>
+          } @else {
+            <span>–</span>
           }
+        </span>
+      }
+      <span>
+        @if (p.unknownRules === 'activate') {
+          <ng-container i18n="@@profile.unknownActivate"
+            >Rules this profile does not set are active.</ng-container
+          >
+        } @else {
+          <ng-container i18n="@@profile.unknownIgnore"
+            >Rules this profile does not set are ignored.</ng-container
+          >
         }
-      </tbody>
-    </table>
-  </div>
-  @if (list.nextCursor()) {
-    <p>
-      <button
-        type="button"
-        class="btn"
-        [attr.aria-disabled]="list.loading() ? true : null"
-        (click)="list.more()"
-        i18n="@@list.more"
-      >
-        Load more
-      </button>
+      </span>
     </p>
-  }
+  </q-page-header>
 
-  @if (editable()) {
-    <form class="card" (submit)="decide($event)">
-      <h2 i18n="@@profile.decide.title">Decide a rule by its key</h2>
-      <p class="hint" i18n="@@profile.decide.hint">
-        A rule no analysis has reported yet can be decided in advance.
+  <div class="page-body">
+    @if (p.isBuiltin) {
+      <p class="alert alert-info" i18n="@@profile.builtinHint">
+        A built-in profile cannot change. Copy it from the list of profiles to make your own.
       </p>
-      <div class="row fields">
-        <div class="field">
-          <label for="profile-rule-key" i18n="@@profile.decide.key">Rule key</label>
-          <input
-            id="profile-rule-key"
-            required
-            [attr.maxlength]="keyMax"
-            placeholder="eslint:no-eval"
-            i18n-placeholder="@@profile.decide.placeholder"
-            [attr.aria-invalid]="keyError() ? true : null"
-            [attr.aria-describedby]="keyError() ? 'profile-rule-key-error' : null"
-            [value]="newKey()"
-            (input)="setKey($event)"
-          />
-          @if (keyError(); as message) {
-            <span id="profile-rule-key-error" class="field-error">{{ message }}</span>
-          }
-        </div>
-        <label class="row">
-          <input
-            id="profile-rule-active"
-            type="checkbox"
-            [checked]="newActive()"
-            (change)="setNewActive($event)"
-          />
-          <span i18n="@@profile.decide.active">Active</span>
-        </label>
+    }
+    <div role="status">
+      @if (announcement(); as message) {
+        <p class="alert alert-success">{{ message }}</p>
+      }
+    </div>
+    @if (error() || list.error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+
+    <section class="card panel" aria-labelledby="rules-heading">
+      <div class="panel-head">
+        <h2 id="rules-heading" #rulesHeading tabindex="-1" i18n="@@profile.rules">Rules</h2>
+        <form role="search" class="rules-search" (submit)="search($event)">
+          <label for="profile-rules-search" class="visually-hidden" i18n="@@profile.search.label"
+            >Search the rules of this profile</label
+          >
+          <span class="search-field">
+            <q-icon name="search" />
+            <input
+              id="profile-rules-search"
+              type="search"
+              placeholder="Key or name"
+              i18n-placeholder="@@profile.search.placeholder"
+              [attr.maxlength]="qMax"
+              [value]="q()"
+              (input)="q.set(inputValue($event))"
+            />
+          </span>
+          <button type="submit" class="btn" i18n="@@profile.search.submit">Search</button>
+          <label class="scope">
+            <input type="checkbox" [checked]="scope() === 'all'" (change)="setScope($event)" />
+            <span i18n="@@profile.scopeAll">Every rule this profile could decide</span>
+          </label>
+        </form>
       </div>
-      <button
-        type="submit"
-        class="btn btn-primary"
-        [disabled]="!newKey().trim()"
-        [attr.aria-disabled]="busy() ? true : null"
-        i18n="@@profile.decide.submit"
-      >
-        Set rule
-      </button>
-    </form>
-  }
+      @if (editable()) {
+        <p class="panel-note hint" i18n="@@profile.severityHint">
+          Setting a rule here keeps the severity it has now, so it no longer follows the parent
+          profile. Choose "Inherit again" to follow the parent again.
+        </p>
+      }
+      <div class="panel-scroll">
+        <table #table>
+          <thead>
+            <tr>
+              <th scope="col" i18n="@@profile.col.rule">Rule</th>
+              <th scope="col" i18n="@@profile.col.active">Active</th>
+              <th scope="col" i18n="@@profile.col.severity">Severity</th>
+              <th scope="col" i18n="@@profile.col.source">Setting</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of list.items(); track r.rule.key) {
+              <tr [attr.data-key]="r.rule.key">
+                <td>
+                  <div class="rule-name">{{ r.rule.name }}</div>
+                  <code class="rule-key">{{ r.rule.key }}</code>
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    [attr.aria-label]="activeLabel(r)"
+                    [checked]="r.active"
+                    [disabled]="!editable()"
+                    [attr.aria-disabled]="editable() && busy() ? true : null"
+                    (change)="setActive(r, $event)"
+                  />
+                </td>
+                <td>
+                  @if (editable()) {
+                    <select
+                      [attr.aria-label]="severityLabel(r)"
+                      [attr.aria-disabled]="busy() ? true : null"
+                      (change)="setSeverity(r, $event)"
+                    >
+                      <option
+                        value=""
+                        [selected]="!r.severityOverride"
+                        i18n="@@profile.severityDefault"
+                      >
+                        Rule default
+                      </option>
+                      @for (s of severities; track s) {
+                        <option [value]="s" [selected]="s === r.severityOverride">
+                          {{ s | label: 'severity' }}
+                        </option>
+                      }
+                    </select>
+                  } @else {
+                    {{ r.severityOverride ?? r.rule.defaultSeverity | label: 'severity' }}
+                  }
+                </td>
+                <td>
+                  <div class="rule-setting">
+                    <span>{{ sourceLabel(r.source) }}</span>
+                    @if (editable() && r.source === 'profile') {
+                      <button
+                        type="button"
+                        class="btn-quiet"
+                        [attr.aria-disabled]="busy() ? true : null"
+                        (click)="reset(r)"
+                        i18n="@@profile.reset"
+                      >
+                        Inherit again
+                      </button>
+                    }
+                  </div>
+                </td>
+              </tr>
+            } @empty {
+              @if (list.loaded()) {
+                <tr>
+                  <td colspan="4" class="muted" i18n="@@profile.empty">No rule matches.</td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (list.nextCursor()) {
+        <p class="panel-foot">
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-disabled]="list.loading() ? true : null"
+            (click)="list.more()"
+            i18n="@@list.more"
+          >
+            Load more
+          </button>
+        </p>
+      }
+
+      @if (editable()) {
+        <form class="panel-add" (submit)="decide($event)">
+          <h3 class="panel-add-title" i18n="@@profile.decide.title">Decide a rule by its key</h3>
+          <p class="hint decide-hint" i18n="@@profile.decide.hint">
+            A rule no analysis has reported yet can be decided in advance.
+          </p>
+          <div class="panel-add-fields">
+            <div class="field">
+              <label for="profile-rule-key" i18n="@@profile.decide.key">Rule key</label>
+              <input
+                id="profile-rule-key"
+                required
+                [attr.maxlength]="keyMax"
+                placeholder="eslint:no-eval"
+                i18n-placeholder="@@profile.decide.placeholder"
+                [attr.aria-invalid]="keyError() ? true : null"
+                [attr.aria-describedby]="keyError() ? 'profile-rule-key-error' : null"
+                [value]="newKey()"
+                (input)="setKey($event)"
+              />
+              @if (keyError(); as message) {
+                <span id="profile-rule-key-error" class="field-error">{{ message }}</span>
+              }
+            </div>
+            <label class="decide-active">
+              <input
+                id="profile-rule-active"
+                type="checkbox"
+                [checked]="newActive()"
+                (change)="setNewActive($event)"
+              />
+              <span i18n="@@profile.decide.active">Active</span>
+            </label>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              [disabled]="!newKey().trim()"
+              [attr.aria-disabled]="busy() ? true : null"
+              i18n="@@profile.decide.submit"
+            >
+              Set rule
+            </button>
+          </div>
+        </form>
+      }
+    </section>
+  </div>
 }

@@ -403,6 +403,35 @@ describe('ProfilePage', () => {
     ).toHaveLength(1);
   });
 
+  it('names the profile on the band with its facts: language, parent and new rules', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles/p2', {
+      body: profile('p2', 'Payments <b>TS</b>', { parentId: 'p1', unknownRules: 'ignore' }),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p1', {
+      body: profile('p1', 'Qualor way', { isBuiltin: true }),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', {
+      body: page([profileRule('eslint:eqeqeq')]),
+    });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe('Payments <b>TS</b>');
+    expect(root.querySelector('nav[aria-label="Breadcrumb"] a')?.getAttribute('href')).toBe(
+      '/profiles',
+    );
+    const meta = root.querySelector('.page-meta');
+    expect(meta?.querySelector('.lang-chip')?.textContent?.trim()).toBe('TypeScript');
+    const parent = meta?.querySelector<HTMLAnchorElement>('a.profile-parent');
+    expect(parent?.textContent?.trim()).toBe('Qualor way');
+    expect(parent?.getAttribute('href')).toBe('/profiles/p1');
+    expect(meta?.textContent).toContain('Rules this profile does not set are ignored.');
+    // The key form closes the rules panel.
+    expect(root.querySelector('#profile-rule-key')?.closest('.card.panel')).not.toBeNull();
+  });
+
   it('keeps a built-in profile read-only', async () => {
     const server = setup();
     server.on('GET', '/api/v0/quality-profiles/p1', {

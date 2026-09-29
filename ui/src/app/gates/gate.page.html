@@ -186,14 +186,14 @@
       </div>
 
       @if (editable()) {
-        <form class="add-row" (submit)="add($event)">
-          <h3 class="add-title" i18n="@@gate.addCondition">Add a condition</h3>
+        <form class="panel-add" (submit)="add($event)">
+          <h3 class="panel-add-title" i18n="@@gate.addCondition">Add a condition</h3>
           @if (catalogError(); as message) {
             <p class="alert alert-error" role="alert" i18n="@@gate.metricsFailed">
               The metrics could not be loaded: {{ message }}
             </p>
           }
-          <div class="add-fields">
+          <div class="panel-add-fields">
             <div class="field">
               <label for="condition-metric" i18n="@@gate.metric">Metric</label>
               <select
