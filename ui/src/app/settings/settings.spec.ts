@@ -630,15 +630,26 @@ describe('WebhooksPage', () => {
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
     expect(root.querySelector('section')?.textContent).toContain('Analysis completed');
+    // Step 8: the form is in the New webhook dialog, which then shows the secret with Done.
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New webhook').click();
+    await settle(fixture);
+    expect(create.open).toBe(true);
     type(root, '#webhook-url', 'https://ci.example.com/hook');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(server.requestsTo('POST', '/api/v0/webhooks')[0]?.body).toEqual({
       organizationId: ORG_ID,
       url: 'https://ci.example.com/hook',
       events: ['analysis.completed', 'gate.status_changed'],
     });
-    expect(root.querySelector<HTMLInputElement>('#secret-once')?.value).toBe('whsec_generated');
+    expect(create.open).toBe(true);
+    expect(create.querySelector<HTMLInputElement>('#secret-once')?.value).toBe('whsec_generated');
+    expect(create.querySelector('#webhook-url')).toBeNull();
+    button(create, 'Done').click();
+    await settle(fixture);
+    expect(create.open).toBe(false);
+    expect(root.querySelector('#secret-once')).toBeNull();
   });
 
   it('maps a refused URL (the SSRF checks, 422 body.url) to the URL field', async () => {
@@ -688,7 +699,7 @@ describe('WebhooksPage', () => {
     );
   });
 
-  it('shows the last 10 deliveries, with the receiver excerpt as plain text', async () => {
+  it('shows the last 20 deliveries as a strip at once, and in a table with the receiver excerpt as text', async () => {
     const server = setup();
     server.on('GET', '/api/v0/webhooks', {
       body: page([webhook('w1', 'https://hooks.example.com/<b>x</b>')]),
@@ -711,12 +722,17 @@ describe('WebhooksPage', () => {
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
     expect(root.querySelector('section b')).toBeNull();
+    // Step 8: the deliveries load with the list, for the strip, before anything is opened.
+    const request = server.requestsTo('GET', '/api/v0/webhooks/w1/deliveries')[0];
+    expect(request?.query.get('limit')).toBe('20');
+    expect(root.querySelector('q-delivery-strip rect.bar.status-failed')).not.toBeNull();
+    expect(root.querySelector('q-delivery-strip .strip-rate')?.textContent).toContain(
+      '0% delivered',
+    );
     const details = root.querySelector('details')!;
     details.open = true;
     details.dispatchEvent(new Event('toggle'));
     await settle(fixture);
-    const request = server.requestsTo('GET', '/api/v0/webhooks/w1/deliveries')[0];
-    expect(request?.query.get('limit')).toBe('10');
     const text = details.textContent ?? '';
     expect(text).toContain('Sep 15, 2026, 9:00 AM UTC');
     expect(text).toContain('Quality gate status changed');
@@ -727,10 +743,12 @@ describe('WebhooksPage', () => {
     expect(details.querySelector('img')).toBeNull();
   });
 
-  it('switches a webhook off in place and deletes one after a confirmation', async () => {
+  it("switches a webhook off in place, and deletes one after the page's own confirmation", async () => {
     const server = setup();
     let hooks = [webhook('w1', 'https://a.example.com/'), webhook('w2', 'https://b.example.com/')];
     server.on('GET', '/api/v0/webhooks', () => ({ body: page(hooks) }));
+    server.on('GET', '/api/v0/webhooks/w1/deliveries', { body: page([]) });
+    server.on('GET', '/api/v0/webhooks/w2/deliveries', { body: page([]) });
     server.on('PATCH', '/api/v0/webhooks/w1', {
       body: webhook('w1', 'https://a.example.com/', { active: false }),
     });
@@ -738,24 +756,33 @@ describe('WebhooksPage', () => {
       hooks = hooks.filter((h) => h.id !== 'w2');
       return { status: 204 };
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const fixture = TestBed.createComponent(WebhooksPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    const first = root.querySelector('section')!;
-    first.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+    const first = root.querySelector<HTMLElement>('section')!;
+    expect(first.querySelector('.webhook-state')?.textContent?.trim()).toBe('Active');
+    const toggle = button(first, 'Switch off');
+    toggle.click();
     await settle(fixture);
     expect(server.requestsTo('PATCH', '/api/v0/webhooks/w1')[0]?.body).toEqual({ active: false });
+    // The same panel and the same button, now saying what it would do next.
     expect(root.querySelector('section')).toBe(first);
-    expect(first.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
+    expect(first.querySelector('.webhook-state')?.textContent?.trim()).toBe('Switched off');
+    expect(toggle.textContent?.trim()).toBe('Switch on');
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'Webhook https://a.example.com/ switched off.',
     );
-    root.querySelectorAll('section')[1]!.querySelector<HTMLButtonElement>('button')!.click();
+    const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+    button(root.querySelectorAll<HTMLElement>('section')[1]!, 'Delete').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(ask.open).toBe(true);
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
       'Delete the webhook to https://b.example.com/? Its delivery history goes too.',
     );
+    button(ask, 'Delete').click();
+    await settle(fixture);
+    expect(confirm).not.toHaveBeenCalled();
     expect(server.requestsTo('DELETE', '/api/v0/webhooks/w2')).toHaveLength(1);
     expect(root.querySelectorAll('section')).toHaveLength(1);
     confirm.mockRestore();
@@ -880,6 +907,10 @@ describe('WebhooksPage: answers that arrive after the context changed', () => {
     const fixture = TestBed.createComponent(WebhooksPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
+    // Step 8: the list reads the deliveries for the strip; the table appears once they came.
+    expect(answers).toHaveLength(1);
+    answers[0]!({ body: page([delivery('first', 200)]) });
+    await settle(fixture);
     const details = root.querySelector('details')!;
     const toggle = (open: boolean) => {
       details.open = open;
@@ -891,10 +922,10 @@ describe('WebhooksPage: answers that arrive after the context changed', () => {
     toggle(true);
     await settle(fixture);
     // jsdom also fires its own toggle events: at least one request per opening.
-    expect(answers.length).toBeGreaterThanOrEqual(2);
+    expect(answers.length).toBeGreaterThanOrEqual(3);
     answers.at(-1)!({ body: page([delivery('new', 204)]) });
     await settle(fixture);
-    for (const answer of answers.slice(0, -1)) answer({ body: page([delivery('old', 500)]) });
+    for (const answer of answers.slice(1, -1)) answer({ body: page([delivery('old', 500)]) });
     await settle(fixture);
     expect(details.textContent).toContain('HTTP 204');
     expect(details.textContent).not.toContain('HTTP 500');

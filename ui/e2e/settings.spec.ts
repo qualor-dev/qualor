@@ -192,22 +192,32 @@ test('an organization admin adds a webhook and sees its secret once', async ({ p
   await expect(
     page.getByRole('region', { name: 'https://hooks.example.com/qualor' }),
   ).toBeVisible();
-  await page.getByLabel('URL').fill('https://ci.example.com/qualor-hook');
-  await page.getByRole('button', { name: 'Add webhook' }).click();
-  await expect(page.getByLabel('Webhook secret')).toHaveValue(/^whsec_/);
+  // The form is in the "New webhook" dialog (step 8), which then shows the secret.
+  await page.getByRole('button', { name: 'New webhook' }).click();
+  const create = page.getByRole('dialog', { name: 'New webhook for every project' });
+  await expect(create.getByLabel('URL')).toBeFocused();
+  await create.getByLabel('URL').fill('https://ci.example.com/qualor-hook');
+  await create.getByRole('button', { name: 'Add webhook' }).click();
+  const shown = page.getByRole('dialog', { name: "The webhook's secret" });
+  await expect(shown.getByLabel('Webhook secret')).toHaveValue(/^whsec_/);
+  await expectAccessible(page);
+  await shown.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('#secret-once')).toHaveCount(0);
   const hook = page.getByRole('region', { name: 'https://ci.example.com/qualor-hook' });
-  await hook.getByLabel('Active').uncheck();
-  await expect(hook.getByLabel('Active')).not.toBeChecked();
+  await expect(hook.getByText('No deliveries yet.')).toBeVisible();
+  // Switched off in place: the state says so, the same button now offers Switch on.
+  await hook.getByRole('button', { name: 'Switch off' }).click();
   await expect(page.getByRole('status')).toHaveText(
     'Webhook https://ci.example.com/qualor-hook switched off.',
   );
-  await hook.getByText('Recent deliveries').click();
-  await expect(hook.getByText('No deliveries yet.')).toBeVisible();
-  // The server's SSRF checks refuse a loopback address: the URL field says why.
-  await page.getByLabel('URL').fill('https://127.0.0.1/internal');
-  await page.getByRole('button', { name: 'Add webhook' }).click();
-  await expect(page.getByText('Use an https URL of a public host')).toBeVisible();
-  await expect(page.getByLabel('URL')).toHaveAttribute('aria-invalid', 'true');
+  await expect(hook.getByText('Switched off', { exact: true })).toBeVisible();
+  await expect(hook.getByRole('button', { name: 'Switch on' })).toBeFocused();
+  // The server's SSRF checks refuse a loopback address: the URL field says why, in the dialog.
+  await page.getByRole('button', { name: 'New webhook' }).click();
+  await create.getByLabel('URL').fill('https://127.0.0.1/internal');
+  await create.getByRole('button', { name: 'Add webhook' }).click();
+  await expect(create.getByText('Use an https URL of a public host')).toBeVisible();
+  await expect(create.getByLabel('URL')).toHaveAttribute('aria-invalid', 'true');
   await expectAccessible(page);
 });
 
