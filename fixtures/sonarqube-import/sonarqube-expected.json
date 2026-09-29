@@ -1,11 +1,14 @@
 {
   "profiles": {
     "Fixture TS": {
-      "skip": "no_mapped_rules",
-      "rows": [],
-      "pendingReview": ["typescript:S3504"],
+      "skip": null,
+      "rows": [
+        { "ruleKey": "sonarjs:S3504", "active": true, "severityOverride": null },
+        { "ruleKey": "sonarjs:S3776", "active": true, "severityOverride": null }
+      ],
+      "pendingReview": [],
       "statusOnly": ["typescript:S1440"],
-      "unmapped": ["typescript:S3776"]
+      "unmapped": []
     },
     "Fixture Java": {
       "skip": null,
@@ -32,7 +35,7 @@
   "statuses": {
     "AYf-1": { "ruleKey": "eslint:eqeqeq", "line": 3 },
     "AYf-2": { "ruleKey": "eslint:eqeqeq", "line": 7 },
-    "AYf-3": "unmappedRule",
+    "AYf-3": "unmatched",
     "AYf-4": { "ruleKey": "eslint:no-console", "line": 6 },
     "AYf-5": "unmatched"
   }
