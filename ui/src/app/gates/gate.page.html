@@ -122,8 +122,9 @@
                       <input
                         [id]="'cond-th-' + c.id"
                         class="cond-threshold"
-                        type="number"
-                        step="any"
+                        type="text"
+                        inputmode="decimal"
+                        autocomplete="off"
                         [value]="draftThreshold(c)"
                         [attr.aria-invalid]="rowError()?.id === c.id ? true : null"
                         [attr.aria-describedby]="
@@ -226,8 +227,9 @@
               <label for="condition-threshold" i18n="@@gate.threshold">Threshold</label>
               <input
                 id="condition-threshold"
-                type="number"
-                step="any"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
                 required
                 [attr.aria-invalid]="thresholdError() ? true : null"
                 [attr.aria-describedby]="thresholdError() ? 'condition-threshold-error' : null"

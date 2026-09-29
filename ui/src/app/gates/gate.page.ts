@@ -58,6 +58,16 @@ export function metricOptions(catalog: Catalog): MetricOption[] {
 }
 
 /**
+ * The number a threshold field holds, or NaN. The fields take text: a number field empties
+ * itself at "80." while a decimal is typed (UI redesign, step 6 review). A comma counts as the
+ * decimal point, as a phone's keypad offers it in many languages.
+ */
+export function parseThreshold(text: string): number {
+  const t = text.trim().replace(',', '.');
+  return /^[+-]?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i.test(t) ? Number(t) : NaN;
+}
+
+/**
  * The thresholds the server accepts for a condition key (gates.md §4, ruling G3; server
  * routes/gates.ts `validateCondition`): ratings 1–5, percentages 0–100, anything else from 0.
  * Null for a key the catalog does not name. The server checks again; its 422 is shown too.
@@ -206,8 +216,8 @@ export class GatePage {
 
   /** Why `text` is no threshold for `metric` (the server's ranges), or null. */
   private thresholdProblem(metric: string, text: string): string | null {
-    const threshold = Number(text);
-    if (text === '' || !Number.isFinite(threshold)) {
+    const threshold = parseThreshold(text);
+    if (!Number.isFinite(threshold)) {
       return $localize`:@@gate.thresholdRequired:Enter a number.`;
     }
     const range = thresholdRange(this.metrics(), metric);
@@ -229,7 +239,7 @@ export class GatePage {
     event.preventDefault();
     if (this.busy() || !this.metric()) return;
     const text = this.threshold().trim();
-    const threshold = Number(text);
+    const threshold = parseThreshold(text);
     const problem = this.thresholdProblem(this.metric(), text);
     if (problem) {
       this.thresholdError.set(problem);
@@ -343,7 +353,7 @@ export class GatePage {
       const saved = await ok(
         this.api.client.PATCH('/api/v0/quality-gates/{id}/conditions/{condId}', {
           params: { path: { id: gateId, condId: condition.id } },
-          body: { operator: draft.operator, threshold: Number(text) },
+          body: { operator: draft.operator, threshold: parseThreshold(text) },
         }),
       );
       if (generation !== this.generation) return;
@@ -409,6 +419,9 @@ export class GatePage {
         }),
       );
       if (!current()) return;
+      // Shown before the reload answers, so "Make default" leaves the band on the next render,
+      // where keepFocus sees the focus lost and moves it (else it drops to the page later).
+      this.gate.update((g) => (g ? { ...g, isDefault: true } : g));
       this.announcement.set(
         $localize`:@@gates.madeDefault:${gate.name}:name: is now the default quality gate.`,
       );

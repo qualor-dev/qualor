@@ -14,6 +14,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, done, ok } from '../api/api';
 import { fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
+import { SessionStore } from '../auth/session';
 import { OrgContext } from '../org/org-context';
 import { closeModal, openModal } from '../shared/dialog';
 import { keepFocus, rowAt, rowByKey } from '../shared/focus';
@@ -56,6 +57,7 @@ export class GatesPage {
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  private readonly session = inject(SessionStore);
   protected readonly org = inject(OrgContext);
 
   protected readonly list = new KeysetList<Gate, string>((organizationId, cursor) =>
@@ -81,9 +83,15 @@ export class GatesPage {
   /** The deletion the confirmation dialog asks about; null while it is closed. */
   protected readonly pendingDelete = signal<{ gate: Gate; question: string } | null>(null);
 
-  /** How many projects of the organisation use each gate id (`null`: the default). */
+  /**
+   * How many projects of the organisation use each gate id (`null`: the default). Only counted
+   * for someone who sees every project: a project grant lists only its own (step 6 review).
+   */
   private readonly usage = resource({
-    params: () => this.org.currentId() ?? undefined,
+    params: () => {
+      const organizationId = this.org.currentId();
+      return this.session.seesWholeOrg(organizationId) ? (organizationId ?? undefined) : undefined;
+    },
     loader: async ({ params }) => {
       const counts = new Map<string | null, number>();
       let cursor: string | undefined;

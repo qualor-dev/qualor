@@ -39,11 +39,21 @@ test('an admin edits the conditions of a custom gate', async ({ page }) => {
     'Condition added: Duplicated lines (%) is greater than 5 %.',
   );
   await expectAccessible(page);
+  // Typed key by key, a decimal stays whole in place (a number field emptied itself at "2.").
+  await threshold.fill('');
+  await threshold.pressSequentially('2.5');
+  await expect(threshold).toHaveValue('2.5');
+  await row
+    .getByRole('button', { name: 'Save the condition on Duplicated lines (%)', exact: true })
+    .click();
+  await expect(page.getByRole('status')).toHaveText(
+    'Condition changed: Duplicated lines (%) is greater than 2.5 %.',
+  );
   // Keyboard only: the Remove button goes with its row, so focus moves to the next row's.
   await row.getByRole('button', { name: 'Remove' }).press('Enter');
   await expect(row).toHaveCount(0);
   await expect(page.getByRole('status')).toHaveText('Condition removed: Duplicated lines (%).');
-  // (The in-place edit and its Save are covered by the unit tests of gates.spec.ts.)
+  // (The rest of the in-place edit is covered by the unit tests of gates.spec.ts.)
   await expect(
     page
       .getByRole('row', { name: /^Coverage on new code/ })

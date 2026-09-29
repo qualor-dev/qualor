@@ -2170,6 +2170,11 @@ details[open] > summary {
   background: rgb(255 255 255 / 0.1);
   color: var(--ink-text);
 }
+/* A tag (Built-in) keeps its outline on ink, in the band's own muted text. */
+.page-band .badge-tag {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.3);
+  color: var(--ink-muted);
+}
 
 /*
  * The pages outside the shell (sign-in, change password, server unavailable): the site's ink panel

@@ -276,6 +276,28 @@ describe('GatesPage', () => {
     expect(server.requestsTo('GET', '/api/v0/projects')).toHaveLength(10);
     expect(root.querySelector('.usage-note')?.textContent).toContain('first 5,000 projects');
   });
+
+  it('counts nothing for someone who sees the organization only through a project grant', async () => {
+    const server = setup(false);
+    const base = me();
+    TestBed.inject(SessionStore).set({
+      ...base,
+      memberships: [{ ...base.memberships[0]!, role: null, permissions: ['org.read'] }],
+      projectGrants: [
+        { projectId: 'b', projectKey: 'acme/b', organizationId: ORG_ID, role: 'viewer' },
+      ],
+    });
+    server.on('GET', '/api/v0/quality-gates', {
+      body: page([gate('g1', 'Qualor way', { isDefault: true })]),
+    });
+    // The server lists only the granted project: a count from it would say 1 of the organization's.
+    server.on('GET', '/api/v0/projects', { body: page([project('b', null)]) });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('tr[data-key="g1"] td.usage')?.textContent?.trim()).toBe('–');
+    expect(server.requestsTo('GET', '/api/v0/projects')).toHaveLength(0);
+  });
 });
 
 describe('GatePage', () => {
@@ -544,13 +566,64 @@ describe('GatePage on the band (step 6)', () => {
       return { body: gate('g2', 'Strict', { isDefault: true }) };
     });
     const { fixture, root } = await renderGate(server);
-    buttonIn(root.querySelector('.band-actions')!, 'Make default').click();
+    const makeDefault = buttonIn(root.querySelector('.band-actions')!, 'Make default');
+    makeDefault.focus();
+    makeDefault.click();
     await settle(fixture);
     expect(root.querySelector('.page-title')?.textContent).toContain('Default');
     expect(actions(root)).toEqual(['Copy', 'Rename', 'Delete']);
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'Strict is now the default quality gate.',
     );
+    // "Make default" is gone: focus moves to the band's first action, never to the page.
+    expect(document.activeElement).toBe(buttonIn(root.querySelector('.band-actions')!, 'Copy'));
+  });
+
+  it('takes a decimal typed key by key, with a point or a comma, in place and in the add form', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g2', {
+      body: gate('g2', 'Strict', {
+        conditions: [{ id: 'c1', metric: 'new_coverage', operator: 'lt', threshold: 80 }],
+      }),
+    });
+    server.on('PATCH', '/api/v0/quality-gates/g2/conditions/c1', {
+      body: { id: 'c1', metric: 'new_coverage', operator: 'lt', threshold: 80.5 },
+    });
+    server.on('POST', '/api/v0/quality-gates/g2/conditions', {
+      status: 201,
+      body: { id: 'c2', metric: 'coverage', operator: 'lt', threshold: 1.5 },
+    });
+    const { fixture, root } = await renderGate(server);
+    async function type(input: HTMLInputElement, text: string): Promise<void> {
+      input.value = '';
+      for (const key of text) {
+        input.value += key;
+        input.dispatchEvent(new Event('input'));
+        await settle(fixture);
+      }
+    }
+    const inPlace = root.querySelector<HTMLInputElement>('#cond-th-c1')!;
+    await type(inPlace, '80.5');
+    expect(inPlace.value).toBe('80.5');
+    buttonIn(root.querySelector('tr[data-key="c1"]')!, 'Save').click();
+    await settle(fixture);
+    expect(server.requestsTo('PATCH', '/api/v0/quality-gates/g2/conditions/c1')[0]?.body).toEqual({
+      operator: 'lt',
+      threshold: 80.5,
+    });
+    const metric = root.querySelector<HTMLSelectElement>('#condition-metric')!;
+    metric.value = 'coverage';
+    metric.dispatchEvent(new Event('change'));
+    const add = root.querySelector<HTMLInputElement>('#condition-threshold')!;
+    await type(add, '1,5');
+    expect(add.value).toBe('1,5');
+    root.querySelector<HTMLFormElement>('form.panel-add')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/quality-gates/g2/conditions')[0]?.body).toEqual({
+      metric: 'coverage',
+      operator: 'lt',
+      threshold: 1.5,
+    });
   });
 
   it('edits a condition in place, offering Save only once it changed', async () => {

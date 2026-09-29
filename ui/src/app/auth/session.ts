@@ -33,6 +33,18 @@ export class SessionStore {
   }
 
   /**
+   * Whether the caller sees every project of an organisation (server auth/facts.ts
+   * `visibleProjectsCondition`): instance admins and anyone holding a role in it. A project grant
+   * alone (role `null`) shows only the granted projects.
+   */
+  seesWholeOrg(organizationId: string | null | undefined): boolean {
+    const me = this.me();
+    if (!me || !organizationId) return false;
+    if (me.user.isInstanceAdmin) return true;
+    return me.memberships.some((m) => m.organizationId === organizationId && m.role !== null);
+  }
+
+  /**
    * Whether the caller's role in an organisation allows a permission (rbac-audit.md §3.1): the
    * membership's effective `permissions` of `GET /auth/me`; an instance admin has every one.
    */
