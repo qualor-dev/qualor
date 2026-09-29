@@ -96,8 +96,13 @@ export function runDotnetBegin(
     );
   }
   const dir = analyzerDir(io.env, root);
-  const analyzers = roslyn.bundledAnalyzers ? bundledDlls(dir) : [];
-  if (roslyn.bundledAnalyzers && analyzers.length === 0) {
+  const roslynator = roslyn.bundledAnalyzers ? bundledDlls(dir) : [];
+  // Task 4: the bundled SonarAnalyzer.CSharp is its own family, next to Roslynator, under
+  // sonar/ of the same directory. Off whenever bundledAnalyzers is (which gates every bundled
+  // analyzer), and also off on its own with roslyn.sonarAnalyzer: false (config.md §6.1).
+  const sonar =
+    roslyn.bundledAnalyzers && roslyn.sonarAnalyzer ? bundledDlls(path.join(dir, 'sonar')) : [];
+  if (roslyn.bundledAnalyzers && roslynator.length === 0) {
     log.warn(`no bundled analyzers in ${dir}: the build reports the .NET SDK's own rules only`);
   }
   const now = (deps.now ?? (() => new Date()))();
@@ -130,7 +135,7 @@ export function runDotnetBegin(
       root: realRoot,
       startedAt: now.toISOString(),
       cli: VERSION,
-      analyzers,
+      analyzers: { roslynator, sonar },
     });
   } catch (err) {
     if (err instanceof CliError) throw err;

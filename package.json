@@ -59,6 +59,7 @@
     "deploy:debian-sources": "tsx tools/deploy/debian-sources-gen.ts",
     "deploy:release-images": "tsx tools/deploy/release-images.ts",
     "deploy:scanner-dotnet-check": "tsx tools/deploy/scanner-dotnet-check.ts",
+    "deploy:scanner-dotnet-sonar-check": "tsx tools/deploy/scanner-dotnet-sonar-check.ts",
     "deploy:embedded-check": "tsx tools/deploy/embedded-check.ts",
     "release:tools": "tsx tools/release/probe.ts",
     "release:version": "tsx tools/release/set-version.ts",

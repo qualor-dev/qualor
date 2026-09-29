@@ -116,6 +116,14 @@ describe('the hook text', () => {
     expect(text).toContain("StartsWith('Roslynator.')");
     expect(text).toContain('<Analyzer Include="@(QualorBundledAnalyzer)" />');
   });
+  it('adds each bundled family unless the project references that family itself', () => {
+    expect(text).toContain('<!-- qualor-dotnet-hook v2 -->');
+    expect(text).toContain(`StartsWith('Roslynator.')`);
+    expect(text).toContain(`StartsWith('SonarAnalyzer.')`);
+    expect(text).toContain(`<ItemGroup Condition="'@(_QualorOwnRoslynator)' == ''">`);
+    expect(text).toContain(`<ItemGroup Condition="'@(_QualorOwnSonar)' == ''">`);
+    expect(text).toContain('<Analyzer Include="@(QualorBundledSonarAnalyzer)" />');
+  });
 });
 
 describe('installHook / removeHook', () => {
@@ -139,6 +147,22 @@ describe('installHook / removeHook', () => {
     expect(() => installHook(userDir)).toThrow(/not Qualor's/);
     expect(removeHook(userDir)).toBe(false);
     expect(readFileSync(file, 'utf8')).toBe('<Project />');
+  });
+  it('recognises and removes a v1 hook file left by an earlier CLI (Task 4)', () => {
+    const userDir = tmp();
+    const file = hookPath(userDir);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, '<!-- qualor-dotnet-hook v1 -->\n<Project />\n');
+    expect(removeHook(userDir)).toBe(true);
+    expect(existsSync(file)).toBe(false);
+  });
+  it('replaces a v1 hook file left by an earlier CLI with the current one (Task 4)', () => {
+    const userDir = tmp();
+    const file = hookPath(userDir);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, '<!-- qualor-dotnet-hook v1 -->\n<Project />\n');
+    installHook(userDir);
+    expect(readFileSync(file, 'utf8')).toBe(hookText());
   });
   it('cleans up its temp file and rethrows on a failed rename, leaving no partial hook (ruling R4)', () => {
     const userDir = tmp();

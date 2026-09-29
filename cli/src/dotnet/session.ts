@@ -27,13 +27,20 @@ const MAX_HOOK_FAILED_BYTES = 1024;
 /** Ruling D3: file-system timestamps are coarse. */
 const FRESHNESS_SLACK_MS = 2_000;
 
+// Task 4: `analyzers` was a flat array of Roslynator paths before it grew a Sonar family. A
+// `strictObject` refuses that older shape outright (rather than coercing it), so a session.json
+// left by a CLI upgraded mid-build is not this session's own (readSession returns null) and `end`
+// reports no session, instead of misreading the array as today's object.
 const sessionSchema = z.strictObject({
   version: z.literal(1),
   id: z.string().regex(/^[0-9a-f]{32}$/),
   root: z.string().min(1),
   startedAt: z.iso.datetime(),
   cli: z.string().max(128),
-  analyzers: z.array(z.string().min(1)).max(1_000),
+  analyzers: z.strictObject({
+    roslynator: z.array(z.string().min(1)).max(1_000),
+    sonar: z.array(z.string().min(1)).max(1_000),
+  }),
 });
 export type SessionInfo = z.infer<typeof sessionSchema>;
 
@@ -65,9 +72,14 @@ export function createSession(root: string, info: SessionInfo): void {
   const dir = sessionDir(root);
   mkdirSync(path.join(dir, 'sarif'), { recursive: true });
   mkdirSync(path.join(dir, 'projects'), { recursive: true });
-  const items = info.analyzers
-    .map((a) => `    <QualorBundledAnalyzer Include="${msbuildEscape(a)}" />`)
-    .join('\n');
+  const items = [
+    ...info.analyzers.roslynator.map(
+      (a) => `    <QualorBundledAnalyzer Include="${msbuildEscape(a)}" />`,
+    ),
+    ...info.analyzers.sonar.map(
+      (a) => `    <QualorBundledSonarAnalyzer Include="${msbuildEscape(a)}" />`,
+    ),
+  ].join('\n');
   writeFileSync(
     path.join(dir, 'session.props'),
     `<Project>\n  <ItemGroup>\n${items}\n  </ItemGroup>\n</Project>\n`,
