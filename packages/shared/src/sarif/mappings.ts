@@ -154,7 +154,11 @@ const trivy: EngineMapping = {
  * and the sonarjs runner copies it (report-format.md §7.1): "<Severity> <Type>".
  */
 const SONAR_SEVERITY: Record<string, Severity> = {
-  Blocker: 'blocker', Critical: 'high', Major: 'medium', Minor: 'low', Info: 'info',
+  Blocker: 'blocker',
+  Critical: 'high',
+  Major: 'medium',
+  Minor: 'low',
+  Info: 'info',
 };
 const SONAR_TYPE: Record<string, { quality: Quality; kind: IssueKind }> = {
   Bug: { quality: 'reliability', kind: 'issue' },
@@ -162,14 +166,21 @@ const SONAR_TYPE: Record<string, { quality: Quality; kind: IssueKind }> = {
   'Security Hotspot': { quality: 'security', kind: 'hotspot' },
   'Code Smell': { quality: 'maintainability', kind: 'issue' },
 };
-const SONAR_CATEGORY = /^(Blocker|Critical|Major|Minor|Info) (Bug|Vulnerability|Security Hotspot|Code Smell)$/;
+const SONAR_CATEGORY =
+  /^(Blocker|Critical|Major|Minor|Info) (Bug|Vulnerability|Security Hotspot|Code Smell)$/;
 
 export function sonarCategory(
   category: string,
 ): { quality: Quality; kind: IssueKind; defaultSeverity: Severity } | null {
   const m = SONAR_CATEGORY.exec(category);
   if (m === null) return null;
-  return { ...SONAR_TYPE[m[2]!]!, defaultSeverity: SONAR_SEVERITY[m[1]!]! };
+  // The regex's two groups are mandatory (no `?`), so a match always captures both; the lookups
+  // below are total for any string the alternation can produce. `noUncheckedIndexedAccess` still
+  // types them `| undefined` because it does not know that, so the checks stay to avoid `!`.
+  const severity = SONAR_SEVERITY[m[1] ?? ''];
+  const type = SONAR_TYPE[m[2] ?? ''];
+  if (severity === undefined || type === undefined) return null;
+  return { ...type, defaultSeverity: severity };
 }
 
 /** Roslyn rule categories (`properties.category`, plan 2D probe P5) that are about correctness. */
@@ -189,7 +200,8 @@ const roslyn: EngineMapping = {
           : 'maintainability';
     return { quality, kind: 'issue' };
   },
-  severity: (_result, rule) => sonarCategory(String(rule?.properties?.['category'] ?? ''))?.defaultSeverity,
+  severity: (_result, rule) =>
+    sonarCategory(String(rule?.properties?.['category'] ?? ''))?.defaultSeverity,
 };
 
 /**
@@ -200,9 +212,11 @@ const roslyn: EngineMapping = {
 const sonarjs: EngineMapping = {
   rule: (r) =>
     sonarCategory(String(r.properties?.['category'] ?? '')) ?? {
-      quality: 'maintainability', kind: 'issue',
+      quality: 'maintainability',
+      kind: 'issue',
     },
-  severity: (_result, rule) => sonarCategory(String(rule?.properties?.['category'] ?? ''))?.defaultSeverity,
+  severity: (_result, rule) =>
+    sonarCategory(String(rule?.properties?.['category'] ?? ''))?.defaultSeverity,
 };
 
 export const ENGINE_MAPPINGS = {
