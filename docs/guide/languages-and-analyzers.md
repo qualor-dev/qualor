@@ -7,8 +7,9 @@ size, complexity, duplication and coverage.
 | Area | Analyzer | Runs when |
 |---|---|---|
 | JavaScript, TypeScript | **ESLint**, the project's own config and plugins | the repository has an ESLint config and its dependencies are installed |
+| JavaScript, TypeScript | **sonarjs**: SonarQube-compatible rules (eslint-plugin-sonarjs 2.0.4, LGPL-3.0) | JS/TS files are in scope, run by the `qualor/scanner` image |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
-| C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** | through `qualor dotnet begin` / `end` around your build |
+| C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
 | Secrets | **Gitleaks** | always (`enabled: true` by default) |
 | Vulnerable dependencies | **Trivy** | lockfiles or manifests exist |
@@ -49,6 +50,28 @@ analyzers:
 ESLint runs the config and plugins from the checkout, so it runs repository code. Never scan
 untrusted merge requests (for example from forks) in a job that holds secrets.
 
+## SonarQube-compatible rules (sonarjs)
+
+SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0)
+add a second, independent pass over JavaScript and TypeScript: `sonarjs`, which runs
+eslint-plugin-sonarjs on its own bundled ESLint. It never loads your `eslint.config.js`, your
+plugins or your `node_modules`; it reads only your source files and `tsconfig.json`, so it still
+reports what it can when your own config or dependencies are missing or your `tsconfig.json`
+does not parse. Type-aware rules just sit out until it does.
+
+```yaml
+analyzers:
+  sonarjs:
+    enabled: auto          # true, false, or auto: on when JS/TS files are in scope
+    timeoutSeconds: 900     # optional
+    typeChecking: auto      # optional; false skips rules that need type information
+```
+
+When the same problem turns up in both your ESLint config and sonarjs (a setter without a getter,
+an empty function, and a few others), only your ESLint's finding is kept; sonarjs is a fallback,
+not a duplicate. Turn sonarjs off entirely with `analyzers.sonarjs.enabled: false`. Without the
+`qualor/scanner` image it is skipped, the same as a project without Trivy's vulnerability database.
+
 ## Java (PMD and SpotBugs)
 
 - **PMD** reads the source. The default ruleset `qualor-default` is PMD's own
@@ -82,8 +105,8 @@ dotnet build --no-incremental       # your build: its SDK, restore, feeds and ar
 qualor dotnet end                   # removes the hook, reads the Roslyn logs, runs qualor scan
 ```
 
-Use the **`qualor/scanner-dotnet`** image. It adds the .NET 8 and .NET 10 SDKs and Roslynator to the
-scanner. GitLab:
+Use the **`qualor/scanner-dotnet`** image. It adds the .NET 8 and .NET 10 SDKs, Roslynator and
+SonarAnalyzer.CSharp 9.32 (SonarQube-compatible rules, LGPL-3.0) to the scanner. GitLab:
 
 ```yaml
 qualor:
@@ -107,7 +130,9 @@ build-command: 'dotnet build MySolution.sln --no-incremental' }`. For GitHub, us
   that passes without them. Compiler errors still fail it. If your pipeline must fail on warnings,
   keep a separate build job for that.
 - The repository's `.editorconfig` and `.globalconfig` still decide severities. A rule set to `none`
-  stays off. If the project references Roslynator itself, its own version is used.
+  stays off. If the project references Roslynator or SonarAnalyzer.CSharp itself, its own version
+  is used instead of the bundled one, so there is never a duplicate-analyzer build error.
+- Turn the bundled SonarAnalyzer.CSharp off with `analyzers.roslyn.sonarAnalyzer: false`.
 - `qualor dotnet abort` cleans up when the build fails, so no hook is left behind.
 - A plain `qualor scan` does not analyse C#.
 

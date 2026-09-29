@@ -6,6 +6,17 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- SonarQube-compatible rules: `qualor/scanner-dotnet` adds SonarAnalyzer.CSharp 9.32 to the .NET
+  build (rule keys `roslyn:S####`), and `qualor/scanner` runs eslint-plugin-sonarjs 2.0.4 with its
+  recommended rules as a new `sonarjs` engine for JavaScript and TypeScript (`sonarjs:S####`). Both
+  are the last LGPL-3.0 releases and do not change. `qualor import sonarqube` maps `csharpsquid:`,
+  `javascript:` and `typescript:` rules one to one where the bundled versions have them. A project's
+  own SonarAnalyzer reference replaces the bundled one; an ESLint issue and the sonarjs rule that
+  decorates it count once. Turn them off with `analyzers.roslyn.sonarAnalyzer: false` and
+  `analyzers.sonarjs.enabled: false`.
+
 ## [0.1.1] - 2026-09-29
 
 ### Fixed

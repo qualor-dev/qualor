@@ -49,12 +49,13 @@ languages: auto                     # or [typescript, javascript, java, csharp]
 
 analyzers:
   eslint:   { enabled: auto, configFile: null, args: [], timeoutSeconds: 900 }
+  sonarjs:  { enabled: auto, timeoutSeconds: 900, typeChecking: auto }
   pmd:      { enabled: auto, rulesets: [qualor-default], timeoutSeconds: 900 }
   spotbugs: { enabled: auto, classDirs: [target/classes, build/classes/java/main], auxClasspathFile: null, timeoutSeconds: 1200 }
   semgrep:  { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
   gitleaks: { enabled: true, configFile: null, timeoutSeconds: 300 }
   trivy:    { enabled: auto, timeoutSeconds: 600 }
-  roslyn:   { enabled: auto, bundledAnalyzers: true }
+  roslyn:   { enabled: auto, bundledAnalyzers: true, sonarAnalyzer: true }
 
 sarif:
   - path: reports/osv.sarif

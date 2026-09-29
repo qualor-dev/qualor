@@ -2,8 +2,9 @@
 
 Open-source, self-hosted, GitLab-first code quality platform: a SonarQube alternative without
 lines-of-code licensing. Qualor runs existing open-source analyzers (ESLint, PMD, SpotBugs,
-Roslyn and Roslynator for C#, OpenGrep, Gitleaks, or any SARIF), tracks their issues across
-commits, measures coverage, duplication and complexity, and applies a quality gate to new code.
+Roslyn and Roslynator for C#, OpenGrep, Gitleaks, SonarQube-compatible rules for C#, JavaScript and
+TypeScript, or any SARIF), tracks their issues across commits, measures coverage, duplication and
+complexity, and applies a quality gate to new code.
 MIT, except `enterprise/`: source-available under the Qualor Enterprise Licence, and inert
 without a licence key ([licence keys](https://qualor.dev/enterprise)).
 
@@ -134,8 +135,10 @@ into the App's webhook settings and activate the webhook.
 Roslyn analyzers need the project's own build (its SDK, restored packages and arguments), so
 Qualor hooks into that build instead of building anything itself: `qualor dotnet begin`, the
 project's own `dotnet build`, then `qualor dotnet end`. Use the
-`qualor/scanner-dotnet` image, which adds the .NET 8 and .NET 10 SDKs and the bundled Roslynator
-analyzers on top of `qualor/scanner`:
+`qualor/scanner-dotnet` image, which adds the .NET 8 and .NET 10 SDKs, the bundled Roslynator
+analyzers and SonarAnalyzer.CSharp 9.32 (SonarQube-compatible rules, LGPL-3.0) on top of
+`qualor/scanner`; a project's own reference to SonarAnalyzer.CSharp or Roslynator replaces the
+bundled one:
 
 ```yaml
 qualor:
@@ -177,7 +180,7 @@ repository commits generated coverage output, add it to `sources.exclude` in `qu
 
 ## Migrating from SonarQube
 
-`qualor import sonarqube` brings a SonarQube Server (9.9 LTA or later) or SonarQube Cloud organisation's setup into Qualor: quality profiles (JavaScript, TypeScript, Java), quality gates, the projects' profile and gate assignments, and the main branch's false positives and accepted issues. It only reads SonarQube (`GET` requests), and `--dry-run` shows what would change without writing anything:
+`qualor import sonarqube` brings a SonarQube Server (9.9 LTA or later) or SonarQube Cloud organisation's setup into Qualor: quality profiles (JavaScript, TypeScript, C#, Java), quality gates, the projects' profile and gate assignments, and the main branch's false positives and accepted issues. C#, JavaScript and TypeScript issue statuses map one to one to Qualor's bundled SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4), wherever the bundled version still has the rule key SonarQube reports. It only reads SonarQube (`GET` requests), and `--dry-run` shows what would change without writing anything:
 
 ```sh
 SONAR_TOKEN=… QUALOR_URL=https://qualor.example.com QUALOR_TOKEN=…   qualor import sonarqube --url https://sonar.example.com --dry-run

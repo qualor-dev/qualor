@@ -15,18 +15,25 @@ stored anywhere.
 | Issues marked **False positive**, **Won't fix** or **Accepted** on the main branch | the same status on the matching Qualor issue, with the latest comment |
 | Quality gates | Qualor gates, for conditions on metrics Qualor has |
 | Projects, and which gate each one uses | project assignments. With `--create-projects`, the projects themselves |
-| Quality profiles for JavaScript, TypeScript and Java | listed in the plan. Rule activation and severity overrides move as the SonarSource-to-analyzer rule mappings are reviewed. Until a profile has reviewed mappings it is reported as skipped, and your Qualor profiles stay as they are |
+| Quality profiles for JavaScript, TypeScript, C# and Java | listed in the plan. Rule activation and severity overrides move as the SonarSource-to-analyzer rule mappings are reviewed. Until a profile has reviewed mappings it is reported as skipped, and your Qualor profiles stay as they are |
 
 The statuses of issues that SonarQube imported from ESLint, PMD, SpotBugs or Roslyn (`external_*`
 rules) map one to one. SonarQube Server 9.9 does not let anyone resolve such external issues, so they
 have statuses to move from SonarQube Server 10.x and Community Build on.
 
-Not imported, and reported instead: rule parameters, SonarSource rules without an ESLint, PMD or
-SpotBugs counterpart, gate conditions on metrics Qualor lacks, security hotspot reviews, branches other
-than main, users and permissions, history, and new-code definitions.
+C#, JavaScript and TypeScript issue statuses map one to one to SonarQube-compatible rules: Qualor
+bundles the same analysers SonarQube's own `csharpsquid`, `javascript` and `typescript` rules come
+from (SonarAnalyzer.CSharp 9.32 inside `roslyn`, eslint-plugin-sonarjs 2.0.4 as `sonarjs`), so a
+rule key SonarQube reports is a rule key Qualor reports too, wherever the bundled version still has
+it. A rule SonarQube retired since is reported unmapped, not guessed at.
 
-Qualor does not run SonarSource's own analyzers. Many SonarQube rules therefore have no counterpart,
-and the import says so.
+Not imported, and reported instead: rule parameters, SonarSource rules without an ESLint, PMD,
+SpotBugs or SonarQube-compatible-rules counterpart, gate conditions on metrics Qualor lacks, security
+hotspot reviews, branches other than main, users and permissions, history, and new-code definitions.
+
+Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
+for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says
+so.
 
 ## Step by step
 
