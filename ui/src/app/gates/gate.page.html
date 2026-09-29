@@ -6,7 +6,7 @@
     <p class="alert alert-error" role="alert">{{ problemMessage(err) }}</p>
   </div>
 } @else if (current(); as g) {
-  <q-page-header [crumbs]="crumbs">
+  <q-page-header [crumbs]="crumbs" [compact]="true">
     <div pageTitle class="page-title">
       <h1>{{ g.name }}</h1>
       @if (g.isDefault) {

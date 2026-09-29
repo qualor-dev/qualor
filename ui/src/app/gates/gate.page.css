@@ -3,6 +3,11 @@
   font-weight: 600;
   min-width: 10rem;
 }
+@media (max-width: 40rem) {
+  .cond-metric {
+    min-width: 0;
+  }
+}
 .cond-fields {
   display: flex;
   flex-wrap: wrap;
