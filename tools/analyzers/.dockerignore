@@ -1,0 +1,4 @@
+# Build context of tools/analyzers/Dockerfile: the local install of the sonarjs pass stays out;
+# the image installs it from package-lock.json and builds categories.json itself.
+sonarjs/node_modules
+sonarjs/categories.json

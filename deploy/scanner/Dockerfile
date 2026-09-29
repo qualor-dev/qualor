@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # The qualor/scanner image: the `qualor` CLI binary plus the pinned analyzer toolchain
 # of tools/analyzers/install.sh (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with a snapshot of its
-# vulnerability database in /opt/qualor/share/trivy) and what they need to run:
+# vulnerability database in /opt/qualor/share/trivy), Qualor's sonarjs pass in /opt/qualor/sonarjs
+# (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9, tools/analyzers/sonarjs) and what they need to run:
 # Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs) and git.
 # Build from the repository root:
 #   docker build -f deploy/scanner/Dockerfile -t qualor/scanner:dev .
@@ -64,6 +65,24 @@ COPY tools/analyzers/install.sh /tmp/install.sh
 RUN sh /tmp/install.sh
 # The Gitleaks built above replaces install.sh's release binary of the same version.
 COPY --from=gitleaks /gitleaks /opt/qualor/bin/gitleaks
+# Qualor's sonarjs pass (config.md §6): eslint-plugin-sonarjs on Qualor's own ESLint 9, installed
+# from its lockfile without install scripts, and categories.json built from the RSPEC metadata of
+# the SonarJS source archive at the plugin's commit (install.sh's SONARJS_* pins), checked against
+# its SHA-256 before it is unpacked; only the rule metadata is unpacked, and the archive is deleted.
+COPY --chmod=0644 tools/analyzers/sonarjs/package.json tools/analyzers/sonarjs/package-lock.json tools/analyzers/sonarjs/run.mjs tools/analyzers/sonarjs/categories.mjs /opt/qualor/sonarjs/
+RUN eval "$(grep -E '^SONARJS_[A-Z0-9_]+=' /tmp/install.sh)" \
+  && cd /opt/qualor/sonarjs \
+  && npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+  && test "$(node -p 'require("eslint-plugin-sonarjs/package.json").version')" = "$SONARJS_VERSION" \
+  && curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o /tmp/sonarjs.tar.gz \
+    "https://github.com/SonarSource/SonarJS/archive/${SONARJS_COMMIT}.tar.gz" \
+  && echo "${SONARJS_SOURCE_SHA256}  /tmp/sonarjs.tar.gz" | sha256sum -c - \
+  && mkdir /tmp/sonarjs-rules \
+  && tar -xzf /tmp/sonarjs.tar.gz -C /tmp/sonarjs-rules --no-same-owner --strip-components=12 --wildcards \
+    '*/sonar-plugin/javascript-checks/src/main/resources/org/sonar/l10n/javascript/rules/javascript/S*.json' \
+  && node categories.mjs /tmp/sonarjs-rules \
+  && rm -rf /tmp/sonarjs.tar.gz /tmp/sonarjs-rules /root/.npm \
+  && chmod -R a+rX /opt/qualor/sonarjs
 
 FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3db8ea4ae263ab4d0c3805933e5355f45 AS jre
 
