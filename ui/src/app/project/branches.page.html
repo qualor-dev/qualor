@@ -65,9 +65,9 @@
             @for (metric of columns; track metric) {
               <td class="num">
                 {{ b.measures[metric] | measure: metric }}
-                @if (metric === 'new_coverage' && b.measures[metric]; as value) {
+                @if (metric === 'new_coverage' && b.measures[metric] != null) {
                   <span class="cov-bar" aria-hidden="true"
-                    ><span [style.width.%]="value"></span
+                    ><span [style.width.%]="b.measures[metric]"></span
                   ></span>
                 }
               </td>

@@ -7,6 +7,14 @@
 .portfolio q-distribution {
   margin-top: 4px;
 }
+.portfolio-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 22px;
+  border-top: 1px solid var(--hairline);
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
 .kpi-note {
   color: var(--text-muted);
   font-size: 12.5px;

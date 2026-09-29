@@ -122,6 +122,18 @@ describe('ProjectsPage', () => {
     expect(strip?.textContent).not.toContain('loaded so far');
   });
 
+  it('draws the coverage bar of a project at 0 %, and none without coverage', async () => {
+    const zero = project('zero', 'Zero');
+    zero.mainBranch = { ...zero.mainBranch!, measures: { coverage: 0 } };
+    server.on('GET', '/api/v0/projects', {
+      body: page([zero, project('legacy', 'Legacy Billing', { mainBranch: null })]),
+    });
+    const { root } = await render();
+    const [first, second] = [...root.querySelectorAll('tbody tr')];
+    expect(first?.querySelector<HTMLElement>('.cov-bar > span')?.style.width).toBe('0%');
+    expect(second?.querySelector('.cov-bar')).toBeNull();
+  });
+
   it('says when the summary covers only the projects loaded so far, and never shows NaN', async () => {
     server.on('GET', '/api/v0/projects', {
       body: {
@@ -131,7 +143,13 @@ describe('ProjectsPage', () => {
     });
     const { root } = await render();
     const strip = root.querySelector('[aria-labelledby="portfolio-heading"]');
-    expect(strip?.textContent).toContain('loaded so far');
+    // The note covers the whole strip: a row of its own, not one figure's caption.
+    const note = strip?.querySelector(':scope > .portfolio-note');
+    expect(note?.textContent).toContain('loaded so far');
+    expect(note?.closest('[data-kpi]')).toBeNull();
+    expect(strip?.querySelector('[data-kpi] .kpi-note:not(:empty)')?.textContent).not.toContain(
+      'loaded so far',
+    );
     expect(strip?.textContent).not.toContain('NaN');
     expect(strip?.querySelector('[data-kpi="coverage"] .kpi-value')?.textContent?.trim()).toBe('–');
   });
@@ -231,6 +249,11 @@ describe('ProjectsPage', () => {
     server.on('POST', '/api/v0/projects', { status: 201, body: project('new', 'New Service') });
     const { fixture, root } = await render();
     expect(root.textContent).toContain('No projects match.');
+    // Creation is the band's "New project" button, above the list.
+    expect(root.querySelector('.empty-state')?.textContent).toContain(
+      'Create one with New project',
+    );
+    expect(root.querySelector('.empty-state')?.textContent).not.toContain('below');
     type(root, '#project-key', 'acme/new');
     type(root, '#project-name', 'New Service');
     root.querySelector('dialog form')!.dispatchEvent(new Event('submit'));

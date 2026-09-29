@@ -82,6 +82,16 @@ describe('BranchesPage', () => {
     expect(query.get('limit')).toBe('50');
   });
 
+  it('draws the new-code coverage bar at 0 %, and none without a value', async () => {
+    server.on('GET', `/api/v0/projects/${PROJECT}/branches`, {
+      body: page([branch('zero', { measures: { new_coverage: 0 } }), branch('none')]),
+    });
+    const { root } = await render();
+    const [first, second] = [...root.querySelectorAll('tbody tr')];
+    expect(first?.querySelector<HTMLElement>('.cov-bar > span')?.style.width).toBe('0%');
+    expect(second?.querySelector('.cov-bar')).toBeNull();
+  });
+
   it("shows a merge request's GitLab title, and links to GitLab only over http(s) (scm.md §8)", async () => {
     server.on('GET', `/api/v0/projects/${PROJECT}/branches`, {
       body: page([

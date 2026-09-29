@@ -56,12 +56,12 @@
       <div class="kpi" data-kpi="ncloc">
         <span class="kpi-label" i18n="@@projects.summary.ncloc">Lines of code</span>
         <span class="kpi-value">{{ summary().ncloc | measure: 'ncloc' }}</span>
-        @if (summary().partial) {
-          <span class="kpi-note" i18n="@@projects.summary.partial"
-            >Of the projects loaded so far.</span
-          >
-        }
       </div>
+      @if (summary().partial) {
+        <p class="portfolio-note" i18n="@@projects.summary.partialAll">
+          These figures cover the projects loaded so far. Load more to include the rest.
+        </p>
+      }
     </section>
   }
 
@@ -95,9 +95,9 @@
               @for (metric of columns; track metric) {
                 <td class="num">
                   {{ project.mainBranch?.measures?.[metric] | measure: metric }}
-                  @if (metric === 'coverage' && project.mainBranch?.measures?.[metric]; as value) {
+                  @if (metric === 'coverage' && project.mainBranch?.measures?.[metric] != null) {
                     <span class="cov-bar" aria-hidden="true"
-                      ><span [style.width.%]="value"></span
+                      ><span [style.width.%]="project.mainBranch?.measures?.[metric]"></span
                     ></span>
                   }
                 </td>
@@ -118,8 +118,8 @@
                     <div class="empty-state">
                       <img src="art/empty.webp" alt="" width="900" height="675" />
                       <p i18n="@@projects.emptyAdmin">
-                        No projects match. Create one below, then run qualor scan in its CI
-                        pipeline.
+                        No projects match. Create one with New project, then run qualor scan in its
+                        CI pipeline.
                       </p>
                     </div>
                   </td>
