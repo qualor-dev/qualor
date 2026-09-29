@@ -11,6 +11,51 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - `restore` (the embedded database) no longer drops the database before the dump has loaded. It
   loads the dump into a new database and replaces the old one only on success; a truncated, empty or
   wrong file now fails with "the existing database was not changed" and the data stays as it was.
+- `qualor import sonarqube` no longer fails the issue-status import with HTTP 500 on SonarQube
+  Server 9.9 and Community Build: only rules the server has are queried, so rules from plugins it
+  lacks (PMD) or newer than its analyzers no longer break the query. Reviewed security hotspots are
+  counted on 9.9–10.1 too, and the SonarQube reads reuse one connection.
+- `--help` and `-h` print the usage and exit 0 after any command or subcommand, instead of
+  "Unknown option".
+- GitLab: a 403 is no longer reported as "GitLab refused the token". The log and the connection
+  test say the token lacks a permission; a commit status on a protected branch needs Maintainer.
+- GitLab: after the decoration token is replaced by one of another user, the old summary comment
+  is deleted instead of staying beside the new one (needs a Maintainer token).
+- Connection tests and webhooks: a host name whose lookup does not finish in time, such as a
+  single-label name, is reported as unresolved instead of a timeout.
+- SSO: **Read metadata** on a SAML connection says why the metadata URL could not be read (host not
+  public, name not resolved, timeout, TLS certificate, HTTP status, not SAML metadata) and logs a
+  warning with the host and the reason. The connection **Test** reports a failed TLS certificate
+  as `fetch.tls`.
+- Signing in with single sign-on no longer asks for a new password when an admin set the user's
+  password; the next password sign-in still does.
+- AI assistant: a key the provider refuses names the provider's HTTP status (401: wrong key; 403:
+  no access to the model or no credit), in the provider **Test** (`problem.providerStatus`) and the
+  `AI request finished` log line. The error code stays `PROVIDER_REFUSED_KEY`.
+- AI assistant: a request that failed without using tokens, because the provider refused the key
+  or nothing was sent, no longer counts against the organisation's daily budgets. The hourly bound
+  per person still counts every request.
+- `qualor/scanner`: the notices name the five MPL-2.0 Go modules compiled into Gitleaks, and
+  `qualor/scanner-sources` carries their source.
+
+### Changed
+
+- GitLab: the connection test reports the token's access level in the project, and the settings
+  page warns when it is below Maintainer. The guide now asks for a Maintainer token.
+- Docs: the GitLab guide covers self-managed GitLab (a one-time import of the component, included
+  by its full version); the SonarQube migration guide says what the import moves today and when
+  the scanner image needs `--allow-insecure-http`; troubleshooting covers a project reused across
+  git histories.
+
+### Security
+
+- `qualor/scanner` and `qualor/scanner-dotnet`: Gitleaks 8.30.1 is built from its release source
+  with Go 1.27.1 and current `golang.org/x/crypto` and `golang.org/x/text`, instead of the upstream
+  binary built with Go 1.24.11 (CVE-2025-68121 and others).
+- Node.js 22.23.3 (was 22.23.2) in all images; its npm bundles tar 7.5.22 (CVE-2026-59873,
+  CVE-2026-59874, CVE-2026-73566).
+- The HIGH and CRITICAL image vulnerabilities that no release fixes yet are listed with reasons
+  and a review date in `deploy/scanner/.trivyignore.yaml`.
 
 ## [0.1.0] - 2026-09-28
 
