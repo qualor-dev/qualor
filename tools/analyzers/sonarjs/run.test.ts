@@ -332,6 +332,67 @@ describe.skipIf(!have && !required)('sonarjs run.mjs', { timeout: 120_000 }, () 
     expect(info.files).toBe(1);
   });
 
+  it('lints exactly the --files list, after checking each entry against the disk', () => {
+    const outside = repo({ 'x.js': BRANCHES });
+    const root = repo({
+      'src/a.js': BRANCHES,
+      'src/b.ts': BRANCHES,
+      'src/..c.js': BRANCHES,
+      'dist/gen.js': BRANCHES,
+      'node_modules/p/i.js': BRANCHES,
+      '.git/hooks/h.js': BRANCHES,
+      'vendor/v.js': BRANCHES,
+      'notes.txt': BRANCHES,
+    });
+    symlinkSync(path.join(root, 'vendor'), path.join(root, 'src/inner'), 'junction');
+    const list = path.join(root, '..', `${path.basename(root)}.files.json`);
+    writeFileSync(
+      list,
+      JSON.stringify([
+        path.join(root, 'src/a.js'),
+        'src/b.ts', // relative to --root
+        'src/..c.js',
+        path.join(root, 'node_modules/p/i.js'),
+        path.join(root, '.git/hooks/h.js'),
+        path.join(root, 'src/inner/v.js'), // through a junction
+        path.join(outside, 'x.js'),
+        path.join(root, '../x.js'),
+        path.join(root, 'notes.txt'),
+        path.join(root, 'src/missing.js'),
+        path.join(root, 'src'),
+        42,
+      ]),
+    );
+    const out = path.join(root, '..', `${path.basename(root)}.sarif`);
+    const r = spawnSync(process.execPath, [RUN, '--root', root, '--out', out, '--files', list], {
+      encoding: 'utf8',
+    });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('sonarjs: 9 listed file(s) not linted');
+    expect(JSON.parse(r.stdout.trim()).files).toBe(3);
+    const uris = JSON.parse(readFileSync(out, 'utf8')).runs[0].results.map(
+      (x: { locations: { physicalLocation: { artifactLocation: { uri: string } } }[] }) =>
+        x.locations[0]!.physicalLocation.artifactLocation.uri,
+    );
+    // dist/gen.js is a source file under the root, but not on the list: not linted.
+    expect([...new Set(uris)].sort()).toEqual(['src/..c.js', 'src/a.js', 'src/b.ts']);
+    // An --exclude still narrows the list.
+    const narrowed = run(root, ['--files', list, '--exclude', 'src/b.ts']);
+    expect(narrowed.info.files).toBe(2);
+  });
+
+  it('fails (exit 2) on a --files list that is not a JSON array', () => {
+    const root = repo({ 'a.js': BRANCHES });
+    const list = path.join(root, '..', `${path.basename(root)}.files.json`);
+    writeFileSync(list, '{"a.js": true}');
+    const r = spawnSync(
+      process.execPath,
+      [RUN, '--root', root, '--out', path.join(root, 'o.sarif'), '--files', list],
+      { encoding: 'utf8' },
+    );
+    expect(r.status).toBe(2);
+  });
+
   it('counts the files that did not parse in parseErrors', () => {
     const root = repo({ 'bad.js': 'function (\n', 'a.js': BRANCHES });
     const { log, info } = run(root);

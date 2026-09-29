@@ -2,14 +2,24 @@
 // versions are under the SONAR Source-Available License) with its own `recommended` config, run by
 // Qualor's own ESLint 9. Never loads the project's config, plugins or node_modules: everything is
 // imported from this directory, and ESLint gets the config inline (overrideConfigFile: true).
-//   node run.mjs --root <dir> --out <file.sarif> [--type-checking on|off] [--exclude <glob>]...
+//   node run.mjs --root <dir> --out <file.sarif> [--files <list.json>] [--type-checking on|off]
+//                [--exclude <glob>]...
 // Writes a SARIF 2.1.0 log keyed by RSPEC ids (S1192) and prints one JSON line
 // {"typeChecking":"on"|"off"|"fallback","files":N,"parseErrors":N,"disabledRules":["S…"]}.
 // Exit 0 whenever the log is written, 2 on an internal error.
-// It lints only the regular files it finds itself under --root: symbolic links and junctions are
-// never followed or linted (as discovery treats them, cli/src/discovery/discover.ts), node_modules
-// and .git are never entered, and an --exclude can narrow that set but never widen it.
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+// With --files (a JSON array of paths, what the CLI passes: the scan's in-scope JS/TS files, so
+// Qualor's excludes and .gitignore apply), it lints exactly those, after checking each again: a
+// regular JS/TS file inside --root, reached without a symbolic link or junction, never under
+// node_modules or .git. Without it, it lints the regular files it finds itself under --root, with
+// the same rules. An --exclude can narrow either set but never widen it.
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -125,6 +135,43 @@ export function sourceFiles(root) {
 }
 
 /**
+ * The entries of a --files list that may be linted: absolute paths (a relative entry is taken
+ * relative to `root`) of regular JS/TS files inside `root`, reached without a symbolic link or
+ * junction in any component, and never under node_modules or .git. The list comes from the CLI,
+ * but each entry is checked against the disk again here, as `sourceFiles` would find it.
+ */
+export function listedFiles(root, entries, warn = stderr) {
+  const realRoot = realpathSync(root);
+  const out = new Set();
+  let dropped = 0;
+  for (const entry of entries) {
+    const full = typeof entry === 'string' ? path.resolve(root, entry) : undefined;
+    const rel = full === undefined ? '' : path.relative(root, full);
+    const ok =
+      rel !== '' &&
+      rel !== '..' &&
+      !rel.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(rel) &&
+      SOURCE.test(full) &&
+      !rel.split(path.sep).some((part) => NEVER_DIRS.has(part)) &&
+      (() => {
+        try {
+          // lstat: the file itself is no link; realpath: no directory on the way is one either.
+          return lstatSync(full).isFile() && realpathSync(full) === path.join(realRoot, rel);
+        } catch {
+          return false;
+        }
+      })();
+    if (ok) out.add(full);
+    else dropped += 1;
+  }
+  if (dropped > 0)
+    warn(`sonarjs: ${dropped} listed file(s) not linted (not a regular source file inside the root)
+`);
+  return [...out].sort();
+}
+
+/**
  * `lint()`, again with each rule that crashes turned off (`disabled` collects the rule ids, which
  * `lint` must honour), so one rule failing on one file never loses the whole pass.
  */
@@ -177,7 +224,7 @@ async function main(args) {
     args.flatMap((a, i) => (a === name && args[i + 1] !== undefined ? [args[i + 1]] : []));
   if (!opt('--root') || !opt('--out'))
     throw new Error(
-      'usage: run.mjs --root <dir> --out <file> [--type-checking on|off] [--exclude <glob>]...',
+      'usage: run.mjs --root <dir> --out <file> [--files <list.json>] [--type-checking on|off] [--exclude <glob>]...',
     );
   const root = path.resolve(opt('--root'));
   const out = path.resolve(opt('--out'));
@@ -253,7 +300,10 @@ async function main(args) {
 
   // Explicit paths, never a glob ESLint expands itself (that would follow symbolic links); ESLint
   // still applies the ignores above to each of them.
-  const files = sourceFiles(root);
+  const list = opt('--files');
+  const listed = list ? JSON.parse(readFileSync(path.resolve(list), 'utf8')) : undefined;
+  if (list && !Array.isArray(listed)) throw new Error('--files must name a JSON array of paths');
+  const files = listed ? listedFiles(root, listed) : sourceFiles(root);
   let mode = wantTypes ? 'on' : 'off';
   let results;
   if (wantTypes) {

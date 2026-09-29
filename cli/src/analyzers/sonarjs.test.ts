@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { BUILTIN_EXCLUDES, parseConfig } from '@qualor/shared';
+import { parseConfig } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import {
   fakeContext,
@@ -22,15 +23,14 @@ const NODE = path.join(path.dirname(ROOT), 'bin', 'node');
 const ctx = (o: Parameters<typeof fakeContext>[1] = {}) =>
   fakeContext(ROOT, { binaries: { node: NODE }, workDir: WORK, ...o });
 
-/** The index where `seq` starts inside `args` as a contiguous run, or -1 (ruling 4: "a contained
- * sequence", not necessarily the whole `args` array — the excludes can fall anywhere around it). */
-function indexOfSubsequence(args: readonly string[], seq: readonly string[]): number {
-  outer: for (let i = 0; i + seq.length <= args.length; i++) {
-    for (let j = 0; j < seq.length; j++) if (args[i + j] !== seq[j]) continue outer;
-    return i;
-  }
-  return -1;
-}
+const scopeFile = (p: string, language: ScopeFile['language']): ScopeFile => ({
+  path: p,
+  absPath: path.join(ROOT, p),
+  language,
+  grammar: null,
+  kind: 'main',
+  size: 1,
+});
 
 describe('sonarjsAnalyzer.prepare', () => {
   // Fix round 1 (controller ruling 12): a missing pass is a normal, image-bundled resource
@@ -84,38 +84,45 @@ describe('sonarjsAnalyzer.prepare', () => {
     expect(capture?.unavailable ?? false).toBe(false);
   });
 
-  it("runs Qualor's node on run.mjs with the root, the excludes and the type-checking mode", async () => {
+  it("runs Qualor's node on run.mjs with the root, the in-scope JS/TS files and the type-checking mode", async () => {
     const dir = fakeSonarjsDir();
-    const p = await sonarjsAnalyzer.prepare(
-      ctx({
+    const work = tmp();
+    const p = await sonarjsAnalyzer.prepare({
+      ...ctx({
         env: { QUALOR_SONARJS_DIR: dir },
+        workDir: work,
         config: {
           sources: { exclude: ['dist/**'] },
           analyzers: { sonarjs: { typeChecking: false } },
         },
       }),
-    );
+      files: [
+        scopeFile('src/a.ts', 'typescript'),
+        scopeFile('src/b.jsx', 'javascript'),
+        scopeFile('src/C.java', 'java'),
+      ],
+    });
     if (!('run' in p)) throw new Error(JSON.stringify(p));
-    const out = path.join(WORK, 'sonarjs.sarif');
+    const out = path.join(work, 'sonarjs.sarif');
+    const list = path.join(work, 'sonarjs-files.json');
     const script = path.join(dir, 'run.mjs');
-    expect(
-      indexOfSubsequence(p.run.args, [
-        script,
-        '--root',
-        ROOT,
-        '--out',
-        out,
-        '--type-checking',
-        'off',
-      ]),
-    ).toBeGreaterThanOrEqual(0);
-    // The built-in excludes (config.md §3.1) and the configured one are all passed as --exclude
-    // (ruling 4), whatever order they fall in relative to the fixed arguments above.
-    for (const glob of [...BUILTIN_EXCLUDES, 'dist/**']) {
-      const i = p.run.args.indexOf(glob);
-      expect(i, `${glob} missing from ${JSON.stringify(p.run.args)}`).toBeGreaterThan(0);
-      expect(p.run.args[i - 1]).toBe('--exclude');
-    }
+    expect(p.run.args).toEqual([
+      script,
+      '--root',
+      ROOT,
+      '--out',
+      out,
+      '--files',
+      list,
+      '--type-checking',
+      'off',
+    ]);
+    // Only the discovered JS/TS files: discovery already applied sources.include, the excludes
+    // and .gitignore, so run.mjs needs no --exclude and never walks the checkout itself.
+    expect(JSON.parse(readFileSync(list, 'utf8'))).toEqual([
+      path.join(ROOT, 'src/a.ts'),
+      path.join(ROOT, 'src/b.jsx'),
+    ]);
     expect(p.run.command).toBe(NODE);
     expect(p.run.cwd).toBe(ROOT);
     expect(p.run.sarifPath).toBe(out);
@@ -123,15 +130,25 @@ describe('sonarjsAnalyzer.prepare', () => {
     expect(p.run.version).toBe('2.0.4');
   });
 
+  it('is skipped when no JavaScript or TypeScript file is in scope', async () => {
+    const p = await sonarjsAnalyzer.prepare({
+      ...ctx({ env: { QUALOR_SONARJS_DIR: fakeSonarjsDir() }, workDir: tmp() }),
+      files: [scopeFile('src/C.java', 'java')],
+    });
+    expect(p).toEqual({ skip: 'no JavaScript or TypeScript files in scope' });
+  });
+
   it('passes --type-checking on for typeChecking auto or true (run.mjs decides from tsconfig.json)', async () => {
     const dir = fakeSonarjsDir();
     for (const typeChecking of ['auto', true] as const) {
-      const p = await sonarjsAnalyzer.prepare(
-        ctx({
+      const p = await sonarjsAnalyzer.prepare({
+        ...ctx({
           env: { QUALOR_SONARJS_DIR: dir },
+          workDir: tmp(),
           config: { analyzers: { sonarjs: { typeChecking } } },
         }),
-      );
+        files: [scopeFile('a.ts', 'typescript')],
+      });
       if (!('run' in p)) throw new Error(JSON.stringify(p));
       const i = p.run.args.indexOf('--type-checking');
       expect(p.run.args[i + 1], String(typeChecking)).toBe('on');

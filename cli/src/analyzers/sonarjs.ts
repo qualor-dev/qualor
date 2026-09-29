@@ -1,6 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { BUILTIN_EXCLUDES } from '@qualor/shared';
 import { z } from 'zod';
 import type { Logger } from '../log';
 import { isInside } from './binary';
@@ -12,9 +11,15 @@ const DEFAULT_DIR = '/opt/qualor/sonarjs';
 /** global-constraints.md: the pinned eslint-plugin-sonarjs version, never read from the tool. */
 export const SONARJS_VERSION = '2.0.4';
 
-/** The scan's exclude globs (config.md §3.1), in the form run.mjs's `--exclude` expects. */
-function excludes(ctx: AnalyzerContext): string[] {
-  return [...BUILTIN_EXCLUDES, ...ctx.config.sources.exclude];
+/**
+ * The scan's in-scope JavaScript and TypeScript files (discovery already applied
+ * `sources.include`, the excludes and .gitignore, config.md §3.1), as absolute paths: what
+ * run.mjs lints, and nothing else.
+ */
+function sourceFiles(ctx: AnalyzerContext): string[] {
+  return ctx.files
+    .filter((f) => f.language === 'javascript' || f.language === 'typescript')
+    .map((f) => f.absPath);
 }
 
 const summarySchema = z.object({
@@ -72,6 +77,12 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   }
   const node = ctx.resolveBinary('node');
   if (node === null) return { unavailable: 'the sonarjs pass needs node on PATH' };
+  const files = sourceFiles(ctx);
+  if (files.length === 0) return { skip: 'no JavaScript or TypeScript files in scope' };
+  // A JSON list in the private work directory (any path, any repo size): run.mjs lints exactly
+  // these, after checking each again (a regular file inside the root, no link, no node_modules).
+  const list = path.join(ctx.workDir, 'sonarjs-files.json');
+  writeFileSync(list, JSON.stringify(files));
   const out = path.join(ctx.workDir, 'sonarjs.sarif');
   const args = [
     script,
@@ -79,9 +90,10 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
     ctx.root,
     '--out',
     out,
+    '--files',
+    list,
     '--type-checking',
     settings.typeChecking === false ? 'off' : 'on',
-    ...excludes(ctx).flatMap((g) => ['--exclude', g]),
   ];
   return {
     run: {
