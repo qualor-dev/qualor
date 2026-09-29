@@ -52,6 +52,7 @@ function output(
       'GITLEAKS-LICENSE.txt',
       'ROSLYNATOR-LICENSE.txt',
       'SONARANALYZER-CSHARP-LICENSE.txt',
+      'SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt',
       'TREE-SITTER-C-SHARP-LICENSE.txt',
     ]),
     '== version',
@@ -73,6 +74,7 @@ describe('the qualor/scanner-dotnet content check (deploy/README.md)', () => {
       ...expected.sdks.map((v) => `DOTNET-${v}-ThirdPartyNotices.txt`),
       'ROSLYNATOR-LICENSE.txt',
       'SONARANALYZER-CSHARP-LICENSE.txt',
+      'SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt',
       'TREE-SITTER-C-SHARP-LICENSE.txt',
     ]);
     expect(expected.analyzers).toBe(8);
@@ -113,6 +115,7 @@ describe('the qualor/scanner-dotnet content check (deploy/README.md)', () => {
       '/opt/qualor/licenses/ has no DOTNET-10.0.401-ThirdPartyNotices.txt',
       '/opt/qualor/licenses/ has no ROSLYNATOR-LICENSE.txt',
       '/opt/qualor/licenses/ has no SONARANALYZER-CSHARP-LICENSE.txt',
+      '/opt/qualor/licenses/ has no SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt',
       '/opt/qualor/licenses/ has no TREE-SITTER-C-SHARP-LICENSE.txt',
       'qualor version does not list the csharp grammar',
     ]);

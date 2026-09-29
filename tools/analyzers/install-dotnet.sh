@@ -71,6 +71,12 @@ echo "$SONARANALYZER_SHA256  $TMP/sonar.nupkg" | sha256sum -c - >/dev/null || { 
 mkdir -p "$PREFIX/dotnet/analyzers/sonar"
 unzip -q -j -o "$TMP/sonar.nupkg" 'analyzers/*.dll' -d "$PREFIX/dotnet/analyzers/sonar"
 chmod 0644 "$PREFIX"/dotnet/analyzers/sonar/*.dll
+# The package's own third-party notices (Google.Protobuf, BSD-3-Clause; the StyleCop Lightup, MIT,
+# and Roslyn, Apache-2.0, code in its ShimLayer), verbatim from the checked nupkg, next to the
+# other licence files. deploy/scanner/licenses/SONARANALYZER-CSHARP-LICENSE.txt quotes them too.
+mkdir -p "$PREFIX/licenses"
+unzip -q -p "$TMP/sonar.nupkg" 'license/THIRD-PARTY-NOTICES.txt' > "$PREFIX/licenses/SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt"
+chmod 0644 "$PREFIX/licenses/SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt"
 
 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 "$PREFIX/bin/dotnet" --list-sdks
 echo "installed .NET SDK $DOTNET8_VERSION and $DOTNET10_VERSION into $DOTNET_ROOT, Roslynator $ROSLYNATOR_VERSION and SonarAnalyzer.CSharp $SONARANALYZER_VERSION into $PREFIX/dotnet/analyzers"

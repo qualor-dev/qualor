@@ -38,6 +38,7 @@ export function expectedContent(installScript: string): ExpectedContent {
       ...sdks.map((v) => `DOTNET-${v}-ThirdPartyNotices.txt`),
       'ROSLYNATOR-LICENSE.txt',
       'SONARANALYZER-CSHARP-LICENSE.txt',
+      'SONARANALYZER-CSHARP-THIRD-PARTY-NOTICES.txt',
       'TREE-SITTER-C-SHARP-LICENSE.txt',
     ],
   };
