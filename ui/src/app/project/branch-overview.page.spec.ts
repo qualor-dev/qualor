@@ -116,6 +116,17 @@ const series = (metric: string, a0: number, a1: number) => ({
   ],
 });
 
+/** The branch's whole history (the server keeps at most 1 000 points, evenly spread). */
+const MAIN_HISTORY = [
+  series('coverage', 60.8, 65.7),
+  series('issues', 7, 9),
+  series('blocker_issues', 1, 1),
+  series('high_issues', 1, 2),
+  series('medium_issues', 3, 4),
+  series('low_issues', 1, 1),
+  series('info_issues', 1, 1),
+];
+
 describe('BranchOverviewPage', () => {
   let server: FakeServer;
 
@@ -143,17 +154,7 @@ describe('BranchOverviewPage', () => {
         { metric: 'lines', overall: 800, new: 19 },
       ],
     });
-    server.on('GET', '/api/v0/branches/b-main/measures/history', {
-      body: [
-        series('coverage', 60.8, 65.7),
-        series('issues', 7, 9),
-        series('blocker_issues', 1, 1),
-        series('high_issues', 1, 2),
-        series('medium_issues', 3, 4),
-        series('low_issues', 1, 1),
-        series('info_issues', 1, 1),
-      ],
-    });
+    server.on('GET', '/api/v0/branches/b-main/measures/history', { body: MAIN_HISTORY });
     server.on('GET', '/api/v0/issues', {
       body: {
         items: [],
@@ -372,5 +373,76 @@ describe('BranchOverviewPage', () => {
     expect(
       text(root.querySelector('[aria-labelledby="sources-heading"] [role="alert"]')),
     ).toContain('HTTP 500');
+  });
+
+  it('shows no empty states or zero counts while the figures are still loading', async () => {
+    const pending = () => new Promise<never>(() => undefined);
+    server.on('GET', '/api/v0/branches/b-main/measures', pending);
+    server.on('GET', '/api/v0/branches/b-main/analyses', pending);
+    server.on('GET', '/api/v0/issues', pending);
+    // Pending requests keep the app unstable, so `settle` would wait forever: tick instead.
+    const fixture = TestBed.createComponent(BranchOverviewPage);
+    fixture.componentRef.setInput('projectId', PROJECT);
+    for (let i = 0; i < 5; i++) {
+      await new Promise((resolve) => setTimeout(resolve));
+      fixture.detectChanges();
+    }
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('#gate-heading')).not.toBeNull();
+    expect(root.textContent).not.toContain('No analysis yet.');
+    expect(root.textContent).not.toContain('No open issues.');
+    expect(
+      root.querySelectorAll('[aria-labelledby="open-issues-heading"] q-distribution li'),
+    ).toHaveLength(0);
+  });
+
+  it('shows no zero counts when the measures fail, and a failed history in its own panel', async () => {
+    server.on('GET', '/api/v0/branches/b-main/measures', {
+      status: 500,
+      body: problem(500, 'INTERNAL'),
+    });
+    server.on('GET', '/api/v0/branches/b-main/measures/history', {
+      status: 500,
+      body: problem(500, 'INTERNAL'),
+    });
+    const { root } = await render();
+    expect(
+      root.querySelectorAll('[aria-labelledby="open-issues-heading"] q-distribution li'),
+    ).toHaveLength(0);
+    const history = root.querySelector('[aria-labelledby="history-heading"]');
+    expect(text(history?.querySelector('[role="alert"]'))).toContain('HTTP 500');
+    expect(history?.querySelector('q-line-chart')).toBeNull();
+  });
+
+  it('reads the recent analyses from their own history, which a long branch never thins out', async () => {
+    const older = {
+      ...analysis(),
+      id: 'a0b',
+      revision: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      analysisDate: '2026-09-08T09:00:00.000Z',
+      gateStatus: 'passed',
+    };
+    server.on('GET', '/api/v0/branches/b-main/analyses', {
+      body: page([STALE, analysis(), older]),
+    });
+    // The whole history skipped a0b (downsampled); the recent one, from a0b on, has it.
+    const exact = (metric: string, a0b: number, a1: number) => ({
+      metric,
+      points: [
+        { analysisId: 'a0b', date: older.analysisDate, value: a0b },
+        { analysisId: 'a1', date: '2026-09-15T09:00:00.000Z', value: a1 },
+      ],
+    });
+    server.on('GET', '/api/v0/branches/b-main/measures/history', (request) =>
+      request.query.get('from') === older.analysisDate
+        ? { body: [exact('issues', 8, 9), exact('coverage', 64, 65.7)] }
+        : { body: MAIN_HISTORY },
+    );
+    const { root } = await render();
+    const rows = [...root.querySelectorAll('[aria-labelledby="recent-heading"] tbody tr')];
+    expect(rows).toHaveLength(2);
+    expect(text(rows[1])).toContain('64 %');
+    expect(text(rows[0]?.querySelector('td.num q-delta'))).toBe('+1');
+    expect(text(root.querySelector('[data-kpi="issues"] q-delta'))).toBe('+1 since Sep 8, 2026');
   });
 });

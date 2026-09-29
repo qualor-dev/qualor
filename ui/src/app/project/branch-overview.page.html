@@ -166,12 +166,18 @@
         </div>
       </div>
       <div class="panel-body">
-        <q-line-chart
-          [series]="historySeries()"
-          [metric]="historyMetric()"
-          [stacked]="view() === 'severity'"
-          [height]="310"
-        />
+        @if (historyError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        } @else if (history.hasValue()) {
+          <q-line-chart
+            [series]="historySeries()"
+            [metric]="historyMetric()"
+            [stacked]="view() === 'severity'"
+            [height]="310"
+          />
+        } @else {
+          <div class="chart-placeholder"></div>
+        }
       </div>
     </section>
 
@@ -181,9 +187,13 @@
         <span class="panel-total">{{ issueTotal() | measure: 'issues' }}</span>
       </div>
       <div class="panel-body">
-        <q-distribution [items]="severityItems()" />
-        <h3 class="subhead" i18n="@@overview.bySoftwareQuality">By software quality</h3>
-        <q-distribution [items]="qualityItems()" [bar]="false" />
+        @if (severityItems(); as items) {
+          <q-distribution [items]="items" />
+        }
+        @if (qualityItems(); as items) {
+          <h3 class="subhead" i18n="@@overview.bySoftwareQuality">By software quality</h3>
+          <q-distribution [items]="items" [bar]="false" />
+        }
       </div>
       <div class="panel-foot link-row">
         <a
@@ -207,8 +217,9 @@
       </div>
       @if (recentError(); as message) {
         <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
-      } @else {
-        <div class="panel-scroll">
+      } @else if (recent(); as rows) {
+        <!-- Focusable, so a keyboard can scroll the table sideways on a phone (it holds no links). -->
+        <div class="panel-scroll" tabindex="0" role="group" aria-labelledby="recent-heading">
           <table>
             <thead>
               <tr>
@@ -220,7 +231,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (r of recent(); track r.id) {
+              @for (r of rows; track r.id) {
                 <tr>
                   <td class="nowrap">{{ r.date | dateTime }}</td>
                   <td>
@@ -254,8 +265,8 @@
       <div class="panel-body">
         @if (sourcesError(); as message) {
           <p class="alert alert-error" role="alert">{{ message }}</p>
-        } @else {
-          <q-distribution [items]="engines()" [bar]="false" />
+        } @else if (engines(); as items) {
+          <q-distribution [items]="items" [bar]="false" />
           <h3 class="subhead" i18n="@@overview.topRules">Rules with the most issues</h3>
           <ol class="rule-list">
             @for (r of topRules(); track r.value) {

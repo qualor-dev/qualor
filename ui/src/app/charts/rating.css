@@ -16,6 +16,9 @@
   background: color-mix(in srgb, var(--r) 12%, var(--surface));
   box-shadow: inset 0 0 0 1.5px var(--r);
 }
+.rating-letter:not([data-rating]) {
+  color: var(--text-muted);
+}
 .rating-letter[data-rating='A'] {
   --r: var(--rating-a);
 }

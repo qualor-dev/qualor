@@ -81,9 +81,9 @@
   --sev-info: #aeb8c8;
   /* Ratings A–E; the letter carries the meaning. */
   --rating-a: #157a51;
-  --rating-b: #4f8a2b;
+  --rating-b: #3d7520;
   --rating-c: #8a5a00;
-  --rating-d: #b4521a;
+  --rating-d: #a84a14;
   --rating-e: #b3261e;
 }
 
@@ -1379,8 +1379,14 @@ details[open] > summary {
   }
 }
 @media (max-width: 40rem) {
+  /* Hidden on a phone visually only: the name stays the user button's accessible name. */
   .user-name {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 }
 

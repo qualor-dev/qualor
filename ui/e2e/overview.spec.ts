@@ -100,3 +100,16 @@ test('an unknown page and the unavailable page say so, accessibly', async ({ pag
   await page.getByRole('button', { name: 'Try again' }).click();
   await expect(page).toHaveURL(/\/projects$/);
 });
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the overview and the user menu stay accessible at 390 px', async ({ page }) => {
+    await page.goto('/projects');
+    await page.getByRole('link', { name: PAYMENTS.name }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(PAYMENTS.name);
+    // The name is hidden on a phone, visually only: the button keeps it.
+    await expect(page.getByRole('button', { name: 'Administrator' })).toBeVisible();
+    await expectAccessible(page);
+  });
+});

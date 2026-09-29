@@ -52,8 +52,11 @@
         }
       }
       @if (plot().end; as end) {
-        @if (!stacked()) {
+        <!-- A stack marks its end only when it is a single analysis: its bands have no area. -->
+        @if (!stacked() || columns().length === 1) {
           <circle class="marker" r="4.5" [attr.cx]="end.x" [attr.cy]="end.y" />
+        }
+        @if (!stacked()) {
           <text class="end-label" text-anchor="end" [attr.x]="end.x - 8" [attr.y]="end.y - 12">
             {{ end.text }}
           </text>

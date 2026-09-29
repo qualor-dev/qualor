@@ -84,6 +84,31 @@ describe('LineChart', () => {
     expect(root.querySelector('.chart-tip')).toBeNull();
   });
 
+  it('marks a single stacked analysis, so a new project is never an empty chart', async () => {
+    const { root } = await render(
+      [series('blocker', [2], 'blocker', 'Blocker'), series('high', [1], 'high', 'High')],
+      'issues',
+      true,
+    );
+    expect(root.querySelectorAll('circle.marker')).toHaveLength(1);
+  });
+
+  it('marks a single analysis of one series', async () => {
+    const { root } = await render([series('coverage', [42])]);
+    expect(root.querySelectorAll('circle.marker')).toHaveLength(1);
+  });
+
+  it('draws an all-equal series as a flat line', async () => {
+    const { root } = await render([series('ncloc', [654, 654, 654])], 'ncloc');
+    const ys = root
+      .querySelector('polyline.line')
+      ?.getAttribute('points')
+      ?.split(' ')
+      .map((p) => p.split(',')[1]);
+    expect(ys).toHaveLength(3);
+    expect(new Set(ys).size).toBe(1);
+  });
+
   it('keeps the latest 1 000 points (the API maximum) of a longer history', async () => {
     const long: ChartSeries = {
       key: 'ncloc',
