@@ -351,8 +351,9 @@ and never one without the other:
    keeps a file only when its SHA-256 matches (a Debian file also has to match its `.dsc`); any
    mismatch deletes it and fails the command. It then writes `SOURCES.md` (the index, the same as
    the committed `deploy/<image>/SOURCES.md`), `SHA256SUMS`, `README.md` and the manifests there.
-   It never runs what it downloads. About 1.7 GB for the scanner (the WebKit tar is 1.1 GB) and
-   120 MB for the server; a rerun keeps the files that still verify.
+   It never runs what it downloads. About 1.9 GB for the scanner (the WebKit tar is 1.1 GB, the
+   sonar-dotnet source about 120 MB, SonarJS about 20 MB and axe-core 4 MB) and 120 MB for the
+   server; a rerun keeps the files that still verify.
 2. `pnpm deploy:release-images --tag <tag> [--also <tag>]…` checks those files again, builds the
    server and scanner images under a staging name (`qualor-release-staging/<image>:<tag>`, which
    no registry push can reach by accident), checks that the Debian packages in each are exactly

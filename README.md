@@ -180,7 +180,7 @@ repository commits generated coverage output, add it to `sources.exclude` in `qu
 
 ## Migrating from SonarQube
 
-`qualor import sonarqube` brings a SonarQube Server (9.9 LTA or later) or SonarQube Cloud organisation's setup into Qualor: quality profiles (JavaScript, TypeScript, C#, Java), quality gates, the projects' profile and gate assignments, and the main branch's false positives and accepted issues. C#, JavaScript and TypeScript issue statuses map one to one to Qualor's bundled SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4), wherever the bundled version still has the rule key SonarQube reports. It only reads SonarQube (`GET` requests), and `--dry-run` shows what would change without writing anything:
+`qualor import sonarqube` brings a SonarQube Server (9.9 LTA or later) or SonarQube Cloud organisation's setup into Qualor: quality profiles (JavaScript, TypeScript, C#, Java), quality gates, the projects' profile and gate assignments, and the main branch's false positives and accepted issues. C#, JavaScript and TypeScript issue statuses map one to one to Qualor's bundled SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0), wherever the bundled version still has the rule key SonarQube reports. It only reads SonarQube (`GET` requests), and `--dry-run` shows what would change without writing anything:
 
 ```sh
 SONAR_TOKEN=… QUALOR_URL=https://qualor.example.com QUALOR_TOKEN=…   qualor import sonarqube --url https://sonar.example.com --dry-run

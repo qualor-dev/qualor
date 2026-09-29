@@ -17,6 +17,15 @@ All notable changes to Qualor are listed here, newest first. The format follows
   decorates it count once. Turn them off with `analyzers.roslyn.sonarAnalyzer: false` and
   `analyzers.sonarjs.enabled: false`.
 
+### Changed
+
+- `sonarjs` is now a built-in engine id. A `qualor.yml` `sarif:` entry with `engine: sonarjs` no
+  longer validates (pick another id), and an imported tool whose name becomes `sonarjs` is reported
+  as `ext-sonarjs`.
+- `qualor dotnet begin` writes a new version of its MSBuild hook. The `qualor dotnet begin` of an
+  older CLI treats that hook as not its own and stops with exit 2, so on a self-hosted runner whose
+  builds share one MSBuild user directory, upgrade every `qualor` CLI on it together.
+
 ## [0.1.1] - 2026-09-29
 
 ### Fixed

@@ -103,12 +103,13 @@ export function runDotnetBegin(
   const sonar =
     roslyn.bundledAnalyzers && roslyn.sonarAnalyzer ? bundledDlls(path.join(dir, 'sonar')) : [];
   if (roslyn.bundledAnalyzers && roslynator.length === 0) {
-    log.warn(`no bundled analyzers in ${dir}: the build reports the .NET SDK's own rules only`);
+    // Not "the SDK's own rules only": the SonarAnalyzer family below may still be there.
+    log.warn(`no bundled analyzers in ${dir}: the build runs without the bundled Roslynator`);
   }
   // config.md §6.1 step 4: each family's empty warning is independent of the other's.
   if (roslyn.bundledAnalyzers && roslyn.sonarAnalyzer && sonar.length === 0) {
     log.warn(
-      `no bundled SonarAnalyzer in ${path.join(dir, 'sonar')}: the build reports the .NET SDK's own rules only`,
+      `no bundled SonarAnalyzer in ${path.join(dir, 'sonar')}: the build runs without the bundled SonarAnalyzer.CSharp`,
     );
   }
   const now = (deps.now ?? (() => new Date()))();

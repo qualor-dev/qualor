@@ -125,7 +125,10 @@ describe('qualor dotnet begin (config.md §6.1)', () => {
       captureIO({ cwd: other, env: e }).io,
       createLogger('warn', (t) => lines.push(t)),
     );
-    expect(lines.join('')).toMatch(/SDK's own rules only/);
+    expect(lines.join('')).toMatch(
+      /no bundled analyzers in .*: the build runs without the bundled Roslynator/,
+    );
+    expect(lines.join('')).not.toMatch(/SDK's own rules only/);
   });
 
   it('warns when there are no bundled SonarAnalyzer DLLs, analogous to the Roslynator warning (fix round 1)', () => {
@@ -136,7 +139,11 @@ describe('qualor dotnet begin (config.md §6.1)', () => {
       captureIO({ cwd: repo(), env: env({ QUALOR_DOTNET_ANALYZERS: dir }) }).io,
       createLogger('warn', (t) => lines.push(t)),
     );
-    expect(lines.join('')).toMatch(/no bundled SonarAnalyzer in .*sonar: .*SDK's own rules only/);
+    // Roslynator is still there, so not "the .NET SDK's own rules only".
+    expect(lines.join('')).toMatch(
+      /no bundled SonarAnalyzer in .*sonar: the build runs without the bundled SonarAnalyzer\.CSharp/,
+    );
+    expect(lines.join('')).not.toMatch(/SDK's own rules only/);
   });
 
   it("the two families' empty warnings are independent of each other (config.md §6.1 step 4, fix round 1)", () => {

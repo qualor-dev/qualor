@@ -8,7 +8,7 @@ This image holds files only: the complete corresponding source of every copyleft
 [`qualor/scanner`](https://hub.docker.com/r/qualor/scanner) with the **same tag**. Every release
 of `qualor/scanner:<tag>` publishes `qualor/scanner-sources:<tag>` next to it, and the same files
 are attached to the release of that tag at <https://github.com/qualor-dev/qualor>. It is a
-`scratch` image with the files in `/sources/`, about 1.7 GB (most of it WebKit).
+`scratch` image with the files in `/sources/`, about 1.9 GB (most of it WebKit).
 
 ### Contents
 

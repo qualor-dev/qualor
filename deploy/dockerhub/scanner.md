@@ -67,9 +67,10 @@ analyses compiled classes).
 
 - The `qualor` CLI (entrypoint `qualor`, default command `scan`), a single binary built with Bun.
 - Node.js 22.23.3 with npm and corepack, to run the project's own ESLint from its `node_modules`.
-- SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0):
+- SonarQube-compatible rules for JavaScript and TypeScript (eslint-plugin-sonarjs 2.0.4, LGPL-3.0):
   Qualor's own sonarjs pass in `/opt/qualor/sonarjs` runs eslint-plugin-sonarjs 2.0.4 on Qualor's
-  own ESLint 9, for JavaScript and TypeScript, alongside the project's own ESLint above.
+  own ESLint 9, alongside the project's own ESLint above. The C# ones, SonarAnalyzer.CSharp 9.32,
+  are in `qualor/scanner-dotnet`.
 - Eclipse Temurin JRE 17.0.20+8, for PMD and SpotBugs.
 - git, with `safe.directory '*'`, since CI runners check out as another user.
 - The pinned analyzers in `/opt/qualor/bin`: PMD 7.27.0, SpotBugs 4.10.4, OpenGrep 1.30.0,
