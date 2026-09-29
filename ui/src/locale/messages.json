@@ -1236,7 +1236,7 @@
     "sso.error.lastConnectionOne": "This is the last enabled connection, and password sign-in is limited to break-glass administrators. Set password sign-in back to everyone first (Settings → Sign-in).",
     "sso.error.nameTaken": "Another connection has this name. Names are compared ignoring case.",
     "sso.title": "Single sign-on",
-    "sso.adminsOnly": "Only instance administrators manage single sign-on.",
+    "sso.adminsOnly": " Only instance administrators manage single sign-on. ",
     "sso.intro": " People sign in through an OpenID Connect or SAML identity provider. Each enabled connection in effect appears as a button on the sign-in page. Who may still use a password is set under Sign-in. ",
     "sso.addOidc": "Add an OpenID Connect connection",
     "sso.addSaml": "Add a SAML connection",
