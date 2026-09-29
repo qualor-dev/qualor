@@ -37,6 +37,8 @@ const MR: Branch = {
   isMain: false,
   mrSourceBranch: 'feature/refund-limits',
   mrTargetBranch: 'main',
+  mrTitle: 'Refund <b>limits</b>',
+  mrUrl: 'https://gitlab.example.com/acme/p1/-/merge_requests/42',
   lastAnalysisId: null,
   lastAnalyzedAt: null,
   gateStatus: null,
@@ -190,6 +192,8 @@ describe('BranchOverviewPage', () => {
 
   it('shows the gate verdict with its conditions, the KPIs and the charts', async () => {
     const { root } = await render();
+    // The main branch is the project's overview: no branch strip.
+    expect(root.querySelector('.branch-context')).toBeNull();
     expect(text(root.querySelector('#gate-heading'))).toBe('Quality gate Qualor way');
     expect(text(root.querySelector('.gate-word'))).toBe('Failed');
     const gate = root.querySelector('[aria-labelledby="gate-heading"]');
@@ -282,6 +286,24 @@ describe('BranchOverviewPage', () => {
   it('titles a merge request by its number and branches, and says when nothing ran', async () => {
     const { root } = await render('b-mr');
     expect(text(root.querySelector('.branch-name'))).toBe('!42 feature/refund-limits → main');
+    // The strip above the overview names the merge request, as text, and links to GitLab.
+    const strip = root.querySelector('.branch-context');
+    expect(text(strip?.querySelector('.branch-context-title'))).toBe(
+      '!42 feature/refund-limits → main',
+    );
+    expect(strip?.textContent).toContain('Refund <b>limits</b>');
+    expect(strip?.querySelector('b')).toBeNull();
+    const gitlab = [...(strip?.querySelectorAll('a') ?? [])].find(
+      (a) => text(a) === 'Open in GitLab',
+    );
+    expect(gitlab?.getAttribute('href')).toBe(
+      'https://gitlab.example.com/acme/p1/-/merge_requests/42',
+    );
+    expect(gitlab?.getAttribute('rel')).toBe('noopener noreferrer');
+    const back = [...(strip?.querySelectorAll('a') ?? [])].find((a) =>
+      text(a)?.startsWith('All branches'),
+    );
+    expect(back?.getAttribute('href')).toBe(`/projects/${PROJECT}/branches`);
     expect(root.textContent).toContain('This branch has no analysis yet.');
     expect(root.querySelector('[role="alert"]')).toBeNull();
     expect(server.requests.filter((r) => r.path.startsWith('/api/v0/analyses'))).toHaveLength(0);

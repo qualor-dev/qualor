@@ -22,7 +22,7 @@
           [attr.y1]="t.y"
           [attr.y2]="t.y"
         />
-        <text class="axis" text-anchor="end" [attr.x]="plot().left - 10" [attr.y]="t.y + 4">
+        <text class="axis axis-y" text-anchor="end" [attr.x]="plot().left - 10" [attr.y]="t.y + 4">
           {{ t.text }}
         </text>
       }
@@ -34,6 +34,18 @@
       @for (band of plot().bands; track band.key) {
         <polygon class="band tone-{{ band.tone }}" [attr.points]="band.area" />
         <polyline class="band-edge" [attr.points]="band.edge" />
+      }
+      @if (plot().column; as col) {
+        @for (seg of col.segments; track seg.key) {
+          <rect
+            class="band-col tone-{{ seg.tone }}"
+            rx="3"
+            [attr.x]="col.x"
+            [attr.y]="seg.y"
+            [attr.width]="col.width"
+            [attr.height]="seg.height"
+          />
+        }
       }
       @if (plot().line; as line) {
         <polygon class="area" [attr.points]="line.area" />
@@ -52,11 +64,8 @@
         }
       }
       @if (plot().end; as end) {
-        <!-- A stack marks its end only when it is a single analysis: its bands have no area. -->
-        @if (!stacked() || columns().length === 1) {
-          <circle class="marker" r="4.5" [attr.cx]="end.x" [attr.cy]="end.y" />
-        }
         @if (!stacked()) {
+          <circle class="marker" r="4.5" [attr.cx]="end.x" [attr.cy]="end.y" />
           <text class="end-label" text-anchor="end" [attr.x]="end.x - 8" [attr.y]="end.y - 12">
             {{ end.text }}
           </text>

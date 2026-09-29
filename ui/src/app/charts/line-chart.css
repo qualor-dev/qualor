@@ -31,7 +31,12 @@ svg:focus-visible {
 .axis {
   fill: var(--text-muted);
   font-size: 11.5px;
+}
+.axis-y {
   font-variant-numeric: tabular-nums;
+}
+.band-col {
+  fill: var(--tone);
 }
 .area {
   fill: var(--chart-accent);

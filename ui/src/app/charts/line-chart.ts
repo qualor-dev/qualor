@@ -157,6 +157,32 @@ export class LineChart {
       }
     }
 
+    // A stack of one analysis has bands without area: it is drawn as one stacked column instead.
+    let column: {
+      x: number;
+      width: number;
+      segments: { key: string; tone: string; y: number; height: number }[];
+    } | null = null;
+    const only = cols.length === 1 ? cols[0] : undefined;
+    if (this.stacked() && only) {
+      let base = 0;
+      const segments: { key: string; tone: string; y: number; height: number }[] = [];
+      this.series().forEach((s, si) => {
+        const v = only.values[si] ?? 0;
+        if (v <= 0) return;
+        const top = y(base + v);
+        // A 2px surface gap between touching segments (dataviz: gaps, not strokes).
+        segments.push({
+          key: s.key,
+          tone: s.tone,
+          y: r1(top + 1),
+          height: r1(Math.max(1, y(base) - top - 2)),
+        });
+        base += v;
+      });
+      column = { x: r1((xs[0] ?? 0) - 12), width: 24, segments };
+    }
+
     let end: { x: number; y: number; text: string } | null = null;
     for (let i = cols.length - 1; i >= 0 && end === null; i--) {
       const col = cols[i];
@@ -165,7 +191,6 @@ export class LineChart {
         end = { x: xs[i] ?? 0, y: r1(y(v)), text: formatMeasure(v, metric, this.locale) };
       }
     }
-    const only = cols.length === 1 ? cols[0] : undefined;
     const xTicks = only
       ? [{ at: only.at, x: xs[0] ?? 0, text: formatDate(only.date, this.locale) }]
       : timeTicks(t0, t1).map((t) => ({
@@ -182,6 +207,7 @@ export class LineChart {
       y,
       line,
       bands,
+      column,
       end,
       xTicks,
       yTicks: ticks.map((t) => ({

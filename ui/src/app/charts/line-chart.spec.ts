@@ -84,13 +84,24 @@ describe('LineChart', () => {
     expect(root.querySelector('.chart-tip')).toBeNull();
   });
 
-  it('marks a single stacked analysis, so a new project is never an empty chart', async () => {
+  it('draws a single stacked analysis as one stacked column, so a new project is never empty', async () => {
     const { root } = await render(
-      [series('blocker', [2], 'blocker', 'Blocker'), series('high', [1], 'high', 'High')],
+      [
+        series('blocker', [2], 'blocker', 'Blocker'),
+        series('high', [0], 'high', 'High'),
+        series('medium', [1], 'medium', 'Medium'),
+      ],
       'issues',
       true,
     );
-    expect(root.querySelectorAll('circle.marker')).toHaveLength(1);
+    const segments = [...root.querySelectorAll('rect.band-col')];
+    expect(segments.map((r) => r.getAttribute('class'))).toEqual([
+      'band-col tone-blocker',
+      'band-col tone-medium',
+    ]);
+    expect(Number(segments[0]?.getAttribute('height'))).toBeGreaterThan(
+      Number(segments[1]?.getAttribute('height')),
+    );
   });
 
   it('marks a single analysis of one series', async () => {

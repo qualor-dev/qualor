@@ -50,6 +50,12 @@ export function notFound(): ApiError {
 export interface BranchView {
   id: string;
   title: string;
+  isMain: boolean;
+  kind: 'branch' | 'merge_request';
+  /** The merge request's own title (GitLab or GitHub), or null. */
+  mrTitle: string | null;
+  /** The merge request's page, as the server stored it; shown only through `safeHelpUri`. */
+  mrUrl: string | null;
   gateStatus: string | null;
   /** The last succeeded analysis (never a failed or stale upload); null before the first. */
   lastAnalysisId: string | null;
@@ -59,6 +65,10 @@ export function branchView(branch: Branch): BranchView {
   return {
     id: branch.id,
     title: branchTitle(branch),
+    isMain: branch.isMain,
+    kind: branch.kind,
+    mrTitle: branch.mrTitle,
+    mrUrl: branch.mrUrl,
     gateStatus: branch.gateStatus,
     lastAnalysisId: branch.lastAnalysisId,
   };
@@ -74,6 +84,10 @@ export async function mainBranchView(api: Api, projectId: string): Promise<Branc
   return {
     id: main.id,
     title: main.name,
+    isMain: true,
+    kind: 'branch',
+    mrTitle: null,
+    mrUrl: null,
     gateStatus: main.gateStatus,
     lastAnalysisId: main.lastAnalysisId,
   };

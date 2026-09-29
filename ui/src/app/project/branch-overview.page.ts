@@ -13,6 +13,8 @@ import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { GateBadge } from '../shared/gate-badge';
+import { Icon } from '../shared/icon';
+import { safeHelpUri } from '../shared/links';
 import { MeasurePipe } from '../shared/measure.pipe';
 import { branchView, findBranch, mainBranchView } from './branches';
 import {
@@ -56,6 +58,7 @@ const SPARK_POINTS = 12;
     Delta,
     Distribution,
     GateBadge,
+    Icon,
     LabelPipe,
     Lens,
     LineChart,
@@ -184,6 +187,16 @@ export class BranchOverviewPage {
           },
         }),
       ),
+  });
+
+  /** A merge request's page, only over http(s) (scm.md §8, plan 1F ruling Y5). */
+  protected readonly mrLink = computed(() => safeHelpUri(this.current()?.mrUrl ?? null));
+  /** The GitLab link names its merge request, starting with the words it shows. */
+  protected readonly mrLinkLabel = computed(() => {
+    const b = this.current();
+    return b
+      ? $localize`:@@branches.openInGitLabLabel:Open in GitLab: ${b.mrTitle || b.title}:mergeRequest:`
+      : '';
   });
 
   /** The latest analysis, `null` when the branch has none, `undefined` while unknown. */
