@@ -224,14 +224,28 @@ describe('LicensePage (enterprise.md §11)', () => {
     expect(texts[2]).toContain('past its grace period');
   });
 
-  it('removes a saved key after a confirmation, and says what the restart does', async () => {
+  /** The key form's Remove (the confirmation dialog has a Remove of its own). */
+  const formRemove = (root: HTMLElement) =>
+    button(root.querySelector<HTMLElement>('form#license-form')!, 'Remove');
+  const ask = (root: HTMLElement) =>
+    root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+
+  it("removes a saved key after the page's own confirmation, and says what the restart does", async () => {
     const server = setup({ ...COMMUNITY, restartRequired: true });
     server.on('DELETE', '/api/v0/license', { body: { ...COMMUNITY, restartRequired: false } });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
-    button(root, 'Remove')!.click();
+    formRemove(root)!.click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(ask(root).open).toBe(true);
+    expect(ask(root).querySelector('#confirm-text')?.textContent?.trim()).toBe(
+      'Remove the saved licence key? At the next start the server runs as the community edition. Nothing is deleted.',
+    );
+    button(ask(root), 'Remove')!.click();
+    await settle(fixture);
+    expect(confirm).not.toHaveBeenCalled();
+    // Closed, and gone with the saved key it asked about.
+    expect(ask(root)?.open ?? false).toBe(false);
     expect(server.requestsTo('DELETE', '/api/v0/license')).toHaveLength(1);
     expect(root.querySelector('[role="status"]')?.textContent).toContain('Removed.');
     confirm.mockRestore();
@@ -243,28 +257,95 @@ describe('LicensePage (enterprise.md §11)', () => {
     const server = setup({ ...ACTIVE_UPLOADED });
     server.on('DELETE', '/api/v0/license', { body: { ...ACTIVE_UPLOADED, restartRequired: true } });
     server.on('PUT', '/api/v0/license', { body: { ...ACTIVE_UPLOADED, restartRequired: true } });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
-    button(root, 'Remove')!.click();
+    formRemove(root)!.click();
+    await settle(fixture);
+    button(ask(root), 'Remove')!.click();
     await settle(fixture);
     expect(root.querySelector('[role="status"]')?.textContent).toContain('Removed.');
-    expect(button(root, 'Remove')).toBeUndefined();
+    expect(formRemove(root)).toBeUndefined();
     paste(root, KEY);
     submit(root);
     await settle(fixture);
     expect(root.querySelector('[role="status"]')?.textContent).toContain('Saved.');
-    expect(button(root, 'Remove')).toBeDefined();
-    confirm.mockRestore();
+    expect(formRemove(root)).toBeDefined();
   });
 
-  it('keeps the key when the removal is not confirmed', async () => {
+  it('keeps the key when the removal is cancelled', async () => {
     const server = setup({ ...ACTIVE_UPLOADED });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, root } = await render();
-    button(root, 'Remove')!.click();
+    formRemove(root)!.click();
     await settle(fixture);
+    button(ask(root), 'Cancel')!.click();
+    await settle(fixture);
+    expect(ask(root).open).toBe(false);
     expect(server.requestsTo('DELETE', '/api/v0/license')).toHaveLength(0);
-    confirm.mockRestore();
+  });
+
+  describe('the plan panel (step 9)', () => {
+    const DAY = 86_400_000;
+    /** A licence issued `since` days ago, `left` days before it expires, with 14 days of grace. */
+    function licence(since: number, left: number, overrides: Partial<typeof ACME> = {}) {
+      const now = Date.now();
+      return {
+        ...ACME,
+        issued: new Date(now - since * DAY).toISOString(),
+        expires: new Date(now + left * DAY).toISOString(),
+        graceEndsAt: new Date(now + (left + 14) * DAY).toISOString(),
+        ...overrides,
+      };
+    }
+    const meter = (root: HTMLElement) => root.querySelector('#license-plan q-meter');
+    const words = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim();
+
+    it('shows the time left as a meter, and each licensed feature as a check with its state', async () => {
+      setup({
+        ...ACTIVE_UPLOADED,
+        license: licence(100, 265, { features: ['audit-log', 'llm.fix-quota'] }),
+        activeFeatures: ['llm.fix-quota'],
+      });
+      const { root } = await render();
+      const plan = root.querySelector('#license-plan')!;
+      expect(plan.textContent).toContain('Acme Corporation');
+      expect(words(meter(root)?.querySelector('.meter-value'))).toBe('265 days left');
+      const track = meter(root)?.querySelector('[role="meter"]');
+      expect(track?.getAttribute('aria-valuenow')).toBe('265');
+      expect(track?.getAttribute('aria-valuemax')).toBe('365');
+      const features = [...plan.querySelectorAll('.feature-checks li')].map((li) => words(li));
+      expect(features).toEqual(['audit-log Not active', 'llm.fix-quota Active']);
+    });
+
+    it('says when the licence expires soon, runs on grace, or has expired, in words', async () => {
+      setup({ ...ACTIVE_UPLOADED, license: licence(340, 25), expiresSoon: true });
+      const soon = await render();
+      expect(words(meter(soon.root)?.querySelector('.meter-note'))).toContain('Renew soon');
+      TestBed.resetTestingModule();
+      setup({ ...ACTIVE_UPLOADED, state: 'grace', license: licence(370, -5) });
+      const grace = await render();
+      expect(words(meter(grace.root)?.querySelector('.meter-value'))).toBe('9 days of grace left');
+      expect(meter(grace.root)?.querySelector('.meter')?.classList).toContain('reached');
+      expect(words(meter(grace.root)?.querySelector('.meter-note'))).toContain(
+        'Enterprise features stop on',
+      );
+      TestBed.resetTestingModule();
+      setup({
+        ...COMMUNITY,
+        state: 'expired',
+        source: 'uploaded',
+        license: licence(400, -35, { expires: '2027-10-01T00:00:00.000Z' }),
+      });
+      const expired = await render();
+      expect(words(meter(expired.root)?.querySelector('.meter-value'))).toBe(
+        'Expired on Oct 1, 2027',
+      );
+    });
+
+    it('draws no meter without a licence', async () => {
+      setup(COMMUNITY);
+      const { root } = await render();
+      expect(meter(root)).toBeNull();
+      expect(root.querySelector('#license-plan')?.textContent).toContain('Community edition');
+    });
   });
 
   it('shows an active licence with its customer, dates, features and plugins', async () => {

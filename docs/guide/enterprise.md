@@ -22,8 +22,8 @@ works in air-gapped networks.
 
 A licence switches on the features its key lists, and nothing else. A Business key lists `sso`,
 `audit-log` and `llm.fix-quota`; an Enterprise key lists those and `sso.multi`,
-`audit-log.stream` and `scim` too. **Settings → Licence** shows the active ones under
-**Enterprise features**; `GET /api/v0/license` also shows the ones the key lists. Roles and
+`audit-log.stream` and `scim` too. **Settings → Licence** lists the features the key has under
+**Enterprise features**, each marked Active or Not active; `GET /api/v0/license` shows the same. Roles and
 project access need no licence: they are part of every edition. Portfolio reports and compliance
 exports are not available yet, in any edition.
 
@@ -188,11 +188,14 @@ spaces, byte-order marks). After you save a key, the page never shows it again.
 - the edition and the state in words, such as "active until 1 October 2027", or the reason a key
   was rejected;
 - whom the licence is for, the licence id, and when it was issued and expires;
-- the active enterprise features and the enterprise plugins, with any load error;
+- the time left, as a meter: the days until the licence expires, or the days left of the grace
+  period;
+- each enterprise feature the key lists, marked Active or Not active, and the enterprise plugins,
+  with any load error;
 - where the key comes from: `QUALOR_LICENSE`, `QUALOR_LICENSE_FILE`, or saved in Qualor.
 
 Unless a variable sets the key, the page also has a field to paste a key with **Save** and, once a
-key is saved in Qualor, a **Remove** button.
+key is saved in Qualor, a **Remove** button, which asks first.
 
 Every signed-in user can see the edition and the active features in `GET /api/v0/system/info`.
 Users who are not instance admins see nothing else about the licence.

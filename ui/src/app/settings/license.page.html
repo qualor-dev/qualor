@@ -1,41 +1,18 @@
-<h2 #heading tabindex="-1" i18n="@@license.title">Licence</h2>
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@license.title">Licence</h2>
+    @if (!instanceAdmin()) {
+      <p class="muted" i18n="@@license.adminsOnly">
+        Only instance administrators manage the licence.
+      </p>
+    }
+  </div>
+</div>
 @if (!instanceAdmin()) {
-  <p class="muted" i18n="@@license.adminsOnly">Only instance administrators manage the licence.</p>
+  <!-- Nothing more: the server is asked nothing. -->
 } @else if (loadError(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
 } @else if (status(); as s) {
-  <p class="license-state">
-    @switch (s.state) {
-      @case ('active') {
-        <span class="badge badge-passed" i18n="@@license.state.active"
-          >Enterprise edition, active until {{ s.license?.expires | dateTime: 'date' }}</span
-        >
-      }
-      @case ('grace') {
-        <span class="badge badge-warn" i18n="@@license.state.grace"
-          >Grace period: enterprise features stop on
-          {{ s.license?.graceEndsAt | dateTime: 'date' }}</span
-        >
-      }
-      @case ('expired') {
-        <span class="badge badge-failed" i18n="@@license.state.expired"
-          >Expired: running as the community edition</span
-        >
-      }
-      @case ('invalid') {
-        @if (rejectedReason(); as reason) {
-          <span class="badge badge-failed" i18n="@@license.state.invalid"
-            >The key was rejected: {{ reason }}</span
-          >
-        } @else {
-          <span class="badge badge-failed">{{ texts.rejectedAtStart() }}</span>
-        }
-      }
-      @default {
-        <span class="badge badge-none" i18n="@@license.state.none">Community edition</span>
-      }
-    }
-  </p>
   <div role="status">
     @if (announcement(); as message) {
       <p class="alert alert-success">{{ message }}</p>
@@ -54,131 +31,248 @@
     </p>
   }
 
-  <dl class="facts">
-    @if (s.license; as l) {
-      <dt i18n="@@license.customer">Customer</dt>
-      <dd>{{ l.customer }}</dd>
-      <dt i18n="@@license.id">Licence ID</dt>
-      <dd>
-        <code>{{ l.id }}</code>
-      </dd>
-      <dt i18n="@@license.keyId">Signing key</dt>
-      <dd>
-        <code>{{ l.keyId }}</code>
-        @if (l.test) {
-          <span class="badge badge-warn" i18n="@@license.testKey">test key</span>
-        }
-      </dd>
-      <dt i18n="@@license.issued">Issued</dt>
-      <dd>{{ l.issued | dateTime: 'date' }}</dd>
-      <dt i18n="@@license.expires">Expires</dt>
-      <dd>{{ l.expires | dateTime: 'date' }}</dd>
-      <dt i18n="@@license.graceEnds">Grace period ends</dt>
-      <dd>{{ l.graceEndsAt | dateTime: 'date' }}</dd>
-    }
-    <dt i18n="@@license.features">Enterprise features</dt>
-    <dd>
-      @for (f of s.activeFeatures; track f) {
-        <code class="feature">{{ f }}</code>
-      } @empty {
-        <span class="muted" i18n="@@license.noFeatures">None</span>
-      }
-    </dd>
-    @if (s.plugins.length > 0) {
-      <dt i18n="@@license.plugins">Plugins</dt>
-      <dd>
-        <ul>
-          @for (p of s.plugins; track p.name) {
-            <li>
-              <code>{{ p.name }}</code>
-              @if (p.state === 'loaded') {
-                <span class="badge badge-passed" i18n="@@license.plugin.loaded">loaded</span>
+  <div class="license-panels">
+    <section id="license-plan" class="card panel" aria-labelledby="license-plan-heading">
+      <div class="panel-head">
+        <h3 id="license-plan-heading" i18n="@@license.planTitle">Your plan</h3>
+        <p class="license-state">
+          @switch (s.state) {
+            @case ('active') {
+              <span class="badge badge-passed" i18n="@@license.state.active"
+                >Enterprise edition, active until {{ s.license?.expires | dateTime: 'date' }}</span
+              >
+            }
+            @case ('grace') {
+              <span class="badge badge-warn" i18n="@@license.state.grace"
+                >Grace period: enterprise features stop on
+                {{ s.license?.graceEndsAt | dateTime: 'date' }}</span
+              >
+            }
+            @case ('expired') {
+              <span class="badge badge-failed" i18n="@@license.state.expired"
+                >Expired: running as the community edition</span
+              >
+            }
+            @case ('invalid') {
+              @if (rejectedReason(); as reason) {
+                <span class="badge badge-failed" i18n="@@license.state.invalid"
+                  >The key was rejected: {{ reason }}</span
+                >
               } @else {
-                <span class="badge badge-failed" i18n="@@license.plugin.failed">failed</span>
-                <span>{{ p.error }}</span>
+                <span class="badge badge-failed">{{ texts.rejectedAtStart() }}</span>
               }
-            </li>
+            }
+            @default {
+              <span class="badge badge-none" i18n="@@license.state.none">Community edition</span>
+            }
           }
-        </ul>
-      </dd>
-    }
-    <dt i18n="@@license.source">Where the key comes from</dt>
-    <dd>
-      @switch (s.source) {
-        @case ('environment') {
-          <ng-container i18n="@@license.source.environment"
-            >The <code>QUALOR_LICENSE</code> variable</ng-container
-          >
+        </p>
+      </div>
+      <div class="panel-body license-plan">
+        @if (timeLeft(); as t) {
+          <q-meter
+            class="license-time"
+            label="Time left"
+            i18n-label="@@license.timeLeft"
+            [value]="t.value"
+            [max]="t.max"
+            [text]="t.text"
+            [note]="t.note"
+            [alert]="t.alert"
+          />
         }
-        @case ('file') {
-          <ng-container i18n="@@license.source.file"
-            >The file named in <code>QUALOR_LICENSE_FILE</code></ng-container
-          >
+        <dl class="facts">
+          @if (s.license; as l) {
+            <dt i18n="@@license.customer">Customer</dt>
+            <dd>{{ l.customer }}</dd>
+            <dt i18n="@@license.id">Licence ID</dt>
+            <dd>
+              <code>{{ l.id }}</code>
+            </dd>
+            <dt i18n="@@license.keyId">Signing key</dt>
+            <dd>
+              <code>{{ l.keyId }}</code>
+              @if (l.test) {
+                <span class="badge badge-warn" i18n="@@license.testKey">test key</span>
+              }
+            </dd>
+            <dt i18n="@@license.issued">Issued</dt>
+            <dd>{{ l.issued | dateTime: 'date' }}</dd>
+            <dt i18n="@@license.expires">Expires</dt>
+            <dd>{{ l.expires | dateTime: 'date' }}</dd>
+            <dt i18n="@@license.graceEnds">Grace period ends</dt>
+            <dd>{{ l.graceEndsAt | dateTime: 'date' }}</dd>
+          }
+          <dt i18n="@@license.source">Where the key comes from</dt>
+          <dd>
+            @switch (s.source) {
+              @case ('environment') {
+                <ng-container i18n="@@license.source.environment"
+                  >The <code>QUALOR_LICENSE</code> variable</ng-container
+                >
+              }
+              @case ('file') {
+                <ng-container i18n="@@license.source.file"
+                  >The file named in <code>QUALOR_LICENSE_FILE</code></ng-container
+                >
+              }
+              @case ('uploaded') {
+                <ng-container i18n="@@license.source.uploaded">Saved in Qualor</ng-container>
+              }
+              @default {
+                <ng-container i18n="@@license.source.none"
+                  >No key was set at the last start</ng-container
+                >
+              }
+            }
+          </dd>
+        </dl>
+        <div class="license-features">
+          <h4 i18n="@@license.features">Enterprise features</h4>
+          @if (features().length > 0) {
+            <ul class="feature-checks">
+              @for (f of features(); track f.name) {
+                <li [class.active]="f.active">
+                  <q-icon [name]="f.active ? 'check' : 'minus'" /><code>{{ f.name }}</code
+                  >&ngsp;
+                  @if (f.active) {
+                    <span i18n="@@license.featureActive">Active</span>
+                  } @else {
+                    <span class="muted" i18n="@@license.featureInactive">Not active</span>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="muted" i18n="@@license.noFeatures">None</p>
+          }
+        </div>
+        @if (s.plugins.length > 0) {
+          <div class="license-plugins">
+            <h4 i18n="@@license.plugins">Plugins</h4>
+            <ul>
+              @for (p of s.plugins; track p.name) {
+                <li>
+                  <code>{{ p.name }}</code
+                  >&ngsp;
+                  @if (p.state === 'loaded') {
+                    <span class="badge badge-passed" i18n="@@license.plugin.loaded">loaded</span>
+                  } @else {
+                    <span class="badge badge-failed" i18n="@@license.plugin.failed">failed</span
+                    >&ngsp;<span class="plugin-error">{{ p.error }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          </div>
         }
-        @case ('uploaded') {
-          <ng-container i18n="@@license.source.uploaded">Saved in Qualor</ng-container>
-        }
-        @default {
-          <ng-container i18n="@@license.source.none">No key was set at the last start</ng-container>
-        }
-      }
-    </dd>
-  </dl>
+      </div>
+    </section>
 
-  @if (managedBy(); as variable) {
-    <p class="alert alert-info" id="license-managed" i18n="@@license.fromEnvironment">
-      The key comes from <code>{{ variable }}</code
-      >. Change it there and restart the server.
-    </p>
-  } @else {
-    <form id="license-form" class="card" novalidate (submit)="save($event)">
-      <h3 i18n="@@license.formTitle">Add or replace the key</h3>
-      <div class="field">
-        <label for="license-key" i18n="@@license.keyLabel">Licence key</label>
-        <textarea
-          #keyField
-          id="license-key"
-          rows="4"
-          spellcheck="false"
-          autocomplete="off"
-          autocapitalize="off"
-          data-1p-ignore
-          data-lpignore="true"
-          [attr.aria-invalid]="keyError() ? true : null"
-          [attr.aria-describedby]="
-            keyError() ? 'license-key-hint license-key-error' : 'license-key-hint'
-          "
-          (input)="setKey($event)"
-        ></textarea>
-        <span id="license-key-hint" class="hint" i18n="@@license.keyHint"
-          >Paste the whole key. Spaces and line breaks are ignored. The key is checked before it is
-          saved, applies at the next start, and is not shown again.</span
-        >
-        @if (keyError(); as message) {
-          <span id="license-key-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <div class="row">
-        <button
-          type="submit"
-          class="btn btn-primary"
-          [attr.aria-disabled]="busy() ? true : null"
-          i18n="@@license.save"
-        >
-          Save
-        </button>
-        @if (canRemove()) {
+    @if (managedBy(); as variable) {
+      <p class="alert alert-info" id="license-managed" i18n="@@license.fromEnvironment">
+        The key comes from <code>{{ variable }}</code
+        >. Change it there and restart the server.
+      </p>
+    } @else {
+      <form
+        id="license-form"
+        class="card panel"
+        aria-labelledby="license-form-heading"
+        novalidate
+        (submit)="save($event)"
+      >
+        <div class="panel-head">
+          <h3 id="license-form-heading" i18n="@@license.formTitle">Add or replace the key</h3>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="license-key" i18n="@@license.keyLabel">Licence key</label>
+            <p id="license-key-hint" i18n="@@license.keyHint">
+              Paste the whole key. Spaces and line breaks are ignored. The key is checked before it
+              is saved, applies at the next start, and is not shown again.
+            </p>
+          </div>
+          <div class="setting-field">
+            <textarea
+              #keyField
+              id="license-key"
+              rows="4"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              data-1p-ignore
+              data-lpignore="true"
+              [attr.aria-invalid]="keyError() ? true : null"
+              [attr.aria-describedby]="
+                keyError() ? 'license-key-hint license-key-error' : 'license-key-hint'
+              "
+              (input)="setKey($event)"
+            ></textarea>
+            @if (keyError(); as message) {
+              <span id="license-key-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-actions">
+          @if (canRemove()) {
+            <button
+              type="button"
+              class="btn btn-danger"
+              [attr.aria-disabled]="busy() ? true : null"
+              (click)="remove()"
+              i18n="@@license.remove"
+            >
+              Remove
+            </button>
+          }
           <button
-            type="button"
-            class="btn btn-danger"
+            type="submit"
+            class="btn btn-primary"
             [attr.aria-disabled]="busy() ? true : null"
-            (click)="remove()"
-            i18n="@@license.remove"
+            i18n="@@license.save"
           >
-            Remove
+            Save
           </button>
-        }
-      </div>
-    </form>
-  }
+        </div>
+      </form>
+
+      @if (canRemove()) {
+        <dialog
+          #confirmDialog
+          id="confirm-dialog"
+          class="dialog"
+          aria-labelledby="confirm-title"
+          aria-describedby="confirm-text"
+          (close)="cancelRemove()"
+        >
+          <div class="dialog-head">
+            <h2 id="confirm-title" i18n="@@license.removeTitle">Remove the licence key</h2>
+          </div>
+          <div class="dialog-body">
+            <p id="confirm-text">{{ texts.confirmRemove() }}</p>
+          </div>
+          <div class="dialog-actions">
+            <button
+              type="button"
+              class="btn"
+              autofocus
+              (click)="cancelRemove()"
+              i18n="@@dialog.cancel"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger-solid"
+              (click)="confirmRemove()"
+              i18n="@@license.remove"
+            >
+              Remove
+            </button>
+          </div>
+        </dialog>
+      }
+    }
+  </div>
 }

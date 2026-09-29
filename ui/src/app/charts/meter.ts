@@ -21,6 +21,15 @@ export class Meter {
   readonly max = input.required<number | null>();
   /** How the numbers read: a count, or US dollars with cents. */
   readonly unit = input<'count' | 'usd'>('count');
+  /** A meter that is no daily budget says its value in its own words ("245 days left")… */
+  readonly text = input<string | null>(null);
+  /** …and its own note, instead of the budget notes. */
+  readonly note = input<string | null>(null);
+  /** Draws it as needing attention (as a reached budget): the note says why. */
+  readonly alert = input(false);
+
+  /** A budget meter: no words of its own were given. */
+  private readonly budget = computed(() => this.text() === null && this.note() === null);
 
   protected readonly state = computed(() => {
     const max = this.max();
@@ -35,6 +44,8 @@ export class Meter {
   });
 
   protected readonly valueText = computed(() => {
+    const own = this.text();
+    if (own !== null) return own;
     const value = this.format(this.value());
     const max = this.max();
     return max === null
@@ -42,7 +53,8 @@ export class Meter {
       : $localize`:@@meter.of:${value}:value: of ${this.format(max)}:max:`;
   });
 
-  protected readonly note = computed(() => {
+  protected readonly noteText = computed(() => {
+    if (!this.budget()) return this.note();
     switch (this.state()) {
       case 'reached':
         return $localize`:@@meter.reached:Budget reached for today`;
@@ -55,12 +67,23 @@ export class Meter {
     }
   });
 
-  /** What a screen reader hears for the track: the numbers, and the reached budget in words. */
-  protected readonly spoken = computed(() =>
-    this.state() === 'reached'
-      ? $localize`:@@meter.reachedSpoken:${this.valueText()}:value:, budget reached for today`
-      : this.valueText(),
+  /** Drawn as needing attention: a reached budget, or what the page says needs it. */
+  protected readonly attention = computed(
+    () => this.alert() || (this.budget() && this.state() === 'reached'),
   );
+
+  /** What a screen reader hears for the track: the value's words, and why it needs attention. */
+  protected readonly spoken = computed(() => {
+    if (!this.budget()) {
+      const note = this.note();
+      return note === null
+        ? this.valueText()
+        : $localize`:@@meter.spokenNote:${this.valueText()}:value:, ${note}:note:`;
+    }
+    return this.state() === 'reached'
+      ? $localize`:@@meter.reachedSpoken:${this.valueText()}:value:, budget reached for today`
+      : this.valueText();
+  });
 
   private format(n: number): string {
     return this.unit() === 'usd'

@@ -34,14 +34,14 @@ test.describe('the licence page (enterprise.md §11)', () => {
     await page.getByRole('link', { name: 'Licence', exact: true }).click();
     await expect(page).toHaveURL(/\/settings\/license$/);
     await expect(page).toHaveTitle('Licence · Qualor');
-    await expect(page.getByText('Community edition')).toBeVisible();
+    await expect(page.getByText('Community edition', { exact: true })).toBeVisible();
     // The e2e server starts without a key: nothing is saved, so nothing can be removed.
     await expect(page.getByRole('button', { name: 'Remove' })).toHaveCount(0);
     await expectAccessible(page);
 
     // The server refuses both keys with 422 LICENSE_INVALID; the page explains each.
     guard.allowFailedLoad('/api/v0/license', 422);
-    const field = page.getByLabel('Licence key');
+    const field = page.getByLabel('Licence key', { exact: true });
     await expect(field).toHaveAttribute('autocomplete', 'off');
     await expect(field).toHaveAttribute('data-1p-ignore', '');
     await field.fill('QLK1.test-e2e.bm9wZQ.AAAA');
@@ -62,37 +62,39 @@ test.describe('the licence page (enterprise.md §11)', () => {
     await expect(page.getByRole('alert')).toContainText(
       'This key was signed with a key this version of Qualor does not accept',
     );
-    await expect(page.getByText('Community edition')).toBeVisible();
+    await expect(page.getByText('Community edition', { exact: true })).toBeVisible();
     await expect(page.getByText(key)).toHaveCount(0);
   });
 
-  test('saves a valid key for the next start, then removes it', async ({ page, guard }) => {
+  test('saves a valid key for the next start, then removes it', async ({ page }) => {
     // Signed by the e2e server's test key (server/scripts/e2e/serve.ts); valid, never shown.
     const valid = readFileSync(LICENSE_KEY_FILE, 'utf8').trim();
     await page.goto('/settings/license');
-    await expect(page.getByText('Community edition')).toBeVisible();
+    await expect(page.getByText('Community edition', { exact: true })).toBeVisible();
     await expect(page.getByText('Restart required.')).toHaveCount(0);
 
-    await page.getByLabel('Licence key').fill(valid);
+    await page.getByLabel('Licence key', { exact: true }).fill(valid);
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Saved. Restart the server to apply the new key.')).toBeVisible();
     await expect(page.getByText('Restart required.')).toBeVisible();
     // The key applies at the next start: until then the server runs as it did.
-    await expect(page.getByText('Community edition')).toBeVisible();
-    await expect(page.getByLabel('Licence key')).toHaveValue('');
+    await expect(page.getByText('Community edition', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Licence key', { exact: true })).toHaveValue('');
     await expect(page.getByText(valid)).toHaveCount(0);
     await expectAccessible(page);
 
-    guard.expectConfirm(
-      true,
+    // The page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
+    await page.getByRole('button', { name: 'Remove' }).click();
+    const ask = page.getByRole('dialog', { name: 'Remove the licence key' });
+    await expect(ask).toContainText(
       'Remove the saved licence key? At the next start the server runs as the community edition. ' +
         'Nothing is deleted.',
     );
-    await page.getByRole('button', { name: 'Remove' }).click();
+    await ask.getByRole('button', { name: 'Remove' }).click();
     // The server started without a key, so removing the saved one leaves nothing to restart for.
     await expect(page.getByText('Removed. No key is saved in Qualor.')).toBeVisible();
     await expect(page.getByText('Restart required.')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Remove' })).toHaveCount(0);
-    await expect(page.getByText('Community edition')).toBeVisible();
+    await expect(page.getByText('Community edition', { exact: true })).toBeVisible();
   });
 });

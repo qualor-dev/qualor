@@ -52,6 +52,27 @@ describe('Meter', () => {
     expect(root.querySelector('[role="meter"]')).toBeNull();
   });
 
+  it('says its own words for a value that is not a daily budget, and can ask for attention', async () => {
+    TestBed.configureTestingModule({ imports: [Meter] });
+    const fixture = TestBed.createComponent(Meter);
+    fixture.componentRef.setInput('label', 'Time left');
+    fixture.componentRef.setInput('value', 5);
+    fixture.componentRef.setInput('max', 14);
+    fixture.componentRef.setInput('text', '5 days of grace left');
+    fixture.componentRef.setInput('note', 'Enterprise features stop on Oct 15, 2027');
+    fixture.componentRef.setInput('alert', true);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(text(root.querySelector('.meter-value'))).toBe('5 days of grace left');
+    expect(text(root.querySelector('.meter-note'))).toBe(
+      'Enterprise features stop on Oct 15, 2027',
+    );
+    expect(root.querySelector('.meter')?.classList).toContain('reached');
+    expect(root.querySelector('[role="meter"]')?.getAttribute('aria-valuetext')).toBe(
+      '5 days of grace left, Enterprise features stop on Oct 15, 2027',
+    );
+  });
+
   it('groups large numbers and shows dollars with cents', async () => {
     const tokens = await render(1_234_567, 1_000_000);
     expect(text(tokens.querySelector('.meter-value'))).toBe('1,234,567 of 1,000,000');
