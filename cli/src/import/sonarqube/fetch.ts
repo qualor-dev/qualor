@@ -497,13 +497,21 @@ export async function fetchResolvedIssues(
   };
 }
 
+/** The parameter of `api/hotspots/search` that names the project (see `countReviewedHotspots`). */
+const hotspotProjectParam = (conn: SonarConnection) =>
+  conn.kind === 'server' && conn.version !== null && versionAtLeast(conn.version, 10, 2)
+    ? 'project'
+    : 'projectKey';
+
 /**
  * Spec §4.4: how many reviewed security hotspots a project has (reported, not imported).
- * SonarQube Server names the project `project`; SonarQube Cloud `projectKey` (finding L1: Cloud
- * answers `project` with 400). The count is informative only, so a failure of it never costs the
- * project's issues: it is `null` (unknown) with a `HOTSPOTS_NOT_COUNTED` warning. An unreachable
- * SonarQube still ends the run (spec §13), as it would at the next read. Read apart from
- * `fetchResolvedIssues`, so that nothing of the hotspot count can cost the issues already read.
+ * The project is `projectKey` on SonarQube Cloud (finding L1: Cloud answers `project` with 400)
+ * and on SonarQube Server before 10.2 (9.9 answers `project` with 400); Server renamed it
+ * `project` in 10.2, keeping `projectKey` as a deprecated alias. The count is informative only,
+ * so a failure of it never costs the project's issues: it is `null` (unknown) with a
+ * `HOTSPOTS_NOT_COUNTED` warning. An unreachable SonarQube still ends the run (spec §13), as it
+ * would at the next read. Read apart from `fetchResolvedIssues`, so that nothing of the hotspot
+ * count can cost the issues already read.
  */
 export async function countReviewedHotspots(
   c: SonarClient,
@@ -514,7 +522,7 @@ export async function countReviewedHotspots(
     const page = await c.get(
       'api/hotspots/search',
       {
-        [conn.kind === 'cloud' ? 'projectKey' : 'project']: projectKey,
+        [hotspotProjectParam(conn)]: projectKey,
         status: 'REVIEWED',
         ps: '1',
       },
@@ -585,6 +593,60 @@ export function openIssueFilters(conn: SonarConnection): Record<string, string>[
   return [{ resolved: 'false' }, { statuses: 'RESOLVED', resolutions: 'FIXED' }];
 }
 
+/** Per client: each rule repository's keys as SonarQube Server lists them; null: not all read. */
+const serverRules = new WeakMap<SonarClient, Map<string, Promise<Set<string> | null>>>();
+
+/**
+ * The rules of `rules` that SonarQube Server has (`known`), and those it may have (`unsure`: their
+ * repository's rules were not all read). An issue query whose `rules` names a key the server has
+ * never had fails with 500 there once it asks `facets=rules` (the facet then holds a rule it cannot
+ * name): a PMD rule on a server without the PMD plugin, or a rule newer than its analyzer. Such a
+ * rule has no issue on that server, so it is left out. Each repository's rules are read once per
+ * client (`api/rules/search`, external rules included). A rule SonarQube removed is not listed
+ * either; an analysis closes its issues. SonarQube Cloud answers such queries: nothing is read.
+ */
+async function rulesOnServer(
+  c: SonarClient,
+  conn: SonarConnection,
+  rules: readonly string[],
+  bounds: ReadBounds,
+): Promise<{ known: string[]; unsure: string[] }> {
+  if (conn.kind === 'cloud') return { known: [...rules], unsure: [] };
+  const cache = serverRules.get(c) ?? new Map<string, Promise<Set<string> | null>>();
+  serverRules.set(c, cache);
+  const known: string[] = [];
+  const unsure: string[] = [];
+  for (const rule of rules) {
+    const repository = rule.split(':')[0] ?? '';
+    let listed = cache.get(repository);
+    if (listed === undefined) {
+      listed = c
+        .pages(
+          'api/rules/search',
+          { repositories: repository, include_external: 'true', f: 'repo' },
+          rulesPageSchema,
+          (page) => page.rules.map((r) => r.key),
+          (k) => k,
+          'rule page',
+          RESULT_WINDOW,
+          bounds,
+        )
+        .then(
+          (r) => (r.complete ? new Set(r.items) : null),
+          (err: unknown) => {
+            cache.delete(repository);
+            throw err;
+          },
+        );
+      cache.set(repository, listed);
+    }
+    const keys = await listed;
+    if (keys === null) unsure.push(rule);
+    else if (keys.has(rule)) known.push(rule);
+  }
+  return { known, unsure };
+}
+
 /**
  * Spec §10.1 (rulings S3, S7 and S14): the main branch's **open** issues of `ruleKeys`, read as
  * competitors for the matching. `ruleKeys` must be every SonarQube rule of the mapping
@@ -593,10 +655,11 @@ export function openIssueFilters(conn: SonarConnection): Record<string, string>[
  * the same Qualor issues, directly or through a chain of shared targets. Read with the filters of
  * `openIssueFilters` (each one query), at most 100 rules per query, the same pages, rule
  * partitioning and window as the resolved read, at most `maxIssues` in all; an issue two queries
- * list is kept once.
- * `unreadRules` are the rules whose open issues were not all read (the window, a capped facet or
- * the cap), each rule judged on its own (see `readIssues`): a resolved issue whose rule is in the
- * component of one of them cannot be trusted and is sent `competitorsUnknown`.
+ * list is kept once. On SonarQube Server only the rules it has are asked (`rulesOnServer`).
+ * `unreadRules` are the rules whose open issues were not all read (the window, a capped facet,
+ * the cap, or a rule list not read whole), each rule judged on its own (see `readIssues`): a
+ * resolved issue whose rule is in the component of one of them cannot be trusted and is sent
+ * `competitorsUnknown`.
  */
 export async function fetchOpenIssues(
   c: SonarClient,
@@ -606,10 +669,12 @@ export async function fetchOpenIssues(
   maxIssues: number,
   bounds: ReadBounds = {},
 ): Promise<{ issues: SonarIssue[]; total: number; unreadRules: string[] }> {
-  const rules = [...new Set(ruleKeys)].sort();
+  const onServer = await rulesOnServer(c, conn, [...new Set(ruleKeys)].sort(), bounds);
+  const rules = onServer.known;
   const issues: SonarIssue[] = [];
   const seen = new Set<string>();
-  const unread = new Set<string>();
+  // A rule the server may have but was not seen in its rule list is not asked: it is unread.
+  const unread = new Set<string>(onServer.unsure);
   let total = 0;
   for (let k = 0; k < rules.length; k += MAX_RULES_PER_QUERY) {
     const batch = rules.slice(k, k + MAX_RULES_PER_QUERY);

@@ -1,9 +1,10 @@
-import { SONAR_MAPPING } from '@qualor/shared';
+import { issuesPageSchema, SONAR_MAPPING } from '@qualor/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   type FakeIssue,
   type FakeSonar,
   type FakeSonarData,
+  fakeRules,
   sampleSonarData,
   startFakeSonarQube,
 } from '../../../test/fake-sonarqube';
@@ -159,15 +160,25 @@ describe('reading SonarQube (import-sonarqube.md §4.4, §5)', () => {
     expect(conn.client.warnings).toEqual([]);
   });
 
-  it('asks SonarQube Server for hotspots by `project`', async () => {
-    fake = await startFakeSonarQube(sampleSonarData());
-    const conn = await connect();
-    await countReviewedHotspots(conn.client, conn, 'acme:shop');
-    expect(fake.requests.find((q) => q.path === 'api/hotspots/search')?.query).toEqual({
-      project: 'acme:shop',
-      status: 'REVIEWED',
-      ps: '1',
-    });
+  it('asks SonarQube Server for hotspots by `projectKey` before 10.2 and by `project` from 10.2', async () => {
+    for (const [version, param] of [
+      ['9.9.4.87374', 'projectKey'],
+      ['10.1.0.73491', 'projectKey'],
+      ['10.2.0.77647', 'project'],
+      ['26.9.0.129388', 'project'],
+    ] as const) {
+      fake = await startFakeSonarQube(sampleSonarData({ version }));
+      const conn = await connect();
+      expect(await countReviewedHotspots(conn.client, conn, 'acme:shop')).toBe(2);
+      expect(fake.requests.find((q) => q.path === 'api/hotspots/search')?.query).toEqual({
+        [param]: 'acme:shop',
+        status: 'REVIEWED',
+        ps: '1',
+      });
+      expect(conn.client.warnings).toEqual([]);
+      await fake.close();
+    }
+    fake = undefined;
   });
 
   for (const kind of ['server', 'cloud'] as const) {
@@ -437,6 +448,65 @@ describe('reading open competitors (import-sonarqube.md §10.1, ruling S3)', () 
     fake = undefined;
   });
 
+  it('asks SonarQube Server only the rules it has: an unknown one would fail the rules facet with 500', async () => {
+    const data = sampleSonarData({ version: '9.9.4.87374' });
+    data.issues.push(open(1, 'java:S1481', { path: 'src/A.java' }));
+    fake = await startFakeSonarQube(data);
+    const conn = await connect();
+    // The fake fails like 9.9 does: a rule it never had, with the rules facet.
+    await expect(
+      conn.client.get(
+        'api/issues/search',
+        { projects: 'acme:shop', rules: 'pmd:UnusedPrivateField,java:S1481', facets: 'rules' },
+        issuesPageSchema,
+        'issue page',
+      ),
+    ).rejects.toMatchObject({ exitCode: EXIT.SERVER });
+    const asking = ['pmd:UnusedPrivateField', 'java:S1481', 'java:S9999', 'squid:S1481'];
+    const before = issueSearches().length;
+    const r = await fetchOpenIssues(conn.client, conn, 'acme:shop', asking, 1000);
+    expect(r.issues.map((i) => i.key)).toEqual(['AYo-java:S1481-1']);
+    expect(r.unreadRules).toEqual([]);
+    const asked = issueSearches().slice(before);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every((q) => q.query['rules'] === 'java:S1481')).toBe(true);
+    // Each repository's rules are read once for the client, external rules included.
+    await fetchOpenIssues(conn.client, conn, 'acme:shop', asking, 1000);
+    const lists = fake.requests.filter(
+      (q) => q.path === 'api/rules/search' && q.query['repositories'] !== undefined,
+    );
+    expect(lists.map((q) => q.query['repositories']).sort()).toEqual(['java', 'pmd', 'squid']);
+    expect(lists.every((q) => q.query['include_external'] === 'true')).toBe(true);
+  });
+
+  it('leaves the rules of a repository whose rule list was not read whole unread, and does not ask them', async () => {
+    const data = sampleSonarData();
+    data.rules.push(...fakeRules(['typescript:S1', 'typescript:S2']));
+    fake = await startFakeSonarQube(data, { window: 4 });
+    const conn = await connect();
+    const r = await fetchOpenIssues(
+      conn.client,
+      conn,
+      'acme:shop',
+      ['typescript:S1440', 'external_eslint_repo:eqeqeq'],
+      1000,
+      { window: 4, pageSize: 2 },
+    );
+    expect(r.unreadRules).toEqual(['typescript:S1440']);
+    expect(issueSearches().every((q) => q.query['rules'] === 'external_eslint_repo:eqeqeq')).toBe(
+      true,
+    );
+    expect(conn.client.warnings.map((w) => w.code)).toContain('SONARQUBE_ISSUE_WINDOW');
+  });
+
+  it('reads no rule list on SonarQube Cloud', async () => {
+    fake = await startFakeSonarQube(sampleSonarData({ kind: 'cloud', organization: 'acme' }));
+    const conn = await connect({ kind: 'cloud', organization: 'acme' });
+    await fetchOpenIssues(conn.client, conn, 'acme:shop', ['typescript:S1440', 'pmd:X'], 1000);
+    expect(fake.requests.some((q) => q.path === 'api/rules/search')).toBe(false);
+    expect(issueSearches()[0]?.query['rules']).toBe('pmd:X,typescript:S1440');
+  });
+
   it('asks nothing without rules', async () => {
     fake = await startFakeSonarQube(sampleSonarData());
     const conn = await connect();
@@ -449,9 +519,11 @@ describe('reading open competitors (import-sonarqube.md §10.1, ruling S3)', () 
   });
 
   it('asks at most 100 rules per query', async () => {
-    fake = await startFakeSonarQube(sampleSonarData());
-    const conn = await connect();
     const rules = Array.from({ length: 250 }, (_, n) => `typescript:S${n}`);
+    const data = sampleSonarData();
+    data.rules.push(...fakeRules(rules));
+    fake = await startFakeSonarQube(data);
+    const conn = await connect();
     await fetchOpenIssues(conn.client, conn, 'acme:shop', rules, 1000);
     const asked = issueSearches().map((q) => (q.query['rules'] ?? '').split(','));
     expect(asked.every((r) => r.length <= 100)).toBe(true);

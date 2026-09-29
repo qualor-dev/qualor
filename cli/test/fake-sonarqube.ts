@@ -7,8 +7,9 @@ import type { AddressInfo } from 'node:net';
  * published Web API documentation, never from a live server. It records every request, answers
  * anything but `GET` with 405 (so a test can assert that none came), checks authentication like
  * the kind and version it plays, requires `organization` on the **org** endpoints in Cloud mode,
- * answers Cloud's hotspot search by `projectKey` only (Server's `project` is a 400 there, as the
- * live check found) and enforces the result window. Rule names are invented placeholders.
+ * answers Cloud's and 9.9's hotspot search by `projectKey` only (`project` is a 400 there, as the
+ * live checks found), fails the `rules` facet of an unknown rule on Server with 500 (as 9.9 and
+ * later do) and enforces the result window. Rule names are invented placeholders.
  */
 
 type Legacy = 'BLOCKER' | 'CRITICAL' | 'MAJOR' | 'MINOR' | 'INFO';
@@ -25,6 +26,10 @@ export interface FakeRule {
   impacts?: Impact[];
   params?: { key: string; defaultValue: string }[];
 }
+/** Rules for keys a test asks about, so that the fake server has them (their details unused). */
+export const fakeRules = (keys: readonly string[]): FakeRule[] =>
+  keys.map((key) => ({ key, name: key, lang: 'none', severity: 'MAJOR' }));
+
 export interface FakeActivation {
   /** The profile the activation names, when not the profile asked (to test a wrong answer). */
   qProfile?: string;
@@ -226,6 +231,9 @@ export async function startFakeSonarQube(
     if (data.kind === 'cloud') return bearer;
     return major >= 10 ? bearer || basic : basic;
   };
+  /** The rules the server has: those of `data.rules`, and every rule an issue was raised by. */
+  const knownRules = () =>
+    new Set([...data.rules.map((r) => r.key), ...data.issues.map((i) => i.rule)]);
   const profileOf = (key: string) => data.profiles.find((p) => p.key === key);
   const defaultProfile = (lang: string) =>
     data.profiles.find((p) => p.language === lang && p.isDefault === true);
@@ -340,6 +348,23 @@ export async function startFakeSonarQube(
         });
       }
       case 'api/rules/search': {
+        if (q['qprofile'] === undefined && q['repositories'] !== undefined) {
+          // A repository's rules; external ones only with `include_external` (never removed ones).
+          const repositories = q['repositories'].split(',');
+          const listed = [...knownRules()]
+            .filter((k) => repositories.includes(k.split(':')[0] ?? ''))
+            .filter((k) => q['include_external'] === 'true' || !k.startsWith('external_'))
+            .sort(cmp);
+          const pg = page(listed, q, window);
+          if (pg === null) return send(res, 400, tooFar());
+          return send(res, 200, {
+            total: pg.paging.total,
+            p: pg.paging.pageIndex,
+            ps: pg.paging.pageSize,
+            ...(major !== 9 && { paging: pg.paging }),
+            rules: pg.items.map((key) => ({ key, repo: key.split(':')[0] })),
+          });
+        }
         const profile = profileOf(q['qprofile'] ?? '');
         if (profile === undefined) return send(res, 400, errors('qprofile is required'));
         const active = q['activation'] === 'true';
@@ -452,6 +477,16 @@ export async function startFakeSonarQube(
           return send(res, 400, errors(`Value of parameter '${wanted}' is not valid`));
         }
         const rules = q['rules'] === undefined ? undefined : new Set(q['rules'].split(','));
+        // SonarQube Server's rules facet fails (500, a NullPointerException) when `rules` names a
+        // rule the server has never had: the facet holds it, and the server cannot name it.
+        const known = knownRules();
+        if (
+          data.kind === 'server' &&
+          q['facets'] === 'rules' &&
+          [...(rules ?? [])].some((r) => !known.has(r))
+        ) {
+          return send(res, 500, errors('An error has occurred'));
+        }
         const unfiltered = data.issues.filter((i) => projects.includes(i.project) && wanted(i));
         const matching = unfiltered
           .filter((i) => rules === undefined || rules.has(i.rule))
@@ -488,14 +523,23 @@ export async function startFakeSonarQube(
         });
       }
       case 'api/hotspots/search': {
-        // Finding L1: SonarQube Cloud names the project `projectKey` and answers Server's
-        // `project` with 400, as the live check saw; Server takes `project`.
-        const param = data.kind === 'cloud' ? 'projectKey' : 'project';
-        if (data.kind === 'cloud' && q['project'] !== undefined) {
+        // Finding L1: SonarQube Cloud names the project `projectKey` and answers `project` with
+        // 400, as the live check saw; so does SonarQube Server before 10.2. From 10.2 Server
+        // takes `project`, and `projectKey` as its deprecated alias.
+        const renamed = data.kind === 'server' && (major > 10 || (major === 10 && minor >= 2));
+        if (!renamed && q['project'] !== undefined) {
           return send(res, 400, errors("The 'project' parameter is not supported"));
         }
-        const key = q[param];
-        if (key === undefined) return send(res, 400, errors(`The '${param}' parameter is missing`));
+        const key = renamed ? (q['project'] ?? q['projectKey']) : q['projectKey'];
+        if (key === undefined) {
+          return send(
+            res,
+            400,
+            errors(
+              "A value must be provided for either parameter 'projectKey' or parameter 'hotspots'",
+            ),
+          );
+        }
         const total = data.hotspotsReviewed?.[key] ?? 0;
         return send(res, 200, {
           paging: { pageIndex: 1, pageSize: 1, total },
