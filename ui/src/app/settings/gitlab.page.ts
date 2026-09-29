@@ -43,7 +43,9 @@ export function testProblemText(code: ProblemCode): string {
     case 'unreachable':
       return $localize`:@@gitlab.problem.unreachable:GitLab could not be reached.`;
     case 'token_refused':
-      return $localize`:@@gitlab.problem.tokenRefused:GitLab refused the token. Check that it is valid, has the api scope and the Developer role.`;
+      return $localize`:@@gitlab.problem.tokenRefused:GitLab refused the token. Check that it is valid and has not expired.`;
+    case 'permission_missing':
+      return $localize`:@@gitlab.problem.permission:The token lacks a permission in the GitLab project. Give it the api scope and the Maintainer role.`;
     case 'not_found':
       return $localize`:@@gitlab.problem.notFound:The GitLab project was not found, or the token cannot see it.`;
     case 'http_error':
@@ -55,16 +57,28 @@ export function testProblemText(code: ProblemCode): string {
   }
 }
 
-/** A test answer as the page shows it: fixed sentences and the names GitLab gave, as text only. */
+/** GitLab's access level of the Maintainer role (Developer is 30). */
+const MAINTAINER = 40;
+
+/**
+ * A test answer as the page shows it: fixed sentences and the names GitLab gave, as text only. A
+ * token below Maintainer in the project is reachable, but cannot set the commit status on a
+ * protected branch, so the answer says so.
+ */
 function testText(result: TestResult): string {
   if (!result.ok || !result.user) {
     return result.problem
       ? testProblemText(result.problem.code)
       : $localize`:@@gitlab.problem.unknown:The test failed.`;
   }
-  return result.project
-    ? $localize`:@@gitlab.testOkProject:Connected as ${result.user.username}:user:; the project ${result.project.pathWithNamespace}:project: is reachable.`
-    : $localize`:@@gitlab.testOk:Connected as ${result.user.username}:user:.`;
+  if (!result.project) {
+    return $localize`:@@gitlab.testOk:Connected as ${result.user.username}:user:.`;
+  }
+  const reachable = $localize`:@@gitlab.testOkProject:Connected as ${result.user.username}:user:; the project ${result.project.pathWithNamespace}:project: is reachable.`;
+  const level = result.project.accessLevel;
+  return level !== null && level < MAINTAINER
+    ? `${reachable} ${$localize`:@@gitlab.belowMaintainer:The token is below Maintainer: merge request comments work, but a commit status on a protected branch (such as the default branch) is refused. Give it the Maintainer role.`}`
+    : reachable;
 }
 
 /**

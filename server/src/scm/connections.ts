@@ -3,7 +3,12 @@ import { decryptSecret, encryptionKey } from '../crypto/secrets';
 import type { Executor } from '../db/client';
 import type { scmConnections } from '../db/schema';
 import type { GitHubClientOptions } from './github/client';
-import { GitLabClient, GitLabError, type GitLabClientOptions } from './gitlab/client';
+import {
+  accessLevelOf,
+  GitLabClient,
+  GitLabError,
+  type GitLabClientOptions,
+} from './gitlab/client';
 import { isInternalHostAllowed, scmBaseUrlProblem } from './url';
 
 /** data-model.md §2: the AAD binding an encrypted token to its column. */
@@ -73,12 +78,17 @@ export type TestProblemCode = (typeof TEST_PROBLEM_CODES)[number];
 export interface ConnectionTest {
   ok: boolean;
   user: { username: string } | null;
-  project: { id: number; pathWithNamespace: string } | null;
+  /**
+   * `accessLevel`: the token user's GitLab access level in the project (30 Developer, 40
+   * Maintainer), or null when GitLab does not say, and always for GitHub.
+   */
+  project: { id: number; pathWithNamespace: string; accessLevel: number | null } | null;
   /** One of scm.md §4.4's fixed texts with its code; never GitLab's own words. */
   problem: { code: TestProblemCode; message: string } | null;
 }
 
 function problemCode(err: GitLabError): TestProblemCode {
+  if (err.reason === 'permission_missing') return 'permission_missing';
   if (err.kind === 'auth') return 'token_refused';
   if (err.kind === 'not_found') return 'not_found';
   switch (err.reason) {
@@ -91,12 +101,10 @@ function problemCode(err: GitLabError): TestProblemCode {
     case 'budget':
     case 'invalid_input':
       return 'bad_answer';
-    // GitLab never raises not_installed or permission_missing (GitHub only); the switch stays
-    // exhaustive.
+    // GitLab never raises not_installed (GitHub only); the switch stays exhaustive.
     case 'http':
     case 'other':
     case 'not_installed':
-    case 'permission_missing':
       return 'http_error';
   }
 }
@@ -104,7 +112,8 @@ function problemCode(err: GitLabError): TestProblemCode {
 /**
  * `POST /scm-connections/{id}/test` (scm.md §2.1): `GET /user` and, with a project ref,
  * `GET /projects/:ref`, with the stored token. Answers only fixed texts (scm.md §4.4) and their
- * codes, never GitLab's own words.
+ * codes, never GitLab's own words, and the token's access level in the project, so the page can
+ * warn that a Developer cannot set a commit status on a protected branch.
  */
 export async function testConnection(
   row: ScmConnectionRow,
@@ -130,7 +139,13 @@ export async function testConnection(
     return {
       ok: true,
       user: { username: user.username },
-      project: project ? { id: project.id, pathWithNamespace: project.path_with_namespace } : null,
+      project: project
+        ? {
+            id: project.id,
+            pathWithNamespace: project.path_with_namespace,
+            accessLevel: accessLevelOf(project),
+          }
+        : null,
       problem: null,
     };
   } catch (err) {

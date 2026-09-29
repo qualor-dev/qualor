@@ -14,7 +14,7 @@ export type Resolver = (hostname: string) => Promise<LookupAddress[]>;
 
 export interface OutboundRequest {
   url: string;
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   headers: Record<string, string>;
   /** Sent with a `content-length`; none for a request without a body. */
   body?: string;
@@ -125,8 +125,8 @@ function durationText(ms: number): string {
  *   environment), and no redirect is followed (a 3xx is answered as such); TLS certificates are
  *   verified against the URL's host name;
  * - one deadline for the whole exchange, the lookup included, and a shorter one for the
- *   connection ({@link CONNECT_TIMEOUT_MS}, ruling X7); at most `maxResponseBytes` of the body are
- *   read.
+ *   connection ({@link CONNECT_TIMEOUT_MS}, ruling X7), which a lookup must also meet (else the
+ *   host is `unresolved`); at most `maxResponseBytes` of the body are read.
  * Never throws; a failure is `kind: 'failed'` with a short fixed reason.
  */
 export async function outboundRequest(
@@ -172,7 +172,16 @@ export async function outboundRequest(
           timer = setTimeout(() => resolve('timeout'), connectMs);
         }),
       ]);
-      if (resolved === 'timeout') return notConnected;
+      // A lookup still running at the connect deadline is a name that does not resolve (a
+      // single-label host the resolver keeps retrying, EAI_AGAIN after its own timeouts), not a
+      // host that is slow to connect.
+      if (resolved === 'timeout') {
+        return fail(
+          `The ${noun} host could not be resolved within ${durationText(connectMs)}`,
+          'unresolved',
+          true,
+        );
+      }
       addresses = resolved;
     } catch {
       return unresolved;

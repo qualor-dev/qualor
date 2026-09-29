@@ -15,6 +15,19 @@ export const GITLAB_PAGE_SIZE = 100;
 export const MAX_GITLAB_REQUESTS = 400;
 /** A `Retry-After` (or `RateLimit-Reset`) is clamped to 1 s – 15 min. */
 export const MAX_RETRY_AFTER_SECONDS = 15 * 60;
+/**
+ * What a 403 means per request: the token is valid (that is a 401), but its user may not do this.
+ * A commit status on a protected branch needs the Maintainer role; a Developer may post one only
+ * on an unprotected branch, such as a merge request's source branch.
+ */
+export const GITLAB_FORBIDDEN = {
+  request:
+    'The GitLab token lacks the permission for this request (HTTP 403); it needs the api scope and the Maintainer role',
+  commitStatus:
+    'The GitLab token lacks the permission to set the commit status (HTTP 403); a commit status on a protected branch needs the Maintainer role',
+  deleteNote:
+    "The GitLab token lacks the permission to delete another user's note (HTTP 403); that needs the Maintainer role",
+} as const;
 
 export type GitLabErrorKind = ScmErrorKind;
 export type GitLabErrorReason = ScmErrorReason;
@@ -48,12 +61,29 @@ export class GitLabError extends ScmError {
 const user = z.looseObject({ id: z.number().int(), username: z.string() });
 export type GitLabUser = z.infer<typeof user>;
 
+const access = z.looseObject({ access_level: z.number().int() }).nullable().optional();
 const project = z.looseObject({
   id: z.number().int(),
   path_with_namespace: z.string(),
   web_url: z.string(),
+  /** The token user's own access (a member of the project, or of its group); absent for some. */
+  permissions: z
+    .looseObject({ project_access: access, group_access: access })
+    .nullable()
+    .optional(),
 });
 export type GitLabProject = z.infer<typeof project>;
+
+/**
+ * The token user's access level in the project (the higher of its project and group membership),
+ * or null when GitLab does not say (an administrator's token, an inherited membership it omits).
+ */
+export function accessLevelOf(p: GitLabProject): number | null {
+  const levels = [p.permissions?.project_access, p.permissions?.group_access]
+    .map((a) => a?.access_level)
+    .filter((level): level is number => typeof level === 'number');
+  return levels.length === 0 ? null : Math.max(...levels);
+}
 
 const sha = z.string().regex(/^[0-9a-f]{40,64}$/);
 const mergeRequest = z.looseObject({
@@ -258,10 +288,12 @@ export class GitLabClient {
     return `${this.projectPath(ref)}/merge_requests/${iid}`;
   }
 
+  /** `forbidden` is the text of a 403 ({@link GITLAB_FORBIDDEN}), which says what was refused. */
   private async call(
-    method: 'GET' | 'POST' | 'PUT',
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     body?: unknown,
+    forbidden: string = GITLAB_FORBIDDEN.request,
   ): Promise<{ status: number; headers: IncomingHttpHeaders; json: unknown }> {
     if (this.requestCount >= this.maxRequests) {
       throw new GitLabError('budget', `More than ${this.maxRequests} GitLab requests in one job`);
@@ -345,10 +377,17 @@ export class GitLabClient {
         gitlabMessage: message,
       });
     }
-    if (status === 401 || status === 403) {
-      throw new GitLabError('auth', `GitLab refused the token (HTTP ${status})`, {
+    if (status === 401) {
+      throw new GitLabError('auth', 'GitLab refused the token (HTTP 401)', {
         status,
         reason: 'http',
+      });
+    }
+    if (status === 403) {
+      throw new GitLabError('auth', forbidden, {
+        status,
+        reason: 'permission_missing',
+        gitlabMessage: message,
       });
     }
     if (status === 404) {
@@ -426,6 +465,24 @@ export class GitLabClient {
       body,
     });
     return this.parse(note, json);
+  }
+
+  /**
+   * Deletes a note of the merge request (`DELETE …/notes/:id`, 204). GitLab lets the note's author
+   * delete it, and a Maintainer any note.
+   */
+  async deleteNote(ref: string, iid: string, noteId: number): Promise<void> {
+    if (!Number.isSafeInteger(noteId) || noteId < 1) {
+      throw new GitLabError('refused', 'The note id is not a GitLab note id', {
+        reason: 'invalid_input',
+      });
+    }
+    await this.call(
+      'DELETE',
+      `${this.mergeRequestPath(ref, iid)}/notes/${noteId}`,
+      undefined,
+      GITLAB_FORBIDDEN.deleteNote,
+    );
   }
 
   /**
@@ -515,14 +572,19 @@ export class GitLabClient {
     this.checkRevision(revision);
     const post = async (pipelineId: string | null): Promise<'set' | 'unchanged'> => {
       try {
-        const { json } = await this.call('POST', `${this.projectPath(ref)}/statuses/${revision}`, {
-          state: input.state,
-          name: input.name,
-          description: input.description,
-          ...(input.targetUrl === null ? {} : { target_url: input.targetUrl }),
-          ...(pipelineId === null ? {} : { pipeline_id: Number(pipelineId) }),
-          ...(pipelineId === null && input.ref !== null ? { ref: input.ref } : {}),
-        });
+        const { json } = await this.call(
+          'POST',
+          `${this.projectPath(ref)}/statuses/${revision}`,
+          {
+            state: input.state,
+            name: input.name,
+            description: input.description,
+            ...(input.targetUrl === null ? {} : { target_url: input.targetUrl }),
+            ...(pipelineId === null ? {} : { pipeline_id: Number(pipelineId) }),
+            ...(pipelineId === null && input.ref !== null ? { ref: input.ref } : {}),
+          },
+          GITLAB_FORBIDDEN.commitStatus,
+        );
         this.parse(commitStatus, json);
         return 'set';
       } catch (err) {

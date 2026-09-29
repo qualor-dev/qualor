@@ -16255,11 +16255,24 @@
                             },
                             "pathWithNamespace": {
                               "type": "string"
+                            },
+                            "accessLevel": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
                             "id",
-                            "pathWithNamespace"
+                            "pathWithNamespace",
+                            "accessLevel"
                           ],
                           "additionalProperties": false
                         },

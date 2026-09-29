@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url';
  * current diff, commit statuses as GitLab keeps them (only a pending or running status of the same
  * name, ref and pipeline is reused, where the same state again is a 400 "Cannot transition status";
  * a final state posted again is a new row, and the row it replaces is `retried`), edits only of
- * the token's own notes, and pagination with `x-next-page`. A resolved note carries `resolved_by`
+ * the token's own notes, deletes of other users' notes only for a Maintainer (the token's access
+ * level, which `GET /projects/:id` reports in `permissions`), and pagination with `x-next-page`. A resolved note carries `resolved_by`
  * (the token's user, or whoever `resolveAs` names), as GitLab's discussions API returns it.
  *
  * Where each shape comes from. They were written from GitLab's REST v4 API documentation (the
@@ -146,6 +147,8 @@ export interface FakeGitLab {
   readonly url: string;
   readonly token: string;
   readonly botUserId: number;
+  /** The token user's access level in every project (30 Developer, the default; 40 Maintainer). */
+  accessLevel: number;
   readonly requests: RecordedRequest[];
   readonly statuses: FakeStatus[];
   addProject(project: { id: number; path: string }): void;
@@ -214,6 +217,7 @@ export async function createFakeGitLab(
 ): Promise<FakeGitLab> {
   const token = options.token ?? `glpat-${randomBytes(12).toString('hex')}`;
   const botUserId = options.botUserId ?? 42;
+  let accessLevel = 30;
   const projects = new Map<number, FakeProject>();
   const requests: RecordedRequest[] = [];
   const statuses: FakeStatus[] = [];
@@ -358,6 +362,10 @@ export async function createFakeGitLab(
         id: project.id,
         path_with_namespace: project.path,
         web_url: `${url}/${project.path}`,
+        permissions: {
+          project_access: { access_level: accessLevel, notification_level: 3 },
+          group_access: null,
+        },
       });
     }
     if (
@@ -494,6 +502,18 @@ export async function createFakeGitLab(
       note.body = json['body'];
       return send(res, 200, noteJson(note));
     }
+    if (req.method === 'DELETE' && tail[0] === 'notes' && tail.length === 2) {
+      const discussion = discussions.find((d) => d.notes.some((n) => n.id === Number(tail[1])));
+      const note = discussion?.notes.find((n) => n.id === Number(tail[1]));
+      if (!discussion || !note) return send(res, 404, { message: '404 Note Not Found' });
+      if (note.authorId !== botUserId && accessLevel < 40) {
+        return send(res, 403, { message: '403 Forbidden' });
+      }
+      discussion.notes.splice(discussion.notes.indexOf(note), 1);
+      if (discussion.notes.length === 0) discussions.splice(discussions.indexOf(discussion), 1);
+      res.writeHead(204).end();
+      return;
+    }
     if (req.method === 'POST' && tail[0] === 'discussions' && tail.length === 1) {
       const position = json['position'] as Record<string, unknown> | undefined;
       if (typeof json['body'] !== 'string' || json['body'] === '' || !position) {
@@ -564,6 +584,12 @@ export async function createFakeGitLab(
     url,
     token,
     botUserId,
+    get accessLevel() {
+      return accessLevel;
+    },
+    set accessLevel(level: number) {
+      accessLevel = level;
+    },
     requests,
     statuses,
     addProject({ id, path: projectPath }) {
