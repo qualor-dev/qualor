@@ -3,8 +3,9 @@ import { Lens } from './lens';
 import { lensGeometry } from './lens-geometry';
 
 describe('lensGeometry', () => {
+  // Every dot touches the circle; the lens clips what reaches past its ring.
   const inside = (g: ReturnType<typeof lensGeometry>) =>
-    g.dots.every((d) => Math.hypot(d.x - g.c, d.y - g.c) <= g.r);
+    g.dots.every((d) => Math.hypot(d.x - g.c, d.y - g.c) - d.r < g.r + 0.01);
 
   it('draws nothing for no value or 0 %', () => {
     for (const value of [null, 0, Number.NaN]) {
@@ -29,6 +30,28 @@ describe('lensGeometry', () => {
     expect(inside(full)).toBe(true);
   });
 
+  it('lays the dots in straight columns, one under another, centred on the circle', () => {
+    // The maintainer, 2026-09-29: no half-step shift on alternate rows.
+    const g = lensGeometry(100, 96);
+    const columns = [...new Set(g.dots.map((d) => d.x))].sort((a, b) => a - b);
+    const rows = [...new Set(g.dots.map((d) => d.y))].sort((a, b) => a - b);
+    expect(columns[1]! - columns[0]!).toBeCloseTo(rows[1]! - rows[0]!, 1);
+    expect(columns[0]! + columns[columns.length - 1]!).toBeCloseTo(2 * g.c, 1);
+  });
+
+  it('fills the circle up to its ring, with no empty corners', () => {
+    // The maintainer, 2026-09-29: the dots reach the ring all round, like a print cut by it.
+    const g = lensGeometry(100, 96);
+    const step = 96 / 17;
+    for (let deg = 0; deg < 360; deg += 3) {
+      const a = (deg * Math.PI) / 180;
+      const [px, py] = [g.c + g.r * Math.cos(a), g.c + g.r * Math.sin(a)];
+      const gap = Math.min(...g.dots.map((d) => Math.hypot(d.x - px, d.y - py) - d.r));
+      // Between neighbouring dots a halftone keeps gaps; a missing dot leaves more than this.
+      expect(gap).toBeLessThan(step * 0.6);
+    }
+  });
+
   it('grows the dots with depth, like the screen prints', () => {
     const g = lensGeometry(80, 96);
     const top = g.dots.reduce((a, d) => (d.y < a.y ? d : a));
@@ -50,6 +73,8 @@ describe('Lens', () => {
     expect(svg?.getAttribute('width')).toBe('76');
     expect(root.querySelectorAll('.lens-dots circle').length).toBeGreaterThan(20);
     expect(root.querySelector('.lens-level')).not.toBeNull();
+    // The dots are cut by the ring's outer edge, so none shows outside it.
+    expect(getComputedStyle(svg!).clipPath).toBe('circle(calc(50% - 0.375px))');
   });
 
   it('draws a mark in the middle for the gate emblem', async () => {

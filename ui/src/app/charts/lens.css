@@ -5,6 +5,10 @@
   flex: none;
   line-height: 0;
 }
+/* The dots that reach past the ring are cut at its outer edge (the ring is 1.25 wide on r = c - 1). */
+svg {
+  clip-path: circle(calc(50% - 0.375px));
+}
 :host(.lens-ok) {
   --lens-ink: var(--ok);
   --lens-track: var(--ok-soft);
