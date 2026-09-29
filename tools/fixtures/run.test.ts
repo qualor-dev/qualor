@@ -16,6 +16,7 @@ import {
   requireAnalyzers,
   runFixtures,
   scanEnv,
+  SONARJS_PASS,
   toolOnPath,
   TRIVY_DATABASE,
   unavailableEngines,
@@ -62,6 +63,10 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(unavailableEngines(['trivy'], (t) => t === 'trivy')).toEqual(['trivy']);
     expect(unavailableEngines(['trivy'], (t) => t === TRIVY_DATABASE)).toEqual(['trivy']);
     expect(unavailableEngines(['trivy'], (t) => ['trivy', TRIVY_DATABASE].includes(t))).toEqual([]);
+    // Plan 8A/8B: sonarjs needs node and the image's own pass, like Trivy above.
+    expect(unavailableEngines(['sonarjs'], (t) => t === 'node')).toEqual(['sonarjs']);
+    expect(unavailableEngines(['sonarjs'], (t) => t === SONARJS_PASS)).toEqual(['sonarjs']);
+    expect(unavailableEngines(['sonarjs'], (t) => ['node', SONARJS_PASS].includes(t))).toEqual([]);
   });
   it('needs dotnet on a Linux host for roslyn; win32 and darwin are always unavailable (ruling R8)', () => {
     expect(unavailableEngines(['roslyn'], (t) => t === 'dotnet', 'linux')).toEqual([]);

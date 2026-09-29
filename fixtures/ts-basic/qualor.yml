@@ -1,4 +1,8 @@
 version: 1
+# js-sonar covers the sonarjs engine; this fixture stays ESLint-only (findingsExhaustive: true).
+analyzers:
+  sonarjs:
+    enabled: false
 coverage:
   reports:
     - path: coverage/lcov.info

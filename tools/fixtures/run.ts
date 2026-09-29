@@ -56,6 +56,15 @@ export const TRIVY_DATABASE = 'trivy-db';
 const TRIVY_DATABASE_FILE = '/opt/qualor/share/trivy/db/trivy.db';
 
 /**
+ * A pseudo-tool: Qualor's own sonarjs pass in the scanner image's place (config.md §6). Like
+ * Trivy's database above, its absence is a normal skip (a plain host without the qualor/scanner
+ * image), not a configuration problem, and the scan environment of a fixture drops every QUALOR_
+ * variable (QUALOR_SONARJS_DIR included), so only the default path is ever checked here.
+ */
+export const SONARJS_PASS = 'sonarjs-pass';
+const SONARJS_PASS_FILE = '/opt/qualor/sonarjs/run.mjs';
+
+/**
  * The binaries each built-in engine needs (any one of an inner list). The harness checks the same
  * places the CLI does: PATH and the scanner image's /opt/qualor/bin.
  */
@@ -74,6 +83,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   // MSBuild's user extensions path off XDG_DATA_HOME there and QUALOR_MSBUILD_USER_DIR only steers
   // the CLI's own write, not the real MSBuild process the fixture spawns.
   roslyn: [['dotnet']],
+  // Plan 8A/8B: needs node and, like trivy above, its image-bundled resource.
+  sonarjs: [['node'], [SONARJS_PASS]],
 };
 
 /**
@@ -93,6 +104,7 @@ export function findTool(name: string, env: Record<string, string | undefined> =
 
 export function toolOnPath(name: string, env: Record<string, string | undefined> = process.env): boolean {
   if (name === TRIVY_DATABASE) return existsSync(TRIVY_DATABASE_FILE);
+  if (name === SONARJS_PASS) return existsSync(SONARJS_PASS_FILE);
   return findTool(name, env) !== null;
 }
 
