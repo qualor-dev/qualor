@@ -128,6 +128,41 @@ describe('qualor dotnet begin (config.md §6.1)', () => {
     expect(lines.join('')).toMatch(/SDK's own rules only/);
   });
 
+  it('warns when there are no bundled SonarAnalyzer DLLs, analogous to the Roslynator warning (fix round 1)', () => {
+    const dir = fakeAnalyzers(['Roslynator.CSharp.Analyzers.dll']); // no sonar/ at all
+    const lines: string[] = [];
+    runDotnetBegin(
+      {},
+      captureIO({ cwd: repo(), env: env({ QUALOR_DOTNET_ANALYZERS: dir }) }).io,
+      createLogger('warn', (t) => lines.push(t)),
+    );
+    expect(lines.join('')).toMatch(/no bundled SonarAnalyzer in .*sonar: .*SDK's own rules only/);
+  });
+
+  it("the two families' empty warnings are independent of each other (config.md §6.1 step 4, fix round 1)", () => {
+    // Roslynator present, sonar/ missing entirely: only the Sonar warning fires.
+    const roslynatorOnly = fakeAnalyzers(['Roslynator.CSharp.Analyzers.dll']);
+    const withRoslynator: string[] = [];
+    runDotnetBegin(
+      {},
+      captureIO({ cwd: repo(), env: env({ QUALOR_DOTNET_ANALYZERS: roslynatorOnly }) }).io,
+      createLogger('warn', (t) => withRoslynator.push(t)),
+    );
+    expect(withRoslynator.join('')).toMatch(/no bundled SonarAnalyzer in/);
+    expect(withRoslynator.join('')).not.toMatch(/no bundled analyzers in/);
+
+    // sonar/ present, no top-level Roslynator DLL: only the Roslynator warning fires.
+    const sonarOnly = fakeAnalyzers([], ['SonarAnalyzer.CSharp.dll']);
+    const withSonar: string[] = [];
+    runDotnetBegin(
+      {},
+      captureIO({ cwd: repo(), env: env({ QUALOR_DOTNET_ANALYZERS: sonarOnly }) }).io,
+      createLogger('warn', (t) => withSonar.push(t)),
+    );
+    expect(withSonar.join('')).toMatch(/no bundled analyzers in/);
+    expect(withSonar.join('')).not.toMatch(/no bundled SonarAnalyzer in/);
+  });
+
   it('installs nothing when roslyn is disabled', () => {
     const root = repo({ 'qualor.yml': 'version: 1\nanalyzers:\n  roslyn: { enabled: false }\n' });
     const e = env();
