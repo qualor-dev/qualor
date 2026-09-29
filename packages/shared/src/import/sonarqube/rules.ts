@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import data from '../../../rules/sonarqube.json' with { type: 'json' };
+import sonaranalyzerCsharpDefaultKeys from '../../../rules/sonaranalyzer-csharp-default-keys.json' with { type: 'json' };
 import sonaranalyzerCsharpKeys from '../../../rules/sonaranalyzer-csharp-keys.json' with { type: 'json' };
+import sonarjsDefaultKeys from '../../../rules/sonarjs-default-keys.json' with { type: 'json' };
 import sonarjsKeys from '../../../rules/sonarjs-keys.json' with { type: 'json' };
 import {
   BUILTIN_ENGINES,
@@ -12,11 +14,15 @@ import {
 /**
  * Spec §6.2, §6.4 ("Keys files"): the bare rule ids a repository row's `keysFile` names, loaded
  * with the same static-import style `sonarqube.json` itself uses so the Bun-compiled CLI binary
- * bundles them (no runtime fs read). Each file is a sorted JSON array of `S####` ids only.
+ * bundles them (no runtime fs read). Each file is a sorted JSON array of `S####` ids only. A
+ * `defaultKeysFile` holds the subset the bundled configuration actually runs (SonarAnalyzer's
+ * rules enabled by default, eslint-plugin-sonarjs's `recommended` ones).
  */
 const KEYS_FILES: Readonly<Record<string, readonly string[]>> = {
   'sonaranalyzer-csharp-keys.json': sonaranalyzerCsharpKeys,
+  'sonaranalyzer-csharp-default-keys.json': sonaranalyzerCsharpDefaultKeys,
   'sonarjs-keys.json': sonarjsKeys,
+  'sonarjs-default-keys.json': sonarjsDefaultKeys,
 };
 
 export type ProfileLanguage = Exclude<Language, 'other'>;
@@ -63,6 +69,10 @@ const tableSchema = z.strictObject({
         .string()
         .regex(/^[a-z0-9-]+-keys\.json$/)
         .optional(),
+      defaultKeysFile: z
+        .string()
+        .regex(/^[a-z0-9-]+-default-keys\.json$/)
+        .optional(),
     }),
   ),
   rules: z.array(
@@ -90,6 +100,11 @@ export class SonarMapping {
     string,
     { engine: BuiltinEngine; keys: ReadonlySet<string> | null }
   >;
+  /**
+   * Per engine, the bundled rule ids (`keysFile`) and the subset the bundled configuration runs
+   * (`defaultKeysFile`), from every repository row that has both.
+   */
+  readonly #bundled: ReadonlyMap<string, { keys: ReadonlySet<string>; run: ReadonlySet<string> }>;
   readonly #rules: ReadonlyMap<string, readonly RuleTarget[]>;
   /** Ruling S14: each Qualor target of the table's components → its component's key. */
   readonly #componentOf: ReadonlyMap<string, string>;
@@ -101,17 +116,29 @@ export class SonarMapping {
   constructor(table: z.infer<typeof tableSchema>) {
     this.#languages = new Map(Object.entries(table.languages));
     this.#aliases = new Map(Object.entries(table.aliases));
+    const keysFile = (name: string): ReadonlySet<string> => {
+      const list = KEYS_FILES[name];
+      if (list === undefined)
+        throw new Error(`sonarqube.json: unknown keysFile or defaultKeysFile ${name}`);
+      return new Set(list);
+    };
     this.#repositories = new Map(
       table.repositories.map((r) => {
-        let keys: ReadonlySet<string> | null = null;
-        if (r.keysFile !== undefined) {
-          const list = KEYS_FILES[r.keysFile];
-          if (list === undefined) throw new Error(`sonarqube.json: unknown keysFile ${r.keysFile}`);
-          keys = new Set(list);
-        }
+        const keys = r.keysFile === undefined ? null : keysFile(r.keysFile);
         return [r.repository, { engine: r.engine, keys }] as const;
       }),
     );
+    const bundled = new Map<string, { keys: Set<string>; run: Set<string> }>();
+    for (const r of table.repositories) {
+      if (r.defaultKeysFile === undefined) continue;
+      if (r.keysFile === undefined)
+        throw new Error(`sonarqube.json: ${r.repository} has a defaultKeysFile without a keysFile`);
+      const entry = bundled.get(r.engine) ?? { keys: new Set<string>(), run: new Set<string>() };
+      for (const k of keysFile(r.keysFile)) entry.keys.add(k);
+      for (const k of keysFile(r.defaultKeysFile)) entry.run.add(k);
+      bundled.set(r.engine, entry);
+    }
+    this.#bundled = bundled;
     const rules = new Map<string, RuleTarget[]>();
     for (const entry of table.rules) {
       for (const key of entry.sonar) {
@@ -180,6 +207,21 @@ export class SonarMapping {
     const rest = canonical.slice(colon);
     const aliases = [...this.#aliases].filter(([, to]) => to === repository).map(([a]) => a);
     return [canonical, ...aliases.map((a) => `${a}${rest}`)];
+  }
+
+  /**
+   * Whether the bundled configuration runs the Qualor rule `ruleKey` (`sonarjs:S1192`,
+   * `roslyn:S107`): false only for a rule id of a bundled SonarSource-derived package
+   * (`keysFile`) outside its `defaultKeysFile` (eslint-plugin-sonarjs's `recommended` config,
+   * SonarAnalyzer.CSharp's rules enabled by default). Any other rule, including every rule of the
+   * project's own ESLint, PMD or Roslyn analyzers, is assumed to run.
+   */
+  runByBundledConfig(ruleKey: string): boolean {
+    const e = engineOf(ruleKey);
+    const bundled = this.#bundled.get(e);
+    if (bundled === undefined) return true;
+    const id = ruleKey.slice(e.length + 1);
+    return !bundled.keys.has(id) || bundled.run.has(id);
   }
 
   language(sonarLanguage: string): SonarLanguage | null {

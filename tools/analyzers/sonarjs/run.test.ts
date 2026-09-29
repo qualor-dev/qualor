@@ -8,6 +8,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -566,6 +567,21 @@ describe.skipIf(!installed && !required)('sonarjs run.mjs helpers', () => {
     ) as { pairs: { rules: [string, string]; reason: string }[] };
     const own = committed.pairs.filter((p) => p.rules[0].startsWith('eslint:sonarjs/'));
     expect(own).toEqual(ownPairs(rspecKeys()));
+  });
+
+  it('the committed sonarjs-keys.json and sonarjs-default-keys.json match the installed plugin (keys.mjs)', async () => {
+    // @ts-expect-error: a plain ES module of the image, without type declarations
+    const { sonarjsKeys, sonarjsDefaultKeys } = await import('./keys.mjs');
+    const { rspecKeys } = await load();
+    const plugin = createRequire(RUN)('eslint-plugin-sonarjs') as {
+      configs: { recommended: { rules: Record<string, unknown> } };
+    };
+    const committed = (name: string) =>
+      JSON.parse(readFileSync(`packages/shared/rules/${name}`, 'utf8')) as string[];
+    expect(sonarjsKeys(rspecKeys())).toEqual(committed('sonarjs-keys.json'));
+    expect(sonarjsDefaultKeys(rspecKeys(), plugin.configs.recommended.rules)).toEqual(
+      committed('sonarjs-default-keys.json'),
+    );
   });
 
   it('summary reports parse errors and the disabled rules by RSPEC key', async () => {

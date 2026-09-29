@@ -207,6 +207,7 @@ describe('importReportSchema (import-sonarqube.md §12.2)', () => {
         unmapped: [],
         unmappedCount: 0,
         parametersNotImported: [],
+        mappedNotRun: [],
       },
     };
     expect(ok({ ...minimal, profiles: [profile] })).toBe(true);

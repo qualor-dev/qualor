@@ -289,6 +289,35 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.stats.parametersNotImported).toEqual(['typescript:S3504']);
   });
 
+  it('counts a mapped rule the bundled configuration does not run as mapped, not run', () => {
+    // S1192 is off in eslint-plugin-sonarjs's recommended config; S1871 is on. csharpsquid:S107
+    // is disabled by default in SonarAnalyzer.CSharp; S1481 is enabled.
+    const ts = planProfile(
+      profile({ active: [rule('typescript:S1192'), rule('typescript:S1871')] }),
+      reviewed,
+    );
+    expect(ts.stats.mapped).toBe(2);
+    expect(ts.stats.mappedNotRun).toEqual(['typescript:S1192']);
+    expect(ts.rows.map((r) => r.ruleKey).sort()).toEqual(['sonarjs:S1192', 'sonarjs:S1871']);
+    const cs = planProfile(
+      profile({
+        language: 'cs',
+        active: [
+          rule('csharpsquid:S107', { language: 'cs' }),
+          rule('csharpsquid:S1481', { language: 'cs' }),
+        ],
+      }),
+    );
+    expect(cs.stats.mappedNotRun).toEqual(['csharpsquid:S107']);
+    // A rule mapped to the project's own ESLint is assumed to run.
+    const eslint = planProfile(
+      profile({ active: [rule('external_eslint_repo:no-console')] }),
+      reviewed,
+    );
+    expect(eslint.stats.mapped).toBe(1);
+    expect(eslint.stats.mappedNotRun).toEqual([]);
+  });
+
   it('keeps java rows to PMD and SpotBugs targets, and other engines to statuses', () => {
     const java = (key: string) => rule(key, { language: 'java' });
     const plan = planProfile(

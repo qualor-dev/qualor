@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { importReportSchema, planGate } from '@qualor/shared';
+import { importReportSchema, planGate, planProfile } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import { EXIT } from '../errors';
 import { createLogger } from '../log';
@@ -132,6 +132,42 @@ describe('the import report (import-sonarqube.md §12)', () => {
     const text = summary(buildReport(input({ dryRun: false, projects: [{ result, issues }] })));
     expect(text).toContain('3 changed in SonarQube');
     expect(text).toContain('2 path invalid, 1 invalid');
+  });
+
+  it('reports the mapped rules the bundled configuration does not run, in the report and the summary', () => {
+    const planned = planProfile({
+      key: 'p1',
+      name: 'Team C#',
+      language: 'cs',
+      isDefault: false,
+      isBuiltIn: false,
+      active: ['csharpsquid:S107', 'csharpsquid:S1481'].map((key) => ({
+        key,
+        name: key,
+        language: 'cs',
+        defaultSeverity: 'MAJOR',
+        severity: 'MAJOR',
+        defaultImpacts: [],
+        impacts: [],
+        paramsCustomised: false,
+      })),
+      inactive: [],
+      complete: true,
+    });
+    const report = buildReport(
+      input({
+        profiles: [
+          { planned, outcome: 'created', reason: null, qualorProfileId: null, defaultChange: null },
+        ],
+      }),
+    );
+    expect(importReportSchema.safeParse(report).success).toBe(true);
+    expect(report.profiles[0]?.rules).toMatchObject({
+      mapped: 2,
+      mappedNotRun: ['csharpsquid:S107'],
+    });
+    expect(summary(report)).toContain('2 mapped');
+    expect(summary(report)).toContain('1 mapped but not run by the bundled configuration');
   });
 
   it('lists warnings by code and count only: their text was logged when they occurred', () => {

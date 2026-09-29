@@ -74,6 +74,7 @@ export function buildReport(r: ReportInput): ImportReport {
         unmapped: p.planned.stats.unmapped.slice(0, MAX_UNMAPPED),
         unmappedCount: p.planned.stats.unmapped.length,
         parametersNotImported: p.planned.stats.parametersNotImported,
+        mappedNotRun: p.planned.stats.mappedNotRun,
       },
     })),
     gates: r.gates.map((g) => ({
@@ -209,7 +210,8 @@ export function printSummary(report: ImportReport, log: Logger): void {
     log.info(
       `profile ${clean(p.name)} (${clean(p.sonarLanguage)}): ${words(p.outcome)}${why(p.reason)}${defaultNote(p.defaultChange)}; ` +
         `${n(r.active)} active, ${n(r.mapped)} mapped, ${n(r.deactivated)} turned off, ${n(r.unmappedCount)} unmapped, ` +
-        `${n(r.pendingReview.length)} pending review, ${n(r.parametersNotImported.length)} with parameters not imported`,
+        `${n(r.pendingReview.length)} pending review, ${n(r.parametersNotImported.length)} with parameters not imported, ` +
+        `${n(r.mappedNotRun.length)} mapped but not run by the bundled configuration`,
     );
   }
   for (const g of report.gates) {

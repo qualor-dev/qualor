@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import sonaranalyzerDefaultKeys from '../../../rules/sonaranalyzer-csharp-default-keys.json' with { type: 'json' };
+import sonaranalyzerKeys from '../../../rules/sonaranalyzer-csharp-keys.json' with { type: 'json' };
+import sonarjsDefaultKeys from '../../../rules/sonarjs-default-keys.json' with { type: 'json' };
+import sonarjsKeys from '../../../rules/sonarjs-keys.json' with { type: 'json' };
 import raw from '../../../rules/sonarqube.json' with { type: 'json' };
 import { engineOf, loadSonarMapping, SONAR_MAPPING } from './rules';
 
@@ -109,6 +113,54 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
         ],
       }),
     ).toThrow(/unknown keysFile/);
+  });
+
+  it('knows which bundled SonarQube-compatible rules the bundled configuration runs', () => {
+    expect(SONAR_MAPPING.runByBundledConfig('sonarjs:S1871')).toBe(true);
+    expect(SONAR_MAPPING.runByBundledConfig('sonarjs:S1192')).toBe(false);
+    expect(SONAR_MAPPING.runByBundledConfig('roslyn:S1481')).toBe(true);
+    expect(SONAR_MAPPING.runByBundledConfig('roslyn:S107')).toBe(false);
+    // Not a bundled SonarSource-derived rule: the project's own analyzers decide.
+    expect(SONAR_MAPPING.runByBundledConfig('roslyn:RCS1001')).toBe(true);
+    expect(SONAR_MAPPING.runByBundledConfig('eslint:eqeqeq')).toBe(true);
+    expect(SONAR_MAPPING.runByBundledConfig('sonarjs:S9999')).toBe(true);
+    // Every default key is a bundled key.
+    for (const [all, run] of [
+      [sonarjsKeys, sonarjsDefaultKeys],
+      [sonaranalyzerKeys, sonaranalyzerDefaultKeys],
+    ] as const) {
+      expect(run.length).toBeGreaterThan(0);
+      expect(run.length).toBeLessThan(all.length);
+      for (const k of run) expect(all).toContain(k);
+    }
+  });
+
+  it('refuses a defaultKeysFile without a keysFile, or one that names no shipped file', () => {
+    expect(() =>
+      table({
+        repositories: [
+          {
+            repository: 'x',
+            engine: 'sonarjs',
+            reason: 'r',
+            defaultKeysFile: 'sonarjs-default-keys.json',
+          },
+        ],
+      }),
+    ).toThrow(/without a keysFile/);
+    expect(() =>
+      table({
+        repositories: [
+          {
+            repository: 'x',
+            engine: 'sonarjs',
+            reason: 'r',
+            keysFile: 'sonarjs-keys.json',
+            defaultKeysFile: 'unknown-default-keys.json',
+          },
+        ],
+      }),
+    ).toThrow(/unknown keysFile or defaultKeysFile/);
   });
 
   it('holds no SonarSource text: reasons are one short line each', () => {

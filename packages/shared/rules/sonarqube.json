@@ -62,19 +62,22 @@
       "repository": "csharpsquid",
       "engine": "roslyn",
       "reason": "SonarSource's own C# analyser (SonarAnalyzer.CSharp), which Qualor bundles, uses its own rule ids.",
-      "keysFile": "sonaranalyzer-csharp-keys.json"
+      "keysFile": "sonaranalyzer-csharp-keys.json",
+      "defaultKeysFile": "sonaranalyzer-csharp-default-keys.json"
     },
     {
       "repository": "javascript",
       "engine": "sonarjs",
       "reason": "SonarSource's own JavaScript analyser's rule ids are reused verbatim by Qualor's bundled eslint-plugin-sonarjs.",
-      "keysFile": "sonarjs-keys.json"
+      "keysFile": "sonarjs-keys.json",
+      "defaultKeysFile": "sonarjs-default-keys.json"
     },
     {
       "repository": "typescript",
       "engine": "sonarjs",
       "reason": "SonarSource's own TypeScript analyser's rule ids are reused verbatim by Qualor's bundled eslint-plugin-sonarjs.",
-      "keysFile": "sonarjs-keys.json"
+      "keysFile": "sonarjs-keys.json",
+      "defaultKeysFile": "sonarjs-default-keys.json"
     }
   ],
   "rules": [
