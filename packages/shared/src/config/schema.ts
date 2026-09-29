@@ -59,11 +59,10 @@ const analyzers = z
       })
       .prefault({}),
     // SonarQube-compatible JS/TS rules (eslint-plugin-sonarjs 2.0.4, LGPL-3.0), a separate pass
-    // from Qualor's own ESLint (§6). `timeout`, not `timeoutSeconds`: it runs a bundled tool, not
-    // the project's own ESLint config.
+    // from Qualor's own ESLint (§6).
     sonarjs: z
-      .strictObject({ enabled, timeout: timeout(900), typeChecking: enabled })
-      .default({ enabled: 'auto', timeout: 900, typeChecking: 'auto' }),
+      .strictObject({ enabled, timeoutSeconds: timeout(900), typeChecking: enabled })
+      .default({ enabled: 'auto', timeoutSeconds: 900, typeChecking: 'auto' }),
     pmd: z
       .strictObject({
         enabled,

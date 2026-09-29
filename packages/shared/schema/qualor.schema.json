@@ -180,7 +180,7 @@
         "sonarjs": {
           "default": {
             "enabled": "auto",
-            "timeout": 900,
+            "timeoutSeconds": 900,
             "typeChecking": "auto"
           },
           "type": "object",
@@ -197,7 +197,7 @@
                 }
               ]
             },
-            "timeout": {
+            "timeoutSeconds": {
               "default": 900,
               "type": "integer",
               "exclusiveMinimum": 0,

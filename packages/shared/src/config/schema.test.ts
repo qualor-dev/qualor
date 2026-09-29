@@ -36,9 +36,23 @@ describe('parseConfig', () => {
 
   it('has analyzers.sonarjs and roslyn.sonarAnalyzer with their defaults', () => {
     const c = parseConfig({ version: 1 });
-    expect(c.analyzers.sonarjs).toEqual({ enabled: 'auto', timeout: 900, typeChecking: 'auto' });
+    expect(c.analyzers.sonarjs).toEqual({
+      enabled: 'auto',
+      timeoutSeconds: 900,
+      typeChecking: 'auto',
+    });
     expect(c.analyzers.roslyn.sonarAnalyzer).toBe(true);
     expect(() => parseConfig({ version: 1, analyzers: { sonarjs: { rules: {} } } })).toThrow();
+  });
+
+  // The CLI's analyzer runner reads a timeout only when the key is literally named
+  // `timeoutSeconds` (cli/src/analyzers/runner.ts): `'timeoutSeconds' in settings ? … : 0`. A
+  // differently-named key (the spec's earlier `timeout` typo) would silently give sonarjs no
+  // timeout at all.
+  it("names sonarjs's timeout key timeoutSeconds, like every other analyzer, so the runner sees it", () => {
+    const sonarjs = parseConfig({ version: 1 }).analyzers.sonarjs;
+    expect('timeoutSeconds' in sonarjs).toBe(true);
+    expect(sonarjs.timeoutSeconds).toBe(900);
   });
 
   it('requires version 1', () => {
