@@ -213,4 +213,22 @@ describe('cross-engine dedupe (data-model.md §5.3)', () => {
     });
     expect(await byRule(p, 'eslint:no-console')).toMatchObject({ duplicateOfIssueId: null });
   });
+
+  it("dedupes the project's own eslint-plugin-sonarjs rule and the sonarjs pass's key, ESLint primary", async () => {
+    const p = await h.project('dedupe/sonarjs-own-plugin');
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('eslint'), engine('sonarjs')],
+        files: [file('src/a.ts')],
+        findings: [
+          finding({ ruleId: 'sonarjs/no-duplicated-branches', line: 4 }),
+          finding({ engineId: 'sonarjs', ruleId: 'S1871', line: 4 }),
+        ],
+      }),
+    );
+    const primary = await byRule(p, 'eslint:sonarjs/no-duplicated-branches');
+    expect(primary).toMatchObject({ duplicateOfIssueId: null });
+    expect(await byRule(p, 'sonarjs:S1871')).toMatchObject({ duplicateOfIssueId: primary!.id });
+  });
 });

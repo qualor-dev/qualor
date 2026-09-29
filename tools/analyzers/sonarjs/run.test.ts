@@ -557,6 +557,17 @@ describe.skipIf(!installed && !required)('sonarjs run.mjs helpers', () => {
     ).rejects.toThrow();
   });
 
+  it("equivalences.json pairs each installed rule's own ESLint name with its key (own-pairs.mjs)", async () => {
+    // @ts-expect-error: a plain ES module of the image, without type declarations
+    const { ownPairs } = await import('./own-pairs.mjs');
+    const { rspecKeys } = await load();
+    const committed = JSON.parse(
+      readFileSync('packages/shared/rules/equivalences.json', 'utf8'),
+    ) as { pairs: { rules: [string, string]; reason: string }[] };
+    const own = committed.pairs.filter((p) => p.rules[0].startsWith('eslint:sonarjs/'));
+    expect(own).toEqual(ownPairs(rspecKeys()));
+  });
+
   it('summary reports parse errors and the disabled rules by RSPEC key', async () => {
     const { summary, rspecKeys } = await load();
     const results = [{ messages: [{ fatal: true }] }, { messages: [{}] }, { messages: [] }];
