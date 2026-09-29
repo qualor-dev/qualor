@@ -81,53 +81,78 @@ test.describe('on a phone', () => {
   });
 });
 
-test('a personal token is shown once, then only by its prefix, and can be revoked', async ({
+test('a personal token is shown once in its dialog, then only by its prefix, and can be revoked', async ({
   page,
-  guard,
 }) => {
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings\/tokens$/);
   await expect(page).toHaveTitle('Access tokens · Qualor');
   await expect(page.getByRole('row', { name: /laptop/ })).toBeVisible();
-  await page.getByLabel('Name').fill('e2e-script');
-  await page.getByLabel('Upload analyses').check();
-  await page.getByRole('button', { name: 'Create token' }).click();
-  const secret = page.getByLabel('New token');
+  // The form is in the "New token" dialog (step 8), which starts on the name.
+  await page.getByRole('button', { name: 'New token' }).click();
+  const create = page.getByRole('dialog', { name: 'New token' });
+  await expect(create.getByLabel('Name')).toBeFocused();
+  await create.getByLabel('Name').fill('e2e-script');
+  await create.getByLabel('Upload analyses').check();
+  await create.getByRole('button', { name: 'Create token' }).click();
+  // The same dialog then holds the secret; its field takes focus, so the keyboard is there.
+  const shown = page.getByRole('dialog', { name: 'Your new token' });
+  const secret = shown.getByLabel('New token');
   await expect(secret).toHaveValue(/^qlr_pat_/);
-  // The one-time field takes focus, so the keyboard is where the secret is.
   await expect(secret).toBeFocused();
+  await expectAccessible(page);
+  const value = await secret.inputValue();
+  await shown.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('#secret-once')).toHaveCount(0);
   await expect(page.getByRole('status')).toHaveText(
     'Token e2e-script created. Copy it now: it is shown only this once.',
   );
-  await expectAccessible(page);
-  const value = await secret.inputValue();
   const row = page.getByRole('row', { name: /e2e-script/ });
-  await expect(row).toContainText('Read, Upload analyses');
+  await expect(row).toContainText('Read');
+  await expect(row).toContainText('Upload analyses');
   await expect(row).toContainText(value.slice(0, 10));
   await expect(row).not.toContainText(value);
-  await page.getByRole('button', { name: 'Done' }).click();
-  await expect(page.getByLabel('New token')).toHaveCount(0);
   // Nothing brings it back: a reload shows the prefix only.
   await page.reload();
   await expect(row).toBeVisible();
   await expect(page.locator('body')).not.toContainText(value);
 
-  guard.expectConfirm(true, 'Revoke the token "e2e-script"? Scripts using it stop working.');
+  // The page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
   await row.getByRole('button', { name: 'Revoke' }).click();
+  const ask = page.getByRole('dialog', { name: 'Revoke the token' });
+  await expect(ask).toContainText('Revoke the token "e2e-script"? Scripts using it stop working.');
+  await ask.getByRole('button', { name: 'Revoke' }).click();
   await expect(row).toHaveCount(0);
   await expect(page.getByRole('status')).toHaveText('Token e2e-script revoked.');
 });
 
-test('an instance admin creates a user who must change the password', async ({ page }) => {
+test('an instance admin creates a user who must change the password, and resets it from the row', async ({
+  page,
+}) => {
   await page.goto('/settings/users');
   await expect(page.getByRole('row', { name: /alice/ })).toBeVisible();
-  await page.getByLabel('Username').fill('bob');
-  await page.getByLabel('Initial password').fill('bob initial passphrase');
-  await page.getByRole('button', { name: 'Create user' }).click();
+  await page.getByRole('button', { name: 'New user' }).click();
+  const create = page.getByRole('dialog', { name: 'New user' });
+  await expect(create.getByLabel('Username')).toBeFocused();
+  await create.getByLabel('Username').fill('bob');
+  await create.getByLabel('Initial password').fill('bob initial passphrase');
+  await create.getByRole('button', { name: 'Create user' }).click();
+  await expect(create).toBeHidden();
   await expect(page.getByRole('status')).toContainText('bob can sign in now');
-  await expect(page.getByLabel('Initial password')).toHaveValue('');
   const bob = page.getByRole('row', { name: /bob/ });
   await expect(bob).toContainText('Must change password');
+  // The row resets the password in a dialog that names the user (step 8).
+  await bob.getByRole('button', { name: 'Reset password' }).click();
+  const reset = page.getByRole('dialog', { name: 'Reset the password of bob' });
+  await expect(reset.getByLabel('New password')).toBeFocused();
+  await expectAccessible(page);
+  await reset.getByLabel('New password').fill('bob second passphrase');
+  await reset.getByRole('button', { name: 'Reset password' }).click();
+  await expect(reset).toBeHidden();
+  await expect(page.getByRole('status')).toHaveText(
+    'bob must choose a new password at the next sign-in.',
+  );
+  await expect(bob.getByRole('button', { name: 'Reset password' })).toBeFocused();
   // Keyboard only: the button changes its label in place and keeps the focus.
   await bob.getByRole('button', { name: 'Deactivate' }).press('Enter');
   await expect(bob).toContainText('Deactivated');
@@ -149,8 +174,12 @@ test('the last instance admin cannot remove their own role (409 LAST_ADMIN)', as
   // The seed gives the signed-in admin a display name, so the row is found by the user's id.
   const row = page.locator(`tbody tr[data-key="${admin?.id ?? ''}"]`);
   await expect(row).toContainText(ADMIN.username);
-  guard.expectConfirm(true, 'Remove your own instance admin role? You can no longer manage users.');
   await row.getByRole('button', { name: 'Remove admin' }).click();
+  const ask = page.getByRole('dialog', { name: 'Remove your admin role' });
+  await expect(ask).toContainText(
+    'Remove your own instance admin role? You can no longer manage users.',
+  );
+  await ask.getByRole('button', { name: 'Remove admin' }).click();
   await expect(page.getByRole('alert')).toHaveText(
     'The last active administrator cannot be demoted, removed or deactivated.',
   );
@@ -343,15 +372,19 @@ test('an organization admin adds a member by name, changes the role and removes 
   await expect(page.getByRole('row', { name: /alice/ })).toContainText('Maintainer');
 
   // A name nobody has: said on the field, which keeps the focus.
-  const name = page.getByLabel('User name');
-  await name.fill('nobody-by-this-name');
+  // The form is in the "Add member" dialog (step 8), which starts on the name.
   await page.getByRole('button', { name: 'Add member' }).click();
-  await expect(page.getByText('No active user has that name.')).toBeVisible();
+  const add = page.getByRole('dialog', { name: 'Add a member' });
+  const name = add.getByLabel('User name');
+  await expect(name).toBeFocused();
+  await name.fill('nobody-by-this-name');
+  await add.getByRole('button', { name: 'Add member' }).click();
+  await expect(add.getByText('No active user has that name.')).toBeVisible();
   await expect(name).toHaveAttribute('aria-invalid', 'true');
   await expect(name).toBeFocused();
 
   // Every edition offers the four roles (rbac-audit.md §1.3).
-  const role = page.getByLabel('Role', { exact: true });
+  const role = add.getByLabel('Role', { exact: true });
   await expect(role.locator('option')).toHaveText([
     'Organization admin',
     'Project admin',
@@ -360,21 +393,27 @@ test('an organization admin adds a member by name, changes the role and removes 
   ]);
   await name.fill('dora');
   await role.selectOption({ label: 'Maintainer' });
-  await page.getByRole('button', { name: 'Add member' }).click();
+  await add.getByRole('button', { name: 'Add member' }).click();
+  await expect(add).toBeHidden();
   await expect(page.getByRole('status')).toHaveText('dora added as Maintainer.');
-  await expect(name).toHaveValue('');
   const dora = page.getByRole('row', { name: /dora/ });
   await expect(dora.getByLabel('Role of dora')).toHaveValue('member');
 
+  // The page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
   await dora.getByLabel('Role of dora').selectOption({ label: 'Organization admin' });
-  guard.expectConfirm(true, 'Change the role of dora in Default to Organization admin?');
   await dora.getByRole('button', { name: 'Change role' }).click();
+  const change = page.getByRole('dialog', { name: 'Change the role' });
+  await expect(change).toContainText('Change the role of dora in Default to Organization admin?');
+  await expectAccessible(page);
+  await change.getByRole('button', { name: 'Change role' }).click();
   await expect(page.getByRole('status')).toHaveText('dora is now Organization admin.');
   await expect(dora.getByLabel('Role of dora')).toHaveValue('admin');
   await expectAccessible(page);
 
-  guard.expectConfirm(true, 'Remove dora from Default? They lose access to its projects.');
   await dora.getByRole('button', { name: 'Remove' }).click();
+  const remove = page.getByRole('dialog', { name: 'Remove the member' });
+  await expect(remove).toContainText('Remove dora from Default? They lose access to its projects.');
+  await remove.getByRole('button', { name: 'Remove' }).click();
   await expect(page.getByRole('status')).toHaveText('dora removed.');
   await expect(dora).toHaveCount(0);
 });

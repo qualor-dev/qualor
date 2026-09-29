@@ -101,12 +101,43 @@ function row(root: HTMLElement, userId: string): HTMLElement {
   return root.querySelector<HTMLElement>(`tr[data-key="${userId}"]`)!;
 }
 
-function button(root: HTMLElement, text: string): HTMLButtonElement {
+function button(root: ParentNode, text: string): HTMLButtonElement {
   return [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!;
 }
 
 function options(select: HTMLSelectElement): string[] {
   return [...select.options].filter((o) => !o.disabled).map((o) => o.textContent?.trim() ?? '');
+}
+
+function dialog(root: HTMLElement, id: string): HTMLDialogElement {
+  return root.querySelector<HTMLDialogElement>(`dialog#${id}`)!;
+}
+
+/**
+ * Answers the page's confirmation dialog (step 8: it replaces the browser's `confirm()`) with the
+ * button `choice`, and returns the question it asked.
+ */
+async function answer(
+  fixture: { whenStable(): Promise<unknown> },
+  root: HTMLElement,
+  choice: string,
+): Promise<string> {
+  const ask = dialog(root, 'confirm-dialog');
+  expect(ask.open).toBe(true);
+  const question = ask.querySelector('#confirm-text')?.textContent?.trim() ?? '';
+  button(ask, choice).click();
+  await settle(fixture);
+  expect(ask.open).toBe(false);
+  return question;
+}
+
+/** Opens the "Add member" dialog (step 8: the add form lives in it). */
+async function openAdd(root: HTMLElement, fixture: { whenStable(): Promise<unknown> }) {
+  button(root, 'Add member').click();
+  await settle(fixture);
+  const add = dialog(root, 'add-dialog');
+  expect(add.open).toBe(true);
+  return add;
 }
 
 describe('MembersPage (rbac-audit.md §17)', () => {
@@ -129,7 +160,6 @@ describe('MembersPage (rbac-audit.md §17)', () => {
     server.on('PUT', `/api/v0/organizations/${ORG_ID}/members/${BOB}`, {
       body: member(BOB, 'bob', 'viewer'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     expect(options(root.querySelector<HTMLSelectElement>('#member-role')!)).toEqual([
       'Organization admin',
@@ -146,12 +176,13 @@ describe('MembersPage (rbac-audit.md §17)', () => {
     choose(row(root, BOB), 'select', 'viewer');
     button(row(root, BOB), 'Change role').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith('Change the role of bob in Default to Viewer?');
+    expect(await answer(fixture, root, 'Change role')).toBe(
+      'Change the role of bob in Default to Viewer?',
+    );
     expect(
       server.requestsTo('PUT', `/api/v0/organizations/${ORG_ID}/members/${BOB}`).map((r) => r.body),
     ).toEqual([{ role: 'viewer' }]);
     expect(root.querySelector('[role="status"]')?.textContent).toContain('bob is now Viewer.');
-    confirm.mockRestore();
   });
 
   it('shows no lapse note', async () => {
@@ -164,19 +195,20 @@ describe('MembersPage (rbac-audit.md §17)', () => {
     expect(root.textContent).not.toContain('enterprise licence');
   });
 
-  it('changes a role with PUT and announces it', async () => {
+  it("changes a role with PUT after the page's own confirmation, and announces it", async () => {
     const server = setup();
     server.on('PUT', `/api/v0/organizations/${ORG_ID}/members/${BOB}`, {
       body: member(BOB, 'bob', 'admin'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
     choose(row(root, BOB), 'select', 'admin');
     button(row(root, BOB), 'Change role').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(await answer(fixture, root, 'Change role')).toBe(
       'Change the role of bob in Default to Organization admin?',
     );
+    expect(confirm).not.toHaveBeenCalled();
     const puts = server.requestsTo('PUT', `/api/v0/organizations/${ORG_ID}/members/${BOB}`);
     expect(puts.map((r) => r.body)).toEqual([{ role: 'admin' }]);
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
@@ -219,45 +251,53 @@ describe('MembersPage (rbac-audit.md §17)', () => {
     server.on('PUT', `/api/v0/organizations/${ORG_ID}/members/${BOB}`, {
       body: member(BOB, 'bob', 'admin'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     choose(row(root, BOB), 'select', 'admin');
     button(row(root, BOB), 'Change role').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(await answer(fixture, root, 'Change role')).toBe(
       'Change the role of bob in Default to Organization admin? Changing this role takes it over from group sync.',
     );
     expect(server.requestsTo('PUT', `/api/v0/organizations/${ORG_ID}/members/${BOB}`)).toHaveLength(
       1,
     );
-    confirm.mockRestore();
   });
 
-  it('sends nothing when the role change is not confirmed, and shows the stored role again', async () => {
+  it('sends nothing when the role change is cancelled, and shows the stored role again', async () => {
     const server = setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, root } = await render();
     choose(row(root, BOB), 'select', 'admin');
     button(row(root, BOB), 'Change role').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    await answer(fixture, root, 'Cancel');
     expect(server.requests.filter((r) => r.method === 'PUT')).toEqual([]);
     expect(row(root, BOB).querySelector('select')?.value).toBe('member');
     expect(button(row(root, BOB), 'Change role').getAttribute('aria-disabled')).toBe('true');
-    confirm.mockRestore();
+  });
+
+  it('puts the role back when the confirmation is closed with Escape', async () => {
+    const server = setup();
+    const { fixture, root } = await render();
+    choose(row(root, BOB), 'select', 'admin');
+    button(row(root, BOB), 'Change role').click();
+    await settle(fixture);
+    const ask = dialog(root, 'confirm-dialog');
+    ask.removeAttribute('open');
+    ask.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    expect(server.requests.filter((r) => r.method === 'PUT')).toEqual([]);
+    expect(row(root, BOB).querySelector('select')?.value).toBe('member');
   });
 
   it('asks in its own words before admins demote themselves', async () => {
     setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, root } = await render();
     choose(row(root, ALICE), 'select', 'member');
     button(row(root, ALICE), 'Change role').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(await answer(fixture, root, 'Cancel')).toBe(
       'Change your own role in Default to Maintainer? You can no longer manage its members, and only another administrator can make you an admin again.',
     );
-    confirm.mockRestore();
   });
 
   it('shows a refused self-demotion (409 LAST_ADMIN) and keeps the role', async () => {
@@ -266,11 +306,11 @@ describe('MembersPage (rbac-audit.md §17)', () => {
       status: 409,
       body: problem(409, 'LAST_ADMIN'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     choose(row(root, ALICE), 'select', 'member');
     button(row(root, ALICE), 'Change role').click();
     await settle(fixture);
+    await answer(fixture, root, 'Change role');
     expect(
       server.requestsTo('PUT', `/api/v0/organizations/${ORG_ID}/members/${ALICE}`),
     ).toHaveLength(1);
@@ -279,35 +319,30 @@ describe('MembersPage (rbac-audit.md §17)', () => {
     );
     expect(row(root, ALICE).querySelector('select')?.value).toBe('admin');
     expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
-    confirm.mockRestore();
   });
 
   it('removes a member with DELETE after a confirmation, and not without one', async () => {
     const server = setup();
     server.on('DELETE', `/api/v0/organizations/${ORG_ID}/members/${BOB}`, { status: 204 });
-    const confirm = vi
-      .spyOn(window, 'confirm')
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
     const { fixture, root } = await render();
     button(row(root, BOB), 'Remove').click();
     await settle(fixture);
+    expect(await answer(fixture, root, 'Cancel')).toBe(
+      'Remove bob from Default? They lose access to its projects.',
+    );
     expect(server.requestsTo('DELETE', `/api/v0/organizations/${ORG_ID}/members/${BOB}`)).toEqual(
       [],
     );
     button(row(root, BOB), 'Remove').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenLastCalledWith(
-      'Remove bob from Default? They lose access to its projects.',
-    );
+    await answer(fixture, root, 'Remove');
     expect(
       server.requestsTo('DELETE', `/api/v0/organizations/${ORG_ID}/members/${BOB}`),
     ).toHaveLength(1);
     expect(root.querySelector('[role="status"]')?.textContent).toContain('bob removed.');
-    confirm.mockRestore();
   });
 
-  it('adds a member: looks the name up, then sends PUT with the chosen role', async () => {
+  it('adds a member in the Add member dialog: looks the name up, then sends PUT with the chosen role', async () => {
     const server = setup();
     server.on('GET', '/api/v0/users/lookup', {
       body: { id: CAROL, username: 'carol', displayName: 'Carol' },
@@ -316,9 +351,10 @@ describe('MembersPage (rbac-audit.md §17)', () => {
       body: member(CAROL, 'carol', 'admin'),
     });
     const { fixture, root } = await render();
+    const add = await openAdd(root, fixture);
     type(root, '#member-username', ' Carol ');
     choose(root, '#member-role', 'admin');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(
       server.requestsTo('GET', '/api/v0/users/lookup').map((r) => r.query.get('username')),
@@ -328,21 +364,27 @@ describe('MembersPage (rbac-audit.md §17)', () => {
         .requestsTo('PUT', `/api/v0/organizations/${ORG_ID}/members/${CAROL}`)
         .map((r) => r.body),
     ).toEqual([{ role: 'admin' }]);
+    expect(add.open).toBe(false);
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'carol added as Organization admin.',
     );
+    // Opened again: an empty name and the default role, never the last choice.
+    await openAdd(root, fixture);
     expect(root.querySelector<HTMLInputElement>('#member-username')?.value).toBe('');
+    expect(root.querySelector<HTMLSelectElement>('#member-role')?.value).toBe('member');
   });
 
-  it('says so when no active user has that name, on the field', async () => {
+  it('says so in the dialog when no active user has that name, on the field', async () => {
     const server = setup();
     server.on('GET', '/api/v0/users/lookup', { status: 404, body: problem(404, 'NOT_FOUND') });
     const { fixture, root } = await render();
+    const add = await openAdd(root, fixture);
     type(root, '#member-username', 'nobody');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     const field = root.querySelector('#member-username')!;
-    expect(root.querySelector('#member-username-error')?.textContent).toContain(
+    expect(add.open).toBe(true);
+    expect(add.querySelector('#member-username-error')?.textContent).toContain(
       'No active user has that name',
     );
     expect(field.getAttribute('aria-invalid')).toBe('true');
@@ -356,6 +398,7 @@ describe('MembersPage (rbac-audit.md §17)', () => {
     expect(root.textContent).toContain('Only organization administrators manage members.');
     expect(server.requestsTo('GET', `/api/v0/organizations/${ORG_ID}/members`)).toEqual([]);
     expect(root.querySelector('form')).toBeNull();
+    expect(button(root, 'Add member')).toBeUndefined();
   });
 });
 

@@ -310,9 +310,9 @@ and unlink their own linked accounts there. Two refusals keep people from lockin
   [Password sign-in](#password-sign-in-and-break-glass-admins)), and another link counts only on
   a connection in effect ([One connection or several](#one-connection-or-several)). A user
   without a password cannot set one themselves (changing a password needs the current one): ask
-  an instance admin to set one first (**Settings → Users → Reset a password**), which ends that
-  user's sessions and revokes their personal tokens. It counts only while password sign-in is
-  allowed for them. The emergency switch below does not count.
+  an instance admin to set one first (**Reset password** on the user's row in **Settings →
+  Users**), which ends that user's sessions and revokes their personal tokens. It counts only
+  while password sign-in is allowed for them. The emergency switch below does not count.
 
 Signing out of Qualor ends the Qualor session only: Qualor does no single logout, and signing out
 of the IdP does not end a Qualor session. A session lasts `QUALOR_SESSION_TTL_HOURS`, like any
@@ -608,10 +608,10 @@ After `sso` lapses:
   `FEATURE_NOT_LICENSED`;
 - **password sign-in is open to everyone who has a password**, whatever **Settings → Sign-in**
   says;
-- **users without a password cannot sign in** until an instance admin sets one in **Settings →
-  Users → Reset a password** (the **No password** filter lists them); they choose their own at the
-  next sign-in. Setting a password ends that user's sessions and revokes their personal tokens,
-  so their CI jobs need a new token;
+- **users without a password cannot sign in** until an instance admin sets one with **Reset
+  password** on their row in **Settings → Users** (the **No password** filter lists them); they
+  choose their own at the next sign-in. Setting a password ends that user's sessions and revokes
+  their personal tokens, so their CI jobs need a new token;
 - existing sessions stay valid until they expire, and API and CI tokens keep working;
 - memberships from group sync stay as they are; nothing syncs until the renewal;
 - connections, links, mappings and the sign-in setting are kept, and a renewed key restores them.

@@ -62,8 +62,8 @@ Each user in `GET /api/v0/users` carries `hasPassword` and `sso` (`identities`, 
 linked accounts, and `scim`).
 
 **After the `sso` licence lapses**, users without a password cannot sign in. Give one a password
-in **Settings → Users**, under **Reset a password**: they choose their own at their next sign-in,
-as any user whose password was reset does. Setting (resetting) a password ends that user's
+in **Settings → Users**, with **Reset password** on their row: they choose their own at their
+next sign-in, as any user whose password was reset does. Setting (resetting) a password ends that user's
 sessions and revokes their personal tokens, so their CI jobs need a new token. The same works for
 a user whose only linked connection was deleted. Only an instance admin can give a user without a
 password one: changing your own password needs the current one. Who else may use a password is set in **Settings → Sign-in**.

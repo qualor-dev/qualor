@@ -13,8 +13,10 @@ import { Api, done, ok } from '../api/api';
 import { fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
 import { DateTimePipe } from '../shared/date-time.pipe';
+import { closeModal, openModal } from '../shared/dialog';
 import { keepFocus, rowAt } from '../shared/focus';
 import { clearField, inputValue, isChecked } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { SecretOnce } from './secret-once';
 
@@ -43,10 +45,14 @@ function scopeLabel(scope: Scope): string {
  * (ruling R10; a token gets 403 `SESSION_REQUIRED`, shown as such). The list shows a token's
  * prefix and metadata only; the whole token is in the `POST` answer alone, shown once in
  * `SecretOnce` and dropped on "Done", on the next creation and when the page is left.
+ *
+ * Step 8 of the redesign (spec §7.8): the list in a panel with a quiet Revoke; "New token" opens a
+ * dialog holding the form, which then shows the secret with Copy and Done (closing the dialog in
+ * any way forgets it); Revoke asks in the page's dialog instead of the browser's `confirm()`.
  */
 @Component({
   selector: 'q-tokens-page',
-  imports: [DateTimePipe, SecretOnce],
+  imports: [DateTimePipe, Icon, SecretOnce],
   templateUrl: './tokens.page.html',
 })
 export class TokensPage {
@@ -71,6 +77,10 @@ export class TokensPage {
   protected readonly expiryError = signal<string | null>(null);
   protected readonly announcement = signal<string | null>(null);
   protected readonly busy = signal(false);
+  /** A refused creation other than its fields, shown in the dialog that is still open. */
+  protected readonly createError = signal<string | null>(null);
+  /** The token the confirmation dialog asks about; null while it is closed. */
+  protected readonly pendingRevoke = signal<{ token: Token; question: string } | null>(null);
   protected readonly allScopes = SCOPES;
   protected readonly expiries = EXPIRY_DAYS;
   protected readonly scopeLabel = scopeLabel;
@@ -79,6 +89,8 @@ export class TokensPage {
   private readonly nameField = viewChild<ElementRef<HTMLInputElement>>('nameField');
   private readonly scopesField = viewChild<ElementRef<HTMLElement>>('scopesField');
   private readonly expiryField = viewChild<ElementRef<HTMLSelectElement>>('expiryField');
+  private readonly createDialog = viewChild<ElementRef<HTMLDialogElement>>('createDialog');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
 
   constructor() {
     void this.list.reset(null);
@@ -111,6 +123,27 @@ export class TokensPage {
     return token.expiresAt !== null && Date.parse(token.expiresAt) <= Date.now();
   }
 
+  /** Opens "New token" on an empty form: the name, Read only, 90 days, no message. */
+  protected openCreate(): void {
+    this.created.set(null);
+    this.name.set('');
+    this.scopes.set(new Set(['read']));
+    this.expiry.set('90');
+    this.nameError.set(null);
+    this.scopesError.set(null);
+    this.expiryError.set(null);
+    this.createError.set(null);
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
+  }
+
+  /** Cancel, or Done after the secret: the dialog closes, and its close forgets the secret. */
+  protected closeCreate(): void {
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    this.forget();
+  }
+
   protected forget(): void {
     this.created.set(null);
   }
@@ -140,6 +173,7 @@ export class TokensPage {
     }
     // A secret on screen belongs to the previous token: it goes before the next is asked for.
     this.created.set(null);
+    this.createError.set(null);
     await this.run(async () => {
       const token = await ok(
         this.api.client.POST('/api/v0/tokens', {
@@ -152,18 +186,39 @@ export class TokensPage {
         $localize`:@@tokens.created:Token ${token.name}:name: created. Copy it now: it is shown only this once.`,
       );
       await this.list.refresh();
-    });
+    }, true);
   }
 
-  protected async revoke(token: Token): Promise<void> {
+  /** Asks in the page's dialog; nothing is sent until its Revoke. */
+  protected revoke(token: Token): void {
     if (this.busy()) return;
-    if (
-      !window.confirm(
-        $localize`:@@tokens.confirmRevoke:Revoke the token "${token.name}:name:"? Scripts using it stop working.`,
-      )
-    ) {
-      return;
-    }
+    this.pendingRevoke.set({
+      token,
+      question: $localize`:@@tokens.confirmRevoke:Revoke the token "${token.name}:name:"? Scripts using it stop working.`,
+    });
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
+  }
+
+  protected async confirmRevoke(): Promise<void> {
+    const pending = this.pendingRevoke();
+    if (!pending) return;
+    // Cleared first: the dialog's close event then finds nothing to cancel.
+    this.pendingRevoke.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    await this.applyRevoke(pending.token);
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing is revoked. */
+  protected cancelRevoke(): void {
+    this.pendingRevoke.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  private async applyRevoke(token: Token): Promise<void> {
+    if (this.busy()) return;
     const index = this.list.items().findIndex((t) => t.id === token.id);
     await this.run(async () => {
       await done(
@@ -193,8 +248,11 @@ export class TokensPage {
     );
   }
 
-  /** Runs one change; while one runs, the buttons stay enabled (and focusable) but do nothing. */
-  private async run(action: () => Promise<void>): Promise<void> {
+  /**
+   * Runs one change; while one runs, the buttons stay enabled (and focusable) but do nothing. A
+   * refusal of the dialog's form (`inDialog`) that names no field shows in the dialog.
+   */
+  private async run(action: () => Promise<void>, inDialog = false): Promise<void> {
     this.busy.set(true);
     this.error.set(null);
     this.announcement.set(null);
@@ -212,6 +270,9 @@ export class TokensPage {
         this.expiryError.set(
           $localize`:@@tokens.expiryInvalid:Choose one of the offered expiries.`,
         );
+      } else if (inDialog) {
+        this.createError.set(problemMessage(err));
+        return;
       } else {
         this.error.set(problemMessage(err));
         keepFocus(this.injector, this.document, () => this.heading().nativeElement);

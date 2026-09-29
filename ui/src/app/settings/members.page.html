@@ -1,11 +1,24 @@
-<h2 #heading tabindex="-1" i18n="@@members.title">Members</h2>
-@if (!canRead()) {
-  <p class="muted" i18n="@@members.adminsOnly">Only organization administrators manage members.</p>
-} @else {
-  <p class="muted" i18n="@@members.intro">
-    Members see the organization's projects; their role decides what they may change. Add people by
-    their exact user name.
-  </p>
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@members.title">Members</h2>
+    @if (!canRead()) {
+      <p class="muted" i18n="@@members.adminsOnly">
+        Only organization administrators manage members.
+      </p>
+    } @else {
+      <p class="muted" i18n="@@members.intro">
+        Members see the organization's projects; their role decides what they may change. Add people
+        by their exact user name.
+      </p>
+    }
+  </div>
+  @if (canManage()) {
+    <button type="button" class="btn btn-primary" (click)="openAdd()">
+      <q-icon name="plus" /><ng-container i18n="@@members.addOpen">Add member</ng-container>
+    </button>
+  }
+</div>
+@if (canRead()) {
   <div role="status">
     @if (announcement(); as message) {
       <p class="alert alert-success">{{ message }}</p>
@@ -14,147 +27,227 @@
   @if (list.error() ?? error(); as message) {
     <p class="alert alert-error" role="alert">{{ message }}</p>
   }
-  <div class="table-wrap">
-    <table #table>
-      <caption class="visually-hidden" i18n="@@members.caption">
-        Members of the organization and their roles
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col" i18n="@@members.col.user">User</th>
-          <th scope="col" i18n="@@members.col.role">Role</th>
-          @if (canManage()) {
-            <th scope="col">
-              <span class="visually-hidden" i18n="@@members.col.actions">Actions</span>
-            </th>
-          }
-        </tr>
-      </thead>
-      <tbody>
-        @for (m of list.items(); track m.userId) {
-          <tr [attr.data-key]="m.userId">
-            <th scope="row">
-              {{ m.username }}
-              @if (m.displayName) {
-                <div class="muted">{{ displayName(m) }}</div>
-              }
-              @if (m.managedBy; as managed) {
-                <div class="hint" i18n="@@members.managed">
-                  From SSO group sync: {{ managed.connectionName }}
-                </div>
-              }
-            </th>
-            <td>
-              @if (canManage()) {
-                <label
-                  class="visually-hidden"
-                  [attr.for]="'member-role-' + m.userId"
-                  i18n="@@members.roleOf"
-                  >Role of {{ m.username }}</label
-                >
-                <select [id]="'member-role-' + m.userId" (change)="choose(m, $event)">
-                  @for (r of roles; track r) {
-                    <option [value]="r" [selected]="r === chosenRole(m)">{{ roleText(r) }}</option>
-                  }
-                </select>
-              } @else {
-                {{ roleText(m.role) }}
-              }
-            </td>
+  <section class="card panel" aria-labelledby="members-caption">
+    <div class="panel-scroll">
+      <table #table>
+        <caption id="members-caption" class="visually-hidden" i18n="@@members.caption">
+          Members of the organization and their roles
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@members.col.user">User</th>
+            <th scope="col" i18n="@@members.col.role">Role</th>
             @if (canManage()) {
-              <td class="actions">
-                <button
-                  type="button"
-                  class="btn"
-                  [attr.aria-disabled]="busy() || chosenRole(m) === m.role ? true : null"
-                  (click)="changeRole(m)"
-                  i18n="@@members.changeRole"
-                >
-                  Change role
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-danger"
-                  [attr.aria-disabled]="busy() ? true : null"
-                  (click)="remove(m)"
-                  i18n="@@members.remove"
-                >
-                  Remove
-                </button>
-              </td>
+              <th scope="col" class="actions-col">
+                <span class="visually-hidden" i18n="@@members.col.actions">Actions</span>
+              </th>
             }
           </tr>
-        } @empty {
-          @if (list.loaded()) {
-            <tr>
-              <td [attr.colspan]="canManage() ? 3 : 2" class="muted" i18n="@@members.empty">
-                This organization has no members yet.
+        </thead>
+        <tbody>
+          @for (m of list.items(); track m.userId) {
+            <tr [attr.data-key]="m.userId">
+              <th scope="row">
+                <div class="person">
+                  <span class="avatar" aria-hidden="true">{{
+                    (m.displayName || m.username).charAt(0)
+                  }}</span>
+                  <div class="name-stack">
+                    <span>{{ m.username }}</span>
+                    @if (m.displayName) {
+                      <span class="muted">{{ displayName(m) }}</span>
+                    }
+                    @if (m.managedBy; as managed) {
+                      <span class="hint" i18n="@@members.managed">
+                        From SSO group sync: {{ managed.connectionName }}
+                      </span>
+                    }
+                  </div>
+                </div>
+              </th>
+              <td>
+                @if (canManage()) {
+                  <label
+                    class="visually-hidden"
+                    [attr.for]="'member-role-' + m.userId"
+                    i18n="@@members.roleOf"
+                    >Role of {{ m.username }}</label
+                  >
+                  <select [id]="'member-role-' + m.userId" (change)="choose(m, $event)">
+                    @for (r of roles; track r) {
+                      <option [value]="r" [selected]="r === chosenRole(m)">
+                        {{ roleText(r) }}
+                      </option>
+                    }
+                  </select>
+                } @else {
+                  {{ roleText(m.role) }}
+                }
               </td>
+              @if (canManage()) {
+                <td class="actions-col">
+                  <div class="row-actions">
+                    <button
+                      type="button"
+                      class="btn-quiet"
+                      [attr.aria-disabled]="busy() || chosenRole(m) === m.role ? true : null"
+                      (click)="changeRole(m)"
+                      i18n="@@members.changeRole"
+                    >
+                      Change role
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-quiet danger"
+                      [attr.aria-disabled]="busy() ? true : null"
+                      (click)="remove(m)"
+                      i18n="@@members.remove"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </td>
+              }
             </tr>
+          } @empty {
+            @if (list.loaded()) {
+              <tr>
+                <td [attr.colspan]="canManage() ? 3 : 2" class="muted" i18n="@@members.empty">
+                  This organization has no members yet.
+                </td>
+              </tr>
+            }
           }
-        }
-      </tbody>
-    </table>
-  </div>
-  @if (list.loaded() && !list.nextCursor() && list.items().length > 0) {
-    <p class="muted">
-      <span i18n="@@members.count">{list.items().length, plural,
-        =1 {1 member}
-        other {{{ list.items().length }} members}
-      }</span>
-    </p>
-  }
-  @if (list.nextCursor()) {
-    <p>
-      <button
-        type="button"
-        class="btn"
-        [attr.aria-disabled]="list.loading() ? true : null"
-        (click)="list.more()"
-        i18n="@@list.more"
-      >
-        Load more
-      </button>
-    </p>
-  }
+        </tbody>
+      </table>
+    </div>
+    @if (list.loaded() && !list.nextCursor() && list.items().length > 0) {
+      <p class="panel-foot muted">
+        <span i18n="@@members.count">{list.items().length, plural,
+          =1 {1 member}
+          other {{{ list.items().length }} members}
+        }</span>
+      </p>
+    }
+    @if (list.nextCursor()) {
+      <p class="panel-foot">
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-disabled]="list.loading() ? true : null"
+          (click)="list.more()"
+          i18n="@@list.more"
+        >
+          Load more
+        </button>
+      </p>
+    }
+  </section>
 
   @if (canManage()) {
-    <form class="card" novalidate (submit)="add($event)">
-      <h3 i18n="@@members.add">Add a member</h3>
-      <div class="field">
-        <label for="member-username" i18n="@@members.username">User name</label>
-        <input
-          #usernameField
-          id="member-username"
-          required
-          autocomplete="off"
-          spellcheck="false"
-          [attr.maxlength]="usernameMax"
-          [attr.aria-invalid]="usernameError() ? true : null"
-          [attr.aria-describedby]="usernameError() ? 'member-username-error' : null"
-          [value]="username()"
-          (input)="setUsername($event)"
-        />
-        @if (usernameError(); as message) {
-          <span id="member-username-error" class="field-error" role="alert">{{ message }}</span>
+    <dialog #addDialog id="add-dialog" class="dialog" aria-labelledby="add-dialog-title">
+      <form novalidate (submit)="add($event)">
+        <div class="dialog-head">
+          <h2 id="add-dialog-title" i18n="@@members.add">Add a member</h2>
+        </div>
+        <div class="dialog-body">
+          @if (addError(); as message) {
+            <p class="alert alert-error" role="alert">{{ message }}</p>
+          }
+          <div class="field">
+            <label for="member-username" i18n="@@members.username">User name</label>
+            <input
+              #usernameField
+              autofocus
+              id="member-username"
+              required
+              autocomplete="off"
+              spellcheck="false"
+              [attr.maxlength]="usernameMax"
+              [attr.aria-invalid]="usernameError() ? true : null"
+              [attr.aria-describedby]="usernameError() ? 'member-username-error' : null"
+              [value]="username()"
+              (input)="setUsername($event)"
+            />
+            @if (usernameError(); as message) {
+              <span id="member-username-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+          <div class="field">
+            <label for="member-role" i18n="@@members.role">Role</label>
+            <select id="member-role" (change)="setRole($event)">
+              @for (r of roles; track r) {
+                <option [value]="r" [selected]="r === role()">{{ roleText(r) }}</option>
+              }
+            </select>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn" (click)="closeAdd()" i18n="@@dialog.cancel">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-primary"
+            [attr.aria-disabled]="busy() ? true : null"
+            i18n="@@members.addSubmit"
+          >
+            Add member
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      #confirmDialog
+      id="confirm-dialog"
+      class="dialog"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-text"
+      (close)="cancelPending()"
+    >
+      <div class="dialog-head">
+        <h2 id="confirm-title">
+          @if (pending()?.kind === 'remove') {
+            <ng-container i18n="@@members.removeTitle">Remove the member</ng-container>
+          } @else {
+            <ng-container i18n="@@members.changeTitle">Change the role</ng-container>
+          }
+        </h2>
+      </div>
+      <div class="dialog-body">
+        <p id="confirm-text">{{ pending()?.question }}</p>
+      </div>
+      <div class="dialog-actions">
+        <button
+          type="button"
+          class="btn"
+          autofocus
+          (click)="cancelPending()"
+          i18n="@@dialog.cancel"
+        >
+          Cancel
+        </button>
+        @if (pending()?.kind === 'remove') {
+          <button
+            type="button"
+            class="btn btn-danger-solid"
+            (click)="confirmPending()"
+            i18n="@@members.remove"
+          >
+            Remove
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="confirmPending()"
+            i18n="@@members.changeRole"
+          >
+            Change role
+          </button>
         }
       </div>
-      <div class="field">
-        <label for="member-role" i18n="@@members.role">Role</label>
-        <select id="member-role" (change)="setRole($event)">
-          @for (r of roles; track r) {
-            <option [value]="r" [selected]="r === role()">{{ roleText(r) }}</option>
-          }
-        </select>
-      </div>
-      <button
-        type="submit"
-        class="btn btn-primary"
-        [attr.aria-disabled]="busy() ? true : null"
-        i18n="@@members.addSubmit"
-      >
-        Add member
-      </button>
-    </form>
+    </dialog>
   }
 }

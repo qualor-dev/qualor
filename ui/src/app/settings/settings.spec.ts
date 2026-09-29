@@ -40,7 +40,7 @@ function choose(root: HTMLElement, selector: string, value: string): void {
   select.dispatchEvent(new Event('change'));
 }
 
-function button(root: HTMLElement, text: string): HTMLButtonElement {
+function button(root: ParentNode, text: string): HTMLButtonElement {
   return [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!;
 }
 
@@ -103,12 +103,14 @@ describe('TokensPage', () => {
     expect(root.querySelector('table')?.textContent).not.toContain('secret-value');
     expect(root.querySelector('[role="status"]')?.textContent).not.toContain('secret-value');
     expect(root.querySelector<HTMLInputElement>('#secret-once')?.readOnly).toBe(true);
-    // The name field is emptied for the next token.
-    expect(root.querySelector<HTMLInputElement>('#token-name')?.value).toBe('');
+    // Intended change (step 8): the dialog shows the secret in place of the form.
+    expect(root.querySelector('#token-name')).toBeNull();
 
     button(root, 'Done').click();
     await settle(fixture);
     expect(root.querySelector('#secret-once')).toBeNull();
+    // The form is back, its name emptied for the next token.
+    expect(root.querySelector<HTMLInputElement>('#token-name')?.value).toBe('');
 
     type(root, '#token-name', 'again');
     root.querySelector('form')!.dispatchEvent(new Event('submit'));
@@ -206,7 +208,66 @@ describe('TokensPage', () => {
     expect(root.querySelector('#secret-once')).toBeNull();
   });
 
-  it('revokes only after a confirmation that names the token, then drops its row', async () => {
+  it('creates a token in the New token dialog, which then shows the secret once with Copy and Done', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/tokens', { body: page([TOKEN]) });
+    server.on('POST', '/api/v0/tokens', {
+      status: 201,
+      body: { ...TOKEN, id: 't2', name: 'ci', token: 'qlr_pat_secret-value' },
+    });
+    const fixture = TestBed.createComponent(TokensPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    expect(create.open).toBe(false);
+    button(root, 'New token').click();
+    await settle(fixture);
+    expect(create.open).toBe(true);
+    type(root, '#token-name', 'ci');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    // The dialog now holds the secret instead of the form.
+    expect(create.open).toBe(true);
+    expect(create.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(
+      'qlr_pat_secret-value',
+    );
+    expect(create.querySelector('#token-name')).toBeNull();
+    expect(button(create, 'Copy')).toBeDefined();
+    button(create, 'Done').click();
+    await settle(fixture);
+    expect(create.open).toBe(false);
+    expect(root.querySelector('#secret-once')).toBeNull();
+    // Opened again: the empty form, never the earlier secret.
+    button(root, 'New token').click();
+    await settle(fixture);
+    expect(create.querySelector('#secret-once')).toBeNull();
+    expect(create.querySelector<HTMLInputElement>('#token-name')?.value).toBe('');
+  });
+
+  it('forgets a shown secret when its dialog is closed with Escape', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/tokens', { body: page([]) });
+    server.on('POST', '/api/v0/tokens', {
+      status: 201,
+      body: { ...TOKEN, id: 't2', name: 'ci', token: 'qlr_pat_secret-value' },
+    });
+    const fixture = TestBed.createComponent(TokensPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New token').click();
+    await settle(fixture);
+    type(root, '#token-name', 'ci');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(create.querySelector('#secret-once')).not.toBeNull();
+    create.removeAttribute('open');
+    create.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    expect(root.querySelector('#secret-once')).toBeNull();
+  });
+
+  it("revokes only after the page's own confirmation that names the token, then drops its row", async () => {
     const server = setup();
     let tokens = [TOKEN, { ...TOKEN, id: 't3', name: 'ci <b>', prefix: 'qlr_pat_cd' }];
     server.on('GET', '/api/v0/tokens', () => ({ body: page(tokens) }));
@@ -214,20 +275,27 @@ describe('TokensPage', () => {
       tokens = tokens.filter((t) => t.id !== 't1');
       return { status: 204 };
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    const confirm = vi.spyOn(window, 'confirm');
     const fixture = TestBed.createComponent(TokensPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
+    const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
     const revoke = () => root.querySelector<HTMLButtonElement>('tbody tr button')!;
     revoke().click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(ask.open).toBe(true);
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
       'Revoke the token "laptop"? Scripts using it stop working.',
     );
+    button(ask, 'Cancel').click();
+    await settle(fixture);
+    expect(ask.open).toBe(false);
     expect(server.requestsTo('DELETE', '/api/v0/tokens/t1')).toHaveLength(0);
-    confirm.mockReturnValueOnce(true);
     revoke().click();
     await settle(fixture);
+    button(ask, 'Revoke').click();
+    await settle(fixture);
+    expect(confirm).not.toHaveBeenCalled();
     expect(server.requestsTo('DELETE', '/api/v0/tokens/t1')).toHaveLength(1);
     expect(root.querySelector('tbody')?.textContent).not.toContain('laptop');
     expect(root.querySelector('tbody')?.textContent).toContain('ci <b>');
@@ -301,6 +369,43 @@ describe('UsersPage', () => {
       .click();
     await settle(fixture);
     expect(server.requestsTo('PATCH', '/api/v0/users/u1')[0]?.body).toEqual({ active: false });
+  });
+
+  it('creates a user in the New user dialog, which stays open on a refusal and closes once the user exists', async () => {
+    const server = setup();
+    let refuse = true;
+    server.on('GET', '/api/v0/users', { body: page([]) });
+    server.on('POST', '/api/v0/users', () =>
+      refuse
+        ? {
+            status: 409,
+            body: problem(409, 'USERNAME_TAKEN'),
+          }
+        : { status: 201, body: user('u2', 'bob', { passwordChangeRequired: true }) },
+    );
+    const fixture = TestBed.createComponent(UsersPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    expect(create.open).toBe(false);
+    button(root, 'New user').click();
+    await settle(fixture);
+    expect(create.open).toBe(true);
+    type(root, '#user-username', 'bob');
+    type(root, '#user-password', 'a long initial passphrase');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(create.open).toBe(true);
+    expect(create.querySelector('#user-username-error')).not.toBeNull();
+    refuse = false;
+    type(root, '#user-username', 'bob');
+    type(root, '#user-password', 'a long initial passphrase');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(create.open).toBe(false);
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(
+      'bob can sign in now and must choose a new password first.',
+    );
   });
 
   it('patches the changed row in place and keeps no password in the form', async () => {
@@ -386,7 +491,7 @@ describe('UsersPage', () => {
     expect(root.querySelector<HTMLInputElement>('#user-password')?.value).toBe('');
   });
 
-  it('resets a password, which the user must change at the next sign-in', async () => {
+  it("resets a password from the user's row, which the user must change at the next sign-in", async () => {
     const server = setup();
     server.on('GET', '/api/v0/users', { body: page([user('u1', 'alice')]) });
     server.on('PATCH', '/api/v0/users/u1', {
@@ -395,13 +500,25 @@ describe('UsersPage', () => {
     const fixture = TestBed.createComponent(UsersPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    choose(root, '#reset-user', 'u1');
+    const reset = root.querySelector<HTMLDialogElement>('dialog#reset-dialog')!;
+    button(root.querySelector('tbody tr')!, 'Reset password').click();
+    await settle(fixture);
+    expect(reset.open).toBe(true);
+    expect(reset.querySelector('h2')?.textContent?.trim()).toBe('Reset the password of alice');
+    type(root, '#reset-password', 'short');
+    reset.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(server.requestsTo('PATCH', '/api/v0/users/u1')).toHaveLength(0);
+    expect(reset.querySelector('#reset-password-error')?.textContent).toContain(
+      'at least 12 characters',
+    );
     type(root, '#reset-password', 'a new temporary passphrase');
-    root.querySelectorAll('form')[1]!.dispatchEvent(new Event('submit'));
+    reset.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(server.requestsTo('PATCH', '/api/v0/users/u1')[0]?.body).toEqual({
       password: 'a new temporary passphrase',
     });
+    expect(reset.open).toBe(false);
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'alice must choose a new password at the next sign-in.',
     );
@@ -409,26 +526,61 @@ describe('UsersPage', () => {
     expect(root.querySelector('tbody')?.textContent).toContain('Must change password');
   });
 
-  it('asks before signing yourself out, and offers no reset of your own password here', async () => {
+  it("asks in the page's dialog before signing yourself out, and offers no reset of your own password here", async () => {
     const server = setup();
     const self = me({ admin: true }).user;
     server.on('GET', '/api/v0/users', {
       body: page([user(self.id, self.username, { isInstanceAdmin: true }), user('u2', 'bob')]),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    const confirm = vi.spyOn(window, 'confirm');
     const fixture = TestBed.createComponent(UsersPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    root.querySelector<HTMLButtonElement>('tbody tr button')!.click();
+    const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+    const own = root.querySelector<HTMLElement>(`tbody tr[data-key="${self.id}"]`)!;
+    button(own, 'Deactivate').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(ask.open).toBe(true);
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
       'Deactivate your own account? You are signed out at once and cannot sign in again.',
     );
+    button(ask, 'Cancel').click();
+    await settle(fixture);
+    expect(ask.open).toBe(false);
     expect(server.requestsTo('PATCH', `/api/v0/users/${self.id}`)).toHaveLength(0);
-    const options = [...root.querySelectorAll('#reset-user option')].map((o) => o.textContent);
-    expect(options).not.toContain(self.username);
-    expect(options).toContain('bob');
+    button(own, 'Remove admin').click();
+    await settle(fixture);
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
+      'Remove your own instance admin role? You can no longer manage users.',
+    );
+    button(ask, 'Cancel').click();
+    await settle(fixture);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(button(own, 'Reset password')).toBeUndefined();
+    expect(button(root.querySelector('tbody tr[data-key="u2"]')!, 'Reset password')).toBeDefined();
     confirm.mockRestore();
+  });
+
+  it('deactivates your own account once the dialog is answered', async () => {
+    const server = setup();
+    const self = me({ admin: true }).user;
+    server.on('GET', '/api/v0/users', {
+      body: page([user(self.id, self.username, { isInstanceAdmin: true }), user('u2', 'bob')]),
+    });
+    server.on('PATCH', `/api/v0/users/${self.id}`, {
+      body: user(self.id, self.username, { isInstanceAdmin: true, active: false }),
+    });
+    const fixture = TestBed.createComponent(UsersPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+    button(root.querySelector(`tbody tr[data-key="${self.id}"]`)!, 'Deactivate').click();
+    await settle(fixture);
+    button(ask, 'Deactivate').click();
+    await settle(fixture);
+    expect(server.requestsTo('PATCH', `/api/v0/users/${self.id}`)[0]?.body).toEqual({
+      active: false,
+    });
   });
 
   it('tells a user who is not an instance admin, and asks the server nothing', async () => {

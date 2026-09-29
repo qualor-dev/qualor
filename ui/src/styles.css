@@ -1610,6 +1610,76 @@ details[open] > summary {
   max-width: 72ch;
   margin-bottom: var(--space-6);
 }
+/* The same with the page's main action ("New token") at the right of the title. */
+.settings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-6);
+  margin-bottom: var(--space-6);
+}
+.settings-head > div {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+.settings-head h2 {
+  font-size: 22px;
+  margin-bottom: var(--space-2);
+}
+.settings-head p {
+  max-width: 72ch;
+  margin: 0;
+}
+.settings-head .btn q-icon {
+  margin-right: 6px;
+}
+/* A filter row above a settings table ("No password"). */
+.settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+/* A person in a table: the initial beside a name stack (the name, the user name below it). */
+.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 12rem;
+}
+.person .avatar {
+  flex-shrink: 0;
+}
+.name-stack {
+  display: grid;
+  min-width: 0;
+  font-weight: 600;
+}
+.name-stack > * {
+  overflow-wrap: anywhere;
+}
+.name-stack .muted {
+  font-weight: 450;
+  font-size: 13px;
+}
+/* A table's last column: its row's quiet actions, kept on one line. */
+.actions-col {
+  width: 1px;
+  text-align: right;
+}
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}
+/* A confirmation's question quotes names, which may have no break point. */
+#confirm-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 /* On a narrow screen the header scrolls away, and the navigation is one row that scrolls sideways. */
 @media (max-width: 56rem) {
   .app-header {
