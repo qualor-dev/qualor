@@ -1,0 +1,312 @@
+/* The project overview (spec §7.1): a 12-column grid of panels. */
+.overview {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 20px;
+}
+.overview > * {
+  margin: 0;
+}
+.gate-panel {
+  grid-column: span 8;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+.new-code-panel {
+  grid-column: span 4;
+}
+.kpi-strip {
+  grid-column: span 12;
+  display: grid;
+  grid-template-columns: 1.45fr 1fr 1fr 1fr 1.35fr;
+}
+.history-panel {
+  grid-column: span 8;
+}
+.open-issues-panel {
+  grid-column: span 4;
+  display: flex;
+  flex-direction: column;
+}
+.open-issues-panel .panel-body {
+  flex: 1;
+}
+.recent-panel {
+  grid-column: span 8;
+}
+.sources-panel {
+  grid-column: span 4;
+}
+
+/* The gate: the verdict at the left, the conditions at the right. */
+.gate-verdict {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 22px;
+  border-right: 1px solid var(--hairline);
+}
+.gate-title {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+.gate-name {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.gate-word-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.gate-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.gate-explanation {
+  margin: 0;
+  font-size: 13px;
+}
+.gate-conditions {
+  min-width: 0;
+}
+.gate-conditions table {
+  width: 100%;
+}
+.gate-conditions th,
+.gate-conditions td {
+  padding-left: 22px;
+  padding-right: 22px;
+}
+.condition-metric {
+  display: block;
+  font-weight: 600;
+}
+.condition-rule {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.condition-skipped {
+  margin: 10px 22px 0;
+}
+.gate-warnings {
+  margin: 12px 22px 0;
+}
+.gate-conditions > :last-child {
+  margin-bottom: 18px;
+}
+
+/* New code: the coverage lens and four figures. */
+.new-code {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+}
+.stat-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.stat-list > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.stat-list > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.stat-list dt {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.stat-list dd {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.stat-list dd.bad {
+  color: var(--bad);
+}
+
+/* The KPI strip: one panel, figures divided by hairlines. */
+.kpi {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 20px 22px;
+  border-right: 1px solid var(--hairline);
+}
+.kpi:last-child {
+  border-right: 0;
+}
+.kpi-label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 550;
+}
+.kpi-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.kpi-figure {
+  display: grid;
+  gap: 4px;
+}
+.kpi-value {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.kpi q-sparkline {
+  margin-top: 8px;
+}
+.ratings {
+  display: flex;
+  gap: 22px;
+  margin-top: 4px;
+}
+
+/* History: a segmented switch of the metric the chart shows. */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.segmented button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-2);
+  font: 600 12.5px var(--font);
+  cursor: pointer;
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow:
+    0 1px 2px rgb(10 27 51 / 0.1),
+    0 0 0 1px var(--border);
+}
+.panel-total {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.subhead {
+  margin: 18px 0 6px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+/* Recent analyses and where the issues come from. */
+.recent-table {
+  margin-top: 10px;
+}
+.recent-table th:first-child,
+.recent-table td:first-child {
+  padding-left: 22px;
+}
+.recent-table th:last-child,
+.recent-table td:last-child {
+  padding-right: 22px;
+}
+.recent-table q-delta {
+  margin-left: 4px;
+}
+.chip {
+  padding: 1px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.rule-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rule-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13.5px;
+}
+.rule-list li:last-child {
+  border-bottom: 0;
+}
+.rule-list code {
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+}
+.rule-list span {
+  font-weight: 650;
+}
+.panel-alert {
+  margin: 16px 22px;
+}
+
+@media (max-width: 72rem) {
+  .gate-panel,
+  .new-code-panel,
+  .history-panel,
+  .open-issues-panel,
+  .recent-panel,
+  .sources-panel {
+    grid-column: span 12;
+  }
+  .kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .kpi:nth-child(odd) {
+    border-right: 0;
+  }
+}
+@media (max-width: 40rem) {
+  .gate-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gate-verdict {
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .kpi-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .kpi {
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+}

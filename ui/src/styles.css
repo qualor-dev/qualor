@@ -1468,6 +1468,18 @@ details[open] > summary {
   }
 }
 
+/* The overview's verdict: the gate badge (a child component) as a large word. */
+.gate-word .badge {
+  padding: 0;
+  background: none;
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+}
+.gate-word .badge q-icon {
+  display: none;
+}
+
 /*
  * The ink page band (q-page-header, spec §4): what pages project into it. Global, because the
  * projected elements belong to the page's template, not to the band's.
