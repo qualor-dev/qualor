@@ -64,7 +64,7 @@
         }
       }
       @if (plot().end; as end) {
-        @if (!stacked()) {
+        @if (end.marked) {
           <circle class="marker" r="4.5" [attr.cx]="end.x" [attr.cy]="end.y" />
           <text class="end-label" text-anchor="end" [attr.x]="end.x - 8" [attr.y]="end.y - 12">
             {{ end.text }}

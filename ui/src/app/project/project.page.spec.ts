@@ -10,9 +10,44 @@ import {
   settle,
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
+import type { BranchView } from './branches';
+import { CurrentProject } from './current-project';
 import { ProjectPage } from './project.page';
 
 const ID = '0190a6c2-0000-7000-8000-0000000000p1';
+
+const PROJECT = {
+  id: ID,
+  organizationId: ORG_ID,
+  key: 'acme/x',
+  name: 'X',
+  mainBranchName: 'main',
+  qualityGateId: null,
+  newCodeDefinition: null,
+  scmConnectionId: null,
+  scmProjectRef: null,
+  createdAt: '',
+  updatedAt: '',
+  mainBranch: {
+    id: 'b-main',
+    name: 'main',
+    gateStatus: 'failed',
+    lastAnalysisId: 'a1',
+    lastAnalyzedAt: '2026-09-15T09:00:00.000Z',
+    measures: { issues: 7 },
+  },
+};
+
+const MR: BranchView = {
+  id: 'b-mr',
+  title: '!42 feature/x → main',
+  isMain: false,
+  kind: 'merge_request',
+  mrTitle: 'Refund <b>limits</b>',
+  mrUrl: 'https://gitlab.example.com/acme/x/-/merge_requests/42',
+  gateStatus: 'passed',
+  lastAnalysisId: null,
+};
 
 describe('ProjectPage', () => {
   let server: FakeServer;
@@ -147,5 +182,49 @@ describe('ProjectPage', () => {
     expect(root.querySelector('.branch-chip')?.textContent?.trim()).toBe('main');
     expect(root.querySelector('.tab-count')?.textContent?.trim()).toBe('7');
     expect(root.querySelector('.tab-count')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('names the branch or merge request an overview shows, with its own gate and link', async () => {
+    server.on('GET', `/api/v0/projects/${ID}`, { body: PROJECT });
+    const fixture = TestBed.createComponent(ProjectPage);
+    fixture.componentRef.setInput('projectId', ID);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const store = TestBed.inject(CurrentProject);
+    store.showBranch(MR);
+    await settle(fixture);
+    expect(root.querySelector('q-gate-badge')?.textContent?.trim()).toBe('Passed');
+    expect(root.querySelector('.branch-chip')?.textContent?.trim()).toBe('!42 feature/x → main');
+    const meta = root.querySelector('.page-meta');
+    expect(meta?.textContent).toContain('Refund <b>limits</b>');
+    expect(meta?.querySelector('b')).toBeNull();
+    const link = meta?.querySelector('a.external-link');
+    expect(link?.getAttribute('href')).toBe(MR.mrUrl);
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link?.getAttribute('aria-label')).toBe('Open in GitLab: Refund <b>limits</b>');
+    // Once the overview goes, the band names the main branch again.
+    store.showBranch(null);
+    await settle(fixture);
+    expect(root.querySelector('q-gate-badge')?.textContent?.trim()).toBe('Failed');
+    expect(root.querySelector('.branch-chip')?.textContent?.trim()).toBe('main');
+    expect(root.querySelector('a.external-link')).toBeNull();
+  });
+
+  it('shows no empty title and no link for a merge request without a title or an http(s) page', async () => {
+    server.on('GET', `/api/v0/projects/${ID}`, { body: PROJECT });
+    const fixture = TestBed.createComponent(ProjectPage);
+    fixture.componentRef.setInput('projectId', ID);
+    await settle(fixture);
+    TestBed.inject(CurrentProject).showBranch({
+      ...MR,
+      mrTitle: null,
+      mrUrl: 'javascript:alert(1)',
+    });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.branch-chip')?.textContent?.trim()).toBe('!42 feature/x → main');
+    expect(root.querySelector('.page-meta-title')).toBeNull();
+    expect(root.querySelector('a.external-link')).toBeNull();
+    expect(root.querySelector('a[href^="javascript"]')).toBeNull();
   });
 });

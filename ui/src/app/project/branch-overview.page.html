@@ -4,33 +4,6 @@
   @if (loadError(); as message) {
     <p class="alert alert-error" role="alert">{{ message }}</p>
   }
-  @if (!b.isMain) {
-    <div class="branch-context">
-      <a class="back-link" [routerLink]="['/projects', projectId(), 'branches']"
-        ><ng-container i18n="@@overview.backToBranches"
-          >All branches and merge requests</ng-container
-        ></a
-      >
-      <div class="branch-context-main">
-        <q-icon [name]="b.kind === 'merge_request' ? 'merge-request' : 'branch'" />
-        <strong class="branch-context-title">{{ b.title }}</strong>
-        @if (b.mrTitle) {
-          <span class="branch-context-sub">{{ b.mrTitle }}</span>
-        }
-        @if (mrLink(); as href) {
-          <a
-            class="external-link"
-            [href]="href"
-            target="_blank"
-            rel="noopener noreferrer"
-            [attr.aria-label]="mrLinkLabel()"
-            ><ng-container i18n="@@branches.openInGitLab">Open in GitLab</ng-container
-            ><q-icon name="external"
-          /></a>
-        }
-      </div>
-    </div>
-  }
   <div class="overview">
     <section class="card panel gate-panel" aria-labelledby="gate-heading">
       <div class="gate-verdict">

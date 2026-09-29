@@ -183,12 +183,18 @@ export class LineChart {
       column = { x: r1((xs[0] ?? 0) - 12), width: 24, segments };
     }
 
-    let end: { x: number; y: number; text: string } | null = null;
+    // The latest value, marked on a line; on a stack only at zero, where no band shows it.
+    let end: { x: number; y: number; text: string; marked: boolean } | null = null;
     for (let i = cols.length - 1; i >= 0 && end === null; i--) {
       const col = cols[i];
       const v = col ? this.shown(col) : null;
       if (v !== null) {
-        end = { x: xs[i] ?? 0, y: r1(y(v)), text: formatMeasure(v, metric, this.locale) };
+        end = {
+          x: xs[i] ?? 0,
+          y: r1(y(v)),
+          text: formatMeasure(v, metric, this.locale),
+          marked: !this.stacked() || v === 0,
+        };
       }
     }
     const xTicks = only

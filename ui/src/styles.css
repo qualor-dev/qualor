@@ -1827,30 +1827,6 @@ details[open] > summary {
   border-top: 1px solid var(--hairline);
 }
 
-/* A branch or merge request's overview names it above the panels (spec §7.1). */
-.branch-context {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-.branch-context-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-}
-.branch-context-main > q-icon {
-  color: var(--text-muted);
-}
-.branch-context-title {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.branch-context-sub {
-  color: var(--text-2);
-  overflow-wrap: anywhere;
-}
 /* A link that leaves Qualor: a small text link with the external icon. */
 .external-link {
   display: inline-flex;
@@ -1942,6 +1918,14 @@ details[open] > summary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+/* A merge request's own title and its page, beside its chip on the band. */
+.page-meta-title {
+  color: var(--ink-text);
+  overflow-wrap: anywhere;
+}
+.page-meta .external-link {
+  color: var(--cobalt-bright);
 }
 .page-meta .icon {
   width: 14px;

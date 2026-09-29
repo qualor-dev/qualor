@@ -12,6 +12,7 @@ import {
 import { SessionStore } from '../auth/session';
 import { BranchOverviewPage } from './branch-overview.page';
 import type { Branch } from './branches';
+import { CurrentProject } from './current-project';
 
 const PROJECT = 'p1';
 const MAIN: Branch = {
@@ -192,8 +193,8 @@ describe('BranchOverviewPage', () => {
 
   it('shows the gate verdict with its conditions, the KPIs and the charts', async () => {
     const { root } = await render();
-    // The main branch is the project's overview: no branch strip.
-    expect(root.querySelector('.branch-context')).toBeNull();
+    // The main branch is the project's overview: the band names main (spec §7.1).
+    expect(TestBed.inject(CurrentProject).shownBranch()).toBeNull();
     expect(text(root.querySelector('#gate-heading'))).toBe('Quality gate Qualor way');
     expect(text(root.querySelector('.gate-word'))).toBe('Failed');
     const gate = root.querySelector('[aria-labelledby="gate-heading"]');
@@ -284,32 +285,23 @@ describe('BranchOverviewPage', () => {
   });
 
   it('titles a merge request by its number and branches, and says when nothing ran', async () => {
-    const { root } = await render('b-mr');
+    const { fixture, root } = await render('b-mr');
     expect(text(root.querySelector('.branch-name'))).toBe('!42 feature/refund-limits → main');
-    // The strip above the overview names the merge request, as text, and links to GitLab.
-    const strip = root.querySelector('.branch-context');
-    expect(text(strip?.querySelector('.branch-context-title'))).toBe(
-      '!42 feature/refund-limits → main',
-    );
-    expect(strip?.textContent).toContain('Refund <b>limits</b>');
-    expect(strip?.querySelector('b')).toBeNull();
-    const gitlab = [...(strip?.querySelectorAll('a') ?? [])].find(
-      (a) => text(a) === 'Open in GitLab',
-    );
-    expect(gitlab?.getAttribute('href')).toBe(
-      'https://gitlab.example.com/acme/p1/-/merge_requests/42',
-    );
-    expect(gitlab?.getAttribute('rel')).toBe('noopener noreferrer');
-    const back = [...(strip?.querySelectorAll('a') ?? [])].find((a) =>
-      text(a)?.startsWith('All branches'),
-    );
-    expect(back?.getAttribute('href')).toBe(`/projects/${PROJECT}/branches`);
+    // Intended change (step 3 review): the band names the merge request (spec §7.1), so the
+    // overview hands it to the project frame instead of drawing a strip of its own.
+    const store = TestBed.inject(CurrentProject);
+    expect(store.shownBranch()?.title).toBe('!42 feature/refund-limits → main');
+    expect(store.shownBranch()?.mrTitle).toBe('Refund <b>limits</b>');
+    expect(root.querySelector('.branch-context')).toBeNull();
     expect(root.textContent).toContain('This branch has no analysis yet.');
     expect(root.querySelector('[role="alert"]')).toBeNull();
     expect(server.requests.filter((r) => r.path.startsWith('/api/v0/analyses'))).toHaveLength(0);
     expect(root.querySelector('q-line-chart svg')?.getAttribute('aria-label')).toBe(
       'Issues: no values yet',
     );
+    // Leaving the overview hands the band back to the main branch.
+    fixture.destroy();
+    expect(store.shownBranch()).toBeNull();
   });
 
   it('reports a branch that does not exist', async () => {

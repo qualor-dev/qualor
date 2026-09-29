@@ -9,15 +9,39 @@
   <q-page-header [crumbs]="crumbs">
     <div pageTitle class="page-title">
       <h1>{{ p.name }}</h1>
-      @if (p.mainBranch; as main) {
+      @if (shown(); as b) {
+        <q-gate-badge [status]="b.gateStatus" />
+      } @else if (p.mainBranch; as main) {
         <q-gate-badge [status]="main.gateStatus" />
       }
     </div>
     <p pageMeta class="page-meta">
       <code>{{ p.key }}</code>
-      <a class="branch-chip" routerLink="branches"
-        ><q-icon name="branch" />{{ p.mainBranchName }}</a
-      >
+      @if (shown(); as b) {
+        <a class="branch-chip" routerLink="branches"
+          ><q-icon [name]="b.kind === 'merge_request' ? 'merge-request' : 'branch'" />{{
+            b.title
+          }}</a
+        >
+        @if (b.mrTitle) {
+          <span class="page-meta-title">{{ b.mrTitle }}</span>
+        }
+        @if (mrLink(); as href) {
+          <a
+            class="external-link"
+            [href]="href"
+            target="_blank"
+            rel="noopener noreferrer"
+            [attr.aria-label]="mrLinkLabel()"
+            ><ng-container i18n="@@branches.openInGitLab">Open in GitLab</ng-container
+            ><q-icon name="external"
+          /></a>
+        }
+      } @else {
+        <a class="branch-chip" routerLink="branches"
+          ><q-icon name="branch" />{{ p.mainBranchName }}</a
+        >
+      }
     </p>
     <nav pageTabs class="tabs" aria-label="Project" i18n-aria-label="@@project.tabs">
       <a

@@ -4,13 +4,15 @@ import { ApiError, problemMessage } from '../api/errors';
 import { SessionStore } from '../auth/session';
 import { GateBadge } from '../shared/gate-badge';
 import { Icon } from '../shared/icon';
+import { safeHelpUri } from '../shared/links';
 import { type Crumb, PageHeader } from '../shared/page-header';
 import { notFound } from './branches';
 import { CurrentProject } from './current-project';
 
 /**
  * A project's frame on the ink page band (spec §7.1): its name with the main branch's gate, the
- * key and the main branch, and tabs for the overview, branches and issues, plus
+ * key and the main branch (or those of the branch or merge request an overview shows), and tabs
+ * for the overview, branches and issues, plus
  * Access for organisation admins, in every edition. The project (and the caller's `permissions` on
  * it, which the tabs use to hide what the caller may not do, rbac-audit.md §17) is read through
  * `CurrentProject`.
@@ -29,6 +31,20 @@ export class ProjectPage {
   protected readonly project = this.store.project;
   /** The project once loaded; never `project.value()` in the error state, which throws. */
   protected readonly current = this.store.current;
+  /**
+   * The branch or merge request an overview shows, when not the main one: the band carries its
+   * gate, its name, a merge request's title and its page instead of the main branch's (§7.1).
+   */
+  protected readonly shown = this.store.shownBranch;
+  /** A merge request's page, only over http(s) (scm.md §8, plan 1F ruling Y5). */
+  protected readonly mrLink = computed(() => safeHelpUri(this.shown()?.mrUrl ?? null));
+  /** The link names its merge request, starting with the words it shows. */
+  protected readonly mrLinkLabel = computed(() => {
+    const b = this.shown();
+    return b
+      ? $localize`:@@branches.openInGitLabLabel:Open in GitLab: ${b.mrTitle || b.title}:mergeRequest:`
+      : '';
+  });
   protected readonly crumbs: Crumb[] = [
     { label: $localize`:@@project.crumb:Projects`, link: '/projects' },
   ];

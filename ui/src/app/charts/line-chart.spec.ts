@@ -104,6 +104,41 @@ describe('LineChart', () => {
     );
   });
 
+  it('marks a single stacked analysis without issues on the baseline, so a clean project is never empty', async () => {
+    const { root } = await render(
+      [series('blocker', [0], 'blocker', 'Blocker'), series('high', [0], 'high', 'High')],
+      'issues',
+      true,
+    );
+    const base = root.querySelector('line.grid.base')?.getAttribute('y1');
+    expect(base).toBeTruthy();
+    expect(root.querySelector('circle.marker')?.getAttribute('cy')).toBe(base);
+  });
+
+  it('marks a stacked history that ends at zero on the baseline, at its end', async () => {
+    const { root } = await render(
+      [
+        series('blocker', [2, 1, 0], 'blocker', 'Blocker'),
+        series('high', [1, 0, 0], 'high', 'High'),
+      ],
+      'issues',
+      true,
+    );
+    const marker = root.querySelector('circle.marker');
+    expect(marker?.getAttribute('cy')).toBe(
+      root.querySelector('line.grid.base')?.getAttribute('y1'),
+    );
+    expect(Number(marker?.getAttribute('cx'))).toBeGreaterThan(300);
+  });
+
+  it('sets the y ticks in proportional figures, which keep "5,000" and "7.5 %" tight', async () => {
+    // In the brand face, tabular figures also space the separators: "5 , 000" (spec §3.2).
+    const { root } = await render([series('ncloc', [900, 5000])], 'ncloc');
+    const tick = root.querySelector('text.axis-y');
+    expect(tick?.textContent?.trim()).toBe('0');
+    expect(getComputedStyle(tick!).fontVariantNumeric).not.toContain('tabular-nums');
+  });
+
   it('marks a single analysis of one series', async () => {
     const { root } = await render([series('coverage', [42])]);
     expect(root.querySelectorAll('circle.marker')).toHaveLength(1);
