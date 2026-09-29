@@ -211,7 +211,8 @@ describe('IssuesPage', () => {
     submit.closest('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(server.requestsTo('POST', '/api/v0/issues/bulk-transition')).toHaveLength(0);
-  });
+    // 501 rendered rows take about 4 s alone and more on a busy machine: past the default 5 s.
+  }, 20_000);
 
   it('offers a retry after 503 CONCURRENCY_CONFLICT, which sends the same change again', async () => {
     let calls = 0;
