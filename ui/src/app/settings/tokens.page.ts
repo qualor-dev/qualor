@@ -187,6 +187,16 @@ export class TokensPage {
       );
       await this.list.refresh();
     }, true);
+    // Closed while the server answered (Escape, Cancel): the dialog opens again on the outcome, or
+    // the secret of a token it made could never be copied.
+    const outcome =
+      this.created() ??
+      this.createError() ??
+      this.nameError() ??
+      this.scopesError() ??
+      this.expiryError();
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog && outcome !== null) openModal(dialog);
   }
 
   /** Asks in the page's dialog; nothing is sent until its Revoke. */

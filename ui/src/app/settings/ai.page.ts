@@ -321,6 +321,8 @@ export class AiSettingsPage {
       async () => {
         const saved = await ok(this.api.client.PUT('/api/v0/system/llm', { body }));
         this.fill(saved);
+        // Budgets and the organisation's switch may have changed: the meters read them again.
+        this.today.reload();
         this.announcement.set(
           $localize`:@@ai.settings.saved:The AI assistant settings were saved.`,
         );

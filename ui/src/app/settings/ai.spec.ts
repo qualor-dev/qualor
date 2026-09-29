@@ -418,6 +418,26 @@ describe('AiSettingsPage (llm.md §3, §18)', () => {
     ]);
   });
 
+  it("reads today's use again after a save, so the meters show the saved budgets", async () => {
+    const server = setup(CONFIGURED);
+    let explainPerDay = 200;
+    server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, () => ({
+      body: orgAi({ usage: { explain: 3 }, budgets: { explainPerDay } }),
+    }));
+    server.on('PUT', '/api/v0/system/llm', () => {
+      explainPerDay = 999;
+      return { body: { ...CONFIGURED, budgets: { ...CONFIGURED.budgets, explainPerDay } } };
+    });
+    const { fixture, root } = await render();
+    const explain = () =>
+      root.querySelector('#ai-today q-meter')?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(explain()).toBe('Explanations 3 of 200');
+    submit(root);
+    await settle(fixture);
+    expect(server.requestsTo('GET', `/api/v0/organizations/${ORG_ID}/ai`)).toHaveLength(2);
+    expect(explain()).toBe('Explanations 3 of 999');
+  });
+
   it("says when the assistant is off for the organisation, and when today's use cannot be read", async () => {
     const off = setup(CONFIGURED);
     const first = await render();

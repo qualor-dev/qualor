@@ -435,8 +435,8 @@ one in effect to use this one instead, or restore the Enterprise plan."
   connection takes over at once. You cannot enable the first one again while another is enabled.
 - **People whose accounts are linked only to a connection not in effect** cannot sign in with
   single sign-on. They can sign in with a password if the password sign-in setting lets them; or
-  make their connection the one in effect, or set them a password (**Settings → Users → Reset a
-  password**).
+  make their connection the one in effect, or set them a password (**Reset password** on the
+  user's row in **Settings → Users**).
 - **Unlinking** counts only links on the connection in effect (409 `LAST_SIGN_IN_METHOD`).
 - **SCIM tokens** of a connection not in effect keep working while `scim` is licensed. On the
   Business plan `scim` is not, so SCIM stops there anyway

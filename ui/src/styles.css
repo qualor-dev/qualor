@@ -1739,8 +1739,9 @@ details[open] > summary {
   min-width: 0;
   font-weight: 600;
 }
+/* break-word, not anywhere: a column never narrows below a word, the table scrolls instead. */
 .name-stack > * {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .name-stack .muted {
   font-weight: 450;

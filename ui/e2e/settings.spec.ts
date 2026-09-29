@@ -79,6 +79,59 @@ test.describe('on a phone', () => {
     );
     await expectAccessible(page);
   });
+
+  test('names in tables keep their words; a table scrolls in its panel instead', async ({
+    page,
+  }) => {
+    /** The cell is at least as wide as the name's longest word: it may wrap between words only. */
+    const keepsWords = async (text: string) => {
+      const name = page.locator('.name-stack > span', { hasText: text }).first();
+      await expect(name).toBeAttached();
+      const { width, need } = await name.evaluate((el) => {
+        const style = getComputedStyle(el);
+        const context = document.createElement('canvas').getContext('2d')!;
+        context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        const words = (el.textContent ?? '').trim().split(/\s+/);
+        return {
+          width: el.getBoundingClientRect().width,
+          need: Math.max(...words.map((word) => context.measureText(word).width)),
+        };
+      });
+      expect(width, text).toBeGreaterThanOrEqual(need - 1);
+    };
+    await page.goto('/settings/tokens');
+    await keepsWords('laptop');
+    await page.goto('/settings/gitlab');
+    await keepsWords('Payments API');
+    await keepsWords('Legacy Billing');
+  });
+
+  test('a webhook with its recent deliveries open still fits the screen', async ({ page }) => {
+    // The seed's webhook has delivered nothing: twenty deliveries are answered in the browser.
+    await page.route(/\/api\/v0\/webhooks\/[^/]+\/deliveries(\?.*)?$/, (route) =>
+      route.fulfill({
+        json: {
+          items: Array.from({ length: 20 }, (_, i) => ({
+            id: `e2e-delivery-${i}`,
+            event: 'analysis.completed',
+            status: i === 3 ? 'failed' : 'succeeded',
+            attempts: i === 3 ? 3 : 1,
+            responseCode: i === 3 ? 502 : 204,
+            responseExcerpt: i === 3 ? '<html><body>502 Bad Gateway</body></html>' : null,
+            nextAttemptAt: null,
+            createdAt: new Date(Date.UTC(2026, 8, 29, 16, 40) - i * 47 * 60e3).toISOString(),
+          })),
+          nextCursor: null,
+        },
+      }),
+    );
+    await page.goto('/settings/webhooks');
+    await page.getByText('Recent deliveries').first().click();
+    await expect(page.getByRole('table').first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+  });
 });
 
 test('a personal token is shown once in its dialog, then only by its prefix, and can be revoked', async ({

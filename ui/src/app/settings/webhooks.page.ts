@@ -222,6 +222,12 @@ export class WebhooksPage {
       },
       (err) => this.createError.set(problemMessage(err)),
     );
+    if (generation !== this.orgGeneration) return;
+    // Closed while the server answered (Escape, Cancel): the dialog opens again on the outcome, or
+    // the secret of a webhook it made could never be copied.
+    const outcome = this.secret() ?? this.createError() ?? this.urlError() ?? this.eventsError();
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog && outcome !== null) openModal(dialog);
   }
 
   /** Switches a webhook on or off; the panel and its button stay, the button says what is next. */

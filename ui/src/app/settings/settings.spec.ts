@@ -267,6 +267,99 @@ describe('TokensPage', () => {
     expect(root.querySelector('#secret-once')).toBeNull();
   });
 
+  it('opens its dialog again on the secret when the dialog was closed while the token was made', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/tokens', { body: page([]) });
+    let answer = (): void => undefined;
+    server.on(
+      'POST',
+      '/api/v0/tokens',
+      () =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve({
+              status: 201,
+              body: { ...TOKEN, id: 't2', name: 'ci', token: 'qlr_pat_secret-value' },
+            });
+        }),
+    );
+    const fixture = TestBed.createComponent(TokensPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New token').click();
+    await settle(fixture);
+    type(root, '#token-name', 'ci');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    // Escape while the server is still making the token.
+    create.removeAttribute('open');
+    create.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    answer();
+    await settle(fixture);
+    // The token exists: its secret is shown, or it could never be copied.
+    expect(create.open).toBe(true);
+    expect(create.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(
+      'qlr_pat_secret-value',
+    );
+  });
+
+  it('opens its dialog again on a refusal that came after it was closed', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/tokens', { body: page([]) });
+    let answer = (): void => undefined;
+    server.on(
+      'POST',
+      '/api/v0/tokens',
+      () =>
+        new Promise((resolve) => {
+          answer = () => resolve({ status: 403, body: problem(403, 'SESSION_REQUIRED') });
+        }),
+    );
+    const fixture = TestBed.createComponent(TokensPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New token').click();
+    await settle(fixture);
+    type(root, '#token-name', 'ci');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    create.removeAttribute('open');
+    create.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    answer();
+    await settle(fixture);
+    expect(create.open).toBe(true);
+    expect(create.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('describes the secret field by its shown-once warning, which the dialog hides from the page', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/tokens', { body: page([]) });
+    server.on('POST', '/api/v0/tokens', {
+      status: 201,
+      body: { ...TOKEN, id: 't2', name: 'ci', token: 'qlr_pat_secret-value' },
+    });
+    const fixture = TestBed.createComponent(TokensPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New token').click();
+    await settle(fixture);
+    type(root, '#token-name', 'ci');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    const field = create.querySelector<HTMLInputElement>('#secret-once')!;
+    const described = (field.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .filter(Boolean)
+      .map((id) => create.querySelector(`#${id}`)?.textContent?.trim())
+      .join(' ');
+    expect(described).toContain('Copy it now: it is shown only this once.');
+  });
+
   it("revokes only after the page's own confirmation that names the token, then drops its row", async () => {
     const server = setup();
     let tokens = [TOKEN, { ...TOKEN, id: 't3', name: 'ci <b>', prefix: 'qlr_pat_cd' }];
@@ -650,6 +743,47 @@ describe('WebhooksPage', () => {
     await settle(fixture);
     expect(create.open).toBe(false);
     expect(root.querySelector('#secret-once')).toBeNull();
+  });
+
+  it('opens its dialog again on the secret when the dialog was closed while the webhook was made', async () => {
+    const server = setup();
+    const hook: Webhook = {
+      id: 'w1',
+      organizationId: ORG_ID,
+      projectId: null,
+      url: 'https://hooks.example.com/qualor',
+      events: ['analysis.completed'],
+      active: true,
+      createdAt: '',
+      updatedAt: '',
+    };
+    server.on('GET', '/api/v0/webhooks', { body: page([]) });
+    let answer = (): void => undefined;
+    server.on(
+      'POST',
+      '/api/v0/webhooks',
+      () =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve({ status: 201, body: { ...hook, id: 'w2', secret: 'whsec_generated' } });
+        }),
+    );
+    const fixture = TestBed.createComponent(WebhooksPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    button(root, 'New webhook').click();
+    await settle(fixture);
+    type(root, '#webhook-url', 'https://ci.example.com/hook');
+    create.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    create.removeAttribute('open');
+    create.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    answer();
+    await settle(fixture);
+    expect(create.open).toBe(true);
+    expect(create.querySelector<HTMLInputElement>('#secret-once')?.value).toBe('whsec_generated');
   });
 
   it('maps a refused URL (the SSRF checks, 422 body.url) to the URL field', async () => {
