@@ -67,6 +67,9 @@ analyses compiled classes).
 
 - The `qualor` CLI (entrypoint `qualor`, default command `scan`), a single binary built with Bun.
 - Node.js 22.23.3 with npm and corepack, to run the project's own ESLint from its `node_modules`.
+- SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0):
+  Qualor's own sonarjs pass in `/opt/qualor/sonarjs` runs eslint-plugin-sonarjs 2.0.4 on Qualor's
+  own ESLint 9, for JavaScript and TypeScript, alongside the project's own ESLint above.
 - Eclipse Temurin JRE 17.0.20+8, for PMD and SpotBugs.
 - git, with `safe.directory '*'`, since CI runners check out as another user.
 - The pinned analyzers in `/opt/qualor/bin`: PMD 7.27.0, SpotBugs 4.10.4, OpenGrep 1.30.0,
@@ -107,7 +110,9 @@ An interrupted scan exits 128 plus the signal number (130 for SIGINT, 143 for SI
 ### Licences
 
 The Qualor CLI is MIT-licensed. The image bundles third-party software under its own licences:
-OpenGrep and SpotBugs (LGPL-2.1), PMD (BSD-style, with Apache-2.0 parts), Gitleaks and Trivy (MIT and Apache-2.0, with MPL-2.0 Go modules), the
+OpenGrep and SpotBugs (LGPL-2.1), PMD (BSD-style, with Apache-2.0 parts), Gitleaks and Trivy (MIT and Apache-2.0, with MPL-2.0 Go modules), eslint-plugin-sonarjs 2.0.4
+(LGPL-3.0, the last release before the SONAR Source-Available License; its own npm dependency tree
+includes axe-core, MPL-2.0), the
 Temurin JRE (GPL-2.0 with the Classpath Exception), Node.js (MIT), and the Bun runtime inside the
 `qualor` binary (MIT; it links JavaScriptCore/WebKit and TinyCC, LGPL). The notices are in
 `/opt/qualor/NOTICE.md` and the licence texts in `/opt/qualor/licenses/`. The complete

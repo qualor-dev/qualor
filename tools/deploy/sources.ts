@@ -25,7 +25,16 @@ export function sideFiles(image: ImageName): string[] {
   return image === 'scanner' ? [...files, 'sources.json'] : files;
 }
 
-export type Component = 'opengrep' | 'spotbugs' | 'pmd' | 'bun' | 'temurin' | 'trivy' | 'gitleaks';
+export type Component =
+  | 'opengrep'
+  | 'spotbugs'
+  | 'pmd'
+  | 'bun'
+  | 'temurin'
+  | 'trivy'
+  | 'gitleaks'
+  | 'sonar-dotnet'
+  | 'sonarjs';
 const COMPONENTS: readonly Component[] = [
   'opengrep',
   'spotbugs',
@@ -34,6 +43,8 @@ const COMPONENTS: readonly Component[] = [
   'temurin',
   'trivy',
   'gitleaks',
+  'sonar-dotnet',
+  'sonarjs',
 ];
 
 /** Where the manifest may download from: the SCM and each component's own upstream. */
@@ -151,14 +162,29 @@ export function loadManifest(root = REPO_ROOT): SourceEntry[] {
   return parseManifest(readFileSync(path.join(root, MANIFEST_PATH), 'utf8'));
 }
 
-/** `<TOOL>_VERSION=` of tools/analyzers/install.sh. */
+/**
+ * `<TOOL>_VERSION=` of the given install script's text: `tools/analyzers/install.sh` for every
+ * tool but SONARANALYZER, which is pinned in `tools/analyzers/install-dotnet.sh` instead.
+ */
 export function installedVersion(
   installSh: string,
-  tool: 'OPENGREP' | 'SPOTBUGS' | 'PMD' | 'TRIVY' | 'GITLEAKS',
+  tool: 'OPENGREP' | 'SPOTBUGS' | 'PMD' | 'TRIVY' | 'GITLEAKS' | 'SONARANALYZER' | 'SONARJS',
 ): string {
   const m = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh);
-  if (!m?.[1]) throw new Error(`tools/analyzers/install.sh has no ${tool}_VERSION`);
+  if (!m?.[1]) throw new Error(`an install script has no ${tool}_VERSION`);
   return m[1];
+}
+
+/**
+ * axe-core's installed version from `node_modules/axe-core` of
+ * `tools/analyzers/sonarjs/package-lock.json` (npm lockfile v3): eslint-plugin-jsx-a11y, a
+ * dependency of the sonarjs pass, bundles it (MPL-2.0, controller ruling 8).
+ */
+export function axeCoreVersionOf(packageLockJson: string): string {
+  const doc = JSON.parse(packageLockJson) as { packages?: Record<string, { version?: string }> };
+  const version = doc.packages?.['node_modules/axe-core']?.version;
+  if (!version) throw new Error('tools/analyzers/sonarjs/package-lock.json has no axe-core');
+  return version;
 }
 
 /** `BUN_VERSION` of cli/scripts/targets.ts, the Bun every `qualor` binary is built with. */
@@ -178,6 +204,8 @@ export function temurinVersionOf(dockerfile: string): string {
 /** The versions the scanner image ships. */
 export function pinnedVersions(root = REPO_ROOT): Pins {
   const installSh = readFileSync(path.join(root, 'tools/analyzers/install.sh'), 'utf8');
+  // SonarAnalyzer.CSharp is pinned in the .NET install script, not this one (phase 8A/8B).
+  const installDotnetSh = readFileSync(path.join(root, 'tools/analyzers/install-dotnet.sh'), 'utf8');
   return {
     opengrep: installedVersion(installSh, 'OPENGREP'),
     spotbugs: installedVersion(installSh, 'SPOTBUGS'),
@@ -187,6 +215,8 @@ export function pinnedVersions(root = REPO_ROOT): Pins {
     trivy: installedVersion(installSh, 'TRIVY'),
     // deploy/scanner/Dockerfile builds this version from source (tools/deploy/images.test.ts).
     gitleaks: installedVersion(installSh, 'GITLEAKS'),
+    'sonar-dotnet': installedVersion(installDotnetSh, 'SONARANALYZER'),
+    sonarjs: installedVersion(installSh, 'SONARJS'),
   };
 }
 

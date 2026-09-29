@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { IMAGES, loadDebianManifest } from './debian-sources';
 import {
   ALLOWED_HOSTS,
+  axeCoreVersionOf,
   bunVersionOf,
   curlArgs,
   indexPath,
@@ -22,6 +23,7 @@ import {
 
 const manifest = loadManifest();
 const installSh = readFileSync('tools/analyzers/install.sh', 'utf8');
+const installDotnetSh = readFileSync('tools/analyzers/install-dotnet.sh', 'utf8');
 const byName = (name: string): SourceEntry | undefined => manifest.find((e) => e.name === name);
 const scannerDebian = loadDebianManifest('scanner');
 
@@ -44,6 +46,9 @@ describe('the pinned source manifest of the scanner image (rulings L1 and L2)', 
       'Saxon-HE (bundled by SpotBugs and PMD)',
       'Rhino (bundled by PMD)',
       'JSR-250 annotations API (bundled by PMD)',
+      'SonarAnalyzer.CSharp (SonarSource/sonar-dotnet)',
+      'SonarJS (eslint-plugin-sonarjs)',
+      'axe-core (bundled by eslint-plugin-jsx-a11y in the sonarjs pass)',
     ]) {
       const entry = byName(name);
       expect(entry, name).toBeDefined();
@@ -60,6 +65,43 @@ describe('the pinned source manifest of the scanner image (rulings L1 and L2)', 
     );
     expect(byName('certifi (Python package in the opengrep launcher)')?.licence).toBe('MPL-2.0');
     expect(byName('Eclipse Temurin 17 (the JRE)')?.licence).toContain('Classpath-exception');
+    // Phase 8A/8B: the last LGPL-3.0 releases, pinned exactly (global-constraints.md).
+    expect(byName('SonarAnalyzer.CSharp (SonarSource/sonar-dotnet)')?.licence).toBe('LGPL-3.0');
+    expect(byName('SonarJS (eslint-plugin-sonarjs)')?.licence).toBe('LGPL-3.0');
+    expect(byName('axe-core (bundled by eslint-plugin-jsx-a11y in the sonarjs pass)')?.licence).toBe(
+      'MPL-2.0',
+    );
+  });
+
+  it('pins SonarAnalyzer.CSharp and SonarJS by the exact commit their tag/release records, without ruling data a top-level exclude cannot reach', () => {
+    const dotnet = byName('SonarAnalyzer.CSharp (SonarSource/sonar-dotnet)');
+    expect(dotnet?.ref).toMatch(/^[0-9a-f]{40}$/);
+    expect(dotnet?.fetch).toEqual({
+      type: 'git-archive',
+      repository: 'https://github.com/SonarSource/sonar-dotnet.git',
+      commit: dotnet?.ref,
+      exclude: ['its'],
+    });
+    expect(dotnet?.pinnedAt).toContain('SONARANALYZER_VERSION');
+    const js = byName('SonarJS (eslint-plugin-sonarjs)');
+    expect(js?.ref).toBe('273825f98b35b29b409fbf4f89efce075c651d96');
+    expect(js?.fetch).toEqual({
+      type: 'git-archive',
+      repository: 'https://github.com/SonarSource/SonarJS.git',
+      commit: js?.ref,
+      exclude: ['its'],
+    });
+    expect(js?.pinnedAt).toContain('SONARJS_COMMIT');
+    const axeCore = byName('axe-core (bundled by eslint-plugin-jsx-a11y in the sonarjs pass)');
+    expect(axeCore?.ref).toBe('v4.13.0');
+    expect(axeCore?.fetch).toEqual({
+      type: 'https',
+      url: 'https://github.com/dequelabs/axe-core/archive/refs/tags/v4.13.0.tar.gz',
+    });
+    // Both share the sonarjs component's version, like the GMP/Saxon/Rhino pattern above.
+    expect(dotnet?.componentVersion).toBe('9.32.0.97167');
+    expect(js?.componentVersion).toBe('2.0.4');
+    expect(axeCore?.componentVersion).toBe('2.0.4');
   });
 
   it('carries the MPL-2.0 Go modules compiled into Trivy, from the Go module proxy (plan 2B)', () => {
@@ -154,6 +196,8 @@ describe('consistency with the shipped versions', () => {
     expect(installedVersion(installSh, 'OPENGREP')).toBe('1.30.0');
     expect(installedVersion(installSh, 'SPOTBUGS')).toBe('4.10.4');
     expect(installedVersion(installSh, 'TRIVY')).toBe('0.74.0');
+    expect(installedVersion(installSh, 'SONARJS')).toBe('2.0.4');
+    expect(installedVersion(installDotnetSh, 'SONARANALYZER')).toBe('9.32.0.97167');
     expect(bunVersionOf(readFileSync('cli/scripts/targets.ts', 'utf8'))).toBe('1.3.13');
     expect(temurinVersionOf(readFileSync('deploy/scanner/Dockerfile', 'utf8'))).toBe('17.0.20+8');
     expect(pinnedVersions()).toEqual({
@@ -164,7 +208,17 @@ describe('consistency with the shipped versions', () => {
       temurin: '17.0.20+8',
       trivy: '0.74.0',
       gitleaks: '8.30.1',
+      'sonar-dotnet': '9.32.0.97167',
+      sonarjs: '2.0.4',
     });
+  });
+
+  it("reads axe-core's version from the sonarjs pass's own lockfile, matching the sources entry", () => {
+    const packageLock = readFileSync('tools/analyzers/sonarjs/package-lock.json', 'utf8');
+    expect(axeCoreVersionOf(packageLock)).toBe('4.13.0');
+    expect(byName('axe-core (bundled by eslint-plugin-jsx-a11y in the sonarjs pass)')?.ref).toBe(
+      `v${axeCoreVersionOf(packageLock)}`,
+    );
   });
 
   it('matches every entry to those versions', () => {
@@ -187,6 +241,8 @@ describe('consistency with the shipped versions', () => {
       { temurin: '17.0.21+9' },
       { trivy: '0.75.0' },
       { gitleaks: '8.30.2' },
+      { 'sonar-dotnet': '9.33.0.0' },
+      { sonarjs: '2.0.5' },
     ];
     for (const bump of bumps) {
       expect(versionProblems(manifest, { ...pinnedVersions(), ...bump })).not.toEqual([]);

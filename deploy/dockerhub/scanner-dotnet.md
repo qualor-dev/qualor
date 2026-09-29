@@ -1,6 +1,6 @@
 # qualor/scanner-dotnet
 
-Short description: Code quality scanner for C#: qualor/scanner plus the .NET 8 and 10 SDKs and Roslynator
+Short description: Code quality scanner for C#: qualor/scanner plus .NET 8/10, Roslynator and SonarAnalyzer.CSharp
 
 Categories: Developer tools, Integration & delivery, Security
 
@@ -27,6 +27,9 @@ The same tags as `qualor/scanner`: the full version, such as `0.1.0`, and the mi
   .NET CLI telemetry turned off (`DOTNET_CLI_TELEMETRY_OPTOUT=1`).
 - The Roslynator analyzers 5.0.0, bundled in `/opt/qualor/dotnet/analyzers`
   (`QUALOR_DOTNET_ANALYZERS`).
+- SonarAnalyzer.CSharp 9.32 (SonarQube-compatible rules, `roslyn:S####`), bundled next to
+  Roslynator. A project's own reference to SonarAnalyzer.CSharp replaces the bundled one, so there
+  is never a duplicate-analyzer error.
 - Runs as the user `node` (uid 1000), like the scanner; about 4.8 GB (about 1.8 GB more than
   `qualor/scanner`). It is built from the `qualor/scanner` image of the same tag, and released
   with that tag right after it.
@@ -74,10 +77,12 @@ variables and exit codes are those of `qualor/scanner`. The full guide is at
 
 ### Licences
 
-The Qualor CLI is MIT-licensed. The .NET SDK is MIT-licensed, and Roslynator is Apache-2.0. This
-image adds no copyleft component, so it has no sources image of its own: the complete
-corresponding source of the copyleft components it carries from `qualor/scanner` is
-[`qualor/scanner-sources`](https://hub.docker.com/r/qualor/scanner-sources) with the same tag.
+The Qualor CLI is MIT-licensed. The .NET SDK is MIT-licensed, and Roslynator is Apache-2.0.
+SonarAnalyzer.CSharp 9.32 is LGPL-3.0, the last release before the SONAR Source-Available
+License. This image has no sources image of its own: the complete corresponding source of the
+copyleft components it carries, SonarAnalyzer.CSharp included, is
+[`qualor/scanner-sources`](https://hub.docker.com/r/qualor/scanner-sources) with the same tag,
+the same one `qualor/scanner` uses.
 The notices are in `/opt/qualor/NOTICE.md` and the licence texts in `/opt/qualor/licenses/`.
 
 ### Trademarks
