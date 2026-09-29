@@ -13,7 +13,7 @@ vulnerability database pinned by digest), compiled into the
 | OpenGrep                                                        | 1.30.0                                         | LGPL-2.1 (`OPENGREP-LICENSE.txt`)                                                                                                                                                    | https://github.com/opengrep/opengrep/tree/v1.30.0   |
 | SpotBugs                                                        | 4.10.4                                         | LGPL-2.1 (`SPOTBUGS-LICENSE.txt`; its libraries: `/opt/qualor/lib/spotbugs-4.10.4/LICENSE-*.txt`)                                                                                    | https://github.com/spotbugs/spotbugs/tree/4.10.4    |
 | PMD                                                             | 7.27.0                                         | BSD-style, with Apache-2.0 parts (`PMD-LICENSE.txt`); its bundled libraries: see below                                                                                               | https://github.com/pmd/pmd/tree/pmd_releases/7.27.0 |
-| Gitleaks                                                        | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`)                                                                                                                                                         | https://github.com/gitleaks/gitleaks/tree/v8.30.1   |
+| Gitleaks                                                        | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`); its MPL-2.0 Go modules: see below                                                                                                                      | https://github.com/gitleaks/gitleaks/tree/v8.30.1   |
 | Trivy                                                           | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                              | https://github.com/aquasecurity/trivy/tree/v0.74.0  |
 | Trivy vulnerability database (a snapshot)                       | see `/opt/qualor/share/trivy/db/metadata.json` | the advisories' own terms: see below                                                                                                                                                 | https://github.com/aquasecurity/trivy-db            |
 | Eclipse Temurin JRE                                             | 17.0.20+8                                      | GPL-2.0 with the Classpath Exception (`/opt/java/openjdk/legal/`)                                                                                                                    | `qualor/scanner-sources`                            |
@@ -44,8 +44,11 @@ https://repo1.maven.org/maven2/javax/annotation/jsr250-api/1.0/ (also
 https://github.com/Saxonica/Saxon-HE and https://github.com/mozilla/rhino).
 
 The Gitleaks binary is built in the image from the source of its release tag with Go 1.27, statically
-linked with the Go standard library and its Go modules (listed in its `go.mod`; `golang.org/x/crypto`
-and `golang.org/x/text` raised to fixed releases), all under permissive licences.
+linked with the Go standard library and 65 Go modules (`go version -m /opt/qualor/bin/gitleaks`
+lists them; `golang.org/x/crypto` and `golang.org/x/text` are raised to fixed releases). Five are
+under MPL-2.0 and have their source in `qualor/scanner-sources`: hashicorp's `errwrap` 1.1.0,
+`go-multierror` 1.1.1, `go-version` 1.7.0, `golang-lru/v2` 2.0.7 and `hcl` 1.0.0; the rest is MIT,
+BSD, Apache-2.0 or CC0-1.0.
 
 The Trivy binary is a statically linked upstream build (Go 1.26). Of the 375 Go modules it
 compiles in (`go version -m /opt/qualor/bin/trivy` lists them), eleven are under MPL-2.0 and have
@@ -142,8 +145,9 @@ its `/sources/` directory), and as files attached to the Qualor release page of 
   and Alpine's build recipe), GNU Readline (the AlmaLinux source RPM `readline-7.0-10.el8`) and
   certifi 2026.7.22 (its PyPI sdist);
 - SpotBugs 4.10.4 (LGPL-2.1): the source archive of its release;
-- the eleven MPL-2.0 Go modules compiled into Trivy 0.74.0: each module's source zip from the Go
-  module proxy (`proxy.golang.org`) at the version the binary names;
+- the eleven MPL-2.0 Go modules compiled into Trivy 0.74.0 and the five compiled into Gitleaks
+  8.30.1: each module's source zip from the Go module proxy (`proxy.golang.org`) at the version the
+  binary names;
 - the MPL-2.0 and CDDL-1.0 Java libraries SpotBugs and PMD bundle: Saxon-HE 12.10, Rhino 1.7.15.1
   and jsr250-api 1.0 (their `-sources.jar` from Maven Central);
 - the Eclipse Temurin JRE 17.0.20+8 (GPL-2.0 with the Classpath Exception): the source archive

@@ -333,7 +333,7 @@ release is `0.1.0`.
 
 Both images contain copyleft software. The scanner: OpenGrep and SpotBugs (LGPL-2.1) and what
 OpenGrep's release binary links or bundles (GMP, GNU Readline, certifi), the MPL-2.0 and CDDL-1.0
-Java libraries of SpotBugs and PMD, the Temurin JRE (GPL-2.0 with the Classpath Exception), the
+Java libraries of SpotBugs and PMD, the MPL-2.0 Go modules compiled into Trivy and Gitleaks, the Temurin JRE (GPL-2.0 with the Classpath Exception), the
 JavaScriptCore/WebKit and TinyCC that Bun links into the `qualor` binary, and its Debian packages.
 The server: its Debian packages (glibc, the GCC runtime and others). Qualor publishes their complete corresponding source next to the images rather than rely on
 written offers. So every release of `qualor/<image>:<tag>` also publishes
@@ -401,7 +401,7 @@ whether the source is still "complete" without them is a judgement call, and the
 `sources.json`). OpenGrep's `tests/semgrep-rules` submodule (test data) is left out the same way.
 The written offers in the NOTICE files remain, as a courtesy only.
 
-**Updating the sources.** Bumping OpenGrep, SpotBugs, PMD or Trivy in `tools/analyzers/install.sh`, Bun
+**Updating the sources.** Bumping OpenGrep, SpotBugs, PMD, Trivy or Gitleaks in `tools/analyzers/install.sh`, Bun
 in `cli/scripts/targets.ts`, or the Temurin base of `deploy/scanner/Dockerfile`, fails
 `tools/deploy/sources.test.ts` until `sources.json` has the new sources. Every entry of the bumped
 component has to be re-derived, not only its tag archive:
@@ -423,6 +423,8 @@ component has to be re-derived, not only its tag archive:
   `go version -m trivy` (a `golang` container will do), look up each module's licence (its
   `LICENSE` in the module cache after `go mod download` of the tag), and pin the zip
   `https://proxy.golang.org/<module>/@v/<version>.zip` of every MPL, LGPL, GPL or EPL one. The
+  same for Gitleaks, which `deploy/scanner/Dockerfile` builds from its tag: list the modules of the
+  binary in the built image (`GITLEAKS_GO_UPGRADES` moves some of them off the tag's `go.sum`). The
   Trivy database pin (`TRIVY_DB_DIGEST`) is data, not a component, and moves on its own
   (`pnpm trivy-db:pin`, above).
 

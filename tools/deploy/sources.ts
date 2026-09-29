@@ -9,7 +9,7 @@ import { REPO_ROOT } from './stack';
  * L1 and L2). For qualor/scanner: OpenGrep (with its submodules and what its release binary
  * links: GMP, GNU Readline, certifi), SpotBugs, the JavaScriptCore/WebKit and TinyCC that Bun
  * links into the `qualor` binary, the Temurin JRE and the MPL-2.0 Go modules compiled into Trivy
- * (plan 2B); for both images, every Debian source
+ * (plan 2B) and into Gitleaks; for both images, every Debian source
  * package (debian-sources.ts). `pnpm deploy:sources` downloads them into sourcesDir(image), and
  * the companion images qualor/<image>-sources carry them.
  */
@@ -25,8 +25,16 @@ export function sideFiles(image: ImageName): string[] {
   return image === 'scanner' ? [...files, 'sources.json'] : files;
 }
 
-export type Component = 'opengrep' | 'spotbugs' | 'pmd' | 'bun' | 'temurin' | 'trivy';
-const COMPONENTS: readonly Component[] = ['opengrep', 'spotbugs', 'pmd', 'bun', 'temurin', 'trivy'];
+export type Component = 'opengrep' | 'spotbugs' | 'pmd' | 'bun' | 'temurin' | 'trivy' | 'gitleaks';
+const COMPONENTS: readonly Component[] = [
+  'opengrep',
+  'spotbugs',
+  'pmd',
+  'bun',
+  'temurin',
+  'trivy',
+  'gitleaks',
+];
 
 /** Where the manifest may download from: the SCM and each component's own upstream. */
 export const ALLOWED_HOSTS = [
@@ -35,7 +43,7 @@ export const ALLOWED_HOSTS = [
   'vault.almalinux.org', // AlmaLinux source RPMs
   'files.pythonhosted.org', // PyPI source distributions
   'repo1.maven.org', // Maven Central source jars
-  'proxy.golang.org', // Go module zips (the MPL-2.0 modules inside Trivy)
+  'proxy.golang.org', // Go module zips (the MPL-2.0 modules inside Trivy and Gitleaks)
 ];
 
 export type Fetch =
@@ -146,7 +154,7 @@ export function loadManifest(root = REPO_ROOT): SourceEntry[] {
 /** `<TOOL>_VERSION=` of tools/analyzers/install.sh. */
 export function installedVersion(
   installSh: string,
-  tool: 'OPENGREP' | 'SPOTBUGS' | 'PMD' | 'TRIVY',
+  tool: 'OPENGREP' | 'SPOTBUGS' | 'PMD' | 'TRIVY' | 'GITLEAKS',
 ): string {
   const m = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh);
   if (!m?.[1]) throw new Error(`tools/analyzers/install.sh has no ${tool}_VERSION`);
@@ -177,12 +185,14 @@ export function pinnedVersions(root = REPO_ROOT): Pins {
     bun: bunVersionOf(readFileSync(path.join(root, 'cli/scripts/targets.ts'), 'utf8')),
     temurin: temurinVersionOf(readFileSync(path.join(root, 'deploy/scanner/Dockerfile'), 'utf8')),
     trivy: installedVersion(installSh, 'TRIVY'),
+    // deploy/scanner/Dockerfile builds this version from source (tools/deploy/images.test.ts).
+    gitleaks: installedVersion(installSh, 'GITLEAKS'),
   };
 }
 
 /**
- * The tag of each component's own source archive. PMD itself is BSD-licensed and Trivy
- * Apache-2.0: only the copyleft libraries they bundle are pinned, under their version.
+ * The tag of each component's own source archive. PMD itself is BSD-licensed, Trivy
+ * Apache-2.0 and Gitleaks MIT: only the copyleft libraries they bundle are pinned, under their version.
  */
 const TAG: Partial<Record<Component, (version: string) => string>> = {
   opengrep: (v) => `v${v}`,

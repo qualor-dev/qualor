@@ -84,7 +84,7 @@ An interrupted scan exits 128 plus the signal number (130 for SIGINT, 143 for SI
 ### Licences
 
 The Qualor CLI is MIT-licensed. The image bundles third-party software under its own licences:
-OpenGrep and SpotBugs (LGPL-2.1), PMD (BSD-style, with Apache-2.0 parts), Gitleaks (MIT), the
+OpenGrep and SpotBugs (LGPL-2.1), PMD (BSD-style, with Apache-2.0 parts), Gitleaks and Trivy (MIT and Apache-2.0, with MPL-2.0 Go modules), the
 Temurin JRE (GPL-2.0 with the Classpath Exception), Node.js (MIT), and the Bun runtime inside the
 `qualor` binary (MIT; it links JavaScriptCore/WebKit and TinyCC, LGPL). The notices are in
 `/opt/qualor/NOTICE.md` and the licence texts in `/opt/qualor/licenses/`. The complete
