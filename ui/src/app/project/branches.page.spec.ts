@@ -1,6 +1,15 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { FakeServer, me, page, provideFakeServer, settle } from '../../testing/fake-server';
+import {
+  FakeServer,
+  me,
+  MEMBER_PROJECT_PERMISSIONS,
+  ORG_ID,
+  page,
+  problem,
+  provideFakeServer,
+  settle,
+} from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
 import type { Branch } from './branches';
 import { BranchesPage } from './branches.page';
@@ -113,16 +122,130 @@ describe('BranchesPage', () => {
     const [first, second] = [...root.querySelectorAll('tbody tr')];
     expect(first?.textContent).toContain('Refund <b>limits</b>');
     expect(first?.querySelector('b')).toBeNull();
+    // Intended change (maintainer, 2026-09-29): the link names the host it leads to, which is
+    // right for a GitLab merge request and a GitHub pull request alike.
     const link = [...(first?.querySelectorAll('a') ?? [])].find(
-      (a) => text(a) === 'Open in GitLab',
+      (a) => text(a) === 'Open on gitlab.example.com',
     );
     expect(link?.getAttribute('href')).toBe(
       'https://gitlab.example.com/acme/api/-/merge_requests/12',
     );
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
     // Each link names its merge request, and keeps the visible words in its name.
-    expect(link?.getAttribute('aria-label')).toBe('Open in GitLab: Refund <b>limits</b>');
-    expect(second?.textContent).not.toContain('Open in GitLab');
+    expect(link?.getAttribute('aria-label')).toBe(
+      'Open on gitlab.example.com: Refund <b>limits</b>',
+    );
+    expect(second?.textContent).not.toContain('Open on');
+  });
+
+  it('names a GitHub pull request link by its host too', async () => {
+    server.on('GET', `/api/v0/projects/${PROJECT}/branches`, {
+      body: page([
+        branch('pr7', {
+          kind: 'merge_request',
+          name: '7',
+          mrTitle: 'Bump dependencies',
+          mrUrl: 'https://github.com/acme/api/pull/7',
+        }),
+      ]),
+    });
+    const { root } = await render();
+    const link = root.querySelector('tbody a.external-link');
+    expect(text(link)).toBe('Open on github.com');
+    expect(link?.getAttribute('aria-label')).toBe('Open on github.com: Bump dependencies');
+  });
+
+  describe('deleting a branch or merge request', () => {
+    const MAIN = branch('b-main', { name: 'main', isMain: true });
+    const FEATURE = branch('b-x', { name: 'feature/x' });
+    const MR = branch('b-mr', {
+      kind: 'merge_request',
+      name: '42',
+      mrSourceBranch: 'feature/x',
+      mrTargetBranch: 'main',
+    });
+    const project = (permissions: string[]) => ({
+      body: { id: PROJECT, organizationId: ORG_ID, permissions },
+    });
+    const MAY_DELETE = [...MEMBER_PROJECT_PERMISSIONS, 'project.branches.delete'];
+    const buttonIn = (root: Element, name: string) =>
+      [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => text(b) === name)!;
+
+    it('is offered on every branch but the main one, to those who may delete branches', async () => {
+      server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
+      server.on('GET', `/api/v0/projects/${PROJECT}/branches`, {
+        body: page([MAIN, FEATURE, MR]),
+      });
+      const { root } = await render();
+      const deletes = [...root.querySelectorAll('tbody button.row-delete')];
+      expect(deletes.map(text)).toEqual(['Delete', 'Delete']);
+      expect(deletes.map((b) => b.getAttribute('aria-label'))).toEqual([
+        'Delete feature/x',
+        'Delete !42 feature/x → main',
+      ]);
+    });
+
+    it('is not offered to a member who may not delete branches', async () => {
+      server.on('GET', `/api/v0/projects/${PROJECT}`, project([...MEMBER_PROJECT_PERMISSIONS]));
+      server.on('GET', `/api/v0/projects/${PROJECT}/branches`, { body: page([MAIN, FEATURE]) });
+      const { root } = await render();
+      expect(root.querySelector('tbody button.row-delete')).toBeNull();
+      expect(root.querySelector('dialog')).toBeNull();
+    });
+
+    it('asks first, deletes on confirmation, then says so and lists the rest', async () => {
+      let deleted = false;
+      server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
+      server.on('GET', `/api/v0/projects/${PROJECT}/branches`, () => ({
+        body: page(deleted ? [MAIN] : [MAIN, FEATURE]),
+      }));
+      server.on('DELETE', '/api/v0/branches/b-x', () => {
+        deleted = true;
+        return { status: 204 };
+      });
+      const { fixture, root } = await render();
+      const dialog = root.querySelector<HTMLDialogElement>('dialog')!;
+      root.querySelector<HTMLButtonElement>('tbody button.row-delete')!.click();
+      await settle(fixture);
+      expect(dialog.open).toBe(true);
+      expect(text(dialog.querySelector('h2'))).toBe('Delete this branch?');
+      expect(text(dialog.querySelector('.dialog-body'))).toContain('feature/x');
+      // Cancel sends nothing.
+      buttonIn(dialog, 'Cancel').click();
+      await settle(fixture);
+      expect(dialog.open).toBe(false);
+      expect(server.requestsTo('DELETE', '/api/v0/branches/b-x')).toHaveLength(0);
+      root.querySelector<HTMLButtonElement>('tbody button.row-delete')!.click();
+      await settle(fixture);
+      buttonIn(dialog, 'Delete').click();
+      await settle(fixture);
+      expect(server.requestsTo('DELETE', '/api/v0/branches/b-x')).toHaveLength(1);
+      expect(dialog.open).toBe(false);
+      expect(rows(root)).toHaveLength(1);
+      // The button used is gone with its row: focus moves to the result.
+      const status = root.querySelector('[role="status"]');
+      expect(text(status)).toBe('Deleted feature/x.');
+      expect(document.activeElement).toBe(status);
+    });
+
+    it('keeps the dialog open with the reason when the server refuses', async () => {
+      server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
+      server.on('GET', `/api/v0/projects/${PROJECT}/branches`, { body: page([MAIN, MR]) });
+      server.on('DELETE', '/api/v0/branches/b-mr', {
+        status: 403,
+        body: problem(403, 'FORBIDDEN'),
+      });
+      const { fixture, root } = await render();
+      const dialog = root.querySelector<HTMLDialogElement>('dialog')!;
+      root.querySelector<HTMLButtonElement>('tbody button.row-delete')!.click();
+      await settle(fixture);
+      expect(text(dialog.querySelector('h2'))).toBe('Delete this merge request?');
+      buttonIn(dialog, 'Delete').click();
+      await settle(fixture);
+      expect(dialog.open).toBe(true);
+      expect(text(dialog.querySelector('[role="alert"]'))).toBeTruthy();
+      expect(rows(root)).toHaveLength(2);
+    });
   });
 
   it('shows every kind again when the route reuses the page for another project', async () => {

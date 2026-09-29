@@ -478,6 +478,45 @@ form.card > label.row {
   background: var(--bad-soft);
   border-color: var(--bad);
 }
+/* A quiet button (spec §5): text only, for row actions at a table's right edge; .danger in red. */
+.btn-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-quiet:hover {
+  background: var(--surface-2);
+}
+.btn-quiet.danger {
+  color: var(--bad);
+}
+.btn-quiet.danger:hover {
+  background: var(--bad-soft);
+}
+/* The confirming button of a destructive dialog: the same dark red in both schemes. */
+.btn-danger-solid {
+  border-color: #b3261e;
+  background: #b3261e;
+  color: #fff;
+}
+.btn-danger-solid:hover {
+  border-color: #9c1f18;
+  background: #9c1f18;
+}
+.btn-danger-solid[aria-disabled='true'],
+.btn-danger-solid[aria-disabled='true']:hover {
+  border-color: #b3261e;
+  background: #b3261e;
+}
 .btn-link {
   border: 0;
   background: none;

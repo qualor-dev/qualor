@@ -4,9 +4,8 @@ import { ApiError, problemMessage } from '../api/errors';
 import { SessionStore } from '../auth/session';
 import { GateBadge } from '../shared/gate-badge';
 import { Icon } from '../shared/icon';
-import { safeHelpUri } from '../shared/links';
 import { type Crumb, PageHeader } from '../shared/page-header';
-import { notFound } from './branches';
+import { mergeRequestLink, notFound } from './branches';
 import { CurrentProject } from './current-project';
 
 /**
@@ -36,14 +35,10 @@ export class ProjectPage {
    * gate, its name, a merge request's title and its page instead of the main branch's (§7.1).
    */
   protected readonly shown = this.store.shownBranch;
-  /** A merge request's page, only over http(s) (scm.md §8, plan 1F ruling Y5). */
-  protected readonly mrLink = computed(() => safeHelpUri(this.shown()?.mrUrl ?? null));
-  /** The link names its merge request, starting with the words it shows. */
-  protected readonly mrLinkLabel = computed(() => {
+  /** A merge request's page, named by its host (scm.md §8; see {@link mergeRequestLink}). */
+  protected readonly mrLink = computed(() => {
     const b = this.shown();
-    return b
-      ? $localize`:@@branches.openInGitLabLabel:Open in GitLab: ${b.mrTitle || b.title}:mergeRequest:`
-      : '';
+    return b ? mergeRequestLink(b.mrUrl, b.mrTitle || b.title) : null;
   });
   protected readonly crumbs: Crumb[] = [
     { label: $localize`:@@project.crumb:Projects`, link: '/projects' },

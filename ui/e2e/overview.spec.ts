@@ -49,6 +49,27 @@ test('the branches tab lists the merge request, which has its own view', async (
   await expectAccessible(page);
 });
 
+test('deleting a merge request asks first, and Cancel leaves it', async ({ page }) => {
+  await page.goto('/projects');
+  await page.getByRole('link', { name: PAYMENTS.name }).click();
+  await page.getByRole('link', { name: 'Branches and merge requests' }).click();
+  const title = `!${MERGE_REQUEST.id} ${MERGE_REQUEST.source} → main`;
+  // The main branch cannot be deleted: only the merge request offers it.
+  await expect(page.getByRole('button', { name: /^Delete / })).toHaveCount(1);
+  const remove = page.getByRole('button', { name: `Delete ${title}` });
+  await remove.click();
+  const dialog = page.getByRole('dialog', { name: 'Delete this merge request?' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('This cannot be undone.');
+  // A destructive dialog starts on its safe choice.
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await expectAccessible(page);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(remove).toBeFocused();
+  await expect(page.getByRole('link', { name: title })).toBeVisible();
+});
+
 test('the project tabs work with the keyboard and mark the current one', async ({ page }) => {
   await page.goto('/projects');
   await page.getByRole('link', { name: PAYMENTS.name }).click();

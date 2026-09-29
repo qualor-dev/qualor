@@ -201,7 +201,11 @@ describe('ProjectPage', () => {
     const link = meta?.querySelector('a.external-link');
     expect(link?.getAttribute('href')).toBe(MR.mrUrl);
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(link?.getAttribute('aria-label')).toBe('Open in GitLab: Refund <b>limits</b>');
+    // The link names the host it leads to (GitLab or GitHub alike), then the merge request.
+    expect(link?.textContent?.trim()).toBe('Open on gitlab.example.com');
+    expect(link?.getAttribute('aria-label')).toBe(
+      'Open on gitlab.example.com: Refund <b>limits</b>',
+    );
     // Once the overview goes, the band names the main branch again.
     store.showBranch(null);
     await settle(fixture);

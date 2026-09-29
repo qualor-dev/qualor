@@ -26,15 +26,14 @@
         @if (b.mrTitle) {
           <span class="page-meta-title">{{ b.mrTitle }}</span>
         }
-        @if (mrLink(); as href) {
+        @if (mrLink(); as link) {
           <a
             class="external-link"
-            [href]="href"
+            [href]="link.href"
             target="_blank"
             rel="noopener noreferrer"
-            [attr.aria-label]="mrLinkLabel()"
-            ><ng-container i18n="@@branches.openInGitLab">Open in GitLab</ng-container
-            ><q-icon name="external"
+            [attr.aria-label]="link.label"
+            >{{ link.text }}<q-icon name="external"
           /></a>
         }
       } @else {

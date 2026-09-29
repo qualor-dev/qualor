@@ -1,6 +1,7 @@
 import { type Api, ok } from '../api/api';
 import { ApiError } from '../api/errors';
 import type { ItemOf } from '../api/types';
+import { safeHelpUri } from '../shared/links';
 
 export type Branch = ItemOf<'/api/v0/projects/{id}/branches'>;
 
@@ -100,4 +101,27 @@ export function branchTitle(branch: Branch): string {
   const target = branch.mrTargetBranch ?? '';
   const route = source && target ? `${source} → ${target}` : source || (target && `→ ${target}`);
   return route ? `!${branch.name} ${route}` : `!${branch.name}`;
+}
+
+/** A link that leaves Qualor: where it goes, what it shows, and its accessible name. */
+export interface ExternalLink {
+  href: string;
+  text: string;
+  label: string;
+}
+
+/**
+ * A merge request's page (scm.md §8), only over http(s) (plan 1F ruling Y5). The text names the
+ * host it leads to, right for a GitLab merge request and a GitHub pull request alike; the name
+ * adds the merge request, starting with the visible words (WCAG label in name).
+ */
+export function mergeRequestLink(url: string | null, name: string): ExternalLink | null {
+  const href = safeHelpUri(url);
+  if (!href) return null;
+  const host = new URL(href).host;
+  return {
+    href,
+    text: $localize`:@@branches.openOn:Open on ${host}:host:`,
+    label: $localize`:@@branches.openOnLabel:Open on ${host}:host:: ${name}:mergeRequest:`,
+  };
 }

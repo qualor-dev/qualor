@@ -11,6 +11,11 @@
 @if (list.error(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
 }
+<div #status class="branches-status" role="status" tabindex="-1">
+  @if (announcement(); as message) {
+    <p class="alert alert-success">{{ message }}</p>
+  }
+</div>
 
 <section class="card panel">
   <div class="panel-scroll">
@@ -25,6 +30,11 @@
           <th scope="col" class="num" i18n="@@branches.col.newIssues">New issues</th>
           <th scope="col" class="num" i18n="@@branches.col.newCoverage">Coverage on new code</th>
           <th scope="col" i18n="@@branches.col.lastAnalysis">Last analysis</th>
+          @if (canDelete()) {
+            <th scope="col" class="actions-col">
+              <span class="visually-hidden" i18n="@@branches.col.actions">Actions</span>
+            </th>
+          }
         </tr>
       </thead>
       <tbody>
@@ -47,15 +57,14 @@
                   @if (b.mrTitle) {
                     <div class="muted prose-text">{{ b.mrTitle }}</div>
                   }
-                  @if (gitlabLink(b); as href) {
+                  @if (mrLink(b); as link) {
                     <a
                       class="external-link"
-                      [href]="href"
+                      [href]="link.href"
                       target="_blank"
                       rel="noopener noreferrer"
-                      [attr.aria-label]="gitlabLinkLabel(b)"
-                      ><ng-container i18n="@@branches.openInGitLab">Open in GitLab</ng-container
-                      ><q-icon name="external"
+                      [attr.aria-label]="link.label"
+                      >{{ link.text }}<q-icon name="external"
                     /></a>
                   }
                 </div>
@@ -79,21 +88,48 @@
                 <span class="muted" i18n="@@branches.never">Never</span>
               }
             </td>
+            @if (canDelete()) {
+              <td class="actions-col">
+                @if (!b.isMain) {
+                  <button
+                    type="button"
+                    class="btn-quiet danger row-delete"
+                    [attr.aria-label]="deleteLabel(b)"
+                    (click)="askDelete(b)"
+                    i18n="@@branches.delete"
+                  >
+                    Delete
+                  </button>
+                }
+              </td>
+            }
           </tr>
         } @empty {
           @if (list.loaded()) {
             <tr>
               @switch (kind()) {
                 @case ('branch') {
-                  <td colspan="5" class="muted" i18n="@@branches.emptyBranches">No branches.</td>
+                  <td
+                    [attr.colspan]="canDelete() ? 6 : 5"
+                    class="muted"
+                    i18n="@@branches.emptyBranches"
+                  >
+                    No branches.
+                  </td>
                 }
                 @case ('merge_request') {
-                  <td colspan="5" class="muted" i18n="@@branches.emptyMergeRequests">
+                  <td
+                    [attr.colspan]="canDelete() ? 6 : 5"
+                    class="muted"
+                    i18n="@@branches.emptyMergeRequests"
+                  >
                     No merge requests.
                   </td>
                 }
                 @default {
-                  <td colspan="5" class="muted" i18n="@@branches.empty">Nothing analyzed yet.</td>
+                  <td [attr.colspan]="canDelete() ? 6 : 5" class="muted" i18n="@@branches.empty">
+                    Nothing analyzed yet.
+                  </td>
                 }
               }
             </tr>
@@ -116,4 +152,42 @@
       Load more
     </button>
   </p>
+}
+
+@if (canDelete()) {
+  <dialog
+    #deleteDialog
+    class="dialog"
+    aria-labelledby="delete-branch-title"
+    aria-describedby="delete-branch-text"
+  >
+    <div class="dialog-head">
+      <h2 id="delete-branch-title">{{ deleteTitle() }}</h2>
+    </div>
+    <div class="dialog-body">
+      @if (deleteError(); as message) {
+        <p class="alert alert-error" role="alert">{{ message }}</p>
+      }
+      @if (toDelete(); as b) {
+        <p id="delete-branch-text" i18n="@@branches.delete.text">
+          <strong class="delete-name">{{ branchTitle(b) }}</strong> is deleted with its analyses and
+          issues. This cannot be undone.
+        </p>
+      }
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" autofocus (click)="closeDelete()" i18n="@@dialog.cancel">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-danger-solid"
+        [attr.aria-disabled]="deleting() ? true : null"
+        (click)="confirmDelete()"
+        i18n="@@branches.delete.confirm"
+      >
+        Delete
+      </button>
+    </div>
+  </dialog>
 }
