@@ -6,6 +6,11 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     expect(governingLanguage('roslyn', 'csharp')).toBe('csharp');
   });
 
+  it('lets the typescript/javascript profiles govern sonarjs findings (phase 8A)', () => {
+    expect(governingLanguage('sonarjs', 'typescript')).toBe('typescript');
+    expect(governingLanguage('sonarjs', 'javascript')).toBe('javascript');
+  });
+
   it('leaves Semgrep, Gitleaks and Trivy on C# files to the * profile', () => {
     for (const engine of ['semgrep', 'gitleaks', 'trivy', 'osv-scanner']) {
       expect(governingLanguage(engine, 'csharp')).toBe('*');

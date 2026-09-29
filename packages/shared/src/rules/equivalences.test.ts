@@ -56,4 +56,9 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(enginePriority('spotbugs')).toBeGreaterThan(enginePriority('roslyn'));
     expect(enginePriority('roslyn')).toBeGreaterThan(enginePriority('pmd'));
   });
+
+  it('ranks sonarjs right below eslint, still above any external engine (config.md §6)', () => {
+    expect(enginePriority('eslint')).toBeGreaterThan(enginePriority('sonarjs'));
+    expect(enginePriority('sonarjs')).toBeGreaterThan(enginePriority('my-tool'));
+  });
 });

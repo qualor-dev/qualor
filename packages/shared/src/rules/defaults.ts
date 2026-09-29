@@ -18,5 +18,7 @@ export function engineRuleDefaults(engineId: string): {
   if (engineId === 'gitleaks') return { quality: 'security', defaultSeverity: 'blocker' };
   // Every Trivy finding is a vulnerable dependency (plan 2B).
   if (engineId === 'trivy') return { quality: 'security', defaultSeverity: 'medium' };
+  // sonarjs (phase 8A) has no metadata-free default of its own: like eslint, an unmetered rule
+  // falls through to plain maintainability/medium.
   return { quality: 'maintainability', defaultSeverity: 'medium' };
 }

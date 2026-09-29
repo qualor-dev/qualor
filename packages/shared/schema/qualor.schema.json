@@ -177,6 +177,47 @@
           },
           "additionalProperties": false
         },
+        "sonarjs": {
+          "default": {
+            "enabled": "auto",
+            "timeout": 900,
+            "typeChecking": "auto"
+          },
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "timeout": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            },
+            "typeChecking": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
         "pmd": {
           "default": {},
           "type": "object",
@@ -374,6 +415,10 @@
               ]
             },
             "bundledAnalyzers": {
+              "default": true,
+              "type": "boolean"
+            },
+            "sonarAnalyzer": {
               "default": true,
               "type": "boolean"
             }

@@ -34,6 +34,13 @@ describe('parseConfig', () => {
     expect(c.server.timeoutSeconds).toBe(30);
   });
 
+  it('has analyzers.sonarjs and roslyn.sonarAnalyzer with their defaults', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.sonarjs).toEqual({ enabled: 'auto', timeout: 900, typeChecking: 'auto' });
+    expect(c.analyzers.roslyn.sonarAnalyzer).toBe(true);
+    expect(() => parseConfig({ version: 1, analyzers: { sonarjs: { rules: {} } } })).toThrow();
+  });
+
   it('requires version 1', () => {
     expect(errorPaths({})).toEqual(['version']);
     expect(errorPaths({ version: 2 })).toEqual(['version']);
@@ -161,7 +168,11 @@ describe('parseConfig', () => {
 
   it('knows C#: the language, the roslyn analyzer and the .NET excludes (config.md §3, §6.1)', () => {
     const config = parseConfig({ version: 1 });
-    expect(config.analyzers.roslyn).toEqual({ enabled: 'auto', bundledAnalyzers: true });
+    expect(config.analyzers.roslyn).toEqual({
+      enabled: 'auto',
+      bundledAnalyzers: true,
+      sonarAnalyzer: true,
+    });
     expect(parseConfig({ version: 1, languages: ['csharp'] }).languages).toEqual(['csharp']);
     expect(config.tests.include).toContain('**/*Tests/**');
     for (const glob of [

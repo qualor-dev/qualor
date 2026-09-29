@@ -1,4 +1,4 @@
-import type { Quality, Severity } from '../report/taxonomy';
+import type { IssueKind, Quality, Severity } from '../report/taxonomy';
 import type { EngineMapping } from './normalize';
 import type { SarifResult, SarifRule } from './types';
 
@@ -149,12 +149,38 @@ const trivy: EngineMapping = {
   },
 };
 
+/**
+ * SonarQube's rule category as SonarAnalyzer.CSharp writes it into SARIF (`properties.category`)
+ * and the sonarjs runner copies it (report-format.md §7.1): "<Severity> <Type>".
+ */
+const SONAR_SEVERITY: Record<string, Severity> = {
+  Blocker: 'blocker', Critical: 'high', Major: 'medium', Minor: 'low', Info: 'info',
+};
+const SONAR_TYPE: Record<string, { quality: Quality; kind: IssueKind }> = {
+  Bug: { quality: 'reliability', kind: 'issue' },
+  Vulnerability: { quality: 'security', kind: 'issue' },
+  'Security Hotspot': { quality: 'security', kind: 'hotspot' },
+  'Code Smell': { quality: 'maintainability', kind: 'issue' },
+};
+const SONAR_CATEGORY = /^(Blocker|Critical|Major|Minor|Info) (Bug|Vulnerability|Security Hotspot|Code Smell)$/;
+
+export function sonarCategory(
+  category: string,
+): { quality: Quality; kind: IssueKind; defaultSeverity: Severity } | null {
+  const m = SONAR_CATEGORY.exec(category);
+  if (m === null) return null;
+  return { ...SONAR_TYPE[m[2]!]!, defaultSeverity: SONAR_SEVERITY[m[1]!]! };
+}
+
 /** Roslyn rule categories (`properties.category`, plan 2D probe P5) that are about correctness. */
 const ROSLYN_RELIABILITY = new Set(['reliability', 'usage']);
 
 const roslyn: EngineMapping = {
   rule: (r) => {
-    const category = String(r.properties?.['category'] ?? '').toLowerCase();
+    const raw = String(r.properties?.['category'] ?? '');
+    const sonar = sonarCategory(raw);
+    if (sonar !== null) return sonar;
+    const category = raw.toLowerCase();
     const quality: Quality =
       category === 'security'
         ? 'security'
@@ -163,6 +189,20 @@ const roslyn: EngineMapping = {
           : 'maintainability';
     return { quality, kind: 'issue' };
   },
+  severity: (_result, rule) => sonarCategory(String(rule?.properties?.['category'] ?? ''))?.defaultSeverity,
+};
+
+/**
+ * SonarQube-compatible JS/TS rules (eslint-plugin-sonarjs 2.0.4, LGPL-3.0, config.md §6). Every
+ * rule the pass reports carries a SonarQube category from its own `categories.json`; without one
+ * (should not happen for a bundled rule) it defaults like ESLint's own default.
+ */
+const sonarjs: EngineMapping = {
+  rule: (r) =>
+    sonarCategory(String(r.properties?.['category'] ?? '')) ?? {
+      quality: 'maintainability', kind: 'issue',
+    },
+  severity: (_result, rule) => sonarCategory(String(rule?.properties?.['category'] ?? ''))?.defaultSeverity,
 };
 
 export const ENGINE_MAPPINGS = {
@@ -173,6 +213,7 @@ export const ENGINE_MAPPINGS = {
   gitleaks,
   trivy,
   roslyn,
+  sonarjs,
 } as const satisfies Record<string, EngineMapping>;
 
 export function engineMapping(engineId: string): EngineMapping | undefined {

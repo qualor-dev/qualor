@@ -12,6 +12,7 @@ export type Language = (typeof LANGUAGES)[number];
 
 export const BUILTIN_ENGINES = [
   'eslint',
+  'sonarjs',
   'pmd',
   'spotbugs',
   'semgrep',
