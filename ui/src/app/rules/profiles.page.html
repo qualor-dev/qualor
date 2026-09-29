@@ -151,7 +151,7 @@
             (input)="setName($event)"
           />
           @if (nameError(); as message) {
-            <span id="profile-name-error" class="field-error">{{ message }}</span>
+            <span id="profile-name-error" class="field-error" role="alert">{{ message }}</span>
           }
         </div>
         <div class="field">
@@ -182,7 +182,7 @@
             }
           </select>
           @if (parentError(); as message) {
-            <span id="profile-parent-error" class="field-error">{{ message }}</span>
+            <span id="profile-parent-error" class="field-error" role="alert">{{ message }}</span>
           }
           <span id="profile-parent-hint" class="hint" i18n="@@profiles.parentHint">
             A profile keeps its parent. Profiles inherit at most three levels deep.

@@ -1,15 +1,24 @@
 /* Quality profiles (spec §7.7): one panel per language, headed by its chip. */
+/* One track that may shrink to the screen: a wide table scrolls in its panel, never the page. */
 .profile-groups {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
 }
 .profile-groups > * {
   margin: 0;
 }
-/* The same columns in every language panel, so they line up down the page. */
+/*
+ * The same columns in every language panel, so they line up down the page. The minimum leaves
+ * the name column room for a name and its tags beside the fixed actions (step 7 review).
+ */
 .profile-groups table {
   table-layout: fixed;
-  min-width: 40rem;
+  min-width: 50rem;
+}
+/* A long parent name wraps in its cell instead of painting over the next ones. */
+.profile-groups td {
+  overflow-wrap: anywhere;
 }
 .col-parent {
   width: 24%;

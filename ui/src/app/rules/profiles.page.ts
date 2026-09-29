@@ -247,7 +247,11 @@ export class ProfilesPage {
   }
 
   private async delete(profile: Profile): Promise<void> {
-    const index = this.list.items().findIndex((p) => p.id === profile.id);
+    // The row's place in its own language panel, where focus stays: the list's order is not the
+    // page's, whose rows are grouped by language (step 7 review). The built-in row always stays.
+    const row = rowByKey(this.host.nativeElement, profile.id);
+    const table = row?.closest('table') ?? undefined;
+    const index = row && table ? [...table.querySelectorAll('tbody tr[data-key]')].indexOf(row) : 0;
     await this.run(async () => {
       await done(
         this.api.client.DELETE('/api/v0/quality-profiles/{id}', {
@@ -261,7 +265,7 @@ export class ProfilesPage {
       keepFocus(
         this.injector,
         this.document,
-        () => rowAt(this.host.nativeElement, index)?.querySelector('button'),
+        () => rowAt(table, index)?.querySelector('button'),
         () => this.heading().nativeElement,
       );
     });

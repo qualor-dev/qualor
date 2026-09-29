@@ -244,6 +244,8 @@ describe('ProfilesPage', () => {
     expect(root.querySelector('#profile-name-error')?.textContent).toContain(
       'This name is reserved for the built-in profiles.',
     );
+    // Announced: focus stays on the submit button (step 7 review).
+    expect(root.querySelector('#profile-name-error')?.getAttribute('role')).toBe('alert');
     expect(root.querySelector('#profile-name')?.getAttribute('aria-invalid')).toBe('true');
     expect(server.requestsTo('POST', '/api/v0/quality-profiles')).toHaveLength(0);
     // A name the server refuses for a reason the page does not know still lands on the field.
@@ -279,6 +281,7 @@ describe('ProfilesPage', () => {
     expect(root.querySelector('#profile-parent-error')?.textContent).toContain(
       'This profile cannot be the parent',
     );
+    expect(root.querySelector('#profile-parent-error')?.getAttribute('role')).toBe('alert');
     answer = { status: 409, body: problem(409, 'PROFILE_LIMIT_REACHED') };
     root.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
@@ -861,5 +864,77 @@ describe('profiles and rules: focus, in-place updates, announcements (fix round 
     root.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(root.querySelector('[role="status"]')?.textContent).toContain('1 rule shown.');
+  });
+});
+
+describe('profiles: step 7 review', () => {
+  it('after a delete, focus stays in the panel of the deleted profile', async () => {
+    const server = setup();
+    let items = [
+      profile('p1', 'Qualor way', { isBuiltin: true, isDefault: true }),
+      profile('p2', 'Qualor way', { isBuiltin: true, isDefault: true, language: 'java' }),
+      profile('p3', 'Payments'),
+    ];
+    server.on('GET', '/api/v0/quality-profiles', () => ({ body: page(items) }));
+    server.on('DELETE', '/api/v0/quality-profiles/p3', () => {
+      items = items.filter((p) => p.id !== 'p3');
+      return { status: 204 };
+    });
+    const fixture = TestBed.createComponent(ProfilesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const row = root.querySelector<HTMLElement>('tr[data-key="p3"]')!;
+    const panel = row.closest('table');
+    button(root, 'Delete', row).click();
+    await settle(fixture);
+    button(root, 'Delete', root.querySelector('dialog#confirm-dialog')!).click();
+    await settle(fixture);
+    expect(root.querySelector('tr[data-key="p3"]')).toBeNull();
+    // The TypeScript panel's remaining row, never a row of the Java panel below.
+    expect(document.activeElement?.closest('table')).toBe(panel);
+    expect(document.activeElement?.closest('tr')?.getAttribute('data-key')).toBe('p1');
+  });
+
+  it('wraps a long parent name in its cell rather than painting over the next ones', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles', {
+      body: page([profile('p1', 'P'.repeat(80)), profile('p2', 'Child', { parentId: 'p1' })]),
+    });
+    const fixture = TestBed.createComponent(ProfilesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const parentCell = root.querySelectorAll('tr[data-key="p2"] td')[1]!;
+    expect(parentCell.textContent?.trim()).toBe('P'.repeat(80));
+    expect(getComputedStyle(parentCell).overflowWrap).toBe('anywhere');
+  });
+
+  it('lets a long parent name on the band wrap instead of running off a phone', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles/p2', {
+      body: profile('p2', 'Child', { parentId: 'p1' }),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p1', { body: profile('p1', 'P'.repeat(80)) });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', { body: page([]) });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const parent = root.querySelector<HTMLElement>('a.profile-parent')!;
+    expect(getComputedStyle(parent).overflowWrap).toBe('anywhere');
+    expect(getComputedStyle(parent).minWidth).toBe('0px');
+  });
+
+  it("keeps a rule's name cell wide enough to read on a phone", async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles/p2', { body: profile('p2', 'Payments') });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', {
+      body: page([profileRule('eslint:eqeqeq')]),
+    });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const cell = root.querySelector<HTMLElement>('tr[data-key="eslint:eqeqeq"] td')!;
+    expect(parseFloat(getComputedStyle(cell).minWidth)).toBeGreaterThanOrEqual(200);
   });
 });

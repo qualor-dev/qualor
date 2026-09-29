@@ -152,3 +152,44 @@ test('a new profile inherits from a parent, which cannot be deleted while it has
   await expect(ts.getByRole('link', { name: 'Payments TypeScript' })).toBeVisible();
   await expectAccessible(page);
 });
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the profiles and a profile fit the screen, their wide tables scroll in their panels', async ({
+    page,
+  }) => {
+    const fits = async () => {
+      const width = await page.evaluate(() => ({
+        page: document.documentElement.scrollWidth,
+        screen: document.documentElement.clientWidth,
+      }));
+      expect(width.page).toBeLessThanOrEqual(width.screen);
+    };
+    await page.goto('/profiles');
+    const ts = page.getByRole('region', { name: 'TypeScript' });
+    await expect(ts.getByRole('link', { name: 'Payments TypeScript' })).toBeVisible();
+    await fits();
+    // No cell paints over the next one: each keeps its content inside.
+    const spilling = await page.evaluate(
+      () =>
+        [...document.querySelectorAll('.profile-groups tbody td')].filter(
+          (cell) => cell.scrollWidth > cell.clientWidth + 1,
+        ).length,
+    );
+    expect(spilling).toBe(0);
+
+    await ts.getByRole('link', { name: 'Payments TypeScript' }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Payments TypeScript');
+    const rule = page.getByRole('row', { name: /eslint:eqeqeq/ });
+    await expect(rule).toBeVisible();
+    await fits();
+    // A rule's name reads in words: "Require === and !==" takes a line or two, not five.
+    const lines = await rule.locator('.rule-name').evaluate((name) => {
+      const style = getComputedStyle(name);
+      const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
+      return name.getBoundingClientRect().height / line;
+    });
+    expect(lines).toBeLessThan(2.5);
+  });
+});

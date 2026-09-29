@@ -1,7 +1,10 @@
 /* A quality profile (spec §7.7): its facts on the band, its rules in a panel. */
+/* A long parent name wraps on the band rather than running off a phone's edge. */
 .profile-parent {
+  min-width: 0;
   color: #fff;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 .rules-search {
   display: flex;
@@ -35,6 +38,10 @@
 }
 .panel-note {
   margin: 12px 22px 0;
+}
+/* Room for a rule's name in words on a phone; the table then scrolls in its panel. */
+.rule-cell {
+  min-width: 14rem;
 }
 .rule-name {
   font-weight: 600;

@@ -102,7 +102,7 @@
           <tbody>
             @for (r of list.items(); track r.rule.key) {
               <tr [attr.data-key]="r.rule.key">
-                <td>
+                <td class="rule-cell">
                   <div class="rule-name">{{ r.rule.name }}</div>
                   <code class="rule-key">{{ r.rule.key }}</code>
                 </td>
