@@ -1,0 +1,142 @@
+/* An issue (spec §7.4): the story on the left, details and actions in a sticky right column. */
+.issue-back {
+  margin: 0 0 16px;
+}
+.issue-layout {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 22rem;
+  align-items: start;
+}
+.issue-main,
+.issue-aside {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+@media (max-width: 64rem) {
+  .issue-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* The column stays in view only where it fits the screen; otherwise its end would be unreachable. */
+@media (min-width: 64.01rem) and (min-height: 48rem) {
+  .issue-aside {
+    position: sticky;
+    top: var(--sticky-top);
+  }
+}
+.issue-main > *,
+.issue-aside > * {
+  margin: 0;
+}
+.issue-header h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  line-height: 1.3;
+}
+.issue-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+}
+.issue-header > p + p {
+  margin-top: 10px;
+}
+/* The code on ink, headed by its file and line. */
+.code-window {
+  overflow: hidden;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-lg);
+  background: var(--ink);
+  box-shadow: var(--shadow);
+}
+.code-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ink-line);
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+.code-head:empty {
+  display: none;
+}
+.code-head code {
+  color: var(--ink-text);
+  overflow-wrap: anywhere;
+}
+.code-window .snippet {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.rule-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin: -8px 0 12px;
+  color: var(--text-muted);
+}
+.rule-meta code {
+  overflow-wrap: anywhere;
+}
+.timeline li + li {
+  margin-top: 16px;
+}
+.timeline-what {
+  margin: 0;
+}
+.timeline .timeline-when {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.timeline .timeline-comment {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.details-list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 0;
+  font-size: 13.5px;
+}
+.details-list dt {
+  color: var(--text-muted);
+}
+.details-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.issue-actions textarea {
+  width: 100%;
+  min-height: 5.5rem;
+}
+.transitions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.severity-form {
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+.severity-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.readonly-note {
+  margin: 0;
+}
