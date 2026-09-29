@@ -762,7 +762,8 @@ h3.subhead {
   background: var(--warn-soft);
   border-bottom: 1px solid var(--warn);
   color: var(--text);
-  padding: var(--space-2) var(--space-6);
+  /* Its words start where the content column does, like the top bar's. */
+  padding: var(--space-2) max(var(--gutter), calc((100% - var(--content-max)) / 2));
 }
 .license-banner-bad {
   background: var(--bad-soft);
@@ -1431,7 +1432,8 @@ details[open] > summary {
   align-items: center;
   gap: var(--space-2) var(--space-6);
   min-height: 60px;
-  padding: 0 var(--gutter);
+  /* The bar's ends line up with the content column on a wide screen, as the page header does. */
+  padding: 0 max(var(--gutter), calc((100% - var(--content-max)) / 2));
   background: var(--ink);
   color: var(--ink-text);
   border-bottom: 1px solid rgb(255 255 255 / 0.08);
