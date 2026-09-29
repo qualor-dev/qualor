@@ -1663,6 +1663,38 @@ details[open] > summary {
   font-weight: 650;
 }
 
+/* Dialogs (spec §5): a short "New …" form over the page. */
+.dialog {
+  width: min(32rem, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 64px -24px rgb(10 27 51 / 0.45);
+}
+.dialog::backdrop {
+  background: rgb(10 27 51 / 0.45);
+}
+.dialog-head {
+  padding: 20px 24px 0;
+}
+.dialog-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.dialog-body {
+  padding: 16px 24px 4px;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--hairline);
+}
+
 /*
  * The ink page band (q-page-header, spec §4): what pages project into it. Global, because the
  * projected elements belong to the page's template, not to the band's.
