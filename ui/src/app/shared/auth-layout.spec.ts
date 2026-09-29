@@ -27,6 +27,10 @@ describe('AuthLayout (spec §7.9)', () => {
     expect(art.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     expect(main.querySelector('.auth-main #projected')?.textContent).toBe('Card');
     expect(art.classList.contains('offline')).toBe(false);
+    // The illustration is its own element under the words (step 10 review), never behind them.
+    const illustration = art.querySelector('.auth-illustration');
+    expect(illustration?.getAttribute('aria-hidden')).toBe('true');
+    expect(art.lastElementChild).toBe(illustration);
   });
 
   it('shows the offline illustration when asked', async () => {

@@ -34,6 +34,64 @@ test.describe('signed out', () => {
     });
   });
 
+  // The words and the illustration never overlap (step 10 review): laptops whose windows are
+  // shorter than 900px, and a landscape phone, which gets the band.
+  for (const [width, height] of [
+    [1440, 900],
+    [1536, 730],
+    [1366, 657],
+    [1280, 620],
+    [1024, 768],
+  ] as const) {
+    test(`at ${width}x${height} the tagline ends above the illustration`, async ({ page }) => {
+      await page.setViewportSize({ width, height });
+      await page.goto('/login');
+      const tagline = (await page.locator('.auth-art .tagline').boundingBox())!;
+      const art = (await page.locator('.auth-art .auth-illustration').boundingBox())!;
+      expect(tagline.y + tagline.height).toBeLessThanOrEqual(art.y);
+    });
+  }
+
+  test('a landscape phone gets the band, its words clear of the illustration', async ({ page }) => {
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.goto('/login');
+    const band = (await page.locator('.auth-art').boundingBox())!;
+    const card = (await page.locator('.auth-card').boundingBox())!;
+    expect(band.y + band.height).toBeLessThanOrEqual(card.y);
+    const tagline = (await page.locator('.auth-art .tagline').boundingBox())!;
+    const art = (await page.locator('.auth-art .auth-illustration').boundingBox())!;
+    expect(tagline.x + tagline.width).toBeLessThanOrEqual(art.x + art.width * 0.25);
+  });
+
+  test('a long single sign-on name wraps in its button on a phone', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    // Connection names may be 64 characters (the SSO routes' limit): answered in the browser.
+    await page.route('**/api/v0/auth/methods', (route) =>
+      route.fulfill({
+        json: {
+          password: 'everyone',
+          providers: [
+            {
+              id: 'c1',
+              name: 'Contoso Corporate Microsoft Entra ID for Europe and the Americas',
+              protocol: 'oidc',
+              startUrl: '/api/v0/ee/sso/c1/start',
+            },
+          ],
+        },
+      }),
+    );
+    await page.goto('/login');
+    const button = page.getByRole('link', { name: /^Sign in with Contoso/ });
+    await expect(button).toBeVisible();
+    const card = (await page.locator('.auth-card').boundingBox())!;
+    const box = (await button.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+  });
+
   test('a wrong password is refused with an alert', async ({ page, guard }) => {
     // The refused sign-in answers 401, which the browser logs; the alert is what the user sees.
     guard.allowFailedLoad('/api/v0/auth/login', 401);
