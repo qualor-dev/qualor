@@ -320,6 +320,19 @@ img {
 .panel-body {
   padding: 16px 22px 20px;
 }
+/* A table straight inside a panel lines up with the panel's padding. */
+.card.panel > table {
+  margin-top: 10px;
+}
+.card.panel > table :is(th, td):first-child {
+  padding-left: 22px;
+}
+.card.panel > table :is(th, td):last-child {
+  padding-right: 22px;
+}
+.panel-alert {
+  margin: 16px 22px;
+}
 .panel-foot {
   padding: 12px 22px;
   border-top: 1px solid var(--hairline);
@@ -1478,6 +1491,161 @@ details[open] > summary {
 }
 .gate-word .badge q-icon {
   display: none;
+}
+
+/*
+ * Shared page parts (spec §5): stat lists, KPI strips, a segmented switch, chips and rule lists,
+ * first used by the project overview.
+ */
+/* New code: the coverage lens and four figures. */
+.new-code {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+}
+.stat-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.stat-list > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.stat-list > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.stat-list dt {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.stat-list dd {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.stat-list dd.bad {
+  color: var(--bad);
+}
+
+/* The KPI strip: one panel, figures divided by hairlines. */
+.kpi {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 20px 22px;
+  border-right: 1px solid var(--hairline);
+}
+.kpi:last-child {
+  border-right: 0;
+}
+.kpi-label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 550;
+}
+.kpi-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.kpi-figure {
+  display: grid;
+  gap: 4px;
+}
+.kpi-value {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.kpi q-sparkline {
+  margin-top: 8px;
+}
+.ratings {
+  display: flex;
+  gap: 22px;
+  margin-top: 4px;
+}
+
+/* History: a segmented switch of the metric the chart shows. */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.segmented button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-2);
+  font: 600 12.5px var(--font);
+  cursor: pointer;
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow:
+    0 1px 2px rgb(10 27 51 / 0.1),
+    0 0 0 1px var(--border);
+}
+.panel-total {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.subhead {
+  margin: 18px 0 6px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.chip {
+  padding: 1px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.rule-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rule-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13.5px;
+}
+.rule-list li:last-child {
+  border-bottom: 0;
+}
+.rule-list code {
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+}
+.rule-list span {
+  font-weight: 650;
 }
 
 /*
