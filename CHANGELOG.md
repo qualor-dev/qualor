@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-29
+
 ### Fixed
 
 - `restore` (the embedded database) no longer drops the database before the dump has loaded. It
