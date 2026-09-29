@@ -148,12 +148,18 @@ test('the SCIM screen creates a token and shows it once', async ({ page }) => {
   );
   await expectAccessible(page);
 
-  await acme.getByLabel('Token name').fill('Okta');
-  await acme.getByRole('button', { name: 'Create token' }).click();
-  const secret = page.getByLabel('SCIM token');
+  // Step 9: New token opens a dialog for the connection, which then holds the token once.
+  await acme.getByRole('button', { name: 'New token for Acme SSO' }).click();
+  const create = page.getByRole('dialog', { name: 'New token for Acme SSO' });
+  await expect(create.getByLabel('Token name')).toBeFocused();
+  await create.getByLabel('Token name').fill('Okta');
+  await create.getByRole('button', { name: 'Create token' }).click();
+  const shown = page.getByRole('dialog', { name: 'Your new SCIM token' });
+  const secret = shown.getByLabel('SCIM token');
   await expect(secret).toHaveValue(/^qlr_scim_[0-9A-Za-z]{32}$/);
+  await expect(secret).toBeFocused();
   const token = await secret.inputValue();
-  await page.getByRole('button', { name: 'Done' }).click();
+  await shown.getByRole('button', { name: 'Done' }).click();
   await expect(secret).toHaveCount(0);
   await page.reload();
   await expect(acme.getByRole('row', { name: /Okta/ })).toContainText(token.slice(0, 12));

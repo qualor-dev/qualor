@@ -19,8 +19,10 @@ import { SessionStore } from '../auth/session';
 import { LabelPipe } from '../i18n/label.pipe';
 import { SystemInfo } from '../shell/system-info';
 import { DateTimePipe } from '../shared/date-time.pipe';
+import { closeModal, openModal } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { inputValue } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import { CopyValue } from './copy-value';
 import { SecretOnce } from './secret-once';
 import { ssoProblem } from './sso-settings-text';
@@ -38,11 +40,17 @@ const MAX_NAME = 200;
  * and forgotten on "Done", on the next change and when the page is left; the list only ever has
  * its prefix. **Revoke** asks first. The connections come from the `sso` routes, so the page needs
  * both features.
+ *
+ * Step 9 of the redesign (spec §7.8): a panel per connection with its base URL and its tokens;
+ * **New token** opens a dialog for that connection, which then holds the token once (and opens
+ * again on the outcome if it was closed while the server answered); **Revoke** asks in the page's
+ * dialog instead of the browser's `confirm()`, with the same question.
  */
 @Component({
   selector: 'q-scim-page',
-  imports: [CopyValue, DateTimePipe, LabelPipe, SecretOnce],
+  imports: [CopyValue, DateTimePipe, Icon, LabelPipe, SecretOnce],
   templateUrl: './scim.page.html',
+  styleUrl: './scim.page.css',
 })
 export class ScimPage {
   private readonly ee = inject(EeApi);
@@ -71,12 +79,23 @@ export class ScimPage {
   protected readonly busy = signal(false);
   /** The token the server just created, until "Done", the next change or leaving the page. */
   protected readonly secret = signal<string | null>(null);
-  /** The name typed for a new token, per connection. */
-  protected readonly names = signal<Readonly<Record<string, string>>>({});
-  protected readonly nameErrors = signal<Readonly<Record<string, string>>>({});
-  /** The optional expiry date (`YYYY-MM-DD`, UTC end of day), per connection. */
-  protected readonly expiries = signal<Readonly<Record<string, string>>>({});
+  /** The connection "New token" was opened for. */
+  private readonly creatingFor = signal<SsoConnection | null>(null);
+  protected readonly createTitle = computed(() => {
+    const connection = this.creatingFor();
+    return connection ? this.newTokenTitle(connection) : '';
+  });
+  protected readonly name = signal('');
+  protected readonly nameError = signal<string | null>(null);
+  /** The optional expiry date (`YYYY-MM-DD`, UTC end of day). */
+  protected readonly expiry = signal('');
+  /** A refusal of the dialog's form that names no field, shown in the dialog. */
+  protected readonly createError = signal<string | null>(null);
+  /** The token Revoke asks about, with the question; null while the dialog is closed. */
+  protected readonly pendingRevoke = signal<{ token: ScimToken; question: string } | null>(null);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
+  private readonly createDialog = viewChild<ElementRef<HTMLDialogElement>>('createDialog');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
 
   constructor() {
     effect(() => {
@@ -118,68 +137,119 @@ export class ScimPage {
     return this.tokens().filter((t) => t.connectionId === connection.id);
   }
 
-  protected setName(connection: SsoConnection, event: Event): void {
-    const value = inputValue(event);
-    this.names.update((n) => ({ ...n, [connection.id]: value }));
-    this.nameErrors.update((e) => ({ ...e, [connection.id]: '' }));
+  protected newTokenTitle(connection: SsoConnection): string {
+    return $localize`:@@scim.newTokenFor:New token for ${connection.name}:name:`;
   }
 
-  protected setExpiry(connection: SsoConnection, event: Event): void {
-    const value = inputValue(event);
-    this.expiries.update((e) => ({ ...e, [connection.id]: value }));
+  /** Opens "New token" for the connection on an empty form, with no token and no message. */
+  protected openCreate(connection: SsoConnection): void {
+    this.creatingFor.set(connection);
+    this.secret.set(null);
+    this.name.set('');
+    this.expiry.set('');
+    this.nameError.set(null);
+    this.createError.set(null);
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
   }
 
-  protected nameError(connection: SsoConnection): string | null {
-    return this.nameErrors()[connection.id] || null;
+  /** Cancel, or Done after the token: the dialog closes, and its close forgets the token. */
+  protected closeCreate(): void {
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+    this.forget();
   }
 
-  protected async create(connection: SsoConnection, event: Event): Promise<void> {
+  protected setName(event: Event): void {
+    this.name.set(inputValue(event));
+    this.nameError.set(null);
+  }
+
+  protected setExpiry(event: Event): void {
+    this.expiry.set(inputValue(event));
+  }
+
+  protected async create(event: Event): Promise<void> {
     event.preventDefault();
-    if (this.busy()) return;
-    const name = (this.names()[connection.id] ?? '').trim();
+    const connection = this.creatingFor();
+    if (!connection || this.busy()) return;
+    const name = this.name().trim();
     if (name === '' || name.length > MAX_NAME) {
-      this.nameErrors.update((e) => ({
-        ...e,
-        [connection.id]: $localize`:@@scim.nameInvalid:Give the token a name of 1 to 200 characters, for example the identity provider it is for.`,
-      }));
-      this.focus(`scim-name-${connection.id}`);
+      this.nameError.set(
+        $localize`:@@scim.nameInvalid:Give the token a name of 1 to 200 characters, for example the identity provider it is for.`,
+      );
+      this.focus('scim-token-name');
       return;
     }
-    const expiry = this.expiries()[connection.id] ?? '';
-    await this.run(async () => {
-      try {
-        const created = await ok(
-          this.ee.client.POST('/api/v0/ee/scim/tokens', {
-            body: {
-              connectionId: connection.id,
-              name,
-              expiresAt: /^\d{4}-\d{2}-\d{2}$/.test(expiry) ? `${expiry}T23:59:59Z` : null,
-            },
-          }),
-        );
-        const { token, ...view } = created;
-        this.tokens.update((all) => [...all, view]);
-        this.names.update((n) => ({ ...n, [connection.id]: '' }));
-        this.expiries.update((e) => ({ ...e, [connection.id]: '' }));
-        this.secret.set(token);
-        this.announcement.set(
-          $localize`:@@scim.created:Token ${view.name}:name: created for ${connection.name}:connection:.`,
-        );
-      } catch (err) {
-        if (!(err instanceof ApiError) || err.status !== 422) throw err;
-        this.nameErrors.update((e) => ({
-          ...e,
-          [connection.id]: $localize`:@@scim.createInvalid:Check the name, and give an expiry date in the future or none.`,
-        }));
-        this.focus(`scim-name-${connection.id}`);
-      }
-    });
+    const expiry = this.expiry();
+    this.createError.set(null);
+    await this.run(
+      async () => {
+        try {
+          const created = await ok(
+            this.ee.client.POST('/api/v0/ee/scim/tokens', {
+              body: {
+                connectionId: connection.id,
+                name,
+                expiresAt: /^\d{4}-\d{2}-\d{2}$/.test(expiry) ? `${expiry}T23:59:59Z` : null,
+              },
+            }),
+          );
+          const { token, ...view } = created;
+          this.tokens.update((all) => [...all, view]);
+          this.name.set('');
+          this.expiry.set('');
+          this.secret.set(token);
+          this.announcement.set(
+            $localize`:@@scim.created:Token ${view.name}:name: created for ${connection.name}:connection:.`,
+          );
+        } catch (err) {
+          if (!(err instanceof ApiError) || err.status !== 422) throw err;
+          this.nameError.set(
+            $localize`:@@scim.createInvalid:Check the name, and give an expiry date in the future or none.`,
+          );
+          this.focus('scim-token-name');
+        }
+      },
+      (err) => this.createError.set(ssoProblem(err)),
+    );
+    // Closed while the server answered (Escape, Cancel): the dialog opens again on the outcome, or
+    // a token it made could never be copied.
+    const outcome = this.secret() ?? this.createError() ?? this.nameError();
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog && outcome !== null) openModal(dialog);
   }
 
-  protected async revoke(token: ScimToken): Promise<void> {
+  /** Asks in the page's dialog; nothing is sent until its Revoke. */
+  protected revoke(token: ScimToken): void {
     if (this.busy()) return;
-    const question = $localize`:@@scim.confirmRevoke:Revoke the SCIM token ${token.name}:name:? The identity provider can no longer provision people with it.`;
-    if (!window.confirm(question)) return;
+    this.pendingRevoke.set({
+      token,
+      question: $localize`:@@scim.confirmRevoke:Revoke the SCIM token ${token.name}:name:? The identity provider can no longer provision people with it.`,
+    });
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
+  }
+
+  protected async confirmRevoke(): Promise<void> {
+    const pending = this.pendingRevoke();
+    if (!pending) return;
+    // Cleared first: the dialog's close event then finds nothing to cancel.
+    this.pendingRevoke.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+    await this.applyRevoke(pending.token);
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing is revoked. */
+  protected cancelRevoke(): void {
+    this.pendingRevoke.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  private async applyRevoke(token: ScimToken): Promise<void> {
+    if (this.busy()) return;
     await this.run(async () => {
       await done(
         this.ee.client.DELETE('/api/v0/ee/scim/tokens/{id}', {
@@ -204,7 +274,8 @@ export class ScimPage {
     afterNextRender(() => this.document.getElementById(id)?.focus(), { injector: this.injector });
   }
 
-  private async run(action: () => Promise<void>): Promise<void> {
+  /** Runs one change; a refusal goes to `onError` when given (the dialog), else to the page. */
+  private async run(action: () => Promise<void>, onError?: (err: unknown) => void): Promise<void> {
     this.busy.set(true);
     this.error.set(null);
     this.announcement.set(null);
@@ -212,8 +283,12 @@ export class ScimPage {
     try {
       await action();
     } catch (err) {
-      this.error.set(ssoProblem(err));
-      keepFocus(this.injector, this.document, () => this.heading().nativeElement);
+      if (onError) {
+        onError(err);
+      } else {
+        this.error.set(ssoProblem(err));
+        keepFocus(this.injector, this.document, () => this.heading().nativeElement);
+      }
     } finally {
       this.busy.set(false);
     }

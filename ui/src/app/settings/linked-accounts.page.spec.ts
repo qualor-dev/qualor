@@ -92,6 +92,24 @@ function row(root: HTMLElement, id: string): HTMLElement {
   return root.querySelector<HTMLElement>(`tr[data-key="${id}"]`)!;
 }
 
+/**
+ * Answers the page's confirmation dialog (step 9: it replaces the browser's `confirm()`) with
+ * the button `choice`, and returns the question it asked.
+ */
+async function answer(
+  fixture: { whenStable(): Promise<unknown> },
+  root: HTMLElement,
+  choice: string,
+): Promise<string> {
+  const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+  expect(ask.open).toBe(true);
+  const question = ask.querySelector('#confirm-text')?.textContent?.trim() ?? '';
+  button(ask, choice)!.click();
+  await settle(fixture);
+  expect(ask.open).toBe(false);
+  return question;
+}
+
 describe('LinkedAccountsPage (sso-scim.md §18)', () => {
   it('lists your identities and offers Link for each connection you have none on', async () => {
     setup();
@@ -103,6 +121,17 @@ describe('LinkedAccountsPage (sso-scim.md §18)', () => {
     const links = [...root.querySelectorAll<HTMLButtonElement>('[data-test^=link-]')];
     expect(links.map((b) => b.getAttribute('data-test'))).toEqual([`link-${C2}`]);
     expect(links[0]!.textContent).toContain('Partner SAML');
+  });
+
+  it('shows your identities in a panel, and the connections to link in another', async () => {
+    setup();
+    const { root } = await render();
+    const panels = [...root.querySelectorAll<HTMLElement>('section.card.panel')];
+    const title = (panel: HTMLElement | undefined) =>
+      root.querySelector(`#${panel?.getAttribute('aria-labelledby')}`)?.textContent?.trim();
+    expect(panels.map(title)).toEqual(['Your accounts', 'Link another account']);
+    expect(panels[0]?.querySelector(`tr[data-key="${I1}"]`)).not.toBeNull();
+    expect(panels[1]?.querySelector(`[data-test=link-${C2}]`)).not.toBeNull();
   });
 
   it('starts a link with POST and follows the answered address', async () => {
@@ -135,18 +164,19 @@ describe('LinkedAccountsPage (sso-scim.md §18)', () => {
   it('unlinks after a confirmation, and sends nothing without one', async () => {
     const { server } = setup();
     server.on('DELETE', `${IDENTITIES}/${I1}`, { status: 204 });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
     button(row(root, I1), 'Unlink')!.click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(await answer(fixture, root, 'Cancel')).toBe(
       'Unlink Acme SSO? You can no longer sign in with it until you link it again.',
     );
     expect(server.requestsTo('DELETE', `${IDENTITIES}/${I1}`)).toHaveLength(0);
-    confirm.mockReturnValue(true);
     server.on('GET', IDENTITIES, { body: [] });
     button(row(root, I1), 'Unlink')!.click();
     await settle(fixture);
+    await answer(fixture, root, 'Unlink');
+    expect(confirm).not.toHaveBeenCalled();
     expect(server.requestsTo('DELETE', `${IDENTITIES}/${I1}`)).toHaveLength(1);
     expect(root.querySelector(`tr[data-key="${I1}"]`)).toBeNull();
     expect(root.querySelector('[role="status"]')?.textContent).toContain('Acme SSO unlinked.');
@@ -161,15 +191,14 @@ describe('LinkedAccountsPage (sso-scim.md §18)', () => {
       status: 409,
       body: problem(409, 'LAST_SIGN_IN_METHOD'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     button(row(root, I1), 'Unlink')!.click();
     await settle(fixture);
+    await answer(fixture, root, 'Unlink');
     expect(root.querySelector('[role="alert"]')?.textContent).toContain(
       'This is your only way to sign in. Ask an administrator to set a password first.',
     );
     expect(row(root, I1)).not.toBeNull();
-    confirm.mockRestore();
   });
 
   it('offers no Unlink for an identity your identity provider provisions (SCIM)', async () => {
@@ -187,14 +216,13 @@ describe('LinkedAccountsPage (sso-scim.md §18)', () => {
       status: 409,
       body: problem(409, 'SCIM_MANAGED_IDENTITY'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     button(row(root, I1), 'Unlink')!.click();
     await settle(fixture);
+    await answer(fixture, root, 'Unlink');
     expect(root.querySelector('[role="alert"]')?.textContent).toContain(
       'Your identity provider manages this link; only an administrator can remove it.',
     );
-    confirm.mockRestore();
   });
 
   it('shows why a link failed (?sso_error=), never the raw value', async () => {

@@ -5,20 +5,6 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.connection-name {
-  font-size: 15px;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-.connection-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-.connection-meta code,
 .certificates code {
   overflow-wrap: anywhere;
 }
@@ -66,15 +52,6 @@
 .setting-field .field > :is(input, textarea) {
   width: 100%;
   max-width: 44rem;
-}
-/* A long option wraps beside its box, not under it. */
-.setting-field label.row {
-  flex-wrap: nowrap;
-  align-items: flex-start;
-}
-.setting-field label.row > input {
-  flex: none;
-  margin-top: 3px;
 }
 .sso-claims {
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));

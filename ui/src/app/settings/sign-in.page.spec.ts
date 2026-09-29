@@ -95,6 +95,32 @@ async function save(fixture: { whenStable(): Promise<unknown> }, root: HTMLEleme
   await settle(fixture);
 }
 
+function button(root: ParentNode, text: string): HTMLButtonElement {
+  return [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!;
+}
+
+function asking(root: HTMLElement): boolean {
+  return root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')?.open === true;
+}
+
+/**
+ * Answers the page's confirmation dialog (step 9: it replaces the browser's `confirm()`) with
+ * the button `choice`, and returns the question it asked.
+ */
+async function answer(
+  fixture: { whenStable(): Promise<unknown> },
+  root: HTMLElement,
+  choice: string,
+): Promise<string> {
+  const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+  expect(ask.open).toBe(true);
+  const question = ask.querySelector('#confirm-text')?.textContent?.trim() ?? '';
+  button(ask, choice).click();
+  await settle(fixture);
+  expect(ask.open).toBe(false);
+  return question;
+}
+
 describe('SignInSettingsPage (sso-scim.md §10, §18)', () => {
   it('offers the two options and explains the lock-out rules', async () => {
     setup();
@@ -105,6 +131,20 @@ describe('SignInSettingsPage (sso-scim.md §10, §18)', () => {
     expect(rules).toContain('API and CI tokens keep working');
     expect(rules).toContain('cannot be deactivated or lose the instance administrator role');
     expect(rules).toContain('QUALOR_FORCE_PASSWORD_SIGN_IN=true');
+  });
+
+  it('names the choice and the picker as groups, each in its setting row', async () => {
+    setup();
+    const { root } = await render();
+    const name = (el: Element | null) =>
+      root.querySelector(`#${el?.getAttribute('aria-labelledby')}`)?.textContent?.trim();
+    const policy = root.querySelector('[role="radiogroup"]');
+    expect(name(policy)).toBe('Password sign-in');
+    expect(policy?.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+    const picker = root.querySelector('#sign-in-picker');
+    expect(picker?.getAttribute('role')).toBe('group');
+    expect(name(picker)).toBe('Break-glass administrators');
+    expect(root.querySelectorAll('form .setting-row')).toHaveLength(2);
   });
 
   it('offers only instance admins, and disables those without a password', async () => {
@@ -124,15 +164,18 @@ describe('SignInSettingsPage (sso-scim.md §10, §18)', () => {
     server.on('PUT', SETTINGS, {
       body: settings({ passwordSignIn: 'break_glass_only', breakGlassUserIds: [ME, ROOT] }),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
     await check(fixture, root.querySelector<HTMLInputElement>('#sign-in-limited')!);
     await check(fixture, box(root, ME));
     await check(fixture, box(root, ROOT));
     await save(fixture, root);
-    expect(confirm).toHaveBeenCalledWith(
+    // Nothing is sent before the page's dialog is answered.
+    expect(server.requestsTo('PUT', SETTINGS)).toHaveLength(0);
+    expect(await answer(fixture, root, 'Limit password sign-in')).toBe(
       'Limit password sign-in? Only these administrators will be able to sign in with a password: alice, root. Everyone else signs in with single sign-on.',
     );
+    expect(confirm).not.toHaveBeenCalled();
     expect(server.requestsTo('PUT', SETTINGS).map((r) => r.body)).toEqual([
       { passwordSignIn: 'break_glass_only', breakGlassUserIds: [ME, ROOT] },
     ]);
@@ -145,18 +188,16 @@ describe('SignInSettingsPage (sso-scim.md §10, §18)', () => {
   it('saves nothing when the limit is not confirmed, and asks nothing for everyone', async () => {
     const server = setup();
     server.on('PUT', SETTINGS, { body: settings() });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, root } = await render();
     await check(fixture, root.querySelector<HTMLInputElement>('#sign-in-limited')!);
     await check(fixture, box(root, ROOT));
     await save(fixture, root);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    await answer(fixture, root, 'Cancel');
     expect(server.requestsTo('PUT', SETTINGS)).toHaveLength(0);
     await check(fixture, root.querySelector<HTMLInputElement>('#sign-in-everyone')!);
     await save(fixture, root);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(asking(root)).toBe(false);
     expect(server.requestsTo('PUT', SETTINGS)).toHaveLength(1);
-    confirm.mockRestore();
   });
 
   it('refuses more than 10 break-glass administrators on the picker, sending nothing', async () => {
@@ -164,17 +205,15 @@ describe('SignInSettingsPage (sso-scim.md §10, §18)', () => {
       user(`0190a6c2-0000-7000-8000-0000000001${String(i).padStart(2, '0')}`, `admin${i}`),
     );
     const server = setup({ users: admins });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     for (const a of admins) await check(fixture, box(root, a.id));
     await save(fixture, root);
     expect(server.requestsTo('PUT', SETTINGS)).toHaveLength(0);
-    expect(confirm).not.toHaveBeenCalled();
+    expect(asking(root)).toBe(false);
     expect(root.querySelector('#sign-in-picker')?.getAttribute('aria-invalid')).toBe('true');
     expect(root.querySelector('#sign-in-picker-error')?.textContent).toContain(
       'Pick at most 10 break-glass administrators.',
     );
-    confirm.mockRestore();
   });
 
   it('warns the saving admin who is not listed that they will sign in with SSO', async () => {
@@ -199,11 +238,10 @@ describe('SignInSettingsPage (sso-scim.md §10, §18)', () => {
         { path: 'body.passwordSignIn', message: 'Enable a connection' },
       ]),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     await check(fixture, root.querySelector<HTMLInputElement>('#sign-in-limited')!);
     await save(fixture, root);
-    confirm.mockRestore();
+    await answer(fixture, root, 'Limit password sign-in');
     expect(root.querySelector('#sign-in-picker')?.getAttribute('aria-invalid')).toBe('true');
     expect(root.querySelector('#sign-in-picker-error')?.textContent).toContain(
       'List at least one active instance administrator with a password.',

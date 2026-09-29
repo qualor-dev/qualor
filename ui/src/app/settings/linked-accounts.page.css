@@ -1,0 +1,26 @@
+/* Linked accounts (spec §7.8): your accounts in a panel, the connections to link in another. */
+.linked-panel {
+  margin-bottom: 16px;
+}
+.linked-panel .panel-head {
+  padding-bottom: 4px;
+}
+.linked-panel h3 {
+  margin: 0;
+}
+.linked-action {
+  text-align: right;
+}
+.linked-action .hint {
+  display: inline-block;
+  max-width: 18rem;
+  text-align: left;
+}
+.link-body {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+}
+.link-body > p {
+  margin: 0;
+}

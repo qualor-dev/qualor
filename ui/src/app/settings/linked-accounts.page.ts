@@ -21,6 +21,7 @@ import { ssoErrorText } from '../auth/sso-text';
 import { LabelPipe } from '../i18n/label.pipe';
 import { SystemInfo } from '../shell/system-info';
 import { DateTimePipe } from '../shared/date-time.pipe';
+import { closeModal, openModal } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 
 /**
@@ -65,11 +66,16 @@ function scimManagedText(): string {
  * to unlink your only way to sign in (409 `LAST_SIGN_IN_METHOD`). A failed link comes back as
  * `?sso_error=<code>`, shown as its fixed message. Nothing is asked of the enterprise API while
  * `sso` is inactive.
+ *
+ * Step 9 of the redesign (spec §7.8): your accounts as a table in a panel, the connections to link
+ * in another; **Unlink** asks in the page's dialog instead of the browser's `confirm()`, with the
+ * same question.
  */
 @Component({
   selector: 'q-linked-accounts-page',
   imports: [DateTimePipe, LabelPipe],
   templateUrl: './linked-accounts.page.html',
+  styleUrl: './linked-accounts.page.css',
 })
 export class LinkedAccountsPage {
   private readonly ee = inject(EeApi);
@@ -104,7 +110,13 @@ export class LinkedAccountsPage {
   protected readonly error = signal<string | null>(null);
   protected readonly announcement = signal<string | null>(null);
   protected readonly busy = signal(false);
+  /** The identity Unlink asks about, with the question; null while the dialog is closed. */
+  protected readonly pendingUnlink = signal<{
+    identity: LinkedIdentity;
+    question: string;
+  } | null>(null);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
 
   constructor() {
     effect(() => {
@@ -146,10 +158,40 @@ export class LinkedAccountsPage {
     });
   }
 
-  protected async unlink(identity: LinkedIdentity): Promise<void> {
+  /** Asks in the page's dialog; nothing is sent until its Unlink. */
+  protected unlink(identity: LinkedIdentity): void {
     if (this.busy()) return;
-    const question = $localize`:@@linkedAccounts.confirmUnlink:Unlink ${identity.connectionName}:connection:? You can no longer sign in with it until you link it again.`;
-    if (!window.confirm(question)) return;
+    this.pendingUnlink.set({
+      identity,
+      question: $localize`:@@linkedAccounts.confirmUnlink:Unlink ${identity.connectionName}:connection:? You can no longer sign in with it until you link it again.`,
+    });
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) openModal(dialog);
+  }
+
+  protected async confirmUnlink(): Promise<void> {
+    const pending = this.pendingUnlink();
+    if (!pending) return;
+    // Cleared first: the dialog's close event then finds nothing to cancel.
+    this.pendingUnlink.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+    await this.applyUnlink(pending.identity);
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing is unlinked. */
+  protected cancelUnlink(): void {
+    this.pendingUnlink.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  protected unlinkLabel(identity: LinkedIdentity): string {
+    return $localize`:@@linkedAccounts.unlinkNamed:Unlink ${identity.connectionName}:connection:`;
+  }
+
+  private async applyUnlink(identity: LinkedIdentity): Promise<void> {
+    if (this.busy()) return;
     await this.run(async () => {
       await done(
         this.ee.client.DELETE('/api/v0/ee/sso/me/identities/{identityId}', {
