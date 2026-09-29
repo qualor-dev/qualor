@@ -1,16 +1,32 @@
 @if (errorMessage(); as message) {
-  <h1 i18n="@@project.unavailable">Project unavailable</h1>
-  <p class="alert alert-error" role="alert">{{ message }}</p>
+  <q-page-header [crumbs]="crumbs" [compact]="true">
+    <h1 pageTitle i18n="@@project.unavailable">Project unavailable</h1>
+  </q-page-header>
+  <div class="page-body">
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  </div>
 } @else if (current(); as p) {
-  <header class="hero-band">
-    <div class="page-header">
-      <div>
-        <span class="eyebrow" i18n="@@project.eyebrow">Project</span>
-        <h1>{{ p.name }}</h1>
-        <code>{{ p.key }}</code>
-      </div>
+  <q-page-header [crumbs]="crumbs">
+    <div pageTitle class="page-title">
+      <h1>{{ p.name }}</h1>
+      @if (p.mainBranch; as main) {
+        <q-gate-badge [status]="main.gateStatus" />
+      }
     </div>
-    <nav class="tabs" aria-label="Project" i18n-aria-label="@@project.tabs">
+    <p pageMeta class="page-meta">
+      <code>{{ p.key }}</code>
+      <a class="branch-chip" routerLink="branches"
+        ><q-icon name="branch" />{{ p.mainBranchName }}</a
+      >
+      @if (p.mainBranch?.lastAnalyzedAt; as at) {
+        <span
+          ><q-icon name="clock" /><ng-container i18n="@@project.analyzedAt"
+            >Analyzed {{ at | dateTime }}</ng-container
+          ></span
+        >
+      }
+    </p>
+    <nav pageTabs class="tabs" aria-label="Project" i18n-aria-label="@@project.tabs">
       <a
         routerLink="."
         routerLinkActive="active"
@@ -26,13 +42,12 @@
         i18n="@@project.tab.branches"
         >Branches and merge requests</a
       >
-      <a
-        routerLink="issues"
-        routerLinkActive="active"
-        ariaCurrentWhenActive="page"
-        i18n="@@project.tab.issues"
-        >Issues</a
-      >
+      <a routerLink="issues" routerLinkActive="active" ariaCurrentWhenActive="page"
+        ><ng-container i18n="@@project.tab.issues">Issues</ng-container>
+        @if (issueCount() !== null) {
+          <span class="tab-count" aria-hidden="true">{{ issueCount() }}</span>
+        }
+      </a>
       @if (showAccess()) {
         <a
           routerLink="access"
@@ -43,6 +58,8 @@
         >
       }
     </nav>
-  </header>
-  <router-outlet />
+  </q-page-header>
+  <div class="page-body">
+    <router-outlet />
+  </div>
 }

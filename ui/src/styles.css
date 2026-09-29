@@ -1469,6 +1469,95 @@ details[open] > summary {
 }
 
 /*
+ * The ink page band (q-page-header, spec §4): what pages project into it. Global, because the
+ * projected elements belong to the page's template, not to the band's.
+ */
+.page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: 10px 0 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.page-meta code {
+  color: var(--ink-text);
+  font-size: 12.5px;
+}
+.page-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.page-meta .icon {
+  width: 14px;
+  height: 14px;
+}
+.branch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  color: #fff !important;
+  font: 600 12.5px var(--mono);
+  text-decoration: none;
+}
+.branch-chip:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+.page-band .tabs {
+  gap: 28px;
+  margin: 22px 0 0;
+  border-bottom: 0;
+}
+.page-band .tabs a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0 13px;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-muted);
+}
+.page-band .tabs a:hover,
+.page-band .tabs a.active {
+  color: #fff;
+}
+.page-band .tabs a.active {
+  border-bottom-color: var(--cobalt-bright);
+}
+.tab-count {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  color: var(--ink-text);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 18px;
+}
+.page-band .badge {
+  font-size: 12.5px;
+  padding: 3px 10px 3px 8px;
+}
+.page-band .badge-failed {
+  background: rgb(214 69 58 / 0.18);
+  color: #ffb4ab;
+}
+.page-band .badge-passed {
+  background: rgb(95 211 156 / 0.16);
+  color: #8fe3bb;
+}
+.page-band .badge-none,
+.page-band .badge-error {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--ink-text);
+}
+
+/*
  * The pages outside the shell (sign-in, change password, server unavailable): the site's ink panel
  * with an illustration next to the form.
  */

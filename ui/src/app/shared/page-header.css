@@ -1,0 +1,84 @@
+:host {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--ink);
+  color: var(--ink-text);
+}
+/* The brand's halftone circle and scan lines at the right, faded into ink toward the title. */
+:host::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, var(--ink) 38%, rgb(10 27 51 / 0.72) 62%, rgb(10 27 51 / 0.15)),
+    url('/art/band.webp') right 38% / 58% auto no-repeat;
+}
+.page-band-inner {
+  max-width: calc(var(--content-max) + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 26px var(--gutter) 0;
+}
+:host(.compact) .page-band-inner {
+  padding-bottom: 26px;
+}
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.crumbs li + li::before {
+  content: '/';
+  margin-right: 8px;
+  color: var(--ink-muted);
+  opacity: 0.6;
+}
+.crumbs a {
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+.crumbs a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+.page-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.page-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+}
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+:host ::ng-deep h1 {
+  margin: 0;
+  color: #fff;
+  font-size: 30px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+:host ::ng-deep :focus-visible {
+  outline-color: var(--cobalt-bright);
+}
+@media (max-width: 40rem) {
+  :host ::ng-deep h1 {
+    font-size: 24px;
+  }
+}
