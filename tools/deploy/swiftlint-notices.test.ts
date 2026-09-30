@@ -33,6 +33,21 @@ export const SWIFTLINT_COMPONENTS = [
 const read = (f: string) => readFileSync(`deploy/scanner/licenses/${f}`, 'utf8');
 
 describe('SwiftLint licence files (plan 8F)', () => {
+  it('were checked against the pinned release: a bump fails here until they are re-checked', () => {
+    // On a bump: re-check SwiftLint's Package.resolved and the static SDK's sbom.spdx.json,
+    // regenerate both files, then move the version in their first lines.
+    const pinned = /^SWIFTLINT_VERSION=(.+)$/m.exec(
+      readFileSync('tools/analyzers/install.sh', 'utf8'),
+    )?.[1];
+    expect(pinned).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(read('SWIFTLINT-LICENSE.txt').split('\n')[0]).toBe(
+      `SwiftLint ${pinned}, swiftlint_linux_amd64.zip and swiftlint_linux_arm64.zip: LICENSE, then LICENSE.mimalloc.`,
+    );
+    expect(read('SWIFTLINT-THIRD-PARTY-NOTICES.txt').split('\n')[0]).toBe(
+      `Third-party software compiled into swiftlint-static (SwiftLint ${pinned}, /opt/qualor/bin/swiftlint of`,
+    );
+  });
+
   it("ship SwiftLint's own MIT licence and mimalloc's, as the release zip has them", () => {
     const text = read('SWIFTLINT-LICENSE.txt');
     expect(text).toContain('Copyright (c) 2025 The SwiftLint Contributors.');
@@ -56,8 +71,11 @@ describe('SwiftLint licence files (plan 8F)', () => {
 
   it('say where each text comes from: a tag or commit, never a moving branch (ruling F20)', () => {
     const text = read('SWIFTLINT-THIRD-PARTY-NOTICES.txt');
-    const sources = [...text.matchAll(/^={78}\n.+\nSource: (\S+)/gm)].map((m) => m[1]);
-    expect(sources).toHaveLength(SWIFTLINT_COMPONENTS.length);
+    const headed = [...text.matchAll(/^={78}\n.+\nSource: (\S+)/gm)].map((m) => m[1]);
+    expect(headed).toHaveLength(SWIFTLINT_COMPONENTS.length);
+    // Every Source line, the sub-sections' included (libyaml, swift-foundation's NOTICE, ICU).
+    const sources = [...text.matchAll(/^Source: (\S+)/gm)].map((m) => m[1]);
+    expect(sources.length).toBeGreaterThan(headed.length);
     for (const url of sources) {
       expect(url).toMatch(/^https:\/\//);
       expect(url).not.toMatch(/\/(main|master|HEAD)\/|[?&]h=(main|master)\b/);

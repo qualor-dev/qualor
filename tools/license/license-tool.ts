@@ -388,9 +388,14 @@ export const ALLOWED_TEST_KEYS: readonly AllowedKey[] = Object.freeze([
  * unless it is listed in LARGE_FILES_NOT_SCANNED with a reason; the scan's test fails otherwise.
  */
 export const SCAN_SIZE_LIMIT = 2 * 1024 * 1024;
-export const LARGE_FILES_NOT_SCANNED: readonly { path: string; reason: string }[] = Object.freeze(
-  [],
-);
+export const LARGE_FILES_NOT_SCANNED: readonly { path: string; reason: string }[] = Object.freeze([
+  {
+    path: 'cli/grammars/tree-sitter-swift.wasm',
+    reason:
+      "tree-sitter-swift 0.7.3's release WebAssembly module (3.8 MB binary), pinned by its " +
+      'SHA-256 in cli/src/parse/vendored.ts and checked by a test (plan 8F)',
+  },
+]);
 
 /**
  * Task 10 review M-3: file names that hold private keys by convention. No tracked file may have
