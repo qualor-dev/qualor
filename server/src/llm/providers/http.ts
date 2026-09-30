@@ -38,7 +38,9 @@ export function retryAfterSeconds(
  * One JSON POST to `<baseUrl><path>` through the outbound core (llm.md §4: the base URL checked
  * first, every resolved address checked and pinned, no proxy, no redirect followed, at most 1 MiB
  * read, the whole exchange within `timeoutSeconds`): the parsed JSON of a 2xx, else an LlmError.
- * The provider's error body is never read.
+ * An error body is read only to classify (llm.md §14): `outputLimitField`, the output limit field
+ * the request carried, is matched against the error's `param`; nothing of the body is shown or
+ * logged.
  */
 export async function postJson(
   config: ProviderConfig,
@@ -46,6 +48,7 @@ export async function postJson(
   headers: Record<string, string>,
   body: unknown,
   http: ProviderHttpOptions,
+  outputLimitField?: ProviderConfig['maxTokensField'],
 ): Promise<unknown> {
   const problem = llmBaseUrlProblem(config.baseUrl, http.internalHosts);
   if (problem) throw new LlmError('url_not_allowed', problem);
@@ -118,6 +121,14 @@ export async function postJson(
   }
   if (status >= 500) throw new LlmError('unavailable', UNREACHABLE, status, retryAfter);
   if (status < 200 || status >= 300) {
+    if (outputLimitField !== undefined && refusedParam(result.body) === outputLimitField) {
+      const other = outputLimitField === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
+      throw new LlmError(
+        'rejected',
+        `The model does not accept ${outputLimitField}; set the output limit field to ${other} in the AI assistant settings`,
+        status,
+      );
+    }
     throw new LlmError(
       'rejected',
       `The provider refused the request (HTTP ${status}); check the base URL and model`,
@@ -128,5 +139,16 @@ export async function postJson(
     return JSON.parse(result.body.toString('utf8')) as unknown;
   } catch {
     throw new LlmError('bad_answer', NOT_UNDERSTOOD, status);
+  }
+}
+
+/** The `error.param` of an OpenAI-style error body, when it is a string; null otherwise. */
+function refusedParam(body: Buffer): string | null {
+  try {
+    const parsed = JSON.parse(body.toString('utf8')) as { error?: { param?: unknown } } | null;
+    const param = parsed?.error?.param;
+    return typeof param === 'string' ? param : null;
+  } catch {
+    return null;
   }
 }

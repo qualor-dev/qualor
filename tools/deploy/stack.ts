@@ -234,6 +234,16 @@ export async function startStack(
   return { ...stack, upMs: Date.now() - started };
 }
 
+/**
+ * The containers' states and the last `tail` log lines of each, for a run that failed while the
+ * stack is still up (a server that stopped answering leaves nothing else behind in CI).
+ */
+export function stackDiagnostics(stack: Pick<Stack, 'name' | 'envFile'>, tail = 150): string {
+  const ps = compose(stack, ['ps', '--all', '--format', '{{.Service}}: {{.Status}}']);
+  const logs = compose(stack, ['logs', '--no-color', '--tail', String(tail)]);
+  return `containers:\n${ps.stdout}${ps.stderr}\nlast ${tail} log lines of each:\n${logs.stdout}${logs.stderr}`;
+}
+
 /** Removes the stack's containers, network and volumes, and its env file. */
 export function stopStack(stack: Pick<Stack, 'name' | 'envFile' | 'dir'>): void {
   liveStacks.delete(stack.name);

@@ -17,7 +17,14 @@ import {
   type BranchSummary,
   type ScanTarget,
 } from './scans';
-import { Api, startStack, stopStack, stopStacksOnSignal, type RunResult } from './stack';
+import {
+  Api,
+  stackDiagnostics,
+  startStack,
+  stopStack,
+  stopStacksOnSignal,
+  type RunResult,
+} from './stack';
 import {
   createWorkspace,
   removeWorkspace,
@@ -74,6 +81,10 @@ async function withQualorProject(
     } finally {
       await logBranches(api, project.id);
     }
+  } catch (err) {
+    // Before the teardown below removes the only evidence of why the stack failed.
+    process.stderr.write(stackDiagnostics(stack));
+    throw err;
   } finally {
     removeWorkspace(ws);
     stopStack(stack);

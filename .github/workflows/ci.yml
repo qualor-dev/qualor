@@ -263,3 +263,31 @@ jobs:
       # projects (a self-hosted runner may host some).
       - if: always()
         run: sh tools/deploy/teardown.sh
+  # Our own server (review.qualor.dev) analyses every push to main and every pull request from
+  # this repository; its GitHub App posts the check run. The released scanner matches the
+  # server's release (a scanner built from main may send what that server does not accept).
+  # --no-wait: the job passes once the report is accepted; the gate is the App's check run.
+  review:
+    needs: [test]
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: qualor/scanner:0.2.0
+      options: --user 1001
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # ESLint loads the workspace's own config and plugins.
+      - run: corepack pnpm install --frozen-lockfile
+        env: { COREPACK_HOME: /tmp/corepack, COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: coverage, path: coverage }
+      # The CLI reads the branch, pull request and target from the GitHub Actions environment.
+      - run: qualor scan --no-wait
+        env:
+          QUALOR_URL: ${{ vars.QUALOR_URL }}
+          QUALOR_TOKEN: ${{ secrets.QUALOR_TOKEN }}

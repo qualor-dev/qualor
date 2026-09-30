@@ -208,7 +208,7 @@
               [attr.aria-describedby]="
                 fieldError('url') ? 'ai-url-error ai-url-hint' : 'ai-url-hint'
               "
-              (input)="set('url', url, $event)"
+              (input)="setUrl($event)"
             />
             @if (fieldError('url'); as message) {
               <span id="ai-url-error" class="field-error" role="alert">{{ message }}</span>
@@ -346,9 +346,17 @@
               <label for="ai-max-tokens-field" i18n="@@ai.settings.maxTokensField"
                 >Output limit field</label
               >
+              <p id="ai-max-tokens-field-hint" i18n="@@ai.settings.maxTokensFieldHint">
+                OpenAI's current models need max_completion_tokens and refuse max_tokens; vLLM,
+                Ollama and most other servers want max_tokens.
+              </p>
             </div>
             <div class="setting-field">
-              <select id="ai-max-tokens-field" (change)="setMaxTokensField($event)">
+              <select
+                id="ai-max-tokens-field"
+                aria-describedby="ai-max-tokens-field-hint"
+                (change)="setMaxTokensField($event)"
+              >
                 <option
                   value="max_tokens"
                   [selected]="maxTokensField() === 'max_tokens'"
