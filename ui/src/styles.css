@@ -318,7 +318,6 @@ img {
   margin: 0;
 }
 .panel-sub {
-  margin-left: var(--space-2);
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 450;
