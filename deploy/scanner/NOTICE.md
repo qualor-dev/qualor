@@ -48,7 +48,7 @@ https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.15.1/ and
 https://repo1.maven.org/maven2/javax/annotation/jsr250-api/1.0/ (also
 https://github.com/Saxonica/Saxon-HE and https://github.com/mozilla/rhino).
 
-detekt's CLI is one shaded jar, `/opt/qualor/lib/detekt/detekt.jar` (detekt-cli 1.23.8), unmodified
+detekt's CLI is one shaded jar, `/opt/qualor/lib/detekt/detekt-cli.jar` (detekt-cli 1.23.8), unmodified
 and pinned by SHA-256 in `tools/analyzers/install.sh`. It bundles the Kotlin compiler 2.0.21 and
 its IntelliJ core; `DETEKT-THIRD-PARTY.txt` lists the libraries inside. They are Apache-2.0 except
 ASM, jline 3, picocontainer (BSD-3-Clause; its text is the upstream PicoContainer1 `LICENSE.txt`),

@@ -76,9 +76,9 @@ analyses compiled classes).
 - Eclipse Temurin JRE 17.0.20+8, for PMD, SpotBugs and detekt.
 - git, with `safe.directory '*'`, since CI runners check out as another user.
 - The pinned analyzers in `/opt/qualor/bin`: PMD 7.27.0, SpotBugs 4.10.4, OpenGrep 1.30.0,
-  Gitleaks 8.30.1, Trivy 0.74.0 and Ruff 0.16.9 (Python), and detekt 1.23.8 (Kotlin, Apache-2.0) in
-  `/opt/qualor/lib/detekt`, with a snapshot of Trivy's vulnerability
-  database (the scan never downloads one). No Semgrep or OpenGrep rules are bundled yet
+  Gitleaks 8.30.1, Trivy 0.74.0 and Ruff 0.16.9 (Python), with a snapshot of Trivy's
+  vulnerability database (the scan never downloads one); and detekt 1.23.8 (Kotlin, Apache-2.0)
+  in `/opt/qualor/lib/detekt`. No Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
 - Runs as the user `node` (uid 1000) in `/src`; about 3.0 GB. Every base image is pinned by
