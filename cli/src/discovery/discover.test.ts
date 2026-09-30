@@ -192,6 +192,30 @@ describe('discoverFiles', () => {
     },
   );
 
+  it.skipIf(process.platform === 'win32')(
+    'skips a directory whose name holds a line break with a warning, never silently (final review minor 1)',
+    () => {
+      const root = tmp();
+      const breaks = ['\n', '\r', '\u0085', '\u2028', '\u2029'];
+      writeTree(root, {
+        ...Object.fromEntries(breaks.map((b, i) => [`a${b}b${i}/c.swift`, 'let c = 1\n'])),
+        // A file name with a line break is still discovered (the analyzers decide on it).
+        'new\nline.swift': 'let n = 1\n',
+        'ok.swift': 'let o = 1\n',
+      });
+      const warnings = new Warnings();
+      const files = discoverFiles({ root, config: config(), warnings, log: silentLogger });
+      expect(files.map((f) => f.path)).toEqual(['new\nline.swift', 'ok.swift']);
+      expect(warnings.list()).toEqual([
+        {
+          code: 'PATH_UNSUPPORTED',
+          message: 'directories whose name contains a line break were skipped',
+          count: breaks.length,
+        },
+      ]);
+    },
+  );
+
   it('marks files of languages outside an explicit list as other', () => {
     const root = tmp();
     writeTree(root, { 'a.ts': 'x\n', 'B.java': 'class B {}\n' });

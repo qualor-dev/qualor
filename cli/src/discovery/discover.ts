@@ -58,6 +58,9 @@ interface PendingDir {
   layers: readonly IgnoreLayer[];
 }
 
+/** The line breaks a directory name may not hold (ruling F6's set). */
+const DIRECTORY_LINE_BREAK = /[\r\n\u0085\u2028\u2029]/;
+
 const byName = (a: Dirent, b: Dirent) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
 export function discoverFiles(o: DiscoverOptions): ScopeFile[] {
@@ -111,7 +114,17 @@ export function discoverFiles(o: DiscoverOptions): ScopeFile[] {
       }
       const abs = path.join(dir.abs, entry.name);
       if (entry.isDirectory()) {
-        if (!(useGitignore && isIgnored(layers, rel, true))) pending.push({ abs, rel, layers });
+        if (useGitignore && isIgnored(layers, rel, true)) continue;
+        // picomatch's `**` does not cross a line break, so every file below would be dropped
+        // silently; U+0085 too, as SwiftLint's file list would split on it (final review minor 1).
+        if (DIRECTORY_LINE_BREAK.test(entry.name)) {
+          warnings.add(
+            'PATH_UNSUPPORTED',
+            'directories whose name contains a line break were skipped',
+          );
+          continue;
+        }
+        pending.push({ abs, rel, layers });
         continue;
       }
       if (!entry.isFile()) continue;
