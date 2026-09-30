@@ -9,6 +9,8 @@ size, complexity, duplication and coverage.
 | JavaScript, TypeScript | **ESLint**, the project's own config and plugins | the repository has an ESLint config and its dependencies are installed |
 | JavaScript, TypeScript | **sonarjs**: SonarQube-compatible rules (eslint-plugin-sonarjs 2.0.4, LGPL-3.0) | JS/TS files are in scope, run by the `qualor/scanner` image |
 | Python | **Ruff** (Qualor's rule selection: Pyflakes, pycodestyle errors, flake8-bugbear, Pylint errors, flake8-bandit's security rules) | .py files are in scope, run by the qualor/scanner image or any Ruff 0.16 on PATH |
+| HTML | **HTMLHint** 1.9.2, the project's `.htmlhintrc` or Qualor's rule set | `.html` files are in scope, run by the `qualor/scanner` image |
+| CSS, SCSS | **stylelint** 17.15, the project's JSON/YAML config or Qualor's default | `.css` or `.scss` files are in scope, run by the `qualor/scanner` image |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -17,8 +19,8 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java, C# and Python. Other files still get findings from
-Gitleaks, Trivy, OpenGrep and external SARIF.
+detection cover TypeScript, JavaScript, Java, C#, Python, HTML and CSS; SCSS gets findings only.
+Other files still get findings from Gitleaks, Trivy, OpenGrep and external SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
 
@@ -113,6 +115,33 @@ code on the same line.
 Python files get the same metrics as the other languages (lines of code, functions, classes,
 cyclomatic and cognitive complexity) and count in duplication detection; a docstring counts as a
 comment, not as code.
+
+## HTML (HTMLHint)
+
+`htmlhint` checks `.html` and `.htm` files. With a `.htmlhintrc` at the repository root it uses
+your rules. Without one it uses a set that works on full pages and on Angular or Vue templates
+alike: `tag-pair`, `attr-no-duplication`, `src-not-empty`, `alt-require`, `attr-unsafe-chars`,
+`doctype-html5`, `html-lang-require`, `title-require`, `meta-charset-require`, `tag-no-obsolete`
+and `frame-title-require`. `<!-- htmlhint … -->` comments in a file work as in HTMLHint. Custom
+rules (`--rulesdir`) are not supported.
+
+## CSS and SCSS (stylelint)
+
+`stylelint` checks `.css` and `.scss` files. It uses your configuration when it is data: a
+`.stylelintrc`, `.stylelintrc.json`, `.stylelintrc.yaml` or `.yml`, or a `stylelint` key in
+`package.json`, at the repository root. It may extend `stylelint-config-recommended`,
+`stylelint-config-standard` and their `-scss` versions, and use the `stylelint-scss` plugin and the
+`postcss-scss` syntax; Qualor bundles exactly these. A configuration written in JavaScript or
+TypeScript (`stylelint.config.js`, `.stylelintrc.mjs`, …), or one that needs another package, is not
+run: stylelint is skipped and the scan log says why. Set `analyzers.stylelint.configFile:
+qualor-default` to use Qualor's configuration instead.
+
+Without a configuration, Qualor uses `stylelint-config-recommended`, the rules that catch mistakes,
+plus `stylelint-config-recommended-scss` for SCSS. Findings of those rules are reliability issues of
+medium severity; findings of other rules (conventions such as `stylelint-config-standard`'s) are
+maintainability issues of low severity. SCSS is parsed with `postcss-scss` even when your
+configuration does not say so. Less and indented Sass (`.sass`) are not checked, and SCSS files get
+no size or duplication metrics.
 
 ## Java (PMD and SpotBugs)
 
@@ -269,7 +298,7 @@ gate. The UI shows a warning instead.
 
 Every file in the working tree (`sources.include`, default `**/*`), minus what `.gitignore` ignores,
 minus the built-in excludes (`node_modules`, `dist`,
-`build`, `target`, `vendor`, `*.min.js`, .NET `obj/` and generated `*.g.cs` / `*.Designer.cs`,
+`build`, `target`, `vendor`, `*.min.js`, `*.min.css`, .NET `obj/` and generated `*.g.cs` / `*.Designer.cs`,
 Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs` and
 `site-packages`, and binary files), minus your own `sources.exclude`. Test files are recognised by
 `tests.include` (by default `*.test.*`, `*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`,

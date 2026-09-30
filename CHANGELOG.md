@@ -17,6 +17,13 @@ All notable changes to Qualor are listed here, newest first. The format follows
   the same rule, and keeps the statuses of issues SonarQube imported from Ruff. The curated
   SonarQube-rule-to-Ruff-rule mappings ship pending review: until a maintainer reviews a mapping,
   it still imports issue statuses, but does not yet activate the rule in a `python` profile.
+- HTML and CSS: `.html`/`.htm` files are language `html`, `.css` and `.scss` files language `css`,
+  with their own quality profiles, and HTML and CSS get line, comment and duplication metrics.
+  `qualor/scanner` runs HTMLHint 1.9.2 (`htmlhint` engine) and stylelint 17.15 (`stylelint`
+  engine) with the project's `.htmlhintrc` or JSON/YAML stylelint configuration, or Qualor's own
+  (HTMLHint rules that suit templates; `stylelint-config-recommended`). A stylelint configuration
+  written in JavaScript or TypeScript is never run: stylelint is skipped with the reason, and
+  `analyzers.stylelint.configFile: qualor-default` uses Qualor's configuration instead.
 
 ### Changed
 
@@ -32,6 +39,12 @@ All notable changes to Qualor are listed here, newest first. The format follows
   `engine: ruff` is a config error. A Ruff SARIF you still import is reported as `ext-ruff`, and
   each of its findings counts once with the built-in `ruff` finding of the same code on the same
   line (the built-in one is shown).
+- `stylelint` and `htmlhint` are reserved engine ids: a `qualor.yml` `sarif:` entry with
+  `engine: stylelint` or `engine: htmlhint` no longer validates, and a SARIF tool with that name
+  becomes `ext-stylelint` / `ext-htmlhint`, so issues imported that way before get new rule keys.
+- `**/*.min.css` is a built-in exclude, like `**/*.min.js`.
+- A report with `html` or `css` files needs a server of this version; upgrade the server with the
+  scanner.
 
 ## [0.2.0] - 2026-09-30
 

@@ -53,7 +53,7 @@ definitions.
 
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says
-so.
+so. SonarQube's `css` and `Web` rules are not mapped yet.
 
 ## Step by step
 

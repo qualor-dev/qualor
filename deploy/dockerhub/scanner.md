@@ -1,6 +1,6 @@
 # qualor/scanner
 
-Short description: Code quality scanner for CI: ESLint, Ruff, PMD, SpotBugs, OpenGrep, Gitleaks, Trivy, a quality gate
+Short description: Code quality scanner for CI: JS/TS, Java, Python, HTML, CSS; Gitleaks, Trivy; one quality gate
 
 Categories: Developer tools, Integration & delivery, Security
 
@@ -71,6 +71,8 @@ analyses compiled classes).
   Qualor's own sonarjs pass in `/opt/qualor/sonarjs` runs eslint-plugin-sonarjs 2.0.4 on Qualor's
   own ESLint 9, alongside the project's own ESLint above. The C# ones, SonarAnalyzer.CSharp 9.32,
   are in `qualor/scanner-dotnet`.
+- stylelint 17.15 and HTMLHint 1.9.2 (HTML, CSS and SCSS): Qualor's own passes in
+  `/opt/qualor/weblint`.
 - Eclipse Temurin JRE 17.0.20+8, for PMD and SpotBugs.
 - git, with `safe.directory '*'`, since CI runners check out as another user.
 - The pinned analyzers in `/opt/qualor/bin`: PMD 7.27.0, SpotBugs 4.10.4, OpenGrep 1.30.0,

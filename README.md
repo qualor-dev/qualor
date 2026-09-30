@@ -2,10 +2,10 @@
 
 Open-source, self-hosted code quality platform: a SonarQube alternative without lines-of-code
 licensing, for GitLab, GitHub and any other CI. Qualor runs existing open-source analyzers
-(ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, Ruff for Python, OpenGrep, Gitleaks, Trivy,
-SonarQube-compatible rules for C#, JavaScript and TypeScript, or any SARIF), tracks their issues
-across commits, measures coverage, duplication and complexity, and applies a quality gate to new
-code.
+(ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, Ruff for Python, stylelint and HTMLHint for
+CSS and HTML, OpenGrep, Gitleaks, Trivy, SonarQube-compatible rules for C#, JavaScript and
+TypeScript, or any SARIF), tracks their issues across commits, measures coverage, duplication and
+complexity, and applies a quality gate to new code.
 MIT, except `enterprise/`: source-available under the Qualor Enterprise Licence, and inert
 without a licence key ([licence keys](https://qualor.dev/enterprise)).
 
