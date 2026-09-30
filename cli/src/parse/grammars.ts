@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { Language, Parser, type Tree } from 'web-tree-sitter';
+import { VENDORED_GRAMMARS } from './vendored';
 
 export const GRAMMARS = [
   'typescript',
@@ -12,12 +14,18 @@ export const GRAMMARS = [
   'html',
   'css',
   'kotlin',
+  'swift',
 ] as const;
 export type GrammarId = (typeof GRAMMARS)[number];
 export type WasmAsset = 'core' | GrammarId;
 
-/** Package-relative WASM files (ruling C1: exact versions pinned in cli/package.json). */
-const PACKAGE_FILES: Readonly<Record<WasmAsset, string>> = {
+type VendoredGrammar = keyof typeof VENDORED_GRAMMARS;
+
+/**
+ * Package-relative WASM files (ruling C1: exact versions pinned in cli/package.json). The
+ * vendored grammars (plan 8F, vendored.ts) are files in cli/grammars/ instead.
+ */
+const PACKAGE_FILES: Readonly<Record<Exclude<WasmAsset, VendoredGrammar>, string>> = {
   core: 'web-tree-sitter/web-tree-sitter.wasm',
   typescript: 'tree-sitter-typescript/tree-sitter-typescript.wasm',
   tsx: 'tree-sitter-typescript/tree-sitter-tsx.wasm',
@@ -40,7 +48,15 @@ export function registerEmbeddedAssets(paths: Record<WasmAsset, string> | null):
 }
 
 export function wasmPath(asset: WasmAsset): string {
-  return embedded?.[asset] ?? createRequire(import.meta.url).resolve(PACKAGE_FILES[asset]);
+  const fromBinary = embedded?.[asset];
+  if (fromBinary !== undefined) return fromBinary;
+  if (asset in VENDORED_GRAMMARS) {
+    const { file } = VENDORED_GRAMMARS[asset as VendoredGrammar];
+    return fileURLToPath(new URL(`../../grammars/${file}`, import.meta.url));
+  }
+  return createRequire(import.meta.url).resolve(
+    PACKAGE_FILES[asset as Exclude<WasmAsset, VendoredGrammar>],
+  );
 }
 
 export interface Parsers {

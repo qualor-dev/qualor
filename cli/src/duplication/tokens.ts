@@ -8,13 +8,17 @@ export interface LineUnit {
   /** Last line touched by a token that starts on `startLine` (multi-line strings). */
   endLine: number;
   tokens: number;
-  /** Opening minus closing brackets: `( [ { ${` count +1, `) ] }` count -1. */
+  /**
+   * Opening minus closing brackets: `( [ { ${` and `\(` (Swift interpolation) count +1,
+   * `) ] }` count -1.
+   */
   delta: number;
   /** First 16 hex characters of SHA-256 over the token texts joined with U+0000. */
   hash: string;
 }
 
-const OPENERS = new Set(['(', '[', '{', '${']);
+// `\(` is Swift's string interpolation (tree-sitter-swift's token for backslash + `(`).
+const OPENERS = new Set(['(', '[', '{', '${', '\\(']);
 const CLOSERS = new Set([')', ']', '}']);
 
 interface PendingLine {

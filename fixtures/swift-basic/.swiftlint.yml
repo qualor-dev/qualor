@@ -1,0 +1,10 @@
+# The project's own SwiftLint configuration. Qualor keeps the rule choices, applies `excluded`
+# itself and drops the keys that write files or change the exit code (config.md §6).
+disabled_rules:
+  - trailing_whitespace
+opt_in_rules:
+  - force_unwrapping
+line_length: 100
+excluded:
+  - Generated
+reporter: xcode

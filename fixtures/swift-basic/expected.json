@@ -1,0 +1,20 @@
+{
+  "description": "Swift repo: tree-sitter-swift metrics; SwiftLint findings are added in plan 8F Task 8",
+  "engines": [],
+  "findingsExhaustive": false,
+  "findings": [],
+  "files": {
+    "Sources/App/Store.swift": { "language": "swift", "kind": "main", "lines": 41, "ncloc": 33, "commentLines": 1, "functions": 6, "classes": 1, "statements": 14, "complexity": 10, "cognitiveComplexity": 5 },
+    "Generated/Model.swift": { "language": "swift", "kind": "main", "lines": 4, "ncloc": 2, "commentLines": 1, "functions": 0, "classes": 0, "statements": 1, "complexity": 0, "cognitiveComplexity": 0 }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "Sources/App/Store.swift#ncloc": "41 lines - the doc comment (3) - blank lines 2, 6, 10, 18, 23, 27, 39 = 33",
+    "Sources/App/Store.swift#functions": "add, total, first, lookup, grade, summary = 6",
+    "Sources/App/Store.swift#statements": "add 1 (the assignment); total var sum, for, sum +=, return = 4; first let, return = 2; lookup return = 1; grade if + 4 returns = 5 (an else if is not a statement of its own); summary's shorthand body 1; total 14 (the member items is not a statement)",
+    "Sources/App/Store.swift#complexity": "6 functions; total for = 1; grade if, else if, else if = 3; ?? and where are not decisions; total 10",
+    "Sources/App/Store.swift#cognitiveComplexity": "total for +1; grade if +1, else if +1, else if +1, else +1 = 4; total 5",
+    "Generated/Model.swift#metrics": "import (1), comment (3), let (4): ncloc 2, one statement; the project's SwiftLint excludes it, Qualor's scope does not"
+  }
+}

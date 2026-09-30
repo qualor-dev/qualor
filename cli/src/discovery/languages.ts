@@ -16,6 +16,7 @@ const PYTHON: LanguageInfo = { language: 'python', grammar: 'python' };
 const HTML: LanguageInfo = { language: 'html', grammar: 'html' };
 const CSS: LanguageInfo = { language: 'css', grammar: 'css' };
 const KOTLIN: LanguageInfo = { language: 'kotlin', grammar: 'kotlin' };
+const SWIFT: LanguageInfo = { language: 'swift', grammar: 'swift' };
 /** SCSS is linted as CSS (stylelint with postcss-scss) but has no grammar: no metrics, no duplication. */
 const SCSS: LanguageInfo = { language: 'css', grammar: null };
 
@@ -37,6 +38,7 @@ const BY_EXTENSION = new Map<string, LanguageInfo>([
   ['.scss', SCSS],
   ['.kt', KOTLIN],
   ['.kts', KOTLIN],
+  ['.swift', SWIFT],
 ]);
 
 export function detectLanguage(

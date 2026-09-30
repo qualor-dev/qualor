@@ -70,6 +70,18 @@ describe('detectLanguage', () => {
     expect(detectLanguage('App.ktm', 'auto')).toEqual({ language: 'other', grammar: null });
   });
 
+  it('maps .swift to swift (plan 8F)', () => {
+    expect(detectLanguage('Sources/App/Store.swift', 'auto')).toEqual({
+      language: 'swift',
+      grammar: 'swift',
+    });
+    expect(detectLanguage('Package.SWIFT', 'auto').language).toBe('swift');
+    for (const p of ['App.xcodeproj/project.pbxproj', 'Podfile', 'a.swiftinterface']) {
+      expect(detectLanguage(p, 'auto')).toEqual({ language: 'other', grammar: null });
+    }
+    expect(detectLanguage('a.swift', ['java']).language).toBe('other');
+  });
+
   it('honours an explicit languages list', () => {
     expect(detectLanguage('a.ts', ['java'])).toEqual({ language: 'other', grammar: null });
     expect(detectLanguage('A.java', ['java']).language).toBe('java');

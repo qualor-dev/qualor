@@ -10,6 +10,7 @@ import {
 import path from 'node:path';
 import { parse, parseDocument } from 'yaml';
 import { BUN_VERSION, RELEASE_TARGETS, type ReleaseTarget } from '../../cli/scripts/targets';
+import { VENDORED_GRAMMARS } from '../../cli/src/parse/vendored';
 import { freePort, must, REPO_ROOT, run } from '../deploy/stack';
 import { releaseNotes } from './changelog';
 import { releaseFiles, sha256sums, SUMS, SUMS_BUNDLE } from './checksums';
@@ -321,9 +322,12 @@ export async function dryRun(o: DryRunOptions, root = DEFAULT_OUTPUT_ROOT): Prom
     if (notes.fromUnreleased) {
       process.stderr.write(`warning: CHANGELOG.md has no ${v.text} section; using Unreleased\n`);
     }
+    const grammars = Object.values(VENDORED_GRAMMARS)
+      .map((g) => `${g.name} ${g.version} (${g.licence})`)
+      .join(', ');
     writeFileSync(
       path.join(dir, 'release-notes.md'),
-      `${notes.notes}\n\nThe \`qualor\` binaries are built with Bun ${BUN_VERSION}.\n`,
+      `${notes.notes}\n\nThe \`qualor\` binaries are built with Bun ${BUN_VERSION} and embed ${grammars}, a grammar that is not an npm package.\n`,
     );
     copyFileSync(path.join(k.hostDir, 'cosign.pub'), path.join(dir, 'cosign.pub'));
     const manifest = buildManifest(

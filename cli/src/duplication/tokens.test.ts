@@ -68,4 +68,25 @@ describe('lineUnits', () => {
       tree.delete();
     }
   });
+
+  it('counts Swift string interpolation as a bracket, so it balances (plan 8F)', async () => {
+    const tree = (await testParsers()).parse(
+      'swift',
+      'let s = "a \\(x) b"\nlet m = """\n  hi \\(y)\n  """\nf(a,\n  b)\n',
+    );
+    if (tree === null) throw new Error('timeout');
+    try {
+      const u = lineUnits(tree.rootNode, 'swift');
+      expect(u.map((x) => [x.startLine, x.delta])).toEqual([
+        [1, 0],
+        [2, 0],
+        [3, 0],
+        [4, 0],
+        [5, 1],
+        [6, -1],
+      ]);
+    } finally {
+      tree.delete();
+    }
+  });
 });

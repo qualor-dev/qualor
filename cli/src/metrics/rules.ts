@@ -2,7 +2,7 @@ import type { Node } from 'web-tree-sitter';
 import type { GrammarId } from '../parse/grammars';
 
 export type SyntaxFamily =
-  'ecmascript' | 'java' | 'csharp' | 'python' | 'markup' | 'stylesheet' | 'kotlin';
+  'ecmascript' | 'java' | 'csharp' | 'python' | 'markup' | 'stylesheet' | 'kotlin' | 'swift';
 
 /**
  * Node tables of ruling C3 (node type names of the pinned grammars, C1). No rule looks at
@@ -72,6 +72,20 @@ export interface FamilyRules {
    * as a syntax error (cli/src/metrics/errors.ts).
    */
   benignMissing?: ReadonlySet<string>;
+  /**
+   * Statements that branch without an else chain (Swift's `guard`, plan 8F): like a loop, +1
+   * complexity and +1 (plus nesting) cognitive complexity, and their body one level deeper.
+   */
+  branches?: ReadonlySet<string>;
+  /**
+   * Node types every named child of which is one statement, for a grammar whose expression
+   * statements have no node of their own (Swift's `statements` wrapper, and a file's top level,
+   * plan 8F). `isStatement` can still refuse a child (a declaration). Unlike `statements` (which
+   * Kotlin uses with an enumerated list), a child counts before leaves are skipped, so a bare
+   * literal or identifier (`get { 1 }`, a closure's `x`) is a statement too; and it needs no
+   * list of expression types, which tree-sitter-swift has many of.
+   */
+  statementParents?: ReadonlySet<string>;
 }
 
 const ECMASCRIPT: FamilyRules = {
@@ -444,6 +458,76 @@ const KOTLIN: FamilyRules = {
   benignMissing: new Set(['_class_member_semi']),
 };
 
+/** Swift declarations: never statements (JavaScript, Java and C# count none of theirs either). */
+const SWIFT_DECLARATIONS = new Set([
+  'import_declaration',
+  'class_declaration',
+  'protocol_declaration',
+  'function_declaration',
+  'init_declaration',
+  'deinit_declaration',
+  'subscript_declaration',
+  'typealias_declaration',
+  'operator_declaration',
+  'precedence_group_declaration',
+  'associatedtype_declaration',
+]);
+
+/** The node right after an `if`'s `else` keyword: the `else if` statement, or the else block's `{`. */
+function swiftElse(ifNode: Node): Node | null {
+  for (let i = 0; i < ifNode.childCount; i++) {
+    if (ifNode.child(i)?.type === 'else') return ifNode.child(i + 1);
+  }
+  return null;
+}
+
+/** tree-sitter-swift 0.7.3 (plan 8F, probe F7). */
+const SWIFT: FamilyRules = {
+  comments: new Set(['comment', 'multiline_comment']),
+  functions: new Set([
+    'function_declaration',
+    'init_declaration',
+    'deinit_declaration',
+    'computed_getter',
+    'computed_setter',
+    'willset_clause',
+    'didset_clause',
+    // Only a shorthand getter (`var x: Int { … }`, `subscript … { … }`): see isFunction.
+    'computed_property',
+  ]),
+  lambdas: new Set(['lambda_literal']),
+  // class_declaration is also struct, enum, actor and extension.
+  classes: new Set(['class_declaration', 'protocol_declaration']),
+  // Counted through statementParents instead (expression statements have no node type).
+  statements: new Set(),
+  loops: new Set(['for_statement', 'while_statement', 'repeat_while_statement']),
+  switches: new Set(['switch_statement']),
+  catchClause: 'catch_block',
+  ternary: 'ternary_expression',
+  // `(a && b)` is a one-element tuple_expression.
+  transparent: new Set(['tuple_expression']),
+  isCase: (n) =>
+    n.type === 'switch_entry' && !n.children.some((c) => c?.type === 'default_keyword'),
+  elseIf: (n) => {
+    const next = swiftElse(n);
+    return next !== null && next.type === 'if_statement' ? next : null;
+  },
+  // An empty `else { }` has no statements node: the `{` token after `else` is the branch.
+  plainElse: (n) => {
+    const next = swiftElse(n);
+    return next !== null && next.type !== 'if_statement' ? next : null;
+  },
+  isStatement: (n) => !SWIFT_DECLARATIONS.has(n.type),
+  // A computed_property is a function only when it is a shorthand getter (it holds the body's
+  // `statements` directly); with get/set, the accessors count instead.
+  isFunction: (n) =>
+    n.type !== 'computed_property' || n.children.some((c) => c?.type === 'statements'),
+  logicalOperator: (n) =>
+    n.type === 'conjunction_expression' ? '&&' : n.type === 'disjunction_expression' ? '||' : null,
+  branches: new Set(['guard_statement']),
+  statementParents: new Set(['statements', 'source_file']),
+};
+
 export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   ecmascript: ECMASCRIPT,
   java: JAVA,
@@ -452,6 +536,7 @@ export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   markup: MARKUP,
   stylesheet: STYLESHEET,
   kotlin: KOTLIN,
+  swift: SWIFT,
 };
 
 export function familyOf(grammar: GrammarId): SyntaxFamily {
@@ -461,5 +546,6 @@ export function familyOf(grammar: GrammarId): SyntaxFamily {
   if (grammar === 'html') return 'markup';
   if (grammar === 'css') return 'stylesheet';
   if (grammar === 'kotlin') return 'kotlin';
+  if (grammar === 'swift') return 'swift';
   return 'ecmascript';
 }

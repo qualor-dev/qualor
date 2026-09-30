@@ -252,6 +252,23 @@ describe('discoverFiles', () => {
     ]);
   });
 
+  it('leaves CocoaPods, Carthage and SwiftPM checkouts out (plan 8F)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'Sources/App/Store.swift': 'let a = 1\n',
+      'Pods/Alamofire/Source/Session.swift': 'let a = 1\n',
+      'Carthage/Checkouts/Kit/Kit.swift': 'let a = 1\n',
+      '.build/checkouts/swift-nio/Sources/NIO.swift': 'let a = 1\n',
+    });
+    const files = discoverFiles({
+      root,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language])).toEqual([['Sources/App/Store.swift', 'swift']]);
+  });
+
   it('excludes committed minified CSS like minified JS; keeps HTML, CSS and SCSS (config.md §3.1, plan 8D)', () => {
     const root = tmp();
     writeTree(root, {

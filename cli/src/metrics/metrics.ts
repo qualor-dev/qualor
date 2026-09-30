@@ -56,6 +56,15 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
       for (let r = node.startPosition.row; r <= node.endPosition.row; r++) commentLines.add(r + 1);
       continue;
     }
+    // Swift (plan 8F): every named child of a `statements` wrapper, or of the file itself, is one
+    // statement, a bare expression or literal included, so this runs before leaves are skipped.
+    if (
+      rules.statementParents?.has(frame.parentType) === true &&
+      node.isNamed &&
+      (rules.isStatement?.(node, frame.parentType) ?? true)
+    ) {
+      statements++;
+    }
     const count = node.childCount;
     if (count === 0 || rules.atoms?.has(type) === true) {
       // Zero-width leaves are tokens inserted by error recovery; whitespace-only leaves (JSX text) are not code.
@@ -104,7 +113,12 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
       // Python's `elif` (plan 8C): a decision, and a hybrid increment like an `else if`.
       complexity++;
       cognitive += 1;
-    } else if (rules.loops.has(type) || type === rules.catchClause || type === rules.ternary) {
+    } else if (
+      rules.loops.has(type) ||
+      rules.branches?.has(type) === true ||
+      type === rules.catchClause ||
+      type === rules.ternary
+    ) {
       complexity++;
       cognitive += 1 + nesting;
       childNesting = nesting + 1;

@@ -10,6 +10,7 @@ import javascriptWasm from 'tree-sitter-javascript/tree-sitter-javascript.wasm' 
 import pythonWasm from 'tree-sitter-python/tree-sitter-python.wasm' with { type: 'file' };
 import tsxWasm from 'tree-sitter-typescript/tree-sitter-tsx.wasm' with { type: 'file' };
 import typescriptWasm from 'tree-sitter-typescript/tree-sitter-typescript.wasm' with { type: 'file' };
+import swiftWasm from '../grammars/tree-sitter-swift.wasm' with { type: 'file' };
 import { processIO } from './io';
 import { main } from './main';
 import { registerEmbeddedAssets } from './parse/grammars';
@@ -25,5 +26,6 @@ registerEmbeddedAssets({
   html: htmlWasm,
   css: cssWasm,
   kotlin: kotlinWasm,
+  swift: swiftWasm,
 });
 process.exitCode = await main(process.argv.slice(2), processIO());
