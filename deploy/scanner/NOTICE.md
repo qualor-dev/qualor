@@ -115,7 +115,7 @@ tree is otherwise permissively licensed (MIT, ISC, BSD, Apache-2.0 and others,
 eslint-plugin-jsx-a11y, which eslint-plugin-sonarjs itself depends on; its source is in
 `qualor/scanner-sources`, same as eslint-plugin-sonarjs's own.
 
-The Ruff binary is the upstream release build, a static Rust program.
+The Ruff binary is the upstream release build for glibc, a Rust program.
 
 - Of the crates it compiles in (`RUFF-DEPENDENCIES.txt` lists each with its licence files,
   generated from the release's `Cargo.lock`), three are under MPL-2.0 and have their source in

@@ -1092,7 +1092,7 @@
       },
       "sha256": "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34",
       "pinnedAt": "Cargo.lock of Ruff 0.16.9's release source (tools/analyzers/install.sh RUFF_VERSION, RUFF_SOURCE_SHA256)",
-      "why": "The scanner image ships the upstream Ruff 0.16.9 binary (MIT), a static Rust program that compiles in this MPL-2.0 crate; the crates.io archive is the crate's source at that version."
+      "why": "The scanner image ships the upstream Ruff 0.16.9 binary (MIT), the upstream release build for glibc, a Rust program that compiles in this MPL-2.0 crate; the crates.io archive is the crate's source at that version."
     },
     {
       "file": "ruff-0.16.9-crate-option-ext-0.2.0.crate",
@@ -1107,7 +1107,7 @@
       },
       "sha256": "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d",
       "pinnedAt": "Cargo.lock of Ruff 0.16.9's release source (tools/analyzers/install.sh RUFF_VERSION, RUFF_SOURCE_SHA256)",
-      "why": "The scanner image ships the upstream Ruff 0.16.9 binary (MIT), a static Rust program that compiles in this MPL-2.0 crate; the crates.io archive is the crate's source at that version."
+      "why": "The scanner image ships the upstream Ruff 0.16.9 binary (MIT), the upstream release build for glibc, a Rust program that compiles in this MPL-2.0 crate; the crates.io archive is the crate's source at that version."
     },
     {
       "file": "ruff-0.16.9-crate-version-ranges-0.1.1.crate",
@@ -1122,7 +1122,7 @@
       },
       "sha256": "f8d079415ceb2be83fc355adbadafe401307d5c309c7e6ade6638e6f9f42f42d",
       "pinnedAt": "Cargo.lock of Ruff 0.16.9's release source (tools/analyzers/install.sh RUFF_VERSION, RUFF_SOURCE_SHA256)",
-      "why": "The scanner image ships the upstream Ruff 0.16.9 binary (MIT), a static Rust program that compiles in this MPL-2.0 crate; the crates.io archive is the crate's source at that version."
+      "why": "The scanner image ships the upstream Ruff 0.16.9 binary (MIT), the upstream release build for glibc, a Rust program that compiles in this MPL-2.0 crate; the crates.io archive is the crate's source at that version."
     }
   ]
 }
