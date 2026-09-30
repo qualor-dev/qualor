@@ -146,6 +146,8 @@ export class AiSettingsPage {
   protected readonly auth = signal<'bearer' | 'api-key'>('bearer');
   protected readonly jsonMode = signal<'json_object' | 'none'>('json_object');
   protected readonly maxTokensField = signal<'max_tokens' | 'max_completion_tokens'>('max_tokens');
+  /** Set once the admin picks the output limit field; until then the base URL's host decides. */
+  private maxTokensFieldChosen = false;
   protected readonly timeout = signal('60');
   protected readonly temperature = signal('');
   protected readonly removeKey = signal(false);
@@ -223,9 +225,21 @@ export class AiSettingsPage {
   }
 
   protected setMaxTokensField(event: Event): void {
+    this.maxTokensFieldChosen = true;
     this.maxTokensField.set(
       inputValue(event) === 'max_completion_tokens' ? 'max_completion_tokens' : 'max_tokens',
     );
+  }
+
+  /**
+   * The base URL, and with it the output limit field's default when the host changes kind (an
+   * OpenAI host or another server) and the admin has not picked the field on this page.
+   */
+  protected setUrl(event: Event): void {
+    const before = defaultOutputLimitField(this.url());
+    this.set('url', this.url, event);
+    const after = defaultOutputLimitField(this.url());
+    if (!this.maxTokensFieldChosen && after !== before) this.maxTokensField.set(after);
   }
 
   protected setBudget(name: string, field: Field, event: Event): void {
@@ -433,6 +447,7 @@ export class AiSettingsPage {
     this.auth.set(p?.auth ?? 'bearer');
     this.jsonMode.set(p?.jsonMode ?? 'json_object');
     this.maxTokensField.set(p?.maxTokensField ?? 'max_tokens');
+    this.maxTokensFieldChosen = false;
     this.timeout.set(String(p?.timeoutSeconds ?? 60));
     this.temperature.set(p?.temperature === null || p === null ? '' : String(p.temperature));
     this.removeKey.set(false);
@@ -608,6 +623,22 @@ function refusal(field: Field): string {
     case 'retention':
       return $localize`:@@ai.settings.badRetention:Use a whole number of days from 1 to 90.`;
   }
+}
+
+/**
+ * The output limit field an OpenAI-compatible base URL needs by default (llm.md §2.2): OpenAI's and
+ * Azure OpenAI's current models refuse `max_tokens`; vLLM, Ollama and the others want it.
+ */
+export function defaultOutputLimitField(url: string): 'max_tokens' | 'max_completion_tokens' {
+  let host: string;
+  try {
+    host = new URL(url.trim()).hostname.toLowerCase();
+  } catch {
+    return 'max_tokens';
+  }
+  return host === 'api.openai.com' || host.endsWith('.openai.azure.com')
+    ? 'max_completion_tokens'
+    : 'max_tokens';
 }
 
 function keyWithoutKind(): string {

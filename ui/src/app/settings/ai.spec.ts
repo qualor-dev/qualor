@@ -135,6 +135,67 @@ describe('AiSettingsPage (llm.md §3, §18)', () => {
     expect(root.textContent).toContain('An API key is set');
   });
 
+  // OpenAI's current models refuse max_tokens; other OpenAI-compatible servers want it.
+  it.each([
+    ['https://api.openai.com/v1', 'max_completion_tokens'],
+    ['https://acme.openai.azure.com/openai/v1', 'max_completion_tokens'],
+    ['http://ollama:11434/v1', 'max_tokens'],
+  ])('picks the output limit field for %s', async (url, field) => {
+    const server = setup();
+    server.on('PUT', '/api/v0/system/llm', { body: CONFIGURED });
+    const { fixture, root } = await render();
+    type(root, '#ai-kind', 'openai');
+    await settle(fixture);
+    type(root, '#ai-url', url);
+    await settle(fixture);
+    expect(root.querySelector<HTMLSelectElement>('#ai-max-tokens-field')!.value).toBe(field);
+    type(root, '#ai-model', 'm');
+    submit(root);
+    await settle(fixture);
+    expect(server.requestsTo('PUT', '/api/v0/system/llm')[0]?.body).toMatchObject({
+      provider: { maxTokensField: field },
+    });
+  });
+
+  it('keeps an output limit field the admin chose, and a saved one while the host stays', async () => {
+    setup({
+      ...CONFIGURED,
+      provider: { ...CONFIGURED.provider, baseUrl: 'https://api.openai.com/v1' },
+    });
+    const { fixture, root } = await render();
+    const field = () => root.querySelector<HTMLSelectElement>('#ai-max-tokens-field')!.value;
+    // Saved as max_tokens for an OpenAI URL (an older model): editing the path keeps it.
+    type(root, '#ai-url', 'https://api.openai.com/v1/');
+    await settle(fixture);
+    expect(field()).toBe('max_tokens');
+    // Another kind of server, then OpenAI again: the default follows the host.
+    type(root, '#ai-url', 'http://vllm:8000/v1');
+    await settle(fixture);
+    expect(field()).toBe('max_tokens');
+    type(root, '#ai-url', 'https://api.openai.com/v1');
+    await settle(fixture);
+    expect(field()).toBe('max_completion_tokens');
+    // Chosen by hand: the host no longer changes it.
+    type(root, '#ai-max-tokens-field', 'max_tokens');
+    type(root, '#ai-url', 'http://vllm:8000/v1');
+    type(root, '#ai-url', 'https://api.openai.com/v1');
+    await settle(fixture);
+    expect(field()).toBe('max_tokens');
+  });
+
+  it('says which models need max_completion_tokens', async () => {
+    setup();
+    const { fixture, root } = await render();
+    type(root, '#ai-kind', 'openai');
+    await settle(fixture);
+    expect(root.querySelector('#ai-max-tokens-field-hint')!.textContent).toContain(
+      "OpenAI's current models need max_completion_tokens",
+    );
+    expect(root.querySelector('#ai-max-tokens-field')!.getAttribute('aria-describedby')).toBe(
+      'ai-max-tokens-field-hint',
+    );
+  });
+
   it('keeps the stored key when the field is empty, and maps a refused address to the key field', async () => {
     const server = setup(CONFIGURED);
     server.on('PUT', '/api/v0/system/llm', {
