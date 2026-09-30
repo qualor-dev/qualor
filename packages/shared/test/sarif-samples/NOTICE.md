@@ -14,6 +14,7 @@ that tool's own output (rule ids, messages, categories, tags, `helpUri`) except 
 | `roslyn.sarif`       | the .NET compiler (Roslyn) and Roslynator.Analyzers, run over `fixtures/csharp-basic`                                                                                                    | MIT (.NET SDK); Apache-2.0 (Roslynator)                                           |
 | `roslyn-sonar.sarif` | the .NET compiler (Roslyn), Roslynator.Analyzers and the bundled **SonarAnalyzer.CSharp 9.32.0.97167**, run over `fixtures/csharp-basic`, then merged with `mergeRoslynLogs` and trimmed | MIT (.NET SDK); Apache-2.0 (Roslynator); **LGPL-3.0-only (SonarAnalyzer.CSharp)** |
 | `ruff.sarif`         | Ruff 0.16.9, run over `fixtures/python-basic` with qualor-default                                                                                                                        | MIT                                                                               |
+| `detekt.sarif`       | detekt 1.23.8, run over `fixtures/kotlin-basic`, rule ids shortened and `properties.ruleset` added by Qualor's conversion (`cli/src/analyzers/detekt-sarif.ts`)                          | Apache-2.0                                                                        |
 
 **`roslyn-sonar.sarif` and SonarSource text.** Qualor's licence boundary (Phase 8A/8B) keeps
 SonarSource's own text — rule descriptions, RSPEC prose — out of this repository; the LGPL-3.0
@@ -28,3 +29,5 @@ their real text as `roslyn.sarif` already does for the same rule ids.
 
 **`ruff.sarif`.** The rule descriptions in it are Ruff's own documentation, MIT; unlike
 `roslyn-sonar.sarif`, nothing is SonarSource text.
+
+**`detekt.sarif`.** The rule descriptions in it are detekt's own documentation, Apache-2.0; nothing is SonarSource text.

@@ -1,0 +1,321 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "detekt",
+          "version": "1.23.8",
+          "semanticVersion": "1.23.8",
+          "rules": [
+            {
+              "id": "LongParameterList",
+              "name": "LongParameterList",
+              "shortDescription": {
+                "text": "The more parameters a function has the more complex it is. Long parameter lists are often used to control complex algorithms and violate the Single Responsibility Principle. Prefer functions with short parameter lists."
+              },
+              "helpUri": "https://detekt.dev/complexity.html#longparameterlist",
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "ruleset": "complexity"
+              }
+            },
+            {
+              "id": "EmptyCatchBlock",
+              "name": "EmptyCatchBlock",
+              "shortDescription": {
+                "text": "Empty catch block detected. Empty catch blocks indicate that an exception is ignored and not handled."
+              },
+              "helpUri": "https://detekt.dev/empty-blocks.html#emptycatchblock",
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "ruleset": "empty-blocks"
+              }
+            },
+            {
+              "id": "TooGenericExceptionCaught",
+              "name": "TooGenericExceptionCaught",
+              "shortDescription": {
+                "text": "The caught exception is too generic. Prefer catching specific exceptions to the case that is currently handled."
+              },
+              "helpUri": "https://detekt.dev/exceptions.html#toogenericexceptioncaught",
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "ruleset": "exceptions"
+              }
+            },
+            {
+              "id": "SwallowedException",
+              "name": "SwallowedException",
+              "shortDescription": {
+                "text": "The caught exception is swallowed. The original exception could be lost."
+              },
+              "helpUri": "https://detekt.dev/exceptions.html#swallowedexception",
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "ruleset": "exceptions"
+              }
+            },
+            {
+              "id": "ReturnCount",
+              "name": "ReturnCount",
+              "shortDescription": {
+                "text": "Restrict the number of return statements in methods."
+              },
+              "helpUri": "https://detekt.dev/style.html#returncount",
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "ruleset": "style"
+              }
+            },
+            {
+              "id": "MagicNumber",
+              "name": "MagicNumber",
+              "shortDescription": {
+                "text": "Report magic numbers. Magic number is a numeric literal that is not defined as a constant and hence it's unclear what the purpose of this number is. It's better to declare such numbers as constants and give them a proper name. By default, -1, 0, 1, and 2 are not considered to be magic numbers."
+              },
+              "helpUri": "https://detekt.dev/style.html#magicnumber",
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "ruleset": "style"
+              }
+            }
+          ],
+          "downloadUri": "https://github.com/detekt/detekt/releases/download/v1.23.8/detekt",
+          "fullName": "detekt",
+          "guid": "022ca8c2-f6a2-4c95-b107-bb72c43263f3",
+          "informationUri": "https://detekt.dev",
+          "language": "en",
+          "organization": "detekt"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "LongParameterList",
+          "level": "warning",
+          "message": {
+            "text": "The function describe(first: String, last: String, title: String?, age: Int) has too many parameters. The current threshold is set to 4."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Labels.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 5,
+                  "startColumn": 17,
+                  "endLine": 5,
+                  "endColumn": 72
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "LongParameterList",
+          "level": "warning",
+          "message": {
+            "text": "The function describe(first: String, last: String, title: String?, age: Int) has too many parameters. The current threshold is set to 4."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Names.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 4,
+                  "startColumn": 17,
+                  "endLine": 4,
+                  "endColumn": 72
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "LongParameterList",
+          "level": "warning",
+          "message": {
+            "text": "The function total(a: Int, b: Int, c: Int, d: Int, e: Int) has too many parameters. The current threshold is set to 4."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 28,
+                  "startColumn": 14,
+                  "endLine": 28,
+                  "endColumn": 54
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "EmptyCatchBlock",
+          "level": "warning",
+          "message": {
+            "text": "Empty catch block detected. If the exception can be safely ignored, name the exception according to one of the exemptions as per the configuration of this rule."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 17,
+                  "startColumn": 32,
+                  "endLine": 18,
+                  "endColumn": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "TooGenericExceptionCaught",
+          "level": "warning",
+          "message": {
+            "text": "The caught exception is too generic. Prefer catching specific exceptions to the case that is currently handled."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 17,
+                  "startColumn": 18,
+                  "endLine": 17,
+                  "endColumn": 30
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "SwallowedException",
+          "level": "warning",
+          "message": {
+            "text": "The caught exception is swallowed. The original exception could be lost."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 17,
+                  "startColumn": 18,
+                  "endLine": 17,
+                  "endColumn": 30
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "ReturnCount",
+          "level": "warning",
+          "message": {
+            "text": "Function discount has 3 return statements which exceeds the limit of 2."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 5,
+                  "startColumn": 9,
+                  "endLine": 5,
+                  "endColumn": 17
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "MagicNumber",
+          "level": "warning",
+          "message": {
+            "text": "This expression contains a magic number. Consider defining it to a well named constant."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 6,
+                  "startColumn": 21,
+                  "endLine": 6,
+                  "endColumn": 26
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "MagicNumber",
+          "level": "warning",
+          "message": {
+            "text": "This expression contains a magic number. Consider defining it to a well named constant."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 8,
+                  "startColumn": 28,
+                  "endLine": 8,
+                  "endColumn": 32
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "originalUriBaseIds": {
+        "%SRCROOT%": {
+          "uri": "file:///fixture-root/"
+        }
+      }
+    }
+  ],
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
+}

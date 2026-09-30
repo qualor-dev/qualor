@@ -1,0 +1,303 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "originalUriBaseIds": {
+        "%SRCROOT%": {
+          "uri": "file:///fixture-root/"
+        }
+      },
+      "results": [
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Labels.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 72,
+                  "endLine": 5,
+                  "startColumn": 17,
+                  "startLine": 5
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The function describe(first: String, last: String, title: String?, age: Int) has too many parameters. The current threshold is set to 4."
+          },
+          "ruleId": "detekt.complexity.LongParameterList"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Names.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 72,
+                  "endLine": 4,
+                  "startColumn": 17,
+                  "startLine": 4
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The function describe(first: String, last: String, title: String?, age: Int) has too many parameters. The current threshold is set to 4."
+          },
+          "ruleId": "detekt.complexity.LongParameterList"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 54,
+                  "endLine": 28,
+                  "startColumn": 14,
+                  "startLine": 28
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The function total(a: Int, b: Int, c: Int, d: Int, e: Int) has too many parameters. The current threshold is set to 4."
+          },
+          "ruleId": "detekt.complexity.LongParameterList"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 10,
+                  "endLine": 18,
+                  "startColumn": 32,
+                  "startLine": 17
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Empty catch block detected. If the exception can be safely ignored, name the exception according to one of the exemptions as per the configuration of this rule."
+          },
+          "ruleId": "detekt.empty-blocks.EmptyCatchBlock"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 30,
+                  "endLine": 17,
+                  "startColumn": 18,
+                  "startLine": 17
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The caught exception is too generic. Prefer catching specific exceptions to the case that is currently handled."
+          },
+          "ruleId": "detekt.exceptions.TooGenericExceptionCaught"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 30,
+                  "endLine": 17,
+                  "startColumn": 18,
+                  "startLine": 17
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "The caught exception is swallowed. The original exception could be lost."
+          },
+          "ruleId": "detekt.exceptions.SwallowedException"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 17,
+                  "endLine": 5,
+                  "startColumn": 9,
+                  "startLine": 5
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Function discount has 3 return statements which exceeds the limit of 2."
+          },
+          "ruleId": "detekt.style.ReturnCount"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 26,
+                  "endLine": 6,
+                  "startColumn": 21,
+                  "startLine": 6
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "This expression contains a magic number. Consider defining it to a well named constant."
+          },
+          "ruleId": "detekt.style.MagicNumber"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/main/kotlin/com/acme/Pricing.kt",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "endColumn": 32,
+                  "endLine": 8,
+                  "startColumn": 28,
+                  "startLine": 8
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "This expression contains a magic number. Consider defining it to a well named constant."
+          },
+          "ruleId": "detekt.style.MagicNumber"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "downloadUri": "https://github.com/detekt/detekt/releases/download/v1.23.8/detekt",
+          "fullName": "detekt",
+          "guid": "022ca8c2-f6a2-4c95-b107-bb72c43263f3",
+          "informationUri": "https://detekt.dev",
+          "language": "en",
+          "name": "detekt",
+          "organization": "detekt",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://detekt.dev/complexity.html#longparameterlist",
+              "id": "detekt.complexity.LongParameterList",
+              "name": "LongParameterList",
+              "shortDescription": {
+                "text": "The more parameters a function has the more complex it is. Long parameter lists are often used to control complex algorithms and violate the Single Responsibility Principle. Prefer functions with short parameter lists."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://detekt.dev/empty-blocks.html#emptycatchblock",
+              "id": "detekt.empty-blocks.EmptyCatchBlock",
+              "name": "EmptyCatchBlock",
+              "shortDescription": {
+                "text": "Empty catch block detected. Empty catch blocks indicate that an exception is ignored and not handled."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://detekt.dev/exceptions.html#toogenericexceptioncaught",
+              "id": "detekt.exceptions.TooGenericExceptionCaught",
+              "name": "TooGenericExceptionCaught",
+              "shortDescription": {
+                "text": "The caught exception is too generic. Prefer catching specific exceptions to the case that is currently handled."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://detekt.dev/exceptions.html#swallowedexception",
+              "id": "detekt.exceptions.SwallowedException",
+              "name": "SwallowedException",
+              "shortDescription": {
+                "text": "The caught exception is swallowed. The original exception could be lost."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://detekt.dev/style.html#returncount",
+              "id": "detekt.style.ReturnCount",
+              "name": "ReturnCount",
+              "shortDescription": {
+                "text": "Restrict the number of return statements in methods."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://detekt.dev/style.html#magicnumber",
+              "id": "detekt.style.MagicNumber",
+              "name": "MagicNumber",
+              "shortDescription": {
+                "text": "Report magic numbers. Magic number is a numeric literal that is not defined as a constant and hence it's unclear what the purpose of this number is. It's better to declare such numbers as constants and give them a proper name. By default, -1, 0, 1, and 2 are not considered to be magic numbers."
+              }
+            }
+          ],
+          "semanticVersion": "1.23.8",
+          "version": "1.23.8"
+        }
+      }
+    }
+  ]
+}

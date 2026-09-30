@@ -2,12 +2,20 @@ import { mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from
 import path from 'node:path';
 import { engineMapping, parseConfig, splitSourceLines } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
-import { describeWithDetekt, fakeContext } from '../../test/analyzers';
+import {
+  describeWithDetekt,
+  expectedKeys,
+  fakeContext,
+  findingKeys,
+  normalizeRecorded,
+  recorded,
+} from '../../test/analyzers';
 import { useTempDirs, writeTree } from '../../test/tmp';
 import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { silentLogger } from '../log';
 import { createDetektAnalyzer, DEFAULT_DETEKT_JAR, detektAnalyzer } from './detekt';
 import { QUALOR_DETEKT_OVERLAY } from './detekt-config';
+import { detektSarif } from './detekt-sarif';
 import { DEAD_PROXY_PROPERTIES } from './jvm';
 import { normalizeCaptures } from './normalize';
 import { runAnalyzers } from './runner';
@@ -300,4 +308,16 @@ describeWithDetekt()('detekt on awkward file names (real detekt, ruling E16)', (
       expect([...new Set(magic)].sort()).toEqual([...names].sort());
     },
   );
+});
+
+describe('detekt SARIF normalisation (recorded run over kotlin-basic)', () => {
+  it('gives the fixture’s expected detekt findings', () => {
+    const out = normalizeRecorded(
+      detektSarif(recorded('detekt/basic.sarif')),
+      detektAnalyzer,
+      'kotlin-basic',
+    );
+    expect(findingKeys(out.findings)).toEqual(expectedKeys('kotlin-basic', 'detekt'));
+    expect(out.engines[0]).toMatchObject({ id: 'detekt', version: '1.23.8' });
+  });
 });

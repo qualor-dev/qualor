@@ -16,6 +16,7 @@ import {
   requireAnalyzers,
   runFixtures,
   scanEnv,
+  DETEKT_JAR,
   SONARJS_PASS,
   toolOnPath,
   TRIVY_DATABASE,
@@ -67,6 +68,10 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(unavailableEngines(['sonarjs'], (t) => t === 'node')).toEqual(['sonarjs']);
     expect(unavailableEngines(['sonarjs'], (t) => t === SONARJS_PASS)).toEqual(['sonarjs']);
     expect(unavailableEngines(['sonarjs'], (t) => ['node', SONARJS_PASS].includes(t))).toEqual([]);
+    // Plan 8E: detekt needs java and the image's jar.
+    expect(unavailableEngines(['detekt'], (t) => t === 'java')).toEqual(['detekt']);
+    expect(unavailableEngines(['detekt'], (t) => t === DETEKT_JAR)).toEqual(['detekt']);
+    expect(unavailableEngines(['detekt'], (t) => ['java', DETEKT_JAR].includes(t))).toEqual([]);
   });
   it('needs node and the weblint pass for stylelint and htmlhint (plan 8D)', () => {
     expect(unavailableEngines(['stylelint', 'htmlhint'], (t) => t === 'node', 'linux')).toEqual(['stylelint', 'htmlhint']);

@@ -1,0 +1,305 @@
+{
+  "version": "1.23.8",
+  "rules": [
+    {
+      "id": "LongParameterList",
+      "name": "LongParameterList",
+      "shortDescription": "The more parameters a function has the more complex it is. Long parameter lists are often used to control complex algorithms and violate the Single Responsibility Principle. Prefer functions with short parameter lists.",
+      "helpUri": "https://detekt.dev/complexity.html#longparameterlist",
+      "defaultSeverity": "medium",
+      "quality": "maintainability",
+      "kind": "issue"
+    },
+    {
+      "id": "EmptyCatchBlock",
+      "name": "EmptyCatchBlock",
+      "shortDescription": "Empty catch block detected. Empty catch blocks indicate that an exception is ignored and not handled.",
+      "helpUri": "https://detekt.dev/empty-blocks.html#emptycatchblock",
+      "defaultSeverity": "medium",
+      "quality": "maintainability",
+      "kind": "issue"
+    },
+    {
+      "id": "TooGenericExceptionCaught",
+      "name": "TooGenericExceptionCaught",
+      "shortDescription": "The caught exception is too generic. Prefer catching specific exceptions to the case that is currently handled.",
+      "helpUri": "https://detekt.dev/exceptions.html#toogenericexceptioncaught",
+      "defaultSeverity": "medium",
+      "quality": "reliability",
+      "kind": "issue"
+    },
+    {
+      "id": "SwallowedException",
+      "name": "SwallowedException",
+      "shortDescription": "The caught exception is swallowed. The original exception could be lost.",
+      "helpUri": "https://detekt.dev/exceptions.html#swallowedexception",
+      "defaultSeverity": "medium",
+      "quality": "reliability",
+      "kind": "issue"
+    },
+    {
+      "id": "ReturnCount",
+      "name": "ReturnCount",
+      "shortDescription": "Restrict the number of return statements in methods.",
+      "helpUri": "https://detekt.dev/style.html#returncount",
+      "defaultSeverity": "low",
+      "quality": "maintainability",
+      "kind": "issue"
+    },
+    {
+      "id": "MagicNumber",
+      "name": "MagicNumber",
+      "shortDescription": "Report magic numbers. Magic number is a numeric literal that is not defined as a constant and hence it's unclear what the purpose of this number is. It's better to declare such numbers as constants and give them a proper name. By default, -1, 0, 1, and 2 are not considered to be magic numbers.",
+      "helpUri": "https://detekt.dev/style.html#magicnumber",
+      "defaultSeverity": "low",
+      "quality": "maintainability",
+      "kind": "issue"
+    }
+  ],
+  "findings": [
+    {
+      "engineId": "detekt",
+      "ruleId": "LongParameterList",
+      "message": "The function describe(first: String, last: String, title: String?, age: Int) has too many parameters. The current threshold is set to 4.",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/kotlin/com/acme/Labels.kt",
+        "startLine": 5,
+        "startColumn": 17,
+        "endLine": 5,
+        "endColumn": 71
+      },
+      "lineHash": "ed574a8ade074061e56b7b1f1bf1e723",
+      "contextHash": "3f26f7e7bae780a5023414ef40c5ac38",
+      "snippet": {
+        "startLine": 2,
+        "lines": [
+          "",
+          "// Labels shown on invoices.",
+          "object Labels {",
+          "    fun describe(first: String, last: String, title: String?, age: Int): String {",
+          "        val builder = StringBuilder()",
+          "        if (title != null && title.isNotEmpty()) {",
+          "            builder.append(title).append(' ')"
+        ]
+      }
+    },
+    {
+      "engineId": "detekt",
+      "ruleId": "LongParameterList",
+      "message": "The function describe(first: String, last: String, title: String?, age: Int) has too many parameters. The current threshold is set to 4.",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/kotlin/com/acme/Names.kt",
+        "startLine": 4,
+        "startColumn": 17,
+        "endLine": 4,
+        "endColumn": 71
+      },
+      "lineHash": "ed574a8ade074061e56b7b1f1bf1e723",
+      "contextHash": "ef7b88bf021fe529d7b45c69c3f5a2fd",
+      "snippet": {
+        "startLine": 1,
+        "lines": [
+          "package com.acme",
+          "",
+          "object Names {",
+          "    fun describe(first: String, last: String, title: String?, age: Int): String {",
+          "        val builder = StringBuilder()",
+          "        if (title != null && title.isNotEmpty()) {",
+          "            builder.append(title).append(' ')"
+        ]
+      }
+    },
+    {
+      "engineId": "detekt",
+      "ruleId": "LongParameterList",
+      "message": "The function total(a: Int, b: Int, c: Int, d: Int, e: Int) has too many parameters. The current threshold is set to 4.",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/kotlin/com/acme/Pricing.kt",
+        "startLine": 28,
+        "startColumn": 14,
+        "endLine": 28,
+        "endColumn": 53
+      },
+      "lineHash": "d942a725d67f04325e52e0b3b51475bd",
+      "contextHash": "9450270cf56d6dbf457fe977929351d3",
+      "snippet": {
+        "startLine": 25,
+        "lines": [
+          "        else -> \"many\"",
+          "    }",
+          "",
+          "    fun total(a: Int, b: Int, c: Int, d: Int, e: Int): Int = a + b + c + d + e",
+          "}"
+        ]
+      }
+    },
+    {
+      "engineId": "detekt",
+      "ruleId": "EmptyCatchBlock",
+      "message": "Empty catch block detected. If the exception can be safely ignored, name the exception according to one of the exemptions as per the configuration of this rule.",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/kotlin/com/acme/Pricing.kt",
+        "startLine": 17,
+        "startColumn": 32,
+        "endLine": 18,
+        "endColumn": 9
+      },
+      "lineHash": "97e761106b852035d6f6cf4903f454a2",
+      "contextHash": "6f8fa3391184df1305addb7bf4b6d64d",
+      "snippet": {
+        "startLine": 14,
+        "lines": [
+          "    fun parse(text: String): Int {",
+          "        try {",
+          "            return text.toInt()",
+          "        } catch (e: Exception) {",
+          "        }",
+          "        return -1",
+          "    }",
+          ""
+        ]
+      }
+    },
+    {
+      "engineId": "detekt",
+      "ruleId": "TooGenericExceptionCaught",
+      "message": "The caught exception is too generic. Prefer catching specific exceptions to the case that is currently handled.",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/kotlin/com/acme/Pricing.kt",
+        "startLine": 17,
+        "startColumn": 18,
+        "endLine": 17,
+        "endColumn": 29
+      },
+      "lineHash": "29678dd90223589ba361ad071bdced92",
+      "contextHash": "a2a10bb1716458c3abd6bed7b1f90024",
+      "snippet": {
+        "startLine": 14,
+        "lines": [
+          "    fun parse(text: String): Int {",
+          "        try {",
+          "            return text.toInt()",
+          "        } catch (e: Exception) {",
+          "        }",
+          "        return -1",
+          "    }"
+        ]
+      }
+    },
+    {
+      "engineId": "detekt",
+      "ruleId": "SwallowedException",
+      "message": "The caught exception is swallowed. The original exception could be lost.",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/kotlin/com/acme/Pricing.kt",
+        "startLine": 17,
+        "startColumn": 18,
+        "endLine": 17,
+        "endColumn": 29
+      },
+      "lineHash": "29678dd90223589ba361ad071bdced92",
+      "contextHash": "a2a10bb1716458c3abd6bed7b1f90024",
+      "snippet": {
+        "startLine": 14,
+        "lines": [
+          "    fun parse(text: String): Int {",
+          "        try {",
+          "            return text.toInt()",
+          "        } catch (e: Exception) {",
+          "        }",
+          "        return -1",
+          "    }"
+        ]
+      }
+    },
+    {
+      "engineId": "detekt",
+      "ruleId": "ReturnCount",
+      "message": "Function discount has 3 return statements which exceeds the limit of 2.",
+      "severity": "low",
+      "location": {
+        "path": "src/main/kotlin/com/acme/Pricing.kt",
+        "startLine": 5,
+        "startColumn": 9,
+        "endLine": 5,
+        "endColumn": 16
+      },
+      "lineHash": "f40505939c249489446ee2428073d18b",
+      "contextHash": "ec13df7cb981e1ba632db2bf78c74634",
+      "snippet": {
+        "startLine": 2,
+        "lines": [
+          "",
+          "// Prices an order.",
+          "class Pricing {",
+          "    fun discount(total: Int, member: Boolean): Int {",
+          "        if (total > 10000 && member) {",
+          "            return total / 10",
+          "        } else if (total > 5000) {"
+        ]
+      }
+    },
+    {
+      "engineId": "detekt",
+      "ruleId": "MagicNumber",
+      "message": "This expression contains a magic number. Consider defining it to a well named constant.",
+      "severity": "low",
+      "location": {
+        "path": "src/main/kotlin/com/acme/Pricing.kt",
+        "startLine": 6,
+        "startColumn": 21,
+        "endLine": 6,
+        "endColumn": 25
+      },
+      "lineHash": "2b7db36546d06e665081c743f8b706f6",
+      "contextHash": "a6a38922fc23d860ed389b614378db05",
+      "snippet": {
+        "startLine": 3,
+        "lines": [
+          "// Prices an order.",
+          "class Pricing {",
+          "    fun discount(total: Int, member: Boolean): Int {",
+          "        if (total > 10000 && member) {",
+          "            return total / 10",
+          "        } else if (total > 5000) {",
+          "            return total / 20"
+        ]
+      }
+    },
+    {
+      "engineId": "detekt",
+      "ruleId": "MagicNumber",
+      "message": "This expression contains a magic number. Consider defining it to a well named constant.",
+      "severity": "low",
+      "location": {
+        "path": "src/main/kotlin/com/acme/Pricing.kt",
+        "startLine": 8,
+        "startColumn": 28,
+        "endLine": 8,
+        "endColumn": 31
+      },
+      "lineHash": "1793e15dd132b59e9c8233fb35f8c9f1",
+      "contextHash": "f292db006613d3a893fa3877ecc2d353",
+      "snippet": {
+        "startLine": 5,
+        "lines": [
+          "    fun discount(total: Int, member: Boolean): Int {",
+          "        if (total > 10000 && member) {",
+          "            return total / 10",
+          "        } else if (total > 5000) {",
+          "            return total / 20",
+          "        }",
+          "        return 0"
+        ]
+      }
+    }
+  ],
+  "warnings": [],
+  "secretRegions": []
+}

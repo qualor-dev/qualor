@@ -32,6 +32,7 @@ const SAMPLE_FIXTURE: Record<string, SampleFixture> = {
   roslyn: { fixture: 'csharp-basic', sourceRoots: [] },
   'roslyn-sonar': { fixture: 'csharp-basic', sourceRoots: [], engineId: 'roslyn' },
   ruff: { fixture: 'python-basic', sourceRoots: [] },
+  detekt: { fixture: 'kotlin-basic', sourceRoots: [] },
 };
 
 function readLines(fixture: string) {

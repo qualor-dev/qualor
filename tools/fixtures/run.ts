@@ -73,6 +73,14 @@ export const WEBLINT_PASS = 'weblint-pass';
 const WEBLINT_PASS_FILES = ['/opt/qualor/weblint/stylelint.mjs', '/opt/qualor/weblint/htmlhint.mjs'];
 
 /**
+ * A pseudo-tool: detekt's jar in the scanner image's place (config.md §6, plan 8E). Like the
+ * sonarjs pass, its absence is a normal skip on a plain host, and a fixture's scan environment
+ * drops QUALOR_DETEKT_JAR, so only the default path is ever checked here.
+ */
+export const DETEKT_JAR = 'detekt-jar';
+const DETEKT_JAR_FILE = '/opt/qualor/lib/detekt/detekt-cli.jar';
+
+/**
  * The binaries each built-in engine needs (any one of an inner list). The harness checks the same
  * places the CLI does: PATH and the scanner image's /opt/qualor/bin.
  */
@@ -98,6 +106,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   // Plan 8D: node and, like sonarjs above, the image-bundled weblint pass.
   stylelint: [['node'], [WEBLINT_PASS]],
   htmlhint: [['node'], [WEBLINT_PASS]],
+  // Plan 8E: java and, like sonarjs above, the image-bundled detekt jar.
+  detekt: [['java'], [DETEKT_JAR]],
 };
 
 /**
@@ -118,6 +128,7 @@ export function findTool(name: string, env: Record<string, string | undefined> =
 export function toolOnPath(name: string, env: Record<string, string | undefined> = process.env): boolean {
   if (name === TRIVY_DATABASE) return existsSync(TRIVY_DATABASE_FILE);
   if (name === SONARJS_PASS) return existsSync(SONARJS_PASS_FILE);
+  if (name === DETEKT_JAR) return existsSync(DETEKT_JAR_FILE);
   if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
   return findTool(name, env) !== null;
 }

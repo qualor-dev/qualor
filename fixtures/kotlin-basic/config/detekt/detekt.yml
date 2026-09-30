@@ -1,0 +1,7 @@
+# The project's own detekt configuration: detekt's defaults plus these changes.
+complexity:
+  LongParameterList:
+    functionThreshold: 4
+style:
+  MagicNumber:
+    ignoreNumbers: ['-1', '0', '1', '2', '10', '18', '20', '65', '80']
