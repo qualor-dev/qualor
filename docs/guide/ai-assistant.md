@@ -86,7 +86,7 @@ instance:
 | API key | write-only. It is stored encrypted and never shown again. Leave it empty for a local model without a key |
 | Key header | `Authorization: Bearer` (the default), or `api-key` for Azure |
 | JSON mode | on by default. Turn it off for a server that refuses `response_format` |
-| Output limit field | `max_tokens` (the default), or `max_completion_tokens` for OpenAI's newer models, which refuse `max_tokens` |
+| Output limit field | `max_completion_tokens` for OpenAI and Azure OpenAI, whose current models refuse `max_tokens`; `max_tokens` for vLLM, Ollama and most other servers. The page picks it from the base URL's host until you choose one |
 | Temperature | optional; not sent when empty |
 | Timeout (seconds) | 5–600, default 60, for the whole request |
 
@@ -243,6 +243,7 @@ Today's use and budgets for an organisation are at `GET /api/v0/organizations/{i
 | "The model provider is rate limiting Qualor; try later" | the provider's own limit. Qualor retries after the time the provider asks for; try again later, or lower the budgets |
 | "The provider refused the API key (HTTP 401)" | set a valid key; check the key header (`api-key` for Azure) |
 | "The provider refused the request (HTTP 403): the key lacks access to this model, or the account has no credit" | the key is valid but may not use this model: check the model's name, the key's project or workspace permissions, and the account's billing or credit |
+| "The model does not accept max_tokens; set the output limit field to max_completion_tokens in the AI assistant settings" (or the other way round) | the model refused the output limit field: pick the other one in the settings |
 | "The provider refused the request; check the base URL and the model" | an OpenAI-compatible base URL usually needs `/v1`; check the model's name. OpenAI's newer models need the `max_completion_tokens` output limit field; some servers need JSON mode off |
 | "The provider's answer was not understood" | the address is not a chat completions or Anthropic Messages API, or the answer was over 1 MiB |
 | "The provider's address is not allowed" | the operator lists the host with its port in `QUALOR_LLM_INTERNAL_HOSTS`, or use an `https` address that resolves to public addresses |

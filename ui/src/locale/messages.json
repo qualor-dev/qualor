@@ -696,6 +696,7 @@
     "ai.settings.jsonObject": " Ask for a JSON object ",
     "ai.settings.jsonNone": " Off (the model does not support it) ",
     "ai.settings.maxTokensField": "Output limit field",
+    "ai.settings.maxTokensFieldHint": " OpenAI's current models need max_completion_tokens and refuse max_tokens; vLLM, Ollama and most other servers want max_tokens. ",
     "ai.settings.maxTokens": " max_tokens ",
     "ai.settings.maxCompletionTokens": " max_completion_tokens ",
     "ai.settings.timeout": "Timeout (seconds)",

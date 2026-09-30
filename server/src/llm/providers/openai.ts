@@ -65,7 +65,7 @@ export async function openAiChat(
   if (config.jsonMode === 'json_object') body.response_format = { type: 'json_object' };
   if (config.temperature !== null) body.temperature = config.temperature;
   const parsed = answerSchema.safeParse(
-    await postJson(config, '/chat/completions', headers, body, http),
+    await postJson(config, '/chat/completions', headers, body, http, config.maxTokensField),
   );
   if (!parsed.success) throw new LlmError('bad_answer', NOT_UNDERSTOOD);
   const [choice] = parsed.data.choices;

@@ -209,6 +209,63 @@ describe('callProvider (llm.md §2, §4, §14)', () => {
     expect(fake.requests).toHaveLength(1);
   });
 
+  // OpenAI's newer models refuse max_tokens with this body (and older servers may refuse
+  // max_completion_tokens the same way): the error's `param` names the field, and only that
+  // identifier is read; the provider's message never reaches the text.
+  it.each([
+    ['max_tokens', 'max_completion_tokens'],
+    ['max_completion_tokens', 'max_tokens'],
+  ] as const)('names the output limit field when the model refuses %s', async (sent, other) => {
+    fake.enqueue({
+      status: 400,
+      body: {
+        error: {
+          message: `Fake error text: Unsupported parameter: '${sent}'`,
+          type: 'invalid_request_error',
+          param: sent,
+          code: 'unsupported_parameter',
+        },
+      },
+    });
+    const err = await callProvider(
+      { ...openai, maxTokensField: sent },
+      fake.apiKey,
+      call,
+      http,
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LlmError);
+    expect(err).toMatchObject({
+      failure: 'rejected',
+      status: 400,
+      message: `The model does not accept ${sent}; set the output limit field to ${other} in the AI assistant settings`,
+    });
+    expect((err as Error).message).not.toContain('Fake error text');
+  });
+
+  it.each([
+    ['another param', { error: { message: 'x', param: 'temperature', code: 'unsupported_value' } }],
+    ['the other field', { error: { message: 'x', param: 'max_completion_tokens' } }],
+    ['no param', { error: { message: 'x' } }],
+    ['not JSON', 'max_tokens'],
+    ['a param that is not a string', { error: { param: ['max_tokens'] } }],
+  ])('keeps the generic 400 text for %s', async (_name, body) => {
+    fake.enqueue({ status: 400, body });
+    const err = await callProvider(openai, fake.apiKey, call, http).catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      failure: 'rejected',
+      status: 400,
+      message: 'The provider refused the request (HTTP 400); check the base URL and model',
+    });
+  });
+
+  it('never reads an Anthropic error for the field (its body has no param)', async () => {
+    fake.enqueue({ status: 400, body: { error: { param: 'max_tokens' } } });
+    const err = await callProvider(anthropic, fake.apiKey, call, http).catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      message: 'The provider refused the request (HTTP 400); check the base URL and model',
+    });
+  });
+
   it.each([
     ['openai', 401, 'The provider refused the API key (HTTP 401)'],
     ['anthropic', 401, 'The provider refused the API key (HTTP 401)'],
