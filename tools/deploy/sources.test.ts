@@ -151,6 +151,25 @@ describe('the pinned source manifest of the scanner image (rulings L1 and L2)', 
     }
   });
 
+  it('carries the MPL-2.0 crates compiled into Ruff, from crates.io, checked against Cargo.lock (plan 8C)', () => {
+    const crates = manifest.filter((e) => e.component === 'ruff');
+    const crateName = (e: SourceEntry): string => e.name.replace(/^(\S+) .*$/, '$1');
+    expect(crates.map((e) => `${crateName(e)}@${e.ref}`).sort()).toEqual([
+      'colored@3.1.1',
+      'option-ext@0.2.0',
+      'version-ranges@0.1.1',
+    ]);
+    for (const e of crates) {
+      expect(e.licence, e.file).toBe('MPL-2.0');
+      expect(e.fetch, e.file).toEqual({
+        type: 'https',
+        url: `https://static.crates.io/crates/${crateName(e)}/${crateName(e)}-${e.ref}.crate`,
+      });
+      expect(e.file, e.file).toBe(`ruff-0.16.9-crate-${crateName(e)}-${e.ref}.crate`);
+      expect(e.componentVersion, e.file).toBe(installedVersion(installSh, 'RUFF'));
+    }
+  });
+
   it('pins WebKit and TinyCC to the full commits Bun pins, and SpotBugs to its release asset', () => {
     const webkit = byName('WebKit (JavaScriptCore), oven-sh fork');
     expect(webkit?.ref).toMatch(/^[0-9a-f]{40}$/);
@@ -210,6 +229,7 @@ describe('consistency with the shipped versions', () => {
       gitleaks: '8.30.1',
       'sonar-dotnet': '9.32.0.97167',
       sonarjs: '2.0.4',
+      ruff: '0.16.9',
     });
   });
 
@@ -243,6 +263,7 @@ describe('consistency with the shipped versions', () => {
       { gitleaks: '8.30.2' },
       { 'sonar-dotnet': '9.33.0.0' },
       { sonarjs: '2.0.5' },
+      { ruff: '0.17.0' },
     ];
     for (const bump of bumps) {
       expect(versionProblems(manifest, { ...pinnedVersions(), ...bump })).not.toEqual([]);
@@ -296,6 +317,7 @@ describe('manifest validation', () => {
       'files.pythonhosted.org',
       'repo1.maven.org',
       'proxy.golang.org',
+      'static.crates.io',
     ]);
     for (const e of manifest) {
       if (e.fetch.type === 'https')

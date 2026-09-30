@@ -8,6 +8,7 @@ size, complexity, duplication and coverage.
 |---|---|---|
 | JavaScript, TypeScript | **ESLint**, the project's own config and plugins | the repository has an ESLint config and its dependencies are installed |
 | JavaScript, TypeScript | **sonarjs**: SonarQube-compatible rules (eslint-plugin-sonarjs 2.0.4, LGPL-3.0) | JS/TS files are in scope, run by the `qualor/scanner` image |
+| Python | **Ruff** (Qualor's rule selection: Pyflakes, pycodestyle errors, flake8-bugbear, Pylint errors, flake8-bandit's security rules) | .py files are in scope, run by the qualor/scanner image or any Ruff 0.16 on PATH |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -16,8 +17,8 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java and C#. Other files still get findings from Gitleaks,
-Trivy, OpenGrep and external SARIF.
+detection cover TypeScript, JavaScript, Java, C# and Python. Other files still get findings from
+Gitleaks, Trivy, OpenGrep and external SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
 
@@ -71,6 +72,39 @@ When the same problem turns up in both your ESLint config and sonarjs (a setter 
 an empty function, and a few others), only your ESLint's finding is kept; sonarjs is a fallback,
 not a duplicate. Turn sonarjs off entirely with `analyzers.sonarjs.enabled: false`. Without the
 `qualor/scanner` image it is skipped, the same as a project without Trivy's vulnerability database.
+
+## Python (Ruff)
+
+Ruff runs with Qualor's own rule selection, `qualor-default`: Pyflakes (unused imports, undefined
+names and the like), pycodestyle's error checks (not its style checks), flake8-bugbear, Pylint's
+error rules, and a security subset of flake8-bandit's rules. A handful of noisy or opinionated
+bandit rules are left out of the default selection (for example the ones about bare `assert`,
+`try`/`except`/`pass`, and subprocess calls). Everything else Ruff can check — pycodestyle's style
+rules, pyupgrade, flake8-simplify, and its other rule families — stays off until you turn it on.
+
+Choose your own rules with `select` and `ignore` (Ruff's own rule prefixes and codes, or
+`qualor-default` for the bundled selection):
+
+```yaml
+analyzers:
+  ruff:
+    select: [qualor-default, UP, SIM]   # add pyupgrade and flake8-simplify
+    ignore: []
+    timeoutSeconds: 600                  # optional
+```
+
+A code you list in `select` is never left out by `ignore`, even one `qualor-default` normally
+leaves out.
+
+Ruff never reads the project's own `ruff.toml`, `.ruff.toml` or `pyproject.toml` (the checkout's, a
+parent directory's, or yours): a scan must not run with settings a merge request itself controls.
+`# noqa` comments in the source are still honoured. Virtual environments and Python caches
+(`.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs`, `site-packages`) are
+never scanned.
+
+Python files get the same metrics as the other languages (lines of code, functions, classes,
+cyclomatic and cognitive complexity) and count in duplication detection; a docstring counts as a
+comment, not as code.
 
 ## Java (PMD and SpotBugs)
 
@@ -221,8 +255,10 @@ gate. The UI shows a warning instead.
 
 Every file in the working tree (`sources.include`, default `**/*`), minus what `.gitignore` ignores,
 minus the built-in excludes (`node_modules`, `dist`,
-`build`, `target`, `vendor`, `*.min.js`, .NET `obj/` and generated `*.g.cs` / `*.Designer.cs`, and
-binary files), minus your own `sources.exclude`. Test files are recognised by
-`tests.include` (by default `*.test.*`, `*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`).
+`build`, `target`, `vendor`, `*.min.js`, .NET `obj/` and generated `*.g.cs` / `*.Designer.cs`,
+Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs` and
+`site-packages`, and binary files), minus your own `sources.exclude`. Test files are recognised by
+`tests.include` (by default `*.test.*`, `*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`,
+`test_*.py`, `*_test.py`, `conftest.py`).
 A committed `coverage/` directory is not excluded automatically. Add it to `sources.exclude` if
 yours is generated output.

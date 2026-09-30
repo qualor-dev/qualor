@@ -17,6 +17,7 @@ vulnerability database pinned by digest), compiled into the
 | Trivy                                                           | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                              | https://github.com/aquasecurity/trivy/tree/v0.74.0                                   |
 | Trivy vulnerability database (a snapshot)                       | see `/opt/qualor/share/trivy/db/metadata.json` | the advisories' own terms: see below                                                                                                                                                 | https://github.com/aquasecurity/trivy-db                                             |
 | eslint-plugin-sonarjs (Qualor's own `sonarjs` pass)             | 2.0.4                                          | LGPL-3.0 (`ESLINT-PLUGIN-SONARJS-LICENSE.txt`); its npm dependency tree, axe-core (MPL-2.0) included: see below (`SONARJS-DEPENDENCIES.txt`)                                         | https://github.com/SonarSource/SonarJS/tree/273825f98b35b29b409fbf4f89efce075c651d96 |
+| Ruff (the ruff engine)                                          | 0.16.9                                         | MIT (`RUFF-LICENSE.txt`, which also carries the licences of the projects Ruff derives from); the Rust crates it compiles in: see below (`RUFF-DEPENDENCIES.txt`)                     | https://github.com/astral-sh/ruff/tree/0.16.9                                        |
 | Eclipse Temurin JRE                                             | 17.0.20+8                                      | GPL-2.0 with the Classpath Exception (`/opt/java/openjdk/legal/`)                                                                                                                    | `qualor/scanner-sources`                                                             |
 | Node.js                                                         | 22.23.3                                        | MIT and bundled licences (`NODE-LICENSE.txt`)                                                                                                                                        | https://github.com/nodejs/node/tree/v22.23.3                                         |
 | npm, Corepack and Yarn (from the Node.js image)                 | 10.9.9, 0.36.0, 1.22.22                        | Artistic-2.0, MIT, BSD-2-Clause (the `LICENSE` in each package's directory)                                                                                                          | https://github.com/nodejs/docker-node                                                |
@@ -99,7 +100,7 @@ OpenSSL, zlib and zstd, musl, the GCC runtime (GCC Runtime Library Exception), a
 mpdecimal. The Python packages are MIT, BSD, Apache-2.0, PSF or 0BSD (chardet 7).
 
 The npm packages compiled into the `qualor` binary are ignore, picomatch, saxes, xmlchars, yaml,
-zod, web-tree-sitter and the tree-sitter grammars for Java, JavaScript, TypeScript and C#
+zod, web-tree-sitter and the tree-sitter grammars for Java, JavaScript, TypeScript, C# and Python
 (`tree-sitter-c-sharp` 0.23.5, MIT, `TREE-SITTER-C-SHARP-LICENSE.txt`), in the
 versions `pnpm-lock.yaml` locks. The `qualor` binary, and so this grammar, is the same in
 `qualor/scanner` and `qualor/scanner-dotnet`: the image only adds the .NET SDKs and
@@ -113,6 +114,14 @@ tree is otherwise permissively licensed (MIT, ISC, BSD, Apache-2.0 and others,
 `SONARJS-DEPENDENCIES.txt`) except axe-core 4.13.0 (MPL-2.0), a dependency of
 eslint-plugin-jsx-a11y, which eslint-plugin-sonarjs itself depends on; its source is in
 `qualor/scanner-sources`, same as eslint-plugin-sonarjs's own.
+
+The Ruff binary is the upstream release build, a static Rust program.
+
+- Of the crates it compiles in (`RUFF-DEPENDENCIES.txt` lists each with its licence files,
+  generated from the release's `Cargo.lock`), three are under MPL-2.0 and have their source in
+  `qualor/scanner-sources`: `colored` 3.1.1, `option-ext` 0.2.0 and `version-ranges` 0.1.1.
+- `terminfo` 0.9.0 is under the WTFPL, and `libcst` 1.9.0 includes PSF-2.0 code.
+- The rest is MIT, Apache-2.0, BSD, ISC, Zlib, Unlicense, CC0-1.0, BSL-1.0 or the Unicode licence.
 
 ## The .NET SDK, Roslynator and SonarAnalyzer.CSharp (software only in `qualor/scanner-dotnet`)
 

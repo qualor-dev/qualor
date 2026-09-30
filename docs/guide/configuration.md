@@ -42,14 +42,16 @@ sources:
   exclude: ['generated/**', 'coverage/**']   # added to the built-in excludes
   useGitignore: true
 tests:
-  include: ['**/*.test.*', '**/*.spec.*', '**/__tests__/**', '**/src/test/**', '**/*Tests/**']
+  include: ['**/*.test.*', '**/*.spec.*', '**/__tests__/**', '**/src/test/**', '**/*Tests/**',
+            '**/test_*.py', '**/*_test.py', '**/conftest.py']
   exclude: []
 
-languages: auto                     # or [typescript, javascript, java, csharp]
+languages: auto                     # or [typescript, javascript, java, csharp, python]
 
 analyzers:
   eslint:   { enabled: auto, configFile: null, args: [], timeoutSeconds: 900 }
   sonarjs:  { enabled: auto, timeoutSeconds: 900, typeChecking: auto }
+  ruff:     { enabled: auto, select: [qualor-default], ignore: [], timeoutSeconds: 600 }
   pmd:      { enabled: auto, rulesets: [qualor-default], timeoutSeconds: 900 }
   spotbugs: { enabled: auto, classDirs: [target/classes, build/classes/java/main], auxClasspathFile: null, timeoutSeconds: 1200 }
   semgrep:  { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
@@ -96,9 +98,10 @@ an empty string. That keeps a secret from leaking into the report through the co
 
 These always apply, and you can only add to them: `node_modules`, `.git`, `dist`, `build`, `target`
 (sources only; SpotBugs still reads the classes), `vendor`, `*.min.js`, `.qualor/`, .NET `obj/`,
-`bin/Debug`, `bin/Release`, generated C# (`*.g.cs`, `*.g.i.cs`, `*.Designer.cs`), binary files, and
-nested git repositories. Files over 1 MiB are skipped for metrics and duplication, but analyzers still
-see them.
+`bin/Debug`, `bin/Release`, generated C# (`*.g.cs`, `*.g.i.cs`, `*.Designer.cs`), Python virtual
+environments and caches (`.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs`,
+`site-packages`), binary files, and nested git repositories. Files over 1 MiB are skipped for
+metrics and duplication, but analyzers still see them.
 
 ## Environment variables (scanner)
 

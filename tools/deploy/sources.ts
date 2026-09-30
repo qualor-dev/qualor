@@ -8,10 +8,10 @@ import { REPO_ROOT } from './stack';
  * The complete corresponding source of the copyleft components of the images (rulings
  * L1 and L2). For qualor/scanner: OpenGrep (with its submodules and what its release binary
  * links: GMP, GNU Readline, certifi), SpotBugs, the JavaScriptCore/WebKit and TinyCC that Bun
- * links into the `qualor` binary, the Temurin JRE and the MPL-2.0 Go modules compiled into Trivy
- * (plan 2B) and into Gitleaks; for both images, every Debian source
- * package (debian-sources.ts). `pnpm deploy:sources` downloads them into sourcesDir(image), and
- * the companion images qualor/<image>-sources carry them.
+ * links into the `qualor` binary, the Temurin JRE, the MPL-2.0 Go modules compiled into Trivy
+ * (plan 2B) and into Gitleaks, and the MPL-2.0 crates compiled into Ruff (plan 8C); for both
+ * images, every Debian source package (debian-sources.ts). `pnpm deploy:sources` downloads them
+ * into sourcesDir(image), and the companion images qualor/<image>-sources carry them.
  */
 export const MANIFEST_PATH = 'deploy/scanner/sources.json';
 export const indexPath = (image: ImageName): string => `deploy/${image}/SOURCES.md`;
@@ -34,7 +34,8 @@ export type Component =
   | 'trivy'
   | 'gitleaks'
   | 'sonar-dotnet'
-  | 'sonarjs';
+  | 'sonarjs'
+  | 'ruff';
 const COMPONENTS: readonly Component[] = [
   'opengrep',
   'spotbugs',
@@ -45,6 +46,7 @@ const COMPONENTS: readonly Component[] = [
   'gitleaks',
   'sonar-dotnet',
   'sonarjs',
+  'ruff',
 ];
 
 /** Where the manifest may download from: the SCM and each component's own upstream. */
@@ -55,6 +57,7 @@ export const ALLOWED_HOSTS = [
   'files.pythonhosted.org', // PyPI source distributions
   'repo1.maven.org', // Maven Central source jars
   'proxy.golang.org', // Go module zips (the MPL-2.0 modules inside Trivy and Gitleaks)
+  'static.crates.io', // crate archives (the MPL-2.0 crates inside Ruff)
 ];
 
 export type Fetch =
@@ -83,7 +86,7 @@ export interface SourceEntry {
 
 export type Pins = Record<Component, string>;
 
-const FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(tar|tar\.gz|tar\.xz|zip|jar|src\.rpm|APKBUILD)$/;
+const FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(tar|tar\.gz|tar\.xz|zip|jar|crate|src\.rpm|APKBUILD)$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 const GITHUB_REPO = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\.git$/;
@@ -100,7 +103,7 @@ function entryProblems(e: Record<string, unknown>, where: string): string[] {
   }
   if (!text(e['file']) || !FILE.test(e['file'])) {
     problems.push(
-      `${where}: file must be a plain .tar(.gz|.xz), .zip, .jar, .src.rpm or .APKBUILD name`,
+      `${where}: file must be a plain .tar(.gz|.xz), .zip, .jar, .crate, .src.rpm or .APKBUILD name`,
     );
   }
   if (!text(e['sha256']) || !SHA256.test(e['sha256'])) {
@@ -168,7 +171,8 @@ export function loadManifest(root = REPO_ROOT): SourceEntry[] {
  */
 export function installedVersion(
   installSh: string,
-  tool: 'OPENGREP' | 'SPOTBUGS' | 'PMD' | 'TRIVY' | 'GITLEAKS' | 'SONARANALYZER' | 'SONARJS',
+  tool:
+    'OPENGREP' | 'SPOTBUGS' | 'PMD' | 'TRIVY' | 'GITLEAKS' | 'SONARANALYZER' | 'SONARJS' | 'RUFF',
 ): string {
   const m = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh);
   if (!m?.[1]) throw new Error(`an install script has no ${tool}_VERSION`);
@@ -220,6 +224,7 @@ export function pinnedVersions(root = REPO_ROOT): Pins {
     gitleaks: installedVersion(installSh, 'GITLEAKS'),
     'sonar-dotnet': installedVersion(installDotnetSh, 'SONARANALYZER'),
     sonarjs: installedVersion(installSh, 'SONARJS'),
+    ruff: installedVersion(installSh, 'RUFF'),
   };
 }
 

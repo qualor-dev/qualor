@@ -16,6 +16,15 @@ All notable changes to Qualor are listed here, newest first. The format follows
   own SonarAnalyzer reference replaces the bundled one; an ESLint issue and the sonarjs rule that
   decorates it count once. Turn them off with `analyzers.roslyn.sonarAnalyzer: false` and
   `analyzers.sonarjs.enabled: false`.
+- Python: `.py` files are a language of their own (`python`) with metrics and duplication, and a
+  new `ruff` engine runs Ruff 0.16 (MIT) from `qualor/scanner` with Qualor's own rule selection
+  (`qualor-default`: Pyflakes, pycodestyle errors, flake8-bugbear, Pylint errors and
+  flake8-bandit's security rules). It never reads the project's Ruff configuration; choose rules
+  with `analyzers.ruff.select` and `analyzers.ruff.ignore`. A `python` quality profile is created
+  for every organisation. `qualor import sonarqube` imports Python profiles where a Ruff rule is
+  the same rule, and keeps the statuses of issues SonarQube imported from Ruff. The curated
+  SonarQube-rule-to-Ruff-rule mappings ship pending review: until a maintainer reviews a mapping,
+  it still imports issue statuses, but does not yet activate the rule in a `python` profile.
 
 ### Changed
 
@@ -25,6 +34,15 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - `qualor dotnet begin` writes a new version of its MSBuild hook. The `qualor dotnet begin` of an
   older CLI treats that hook as not its own and stops with exit 2, so on a self-hosted runner whose
   builds share one MSBuild user directory, upgrade every `qualor` CLI on it together.
+- A report that holds Python files is refused (422) by a Qualor server older than this release:
+  upgrade the server before the scanner.
+- `.py` files were language `other`; they now count in lines of code, complexity and duplication,
+  and `test_*.py`, `*_test.py` and `conftest.py` are test files by default.
+- New built-in excludes: `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`,
+  `.eggs` and `site-packages` directories.
+- `ruff` is now a built-in engine id: a `qualor.yml` `sarif:` entry with `engine: ruff` no longer
+  validates, and an imported tool whose name becomes `ruff` (your own Ruff SARIF) is reported as
+  `ext-ruff`.
 
 ## [0.1.1] - 2026-09-29
 
