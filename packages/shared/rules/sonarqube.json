@@ -220,7 +220,7 @@
     {
       "sonar": ["python:S2245"],
       "qualor": ["ruff:S311"],
-      "relation": "equivalent",
+      "relation": "overlap",
       "reviewed": true,
       "reason": "Both flag the pseudo-random module used where cryptographic randomness is required."
     },
@@ -360,7 +360,7 @@
     {
       "sonar": ["python:S1656"],
       "qualor": ["ruff:PLW0127"],
-      "relation": "equivalent",
+      "relation": "overlap",
       "reviewed": true,
       "reason": "Both flag a variable assigned to itself, which has no effect."
     },
@@ -495,7 +495,7 @@
     {
       "sonar": ["python:S1128"],
       "qualor": ["ruff:F401"],
-      "relation": "equivalent",
+      "relation": "overlap",
       "reviewed": true,
       "reason": "Both flag an import that the module never uses."
     },
@@ -592,10 +592,10 @@
     },
     {
       "sonar": ["python:S1131"],
-      "qualor": ["ruff:W291"],
-      "relation": "overlap",
+      "qualor": ["ruff:W291", "ruff:W293"],
+      "relation": "equivalent",
       "reviewed": true,
-      "reason": "Both flag trailing whitespace at the end of a line."
+      "reason": "Both flag whitespace at the end of a line, including lines that hold only whitespace; Ruff splits the two cases."
     },
     {
       "sonar": ["python:S113"],
@@ -824,7 +824,7 @@
     {
       "sonar": ["python:S6734"],
       "qualor": ["ruff:PD002"],
-      "relation": "equivalent",
+      "relation": "overlap",
       "reviewed": true,
       "reason": "Both flag pandas calls using inplace=True instead of reassigning the result."
     }

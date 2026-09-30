@@ -354,9 +354,9 @@ describe('planProfile (import-sonarqube.md §7)', () => {
   });
 
   it('plans a py profile: external_ruff rows and reviewed equivalent python rows activate Ruff rules; overlap rows are status only', () => {
-    // The curated python: rows are reviewed (plan 8C follow-up, 2026-10-01). python:S1128
-    // (equivalent to ruff:F401) activates it alongside external_ruff:F401, which names the same
-    // rule, so one row results. python:S1131 (overlap, ruff:W291) stays status only.
+    // The curated python: rows are reviewed (plan 8C follow-up, 2026-10-01). python:S1716
+    // (equivalent to ruff:F701 and ruff:F702) activates both; python:S1128 (overlap with
+    // ruff:F401) stays status only, and external_ruff:F401 still activates ruff:F401.
     // external_ruff:ERA001 is outside qualor-default, so it lands in mappedNotRun.
     const plan = planProfile(
       profile({
@@ -364,8 +364,8 @@ describe('planProfile (import-sonarqube.md §7)', () => {
         active: [
           rule('external_ruff:F401', { language: 'py' }),
           rule('external_ruff:ERA001', { language: 'py' }),
+          rule('python:S1716', { language: 'py' }),
           rule('python:S1128', { language: 'py' }),
-          rule('python:S1131', { language: 'py' }),
           rule('python:S9999', { language: 'py' }),
         ],
       }),
@@ -374,9 +374,11 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.rows).toEqual([
       { ruleKey: 'ruff:ERA001', active: true, severityOverride: null },
       { ruleKey: 'ruff:F401', active: true, severityOverride: null },
+      { ruleKey: 'ruff:F701', active: true, severityOverride: null },
+      { ruleKey: 'ruff:F702', active: true, severityOverride: null },
     ]);
     expect(plan.stats.mappedNotRun).toEqual(['external_ruff:ERA001']);
-    expect(plan.stats.statusOnly).toEqual(['python:S1131']);
+    expect(plan.stats.statusOnly).toEqual(['python:S1128']);
     expect(plan.stats.pendingReview).toEqual([]);
     expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'python:S9999' })]);
   });

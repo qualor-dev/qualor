@@ -43,10 +43,14 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     expect(SONAR_MAPPING.targets('python:S9999')).toEqual([]);
   });
 
-  it('maps python:S1128 to ruff:F401 through the curated table', () => {
+  it('maps curated python rows through the table, with their reviewed relation', () => {
     expect(SONAR_MAPPING.targets('python:S1128')).toContainEqual(
-      expect.objectContaining({ key: 'ruff:F401', relation: 'equivalent', source: 'table' }),
+      expect.objectContaining({ key: 'ruff:F401', relation: 'overlap', source: 'table' }),
     );
+    expect(SONAR_MAPPING.targets('python:S1131')).toEqual([
+      expect.objectContaining({ key: 'ruff:W291', relation: 'equivalent', reviewed: true }),
+      expect.objectContaining({ key: 'ruff:W293', relation: 'equivalent', reviewed: true }),
+    ]);
   });
 
   it('knows which Ruff targets qualor-default runs', () => {
