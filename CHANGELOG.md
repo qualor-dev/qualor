@@ -24,6 +24,14 @@ All notable changes to Qualor are listed here, newest first. The format follows
   (HTMLHint rules that suit templates; `stylelint-config-recommended`). A stylelint configuration
   written in JavaScript or TypeScript is never run: stylelint is skipped with the reason, and
   `analyzers.stylelint.configFile: qualor-default` uses Qualor's configuration instead.
+- Kotlin: `.kt` and `.kts` files are a language of their own (`kotlin`), with complexity, size and
+  duplication metrics and a "Qualor way" Kotlin quality profile. `qualor/scanner` runs detekt 1.23.8
+  (Apache-2.0) on them as a new `detekt` engine (rule keys such as `detekt:MagicNumber`), with the
+  repository's own detekt config (`config/detekt/detekt.yml`, `config/detekt.yml`, `detekt.yml` or
+  `.detekt.yml`) on top of detekt's defaults, or detekt's default rule set. Rules that need the
+  project's classpath do not run, and plugins and baselines from the checkout are never loaded. A
+  detekt config Qualor cannot use makes detekt skip (fail under `analyzers.detekt.enabled: true`).
+  Turn it off with `analyzers.detekt.enabled: false`.
 
 ### Changed
 
@@ -52,6 +60,16 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - `**/*.min.css` is a built-in exclude, like `**/*.min.js`.
 - A report with `html` or `css` files needs a server of this version; upgrade the server with the
   scanner.
+- Qualor now runs detekt itself. If you imported your own detekt SARIF to cover Kotlin, remove
+  that import (the `--sarif` flag, or the `qualor.yml` `sarif:` entry). `detekt` is now a reserved
+  engine id: a `sarif:` entry with `engine: detekt` is a config error. A detekt SARIF you still
+  import is reported as `ext-detekt`, and each of its findings counts once with the built-in
+  `detekt` finding of the same rule on the same line.
+- A report that holds Kotlin files or the `detekt` engine is refused (422) by a Qualor server older
+  than this release: upgrade the server before the scanner.
+- `.kt` and `.kts` files were language `other`; they now count in lines of code, complexity and
+  duplication, which can move a new-code duplication condition.
+- `**/src/androidTest/**` and `**/src/*Test/**` (Kotlin Multiplatform) are test sources by default.
 
 ## [0.2.0] - 2026-09-30
 

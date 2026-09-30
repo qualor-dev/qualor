@@ -11,6 +11,7 @@ size, complexity, duplication and coverage.
 | Python | **Ruff** (Qualor's rule selection: Pyflakes, pycodestyle errors, flake8-bugbear, Pylint errors, flake8-bandit's security rules) | .py files are in scope, run by the qualor/scanner image or any Ruff 0.16 on PATH |
 | HTML | **HTMLHint** 1.9.2, the project's `.htmlhintrc` or Qualor's rule set | `.html` files are in scope, run by the `qualor/scanner` image |
 | CSS, SCSS | **stylelint** 17.15, the project's JSON/YAML config or Qualor's default | `.css` or `.scss` files are in scope, run by the `qualor/scanner` image |
+| Kotlin | **detekt** 1.23.8 (Apache-2.0), your `detekt.yml` or detekt's default rule set | `.kt` or `.kts` files are in scope, run by the `qualor/scanner` image |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -19,7 +20,7 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java, C#, Python, HTML and CSS; SCSS gets findings only.
+detection cover TypeScript, JavaScript, Java, Kotlin, C#, Python, HTML and CSS; SCSS gets findings only.
 Other files still get findings from Gitleaks, Trivy, OpenGrep and external SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
@@ -165,6 +166,49 @@ import (`--sarif` or the `qualor.yml` `sarif:` entry). `stylelint` is a reserved
 import is reported as `ext-stylelint`, and each of its findings counts once with the built-in
 `stylelint` finding of the same code on the same line.
 
+## Kotlin (detekt)
+
+detekt checks `.kt` and `.kts` files (Gradle Kotlin scripts too). With a detekt config in the
+repository, `config/detekt/detekt.yml` (the detekt Gradle plugin's default), `config/detekt.yml`,
+`detekt.yml` or `.detekt.yml` (the first one found), Qualor reads it and uses it on top of detekt's
+defaults, the way `buildUponDefaultConfig = true` does in Gradle. A config file that is a symbolic
+link is fine while it points at a file inside the repository. Without a config file, detekt runs
+its default rule set.
+
+```yaml
+analyzers:
+  detekt:
+    enabled: auto              # true, false, or auto: on when Kotlin files are in scope
+    configFile: lint/detekt.yml  # optional: another location for your config
+    timeoutSeconds: 900         # optional
+```
+
+`configFile` must stay inside the repository (a path outside it stops the scan with exit 2).
+
+Qualor does not build your project, so detekt runs without its classpath: rules that need type
+information (about a third of detekt's rules, such as `UnsafeCast` or `UnreachableCode`) report
+nothing. A detekt baseline file is not used, since Qualor has its own new-code gate. Plugins your
+config or build refers to are never loaded, because that would run code from the repository. Keys
+detekt does not know (a config written for another detekt version, for example) are ignored
+instead of failing the scan, and findings keep the severity your config gives each rule.
+
+Qualor reads the config as data. A config file that is not valid YAML or not a YAML mapping, has a
+duplicate key, an explicit YAML tag or more than 50 aliases, is not UTF-8, is larger than 1 MiB,
+or is a link that leaves the repository makes detekt skip with the reason in the scan log
+(`enabled: auto`), or fail the scan with exit 3 (`enabled: true`). Kotlin files larger than
+1 MiB, and files reached through a symbolic link, are not passed to detekt; the log says how many.
+Without the `qualor/scanner` image detekt is skipped.
+
+Qualor now runs detekt itself, so if you imported your own detekt SARIF before, remove that import
+(`--sarif` or the `qualor.yml` `sarif:` entry). `detekt` is a reserved engine id: a `sarif:` entry
+with `engine: detekt` is a configuration error. A detekt SARIF you still import is reported as
+`ext-detekt`, and each of its findings counts once with the built-in `detekt` finding of the same
+rule on the same line.
+
+Kotlin files get the same metrics as the other languages (lines of code, functions, classes,
+cyclomatic and cognitive complexity) and count in duplication detection. Test sources such as
+`src/test`, `src/androidTest` and Kotlin Multiplatform's `src/*Test` are test files by default.
+
 ## Java (PMD and SpotBugs)
 
 - **PMD** reads the source. The default ruleset `qualor-default` is PMD's own
@@ -290,11 +334,12 @@ sarif:
     engine: osv-scanner            # optional; default: the SARIF tool name
 ```
 
-The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint` and
+The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`, `detekt` and
 the others) are reserved: `engine: ruff` is a configuration error, and a SARIF file from a tool
-Qualor runs itself is reported under `ext-<tool>`. Don't import Ruff, stylelint or HTMLHint SARIF
-any more: Qualor runs Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
-[CSS and SCSS](#css-and-scss-stylelint) and [HTML](#html-htmlhint)) itself; a SARIF file you still
+Qualor runs itself is reported under `ext-<tool>`. Don't import Ruff, stylelint, HTMLHint or detekt
+SARIF any more: Qualor runs Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
+[CSS and SCSS](#css-and-scss-stylelint) and [HTML](#html-htmlhint)) and detekt (see
+[Kotlin](#kotlin-detekt)) itself; a SARIF file you still
 import for one of them counts once with the built-in finding of the same code on the same line.
 
 ## Coverage
@@ -325,6 +370,6 @@ minus the built-in excludes (`node_modules`, `dist`,
 Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs` and
 `site-packages`, and binary files), minus your own `sources.exclude`. Test files are recognised by
 `tests.include` (by default `*.test.*`, `*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`,
-`test_*.py`, `*_test.py`, `conftest.py`).
+`test_*.py`, `*_test.py`, `conftest.py`, `src/androidTest/`, `src/*Test/`).
 A committed `coverage/` directory is not excluded automatically. Add it to `sources.exclude` if
 yours is generated output.

@@ -2,7 +2,7 @@
 
 Qualor is an open-source, self-hosted code quality platform. It is an alternative to SonarQube with
 no lines-of-code licence. It runs open-source analyzers you already know: ESLint, PMD, SpotBugs,
-Roslyn and Roslynator for C#, Ruff for Python, stylelint and HTMLHint for CSS and HTML, OpenGrep,
+Roslyn and Roslynator for C#, detekt for Kotlin, Ruff for Python, stylelint and HTMLHint for CSS and HTML, OpenGrep,
 Gitleaks and Trivy, plus SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32,
 eslint-plugin-sonarjs 2.0.4, LGPL-3.0) for C#, JavaScript and TypeScript, or any tool that writes
 SARIF. It tracks their issues across commits and measures coverage, duplication and complexity. It
@@ -25,8 +25,8 @@ These pages cover installation, setup and day-to-day use. They are the same Mark
 5. [GitHub](./github.md): the Actions workflow and a GitHub App for check runs, annotations and
    comments.
 6. [Other CI systems and local scans](./other-ci.md): Jenkins, Bitbucket, TeamCity or a laptop.
-7. [Languages and analyzers](./languages-and-analyzers.md): JavaScript, TypeScript, Java, C#,
-   Python, HTML, CSS, secrets, dependencies, external SARIF files and coverage.
+7. [Languages and analyzers](./languages-and-analyzers.md): JavaScript, TypeScript, Java, Kotlin,
+   C#, Python, HTML, CSS, secrets, dependencies, external SARIF files and coverage.
 8. [Configuration reference](./configuration.md): `qualor.yml`, environment variables and
    precedence.
 9. [Quality gates, profiles and issues](./quality-gates.md): metrics, new code, gates, rule

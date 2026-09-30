@@ -43,10 +43,11 @@ sources:
   useGitignore: true
 tests:
   include: ['**/*.test.*', '**/*.spec.*', '**/__tests__/**', '**/src/test/**', '**/*Tests/**',
-            '**/test_*.py', '**/*_test.py', '**/conftest.py']
+            '**/test_*.py', '**/*_test.py', '**/conftest.py', '**/src/androidTest/**',
+            '**/src/*Test/**']
   exclude: []
 
-languages: auto                     # or [typescript, javascript, java, csharp, python, html, css]
+languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin]
 
 analyzers:
   eslint:    { enabled: auto, configFile: null, args: [], timeoutSeconds: 900 }
@@ -54,6 +55,7 @@ analyzers:
   ruff:      { enabled: auto, select: [qualor-default], ignore: [], timeoutSeconds: 600 }
   pmd:       { enabled: auto, rulesets: [qualor-default], timeoutSeconds: 900 }
   spotbugs:  { enabled: auto, classDirs: [target/classes, build/classes/java/main], auxClasspathFile: null, timeoutSeconds: 1200 }
+  detekt:    { enabled: auto, configFile: null, timeoutSeconds: 900 }
   semgrep:   { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
   gitleaks:  { enabled: true, configFile: null, timeoutSeconds: 300 }
   trivy:     { enabled: auto, timeoutSeconds: 600 }
@@ -103,7 +105,8 @@ These always apply, and you can only add to them: `node_modules`, `.git`, `dist`
 `bin/Debug`, `bin/Release`, generated C# (`*.g.cs`, `*.g.i.cs`, `*.Designer.cs`), Python virtual
 environments and caches (`.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs`,
 `site-packages`), binary files, and nested git repositories. Files over 1 MiB are skipped for
-metrics and duplication, but analyzers still see them.
+metrics and duplication, but analyzers still see them (detekt is the exception: it is not given
+Kotlin files over 1 MiB).
 
 ## Environment variables (scanner)
 
@@ -122,6 +125,7 @@ The server's variables (such as `QUALOR_PUBLIC_URL`, `QUALOR_SCM_INTERNAL_HOSTS`
 | `QUALOR_TRIVY_CACHE_DIR` | another Trivy database directory (absolute, outside the checkout) |
 | `QUALOR_SONARJS_DIR` | another location for Qualor's sonarjs pass (absolute, outside the checkout; default `/opt/qualor/sonarjs`, set in `qualor/scanner`) |
 | `QUALOR_WEBLINT_DIR` | directory of the HTML and CSS linters (default `/opt/qualor/weblint`, in the `qualor/scanner` image); absolute and outside the repository |
+| `QUALOR_DETEKT_JAR` | another location for detekt's jar (absolute, outside the checkout; default `/opt/qualor/lib/detekt/detekt-cli.jar`, set in `qualor/scanner`) |
 | `QUALOR_DOTNET_ANALYZERS` | directory of the bundled Roslyn analyzer DLLs (set in `qualor/scanner-dotnet`) |
 | `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | a proxy between the runner and the server (`http://` proxies) |
 

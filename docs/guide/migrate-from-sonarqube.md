@@ -51,6 +51,8 @@ SpotBugs, SonarQube-compatible-rules or Ruff counterpart, gate conditions on met
 security hotspot reviews, branches other than main, users and permissions, history, and new-code
 definitions.
 
+Kotlin projects are scanned by detekt, but SonarQube's own Kotlin rules have no detekt counterpart yet, so Kotlin quality profiles are reported as not supported and Kotlin issue statuses are not imported.
+
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says
 so. SonarQube's `css` and `Web` rules are not mapped yet.
