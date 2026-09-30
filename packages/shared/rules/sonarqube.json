@@ -1,11 +1,12 @@
 {
-  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. A curated entry stays reviewed:false until a person has compared both rules' public documentation; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet.",
+  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. A curated entry stays reviewed:false until a person has compared both rules' public documentation; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules.",
   "languages": {
     "js": { "language": "javascript", "engines": ["eslint", "sonarjs"] },
     "ts": { "language": "typescript", "engines": ["eslint", "sonarjs"] },
     "java": { "language": "java", "engines": ["pmd", "spotbugs"] },
     "cs": { "language": "csharp", "engines": ["roslyn"] },
-    "py": { "language": "python", "engines": ["ruff"] }
+    "py": { "language": "python", "engines": ["ruff"] },
+    "swift": { "language": "swift", "engines": ["swiftlint"] }
   },
   "aliases": { "squid": "java" },
   "repositories": [
@@ -28,6 +29,11 @@
       "repository": "external_roslyn",
       "engine": "roslyn",
       "reason": "Roslyn analyzer issues imported into SonarQube keep the analyzer's diagnostic ids."
+    },
+    {
+      "repository": "external_swiftlint",
+      "engine": "swiftlint",
+      "reason": "SwiftLint reports imported into SonarQube keep SwiftLint's rule identifiers."
     },
     {
       "repository": "external_ruff",

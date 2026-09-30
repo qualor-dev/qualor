@@ -214,6 +214,16 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.rows).toEqual([{ ruleKey: 'roslyn:S1481', active: true, severityOverride: null }]);
   });
 
+  it('classifies a Swift profile, all unmapped, and skips it for no mapped rules (plan 8F)', () => {
+    const plan = planProfile(
+      profile({ language: 'swift', active: [rule('swift:S1481', { language: 'swift' })] }),
+    );
+    expect(plan.language).toBe('swift');
+    expect(plan.skip).toBe('no_mapped_rules');
+    expect(plan.rows).toEqual([]);
+    expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['swift:S1481']);
+  });
+
   it('never turns off a target whose left-off rule is an unreviewed equivalent', () => {
     const mapping = loadSonarMapping({
       ...structuredClone(raw),

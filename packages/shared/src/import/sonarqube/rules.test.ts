@@ -27,6 +27,14 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     expect(SONAR_MAPPING.language('py')).toEqual({ language: 'python', engines: ['ruff'] });
   });
 
+  it('maps the swift language and the statuses of SwiftLint issues SonarQube imported (plan 8F)', () => {
+    expect(SONAR_MAPPING.language('swift')).toEqual({ language: 'swift', engines: ['swiftlint'] });
+    expect(SONAR_MAPPING.targets('external_swiftlint:force_cast')).toEqual([
+      { key: 'swiftlint:force_cast', relation: 'equivalent', reviewed: true, source: 'repository' },
+    ]);
+    expect(SONAR_MAPPING.targets('swift:S1481')).toEqual([]); // SonarSource's own Swift rules: unmapped
+  });
+
   it('maps external_ruff statuses one to one, for codes the pinned Ruff has only', () => {
     expect(SONAR_MAPPING.targets('external_ruff:SIM113')).toEqual([
       { key: 'ruff:SIM113', relation: 'equivalent', reviewed: true, source: 'repository' },
