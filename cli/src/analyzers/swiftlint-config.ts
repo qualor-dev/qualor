@@ -1,7 +1,7 @@
 import { lstatSync } from 'node:fs';
 import path from 'node:path';
 import { isUrl, SWIFTLINT_RULES, type QualorConfig } from '@qualor/shared';
-import { parseDocument, stringify, visit, type Tags } from 'yaml';
+import { parseDocument, visit, type ScalarTag, type Tags } from 'yaml';
 import { within } from './binary';
 import { shown } from './reason';
 import { readRepoConfigBytes, WeblintConfigError } from './weblint';
@@ -34,20 +34,119 @@ line_length:
 `;
 
 /**
+ * Yams's booleans (its `Resolver`): yes/no, true/false and on/off in three casings. The yaml
+ * package's YAML 1.1 schema also reads `y`/`n` as booleans, which Yams reads as strings, so
+ * `excluded: [x, y]` would change meaning (fix round 1, Important 1).
+ */
+const YAMS_BOOLS: ScalarTag[] = [
+  [true, /^(?:yes|Yes|YES|true|True|TRUE|on|On|ON)$/] as const,
+  [false, /^(?:no|No|NO|false|False|FALSE|off|Off|OFF)$/] as const,
+].map(([value, test]) => ({
+  identify: (v: unknown) => v === value,
+  default: true,
+  tag: 'tag:yaml.org,2002:bool',
+  test,
+  resolve: () => value,
+}));
+
+/** Yams's decimal float with a point: `1.5`, `5.`, `.5`, never a bare `.`. */
+const YAMS_DECIMAL = /^(?:[-+]?[0-9][0-9_]*\.[0-9_]*|\.[0-9_]+)$/;
+
+/**
+ * The yaml package's 1.1 float reads a bare `.` as NaN; Yams's float needs a digit, so
+ * `included: [.]` is the directory for both (fix round 1, Minor 3).
+ */
+function yamsDecimal(t: Tags[number]): Tags[number] {
+  if (typeof t === 'string' || t.collection !== undefined) return t;
+  const scalar = t as ScalarTag;
+  return scalar.test?.test('.') === true ? { ...scalar, test: YAMS_DECIMAL } : t;
+}
+
+/**
  * SwiftLint reads its configuration with Yams, a YAML 1.1 reader: `yes`/`on` are booleans there.
- * Qualor reads and writes YAML 1.1 too, so each value it keeps means to SwiftLint what it meant in
- * the project's file. Timestamps are left as text both ways (Yams decides what a date is).
+ * Qualor reads YAML 1.1 with Yams's booleans, so each value it keeps means to SwiftLint what it
+ * meant in the project's file. Timestamps are left as text (Yams decides what a date is).
  */
 const YAML_OPTIONS = {
   version: '1.1' as const,
-  customTags: (tags: Tags) =>
-    tags.filter((t) =>
-      typeof t === 'string' ? t !== 'timestamp' : t.tag !== 'tag:yaml.org,2002:timestamp',
-    ),
+  customTags: (tags: Tags) => [
+    ...YAMS_BOOLS,
+    ...tags
+      .filter((t) =>
+        typeof t === 'string'
+          ? t !== 'timestamp' && t !== 'bool'
+          : t.tag !== 'tag:yaml.org,2002:timestamp' && t.tag !== 'tag:yaml.org,2002:bool',
+      )
+      .map(yamsDecimal),
+  ],
 };
 
-/** Characters libyaml (Yams) reads as a line break, which the yaml package writes as they are. */
-const YAML11_BREAKS = /[\u0085\u2028\u2029]/;
+/** The yaml package's own guard against aliases that expand exponentially (its default). */
+const MAX_ALIAS_EXPANSION = 100;
+
+/** Thrown by `quoted` for a string libyaml cannot hold (a lone UTF-16 surrogate). */
+class UnwritableString extends Error {}
+
+/**
+ * A double-quoted YAML scalar holding only printable ASCII: every other character is an escape
+ * (`\xHH`, `\uHHHH`, `\UHHHHHHHH`), which libyaml decodes after reading. So no raw control, C1,
+ * U+0085/U+2028/U+2029 line break or U+FEFF reaches libyaml, which refuses or re-reads them (fix
+ * round 1, Important 2), and `$` is written as `\x24`: SwiftLint replaces `${VAR}` in the text of
+ * its configuration before parsing it, so no kept value can read the environment (Minor 2).
+ * A string is always quoted, so Yams reads it as a string whatever it looks like (Minor 1).
+ */
+function quoted(s: string): string {
+  let out = '"';
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (cp >= 0xd800 && cp <= 0xdfff) throw new UnwritableString();
+    const hex = (width: number) => cp.toString(16).padStart(width, '0');
+    if (ch === '"' || ch === '\\') out += `\\${ch}`;
+    else if (cp >= 0x20 && cp < 0x7f && ch !== '$') out += ch;
+    else if (cp <= 0xff) out += `\\x${hex(2)}`;
+    else if (cp <= 0xffff) out += `\\u${hex(4)}`;
+    else out += `\\U${hex(8)}`;
+  }
+  return `${out}"`;
+}
+
+function scalar(value: unknown): string {
+  if (typeof value === 'string') return quoted(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') {
+    if (Number.isNaN(value)) return '.nan';
+    if (!Number.isFinite(value)) return value > 0 ? '.inf' : '-.inf';
+    return String(value);
+  }
+  return 'null';
+}
+
+const isEmpty = (v: object) => (Array.isArray(v) ? v.length === 0 : Object.keys(v).length === 0);
+
+/** Block-style YAML lines for a plain value (`parseSwiftlintYaml` checked it is plain data). */
+function emit(value: unknown, indent: string, lines: string[], head: string): void {
+  if (value === null || typeof value !== 'object') {
+    lines.push(`${head} ${scalar(value)}`);
+  } else if (isEmpty(value)) {
+    lines.push(`${head} ${Array.isArray(value) ? '[]' : '{}'}`);
+  } else {
+    lines.push(head);
+    if (Array.isArray(value)) {
+      for (const item of value) emit(item, `${indent}  `, lines, `${indent}  -`);
+    } else {
+      for (const [k, v] of Object.entries(value)) {
+        emit(v, `${indent}  `, lines, `${indent}  ${quoted(k)}:`);
+      }
+    }
+  }
+}
+
+/** The written configuration's body: top-level keys at column 0. */
+function writeYaml(out: Record<string, unknown>): string {
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(out)) emit(v, '', lines, `${quoted(k)}:`);
+  return lines.map((l) => `${l}\n`).join('');
+}
 
 export interface SwiftlintPlan {
   /** The configuration Qualor writes to its work directory and passes as `--config`. */
@@ -138,19 +237,22 @@ export function parseSwiftlintYaml(
       return { error: `has more than ${MAX_SWIFTLINT_CONFIG_ALIASES} YAML aliases` };
     }
     try {
-      value = doc.toJS({ maxAliasCount: 100 });
+      value = doc.toJS({ maxAliasCount: MAX_ALIAS_EXPANSION });
     } catch (err) {
       // The yaml package's resource-exhaustion guard: a few aliases that expand exponentially.
       if (err instanceof ReferenceError) return { error: 'expands too many YAML aliases' };
       throw err;
     }
+    if (value === null || value === undefined) return { ok: {} };
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      return { error: 'is not a YAML mapping' };
+    }
+    // Recursive, so inside the try as well.
+    if (!plainData(value)) return { error: 'holds a YAML value SwiftLint cannot read' };
+    return { ok: value as Record<string, unknown> };
   } catch {
     return { error: 'cannot be parsed as YAML' };
   }
-  if (value === null || value === undefined) return { ok: {} };
-  if (typeof value !== 'object' || Array.isArray(value)) return { error: 'is not a YAML mapping' };
-  if (!plainData(value)) return { error: 'holds a YAML value SwiftLint cannot read' };
-  return { ok: value as Record<string, unknown> };
 }
 
 /** `included`/`excluded` (relative to the configuration's directory) as picomatch globs. */
@@ -166,21 +268,27 @@ function pathGlobs(
   for (const raw of entries) {
     const entry = raw.replace(/^(\.\/)+/, '').replace(/\/+$/, '');
     const escapes =
-      entry === '' ||
-      entry.startsWith('!') ||
-      entry.startsWith('~') ||
-      entry.includes('\\') ||
-      path.posix.isAbsolute(entry) ||
-      path.win32.isAbsolute(entry) ||
-      /^[A-Za-z]:/.test(entry) ||
-      entry.split('/').includes('..');
+      raw === '' ||
+      raw.startsWith('!') ||
+      raw.startsWith('~') ||
+      raw.includes('\\') ||
+      path.posix.isAbsolute(raw) ||
+      path.win32.isAbsolute(raw) ||
+      /^[A-Za-z]:/.test(raw) ||
+      raw.split('/').includes('..');
     if (escapes) {
       dropped.push(`${key}: ${shown(raw)}`);
+      continue;
+    }
+    // `.` and `./` name the configuration's directory itself (fix round 1, Minor 3).
+    if (entry === '' || entry === '.') {
+      globs.push(...(dir === '' ? ['**'] : [dir, `${dir}/**`]));
       continue;
     }
     const glob = dir === '' ? entry : `${dir}/${entry}`;
     globs.push(glob, `${glob}/**`);
   }
+
   return globs;
 }
 
@@ -256,18 +364,19 @@ export function planSwiftlintConfig(
       dropped.push(shown(key));
     }
   }
-  const header = `# Written by Qualor from ${name.replace(/[\u2028\u2029]/g, '?')} (config.md §6).\n`;
+  // The name is shown as printable ASCII: a comment ends at any line break libyaml knows.
+  const header = `# Written by Qualor from ${name.replace(/[^\x20-\x7e]/g, '?')} (config.md §6).\n`;
   let yaml: string;
   try {
-    yaml = header + stringify(out, YAML_OPTIONS);
-  } catch {
-    return { skip: `${name} cannot be parsed as YAML` };
+    yaml = header + writeYaml(out);
+  } catch (err) {
+    if (err instanceof UnwritableString) {
+      return { skip: `${name} holds a lone UTF-16 surrogate, which SwiftLint cannot read` };
+    }
+    // A value nested past the stack (fix round 1, Minor 4).
+    return { skip: `${name} cannot be written as YAML` };
   }
-  if (YAML11_BREAKS.test(yaml)) {
-    return {
-      skip: `${name} holds U+0085, U+2028 or U+2029, which SwiftLint reads as a line break`,
-    };
-  }
+
   return { yaml, included, excluded, dropped, notRun, source };
 }
 

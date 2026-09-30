@@ -17,22 +17,17 @@ import {
   type SwiftlintPlan,
 } from './swiftlint-config';
 
-// Any exception of the YAML parser or writer (a RangeError on a document nested past the stack)
-// must be a skip reason, never a CLI crash (ruling F9, E14 parity). The yaml package turns its own
-// stack overflow into a parse error, so a throw is simulated for one marker text.
+// Any exception of the YAML parser (a RangeError on a document nested past the stack) must be a
+// skip reason, never a CLI crash (ruling F9, E14 parity). The yaml package turns its own stack
+// overflow into a parse error, so a throw is simulated for one marker text.
 vi.mock('yaml', async (importOriginal) => {
   const yaml = await importOriginal<typeof Yaml>();
-  const marked = (v: unknown) => JSON.stringify(v ?? null).includes('THROW-RANGE-ERROR');
   return {
     ...yaml,
     parseDocument: (...args: Parameters<typeof yaml.parseDocument>) => {
       if (args[0].includes('THROW-RANGE-ERROR-PARSE'))
         throw new RangeError('Maximum call stack size exceeded');
       return yaml.parseDocument(...args);
-    },
-    stringify: (...args: Parameters<typeof yaml.stringify>) => {
-      if (marked(args[0])) throw new RangeError('Maximum call stack size exceeded');
-      return yaml.stringify(...args);
     },
   };
 });
@@ -41,6 +36,8 @@ const tmp = useTempDirs();
 const posix = process.platform !== 'win32';
 const SOURCEKIT = [...SWIFTLINT_RULES].filter(([, r]) => r.sourceKit).map(([id]) => id);
 const bytes = (s: string) => new TextEncoder().encode(s);
+/** A backslash, spelled so that no editing tool rewrites an escape sequence in expected text. */
+const BS = String.fromCharCode(92);
 
 function parsed(yaml: string): Record<string, unknown> {
   const r = parseSwiftlintYaml(bytes(yaml));
@@ -207,6 +204,19 @@ describe('planSwiftlintConfig (config.md §6, plan 8F)', () => {
     expect(plan('excluded: Pods\n').excluded).toEqual(['Pods', 'Pods/**']);
   });
 
+  it('reads . and ./ as the configuration directory itself (fix round 1, m3)', () => {
+    expect(plan('included: [., ./, .//]\n', 'ios').included).toEqual([
+      'ios',
+      'ios/**',
+      'ios',
+      'ios/**',
+      'ios',
+      'ios/**',
+    ]);
+    expect(plan('included: [.]\n').included).toEqual(['**']);
+    expect(plan('included: ["/", ""]\n').dropped).toEqual(['included: /', 'included: ']);
+  });
+
   it('skips rule lists that are not lists of identifiers, and path lists that are not lists', () => {
     expect(skipOf('disabled_rules: {a: 1}\n')).toEqual({
       skip: '.swiftlint.yml: disabled_rules must be a list of rule identifiers',
@@ -216,32 +226,87 @@ describe('planSwiftlintConfig (config.md §6, plan 8F)', () => {
     });
   });
 
-  it('reads and writes YAML 1.1 like SwiftLint (Yams), so every value means what it meant', () => {
-    // A quoted "yes" stays a string; a bare yes is a boolean in YAML 1.1, for Yams and for us.
-    expect(plan('file_name:\n  severity: "yes"\n').yaml).toContain('severity: "yes"');
-    expect(written(plan('file_name:\n  flag: yes\n'))['file_name']).toEqual({ flag: true });
-    // A date stays the text it was (SwiftLint's own reader decides what it is).
-    expect(plan('expiring_todo:\n  date: 2026-01-01\n').yaml).toContain('date: 2026-01-01');
+  it('reads booleans as Yams does: yes/no/on/off/true/false, never y or n (fix round 1, I1)', () => {
+    const p = plan(
+      'identifier_name:\n  excluded: [x, y, n, Y, N, id]\nfile_name:\n  a: yes\n  b: Off\n  c: TRUE\n  d: "yes"\n',
+    );
+    expect(written(p)['identifier_name']).toEqual({ excluded: ['x', 'y', 'n', 'Y', 'N', 'id'] });
+    expect(written(p)['file_name']).toEqual({ a: true, b: false, c: true, d: 'yes' });
+    expect(p.yaml).toContain('"excluded":\n    - "x"\n    - "y"\n    - "n"\n');
+    expect(p.yaml).toContain('"a": true\n');
+    expect(p.yaml).toContain('"d": "yes"\n');
+    // Yams's floats need a digit: a bare `.` is a string (fix round 1, Minor 3).
+    expect(parseSwiftlintYaml(bytes('v: [., 1.5, .5, 5., 7]\n'))).toEqual({
+      ok: { v: ['.', 1.5, 0.5, 5, 7] },
+    });
   });
 
-  it('skips a kept value holding a character that Yams reads as a line break', () => {
-    for (const c of ['\\u2028', '\\u2029', '\\x85']) {
-      expect(skipOf(`line_length:\n  message: "x${c}write_baseline:/tmp/m"\n`), c).toEqual({
-        skip: '.swiftlint.yml holds U+0085, U+2028 or U+2029, which SwiftLint reads as a line break',
-      });
-    }
-  });
-
-  it('writes the source name safely into the header', () => {
-    const p = planSwiftlintConfig({}, '', 'a\nwrite_baseline: x\u2028.yml');
-    expect('yaml' in p && p.yaml.split('\n')[0]).toBe(
-      '# Written by Qualor from a?write_baseline: x?.yml (config.md §6).',
+  it('writes every string and key double-quoted, so Yams reads each as a string (fix round 1, m1)', () => {
+    const p = plan(
+      'expiring_todo:\n  date: 2026-01-01\n  oct: "0o17"\n  num: "1e3"\n  "<<": {a: 1}\n  n: 12\n  f: 1.5\n  e: []\n  m: {}\n  z: null\n',
+    );
+    expect(p.yaml.split('\n').slice(1).join('\n')).toBe(
+      [
+        '"disabled_rules":',
+        ...SOURCEKIT.map((id) => `  - "${id}"`),
+        '"expiring_todo":',
+        '  "date": "2026-01-01"',
+        '  "oct": "0o17"',
+        '  "num": "1e3"',
+        '  "<<":',
+        '    "a": 1',
+        '  "n": 12',
+        '  "f": 1.5',
+        '  "e": []',
+        '  "m": {}',
+        '  "z": null',
+        '',
+      ].join('\n'),
     );
   });
 
-  it('skips when writing the configuration throws', () => {
-    expect(skipOf('line_length:\n  message: THROW-RANGE-ERROR\n')).toEqual({
-      skip: '.swiftlint.yml cannot be parsed as YAML',
+  it('escapes every character outside printable ASCII, so libyaml reads it back (fix round 1, I2)', () => {
+    const value =
+      'a\u{7f}b\u{9f}c\u{85}d\u{2028}e\u{2029}f\u{feff}g\u{fffe}h\u{e9}i\u{1f600}j\u{1}k"l\\m\tn\no';
+    const p = planSwiftlintConfig({ line_length: { message: value } }, '', 'x.yml');
+    if ('skip' in p) throw new Error(p.skip);
+    expect(p.yaml.split('\n').slice(1).join('\n')).toMatch(/^[\x20-\x7e\n]*$/);
+    expect(p.yaml).toContain(
+      '"message": "a%x7fb%x9fc%x85d%u2028e%u2029f%ufeffg%ufffeh%xe9i%U0001f600j%x01k%"l%%m%x09n%x0ao"'.replaceAll(
+        '%',
+        BS,
+      ),
+    );
+    expect(written(p)['line_length']).toEqual({ message: value });
+  });
+
+  it('skips a value holding a lone surrogate, which libyaml cannot read (fix round 1, I2)', () => {
+    expect(
+      planSwiftlintConfig({ line_length: { message: 'a\u{d800}b' } }, '', '.swiftlint.yml'),
+    ).toEqual({
+      skip: '.swiftlint.yml holds a lone UTF-16 surrogate, which SwiftLint cannot read',
+    });
+  });
+
+  it('writes $ as an escape, so SwiftLint expands no ${VAR} in a kept value (fix round 1, m2)', () => {
+    const p = plan('identifier_name:\n  excluded: ["${CI_JOB_TOKEN}", "$HOME"]\n');
+    expect(p.yaml).not.toContain('$');
+    expect(p.yaml).toContain(`"${BS}x24{CI_JOB_TOKEN}"`);
+    expect(written(p)['identifier_name']).toEqual({ excluded: ['${CI_JOB_TOKEN}', '$HOME'] });
+  });
+
+  it('writes the source name safely into the header', () => {
+    const p = planSwiftlintConfig({}, '', 'a\nwrite_baseline: x\u{2028}\u{e9}$.yml');
+    expect('yaml' in p && p.yaml.split('\n')[0]).toBe(
+      '# Written by Qualor from a?write_baseline: x??$.yml (config.md §6).',
+    );
+  });
+
+  it('skips when writing the configuration throws (fix round 1, m4)', () => {
+    let deep: unknown = 1;
+    for (let i = 0; i < 100_000; i++) deep = [deep];
+    expect(planSwiftlintConfig({ line_length: deep }, '', '.swiftlint.yml')).toEqual({
+      skip: '.swiftlint.yml cannot be written as YAML',
     });
   });
 });
