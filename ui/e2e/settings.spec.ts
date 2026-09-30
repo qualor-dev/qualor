@@ -82,6 +82,7 @@ test.describe('on a phone', () => {
 
   // Each settings page fits the screen once its data is in: a wide table scrolls in its panel.
   for (const path of [
+    '/settings/organizations',
     '/settings/users',
     '/settings/members',
     '/settings/webhooks',
@@ -231,6 +232,55 @@ test('an instance admin creates a user who must change the password, and resets 
   await expect(bob).toContainText('Deactivated');
   await expect(page.getByRole('status')).toHaveText('bob is deactivated.');
   await expect(bob.getByRole('button', { name: 'Activate' })).toBeFocused();
+  await expectAccessible(page);
+});
+
+test('an instance admin sees the organizations and creates one in a dialog', async ({ page }) => {
+  await page.goto('/settings/organizations');
+  await expect(page).toHaveTitle('Organizations · Qualor');
+  const current = page.getByRole('row', { name: /Default/ });
+  await expect(current).toContainText('default');
+  await expect(current).toContainText('Current');
+  // The switcher in the header appears with a second organization only.
+  await expect(page.getByRole('combobox', { name: 'Organization', exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'New organization' }).click();
+  const create = page.getByRole('dialog', { name: 'New organization' });
+  await expect(create.getByLabel('Name')).toBeFocused();
+  await create.getByLabel('Name').fill('E2E Labs');
+  await expect(create.getByLabel('Key')).toHaveValue('e2e-labs');
+  await expectAccessible(page);
+
+  // The seeded server keeps one organization: the new one lives in this browser only.
+  const labs = {
+    id: '0190a6c2-0000-7000-8000-0000000000e2',
+    key: 'e2e-labs',
+    name: 'E2E Labs',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  let created = false;
+  await page.route(/\/api\/v0\/organizations(\?.*)?$/, async (route) => {
+    if (route.request().method() === 'POST') {
+      expect(route.request().postDataJSON()).toEqual({ key: 'e2e-labs', name: 'E2E Labs' });
+      created = true;
+      return route.fulfill({ status: 201, json: labs });
+    }
+    const response = await route.fetch();
+    const body = (await response.json()) as { items: unknown[]; nextCursor: string | null };
+    return route.fulfill({
+      response,
+      json: created ? { ...body, items: [...body.items, labs] } : body,
+    });
+  });
+  await create.getByRole('button', { name: 'Create organization' }).click();
+  await expect(create).toBeHidden();
+  await expect(page.getByRole('status')).toHaveText('E2E Labs created. You are its admin.');
+  await expect(page.getByRole('row', { name: /E2E Labs/ })).toContainText('e2e-labs');
+  await expect(
+    page.getByRole('row', { name: /E2E Labs/ }).getByRole('button', { name: 'Switch to E2E Labs' }),
+  ).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Organization', exact: true })).toBeVisible();
   await expectAccessible(page);
 });
 

@@ -9,6 +9,11 @@ export const settingsRoutes: Routes = [
     loadComponent: () => import('./tokens.page').then((m) => m.TokensPage),
   },
   {
+    path: 'organizations',
+    title: $localize`:@@title.organizations:Organizations`,
+    loadComponent: () => import('./organizations.page').then((m) => m.OrganizationsPage),
+  },
+  {
     path: 'users',
     title: $localize`:@@title.users:Users`,
     loadComponent: () => import('./users.page').then((m) => m.UsersPage),

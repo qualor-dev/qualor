@@ -18,6 +18,8 @@ const REMOVED = [
   'has a test action per project',
   'The test on Settings → GitLab says which',
   'map it in Settings → GitLab or GitHub',
+  // Step 11: organisations are created in Settings → Organizations.
+  'creates more organisations through the API',
 ];
 
 const guide = new URL('../../docs/guide/', import.meta.url);

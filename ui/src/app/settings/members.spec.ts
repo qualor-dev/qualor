@@ -471,6 +471,22 @@ describe('SettingsPage navigation for members and enterprise entries (rbac-audit
     ]);
   });
 
+  it('lists Organizations first under Instance, for instance admins', async () => {
+    setup();
+    TestBed.inject(SessionStore).set(me({ admin: true }));
+    const fixture = TestBed.createComponent(SettingsPage);
+    await settle(fixture);
+    const instance = [
+      ...(fixture.nativeElement as HTMLElement).querySelectorAll('nav [role="group"]'),
+    ].find((g) => g.querySelector('.nav-group-title')?.textContent?.trim() === 'Instance');
+    expect([...(instance?.querySelectorAll('a') ?? [])].map((a) => a.textContent?.trim())).toEqual([
+      'Organizations',
+      'Users',
+      'AI assistant',
+      'Licence',
+    ]);
+  });
+
   it('hides the audit entries while audit-log is not active', async () => {
     const server = new FakeServer();
     server.on('GET', '/api/v0/organizations', { body: page([]) });

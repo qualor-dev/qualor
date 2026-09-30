@@ -7,7 +7,11 @@ GitLab/GitHub connections. The first start creates the organisation `default`. T
 on organisations, users, projects or lines of code, in the community edition or with an
 [enterprise licence](./enterprise.md). Most companies need only `default`.
 
-An instance admin creates more organisations through the API (`POST /api/v0/organizations`).
+An instance admin creates more organisations in **Settings → Organizations** with **New
+organization**. Give it a name and a key of 2 to 64 lowercase letters, digits and hyphens. The key
+is what the CLI and the audit log use. Neither can be changed later. You become the new
+organisation's Organization admin, and the organisation switcher in the header lists it. The same
+screen calls `POST /api/v0/organizations`.
 
 ## Users and roles
 
