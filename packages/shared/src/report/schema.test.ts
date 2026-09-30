@@ -46,6 +46,10 @@ describe('reportSchema', () => {
     expect(issues({ ...base, files: [file, file] }).join()).toMatch(/duplicate file path/);
   });
 
+  it('accepts a Python file (plan 8C)', () => {
+    expect(issues({ ...base, files: [{ ...file, language: 'python' }] })).toEqual([]);
+  });
+
   it('rejects a finding on a file that is not in files[]', () => {
     const f = { ...finding, location: { ...must(finding.location), path: 'src/missing.ts' } };
     expect(issues({ ...base, findings: [f] }).join()).toMatch(/findings\.0\.location\.path/);

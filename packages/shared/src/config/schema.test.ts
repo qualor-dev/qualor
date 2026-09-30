@@ -211,6 +211,48 @@ describe('parseConfig', () => {
       parseConfig({ version: 1, sarif: [{ path: 'x.sarif', engine: 'roslyn' }] }),
     ).toThrow(/reserved/);
   });
+
+  it('has analyzers.ruff with its defaults and knows Python (config.md §3, §3.1, §6)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.ruff).toEqual({
+      enabled: 'auto',
+      select: ['qualor-default'],
+      ignore: [],
+      timeoutSeconds: 600,
+    });
+    expect(parseConfig({ version: 1, languages: ['python'] }).languages).toEqual(['python']);
+    for (const glob of ['**/test_*.py', '**/*_test.py', '**/conftest.py']) {
+      expect(c.tests.include).toContain(glob);
+    }
+    for (const glob of [
+      '**/.venv/**',
+      '**/venv/**',
+      '**/.tox/**',
+      '**/.nox/**',
+      '**/__pycache__/**',
+      '**/__pypackages__/**',
+      '**/.eggs/**',
+      '**/site-packages/**',
+    ]) {
+      expect(BUILTIN_EXCLUDES).toContain(glob);
+    }
+  });
+
+  it('validates Ruff selectors and reserves the ruff engine id', () => {
+    const ruff = (r: object) => parseConfig({ version: 1, analyzers: { ruff: r } }).analyzers.ruff;
+    expect(ruff({ select: ['qualor-default', 'UP', 'S608'], ignore: ['E731'] }).select).toEqual([
+      'qualor-default',
+      'UP',
+      'S608',
+    ]);
+    expect(() => ruff({ select: [] })).toThrow(/at least one/);
+    expect(() => ruff({ select: ['E4,E7'] })).toThrow(/Ruff rule/);
+    expect(() => ruff({ ignore: ['qualor-default'] })).toThrow(/Ruff rule/);
+    expect(() => ruff({ config: 'ruff.toml' })).toThrow();
+    expect(() => parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'ruff' }] })).toThrow(
+      /reserved/,
+    );
+  });
 });
 
 describe('interpolateEnv', () => {

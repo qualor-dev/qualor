@@ -30,7 +30,8 @@ export const EQUIVALENCES: Equivalences = equivalencesSchema.parse(data);
 
 /**
  * data-model.md §5.3: which engine's issue is primary when two engines report the same problem.
- * Higher wins; external engines (any id not listed) rank lowest.
+ * Higher wins; external engines (any id not listed) rank lowest. `gitleaks` > `semgrep` >
+ * `spotbugs` > `roslyn` > `pmd` > `eslint` > `sonarjs` > `ruff` > external.
  */
 export const ENGINE_PRIORITY: readonly string[] = [
   'gitleaks',
@@ -40,6 +41,7 @@ export const ENGINE_PRIORITY: readonly string[] = [
   'pmd',
   'eslint',
   'sonarjs',
+  'ruff',
 ];
 
 export function enginePriority(engineId: string): number {

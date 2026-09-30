@@ -12,6 +12,7 @@ export * from './metrics';
 export * from './gates/evaluate';
 export * from './rules/equivalences';
 export * from './rules/defaults';
+export * from './rules/ruff';
 export * from './markdown/code-span';
 export * from './fixtures';
 export * from './import/sonarqube/api';

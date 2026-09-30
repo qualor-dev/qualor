@@ -63,6 +63,11 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(enginePriority('sonarjs')).toBeGreaterThan(enginePriority('my-tool'));
   });
 
+  it('ranks ruff right after sonarjs, above any external engine (data-model.md §5.3)', () => {
+    expect(enginePriority('sonarjs')).toBeGreaterThan(enginePriority('ruff'));
+    expect(enginePriority('ruff')).toBeGreaterThan(enginePriority('my-tool'));
+  });
+
   it('pairs every sonarjs rule that decorates an ESLint rule with that rule', () => {
     expect(equivalentPartners('sonarjs:S2376')).toContain('eslint:accessor-pairs');
     expect(equivalentPartners('sonarjs:S1186')).toEqual(

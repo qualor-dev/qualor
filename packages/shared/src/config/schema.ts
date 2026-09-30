@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { BUILTIN_ENGINES, ENGINE_ID_PATTERN } from '../report/taxonomy';
+import { RUFF_SELECTOR } from '../rules/ruff';
 
-const SCANNABLE_LANGUAGES = ['typescript', 'javascript', 'java', 'csharp'] as const;
+const SCANNABLE_LANGUAGES = ['typescript', 'javascript', 'java', 'csharp', 'python'] as const;
 
 export const BUILTIN_EXCLUDES: readonly string[] = [
   '**/node_modules/**',
@@ -20,6 +21,15 @@ export const BUILTIN_EXCLUDES: readonly string[] = [
   '**/*.g.cs',
   '**/*.g.i.cs',
   '**/*.Designer.cs',
+  // Python virtual environments, caches and installed packages (the directories Ruff leaves out itself).
+  '**/.venv/**',
+  '**/venv/**',
+  '**/.tox/**',
+  '**/.nox/**',
+  '**/__pycache__/**',
+  '**/__pypackages__/**',
+  '**/.eggs/**',
+  '**/site-packages/**',
 ];
 
 const enabled = z.union([z.literal('auto'), z.boolean()]).default('auto');
@@ -63,6 +73,29 @@ const analyzers = z
     sonarjs: z
       .strictObject({ enabled, timeoutSeconds: timeout(900), typeChecking: enabled })
       .default({ enabled: 'auto', timeoutSeconds: 900, typeChecking: 'auto' }),
+    // Python (plan 8C): Ruff with Qualor's own rule selection, never the project's Ruff
+    // configuration (config.md §6).
+    ruff: z
+      .strictObject({
+        enabled,
+        select: z
+          .array(
+            z.string().refine((s) => s === 'qualor-default' || RUFF_SELECTOR.test(s), {
+              message: 'a Ruff rule selector (F, B, S608, PLE, ALL…) or qualor-default',
+            }),
+          )
+          .min(1, { message: 'list at least one rule selector, or set enabled: false' })
+          .default(['qualor-default']),
+        ignore: z
+          .array(
+            z.string().refine((s) => RUFF_SELECTOR.test(s), {
+              message: 'a Ruff rule selector (F, B, S608, PLE…)',
+            }),
+          )
+          .default([]),
+        timeoutSeconds: timeout(600),
+      })
+      .prefault({}),
     pmd: z
       .strictObject({
         enabled,
@@ -183,6 +216,9 @@ export const configSchema = z
             '**/__tests__/**',
             '**/src/test/**',
             '**/*Tests/**',
+            '**/test_*.py',
+            '**/*_test.py',
+            '**/conftest.py',
           ]),
         exclude: globs,
       })

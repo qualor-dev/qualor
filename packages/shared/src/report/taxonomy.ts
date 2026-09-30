@@ -7,12 +7,13 @@ export type Quality = (typeof QUALITIES)[number];
 export const ISSUE_KINDS = ['issue', 'hotspot'] as const;
 export type IssueKind = (typeof ISSUE_KINDS)[number];
 
-export const LANGUAGES = ['typescript', 'javascript', 'java', 'csharp', 'other'] as const;
+export const LANGUAGES = ['typescript', 'javascript', 'java', 'csharp', 'python', 'other'] as const;
 export type Language = (typeof LANGUAGES)[number];
 
 export const BUILTIN_ENGINES = [
   'eslint',
   'sonarjs',
+  'ruff',
   'pmd',
   'spotbugs',
   'semgrep',

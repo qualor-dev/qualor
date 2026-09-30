@@ -115,6 +115,22 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
         '**/bin/Debug',
         '--skip-dirs',
         '**/bin/Release',
+        '--skip-dirs',
+        '**/.venv',
+        '--skip-dirs',
+        '**/venv',
+        '--skip-dirs',
+        '**/.tox',
+        '--skip-dirs',
+        '**/.nox',
+        '--skip-dirs',
+        '**/__pycache__',
+        '--skip-dirs',
+        '**/__pypackages__',
+        '--skip-dirs',
+        '**/.eggs',
+        '--skip-dirs',
+        '**/site-packages',
         '--timeout',
         '600s',
         '--format',
@@ -133,7 +149,7 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     });
     expect(typeof transform).toBe('function');
     expect(dropEnv).toBe(isTrivyVariable);
-    expect(skipDirs()).toHaveLength(9);
+    expect(skipDirs()).toHaveLength(17);
   });
 
   it('passes a root .trivyignore, and warns about a database older than 14 days', async () => {
