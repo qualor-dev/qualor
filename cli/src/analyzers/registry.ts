@@ -1,3 +1,4 @@
+import { detektAnalyzer } from './detekt';
 import { eslintAnalyzer } from './eslint';
 import { gitleaksAnalyzer } from './gitleaks';
 import { htmlhintAnalyzer } from './htmlhint';
@@ -19,6 +20,7 @@ export function builtinAnalyzers(): Analyzer[] {
     ruffAnalyzer,
     pmdAnalyzer,
     spotbugsAnalyzer,
+    detektAnalyzer,
     semgrepAnalyzer,
     gitleaksAnalyzer,
     trivyAnalyzer,

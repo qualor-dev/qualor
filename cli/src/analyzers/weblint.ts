@@ -36,27 +36,40 @@ export function repoEntryExists(file: string): boolean {
  * size are taken from that descriptor; at most `maxBytes + 1` bytes are ever read.
  */
 export function readRepoConfig(root: string, rel: string, maxBytes: number): string {
+  return readRepoConfigBytes(root, rel, maxBytes).toString('utf8');
+}
+
+/**
+ * `readRepoConfig`'s raw bytes, for a caller that checks the encoding itself (detekt). `name` is
+ * what the messages call the file (default `rel`).
+ */
+export function readRepoConfigBytes(
+  root: string,
+  rel: string,
+  maxBytes: number,
+  name: string = rel,
+): Buffer {
   const file = path.resolve(root, rel);
-  if (!repoEntryExists(file)) throw new WeblintConfigError(`${rel} cannot be read`);
-  if (!staysInside(root, file)) throw new WeblintConfigError(`${rel} is outside the repository`);
-  const notRegular = () => new WeblintConfigError(`${rel} is not a regular file`);
+  if (!repoEntryExists(file)) throw new WeblintConfigError(`${name} cannot be read`);
+  if (!staysInside(root, file)) throw new WeblintConfigError(`${name} is outside the repository`);
+  const notRegular = () => new WeblintConfigError(`${name} is not a regular file`);
   try {
     if (!statSync(file).isFile()) throw notRegular();
   } catch (err) {
     if (err instanceof WeblintConfigError) throw err;
-    throw new WeblintConfigError(`${rel} cannot be read`);
+    throw new WeblintConfigError(`${name} cannot be read`);
   }
   let fd: number;
   try {
     fd = openSync(file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
   } catch {
-    throw new WeblintConfigError(`${rel} cannot be read`);
+    throw new WeblintConfigError(`${name} cannot be read`);
   }
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) throw notRegular();
     const tooLarge = () =>
-      new WeblintConfigError(`${rel} is larger than ${maxBytes / 1024 / 1024} MiB`);
+      new WeblintConfigError(`${name} is larger than ${maxBytes / 1024 / 1024} MiB`);
     if (stat.size > maxBytes) throw tooLarge();
     const buf = Buffer.alloc(maxBytes + 1);
     let length = 0;
@@ -66,10 +79,10 @@ export function readRepoConfig(root: string, rel: string, maxBytes: number): str
       length += n;
       if (length > maxBytes) throw tooLarge();
     }
-    return buf.toString('utf8', 0, length);
+    return buf.subarray(0, length);
   } catch (err) {
     if (err instanceof WeblintConfigError) throw err;
-    throw new WeblintConfigError(`${rel} cannot be read`);
+    throw new WeblintConfigError(`${name} cannot be read`);
   } finally {
     closeSync(fd);
   }

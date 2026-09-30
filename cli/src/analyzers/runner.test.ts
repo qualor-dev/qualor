@@ -9,6 +9,7 @@ import { useTempDirs, writeTree } from '../../test/tmp';
 import type { ScopeFile } from '../discovery/discover';
 import type { Logger } from '../log';
 import { silentLogger } from '../log';
+import { createDetektAnalyzer } from './detekt';
 import { builtinAnalyzers } from './registry';
 import {
   emergencyCleanup,
@@ -337,7 +338,48 @@ describe('runAnalyzers', () => {
     expect(requiredFailures(captures)).toEqual(['pmd']);
   });
 
-  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D, 8D)', () => {
+  it('skips detekt without the image under auto and fails it under enabled: true (plan 8E Review Focus 5)', async () => {
+    const root = tmp();
+    writeTree(root, { 'src/A.kt': 'class A\n' });
+    const analyzer = createDetektAnalyzer({ defaultJar: path.join(tmp(), 'missing.jar') });
+    const files: ScopeFile[] = [
+      {
+        path: 'src/A.kt',
+        absPath: path.join(root, 'src', 'A.kt'),
+        language: 'kotlin',
+        grammar: 'kotlin',
+        kind: 'main',
+        size: 8,
+      },
+    ];
+    const [auto] = await runAnalyzers([analyzer], {
+      root,
+      files,
+      config: config({}),
+      log: silentLogger,
+      env: { PATH: '' },
+    });
+    // A plain host keeps a complete scan (ruling G6): a skip, not unavailable.
+    expect([auto?.status, auto?.reason, auto?.required, auto?.unavailable ?? false]).toEqual([
+      'skipped',
+      'detekt is not installed (qualor/scanner image)',
+      false,
+      false,
+    ]);
+    const required = await runAnalyzers([analyzer], {
+      root,
+      files,
+      config: config({ detekt: { enabled: true } }),
+      log: silentLogger,
+      env: { PATH: '' },
+    });
+    expect(required.map((c) => [c.engineId, c.status, c.required])).toEqual([
+      ['detekt', 'failed', true],
+    ]);
+    expect(requiredFailures(required)).toEqual(['detekt']);
+  });
+
+  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D, 8D, 8E)', () => {
     const ids = builtinAnalyzers().map((a) => a.id);
     const order = [
       'eslint',
@@ -345,6 +387,7 @@ describe('runAnalyzers', () => {
       'ruff',
       'pmd',
       'spotbugs',
+      'detekt',
       'semgrep',
       'gitleaks',
       'trivy',

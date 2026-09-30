@@ -1,8 +1,8 @@
 import { lstatSync, opendirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { ScopeFile } from '../discovery/discover';
-import { executable, isInside, staysInside } from './binary';
-import { DEAD_PROXY_PROPERTIES } from './jvm';
+import { staysInside } from './binary';
+import { DEAD_PROXY_PROPERTIES, javaBinary } from './jvm';
 import { shown } from './reason';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
 
@@ -128,23 +128,6 @@ export function spotbugsHome(launcher: string): { home: string; jar: string } | 
   } catch {
     return null;
   }
-}
-
-/**
- * The `java` SpotBugs runs on: `$JAVA_HOME/bin/java` when `JAVA_HOME` is absolute and lies
- * outside the repository (as the SpotBugs and PMD launchers would pick it), else the `java` from
- * `PATH` or the scanner image (ruling V3). A `JAVA_HOME` inside the checkout is never used.
- */
-function javaBinary(ctx: AnalyzerContext): string | null {
-  const key = Object.keys(ctx.env).find((k) =>
-    process.platform === 'win32' ? k.toUpperCase() === 'JAVA_HOME' : k === 'JAVA_HOME',
-  );
-  const home = key === undefined ? undefined : ctx.env[key];
-  if (home !== undefined && path.isAbsolute(home)) {
-    const java = path.join(home, 'bin', process.platform === 'win32' ? 'java.exe' : 'java');
-    if (executable(java) && !isInside(ctx.root, java)) return java;
-  }
-  return ctx.resolveBinary('java');
 }
 
 function prepare(ctx: AnalyzerContext): Promise<Preparation> {

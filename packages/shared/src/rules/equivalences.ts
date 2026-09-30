@@ -92,13 +92,26 @@ export const EXTERNAL_BUILTIN_ALIASES: Readonly<Record<string, string>> = Object
   'ext-detekt': 'detekt',
 });
 
+/** detekt 1.23 SARIF rule ids: `detekt.<rule set>.<Rule>` (`detekt.style.MagicNumber`). */
+const DETEKT_RULE_ID = /^detekt\.([a-z][a-z-]*)\.([A-Z][A-Za-z0-9]*)$/;
+
+/**
+ * A detekt SARIF rule id split into its rule set and rule name, or null for any other id. The
+ * CLI's detekt transform (cli/src/analyzers/detekt-sarif.ts) and the `ext-detekt` pairing below
+ * share it (plan 8E ruling E5), so both reach the same `<Rule>`.
+ */
+export function detektRuleId(id: string): { ruleset: string; rule: string } | null {
+  const [, ruleset, rule] = DETEKT_RULE_ID.exec(id) ?? [];
+  return ruleset === undefined || rule === undefined ? null : { ruleset, rule };
+}
+
 /**
  * Per aliased external engine: how its own SARIF rule ids map to the built-in rule ids, when they
  * differ. detekt writes `detekt.<ruleset>.<Rule>` (`detekt.style.MagicNumber`), the built-in
  * engine's rules are `<Rule>`.
  */
 const RULE_ID_NORMALISERS: Readonly<Record<string, (ruleId: string) => string>> = Object.freeze({
-  'ext-detekt': (id) => /^detekt\.[^.]+\.([^.]+)$/.exec(id)?.[1] ?? id,
+  'ext-detekt': (id) => detektRuleId(id)?.rule ?? id,
 });
 
 /**

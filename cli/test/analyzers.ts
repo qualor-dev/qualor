@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -18,6 +18,7 @@ import {
 import { parse } from 'yaml';
 import { describe, expect } from 'vitest';
 import { findRepoBinary, resolveBinary } from '../src/analyzers/binary';
+import { DEFAULT_DETEKT_JAR } from '../src/analyzers/detekt';
 import { fileLines, normalizeCaptures, type NormalizedEngines } from '../src/analyzers/normalize';
 import type { ProcessResult } from '../src/analyzers/process';
 import { runAnalyzers } from '../src/analyzers/runner';
@@ -70,6 +71,15 @@ export function describeWithTools(
   groups: readonly (string | readonly string[])[],
 ): typeof describe {
   const ok = groups.every((g) => (typeof g === 'string' ? [g] : g).some(toolInstalled));
+  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+/**
+ * Plan 8E: real detekt needs its jar (tools/analyzers/install.sh, which both CIs' test jobs run)
+ * and java; `QUALOR_REQUIRE_ANALYZERS=1` makes it run, and fail, when either is missing.
+ */
+export function describeWithDetekt(): typeof describe {
+  const ok = existsSync(DEFAULT_DETEKT_JAR) && toolInstalled('java');
   return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
 }
 
