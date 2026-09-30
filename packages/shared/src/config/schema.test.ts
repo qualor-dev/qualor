@@ -249,6 +249,15 @@ describe('parseConfig', () => {
     expect(() => ruff({ select: ['E4,E7'] })).toThrow(/Ruff rule/);
     expect(() => ruff({ ignore: ['qualor-default'] })).toThrow(/Ruff rule/);
     expect(() => ruff({ config: 'ruff.toml' })).toThrow();
+    // Ruff 0.16.9 has no code starting with these: a config error naming the value, not a Ruff exit 2.
+    expect(() => ruff({ select: ['ZZZ9'] })).toThrow(/unknown Ruff rule selector "ZZZ9"/);
+    expect(() => ruff({ ignore: ['S9999'] })).toThrow(/unknown Ruff rule selector "S9999"/);
+    expect(ruff({ select: ['ALL', 'C90', 'PL', 'RUF100', 'E'], ignore: ['ALL', 'D1'] })).toEqual(
+      expect.objectContaining({
+        select: ['ALL', 'C90', 'PL', 'RUF100', 'E'],
+        ignore: ['ALL', 'D1'],
+      }),
+    );
     expect(() => parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'ruff' }] })).toThrow(
       /reserved/,
     );

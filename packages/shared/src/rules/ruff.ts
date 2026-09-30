@@ -1,3 +1,5 @@
+import ruffKeys from '../../rules/ruff-keys.json' with { type: 'json' };
+
 /**
  * Ruff (plan 8C, config.md §3, §6). `RUFF_VERSION` is the Ruff the qualor/scanner image ships
  * (tools/analyzers/install.sh RUFF_VERSION; tools/ci.test.ts checks they agree). The CLI runs only
@@ -8,6 +10,19 @@ export const RUFF_VERSION = '0.16.9';
 
 /** A Ruff rule selector: a linter prefix or a rule code (`F`, `E4`, `PLE`, `S608`, `ASYNC100`, `ALL`). */
 export const RUFF_SELECTOR = /^[A-Z]{1,5}[0-9]{0,4}$/;
+
+/** Every prefix of every code Ruff RUFF_VERSION has (ruff-keys.json), `F` and `F4` as well as `F401`. */
+const KNOWN_PREFIXES: ReadonlySet<string> = new Set(
+  (ruffKeys as string[]).flatMap((code) => [...code].map((_, i) => code.slice(0, i + 1))),
+);
+
+/**
+ * Whether `selector` is `ALL` or selects at least one rule of Ruff RUFF_VERSION: a prefix of one
+ * of its codes. An unknown selector would otherwise stop Ruff with only "exit code 2".
+ */
+export function ruffSelectorKnown(selector: string): boolean {
+  return selector === 'ALL' || (RUFF_SELECTOR.test(selector) && KNOWN_PREFIXES.has(selector));
+}
 
 /** `qualor-default`: Ruff's own defaults, flake8-bugbear, Pylint errors, flake8-bandit's security rules. */
 export const RUFF_DEFAULT_SELECT: readonly string[] = ['E4', 'E7', 'E9', 'F', 'B', 'PLE', 'S'];

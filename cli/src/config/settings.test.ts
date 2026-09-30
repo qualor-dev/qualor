@@ -58,6 +58,15 @@ describe('loadSettings', () => {
     expect(version.message).toContain('version');
   });
 
+  it('rejects an unknown Ruff selector as a config error naming it, exit code 2', () => {
+    const root = tmp();
+    writeTree(root, { 'qualor.yml': 'version: 1\nanalyzers:\n  ruff:\n    select: [F, ZZZ9]\n' });
+    const err = failure(() => loadSettings({ cwd: root, env: {}, flags: {}, log: silentLogger }));
+    expect(err.exitCode).toBe(2);
+    expect(err.message).toContain('analyzers.ruff.select.1');
+    expect(err.message).toContain('unknown Ruff rule selector "ZZZ9"');
+  });
+
   it('rejects Semgrep registry configs with a message about the network', () => {
     const root = tmp();
     writeTree(root, {

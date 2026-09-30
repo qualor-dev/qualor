@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BUILTIN_ENGINES, ENGINE_ID_PATTERN } from '../report/taxonomy';
-import { RUFF_SELECTOR } from '../rules/ruff';
+import { RUFF_SELECTOR, RUFF_VERSION, ruffSelectorKnown } from '../rules/ruff';
 
 const SCANNABLE_LANGUAGES = ['typescript', 'javascript', 'java', 'csharp', 'python'] as const;
 
@@ -34,6 +34,21 @@ export const BUILTIN_EXCLUDES: readonly string[] = [
 
 const enabled = z.union([z.literal('auto'), z.boolean()]).default('auto');
 const timeout = (seconds: number) => z.number().int().positive().max(86_400).default(seconds);
+/**
+ * A Ruff selector (or a value `extra` allows): the shape first, then — so a typo is a config error
+ * naming it, not a Ruff exit 2 — `ALL` or a prefix of a code Ruff RUFF_VERSION has.
+ */
+const ruffSelector = (extra: (s: string) => boolean, shape: string) =>
+  z.string().superRefine((s, ctx) => {
+    if (extra(s)) return;
+    if (!RUFF_SELECTOR.test(s)) ctx.addIssue({ code: 'custom', message: shape });
+    else if (!ruffSelectorKnown(s)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `unknown Ruff rule selector "${s}": no rule of Ruff ${RUFF_VERSION} starts with it`,
+      });
+    }
+  });
 const globs = z.array(z.string().min(1)).default([]);
 
 /**
@@ -80,18 +95,15 @@ const analyzers = z
         enabled,
         select: z
           .array(
-            z.string().refine((s) => s === 'qualor-default' || RUFF_SELECTOR.test(s), {
-              message: 'a Ruff rule selector (F, B, S608, PLE, ALL…) or qualor-default',
-            }),
+            ruffSelector(
+              (s) => s === 'qualor-default',
+              'a Ruff rule selector (F, B, S608, PLE, ALL…) or qualor-default',
+            ),
           )
           .min(1, { message: 'list at least one rule selector, or set enabled: false' })
           .default(['qualor-default']),
         ignore: z
-          .array(
-            z.string().refine((s) => RUFF_SELECTOR.test(s), {
-              message: 'a Ruff rule selector (F, B, S608, PLE…)',
-            }),
-          )
+          .array(ruffSelector(() => false, 'a Ruff rule selector (F, B, S608, PLE…)'))
           .default([]),
         timeoutSeconds: timeout(600),
       })
