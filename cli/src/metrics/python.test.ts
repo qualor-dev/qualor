@@ -80,6 +80,28 @@ def top():
     expect(m.statements).toBe(18);
   });
 
+  it('counts a guarded wildcard case _ if …: as a decision, a bare case _: not', () => {
+    const guarded = metrics(`def f(a, b):
+    match a:
+        case 1:
+            pass
+        case _ if b:
+            pass
+        case _:
+            pass
+`);
+    // def 1 + case 1 + case _ if b = 3
+    expect(guarded.complexity).toBe(3);
+    const bare = metrics(`def f(a):
+    match a:
+        case 1:
+            pass
+        case _:
+            pass
+`);
+    expect(bare.complexity).toBe(2);
+  });
+
   it('adds nesting to cognitive complexity like Java', () => {
     const m = metrics(`def g(xs):
     for x in xs:

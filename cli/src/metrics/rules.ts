@@ -289,8 +289,10 @@ const PYTHON: FamilyRules = {
   catchClause: 'except_clause',
   ternary: 'conditional_expression',
   transparent: new Set(['parenthesized_expression']),
-  // A bare `case _:` is the default arm, not a decision.
-  isCase: (n) => n.type === 'case_clause' && n.namedChild(0)?.text !== '_',
+  // A bare `case _:` is the default arm, not a decision; a guarded `case _ if cond:` is one.
+  isCase: (n) =>
+    n.type === 'case_clause' &&
+    (n.namedChild(0)?.text !== '_' || n.namedChildren.some((c) => c?.type === 'if_clause')),
   // Python's `elif` is its own clause (elseIfClause), never a nested if_statement.
   elseIf: () => null,
   // Only called for if_statement: a for/while/try `else` is not a branch of an if.
