@@ -68,6 +68,10 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(unavailableEngines(['sonarjs'], (t) => t === SONARJS_PASS)).toEqual(['sonarjs']);
     expect(unavailableEngines(['sonarjs'], (t) => ['node', SONARJS_PASS].includes(t))).toEqual([]);
   });
+  it('needs node and the weblint pass for stylelint and htmlhint (plan 8D)', () => {
+    expect(unavailableEngines(['stylelint', 'htmlhint'], (t) => t === 'node', 'linux')).toEqual(['stylelint', 'htmlhint']);
+    expect(unavailableEngines(['stylelint', 'htmlhint'], () => true, 'linux')).toEqual([]);
+  });
   it('needs dotnet on a Linux host for roslyn; win32 and darwin are always unavailable (ruling R8)', () => {
     expect(unavailableEngines(['roslyn'], (t) => t === 'dotnet', 'linux')).toEqual([]);
     expect(unavailableEngines(['roslyn'], () => false, 'linux')).toEqual(['roslyn']);

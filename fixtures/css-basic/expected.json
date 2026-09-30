@@ -1,0 +1,25 @@
+{
+  "description": "CSS and SCSS with the project's own .stylelintrc.json (stylelint-config-standard, one rule off); SCSS parses with postcss-scss although the config sets no SCSS syntax",
+  "engines": ["stylelint"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "stylelint:declaration-property-value-no-unknown", "path": "src/styles/main.css", "startLine": 3, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "stylelint:length-zero-no-unit", "path": "src/styles/main.css", "startLine": 4, "severity": "low", "quality": "maintainability" },
+    { "ruleKey": "stylelint:block-no-empty", "path": "src/styles/main.css", "startLine": 7, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "stylelint:property-no-unknown", "path": "src/styles/main.css", "startLine": 11, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "stylelint:color-hex-length", "path": "src/styles/theme.scss", "startLine": 1, "severity": "low", "quality": "maintainability" },
+    { "ruleKey": "stylelint:declaration-property-value-no-unknown", "path": "src/styles/theme.scss", "startLine": 8, "severity": "medium", "quality": "reliability" }
+  ],
+  "files": {
+    "src/styles/main.css": { "language": "css", "kind": "main", "lines": 13, "ncloc": 10, "commentLines": 1, "functions": 0, "classes": 0, "complexity": 0, "cognitiveComplexity": 0 },
+    "src/styles/theme.scss": { "language": "css", "kind": "main", "lines": 10 }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "main.css#ncloc": "13 lines - 1 comment line (1) - 2 blank lines (6, 9) = 10",
+    "theme.scss#metrics": "SCSS is language css without a grammar (report-format.md §6): no metrics, no duplication",
+    "config": "the project config turns font-family-no-missing-generic-family-keyword off, so Arial on line 12 is not reported; #fffffff is reported by declaration-property-value-no-unknown (stylelint 17 reports it there, not under color-no-invalid-hex)",
+    "severity": "report-format.md §7.1: rules of stylelint-config-recommended(-scss) are possible-error (reliability/medium), the others (length-zero-no-unit, color-hex-length, from stylelint-config-standard) convention (maintainability/low)"
+  }
+}

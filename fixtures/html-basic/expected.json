@@ -1,0 +1,25 @@
+{
+  "description": "HTML with Qualor's default HTMLHint rules: a full page with real mistakes, and an Angular fragment that only trips frame-title-require",
+  "engines": ["htmlhint"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "htmlhint:html-lang-require", "path": "index.html", "startLine": 2, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "htmlhint:title-require", "path": "index.html", "startLine": 5, "severity": "low", "quality": "maintainability" },
+    { "ruleKey": "htmlhint:attr-no-duplication", "path": "index.html", "startLine": 8, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "htmlhint:alt-require", "path": "index.html", "startLine": 9, "severity": "medium", "quality": "maintainability" },
+    { "ruleKey": "htmlhint:tag-no-obsolete", "path": "index.html", "startLine": 11, "severity": "low", "quality": "maintainability" },
+    { "ruleKey": "htmlhint:frame-title-require", "path": "partials/card.html", "startLine": 3, "severity": "medium", "quality": "maintainability" }
+  ],
+  "files": {
+    "index.html": { "language": "html", "kind": "main", "lines": 18, "ncloc": 16, "commentLines": 1, "functions": 0, "classes": 0, "complexity": 0, "cognitiveComplexity": 0 },
+    "partials/card.html": { "language": "html", "kind": "main", "lines": 4, "ncloc": 4, "commentLines": 0, "functions": 0, "classes": 0, "complexity": 0, "cognitiveComplexity": 0 }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "index.html#ncloc": "18 lines - 1 comment line (7) - 1 blank line inside <script> (14) = 16 (report-format.md §6: text and script bodies count their non-blank lines only)",
+    "index.html#tag-no-obsolete": "HTMLHint reports <center> at its start and its end tag, both on line 11 with the same text; the pass keeps one",
+    "partials/card.html": "an Angular template: no doctype, no <head>, [class.active] and (click) attributes and {{ }} text stay silent under Qualor's set; only the iframe without an accessible name is reported",
+    "severity": "report-format.md §7.1: attr-no-duplication is a correctness rule (reliability/medium), alt-require, html-lang-require and frame-title-require accessibility rules (maintainability/medium), title-require and tag-no-obsolete others (maintainability/low), whatever HTMLHint's error/warning"
+  }
+}

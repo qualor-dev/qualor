@@ -65,6 +65,14 @@ export const SONARJS_PASS = 'sonarjs-pass';
 const SONARJS_PASS_FILE = '/opt/qualor/sonarjs/run.mjs';
 
 /**
+ * A pseudo-tool: Qualor's HTML and CSS passes in the scanner image's place (config.md §6), a skip
+ * when absent like sonarjs's; the scan environment drops QUALOR_WEBLINT_DIR, so only the default
+ * path is ever checked here.
+ */
+export const WEBLINT_PASS = 'weblint-pass';
+const WEBLINT_PASS_FILES = ['/opt/qualor/weblint/stylelint.mjs', '/opt/qualor/weblint/htmlhint.mjs'];
+
+/**
  * The binaries each built-in engine needs (any one of an inner list). The harness checks the same
  * places the CLI does: PATH and the scanner image's /opt/qualor/bin.
  */
@@ -87,6 +95,9 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   sonarjs: [['node'], [SONARJS_PASS]],
   // Plan 8C: the Ruff binary (install.sh).
   ruff: [['ruff']],
+  // Plan 8D: node and, like sonarjs above, the image-bundled weblint pass.
+  stylelint: [['node'], [WEBLINT_PASS]],
+  htmlhint: [['node'], [WEBLINT_PASS]],
 };
 
 /**
@@ -107,6 +118,7 @@ export function findTool(name: string, env: Record<string, string | undefined> =
 export function toolOnPath(name: string, env: Record<string, string | undefined> = process.env): boolean {
   if (name === TRIVY_DATABASE) return existsSync(TRIVY_DATABASE_FILE);
   if (name === SONARJS_PASS) return existsSync(SONARJS_PASS_FILE);
+  if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
   return findTool(name, env) !== null;
 }
 

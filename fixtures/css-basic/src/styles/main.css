@@ -1,0 +1,13 @@
+/* Page layout */
+.page-header {
+  color: #fffffff;
+  margin: 0px;
+}
+
+.page-footer {
+}
+
+.page-body {
+  colr: red;
+  font-family: Arial;
+}

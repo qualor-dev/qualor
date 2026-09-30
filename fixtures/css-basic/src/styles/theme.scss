@@ -1,0 +1,10 @@
+$brand: #3366cc;
+
+// Buttons
+.button {
+  color: $brand;
+
+  &:hover {
+    color: darken($brand, 10%);
+  }
+}
