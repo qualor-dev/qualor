@@ -153,7 +153,8 @@ function licenceTexts(crateFile) {
     .sort();
   return names.map((n) => ({
     file: n.slice(n.indexOf('/') + 1),
-    text: execFileSync('tar', ['-xzOf', archive, n], run),
+    // LF only, as git stores the file (.gitattributes eol=lf); some crates ship CRLF texts.
+    text: execFileSync('tar', ['-xzOf', archive, n], run).replace(/\r\n?/g, '\n'),
   }));
 }
 
