@@ -326,20 +326,6 @@
       "reason": "Both flag yield or return used outside of a function body."
     },
     {
-      "sonar": ["python:S2734"],
-      "qualor": ["ruff:PLE0101"],
-      "relation": "equivalent",
-      "reviewed": false,
-      "reason": "Both flag a return with a value inside a generator function."
-    },
-    {
-      "sonar": ["python:S5780"],
-      "qualor": ["ruff:F601"],
-      "relation": "overlap",
-      "reviewed": false,
-      "reason": "Both flag a suspicious membership or equality test against a literal collection."
-    },
-    {
       "sonar": ["python:S5781"],
       "qualor": ["ruff:B033"],
       "relation": "equivalent",
