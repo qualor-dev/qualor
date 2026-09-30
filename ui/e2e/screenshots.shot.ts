@@ -175,7 +175,7 @@ test('20 licence, 21 licence in its grace period with the admin banner', async (
     }),
   );
   await page.reload();
-  await expect(page.getByText('Grace period: enterprise features stop on')).toBeVisible();
+  await expect(page.getByText('Grace period ends', { exact: true })).toBeVisible();
   await expect(
     page.getByRole('status').filter({ hasText: 'The Qualor licence expired on' }),
   ).toBeVisible();

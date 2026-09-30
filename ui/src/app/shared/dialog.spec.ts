@@ -34,9 +34,7 @@ describe('openModal and closeModal', () => {
 });
 
 @Component({
-  template: `<dialog #dialog>
-    <p id="question">{{ question() }}</p>
-  </dialog>`,
+  templateUrl: './dialog.spec.html',
 })
 class Asking {
   readonly question = signal('');
