@@ -144,4 +144,24 @@ describe('built-in profiles and gate (data-model.md §4.4, gates.md §7)', () =>
     const csharp = (await profilesOf(org!.id)).filter((p) => p.language === 'csharp');
     expect(csharp).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
   });
+
+  it('adds the python built-in to an organisation that has every other built-in (plan 8C, no migration)', async () => {
+    const [org] = await t.db
+      .insert(organizations)
+      .values({ key: 'pre-python', name: 'Before Python' })
+      .returning();
+    for (const language of PROFILE_LANGUAGES.filter((l) => l !== 'python')) {
+      await t.db.insert(qualityProfiles).values({
+        organizationId: org!.id,
+        name: BUILTIN_NAME,
+        language,
+        isBuiltin: true,
+        isDefault: true,
+        unknownRules: 'activate',
+      });
+    }
+    await bootstrap(t.db, admin);
+    const python = (await profilesOf(org!.id)).filter((p) => p.language === 'python');
+    expect(python).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
+  });
 });

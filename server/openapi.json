@@ -12183,6 +12183,7 @@
                 "javascript",
                 "java",
                 "csharp",
+                "python",
                 "*"
               ]
             },
@@ -12224,6 +12225,7 @@
                               "javascript",
                               "java",
                               "csharp",
+                              "python",
                               "*"
                             ]
                           },
@@ -12365,6 +12367,7 @@
                       "javascript",
                       "java",
                       "csharp",
+                      "python",
                       "*"
                     ]
                   },
@@ -12412,6 +12415,7 @@
                         "javascript",
                         "java",
                         "csharp",
+                        "python",
                         "*"
                       ]
                     },
@@ -12567,6 +12571,7 @@
                         "javascript",
                         "java",
                         "csharp",
+                        "python",
                         "*"
                       ]
                     },
@@ -12735,6 +12740,7 @@
                         "javascript",
                         "java",
                         "csharp",
+                        "python",
                         "*"
                       ]
                     },
@@ -12984,6 +12990,7 @@
                         "javascript",
                         "java",
                         "csharp",
+                        "python",
                         "*"
                       ]
                     },
@@ -13139,6 +13146,7 @@
                         "javascript",
                         "java",
                         "csharp",
+                        "python",
                         "*"
                       ]
                     },
@@ -13832,6 +13840,7 @@
                           "javascript",
                           "java",
                           "csharp",
+                          "python",
                           "*"
                         ]
                       },
@@ -13860,6 +13869,7 @@
                                   "javascript",
                                   "java",
                                   "csharp",
+                                  "python",
                                   "*"
                                 ]
                               },
@@ -14033,6 +14043,7 @@
                 "javascript",
                 "java",
                 "csharp",
+                "python",
                 "*"
               ]
             },
@@ -14056,6 +14067,7 @@
                         "javascript",
                         "java",
                         "csharp",
+                        "python",
                         "*"
                       ]
                     },
@@ -14084,6 +14096,7 @@
                                 "javascript",
                                 "java",
                                 "csharp",
+                                "python",
                                 "*"
                               ]
                             },

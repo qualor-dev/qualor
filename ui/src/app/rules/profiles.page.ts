@@ -23,7 +23,7 @@ import { copyName } from '../shared/names';
 
 export type Profile = ItemOf<'/api/v0/quality-profiles'>;
 type Language = Profile['language'];
-const LANGUAGES: Language[] = ['typescript', 'javascript', 'java', 'csharp', '*'];
+const LANGUAGES: Language[] = ['typescript', 'javascript', 'java', 'csharp', 'python', '*'];
 /** data-model.md §4.4: a profile is at most the third level of its chain. */
 const MAX_PROFILE_DEPTH = 3;
 

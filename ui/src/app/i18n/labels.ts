@@ -61,6 +61,7 @@ const LABELS: Record<LabelKind, Record<string, string>> = {
     javascript: $localize`:@@label.language.javascript:JavaScript`,
     java: $localize`:@@label.language.java:Java`,
     csharp: $localize`:@@label.language.csharp:C#`,
+    python: $localize`:@@label.language.python:Python`,
     '*': $localize`:@@label.language.any:Other engines`,
   },
   /** The `warnings` of a gate result (gates.md §5, §6; server gates/stage.ts, shared evaluate.ts). */

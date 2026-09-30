@@ -21,4 +21,12 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     expect(governingLanguage('roslyn', null)).toBe('*');
     expect(governingLanguage('roslyn', 'other')).toBe('*');
   });
+
+  it('lets the python profile govern ruff findings on Python files (plan 8C)', () => {
+    expect(governingLanguage('ruff', 'python')).toBe('python');
+    expect(governingLanguage('ruff', null)).toBe('*');
+    for (const engine of ['semgrep', 'gitleaks', 'trivy', 'osv-scanner']) {
+      expect(governingLanguage(engine, 'python')).toBe('*');
+    }
+  });
 });

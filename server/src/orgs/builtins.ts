@@ -8,7 +8,14 @@ import { gateConditions, qualityGates, qualityProfiles } from '../db/schema';
 export const BUILTIN_NAME = 'Qualor way';
 
 /** data-model.md §4.4: one profile per language, plus `*` for engines not tied to a language. */
-export const PROFILE_LANGUAGES = ['typescript', 'javascript', 'java', 'csharp', '*'] as const;
+export const PROFILE_LANGUAGES = [
+  'typescript',
+  'javascript',
+  'java',
+  'csharp',
+  'python',
+  '*',
+] as const;
 export type ProfileLanguage = (typeof PROFILE_LANGUAGES)[number];
 
 export interface EnsureBuiltinsResult {
