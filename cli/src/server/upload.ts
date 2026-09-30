@@ -98,6 +98,13 @@ export async function uploadReport(
         `the report (${(input.size / 1024 / 1024).toFixed(1)} MiB gzipped) is larger than the server accepts (${describeFailure(res)})`,
       );
     }
+    if (res.status === 422) {
+      // Ruling C2: a new language or engine in the report is refused by an older server.
+      throw new CliError(
+        EXIT.SERVER,
+        `the server rejected the upload (${describeFailure(res)}); a server older than this scanner may not accept its report (a new language or engine): upgrade the server first`,
+      );
+    }
     throw new CliError(EXIT.SERVER, `the server rejected the upload (${describeFailure(res)})`);
   }
 }

@@ -162,6 +162,20 @@ describe('uploadReport', () => {
     expect(err.message).toContain('422 REPORT_INVALID');
   });
 
+  it("hints on a 422 that an older server may not accept a newer scanner's report", async () => {
+    const { file, size } = gzFile();
+    const { url } = await serve((_req, res) => problem(res, 422, 'REPORT_INVALID'), {
+      readBody: false,
+    });
+    const err = await uploadError(
+      uploadReport(ep(url), { projectKey: 'a/b', file, size }, { log: silentLogger }),
+    );
+    expect(err.exitCode).toBe(4);
+    expect(err.message).toContain('422 REPORT_INVALID');
+    expect(err.message).toContain('a server older than this scanner may not accept its report');
+    expect(err.message).toContain('upgrade the server first');
+  });
+
   it('fails with exit 4 on a 202 that is not an upload answer', async () => {
     const { file, size } = gzFile();
     const { url } = await serve((_req, res) => json(res, 202, { analysisId: 'nope' }));
