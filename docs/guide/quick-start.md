@@ -25,8 +25,8 @@ docker compose ps          # wait until "server" is healthy (15–30 s)
 grep BOOTSTRAP .env        # the admin password for the first sign-in
 ```
 
-Open <http://127.0.0.1:8080> and sign in as `admin` with that password. Then change it with
-**Change password** at the top right. The server listens on `127.0.0.1` only. To reach it from other
+Open <http://127.0.0.1:8080> and sign in as `admin` with that password. Then change it: open the
+menu under your name at the top right and choose **Change password**. The server listens on `127.0.0.1` only. To reach it from other
 machines, put TLS in front of it ([Install the server](./install-server.md#reverse-proxy-and-tls)).
 
 ## 2. Pull the scanner

@@ -46,8 +46,9 @@ than guess.
 | `new_coverage` | < 80 % |
 | `new_duplicated_lines_density` | > 3 % |
 
-It is the default for every organisation, and it is read-only. To change it, **Quality gates → copy**,
-edit the copy, and make it the default, or assign it to single projects (`qualityGateId`).
+It is the default for every organisation, and it is read-only. To change it, press **Copy** in its
+row of **Quality gates** (or on the gate's own page), edit the copy, and make it the default, or
+assign it to single projects (`qualityGateId`).
 
 Rules of evaluation:
 
@@ -71,7 +72,8 @@ Rules of evaluation:
 | New-code size | `new_lines` |
 
 A condition is `metric`, `gt` or `lt`, and a threshold, for example `new_security_rating gt 1`. A gate
-has at most one condition per metric.
+has at most one condition per metric. On a gate's page, change a condition's operator or threshold in its row and
+press **Save**, or Enter; Escape drops the change. A rating's threshold shows its letter: 1 is A.
 
 Common additions:
 
@@ -88,8 +90,8 @@ profile per language (`typescript`, `javascript`, `java`, `csharp`) plus `*` for
 secrets, dependencies, OpenGrep, external SARIF, and files without a language. The built-in profiles
 are called "Qualor way".
 
-- **Quality profiles → copy** a built-in profile, then turn rules on or off, override a severity, and
-  make the copy the default.
+- Press **Copy** in a built-in profile's row of **Quality profiles**, then turn rules on or off in
+  the copy, override a severity, and make the copy the default.
 - A profile may **inherit** from a parent of the same language (up to 3 levels), and changes only the
   rules it names.
 - **Unknown rules**, meaning rules a profile does not mention, follow the profile's `unknownRules`

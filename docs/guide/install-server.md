@@ -151,8 +151,8 @@ docker compose ps       # wait until "server" is healthy (15–30 s)
   volume refuses to start.
 - **First sign-in.** The first start creates the `default` organisation and the instance admin `admin`
   (`QUALOR_BOOTSTRAP_ADMIN_USERNAME`) with the bootstrap password. Open the server, sign in, and
-  change the password with **Change password** at the top right. After a user exists, the bootstrap
-  password is no longer used.
+  change the password: open the menu under your name at the top right and choose **Change
+  password**. After a user exists, the bootstrap password is no longer used.
 - **Network.** The server publishes `127.0.0.1:8080` only (`QUALOR_BIND_ADDRESS`, `QUALOR_PORT`).
 - **Migrations** run at every start, before the server listens, under a lock. `/readyz` answers 503
   until they are applied.

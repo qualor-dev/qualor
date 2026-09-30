@@ -20,6 +20,11 @@ const REMOVED = [
   'map it in Settings → GitLab or GitHub',
   // Step 11: organisations are created in Settings → Organizations.
   'creates more organisations through the API',
+  // Step 10: Change password is in the user menu, under the name at the top right.
+  'Change password at the top right',
+  // Steps 6 and 7: Copy is a button of the row (and of a gate's band).
+  'Quality gates → copy',
+  'Quality profiles → copy',
 ];
 
 const guide = new URL('../../docs/guide/', import.meta.url);
