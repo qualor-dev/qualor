@@ -55,7 +55,11 @@
         </h3>
       </div>
       <div class="panel-body">
-        @if (!org.currentId() && !org.organizations.isLoading()) {
+        @if (org.organizations.error()) {
+          <p class="alert alert-error" i18n="@@ai.today.organizationsFailed">
+            The organizations could not be loaded.
+          </p>
+        } @else if (!org.currentId() && !org.organizations.isLoading()) {
           <p class="muted" i18n="@@ai.today.noOrganization">
             There is no organization yet. Create one in
             <a routerLink="/settings/organizations">Organizations</a>.

@@ -224,6 +224,9 @@ describe('LoginPage single sign-on (sso-scim.md §18)', () => {
     expect(el.querySelector('form[data-test=password-form]')).toBeNull();
     const toggle = el.querySelector<HTMLButtonElement>('[data-test=emergency-sign-in]')!;
     expect(toggle.textContent).toContain('Emergency administrator sign-in');
+    // A quiet link under the card, its own width: not a grid spanning the card (final review).
+    expect(getComputedStyle(toggle).display).not.toBe('grid');
+    expect(getComputedStyle(toggle).width).toBe('auto');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     toggle.click();
     await settle(fixture);

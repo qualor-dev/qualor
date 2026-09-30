@@ -234,6 +234,43 @@ describe('BranchesPage', () => {
       expect(text(root.querySelector('[role="status"]'))).toBe('');
     });
 
+    it('asks nothing about another branch while a delete runs (final review)', async () => {
+      server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
+      const OTHER = branch('b-y', { name: 'feature/y' });
+      server.on('GET', `/api/v0/projects/${PROJECT}/branches`, {
+        body: page([MAIN, FEATURE, OTHER]),
+      });
+      let answer = (): void => undefined;
+      server.on(
+        'DELETE',
+        '/api/v0/branches/b-x',
+        () =>
+          new Promise((resolve) => {
+            answer = () => resolve({ status: 204 });
+          }),
+      );
+      const { fixture, root } = await render();
+      const dialog = root.querySelector<HTMLDialogElement>('dialog')!;
+      const deleteOf = (key: string) =>
+        root.querySelector<HTMLButtonElement>(`tr[data-key="${key}"] button.row-delete`)!;
+      deleteOf('b-x').click();
+      await settle(fixture);
+      buttonIn(dialog, 'Delete').click();
+      await settle(fixture);
+      // Escape while the server deletes, then Delete on another row.
+      dialog.removeAttribute('open');
+      dialog.dispatchEvent(new Event('close'));
+      await settle(fixture);
+      expect(deleteOf('b-y').getAttribute('aria-disabled')).toBe('true');
+      deleteOf('b-y').click();
+      await settle(fixture);
+      expect(dialog.open).toBe(false);
+      answer();
+      await settle(fixture);
+      expect(text(root.querySelector('[role="status"]'))).toBe('Deleted feature/x.');
+      expect(deleteOf('b-y').getAttribute('aria-disabled')).toBeNull();
+    });
+
     it('opens its dialog again on a refusal that came after it was closed', async () => {
       server.on('GET', `/api/v0/projects/${PROJECT}`, project(MAY_DELETE));
       server.on('GET', `/api/v0/projects/${PROJECT}/branches`, { body: page([MAIN, FEATURE]) });

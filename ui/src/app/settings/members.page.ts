@@ -328,6 +328,8 @@ export class MembersPage {
     const role = this.role();
     if (this.busy() || !organizationId) return;
     this.addError.set(null);
+    // A refusal of an earlier try is not this one's: the dialog reopens only on its own.
+    this.usernameError.set(null);
     if (!username) {
       this.usernameError.set($localize`:@@members.usernameRequired:Enter a user name.`);
       this.focusUsername();
@@ -377,6 +379,10 @@ export class MembersPage {
       },
       (err) => this.addError.set(problemMessage(err)),
     );
+    // Closed while the server answered (Escape, Cancel): the dialog opens again on a refusal.
+    if (this.usernameError() !== null || this.addError() !== null) {
+      openAfterRender(this.injector, () => this.addDialog()?.nativeElement);
+    }
   }
 
   /** A change to one's own membership changes one's permissions: `GET /auth/me` again. */

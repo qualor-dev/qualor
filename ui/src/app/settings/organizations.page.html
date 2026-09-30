@@ -24,7 +24,7 @@
       <p class="alert alert-success">{{ text }}</p>
     }
   </div>
-  @if (loadError() ?? error(); as text) {
+  @if (loadError(); as text) {
     <p class="alert alert-error" role="alert">{{ text }}</p>
   }
   <section class="card panel" aria-labelledby="orgs-caption">

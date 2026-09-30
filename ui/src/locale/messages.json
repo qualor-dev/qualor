@@ -659,6 +659,7 @@
     "ai.settings.on": "{VAR_PLURAL, plural, =1 {On for 1 organisation} other {On for {INTERPOLATION} organisations}}",
     "ai.today.title": "Today in {$INTERPOLATION} (UTC)",
     "ai.today.titleNone": "Today (UTC)",
+    "ai.today.organizationsFailed": " The organizations could not be loaded. ",
     "ai.today.noOrganization": " There is no organization yet. Create one in {$START_LINK}Organizations{$CLOSE_LINK}. ",
     "ai.today.failed": "Today's use could not be read.",
     "ai.today.off": " The assistant is off for {$INTERPOLATION}: nothing is sent. ",

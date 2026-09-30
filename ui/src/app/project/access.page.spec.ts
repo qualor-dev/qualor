@@ -479,6 +479,29 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     );
   });
 
+  it('stays closed after a success that follows a refusal on the field (final review)', async () => {
+    const server = setup({ grants: [] });
+    let exists = false;
+    server.on('GET', '/api/v0/users/lookup', () =>
+      exists
+        ? { body: { id: CAROL, username: 'carol', displayName: null } }
+        : { status: 404, body: problem(404, 'NOT_FOUND') },
+    );
+    server.on('PUT', `${MEMBERS}/${CAROL}`, { body: grant(CAROL, 'carol', 'viewer') });
+    const { fixture, root } = await render();
+    const add = await openAdd(root, fixture);
+    type(root, '#grant-username', 'carol');
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(root.querySelector('#grant-username-error')).not.toBeNull();
+    // The user now exists: the same name again, without typing.
+    exists = true;
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(add.open).toBe(false);
+    expect(root.querySelector('#grant-username-error')).toBeNull();
+  });
+
   it('opens Add member again on a refusal that came after it was closed', async () => {
     const server = setup({ grants: [] });
     server.on('GET', '/api/v0/users/lookup', {

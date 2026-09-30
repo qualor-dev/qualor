@@ -193,3 +193,18 @@ test.describe('on a phone', () => {
     expect(lines).toBeLessThan(2.5);
   });
 });
+
+for (const width of [390, 1440]) {
+  test(`a rule's key sits under its name, not beside it, at ${width}px (final review)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/rules');
+    const row = page.locator('tbody tr').first();
+    await expect(row.locator('.rule-name')).toBeVisible();
+    const name = (await row.locator('.rule-name').boundingBox())!;
+    const key = (await row.locator('.rule-key').boundingBox())!;
+    expect(key.y).toBeGreaterThanOrEqual(name.y + name.height - 1);
+    expect(Math.abs(key.x - name.x)).toBeLessThanOrEqual(1);
+  });
+}

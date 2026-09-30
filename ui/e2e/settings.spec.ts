@@ -62,6 +62,33 @@ test('the settings navigation groups its entries and marks the current page', as
   await expectAccessible(page);
 });
 
+test.describe('on a tablet', () => {
+  test.use({ viewport: { width: 768, height: 1024 } });
+
+  // Each settings page fits a tablet too once its data is in (Task 2 of step 11: 390 and 768px).
+  for (const path of [
+    '/settings/tokens',
+    '/settings/organizations',
+    '/settings/users',
+    '/settings/members',
+    '/settings/webhooks',
+    '/settings/gitlab',
+    '/settings/github',
+    '/settings/repositories',
+    '/settings/ai',
+    '/settings/license',
+  ]) {
+    test(`${path} never scrolls sideways at 768px`, async ({ page }) => {
+      await page.goto(path);
+      await expect(page.locator('.settings-head h2')).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        768,
+      );
+    });
+  }
+});
+
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 

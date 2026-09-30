@@ -24,6 +24,30 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+test.describe('on a tablet', () => {
+  test.use({ viewport: { width: 768, height: 1024 } });
+
+  // The enterprise settings pages fit a tablet too (Task 2 of step 11: 390 and 768px).
+  for (const path of [
+    '/settings/license',
+    '/settings/ee/audit-log',
+    '/settings/ee/audit-settings',
+    '/settings/ee/sso',
+    '/settings/ee/sign-in',
+    '/settings/ee/scim',
+    '/settings/ee/linked-accounts',
+  ]) {
+    test(`${path} never scrolls sideways at 768px`, async ({ page }) => {
+      await page.goto(path);
+      await expect(page.locator('.settings-head h2')).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        768,
+      );
+    });
+  }
+});
+
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 

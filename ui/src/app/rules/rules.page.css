@@ -24,8 +24,16 @@
 .rule-cell {
   min-width: 16rem;
 }
+/* The chevron beside the name, the key under the name: a grid, not the global inline row. */
 .rule-cell summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-2);
   font-weight: 600;
+}
+.rule-name {
+  grid-column: 2;
   overflow-wrap: anywhere;
 }
 .rule-details {
@@ -39,7 +47,8 @@
 }
 .rule-key {
   display: block;
-  margin: 2px 0 0 18px;
+  grid-column: 2;
+  margin: 2px 0 0;
   font-weight: 400;
   color: var(--text-muted);
   font-size: 12.5px;

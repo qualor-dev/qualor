@@ -196,3 +196,31 @@ describe('OrganizationsPage (Settings → Organizations)', () => {
     expect(button(root, 'New organization')).toBeUndefined();
   });
 });
+
+describe('OrganizationsPage: New organization after Escape (final review)', () => {
+  it('opens the dialog again on a refusal that came after it was closed', async () => {
+    const server = setup();
+    let answer = (): void => undefined;
+    server.on(
+      'POST',
+      '/api/v0/organizations',
+      () =>
+        new Promise((resolve) => {
+          answer = () => resolve({ status: 409, body: problem(409, 'ORG_KEY_TAKEN') });
+        }),
+    );
+    const { fixture, root } = await render();
+    const dialog = await openNew(root, fixture);
+    type(root, '#org-name', 'Acme');
+    await submit(dialog, fixture);
+    dialog.removeAttribute('open');
+    dialog.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    answer();
+    await settle(fixture);
+    expect(dialog.open).toBe(true);
+    expect(root.querySelector('#org-key-error')?.textContent?.trim()).toBe(
+      'An organization with this key already exists.',
+    );
+  });
+});

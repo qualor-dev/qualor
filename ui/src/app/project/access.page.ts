@@ -320,6 +320,8 @@ export class AccessPage {
     const username = this.username().trim();
     const role = this.role();
     if (this.busy() || !project) return;
+    // A refusal of an earlier try is not this one's: the dialog reopens only on its own.
+    this.usernameError.set(null);
     if (!username) {
       this.fieldError($localize`:@@access.usernameRequired:Enter a user name.`);
       return;

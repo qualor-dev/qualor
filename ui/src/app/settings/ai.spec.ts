@@ -11,6 +11,7 @@ import {
   settle,
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
+import { OrgContext } from '../org/org-context';
 import { AiSettingsPage } from './ai.page';
 
 const KEY = ['fake', 'ui', 'key', '0123456789'].join('-');
@@ -496,5 +497,28 @@ describe('AiSettingsPage: step 11', () => {
     const { root } = await render();
     const sent = root.querySelector('#ai-data-sent .panel-body p')?.textContent?.trim() ?? '';
     expect(sent.startsWith('The rule, the finding')).toBe(true);
+  });
+});
+
+describe('AiSettingsPage: final review', () => {
+  it('says the organizations could not be loaded, never that there are none', async () => {
+    const server = setup(CONFIGURED);
+    const { fixture, root } = await render();
+    // The header's list fails when read again; the page's own list stays loaded.
+    server.on('GET', '/api/v0/organizations', { status: 500, body: problem(500, 'INTERNAL') });
+    TestBed.inject(OrgContext).organizations.reload();
+    await settle(fixture);
+    const today = root.querySelector('#ai-today')!;
+    expect(today.textContent).not.toContain('There is no organization yet');
+    expect(today.textContent).toContain('The organizations could not be loaded.');
+  });
+
+  it('says nothing waits for midnight when a budget of 0 allows none', async () => {
+    const server = setup(CONFIGURED);
+    server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, {
+      body: orgAi({ usage: { tokens: 0 }, budgets: { tokensPerDay: 0 } }),
+    });
+    const { root } = await render();
+    expect(root.querySelector('#ai-today')?.textContent).not.toContain('midnight');
   });
 });

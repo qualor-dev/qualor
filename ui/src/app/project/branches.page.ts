@@ -109,6 +109,8 @@ export class BranchesPage {
   }
 
   protected askDelete(branch: Branch): void {
+    // One question at a time: the dialog belongs to the delete that runs until it has answered.
+    if (this.deleting()) return;
     this.toDelete.set(branch);
     this.deleteError.set(null);
     openAfterRender(

@@ -127,9 +127,10 @@ export class AiSettingsPage {
     if (!t?.enabled) return false;
     const { tokensPerDay, costPerDayUsd } = t.budgets;
     const cost = t.usage.costUsd;
+    // A budget of 0 allows none (its meter says so): nothing waits for midnight then.
     return (
-      (tokensPerDay !== null && t.usage.tokens >= tokensPerDay) ||
-      (costPerDayUsd !== null && cost !== null && cost >= costPerDayUsd)
+      (tokensPerDay !== null && tokensPerDay > 0 && t.usage.tokens >= tokensPerDay) ||
+      (costPerDayUsd !== null && costPerDayUsd > 0 && cost !== null && cost >= costPerDayUsd)
     );
   });
 

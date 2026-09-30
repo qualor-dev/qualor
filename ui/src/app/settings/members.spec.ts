@@ -540,3 +540,35 @@ describe('SettingsPage navigation for members and enterprise entries (rbac-audit
     expect(names).toContain('Other');
   });
 });
+
+describe('MembersPage: Add member after Escape (final review)', () => {
+  it('opens Add member again on a refusal that came after it was closed', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/users/lookup', {
+      body: { id: CAROL, username: 'carol', displayName: null },
+    });
+    let answer = (): void => undefined;
+    server.on(
+      'PUT',
+      `/api/v0/organizations/${ORG_ID}/members/${CAROL}`,
+      () =>
+        new Promise((resolve) => {
+          answer = () => resolve({ status: 403, body: problem(403, 'FORBIDDEN') });
+        }),
+    );
+    const { fixture, root } = await render();
+    const add = await openAdd(root, fixture);
+    type(root, '#member-username', 'carol');
+    add.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    add.removeAttribute('open');
+    add.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    answer();
+    await settle(fixture);
+    expect(add.open).toBe(true);
+    expect(add.querySelector('[role="alert"]')?.textContent).toContain(
+      'You are not allowed to do this.',
+    );
+  });
+});

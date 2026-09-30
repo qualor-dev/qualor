@@ -39,7 +39,7 @@
       </thead>
       <tbody>
         @for (b of list.items(); track b.id) {
-          <tr>
+          <tr [attr.data-key]="b.id">
             <td>
               <div class="branch-cell">
                 <q-icon [name]="b.kind === 'merge_request' ? 'merge-request' : 'branch'" />
@@ -95,6 +95,7 @@
                     type="button"
                     class="btn-quiet danger row-delete"
                     [attr.aria-label]="deleteLabel(b)"
+                    [attr.aria-disabled]="deleting() ? true : null"
                     (click)="askDelete(b)"
                     i18n="@@branches.delete"
                   >

@@ -76,7 +76,10 @@
   margin: var(--space-4) 0 0;
   text-align: center;
 }
-.auth-card .auth-alt .btn-link,
+/* The emergency sign-in under the card is a link's width, not a full-width button. */
+.auth-card .auth-alt .btn-link {
+  width: auto;
+}
 .auth-providers {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

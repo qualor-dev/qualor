@@ -25,6 +25,8 @@ const REMOVED = [
   // Steps 6 and 7: Copy is a button of the row (and of a gate's band).
   'Quality gates → copy',
   'Quality profiles → copy',
+  // Step 11: the UI calls them "Rules it does not set" (the list) and "Not set here" (a profile).
+  'Unknown rules, meaning',
 ];
 
 const guide = new URL('../../docs/guide/', import.meta.url);

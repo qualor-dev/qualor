@@ -72,7 +72,6 @@ export class OrganizationsPage {
   /** A refusal that names no field, shown in the dialog. */
   protected readonly dialogError = signal<string | null>(null);
   protected readonly announcement = signal<string | null>(null);
-  protected readonly error = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly keyMax = KEY_MAX_LENGTH;
   protected readonly nameMax = NAME_MAX_LENGTH;
@@ -145,7 +144,6 @@ export class OrganizationsPage {
       return;
     }
     this.busy.set(true);
-    this.error.set(null);
     this.announcement.set(null);
     try {
       const created = await ok(
@@ -169,6 +167,8 @@ export class OrganizationsPage {
       );
     } catch (err) {
       this.createFailed(err);
+      // Closed while the server answered (Escape, Cancel): the dialog opens again on the refusal.
+      openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
     } finally {
       this.busy.set(false);
     }

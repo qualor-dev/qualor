@@ -94,8 +94,8 @@ are called "Qualor way".
   the copy, override a severity, and make the copy the default.
 - A profile may **inherit** from a parent of the same language (up to 3 levels), and changes only the
   rules it names.
-- **Unknown rules**, meaning rules a profile does not mention, follow the profile's `unknownRules`
-  setting: `activate` (the default) or `ignore`. With `activate`, a new ESLint plugin rule shows up
+- **Rules it does not set** (shown as **Not set here** in a profile's rules) follow the profile's
+  `unknownRules` setting: `activate` (the default) or `ignore`. With `activate`, a new ESLint plugin rule shows up
   without anyone editing the profile. Findings the profile drops are counted in the analysis warnings.
 - A profile change applies **from the next analysis**.
 
