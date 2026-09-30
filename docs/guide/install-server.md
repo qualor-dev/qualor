@@ -26,7 +26,7 @@ first release is `0.1.0`.
 |---|---|---|
 | [`qualor/server`](https://hub.docker.com/r/qualor/server) | API, web UI and worker in one Node process, plus PostgreSQL 18; distroless, user 65532 | ~340 MB |
 | [`qualor/scanner`](https://hub.docker.com/r/qualor/scanner) | the `qualor` CLI (its entrypoint), Node.js, a JRE 17, git and the pinned analyzers, with Trivy's database | ~3.5 GB |
-| [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet) | `qualor/scanner` plus the .NET 8 and .NET 10 SDKs and Roslynator, for C# | ~5.2 GB |
+| [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet) | `qualor/scanner` plus the .NET 8 and .NET 10 SDKs and Roslynator, for C# | ~5.3 GB |
 
 **Tags.** Every release is tagged with its full version (`0.2.0`) and its minor version (`0.2`), which
 moves to the newest patch release of that minor. While Qualor is in 0.x there is no `0` tag: a new

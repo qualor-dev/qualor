@@ -30,7 +30,7 @@ The same tags as `qualor/scanner`: the full version, such as `0.2.0`, and the mi
 - SonarAnalyzer.CSharp 9.32 (SonarQube-compatible rules, `roslyn:S####`), bundled next to
   Roslynator. A project's own reference to SonarAnalyzer.CSharp replaces the bundled one, so there
   is never a duplicate-analyzer error.
-- Runs as the user `node` (uid 1000), like the scanner; about 5.2 GB (about 1.8 GB more than
+- Runs as the user `node` (uid 1000), like the scanner; about 5.3 GB (about 1.8 GB more than
   `qualor/scanner`). It is built from the `qualor/scanner` image of the same tag, and released
   with that tag right after it.
 
