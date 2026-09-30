@@ -34,6 +34,22 @@ All notable changes to Qualor are listed here, newest first. The format follows
   makes detekt skip (fail under `analyzers.detekt.enabled: true`); an
   `analyzers.detekt.configFile` outside the repository stops the scan with exit 2. Turn it off
   with `analyzers.detekt.enabled: false`.
+- Swift: `.swift` files are a language of their own (`swift`), with complexity, size and
+  duplication metrics (tree-sitter-swift 0.7.3) and a "Qualor way" Swift quality profile.
+  `qualor/scanner` runs SwiftLint 0.65.1 (MIT), its static Linux build with no Swift toolchain, on
+  them as a new `swiftlint` engine (rule keys such as `swiftlint:force_cast`). It uses the
+  repository's own `.swiftlint.yml`, read and filtered by Qualor (settings that write files, fetch
+  URLs or change the exit code are ignored), or, without one, SwiftLint's default rules with a few
+  adjustments (`todo` and `multiple_closures_with_trailing_closure` off, `trailing_whitespace`
+  ignoring empty lines, `identifier_name` excluding `i`, `j`, `k`, `x`, `y`, `z` and `id`,
+  `line_length` ignoring URLs and comments). The rules that need SourceKit, and custom rules, do
+  not run; Swift files over 1 MiB are not passed to SwiftLint. A `.swiftlint.yml` Qualor cannot use
+  (`parent_config` or `child_config`, invalid YAML, larger than 1 MiB) makes SwiftLint skip (fail
+  under `analyzers.swiftlint.enabled: true`); `analyzers.swiftlint.configFile: qualor-default`
+  uses the defaults instead, and a `configFile` that is a URL or outside the repository stops the
+  scan with exit 2. Turn it off with `analyzers.swiftlint.enabled: false`.
+  `qualor import sonarqube` carries over the statuses of SwiftLint issues SonarQube imported
+  (`external_swiftlint`).
 
 ### Changed
 
@@ -75,6 +91,18 @@ All notable changes to Qualor are listed here, newest first. The format follows
   covers Kotlin Multiplatform's test source sets, but applies to every language: Gradle's
   `src/integrationTest` or `src/functionalTest`, for example, become test files too, which leave
   lines of code, complexity, duplication and coverage.
+- Qualor now runs SwiftLint itself. If you imported your own SwiftLint SARIF to cover Swift,
+  remove that import (the `--sarif` flag, or the `qualor.yml` `sarif:` entry). `swiftlint` is now a
+  reserved engine id: a `sarif:` entry with `engine: swiftlint` is a config error. A SwiftLint SARIF
+  you still import is reported as `ext-swiftlint`, and each of its findings counts once with the
+  built-in `swiftlint` finding of the same rule on the same line.
+- A report that holds Swift files or the `swiftlint` engine is refused (422) by a Qualor server
+  older than this release: upgrade the server before the scanner.
+- `.swift` files were language `other`; they now count in lines of code, complexity and
+  duplication, which can move a new-code duplication condition.
+- `Pods/`, `Carthage/` and `.build/` are built-in excludes. Trivy skips them too, so a dependency
+  lockfile that lives only inside one of them is no longer scanned; the lockfiles at the repository
+  root (`Podfile.lock`, `Package.resolved`, `Cartfile.resolved`) still are.
 
 ## [0.2.0] - 2026-09-30
 

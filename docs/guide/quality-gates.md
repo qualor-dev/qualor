@@ -86,7 +86,7 @@ Common additions:
 ## Quality profiles: which rules count
 
 A **quality profile** decides which analyzer rules become issues, and at which severity. There is one
-profile per language (`typescript`, `javascript`, `java`, `csharp`, `python`, `html`, `css`, `kotlin`) plus `*`
+profile per language (`typescript`, `javascript`, `java`, `csharp`, `python`, `html`, `css`, `kotlin`, `swift`) plus `*`
 for everything else:
 secrets, dependencies, OpenGrep, external SARIF, and files without a language. The built-in profiles
 are called "Qualor way".

@@ -2,7 +2,7 @@
 
 Open-source, self-hosted code quality platform: a SonarQube alternative without lines-of-code
 licensing, for GitLab, GitHub and any other CI. Qualor runs existing open-source analyzers
-(ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, detekt for Kotlin, Ruff for Python, stylelint and HTMLHint for
+(ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swift, Ruff for Python, stylelint and HTMLHint for
 CSS and HTML, OpenGrep, Gitleaks, Trivy, SonarQube-compatible rules for C#, JavaScript and
 TypeScript, or any SARIF), tracks their issues across commits, measures coverage, duplication and
 complexity, and applies a quality gate to new code.
@@ -172,6 +172,13 @@ with the settings detekt recommends for Jetpack Compose. It needs no build, but 
 project's classpath do not run; see
 [Kotlin (detekt)](docs/guide/languages-and-analyzers.md#kotlin-detekt).
 
+### Swift
+
+`qualor/scanner` runs SwiftLint 0.65.1 on `.swift` files, with your `.swiftlint.yml` (read and
+filtered by Qualor) or, without one, SwiftLint's default rules with a few adjustments. It needs no
+Swift toolchain or build; the rules that need SourceKit do not run. See
+[Swift (SwiftLint)](docs/guide/languages-and-analyzers.md#swift-swiftlint).
+
 ### C#
 
 Roslyn analyzers need the project's own build (its SDK, restored packages and arguments), so
@@ -225,7 +232,7 @@ repository commits generated coverage output, add it to `sources.exclude` in `qu
 `qualor import sonarqube` copies a SonarQube Server (9.9 LTA or later, Community Build included) or
 SonarQube Cloud organisation's setup into one Qualor organisation: quality gates (for conditions on
 metrics Qualor has), which gate each project uses (with `--create-projects`, the projects
-themselves), quality profiles for JavaScript, TypeScript, C#, Java and Python (Kotlin profiles are not imported), and the main
+themselves), quality profiles for JavaScript, TypeScript, C#, Java and Python (Kotlin and Swift profiles are not imported), and the main
 branch's issues marked false positive, won't fix or accepted. C#, JavaScript and TypeScript rules
 map one to one to Qualor's bundled SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32,
 eslint-plugin-sonarjs 2.0.4, LGPL-3.0) wherever the bundled version has the rule key SonarQube

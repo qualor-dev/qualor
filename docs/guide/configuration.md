@@ -47,7 +47,7 @@ tests:
             '**/src/*Test/**']
   exclude: []
 
-languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin]
+languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin, swift]
 
 analyzers:
   eslint:    { enabled: auto, configFile: null, args: [], timeoutSeconds: 900 }
@@ -56,6 +56,7 @@ analyzers:
   pmd:       { enabled: auto, rulesets: [qualor-default], timeoutSeconds: 900 }
   spotbugs:  { enabled: auto, classDirs: [target/classes, build/classes/java/main], auxClasspathFile: null, timeoutSeconds: 1200 }
   detekt:    { enabled: auto, configFile: null, timeoutSeconds: 900 }
+  swiftlint: { enabled: auto, configFile: null, timeoutSeconds: 600 }
   semgrep:   { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
   gitleaks:  { enabled: true, configFile: null, timeoutSeconds: 300 }
   trivy:     { enabled: auto, timeoutSeconds: 600 }
@@ -104,9 +105,9 @@ These always apply, and you can only add to them: `node_modules`, `.git`, `dist`
 (sources only; SpotBugs still reads the classes), `vendor`, `*.min.js`, `*.min.css`, `.qualor/`, .NET `obj/`,
 `bin/Debug`, `bin/Release`, generated C# (`*.g.cs`, `*.g.i.cs`, `*.Designer.cs`), Python virtual
 environments and caches (`.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs`,
-`site-packages`), binary files, and nested git repositories. Files over 1 MiB are skipped for
-metrics and duplication, but analyzers still see them (detekt is the exception: it is not given
-Kotlin files over 1 MiB).
+`site-packages`), Swift's `Pods/`, `Carthage/` and `.build/`, binary files, and nested git repositories. Files over 1 MiB are skipped for
+metrics and duplication, but analyzers still see them (detekt and SwiftLint are the exception: they are not
+given Kotlin or Swift files over 1 MiB).
 
 ## Environment variables (scanner)
 

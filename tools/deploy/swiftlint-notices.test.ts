@@ -84,3 +84,30 @@ describe('SwiftLint licence files (plan 8F)', () => {
     expect(text).toContain('/google/boringssl/817ab07ebb53da35afea409ab9328f578492832d/LICENSE');
   });
 });
+
+describe('NOTICE.md (plan 8F)', () => {
+  it('names SwiftLint, its notices, the Swift grammar and the CryptoSwift acknowledgment', () => {
+    // Line breaks in the prose do not matter.
+    const notice = readFileSync('deploy/scanner/NOTICE.md', 'utf8').replace(/\s+/g, ' ');
+    for (const s of [
+      'SwiftLint',
+      'SWIFTLINT-LICENSE.txt',
+      'SWIFTLINT-THIRD-PARTY-NOTICES.txt',
+      'TREE-SITTER-SWIFT-LICENSE.txt',
+      'tree-sitter-swift 0.7.3',
+      'BoringSSL at commit 817ab07',
+      'libxml2 2.14.5',
+      'ICU 76.1',
+      'This product includes software developed by the OpenSSL Project',
+      'This product includes cryptographic software written by Eric Young',
+      'This product includes software developed by the "Marcin Krzyzanowski" (http://krzyzanowskim.com/).',
+    ]) {
+      expect(notice).toContain(s);
+    }
+    const pinned = /^SWIFTLINT_VERSION=(.+)$/m.exec(
+      readFileSync('tools/analyzers/install.sh', 'utf8'),
+    )?.[1];
+    expect(notice).toContain(`| ${pinned} |`);
+    expect(notice).toContain(`${SWIFTLINT_COMPONENTS.length} components`);
+  });
+});

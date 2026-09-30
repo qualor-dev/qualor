@@ -13,6 +13,7 @@ vulnerability database pinned by digest), compiled into the
 | OpenGrep                                                                      | 1.30.0                                         | LGPL-2.1 (`OPENGREP-LICENSE.txt`)                                                                                                                                                           | https://github.com/opengrep/opengrep/tree/v1.30.0                                                     |
 | SpotBugs                                                                      | 4.10.4                                         | LGPL-2.1 (`SPOTBUGS-LICENSE.txt`; its libraries: `/opt/qualor/lib/spotbugs-4.10.4/LICENSE-*.txt`)                                                                                           | https://github.com/spotbugs/spotbugs/tree/4.10.4                                                      |
 | detekt (the detekt engine, Kotlin)                                            | 1.23.8                                         | Apache-2.0 (`DETEKT-LICENSE.txt`); the libraries its jar bundles: see below (`DETEKT-THIRD-PARTY.txt`), Trove4J LGPL-2.1 (`TROVE4J-LICENSE.txt`)                                            | https://github.com/detekt/detekt/tree/v1.23.8                                                         |
+| SwiftLint (the swiftlint engine, Swift)                                       | 0.65.1                                         | MIT (`SWIFTLINT-LICENSE.txt`, with mimalloc's MIT licence); what its static build links: see below (`SWIFTLINT-THIRD-PARTY-NOTICES.txt`)                                                    | https://github.com/realm/SwiftLint/tree/0.65.1                                                        |
 | PMD                                                                           | 7.27.0                                         | BSD-style, with Apache-2.0 parts (`PMD-LICENSE.txt`); its bundled libraries: see below                                                                                                      | https://github.com/pmd/pmd/tree/pmd_releases/7.27.0                                                   |
 | Gitleaks                                                                      | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`); its MPL-2.0 Go modules: see below                                                                                                                             | https://github.com/gitleaks/gitleaks/tree/v8.30.1                                                     |
 | Trivy                                                                         | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                                     | https://github.com/aquasecurity/trivy/tree/v0.74.0                                                    |
@@ -54,6 +55,33 @@ its IntelliJ core; `DETEKT-THIRD-PARTY.txt` lists the libraries inside. They are
 ASM, jline 3, picocontainer (BSD-3-Clause; its text is the upstream PicoContainer1 `LICENSE.txt`),
 stax2 (BSD-2-Clause), JDOM (its own BSD-style licence) and Trove4J 1.0.20200330 (LGPL-2.1,
 `TROVE4J-LICENSE.txt`), whose source is in `qualor/scanner-sources`.
+
+SwiftLint is SwiftLint's own static Linux build (`swiftlint-static` of the release zip), unmodified,
+pinned by SHA-256 in `tools/analyzers/install.sh` and installed as `/opt/qualor/bin/swiftlint`.
+`SWIFTLINT-THIRD-PARTY-NOTICES.txt` holds the licence text of each of the 21 components it is
+statically linked with:
+
+- the Swift 6.3.2 runtime and standard library, Foundation (swift-corelibs-foundation and
+  swift-foundation), Dispatch and the ICU 76.1 data of swift-foundation-icu (Apache-2.0 with the
+  Runtime Library Exception; the Unicode licence for ICU, given without the GPL-licensed
+  build-script sections of ICU's own licence file, which cover files that are not in the binary);
+- LLVM's libc++, libc++abi, libunwind and compiler-rt (Apache-2.0 with the LLVM Exception);
+- musl 1.2.5 (MIT) and musl-fts 1.2.7 (BSD-3-Clause);
+- curl 8.15.0 (the curl licence);
+- BoringSSL at commit 817ab07 (OpenSSL and SSLeay licences, ISC, and MIT for fiat-crypto);
+- libxml2 2.14.5 (MIT);
+- zlib 1.3.1 (Zlib) and mimalloc (MIT, in `SWIFTLINT-LICENSE.txt`);
+- SwiftLint's Swift packages: SourceKitten, Yams (with libyaml), swift-syntax,
+  swift-argument-parser, CollectionConcurrencyKit, swift-filename-matcher, SwiftyTextTable and
+  SWXMLHash (MIT and Apache-2.0), and CryptoSwift 1.10.0 (a zlib-style licence with an
+  acknowledgment clause).
+
+None of them is copyleft. BoringSSL's licence carries the OpenSSL and SSLeay advertising clauses,
+whose acknowledgments are these: This product includes software developed by the OpenSSL Project
+for use in the OpenSSL Toolkit. (http://www.openssl.org/) This product includes cryptographic
+software written by Eric Young (eay@cryptsoft.com). This product includes software written by Tim
+Hudson (tjh@cryptsoft.com). CryptoSwift's licence asks for this acknowledgment: This product
+includes software developed by the "Marcin Krzyzanowski" (http://krzyzanowskim.com/).
 
 The Gitleaks binary is built in the image from the source of its release tag with Go 1.27, statically
 linked with the Go standard library and 65 Go modules (`go version -m /opt/qualor/bin/gitleaks`
@@ -113,7 +141,9 @@ zod, web-tree-sitter and the tree-sitter grammars for Java, JavaScript, TypeScri
 HTML, CSS and Kotlin (`tree-sitter-c-sharp` 0.23.5, MIT, `TREE-SITTER-C-SHARP-LICENSE.txt`;
 `tree-sitter-html` 0.23.2, `tree-sitter-css` 0.25.0 and `@tree-sitter-grammars/tree-sitter-kotlin` 1.1.0,
 all MIT), in the
-versions `pnpm-lock.yaml` locks. The `qualor` binary, and so this grammar, is the same in
+versions `pnpm-lock.yaml` locks. The Swift grammar, tree-sitter-swift 0.7.3 (MIT,
+`TREE-SITTER-SWIFT-LICENSE.txt`), is vendored in the CLI's source (`cli/grammars`), because no npm
+package ships it as WebAssembly. The `qualor` binary, and so this grammar, is the same in
 `qualor/scanner` and `qualor/scanner-dotnet`: the image only adds the .NET SDKs and
 Roslynator around it. The image keeps the licence files of every production dependency
 of the CLI, as installed, in `/opt/qualor/licenses/qualor/npm/`.

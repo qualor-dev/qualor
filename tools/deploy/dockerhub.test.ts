@@ -42,7 +42,7 @@ describe('the Docker Hub descriptions', () => {
   it('name the same analyzer versions, entrypoint and user as the scanner image', () => {
     const text = read('scanner');
     const installSh = readFileSync('tools/analyzers/install.sh', 'utf8');
-    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS', 'DETEKT']) {
+    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS', 'DETEKT', 'SWIFTLINT']) {
       const version = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh)?.[1] ?? '';
       expect(version, tool).not.toBe('');
       expect(text, tool).toContain(version);

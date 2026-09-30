@@ -12,6 +12,7 @@ size, complexity, duplication and coverage.
 | HTML | **HTMLHint** 1.9.2, the project's `.htmlhintrc` or Qualor's rule set | `.html` files are in scope, run by the `qualor/scanner` image |
 | CSS, SCSS | **stylelint** 17.15, the project's JSON/YAML config or Qualor's default | `.css` or `.scss` files are in scope, run by the `qualor/scanner` image |
 | Kotlin | **detekt** 1.23.8 (Apache-2.0), your `detekt.yml` or detekt's default rule set with the settings detekt recommends for Jetpack Compose | `.kt` or `.kts` files are in scope, run by the `qualor/scanner` image |
+| Swift | **SwiftLint** 0.65.1 (MIT), your `.swiftlint.yml` or SwiftLint's default rules with a few adjustments | `.swift` files are in scope, run by the `qualor/scanner` image |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -20,7 +21,7 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java, Kotlin, C#, Python, HTML and CSS; SCSS gets findings only.
+detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, HTML and CSS; SCSS gets findings only.
 Other files still get findings from Gitleaks, Trivy, OpenGrep and external SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
@@ -235,6 +236,81 @@ Kotlin files get the same metrics as the other languages (lines of code, functio
 cyclomatic and cognitive complexity) and count in duplication detection. Test sources such as
 `src/test`, `src/androidTest` and Kotlin Multiplatform's `src/*Test` are test files by default.
 
+## Swift (SwiftLint)
+
+The `qualor/scanner` image runs SwiftLint 0.65.1 on your `.swift` files. It is SwiftLint's own
+static Linux build, so no Swift toolchain is needed and nothing is built. The rules that need
+SourceKit (such as `unused_import`, `explicit_self` and `statement_position`) do not run, and
+neither do your `custom_rules`; the other 244 rules do. When a configuration asks for rules that
+cannot run, the scan log names them.
+
+Your `.swiftlint.yml` at the repository root is used: Qualor reads it as data and writes a cleaned
+copy for SwiftLint. It keeps what chooses and configures rules (`disabled_rules`, `opt_in_rules`,
+`only_rules`, `enabled_rules` and the settings of each rule) and uses `included` and `excluded`
+only to narrow the Swift files that are checked. Qualor leaves out what would write files, fetch
+from the network or change the exit code (`reporter`, `strict`, `baseline`, `write_baseline`,
+`cache_path`, `check_for_updates` and similar), `analyzer_rules`, and every key SwiftLint does not
+know; the scan log lists them. A warning stays a warning: Qualor's own gate decides what fails.
+Configurations in subdirectories (a nested `.swiftlint.yml`) are not read. A configuration with
+`parent_config` or `child_config` makes SwiftLint skip, because Qualor does not fetch or follow
+other configurations: make it self-contained, or use Qualor's default.
+
+Without a `.swiftlint.yml`, SwiftLint's default rules run with six adjustments, so a SwiftUI
+project is not buried in style findings:
+
+```yaml
+disabled_rules:
+  - todo
+  - multiple_closures_with_trailing_closure
+trailing_whitespace:
+  ignores_empty_lines: true
+identifier_name:
+  excluded: [i, j, k, x, 'y', z, id]
+line_length:
+  ignores_urls: true
+  ignores_comments: true
+```
+
+A configuration of your own replaces them: SwiftLint then runs as your own configuration says.
+Copy the ones you want into it.
+
+```yaml
+analyzers:
+  swiftlint:
+    enabled: auto              # true, false, or auto: on when Swift files are in scope
+    configFile: config/swiftlint.yml  # optional: another location; or qualor-default
+    timeoutSeconds: 600         # optional
+```
+
+`configFile` must be a path inside the repository: a URL, or a path outside it, stops the scan with
+exit 2. `configFile: qualor-default` ignores your `.swiftlint.yml` and uses the defaults above,
+which is the way out of a configuration Qualor cannot use. Every other problem with the
+configuration makes SwiftLint skip, with the reason in the scan log (`enabled: auto`), or fail the
+scan with exit 3 (`enabled: true`): a `configFile` that does not exist, a file that is not valid
+YAML or not a mapping, is not UTF-8, is larger than 1 MiB or is a link that leaves the repository,
+`only_rules` combined with `disabled_rules` or `opt_in_rules`, and `parent_config` or
+`child_config`. The regular expressions in your rule settings are run by SwiftLint as written, so
+`timeoutSeconds` is what stops one that never finishes.
+
+SwiftLint checks the `.swift` files in scope whose names end in exactly `.swift`. Files larger than
+1 MiB, files reached through a symbolic link, and names with a line break are not passed; the log
+says how many. `Pods/`, `Carthage/` and `.build/` are never scanned. Without the `qualor/scanner`
+image SwiftLint is skipped, and so is a SwiftLint of another minor version on the `PATH`.
+
+An error in SwiftLint is a high-severity issue. A warning is medium for SwiftLint's `lint` rules
+(the ones about correctness) and low for its style, idiomatic, metrics and performance rules.
+Rule keys look like `swiftlint:force_cast`.
+
+Qualor runs SwiftLint itself, so if you imported your own SwiftLint SARIF before, remove that
+import (`--sarif` or the `qualor.yml` `sarif:` entry). `swiftlint` is a reserved engine id: a
+`sarif:` entry with `engine: swiftlint` is a configuration error. A SwiftLint SARIF you still
+import is reported as `ext-swiftlint`, and each of its findings counts once with the built-in
+`swiftlint` finding of the same rule on the same line.
+
+Swift files get the same metrics as the other languages (lines of code, functions, classes,
+cyclomatic and cognitive complexity) and count in duplication detection. `*Tests/**` folders
+are test files by default.
+
 ## Java (PMD and SpotBugs)
 
 - **PMD** reads the source. The default ruleset `qualor-default` is PMD's own
@@ -360,12 +436,12 @@ sarif:
     engine: osv-scanner            # optional; default: the SARIF tool name
 ```
 
-The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`, `detekt` and
+The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`, `detekt`, `swiftlint` and
 the others) are reserved: `engine: ruff` is a configuration error, and a SARIF file from a tool
-Qualor runs itself is reported under `ext-<tool>`. Don't import Ruff, stylelint, HTMLHint or detekt
+Qualor runs itself is reported under `ext-<tool>`. Don't import Ruff, stylelint, HTMLHint, detekt or SwiftLint
 SARIF any more: Qualor runs Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
 [CSS and SCSS](#css-and-scss-stylelint) and [HTML](#html-htmlhint)) and detekt (see
-[Kotlin](#kotlin-detekt)) itself; a SARIF file you still
+[Kotlin](#kotlin-detekt)) and SwiftLint (see [Swift](#swift-swiftlint)) itself; a SARIF file you still
 import for one of them counts once with the built-in finding of the same code on the same line.
 
 ## Coverage
