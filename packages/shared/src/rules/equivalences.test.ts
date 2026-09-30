@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sonarjsKeys from '../../rules/sonarjs-keys.json' with { type: 'json' };
 import {
   effectiveCwe,
+  ENGINE_PRIORITY,
   enginePriority,
   EQUIVALENCES,
   equivalentPartners,
@@ -101,7 +102,11 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
   });
 
   it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
-    expect(EXTERNAL_BUILTIN_ALIASES).toEqual({ 'ext-ruff': 'ruff' });
+    expect(EXTERNAL_BUILTIN_ALIASES).toEqual({
+      'ext-ruff': 'ruff',
+      'ext-stylelint': 'stylelint',
+      'ext-htmlhint': 'htmlhint',
+    });
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
     expect(rulesEquivalent(rule('ext-ruff:F401'), rule('ruff:F401'))).toBe(true);
@@ -111,5 +116,43 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(equivalentPartners('ext-ruff:')).toEqual([]);
     expect(equivalentPartners('ruff')).toEqual([]);
     expect(enginePriority('ruff')).toBeGreaterThan(enginePriority('ext-ruff'));
+  });
+
+  it('ranks stylelint and htmlhint below ruff and above any external engine (plan 8D ruling D5)', () => {
+    const p = (e: string) => ENGINE_PRIORITY.indexOf(e);
+    expect(p('ruff')).toBeGreaterThanOrEqual(0);
+    expect(p('stylelint')).toBeGreaterThan(p('ruff'));
+    expect(p('htmlhint')).toBeGreaterThan(p('stylelint'));
+    expect(enginePriority('htmlhint')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(enginePriority('stylelint')).toBeGreaterThan(enginePriority('ext-stylelint'));
+    expect(enginePriority('htmlhint')).toBeGreaterThan(enginePriority('ext-htmlhint'));
+  });
+
+  it('pairs an externally imported stylelint rule with the built-in stylelint rule of the same id, stylelint primary (plan 8D ruling D4)', () => {
+    expect(equivalentPartners('ext-stylelint:block-no-empty')).toEqual([
+      'stylelint:block-no-empty',
+    ]);
+    expect(equivalentPartners('stylelint:block-no-empty')).toEqual([
+      'ext-stylelint:block-no-empty',
+    ]);
+    expect(
+      rulesEquivalent(rule('ext-stylelint:block-no-empty'), rule('stylelint:block-no-empty')),
+    ).toBe(true);
+    expect(
+      rulesEquivalent(rule('ext-stylelint:block-no-empty'), rule('stylelint:length-zero-no-unit')),
+    ).toBe(false);
+    expect(
+      rulesEquivalent(rule('ext-bandit:block-no-empty'), rule('stylelint:block-no-empty')),
+    ).toBe(false);
+  });
+
+  it('pairs an externally imported HTMLHint rule with the built-in HTMLHint rule of the same id, htmlhint primary (plan 8D ruling D4)', () => {
+    expect(equivalentPartners('ext-htmlhint:tag-pair')).toEqual(['htmlhint:tag-pair']);
+    expect(equivalentPartners('htmlhint:tag-pair')).toEqual(['ext-htmlhint:tag-pair']);
+    expect(rulesEquivalent(rule('ext-htmlhint:tag-pair'), rule('htmlhint:tag-pair'))).toBe(true);
+    expect(rulesEquivalent(rule('ext-htmlhint:tag-pair'), rule('htmlhint:alt-require'))).toBe(
+      false,
+    );
+    expect(rulesEquivalent(rule('ext-bandit:tag-pair'), rule('htmlhint:tag-pair'))).toBe(false);
   });
 });

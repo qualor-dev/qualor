@@ -407,6 +407,8 @@
               "java",
               "csharp",
               "python",
+              "html",
+              "css",
               "other"
             ]
           },

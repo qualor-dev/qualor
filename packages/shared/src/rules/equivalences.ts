@@ -31,7 +31,8 @@ export const EQUIVALENCES: Equivalences = equivalencesSchema.parse(data);
 /**
  * data-model.md §5.3: which engine's issue is primary when two engines report the same problem.
  * Higher wins; external engines (any id not listed) rank lowest. `gitleaks` > `semgrep` >
- * `spotbugs` > `roslyn` > `pmd` > `eslint` > `sonarjs` > `ruff` > external.
+ * `spotbugs` > `roslyn` > `pmd` > `eslint` > `sonarjs` > `ruff` > `stylelint` > `htmlhint` >
+ * external (plan 8D ruling D5).
  */
 export const ENGINE_PRIORITY: readonly string[] = [
   'gitleaks',
@@ -42,6 +43,8 @@ export const ENGINE_PRIORITY: readonly string[] = [
   'eslint',
   'sonarjs',
   'ruff',
+  'stylelint',
+  'htmlhint',
 ];
 
 export function enginePriority(engineId: string): number {
@@ -75,9 +78,15 @@ for (const { rules } of EQUIVALENCES.pairs) {
  * built-in rule with the identical rule id (`ext-ruff:F401` ↔ `ruff:F401`), so a project that
  * still imports its own SARIF of a tool Qualor now runs does not see every finding twice. The
  * built-in engine is primary: `enginePriority` ranks every external engine lowest.
+ *
+ * `ext-stylelint` and `ext-htmlhint` (plan 8D ruling D4): the same dedupe bug 8C's own final
+ * review found for `ext-ruff` — a project importing its own stylelint/HTMLHint SARIF would
+ * otherwise see every finding twice once Qualor runs the tool itself.
  */
 export const EXTERNAL_BUILTIN_ALIASES: Readonly<Record<string, string>> = Object.freeze({
   'ext-ruff': 'ruff',
+  'ext-stylelint': 'stylelint',
+  'ext-htmlhint': 'htmlhint',
 });
 
 const BUILTIN_TO_EXTERNAL = new Map(

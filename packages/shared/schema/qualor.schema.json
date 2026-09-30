@@ -132,7 +132,9 @@
               "javascript",
               "java",
               "csharp",
-              "python"
+              "python",
+              "html",
+              "css"
             ]
           }
         }
@@ -467,6 +469,80 @@
             "sonarAnalyzer": {
               "default": true,
               "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "stylelint": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "configFile": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 600,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "htmlhint": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "configFile": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 300,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
             }
           },
           "additionalProperties": false

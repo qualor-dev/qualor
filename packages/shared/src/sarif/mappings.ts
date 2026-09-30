@@ -277,6 +277,61 @@ const ruff: EngineMapping = {
   severity: (result, rule) => ruffRule(rule?.id ?? result.ruleId ?? '').defaultSeverity,
 };
 
+/**
+ * stylelint (config.md §6, plan 8D). Qualor's pass marks each rule `possible-error` (it is in
+ * stylelint-config-recommended or stylelint-config-recommended-scss, the "avoid errors" sets) or
+ * `convention`. The category decides quality and severity; the configured `error`/`warning`
+ * does not (stylelint configs set every rule to `error`).
+ */
+const STYLELINT_CATEGORIES: ReadonlyMap<string, { quality: Quality; defaultSeverity: Severity }> =
+  new Map([
+    ['possible-error', { quality: 'reliability', defaultSeverity: 'medium' }],
+    ['convention', { quality: 'maintainability', defaultSeverity: 'low' }],
+  ]);
+const STYLELINT_CONVENTION = { quality: 'maintainability', defaultSeverity: 'low' } as const;
+function stylelintMeta(rule: SarifRule | undefined): {
+  quality: Quality;
+  defaultSeverity: Severity;
+} {
+  return (
+    STYLELINT_CATEGORIES.get(String(rule?.properties?.['category'] ?? '')) ?? STYLELINT_CONVENTION
+  );
+}
+const stylelint: EngineMapping = {
+  rule: (r) => ({ ...stylelintMeta(r), kind: 'issue' }),
+  severity: (_result, r) => stylelintMeta(r).defaultSeverity,
+};
+
+/** HTMLHint (plan 8D): rule ids that are markup errors, and those about accessibility. */
+const HTMLHINT_RELIABILITY = new Set([
+  'tag-pair',
+  'attr-no-duplication',
+  'id-unique',
+  'src-not-empty',
+  'attr-unsafe-chars',
+  'attr-value-no-duplication',
+  'tags-check',
+  'spec-char-escape',
+  'empty-tag-not-self-closed',
+  'tagname-specialchars',
+]);
+const HTMLHINT_ACCESSIBILITY = new Set([
+  'alt-require',
+  'frame-title-require',
+  'html-lang-require',
+  'input-requires-label',
+]);
+function htmlhintMeta(id: string): { quality: Quality; defaultSeverity: Severity } {
+  if (HTMLHINT_RELIABILITY.has(id)) return { quality: 'reliability', defaultSeverity: 'medium' };
+  if (HTMLHINT_ACCESSIBILITY.has(id))
+    return { quality: 'maintainability', defaultSeverity: 'medium' };
+  return { quality: 'maintainability', defaultSeverity: 'low' };
+}
+const htmlhint: EngineMapping = {
+  rule: (r) => ({ ...htmlhintMeta(r.id), kind: 'issue' }),
+  severity: (result, r) => htmlhintMeta(r?.id ?? result.ruleId ?? '').defaultSeverity,
+};
+
 export const ENGINE_MAPPINGS = {
   eslint,
   pmd,
@@ -287,6 +342,8 @@ export const ENGINE_MAPPINGS = {
   roslyn,
   sonarjs,
   ruff,
+  stylelint,
+  htmlhint,
 } as const satisfies Record<string, EngineMapping>;
 
 export function engineMapping(engineId: string): EngineMapping | undefined {

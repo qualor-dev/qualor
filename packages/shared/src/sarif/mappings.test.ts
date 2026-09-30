@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BUILTIN_ENGINES, LANGUAGES } from '../report/taxonomy';
 import { engineMapping, ENGINE_MAPPINGS, ruffRule, sonarCategory } from './mappings';
 import type { SarifResult, SarifRule } from './types';
 
@@ -272,5 +273,71 @@ describe('ruff (report-format.md §7.1, plan 8C)', () => {
     });
     expect(ruff.severity!({ ruleId: 'E711', level: 'error' } as never, { id: 'E711' })).toBe('low');
     expect(ruff.severity!({ ruleId: 'S608', level: 'error' } as never, undefined)).toBe('high');
+  });
+});
+
+describe('stylelint and htmlhint (report-format.md §7.1, plan 8D)', () => {
+  it('are built-in engines and html/css are languages before other', () => {
+    expect(BUILTIN_ENGINES).toEqual(expect.arrayContaining(['stylelint', 'htmlhint']));
+    expect(LANGUAGES).toEqual(expect.arrayContaining(['html', 'css']));
+    expect(LANGUAGES.at(-1)).toBe('other');
+  });
+
+  it('stylelint: a possible-error rule is reliability/medium, anything else maintainability/low', () => {
+    const m = engineMapping('stylelint')!;
+    const possible = { id: 'block-no-empty', properties: { category: 'possible-error' } };
+    const convention = { id: 'length-zero-no-unit', properties: { category: 'convention' } };
+    expect(m.rule!(possible)).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(m.rule!(convention)).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(m.rule!({ id: 'x' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(m.rule!({ id: 'x', properties: { category: '__proto__' } }).quality).toBe(
+      'maintainability',
+    );
+    // The configured level (stylelint configs set everything to error) does not decide severity.
+    expect(
+      m.severity!({ ruleId: 'length-zero-no-unit', level: 'error' } as never, convention),
+    ).toBe('low');
+    expect(m.severity!({ ruleId: 'block-no-empty', level: 'warning' } as never, possible)).toBe(
+      'medium',
+    );
+  });
+
+  it('htmlhint: correctness rules are reliability, accessibility rules medium, the rest low', () => {
+    const m = engineMapping('htmlhint')!;
+    expect(m.rule!({ id: 'tag-pair' })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(m.rule!({ id: 'alt-require' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(m.rule!({ id: 'title-require' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(
+      m.severity!({ ruleId: 'tag-no-obsolete', level: 'error' } as never, {
+        id: 'tag-no-obsolete',
+      }),
+    ).toBe('low');
+    expect(m.severity!({ ruleId: 'attr-no-duplication', level: 'error' } as never, undefined)).toBe(
+      'medium',
+    );
   });
 });

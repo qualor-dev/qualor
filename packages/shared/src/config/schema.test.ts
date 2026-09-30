@@ -264,6 +264,40 @@ describe('parseConfig', () => {
   });
 });
 
+describe('HTML and CSS settings (plan 8D)', () => {
+  it('has analyzers.stylelint and analyzers.htmlhint with their defaults', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.stylelint).toEqual({
+      enabled: 'auto',
+      configFile: null,
+      timeoutSeconds: 600,
+    });
+    expect(c.analyzers.htmlhint).toEqual({
+      enabled: 'auto',
+      configFile: null,
+      timeoutSeconds: 300,
+    });
+    expect(() => parseConfig({ version: 1, analyzers: { stylelint: { rules: {} } } })).toThrow();
+    expect(() =>
+      parseConfig({ version: 1, analyzers: { htmlhint: { configFile: '' } } }),
+    ).toThrow();
+  });
+
+  it('accepts html and css in an explicit language list', () => {
+    expect(parseConfig({ version: 1, languages: ['html', 'css'] }).languages).toEqual([
+      'html',
+      'css',
+    ]);
+  });
+
+  it('excludes minified CSS like minified JS (config.md §3.1)', () => {
+    expect(BUILTIN_EXCLUDES).toContain('**/*.min.css');
+    expect(BUILTIN_EXCLUDES.indexOf('**/*.min.css')).toBe(
+      BUILTIN_EXCLUDES.indexOf('**/*.min.js') + 1,
+    );
+  });
+});
+
 describe('interpolateEnv', () => {
   it('replaces ${VAR} and ${VAR:-default} recursively', () => {
     const warn = vi.fn();

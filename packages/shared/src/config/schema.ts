@@ -2,7 +2,15 @@ import { z } from 'zod';
 import { BUILTIN_ENGINES, ENGINE_ID_PATTERN } from '../report/taxonomy';
 import { RUFF_SELECTOR, RUFF_VERSION, ruffSelectorKnown } from '../rules/ruff';
 
-const SCANNABLE_LANGUAGES = ['typescript', 'javascript', 'java', 'csharp', 'python'] as const;
+const SCANNABLE_LANGUAGES = [
+  'typescript',
+  'javascript',
+  'java',
+  'csharp',
+  'python',
+  'html',
+  'css',
+] as const;
 
 export const BUILTIN_EXCLUDES: readonly string[] = [
   '**/node_modules/**',
@@ -11,6 +19,7 @@ export const BUILTIN_EXCLUDES: readonly string[] = [
   '**/build/**',
   '**/target/**',
   '**/*.min.js',
+  '**/*.min.css',
   '**/vendor/**',
   // The scanner's own session files (config.md §6.1).
   '.qualor/**',
@@ -182,6 +191,23 @@ const analyzers = z
         // Also add the bundled SonarAnalyzer.CSharp 9.32.0.97167 (only with bundledAnalyzers); a
         // project's own SonarAnalyzer wins (config.md §3).
         sonarAnalyzer: z.boolean().default(true),
+      })
+      .prefault({}),
+    // CSS and SCSS (plan 8D): Qualor's own stylelint, with the project's JSON/YAML config or
+    // Qualor's default; never an executable config (config.md §6).
+    stylelint: z
+      .strictObject({
+        enabled,
+        configFile: z.string().min(1).nullable().default(null),
+        timeoutSeconds: timeout(600),
+      })
+      .prefault({}),
+    // HTML (plan 8D): Qualor's own HTMLHint, with the root .htmlhintrc or Qualor's rule set.
+    htmlhint: z
+      .strictObject({
+        enabled,
+        configFile: z.string().min(1).nullable().default(null),
+        timeoutSeconds: timeout(300),
       })
       .prefault({}),
   })

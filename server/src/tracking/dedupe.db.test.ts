@@ -260,4 +260,84 @@ describe('cross-engine dedupe (data-model.md §5.3)', () => {
     expect(await byRule(p, 'ext-ruff:E711')).toMatchObject({ duplicateOfIssueId: null });
     expect(await byRule(p, 'ruff:E711')).toMatchObject({ duplicateOfIssueId: null });
   });
+
+  it("dedupes a project's own imported stylelint SARIF (ext-stylelint) against the built-in stylelint rule of the same id, stylelint primary (plan 8D ruling D4)", async () => {
+    const p = await h.project('dedupe/ext-stylelint');
+    const css = (path: string) => file(path, { language: 'css' });
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('stylelint'), engine('ext-stylelint')],
+        files: [css('src/a.css')],
+        findings: [
+          finding({
+            engineId: 'ext-stylelint',
+            ruleId: 'block-no-empty',
+            path: 'src/a.css',
+            line: 1,
+          }),
+          finding({ engineId: 'stylelint', ruleId: 'block-no-empty', path: 'src/a.css', line: 1 }),
+          finding({
+            engineId: 'ext-stylelint',
+            ruleId: 'length-zero-no-unit',
+            path: 'src/a.css',
+            line: 1,
+          }),
+          finding({
+            engineId: 'ext-stylelint',
+            ruleId: 'color-no-invalid-hex',
+            path: 'src/a.css',
+            line: 3,
+          }),
+        ],
+      }),
+    );
+    const primary = await byRule(p, 'stylelint:block-no-empty');
+    expect(primary).toMatchObject({ duplicateOfIssueId: null });
+    expect(await byRule(p, 'ext-stylelint:block-no-empty')).toMatchObject({
+      status: 'open',
+      duplicateOfIssueId: primary!.id,
+    });
+    // A different rule id on the same line, and the same rule id on another line, stay separate.
+    expect(await byRule(p, 'ext-stylelint:length-zero-no-unit')).toMatchObject({
+      duplicateOfIssueId: null,
+    });
+    expect(await byRule(p, 'ext-stylelint:color-no-invalid-hex')).toMatchObject({
+      duplicateOfIssueId: null,
+    });
+  });
+
+  it("dedupes a project's own imported HTMLHint SARIF (ext-htmlhint) against the built-in HTMLHint rule of the same id, htmlhint primary (plan 8D ruling D4)", async () => {
+    const p = await h.project('dedupe/ext-htmlhint');
+    const html = (path: string) => file(path, { language: 'html' });
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('htmlhint'), engine('ext-htmlhint')],
+        files: [html('src/index.html')],
+        findings: [
+          finding({
+            engineId: 'ext-htmlhint',
+            ruleId: 'tag-pair',
+            path: 'src/index.html',
+            line: 1,
+          }),
+          finding({ engineId: 'htmlhint', ruleId: 'tag-pair', path: 'src/index.html', line: 1 }),
+          finding({
+            engineId: 'ext-htmlhint',
+            ruleId: 'alt-require',
+            path: 'src/index.html',
+            line: 1,
+          }),
+        ],
+      }),
+    );
+    const primary = await byRule(p, 'htmlhint:tag-pair');
+    expect(primary).toMatchObject({ duplicateOfIssueId: null });
+    expect(await byRule(p, 'ext-htmlhint:tag-pair')).toMatchObject({
+      status: 'open',
+      duplicateOfIssueId: primary!.id,
+    });
+    expect(await byRule(p, 'ext-htmlhint:alt-require')).toMatchObject({ duplicateOfIssueId: null });
+  });
 });
