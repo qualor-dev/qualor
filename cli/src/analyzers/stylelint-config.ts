@@ -104,7 +104,9 @@ function leavesRoot(glob: string): boolean {
     path.posix.isAbsolute(g) ||
     path.win32.isAbsolute(g) ||
     /^[a-z]:/i.test(g) ||
-    g.split(/[\\/]/).includes('..')
+    // Brace and extglob alternatives (`{..,src}/**`, `{/etc,x}`, `+(..)/x`) expand to paths too.
+    /(?:^|[{,(|])\s*(?:[\\/]|[a-z]:)/i.test(g) ||
+    g.split(/[\\/{},()|]/).some((segment) => segment.trim() === '..')
   );
 }
 
@@ -140,6 +142,13 @@ function block(raw: unknown, where: string, allowed: ReadonlySet<string>): Style
       out[key] = names(value, `${where} customSyntax`, STYLELINT_BUNDLED.customSyntax);
     } else if (key === 'rules') {
       if (!isObject(value)) throw new WeblintConfigError(`${where} rules must be an object`);
+      for (const id of Object.keys(value)) {
+        // `constructor`, `toString`, `__proto__`…: stylelint looks rules up on a plain object.
+        if (id in Object.prototype)
+          throw new WeblintConfigError(
+            `${where} rules sets "${id}", which is not a stylelint rule`,
+          );
+      }
       out[key] = value;
     } else if (key === 'overrides') {
       if (!Array.isArray(value)) throw new WeblintConfigError(`${where} overrides must be a list`);
@@ -218,20 +227,34 @@ function load(root: string, rel: string): StylelintConfig {
   return sanitizeStylelintConfig(raw, rel);
 }
 
-/** package.json's `stylelint` key; undefined when there is none or package.json cannot be used. */
+/**
+ * package.json's `stylelint` key; undefined when there is no package.json or it has no such key.
+ * A package.json that cannot be used (outside the repository, too large, not JSON) is a skip
+ * reason, never silently passed over: stylelint would have read its key.
+ */
 function packageJsonConfig(root: string): unknown {
+  if (!repoEntryExists(path.join(root, 'package.json'))) return undefined;
+  const text = readRepoConfig(root, 'package.json', MAX_PACKAGE_JSON_BYTES);
+  let pkg: unknown;
   try {
-    const pkg: unknown = JSON.parse(readRepoConfig(root, 'package.json', MAX_PACKAGE_JSON_BYTES));
-    return isObject(pkg) ? pkg['stylelint'] : undefined;
+    pkg = JSON.parse(text);
   } catch {
-    return undefined;
+    throw new WeblintConfigError('package.json is not valid JSON');
   }
+  return isObject(pkg) ? pkg['stylelint'] : undefined;
 }
 
-function stylelintIgnore(root: string): string | null {
+/** The root .stylelintignore's path, null without one, or a skip reason of its own. */
+function stylelintIgnore(root: string): string | null | { skip: string } {
   const file = path.join(root, '.stylelintignore');
   if (!repoEntryExists(file)) return null;
-  readRepoConfig(root, '.stylelintignore', MAX_CONFIG_BYTES);
+  try {
+    readRepoConfig(root, '.stylelintignore', MAX_CONFIG_BYTES);
+  } catch (err) {
+    if (!(err instanceof WeblintConfigError)) throw err;
+    // configFile does not help here: the ignore file applies whatever the configuration.
+    return { skip: `${err.message}; fix or remove .stylelintignore` };
+  }
   return file;
 }
 
@@ -244,8 +267,9 @@ export function resolveStylelintConfig(
   root: string,
   configFile: string | null,
 ): { config: StylelintConfig; source: string; ignoreFile: string | null } | { skip: string } {
+  const ignoreFile = stylelintIgnore(root);
+  if (ignoreFile !== null && typeof ignoreFile === 'object') return ignoreFile;
   try {
-    const ignoreFile = stylelintIgnore(root);
     if (configFile === 'qualor-default') {
       return { config: QUALOR_DEFAULT_STYLELINT, source: 'qualor-default', ignoreFile };
     }

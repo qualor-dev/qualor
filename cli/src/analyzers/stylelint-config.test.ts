@@ -304,6 +304,12 @@ describe('resolveStylelintConfig never loads or runs anything from the checkout 
     ['../outside/**'],
     ['src/../../outside/**'],
     ['!../outside/**'],
+    ['{..,src}/**'],
+    ['{../x,y}'],
+    ['src/{a, ..}/x'],
+    ['{/etc,src}/**'],
+    ['{src,C:/x}/**'],
+    ['+(..)/x'],
   ])('refuses ignoreFiles %s, which points outside the repository', (glob) => {
     const root = repo({ '.stylelintrc.json': JSON.stringify({ ignoreFiles: [glob] }) });
     expect(skip(resolveStylelintConfig(root, null))).toContain(
@@ -341,6 +347,82 @@ describe('resolveStylelintConfig never loads or runs anything from the checkout 
     );
   });
 
+  it('keeps ignoreFiles globs inside the repository, braces and dotted names included', () => {
+    const ignoreFiles = [
+      'legacy/**',
+      '!legacy/keep.css',
+      '{src,lib}/**/*.min.css',
+      '..foo/**',
+      'a..b/*',
+    ];
+    const root = repo({ '.stylelintrc.json': JSON.stringify({ ignoreFiles }) });
+    expect(resolveStylelintConfig(root, null)).toMatchObject({ config: { ignoreFiles } });
+  });
+
+  it.each([['constructor'], ['toString'], ['hasOwnProperty'], ['__proto__'], ['valueOf']])(
+    'refuses the rule id %s, which names a property of every object',
+    (id) => {
+      const text = `{ "rules": { ${JSON.stringify(id)}: true } }`;
+      const reason = skip(resolveStylelintConfig(repo({ '.stylelintrc.json': text }), null));
+      expect(reason).toContain(
+        `.stylelintrc.json rules sets "${id}", which is not a stylelint rule`,
+      );
+      expect(reason).toContain('configFile: qualor-default');
+      const nested = JSON.stringify({ overrides: [{ files: ['*.css'], rules: { [id]: true } }] });
+      expect(skip(resolveStylelintConfig(repo({ '.stylelintrc.json': nested }), null))).toContain(
+        `overrides[0] rules sets "${id}"`,
+      );
+    },
+  );
+
+  it('gives an unusable .stylelintignore its own reason, whatever configFile says', () => {
+    const root = repo({ '.stylelintrc.json': '{ "rules": {} }' });
+    writeFileSync(path.join(root, '.stylelintignore'), 'x'.repeat(1024 * 1024 + 1));
+    for (const configFile of [null, 'qualor-default', '.stylelintrc.json']) {
+      const reason = skip(resolveStylelintConfig(root, configFile));
+      expect(reason).toBe('.stylelintignore is larger than 1 MiB; fix or remove .stylelintignore');
+    }
+    const dir = repo({ '.stylelintignore/x': '' });
+    expect(skip(resolveStylelintConfig(dir, 'qualor-default'))).toBe(
+      '.stylelintignore is not a regular file; fix or remove .stylelintignore',
+    );
+  });
+
+  it('skips on an unusable package.json instead of passing over it, but not on one without the key', () => {
+    const invalid = repo({ 'package.json': '{ nope', '.stylelintrc.json': '{ "rules": {} }' });
+    const reason = skip(resolveStylelintConfig(invalid, null));
+    expect(reason).toContain('package.json is not valid JSON');
+    expect(reason).toContain('configFile: qualor-default');
+    const big = repo({ '.stylelintrc.json': '{ "rules": {} }' });
+    writeFileSync(path.join(big, 'package.json'), `{"x":"${'a'.repeat(4 * 1024 * 1024)}"}`);
+    expect(skip(resolveStylelintConfig(big, null))).toContain('package.json is larger than 4 MiB');
+    const dir = repo({ 'package.json/x': '', '.stylelintrc.json': '{ "rules": {} }' });
+    expect(skip(resolveStylelintConfig(dir, null))).toContain('package.json is not a regular file');
+    // configFile (a path or qualor-default) never reads package.json.
+    expect(resolveStylelintConfig(invalid, '.stylelintrc.json')).toMatchObject({
+      source: '.stylelintrc.json',
+    });
+    expect(resolveStylelintConfig(invalid, 'qualor-default')).toMatchObject({
+      source: 'qualor-default',
+    });
+    // A valid package.json without the key is no configuration: the search goes on.
+    for (const pkg of ['{ "name": "x" }', '[1]', '{ "stylelint": { "rules": {} } }']) {
+      const root = repo({ 'package.json': pkg, '.stylelintrc.json': '{ "rules": {} }' });
+      const expected = pkg.includes('stylelint') ? 'package.json "stylelint"' : '.stylelintrc.json';
+      expect(resolveStylelintConfig(root, null), pkg).toMatchObject({ source: expected });
+    }
+  });
+
+  it.runIf(posix)('skips on a package.json that links out of the repository', () => {
+    const outside = path.join(tmp(), 'package.json');
+    writeFileSync(outside, '{ "name": "x" }');
+    const root = repo({ '.stylelintrc.json': '{ "rules": {} }' });
+    symlinkSync(outside, path.join(root, 'package.json'));
+    const reason = skip(resolveStylelintConfig(root, null));
+    expect(reason).toContain('package.json is outside the repository');
+    expect(reason).toContain('configFile: qualor-default');
+  });
+
   it('keeps __proto__ a plain, refused key', () => {
     for (const text of ['{ "__proto__": { "polluted": 1 } }', '__proto__:\n  polluted: 1\n']) {
       expect(skip(resolveStylelintConfig(repo({ '.stylelintrc': text }), null))).toContain(
@@ -367,8 +449,8 @@ describe('resolveStylelintConfig never loads or runs anything from the checkout 
     writeFileSync(outside, 'x\n');
     const root = repo({});
     symlinkSync(outside, path.join(root, '.stylelintignore'));
-    expect(skip(resolveStylelintConfig(root, 'qualor-default'))).toContain(
-      '.stylelintignore is outside the repository',
+    expect(skip(resolveStylelintConfig(root, 'qualor-default'))).toBe(
+      '.stylelintignore is outside the repository; fix or remove .stylelintignore',
     );
   });
 

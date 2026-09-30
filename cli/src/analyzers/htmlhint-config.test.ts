@@ -117,6 +117,15 @@ describe('resolveHtmlhintRules reads rules as data only (config.md §6)', () => 
     expect(readdirSync(root, { recursive: true }).map(String)).not.toContain('evil.ran');
   });
 
+  it('refuses constructor and other Object.prototype names, which HTMLHint would call as rules', () => {
+    for (const key of ['constructor', 'toString', 'valueOf', '__proto__']) {
+      const root = repo({ '.htmlhintrc': `{ "tag-pair": true, ${JSON.stringify(key)}: true }` });
+      const reason = skip(resolveHtmlhintRules(root, null));
+      expect(reason, key).toContain(`.htmlhintrc sets "${key}", which is not an HTMLHint rule id`);
+      expect(reason, key).toContain('configFile: qualor-default');
+    }
+  });
+
   it('drops $schema and keeps rule options as data', () => {
     const root = repo({
       '.htmlhintrc':

@@ -84,7 +84,8 @@ function ruleset(raw: Record<string, unknown>, rel: string): Record<string, unkn
       throw new WeblintConfigError(
         `${rel} sets "${key}", which Qualor does not support (it loads code)`,
       );
-    if (!RULE_ID.test(key))
+    // `constructor` has the shape of a rule id, but HTMLHint looks rules up on a plain object.
+    if (!RULE_ID.test(key) || key in Object.prototype)
       throw new WeblintConfigError(`${rel} sets "${key}", which is not an HTMLHint rule id`);
     out[key] = value;
   }
