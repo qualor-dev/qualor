@@ -41,6 +41,15 @@ const PUBLISH_IF =
   "inputs.confirm == format('publish v{0}', inputs.version)";
 /** Any reference to a secret or to the job token, in any spelling. */
 const SECRET_REF = /\bsecrets\s*(?:\.|\[)|\btoJSON\(\s*secrets\s*\)|\bgithub\.token\b/;
+/**
+ * The one exception outside the publish step (release.md §11): ci.yml's `review` job uploads the
+ * analysis to our own server with a project analysis token, which can only upload reports of that
+ * project. Only its `qualor scan --no-wait` step, and only `secrets.QUALOR_TOKEN`.
+ */
+function isAnalysisUpload(file: string, job: string, step: object & { run?: string }): boolean {
+  if (file !== 'ci.yml' || job !== 'review' || step.run !== 'qualor scan --no-wait') return false;
+  return !SECRET_REF.test(JSON.stringify(step).replaceAll('${{ secrets.QUALOR_TOKEN }}', ''));
+}
 /** The only actions a workflow may use: checkout, setup, cache and artifacts; none publishes. */
 const ALLOWED_ACTIONS = [
   'actions/checkout',
@@ -120,7 +129,8 @@ describe('the publish gate (release.md §11, §15 item 7)', () => {
         if (SECRET_REF.test(JSON.stringify(rest))) found.push(`${f}: ${name}`);
         for (const s of steps) {
           const allowed =
-            f === 'release.yml' && name === 'publish' && s.run === 'pnpm release:publish';
+            (f === 'release.yml' && name === 'publish' && s.run === 'pnpm release:publish') ||
+            isAnalysisUpload(f, name, s);
           if (!allowed && SECRET_REF.test(JSON.stringify(s))) {
             found.push(`${f}: ${name}: ${s.run ?? s.uses ?? ''}`);
           }
@@ -138,6 +148,22 @@ describe('the publish gate (release.md §11, §15 item 7)', () => {
       expect(SECRET_REF.test(sample), sample).toBe(true);
     }
     expect(SECRET_REF.test('the compose stack with secrets generated for this run')).toBe(false);
+  });
+
+  it('lets the review upload hold only the analysis token, in that one step', () => {
+    const upload = {
+      run: 'qualor scan --no-wait',
+      env: { QUALOR_URL: '${{ vars.QUALOR_URL }}', QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}' },
+    };
+    expect(isAnalysisUpload('ci.yml', 'review', upload)).toBe(true);
+    // Another secret beside it, the job token, another step, job or file: refused.
+    const withMore = { ...upload, env: { ...upload.env, X: '${{ secrets.OTHER }}' } };
+    expect(isAnalysisUpload('ci.yml', 'review', withMore)).toBe(false);
+    const withToken = { ...upload, env: { ...upload.env, T: '${{ github.token }}' } };
+    expect(isAnalysisUpload('ci.yml', 'review', withToken)).toBe(false);
+    expect(isAnalysisUpload('ci.yml', 'review', { ...upload, run: 'qualor scan' })).toBe(false);
+    expect(isAnalysisUpload('ci.yml', 'dogfood', upload)).toBe(false);
+    expect(isAnalysisUpload('nightly.yml', 'review', upload)).toBe(false);
   });
 
   it('never interpolates an expression into a script, nor into a github-script script', () => {
