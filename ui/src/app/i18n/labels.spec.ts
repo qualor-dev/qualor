@@ -6,6 +6,7 @@ describe('label', () => {
     expect(label('status', 'wont_fix')).toBe("Won't fix");
     expect(label('gate', 'none')).toBe('No gate');
     expect(label('language', '*')).toBe('Other engines');
+    expect(label('language', 'kotlin')).toBe('Kotlin');
     expect(label('gateWarning', 'NEW_CODE_DEFINITION_FALLBACK')).toBe(
       'No earlier version was found for the new-code baseline; the last 30 days are new code instead.',
     );

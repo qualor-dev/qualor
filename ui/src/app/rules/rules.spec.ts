@@ -227,6 +227,26 @@ describe('ProfilesPage', () => {
     expect(choices()).toEqual(['', 'p4']);
   });
 
+  it('offers every profile language, Kotlin and HTML/CSS included, by its label', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles', { body: page([]) });
+    const fixture = TestBed.createComponent(ProfilesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const options = [...root.querySelectorAll<HTMLOptionElement>('#profile-language option')];
+    expect(options.map((o) => [o.value, o.textContent?.trim()])).toEqual([
+      ['typescript', 'TypeScript'],
+      ['javascript', 'JavaScript'],
+      ['java', 'Java'],
+      ['csharp', 'C#'],
+      ['python', 'Python'],
+      ['html', 'HTML'],
+      ['css', 'CSS'],
+      ['kotlin', 'Kotlin'],
+      ['*', 'Other engines'],
+    ]);
+  });
+
   it('refuses the reserved built-in name before asking, and shows a 422 next to its field', async () => {
     const server = setup();
     server.on('GET', '/api/v0/quality-profiles', { body: page([]) });
