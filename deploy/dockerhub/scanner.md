@@ -81,7 +81,7 @@ analyses compiled classes).
   in `/opt/qualor/lib/detekt`. No Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
-- Runs as the user `node` (uid 1000) in `/src`; about 3.0 GB. Every base image is pinned by
+- Runs as the user `node` (uid 1000) in `/src`; about 3.4 GB. Every base image is pinned by
   digest.
 
 ### Environment

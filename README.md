@@ -167,8 +167,9 @@ into the App's webhook settings and activate the webhook.
 ### Kotlin
 
 `qualor/scanner` runs detekt 1.23.8 on `.kt` and `.kts` files, with your `detekt.yml` (for example
-`config/detekt/detekt.yml`) on top of detekt's defaults, or detekt's default rule set without one.
-It needs no build, but rules that need the project's classpath do not run; see
+`config/detekt/detekt.yml`) on top of detekt's defaults, or without one detekt's default rule set
+with the settings detekt recommends for Jetpack Compose. It needs no build, but rules that need the
+project's classpath do not run; see
 [Kotlin (detekt)](docs/guide/languages-and-analyzers.md#kotlin-detekt).
 
 ### C#

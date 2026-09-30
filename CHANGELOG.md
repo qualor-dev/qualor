@@ -28,10 +28,12 @@ All notable changes to Qualor are listed here, newest first. The format follows
   duplication metrics and a "Qualor way" Kotlin quality profile. `qualor/scanner` runs detekt 1.23.8
   (Apache-2.0) on them as a new `detekt` engine (rule keys such as `detekt:MagicNumber`), with the
   repository's own detekt config (`config/detekt/detekt.yml`, `config/detekt.yml`, `detekt.yml` or
-  `.detekt.yml`) on top of detekt's defaults, or detekt's default rule set. Rules that need the
-  project's classpath do not run, and plugins and baselines from the checkout are never loaded. A
-  detekt config Qualor cannot use makes detekt skip (fail under `analyzers.detekt.enabled: true`).
-  Turn it off with `analyzers.detekt.enabled: false`.
+  `.detekt.yml`) on top of detekt's defaults, or detekt's default rule set with the settings
+  detekt recommends for Jetpack Compose. Rules that need the project's classpath do not run, and
+  plugins and baselines from the checkout are never loaded. A detekt config Qualor cannot use
+  makes detekt skip (fail under `analyzers.detekt.enabled: true`); an
+  `analyzers.detekt.configFile` outside the repository stops the scan with exit 2. Turn it off
+  with `analyzers.detekt.enabled: false`.
 
 ### Changed
 
@@ -69,7 +71,10 @@ All notable changes to Qualor are listed here, newest first. The format follows
   than this release: upgrade the server before the scanner.
 - `.kt` and `.kts` files were language `other`; they now count in lines of code, complexity and
   duplication, which can move a new-code duplication condition.
-- `**/src/androidTest/**` and `**/src/*Test/**` (Kotlin Multiplatform) are test sources by default.
+- `**/src/androidTest/**` and `**/src/*Test/**` are test sources by default. `**/src/*Test/**`
+  covers Kotlin Multiplatform's test source sets, but applies to every language: Gradle's
+  `src/integrationTest` or `src/functionalTest`, for example, become test files too, which leave
+  lines of code, complexity, duplication and coverage.
 
 ## [0.2.0] - 2026-09-30
 

@@ -11,7 +11,7 @@ size, complexity, duplication and coverage.
 | Python | **Ruff** (Qualor's rule selection: Pyflakes, pycodestyle errors, flake8-bugbear, Pylint errors, flake8-bandit's security rules) | .py files are in scope, run by the qualor/scanner image or any Ruff 0.16 on PATH |
 | HTML | **HTMLHint** 1.9.2, the project's `.htmlhintrc` or Qualor's rule set | `.html` files are in scope, run by the `qualor/scanner` image |
 | CSS, SCSS | **stylelint** 17.15, the project's JSON/YAML config or Qualor's default | `.css` or `.scss` files are in scope, run by the `qualor/scanner` image |
-| Kotlin | **detekt** 1.23.8 (Apache-2.0), your `detekt.yml` or detekt's default rule set | `.kt` or `.kts` files are in scope, run by the `qualor/scanner` image |
+| Kotlin | **detekt** 1.23.8 (Apache-2.0), your `detekt.yml` or detekt's default rule set with the settings detekt recommends for Jetpack Compose | `.kt` or `.kts` files are in scope, run by the `qualor/scanner` image |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -173,7 +173,28 @@ repository, `config/detekt/detekt.yml` (the detekt Gradle plugin's default), `co
 `detekt.yml` or `.detekt.yml` (the first one found), Qualor reads it and uses it on top of detekt's
 defaults, the way `buildUponDefaultConfig = true` does in Gradle. A config file that is a symbolic
 link is fine while it points at a file inside the repository. Without a config file, detekt runs
-its default rule set.
+its default rule set with the settings detekt recommends for Jetpack Compose, so a composable's
+name or a private `@Preview` is not a finding:
+
+```yaml
+naming:
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    constantPattern: '[A-Z][A-Za-z0-9]*'
+complexity:
+  LongParameterList:
+    ignoreDefaultParameters: true
+style:
+  MagicNumber:
+    ignorePropertyDeclaration: true
+    ignoreCompanionObjectPropertyDeclaration: true
+  UnusedPrivateMember:
+    ignoreAnnotated: ['Preview']
+```
+
+A config file of your own replaces these six settings: detekt then runs as your own Gradle build
+does. Copy them into your config if you want them there too.
 
 ```yaml
 analyzers:
@@ -183,14 +204,19 @@ analyzers:
     timeoutSeconds: 900         # optional
 ```
 
-`configFile` must stay inside the repository (a path outside it stops the scan with exit 2).
+`configFile` must stay inside the repository (a path outside it stops the scan with exit 2). A
+`configFile` that does not exist makes detekt skip, with the reason in the scan log; under
+`enabled: true` the scan fails with exit 3.
 
 Qualor does not build your project, so detekt runs without its classpath: rules that need type
 information (about a third of detekt's rules, such as `UnsafeCast` or `UnreachableCode`) report
 nothing. A detekt baseline file is not used, since Qualor has its own new-code gate. Plugins your
-config or build refers to are never loaded, because that would run code from the repository. Keys
-detekt does not know (a config written for another detekt version, for example) are ignored
-instead of failing the scan, and findings keep the severity your config gives each rule.
+config or build refers to are never loaded, because that would run code from the repository.
+`AbsentOrWrongFileLicense` never runs, because it would read the file your config names as its
+license template. Keys detekt does not know (a config written for another detekt version, for
+example) are ignored instead of failing the scan, and findings keep the severity your config gives
+each rule. A key detekt knows with a value of the wrong type (`maxLineLength: abc`) fails detekt,
+with detekt's reason in the scan log.
 
 Qualor reads the config as data. A config file that is not valid YAML or not a YAML mapping, has a
 duplicate key, an explicit YAML tag or more than 50 aliases, is not UTF-8, is larger than 1 MiB,
@@ -370,6 +396,9 @@ minus the built-in excludes (`node_modules`, `dist`,
 Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs` and
 `site-packages`, and binary files), minus your own `sources.exclude`. Test files are recognised by
 `tests.include` (by default `*.test.*`, `*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`,
-`test_*.py`, `*_test.py`, `conftest.py`, `src/androidTest/`, `src/*Test/`).
+`test_*.py`, `*_test.py`, `conftest.py`, `src/androidTest/`, `src/*Test/`). `src/*Test/` is meant
+for Kotlin Multiplatform's `commonTest` and `jvmTest`, but applies to every language: a Gradle
+`src/integrationTest` or `src/functionalTest` is test code too, and leaves lines of code,
+complexity, duplication and coverage.
 A committed `coverage/` directory is not excluded automatically. Add it to `sources.exclude` if
 yours is generated output.
