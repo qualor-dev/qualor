@@ -1,4 +1,9 @@
-import { effectiveCwe, enginePriority, equivalentPartners } from '@qualor/shared';
+import {
+  effectiveCwe,
+  enginePriority,
+  equivalentPartners,
+  normalizedRuleKey,
+} from '@qualor/shared';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { jsonChunks, uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
@@ -112,6 +117,10 @@ export function planDedupe(live: readonly LiveIssue[]): DuplicateChange[] {
       const root: Root = { order, id: issue.id, engineId: issue.engineId };
       for (const c of cwe) register(byCwe, c, root);
       register(byRuleKey, issue.ruleKey, root);
+      // An aliased external engine's own rule id form (ext-detekt) is also found by its built-in
+      // partner's lookup, which uses the normalised key.
+      const normalized = normalizedRuleKey(issue.ruleKey);
+      if (normalized !== issue.ruleKey) register(byRuleKey, normalized, root);
     });
   }
   return live

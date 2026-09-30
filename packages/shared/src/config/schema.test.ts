@@ -357,4 +357,19 @@ describe('BUILTIN_EXCLUDES', () => {
   it('does not exclude coverage directories, which may hold source (ruling Q3)', () => {
     expect(BUILTIN_EXCLUDES.some((glob) => glob.includes('coverage'))).toBe(false);
   });
+
+  it('has analyzers.detekt with its defaults and accepts kotlin as a language (phase 8E)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.detekt).toEqual({ enabled: 'auto', configFile: null, timeoutSeconds: 900 });
+    expect(parseConfig({ version: 1, languages: ['kotlin'] }).languages).toEqual(['kotlin']);
+    expect(errorPaths({ version: 1, analyzers: { detekt: { rules: {} } } })).not.toEqual([]);
+    expect(errorPaths({ version: 1, analyzers: { detekt: { configFile: '' } } })).not.toEqual([]);
+    // A built-in engine id is reserved for external SARIF (report-format.md 7.2).
+    expect(errorPaths({ version: 1, sarif: [{ path: 'r.sarif', engine: 'detekt' }] })).not.toEqual(
+      [],
+    );
+    // Android and Kotlin Multiplatform test source sets (ruling E17).
+    expect(c.tests.include).toContain('**/src/androidTest/**');
+    expect(c.tests.include).toContain('**/src/*Test/**');
+  });
 });

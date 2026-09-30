@@ -32,7 +32,7 @@ export const EQUIVALENCES: Equivalences = equivalencesSchema.parse(data);
  * data-model.md §5.3: which engine's issue is primary when two engines report the same problem.
  * Higher wins; external engines (any id not listed) rank lowest. `gitleaks` > `semgrep` >
  * `spotbugs` > `roslyn` > `pmd` > `eslint` > `sonarjs` > `ruff` > `stylelint` > `htmlhint` >
- * external (plan 8D ruling D5).
+ * `detekt` > external (plan 8D ruling D5, plan 8E ruling E4).
  */
 export const ENGINE_PRIORITY: readonly string[] = [
   'gitleaks',
@@ -45,6 +45,7 @@ export const ENGINE_PRIORITY: readonly string[] = [
   'ruff',
   'stylelint',
   'htmlhint',
+  'detekt',
 ];
 
 export function enginePriority(engineId: string): number {
@@ -87,14 +88,40 @@ export const EXTERNAL_BUILTIN_ALIASES: Readonly<Record<string, string>> = Object
   'ext-ruff': 'ruff',
   'ext-stylelint': 'stylelint',
   'ext-htmlhint': 'htmlhint',
+  // Plan 8E ruling E5; detekt's own SARIF ids are `detekt.<ruleset>.<Rule>` (RULE_ID_NORMALISERS).
+  'ext-detekt': 'detekt',
 });
+
+/**
+ * Per aliased external engine: how its own SARIF rule ids map to the built-in rule ids, when they
+ * differ. detekt writes `detekt.<ruleset>.<Rule>` (`detekt.style.MagicNumber`), the built-in
+ * engine's rules are `<Rule>`.
+ */
+const RULE_ID_NORMALISERS: Readonly<Record<string, (ruleId: string) => string>> = Object.freeze({
+  'ext-detekt': (id) => /^detekt\.[^.]+\.([^.]+)$/.exec(id)?.[1] ?? id,
+});
+
+/**
+ * The key with an aliased external engine's rule id normalised (`ext-detekt:detekt.style.X` →
+ * `ext-detekt:X`); every other key is returned as it is. Dedupe indexes issues by this key too.
+ */
+export function normalizedRuleKey(key: string): string {
+  const colon = key.indexOf(':');
+  if (colon <= 0) return key;
+  const engineId = key.slice(0, colon);
+  const normalise = Object.hasOwn(RULE_ID_NORMALISERS, engineId)
+    ? RULE_ID_NORMALISERS[engineId]
+    : undefined;
+  return normalise === undefined ? key : `${engineId}:${normalise(key.slice(colon + 1))}`;
+}
 
 const BUILTIN_TO_EXTERNAL = new Map(
   Object.entries(EXTERNAL_BUILTIN_ALIASES).map(([external, builtin]) => [builtin, external]),
 );
 
 /** The key of the same rule id under the aliased engine (either direction), or null. */
-function aliasPartner(key: string): string | null {
+function aliasPartner(rawKey: string): string | null {
+  const key = normalizedRuleKey(rawKey);
   const colon = key.indexOf(':');
   if (colon <= 0 || colon === key.length - 1) return null;
   const engineId = key.slice(0, colon);
@@ -130,7 +157,8 @@ export function effectiveCwe(rule: EquivalenceRule): number[] {
  */
 export function rulesEquivalent(a: EquivalenceRule, b: EquivalenceRule): boolean {
   if (a.engineId === b.engineId) return false;
-  if (PAIRS.has(pairKey(a.key, b.key)) || aliasPartner(a.key) === b.key) return true;
+  if (PAIRS.has(pairKey(a.key, b.key)) || aliasPartner(a.key) === normalizedRuleKey(b.key))
+    return true;
   const cwe = new Set(effectiveCwe(a));
   return effectiveCwe(b).some((c) => cwe.has(c));
 }

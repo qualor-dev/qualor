@@ -332,6 +332,35 @@ const htmlhint: EngineMapping = {
   severity: (result, r) => htmlhintMeta(r?.id ?? result.ruleId ?? '').defaultSeverity,
 };
 
+/**
+ * detekt (Kotlin, config.md §6): the CLI's transform (cli/src/analyzers/detekt-sarif.ts) puts each
+ * rule's rule set into `properties.ruleset`. Rule sets about wrong or fragile behaviour are
+ * reliability, the rest maintainability; detekt 1.23 has no security rule set.
+ */
+const DETEKT_RELIABILITY = new Set(['potential-bugs', 'coroutines', 'exceptions']);
+const DETEKT_LOW = new Set(['style', 'naming', 'comments']);
+const detektRuleset = (r: SarifRule | undefined): string =>
+  String(r?.properties?.['ruleset'] ?? '');
+const detektDefaultSeverity = (r: SarifRule | undefined): Severity =>
+  DETEKT_LOW.has(detektRuleset(r)) ? 'low' : 'medium';
+
+const detekt: EngineMapping = {
+  rule: (r) => ({
+    quality: DETEKT_RELIABILITY.has(detektRuleset(r)) ? 'reliability' : 'maintainability',
+    defaultSeverity: detektDefaultSeverity(r),
+  }),
+  // A project's own `severity: error | info` arrives as SARIF level error / note; detekt's own
+  // default is warning, which takes the rule set's default instead of a flat medium.
+  severity: (result, r) =>
+    result.level === 'error'
+      ? 'high'
+      : result.level === 'note'
+        ? 'low'
+        : result.level === 'none'
+          ? 'info'
+          : detektDefaultSeverity(r),
+};
+
 export const ENGINE_MAPPINGS = {
   eslint,
   pmd,
@@ -344,6 +373,7 @@ export const ENGINE_MAPPINGS = {
   ruff,
   stylelint,
   htmlhint,
+  detekt,
 } as const satisfies Record<string, EngineMapping>;
 
 export function engineMapping(engineId: string): EngineMapping | undefined {

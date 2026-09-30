@@ -10,6 +10,7 @@ const SCANNABLE_LANGUAGES = [
   'python',
   'html',
   'css',
+  'kotlin',
 ] as const;
 
 export const BUILTIN_EXCLUDES: readonly string[] = [
@@ -210,6 +211,16 @@ const analyzers = z
         timeoutSeconds: timeout(300),
       })
       .prefault({}),
+    // Kotlin (plan 8E): detekt 1.23.8 from the qualor/scanner image, run on its JRE (config.md §6).
+    // configFile null: the first of config/detekt/detekt.yml, config/detekt.yml, detekt.yml,
+    // .detekt.yml, else detekt's own default rule set.
+    detekt: z
+      .strictObject({
+        enabled,
+        configFile: z.string().min(1).nullable().default(null),
+        timeoutSeconds: timeout(900),
+      })
+      .prefault({}),
   })
   .prefault({});
 
@@ -253,6 +264,8 @@ export const configSchema = z
             '**/*.spec.*',
             '**/__tests__/**',
             '**/src/test/**',
+            '**/src/androidTest/**',
+            '**/src/*Test/**',
             '**/*Tests/**',
             '**/test_*.py',
             '**/*_test.py',

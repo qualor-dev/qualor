@@ -341,3 +341,49 @@ describe('stylelint and htmlhint (report-format.md §7.1, plan 8D)', () => {
     );
   });
 });
+
+describe('detekt (report-format.md 7.1, phase 8E)', () => {
+  const detekt = () => engineMapping('detekt')!;
+
+  it.each([
+    ['potential-bugs', 'reliability', 'medium'],
+    ['coroutines', 'reliability', 'medium'],
+    ['exceptions', 'reliability', 'medium'],
+    ['complexity', 'maintainability', 'medium'],
+    ['empty-blocks', 'maintainability', 'medium'],
+    ['performance', 'maintainability', 'medium'],
+    ['style', 'maintainability', 'low'],
+    ['naming', 'maintainability', 'low'],
+    ['comments', 'maintainability', 'low'],
+  ])('rule set %s -> %s, default %s', (ruleset, quality, defaultSeverity) => {
+    expect(detekt().rule!(rule('X', { ruleset }))).toEqual({ quality, defaultSeverity });
+  });
+
+  it('treats a rule without a rule set as maintainability/medium', () => {
+    expect(detekt().rule!(rule('X'))).toEqual({
+      quality: 'maintainability',
+      defaultSeverity: 'medium',
+    });
+  });
+
+  it('takes a project severity from the SARIF level and the rule set default otherwise', () => {
+    const style = rule('MagicNumber', { ruleset: 'style' });
+    const sev = (level: 'error' | 'warning' | 'note' | 'none' | undefined) =>
+      detekt().severity!({ ruleId: 'MagicNumber', ...(level && { level }) } as never, style);
+    expect(sev('error')).toBe('high');
+    expect(sev('note')).toBe('low');
+    expect(sev('none')).toBe('info');
+    expect(sev('warning')).toBe('low');
+    expect(sev(undefined)).toBe('low');
+    expect(
+      detekt().severity!(
+        { ruleId: 'UnsafeCast', level: 'warning' } as never,
+        rule('UnsafeCast', { ruleset: 'potential-bugs' }),
+      ),
+    ).toBe('medium');
+  });
+
+  it('gives the external ext-detekt engine no mapping, so no rule set is required', () => {
+    expect(engineMapping('ext-detekt')).toBeUndefined();
+  });
+});

@@ -94,6 +94,8 @@
             "**/*.spec.*",
             "**/__tests__/**",
             "**/src/test/**",
+            "**/src/androidTest/**",
+            "**/src/*Test/**",
             "**/*Tests/**",
             "**/test_*.py",
             "**/*_test.py",
@@ -134,7 +136,8 @@
               "csharp",
               "python",
               "html",
-              "css"
+              "css",
+              "kotlin"
             ]
           }
         }
@@ -540,6 +543,43 @@
             },
             "timeoutSeconds": {
               "default": 300,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "detekt": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "configFile": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 900,
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 86400

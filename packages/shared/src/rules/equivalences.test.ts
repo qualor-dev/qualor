@@ -7,6 +7,7 @@ import {
   EQUIVALENCES,
   equivalentPartners,
   EXTERNAL_BUILTIN_ALIASES,
+  normalizedRuleKey,
   rulesEquivalent,
 } from './equivalences';
 
@@ -106,6 +107,7 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       'ext-ruff': 'ruff',
       'ext-stylelint': 'stylelint',
       'ext-htmlhint': 'htmlhint',
+      'ext-detekt': 'detekt',
     });
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
@@ -154,5 +156,39 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       false,
     );
     expect(rulesEquivalent(rule('ext-bandit:tag-pair'), rule('htmlhint:tag-pair'))).toBe(false);
+  });
+
+  it('ranks detekt last of the built-ins and above any external engine (plan 8E ruling E4)', () => {
+    const p = (e: string) => ENGINE_PRIORITY.indexOf(e);
+    expect(p('detekt')).toBe(ENGINE_PRIORITY.length - 1);
+    expect(p('detekt')).toBeGreaterThan(p('htmlhint'));
+    expect(enginePriority('htmlhint')).toBeGreaterThan(enginePriority('detekt'));
+    expect(enginePriority('detekt')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(enginePriority('detekt')).toBeGreaterThan(enginePriority('ext-detekt'));
+  });
+
+  it("pairs detekt's own SARIF ids (detekt.<ruleset>.<Rule>) with the built-in rule (plan 8E ruling E5)", () => {
+    expect(normalizedRuleKey('ext-detekt:detekt.style.MagicNumber')).toBe('ext-detekt:MagicNumber');
+    expect(normalizedRuleKey('ext-detekt:MagicNumber')).toBe('ext-detekt:MagicNumber');
+    expect(normalizedRuleKey('ext-detekt:detekt.a.b.C')).toBe('ext-detekt:detekt.a.b.C');
+    expect(normalizedRuleKey('ext-ruff:F401')).toBe('ext-ruff:F401');
+    expect(normalizedRuleKey('detekt:MagicNumber')).toBe('detekt:MagicNumber');
+    expect(equivalentPartners('ext-detekt:detekt.style.MagicNumber')).toEqual([
+      'detekt:MagicNumber',
+    ]);
+    expect(equivalentPartners('ext-detekt:MagicNumber')).toEqual(['detekt:MagicNumber']);
+    expect(equivalentPartners('detekt:MagicNumber')).toEqual(['ext-detekt:MagicNumber']);
+    expect(
+      rulesEquivalent(rule('ext-detekt:detekt.style.MagicNumber'), rule('detekt:MagicNumber')),
+    ).toBe(true);
+    expect(
+      rulesEquivalent(rule('detekt:MagicNumber'), rule('ext-detekt:detekt.style.MagicNumber')),
+    ).toBe(true);
+    expect(
+      rulesEquivalent(rule('ext-detekt:detekt.style.MagicNumber'), rule('detekt:ReturnCount')),
+    ).toBe(false);
+    expect(
+      rulesEquivalent(rule('ext-bandit:detekt.style.MagicNumber'), rule('detekt:MagicNumber')),
+    ).toBe(false);
   });
 });

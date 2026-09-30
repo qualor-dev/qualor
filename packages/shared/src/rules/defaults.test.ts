@@ -8,7 +8,7 @@ describe('engineRuleDefaults (report-format.md §7.1)', () => {
       defaultSeverity: 'blocker',
     });
     expect(engineRuleDefaults('trivy')).toEqual({ quality: 'security', defaultSeverity: 'medium' });
-    for (const id of ['eslint', 'sonarjs', 'pmd', 'spotbugs', 'semgrep', 'osv-scanner']) {
+    for (const id of ['eslint', 'sonarjs', 'pmd', 'spotbugs', 'semgrep', 'detekt', 'osv-scanner']) {
       expect(engineRuleDefaults(id), id).toEqual({
         quality: 'maintainability',
         defaultSeverity: 'medium',

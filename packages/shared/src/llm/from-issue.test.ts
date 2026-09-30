@@ -11,7 +11,7 @@ const raw: RawIssueInput = {
   path: 'src/a.ts',
   startLine: 2,
   endLine: 2,
-  language: 'kotlin',
+  language: 'cobol',
   snippet: { startLine: 1, lines: ['a', 'b'] },
 };
 

@@ -340,4 +340,40 @@ describe('cross-engine dedupe (data-model.md §5.3)', () => {
     });
     expect(await byRule(p, 'ext-htmlhint:alt-require')).toMatchObject({ duplicateOfIssueId: null });
   });
+
+  it("dedupes a project's own imported detekt SARIF (ext-detekt, ids detekt.<ruleset>.<Rule>) against the built-in detekt rule, detekt primary (plan 8E ruling E5)", async () => {
+    const p = await h.project('dedupe/ext-detekt');
+    const kt = (path: string) => file(path, { language: 'kotlin' });
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('detekt'), engine('ext-detekt')],
+        files: [kt('src/Main.kt')],
+        findings: [
+          finding({
+            engineId: 'ext-detekt',
+            ruleId: 'detekt.style.MagicNumber',
+            path: 'src/Main.kt',
+            line: 1,
+          }),
+          finding({ engineId: 'detekt', ruleId: 'MagicNumber', path: 'src/Main.kt', line: 1 }),
+          finding({
+            engineId: 'ext-detekt',
+            ruleId: 'detekt.style.ReturnCount',
+            path: 'src/Main.kt',
+            line: 1,
+          }),
+        ],
+      }),
+    );
+    const primary = await byRule(p, 'detekt:MagicNumber');
+    expect(primary).toMatchObject({ duplicateOfIssueId: null });
+    expect(await byRule(p, 'ext-detekt:detekt.style.MagicNumber')).toMatchObject({
+      status: 'open',
+      duplicateOfIssueId: primary!.id,
+    });
+    expect(await byRule(p, 'ext-detekt:detekt.style.ReturnCount')).toMatchObject({
+      duplicateOfIssueId: null,
+    });
+  });
 });
