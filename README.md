@@ -18,6 +18,35 @@ Repository: <https://github.com/qualor-dev/qualor>. Homepage: <https://qualor.de
 configuration, quality gates, migration from SonarQube, the API and troubleshooting, and it has
 [ready-made prompts](docs/guide/ai-prompts.md) that let an AI agent roll Qualor out for you.
 
+<p align="center">
+  <img src="docs/screenshots/overview.png" width="100%" alt="A project's overview in Qualor's dark theme: the quality gate that failed and the condition that failed it, the new-code measures, coverage, issues, duplication, lines of code and ratings with their trends, the history of open issues by severity, and the open issues by severity and software quality">
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/issues.png" alt="A project's issues: filters by severity and status with counts, the severity distribution, and each issue with its rule, file and line">
+      <br><sub><b>Issues</b>, filtered by severity, status, software quality and rule</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/issue-ai.png" alt="An issue with the code around it and the optional AI assistant's explanation of the finding and how to fix it">
+      <br><sub><b>An issue</b> with its code, and the optional AI assistant on your own model</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/gate.png" alt="A quality gate's conditions, each edited in its row, and the form to add one">
+      <br><sub><b>A quality gate</b>, its conditions edited in place</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/projects.png" alt="The projects list: quality gate results, open issues, average coverage and lines of code across the organization, then each project's measures">
+      <br><sub><b>Projects</b> at a glance</sub>
+    </td>
+  </tr>
+</table>
+
+The screenshots show the dark theme; the web UI follows the system's light or dark setting.
+
 ## Quick start
 
 You need Docker with Compose v2. The server is one container, `qualor/server`, with its own
