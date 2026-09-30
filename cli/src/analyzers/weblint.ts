@@ -1,6 +1,18 @@
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  statSync,
+} from 'node:fs';
 import path from 'node:path';
-import { staysInside } from './binary';
+import { z } from 'zod';
+import type { Logger } from '../log';
+import { isInside, staysInside } from './binary';
+import type { AnalyzerContext } from './types';
 
 /** A repository configuration Qualor's HTML and CSS passes cannot use (config.md §6): a skip reason. */
 export class WeblintConfigError extends Error {}
@@ -60,5 +72,79 @@ export function readRepoConfig(root: string, rel: string, maxBytes: number): str
     throw new WeblintConfigError(`${rel} cannot be read`);
   } finally {
     closeSync(fd);
+  }
+}
+
+/** Where the `qualor/scanner` image installs the HTML and CSS passes (config.md §4). */
+export const DEFAULT_WEBLINT_DIR = '/opt/qualor/weblint';
+
+/**
+ * The runner script of one pass, or why it cannot run. A missing install is a skip (an
+ * image-bundled resource absent on a plain host, ruling G6, like sonarjs); a relative or
+ * in-repository QUALOR_WEBLINT_DIR is unavailable (a merge request must never point it at its own
+ * code).
+ */
+export function weblintScript(
+  ctx: AnalyzerContext,
+  script: 'stylelint.mjs' | 'htmlhint.mjs',
+): { script: string } | { skip: string } | { unavailable: string } {
+  const dir = ctx.env['QUALOR_WEBLINT_DIR'] || DEFAULT_WEBLINT_DIR;
+  if (!path.isAbsolute(dir) || isInside(ctx.root, dir)) {
+    return { unavailable: 'QUALOR_WEBLINT_DIR must be an absolute path outside the repository' };
+  }
+  const file = path.join(dir, script);
+  if (!existsSync(file)) {
+    return { skip: 'the HTML and CSS linters are not installed (qualor/scanner image)' };
+  }
+  return { script: file };
+}
+
+/**
+ * tools/analyzers/weblint/{stylelint,htmlhint}.mjs's one stdout JSON line. Unknown keys are
+ * accepted (and dropped), so a runner may add fields without breaking an older CLI.
+ */
+const summarySchema = z.object({
+  files: z.number(),
+  listed: z.number().optional(),
+  parseErrors: z.number().optional(),
+  unknownRules: z.array(z.string()).optional(),
+  invalidOptions: z.number().optional(),
+});
+
+/**
+ * The pass's summary line, for the log only (a report `reason` stays fixed, config.md §6). A
+ * missing or malformed line is ignored: the run's exit code and SARIF already decide its status.
+ */
+export function logWeblintSummary(
+  log: Logger,
+  engine: 'stylelint' | 'htmlhint',
+  stdout: string,
+): void {
+  const last = stdout
+    .split('\n')
+    .filter((l) => l.trim() !== '')
+    .at(-1);
+  if (last === undefined) return;
+  let s: z.infer<typeof summarySchema>;
+  try {
+    s = summarySchema.parse(JSON.parse(last));
+  } catch {
+    return;
+  }
+  log.debug(
+    s.listed !== undefined && s.listed !== s.files
+      ? `${engine}: linted ${s.files} of ${s.listed} listed file(s)`
+      : `${engine}: linted ${s.files} file(s)`,
+  );
+  // Debug, like sonarjs and ESLint: a file that does not parse is not a finding.
+  if ((s.parseErrors ?? 0) > 0) log.debug(`${engine}: ${s.parseErrors} file(s) did not parse`);
+  const unknown = s.unknownRules ?? [];
+  if (unknown.length > 0) {
+    log.warn(
+      `${engine}: the configuration names rule(s) this ${engine} does not have: ${unknown.join(', ')}`,
+    );
+  }
+  if ((s.invalidOptions ?? 0) > 0) {
+    log.warn(`${engine}: ${s.invalidOptions} invalid rule option(s) in the configuration`);
   }
 }

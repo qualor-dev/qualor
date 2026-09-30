@@ -1,11 +1,13 @@
 import { eslintAnalyzer } from './eslint';
 import { gitleaksAnalyzer } from './gitleaks';
+import { htmlhintAnalyzer } from './htmlhint';
 import { pmdAnalyzer } from './pmd';
 import { roslynAnalyzer } from './roslyn';
 import { ruffAnalyzer } from './ruff';
 import { semgrepAnalyzer } from './semgrep';
 import { sonarjsAnalyzer } from './sonarjs';
 import { spotbugsAnalyzer } from './spotbugs';
+import { stylelintAnalyzer } from './stylelint';
 import { trivyAnalyzer } from './trivy';
 import type { Analyzer } from './types';
 
@@ -21,5 +23,7 @@ export function builtinAnalyzers(): Analyzer[] {
     gitleaksAnalyzer,
     trivyAnalyzer,
     roslynAnalyzer,
+    stylelintAnalyzer,
+    htmlhintAnalyzer,
   ];
 }

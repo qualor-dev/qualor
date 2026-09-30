@@ -337,8 +337,9 @@ describe('runAnalyzers', () => {
     expect(requiredFailures(captures)).toEqual(['pmd']);
   });
 
-  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D)', () => {
-    expect(builtinAnalyzers().map((a) => a.id)).toEqual([
+  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D, 8D)', () => {
+    const ids = builtinAnalyzers().map((a) => a.id);
+    const order = [
       'eslint',
       'sonarjs',
       'ruff',
@@ -348,7 +349,14 @@ describe('runAnalyzers', () => {
       'gitleaks',
       'trivy',
       'roslyn',
-    ]);
+      'stylelint',
+      'htmlhint',
+    ] as const;
+    // Membership and relative order (config.md §3), never the whole list.
+    expect(ids).toEqual(expect.arrayContaining([...order]));
+    const at = order.map((id) => ids.indexOf(id));
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('gives adapters ctx.exec, which always sanitizes the environment, defaults cwd to the root and kills on timeout', async () => {

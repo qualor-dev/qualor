@@ -26,6 +26,7 @@ import { VERSION } from '../index';
 import { createLogger, silentLogger } from '../log';
 import { main } from '../main';
 import { pmdAnalyzer } from '../analyzers/pmd';
+import { builtinAnalyzers } from '../analyzers/registry';
 import { trivyJsonToSarif } from '../analyzers/trivy-output';
 import type { Analyzer } from '../analyzers/types';
 import { ANALYZER_OUTPUT_DIR } from '../../test/analyzers';
@@ -100,9 +101,9 @@ describe('qualor scan --dry-run', () => {
   it('main() scans with the default analyzer registry', { timeout: 60_000 }, async () => {
     // The other dry-run tests pass analyzers: [] so their results cannot depend on installed tools;
     // this one keeps main() wired to builtinAnalyzers(). The repository has no TypeScript,
-    // JavaScript, Java or C#, so ESLint, sonarjs, PMD, SpotBugs and roslyn are skipped wherever it
-    // runs; Gitleaks is auto so a missing binary is a skip, not exit 3; Trivy runs where its
-    // database is installed and finds no lockfile (plan 2B).
+    // JavaScript, Java, C#, HTML or CSS, so ESLint, sonarjs, PMD, SpotBugs, roslyn, stylelint and
+    // htmlhint are skipped wherever it runs; Gitleaks is auto so a missing binary is a skip, not
+    // exit 3; Trivy runs where its database is installed and finds no lockfile (plan 2B).
     const repo = path.join(tmp(), 'repo');
     writeTree(repo, {
       'README.md': '# docs only\n',
@@ -117,22 +118,14 @@ describe('qualor scan --dry-run', () => {
     );
     expect(code, c.stderr()).toBe(0);
     const report = readReport(path.join(repo, 'out', 'r.json.gz'));
-    expect(report.engines.map((e) => e.id)).toEqual([
-      'eslint',
-      'sonarjs',
-      'ruff',
-      'pmd',
-      'spotbugs',
-      'semgrep',
-      'gitleaks',
-      'trivy',
-      'roslyn',
-    ]);
-    expect(
-      report.engines
-        .filter((e) => ['eslint', 'sonarjs', 'ruff', 'pmd', 'spotbugs'].includes(e.id))
-        .map((e) => e.status),
-    ).toEqual(['skipped', 'skipped', 'skipped', 'skipped', 'skipped']);
+    expect(report.engines.map((e) => e.id)).toEqual(builtinAnalyzers().map((a) => a.id));
+    expect(report.engines.map((e) => e.id)).toEqual(
+      expect.arrayContaining(['stylelint', 'htmlhint']),
+    );
+    const skipped = ['eslint', 'sonarjs', 'ruff', 'pmd', 'spotbugs', 'stylelint', 'htmlhint'];
+    expect(report.engines.filter((e) => skipped.includes(e.id)).map((e) => e.status)).toEqual(
+      skipped.map(() => 'skipped'),
+    );
   });
 
   it(
