@@ -68,3 +68,32 @@ test('an organization admin creates a project', async ({ page }) => {
     'This branch has no analysis yet. Run qualor scan in its CI pipeline.',
   );
 });
+
+test("the summary's note on a partial list adds no second hairline, at any width", async ({
+  page,
+}) => {
+  // More projects than one page: the answer says so here (the seed has three).
+  await page.route(/\/api\/v0\/projects\?/, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { items: unknown[]; nextCursor: string | null };
+    return route.fulfill({ response, json: { ...body, nextCursor: 'e2e-more' } });
+  });
+  await page.goto('/projects');
+  await expect(page.locator('.portfolio-note')).toBeVisible();
+  const borders = () =>
+    page.locator('.portfolio .kpi').evaluateAll((kpis) =>
+      kpis.map((kpi) => {
+        const style = getComputedStyle(kpi);
+        return `${style.borderRightWidth} ${style.borderBottomWidth}`;
+      }),
+    );
+  // Four columns: hairlines between them only; the note draws its own line above it.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await borders()).toEqual(['1px 0px', '1px 0px', '1px 0px', '0px 0px']);
+  // Two columns: a line under the first row only.
+  await page.setViewportSize({ width: 1000, height: 900 });
+  expect((await borders()).map((b) => b.split(' ')[1])).toEqual(['1px', '1px', '0px', '0px']);
+  // One column: a line under each but the last.
+  await page.setViewportSize({ width: 390, height: 900 });
+  expect((await borders()).map((b) => b.split(' ')[1])).toEqual(['1px', '1px', '1px', '0px']);
+});

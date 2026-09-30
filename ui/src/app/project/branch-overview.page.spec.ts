@@ -304,6 +304,20 @@ describe('BranchOverviewPage', () => {
     expect(store.shownBranch()).toBeNull();
   });
 
+  it("names a branch or merge request and its project in the browser's tab", async () => {
+    // The route's title says only "Branch"; the page names which one once it has loaded.
+    TestBed.inject(CurrentProject).use(PROJECT);
+    await render('b-mr');
+    expect(document.title).toBe('!42 feature/refund-limits → main · P1 · Qualor');
+  });
+
+  it("leaves the project overview's tab to its route: the main branch is the project", async () => {
+    document.title = 'Overview · Qualor';
+    TestBed.inject(CurrentProject).use(PROJECT);
+    await render();
+    expect(document.title).toBe('Overview · Qualor');
+  });
+
   it('reports a branch that does not exist', async () => {
     const { root } = await render('nope');
     expect(text(root.querySelector('[role="alert"]'))).toBe(

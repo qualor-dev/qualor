@@ -52,13 +52,16 @@
         <polyline class="line" [attr.points]="line.points" />
       }
       @if (tip(); as tip) {
-        <line
-          class="crosshair"
-          [attr.x1]="tip.x"
-          [attr.x2]="tip.x"
-          [attr.y1]="plot().top"
-          [attr.y2]="plot().bottom"
-        />
+        <!-- A single stacked column is the one point: a line through it would cross it out. -->
+        @if (!plot().column) {
+          <line
+            class="crosshair"
+            [attr.x1]="tip.x"
+            [attr.x2]="tip.x"
+            [attr.y1]="plot().top"
+            [attr.y2]="plot().bottom"
+          />
+        }
         @if (tip.y !== null) {
           <circle class="marker" r="4.5" [attr.cx]="tip.x" [attr.cy]="tip.y" />
         }

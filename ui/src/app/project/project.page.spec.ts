@@ -214,6 +214,29 @@ describe('ProjectPage', () => {
     expect(root.querySelector('a.external-link')).toBeNull();
   });
 
+  it('names a plain branch other than main with its own gate, and no merge request words', async () => {
+    server.on('GET', `/api/v0/projects/${ID}`, { body: PROJECT });
+    const fixture = TestBed.createComponent(ProjectPage);
+    fixture.componentRef.setInput('projectId', ID);
+    await settle(fixture);
+    TestBed.inject(CurrentProject).showBranch({
+      id: 'b-release',
+      title: 'release/2.0',
+      isMain: false,
+      kind: 'branch',
+      mrTitle: null,
+      mrUrl: null,
+      gateStatus: 'failed',
+      lastAnalysisId: null,
+    });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.branch-chip')?.textContent?.trim()).toBe('release/2.0');
+    expect(root.querySelector('q-gate-badge')?.textContent?.trim()).toBe('Failed');
+    expect(root.querySelector('.page-meta-title')).toBeNull();
+    expect(root.querySelector('a.external-link')).toBeNull();
+  });
+
   it('shows no empty title and no link for a merge request without a title or an http(s) page', async () => {
     server.on('GET', `/api/v0/projects/${ID}`, { body: PROJECT });
     const fixture = TestBed.createComponent(ProjectPage);

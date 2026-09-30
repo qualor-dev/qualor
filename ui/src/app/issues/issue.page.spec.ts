@@ -604,6 +604,13 @@ describe('IssuePage: actions the caller may not use (rbac-audit.md §17)', () =>
     expect(root.textContent).toContain(
       'Your role lets you read this issue, not change its status or severity.',
     );
+    // The side column holds Details and, for those who may, Change: each card names itself.
+    expect(root.querySelector('aside')?.hasAttribute('aria-labelledby')).toBe(false);
+    expect(root.querySelector('section[aria-labelledby="details-heading"]')).not.toBeNull();
+    // No assistant to show: its place takes no room, so no gap doubles in the column.
+    const ai = root.querySelector('q-ai-panel')!;
+    expect(ai.children).toHaveLength(0);
+    expect(getComputedStyle(ai).display).toBe('none');
   });
 
   it('shows no change while the project has not said what the caller may do', async () => {

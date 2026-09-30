@@ -330,7 +330,7 @@ describe('MembersPage (rbac-audit.md §17)', () => {
     );
   });
 
-  it('shows a refused self-demotion (409 LAST_ADMIN) and keeps the role', async () => {
+  it('keeps a refused self-demotion (409 LAST_ADMIN) in the question, with the role kept', async () => {
     const server = setup();
     server.on('PUT', `/api/v0/organizations/${ORG_ID}/members/${ALICE}`, {
       status: 409,
@@ -340,15 +340,38 @@ describe('MembersPage (rbac-audit.md §17)', () => {
     choose(row(root, ALICE), 'select', 'member');
     button(row(root, ALICE), 'Change role').click();
     await settle(fixture);
-    await answer(fixture, root, 'Change role');
+    const ask = dialog(root, 'confirm-dialog');
+    button(ask, 'Change role').click();
+    await settle(fixture);
     expect(
       server.requestsTo('PUT', `/api/v0/organizations/${ORG_ID}/members/${ALICE}`),
     ).toHaveLength(1);
-    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+    // Intended change (step 11): the refusal stays in the dialog that asked, as a branch delete's.
+    expect(ask.open).toBe(true);
+    expect(ask.querySelector('[role="alert"]')?.textContent).toContain(
       'The last active administrator cannot be demoted, removed or deactivated.',
     );
+    expect(
+      [...root.querySelectorAll('[role="alert"]')].filter((a) => !a.closest('dialog')),
+    ).toEqual([]);
+    button(ask, 'Cancel').click();
+    await settle(fixture);
     expect(row(root, ALICE).querySelector('select')?.value).toBe('admin');
     expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
+  });
+
+  it("names the person in the question's title", async () => {
+    setup();
+    const { fixture, root } = await render();
+    const title = () => dialog(root, 'confirm-dialog').querySelector('#confirm-title')?.textContent;
+    choose(row(root, BOB), 'select', 'admin');
+    button(row(root, BOB), 'Change role').click();
+    await settle(fixture);
+    expect(title()?.trim()).toBe('Change the role of bob');
+    await answer(fixture, root, 'Cancel');
+    button(row(root, BOB), 'Remove').click();
+    await settle(fixture);
+    expect(title()?.trim()).toBe('Remove bob');
   });
 
   it('removes a member with DELETE after a confirmation, and not without one', async () => {

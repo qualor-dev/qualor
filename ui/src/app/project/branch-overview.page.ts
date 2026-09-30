@@ -9,6 +9,7 @@ import {
   resource,
   signal,
 } from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { problemMessage } from '../api/errors';
@@ -104,6 +105,13 @@ export class BranchOverviewPage {
       project.showBranch(branch && !branch.isMain ? branch : null);
     });
     inject(DestroyRef).onDestroy(() => project.showBranch(null));
+    // The route's title says only "Branch": the tab names which one, and its project, once loaded.
+    const title = inject(Title);
+    effect(() => {
+      const branch = this.current();
+      if (!this.branchId() || !branch) return;
+      title.setTitle([branch.title, project.current()?.name, 'Qualor'].filter(Boolean).join(' · '));
+    });
   }
 
   /** The last succeeded analysis; `null` when the branch has none yet. */

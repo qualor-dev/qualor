@@ -89,6 +89,17 @@ export class MembersPage {
   protected readonly busy = signal(false);
   /** The change the confirmation dialog asks about; null while it is closed. */
   protected readonly pending = signal<Pending | null>(null);
+  /** A refused change or removal, shown in the question that asked (step 11). */
+  protected readonly confirmError = signal<string | null>(null);
+  /** The question's title names the person (step 11). */
+  protected readonly confirmTitle = computed(() => {
+    const pending = this.pending();
+    if (!pending) return '';
+    const name = pending.member.username;
+    return pending.kind === 'remove'
+      ? $localize`:@@members.removeTitleNamed:Remove ${name}:name:`
+      : $localize`:@@members.changeTitleNamed:Change the role of ${name}:name:`;
+  });
   protected readonly usernameMax = USERNAME_MAX_LENGTH;
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly table = viewChild<ElementRef<HTMLElement>>('table');
@@ -182,6 +193,7 @@ export class MembersPage {
   }
 
   private ask(pending: Pending): void {
+    this.confirmError.set(null);
     this.pending.set(pending);
     openAfterRender(
       this.injector,
@@ -190,20 +202,38 @@ export class MembersPage {
     );
   }
 
+  /**
+   * Answers the question. It stays open until the server has answered, and a refusal stays in it
+   * with its reason, as a branch delete's does; closed meanwhile (Escape), it opens again on one.
+   */
   protected async confirmPending(): Promise<void> {
     const pending = this.pending();
-    if (!pending) return;
-    // Cleared first: the dialog's close event then reads no pending change to cancel.
-    this.pending.set(null);
-    this.closeConfirm();
-    if (pending.kind === 'change') await this.applyChange(pending.member, pending.role);
-    else await this.applyRemove(pending.member);
+    if (!pending || this.busy()) return;
+    this.confirmError.set(null);
+    const refusal =
+      pending.kind === 'change'
+        ? await this.applyChange(pending.member, pending.role)
+        : await this.applyRemove(pending.member);
+    if (refusal === null) {
+      // Cleared first: the dialog's close event then reads no pending change to cancel.
+      if (this.pending() === pending) this.pending.set(null);
+      this.closeConfirm();
+      return;
+    }
+    this.pending.set(pending);
+    this.confirmError.set(refusal);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pending() === pending,
+    );
   }
 
   /** Cancel, Escape or the dialog closing otherwise: nothing changes, a chosen role goes back. */
   protected cancelPending(): void {
     const pending = this.pending();
     this.pending.set(null);
+    this.confirmError.set(null);
     this.closeConfirm();
     if (pending?.kind === 'change') this.resetChoice(pending.member);
   }
@@ -213,36 +243,38 @@ export class MembersPage {
     if (dialog?.open) closeModal(dialog);
   }
 
-  private async applyChange(member: Member, role: Role): Promise<void> {
+  /** Changes a role; the refusal's words when the server refuses (409 LAST_ADMIN, 403…), else null. */
+  private async applyChange(member: Member, role: Role): Promise<string | null> {
     const organizationId = this.org.currentId();
-    if (this.busy() || !organizationId) return;
-    let changed = false;
-    await this.run(async (current) => {
-      const saved = await ok(
-        this.api.client.PUT('/api/v0/organizations/{id}/members/{userId}', {
-          params: { path: { id: organizationId, userId: member.userId } },
-          body: { role },
-        }),
-      );
-      if (!current()) return;
-      await this.list.refresh();
-      changed = true;
-      this.chosen.update((all) =>
-        Object.fromEntries(Object.entries(all).filter(([userId]) => userId !== saved.userId)),
-      );
-      this.announcement.set(
-        $localize`:@@members.changed:${saved.username}:name: is now ${this.roleText(saved.role)}:role:.`,
-      );
-      await this.afterOwnChange(saved.userId);
-      keepFocus(
-        this.injector,
-        this.document,
-        () => rowByKey(this.table()?.nativeElement, saved.userId)?.querySelector('select'),
-        () => this.heading().nativeElement,
-      );
-    });
-    // A refused change (409 LAST_ADMIN, 403, …) leaves the member's stored role on screen.
-    if (!changed) this.resetChoice(member);
+    if (this.busy() || !organizationId) return null;
+    let refusal: string | null = null;
+    await this.run(
+      async (current) => {
+        const saved = await ok(
+          this.api.client.PUT('/api/v0/organizations/{id}/members/{userId}', {
+            params: { path: { id: organizationId, userId: member.userId } },
+            body: { role },
+          }),
+        );
+        if (!current()) return;
+        await this.list.refresh();
+        this.chosen.update((all) =>
+          Object.fromEntries(Object.entries(all).filter(([userId]) => userId !== saved.userId)),
+        );
+        this.announcement.set(
+          $localize`:@@members.changed:${saved.username}:name: is now ${this.roleText(saved.role)}:role:.`,
+        );
+        await this.afterOwnChange(saved.userId);
+        keepFocus(
+          this.injector,
+          this.document,
+          () => rowByKey(this.table()?.nativeElement, saved.userId)?.querySelector('select'),
+          () => this.heading().nativeElement,
+        );
+      },
+      (err) => (refusal = problemMessage(err)),
+    );
+    return refusal;
   }
 
   /**
@@ -257,27 +289,35 @@ export class MembersPage {
     if (select) select.value = member.role;
   }
 
-  private async applyRemove(member: Member): Promise<void> {
+  /** Removes a member; the refusal's words when the server refuses, else null. */
+  private async applyRemove(member: Member): Promise<string | null> {
     const organizationId = this.org.currentId();
-    if (this.busy() || !organizationId) return;
+    if (this.busy() || !organizationId) return null;
     const index = this.list.items().findIndex((m) => m.userId === member.userId);
-    await this.run(async (current) => {
-      await done(
-        this.api.client.DELETE('/api/v0/organizations/{id}/members/{userId}', {
-          params: { path: { id: organizationId, userId: member.userId } },
-        }),
-      );
-      if (!current()) return;
-      await this.list.refresh();
-      this.announcement.set($localize`:@@members.removed:${member.username}:name: removed.`);
-      await this.afterOwnChange(member.userId);
-      keepFocus(
-        this.injector,
-        this.document,
-        () => rowAt(this.table()?.nativeElement, index)?.querySelector('button'),
-        () => this.heading().nativeElement,
-      );
-    });
+    let refusal: string | null = null;
+    await this.run(
+      async (current) => {
+        await done(
+          this.api.client.DELETE('/api/v0/organizations/{id}/members/{userId}', {
+            params: { path: { id: organizationId, userId: member.userId } },
+          }),
+        );
+        if (!current()) return;
+        await this.list.refresh();
+        this.announcement.set($localize`:@@members.removed:${member.username}:name: removed.`);
+        await this.afterOwnChange(member.userId);
+        keepFocus(
+          this.injector,
+          this.document,
+          // The next person's role: their Change role is muted until another role is chosen.
+          () => rowAt(this.table()?.nativeElement, index)?.querySelector('select'),
+          () => rowAt(this.table()?.nativeElement, index)?.querySelector('button'),
+          () => this.heading().nativeElement,
+        );
+      },
+      (err) => (refusal = problemMessage(err)),
+    );
+    return refusal;
   }
 
   /** Adds a user by exact name: `GET /users/lookup`, then `PUT` with the chosen role. */

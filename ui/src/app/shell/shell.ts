@@ -1,4 +1,12 @@
-import { Component, DestroyRef, type ElementRef, inject, viewChild } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import {
+  afterNextRender,
+  Component,
+  DestroyRef,
+  type ElementRef,
+  inject,
+  viewChild,
+} from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../auth/auth.service';
 import { SessionStore } from '../auth/session';
@@ -30,6 +38,7 @@ export class Shell {
   protected readonly org = inject(OrgContext);
   protected readonly inputValue = inputValue;
   private readonly main = viewChild.required<ElementRef<HTMLElement>>('main');
+  private readonly header = viewChild.required<ElementRef<HTMLElement>>('header');
 
   constructor() {
     const router = inject(Router);
@@ -43,7 +52,35 @@ export class Shell {
       }
       previous = path;
     });
-    inject(DestroyRef).onDestroy(() => subscription.unsubscribe());
+    const destroyRef = inject(DestroyRef);
+    destroyRef.onDestroy(() => subscription.unsubscribe());
+
+    // Sticky parts (an issue's details, the settings navigation) sit below the top bar, which grows
+    // past its 60px with the organization switcher, or when it wraps: they follow its height.
+    const document = inject(DOCUMENT);
+    afterNextRender(() => {
+      const header = this.header().nativeElement;
+      const root = document.documentElement;
+      const view = document.defaultView;
+      const update = () => {
+        if (view?.getComputedStyle(header).position === 'sticky') {
+          root.style.setProperty('--sticky-top', header.offsetHeight + 12 + 'px');
+        } else {
+          // Below 56rem the bar scrolls away: the stylesheet's value holds.
+          root.style.removeProperty('--sticky-top');
+        }
+      };
+      update();
+      if (typeof ResizeObserver !== 'function') return;
+      const observer = new ResizeObserver(update);
+      observer.observe(header);
+      view?.addEventListener('resize', update);
+      destroyRef.onDestroy(() => {
+        observer.disconnect();
+        view?.removeEventListener('resize', update);
+        root.style.removeProperty('--sticky-top');
+      });
+    });
   }
 
   protected logout(): void {

@@ -40,6 +40,11 @@ describe('Distribution', () => {
     expect(root.querySelector('.dist-bar')).toBeNull();
   });
 
+  it('inline, lists nothing when everything is zero: no empty list for a screen reader', async () => {
+    const root = await render([{ key: 'x', label: 'X', value: 0, tone: 'accent' }], 'inline');
+    expect(root.querySelector('ul')).toBeNull();
+  });
+
   it('inline, names the items of the bar on one line and leaves the empty ones out', async () => {
     const root = await render(ITEMS, 'inline');
     expect(root.querySelector('.dist-rows')).toBeNull();

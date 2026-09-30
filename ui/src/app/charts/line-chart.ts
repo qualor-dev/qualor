@@ -166,18 +166,20 @@ export class LineChart {
     const only = cols.length === 1 ? cols[0] : undefined;
     if (this.stacked() && only) {
       let base = 0;
+      /** The drawn top of the segment below (the baseline at first). */
+      let drawnTop = Infinity;
       const segments: { key: string; tone: string; y: number; height: number }[] = [];
       this.series().forEach((s, si) => {
         const v = only.values[si] ?? 0;
         if (v <= 0) return;
         const top = y(base + v);
-        // A 2px surface gap between touching segments (dataviz: gaps, not strokes).
-        segments.push({
-          key: s.key,
-          tone: s.tone,
-          y: r1(top + 1),
-          height: r1(Math.max(1, y(base) - top - 2)),
-        });
+        // A 2px surface gap between touching segments (dataviz: gaps, not strokes). A segment too
+        // thin for a pixel keeps one, standing on its base rather than hanging below it; the next
+        // one stands on what was drawn.
+        const floor = Math.min(y(base) - 1, drawnTop - 2);
+        const height = Math.max(1, floor - (top + 1));
+        drawnTop = floor - height;
+        segments.push({ key: s.key, tone: s.tone, y: r1(drawnTop), height: r1(height) });
         base += v;
       });
       column = { x: r1((xs[0] ?? 0) - 12), width: 24, segments };

@@ -104,6 +104,40 @@ describe('LineChart', () => {
     );
   });
 
+  it('shows a single stacked column its tooltip without a crosshair through it', async () => {
+    const { fixture, root } = await render(
+      [series('blocker', [2], 'blocker', 'Blocker'), series('high', [1], 'high', 'High')],
+      'issues',
+      true,
+    );
+    root.querySelector('svg')!.dispatchEvent(new FocusEvent('focus'));
+    await fixture.whenStable();
+    expect(text(root.querySelector('.chart-tip'))).toBe('Sep 1, 2026 3 Blocker 2 High 1');
+    // One analysis is one column: a line through it would cross out what it points at.
+    expect(root.querySelector('line.crosshair')).toBeNull();
+  });
+
+  it('keeps a segment thinner than a pixel on its base, never below the one under it', async () => {
+    const { root } = await render(
+      [
+        series('blocker', [1], 'blocker', 'Blocker'),
+        series('high', [2000], 'high', 'High'),
+        series('medium', [1], 'medium', 'Medium'),
+      ],
+      'issues',
+      true,
+    );
+    const base = Number(root.querySelector('line.grid.base')?.getAttribute('y1'));
+    const [blocker, high, medium] = [...root.querySelectorAll('rect.band-col')].map((r) => ({
+      top: Number(r.getAttribute('y')),
+      bottom: Number(r.getAttribute('y')) + Number(r.getAttribute('height')),
+    }));
+    // Each segment ends a pixel above what it stands on: the baseline, then the segment below.
+    expect(blocker!.bottom).toBeLessThanOrEqual(base - 1);
+    expect(high!.bottom).toBeLessThanOrEqual(blocker!.top - 1);
+    expect(medium!.bottom).toBeLessThanOrEqual(high!.top - 1);
+  });
+
   it('marks a single stacked analysis without issues on the baseline, so a clean project is never empty', async () => {
     const { root } = await render(
       [series('blocker', [0], 'blocker', 'Blocker'), series('high', [0], 'high', 'High')],

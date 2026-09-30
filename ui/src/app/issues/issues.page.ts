@@ -247,11 +247,19 @@ export class IssuesPage {
         clearLabel: $localize`:@@issues.facet.clearLabel:Clear the ${title}:group: filter`,
         filtered: isFiltered(f, filter),
         labelKind,
-        values: values.map((v) => ({
-          ...v,
-          tone: filter === 'severity' ? v.value : null,
-          width: v.count && max > 0 ? Math.round((100 * v.count) / max) : 0,
-        })),
+        values: values.map((v) => {
+          // A severity wears its tone; a rule key or a path reads as code.
+          const tone = filter === 'severity' ? v.value : null;
+          const code = filter === 'rule' || filter === 'path';
+          return {
+            ...v,
+            nameClass: [tone ? `facet-dot tone-${tone}` : '', code ? 'facet-code' : '']
+              .filter(Boolean)
+              .join(' '),
+            barClass: tone ? `tone-${tone}` : '',
+            width: v.count && max > 0 ? Math.round((100 * v.count) / max) : 0,
+          };
+        }),
       };
     };
     const faceted = (filter: ListFilter, known: string[], labelKind: LabelKind | null) =>

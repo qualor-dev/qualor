@@ -28,9 +28,6 @@
   gap: 4px;
   white-space: nowrap;
 }
-.load-more {
-  margin: 16px 0 0;
-}
 #confirm-text {
   margin: 0;
   overflow-wrap: anywhere;

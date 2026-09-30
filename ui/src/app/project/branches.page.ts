@@ -100,7 +100,11 @@ export class BranchesPage {
     effect(() => this.project.use(this.projectId()));
     effect(() => {
       const params = { projectId: this.projectId(), kind: this.kind() };
-      untracked(() => void this.list.reset(params));
+      untracked(() => {
+        // News of a delete belongs to the list it happened in, not to the next one shown.
+        this.announcement.set(null);
+        void this.list.reset(params);
+      });
     });
   }
 

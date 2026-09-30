@@ -127,3 +127,7 @@
     display: inline-flex;
   }
 }
+/* The AI assistant shows nothing to a viewer without it: its place takes no gap of the column. */
+q-ai-panel:empty {
+  display: none;
+}

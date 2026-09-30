@@ -31,10 +31,8 @@
         </h2>
       </div>
       <div class="panel-scroll">
-        <table #table class="roles-table">
-          <caption class="visually-hidden" i18n="@@access.caption">
-            People with a role on this project
-          </caption>
+        <!-- Named by the panel's heading: a caption would say it twice. -->
+        <table #table class="roles-table" aria-labelledby="access-heading">
           <thead>
             <tr>
               <th scope="col" i18n="@@access.col.user">User</th>
@@ -242,15 +240,12 @@
       (close)="cancelPending()"
     >
       <div class="dialog-head">
-        <h2 id="confirm-title">
-          @if (pending()?.kind === 'remove') {
-            <ng-container i18n="@@access.removeTitle">Remove the role</ng-container>
-          } @else {
-            <ng-container i18n="@@access.changeTitle">Change the role</ng-container>
-          }
-        </h2>
+        <h2 id="confirm-title">{{ confirmTitle() }}</h2>
       </div>
       <div class="dialog-body">
+        @if (confirmError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
         <p id="confirm-text">{{ pending()?.question }}</p>
       </div>
       <div class="dialog-actions">
@@ -267,6 +262,7 @@
           <button
             type="button"
             class="btn btn-danger-solid"
+            [attr.aria-disabled]="busy() ? true : null"
             (click)="confirmPending()"
             i18n="@@access.remove"
           >
@@ -276,6 +272,7 @@
           <button
             type="button"
             class="btn btn-primary"
+            [attr.aria-disabled]="busy() ? true : null"
             (click)="confirmPending()"
             i18n="@@access.changeRole"
           >

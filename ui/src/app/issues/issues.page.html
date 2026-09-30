@@ -109,7 +109,7 @@
                     [checked]="v.selected"
                     (change)="toggleFilter(group.filter, v.value)"
                   />
-                  <span class="facet-name tone-{{ v.tone }}" [class.facet-dot]="v.tone !== null">{{
+                  <span class="facet-name" [class]="v.nameClass">{{
                     group.labelKind ? (v.value | label: group.labelKind) : v.value
                   }}</span>
                   @if (v.count !== null) {
@@ -117,7 +117,7 @@
                   }
                 </label>
                 @if (v.count !== null) {
-                  <span class="facet-bar tone-{{ v.tone }}" aria-hidden="true"
+                  <span class="facet-bar" [class]="v.barClass" aria-hidden="true"
                     ><span class="facet-fill" [style.width.%]="v.width"></span
                   ></span>
                 }

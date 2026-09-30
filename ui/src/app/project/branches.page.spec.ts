@@ -226,6 +226,12 @@ describe('BranchesPage', () => {
       const status = root.querySelector('[role="status"]');
       expect(text(status)).toBe('Deleted feature/x.');
       expect(document.activeElement).toBe(status);
+      // Another kind of list is another view: the news of the delete stays with the one it was in.
+      [...root.querySelectorAll<HTMLButtonElement>('.segmented button')]
+        .find((b) => text(b) === 'Branches')!
+        .click();
+      await settle(fixture);
+      expect(text(root.querySelector('[role="status"]'))).toBe('');
     });
 
     it('opens its dialog again on a refusal that came after it was closed', async () => {

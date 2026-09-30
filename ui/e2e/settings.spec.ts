@@ -550,7 +550,7 @@ test('an organization admin adds a member by name, changes the role and removes 
   // The page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
   await dora.getByLabel('Role of dora').selectOption({ label: 'Organization admin' });
   await dora.getByRole('button', { name: 'Change role' }).click();
-  const change = page.getByRole('dialog', { name: 'Change the role' });
+  const change = page.getByRole('dialog', { name: 'Change the role of dora' });
   await expect(change).toContainText('Change the role of dora in Default to Organization admin?');
   await expectAccessible(page);
   await change.getByRole('button', { name: 'Change role' }).click();
@@ -559,7 +559,7 @@ test('an organization admin adds a member by name, changes the role and removes 
   await expectAccessible(page);
 
   await dora.getByRole('button', { name: 'Remove' }).click();
-  const remove = page.getByRole('dialog', { name: 'Remove the member' });
+  const remove = page.getByRole('dialog', { name: 'Remove dora' });
   await expect(remove).toContainText('Remove dora from Default? They lose access to its projects.');
   await remove.getByRole('button', { name: 'Remove' }).click();
   await expect(page.getByRole('status')).toHaveText('dora removed.');

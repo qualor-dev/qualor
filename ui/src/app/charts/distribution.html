@@ -6,15 +6,18 @@
   </div>
 }
 @if (layout() === 'inline') {
-  <ul class="dist-legend">
-    @for (item of filled(); track item.key) {
-      <li class="tone-{{ item.tone }}">
-        <span class="dist-dot" aria-hidden="true"></span>
-        <span class="dist-label">{{ item.label }}</span
-        >&ngsp;<span class="dist-count">{{ item.value }}</span>
-      </li>
-    }
-  </ul>
+  <!-- Nothing counted, nothing listed: an empty list says nothing to a screen reader. -->
+  @if (filled().length > 0) {
+    <ul class="dist-legend">
+      @for (item of filled(); track item.key) {
+        <li class="tone-{{ item.tone }}">
+          <span class="dist-dot" aria-hidden="true"></span>
+          <span class="dist-label">{{ item.label }}</span
+          >&ngsp;<span class="dist-count">{{ item.value }}</span>
+        </li>
+      }
+    </ul>
+  }
 } @else {
   <ul class="dist-rows">
     @for (item of items(); track item.key) {

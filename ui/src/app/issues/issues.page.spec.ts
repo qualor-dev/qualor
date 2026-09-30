@@ -136,6 +136,22 @@ describe('IssuesPage', () => {
     expect(facetText(root, 'status').slice(0, 2)).toEqual(['Open 2', 'Resolved']);
   });
 
+  it('writes rule values as code, and gives a colour only to severities', async () => {
+    const { root } = await render();
+    const rule = [...facet(root, 'rule')][0]!.querySelector('.facet-name')!;
+    expect(rule.textContent?.trim()).toBe('eslint:eqeqeq');
+    expect(rule.classList).toContain('facet-code');
+    const status = [...facet(root, 'status')][0]!.querySelector('.facet-name')!;
+    expect(status.classList).not.toContain('facet-code');
+    // A class names a tone only where there is one: no tone-null on the other facets.
+    expect([...root.querySelectorAll('[class]')].some((el) => el.classList.contains('tone-'))).toBe(
+      false,
+    );
+    expect([...facet(root, 'severity')][0]!.querySelector('.facet-name')?.classList).toContain(
+      'tone-blocker',
+    );
+  });
+
   it('puts a facet choice in the URL', async () => {
     const { fixture, root } = await render();
     const high = [...facet(root, 'severity')][1]?.querySelector('input');

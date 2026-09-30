@@ -35,9 +35,6 @@
 .branch-title > a:hover {
   text-decoration: underline;
 }
-.load-more {
-  margin: 16px 0 0;
-}
 .branches-status:not(:empty) {
   margin-bottom: 16px;
 }

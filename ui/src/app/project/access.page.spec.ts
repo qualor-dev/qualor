@@ -302,6 +302,121 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     expect(root.querySelector<HTMLSelectElement>('#grant-role')?.value).toBe('viewer');
   });
 
+  it("names the person in the question's title", async () => {
+    setup();
+    const { fixture, root } = await render();
+    const title = () => dialog(root, 'confirm-dialog').querySelector('#confirm-title')?.textContent;
+    choose(row(root, BOB), 'select', 'project_admin');
+    button(row(root, BOB), 'Change role').click();
+    await settle(fixture);
+    expect(title()?.trim()).toBe('Change the role of bob');
+    button(dialog(root, 'confirm-dialog'), 'Cancel').click();
+    await settle(fixture);
+    button(row(root, BOB), 'Remove').click();
+    await settle(fixture);
+    expect(title()?.trim()).toBe('Remove the role of bob');
+  });
+
+  it('keeps the question open with the reason when the server refuses, until Cancel', async () => {
+    const server = setup();
+    server.on('PUT', `${MEMBERS}/${BOB}`, { status: 403, body: problem(403, 'FORBIDDEN') });
+    const { fixture, root } = await render();
+    choose(row(root, BOB), 'select', 'project_admin');
+    button(row(root, BOB), 'Change role').click();
+    await settle(fixture);
+    const ask = dialog(root, 'confirm-dialog');
+    button(ask, 'Change role').click();
+    await settle(fixture);
+    // Intended change (step 11): the refusal stays in the dialog that asked, as a branch delete's.
+    expect(ask.open).toBe(true);
+    expect(ask.querySelector('[role="alert"]')?.textContent).toContain(
+      'You are not allowed to do this.',
+    );
+    expect(
+      [...root.querySelectorAll('[role="alert"]')].filter((a) => !a.closest('dialog')),
+    ).toEqual([]);
+    button(ask, 'Cancel').click();
+    await settle(fixture);
+    expect(ask.open).toBe(false);
+    expect(row(root, BOB).querySelector('select')?.value).toBe('viewer');
+  });
+
+  it('asks again with the reason when a removal is refused after Escape', async () => {
+    const server = setup();
+    let refuse!: () => void;
+    server.on(
+      'DELETE',
+      `${MEMBERS}/${BOB}`,
+      () =>
+        new Promise((resolve) => {
+          refuse = () => resolve({ status: 403, body: problem(403, 'FORBIDDEN') });
+        }),
+    );
+    const { fixture, root } = await render();
+    button(row(root, BOB), 'Remove').click();
+    await settle(fixture);
+    const ask = dialog(root, 'confirm-dialog');
+    button(ask, 'Remove').click();
+    await settle(fixture);
+    // Escape while the server answers.
+    ask.removeAttribute('open');
+    ask.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    refuse();
+    await settle(fixture);
+    expect(ask.open).toBe(true);
+    expect(ask.querySelector('#confirm-text')?.textContent).toContain('Remove the role of bob');
+    expect(ask.querySelector('[role="alert"]')?.textContent).toContain(
+      'You are not allowed to do this.',
+    );
+  });
+
+  it('puts the role back when the question is closed with Escape', async () => {
+    const server = setup();
+    const { fixture, root } = await render();
+    choose(row(root, BOB), 'select', 'project_admin');
+    button(row(root, BOB), 'Change role').click();
+    await settle(fixture);
+    const ask = dialog(root, 'confirm-dialog');
+    ask.removeAttribute('open');
+    ask.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    expect(server.requests.filter((r) => r.method === 'PUT')).toEqual([]);
+    expect(row(root, BOB).querySelector('select')?.value).toBe('viewer');
+  });
+
+  it("moves focus after a removal to the next person's role, never a muted button", async () => {
+    let removed = false;
+    const server = setup({
+      grants: [grant(BOB, 'bob', 'viewer'), grant(CAROL, 'carol', 'member')],
+    });
+    server.on('GET', MEMBERS, () => ({
+      body: page(
+        removed
+          ? [grant(CAROL, 'carol', 'member')]
+          : [grant(BOB, 'bob', 'viewer'), grant(CAROL, 'carol', 'member')],
+      ),
+    }));
+    server.on('DELETE', `${MEMBERS}/${BOB}`, () => {
+      removed = true;
+      return { status: 204 };
+    });
+    const { fixture, root } = await render();
+    button(row(root, BOB), 'Remove').click();
+    await settle(fixture);
+    button(dialog(root, 'confirm-dialog'), 'Remove').click();
+    await settle(fixture);
+    expect(document.activeElement).toBe(row(root, CAROL).querySelector('select'));
+  });
+
+  it('names its table by the panel heading once, with no caption repeating it', async () => {
+    setup();
+    const { root } = await render();
+    const table = root.querySelector('table')!;
+    expect(table.querySelector('caption')).toBeNull();
+    expect(table.getAttribute('aria-labelledby')).toBe('access-heading');
+  });
+
   it('puts the role back when a change is cancelled', async () => {
     const server = setup();
     const { fixture, root } = await render();
