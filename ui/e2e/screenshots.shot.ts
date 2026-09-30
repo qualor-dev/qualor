@@ -37,7 +37,7 @@ test('02 projects', async ({ page }) => {
 test('03 project overview, 04 branches, 05 merge request', async ({ page }) => {
   await page.goto('/projects');
   await page.getByRole('link', { name: 'Payments API' }).click();
-  await expect(page.getByRole('img', { name: /^Coverage went from/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /^Issues went from/ })).toBeVisible();
   await shoot(page, '03-project-overview');
   await page.getByRole('link', { name: 'Branches and merge requests' }).click();
   await expect(page.getByRole('link', { name: /^!42/ })).toBeVisible();
@@ -175,7 +175,7 @@ test('20 licence, 21 licence in its grace period with the admin banner', async (
     }),
   );
   await page.reload();
-  await expect(page.getByText('Grace period: enterprise features stop on')).toBeVisible();
+  await expect(page.getByText('Grace period ends', { exact: true })).toBeVisible();
   await expect(
     page.getByRole('status').filter({ hasText: 'The Qualor licence expired on' }),
   ).toBeVisible();

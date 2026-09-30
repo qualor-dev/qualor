@@ -13,7 +13,9 @@ import {
 import { Router } from '@angular/router';
 import { ApiError, problemMessage } from '../api/errors';
 import type { AuthMethods, SsoProvider } from '../api/types';
+import { AuthLayout } from '../shared/auth-layout';
 import { inputValue } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import { AuthService } from './auth.service';
 import { safeReturnUrl } from './guards';
 import { ssoErrorText } from './sso-text';
@@ -23,6 +25,7 @@ const PASSWORD_ONLY: AuthMethods = { password: 'everyone', providers: [] };
 
 @Component({
   selector: 'q-login-page',
+  imports: [AuthLayout, Icon],
   templateUrl: './login.page.html',
 })
 export class LoginPage {

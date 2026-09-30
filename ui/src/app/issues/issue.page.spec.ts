@@ -121,6 +121,62 @@ describe('IssuePage', () => {
     expect(root.querySelector('ol li')?.textContent).toContain('Sep 16, 2026, 10:00 AM UTC');
   });
 
+  it('lists the details beside the story: severity, status, type, quality, rule, file, first seen, branch', async () => {
+    server.on('GET', '/api/v0/projects/p1/branches', {
+      body: page([
+        {
+          id: 'b1',
+          projectId: 'p1',
+          kind: 'branch',
+          name: 'main',
+          isMain: true,
+          mrSourceBranch: null,
+          mrTargetBranch: null,
+          mrTitle: null,
+          mrUrl: null,
+          lastAnalysisId: null,
+          lastAnalyzedAt: null,
+          gateStatus: null,
+          measures: {},
+        },
+      ]),
+    });
+    const { root } = await render();
+    const details = root.querySelector('aside dl.details-list');
+    const rows = [...(details?.querySelectorAll('dt') ?? [])].map((dt) => [
+      dt.textContent?.trim(),
+      dt.nextElementSibling?.textContent?.replace(/\s+/g, ' ').trim(),
+    ]);
+    expect(rows).toEqual([
+      ['Severity', 'High'],
+      ['Status', 'Open'],
+      ['Type', 'Issue'],
+      ['Software quality', 'Reliability'],
+      ['Rule', 'eslint:eqeqeq'],
+      ['File', 'src/refunds/limits.ts:44'],
+      ['First seen', 'Sep 15, 2026, 9:00 AM UTC'],
+      ['Branch', 'main'],
+    ]);
+    // The actions sit in the same column, under the details.
+    expect(root.querySelector('aside #actions-heading')).not.toBeNull();
+    // The code window names its file and the line.
+    expect(root.querySelector('.code-head')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'src/refunds/limits.ts Line 44',
+    );
+  });
+
+  it('leaves out the file and the code without a location, and the branch when its lookup fails', async () => {
+    server.on('GET', `/api/v0/issues/${ID}`, {
+      body: detail({ path: null, startLine: null, snippet: null }),
+    });
+    const { root } = await render();
+    const terms = [...root.querySelectorAll('dl.details-list dt')].map((dt) =>
+      dt.textContent?.trim(),
+    );
+    expect(terms).toEqual(['Severity', 'Status', 'Type', 'Software quality', 'Rule', 'First seen']);
+    expect(root.querySelector('.code-window')).toBeNull();
+  });
+
   it('links an http(s) rule documentation in a new tab without an opener or referrer', async () => {
     server.on('GET', `/api/v0/issues/${ID}`, {
       body: detail({
@@ -548,6 +604,13 @@ describe('IssuePage: actions the caller may not use (rbac-audit.md §17)', () =>
     expect(root.textContent).toContain(
       'Your role lets you read this issue, not change its status or severity.',
     );
+    // The side column holds Details and, for those who may, Change: each card names itself.
+    expect(root.querySelector('aside')?.hasAttribute('aria-labelledby')).toBe(false);
+    expect(root.querySelector('section[aria-labelledby="details-heading"]')).not.toBeNull();
+    // No assistant to show: its place takes no room, so no gap doubles in the column.
+    const ai = root.querySelector('q-ai-panel')!;
+    expect(ai.children).toHaveLength(0);
+    expect(getComputedStyle(ai).display).toBe('none');
   });
 
   it('shows no change while the project has not said what the caller may do', async () => {

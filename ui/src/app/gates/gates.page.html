@@ -1,126 +1,212 @@
-<div class="page-header">
-  <div>
-    @if (org.current(); as o) {
-      <span class="eyebrow">{{ o.name }}</span>
+<q-page-header [compact]="true">
+  <h1 pageTitle #heading tabindex="-1" i18n="@@gates.title">Quality gates</h1>
+  @if (org.canChange('org.gates.manage')) {
+    <div pageActions class="band-actions">
+      <button type="button" class="btn btn-primary" (click)="openCreate()">
+        <q-icon name="plus" /><ng-container i18n="@@gates.newOpen">New gate</ng-container>
+      </button>
+    </div>
+  }
+</q-page-header>
+
+<div class="page-body">
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
     }
-    <h1 #heading tabindex="-1" i18n="@@gates.title">Quality gates</h1>
   </div>
-</div>
-<div role="status">
-  @if (announcement(); as message) {
-    <p class="alert alert-success">{{ message }}</p>
+  @if (list.error() ?? error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  <section class="card panel" aria-labelledby="gates-caption">
+    @if (usageError(); as message) {
+      <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
+    }
+    <div class="panel-scroll">
+      <table #table>
+        <caption id="gates-caption" class="visually-hidden" i18n="@@gates.caption">
+          The organization's quality gates
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@gates.col.name">Name</th>
+            <th scope="col" i18n="@@gates.col.conditions">Conditions</th>
+            <th scope="col" class="num" i18n="@@gates.col.projects">Projects</th>
+            @if (org.canChange('org.gates.manage')) {
+              <th scope="col" class="actions-col">
+                <span class="visually-hidden" i18n="@@gates.col.actions">Actions</span>
+              </th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (gate of list.items(); track gate.id) {
+            <tr [attr.data-key]="gate.id">
+              <td>
+                <div class="gate-name">
+                  <a [routerLink]="['/gates', gate.id]">{{ gate.name }}</a>
+                  @if (gate.isDefault) {
+                    <span class="badge badge-accent" i18n="@@gates.default">Default</span>
+                  }
+                  @if (gate.isBuiltin) {
+                    <span class="badge badge-tag" i18n="@@gates.builtin">Built-in</span>
+                  }
+                </div>
+              </td>
+              <td class="summary">{{ summary(gate) }}</td>
+              <td class="num usage">
+                @if (usageOf(gate); as used) {
+                  {{ used }}
+                } @else {
+                  <span class="muted">–</span>
+                }
+              </td>
+              @if (org.canChange('org.gates.manage')) {
+                <td class="actions-col">
+                  <div class="row-actions">
+                    <button
+                      type="button"
+                      class="btn-quiet"
+                      [attr.aria-disabled]="busy() ? true : null"
+                      (click)="copy(gate)"
+                      i18n="@@gates.copy"
+                    >
+                      Copy
+                    </button>
+                    @if (!gate.isDefault) {
+                      <button
+                        type="button"
+                        class="btn-quiet"
+                        [attr.aria-disabled]="busy() ? true : null"
+                        (click)="setDefault(gate)"
+                        i18n="@@gates.setDefault"
+                      >
+                        Make default
+                      </button>
+                    }
+                    @if (!gate.isBuiltin) {
+                      <button
+                        type="button"
+                        class="btn-quiet danger"
+                        [attr.aria-disabled]="busy() ? true : null"
+                        (click)="remove(gate)"
+                        i18n="@@gates.delete"
+                      >
+                        Delete
+                      </button>
+                    }
+                  </div>
+                </td>
+              }
+            </tr>
+          } @empty {
+            @if (list.loaded()) {
+              <tr>
+                <td
+                  [attr.colspan]="org.canChange('org.gates.manage') ? 4 : 3"
+                  class="muted"
+                  i18n="@@gates.empty"
+                >
+                  No quality gate yet.
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (usagePartial()) {
+      <p class="panel-foot usage-note muted" i18n="@@gates.usagePartial">
+        Projects are counted over the organization's first 5,000 projects.
+      </p>
+    }
+  </section>
+  @if (list.nextCursor()) {
+    <p class="load-more">
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-disabled]="list.loading() ? true : null"
+        (click)="list.more()"
+        i18n="@@list.more"
+      >
+        Load more
+      </button>
+    </p>
   }
 </div>
-@if (list.error() ?? error(); as message) {
-  <p class="alert alert-error" role="alert">{{ message }}</p>
-}
-<div class="table-wrap">
-  <table #table>
-    <thead>
-      <tr>
-        <th scope="col" i18n="@@gates.col.name">Name</th>
-        <th scope="col" class="num" i18n="@@gates.col.conditions">Conditions</th>
-        <th scope="col"><span class="visually-hidden" i18n="@@gates.col.actions">Actions</span></th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (gate of list.items(); track gate.id) {
-        <tr [attr.data-key]="gate.id">
-          <td>
-            <a [routerLink]="['/gates', gate.id]">{{ gate.name }}</a>
-            @if (gate.isDefault) {
-              <span class="badge badge-accent" i18n="@@gates.default">Default</span>
-            }
-            @if (gate.isBuiltin) {
-              <span class="badge badge-tag" i18n="@@gates.builtin">Built-in</span>
-            }
-          </td>
-          <td class="num">{{ gate.conditions.length }}</td>
-          <td class="actions">
-            @if (org.canChange('org.gates.manage')) {
-              <div class="row">
-                <button
-                  type="button"
-                  class="btn"
-                  [attr.aria-disabled]="busy() ? true : null"
-                  (click)="copy(gate)"
-                  i18n="@@gates.copy"
-                >
-                  Copy
-                </button>
-                @if (!gate.isDefault) {
-                  <button
-                    type="button"
-                    class="btn"
-                    [attr.aria-disabled]="busy() ? true : null"
-                    (click)="setDefault(gate)"
-                    i18n="@@gates.setDefault"
-                  >
-                    Make default
-                  </button>
-                }
-                @if (!gate.isBuiltin) {
-                  <button
-                    type="button"
-                    class="btn btn-danger"
-                    [attr.aria-disabled]="busy() ? true : null"
-                    (click)="remove(gate)"
-                    i18n="@@gates.delete"
-                  >
-                    Delete
-                  </button>
-                }
-              </div>
-            }
-          </td>
-        </tr>
-      } @empty {
-        @if (list.loaded()) {
-          <tr>
-            <td colspan="3" class="muted" i18n="@@gates.empty">No quality gate yet.</td>
-          </tr>
-        }
-      }
-    </tbody>
-  </table>
-</div>
-@if (list.nextCursor()) {
-  <p>
-    <button
-      type="button"
-      class="btn"
-      [attr.aria-disabled]="list.loading() ? true : null"
-      (click)="list.more()"
-      i18n="@@list.more"
-    >
-      Load more
-    </button>
-  </p>
-}
 
 @if (org.canChange('org.gates.manage')) {
-  <form class="card row create-row" (submit)="create($event)">
-    <label for="gate-name" class="label" i18n="@@gates.new">New gate</label>
-    <input
-      id="gate-name"
-      required
-      maxlength="100"
-      [attr.aria-invalid]="nameError() ? true : null"
-      [attr.aria-describedby]="nameError() ? 'gate-name-error' : null"
-      [value]="newName()"
-      (input)="setName($event)"
-    />
-    @if (nameError(); as message) {
-      <span id="gate-name-error" class="field-error">{{ message }}</span>
-    }
-    <button
-      type="submit"
-      class="btn btn-primary"
-      [disabled]="!newName().trim()"
-      [attr.aria-disabled]="busy() ? true : null"
-      i18n="@@gates.create"
-    >
-      Create gate
-    </button>
-  </form>
+  <dialog #createDialog id="create-dialog" class="dialog" aria-labelledby="create-gate-title">
+    <form novalidate (submit)="create($event)">
+      <div class="dialog-head">
+        <h2 id="create-gate-title" i18n="@@gates.createTitle">New quality gate</h2>
+      </div>
+      <div class="dialog-body">
+        @if (createError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        <div class="field">
+          <label for="gate-name" i18n="@@gates.nameLabel">Name</label>
+          <input
+            id="gate-name"
+            required
+            autofocus
+            autocomplete="off"
+            maxlength="100"
+            [attr.aria-invalid]="nameError() ? true : null"
+            [attr.aria-describedby]="nameError() ? 'gate-name-error' : null"
+            [value]="newName()"
+            (input)="setName($event)"
+          />
+          @if (nameError(); as message) {
+            <span id="gate-name-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" (click)="closeCreate()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [disabled]="!newName().trim()"
+          [attr.aria-disabled]="busy() ? true : null"
+          i18n="@@gates.create"
+        >
+          Create gate
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog
+    #confirmDialog
+    id="confirm-dialog"
+    class="dialog"
+    aria-labelledby="confirm-title"
+    aria-describedby="confirm-text"
+    (close)="cancelDelete()"
+  >
+    <div class="dialog-head">
+      <h2 id="confirm-title" i18n="@@gates.deleteTitle">Delete the quality gate</h2>
+    </div>
+    <div class="dialog-body">
+      <p id="confirm-text">{{ pendingDelete()?.question }}</p>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" autofocus (click)="cancelDelete()" i18n="@@dialog.cancel">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-danger-solid"
+        (click)="confirmDelete()"
+        i18n="@@gates.delete"
+      >
+        Delete
+      </button>
+    </div>
+  </dialog>
 }

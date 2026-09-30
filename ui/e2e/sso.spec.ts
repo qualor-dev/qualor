@@ -39,10 +39,11 @@ test('the Single sign-on screen shows a connection and saves a mapping', async (
   await page.getByRole('link', { name: 'Single sign-on' }).click();
   await expect(page).toHaveURL(/\/settings\/ee\/sso$/);
   await expect(page).toHaveTitle('Single sign-on · Qualor');
-  const table = page.locator('#sso-connections');
-  await expect(table.getByRole('row', { name: /Acme SSO/ })).toContainText('Enabled');
-  await expect(table.getByRole('row', { name: /Staging OIDC/ })).toContainText('Disabled');
-  await expect(table.getByRole('row', { name: /Corp SAML/ })).toContainText('SAML');
+  // A panel per connection (step 9), named by the connection.
+  const list = page.locator('#sso-connections');
+  await expect(list.getByRole('region', { name: 'Acme SSO' })).toContainText('Enabled');
+  await expect(list.getByRole('region', { name: 'Staging OIDC' })).toContainText('Disabled');
+  await expect(list.getByRole('region', { name: 'Corp SAML' })).toContainText('SAML');
   // sso.multi: every enabled connection is in effect, and the page counts them against the 10.
   await expect(page.locator('#sso-count')).toHaveText('3 of 10 connections');
   await expect(page.locator('#sso-multi-not-licensed')).toHaveCount(0);
@@ -63,7 +64,9 @@ test('the Single sign-on screen shows a connection and saves a mapping', async (
   await expect(mappings).toContainText('acme/web-shop');
 
   await page.getByLabel('Group', { exact: true }).fill('platform');
-  await page.getByLabel('Organization', { exact: true }).selectOption({ label: 'Default' });
+  await page
+    .getByRole('combobox', { name: 'Organization', exact: true })
+    .selectOption({ label: 'Default' });
   await page.getByLabel('Role', { exact: true }).selectOption({ label: 'Maintainer' });
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await page.getByRole('button', { name: 'Save mappings' }).click();
@@ -85,10 +88,50 @@ test('the Single sign-on screen shows a connection and saves a mapping', async (
   );
 });
 
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("each kind of connection's form fits the screen: nothing scrolls sideways", async ({
+    page,
+  }) => {
+    await editConnection(page, 'Acme SSO');
+    await expect(page.getByLabel('Redirect URI')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+    // A long checkbox label wraps beside its box, not under it.
+    const option = page.locator('label', { hasText: 'Also read the userinfo endpoint' });
+    const box = await option.getByRole('checkbox').boundingBox();
+    const words = await option.locator('span').boundingBox();
+    expect(words!.x).toBeGreaterThan(box!.x + box!.width);
+    expect(words!.y).toBeLessThan(box!.y + box!.height);
+    // Group names keep their words: the mappings table scrolls in its panel instead.
+    const mappings = page.locator('#sso-mappings');
+    const long = await mappings.locator('code', { hasText: 'engineering' }).boundingBox();
+    const short = await mappings.locator('code', { hasText: /^qa$/ }).boundingBox();
+    expect(long!.height).toBeLessThanOrEqual(short!.height + 1);
+    await expectAccessible(page);
+
+    await editConnection(page, 'Corp SAML');
+    await expect(page.getByLabel('ACS URL')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+  });
+});
+
 test('the Sign-in screen lists the instance admins and saves', async ({ page }) => {
   await page.goto('/settings/ee/sign-in');
   await expect(page.getByRole('heading', { name: 'Sign-in', exact: true })).toBeVisible();
   await expect(page.getByLabel('Everyone with a password')).toBeChecked();
+  // Each option's box sits on its words' first line, the size of a checkbox.
+  for (const words of ['Everyone with a password', 'Only the break-glass administrators']) {
+    const option = page.locator('label', { hasText: words });
+    const box = (await option.getByRole('radio').boundingBox())!;
+    const text = (await option.locator('span').boundingBox())!;
+    expect(box.height, words).toBeLessThanOrEqual(20);
+    expect(Math.abs(box.y + box.height / 2 - (text.y + 10)), words).toBeLessThanOrEqual(4);
+  }
   const admin = page.locator('#sign-in-picker label', { hasText: 'admin' });
   await expect(admin.getByRole('checkbox')).toBeEnabled();
   // sso-user is not an instance admin, so it is not offered.
@@ -113,12 +156,18 @@ test('the SCIM screen creates a token and shows it once', async ({ page }) => {
   );
   await expectAccessible(page);
 
-  await acme.getByLabel('Token name').fill('Okta');
-  await acme.getByRole('button', { name: 'Create token' }).click();
-  const secret = page.getByLabel('SCIM token');
+  // Step 9: New token opens a dialog for the connection, which then holds the token once.
+  await acme.getByRole('button', { name: 'New token for Acme SSO' }).click();
+  const create = page.getByRole('dialog', { name: 'New token for Acme SSO' });
+  await expect(create.getByLabel('Token name')).toBeFocused();
+  await create.getByLabel('Token name').fill('Okta');
+  await create.getByRole('button', { name: 'Create token' }).click();
+  const shown = page.getByRole('dialog', { name: 'Your new SCIM token' });
+  const secret = shown.getByLabel('SCIM token');
   await expect(secret).toHaveValue(/^qlr_scim_[0-9A-Za-z]{32}$/);
+  await expect(secret).toBeFocused();
   const token = await secret.inputValue();
-  await page.getByRole('button', { name: 'Done' }).click();
+  await shown.getByRole('button', { name: 'Done' }).click();
   await expect(secret).toHaveCount(0);
   await page.reload();
   await expect(acme.getByRole('row', { name: /Okta/ })).toContainText(token.slice(0, 12));

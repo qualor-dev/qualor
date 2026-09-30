@@ -43,14 +43,16 @@ test('a Business admin sees the kept stream paused and saves retention without i
   await expect(page.locator('#audit-stream-status')).toBeVisible();
 });
 
-test('a Business admin removes the kept stream under Stream status', async ({ page, guard }) => {
+test('a Business admin removes the kept stream under Stream status', async ({ page }) => {
   await page.goto('/settings/ee/audit-settings');
   await expect(page.locator('#audit-stream-status')).toBeVisible();
-  guard.expectConfirm(
-    true,
+  // The page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
+  await page.getByRole('button', { name: 'Remove' }).click();
+  const ask = page.getByRole('dialog', { name: 'Remove the SIEM stream' });
+  await expect(ask).toContainText(
     'Remove the SIEM stream? Events are no longer sent; they stay in the audit log.',
   );
-  await page.getByRole('button', { name: 'Remove' }).click();
+  await ask.getByRole('button', { name: 'Remove' }).click();
   await expect(page.locator('#audit-stream-status')).toHaveCount(0);
   await expect(page.getByLabel('Stream URL')).toHaveValue('');
   await page.reload();

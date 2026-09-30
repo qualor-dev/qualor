@@ -28,8 +28,10 @@ import { LabelPipe } from '../i18n/label.pipe';
 import { OrgContext } from '../org/org-context';
 import { SystemInfo } from '../shell/system-info';
 import { DateTimePipe } from '../shared/date-time.pipe';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { inputValue, isChecked } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import { CopyValue } from './copy-value';
 import {
   metadataProblemText,
@@ -101,6 +103,29 @@ type TextField = {
   [K in keyof Draft]: Draft[K] extends string ? K : never;
 }[keyof Draft];
 type FlagField = { [K in keyof Draft]: Draft[K] extends boolean ? K : never }[keyof Draft];
+type ClaimField = 'claimUsername' | 'claimEmail' | 'claimDisplayName' | 'claimGroups';
+
+/** The claims the form names (§4.1), each a field with its own error under it. */
+function claimFields(): readonly { id: string; key: ClaimField; label: string }[] {
+  return [
+    {
+      id: 'sso-claim-username',
+      key: 'claimUsername',
+      label: $localize`:@@sso.claimUsername:Username claim`,
+    },
+    { id: 'sso-claim-email', key: 'claimEmail', label: $localize`:@@sso.claimEmail:Email claim` },
+    {
+      id: 'sso-claim-display-name',
+      key: 'claimDisplayName',
+      label: $localize`:@@sso.claimDisplayName:Display name claim`,
+    },
+    {
+      id: 'sso-claim-groups',
+      key: 'claimGroups',
+      label: $localize`:@@sso.claimGroups:Groups claim`,
+    },
+  ];
+}
 
 /** A mapping row as the table shows it; new rows carry the keys the page chose them by. */
 interface MappingRow {
@@ -285,11 +310,16 @@ function fieldText(id: string): string {
  * a connection is created disabled while another is enabled, a disabled connection's **Enabled**
  * switch is disabled while another is enabled, and an enabled connection the server reports as
  * not in effect is marked. With `sso.multi` the page counts the connections against the 10.
+ *
+ * Step 9 of the redesign (spec §7.8): a panel per connection with its kind, its identity provider
+ * and its state; the connection's form in setting rows, its check, mappings and deletion in
+ * panels below it; **Delete** asks in the page's dialog instead of the browser's `confirm()`.
  */
 @Component({
   selector: 'q-sso-page',
-  imports: [CopyValue, DateTimePipe, LabelPipe],
+  imports: [CopyValue, DateTimePipe, Icon, LabelPipe],
   templateUrl: './sso.page.html',
+  styleUrl: './sso.page.css',
 })
 export class SsoPage {
   private readonly ee = inject(EeApi);
@@ -357,7 +387,13 @@ export class SsoPage {
 
   protected readonly nameIdFormats = NAME_ID_FORMATS;
   protected readonly roles = ROLES;
+  protected readonly claimFields = claimFields();
+  /** The connection **Delete** asks about, with the question; null while the dialog is closed. */
+  protected readonly pendingDelete = signal<{ connection: SsoConnection; question: string } | null>(
+    null,
+  );
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
 
   constructor() {
     effect(() => {
@@ -706,7 +742,34 @@ export class SsoPage {
       tokens === null
         ? $localize`:@@sso.confirmDelete:Delete ${connection.name}:name:? Its linked identities, its ${mappings}:mappings: group mappings and its SCIM tokens are deleted: people who sign in only through it cannot sign in until an administrator sets a password. Memberships its group sync granted stay, as manual memberships.`
         : $localize`:@@sso.confirmDeleteTokens:Delete ${connection.name}:name:? Its linked identities, its ${mappings}:mappings: group mappings and its ${tokens}:tokens: active SCIM tokens are deleted: people who sign in only through it cannot sign in until an administrator sets a password. Memberships its group sync granted stay, as manual memberships.`;
-    if (!window.confirm(question)) return;
+    // Asked in the page's dialog (step 9); nothing is sent until its Delete.
+    this.pendingDelete.set({ connection, question });
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingDelete() !== null,
+    );
+  }
+
+  protected async confirmDelete(): Promise<void> {
+    const pending = this.pendingDelete();
+    if (!pending) return;
+    // Cleared first: the dialog's close event then finds nothing to cancel.
+    this.pendingDelete.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+    await this.applyDelete(pending.connection);
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing is deleted. */
+  protected cancelDelete(): void {
+    this.pendingDelete.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  private async applyDelete(connection: SsoConnection): Promise<void> {
+    if (this.busy()) return;
     await this.run(async () => {
       await done(
         this.ee.client.DELETE('/api/v0/ee/sso/connections/{id}', {

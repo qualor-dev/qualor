@@ -76,6 +76,23 @@ async function save(fixture: { whenStable(): Promise<unknown> }, root: HTMLEleme
   await settle(fixture);
 }
 
+/**
+ * Answers the page's confirmation dialog (step 9: it replaces the browser's `confirm()`) with
+ * the button `choice`, and returns the question it asked.
+ */
+async function answer(
+  fixture: { whenStable(): Promise<unknown> },
+  root: HTMLElement,
+  choice: string,
+): Promise<string> {
+  const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+  expect(ask.open).toBe(true);
+  const question = ask.querySelector('#confirm-text')?.textContent?.trim() ?? '';
+  await click(fixture, button(ask, choice));
+  expect(ask.open).toBe(false);
+  return question;
+}
+
 describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
   it('saves the retention in days', async () => {
     const server = setup();
@@ -153,10 +170,14 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
     ]);
     const field = root.querySelector<HTMLInputElement>('#secret-once')!;
     expect(field.value).toBe(SECRET);
-    button(root, 'Done').click();
+    const done = button(root, 'Done');
+    done.focus();
+    done.click();
     await settle(fixture);
     expect(root.querySelector('#secret-once')).toBeNull();
     expect(root.textContent).not.toContain(SECRET);
+    // The button went with the secret: focus stays in the page, on its heading.
+    expect(document.activeElement).toBe(root.querySelector('h2'));
   });
 
   it("shows the server's 422 on the stream URL field", async () => {
@@ -210,13 +231,14 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
       }),
     });
     server.on('POST', `${SETTINGS}/stream/regenerate-secret`, { body: { secret: SECRET } });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
     button(root, 'Regenerate the secret').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(await answer(fixture, root, 'Regenerate the secret')).toBe(
       'Regenerate the stream secret? The receiver must be given the new secret: batches signed with it fail the old check.',
     );
+    expect(confirm).not.toHaveBeenCalled();
     expect(server.requestsTo('POST', `${SETTINGS}/stream/regenerate-secret`)).toHaveLength(1);
     expect(root.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(SECRET);
     confirm.mockRestore();
@@ -252,17 +274,16 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
       }),
     });
     server.on('PUT', SETTINGS, { body: settings(null) });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     type(root, '#audit-stream-url', '');
     await save(fixture, root);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(server.requestsTo('PUT', SETTINGS)).toHaveLength(0);
+    expect(await answer(fixture, root, 'Remove')).toBe(
       'Remove the SIEM stream? Events are no longer sent; they stay in the audit log.',
     );
     expect(server.requestsTo('PUT', SETTINGS).map((r) => r.body)).toEqual([
       { retentionDays: 365, stream: null },
     ]);
-    confirm.mockRestore();
   });
 
   it('disables the stream card with a licence note without audit-log.stream', async () => {
@@ -303,7 +324,6 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
     server.on('PUT', SETTINGS, (request) => ({
       body: settings((request.body as { stream?: unknown }).stream === null ? null : kept),
     }));
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { fixture, root } = await render();
     // Read-only: the address, whether it is active and its status, without the stream's buttons.
     const url = root.querySelector<HTMLInputElement>('#audit-stream-url')!;
@@ -326,13 +346,13 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
     await settle(fixture);
     expect(server.requests.filter((r) => r.path.includes('/stream/'))).toEqual([]);
 
-    // Save keeps the stream: retention alone.
+    // Save keeps the stream: retention alone, without asking.
     await save(fixture, root);
     expect(server.requestsTo('PUT', SETTINGS).map((r) => r.body)).toEqual([{ retentionDays: 365 }]);
-    expect(confirm).not.toHaveBeenCalled();
+    expect(root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')?.open).toBe(false);
 
     await click(fixture, button(root, 'Remove'));
-    expect(confirm).toHaveBeenCalledWith(
+    expect(await answer(fixture, root, 'Remove')).toBe(
       'Remove the SIEM stream? Events are no longer sent; they stay in the audit log.',
     );
     expect(server.requestsTo('PUT', SETTINGS).map((r) => r.body)).toEqual([
@@ -341,10 +361,9 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
     ]);
     expect(root.querySelector('#audit-stream-status')).toBeNull();
     expect(root.querySelector<HTMLInputElement>('#audit-stream-url')?.value).toBe('');
-    confirm.mockRestore();
   });
 
-  it('removes nothing when the removal is declined', async () => {
+  it('removes nothing when the removal is cancelled', async () => {
     const server = setup({
       features: ['audit-log'],
       current: settings({
@@ -354,11 +373,10 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
         status: STATUS,
       }),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, root } = await render();
     await click(fixture, button(root, 'Remove'));
+    await answer(fixture, root, 'Cancel');
     expect(server.requestsTo('PUT', SETTINGS)).toHaveLength(0);
-    confirm.mockRestore();
   });
 
   it('offers no Remove button while audit-log.stream is active', async () => {
@@ -390,5 +408,15 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
       'Only instance administrators change the audit settings.',
     );
     expect(other.requests.filter((r) => r.path.startsWith('/api/v0/ee/'))).toEqual([]);
+  });
+});
+
+describe('AuditSettingsPage: step 11', () => {
+  it('says what the page is for in one line', async () => {
+    setup();
+    const { root } = await render();
+    expect(root.querySelector('.settings-head p')?.textContent?.trim()).toBe(
+      'How long the audit log keeps its events, and where it sends them.',
+    );
   });
 });

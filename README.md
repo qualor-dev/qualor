@@ -18,6 +18,35 @@ Repository: <https://github.com/qualor-dev/qualor>. Homepage: <https://qualor.de
 configuration, quality gates, migration from SonarQube, the API and troubleshooting, and it has
 [ready-made prompts](docs/guide/ai-prompts.md) that let an AI agent roll Qualor out for you.
 
+<p align="center">
+  <img src="docs/screenshots/overview.png" width="100%" alt="A project's overview in Qualor's dark theme: the quality gate that failed and the condition that failed it, the new-code measures, coverage, issues, duplication, lines of code and ratings with their trends, the history of open issues by severity, and the open issues by severity and software quality">
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/issues.png" alt="A project's issues: filters by severity and status with counts, the severity distribution, and each issue with its rule, file and line">
+      <br><sub><b>Issues</b>, filtered by severity, status, software quality and rule</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/issue-ai.png" alt="An issue with the code around it and the optional AI assistant's explanation of the finding and how to fix it">
+      <br><sub><b>An issue</b> with its code, and the optional AI assistant on your own model</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/gate.png" alt="A quality gate's conditions, each edited in its row, and the form to add one">
+      <br><sub><b>A quality gate</b>, its conditions edited in place</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/projects.png" alt="The projects list: quality gate results, open issues, average coverage and lines of code across the organization, then each project's measures">
+      <br><sub><b>Projects</b> at a glance</sub>
+    </td>
+  </tr>
+</table>
+
+The screenshots show the dark theme; the web UI follows the system's light or dark setting.
+
 ## Quick start
 
 You need Docker with Compose v2. The server is one container, `qualor/server`, with its own
@@ -28,7 +57,7 @@ Save the compose file of [Install the server](docs/guide/install-server.md#the-c
 ```sh
 umask 077
 cat > .env <<EOF
-QUALOR_VERSION=0.1
+QUALOR_VERSION=0.2
 QUALOR_SECRET_KEY=$(openssl rand -hex 32)
 QUALOR_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)
 EOF
@@ -56,7 +85,7 @@ The answer's `token` is shown once.
 
 ## Scan in CI: one line
 
-The scanner image is `qualor/scanner:<tag>` on Docker Hub (`0.1`, or a full version such as `0.1.1`).
+The scanner image is `qualor/scanner:<tag>` on Docker Hub (`0.2`, or a full version such as `0.2.0`).
 It carries the `qualor` CLI and the pinned analyzers; its entrypoint is `qualor`. Set `QUALOR_URL`
 and `QUALOR_TOKEN` as CI variables (the token masked), then:
 
@@ -71,7 +100,7 @@ include:
 A self-managed GitLab includes components only from its own instance: import
 `https://gitlab.com/qualor/qualor.git` into a project there once (New project → Import project →
 Repository by URL) and include it by its full version
-(`component: $CI_SERVER_FQDN/<path of the copy>/qualor@0.1.1`); a short version such as `@0.1`
+(`component: $CI_SERVER_FQDN/<path of the copy>/qualor@0.2.0`); a short version such as `@0.2`
 resolves only in a CI/CD catalog project with releases
 ([docs/guide/gitlab.md](docs/guide/gitlab.md)). It runs in merge request
 pipelines and on the default branch, fails with the quality gate, and keeps GitLab's Code Quality,

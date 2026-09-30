@@ -1,20 +1,42 @@
-<h2 #heading tabindex="-1" i18n="@@sso.title">Single sign-on</h2>
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@sso.title">Single sign-on</h2>
+    @if (infoLoaded() && !licensed() && !infoError()) {
+      <p class="muted" i18n="@@sso.notLicensed">
+        Single sign-on needs an enterprise licence with the sso feature.
+      </p>
+    } @else if (licensed() && !instanceAdmin()) {
+      <p class="muted" i18n="@@sso.adminsOnly">
+        Only instance administrators manage single sign-on.
+      </p>
+    } @else if (connections()) {
+      <p class="muted" i18n="@@sso.intro">
+        People sign in through an OpenID Connect or SAML identity provider. Each enabled connection
+        in effect appears as a button on the sign-in page. Who may still use a password is set under
+        Sign-in.
+      </p>
+    }
+  </div>
+  @if (connections() && canAdd()) {
+    <div class="sso-add">
+      <button type="button" class="btn" (click)="add('oidc')">
+        <q-icon name="plus" /><ng-container i18n="@@sso.addOidc"
+          >Add an OpenID Connect connection</ng-container
+        >
+      </button>
+      <button type="button" class="btn" (click)="add('saml')">
+        <q-icon name="plus" /><ng-container i18n="@@sso.addSaml"
+          >Add a SAML connection</ng-container
+        >
+      </button>
+    </div>
+  }
+</div>
 @if (infoError(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
-} @else if (infoLoaded() && !licensed()) {
-  <p class="muted" i18n="@@sso.notLicensed">
-    Single sign-on needs an enterprise licence with the sso feature.
-  </p>
-} @else if (licensed() && !instanceAdmin()) {
-  <p class="muted" i18n="@@sso.adminsOnly">Only instance administrators manage single sign-on.</p>
 } @else if (loadError(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
 } @else if (connections(); as list) {
-  <p class="muted" i18n="@@sso.intro">
-    People sign in through an OpenID Connect or SAML identity provider. Each enabled connection in
-    effect appears as a button on the sign-in page. Who may still use a password is set under
-    Sign-in.
-  </p>
   @if (!multi()) {
     <p id="sso-multi-not-licensed" class="alert alert-info" i18n="@@sso.multiNotLicensed">
       Your plan signs people in through one single sign-on connection at a time. Connecting several
@@ -30,58 +52,71 @@
     <p class="alert alert-error" role="alert">{{ message }}</p>
   }
 
-  <div class="table-wrap">
-    <table id="sso-connections">
-      <caption class="visually-hidden" i18n="@@sso.connections">
-        Connections
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col" i18n="@@sso.col.name">Name</th>
-          <th scope="col" i18n="@@sso.col.protocol">Protocol</th>
-          <th scope="col" i18n="@@sso.col.status">Status</th>
-          <th scope="col"><span class="visually-hidden" i18n="@@sso.col.actions">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (c of list; track c.id) {
-          <tr [attr.data-key]="c.id">
-            <th scope="row">{{ c.name }}</th>
-            <td>{{ c.protocol | label: 'ssoProtocol' }}</td>
-            <td>
-              @if (c.enabled) {
-                <span class="badge badge-passed" i18n="@@sso.enabled">Enabled</span>
-                @if (!c.inEffect) {
-                  <span class="badge badge-error" i18n="@@sso.notInEffectBadge">Not in effect</span>
-                }
-              } @else {
-                <span class="badge" i18n="@@sso.disabled">Disabled</span>
+  <h3 class="subhead" i18n="@@sso.connections">Connections</h3>
+  <div id="sso-connections" class="connection-list">
+    @for (c of list; track c.id) {
+      @let idp = c.oidc?.issuer || c.saml?.idpEntityId;
+      <section
+        class="card panel sso-connection"
+        [class.editing]="editing() === c.id"
+        [attr.data-key]="c.id"
+        [attr.aria-labelledby]="'sso-connection-' + c.id"
+      >
+        <div class="panel-head connection-head">
+          <div class="connection-title">
+            <h4 class="connection-name" [id]="'sso-connection-' + c.id">{{ c.name }}</h4>
+            <p class="connection-meta">
+              <span class="badge badge-tag">{{ c.protocol | label: 'ssoProtocol' }}</span>
+              @if (idp) {
+                <code>{{ idp }}</code>
               }
-              @if (!c.configValid) {
-                <span class="badge badge-error" i18n="@@sso.configInvalid"
-                  >Configuration not valid</span
+            </p>
+          </div>
+          <div class="connection-side">
+            @if (c.enabled) {
+              <span class="badge badge-passed connection-state"
+                ><q-icon name="check" /><ng-container i18n="@@sso.enabled"
+                  >Enabled</ng-container
+                ></span
+              >
+              @if (!c.inEffect) {
+                <span class="badge badge-error connection-state"
+                  ><q-icon name="alert" /><ng-container i18n="@@sso.notInEffectBadge"
+                    >Not in effect</ng-container
+                  ></span
                 >
               }
-            </td>
-            <td>
-              <button
-                type="button"
-                class="btn"
-                [attr.aria-label]="editLabel(c)"
-                (click)="edit(c)"
-                i18n="@@sso.edit"
+            } @else {
+              <span class="badge badge-none connection-state"
+                ><q-icon name="minus" /><ng-container i18n="@@sso.disabled"
+                  >Disabled</ng-container
+                ></span
               >
-                Edit
-              </button>
-            </td>
-          </tr>
-        } @empty {
-          <tr>
-            <td colspan="4" class="muted" i18n="@@sso.empty">No connections yet.</td>
-          </tr>
-        }
-      </tbody>
-    </table>
+            }
+            @if (!c.configValid) {
+              <span class="badge badge-failed connection-state"
+                ><q-icon name="cross" /><ng-container i18n="@@sso.configInvalid"
+                  >Configuration not valid</ng-container
+                ></span
+              >
+            }
+            <button
+              type="button"
+              class="btn"
+              [attr.aria-label]="editLabel(c)"
+              (click)="edit(c)"
+              i18n="@@sso.edit"
+            >
+              Edit
+            </button>
+          </div>
+        </div>
+      </section>
+    } @empty {
+      <div class="card empty-state">
+        <p i18n="@@sso.empty">No connections yet.</p>
+      </div>
+    }
   </div>
   @if (anyNotInEffect()) {
     <p id="sso-not-in-effect" class="alert alert-warn" i18n="@@sso.notInEffect">
@@ -94,688 +129,411 @@
       {{ list.length }} of {{ maxConnections }} connections
     </p>
   }
-  @if (canAdd()) {
-    <div class="row">
-      <button type="button" class="btn" (click)="add('oidc')" i18n="@@sso.addOidc">
-        Add an OpenID Connect connection
-      </button>
-      <button type="button" class="btn" (click)="add('saml')" i18n="@@sso.addSaml">
-        Add a SAML connection
-      </button>
-    </div>
-  } @else {
+  @if (!canAdd()) {
     <p class="hint" i18n="@@sso.atLimit">Qualor allows at most 10 connections.</p>
   }
 
   @if (editing()) {
     @let d = draft();
     @let c = current();
-    <form class="card" novalidate aria-labelledby="sso-form-title" (submit)="save($event)">
-      <h3 id="sso-form-title" tabindex="-1">
-        @if (c) {
-          {{ c.name }} ({{ c.protocol | label: 'ssoProtocol' }})
-        } @else if (d.protocol === 'oidc') {
-          <span i18n="@@sso.newOidc">New OpenID Connect connection</span>
-        } @else {
-          <span i18n="@@sso.newSaml">New SAML connection</span>
-        }
-      </h3>
-
-      @if (c) {
-        <section aria-labelledby="sso-copy-title">
-          <h4 id="sso-copy-title" i18n="@@sso.copyTitle">Values for the identity provider</h4>
-          @if (c.urls; as urls) {
-            @if (c.protocol === 'oidc') {
-              <q-copy-value
-                fieldId="sso-url-redirect"
-                label="Redirect URI"
-                i18n-label="@@sso.url.redirect"
-                [value]="urls.redirectUri"
-              />
+    <div class="sso-editor">
+      <form
+        class="card panel sso-form"
+        novalidate
+        aria-labelledby="sso-form-title"
+        (submit)="save($event)"
+      >
+        <div class="panel-head">
+          <h3 id="sso-form-title" tabindex="-1">
+            @if (c) {
+              {{ c.name }} ({{ c.protocol | label: 'ssoProtocol' }})
+            } @else if (d.protocol === 'oidc') {
+              <span i18n="@@sso.newOidc">New OpenID Connect connection</span>
             } @else {
-              <q-copy-value
-                fieldId="sso-url-entity"
-                label="Entity id (SP)"
-                i18n-label="@@sso.url.entityId"
-                [value]="urls.entityId"
-              />
-              <q-copy-value
-                fieldId="sso-url-acs"
-                label="ACS URL"
-                i18n-label="@@sso.url.acs"
-                [value]="urls.acsUrl"
-              />
-              <q-copy-value
-                fieldId="sso-url-metadata"
-                label="SP metadata URL"
-                i18n-label="@@sso.url.metadata"
-                [value]="urls.metadataUrl"
-              />
+              <span i18n="@@sso.newSaml">New SAML connection</span>
             }
-            <p class="hint" i18n="@@sso.url.hint">
-              These values come from QUALOR_PUBLIC_URL. If it changes, give the identity provider
-              the new ones.
-            </p>
-          } @else {
-            <p class="alert alert-warn" i18n="@@sso.url.none">
-              QUALOR_PUBLIC_URL is not set, so there are no addresses to give the identity provider
-              and the connection cannot be enabled. Set it and restart the server.
-            </p>
-          }
-        </section>
-      } @else {
-        <p class="hint" i18n="@@sso.url.afterSave">
-          The values to copy into the identity provider appear once the connection is saved.
-        </p>
-      }
+          </h3>
+        </div>
 
-      <div class="field">
-        <label for="sso-name" i18n="@@sso.name">Name</label>
-        <input
-          id="sso-name"
-          maxlength="64"
-          autocomplete="off"
-          [value]="d.name"
-          [attr.aria-invalid]="fieldError('sso-name') ? true : null"
-          [attr.aria-describedby]="
-            fieldError('sso-name') ? 'sso-name-hint sso-name-error' : 'sso-name-hint'
-          "
-          (input)="setText('name', $event)"
-        />
-        <span id="sso-name-hint" class="hint" i18n="@@sso.nameHint"
-          >The sign-in button says "Sign in with" and this name.</span
-        >
-        @if (fieldError('sso-name'); as message) {
-          <span id="sso-name-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <label class="row">
-        <input
-          id="sso-enabled"
-          type="checkbox"
-          [checked]="d.enabled && !enableBlocked()"
-          [disabled]="enableBlocked()"
-          [attr.aria-describedby]="enableBlocked() ? 'sso-enabled-note' : null"
-          (change)="setFlag('enabled', $event)"
-        />
-        <span i18n="@@sso.enabledLabel">Enabled: show it on the sign-in page</span>
-      </label>
-      @if (enableBlocked()) {
-        <p id="sso-enabled-note" class="hint" i18n="@@sso.createDisabled">
-          It stays disabled while another connection is enabled.
-        </p>
-      }
-
-      @if (d.protocol === 'oidc') {
-        <div class="field">
-          <label for="sso-issuer" i18n="@@sso.issuer">Issuer URL</label>
-          <input
-            id="sso-issuer"
-            type="url"
-            maxlength="2048"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="https://"
-            i18n-placeholder="@@sso.issuerPlaceholder"
-            [value]="d.issuer"
-            [attr.aria-invalid]="fieldError('sso-issuer') ? true : null"
-            [attr.aria-describedby]="fieldError('sso-issuer') ? 'sso-issuer-error' : null"
-            (input)="setText('issuer', $event)"
-          />
-          @if (fieldError('sso-issuer'); as message) {
-            <span id="sso-issuer-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-        <div class="field">
-          <label for="sso-client-id" i18n="@@sso.clientId">Client id</label>
-          <input
-            id="sso-client-id"
-            maxlength="255"
-            autocomplete="off"
-            spellcheck="false"
-            [value]="d.clientId"
-            [attr.aria-invalid]="fieldError('sso-client-id') ? true : null"
-            [attr.aria-describedby]="fieldError('sso-client-id') ? 'sso-client-id-error' : null"
-            (input)="setText('clientId', $event)"
-          />
-          @if (fieldError('sso-client-id'); as message) {
-            <span id="sso-client-id-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-        <div class="field">
-          @if (c?.oidc?.clientSecretSet && !changeSecret()) {
-            <span class="label" i18n="@@sso.clientSecret">Client secret</span>
-            <p class="row">
-              <span id="sso-client-secret-state" i18n="@@sso.secretSet"
-                >Set. It is never shown again.</span
-              >
-              <button
-                type="button"
-                class="btn btn-link"
-                aria-describedby="sso-client-secret-state"
-                (click)="showSecretField()"
-                i18n="@@sso.changeSecret"
-              >
-                Change
-              </button>
-            </p>
-          } @else {
-            <label for="sso-client-secret" i18n="@@sso.clientSecret">Client secret</label>
-            <input
-              id="sso-client-secret"
-              type="password"
-              maxlength="1024"
-              autocomplete="new-password"
-              data-1p-ignore
-              data-lpignore="true"
-              spellcheck="false"
-              [value]="d.clientSecret"
-              [attr.aria-invalid]="fieldError('sso-client-secret') ? true : null"
-              [attr.aria-describedby]="
-                fieldError('sso-client-secret')
-                  ? 'sso-client-secret-hint sso-client-secret-error'
-                  : 'sso-client-secret-hint'
-              "
-              (input)="setText('clientSecret', $event)"
-            />
-            <span id="sso-client-secret-hint" class="hint" i18n="@@sso.secretHint"
-              >Stored encrypted and never shown again. Leave it empty to keep the stored one.</span
-            >
-            @if (fieldError('sso-client-secret'); as message) {
-              <span id="sso-client-secret-error" class="field-error" role="alert">{{
-                message
-              }}</span>
-            }
-          }
-        </div>
-        <div class="row fields">
-          <div class="field">
-            <label for="sso-client-auth" i18n="@@sso.clientAuth">Client authentication</label>
-            <select id="sso-client-auth" (change)="setClientAuth($event)">
-              <option
-                value="client_secret_basic"
-                [selected]="d.clientAuth === 'client_secret_basic'"
-                i18n="@@sso.clientAuth.basic"
-              >
-                client_secret_basic
-              </option>
-              <option
-                value="client_secret_post"
-                [selected]="d.clientAuth === 'client_secret_post'"
-                i18n="@@sso.clientAuth.post"
-              >
-                client_secret_post
-              </option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="sso-scopes" i18n="@@sso.scopes">Scopes</label>
-            <input
-              id="sso-scopes"
-              autocomplete="off"
-              spellcheck="false"
-              [value]="d.scopes"
-              [attr.aria-invalid]="fieldError('sso-scopes') ? true : null"
-              [attr.aria-describedby]="fieldError('sso-scopes') ? 'sso-scopes-error' : null"
-              (input)="setText('scopes', $event)"
-            />
-            @if (fieldError('sso-scopes'); as message) {
-              <span id="sso-scopes-error" class="field-error" role="alert">{{ message }}</span>
-            }
-          </div>
-        </div>
-        <label class="row">
-          <input type="checkbox" [checked]="d.userinfo" (change)="setFlag('userinfo', $event)" />
-          <span i18n="@@sso.userinfo"
-            >Also read the userinfo endpoint (for identity providers that send the email or groups
-            only there)</span
-          >
-        </label>
-      } @else {
-        <div class="field">
-          <label for="sso-metadata-url" i18n="@@sso.metadataUrl">Metadata URL (optional)</label>
-          <input
-            id="sso-metadata-url"
-            type="url"
-            maxlength="2048"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="https://"
-            i18n-placeholder="@@sso.metadataUrlPlaceholder"
-            [value]="d.metadataUrl"
-            [attr.aria-invalid]="fieldError('sso-metadata-url') ? true : null"
-            [attr.aria-describedby]="
-              fieldError('sso-metadata-url')
-                ? 'sso-metadata-url-hint sso-metadata-url-error'
-                : 'sso-metadata-url-hint'
-            "
-            (input)="setText('metadataUrl', $event)"
-          />
-          <span id="sso-metadata-url-hint" class="hint" i18n="@@sso.metadataUrlHint"
-            >Read only when you press Read metadata, never on a schedule. Save the URL first.</span
-          >
-          @if (fieldError('sso-metadata-url'); as message) {
-            <span id="sso-metadata-url-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-        <div class="field">
-          <label for="sso-idp-entity-id" i18n="@@sso.idpEntityId"
-            >Identity provider entity id</label
-          >
-          <input
-            id="sso-idp-entity-id"
-            maxlength="1024"
-            autocomplete="off"
-            spellcheck="false"
-            [value]="d.idpEntityId"
-            [attr.aria-invalid]="fieldError('sso-idp-entity-id') ? true : null"
-            [attr.aria-describedby]="
-              fieldError('sso-idp-entity-id') ? 'sso-idp-entity-id-error' : null
-            "
-            (input)="setText('idpEntityId', $event)"
-          />
-          @if (fieldError('sso-idp-entity-id'); as message) {
-            <span id="sso-idp-entity-id-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-        <div class="field">
-          <label for="sso-idp-sso-url" i18n="@@sso.idpSsoUrl">SSO URL (HTTP-Redirect)</label>
-          <input
-            id="sso-idp-sso-url"
-            type="url"
-            maxlength="2048"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="https://"
-            i18n-placeholder="@@sso.idpSsoUrlPlaceholder"
-            [value]="d.idpSsoUrl"
-            [attr.aria-invalid]="fieldError('sso-idp-sso-url') ? true : null"
-            [attr.aria-describedby]="fieldError('sso-idp-sso-url') ? 'sso-idp-sso-url-error' : null"
-            (input)="setText('idpSsoUrl', $event)"
-          />
-          @if (fieldError('sso-idp-sso-url'); as message) {
-            <span id="sso-idp-sso-url-error" class="field-error" role="alert">{{ message }}</span>
-          }
-        </div>
-        <div class="field">
-          <label for="sso-idp-certificates" i18n="@@sso.idpCertificates"
-            >Signing certificates (PEM, 1 to 3)</label
-          >
-          <textarea
-            id="sso-idp-certificates"
-            rows="6"
-            spellcheck="false"
-            [value]="d.idpCertificates"
-            [attr.aria-invalid]="fieldError('sso-idp-certificates') ? true : null"
-            [attr.aria-describedby]="
-              fieldError('sso-idp-certificates') ? 'sso-idp-certificates-error' : null
-            "
-            (input)="setText('idpCertificates', $event)"
-          ></textarea>
-          @if (fieldError('sso-idp-certificates'); as message) {
-            <span id="sso-idp-certificates-error" class="field-error" role="alert">{{
-              message
-            }}</span>
-          }
-        </div>
-        @if (c?.saml; as saml) {
-          <ul
-            id="sso-certificates"
-            class="link-list"
-            aria-label="Pinned certificates"
-            i18n-aria-label="@@sso.pinned"
-          >
-            @for (cert of saml.idpCertificates; track cert.sha256) {
-              <li>
-                <span i18n="@@sso.fingerprint">SHA-256</span>{{ ' ' }}
-                <code class="prose-text">{{ cert.sha256 }}</code>
-                · <span i18n="@@sso.notAfter">valid until {{ cert.notAfter | dateTime }}</span>
-                @if (cert.expired) {
-                  <span class="badge badge-warn" i18n="@@sso.expired">Expired</span>
-                }
-              </li>
-            }
-          </ul>
-        }
-        <div class="row fields">
-          <div class="field">
-            <label for="sso-name-id-format" i18n="@@sso.nameIdFormat">NameID format</label>
-            <select id="sso-name-id-format" (change)="setNameIdFormat($event)">
-              @for (f of nameIdFormats; track f) {
-                <option [value]="f" [selected]="d.nameIdFormat === f">{{ nameIdLabel(f) }}</option>
-              }
-            </select>
-          </div>
-        </div>
-        <label class="row">
-          <input
-            type="checkbox"
-            [checked]="d.emailVerified"
-            (change)="setFlag('emailVerified', $event)"
-          />
-          <span i18n="@@sso.emailVerified"
-            >This identity provider verifies the email attribute (needed to link by email and to
-            store the email of new accounts)</span
-          >
-        </label>
-        <label class="row">
-          <input
-            type="checkbox"
-            [checked]="d.wantResponseSigned"
-            (change)="setFlag('wantResponseSigned', $event)"
-          />
-          <span i18n="@@sso.wantResponseSigned"
-            >Also require a signature on the whole response (the assertion is always signed)</span
-          >
-        </label>
-        <details>
-          <summary i18n="@@sso.spKeyTitle">Service provider key (optional)</summary>
-          <p class="hint" i18n="@@sso.spKeyHint">
-            With a key and its certificate, Qualor signs its requests and the identity provider may
-            encrypt assertions.
-          </p>
-          <div class="field">
-            @if (c?.saml?.spKeySet && !changeSpKey()) {
-              <span class="label" i18n="@@sso.spKey">Private key</span>
-              <p class="row">
-                <span id="sso-sp-key-state" i18n="@@sso.secretSet"
-                  >Set. It is never shown again.</span
-                >
-                <button
-                  type="button"
-                  class="btn btn-link"
-                  aria-describedby="sso-sp-key-state"
-                  (click)="showSpKeyField()"
-                  i18n="@@sso.changeSecret"
-                >
-                  Change
-                </button>
-              </p>
-            } @else {
-              <label for="sso-sp-key" i18n="@@sso.spKey">Private key</label>
-              <textarea
-                id="sso-sp-key"
-                rows="4"
-                autocomplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                spellcheck="false"
-                [value]="d.spKey"
-                [attr.aria-invalid]="fieldError('sso-sp-key') ? true : null"
-                [attr.aria-describedby]="fieldError('sso-sp-key') ? 'sso-sp-key-error' : null"
-                (input)="setText('spKey', $event)"
-              ></textarea>
-              @if (fieldError('sso-sp-key'); as message) {
-                <span id="sso-sp-key-error" class="field-error" role="alert">{{ message }}</span>
-              }
-            }
-          </div>
-          <div class="field">
-            <label for="sso-sp-certificate" i18n="@@sso.spCertificate">Certificate</label>
-            <textarea
-              id="sso-sp-certificate"
-              rows="4"
-              spellcheck="false"
-              [value]="d.spCertificate"
-              [attr.aria-invalid]="fieldError('sso-sp-certificate') ? true : null"
-              [attr.aria-describedby]="
-                fieldError('sso-sp-certificate') ? 'sso-sp-certificate-error' : null
-              "
-              (input)="setText('spCertificate', $event)"
-            ></textarea>
-            @if (fieldError('sso-sp-certificate'); as message) {
-              <span id="sso-sp-certificate-error" class="field-error" role="alert">{{
-                message
-              }}</span>
-            }
-          </div>
-        </details>
-      }
-
-      <h4 i18n="@@sso.accounts">Accounts</h4>
-      <label class="row">
-        <input type="checkbox" [checked]="d.jit" (change)="setFlag('jit', $event)" />
-        <span i18n="@@sso.jit">Create an account at the first sign-in</span>
-      </label>
-      <label class="row">
-        <input
-          type="checkbox"
-          [checked]="d.linkByEmail"
-          (change)="setFlag('linkByEmail', $event)"
-        />
-        <span i18n="@@sso.linkByEmail"
-          >Link to an existing account with the same verified email (never an instance
-          administrator)</span
-        >
-      </label>
-      <div class="row fields">
-        <div class="field">
-          <label for="sso-claim-username" i18n="@@sso.claimUsername">Username claim</label>
-          <input
-            id="sso-claim-username"
-            maxlength="128"
-            autocomplete="off"
-            spellcheck="false"
-            [value]="d.claimUsername"
-            [attr.aria-invalid]="fieldError('sso-claim-username') ? true : null"
-            (input)="setText('claimUsername', $event)"
-          />
-        </div>
-        <div class="field">
-          <label for="sso-claim-email" i18n="@@sso.claimEmail">Email claim</label>
-          <input
-            id="sso-claim-email"
-            maxlength="128"
-            autocomplete="off"
-            spellcheck="false"
-            [value]="d.claimEmail"
-            [attr.aria-invalid]="fieldError('sso-claim-email') ? true : null"
-            (input)="setText('claimEmail', $event)"
-          />
-        </div>
-        <div class="field">
-          <label for="sso-claim-display-name" i18n="@@sso.claimDisplayName"
-            >Display name claim</label
-          >
-          <input
-            id="sso-claim-display-name"
-            maxlength="128"
-            autocomplete="off"
-            spellcheck="false"
-            [value]="d.claimDisplayName"
-            [attr.aria-invalid]="fieldError('sso-claim-display-name') ? true : null"
-            (input)="setText('claimDisplayName', $event)"
-          />
-        </div>
-        <div class="field">
-          <label for="sso-claim-groups" i18n="@@sso.claimGroups">Groups claim</label>
-          <input
-            id="sso-claim-groups"
-            maxlength="128"
-            autocomplete="off"
-            spellcheck="false"
-            [value]="d.claimGroups"
-            [attr.aria-invalid]="fieldError('sso-claim-groups') ? true : null"
-            (input)="setText('claimGroups', $event)"
-          />
-        </div>
-      </div>
-      @for (
-        id of [
-          'sso-claim-username',
-          'sso-claim-email',
-          'sso-claim-display-name',
-          'sso-claim-groups',
-        ];
-        track id
-      ) {
-        @if (fieldError(id); as message) {
-          <p class="field-error" role="alert">{{ message }}</p>
-        }
-      }
-      <p class="hint" i18n="@@sso.claimsHint">
-        Leave a claim empty to not read it. For SAML, an empty username uses the NameID.
-      </p>
-      <div class="field">
-        <label for="sso-required-claims" i18n="@@sso.requiredClaims"
-          >Required claims (optional)</label
-        >
-        <textarea
-          id="sso-required-claims"
-          rows="2"
-          spellcheck="false"
-          placeholder="hd=example.com"
-          i18n-placeholder="@@sso.requiredClaimsPlaceholder"
-          [value]="d.requiredClaims"
-          [attr.aria-invalid]="fieldError('sso-required-claims') ? true : null"
-          [attr.aria-describedby]="
-            fieldError('sso-required-claims')
-              ? 'sso-required-claims-hint sso-required-claims-error'
-              : 'sso-required-claims-hint'
-          "
-          (input)="setText('requiredClaims', $event)"
-        ></textarea>
-        <span id="sso-required-claims-hint" class="hint" i18n="@@sso.requiredClaimsHint"
-          >One claim=value a line, at most 5. A sign-in without each of them is refused.</span
-        >
-        @if (fieldError('sso-required-claims'); as message) {
-          <span id="sso-required-claims-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <div class="field">
-        <label for="sso-group-source" i18n="@@sso.groupSource">Groups come from</label>
-        <select id="sso-group-source" (change)="setGroupSource($event)">
-          <option value="none" [selected]="d.groupSource === 'none'" i18n="@@sso.groupSource.none">
-            Nowhere: no group mappings
-          </option>
-          <option
-            value="claims"
-            [selected]="d.groupSource === 'claims'"
-            i18n="@@sso.groupSource.claims"
-          >
-            The groups claim at each sign-in
-          </option>
-          <option value="scim" [selected]="d.groupSource === 'scim'" i18n="@@sso.groupSource.scim">
-            SCIM provisioning
-          </option>
-        </select>
-      </div>
-
-      <div class="row">
-        <button
-          type="submit"
-          class="btn btn-primary"
-          [attr.aria-disabled]="busy() ? true : null"
-          i18n="@@sso.save"
-        >
-          Save
-        </button>
-        <button type="button" class="btn" (click)="close()" i18n="@@sso.close">Close</button>
-      </div>
-    </form>
-
-    @if (c) {
-      <section class="card" aria-labelledby="sso-check-title">
-        <h3 id="sso-check-title" i18n="@@sso.checkTitle">Check the connection</h3>
-        <div class="row">
-          <button
-            type="button"
-            class="btn"
-            [attr.aria-disabled]="busy() ? true : null"
-            (click)="runTest(c)"
-            i18n="@@sso.test"
-          >
-            Test
-          </button>
-          @if (c.protocol === 'saml') {
-            <button
-              type="button"
-              class="btn"
-              [attr.aria-disabled]="busy() || !c.saml?.metadataUrl ? true : null"
-              [disabled]="!c.saml?.metadataUrl"
-              (click)="readMetadata(c)"
-              i18n="@@sso.readMetadata"
-            >
-              Read metadata
-            </button>
-          }
-        </div>
-        <div id="sso-test" aria-live="polite">
-          @if (test(); as t) {
-            @if (t.ok) {
-              <p class="alert alert-success" i18n="@@sso.test.ok">The test passed.</p>
-            } @else if (t.problem; as problem) {
-              <p class="alert alert-error">{{ testText(problem.code) }}</p>
-            } @else {
-              <p class="alert alert-error">{{ testText('') }}</p>
-            }
-            @if (t.endpoints; as e) {
-              <dl class="facts">
-                <dt i18n="@@sso.endpoint.authorization">Authorization endpoint</dt>
-                <dd>
-                  <code class="prose-text">{{ e.authorization ?? '-' }}</code>
-                </dd>
-                <dt i18n="@@sso.endpoint.token">Token endpoint</dt>
-                <dd>
-                  <code class="prose-text">{{ e.token ?? '-' }}</code>
-                </dd>
-                <dt i18n="@@sso.endpoint.jwks">JWKS</dt>
-                <dd>
-                  <code class="prose-text">{{ e.jwks ?? '-' }}</code>
-                </dd>
-                <dt i18n="@@sso.endpoint.userinfo">Userinfo endpoint</dt>
-                <dd>
-                  <code class="prose-text">{{ e.userinfo ?? '-' }}</code>
-                </dd>
-              </dl>
-              <p class="hint" i18n="@@sso.endpoint.hint">
-                Qualor contacts only these addresses and the issuer's discovery document.
-              </p>
-            }
-            @if (t.certificates; as certs) {
-              <ul class="link-list">
-                @for (cert of certs; track cert.sha256) {
-                  <li>
-                    <span i18n="@@sso.fingerprint">SHA-256</span>{{ ' ' }}
-                    <code class="prose-text">{{ cert.sha256 }}</code>
-                    · <span i18n="@@sso.notAfter">valid until {{ cert.notAfter | dateTime }}</span>
-                    @if (cert.expired) {
-                      <span class="badge badge-warn" i18n="@@sso.expired">Expired</span>
-                    }
-                  </li>
-                }
-              </ul>
-            }
-          }
-        </div>
-        @if (preview(); as p) {
-          <section id="sso-metadata-preview" aria-labelledby="sso-preview-title">
-            <h4 id="sso-preview-title" i18n="@@sso.preview.title">
-              What the metadata would change
+        <section class="setting-row" aria-labelledby="sso-copy-title">
+          <div class="setting-text">
+            <h4 id="sso-copy-title" class="setting-name" i18n="@@sso.copyTitle">
+              Values for the identity provider
             </h4>
-            <p class="muted" i18n="@@sso.preview.intro">
-              Nothing is saved yet. Check the certificates' fingerprints with the identity provider
-              before you save: the metadata document itself is not signed.
+            @if (c?.urls) {
+              <p i18n="@@sso.url.hint">
+                These values come from QUALOR_PUBLIC_URL. If it changes, give the identity provider
+                the new ones.
+              </p>
+            }
+          </div>
+          <div class="setting-field">
+            @if (c?.urls; as urls) {
+              @if (c?.protocol === 'oidc') {
+                <q-copy-value
+                  fieldId="sso-url-redirect"
+                  label="Redirect URI"
+                  i18n-label="@@sso.url.redirect"
+                  [value]="urls.redirectUri"
+                />
+              } @else {
+                <q-copy-value
+                  fieldId="sso-url-entity"
+                  label="Entity id (SP)"
+                  i18n-label="@@sso.url.entityId"
+                  [value]="urls.entityId"
+                />
+                <q-copy-value
+                  fieldId="sso-url-acs"
+                  label="ACS URL"
+                  i18n-label="@@sso.url.acs"
+                  [value]="urls.acsUrl"
+                />
+                <q-copy-value
+                  fieldId="sso-url-metadata"
+                  label="SP metadata URL"
+                  i18n-label="@@sso.url.metadata"
+                  [value]="urls.metadataUrl"
+                />
+              }
+            } @else if (c) {
+              <p class="alert alert-warn" i18n="@@sso.url.none">
+                QUALOR_PUBLIC_URL is not set, so there are no addresses to give the identity
+                provider and the connection cannot be enabled. Set it and restart the server.
+              </p>
+            } @else {
+              <p class="hint" i18n="@@sso.url.afterSave">
+                The values to copy into the identity provider appear once the connection is saved.
+              </p>
+            }
+          </div>
+        </section>
+
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="sso-name" i18n="@@sso.name">Name</label>
+            <p id="sso-name-hint" i18n="@@sso.nameHint">
+              The sign-in button says "Sign in with" and this name.
             </p>
-            <dl class="facts">
-              <dt i18n="@@sso.idpEntityId">Identity provider entity id</dt>
-              <dd>
-                <code class="prose-text">{{ p.idpEntityId }}</code>
-                @if (p.idpEntityId !== c.saml?.idpEntityId) {
-                  <span class="badge badge-warn" i18n="@@sso.preview.changed">Changed</span>
+          </div>
+          <div class="setting-field">
+            <input
+              id="sso-name"
+              maxlength="64"
+              autocomplete="off"
+              [value]="d.name"
+              [attr.aria-invalid]="fieldError('sso-name') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('sso-name') ? 'sso-name-hint sso-name-error' : 'sso-name-hint'
+              "
+              (input)="setText('name', $event)"
+            />
+            @if (fieldError('sso-name'); as message) {
+              <span id="sso-name-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <span class="setting-name" i18n="@@sso.row.status">Status</span>
+          </div>
+          <div class="setting-field">
+            <label class="row">
+              <input
+                id="sso-enabled"
+                type="checkbox"
+                [checked]="d.enabled && !enableBlocked()"
+                [disabled]="enableBlocked()"
+                [attr.aria-describedby]="enableBlocked() ? 'sso-enabled-note' : null"
+                (change)="setFlag('enabled', $event)"
+              />
+              <span i18n="@@sso.enabledLabel">Enabled: show it on the sign-in page</span>
+            </label>
+            @if (enableBlocked()) {
+              <p id="sso-enabled-note" class="hint" i18n="@@sso.createDisabled">
+                It stays disabled while another connection is enabled.
+              </p>
+            }
+          </div>
+        </div>
+
+        <h4 class="form-section" i18n="@@sso.section.provider">Identity provider</h4>
+        @if (d.protocol === 'oidc') {
+          @let secretKept = c?.oidc?.clientSecretSet && !changeSecret();
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="sso-issuer" i18n="@@sso.issuer">Issuer URL</label>
+            </div>
+            <div class="setting-field">
+              <input
+                id="sso-issuer"
+                type="url"
+                maxlength="2048"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="https://"
+                i18n-placeholder="@@sso.issuerPlaceholder"
+                [value]="d.issuer"
+                [attr.aria-invalid]="fieldError('sso-issuer') ? true : null"
+                [attr.aria-describedby]="fieldError('sso-issuer') ? 'sso-issuer-error' : null"
+                (input)="setText('issuer', $event)"
+              />
+              @if (fieldError('sso-issuer'); as message) {
+                <span id="sso-issuer-error" class="field-error" role="alert">{{ message }}</span>
+              }
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="sso-client-id" i18n="@@sso.clientId">Client id</label>
+            </div>
+            <div class="setting-field">
+              <input
+                id="sso-client-id"
+                maxlength="255"
+                autocomplete="off"
+                spellcheck="false"
+                [value]="d.clientId"
+                [attr.aria-invalid]="fieldError('sso-client-id') ? true : null"
+                [attr.aria-describedby]="fieldError('sso-client-id') ? 'sso-client-id-error' : null"
+                (input)="setText('clientId', $event)"
+              />
+              @if (fieldError('sso-client-id'); as message) {
+                <span id="sso-client-id-error" class="field-error" role="alert">{{ message }}</span>
+              }
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              @if (secretKept) {
+                <span class="setting-name" i18n="@@sso.clientSecret">Client secret</span>
+              } @else {
+                <label for="sso-client-secret" i18n="@@sso.clientSecret">Client secret</label>
+                <p id="sso-client-secret-hint" i18n="@@sso.secretHint">
+                  Stored encrypted and never shown again. Leave it empty to keep the stored one.
+                </p>
+              }
+            </div>
+            <div class="setting-field">
+              @if (secretKept) {
+                <p class="row secret-state">
+                  <span id="sso-client-secret-state" i18n="@@sso.secretSet"
+                    >Set. It is never shown again.</span
+                  >
+                  <button
+                    type="button"
+                    class="btn btn-link"
+                    aria-describedby="sso-client-secret-state"
+                    (click)="showSecretField()"
+                    i18n="@@sso.changeSecret"
+                  >
+                    Change
+                  </button>
+                </p>
+              } @else {
+                <input
+                  id="sso-client-secret"
+                  type="password"
+                  maxlength="1024"
+                  autocomplete="new-password"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  spellcheck="false"
+                  [value]="d.clientSecret"
+                  [attr.aria-invalid]="fieldError('sso-client-secret') ? true : null"
+                  [attr.aria-describedby]="
+                    fieldError('sso-client-secret')
+                      ? 'sso-client-secret-hint sso-client-secret-error'
+                      : 'sso-client-secret-hint'
+                  "
+                  (input)="setText('clientSecret', $event)"
+                />
+                @if (fieldError('sso-client-secret'); as message) {
+                  <span id="sso-client-secret-error" class="field-error" role="alert">{{
+                    message
+                  }}</span>
                 }
-              </dd>
-              <dt i18n="@@sso.idpSsoUrl">SSO URL (HTTP-Redirect)</dt>
-              <dd>
-                <code class="prose-text">{{ p.idpSsoUrl }}</code>
-                @if (p.idpSsoUrl !== c.saml?.idpSsoUrl) {
-                  <span class="badge badge-warn" i18n="@@sso.preview.changed">Changed</span>
-                }
-              </dd>
-              <dt i18n="@@sso.preview.certificates">Signing certificates</dt>
-              <dd>
-                <ul class="link-list">
-                  @for (cert of p.certificates; track cert.sha256) {
+              }
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="sso-client-auth" i18n="@@sso.clientAuth">Client authentication</label>
+            </div>
+            <div class="setting-field">
+              <select id="sso-client-auth" (change)="setClientAuth($event)">
+                <option
+                  value="client_secret_basic"
+                  [selected]="d.clientAuth === 'client_secret_basic'"
+                  i18n="@@sso.clientAuth.basic"
+                >
+                  client_secret_basic
+                </option>
+                <option
+                  value="client_secret_post"
+                  [selected]="d.clientAuth === 'client_secret_post'"
+                  i18n="@@sso.clientAuth.post"
+                >
+                  client_secret_post
+                </option>
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="sso-scopes" i18n="@@sso.scopes">Scopes</label>
+            </div>
+            <div class="setting-field">
+              <input
+                id="sso-scopes"
+                autocomplete="off"
+                spellcheck="false"
+                [value]="d.scopes"
+                [attr.aria-invalid]="fieldError('sso-scopes') ? true : null"
+                [attr.aria-describedby]="fieldError('sso-scopes') ? 'sso-scopes-error' : null"
+                (input)="setText('scopes', $event)"
+              />
+              @if (fieldError('sso-scopes'); as message) {
+                <span id="sso-scopes-error" class="field-error" role="alert">{{ message }}</span>
+              }
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <span class="setting-name" i18n="@@sso.row.userinfo">Userinfo endpoint</span>
+            </div>
+            <div class="setting-field">
+              <label class="row">
+                <input
+                  type="checkbox"
+                  [checked]="d.userinfo"
+                  (change)="setFlag('userinfo', $event)"
+                />
+                <span i18n="@@sso.userinfo"
+                  >Also read the userinfo endpoint (for identity providers that send the email or
+                  groups only there)</span
+                >
+              </label>
+            </div>
+          </div>
+        } @else {
+          @let keyKept = c?.saml?.spKeySet && !changeSpKey();
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="sso-metadata-url" i18n="@@sso.metadataUrl">Metadata URL (optional)</label>
+              <p id="sso-metadata-url-hint" i18n="@@sso.metadataUrlHint">
+                Read only when you press Read metadata, never on a schedule. Save the URL first.
+              </p>
+            </div>
+            <div class="setting-field">
+              <input
+                id="sso-metadata-url"
+                type="url"
+                maxlength="2048"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="https://"
+                i18n-placeholder="@@sso.metadataUrlPlaceholder"
+                [value]="d.metadataUrl"
+                [attr.aria-invalid]="fieldError('sso-metadata-url') ? true : null"
+                [attr.aria-describedby]="
+                  fieldError('sso-metadata-url')
+                    ? 'sso-metadata-url-hint sso-metadata-url-error'
+                    : 'sso-metadata-url-hint'
+                "
+                (input)="setText('metadataUrl', $event)"
+              />
+              @if (fieldError('sso-metadata-url'); as message) {
+                <span id="sso-metadata-url-error" class="field-error" role="alert">{{
+                  message
+                }}</span>
+              }
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="sso-idp-entity-id" i18n="@@sso.idpEntityId"
+                >Identity provider entity id</label
+              >
+            </div>
+            <div class="setting-field">
+              <input
+                id="sso-idp-entity-id"
+                maxlength="1024"
+                autocomplete="off"
+                spellcheck="false"
+                [value]="d.idpEntityId"
+                [attr.aria-invalid]="fieldError('sso-idp-entity-id') ? true : null"
+                [attr.aria-describedby]="
+                  fieldError('sso-idp-entity-id') ? 'sso-idp-entity-id-error' : null
+                "
+                (input)="setText('idpEntityId', $event)"
+              />
+              @if (fieldError('sso-idp-entity-id'); as message) {
+                <span id="sso-idp-entity-id-error" class="field-error" role="alert">{{
+                  message
+                }}</span>
+              }
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="sso-idp-sso-url" i18n="@@sso.idpSsoUrl">SSO URL (HTTP-Redirect)</label>
+            </div>
+            <div class="setting-field">
+              <input
+                id="sso-idp-sso-url"
+                type="url"
+                maxlength="2048"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="https://"
+                i18n-placeholder="@@sso.idpSsoUrlPlaceholder"
+                [value]="d.idpSsoUrl"
+                [attr.aria-invalid]="fieldError('sso-idp-sso-url') ? true : null"
+                [attr.aria-describedby]="
+                  fieldError('sso-idp-sso-url') ? 'sso-idp-sso-url-error' : null
+                "
+                (input)="setText('idpSsoUrl', $event)"
+              />
+              @if (fieldError('sso-idp-sso-url'); as message) {
+                <span id="sso-idp-sso-url-error" class="field-error" role="alert">{{
+                  message
+                }}</span>
+              }
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="sso-idp-certificates" i18n="@@sso.idpCertificates"
+                >Signing certificates (PEM, 1 to 3)</label
+              >
+            </div>
+            <div class="setting-field">
+              <textarea
+                id="sso-idp-certificates"
+                rows="6"
+                spellcheck="false"
+                [value]="d.idpCertificates"
+                [attr.aria-invalid]="fieldError('sso-idp-certificates') ? true : null"
+                [attr.aria-describedby]="
+                  fieldError('sso-idp-certificates') ? 'sso-idp-certificates-error' : null
+                "
+                (input)="setText('idpCertificates', $event)"
+              ></textarea>
+              @if (fieldError('sso-idp-certificates'); as message) {
+                <span id="sso-idp-certificates-error" class="field-error" role="alert">{{
+                  message
+                }}</span>
+              }
+              @if (c?.saml; as saml) {
+                <ul
+                  id="sso-certificates"
+                  class="link-list certificates"
+                  aria-label="Pinned certificates"
+                  i18n-aria-label="@@sso.pinned"
+                >
+                  @for (cert of saml.idpCertificates; track cert.sha256) {
                     <li>
                       <span i18n="@@sso.fingerprint">SHA-256</span>{{ ' ' }}
                       <code class="prose-text">{{ cert.sha256 }}</code>
@@ -787,175 +545,595 @@
                     </li>
                   }
                 </ul>
-              </dd>
-            </dl>
-            <div class="row">
-              <button
-                type="button"
-                class="btn btn-primary"
-                [attr.aria-disabled]="busy() ? true : null"
-                (click)="applyPreview(c)"
-                i18n="@@sso.preview.save"
-              >
-                Save these values
-              </button>
-              <button
-                type="button"
-                class="btn"
-                (click)="discardPreview()"
-                i18n="@@sso.preview.discard"
-              >
-                Discard
-              </button>
+              }
             </div>
-          </section>
-        }
-      </section>
-
-      <section class="card" aria-labelledby="sso-mappings-title">
-        <h3 id="sso-mappings-title" i18n="@@sso.mappings">Group mappings</h3>
-        <p class="muted" i18n="@@sso.mappingsIntro">
-          Each group the identity provider sends gives a role in an organization or on a project.
-          The group * matches everyone of this connection. Memberships made by hand are left alone.
-        </p>
-        @if (d.groupSource === 'none') {
-          <p class="alert alert-info" i18n="@@sso.mappingsNoSource">
-            Groups come from nowhere, so these mappings are not used. Choose a source above and
-            save.
-          </p>
-        }
-        @if (mappingsError(); as message) {
-          <p class="alert alert-error" role="alert">{{ message }}</p>
-        }
-        <div class="table-wrap">
-          <table id="sso-mappings">
-            <thead>
-              <tr>
-                <th scope="col" i18n="@@sso.mapping.group">Group</th>
-                <th scope="col" i18n="@@sso.mapping.org">Organization</th>
-                <th scope="col" i18n="@@sso.mapping.project">Project</th>
-                <th scope="col" i18n="@@sso.mapping.role">Role</th>
-                <th scope="col">
-                  <span class="visually-hidden" i18n="@@sso.col.actions">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (m of mappings(); track $index) {
-                <tr>
-                  <th scope="row">
-                    <code class="prose-text">{{ m.group }}</code>
-                  </th>
-                  <td>{{ m.organizationKey }}</td>
-                  <td>
-                    @if (m.projectKey) {
-                      {{ m.projectKey }}
-                    } @else {
-                      <span class="muted" i18n="@@sso.mapping.wholeOrg">Whole organization</span>
-                    }
-                  </td>
-                  <td>{{ roleLabel(m.role) }}</td>
-                  <td>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <label for="sso-name-id-format" i18n="@@sso.nameIdFormat">NameID format</label>
+            </div>
+            <div class="setting-field">
+              <select id="sso-name-id-format" (change)="setNameIdFormat($event)">
+                @for (f of nameIdFormats; track f) {
+                  <option [value]="f" [selected]="d.nameIdFormat === f">
+                    {{ nameIdLabel(f) }}
+                  </option>
+                }
+              </select>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <span id="sso-assertions-title" class="setting-name" i18n="@@sso.row.assertions"
+                >Assertions</span
+              >
+            </div>
+            <div class="setting-field" role="group" aria-labelledby="sso-assertions-title">
+              <label class="row">
+                <input
+                  type="checkbox"
+                  [checked]="d.emailVerified"
+                  (change)="setFlag('emailVerified', $event)"
+                />
+                <span i18n="@@sso.emailVerified"
+                  >This identity provider verifies the email attribute (needed to link by email and
+                  to store the email of new accounts)</span
+                >
+              </label>
+              <label class="row">
+                <input
+                  type="checkbox"
+                  [checked]="d.wantResponseSigned"
+                  (change)="setFlag('wantResponseSigned', $event)"
+                />
+                <span i18n="@@sso.wantResponseSigned"
+                  >Also require a signature on the whole response (the assertion is always
+                  signed)</span
+                >
+              </label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <span id="sso-sp-title" class="setting-name" i18n="@@sso.spKeyTitle"
+                >Service provider key (optional)</span
+              >
+              <p i18n="@@sso.spKeyHint">
+                With a key and its certificate, Qualor signs its requests and the identity provider
+                may encrypt assertions.
+              </p>
+            </div>
+            <div class="setting-field sso-subfields" role="group" aria-labelledby="sso-sp-title">
+              <div class="field">
+                @if (keyKept) {
+                  <span class="label" i18n="@@sso.spKey">Private key</span>
+                  <p class="row secret-state">
+                    <span id="sso-sp-key-state" i18n="@@sso.secretSet"
+                      >Set. It is never shown again.</span
+                    >
                     <button
                       type="button"
                       class="btn btn-link"
-                      [attr.aria-label]="removeMappingLabel(m.group)"
-                      (click)="removeMapping($index)"
-                      i18n="@@sso.mapping.remove"
+                      aria-describedby="sso-sp-key-state"
+                      (click)="showSpKeyField()"
+                      i18n="@@sso.changeSecret"
                     >
-                      Remove
+                      Change
                     </button>
-                  </td>
-                </tr>
-              } @empty {
-                <tr>
-                  <td colspan="5" class="muted" i18n="@@sso.mapping.empty">No mappings.</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        <form class="row fields" novalidate (submit)="addMapping($event)">
-          <div class="field">
-            <label for="sso-mapping-group" i18n="@@sso.mapping.group">Group</label>
-            <input
-              id="sso-mapping-group"
-              maxlength="255"
-              autocomplete="off"
-              spellcheck="false"
-              [value]="newGroup()"
-              (input)="setNewGroup($event)"
-            />
+                  </p>
+                } @else {
+                  <label for="sso-sp-key" i18n="@@sso.spKey">Private key</label>
+                  <textarea
+                    id="sso-sp-key"
+                    rows="4"
+                    autocomplete="off"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    spellcheck="false"
+                    [value]="d.spKey"
+                    [attr.aria-invalid]="fieldError('sso-sp-key') ? true : null"
+                    [attr.aria-describedby]="fieldError('sso-sp-key') ? 'sso-sp-key-error' : null"
+                    (input)="setText('spKey', $event)"
+                  ></textarea>
+                  @if (fieldError('sso-sp-key'); as message) {
+                    <span id="sso-sp-key-error" class="field-error" role="alert">{{
+                      message
+                    }}</span>
+                  }
+                }
+              </div>
+              <div class="field">
+                <label for="sso-sp-certificate" i18n="@@sso.spCertificate">Certificate</label>
+                <textarea
+                  id="sso-sp-certificate"
+                  rows="4"
+                  spellcheck="false"
+                  [value]="d.spCertificate"
+                  [attr.aria-invalid]="fieldError('sso-sp-certificate') ? true : null"
+                  [attr.aria-describedby]="
+                    fieldError('sso-sp-certificate') ? 'sso-sp-certificate-error' : null
+                  "
+                  (input)="setText('spCertificate', $event)"
+                ></textarea>
+                @if (fieldError('sso-sp-certificate'); as message) {
+                  <span id="sso-sp-certificate-error" class="field-error" role="alert">{{
+                    message
+                  }}</span>
+                }
+              </div>
+            </div>
           </div>
-          <div class="field">
-            <label for="sso-mapping-org" i18n="@@sso.mapping.org">Organization</label>
-            <select id="sso-mapping-org" (change)="setNewOrg($event)">
-              <option value="" [selected]="newOrg() === ''" i18n="@@sso.mapping.chooseOrg">
-                Choose…
-              </option>
-              @for (o of org.orgs(); track o.id) {
-                <option [value]="o.id" [selected]="newOrg() === o.id">{{ o.name }}</option>
-              }
-            </select>
-          </div>
-          <div class="field">
-            <label for="sso-mapping-project" i18n="@@sso.mapping.project">Project</label>
-            <select id="sso-mapping-project" (change)="setNewProject($event)">
-              <option value="" [selected]="newProject() === ''" i18n="@@sso.mapping.wholeOrgOption">
-                Whole organization
-              </option>
-              @for (p of projects(); track p.id) {
-                <option [value]="p.id" [selected]="newProject() === p.id">{{ p.name }}</option>
-              }
-            </select>
-          </div>
-          <div class="field">
-            <label for="sso-mapping-role" i18n="@@sso.mapping.role">Role</label>
-            <select id="sso-mapping-role" (change)="setNewRole($event)">
-              @for (r of roles; track r) {
-                <option [value]="r" [disabled]="roleDisabled(r)" [selected]="newRole() === r">
-                  {{ roleLabel(r) }}
-                </option>
-              }
-            </select>
-          </div>
-          <button type="submit" class="btn" i18n="@@sso.mapping.add">Add</button>
-        </form>
-        @if (newMappingError(); as message) {
-          <p class="field-error" role="alert">{{ message }}</p>
         }
-        <div class="row">
+
+        <h4 class="form-section" i18n="@@sso.accounts">Accounts</h4>
+        <div class="setting-row">
+          <div class="setting-text">
+            <span id="sso-first-sign-in" class="setting-name" i18n="@@sso.row.firstSignIn"
+              >First sign-in</span
+            >
+          </div>
+          <div class="setting-field" role="group" aria-labelledby="sso-first-sign-in">
+            <label class="row">
+              <input type="checkbox" [checked]="d.jit" (change)="setFlag('jit', $event)" />
+              <span i18n="@@sso.jit">Create an account at the first sign-in</span>
+            </label>
+            <label class="row">
+              <input
+                type="checkbox"
+                [checked]="d.linkByEmail"
+                (change)="setFlag('linkByEmail', $event)"
+              />
+              <span i18n="@@sso.linkByEmail"
+                >Link to an existing account with the same verified email (never an instance
+                administrator)</span
+              >
+            </label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <span id="sso-claims-title" class="setting-name" i18n="@@sso.row.claims">Claims</span>
+            <p id="sso-claims-hint" i18n="@@sso.claimsHint">
+              Leave a claim empty to not read it. For SAML, an empty username uses the NameID.
+            </p>
+          </div>
+          <div class="setting-field sso-claims" role="group" aria-labelledby="sso-claims-title">
+            @for (claim of claimFields; track claim.id) {
+              <div class="field">
+                <label [for]="claim.id">{{ claim.label }}</label>
+                <input
+                  maxlength="128"
+                  autocomplete="off"
+                  spellcheck="false"
+                  [id]="claim.id"
+                  [value]="d[claim.key]"
+                  [attr.aria-invalid]="fieldError(claim.id) ? true : null"
+                  [attr.aria-describedby]="
+                    fieldError(claim.id)
+                      ? 'sso-claims-hint ' + claim.id + '-error'
+                      : 'sso-claims-hint'
+                  "
+                  (input)="setText(claim.key, $event)"
+                />
+                @if (fieldError(claim.id); as message) {
+                  <span class="field-error" role="alert" [id]="claim.id + '-error'">{{
+                    message
+                  }}</span>
+                }
+              </div>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="sso-required-claims" i18n="@@sso.requiredClaims"
+              >Required claims (optional)</label
+            >
+            <p id="sso-required-claims-hint" i18n="@@sso.requiredClaimsHint">
+              One claim=value a line, at most 5. A sign-in without each of them is refused.
+            </p>
+          </div>
+          <div class="setting-field">
+            <textarea
+              id="sso-required-claims"
+              rows="2"
+              spellcheck="false"
+              placeholder="hd=example.com"
+              i18n-placeholder="@@sso.requiredClaimsPlaceholder"
+              [value]="d.requiredClaims"
+              [attr.aria-invalid]="fieldError('sso-required-claims') ? true : null"
+              [attr.aria-describedby]="
+                fieldError('sso-required-claims')
+                  ? 'sso-required-claims-hint sso-required-claims-error'
+                  : 'sso-required-claims-hint'
+              "
+              (input)="setText('requiredClaims', $event)"
+            ></textarea>
+            @if (fieldError('sso-required-claims'); as message) {
+              <span id="sso-required-claims-error" class="field-error" role="alert">{{
+                message
+              }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="sso-group-source" i18n="@@sso.groupSource">Groups come from</label>
+          </div>
+          <div class="setting-field">
+            <select id="sso-group-source" (change)="setGroupSource($event)">
+              <option
+                value="none"
+                [selected]="d.groupSource === 'none'"
+                i18n="@@sso.groupSource.none"
+              >
+                Nowhere: no group mappings
+              </option>
+              <option
+                value="claims"
+                [selected]="d.groupSource === 'claims'"
+                i18n="@@sso.groupSource.claims"
+              >
+                The groups claim at each sign-in
+              </option>
+              <option
+                value="scim"
+                [selected]="d.groupSource === 'scim'"
+                i18n="@@sso.groupSource.scim"
+              >
+                SCIM provisioning
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="setting-actions">
+          <button type="button" class="btn" (click)="close()" i18n="@@sso.close">Close</button>
           <button
-            type="button"
+            type="submit"
             class="btn btn-primary"
             [attr.aria-disabled]="busy() ? true : null"
-            (click)="saveMappings(c)"
-            i18n="@@sso.mapping.save"
+            i18n="@@sso.save"
           >
-            Save mappings
+            Save
           </button>
-          @if (mappingsDirty()) {
-            <span class="hint" i18n="@@sso.mapping.unsaved">Not saved yet.</span>
-          }
         </div>
-      </section>
+      </form>
 
-      <section class="card" aria-labelledby="sso-danger-title">
-        <h3 id="sso-danger-title" i18n="@@sso.deleteTitle">Delete the connection</h3>
-        <p class="muted" i18n="@@sso.deleteIntro">
-          Deleting it removes its linked identities, group mappings and SCIM tokens. Memberships
-          granted by its group sync stay, as manual memberships.
-        </p>
+      @if (c) {
+        <section class="card panel sso-check" aria-labelledby="sso-check-title">
+          <div class="panel-head">
+            <h3 id="sso-check-title" i18n="@@sso.checkTitle">Check the connection</h3>
+            <div class="row">
+              <button
+                type="button"
+                class="btn"
+                [attr.aria-disabled]="busy() ? true : null"
+                (click)="runTest(c)"
+                i18n="@@sso.test"
+              >
+                Test
+              </button>
+              @if (c.protocol === 'saml') {
+                <button
+                  type="button"
+                  class="btn"
+                  [attr.aria-disabled]="busy() || !c.saml?.metadataUrl ? true : null"
+                  [disabled]="!c.saml?.metadataUrl"
+                  (click)="readMetadata(c)"
+                  i18n="@@sso.readMetadata"
+                >
+                  Read metadata
+                </button>
+              }
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="sso-test" aria-live="polite">
+              @if (test(); as t) {
+                @if (t.ok) {
+                  <p class="alert alert-success" i18n="@@sso.test.ok">The test passed.</p>
+                } @else if (t.problem; as problem) {
+                  <p class="alert alert-error">{{ testText(problem.code) }}</p>
+                } @else {
+                  <p class="alert alert-error">{{ testText('') }}</p>
+                }
+                @if (t.endpoints; as e) {
+                  <dl class="facts">
+                    <dt i18n="@@sso.endpoint.authorization">Authorization endpoint</dt>
+                    <dd>
+                      <code class="prose-text">{{ e.authorization ?? '-' }}</code>
+                    </dd>
+                    <dt i18n="@@sso.endpoint.token">Token endpoint</dt>
+                    <dd>
+                      <code class="prose-text">{{ e.token ?? '-' }}</code>
+                    </dd>
+                    <dt i18n="@@sso.endpoint.jwks">JWKS</dt>
+                    <dd>
+                      <code class="prose-text">{{ e.jwks ?? '-' }}</code>
+                    </dd>
+                    <dt i18n="@@sso.endpoint.userinfo">Userinfo endpoint</dt>
+                    <dd>
+                      <code class="prose-text">{{ e.userinfo ?? '-' }}</code>
+                    </dd>
+                  </dl>
+                  <p class="hint" i18n="@@sso.endpoint.hint">
+                    Qualor contacts only these addresses and the issuer's discovery document.
+                  </p>
+                }
+                @if (t.certificates; as certs) {
+                  <ul class="link-list certificates">
+                    @for (cert of certs; track cert.sha256) {
+                      <li>
+                        <span i18n="@@sso.fingerprint">SHA-256</span>{{ ' ' }}
+                        <code class="prose-text">{{ cert.sha256 }}</code>
+                        ·
+                        <span i18n="@@sso.notAfter"
+                          >valid until {{ cert.notAfter | dateTime }}</span
+                        >
+                        @if (cert.expired) {
+                          <span class="badge badge-warn" i18n="@@sso.expired">Expired</span>
+                        }
+                      </li>
+                    }
+                  </ul>
+                }
+              }
+            </div>
+            @if (preview(); as p) {
+              <section id="sso-metadata-preview" aria-labelledby="sso-preview-title">
+                <h4 id="sso-preview-title" i18n="@@sso.preview.title">
+                  What the metadata would change
+                </h4>
+                <p class="muted" i18n="@@sso.preview.intro">
+                  Nothing is saved yet. Check the certificates' fingerprints with the identity
+                  provider before you save: the metadata document itself is not signed.
+                </p>
+                <dl class="facts">
+                  <dt i18n="@@sso.idpEntityId">Identity provider entity id</dt>
+                  <dd>
+                    <code class="prose-text">{{ p.idpEntityId }}</code>
+                    @if (p.idpEntityId !== c.saml?.idpEntityId) {
+                      <span class="badge badge-warn" i18n="@@sso.preview.changed">Changed</span>
+                    }
+                  </dd>
+                  <dt i18n="@@sso.idpSsoUrl">SSO URL (HTTP-Redirect)</dt>
+                  <dd>
+                    <code class="prose-text">{{ p.idpSsoUrl }}</code>
+                    @if (p.idpSsoUrl !== c.saml?.idpSsoUrl) {
+                      <span class="badge badge-warn" i18n="@@sso.preview.changed">Changed</span>
+                    }
+                  </dd>
+                  <dt i18n="@@sso.preview.certificates">Signing certificates</dt>
+                  <dd>
+                    <ul class="link-list certificates">
+                      @for (cert of p.certificates; track cert.sha256) {
+                        <li>
+                          <span i18n="@@sso.fingerprint">SHA-256</span>{{ ' ' }}
+                          <code class="prose-text">{{ cert.sha256 }}</code>
+                          ·
+                          <span i18n="@@sso.notAfter"
+                            >valid until {{ cert.notAfter | dateTime }}</span
+                          >
+                          @if (cert.expired) {
+                            <span class="badge badge-warn" i18n="@@sso.expired">Expired</span>
+                          }
+                        </li>
+                      }
+                    </ul>
+                  </dd>
+                </dl>
+                <div class="row">
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    [attr.aria-disabled]="busy() ? true : null"
+                    (click)="applyPreview(c)"
+                    i18n="@@sso.preview.save"
+                  >
+                    Save these values
+                  </button>
+                  <button
+                    type="button"
+                    class="btn"
+                    (click)="discardPreview()"
+                    i18n="@@sso.preview.discard"
+                  >
+                    Discard
+                  </button>
+                </div>
+              </section>
+            }
+          </div>
+        </section>
+
+        <section class="card panel" aria-labelledby="sso-mappings-title">
+          <div class="panel-head">
+            <h3 id="sso-mappings-title" i18n="@@sso.mappings">Group mappings</h3>
+          </div>
+          <div class="panel-body sso-mappings-intro">
+            <p class="muted" i18n="@@sso.mappingsIntro">
+              Each group the identity provider sends gives a role in an organization or on a
+              project. The group * matches everyone of this connection. Memberships made by hand are
+              left alone.
+            </p>
+            @if (d.groupSource === 'none') {
+              <p class="alert alert-info" i18n="@@sso.mappingsNoSource">
+                Groups come from nowhere, so these mappings are not used. Choose a source above and
+                save.
+              </p>
+            }
+            @if (mappingsError(); as message) {
+              <p class="alert alert-error" role="alert">{{ message }}</p>
+            }
+          </div>
+          <div class="panel-scroll">
+            <table id="sso-mappings">
+              <thead>
+                <tr>
+                  <th scope="col" i18n="@@sso.mapping.group">Group</th>
+                  <th scope="col" i18n="@@sso.mapping.org">Organization</th>
+                  <th scope="col" i18n="@@sso.mapping.project">Project</th>
+                  <th scope="col" i18n="@@sso.mapping.role">Role</th>
+                  <th scope="col" class="actions-col">
+                    <span class="visually-hidden" i18n="@@sso.col.actions">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (m of mappings(); track $index) {
+                  <tr>
+                    <th scope="row">
+                      <code class="prose-text">{{ m.group }}</code>
+                    </th>
+                    <td>{{ m.organizationKey }}</td>
+                    <td>
+                      @if (m.projectKey) {
+                        {{ m.projectKey }}
+                      } @else {
+                        <span class="muted" i18n="@@sso.mapping.wholeOrg">Whole organization</span>
+                      }
+                    </td>
+                    <td>{{ roleLabel(m.role) }}</td>
+                    <td class="actions-col">
+                      <button
+                        type="button"
+                        class="btn-quiet danger"
+                        [attr.aria-label]="removeMappingLabel(m.group)"
+                        (click)="removeMapping($index)"
+                        i18n="@@sso.mapping.remove"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="5" class="muted" i18n="@@sso.mapping.empty">No mappings.</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <form class="sso-mapping-add" novalidate (submit)="addMapping($event)">
+            <div class="field">
+              <label for="sso-mapping-group" i18n="@@sso.mapping.group">Group</label>
+              <input
+                id="sso-mapping-group"
+                maxlength="255"
+                autocomplete="off"
+                spellcheck="false"
+                [value]="newGroup()"
+                (input)="setNewGroup($event)"
+              />
+            </div>
+            <div class="field">
+              <label for="sso-mapping-org" i18n="@@sso.mapping.org">Organization</label>
+              <select id="sso-mapping-org" (change)="setNewOrg($event)">
+                <option value="" [selected]="newOrg() === ''" i18n="@@sso.mapping.chooseOrg">
+                  Choose…
+                </option>
+                @for (o of org.orgs(); track o.id) {
+                  <option [value]="o.id" [selected]="newOrg() === o.id">{{ o.name }}</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="sso-mapping-project" i18n="@@sso.mapping.project">Project</label>
+              <select id="sso-mapping-project" (change)="setNewProject($event)">
+                <option
+                  value=""
+                  [selected]="newProject() === ''"
+                  i18n="@@sso.mapping.wholeOrgOption"
+                >
+                  Whole organization
+                </option>
+                @for (p of projects(); track p.id) {
+                  <option [value]="p.id" [selected]="newProject() === p.id">{{ p.name }}</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="sso-mapping-role" i18n="@@sso.mapping.role">Role</label>
+              <select id="sso-mapping-role" (change)="setNewRole($event)">
+                @for (r of roles; track r) {
+                  <option [value]="r" [disabled]="roleDisabled(r)" [selected]="newRole() === r">
+                    {{ roleLabel(r) }}
+                  </option>
+                }
+              </select>
+            </div>
+            <button type="submit" class="btn" i18n="@@sso.mapping.add">Add</button>
+            @if (newMappingError(); as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+          </form>
+          <div class="panel-foot row">
+            <button
+              type="button"
+              class="btn btn-primary"
+              [attr.aria-disabled]="busy() ? true : null"
+              (click)="saveMappings(c)"
+              i18n="@@sso.mapping.save"
+            >
+              Save mappings
+            </button>
+            @if (mappingsDirty()) {
+              <span class="hint" i18n="@@sso.mapping.unsaved">Not saved yet.</span>
+            }
+          </div>
+        </section>
+
+        <section class="card panel sso-danger" aria-labelledby="sso-danger-title">
+          <div>
+            <h3 id="sso-danger-title" i18n="@@sso.deleteTitle">Delete the connection</h3>
+            <p i18n="@@sso.deleteIntro">
+              Deleting it removes its linked identities, group mappings and SCIM tokens. Memberships
+              granted by its group sync stay, as manual memberships.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-danger"
+            [attr.aria-disabled]="busy() ? true : null"
+            (click)="remove(c)"
+            i18n="@@sso.delete"
+          >
+            Delete
+          </button>
+        </section>
+      }
+    </div>
+  }
+
+  <dialog
+    #confirmDialog
+    id="confirm-dialog"
+    class="dialog"
+    aria-labelledby="confirm-title"
+    aria-describedby="confirm-text"
+    (close)="cancelDelete()"
+  >
+    <div class="dialog-head">
+      <h2 id="confirm-title" i18n="@@sso.deleteTitle">Delete the connection</h2>
+    </div>
+    <div class="dialog-body">
+      <p id="confirm-text">{{ pendingDelete()?.question }}</p>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" autofocus (click)="cancelDelete()" i18n="@@dialog.cancel">
+        Cancel
+      </button>
+      @if (pendingDelete()) {
         <button
           type="button"
-          class="btn btn-danger"
-          [attr.aria-disabled]="busy() ? true : null"
-          (click)="remove(c)"
+          class="btn btn-danger-solid"
+          (click)="confirmDelete()"
           i18n="@@sso.delete"
         >
           Delete
         </button>
-      </section>
-    }
-  }
+      }
+    </div>
+  </dialog>
 }

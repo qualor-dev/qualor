@@ -19,10 +19,11 @@ import type { ResponseBody } from '../api/types';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { can } from '../auth/permissions';
-import { notFound } from '../project/branches';
+import { branchView, findBranch, notFound } from '../project/branches';
 import { CurrentProject } from '../project/current-project';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { inputValue } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import { isUuid } from '../shared/ids';
 import { KeysetList } from '../shared/keyset';
 import { safeHelpUri } from '../shared/links';
@@ -60,9 +61,10 @@ export function readSnippet(raw: unknown): Snippet | null {
 }
 
 /**
- * One issue: its location and snippet, the rule and its description, the status change and
- * severity override, and the changelog. Rule descriptions are Markdown from analyzers; they are
- * shown as plain text (plan 1F ruling Y5), never rendered as HTML.
+ * One issue, in two columns (spec §7.4): its message, snippet, AI panel, rule and changelog on
+ * the left; its details (the branch's title looked up by id) and the status change and severity
+ * override on the right. Rule descriptions are Markdown from analyzers; they are shown as plain
+ * text (plan 1F ruling Y5), never rendered as HTML.
  *
  * - The history is oldest first; after a change it is loaded to its end, so the new entry (the
  *   server logs transitions and severity overrides) shows at the bottom.
@@ -75,8 +77,9 @@ export function readSnippet(raw: unknown): Snippet | null {
  */
 @Component({
   selector: 'q-issue-page',
-  imports: [AiPanel, DateTimePipe, LabelPipe, RouterLink],
+  imports: [AiPanel, DateTimePipe, Icon, LabelPipe, RouterLink],
   templateUrl: './issue.page.html',
+  styleUrl: './issue.page.css',
 })
 export class IssuePage {
   private readonly api = inject(Api);
@@ -119,6 +122,21 @@ export class IssuePage {
         params: { path: { id }, query: { limit: 100, ...(cursor ? { cursor } : {}) } },
       }),
     ),
+  );
+
+  /** The issue's branch id: a string, so a changed issue of the same branch asks nothing again. */
+  private readonly branchId = computed(() => this.current()?.branchId);
+  /** The issue's branch, for the details; a failed lookup leaves the row out. */
+  protected readonly branch = resource({
+    params: () => {
+      const branchId = this.branchId();
+      return branchId ? { projectId: this.projectId(), branchId } : undefined;
+    },
+    loader: async ({ params }) =>
+      branchView(await findBranch(this.api, params.projectId, params.branchId)),
+  });
+  protected readonly branchTitle = computed(() =>
+    this.branch.hasValue() ? this.branch.value().title : null,
   );
 
   protected readonly snippet = computed(() => readSnippet(this.current()?.snippet));

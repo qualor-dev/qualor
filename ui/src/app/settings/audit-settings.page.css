@@ -1,0 +1,43 @@
+/* Audit settings (spec §7.8): retention and the stream in setting rows, its status apart. */
+.audit-settings {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.audit-settings > * {
+  margin: 0;
+}
+.panel-head h3 {
+  margin: 0;
+}
+.panel-head {
+  padding-bottom: 14px;
+}
+.audit-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.audit-stream-status .panel-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 0;
+}
+.audit-stream-status .panel-body > p {
+  margin: 0;
+}
+.audit-stream-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.excerpt {
+  max-height: 10rem;
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

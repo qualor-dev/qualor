@@ -16,13 +16,17 @@ import type { ItemOf } from '../api/types';
 import { PASSWORD_MIN_LENGTH } from '../auth/change-password.page';
 import { SessionStore } from '../auth/session';
 import { DateTimePipe } from '../shared/date-time.pipe';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus, rowByKey } from '../shared/focus';
 import { clearField, inputValue, isChecked } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 
 export type User = ItemOf<'/api/v0/users'>;
 type UserPatch = { active: boolean } | { isInstanceAdmin: boolean };
 type Field = 'username' | 'displayName' | 'email' | 'password';
+/** A change to one's own account the confirmation dialog asks about. */
+type Pending = { kind: 'active' | 'admin'; user: User; question: string };
 
 /** The server's bound on passwords (`z.string().min(12).max(256)`). */
 const PASSWORD_MAX_LENGTH = 256;
@@ -40,12 +44,17 @@ const PASSWORD_MAX_LENGTH = 256;
  * - Badges say how a user signs in (sso-scim.md §18): "No password", "SSO" (an identity of a
  *   connection) and "SCIM" (provisioned by an identity provider, which may overwrite changes made
  *   here); the "No password" filter lists only the users without a password.
- * - Deactivating or demoting yourself asks first; your own password is changed on the password
- *   page (a reset here would end your session), so the reset form does not offer you.
+ * - Deactivating or demoting yourself asks first; your own password is changed from the user menu
+ *   (a reset here would end your session), so your row offers no reset.
+ *
+ * Step 8 of the redesign (spec §7.8): the users in a panel with quiet row actions; "New user"
+ * opens a dialog holding the form; each other user's row resets their password in a dialog that
+ * names them (it replaces the separate form with its user list); asking about your own account
+ * uses the page's dialog instead of the browser's `confirm()`.
  */
 @Component({
   selector: 'q-users-page',
-  imports: [DateTimePipe],
+  imports: [DateTimePipe, Icon],
   templateUrl: './users.page.html',
 })
 export class UsersPage {
@@ -74,25 +83,26 @@ export class UsersPage {
    * sign-on, for instance after `sso` lapsed, so an admin can give them a password.
    */
   protected readonly noPasswordOnly = signal(false);
-  protected readonly others = computed(() =>
-    this.list.items().filter((u) => u.id !== this.selfId()),
-  );
   protected readonly username = signal('');
   protected readonly displayName = signal('');
   protected readonly email = signal('');
   protected readonly password = signal('');
   protected readonly admin = signal(false);
   protected readonly errors = signal<Partial<Record<Field, string>>>({});
-  protected readonly resetUser = signal('');
+  /** The user whose password the reset dialog sets; null while it is closed. */
+  protected readonly resetTarget = signal<User | null>(null);
   protected readonly resetPassword = signal('');
   protected readonly resetError = signal<string | null>(null);
+  /** A refusal of an open dialog's form that names no field, shown in that dialog. */
+  protected readonly dialogError = signal<string | null>(null);
+  /** The change to your own account the confirmation dialog asks about. */
+  protected readonly pending = signal<Pending | null>(null);
   protected readonly announcement = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly minLength = PASSWORD_MIN_LENGTH;
   protected readonly maxLength = PASSWORD_MAX_LENGTH;
   protected readonly isChecked = isChecked;
-  protected readonly value = inputValue;
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly table = viewChild<ElementRef<HTMLElement>>('table');
   private readonly usernameField = viewChild<ElementRef<HTMLInputElement>>('usernameField');
@@ -100,6 +110,9 @@ export class UsersPage {
   private readonly emailField = viewChild<ElementRef<HTMLInputElement>>('emailField');
   private readonly passwordField = viewChild<ElementRef<HTMLInputElement>>('passwordField');
   private readonly resetField = viewChild<ElementRef<HTMLInputElement>>('resetField');
+  private readonly createDialog = viewChild<ElementRef<HTMLDialogElement>>('createDialog');
+  private readonly resetDialog = viewChild<ElementRef<HTMLDialogElement>>('resetDialog');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
   private started = false;
 
   constructor() {
@@ -131,6 +144,29 @@ export class UsersPage {
     this.resetError.set(null);
   }
 
+  /** Opens "New user" on an empty form, not an instance admin. */
+  protected openCreate(): void {
+    this.username.set('');
+    this.displayName.set('');
+    this.email.set('');
+    this.password.set('');
+    this.admin.set(false);
+    this.errors.set({});
+    this.dialogError.set(null);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
+  }
+
+  protected closeCreate(): void {
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    this.forgetPassword();
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: a typed initial password never stays. */
+  protected forgetPassword(): void {
+    clearField(this.passwordField(), this.password);
+  }
+
   protected async create(event: Event): Promise<void> {
     event.preventDefault();
     if (this.busy()) return;
@@ -139,6 +175,7 @@ export class UsersPage {
     if (!username) errors.username = usernameMessage();
     if (this.password().length < PASSWORD_MIN_LENGTH) errors.password = passwordShort();
     this.errors.set(errors);
+    this.dialogError.set(null);
     if (Object.keys(errors).length > 0) {
       this.focusFirstInvalid();
       return;
@@ -164,6 +201,8 @@ export class UsersPage {
         clearField(this.displayNameField(), this.displayName);
         clearField(this.emailField(), this.email);
         this.admin.set(false);
+        const dialog = this.createDialog()?.nativeElement;
+        if (dialog) closeModal(dialog);
         await this.list.refresh();
       },
       (err) => this.createFailed(err),
@@ -174,13 +213,12 @@ export class UsersPage {
 
   protected async toggleActive(user: User): Promise<void> {
     if (this.busy()) return;
-    if (
-      user.active &&
-      user.id === this.selfId() &&
-      !window.confirm(
-        $localize`:@@users.confirmDeactivateSelf:Deactivate your own account? You are signed out at once and cannot sign in again.`,
-      )
-    ) {
+    if (user.active && user.id === this.selfId()) {
+      this.ask({
+        kind: 'active',
+        user,
+        question: $localize`:@@users.confirmDeactivateSelf:Deactivate your own account? You are signed out at once and cannot sign in again.`,
+      });
       return;
     }
     await this.patch(user, { active: !user.active }, 0);
@@ -188,23 +226,75 @@ export class UsersPage {
 
   protected async toggleAdmin(user: User): Promise<void> {
     if (this.busy()) return;
-    if (
-      user.isInstanceAdmin &&
-      user.id === this.selfId() &&
-      !window.confirm(
-        $localize`:@@users.confirmDemoteSelf:Remove your own instance admin role? You can no longer manage users.`,
-      )
-    ) {
+    if (user.isInstanceAdmin && user.id === this.selfId()) {
+      this.ask({
+        kind: 'admin',
+        user,
+        question: $localize`:@@users.confirmDemoteSelf:Remove your own instance admin role? You can no longer manage users.`,
+      });
       return;
     }
     await this.patch(user, { isInstanceAdmin: !user.isInstanceAdmin }, 1);
   }
 
+  private ask(pending: Pending): void {
+    this.pending.set(pending);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pending() !== null,
+    );
+  }
+
+  protected async confirmPending(): Promise<void> {
+    const pending = this.pending();
+    if (!pending) return;
+    // Cleared first: the dialog's close event then finds nothing to cancel.
+    this.pending.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    if (pending.kind === 'active') await this.patch(pending.user, { active: false }, 0);
+    else await this.patch(pending.user, { isInstanceAdmin: false }, 1);
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing changes. */
+  protected cancelPending(): void {
+    this.pending.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  /** Opens the reset dialog for another user's row. */
+  protected openReset(user: User): void {
+    if (this.busy() || user.id === this.selfId()) return;
+    this.resetTarget.set(user);
+    this.resetPassword.set('');
+    this.resetError.set(null);
+    this.dialogError.set(null);
+    openAfterRender(
+      this.injector,
+      () => this.resetDialog()?.nativeElement,
+      () => this.resetTarget() !== null,
+    );
+  }
+
+  protected closeReset(): void {
+    const dialog = this.resetDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    this.cancelReset();
+  }
+
+  /** The reset dialog closed, however: its user and typed password are forgotten. */
+  protected cancelReset(): void {
+    this.resetTarget.set(null);
+    clearField(this.resetField(), this.resetPassword);
+  }
+
   protected async reset(event: Event): Promise<void> {
     event.preventDefault();
-    if (this.busy()) return;
-    const user = this.others().find((u) => u.id === this.resetUser());
-    if (!user) return;
+    const user = this.resetTarget();
+    if (this.busy() || !user) return;
+    this.dialogError.set(null);
     if (this.resetPassword().length < PASSWORD_MIN_LENGTH) {
       this.resetError.set(passwordShort());
       this.resetField()?.nativeElement.focus();
@@ -223,11 +313,15 @@ export class UsersPage {
         this.announcement.set(
           $localize`:@@users.reset:${user.username}:username: must choose a new password at the next sign-in.`,
         );
+        this.closeReset();
       },
       (err) => {
-        if (fieldErrors(err)['body.password'] === undefined) return false;
-        this.resetError.set(passwordShort());
-        this.resetField()?.nativeElement.focus();
+        if (fieldErrors(err)['body.password'] !== undefined) {
+          this.resetError.set(passwordShort());
+          this.resetField()?.nativeElement.focus();
+        } else {
+          this.dialogError.set(problemMessage(err));
+        }
         return true;
       },
     );
@@ -254,7 +348,10 @@ export class UsersPage {
     this.list.items.update((items) => items.map((u) => (u.id === user.id ? user : u)));
   }
 
-  /** Maps a refused new user to its fields; true when every problem found a field. */
+  /**
+   * Maps a refused new user to its fields; a refusal that names none shows in the dialog. Always
+   * handled there: the dialog stays open with what was typed, the password aside.
+   */
   private createFailed(err: unknown): boolean {
     const fields = fieldErrors(err);
     const errors: Partial<Record<Field, string>> = {};
@@ -271,8 +368,9 @@ export class UsersPage {
     }
     if (err instanceof ApiError && err.code === 'EMAIL_TAKEN') errors.email = problemMessage(err);
     this.errors.set(errors);
+    if (Object.keys(errors).length === 0) this.dialogError.set(problemMessage(err));
     this.focusFirstInvalid();
-    return Object.keys(errors).length > 0;
+    return true;
   }
 
   /** Moves focus to the first field of the new-user form with an error. */
@@ -292,7 +390,8 @@ export class UsersPage {
 
   /**
    * Runs one change; while one runs, the buttons stay enabled (and focusable) but do nothing.
-   * `onError` may place the error on fields (returning true); anything else is an alert.
+   * `onError` may place the error on fields or in a dialog (returning true); anything else is an
+   * alert on the page.
    */
   private async run(
     action: () => Promise<void>,

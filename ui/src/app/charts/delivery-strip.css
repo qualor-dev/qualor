@@ -1,0 +1,93 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.strip-caption {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.strip-plot {
+  position: relative;
+  flex: none;
+}
+svg {
+  display: block;
+  overflow: visible;
+}
+svg:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.baseline {
+  stroke: var(--chart-baseline);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.bar.status-succeeded {
+  fill: var(--ok);
+}
+.bar.status-failed {
+  fill: var(--bad);
+}
+.bar.status-pending {
+  fill: var(--chart-spark);
+}
+.bar.active {
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.strip-rate,
+.strip-pending,
+.strip-none {
+  margin: 0;
+  font-size: 13px;
+}
+/* The pending count wears the pending bar's mark, as a legend would. */
+.strip-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pending-mark {
+  width: 7px;
+  height: 4px;
+  border-radius: 1.5px;
+  background: var(--chart-spark);
+}
+.strip-rate strong {
+  font-variant-numeric: tabular-nums;
+}
+.chart-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  min-width: 11rem;
+  max-width: 18rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 8px 24px -8px rgb(10 27 51 / 0.45);
+  font-size: 12px;
+  line-height: 1.35;
+  transform: translateX(-12px);
+  pointer-events: none;
+}
+.chart-tip.flip {
+  transform: translateX(calc(-100% + 12px));
+}
+.tip-date,
+.tip-detail {
+  color: var(--ink-muted);
+}

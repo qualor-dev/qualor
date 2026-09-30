@@ -8,14 +8,6 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
-- SonarQube-compatible rules: `qualor/scanner-dotnet` adds SonarAnalyzer.CSharp 9.32 to the .NET
-  build (rule keys `roslyn:S####`), and `qualor/scanner` runs eslint-plugin-sonarjs 2.0.4 with its
-  recommended rules as a new `sonarjs` engine for JavaScript and TypeScript (`sonarjs:S####`). Both
-  are the last LGPL-3.0 releases and do not change. `qualor import sonarqube` maps `csharpsquid:`,
-  `javascript:` and `typescript:` rules one to one where the bundled versions have them. A project's
-  own SonarAnalyzer reference replaces the bundled one; an ESLint issue and the sonarjs rule that
-  decorates it count once. Turn them off with `analyzers.roslyn.sonarAnalyzer: false` and
-  `analyzers.sonarjs.enabled: false`.
 - Python: `.py` files are a language of their own (`python`) with metrics and duplication, and a
   new `ruff` engine runs Ruff 0.16 (MIT) from `qualor/scanner` with Qualor's own rule selection
   (`qualor-default`: Pyflakes, pycodestyle errors, flake8-bugbear, Pylint errors and
@@ -28,12 +20,6 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Changed
 
-- `sonarjs` is now a built-in engine id. A `qualor.yml` `sarif:` entry with `engine: sonarjs` no
-  longer validates (pick another id), and an imported tool whose name becomes `sonarjs` is reported
-  as `ext-sonarjs`.
-- `qualor dotnet begin` writes a new version of its MSBuild hook. The `qualor dotnet begin` of an
-  older CLI treats that hook as not its own and stops with exit 2, so on a self-hosted runner whose
-  builds share one MSBuild user directory, upgrade every `qualor` CLI on it together.
 - A report that holds Python files is refused (422) by a Qualor server older than this release:
   upgrade the server before the scanner.
 - `.py` files were language `other`; they now count in lines of code, complexity and duplication,
@@ -46,6 +32,41 @@ All notable changes to Qualor are listed here, newest first. The format follows
   `engine: ruff` is a config error. A Ruff SARIF you still import is reported as `ext-ruff`, and
   each of its findings counts once with the built-in `ruff` finding of the same code on the same
   line (the built-in one is shown).
+
+## [0.2.0] - 2026-09-30
+
+### Added
+
+- SonarQube-compatible rules: `qualor/scanner-dotnet` adds SonarAnalyzer.CSharp 9.32 to the .NET
+  build (rule keys `roslyn:S####`), and `qualor/scanner` runs eslint-plugin-sonarjs 2.0.4 with its
+  recommended rules as a new `sonarjs` engine for JavaScript and TypeScript (`sonarjs:S####`). Both
+  are the last LGPL-3.0 releases and do not change. `qualor import sonarqube` maps `csharpsquid:`,
+  `javascript:` and `typescript:` rules one to one where the bundled versions have them. A project's
+  own SonarAnalyzer reference replaces the bundled one; an ESLint issue and the sonarjs rule that
+  decorates it count once. Turn them off with `analyzers.roslyn.sonarAnalyzer: false` and
+  `analyzers.sonarjs.enabled: false`.
+- **Settings → Organizations**: an instance admin sees every organisation and creates one with
+  **New organization**.
+- The **Branches** tab of a project deletes a branch or merge request, after a confirmation.
+
+### Changed
+
+- The web UI is redesigned, in the light and dark themes, and every page fits a phone and a
+  tablet. A project's overview shows the quality gate's verdict with the condition that failed,
+  the measures on new code, coverage, issues, duplication and size with their trends, and the
+  history of open issues. The issues list has a filter bar and collapsible facets, and an issue
+  shows its code, the AI assistant and its history beside its details. A quality gate's
+  conditions are changed in their own rows. Settings are grouped as **Your account**,
+  **Organization** and **Instance**, and creating or deleting something asks in a dialog. The
+  account, **Change password** and **Sign out** are in a menu on the top bar.
+- Projects are mapped to their GitLab and GitHub repositories on a page of their own, **Settings →
+  Repositories**, instead of the **Projects** table of **Settings → GitLab**.
+- `sonarjs` is now a built-in engine id. A `qualor.yml` `sarif:` entry with `engine: sonarjs` no
+  longer validates (pick another id), and an imported tool whose name becomes `sonarjs` is reported
+  as `ext-sonarjs`.
+- `qualor dotnet begin` writes a new version of its MSBuild hook. The `qualor dotnet begin` of an
+  older CLI treats that hook as not its own and stops with exit 2, so on a self-hosted runner whose
+  builds share one MSBuild user directory, upgrade every `qualor` CLI on it together.
 
 ## [0.1.1] - 2026-09-29
 

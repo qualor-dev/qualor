@@ -1,4 +1,4 @@
-<p>
+<p class="issue-back">
   <a class="back-link" [routerLink]="['/projects', projectId(), 'issues']" i18n="@@issue.back"
     >Back to issues</a
   >
@@ -6,203 +6,254 @@
 @if (loadError(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
 } @else if (current(); as i) {
-  <article class="stack">
-    <header class="card">
-      <h2 class="prose-text">{{ i.message }}</h2>
-      <p class="row">
-        <span class="badge badge-{{ i.severity }}">{{ i.severity | label: 'severity' }}</span>
-        @if (i.severityOverridden) {
-          <span class="muted" i18n="@@issue.overridden">(set by a person)</span>
-        }
-        <span class="badge badge-tag">{{ i.quality | label: 'quality' }}</span>
-        <span class="badge badge-tag">{{ i.kind | label: 'kind' }}</span>
-        <span class="badge badge-tag">{{ i.status | label: 'status' }}</span>
-        @if (i.inNewCode) {
-          <span class="badge badge-accent" i18n="@@issue.newCode">New code</span>
-        }
-      </p>
-      @if (i.path) {
-        <p>
-          <code class="prose-text">{{ i.path }}{{ i.startLine ? ':' + i.startLine : '' }}</code>
+  <div class="issue-layout">
+    <article class="issue-main">
+      <header class="issue-header">
+        <h2 class="prose-text">{{ i.message }}</h2>
+        <p class="issue-tags">
+          <span class="badge badge-{{ i.severity }}">{{ i.severity | label: 'severity' }}</span>
+          @if (i.severityOverridden) {
+            <span class="muted" i18n="@@issue.overridden">(set by a person)</span>
+          }
+          <!-- At one column the details and actions come after the story: the status stays here. -->
+          <span class="badge badge-tag issue-status-tag">{{ i.status | label: 'status' }}</span>
+          @if (i.inNewCode) {
+            <span class="badge badge-accent" i18n="@@issue.newCode">New code</span>
+          }
+          @if (i.duplicateOfIssueId) {
+            <span class="badge badge-tag" i18n="@@issues.duplicate">Duplicate</span>
+          }
         </p>
-      }
-      <p class="muted" i18n="@@issue.seen">
-        First seen {{ i.firstSeenAt | dateTime }} · rule {{ i.rule.key }}
-      </p>
-      @if (i.duplicateOfIssueId; as primary) {
-        <p>
-          <a [routerLink]="['/projects', projectId(), 'issues', primary]" i18n="@@issue.duplicateOf"
-            >This issue duplicates another one; see the original.</a
-          >
-        </p>
-      }
-    </header>
-
-    @if (snippet(); as s) {
-      <section aria-labelledby="snippet-heading">
-        <h3 id="snippet-heading" i18n="@@issue.code">Code</h3>
-        <pre
-          class="snippet"
-          tabindex="0"
-        ><code>@for (line of s.lines; track $index) {<span class="snippet-line" [class.hit]="s.startLine + $index === i.startLine"><span class="ln">{{ s.startLine + $index }}</span>{{ line }}</span>}</code></pre>
-      </section>
-    }
-
-    <q-ai-panel
-      [issue]="i"
-      [canAsk]="canAsk()"
-      [canTriage]="canTriage()"
-      (acceptTriage)="openFalsePositive($event)"
-    />
-
-    @if (canTriage()) {
-      <section class="card stack" aria-labelledby="actions-heading">
-        <div>
-          <h3 id="actions-heading" #actionsHeading tabindex="-1" i18n="@@issue.actions">Change</h3>
-          <div role="status">
-            @if (announcement(); as message) {
-              <p class="alert alert-success">{{ message }}</p>
-            }
-          </div>
-        </div>
-        @if (error(); as message) {
-          <div class="row">
-            <p class="alert alert-error" role="alert">{{ message }}</p>
-            @if (retryOffer.pending()) {
-              <button
-                type="button"
-                class="btn"
-                [disabled]="busy() || retryOffer.waiting()"
-                (click)="retry()"
-                i18n="@@issue.retry"
-              >
-                Try again
-              </button>
-            }
-          </div>
-        }
-        @if (targets().length > 0) {
-          <div class="field">
-            <label for="issue-comment" i18n="@@issue.comment">Comment</label>
-            <textarea
-              #commentField
-              id="issue-comment"
-              [attr.aria-describedby]="
-                suggestionId() ? 'issue-comment-hint issue-suggestion' : 'issue-comment-hint'
-              "
-              [attr.maxlength]="commentMax()"
-              [value]="comment()"
-              (input)="comment.set(inputValue($event))"
-            ></textarea>
-            <span id="issue-comment-hint" class="hint" i18n="@@issue.commentHint"
-              >Required for won't fix and false positive.</span
+        @if (i.duplicateOfIssueId; as primary) {
+          <p>
+            <a
+              [routerLink]="['/projects', projectId(), 'issues', primary]"
+              i18n="@@issue.duplicateOf"
+              >This issue duplicates another one; see the original.</a
             >
-            @if (suggestionId()) {
-              <p id="issue-suggestion" class="alert alert-info row">
-                <span i18n="@@issue.suggestionNote"
-                  >Pressing False positive also records that the AI triage suggestion was shown. The
-                  decision and the comment are yours.</span
-                >
-                <button
-                  type="button"
-                  class="btn btn-link"
-                  (click)="dropSuggestion()"
-                  i18n="@@issue.suggestionDrop"
-                >
-                  Do not record it
-                </button>
-              </p>
-            }
-          </div>
-          <div class="row">
-            @for (t of targets(); track t) {
-              <button
-                type="button"
-                class="btn"
-                [disabled]="busy() || (needsComment(t) && !comment().trim())"
-                (click)="transition(t)"
-              >
-                {{ t | label: 'transition' }}
-              </button>
-            }
-          </div>
-        } @else {
-          <p class="muted" i18n="@@issue.closed">
-            A closed issue cannot change; it reopens if an analysis finds it again.
           </p>
         }
-        <form class="row" (submit)="saveSeverity($event)">
-          <label for="issue-severity" class="label" i18n="@@issue.severity">Severity</label>
-          <select id="issue-severity" (change)="setSeverity($event)">
-            @for (s of severities; track s) {
-              <option [value]="s" [selected]="s === i.severity">{{ s | label: 'severity' }}</option>
+      </header>
+
+      @if (snippet(); as s) {
+        <section class="code-window" aria-labelledby="snippet-heading">
+          <h3 id="snippet-heading" class="visually-hidden" i18n="@@issue.code">Code</h3>
+          <div class="code-head">
+            @if (i.path) {
+              <code>{{ i.path }}</code>
             }
-          </select>
-          <button
-            type="submit"
-            class="btn"
-            [disabled]="busy() || !severityChanged()"
-            i18n="@@issue.severitySave"
-          >
-            Set severity
-          </button>
-        </form>
-      </section>
-    } @else if (readOnlyRole()) {
-      <p class="muted" i18n="@@issue.readOnlyRole">
-        Your role lets you read this issue, not change its status or severity.
-      </p>
-    }
-
-    <section class="card" aria-labelledby="rule-heading">
-      <h3 id="rule-heading">{{ i.rule.name }}</h3>
-      <p class="muted">
-        <code>{{ i.rule.key }}</code>
-        @if (helpUri(); as href) {
-          ·
-          <a [href]="href" target="_blank" rel="noopener noreferrer" i18n="@@issue.ruleDocs"
-            >Rule documentation</a
-          >
-        }
-      </p>
-      @if (i.rule.descriptionMd; as description) {
-        <p class="prose-text">{{ description }}</p>
+            @if (i.startLine) {
+              &ngsp;<span i18n="@@issue.code.line">Line {{ i.startLine }}</span>
+            }
+          </div>
+          <pre
+            class="snippet"
+            tabindex="0"
+          ><code>@for (line of s.lines; track $index) {<span class="snippet-line" [class.hit]="s.startLine + $index === i.startLine"><span class="ln">{{ s.startLine + $index }}</span>{{ line }}</span>}</code></pre>
+        </section>
       }
-    </section>
 
-    <section class="card" aria-labelledby="changelog-heading">
-      <h3 id="changelog-heading" i18n="@@issue.changelog">History</h3>
-      @if (changelog.items().length > 0) {
-        <ol class="stack timeline">
-          @for (entry of changelog.items(); track entry.id) {
-            <li>
-              <span class="muted">{{ entry.createdAt | dateTime }}</span>
-              <strong>
-                @if (entry.user; as user) {
-                  {{ user.username }}
-                } @else {
-                  <span i18n="@@issue.changelog.system">Analysis</span>
-                }
-              </strong>
-              <span>{{ changeText(entry) }}</span>
-              @if (entry.comment; as comment) {
-                <p class="prose-text">{{ comment }}</p>
-              }
-            </li>
+      <q-ai-panel
+        [issue]="i"
+        [canAsk]="canAsk()"
+        [canTriage]="canTriage()"
+        (acceptTriage)="openFalsePositive($event)"
+      />
+
+      <section class="card" aria-labelledby="rule-heading">
+        <h3 id="rule-heading">{{ i.rule.name }}</h3>
+        <p class="rule-meta">
+          <code>{{ i.rule.key }}</code>
+          @if (helpUri(); as href) {
+            <a class="external-link" [href]="href" target="_blank" rel="noopener noreferrer"
+              ><ng-container i18n="@@issue.ruleDocs">Rule documentation</ng-container
+              ><q-icon name="external"
+            /></a>
           }
-        </ol>
+        </p>
+        @if (i.rule.descriptionMd; as description) {
+          <p class="prose-text">{{ description }}</p>
+        }
+      </section>
+
+      <section class="card" aria-labelledby="changelog-heading">
+        <h3 id="changelog-heading" i18n="@@issue.changelog">History</h3>
+        @if (changelog.items().length > 0) {
+          <ol class="timeline">
+            @for (entry of changelog.items(); track entry.id) {
+              <li>
+                <p class="timeline-what">
+                  <strong>
+                    @if (entry.user; as user) {
+                      {{ user.username }}
+                    } @else {
+                      <span i18n="@@issue.changelog.system">Analysis</span>
+                    }
+                  </strong>
+                  &ngsp;<span>{{ changeText(entry) }}</span>
+                </p>
+                <p class="timeline-when">{{ entry.createdAt | dateTime }}</p>
+                @if (entry.comment; as comment) {
+                  <p class="timeline-comment prose-text">{{ comment }}</p>
+                }
+              </li>
+            }
+          </ol>
+        }
+        @if (changelog.loaded() && changelog.items().length === 0) {
+          <p class="muted" i18n="@@issue.changelog.empty">No changes yet.</p>
+        }
+        @if (changelog.error(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        @if (changelog.nextCursor()) {
+          <button type="button" class="btn" (click)="changelog.more()" i18n="@@list.more">
+            Load more
+          </button>
+        }
+      </section>
+    </article>
+
+    <!-- The side column: Details and, for those who may, Change, each card named by its heading. -->
+    <aside class="issue-aside">
+      <section class="card" aria-labelledby="details-heading">
+        <h3 id="details-heading" i18n="@@issue.details">Details</h3>
+        <dl class="details-list">
+          <dt i18n="@@issue.details.severity">Severity</dt>
+          <dd>
+            <span class="badge badge-{{ i.severity }}">{{ i.severity | label: 'severity' }}</span>
+          </dd>
+          <dt i18n="@@issue.details.status">Status</dt>
+          <dd>{{ i.status | label: 'status' }}</dd>
+          <dt i18n="@@issue.details.type">Type</dt>
+          <dd>{{ i.kind | label: 'kind' }}</dd>
+          <dt i18n="@@issue.details.quality">Software quality</dt>
+          <dd>{{ i.quality | label: 'quality' }}</dd>
+          <dt i18n="@@issue.details.rule">Rule</dt>
+          <dd>
+            <code>{{ i.rule.key }}</code>
+          </dd>
+          @if (i.path) {
+            <dt i18n="@@issue.details.file">File</dt>
+            <dd>
+              <code>{{ i.path }}{{ i.startLine ? ':' + i.startLine : '' }}</code>
+            </dd>
+          }
+          <dt i18n="@@issue.details.firstSeen">First seen</dt>
+          <dd>{{ i.firstSeenAt | dateTime }}</dd>
+          @if (branchTitle(); as title) {
+            <dt i18n="@@issue.details.branch">Branch</dt>
+            <dd>{{ title }}</dd>
+          }
+        </dl>
+      </section>
+
+      @if (canTriage()) {
+        <section class="card issue-actions" aria-labelledby="actions-heading">
+          <div>
+            <h3 id="actions-heading" #actionsHeading tabindex="-1" i18n="@@issue.actions">
+              Change
+            </h3>
+            <div role="status">
+              @if (announcement(); as message) {
+                <p class="alert alert-success">{{ message }}</p>
+              }
+            </div>
+          </div>
+          @if (error(); as message) {
+            <div class="stack">
+              <p class="alert alert-error" role="alert">{{ message }}</p>
+              @if (retryOffer.pending()) {
+                <p>
+                  <button
+                    type="button"
+                    class="btn"
+                    [disabled]="busy() || retryOffer.waiting()"
+                    (click)="retry()"
+                    i18n="@@issue.retry"
+                  >
+                    Try again
+                  </button>
+                </p>
+              }
+            </div>
+          }
+          @if (targets().length > 0) {
+            <div class="field">
+              <label for="issue-comment" i18n="@@issue.comment">Comment</label>
+              <textarea
+                #commentField
+                id="issue-comment"
+                [attr.aria-describedby]="
+                  suggestionId() ? 'issue-comment-hint issue-suggestion' : 'issue-comment-hint'
+                "
+                [attr.maxlength]="commentMax()"
+                [value]="comment()"
+                (input)="comment.set(inputValue($event))"
+              ></textarea>
+              <span id="issue-comment-hint" class="hint" i18n="@@issue.commentHint"
+                >Required for won't fix and false positive.</span
+              >
+              @if (suggestionId()) {
+                <p id="issue-suggestion" class="alert alert-info">
+                  <span i18n="@@issue.suggestionNote"
+                    >Pressing False positive also records that the AI triage suggestion was shown.
+                    The decision and the comment are yours.</span
+                  >
+                  &ngsp;<button
+                    type="button"
+                    class="btn btn-link"
+                    (click)="dropSuggestion()"
+                    i18n="@@issue.suggestionDrop"
+                  >
+                    Do not record it
+                  </button>
+                </p>
+              }
+            </div>
+            <div class="transitions">
+              @for (t of targets(); track t) {
+                <button
+                  type="button"
+                  class="btn"
+                  [disabled]="busy() || (needsComment(t) && !comment().trim())"
+                  (click)="transition(t)"
+                >
+                  {{ t | label: 'transition' }}
+                </button>
+              }
+            </div>
+          } @else {
+            <p class="muted" i18n="@@issue.closed">
+              A closed issue cannot change; it reopens if an analysis finds it again.
+            </p>
+          }
+          <form class="severity-form" (submit)="saveSeverity($event)">
+            <label for="issue-severity" class="label" i18n="@@issue.severity">Severity</label>
+            <div class="severity-row">
+              <select id="issue-severity" (change)="setSeverity($event)">
+                @for (s of severities; track s) {
+                  <option [value]="s" [selected]="s === i.severity">
+                    {{ s | label: 'severity' }}
+                  </option>
+                }
+              </select>
+              <button
+                type="submit"
+                class="btn"
+                [disabled]="busy() || !severityChanged()"
+                i18n="@@issue.severitySave"
+              >
+                Set severity
+              </button>
+            </div>
+          </form>
+        </section>
+      } @else if (readOnlyRole()) {
+        <p class="muted readonly-note" i18n="@@issue.readOnlyRole">
+          Your role lets you read this issue, not change its status or severity.
+        </p>
       }
-      @if (changelog.loaded() && changelog.items().length === 0) {
-        <p class="muted" i18n="@@issue.changelog.empty">No changes yet.</p>
-      }
-      @if (changelog.error(); as message) {
-        <p class="alert alert-error" role="alert">{{ message }}</p>
-      }
-      @if (changelog.nextCursor()) {
-        <button type="button" class="btn" (click)="changelog.more()" i18n="@@list.more">
-          Load more
-        </button>
-      }
-    </section>
-  </article>
+    </aside>
+  </div>
 }

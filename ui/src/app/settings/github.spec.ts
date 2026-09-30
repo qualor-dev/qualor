@@ -78,6 +78,14 @@ function upload(root: HTMLElement, selector: string, file: File): void {
 }
 
 describe('GitHubPage (github.md §2)', () => {
+  it('points to Repositories for the mapping of projects to repositories', async () => {
+    setup();
+    const { root } = await render();
+    const link = root.querySelector('.settings-head a[href="/settings/repositories"]');
+    expect(link?.textContent?.trim()).toBe('Repositories');
+    expect(root.textContent).not.toContain('Projects list of the');
+  });
+
   it('lists only GitHub connections, with the App id and the webhook URL', async () => {
     setup();
     const { root } = await render();
@@ -180,13 +188,21 @@ describe('GitHubPage (github.md §2)', () => {
       },
     });
     const { fixture, root } = await render();
+    const state = () => root.querySelector('section .connection-state')?.textContent?.trim();
+    expect(state()).toBe('Not tested yet');
     type(root, '#test-ref-g1', 'acme/api');
     button(root, 'Test').click();
     await settle(fixture);
+    expect(state()).toBe('Test failed');
     expect(server.requestsTo('POST', '/api/v0/scm-connections/g1/test')[0]?.body).toEqual({
       projectRef: 'acme/api',
     });
     expect(root.textContent).toContain(githubProblemText('not_installed'));
+    // A failed test reads as the failure it is, never in the green news of a success.
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
+    expect(root.querySelector('p[role="alert"]')?.textContent).toContain(
+      githubProblemText('not_installed'),
+    );
   });
 
   it('has a sentence of its own for every test code', () => {
@@ -286,7 +302,7 @@ describe('GitHubPage (github.md §2)', () => {
     expect(root.textContent).not.toContain('whsec-new-0123456789');
   });
 
-  it('changes the App id, sets and removes the webhook secret, and deletes after a confirmation', async () => {
+  it("changes the App id, sets and removes the webhook secret, and deletes after the page's own confirmation", async () => {
     const server = setup();
     let connections: Connection[] = [GITHUB];
     server.on('GET', '/api/v0/scm-connections', () => ({ body: page(connections) }));
@@ -295,7 +311,7 @@ describe('GitHubPage (github.md §2)', () => {
       connections = [];
       return { status: 204 };
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
     type(root, '#app-id-g1', '654321');
     root.querySelector('#app-id-g1')!.closest('form')!.dispatchEvent(new Event('submit'));
@@ -318,9 +334,14 @@ describe('GitHubPage (github.md §2)', () => {
     ]);
     button(root, 'Delete').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+    expect(ask.open).toBe(true);
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
       'Delete the GitHub App 123456 at https://api.github.com? Its projects stop being decorated.',
     );
+    button(ask, 'Delete').click();
+    await settle(fixture);
+    expect(confirm).not.toHaveBeenCalled();
     expect(server.requestsTo('DELETE', '/api/v0/scm-connections/g1')).toHaveLength(1);
     expect(root.textContent).toContain('No GitHub App yet.');
     confirm.mockRestore();

@@ -157,6 +157,32 @@ describe('LoginPage single sign-on (sso-scim.md §18)', () => {
     expect(button.compareDocumentPosition(form!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('sits in the auth layout, each provider a button with the key icon', async () => {
+    const { el } = await render({
+      password: 'everyone',
+      providers: [
+        { id: 'c1', name: 'Acme SSO', protocol: 'oidc', startUrl: '/api/v0/ee/sso/c1/start' },
+        { id: 'c2', name: 'Corp SAML', protocol: 'saml', startUrl: '/api/v0/ee/sso/c2/start' },
+      ],
+    });
+    expect(el.querySelector('q-auth-layout main.auth-main .auth-card h1')?.textContent).toContain(
+      'Sign in to Qualor',
+    );
+    for (const id of ['c1', 'c2']) {
+      const button = el.querySelector<HTMLAnchorElement>(`[data-test=sso-${id}]`)!;
+      expect(button.classList.contains('btn')).toBe(true);
+      expect(button.querySelector('q-icon')?.getAttribute('name')).toBe('key');
+    }
+    // "or sign in with a password" divides the providers from the form.
+    expect(el.querySelector('.auth-or')?.textContent?.trim()).toBe('or sign in with a password');
+  });
+
+  it('shows no divider without providers', async () => {
+    const { el } = await render({ password: 'everyone', providers: [] });
+    expect(el.querySelector('form[data-test=password-form]')).not.toBeNull();
+    expect(el.querySelector('.auth-or')).toBeNull();
+  });
+
   it('never builds a start link that leaves this server', async () => {
     const { fixture, el } = await render({
       password: 'everyone',
@@ -198,6 +224,9 @@ describe('LoginPage single sign-on (sso-scim.md §18)', () => {
     expect(el.querySelector('form[data-test=password-form]')).toBeNull();
     const toggle = el.querySelector<HTMLButtonElement>('[data-test=emergency-sign-in]')!;
     expect(toggle.textContent).toContain('Emergency administrator sign-in');
+    // A quiet link under the card, its own width: not a grid spanning the card (final review).
+    expect(getComputedStyle(toggle).display).not.toBe('grid');
+    expect(getComputedStyle(toggle).width).toBe('auto');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     toggle.click();
     await settle(fixture);

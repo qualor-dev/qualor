@@ -114,6 +114,28 @@ describe('RulesPage', () => {
     );
   });
 
+  it('opens a rule in its row: name as the disclosure, key in mono, languages as chips', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/rules', {
+      body: page([
+        { ...rule('eslint:a', 'https://eslint.org/a'), languages: ['typescript', 'javascript'] },
+      ]),
+    });
+    const fixture = TestBed.createComponent(RulesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const row = root.querySelector('tbody tr')!;
+    expect(row.querySelector('details > summary .rule-name')?.textContent?.trim()).toBe(
+      'Rule eslint:a',
+    );
+    expect(row.querySelector('code.rule-key')?.textContent?.trim()).toBe('eslint:a');
+    expect([...row.querySelectorAll('.lang-chip')].map((c) => c.textContent?.trim())).toEqual([
+      'TypeScript',
+      'JavaScript',
+    ]);
+    expect(row.querySelector('a.external-link')?.textContent?.trim()).toBe('Rule documentation');
+  });
+
   it('searches on submit and filters by quality and severity', async () => {
     const server = setup(false);
     server.on('GET', '/api/v0/rules', { body: page([]) });
@@ -163,6 +185,10 @@ describe('ProfilesPage', () => {
       ),
     ).toEqual(['–', 'Qualor way']);
     expect(root.querySelector('[aria-labelledby="profiles-java"] tbody')?.children).toHaveLength(1);
+    // Intended change (step 7): the form is in the "New profile" dialog.
+    button(root, 'New profile').click();
+    await settle(fixture);
+    expect(root.querySelector<HTMLDialogElement>('dialog#create-dialog')?.open).toBe(true);
     const name = root.querySelector<HTMLInputElement>('#profile-name')!;
     name.value = 'Strict TS';
     name.dispatchEvent(new Event('input'));
@@ -220,6 +246,8 @@ describe('ProfilesPage', () => {
     expect(root.querySelector('#profile-name-error')?.textContent).toContain(
       'This name is reserved for the built-in profiles.',
     );
+    // Announced: focus stays on the submit button (step 7 review).
+    expect(root.querySelector('#profile-name-error')?.getAttribute('role')).toBe('alert');
     expect(root.querySelector('#profile-name')?.getAttribute('aria-invalid')).toBe('true');
     expect(server.requestsTo('POST', '/api/v0/quality-profiles')).toHaveLength(0);
     // A name the server refuses for a reason the page does not know still lands on the field.
@@ -255,11 +283,13 @@ describe('ProfilesPage', () => {
     expect(root.querySelector('#profile-parent-error')?.textContent).toContain(
       'This profile cannot be the parent',
     );
+    expect(root.querySelector('#profile-parent-error')?.getAttribute('role')).toBe('alert');
     answer = { status: 409, body: problem(409, 'PROFILE_LIMIT_REACHED') };
     root.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(root.querySelector('#profile-parent-error')).toBeNull();
-    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+    // The refusal stays in the dialog that asked (step 7 review).
+    expect(root.querySelector('#create-dialog [role="alert"]')?.textContent).toContain(
       'This organization has as many quality profiles as it can have.',
     );
   });
@@ -271,22 +301,51 @@ describe('ProfilesPage', () => {
       status: 409,
       body: problem(409, 'PROFILE_HAS_CHILDREN'),
     });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    const confirm = vi.spyOn(window, 'confirm');
     const fixture = TestBed.createComponent(ProfilesPage);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    button(root, 'Delete').click();
+    const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+    button(root, 'Delete', root.querySelector('tbody')!).click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith('Delete the quality profile "Payments"?');
+    // Intended change (step 7): the page's own dialog asks, not the browser's.
+    expect(confirm).not.toHaveBeenCalled();
+    expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
+      'Delete the quality profile "Payments"?',
+    );
+    button(root, 'Cancel', ask).click();
+    await settle(fixture);
     expect(server.requestsTo('DELETE', '/api/v0/quality-profiles/p2')).toHaveLength(0);
-    confirm.mockReturnValueOnce(true);
-    button(root, 'Delete').click();
+    button(root, 'Delete', root.querySelector('tbody')!).click();
+    await settle(fixture);
+    button(root, 'Delete', ask).click();
     await settle(fixture);
     expect(server.requestsTo('DELETE', '/api/v0/quality-profiles/p2')).toHaveLength(1);
     expect(root.querySelector('[role="alert"]')?.textContent).toContain(
       'Other profiles inherit from this one; delete them first.',
     );
     confirm.mockRestore();
+  });
+
+  it('heads each language with its count, and shows what each profile does with new rules', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-profiles', {
+      body: page([
+        profile('p1', 'Qualor way', { isBuiltin: true, isDefault: true }),
+        profile('p2', 'Payments', { unknownRules: 'ignore' }),
+      ]),
+    });
+    const fixture = TestBed.createComponent(ProfilesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const ts = root.querySelector('[aria-labelledby="profiles-typescript"]')!;
+    expect(ts.querySelector('h2')?.textContent?.trim()).toBe('TypeScript');
+    expect(ts.querySelector('.panel-sub')?.textContent?.trim()).toBe('2 profiles');
+    expect(
+      [...ts.querySelectorAll('tbody tr')].map((tr) => tr.children[2]?.textContent?.trim()),
+    ).toEqual(['Active', 'Ignored']);
+    // A language without a profile gets no empty panel.
+    expect(root.querySelector('[aria-labelledby="profiles-java"]')).toBeNull();
   });
 
   it('copies a built-in profile and offers no change to a member', async () => {
@@ -368,6 +427,35 @@ describe('ProfilePage', () => {
     expect(
       server.requestsTo('DELETE', '/api/v0/quality-profiles/p2/rules/eslint%3Ano-console'),
     ).toHaveLength(1);
+  });
+
+  it('names the profile on the band with its facts: language, parent and new rules', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles/p2', {
+      body: profile('p2', 'Payments <b>TS</b>', { parentId: 'p1', unknownRules: 'ignore' }),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p1', {
+      body: profile('p1', 'Qualor way', { isBuiltin: true }),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', {
+      body: page([profileRule('eslint:eqeqeq')]),
+    });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe('Payments <b>TS</b>');
+    expect(root.querySelector('nav[aria-label="Breadcrumb"] a')?.getAttribute('href')).toBe(
+      '/profiles',
+    );
+    const meta = root.querySelector('.page-meta');
+    expect(meta?.querySelector('.lang-chip')?.textContent?.trim()).toBe('TypeScript');
+    const parent = meta?.querySelector<HTMLAnchorElement>('a.profile-parent');
+    expect(parent?.textContent?.trim()).toBe('Qualor way');
+    expect(parent?.getAttribute('href')).toBe('/profiles/p1');
+    expect(meta?.textContent).toContain('Rules this profile does not set are ignored.');
+    // The key form closes the rules panel.
+    expect(root.querySelector('#profile-rule-key')?.closest('.card.panel')).not.toBeNull();
   });
 
   it('keeps a built-in profile read-only', async () => {
@@ -779,5 +867,147 @@ describe('profiles and rules: focus, in-place updates, announcements (fix round 
     root.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(root.querySelector('[role="status"]')?.textContent).toContain('1 rule shown.');
+  });
+});
+
+describe('profiles: step 7 review', () => {
+  it('after a delete, focus stays in the panel of the deleted profile', async () => {
+    const server = setup();
+    let items = [
+      profile('p1', 'Qualor way', { isBuiltin: true, isDefault: true }),
+      profile('p2', 'Qualor way', { isBuiltin: true, isDefault: true, language: 'java' }),
+      profile('p3', 'Payments'),
+    ];
+    server.on('GET', '/api/v0/quality-profiles', () => ({ body: page(items) }));
+    server.on('DELETE', '/api/v0/quality-profiles/p3', () => {
+      items = items.filter((p) => p.id !== 'p3');
+      return { status: 204 };
+    });
+    const fixture = TestBed.createComponent(ProfilesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const row = root.querySelector<HTMLElement>('tr[data-key="p3"]')!;
+    const panel = row.closest('table');
+    button(root, 'Delete', row).click();
+    await settle(fixture);
+    button(root, 'Delete', root.querySelector('dialog#confirm-dialog')!).click();
+    await settle(fixture);
+    expect(root.querySelector('tr[data-key="p3"]')).toBeNull();
+    // The TypeScript panel's remaining row, never a row of the Java panel below.
+    expect(document.activeElement?.closest('table')).toBe(panel);
+    expect(document.activeElement?.closest('tr')?.getAttribute('data-key')).toBe('p1');
+  });
+
+  it('wraps a long parent name in its cell rather than painting over the next ones', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles', {
+      body: page([profile('p1', 'P'.repeat(80)), profile('p2', 'Child', { parentId: 'p1' })]),
+    });
+    const fixture = TestBed.createComponent(ProfilesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const parentCell = root.querySelectorAll('tr[data-key="p2"] td')[1]!;
+    expect(parentCell.textContent?.trim()).toBe('P'.repeat(80));
+    expect(getComputedStyle(parentCell).overflowWrap).toBe('anywhere');
+  });
+
+  it('lets a long parent name on the band wrap instead of running off a phone', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles/p2', {
+      body: profile('p2', 'Child', { parentId: 'p1' }),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p1', { body: profile('p1', 'P'.repeat(80)) });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', { body: page([]) });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const parent = root.querySelector<HTMLElement>('a.profile-parent')!;
+    expect(getComputedStyle(parent).overflowWrap).toBe('anywhere');
+    expect(getComputedStyle(parent).minWidth).toBe('0px');
+  });
+
+  it("keeps a rule's name cell wide enough to read on a phone", async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles/p2', { body: profile('p2', 'Payments') });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', {
+      body: page([profileRule('eslint:eqeqeq')]),
+    });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const cell = root.querySelector<HTMLElement>('tr[data-key="eslint:eqeqeq"] td')!;
+    expect(parseFloat(getComputedStyle(cell).minWidth)).toBeGreaterThanOrEqual(200);
+  });
+});
+
+describe('profiles and rules: step 11', () => {
+  it('keeps a rule key under its name, above the description that opens', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/rules', { body: page([rule('eslint:a', null)]) });
+    const fixture = TestBed.createComponent(RulesPage);
+    await settle(fixture);
+    const summary = (fixture.nativeElement as HTMLElement).querySelector(
+      'tbody details > summary',
+    )!;
+    expect(summary.querySelector('.rule-name')?.textContent?.trim()).toBe('Rule eslint:a');
+    expect(summary.querySelector('code.rule-key')?.textContent?.trim()).toBe('eslint:a');
+  });
+
+  it('gives the rules a profile does not set one name, in the list and in its table', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-profiles', { body: page([profile('p1', 'Qualor way')]) });
+    const list = TestBed.createComponent(ProfilesPage);
+    await settle(list);
+    const head = (list.nativeElement as HTMLElement).querySelectorAll('thead th');
+    expect([...head].map((th) => th.textContent?.trim())).toContain('Rules it does not set');
+    TestBed.resetTestingModule();
+    const other = setup(false);
+    other.on('GET', '/api/v0/quality-profiles/p2', { body: profile('p2', 'Payments') });
+    other.on('GET', '/api/v0/quality-profiles/p2/rules', {
+      body: page([profileRule('eslint:eqeqeq', { source: 'default' })]),
+    });
+    const one = TestBed.createComponent(ProfilePage);
+    one.componentRef.setInput('profileId', 'p2');
+    await settle(one);
+    expect((one.nativeElement as HTMLElement).querySelector('tbody')?.textContent).toContain(
+      'Not set here',
+    );
+  });
+
+  it('names the parent in one sentence, and says so when it cannot be loaded', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles/p2', {
+      body: profile('p2', 'Payments', { parentId: 'p1' }),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p1', {
+      status: 500,
+      body: problem(500, 'INTERNAL'),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', { body: page([]) });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.page-meta')?.textContent).toContain(
+      'Inherits from another profile',
+    );
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+      'The parent profile could not be loaded',
+    );
+  });
+
+  it('marks Create profile busy while the server answers', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles', { body: page([]) });
+    server.on('POST', '/api/v0/quality-profiles', () => new Promise(() => undefined));
+    const fixture = TestBed.createComponent(ProfilesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    type(root, '#profile-name', 'Payments');
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(button(root, 'Create profile').getAttribute('aria-disabled')).toBe('true');
   });
 });

@@ -12,9 +12,12 @@ import {
 import { Api, ok } from '../api/api';
 import { ApiError, fieldErrors, problemMessage } from '../api/errors';
 import { SessionStore } from '../auth/session';
-import { DateTimePipe } from '../shared/date-time.pipe';
+import { Meter } from '../charts/meter';
+import { DateTimePipe, formatDate } from '../shared/date-time.pipe';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
+import { Icon } from '../shared/icon';
 import {
   cleanKey,
   knownReasonText,
@@ -25,6 +28,12 @@ import {
 } from './license-text';
 
 export type { LicenseStatus } from './license-text';
+
+const DAY = 86_400_000;
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
 
 /**
  * Settings → Licence (enterprise.md §11), instance admins only. Shows the edition and state in
@@ -39,8 +48,9 @@ export type { LicenseStatus } from './license-text';
  */
 @Component({
   selector: 'q-license-page',
-  imports: [DateTimePipe],
+  imports: [DateTimePipe, Icon, Meter],
   templateUrl: './license.page.html',
+  styleUrl: './license.page.css',
 })
 export class LicensePage {
   private readonly api = inject(Api);
@@ -80,8 +90,75 @@ export class LicensePage {
     return s.source === 'uploaded' || (s.source === null && s.restartRequired);
   });
 
+  /**
+   * The licence's time as a meter (step 9): the days left of its length, or of the grace period,
+   * or that it expired; words for each, since the fill alone says little. None without a licence.
+   */
+  protected readonly timeLeft = computed(() => {
+    const s = this.status();
+    const l = s?.license;
+    // A key the server rejected (revoked, not yet valid) runs nothing: it has no time to show.
+    if (!s || !l || !(s.state === 'active' || s.state === 'grace' || s.state === 'expired')) {
+      return null;
+    }
+    const now = Date.now();
+    const expires = Date.parse(l.expires);
+    const graceEnds = Date.parse(l.graceEndsAt);
+    const total = Math.max(1, Math.round((expires - Date.parse(l.issued)) / DAY));
+    if (s.state === 'grace') {
+      const graceDays = Math.max(1, Math.round((graceEnds - expires) / DAY));
+      const left = clamp(Math.ceil((graceEnds - now) / DAY), 0, graceDays);
+      return {
+        value: left,
+        max: graceDays,
+        text:
+          left === 1
+            ? $localize`:@@license.graceDayLeft:1 day of grace left`
+            : $localize`:@@license.graceDaysLeft:${left}:days: days of grace left`,
+        note: $localize`:@@license.graceStops:Enterprise features stop on ${formatDate(l.graceEndsAt)}:date:`,
+        alert: 'attention' as const,
+      };
+    }
+    if (s.state === 'expired' || now >= expires) {
+      return {
+        value: 0,
+        max: total,
+        text: $localize`:@@license.expiredOn:Expired on ${formatDate(l.expires)}:date:`,
+        note: null,
+        alert: 'failure' as const,
+      };
+    }
+    const left = clamp(Math.ceil((expires - now) / DAY), 0, total);
+    return {
+      value: left,
+      max: total,
+      text:
+        left === 1
+          ? $localize`:@@license.dayLeft:1 day left`
+          : $localize`:@@license.daysLeft:${left}:days: days left`,
+      note: s.expiresSoon
+        ? $localize`:@@license.renewSoon:Renew soon: the licence expires on ${formatDate(l.expires)}:date:`
+        : null,
+      alert: s.expiresSoon ? ('attention' as const) : null,
+    };
+  });
+
+  /** The plugins the server could not load: their features stay off whatever the key says. */
+  protected readonly failedPlugins = computed(
+    () => this.status()?.plugins.filter((p) => p.state === 'failed') ?? [],
+  );
+
+  /** Each feature the key lists (and any active beyond it), and whether it is active now. */
+  protected readonly features = computed(() => {
+    const s = this.status();
+    if (!s) return [];
+    const names = [...new Set([...(s.license?.features ?? []), ...s.activeFeatures])];
+    return names.map((name) => ({ name, active: s.activeFeatures.includes(name) }));
+  });
+
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly keyField = viewChild<ElementRef<HTMLTextAreaElement>>('keyField');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
 
   constructor() {
     if (this.instanceAdmin()) void this.load();
@@ -127,9 +204,21 @@ export class LicensePage {
     });
   }
 
-  protected async remove(): Promise<void> {
+  /** Asks in the page's dialog; nothing is sent until its Remove. */
+  protected remove(): void {
     if (this.busy()) return;
-    if (!window.confirm(licenseTexts.confirmRemove())) return;
+    openAfterRender(this.injector, () => this.confirmDialog()?.nativeElement);
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: the key stays. */
+  protected cancelRemove(): void {
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  protected async confirmRemove(): Promise<void> {
+    this.cancelRemove();
+    if (this.busy()) return;
     await this.run(async () => {
       const status = await ok(this.api.client.DELETE('/api/v0/license'));
       this.status.set(status);

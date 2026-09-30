@@ -11,6 +11,7 @@ import {
   settle,
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
+import { OrgContext } from '../org/org-context';
 import { AiSettingsPage } from './ai.page';
 
 const KEY = ['fake', 'ui', 'key', '0123456789'].join('-');
@@ -60,9 +61,22 @@ const PROJECTS = [
   { id: 'p3', organizationId: 'other-org', key: 'other/api', name: 'Other API' },
 ];
 
+/** The organisation's view of the assistant (`GET /organizations/{id}/ai`): today's use and budgets. */
+function orgAi(overrides: { enabled?: boolean; usage?: object; budgets?: object } = {}) {
+  return {
+    enabled: overrides.enabled ?? true,
+    features: { explain: true, triage: true, fix: false },
+    provider: { kind: 'openai', host: 'ollama:11434', model: 'qwen2.5-coder' },
+    dataSent: ['rule', 'message', 'path', 'language', 'snippet'],
+    usage: { explain: 0, triage: 0, fix: 0, tokens: 0, costUsd: null, ...overrides.usage },
+    budgets: { ...EMPTY.budgets, ...overrides.budgets },
+  };
+}
+
 function setup(settings: object = EMPTY): FakeServer {
   const server = new FakeServer();
   server.on('GET', '/api/v0/system/llm', { body: settings });
+  server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, { body: orgAi({ enabled: false }) });
   server.on('GET', '/api/v0/projects', { body: page(PROJECTS) });
   server.on('GET', '/api/v0/organizations', {
     body: page([{ id: ORG_ID, key: 'default', name: 'Default', createdAt: '', updatedAt: '' }]),
@@ -382,11 +396,129 @@ describe('AiSettingsPage (llm.md §3, §18)', () => {
     expect(root.textContent).not.toContain(KEY);
   });
 
+  it("shows the current organisation's use of today against its budgets, as meters with words", async () => {
+    const server = setup(CONFIGURED);
+    server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, {
+      body: orgAi({
+        usage: { explain: 200, triage: 3, tokens: 1234, costUsd: 0.5 },
+        budgets: { costPerDayUsd: 2 },
+      }),
+    });
+    const { root } = await render();
+    const today = root.querySelector('#ai-today')!;
+    expect(today.querySelector('h3')?.textContent?.trim()).toBe('Today in Default (UTC)');
+    const meters = [...today.querySelectorAll('q-meter')].map((m) =>
+      m.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(meters).toEqual([
+      'Explanations 200 of 200 Budget reached for today',
+      'Triage suggestions 3 of 100',
+      'Fix suggestions 0 of 25',
+      'Tokens 1,234 of 1,000,000',
+      'Cost $0.50 of $2.00',
+    ]);
+  });
+
+  it("reads today's use again after a save, so the meters show the saved budgets", async () => {
+    const server = setup(CONFIGURED);
+    let explainPerDay = 200;
+    server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, () => ({
+      body: orgAi({ usage: { explain: 3 }, budgets: { explainPerDay } }),
+    }));
+    server.on('PUT', '/api/v0/system/llm', () => {
+      explainPerDay = 999;
+      return { body: { ...CONFIGURED, budgets: { ...CONFIGURED.budgets, explainPerDay } } };
+    });
+    const { fixture, root } = await render();
+    const explain = () =>
+      root.querySelector('#ai-today q-meter')?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(explain()).toBe('Explanations 3 of 200');
+    submit(root);
+    await settle(fixture);
+    expect(server.requestsTo('GET', `/api/v0/organizations/${ORG_ID}/ai`)).toHaveLength(2);
+    expect(explain()).toBe('Explanations 3 of 999');
+  });
+
+  it("says when the assistant is off for the organisation, and when today's use cannot be read", async () => {
+    const off = setup(CONFIGURED);
+    const first = await render();
+    expect(first.root.querySelector('#ai-today')?.textContent).toContain(
+      'The assistant is off for Default: nothing is sent.',
+    );
+    expect(first.root.querySelector('#ai-today q-meter')).toBeNull();
+    expect(off.requestsTo('GET', `/api/v0/organizations/${ORG_ID}/ai`)).toHaveLength(1);
+    TestBed.resetTestingModule();
+    const failing = setup(CONFIGURED);
+    failing.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, {
+      status: 500,
+      body: problem(500, 'INTERNAL'),
+    });
+    const second = await render();
+    expect(second.root.querySelector('#ai-today .alert-error')?.textContent).toContain(
+      "Today's use could not be read.",
+    );
+    // The rest of the page renders.
+    expect(second.root.querySelector('form#ai-settings')).not.toBeNull();
+  });
+
   it('asks nothing of the server for a user who is not an instance admin', async () => {
     const server = setup(CONFIGURED);
     TestBed.inject(SessionStore).set(me());
     const { root } = await render();
     expect(root.textContent).toContain('Only instance administrators configure the AI assistant.');
     expect(server.requestsTo('GET', '/api/v0/system/llm')).toHaveLength(0);
+  });
+});
+
+describe('AiSettingsPage: step 11', () => {
+  it('says that a reached token or cost budget holds back every feature', async () => {
+    const server = setup(CONFIGURED);
+    server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, {
+      body: orgAi({ usage: { tokens: 1_000_000 }, budgets: { tokensPerDay: 1_000_000 } }),
+    });
+    const { root } = await render();
+    expect(root.querySelector('#ai-today')?.textContent).toContain(
+      'Every feature waits until midnight UTC: the token or cost budget for today is reached.',
+    );
+  });
+
+  it('says so when there is no organization to show, instead of loading forever', async () => {
+    const server = setup(CONFIGURED);
+    server.on('GET', '/api/v0/organizations', { body: page([]) });
+    const { root } = await render();
+    const today = root.querySelector('#ai-today')!;
+    expect(today.querySelector('h3')?.textContent?.trim()).toBe('Today (UTC)');
+    expect(today.textContent).toContain('There is no organization yet.');
+    expect(today.textContent).not.toContain('Loading');
+  });
+
+  it('says what is sent once, under its heading', async () => {
+    setup(CONFIGURED);
+    const { root } = await render();
+    const sent = root.querySelector('#ai-data-sent .panel-body p')?.textContent?.trim() ?? '';
+    expect(sent.startsWith('The rule, the finding')).toBe(true);
+  });
+});
+
+describe('AiSettingsPage: final review', () => {
+  it('says the organizations could not be loaded, never that there are none', async () => {
+    const server = setup(CONFIGURED);
+    const { fixture, root } = await render();
+    // The header's list fails when read again; the page's own list stays loaded.
+    server.on('GET', '/api/v0/organizations', { status: 500, body: problem(500, 'INTERNAL') });
+    TestBed.inject(OrgContext).organizations.reload();
+    await settle(fixture);
+    const today = root.querySelector('#ai-today')!;
+    expect(today.textContent).not.toContain('There is no organization yet');
+    expect(today.textContent).toContain('The organizations could not be loaded.');
+  });
+
+  it('says nothing waits for midnight when a budget of 0 allows none', async () => {
+    const server = setup(CONFIGURED);
+    server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, {
+      body: orgAi({ usage: { tokens: 0 }, budgets: { tokensPerDay: 0 } }),
+    });
+    const { root } = await render();
+    expect(root.querySelector('#ai-today')?.textContent).not.toContain('midnight');
   });
 });

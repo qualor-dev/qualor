@@ -321,6 +321,74 @@ const PAYMENTS_THIRD: FindingSpec[] = [
   },
 ];
 
+/**
+ * Findings fixed before September, on files removed by then (UI redesign spec §9): the early
+ * history of the overview's charts. None uses eslint:no-console or eslint:no-unused-vars, the rules
+ * `seedDemo` looks up with `byRule` to triage open issues.
+ */
+const PAYMENTS_FIXED: FindingSpec[] = [
+  {
+    engine: 'eslint',
+    rule: 'eqeqeq',
+    path: 'src/payments/legacy-rates.ts',
+    line: 21,
+    message: "Expected '===' and instead saw '=='.",
+  },
+  {
+    engine: 'eslint',
+    rule: 'no-param-reassign',
+    path: 'src/payments/legacy-rates.ts',
+    line: 57,
+    message: "Assignment to function parameter 'rate'.",
+  },
+  {
+    engine: 'semgrep',
+    rule: 'javascript.lang.security.detect-eval-with-expression',
+    path: 'src/payments/legacy-rates.ts',
+    line: 90,
+    message: 'Detected eval() with a non-literal argument.',
+  },
+  {
+    engine: 'eslint',
+    rule: 'eqeqeq',
+    path: 'src/refunds/legacy-queue.ts',
+    line: 14,
+    message: "Expected '===' and instead saw '=='.",
+    severity: 'high',
+  },
+  {
+    engine: 'eslint',
+    rule: 'no-param-reassign',
+    path: 'src/refunds/legacy-queue.ts',
+    line: 33,
+    message: "Assignment to function parameter 'queue'.",
+  },
+  {
+    engine: 'gitleaks',
+    rule: 'generic-api-key',
+    path: 'config/legacy.env',
+    line: 2,
+    message: 'Generic API key detected.',
+  },
+];
+/** The files of those findings, gone from the September analyses on. */
+const LEGACY_FILES: FileSpec[] = [
+  { path: 'src/payments/legacy-rates.ts', lines: 140, ncloc: 110, covered: 22 },
+  { path: 'src/refunds/legacy-queue.ts', lines: 90, ncloc: 70, covered: 14 },
+  { path: 'config/legacy.env', language: 'other', lines: 6, ncloc: 0 },
+];
+/** June to August on main: [day, version, scale, fixed findings still there, base findings]. */
+const PAYMENTS_HISTORY: [string, string, number, number, number][] = [
+  ['2026-06-02', '1.0.0', 0.55, 6, 3],
+  ['2026-06-16', '1.0.1', 0.6, 6, 5],
+  ['2026-06-30', '1.1.0', 0.64, 5, 5],
+  ['2026-07-14', '1.1.1', 0.68, 5, 5],
+  ['2026-07-28', '1.1.2', 0.72, 4, 5],
+  ['2026-08-04', '1.1.3', 0.74, 3, 5],
+  ['2026-08-11', '1.1.4', 0.76, 2, 5],
+  ['2026-08-18', '1.1.5', 0.78, 1, 5],
+];
+
 function paymentsFiles(scale: number, newLines = false): FileSpec[] {
   return [
     {
@@ -403,6 +471,25 @@ export async function seedDemo(base: string, credentials: SeedCredentials): Prom
 
   const payments = await project('acme/payments-api', 'Payments API');
   const common = { projectKey: payments.key, projectName: 'Payments API', branch: 'main' };
+  // A history from June, so the overview's charts have a shape; it leaves the September state as
+  // it was: the same open issues, new code and gate.
+  for (const [index, [day, version, scale, fixed, baseCount]] of PAYMENTS_HISTORY.entries()) {
+    await upload(
+      base,
+      payments.token,
+      payments.key,
+      report({
+        ...common,
+        version,
+        date: `${day}T09:00:00Z`,
+        // A 40-character revision per day (hex32 gives 32).
+        revision: `${hex32(`history:${day}`)}${hex32(`rev:${day}`)}`.slice(0, 40),
+        firstAnalysis: index === 0,
+        files: [...paymentsFiles(scale), ...LEGACY_FILES],
+        findings: [...PAYMENTS_FIXED.slice(0, fixed), ...PAYMENTS_BASE.slice(0, baseCount)],
+      }),
+    );
+  }
   await upload(
     base,
     payments.token,
@@ -412,7 +499,7 @@ export async function seedDemo(base: string, credentials: SeedCredentials): Prom
       version: '1.2.0',
       date: '2026-09-01T09:00:00Z',
       revision: 'a'.repeat(40),
-      firstAnalysis: true,
+      firstAnalysis: false,
       files: paymentsFiles(0.8),
       findings: PAYMENTS_BASE,
     }),

@@ -1,0 +1,84 @@
+/* Settings (spec §7.8): the grouped navigation at the left, the page beside it. */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: start;
+}
+.settings-nav {
+  position: sticky;
+  top: var(--sticky-top);
+  display: grid;
+  gap: var(--space-5);
+}
+.nav-group-title {
+  display: block;
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.nav-group ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nav-group a {
+  display: block;
+  padding: 7px var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 14px;
+  text-decoration: none;
+}
+.nav-group a:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.nav-group a.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.settings-content {
+  min-width: 0;
+}
+/* Narrow: the navigation sits above the page, each group a row with its name at the left. */
+@media (max-width: 56rem) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+  .settings-nav {
+    position: static;
+    gap: var(--space-2);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .nav-group {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+  .nav-group-title {
+    flex: 0 0 6.5rem;
+    margin: 0;
+    padding: 0;
+  }
+  .nav-group ul {
+    display: flex;
+    flex: 1 1 0;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .nav-group a {
+    padding: 6px 10px;
+  }
+  .nav-group a.active {
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+}

@@ -43,9 +43,9 @@ On GitLab.com:
 ```yaml
 # .gitlab-ci.yml
 include:
-  - component: gitlab.com/qualor/qualor/qualor@0.1
+  - component: gitlab.com/qualor/qualor/qualor@0.2
     inputs:
-      image-tag: '0.1'
+      image-tag: '0.2'
 ```
 
 **Self-managed GitLab** can include components only from its own instance, never from
@@ -59,9 +59,9 @@ include:
 
 ```yaml
 include:
-  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.1.1
+  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.2.0
     inputs:
-      image-tag: '0.1.1'
+      image-tag: '0.2.0'
       # image: mirror.acme.internal/qualor/scanner   # your own copy of the image, without the tag
 ```
 
@@ -69,13 +69,13 @@ On GitLab Free and Community Edition, the import is a one-time copy: to get a ne
 again or push its tag to the copy. Pull mirroring (**Settings → Repository → Mirroring
 repositories**) keeps the copy up to date on its own, but needs GitLab Premium.
 
-A short version such as `@0.1` resolves only in a CI/CD catalog project with releases. To use it on
+A short version such as `@0.2` resolves only in a CI/CD catalog project with releases. To use it on
 your instance, turn on **Settings → General → Visibility → CI/CD Catalog project** in the copy, then
 run a pipeline for the release tag (**Build → Pipelines → Run pipeline**). That pipeline creates the
 release the catalog needs; an import alone runs none.
 
-Pin the component and the image to the same release. Use a full version (`@0.1.1`,
-`image-tag: '0.1.1'`) where every pipeline must run exactly the same analyzers.
+Pin the component and the image to the same release. Use a full version (`@0.2.0`,
+`image-tag: '0.2.0'`) where every pipeline must run exactly the same analyzers.
 
 The job runs in merge request pipelines and on the default branch. It uploads the analysis, fails
 with the quality gate, and keeps GitLab's **Code Quality**, **SAST** and **Dependency Scanning**
@@ -84,7 +84,7 @@ and Dependency Scanning widgets need GitLab Ultimate. The Code Quality report wo
 
 | Input | Default | Meaning |
 |---|---|---|
-| `image-tag` | required | the scanner image tag, such as `0.1` or `0.1.0` |
+| `image-tag` | required | the scanner image tag, such as `0.2` or `0.2.0` |
 | `image` | `qualor/scanner` | the scanner image, without the tag |
 | `stage` | `test` | the stage of the job |
 | `job-name` | `qualor` | the job's name |
@@ -108,7 +108,7 @@ qualor:            # the component's job-name
 ```yaml
 qualor:
   stage: test
-  image: { name: qualor/scanner:0.1, entrypoint: [''] }
+  image: { name: qualor/scanner:0.2, entrypoint: [''] }
   variables: { GIT_DEPTH: 0 }        # full history: new code is computed from git
   script:
     - npm ci                          # JS/TS: ESLint runs from node_modules. Java: build first.
@@ -142,17 +142,17 @@ A C# project uses `qualor/scanner-dotnet` and wraps its own build. See
 
 In Qualor, an **org admin** opens **Settings → GitLab**:
 
-1. **New GitLab connection.** Enter the GitLab address (`https://gitlab.example.com`; a path such as
-   `/gitlab` is allowed) and an access token:
+1. **New connection** opens the **New GitLab connection** dialog. Enter the GitLab address
+   (`https://gitlab.example.com`; a path such as `/gitlab` is allowed) and an access token:
    - scope **`api`** and role **Maintainer**. Developer is enough for the merge request comments,
      but GitLab refuses a Developer's commit status on a protected branch, such as the default
      branch;
    - best, a **project access token** of the GitLab project, because it can reach nothing else. For
      many projects, use a **group access token**, or a personal token of a dedicated bot user. Never
      use a person's own token: every comment would carry their name.
-2. In the **Projects** table on the same page, pick the connection for each Qualor project and enter
-   the GitLab project: its numeric id or its full path `group/project`. Use the test action to check
-   that the token can see the project. It also warns when the token's role is below Maintainer.
+2. In **Settings → Repositories**, pick the connection for each Qualor project and enter the GitLab
+   project: its numeric id or its full path `group/project`, then **Save**. **Check** tests that the
+   token can see the project; it also warns when the token's role is below Maintainer.
 3. Ask the server operator to set `QUALOR_PUBLIC_URL` so that comments link back to Qualor.
 
 **Self-managed GitLab on an internal network.** The server calls only hosts that resolve to public
@@ -199,9 +199,9 @@ Either:
 | Exit 5 | the token is wrong, revoked, or of another project |
 | `new code unavailable`, gate `error` | shallow clone: set `GIT_DEPTH: 0` |
 | The analysis appears as a branch, not a merge request | the job ran in a branch pipeline. Use `merge_request_event` rules |
-| No comments | no connection or mapping, `QUALOR_SCM_INTERNAL_HOSTS` missing, or the token lacks the `api` scope. The test on **Settings → GitLab** says which |
+| No comments | no connection or mapping, `QUALOR_SCM_INTERNAL_HOSTS` missing, or the token lacks the `api` scope. **Check** on **Settings → Repositories** says which |
 | Comments on merge requests, but no commit status on the default branch | the token's role is below Maintainer, and the branch is protected. Give the token the Maintainer role |
-| `@0.1` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.1.1`, or see the steps above |
+| `@0.2` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.2.0`, or see the steps above |
 | Comments but no links | `QUALOR_PUBLIC_URL` is not set on the server |
 
 More in [Troubleshooting](./troubleshooting.md).

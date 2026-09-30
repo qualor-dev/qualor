@@ -25,10 +25,10 @@ In the repository (or the organisation) go to **Settings → Secrets and variabl
 | Kind | Name | Value |
 |---|---|---|
 | Variable | `QUALOR_URL` | `https://qualor.example.com` |
-| Variable | `QUALOR_SCANNER_IMAGE` | `qualor/scanner:0.1`, or a full version such as `qualor/scanner:0.1.0` |
+| Variable | `QUALOR_SCANNER_IMAGE` | `qualor/scanner:0.2`, or a full version such as `qualor/scanner:0.2.0` |
 | Secret | `QUALOR_TOKEN` | the token |
 
-For C#, add the variable `QUALOR_SCANNER_DOTNET_IMAGE` with `qualor/scanner-dotnet:0.1` instead.
+For C#, add the variable `QUALOR_SCANNER_DOTNET_IMAGE` with `qualor/scanner-dotnet:0.2` instead.
 
 ## 2. The workflow
 
@@ -112,9 +112,9 @@ In Qualor, an **org admin** opens **Settings → GitHub → New GitHub App**:
 - **Webhook secret** (optional): a random value such as `openssl rand -hex 32`. It is needed only for
   the Re-run button.
 
-Then, in the **Projects** table of **Settings → GitLab** (it lists GitLab and GitHub mappings), pick
-the GitHub connection for each project and enter the repository as `owner/repo`. The test action
-checks that the App is installed there and has the permissions it needs.
+Then, in **Settings → Repositories**, pick the GitHub connection for each project, enter the
+repository as `owner/repo` and **Save**. **Check** tests that the App is installed there and has the
+permissions it needs.
 
 ### Turn on Re-run (optional)
 

@@ -16,7 +16,7 @@ Save the compose file from [Install the server](./install-server.md#the-compose-
 ```sh
 umask 077
 cat > .env <<EOF
-QUALOR_VERSION=0.1
+QUALOR_VERSION=0.2
 QUALOR_SECRET_KEY=$(openssl rand -hex 32)
 QUALOR_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)
 EOF
@@ -25,14 +25,14 @@ docker compose ps          # wait until "server" is healthy (15–30 s)
 grep BOOTSTRAP .env        # the admin password for the first sign-in
 ```
 
-Open <http://127.0.0.1:8080> and sign in as `admin` with that password. Then change it with
-**Change password** at the top right. The server listens on `127.0.0.1` only. To reach it from other
+Open <http://127.0.0.1:8080> and sign in as `admin` with that password. Then change it: open the
+menu under your name at the top right and choose **Change password**. The server listens on `127.0.0.1` only. To reach it from other
 machines, put TLS in front of it ([Install the server](./install-server.md#reverse-proxy-and-tls)).
 
 ## 2. Pull the scanner
 
 ```sh
-docker pull qualor/scanner:0.1
+docker pull qualor/scanner:0.2
 ```
 
 It is about 3 GB, and 1.4 GB of that is Trivy's vulnerability database. CI runners pull it the same
@@ -64,7 +64,7 @@ docker run --rm --network host \
   -e QUALOR_URL=http://127.0.0.1:8080 \
   -e QUALOR_TOKEN=<token> \
   -e QUALOR_PROJECT_KEY=<project key> \
-  qualor/scanner:0.1 scan
+  qualor/scanner:0.2 scan
 ```
 
 `--network host` lets the container reach the server on `127.0.0.1`. That works on Linux. With Docker

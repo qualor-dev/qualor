@@ -1,0 +1,154 @@
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@orgs.title">Organizations</h2>
+    @if (!isAdmin()) {
+      <p class="muted" i18n="@@orgs.adminsOnly">
+        Only instance administrators manage organizations.
+      </p>
+    } @else {
+      <p class="muted" i18n="@@orgs.intro">
+        Each organization has its own projects, quality gates, quality profiles, members and
+        connections. You become the admin of each organization you create.
+      </p>
+    }
+  </div>
+  @if (isAdmin()) {
+    <button type="button" class="btn btn-primary" (click)="openCreate()">
+      <q-icon name="plus" /><ng-container i18n="@@orgs.newOpen">New organization</ng-container>
+    </button>
+  }
+</div>
+@if (isAdmin()) {
+  <div role="status">
+    @if (announcement(); as text) {
+      <p class="alert alert-success">{{ text }}</p>
+    }
+  </div>
+  @if (loadError(); as text) {
+    <p class="alert alert-error" role="alert">{{ text }}</p>
+  }
+  <section class="card panel" aria-labelledby="orgs-caption">
+    <div class="panel-scroll">
+      <table>
+        <caption id="orgs-caption" class="visually-hidden" i18n="@@orgs.caption">
+          The organizations of this server
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@orgs.col.name">Organization</th>
+            <th scope="col" i18n="@@orgs.col.created">Created</th>
+            <th scope="col" class="actions-col">
+              <span class="visually-hidden" i18n="@@orgs.col.actions">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (o of org.orgs(); track o.id) {
+            <tr [attr.data-key]="o.id">
+              <th scope="row">
+                <div class="name-stack">
+                  <span>{{ o.name }}</span>
+                  <code class="muted">{{ o.key }}</code>
+                </div>
+              </th>
+              <td class="nowrap">
+                <span [title]="o.createdAt | dateTime">{{ o.createdAt | dateTime: 'date' }}</span>
+              </td>
+              <td class="actions-col">
+                <div class="row-actions">
+                  @if (o.id === org.currentId()) {
+                    <span class="badge badge-tag" i18n="@@orgs.current">Current</span>
+                  } @else {
+                    <button
+                      type="button"
+                      class="btn-quiet"
+                      [attr.aria-label]="switchLabel(o)"
+                      (click)="switchTo(o)"
+                      i18n="@@orgs.switch"
+                    >
+                      Switch to
+                    </button>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (org.orgs().length > 0) {
+      <p class="panel-foot muted">
+        <span i18n="@@orgs.count">{org.orgs().length, plural,
+          =1 {1 organization}
+          other {{{ org.orgs().length }} organizations}
+        }</span>
+      </p>
+    }
+  </section>
+
+  <dialog #createDialog id="create-dialog" class="dialog" aria-labelledby="create-org-title">
+    <form novalidate (submit)="create($event)">
+      <div class="dialog-head">
+        <h2 id="create-org-title" i18n="@@orgs.new">New organization</h2>
+      </div>
+      <div class="dialog-body">
+        @if (dialogError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        <div class="field">
+          <label for="org-name" i18n="@@orgs.name">Name</label>
+          <input
+            #nameField
+            id="org-name"
+            required
+            autofocus
+            autocomplete="off"
+            [attr.maxlength]="nameMax"
+            [attr.aria-invalid]="errors().name ? true : null"
+            [attr.aria-describedby]="errors().name ? 'org-name-error' : null"
+            [value]="name()"
+            (input)="setName($event)"
+          />
+          @if (errors().name; as message) {
+            <span id="org-name-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+        <div class="field">
+          <label for="org-key" i18n="@@orgs.key">Key</label>
+          <input
+            #keyField
+            id="org-key"
+            required
+            autocomplete="off"
+            spellcheck="false"
+            [attr.maxlength]="keyMax"
+            [attr.aria-invalid]="errors().key ? true : null"
+            [attr.aria-describedby]="errors().key ? 'org-key-error org-key-hint' : 'org-key-hint'"
+            [value]="key()"
+            (input)="setKey($event)"
+          />
+          @if (errors().key; as message) {
+            <span id="org-key-error" class="field-error" role="alert">{{ message }}</span>
+          }
+          <span id="org-key-hint" class="hint" i18n="@@orgs.keyHint"
+            >Lowercase letters, digits and hyphens. The CLI and the audit log name the organization
+            by it. Neither the name nor the key can be changed later.</span
+          >
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" (click)="closeCreate()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          i18n="@@orgs.createSubmit"
+        >
+          Create organization
+        </button>
+      </div>
+    </form>
+  </dialog>
+}

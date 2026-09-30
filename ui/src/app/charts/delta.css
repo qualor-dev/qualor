@@ -1,0 +1,20 @@
+:host {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+.delta {
+  font-weight: 650;
+  color: var(--text-muted);
+}
+.delta-good {
+  color: var(--ok);
+}
+.delta-bad {
+  color: var(--bad);
+}
+.delta-since {
+  color: var(--text-muted);
+}

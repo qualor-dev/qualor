@@ -1,0 +1,19 @@
+<div class="page-band-inner">
+  @if (crumbs().length > 0) {
+    <nav class="crumbs" aria-label="Breadcrumb" i18n-aria-label="@@header.breadcrumb">
+      <ol>
+        @for (crumb of crumbs(); track $index) {
+          <li>
+            <a [routerLink]="crumb.link">{{ crumb.label }}</a>
+          </li>
+        }
+      </ol>
+    </nav>
+  }
+  <div class="page-title-row">
+    <div class="page-title"><ng-content select="[pageTitle]" /></div>
+    <div class="page-actions"><ng-content select="[pageActions]" /></div>
+  </div>
+  <ng-content select="[pageMeta]" />
+  <ng-content select="[pageTabs]" />
+</div>

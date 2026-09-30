@@ -1,0 +1,38 @@
+:host {
+  --lens-ink: var(--chart-accent);
+  --lens-track: var(--chart-track);
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+}
+/* The dots that reach past the ring are cut at its outer edge (the ring is 1.25 wide on r = c - 1). */
+svg {
+  clip-path: circle(calc(50% - 0.375px));
+}
+:host(.lens-ok) {
+  --lens-ink: var(--ok);
+  --lens-track: var(--ok-soft);
+}
+:host(.lens-bad) {
+  --lens-ink: var(--bad);
+  --lens-track: var(--bad-soft);
+}
+.lens-track {
+  fill: var(--lens-track);
+}
+.lens-dots {
+  fill: var(--lens-ink);
+}
+.lens-level,
+.lens-ring {
+  fill: none;
+  stroke: var(--lens-ink);
+  stroke-width: 1.25;
+}
+.lens-mark {
+  fill: none;
+  stroke: var(--lens-ink);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

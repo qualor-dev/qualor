@@ -108,3 +108,20 @@ describe('UsersPage: sign-in badges and the "No password" filter (sso-scim.md §
     expect(last.query.get('signIn')).toBe('no-password');
   });
 });
+
+describe('UsersPage: the "No password" filter with nobody to show (step 11)', () => {
+  it('says every user can sign in with a password, instead of an empty table', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/users', (request) => ({
+      body: page(request.query.get('signIn') === 'no-password' ? [] : [user('u1', 'plain')]),
+    }));
+    const fixture = TestBed.createComponent(UsersPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    root.querySelector<HTMLButtonElement>('[data-test=filter-no-password]')!.click();
+    await settle(fixture);
+    expect(root.querySelector('tbody')?.textContent?.trim()).toBe(
+      'Every user can sign in with a password.',
+    );
+  });
+});

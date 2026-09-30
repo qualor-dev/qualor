@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { expect, expectAccessible, test } from './fixtures';
 import { OLGA, PAYMENTS, SIEM_URL } from './seed-data';
 
@@ -24,6 +24,146 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+test.describe('on a tablet', () => {
+  test.use({ viewport: { width: 768, height: 1024 } });
+
+  // The enterprise settings pages fit a tablet too (Task 2 of step 11: 390 and 768px).
+  for (const path of [
+    '/settings/license',
+    '/settings/ee/audit-log',
+    '/settings/ee/audit-settings',
+    '/settings/ee/sso',
+    '/settings/ee/sign-in',
+    '/settings/ee/scim',
+    '/settings/ee/linked-accounts',
+  ]) {
+    test(`${path} never scrolls sideways at 768px`, async ({ page }) => {
+      await page.goto(path);
+      await expect(page.locator('.settings-head h2')).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        768,
+      );
+    });
+  }
+});
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  // Each enterprise settings page fits the screen once its data is in (redesign step 9 review):
+  // a wide table scrolls in its panel, never the page.
+  for (const path of [
+    '/settings/license',
+    '/settings/ee/audit-log',
+    '/settings/ee/audit-settings',
+    '/settings/ee/sso',
+    '/settings/ee/sign-in',
+    '/settings/ee/scim',
+    '/settings/ee/linked-accounts',
+  ]) {
+    test(`${path} never scrolls sideways`, async ({ page }) => {
+      await page.goto(path);
+      await expect(page.locator('.settings-head h2')).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        390,
+      );
+    });
+  }
+
+  test('audit targets keep their words; the events table scrolls instead', async ({ page }) => {
+    await page.goto('/settings/ee/audit-log');
+    const target = page.locator('td', { hasText: /^user: admin$/ }).first();
+    await expect(target).toBeAttached();
+    const { width, need } = await target.evaluate((el) => {
+      const style = getComputedStyle(el);
+      const context = document.createElement('canvas').getContext('2d')!;
+      context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      const words = (el.textContent ?? '').trim().split(/\s+/);
+      return {
+        width: el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        need: Math.max(...words.map((word) => context.measureText(word).width)),
+      };
+    });
+    expect(width).toBeGreaterThanOrEqual(need - 1);
+  });
+
+  test('dates in the SCIM and linked-account tables keep to one line; the table scrolls', async ({
+    page,
+  }) => {
+    const lines = (cell: Locator) =>
+      cell.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      });
+    await page.goto('/settings/ee/scim');
+    const token = page.locator('tr', { hasText: 'Entra ID provisioning' });
+    expect(await lines(token.locator('td').nth(1))).toBe(1);
+    expect(await lines(token.locator('td').nth(3))).toBe(1);
+    await page.goto('/settings/ee/linked-accounts');
+    const account = page.locator('tr', { hasText: 'Acme SSO' });
+    expect(await lines(account.locator('td').nth(0))).toBe(1);
+    expect(await lines(account.locator('td').nth(1))).toBe(1);
+  });
+
+  test("each licence fact's value has the width under its label", async ({ page }) => {
+    await page.goto('/settings/license');
+    const facts = page.locator('dl.facts');
+    await expect(facts.locator('dt').first()).toBeVisible();
+    const pairs = await facts.evaluate((dl) =>
+      [...dl.querySelectorAll('dt')].map((dt) => {
+        const dd = dt.nextElementSibling!;
+        const label = dt.getBoundingClientRect();
+        const value = dd.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(dd);
+        // A new line starts below the last one's bottom (a code's box sits a pixel off its words).
+        let lines = 0;
+        let bottom = -Infinity;
+        for (const box of [...range.getClientRects()].sort((a, b) => a.top - b.top)) {
+          if (box.top >= bottom - 2) lines += 1;
+          bottom = Math.max(bottom, box.bottom);
+        }
+        return {
+          label: dt.textContent?.trim(),
+          left: value.left - label.left,
+          below: value.top >= label.bottom,
+          lines,
+        };
+      }),
+    );
+    for (const pair of pairs) {
+      expect(pair.left, pair.label).toBeLessThanOrEqual(1);
+      expect(pair.below, pair.label).toBe(true);
+    }
+    // A sentence stays one: "The QUALOR_LICENSE variable" on one line, its code among its words.
+    expect(pairs.find((p) => p.label === 'Where the key comes from')?.lines).toBe(1);
+  });
+});
+
+test('the audit Organization select shows its words at every width beside a phone', async ({
+  page,
+}) => {
+  await page.goto('/settings/ee/audit-log');
+  const select = page.locator('#audit-organization');
+  await expect(select).toBeVisible();
+  for (const width of [768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const { box, need } = await select.evaluate((el: HTMLSelectElement) => {
+      const style = getComputedStyle(el);
+      const context = document.createElement('canvas').getContext('2d')!;
+      context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      return {
+        box: el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        need: context.measureText(el.options[el.selectedIndex]!.text.trim()).width,
+      };
+    });
+    expect(box, `${width}px`).toBeGreaterThanOrEqual(need);
+  }
+});
+
 test.describe('as people other than the instance admin', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -42,7 +182,8 @@ test.describe('as people other than the instance admin', () => {
     );
     await expect(page.getByRole('row', { name: /project_member\.added/ }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Verify chain' })).toHaveCount(0);
-    await expect(page.getByLabel('Organization')).toHaveCount(0);
+    // The organisation filter (instance admins only); the settings navigation has an Organization group.
+    await expect(page.getByRole('combobox', { name: 'Organization' })).toHaveCount(0);
     await expectAccessible(page);
   });
 });

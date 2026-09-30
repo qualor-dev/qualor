@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { fieldErrors, problemMessage } from '../api/errors';
+import { AuthLayout } from '../shared/auth-layout';
 import { inputValue } from '../shared/forms';
 import { AuthService } from './auth.service';
 import { SessionStore } from './session';
@@ -10,6 +11,7 @@ export const PASSWORD_MIN_LENGTH = 12;
 
 @Component({
   selector: 'q-change-password-page',
+  imports: [AuthLayout],
   templateUrl: './change-password.page.html',
 })
 export class ChangePasswordPage {
@@ -34,6 +36,11 @@ export class ChangePasswordPage {
   /** A forced change blocks every other page; signing out is the other way off this one. */
   protected signOut(): void {
     void this.auth.logout();
+  }
+
+  /** A change chosen from the user menu may be left: back to the projects, nothing changed. */
+  protected cancel(): void {
+    void this.router.navigate(['/projects']);
   }
 
   protected async submit(event: Event): Promise<void> {

@@ -1,0 +1,110 @@
+/*
+ * The pages outside the shell (spec §7.9: sign-in, change password, server unavailable,
+ * `q-auth-layout`): the site's ink panel with an illustration next to the form's card.
+ */
+.auth-page {
+  display: grid;
+  grid-template-columns: minmax(20rem, 5fr) 7fr;
+  min-height: 100vh;
+  background: var(--bg);
+}
+.auth-art {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--ink-text);
+}
+/*
+ * The illustration fills the panel under the words, so it never runs behind them at any window
+ * size; it bleeds past the panel's edges, which keeps the paper's border out of view.
+ */
+.auth-illustration {
+  flex: 1 1 auto;
+  min-height: 10rem;
+  margin: 0 calc(-1 * var(--space-10)) calc(-1 * var(--space-10));
+  background:
+    linear-gradient(180deg, var(--ink), rgb(10 27 51 / 0) 30%),
+    url('/art/signin.webp') center bottom / cover no-repeat;
+}
+.auth-art.offline .auth-illustration {
+  background:
+    linear-gradient(180deg, var(--ink), rgb(10 27 51 / 0) 25%, rgb(10 27 51 / 0) 75%, var(--ink)),
+    url('/art/offline.webp') center / 130% auto no-repeat;
+}
+.auth-art .brand {
+  font-size: 19px;
+}
+/* The page-title scale (30/750), in three lines clear of the illustration. */
+.auth-art .tagline {
+  max-width: 30rem;
+  margin: var(--space-8) 0 0;
+  font-size: 30px;
+  font-weight: 750;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  color: #fff;
+}
+.auth-main {
+  display: grid;
+  place-items: center;
+  padding: var(--space-8) var(--space-6);
+}
+.auth-card {
+  width: min(25rem, 100%);
+  padding: var(--space-8);
+}
+/* The dialog-title scale (24). */
+.auth-card h1 {
+  margin-bottom: var(--space-6);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+/* The system's controls, full width in the card: a field's height, not a hero button. */
+.auth-card .btn {
+  width: 100%;
+  min-height: 36px;
+}
+.auth-card input {
+  width: 100%;
+}
+.auth-alt {
+  margin: var(--space-4) 0 0;
+  text-align: center;
+}
+/* The emergency sign-in under the card is a link's width, not a full-width button. */
+.auth-card .auth-alt .btn-link {
+  width: auto;
+}
+.auth-providers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+/* A connection's name may be 64 characters: it wraps inside its button, never past the card. */
+.auth-providers .btn {
+  padding-block: var(--space-2);
+  line-height: 1.3;
+  white-space: normal;
+  text-align: center;
+}
+/* "or sign in with a password" between two hairlines. */
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 var(--space-4);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.auth-or::before,
+.auth-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}

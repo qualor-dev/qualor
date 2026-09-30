@@ -1,7 +1,15 @@
-<h2 #heading tabindex="-1" i18n="@@tokens.title">Your access tokens</h2>
-<p class="muted" i18n="@@tokens.intro">
-  Tokens let scripts and the scanner call the API as you. A token never has more rights than you.
-</p>
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@tokens.title">Your access tokens</h2>
+    <p class="muted" i18n="@@tokens.intro">
+      Tokens let scripts and the scanner call the API as you. A token never has more rights than
+      you.
+    </p>
+  </div>
+  <button type="button" class="btn btn-primary" (click)="openCreate()">
+    <q-icon name="plus" /><ng-container i18n="@@tokens.newOpen">New token</ng-container>
+  </button>
+</div>
 <div role="status">
   @if (announcement(); as message) {
     <p class="alert alert-success">{{ message }}</p>
@@ -10,154 +18,235 @@
 @if (list.error() ?? error(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
 }
-@if (created(); as token) {
-  <q-secret-once
-    [value]="token"
-    label="New token"
-    i18n-label="@@tokens.newToken"
-    (done)="forget()"
-  />
-}
-<div class="table-wrap">
-  <table #table>
-    <thead>
-      <tr>
-        <th scope="col" i18n="@@tokens.col.name">Name</th>
-        <th scope="col" i18n="@@tokens.col.scopes">Scopes</th>
-        <th scope="col" i18n="@@tokens.col.expires">Expires</th>
-        <th scope="col" i18n="@@tokens.col.lastUsed">Last used</th>
-        <th scope="col">
-          <span class="visually-hidden" i18n="@@tokens.col.actions">Actions</span>
-        </th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (t of list.items(); track t.id) {
-        <tr [attr.data-key]="t.id">
-          <td>
-            {{ t.name }}
-            <div class="muted">
-              <code>{{ t.prefix }}…</code>
-            </div>
-          </td>
-          <td>{{ scopesText(t) }}</td>
-          <td>
-            @if (t.expiresAt; as at) {
-              {{ at | dateTime: 'date' }}
-              @if (isExpired(t)) {
-                <span class="badge" i18n="@@tokens.expired">Expired</span>
-              }
-            } @else {
-              <span i18n="@@tokens.never">Never</span>
-            }
-          </td>
-          <td>
-            @if (t.lastUsedAt; as at) {
-              {{ at | dateTime }}
-            } @else {
-              <span class="muted" i18n="@@tokens.unused">Not used yet</span>
-            }
-          </td>
-          <td class="actions">
-            <button
-              type="button"
-              class="btn btn-danger"
-              [attr.aria-disabled]="busy() ? true : null"
-              (click)="revoke(t)"
-              i18n="@@tokens.revoke"
-            >
-              Revoke
-            </button>
-          </td>
+
+<section class="card panel" aria-labelledby="tokens-caption">
+  <div class="panel-scroll">
+    <table #table>
+      <caption id="tokens-caption" class="visually-hidden" i18n="@@tokens.caption">
+        Your access tokens
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col" i18n="@@tokens.col.name">Name</th>
+          <th scope="col" i18n="@@tokens.col.scopes">Scopes</th>
+          <th scope="col" i18n="@@tokens.col.expires">Expires</th>
+          <th scope="col" i18n="@@tokens.col.lastUsed">Last used</th>
+          <th scope="col" class="actions-col">
+            <span class="visually-hidden" i18n="@@tokens.col.actions">Actions</span>
+          </th>
         </tr>
-      } @empty {
-        @if (list.loaded()) {
-          <tr>
-            <td colspan="5" class="muted" i18n="@@tokens.empty">You have no tokens.</td>
+      </thead>
+      <tbody>
+        @for (t of list.items(); track t.id) {
+          <tr [attr.data-key]="t.id">
+            <th scope="row">
+              <div class="name-stack">
+                <span>{{ t.name }}</span>
+                <code class="muted">{{ t.prefix }}…</code>
+              </div>
+            </th>
+            <td>
+              <div class="row">
+                @for (s of t.scopes; track s) {
+                  <span class="badge badge-tag">{{ scopeLabel(s) }}</span>
+                }
+              </div>
+            </td>
+            <td class="nowrap">
+              @if (t.expiresAt; as at) {
+                {{ at | dateTime: 'date' }}
+                @if (isExpired(t)) {
+                  <span class="badge badge-warn" i18n="@@tokens.expired">Expired</span>
+                }
+              } @else {
+                <span i18n="@@tokens.never">Never</span>
+              }
+            </td>
+            <td class="nowrap">
+              @if (t.lastUsedAt; as at) {
+                {{ at | dateTime }}
+              } @else {
+                <span class="muted" i18n="@@tokens.unused">Not used yet</span>
+              }
+            </td>
+            <td class="actions-col">
+              <div class="row-actions">
+                <button
+                  type="button"
+                  class="btn-quiet danger"
+                  [attr.aria-disabled]="busy() ? true : null"
+                  (click)="revoke(t)"
+                  i18n="@@tokens.revoke"
+                >
+                  Revoke
+                </button>
+              </div>
+            </td>
           </tr>
+        } @empty {
+          @if (list.loaded()) {
+            <tr>
+              <td colspan="5" class="muted" i18n="@@tokens.empty">You have no tokens.</td>
+            </tr>
+          }
         }
-      }
-    </tbody>
-  </table>
-</div>
-@if (list.nextCursor()) {
-  <p>
+      </tbody>
+    </table>
+  </div>
+  @if (list.nextCursor()) {
+    <p class="panel-foot">
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-disabled]="list.loading() ? true : null"
+        (click)="list.more()"
+        i18n="@@list.more"
+      >
+        Load more
+      </button>
+    </p>
+  }
+</section>
+
+<dialog
+  #createDialog
+  id="create-dialog"
+  class="dialog"
+  aria-labelledby="create-token-title"
+  (cancel)="keepSecret($event)"
+  (close)="forget()"
+>
+  @if (created(); as token) {
+    <div class="dialog-head">
+      <h2 id="create-token-title" i18n="@@tokens.createdTitle">Your new token</h2>
+    </div>
+    <div class="dialog-body">
+      <q-secret-once
+        [value]="token"
+        label="New token"
+        i18n-label="@@tokens.newToken"
+        [showDone]="false"
+        (done)="closeCreate()"
+      />
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-primary" (click)="closeCreate()">
+        <ng-container i18n="@@secret.done">Done</ng-container>
+      </button>
+    </div>
+  } @else {
+    <form novalidate (submit)="create($event)">
+      <div class="dialog-head">
+        <h2 id="create-token-title" i18n="@@tokens.new">New token</h2>
+      </div>
+      <div class="dialog-body">
+        @if (createError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        <div class="field">
+          <label for="token-name" i18n="@@tokens.name">Name</label>
+          <input
+            #nameField
+            id="token-name"
+            required
+            autofocus
+            maxlength="100"
+            autocomplete="off"
+            [attr.aria-invalid]="nameError() ? true : null"
+            [attr.aria-describedby]="nameError() ? 'token-name-error' : null"
+            [value]="name()"
+            (input)="setName($event)"
+          />
+          @if (nameError(); as message) {
+            <span id="token-name-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+        <fieldset
+          #scopesField
+          class="facet"
+          [attr.aria-describedby]="scopesError() ? 'token-scopes-error' : null"
+        >
+          <legend i18n="@@tokens.scopes">Scopes</legend>
+          @for (s of allScopes; track s) {
+            <label>
+              <input
+                type="checkbox"
+                [checked]="scopes().has(s)"
+                (change)="toggleScope(s, $event)"
+              />
+              <span>{{ scopeLabel(s) }}</span>
+            </label>
+          }
+          @if (scopesError(); as message) {
+            <span id="token-scopes-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </fieldset>
+        <div class="field">
+          <label for="token-expiry" i18n="@@tokens.expiry">Expires after</label>
+          <select
+            #expiryField
+            id="token-expiry"
+            [attr.aria-invalid]="expiryError() ? true : null"
+            [attr.aria-describedby]="expiryError() ? 'token-expiry-error' : null"
+            (change)="setExpiry($event)"
+          >
+            @for (d of expiries; track d) {
+              <option [value]="d" [selected]="d === expiry()">
+                @if (d) {
+                  <ng-container i18n="@@tokens.days">{{ d }} days</ng-container>
+                } @else {
+                  <ng-container i18n="@@tokens.noExpiry">Never</ng-container>
+                }
+              </option>
+            }
+          </select>
+          @if (expiryError(); as message) {
+            <span id="token-expiry-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" (click)="closeCreate()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          i18n="@@tokens.create"
+        >
+          Create token
+        </button>
+      </div>
+    </form>
+  }
+</dialog>
+
+<dialog
+  #confirmDialog
+  id="confirm-dialog"
+  class="dialog"
+  aria-labelledby="confirm-title"
+  aria-describedby="confirm-text"
+  (close)="cancelRevoke()"
+>
+  <div class="dialog-head">
+    <h2 id="confirm-title" i18n="@@tokens.revokeTitle">Revoke the token</h2>
+  </div>
+  <div class="dialog-body">
+    <p id="confirm-text">{{ pendingRevoke()?.question }}</p>
+  </div>
+  <div class="dialog-actions">
+    <button type="button" class="btn" autofocus (click)="cancelRevoke()" i18n="@@dialog.cancel">
+      Cancel
+    </button>
     <button
       type="button"
-      class="btn"
-      [attr.aria-disabled]="list.loading() ? true : null"
-      (click)="list.more()"
-      i18n="@@list.more"
+      class="btn btn-danger-solid"
+      (click)="confirmRevoke()"
+      i18n="@@tokens.revoke"
     >
-      Load more
+      Revoke
     </button>
-  </p>
-}
-
-<form class="card" novalidate (submit)="create($event)">
-  <h3 i18n="@@tokens.new">New token</h3>
-  <div class="field">
-    <label for="token-name" i18n="@@tokens.name">Name</label>
-    <input
-      #nameField
-      id="token-name"
-      required
-      maxlength="100"
-      autocomplete="off"
-      [attr.aria-invalid]="nameError() ? true : null"
-      [attr.aria-describedby]="nameError() ? 'token-name-error' : null"
-      [value]="name()"
-      (input)="setName($event)"
-    />
-    @if (nameError(); as message) {
-      <span id="token-name-error" class="field-error" role="alert">{{ message }}</span>
-    }
   </div>
-  <fieldset
-    #scopesField
-    class="facet"
-    [attr.aria-describedby]="scopesError() ? 'token-scopes-error' : null"
-  >
-    <legend i18n="@@tokens.scopes">Scopes</legend>
-    @for (s of allScopes; track s) {
-      <label>
-        <input type="checkbox" [checked]="scopes().has(s)" (change)="toggleScope(s, $event)" />
-        <span>{{ scopeLabel(s) }}</span>
-      </label>
-    }
-    @if (scopesError(); as message) {
-      <span id="token-scopes-error" class="field-error" role="alert">{{ message }}</span>
-    }
-  </fieldset>
-  <div class="field">
-    <label for="token-expiry" i18n="@@tokens.expiry">Expires after</label>
-    <select
-      #expiryField
-      id="token-expiry"
-      [attr.aria-invalid]="expiryError() ? true : null"
-      [attr.aria-describedby]="expiryError() ? 'token-expiry-error' : null"
-      (change)="setExpiry($event)"
-    >
-      @for (d of expiries; track d) {
-        <option [value]="d" [selected]="d === expiry()">
-          @if (d) {
-            <ng-container i18n="@@tokens.days">{{ d }} days</ng-container>
-          } @else {
-            <ng-container i18n="@@tokens.noExpiry">Never</ng-container>
-          }
-        </option>
-      }
-    </select>
-    @if (expiryError(); as message) {
-      <span id="token-expiry-error" class="field-error" role="alert">{{ message }}</span>
-    }
-  </div>
-  <button
-    type="submit"
-    class="btn btn-primary"
-    [attr.aria-disabled]="busy() ? true : null"
-    i18n="@@tokens.create"
-  >
-    Create token
-  </button>
-</form>
+</dialog>

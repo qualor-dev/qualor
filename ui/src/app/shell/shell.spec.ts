@@ -56,6 +56,18 @@ describe('Shell', () => {
       'Settings',
     ]);
     expect(root.querySelector('.user-menu')?.textContent).toContain('Alice');
+    // The account's links sit in a popover opened by the user button.
+    const button = root.querySelector<HTMLButtonElement>('.user-button');
+    expect(button?.getAttribute('popovertarget')).toBe('user-menu');
+    expect(button?.textContent).toContain('Alice');
+    const menu = root.querySelector('#user-menu');
+    expect(menu?.hasAttribute('popover')).toBe(true);
+    expect(menu?.querySelector('a[href="/change-password"]')?.textContent?.trim()).toBe(
+      'Change password',
+    );
+    expect([...(menu?.querySelectorAll('button') ?? [])].map((b) => b.textContent?.trim())).toEqual(
+      ['Sign out'],
+    );
     // Two organisations: a labelled switcher.
     const select = root.querySelector<HTMLSelectElement>('#org-switch');
     expect(root.querySelector('label[for="org-switch"]')?.textContent).toContain('Organization');
