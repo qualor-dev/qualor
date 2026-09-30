@@ -125,6 +125,12 @@ alike: `tag-pair`, `attr-no-duplication`, `src-not-empty`, `alt-require`, `attr-
 and `frame-title-require`. `<!-- htmlhint … -->` comments in a file work as in HTMLHint. Custom
 rules (`--rulesdir`) are not supported.
 
+Qualor now runs HTMLHint itself, so if you imported your own HTMLHint SARIF before, remove that
+import (`--sarif` or the `qualor.yml` `sarif:` entry). `htmlhint` is a reserved engine id: a
+`sarif:` entry with `engine: htmlhint` is a configuration error. An HTMLHint SARIF you still import
+is reported as `ext-htmlhint`, and each of its findings counts once with the built-in `htmlhint`
+finding of the same code on the same line.
+
 ## CSS and SCSS (stylelint)
 
 `stylelint` checks `.css` and `.scss` files. It uses your configuration when it is data: a
@@ -142,6 +148,12 @@ medium severity; findings of other rules (conventions such as `stylelint-config-
 maintainability issues of low severity. SCSS is parsed with `postcss-scss` even when your
 configuration does not say so. Less and indented Sass (`.sass`) are not checked, and SCSS files get
 no size or duplication metrics.
+
+Qualor now runs stylelint itself, so if you imported your own stylelint SARIF before, remove that
+import (`--sarif` or the `qualor.yml` `sarif:` entry). `stylelint` is a reserved engine id: a
+`sarif:` entry with `engine: stylelint` is a configuration error. A stylelint SARIF you still
+import is reported as `ext-stylelint`, and each of its findings counts once with the built-in
+`stylelint` finding of the same code on the same line.
 
 ## Java (PMD and SpotBugs)
 
@@ -268,11 +280,12 @@ sarif:
     engine: osv-scanner            # optional; default: the SARIF tool name
 ```
 
-The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep` and the others) are
-reserved: `engine: ruff` is a configuration error, and a SARIF file from a tool Qualor runs itself
-is reported under `ext-<tool>`. Don't import Ruff SARIF any more: Qualor runs Ruff (see
-[Python](#python-ruff)); a Ruff SARIF you still import counts once with the built-in finding of the
-same code on the same line.
+The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint` and
+the others) are reserved: `engine: ruff` is a configuration error, and a SARIF file from a tool
+Qualor runs itself is reported under `ext-<tool>`. Don't import Ruff, stylelint or HTMLHint SARIF
+any more: Qualor runs Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
+[CSS and SCSS](#css-and-scss-stylelint) and [HTML](#html-htmlhint)) itself; a SARIF file you still
+import for one of them counts once with the built-in finding of the same code on the same line.
 
 ## Coverage
 
