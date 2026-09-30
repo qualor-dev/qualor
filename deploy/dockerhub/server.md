@@ -34,7 +34,7 @@ Website: <https://qualor.dev> · Documentation: <https://qualor.dev/docs> · Sou
 
 ### Tags
 
-Every release has its full version tag, such as `0.1.0`, and a minor tag, such as `0.1`, that
+Every release has its full version tag, such as `0.2.0`, and a minor tag, such as `0.2`, that
 follows its patch releases. There is no `latest` tag: pin a version and upgrade when you choose to.
 
 ### Try it
@@ -43,7 +43,7 @@ follows its patch releases. There is no `latest` tag: pin a version and upgrade 
 export QUALOR_SECRET_KEY=$(openssl rand -hex 32)
 export QUALOR_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)
 docker run -d --name qualor -p 127.0.0.1:8080:8080 -v qualor-data:/var/lib/qualor \
-  -e QUALOR_SECRET_KEY -e QUALOR_BOOTSTRAP_ADMIN_PASSWORD qualor/server:0.1
+  -e QUALOR_SECRET_KEY -e QUALOR_BOOTSTRAP_ADMIN_PASSWORD qualor/server:0.2
 echo "$QUALOR_BOOTSTRAP_ADMIN_PASSWORD"   # the admin password for the first sign-in
 ```
 

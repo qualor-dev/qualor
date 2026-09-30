@@ -35,17 +35,16 @@ it.
 
 ## Verifying a release
 
-No signed release is published yet; the first will be 0.1.0. From then on, releases are signed
-with cosign: the images, the Helm chart, and the release files through their `SHA256SUMS`. The
-public key is published with the first release, as `cosign.pub` in this repository and at
+Every release since 0.1.0 is signed with cosign: the images, the Helm chart, and the release
+files through their `SHA256SUMS`. The public key is `cosign.pub` in this repository and at
 <https://qualor.dev/cosign.pub>. Verify with that key, not with the copy a release carries.
 
 The signatures are not recorded in the public Rekor transparency log, so every command below
 carries `--insecure-ignore-tlog=true`; without it, cosign looks for a log entry and fails.
 
 ```sh
-cosign verify --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true qualor/server:0.1.0
-cosign verify-attestation --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true --type spdxjson qualor/server:0.1.0
+cosign verify --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true qualor/server:0.2.0
+cosign verify-attestation --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true --type spdxjson qualor/server:0.2.0
 curl -fsSLO https://qualor.dev/cosign.pub
 cosign verify-blob --key cosign.pub --insecure-ignore-tlog=true --bundle SHA256SUMS.bundle SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS

@@ -110,7 +110,7 @@ SonarAnalyzer.CSharp 9.32 (SonarQube-compatible rules, LGPL-3.0) to the scanner.
 
 ```yaml
 qualor:
-  image: { name: qualor/scanner-dotnet:0.1, entrypoint: [''] }
+  image: { name: qualor/scanner-dotnet:0.2, entrypoint: [''] }
   variables: { GIT_DEPTH: 0 }
   script:
     - qualor dotnet begin
@@ -155,7 +155,7 @@ merge request that did not touch the dependency.
 
 - Ignore a vulnerability by id in `.trivyignore` at the repository root.
 - The vulnerability database comes from the image and is never downloaded during a scan. It is as
-  old as the scanner release you run, so keep the scanner current (the minor tag `0.1` does that
+  old as the scanner release you run, so keep the scanner current (the minor tag `0.2` does that
   for its patch releases), or fetch a fresh database in the job:
 
 ```yaml

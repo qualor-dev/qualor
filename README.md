@@ -57,7 +57,7 @@ Save the compose file of [Install the server](docs/guide/install-server.md#the-c
 ```sh
 umask 077
 cat > .env <<EOF
-QUALOR_VERSION=0.1
+QUALOR_VERSION=0.2
 QUALOR_SECRET_KEY=$(openssl rand -hex 32)
 QUALOR_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)
 EOF
@@ -85,7 +85,7 @@ The answer's `token` is shown once.
 
 ## Scan in CI: one line
 
-The scanner image is `qualor/scanner:<tag>` on Docker Hub (`0.1`, or a full version such as `0.1.1`).
+The scanner image is `qualor/scanner:<tag>` on Docker Hub (`0.2`, or a full version such as `0.2.0`).
 It carries the `qualor` CLI and the pinned analyzers; its entrypoint is `qualor`. Set `QUALOR_URL`
 and `QUALOR_TOKEN` as CI variables (the token masked), then:
 
@@ -100,7 +100,7 @@ include:
 A self-managed GitLab includes components only from its own instance: import
 `https://gitlab.com/qualor/qualor.git` into a project there once (New project → Import project →
 Repository by URL) and include it by its full version
-(`component: $CI_SERVER_FQDN/<path of the copy>/qualor@0.1.1`); a short version such as `@0.1`
+(`component: $CI_SERVER_FQDN/<path of the copy>/qualor@0.2.0`); a short version such as `@0.2`
 resolves only in a CI/CD catalog project with releases
 ([docs/guide/gitlab.md](docs/guide/gitlab.md)). It runs in merge request
 pipelines and on the default branch, fails with the quality gate, and keeps GitLab's Code Quality,

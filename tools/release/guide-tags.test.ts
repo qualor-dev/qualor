@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { VERSION } from '@qualor/shared';
 
 const FILES = [
   'README.md',
@@ -22,6 +23,7 @@ describe('the guide uses the 0.x tags', () => {
   it('install-server.md explains the 0.x tags', () => {
     const text = readFileSync('docs/guide/install-server.md', 'utf8');
     expect(text).toContain('there is no `0` tag');
-    expect(text).toContain('QUALOR_VERSION=0.1');
+    // The examples use the minor tag of the release the guide describes.
+    expect(text).toContain(`QUALOR_VERSION=${VERSION.split('.').slice(0, 2).join('.')}`);
   });
 });
