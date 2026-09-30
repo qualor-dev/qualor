@@ -21,19 +21,43 @@ export const MAX_DETEKT_CONFIG_BYTES = 1024 * 1024;
 export const MAX_DETEKT_CONFIG_ALIASES = 50;
 
 /**
- * Passed after the project's config, so it wins (detekt merges `--config` files, the later one
- * first). A config for another detekt version (unknown keys) never fails the run; the SARIF report
- * is always written; `AbsentOrWrongFileLicense` never runs, because it reads the file its
+ * Passed only when the project has no detekt config, before the overlay: the settings detekt
+ * recommends for Jetpack Compose (detekt.dev/docs/introduction/compose), so a composable's
+ * PascalCase name, a private `@Preview`, a screen's defaulted parameters and a top-level
+ * PascalCase constant are not findings (final review, Important 1). A project config replaces
+ * them: its own Gradle run never sees them.
+ */
+export const QUALOR_DETEKT_DEFAULTS = `# Qualor's defaults for a project without a detekt config: detekt's Jetpack Compose settings.
+naming:
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    constantPattern: '[A-Z][A-Za-z0-9]*'
+complexity:
+  LongParameterList:
+    ignoreDefaultParameters: true
+style:
+  MagicNumber:
+    ignorePropertyDeclaration: true
+    ignoreCompanionObjectPropertyDeclaration: true
+  UnusedPrivateMember:
+    ignoreAnnotated: ['Preview']
+`;
+
+/**
+ * Passed last, so it wins (detekt merges `--config` files, the later one first). Only keys with
+ * an effect in detekt 1.23.8 (ruling E21): a config for another detekt version (unknown keys)
+ * never fails the run; `output-reports.active: false` would stop the SARIF report
+ * (`output-reports.exclude` and `warningsAsErrors` change nothing in the SARIF, so they are not
+ * set); `AbsentOrWrongFileLicense` never runs, because it reads the file its
  * `licenseTemplateFile` names, resolved from the last config's directory, which could be any file
  * the job can read.
  */
 export const QUALOR_DETEKT_OVERLAY = `# Qualor's settings over detekt's defaults and the project's config (config.md §6).
 config:
   validation: false
-  warningsAsErrors: false
 output-reports:
   active: true
-  exclude: []
 comments:
   AbsentOrWrongFileLicense:
     active: false

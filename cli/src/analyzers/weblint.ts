@@ -12,6 +12,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { Logger } from '../log';
 import { isInside, staysInside } from './binary';
+import { detailLine } from './reason';
 import type { AnalyzerContext } from './types';
 
 /** A repository configuration Qualor's HTML and CSS passes cannot use (config.md §6): a skip reason. */
@@ -112,8 +113,6 @@ export function weblintScript(
   return { script: file };
 }
 
-const MAX_DETAIL_CHARS = 300;
-
 /**
  * Why a pass exited 2, from its stderr (final review, 8D minor 6): the `<engine>: fatal: …` line
  * files.mjs's `run()` writes, else the first non-empty line; control characters become spaces and
@@ -130,11 +129,7 @@ export function weblintFailureDetail(
   const prefix = `${engine}: fatal: `;
   const fatal = lines.findLast((l) => l.startsWith(prefix));
   const line = fatal === undefined ? lines[0] : fatal.slice(prefix.length);
-  if (line === undefined) return null;
-  const printable = [...line]
-    .map((c) => (c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f ? ' ' : c))
-    .join('');
-  return printable.trim().slice(0, MAX_DETAIL_CHARS);
+  return line === undefined ? null : detailLine(line);
 }
 
 /**

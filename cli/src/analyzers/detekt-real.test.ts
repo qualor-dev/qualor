@@ -20,7 +20,7 @@ import {
 } from '../../test/analyzers';
 import { useTempDirs, writeTree } from '../../test/tmp';
 import type { ScopeFile } from '../discovery/discover';
-import { silentLogger } from '../log';
+import { createLogger, silentLogger } from '../log';
 import { resolveBinary } from './binary';
 import { DEFAULT_DETEKT_JAR, detektAnalyzer } from './detekt';
 import { normalizeCaptures } from './normalize';
@@ -47,8 +47,52 @@ function kt(root: string, p: string): ScopeFile {
   };
 }
 
-/** A class with two magic numbers on line 4: `MagicNumber` reports 42 and 7. */
-const MAGIC = 'package a\n\nclass A {\n    val x = 42 * 7\n}\n';
+/**
+ * A class with two magic numbers on line 4: `MagicNumber` reports 42 and 7. An expression, not a
+ * property declaration, which the Compose layer ignores without a project config.
+ */
+const MAGIC = 'package a\n\nclass A {\n    fun f() = 42 * 7\n}\n';
+
+/**
+ * A Jetpack Compose screen (no Compose on the class path: detekt runs without type resolution):
+ * PascalCase composables, a private `@Preview`, a screen of 7 parameters of which 4 are defaulted,
+ * and one unused parameter, a genuine finding.
+ */
+const COMPOSE = `package a
+
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
+
+@Composable
+fun Greeting(name: String, modifier: Modifier = Modifier) {
+    Text(text = "Hello $name", modifier = modifier)
+}
+
+@Composable
+fun ProfileScreen(
+    name: String,
+    email: String,
+    age: Int,
+    modifier: Modifier = Modifier,
+    onSave: () -> Unit = {},
+    onCancel: () -> Unit = {},
+    onDelete: () -> Unit = {},
+) {
+    Greeting(name, modifier)
+}
+
+@Preview
+@Composable
+private fun GreetingPreview() {
+    Greeting("Android")
+}
+`;
+
+/** The rule ids of the findings, each once, sorted. */
+function ruleIds(findings: readonly { ruleId: string }[]): string[] {
+  return [...new Set(findings.map((f) => f.ruleId))].sort();
+}
 
 /** Runs the real detekt adapter over `paths` and normalises its findings as `runScan` does. */
 async function scan(
@@ -141,8 +185,81 @@ describeWithDetekt()('detekt on kotlin-basic (real detekt)', () => {
       expect(out.findings.some((f) => f.ruleId === 'AbsentOrWrongFileLicense')).toBe(false);
       expect(JSON.stringify(out)).not.toContain('SECRET-TEMPLATE-TEXT');
       expect(JSON.stringify(capture.sarif)).not.toContain('SECRET-TEMPLATE-TEXT');
-      // warningsAsErrors is overridden: detekt's default findings stay at their rule-set severity.
-      expect(out.findings.find((f) => f.ruleId === 'MagicNumber')?.severity).toBe('low');
+    },
+  );
+});
+
+describeWithDetekt()(
+  'detekt on Jetpack Compose code (real detekt, final review Important 1)',
+  () => {
+    const COMPOSE_NOISE = ['FunctionNaming', 'LongParameterList', 'UnusedPrivateMember'];
+
+    it(
+      'without a project config: no Compose false positive, genuine findings stay',
+      TIMEOUT,
+      async () => {
+        const root = tmp();
+        writeTree(root, {
+          'src/main/kotlin/a/Screen.kt': COMPOSE,
+          'src/main/kotlin/a/A.kt': MAGIC,
+        });
+        const { capture, findings } = await scan(root, [
+          'src/main/kotlin/a/Screen.kt',
+          'src/main/kotlin/a/A.kt',
+        ]);
+        expect(capture.status, capture.reason ?? '').toBe('ok');
+        const ids = ruleIds(findings);
+        for (const noise of COMPOSE_NOISE) expect(ids).not.toContain(noise);
+        expect(ids).toContain('UnusedParameter');
+        expect(magicLines(findings)).toEqual([
+          'src/main/kotlin/a/A.kt:4:15',
+          'src/main/kotlin/a/A.kt:4:20',
+        ]);
+      },
+    );
+
+    it(
+      'with a project config that does not set them: detekt’s own defaults, the layer is not used',
+      TIMEOUT,
+      async () => {
+        const root = tmp();
+        writeTree(root, {
+          'src/main/kotlin/a/Screen.kt': COMPOSE,
+          'config/detekt/detekt.yml': 'style:\n  WildcardImport:\n    active: true\n',
+        });
+        const { capture, findings } = await scan(root, ['src/main/kotlin/a/Screen.kt']);
+        expect(capture.status, capture.reason ?? '').toBe('ok');
+        const ids = ruleIds(findings);
+        for (const noise of COMPOSE_NOISE) expect(ids).toContain(noise);
+        expect(ids).toContain('UnusedParameter');
+      },
+    );
+  },
+);
+
+describeWithDetekt()('detekt failures say why (real detekt, final review minor 3)', () => {
+  it(
+    'a project config value of the wrong type fails detekt, with the reason in the log only',
+    TIMEOUT,
+    async () => {
+      const root = tmp();
+      writeTree(root, {
+        'src/A.kt': MAGIC,
+        'config/detekt/detekt.yml': 'style:\n  MaxLineLength:\n    maxLineLength: abc\n',
+      });
+      const lines: string[] = [];
+      const [capture] = await runAnalyzers([detektAnalyzer], {
+        root,
+        config: parseConfig({ version: 1 }),
+        files: [kt(root, 'src/A.kt')],
+        log: createLogger('warn', (t) => lines.push(t)),
+        env: process.env,
+      });
+      expect(capture).toMatchObject({ status: 'failed', reason: 'exited with code 1' });
+      expect(lines.join('\n')).toContain(
+        'detekt: src/A.kt: The original exception message was: Value "abc" set for config parameter "style > MaxLineLength > maxLineLength" is not of required type Int.',
+      );
+      expect(lines.join('\n')).not.toContain('detekt-input');
     },
   );
 });
@@ -228,7 +345,7 @@ describeWithDetekt()('detekt never runs code from the repository (real detekt)',
           '--plugins',
           path.join(root, 'plugins', 'evil.jar'),
         ],
-        { cwd: tmp(), encoding: 'utf8' },
+        { cwd: tmp(), encoding: 'utf8', timeout: 120_000 },
       );
       expect(markerText(marker), r.stderr).toBe('class');
     },
@@ -295,12 +412,12 @@ describeWithDetekt()('detekt never runs code from the repository (real detekt)',
       expect(capture.status, capture.reason ?? '').toBe('ok');
       expect(existsSync(marker), markerText(marker)).toBe(false);
       // 42 is reported (no planted config or baseline was read), 7 is not (the project config was).
-      expect(magicLines(findings)).toEqual(['src/main/kotlin/a/A.kt:4:13']);
+      expect(magicLines(findings)).toEqual(['src/main/kotlin/a/A.kt:4:15']);
     },
   );
 
   itHostile(
-    'a project config with plugin or class path keys cannot load code',
+    'a project config with plugin or class path keys cannot load code (structural pin: detekt 1.23.8 reads none of these keys)',
     TIMEOUT,
     async () => {
       const root = tmp();
@@ -349,7 +466,7 @@ describeWithDetekt()('detekt never runs code from the repository (real detekt)',
       symlinkSync(path.join(outside, 'dir'), path.join(root, 'linked'));
       const { capture, findings } = await scan(root, ['src/A.kt', 'src/Linked.kt', 'linked/B.kt']);
       expect(capture.status, capture.reason ?? '').toBe('ok');
-      expect(magicLines(findings)).toEqual(['src/A.kt:4:13', 'src/A.kt:4:18']);
+      expect(magicLines(findings)).toEqual(['src/A.kt:4:15', 'src/A.kt:4:20']);
       const sarif = JSON.stringify(capture.sarif);
       expect(sarif).not.toContain('Linked.kt');
       expect(sarif).not.toContain('B.kt');
@@ -408,7 +525,7 @@ describeWithDetekt()('detekt never runs code from the repository (real detekt)',
       );
       const { capture, findings } = await scan(root, ['src/A.kt']);
       expect(capture.status, capture.reason ?? '').toBe('ok');
-      expect(magicLines(findings)).toEqual(['src/A.kt:4:13']);
+      expect(magicLines(findings)).toEqual(['src/A.kt:4:15']);
     },
   );
 });

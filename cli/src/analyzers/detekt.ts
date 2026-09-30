@@ -13,10 +13,15 @@ import {
 import path from 'node:path';
 import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { isInside, within } from './binary';
-import { checkDetektConfig, detektConfig, QUALOR_DETEKT_OVERLAY } from './detekt-config';
+import {
+  checkDetektConfig,
+  detektConfig,
+  QUALOR_DETEKT_DEFAULTS,
+  QUALOR_DETEKT_OVERLAY,
+} from './detekt-config';
 import { detektSarif } from './detekt-sarif';
 import { DEAD_PROXY_PROPERTIES, javaBinary } from './jvm';
-import { shown } from './reason';
+import { detailLine, shown } from './reason';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
 
 /** Where tools/analyzers/install.sh puts detekt's CLI jar (config.md §4). */
@@ -39,12 +44,13 @@ function isFile(p: string): boolean {
 /**
  * The file's bytes when it is a regular file inside the root, reached without a symbolic link or
  * junction on the way, of at most 1 MiB (ruling E15); else null. Opened once, without following a
- * link at the last step and without blocking on a FIFO, and judged by that descriptor.
+ * link at the last step and without blocking on a FIFO, and judged by that descriptor. `realRoot`
+ * is `realpathSync(root)`, computed once per run.
  */
-function readPlainFile(root: string, abs: string): Buffer | null {
+function readPlainFile(root: string, realRoot: string, abs: string): Buffer | null {
   try {
     if (!lstatSync(abs).isFile()) return null;
-    if (realpathSync(abs) !== path.join(realpathSync(root), path.relative(root, abs))) return null;
+    if (realpathSync(abs) !== path.join(realRoot, path.relative(root, abs))) return null;
     const fd = openSync(
       abs,
       constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
@@ -69,20 +75,22 @@ function readPlainFile(root: string, abs: string): Buffer | null {
  * detekt's read, and the relative paths it reports are the repository's own.
  */
 function copyKotlinFiles(ctx: AnalyzerContext, input: string): { copied: number; leftOut: number } {
-  let copied = 0;
-  let leftOut = 0;
-  for (const f of ctx.files) {
-    if (f.language !== 'kotlin') continue;
-    if (copyOne(ctx.root, f, input)) copied++;
-    else leftOut++;
+  const kotlin = ctx.files.filter((f) => f.language === 'kotlin');
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(ctx.root);
+  } catch {
+    return { copied: 0, leftOut: kotlin.length };
   }
-  return { copied, leftOut };
+  let copied = 0;
+  for (const f of kotlin) if (copyOne(ctx.root, realRoot, f, input)) copied++;
+  return { copied, leftOut: kotlin.length - copied };
 }
 
-function copyOne(root: string, f: ScopeFile, input: string): boolean {
+function copyOne(root: string, realRoot: string, f: ScopeFile, input: string): boolean {
   const target = path.join(input, ...f.path.split('/'));
   if (!within(input, target) || target === input) return false;
-  const bytes = readPlainFile(root, f.absPath);
+  const bytes = readPlainFile(root, realRoot, f.absPath);
   if (bytes === null) return false;
   try {
     mkdirSync(path.dirname(target), { recursive: true });
@@ -92,6 +100,48 @@ function copyOne(root: string, f: ScopeFile, input: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** detekt's line with the cause of a crash, in the head of its stderr. */
+const ORIGINAL_MESSAGE = 'The original exception message was: ';
+/** detekt's first stderr line when analysing one file threw. */
+const ANALYZING = /^java\.lang\.IllegalStateException: Analyzing (.+) led to an exception\.$/;
+
+/** The work-directory paths in detekt's stderr, and what the user knows them as. */
+export interface DetektPaths {
+  /** The copy detekt reads (`--input`). */
+  input: string;
+  /** The checked copy of the project config, or null. */
+  projectConfig: string | null;
+  /** That config's repository path, or null. */
+  projectConfigRel: string | null;
+}
+
+/**
+ * Why detekt failed, from its stderr (final review, minor 3): the `The original exception message
+ * was: …` line, after the file detekt was analysing when there is one, else the first non-empty
+ * line. The copy's paths become repository paths, so the line names the checkout file; then it is
+ * one bounded line (`detailLine`). For the log only, never a report `reason`.
+ */
+export function detektFailureDetail(stderr: string, paths: DetektPaths): string | null {
+  const shownPath = (text: string): string => {
+    let out = text;
+    if (paths.projectConfig !== null && paths.projectConfigRel !== null) {
+      out = out.split(paths.projectConfig).join(paths.projectConfigRel);
+    }
+    for (const prefix of new Set([`${paths.input}/`, `${paths.input}${path.sep}`])) {
+      out = out.split(prefix).join('');
+    }
+    return out;
+  };
+  const lines = stderr.split(/\r?\n/).filter((l) => l.trim() !== '');
+  const message = lines.find((l) => l.startsWith(ORIGINAL_MESSAGE));
+  if (message !== undefined) {
+    const file = lines[0]?.match(ANALYZING)?.[1];
+    return detailLine(shownPath(file === undefined ? message : `${file}: ${message}`));
+  }
+  const first = lines[0];
+  return first === undefined ? null : detailLine(shownPath(first));
 }
 
 function prepareWith(defaultJar: string) {
@@ -135,12 +185,23 @@ function prepareSync(ctx: AnalyzerContext, defaultJar: string): Preparation {
   }
   if (copied === 0) return { skip: 'no Kotlin file in scope that detekt can be given' };
   const configs: string[] = [];
+  let projectConfig: string | null = null;
   if (config.kind === 'project') {
     // The checked text, not the file: nothing can change between the check and detekt's read.
-    const copy = path.join(ctx.workDir, 'project-detekt.yml');
-    writeFileSync(copy, config.text);
-    configs.push(copy);
+    projectConfig = path.join(ctx.workDir, 'project-detekt.yml');
+    writeFileSync(projectConfig, config.text);
+    configs.push(projectConfig);
+  } else {
+    // No project config: detekt's defaults with its Jetpack Compose settings (Important 1).
+    const defaults = path.join(ctx.workDir, 'qualor-detekt-defaults.yml');
+    writeFileSync(defaults, QUALOR_DETEKT_DEFAULTS);
+    configs.push(defaults);
   }
+  const paths: DetektPaths = {
+    input,
+    projectConfig,
+    projectConfigRel: config.kind === 'project' ? config.rel : null,
+  };
   const overlay = path.join(ctx.workDir, 'qualor-detekt.yml');
   writeFileSync(overlay, QUALOR_DETEKT_OVERLAY);
   configs.push(overlay);
@@ -179,6 +240,7 @@ function prepareSync(ctx: AnalyzerContext, defaultJar: string): Preparation {
       // The SARIF driver carries detekt's own version.
       version: null,
       transform: (output) => detektSarif(output, ctx.root),
+      failureDetail: (_code, stderr) => detektFailureDetail(stderr, paths),
     },
   };
 }

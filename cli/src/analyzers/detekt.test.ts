@@ -1,4 +1,11 @@
-import { mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { engineMapping, parseConfig, splitSourceLines } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
@@ -13,8 +20,13 @@ import {
 import { useTempDirs, writeTree } from '../../test/tmp';
 import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { silentLogger } from '../log';
-import { createDetektAnalyzer, DEFAULT_DETEKT_JAR, detektAnalyzer } from './detekt';
-import { QUALOR_DETEKT_OVERLAY } from './detekt-config';
+import {
+  createDetektAnalyzer,
+  DEFAULT_DETEKT_JAR,
+  detektAnalyzer,
+  detektFailureDetail,
+} from './detekt';
+import { QUALOR_DETEKT_DEFAULTS, QUALOR_DETEKT_OVERLAY } from './detekt-config';
 import { detektSarif } from './detekt-sarif';
 import { DEAD_PROXY_PROPERTIES } from './jvm';
 import { normalizeCaptures } from './normalize';
@@ -75,6 +87,23 @@ function copied(workDir: string): string[] {
     .sort();
 }
 
+const TYPE_MESSAGE =
+  'The original exception message was: Value "abc" set for config parameter "style > MaxLineLength > maxLineLength" is not of required type Int.';
+
+/** Recorded: detekt 1.23.8's stderr for a project config value of the wrong type (trace cut). */
+function typeStderr(file: string): string {
+  return [
+    `java.lang.IllegalStateException: Analyzing ${file} led to an exception.`,
+    'Location: io.gitlab.arturbosch.detekt.core.config.BaseConfigKt.valueOrDefaultInternal(BaseConfig.kt:36)',
+    TYPE_MESSAGE,
+    "Running detekt '1.23.8' on Java '17.0.20.1+1-1-deb12u1-Debian' on OS 'Linux'",
+    'If the exception message does not help, please feel free to create an issue on our GitHub page.',
+    '\tat io.gitlab.arturbosch.detekt.core.AnalyzerKt.throwIllegalStateException(Analyzer.kt:185)',
+    'Caused by: java.lang.IllegalStateException: Value "abc" set for config parameter "style > MaxLineLength > maxLineLength" is not of required type Int.',
+    '',
+  ].join('\n');
+}
+
 describe('detekt prepare (config.md §6)', () => {
   it('is skipped without the image jar, so a plain host keeps a complete scan (ruling G6)', async () => {
     const s = setup();
@@ -109,11 +138,12 @@ describe('detekt prepare (config.md §6)', () => {
     });
   });
 
-  it('runs java -jar on a checked copy of the in-scope Kotlin files, detekt defaults and the overlay last', async () => {
+  it('runs java -jar on a checked copy of the in-scope Kotlin files, detekt defaults, the Compose layer and the overlay last', async () => {
     const s = setup();
     const p = await detektAnalyzer.prepare(ctxFor(s));
     if (!('run' in p)) throw new Error(JSON.stringify(p));
     const input = path.join(s.workDir, 'detekt-input');
+    const defaults = path.join(s.workDir, 'qualor-detekt-defaults.yml');
     const overlay = path.join(s.workDir, 'qualor-detekt.yml');
     expect(p.run.command).toBe('/usr/bin/java');
     expect(p.run.args).toEqual([
@@ -128,7 +158,7 @@ describe('detekt prepare (config.md §6)', () => {
       '--base-path',
       input,
       '--config',
-      overlay,
+      `${defaults},${overlay}`,
       '--build-upon-default-config',
       '--report',
       `sarif:${p.run.sarifPath}`,
@@ -145,10 +175,11 @@ describe('detekt prepare (config.md §6)', () => {
     expect(p.run.sarifPath).toBe(path.join(s.workDir, 'detekt.sarif'));
     expect(copied(s.workDir)).toEqual(['build.gradle.kts', 'src/A.kt']);
     expect(readFileSync(path.join(input, 'src', 'A.kt'), 'utf8')).toBe('class A\n');
+    expect(readFileSync(defaults, 'utf8')).toBe(QUALOR_DETEKT_DEFAULTS);
     expect(readFileSync(overlay, 'utf8')).toBe(QUALOR_DETEKT_OVERLAY);
   });
 
-  it('passes a checked copy of the project config before the overlay, never the checkout file (ruling E6)', async () => {
+  it('passes a checked copy of the project config before the overlay and no Compose layer, never the checkout file (ruling E6)', async () => {
     const s = setup({ 'config/detekt/detekt.yml': 'style:\n  MagicNumber:\n    active: false\n' });
     const p = await detektAnalyzer.prepare(ctxFor(s));
     if (!('run' in p)) throw new Error(JSON.stringify(p));
@@ -157,6 +188,8 @@ describe('detekt prepare (config.md §6)', () => {
       `${copy},${path.join(s.workDir, 'qualor-detekt.yml')}`,
     );
     expect(readFileSync(copy, 'utf8')).toBe('style:\n  MagicNumber:\n    active: false\n');
+    // A project with its own config keeps exactly the behaviour of its own Gradle run.
+    expect(existsSync(path.join(s.workDir, 'qualor-detekt-defaults.yml'))).toBe(false);
   });
 
   it('skips on an unusable project config, never exit 2 (ruling E7)', async () => {
@@ -263,6 +296,42 @@ describe('detekt prepare (config.md §6)', () => {
     );
   });
 
+  it("gives detekt's own reason for a failure, with the repository path (final review, minor 3)", async () => {
+    const s = setup({
+      'config/detekt/detekt.yml': 'style:\n  MaxLineLength:\n    maxLineLength: abc\n',
+    });
+    const p = await detektAnalyzer.prepare(ctxFor(s));
+    if (!('run' in p)) throw new Error(JSON.stringify(p));
+    const input = path.join(s.workDir, 'detekt-input');
+    const detail = p.run.failureDetail!(1, typeStderr(`${input}/src/A.kt`));
+    expect(detail).toBe(`src/A.kt: ${TYPE_MESSAGE}`);
+    expect(
+      p.run.failureDetail!(1, `Error reading ${path.join(s.workDir, 'project-detekt.yml')}`),
+    ).toBe('Error reading config/detekt/detekt.yml');
+  });
+
+  it('detektFailureDetail: the original exception message, else the first line; one bounded line', () => {
+    const input = '/work/detekt-input';
+    const config = '/work/project-detekt.yml';
+    const o = { input, projectConfig: config, projectConfigRel: 'config/detekt/detekt.yml' };
+    expect(detektFailureDetail(typeStderr(`${input}/src/Screen.kt`), o)).toBe(
+      `src/Screen.kt: ${TYPE_MESSAGE}`,
+    );
+    // Without an original message: the first non-empty line, the copy's paths as the checkout's.
+    expect(detektFailureDetail(`\nError reading ${config}: boom\n\tat x\n`, o)).toBe(
+      'Error reading config/detekt/detekt.yml: boom',
+    );
+    expect(detektFailureDetail(`Provided path '${input}/a b/C.kt' does not exist!\n`, o)).toBe(
+      "Provided path 'a b/C.kt' does not exist!",
+    );
+    expect(detektFailureDetail(`x${'y'.repeat(1000)}\u001b[31m`, o)).toHaveLength(300);
+    expect(detektFailureDetail('a\u001b[2Jb', o)).toBe('a [2Jb');
+    expect(detektFailureDetail('', o)).toBeNull();
+    expect(detektFailureDetail(`Error reading ${config}`, { ...o, projectConfigRel: null })).toBe(
+      `Error reading ${config}`,
+    );
+  });
+
   it('declares its id, languages and default jar', () => {
     expect(detektAnalyzer.id).toBe('detekt');
     expect(detektAnalyzer.languages).toEqual(['kotlin']);
@@ -285,7 +354,8 @@ describeWithDetekt()('detekt on awkward file names (real detekt, ruling E16)', (
       ];
       writeTree(
         root,
-        Object.fromEntries(names.map((n) => [n, 'class Foo {\n    val x = 42 * 7\n}\n'])),
+        // An expression, not a property: the Compose layer ignores property declarations.
+        Object.fromEntries(names.map((n) => [n, 'class Foo {\n    fun f() = 42 * 7\n}\n'])),
       );
       const [capture] = await runAnalyzers([detektAnalyzer], {
         root,

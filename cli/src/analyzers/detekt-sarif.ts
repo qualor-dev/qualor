@@ -21,6 +21,9 @@ function rule(r: SarifRule): SarifRule {
     : { ...r, id: id.rule, properties: { ...r.properties, ruleset: id.ruleset } };
 }
 
+/** A URI with a scheme and an authority, which detekt never writes against `%SRCROOT%`. */
+const ABSOLUTE_URI = /^[a-z][a-z0-9+.-]*:\/\//i;
+
 /**
  * detekt writes the path relative to `--base-path` unencoded (`src/A b.kt`, `100%.kt`), but the
  * normaliser decodes a relative URI: each segment is percent-encoded, so it decodes to the same
@@ -29,10 +32,8 @@ function rule(r: SarifRule): SarifRule {
 function encodedLocation(l: SarifLocation): SarifLocation {
   const artifact = l.physicalLocation?.artifactLocation;
   const uri = artifact?.uri;
-  // Only detekt's relative paths (a `:` in a file name is encoded too, never read as a scheme).
-  if (artifact?.uriBaseId !== SRCROOT || uri === undefined || uri.startsWith('file:/')) {
-    return l;
-  }
+  // Only detekt's relative paths; a `:` in a file name is encoded too, never read as a scheme.
+  if (artifact?.uriBaseId !== SRCROOT || uri === undefined || ABSOLUTE_URI.test(uri)) return l;
   return {
     ...l,
     physicalLocation: {

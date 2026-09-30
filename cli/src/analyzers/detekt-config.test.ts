@@ -10,6 +10,8 @@ import {
   detektConfig,
   MAX_DETEKT_CONFIG_ALIASES,
   MAX_DETEKT_CONFIG_BYTES,
+  QUALOR_DETEKT_DEFAULTS,
+  QUALOR_DETEKT_OVERLAY,
 } from './detekt-config';
 
 // A parser exception (a RangeError on a document nested past the stack) must be a skip reason,
@@ -242,5 +244,47 @@ describe('detektConfig (config.md §6)', () => {
       kind: 'skip',
       reason: 'configFile a?b.yml does not exist',
     });
+  });
+});
+
+describe('the configs Qualor passes to detekt (config.md §6)', () => {
+  it('pins the Compose defaults layer, used only without a project config (final review, Important 1)', () => {
+    // detekt's own Jetpack Compose guidance (detekt.dev/docs/introduction/compose).
+    expect(QUALOR_DETEKT_DEFAULTS).toBe(
+      [
+        "# Qualor's defaults for a project without a detekt config: detekt's Jetpack Compose settings.",
+        'naming:',
+        '  FunctionNaming:',
+        "    ignoreAnnotated: ['Composable']",
+        '  TopLevelPropertyNaming:',
+        "    constantPattern: '[A-Z][A-Za-z0-9]*'",
+        'complexity:',
+        '  LongParameterList:',
+        '    ignoreDefaultParameters: true',
+        'style:',
+        '  MagicNumber:',
+        '    ignorePropertyDeclaration: true',
+        '    ignoreCompanionObjectPropertyDeclaration: true',
+        '  UnusedPrivateMember:',
+        "    ignoreAnnotated: ['Preview']",
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('pins the overlay: only the keys with an effect in detekt 1.23.8 (ruling E21)', () => {
+    expect(QUALOR_DETEKT_OVERLAY).toBe(
+      [
+        "# Qualor's settings over detekt's defaults and the project's config (config.md §6).",
+        'config:',
+        '  validation: false',
+        'output-reports:',
+        '  active: true',
+        'comments:',
+        '  AbsentOrWrongFileLicense:',
+        '    active: false',
+        '',
+      ].join('\n'),
+    );
   });
 });

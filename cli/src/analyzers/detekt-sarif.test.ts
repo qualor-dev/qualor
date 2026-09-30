@@ -77,6 +77,18 @@ describe('detektSarif (report-format.md §5)', () => {
     expect(decodeURIComponent(uri!)).toBe('src/A b/100%20#x?.kt');
   });
 
+  it('encodes a relative path that starts like a scheme, and keeps a URI with one (final review, minor 4)', () => {
+    const at = (uri: string) => {
+      const run = structuredClone(raw).runs[0]!;
+      run.results[0]!.locations![0]!.physicalLocation.artifactLocation.uri = uri;
+      const out = detektSarif({ ...raw, runs: [run] }, path.resolve('/repo')).runs[0]!;
+      return out.results?.[0]?.locations?.[0]?.physicalLocation?.artifactLocation?.uri;
+    };
+    expect(at('file:/x.kt')).toBe('file%3A/x.kt');
+    expect(at('src/a:b.kt')).toBe('src/a%3Ab.kt');
+    expect(at('file:///elsewhere/A.kt')).toBe('file:///elsewhere/A.kt');
+  });
+
   it('parses detekt rule ids strictly, with the shared normaliser of ext-detekt (ruling E5)', () => {
     expect(detektRuleId('detekt.empty-blocks.EmptyCatchBlock')).toEqual({
       ruleset: 'empty-blocks',

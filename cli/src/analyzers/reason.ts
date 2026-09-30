@@ -7,3 +7,16 @@ export function shown(name: string): string {
   const clean = name.replace(/[\u0000-\u001f\u007f-\u009f]/g, '?');
   return clean.length <= 200 ? clean : `${clean.slice(0, 199)}…`;
 }
+
+const MAX_DETAIL_CHARS = 300;
+
+/**
+ * One line of a tool's stderr as a `failureDetail` (logged at warn, never a report `reason`):
+ * control characters become spaces, and it is trimmed and cut at 300 characters.
+ */
+export function detailLine(line: string): string {
+  const printable = [...line]
+    .map((c) => (c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f ? ' ' : c))
+    .join('');
+  return printable.trim().slice(0, MAX_DETAIL_CHARS);
+}
