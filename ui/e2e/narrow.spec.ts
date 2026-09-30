@@ -136,6 +136,35 @@ test.describe('on a tablet', () => {
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
+  test('the header keeps the account beside the brand; the organization switcher has its own row', async ({
+    page,
+  }) => {
+    // A second organization, in this browser only, brings the switcher.
+    await page.route(/\/api\/v0\/organizations(\?.*)?$/, async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as { items: unknown[] };
+      const other = {
+        id: '0190a6c2-0000-7000-8000-00000000a001',
+        key: 'platform',
+        name: 'Platform Engineering',
+        createdAt: '2026-09-29T09:12:00.000Z',
+        updatedAt: '2026-09-29T09:12:00.000Z',
+      };
+      return route.fulfill({ response, json: { ...body, items: [...body.items, other] } });
+    });
+    await page.goto('/projects');
+    const switcher = page.getByRole('combobox', { name: 'Organization', exact: true });
+    await expect(switcher).toBeVisible();
+    const brand = (await page.locator('.brand').boundingBox())!;
+    const account = (await page.locator('.user-button').boundingBox())!;
+    const organization = (await switcher.boundingBox())!;
+    const nav = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
+    expect(Math.abs(account.y + account.height / 2 - (brand.y + brand.height / 2))).toBeLessThan(4);
+    expect(organization.y).toBeGreaterThanOrEqual(account.y + account.height);
+    expect(nav.y).toBeGreaterThanOrEqual(organization.y + organization.height);
+    expect(organization.x + organization.width).toBeLessThanOrEqual(390);
+  });
+
   test("Access keeps a grant's role and Remove in view; the role changes from its select", async ({
     page,
   }) => {

@@ -1888,6 +1888,15 @@ details[open] > summary {
   .app-nav a {
     white-space: nowrap;
   }
+  /* The organization switcher has a row of its own, under the brand and the account. */
+  .org-switch {
+    order: 2;
+    flex: 1 0 100%;
+  }
+  .org-switch select {
+    flex: 0 1 20rem;
+    min-width: 0;
+  }
 }
 @media (max-width: 40rem) {
   /* Hidden on a phone visually only: the name stays the user button's accessible name. */
