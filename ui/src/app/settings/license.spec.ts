@@ -319,11 +319,15 @@ describe('LicensePage (enterprise.md §11)', () => {
       setup({ ...ACTIVE_UPLOADED, license: licence(340, 25), expiresSoon: true });
       const soon = await render();
       expect(words(meter(soon.root)?.querySelector('.meter-note'))).toContain('Renew soon');
+      // Attention, not failure: amber until the licence has expired (step 11).
+      expect(meter(soon.root)?.querySelector('.meter')?.classList).toContain('attention');
+      expect(meter(soon.root)?.querySelector('.meter')?.classList).not.toContain('reached');
       TestBed.resetTestingModule();
       setup({ ...ACTIVE_UPLOADED, state: 'grace', license: licence(370, -5) });
       const grace = await render();
       expect(words(meter(grace.root)?.querySelector('.meter-value'))).toBe('9 days of grace left');
-      expect(meter(grace.root)?.querySelector('.meter')?.classList).toContain('reached');
+      expect(meter(grace.root)?.querySelector('.meter')?.classList).toContain('attention');
+      expect(meter(grace.root)?.querySelector('.meter')?.classList).not.toContain('reached');
       expect(words(meter(grace.root)?.querySelector('.meter-note'))).toContain(
         'Enterprise features stop on',
       );
@@ -338,6 +342,7 @@ describe('LicensePage (enterprise.md §11)', () => {
       expect(words(meter(expired.root)?.querySelector('.meter-value'))).toBe(
         'Expired on Oct 1, 2027',
       );
+      expect(meter(expired.root)?.querySelector('.meter')?.classList).toContain('reached');
     });
 
     it('claims no time for a key the server rejected (revoked, not yet valid)', async () => {

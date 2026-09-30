@@ -1,4 +1,9 @@
-<div class="meter" [class.reached]="attention()" [class.off]="state() === 'off'">
+<div
+  class="meter"
+  [class.reached]="tone() === 'failure'"
+  [class.attention]="tone() === 'attention'"
+  [class.off]="state() === 'off'"
+>
   <div class="meter-head">
     <span class="meter-label">{{ label() }}</span
     >&ngsp;<span class="meter-value">{{ valueText() }}</span>
@@ -18,7 +23,7 @@
   }
   @if (noteText(); as note) {
     <span class="meter-note">
-      @if (attention()) {
+      @if (tone() !== null) {
         <q-icon name="alert" />
       }
       {{ note }}

@@ -1,6 +1,9 @@
 import { Component, computed, inject, input, LOCALE_ID } from '@angular/core';
 import { Icon } from '../shared/icon';
 
+/** What a meter asks of its reader: attention (amber: renew soon, grace) or a failure (red). */
+export type MeterAlert = 'attention' | 'failure';
+
 /**
  * `q-meter` (spec §6.7): a use against its budget as a horizontal track in the chart ramp, with
  * the numbers beside it ("12 of 200") and, beyond colour, words for what the reader must know: the
@@ -25,8 +28,11 @@ export class Meter {
   readonly text = input<string | null>(null);
   /** …and its own note, instead of the budget notes. */
   readonly note = input<string | null>(null);
-  /** Draws it as needing attention (as a reached budget): the note says why. */
-  readonly alert = input(false);
+  /**
+   * Draws it as needing attention (amber) or as a failure (red, as a reached budget); the note says
+   * why. The failure red is for what already stopped: a reached budget, an expired licence.
+   */
+  readonly alert = input<MeterAlert | null>(null);
 
   /** A budget meter: no words of its own were given. */
   private readonly budget = computed(() => this.text() === null && this.note() === null);
@@ -67,9 +73,9 @@ export class Meter {
     }
   });
 
-  /** Drawn as needing attention: a reached budget, or what the page says needs it. */
-  protected readonly attention = computed(
-    () => this.alert() || (this.budget() && this.state() === 'reached'),
+  /** Its tone: what the page says, else a failure once a budget is reached. */
+  protected readonly tone = computed<MeterAlert | null>(
+    () => this.alert() ?? (this.budget() && this.state() === 'reached' ? 'failure' : null),
   );
 
   /** What a screen reader hears for the track: the value's words, and why it needs attention. */

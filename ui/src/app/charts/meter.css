@@ -48,3 +48,11 @@
   color: var(--bad);
   font-weight: 600;
 }
+/* Attention (renew soon, grace) is amber: nothing has stopped yet. */
+.attention .meter-fill {
+  background: var(--warn);
+}
+.attention .meter-note {
+  color: var(--warn);
+  font-weight: 600;
+}

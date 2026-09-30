@@ -60,17 +60,24 @@ describe('Meter', () => {
     fixture.componentRef.setInput('max', 14);
     fixture.componentRef.setInput('text', '5 days of grace left');
     fixture.componentRef.setInput('note', 'Enterprise features stop on Oct 15, 2027');
-    fixture.componentRef.setInput('alert', true);
+    fixture.componentRef.setInput('alert', 'attention');
     await fixture.whenStable();
     const root = fixture.nativeElement as HTMLElement;
     expect(text(root.querySelector('.meter-value'))).toBe('5 days of grace left');
     expect(text(root.querySelector('.meter-note'))).toBe(
       'Enterprise features stop on Oct 15, 2027',
     );
-    expect(root.querySelector('.meter')?.classList).toContain('reached');
+    // Attention is amber; the failure red is for a reached budget or an expired licence.
+    expect(root.querySelector('.meter')?.classList).toContain('attention');
+    expect(root.querySelector('.meter')?.classList).not.toContain('reached');
+    expect(root.querySelector('.meter-note q-icon')).not.toBeNull();
     expect(root.querySelector('[role="meter"]')?.getAttribute('aria-valuetext')).toBe(
       '5 days of grace left, Enterprise features stop on Oct 15, 2027',
     );
+    fixture.componentRef.setInput('alert', 'failure');
+    await fixture.whenStable();
+    expect(root.querySelector('.meter')?.classList).toContain('reached');
+    expect(root.querySelector('.meter')?.classList).not.toContain('attention');
   });
 
   it('groups large numbers and shows dollars with cents', async () => {

@@ -116,7 +116,7 @@ export class LicensePage {
             ? $localize`:@@license.graceDayLeft:1 day of grace left`
             : $localize`:@@license.graceDaysLeft:${left}:days: days of grace left`,
         note: $localize`:@@license.graceStops:Enterprise features stop on ${formatDate(l.graceEndsAt)}:date:`,
-        alert: true,
+        alert: 'attention' as const,
       };
     }
     if (s.state === 'expired' || now >= expires) {
@@ -125,7 +125,7 @@ export class LicensePage {
         max: total,
         text: $localize`:@@license.expiredOn:Expired on ${formatDate(l.expires)}:date:`,
         note: null,
-        alert: true,
+        alert: 'failure' as const,
       };
     }
     const left = clamp(Math.ceil((expires - now) / DAY), 0, total);
@@ -139,7 +139,7 @@ export class LicensePage {
       note: s.expiresSoon
         ? $localize`:@@license.renewSoon:Renew soon: the licence expires on ${formatDate(l.expires)}:date:`
         : null,
-      alert: s.expiresSoon,
+      alert: s.expiresSoon ? ('attention' as const) : null,
     };
   });
 

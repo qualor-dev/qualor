@@ -44,6 +44,8 @@
   --surface-2: #f0f4fa;
   --border: #d7e0ec;
   --border-strong: #b9c7da;
+  /* The border of a form field: 3:1 on every surface a field sits on (WCAG 1.4.11). */
+  --control-border: #7d8da1;
   --text: #0a1b33;
   --text-muted: #4a5b73;
   --accent: #1f5fbf;
@@ -73,7 +75,7 @@
   --chart-grid: #e9eef5;
   --chart-baseline: #c7d2e0;
   --chart-crosshair: #8ea3c0;
-  --chart-spark: #9fb0c7;
+  --chart-spark: #7e8fa6;
   /* Severity: an ordered heat ramp (validated --ordinal: monotone L, steps >= 0.06, light end
      >= 2:1), always shown with its label; dark mode flips it so info sits nearest the surface. */
   --sev-blocker: #8e1712;
@@ -96,6 +98,7 @@
     --surface-2: #10284a;
     --border: #1e3a61;
     --border-strong: #2d5184;
+    --control-border: #56749e;
     --text: #e6eefa;
     --text-muted: #9fb2cc;
     --accent: #8db6f7;
@@ -103,7 +106,8 @@
     --accent-text: #07142a;
     --accent-soft: #14305a;
     --primary: #2a6fd6;
-    --primary-hover: #3b7fe3;
+    /* Darker on hover: white keeps 4.5:1 on it (a lighter blue would not). */
+    --primary-hover: #1f5fbf;
     --focus: #8db6f7;
     --ok: #5fd39c;
     --ok-soft: #0f3a2c;
@@ -603,7 +607,7 @@ textarea {
   font-size: 14px;
   color: var(--text);
   background: var(--surface);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
   min-height: 36px;
@@ -987,6 +991,22 @@ tbody tr:has(.empty-state):hover {
   height: 0.45em;
   border-radius: 50%;
   background: currentColor;
+}
+/* A severity's dot is the colour the charts draw it in (facets, distribution, legend). */
+.badge-blocker::before {
+  background: var(--sev-blocker);
+}
+.badge-high::before {
+  background: var(--sev-high);
+}
+.badge-medium::before {
+  background: var(--sev-medium);
+}
+.badge-low::before {
+  background: var(--sev-low);
+}
+.badge-info::before {
+  background: var(--sev-info);
 }
 .badge q-icon {
   width: 13px;
@@ -2591,6 +2611,19 @@ details[open] > summary {
   .auth-main {
     place-items: start center;
     padding: var(--space-6) var(--space-4);
+  }
+}
+
+/* On dark the ink panel and the page are nearly one colour: a hairline marks the panel's edge. */
+@media (prefers-color-scheme: dark) {
+  .auth-art {
+    box-shadow: inset -1px 0 0 var(--hairline);
+  }
+}
+@media (prefers-color-scheme: dark) and (max-width: 52rem),
+  (prefers-color-scheme: dark) and (max-height: 32rem) {
+  .auth-art {
+    box-shadow: inset 0 -1px 0 var(--hairline);
   }
 }
 
