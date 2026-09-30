@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # The qualor/scanner image: the `qualor` CLI binary plus the pinned analyzer toolchain
 # of tools/analyzers/install.sh (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with a snapshot of its
-# vulnerability database in /opt/qualor/share/trivy), Qualor's sonarjs pass in /opt/qualor/sonarjs
+# vulnerability database in /opt/qualor/share/trivy, Ruff), Qualor's sonarjs pass in /opt/qualor/sonarjs
 # (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9, tools/analyzers/sonarjs) and what they need to run:
 # Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs) and git.
 # Build from the repository root:

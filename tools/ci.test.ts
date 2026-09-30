@@ -201,7 +201,7 @@ describe('analyzer toolchain (plan 1D)', () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
 
   it('pins every tool to an exact version and a SHA-256', () => {
-    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS', 'TRIVY']) {
+    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS', 'TRIVY', 'RUFF']) {
       expect(script, tool).toMatch(new RegExp(`^${tool}_VERSION=\\d+\\.\\d+\\.\\d+$`, 'm'));
       expect(script, tool).toMatch(new RegExp(`^${tool}_SHA256(_X64)?=[0-9a-f]{64}$`, 'm'));
     }
@@ -227,6 +227,41 @@ describe('analyzer toolchain (plan 1D)', () => {
       scripts: Record<string, string>;
     };
     expect(root.scripts['trivy-db:pin']).toBe('tsx tools/analyzers/trivy-db-pin.ts');
+  });
+
+  it('pins Ruff per architecture and its source archive, and installs only the binary (plan 8C)', () => {
+    expect(script).toMatch(/^RUFF_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^RUFF_SHA256_X64=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^RUFF_SHA256_ARM64=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^RUFF_SOURCE_SHA256=[0-9a-f]{64}$/m);
+    expect(script).toContain(
+      '"$GH/astral-sh/ruff/releases/download/$RUFF_VERSION/ruff-$RF_ARCH-unknown-linux-gnu.tar.gz" "$RF_SHA" ruff.tgz',
+    );
+    expect(script).toContain('install -m 0755 "$TMP/ruff" "$PREFIX/bin/ruff"');
+    // The CLI's pin and the image's must agree (RUFF_VERSION in packages/shared/src/rules/ruff.ts).
+    const shared = readFileSync('packages/shared/src/rules/ruff.ts', 'utf8');
+    const pinned = /^RUFF_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(shared).toContain(`export const RUFF_VERSION = '${pinned}';`);
+  });
+
+  it('installs the toolchain (Ruff included) in every job that requires the analyzers (plan 8C)', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      if (!job.steps.some((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1')) continue;
+      expect(
+        job.steps.some((s) => s.run?.endsWith('sh tools/analyzers/install.sh') === true),
+        name,
+      ).toBe(true);
+    }
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { extends?: string; variables?: Record<string, string> } | undefined
+    >;
+    for (const [name, job] of Object.entries(gitlab)) {
+      if (name === '.analyzers' || job?.variables?.['QUALOR_REQUIRE_ANALYZERS'] !== '1') continue;
+      expect(job.extends, name).toBe('.analyzers');
+    }
+    expect(script.indexOf('"$PREFIX/bin/ruff"')).toBeGreaterThan(0);
   });
 
   it('installs the toolchain and requires it in the test, fixtures and cli-binary jobs', () => {

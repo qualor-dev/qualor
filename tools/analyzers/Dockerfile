@@ -1,6 +1,6 @@
 # A local Linux environment with the analyzer toolchain CI installs (plan 1D Task 2): Node 22,
-# JDK 17 (PMD, SpotBugs, javac), PMD, SpotBugs, OpenGrep, Gitleaks and Trivy with its database
-# from install.sh, and bun. Also the .NET 8 and 10 SDKs and Roslynator from install-dotnet.sh
+# JDK 17 (PMD, SpotBugs, javac), PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with its database
+# and Ruff from install.sh, and bun. Also the .NET 8 and 10 SDKs and Roslynator from install-dotnet.sh
 # (plan 2D), and Qualor's sonarjs pass in /opt/qualor/sonarjs (plan 8A/8B).
 #   docker build -t qualor-analyzers tools/analyzers
 # Pinned by version and digest (multi-arch index); bump both together.

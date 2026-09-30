@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs the pinned analyzer toolchain (plan 1D, Task 2) into $QUALOR_TOOLS (default
-# /opt/qualor): PMD, SpotBugs, OpenGrep, Gitleaks and Trivy, each checked against its SHA-256
+# /opt/qualor): PMD, SpotBugs, OpenGrep, Gitleaks, Trivy and Ruff, each checked against its SHA-256
 # before it is unpacked, and Trivy's vulnerability database (plan 2B), a snapshot pinned by the
 # digest of its OCI layer, into $QUALOR_TOOLS/share/trivy/db. Java (>= 17) must already be on
 # PATH for PMD and SpotBugs. The same versions are what the qualor/scanner image ships; bump them
@@ -31,6 +31,17 @@ TRIVY_SHA256_ARM64=b94ce1976bbf3c15b514b605ee88be7c6d94a29be2302847ff01cb794d47a
 # TRIVY_DB_CREATED; architecture-independent.
 TRIVY_DB_DIGEST=sha256:7d0ae3ee84ece1ecae274d9ac146c7241ae483c981f68aeb3f4953f6c2fbc6b0
 TRIVY_DB_CREATED=2026-09-25T06:43:29Z
+# Ruff (plan 8C), the Python linter of the `ruff` engine: the upstream release binary for
+# glibc, checked against the release's sha256.sum (the same as GitHub's asset digests of the
+# immutable release 0.16.9). RUFF_VERSION must equal RUFF_VERSION in
+# packages/shared/src/rules/ruff.ts (tools/ci.test.ts checks), and a bump regenerates
+# packages/shared/rules/ruff-*.json (tools/analyzers/ruff-keys.ts) and
+# deploy/scanner/licenses/RUFF-DEPENDENCIES.txt (tools/analyzers/ruff-licences.mjs, from
+# RUFF_SOURCE_SHA256's source.tar.gz).
+RUFF_VERSION=0.16.9
+RUFF_SHA256_X64=1bfbb819b5d4f9af501748862276b60e412d336034d99387691a4d4bce7a6f13
+RUFF_SHA256_ARM64=a13061e8f471b49c9d2aa284c32dd54a0e5534d702d1a44e1d7f4c875569586d
+RUFF_SOURCE_SHA256=87df064eb5582c59e2575959b8b43ab6550c727d6a9875cc515d0299b826c067
 # Qualor's sonarjs pass (tools/analyzers/sonarjs, plan 8A/8B), which this script does not install:
 # the qualor/scanner and tools/analyzers Dockerfiles run `npm ci` from its package-lock.json and
 # read these pins. SONARJS_VERSION must equal that package.json's eslint-plugin-sonarjs (the last
@@ -46,8 +57,8 @@ SONARJS_SOURCE_SHA256=17af65bcc0c8b631da9f135afb0a9ef1da82eb31049e9ce7d90dc40e04
 PREFIX="${QUALOR_TOOLS:-/opt/qualor}"
 GH=https://github.com
 case "$(uname -m)" in
-  x86_64 | amd64) OG_ARCH=x86; OG_SHA=$OPENGREP_SHA256_X64; GL_ARCH=x64; GL_SHA=$GITLEAKS_SHA256_X64; TV_ARCH=64bit; TV_SHA=$TRIVY_SHA256_X64 ;;
-  aarch64 | arm64) OG_ARCH=aarch64; OG_SHA=$OPENGREP_SHA256_ARM64; GL_ARCH=arm64; GL_SHA=$GITLEAKS_SHA256_ARM64; TV_ARCH=ARM64; TV_SHA=$TRIVY_SHA256_ARM64 ;;
+  x86_64 | amd64) OG_ARCH=x86; OG_SHA=$OPENGREP_SHA256_X64; GL_ARCH=x64; GL_SHA=$GITLEAKS_SHA256_X64; TV_ARCH=64bit; TV_SHA=$TRIVY_SHA256_X64; RF_ARCH=x86_64; RF_SHA=$RUFF_SHA256_X64 ;;
+  aarch64 | arm64) OG_ARCH=aarch64; OG_SHA=$OPENGREP_SHA256_ARM64; GL_ARCH=arm64; GL_SHA=$GITLEAKS_SHA256_ARM64; TV_ARCH=ARM64; TV_SHA=$TRIVY_SHA256_ARM64; RF_ARCH=aarch64; RF_SHA=$RUFF_SHA256_ARM64 ;;
   *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
@@ -92,6 +103,10 @@ fetch "$GH/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/gitleaks_${GIT
 tar -xzf "$TMP/gitleaks.tgz" -C "$TMP" gitleaks
 install -m 0755 "$TMP/gitleaks" "$PREFIX/bin/gitleaks"
 
+fetch "$GH/astral-sh/ruff/releases/download/$RUFF_VERSION/ruff-$RF_ARCH-unknown-linux-gnu.tar.gz" "$RF_SHA" ruff.tgz
+tar -xzf "$TMP/ruff.tgz" -C "$TMP" --strip-components=1 "ruff-$RF_ARCH-unknown-linux-gnu/ruff"
+install -m 0755 "$TMP/ruff" "$PREFIX/bin/ruff"
+
 from_cache "$TV_SHA" trivy.tgz || {
   fetch "$GH/aquasecurity/trivy/releases/download/v$TRIVY_VERSION/trivy_${TRIVY_VERSION}_Linux-$TV_ARCH.tar.gz" "$TV_SHA" trivy.tgz
   to_cache "$TV_SHA" trivy.tgz
@@ -118,4 +133,4 @@ chmod 0644 "$PREFIX/share/trivy/db/trivy.db" "$PREFIX/share/trivy/db/metadata.js
 # Only the current pins stay in the cache.
 [ -z "$CACHE" ] || find "$CACHE" -maxdepth 1 -type f ! -name "$TV_SHA" ! -name "${TRIVY_DB_DIGEST#sha256:}" -delete
 
-echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION into $PREFIX/bin, and the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy"
+echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION, Ruff $RUFF_VERSION into $PREFIX/bin, and the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy"
