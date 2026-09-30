@@ -237,8 +237,8 @@ profiles are not imported), and the main branch's issues marked false positive, 
 accepted. C#, JavaScript and TypeScript rules map one to one to Qualor's bundled
 SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0)
 wherever the bundled version has the rule key SonarQube reports. Ruff findings imported into
-SonarQube map one to one; for SonarQube's own Python rules, issue statuses import where a Ruff rule
-is the same rule, and profiles follow once those mappings are reviewed. It only reads SonarQube
+SonarQube map one to one; for SonarQube's own Python rules, reviewed mappings activate the Ruff rule in a
+profile where it is the same rule, and import issue statuses where it is a partial counterpart. It only reads SonarQube
 (`GET` requests), and `--dry-run` shows what would change without writing anything:
 
 ```sh

@@ -353,11 +353,11 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(ts.skip).toBe('no_mapped_rules');
   });
 
-  it('plans a py profile: reviewed equivalents (external_ruff) become rows; curated python rows stay pending review (ruling C1, C3)', () => {
-    // Every curated python: row ships reviewed:false (ruling C1), so python:S1128 (-> ruff:F401)
-    // never becomes a row here, only a pendingReview entry; external_ruff:<code> (repository,
-    // always reviewed) is what actually activates a ruff rule. external_ruff:ERA001 is outside
-    // qualor-default, so it lands in mappedNotRun even though it is mapped.
+  it('plans a py profile: external_ruff rows and reviewed equivalent python rows activate Ruff rules; overlap rows are status only', () => {
+    // The curated python: rows are reviewed (plan 8C follow-up, 2026-10-01). python:S1128
+    // (equivalent to ruff:F401) activates it alongside external_ruff:F401, which names the same
+    // rule, so one row results. python:S1131 (overlap, ruff:W291) stays status only.
+    // external_ruff:ERA001 is outside qualor-default, so it lands in mappedNotRun.
     const plan = planProfile(
       profile({
         language: 'py',
@@ -365,6 +365,7 @@ describe('planProfile (import-sonarqube.md §7)', () => {
           rule('external_ruff:F401', { language: 'py' }),
           rule('external_ruff:ERA001', { language: 'py' }),
           rule('python:S1128', { language: 'py' }),
+          rule('python:S1131', { language: 'py' }),
           rule('python:S9999', { language: 'py' }),
         ],
       }),
@@ -375,8 +376,32 @@ describe('planProfile (import-sonarqube.md §7)', () => {
       { ruleKey: 'ruff:F401', active: true, severityOverride: null },
     ]);
     expect(plan.stats.mappedNotRun).toEqual(['external_ruff:ERA001']);
-    expect(plan.stats.pendingReview).toEqual(['python:S1128']);
+    expect(plan.stats.statusOnly).toEqual(['python:S1131']);
+    expect(plan.stats.pendingReview).toEqual([]);
     expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'python:S9999' })]);
+  });
+
+  it('keeps an unreviewed python row out of the profile and lists it as pending review', () => {
+    const mapping = loadSonarMapping({
+      ...structuredClone(raw),
+      rules: [
+        ...raw.rules,
+        {
+          sonar: ['python:S0001'],
+          qualor: ['ruff:F841'],
+          relation: 'equivalent',
+          reviewed: false,
+          reason: 'Synthetic row for the unreviewed path.',
+        },
+      ],
+    });
+    const plan = planProfile(
+      profile({ language: 'py', active: [rule('python:S0001', { language: 'py' })] }),
+      mapping,
+    );
+    expect(plan.rows).toEqual([]);
+    expect(plan.skip).toBe('no_mapped_rules');
+    expect(plan.stats.pendingReview).toEqual(['python:S0001']);
   });
 });
 

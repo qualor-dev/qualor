@@ -247,8 +247,12 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     },
   );
 
-  it('ships every curated entry unreviewed', () => {
-    for (const entry of raw.rules) expect(entry.reviewed).toBe(false);
+  it('ships every curated non-python entry unreviewed and every python entry reviewed', () => {
+    // python: rows were reviewed on 2026-10-01 (see the file's $comment); the rest await a person.
+    for (const entry of raw.rules) {
+      const python = entry.sonar.every((s) => s.startsWith('python:'));
+      expect(entry.reviewed, entry.sonar.join(',')).toBe(python);
+    }
   });
 
   it('maps the unit-test PMD rules and the JSP Find Security Bugs patterns', () => {

@@ -15,8 +15,10 @@ All notable changes to Qualor are listed here, newest first. The format follows
   with `analyzers.ruff.select` and `analyzers.ruff.ignore`. A `python` quality profile is created
   for every organisation. `qualor import sonarqube` imports Python profiles where a Ruff rule is
   the same rule, and keeps the statuses of issues SonarQube imported from Ruff. The curated
-  SonarQube-rule-to-Ruff-rule mappings ship pending review: until a maintainer reviews a mapping,
-  it still imports issue statuses, but does not yet activate the rule in a `python` profile.
+  SonarQube-rule-to-Ruff-rule mappings (88 rules) are reviewed: each was compared against both
+  rules' public documentation, and an imported Python profile now activates the mapped Ruff rule
+  where the two are equivalent. A mapping marked overlap (partial counterpart) only imports issue
+  statuses and does not activate the rule.
 - HTML and CSS: `.html`/`.htm` files are language `html`, `.css` and `.scss` files language `css`,
   with their own quality profiles, and HTML and CSS get line, comment and duplication metrics.
   `qualor/scanner` runs HTMLHint 1.9.2 (`htmlhint` engine) and stylelint 17.15 (`stylelint`
