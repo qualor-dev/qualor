@@ -1,18 +1,7 @@
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
-import { isInside, within } from './binary';
+import { isInside } from './binary';
+import { copyCheckedFiles } from './checked-copy';
 import {
   checkDetektConfig,
   detektConfig,
@@ -42,64 +31,16 @@ function isFile(p: string): boolean {
 }
 
 /**
- * The file's bytes when it is a regular file inside the root, reached without a symbolic link or
- * junction on the way, of at most 1 MiB (ruling E15); else null. Opened once, without following a
- * link at the last step and without blocking on a FIFO, and judged by that descriptor. `realRoot`
- * is `realpathSync(root)`, computed once per run.
- */
-function readPlainFile(root: string, realRoot: string, abs: string): Buffer | null {
-  try {
-    if (!lstatSync(abs).isFile()) return null;
-    if (realpathSync(abs) !== path.join(realRoot, path.relative(root, abs))) return null;
-    const fd = openSync(
-      abs,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
-    );
-    try {
-      const stat = fstatSync(fd);
-      if (!stat.isFile() || stat.size > MAX_ANALYZED_BYTES) return null;
-      const bytes = readFileSync(fd);
-      return bytes.length > MAX_ANALYZED_BYTES ? null : bytes;
-    } finally {
-      closeSync(fd);
-    }
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Copies the in-scope Kotlin files into `input`, at their repository paths. detekt reads the copy,
- * never the checkout: no path of the checkout reaches its command line (JCommander would split one
- * with a space, detekt one with a comma or semicolon), nothing can change between this check and
- * detekt's read, and the relative paths it reports are the repository's own.
+ * Copies the in-scope Kotlin files into `input`, at their repository paths (`copyCheckedFiles`).
+ * detekt reads the copy, never the checkout: no path of the checkout reaches its command line
+ * (JCommander would split one with a space, detekt one with a comma or semicolon), nothing can
+ * change between this check and detekt's read, and the relative paths it reports are the
+ * repository's own.
  */
 function copyKotlinFiles(ctx: AnalyzerContext, input: string): { copied: number; leftOut: number } {
   const kotlin = ctx.files.filter((f) => f.language === 'kotlin');
-  let realRoot: string;
-  try {
-    realRoot = realpathSync(ctx.root);
-  } catch {
-    return { copied: 0, leftOut: kotlin.length };
-  }
-  let copied = 0;
-  for (const f of kotlin) if (copyOne(ctx.root, realRoot, f, input)) copied++;
+  const copied = copyCheckedFiles(ctx.root, kotlin, input).length;
   return { copied, leftOut: kotlin.length - copied };
-}
-
-function copyOne(root: string, realRoot: string, f: ScopeFile, input: string): boolean {
-  const target = path.join(input, ...f.path.split('/'));
-  if (!within(input, target) || target === input) return false;
-  const bytes = readPlainFile(root, realRoot, f.absPath);
-  if (bytes === null) return false;
-  try {
-    mkdirSync(path.dirname(target), { recursive: true });
-    // `wx`: two paths that one file system folds together are never merged silently.
-    writeFileSync(target, bytes, { flag: 'wx' });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** detekt's line with the cause of a crash, in the head of its stderr. */

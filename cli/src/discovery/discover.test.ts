@@ -259,6 +259,10 @@ describe('discoverFiles', () => {
       'Pods/Alamofire/Source/Session.swift': 'let a = 1\n',
       'Carthage/Checkouts/Kit/Kit.swift': 'let a = 1\n',
       '.build/checkouts/swift-nio/Sources/NIO.swift': 'let a = 1\n',
+      // Nested too (Task 2 review carry): an app folder's Pods, a local package's .build.
+      'App/Pods/Kit/Kit.swift': 'let a = 1\n',
+      'Packages/Core/.build/debug/Gen.swift': 'let a = 1\n',
+      'Vendor/Carthage/Build/K.swift': 'let a = 1\n',
     });
     const files = discoverFiles({
       root,

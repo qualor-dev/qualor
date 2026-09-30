@@ -1,8 +1,14 @@
 {
-  "description": "Swift repo: tree-sitter-swift metrics; SwiftLint findings are added in plan 8F Task 8",
-  "engines": [],
-  "findingsExhaustive": false,
-  "findings": [],
+  "description": "Swift repo: SwiftLint with the project's own .swiftlint.yml (Generated/ excluded, force_unwrapping opted in, trailing_whitespace disabled, line_length 100); tree-sitter-swift metrics",
+  "engines": ["swiftlint"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "swiftlint:duplicate_conditions", "path": "Sources/App/Store.swift", "startLine": 29, "severity": "high", "quality": "reliability" },
+    { "ruleKey": "swiftlint:duplicate_conditions", "path": "Sources/App/Store.swift", "startLine": 33, "severity": "high", "quality": "reliability" },
+    { "ruleKey": "swiftlint:force_cast", "path": "Sources/App/Store.swift", "startLine": 20, "severity": "high", "quality": "maintainability" },
+    { "ruleKey": "swiftlint:force_unwrapping", "path": "Sources/App/Store.swift", "startLine": 25, "severity": "low", "quality": "maintainability" },
+    { "ruleKey": "swiftlint:line_length", "path": "Sources/App/Store.swift", "startLine": 40, "severity": "low", "quality": "maintainability" }
+  ],
   "files": {
     "Sources/App/Store.swift": { "language": "swift", "kind": "main", "lines": 41, "ncloc": 33, "commentLines": 1, "functions": 6, "classes": 1, "statements": 14, "complexity": 10, "cognitiveComplexity": 5 },
     "Generated/Model.swift": { "language": "swift", "kind": "main", "lines": 4, "ncloc": 2, "commentLines": 1, "functions": 0, "classes": 0, "statements": 1, "complexity": 0, "cognitiveComplexity": 0 }
@@ -15,6 +21,8 @@
     "Sources/App/Store.swift#statements": "add 1 (the assignment); total var sum, for, sum +=, return = 4; first let, return = 2; lookup return = 1; grade if + 4 returns = 5 (an else if is not a statement of its own); summary's shorthand body 1; total 14 (the member items is not a statement)",
     "Sources/App/Store.swift#complexity": "6 functions; total for = 1; grade if, else if, else if = 3; ?? and where are not decisions; total 10",
     "Sources/App/Store.swift#cognitiveComplexity": "total for +1; grade if +1, else if +1, else if +1, else +1 = 4; total 5",
-    "Generated/Model.swift#metrics": "import (1), comment (3), let (4): ncloc 2, one statement; the project's SwiftLint excludes it, Qualor's scope does not"
+    "Generated/Model.swift#metrics": "import (1), comment (3), let (4): ncloc 2, one statement; the project's SwiftLint excludes it, Qualor's scope does not",
+    "swiftlint#config": "Qualor writes disabled_rules [trailing_whitespace + the 12 SourceKit rules], opt_in_rules [force_unwrapping], line_length 100; reporter is dropped; Generated/ is left out of the file list, so Generated/Model.swift:4's force_cast never runs",
+    "swiftlint#severity": "duplicate_conditions (lint) and force_cast (idiomatic) are SwiftLint errors -> high; force_unwrapping (idiomatic) and line_length (metrics) are warnings of a non-lint kind -> low (report-format.md §7.1)"
   }
 }

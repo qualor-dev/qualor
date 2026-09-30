@@ -108,6 +108,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   htmlhint: [['node'], [WEBLINT_PASS]],
   // Plan 8E: java and, like sonarjs above, the image-bundled detekt jar.
   detekt: [['java'], [DETEKT_JAR]],
+  // Plan 8F: SwiftLint's static binary, from install.sh (/opt/qualor/bin).
+  swiftlint: [['swiftlint']],
 };
 
 /**

@@ -1,0 +1,5 @@
+{
+  "yaml": "error: Cannot parse YAML file: 2:1: error: parser: while parsing a flow node in line 2, column 1\ndid not find expected node content:\na: [\n^\nCould not read configuration: file Configuration.swift, line 280\n",
+  "noFiles": "Error: No lintable files found at paths: '/tmp/qualor-swiftlint-AbC123/src'\n",
+  "combined": "error: 'disabled_rules' or 'opt_in_rules' cannot be used in combination with 'only_rules'\nCould not read configuration: file Configuration.swift, line 280\n"
+}

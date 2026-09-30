@@ -9,6 +9,7 @@ import { semgrepAnalyzer } from './semgrep';
 import { sonarjsAnalyzer } from './sonarjs';
 import { spotbugsAnalyzer } from './spotbugs';
 import { stylelintAnalyzer } from './stylelint';
+import { swiftlintAnalyzer } from './swiftlint';
 import { trivyAnalyzer } from './trivy';
 import type { Analyzer } from './types';
 
@@ -21,6 +22,7 @@ export function builtinAnalyzers(): Analyzer[] {
     pmdAnalyzer,
     spotbugsAnalyzer,
     detektAnalyzer,
+    swiftlintAnalyzer,
     semgrepAnalyzer,
     gitleaksAnalyzer,
     trivyAnalyzer,

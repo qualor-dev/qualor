@@ -72,6 +72,9 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(unavailableEngines(['detekt'], (t) => t === 'java')).toEqual(['detekt']);
     expect(unavailableEngines(['detekt'], (t) => t === DETEKT_JAR)).toEqual(['detekt']);
     expect(unavailableEngines(['detekt'], (t) => ['java', DETEKT_JAR].includes(t))).toEqual([]);
+    // Plan 8F: SwiftLint's static binary only.
+    expect(unavailableEngines(['swiftlint'], () => false)).toEqual(['swiftlint']);
+    expect(unavailableEngines(['swiftlint'], (t) => t === 'swiftlint')).toEqual([]);
   });
   it('needs node and the weblint pass for stylelint and htmlhint (plan 8D)', () => {
     expect(unavailableEngines(['stylelint', 'htmlhint'], (t) => t === 'node', 'linux')).toEqual(['stylelint', 'htmlhint']);

@@ -1,0 +1,159 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/cos02/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Sources/App/Store.swift"
+                },
+                "region": {
+                  "startColumn": 12,
+                  "startLine": 29
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Duplicate sets of conditions in the same branch instruction should be avoided"
+          },
+          "ruleId": "duplicate_conditions"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Sources/App/Store.swift"
+                },
+                "region": {
+                  "startColumn": 19,
+                  "startLine": 33
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Duplicate sets of conditions in the same branch instruction should be avoided"
+          },
+          "ruleId": "duplicate_conditions"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Sources/App/Store.swift"
+                },
+                "region": {
+                  "startColumn": 24,
+                  "startLine": 20
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Force casts should be avoided"
+          },
+          "ruleId": "force_cast"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Sources/App/Store.swift"
+                },
+                "region": {
+                  "startColumn": 26,
+                  "startLine": 25
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Force unwrapping should be avoided"
+          },
+          "ruleId": "force_unwrapping"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Sources/App/Store.swift"
+                },
+                "region": {
+                  "startColumn": 1,
+                  "startLine": 40
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Line should be 100 characters or less; currently it has 116 characters"
+          },
+          "ruleId": "line_length"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/realm/SwiftLint/blob/0.65.1/README.md",
+          "name": "SwiftLint",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Duplicate sets of conditions in the same branch instruction should be avoided"
+              },
+              "helpUri": "https://realm.github.io/SwiftLint/duplicate_conditions.html",
+              "id": "duplicate_conditions",
+              "shortDescription": {
+                "text": "Duplicate Conditions"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Force casts should be avoided"
+              },
+              "helpUri": "https://realm.github.io/SwiftLint/force_cast.html",
+              "id": "force_cast",
+              "shortDescription": {
+                "text": "Force Cast"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Force unwrapping should be avoided"
+              },
+              "helpUri": "https://realm.github.io/SwiftLint/force_unwrapping.html",
+              "id": "force_unwrapping",
+              "shortDescription": {
+                "text": "Force Unwrapping"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "Lines should not span too many characters."
+              },
+              "helpUri": "https://realm.github.io/SwiftLint/line_length.html",
+              "id": "line_length",
+              "shortDescription": {
+                "text": "Line Length"
+              }
+            }
+          ],
+          "semanticVersion": "0.65.1"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
