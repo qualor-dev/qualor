@@ -120,6 +120,7 @@ describe('qualor scan --dry-run', () => {
     expect(report.engines.map((e) => e.id)).toEqual([
       'eslint',
       'sonarjs',
+      'ruff',
       'pmd',
       'spotbugs',
       'semgrep',
@@ -129,9 +130,9 @@ describe('qualor scan --dry-run', () => {
     ]);
     expect(
       report.engines
-        .filter((e) => ['eslint', 'sonarjs', 'pmd', 'spotbugs'].includes(e.id))
+        .filter((e) => ['eslint', 'sonarjs', 'ruff', 'pmd', 'spotbugs'].includes(e.id))
         .map((e) => e.status),
-    ).toEqual(['skipped', 'skipped', 'skipped', 'skipped']);
+    ).toEqual(['skipped', 'skipped', 'skipped', 'skipped', 'skipped']);
   });
 
   it(

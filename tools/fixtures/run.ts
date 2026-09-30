@@ -85,6 +85,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   roslyn: [['dotnet']],
   // Plan 8A/8B: needs node and, like trivy above, its image-bundled resource.
   sonarjs: [['node'], [SONARJS_PASS]],
+  // Plan 8C: the Ruff binary (install.sh).
+  ruff: [['ruff']],
 };
 
 /**

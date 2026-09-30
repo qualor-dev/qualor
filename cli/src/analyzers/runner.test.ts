@@ -341,6 +341,7 @@ describe('runAnalyzers', () => {
     expect(builtinAnalyzers().map((a) => a.id)).toEqual([
       'eslint',
       'sonarjs',
+      'ruff',
       'pmd',
       'spotbugs',
       'semgrep',

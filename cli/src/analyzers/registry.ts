@@ -2,6 +2,7 @@ import { eslintAnalyzer } from './eslint';
 import { gitleaksAnalyzer } from './gitleaks';
 import { pmdAnalyzer } from './pmd';
 import { roslynAnalyzer } from './roslyn';
+import { ruffAnalyzer } from './ruff';
 import { semgrepAnalyzer } from './semgrep';
 import { sonarjsAnalyzer } from './sonarjs';
 import { spotbugsAnalyzer } from './spotbugs';
@@ -13,6 +14,7 @@ export function builtinAnalyzers(): Analyzer[] {
   return [
     eslintAnalyzer,
     sonarjsAnalyzer,
+    ruffAnalyzer,
     pmdAnalyzer,
     spotbugsAnalyzer,
     semgrepAnalyzer,
