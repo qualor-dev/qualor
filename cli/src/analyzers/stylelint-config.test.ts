@@ -6,6 +6,7 @@ import { useTempDirs, writeTree } from '../../test/tmp';
 import {
   QUALOR_DEFAULT_STYLELINT,
   resolveStylelintConfig,
+  sanitizeStylelintConfig,
   STYLELINT_CONFIG_FILES,
 } from './stylelint-config';
 
@@ -24,12 +25,68 @@ describe('resolveStylelintConfig (config.md §6, plan 8D)', () => {
     expect(resolveStylelintConfig(repo({ 'a.css': '' }), null)).toEqual({
       config: QUALOR_DEFAULT_STYLELINT,
       source: 'qualor-default',
-      ignoreFile: null,
+      ignore: null,
     });
-    expect(QUALOR_DEFAULT_STYLELINT).toEqual({
+    expect(QUALOR_DEFAULT_STYLELINT).toMatchObject({
       extends: ['stylelint-config-recommended'],
       overrides: [{ files: ['**/*.scss'], extends: ['stylelint-config-recommended-scss'] }],
     });
+  });
+
+  it("carves framework syntax and no-descending-specificity out of Qualor's default (final review)", () => {
+    const rules = QUALOR_DEFAULT_STYLELINT['rules'] as Record<string, unknown>;
+    expect(rules['no-descending-specificity']).toBeNull();
+    expect(rules['selector-pseudo-element-no-unknown']).toEqual([
+      true,
+      { ignorePseudoElements: ['ng-deep', 'v-deep', 'v-global', 'v-slotted'] },
+    ]);
+    expect(rules['selector-pseudo-class-no-unknown']).toEqual([
+      true,
+      { ignorePseudoClasses: ['deep', 'global', 'local', 'slotted', 'export', 'import'] },
+    ]);
+    const atRules = [
+      'tailwind',
+      'apply',
+      'config',
+      'theme',
+      'utility',
+      'variant',
+      'custom-variant',
+      'plugin',
+      'source',
+      'reference',
+      'screen',
+      'responsive',
+      'variants',
+    ];
+    expect(rules['at-rule-no-unknown']).toEqual([true, { ignoreAtRules: atRules }]);
+    expect(rules['at-rule-prelude-no-invalid']).toEqual([true, { ignoreAtRules: ['apply'] }]);
+    expect(rules['function-no-unknown']).toEqual([
+      true,
+      { ignoreFunctions: ['theme', 'screen', '--alpha', '--spacing'] },
+    ]);
+    expect(rules['property-no-unknown']).toEqual([
+      true,
+      { ignoreProperties: ['composes'], ignoreSelectors: [':export', '/^:import/'] },
+    ]);
+    // The SCSS override extends stylelint-config-recommended again, which would reset the options,
+    // so it repeats the carve-outs that apply to SCSS and ignores the same at-rules in
+    // scss/at-rule-no-unknown; the top-level rules win over its `extends`, so it turns off again
+    // what stylelint-config-recommended-scss turns off.
+    const [scss] = QUALOR_DEFAULT_STYLELINT['overrides'] as { rules: Record<string, unknown> }[];
+    expect(scss!.rules).toEqual({
+      'at-rule-no-unknown': null,
+      'at-rule-prelude-no-invalid': null,
+      'function-no-unknown': null,
+      'selector-pseudo-element-no-unknown': rules['selector-pseudo-element-no-unknown'],
+      'selector-pseudo-class-no-unknown': rules['selector-pseudo-class-no-unknown'],
+      'property-no-unknown': rules['property-no-unknown'],
+      'scss/at-rule-no-unknown': [true, { ignoreAtRules: atRules }],
+    });
+    // Only bundled packages, as for a project config.
+    expect(sanitizeStylelintConfig(QUALOR_DEFAULT_STYLELINT, 'qualor-default')).toEqual(
+      QUALOR_DEFAULT_STYLELINT,
+    );
   });
 
   it('reads a JSON config that extends a bundled config, and parses SCSS with postcss-scss', () => {
@@ -48,7 +105,7 @@ describe('resolveStylelintConfig (config.md §6, plan 8D)', () => {
         overrides: [SCSS],
       },
       source: '.stylelintrc.json',
-      ignoreFile: null,
+      ignore: null,
     });
   });
 
@@ -190,11 +247,9 @@ describe('resolveStylelintConfig (config.md §6, plan 8D)', () => {
     );
   });
 
-  it('honours a root .stylelintignore and refuses a large one', () => {
+  it('honours a root .stylelintignore (its text) and refuses a large one', () => {
     const root = repo({ '.stylelintignore': 'vendor/\n' });
-    expect(resolveStylelintConfig(root, null)).toMatchObject({
-      ignoreFile: path.join(root, '.stylelintignore'),
-    });
+    expect(resolveStylelintConfig(root, null)).toMatchObject({ ignore: 'vendor/\n' });
     writeFileSync(path.join(root, '.stylelintignore'), 'x'.repeat(1024 * 1024 + 1));
     expect(skip(resolveStylelintConfig(root, null))).toContain(
       '.stylelintignore is larger than 1 MiB',
@@ -443,6 +498,15 @@ describe('resolveStylelintConfig never loads or runs anything from the checkout 
       'is outside the repository',
     );
   });
+
+  it.runIf(posix)(
+    'reads a .stylelintignore that links inside the repository, as its text (D8, final review)',
+    () => {
+      const root = repo({ 'config/stylelintignore': 'gen/\n' });
+      symlinkSync('config/stylelintignore', path.join(root, '.stylelintignore'));
+      expect(resolveStylelintConfig(root, null)).toMatchObject({ ignore: 'gen/\n' });
+    },
+  );
 
   it.runIf(posix)('never reads a .stylelintignore that links out of the repository', () => {
     const outside = path.join(tmp(), 'ignore');

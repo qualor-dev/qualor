@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolveHtmlhintRules } from './htmlhint-config';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
-import { logWeblintSummary, weblintScript } from './weblint';
+import { logWeblintSummary, weblintFailureDetail, weblintScript } from './weblint';
 
 /**
  * config.md §6: Qualor's HTMLHint pass (tools/analyzers/weblint/htmlhint.mjs) over the scan's
@@ -37,6 +37,8 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
         logWeblintSummary(ctx.log, 'htmlhint', stdout);
         return output;
       },
+      // Exit 2: the pass's own reason (a ConfigurationError, a refused config) at warn.
+      failureDetail: (code, stderr) => weblintFailureDetail('htmlhint', code, stderr),
     },
   };
 }

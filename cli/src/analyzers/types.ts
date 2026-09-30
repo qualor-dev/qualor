@@ -86,6 +86,12 @@ export interface AnalyzerCommand {
    * `output` unchanged or converted, as before this parameter existed.
    */
   transform?(output: unknown, stdout: string): unknown;
+  /**
+   * A run whose exit code is not in `okExitCodes`: one line from the tool's stderr tail that says
+   * why, or null. It is logged at warn so the user sees the reason (a configuration stylelint
+   * refuses); the report `reason` stays the fixed "exited with code N" (config.md §6).
+   */
+  failureDetail?(exitCode: number | null, stderr: string): string | null;
 }
 
 export type Preparation =

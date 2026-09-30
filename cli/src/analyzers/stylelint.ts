@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolveStylelintConfig } from './stylelint-config';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
-import { logWeblintSummary, weblintScript } from './weblint';
+import { logWeblintSummary, weblintFailureDetail, weblintScript } from './weblint';
 
 /**
  * config.md §6: Qualor's stylelint pass (tools/analyzers/weblint/stylelint.mjs) over the scan's
@@ -25,6 +25,10 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   const out = path.join(ctx.workDir, 'stylelint.sarif');
   writeFileSync(list, JSON.stringify(files));
   writeFileSync(config, JSON.stringify(resolved.config));
+  // The .stylelintignore text the resolver already read, never the checkout's file (a link inside
+  // the repository is allowed there, ruling D8; the pass refuses links in the checkout).
+  const ignore = path.join(ctx.workDir, 'stylelint-ignore.txt');
+  if (resolved.ignore !== null) writeFileSync(ignore, resolved.ignore);
   return {
     run: {
       command: node,
@@ -38,7 +42,7 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
         list,
         '--config',
         config,
-        ...(resolved.ignoreFile === null ? [] : ['--ignore-file', resolved.ignoreFile]),
+        ...(resolved.ignore === null ? [] : ['--ignore-file', ignore]),
       ],
       // Never the checkout: nothing the pass or stylelint resolves relative to the working
       // directory can start there.
@@ -51,6 +55,8 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
         logWeblintSummary(ctx.log, 'stylelint', stdout);
         return output;
       },
+      // Exit 2: the pass's own reason (a ConfigurationError, a refused config) at warn.
+      failureDetail: (code, stderr) => weblintFailureDetail('stylelint', code, stderr),
     },
   };
 }

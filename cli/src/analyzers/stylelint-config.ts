@@ -19,10 +19,75 @@ export const STYLELINT_BUNDLED = {
 
 export type StylelintConfig = Record<string, unknown>;
 
-/** A repository without a stylelint configuration, or `configFile: qualor-default` (decision D2). */
+/**
+ * Framework syntax stylelint-config-recommended would report as unknown (final review, ruling
+ * D13): Angular `::ng-deep`; Vue `:deep()`, `:slotted()`, `:global()`, `::v-deep`; CSS Modules
+ * `:global`, `:local`, `:export`, `:import`, `composes`; Tailwind v3/v4 at-rules, the `@apply`
+ * prelude and `theme()`, `screen()`, `--alpha()`, `--spacing()`.
+ */
+const FRAMEWORK_AT_RULES = [
+  'tailwind',
+  'apply',
+  'config',
+  'theme',
+  'utility',
+  'variant',
+  'custom-variant',
+  'plugin',
+  'source',
+  'reference',
+  'screen',
+  'responsive',
+  'variants',
+];
+const FRAMEWORK_SELECTOR_RULES = {
+  'selector-pseudo-element-no-unknown': [
+    true,
+    { ignorePseudoElements: ['ng-deep', 'v-deep', 'v-global', 'v-slotted'] },
+  ],
+  'selector-pseudo-class-no-unknown': [
+    true,
+    { ignorePseudoClasses: ['deep', 'global', 'local', 'slotted', 'export', 'import'] },
+  ],
+  'property-no-unknown': [
+    true,
+    // `:import("./x.css")` carries its source, so a pattern rather than the plain selector.
+    { ignoreProperties: ['composes'], ignoreSelectors: [':export', '/^:import/'] },
+  ],
+};
+
+/**
+ * A repository without a stylelint configuration, or `configFile: qualor-default` (decision D2):
+ * stylelint-config-recommended without `no-descending-specificity` (a style preference that floods
+ * any stylesheet grown by cascade order) and with the framework carve-outs above. The SCSS override
+ * extends stylelint-config-recommended again through stylelint-config-recommended-scss, which would
+ * reset the rule options, so it repeats the carve-outs that still apply to SCSS; the top-level rules
+ * also win over that `extends`, so it turns off again what the SCSS config turns off.
+ */
 export const QUALOR_DEFAULT_STYLELINT: StylelintConfig = {
   extends: ['stylelint-config-recommended'],
-  overrides: [{ files: ['**/*.scss'], extends: ['stylelint-config-recommended-scss'] }],
+  rules: {
+    'no-descending-specificity': null,
+    ...FRAMEWORK_SELECTOR_RULES,
+    'at-rule-no-unknown': [true, { ignoreAtRules: FRAMEWORK_AT_RULES }],
+    'at-rule-prelude-no-invalid': [true, { ignoreAtRules: ['apply'] }],
+    'function-no-unknown': [true, { ignoreFunctions: ['theme', 'screen', '--alpha', '--spacing'] }],
+  },
+  overrides: [
+    {
+      files: ['**/*.scss'],
+      extends: ['stylelint-config-recommended-scss'],
+      // Rules the top level sets win over this override's `extends`, so the ones
+      // stylelint-config-recommended-scss turns off for SCSS are turned off again here.
+      rules: {
+        'at-rule-no-unknown': null,
+        'at-rule-prelude-no-invalid': null,
+        'function-no-unknown': null,
+        ...FRAMEWORK_SELECTOR_RULES,
+        'scss/at-rule-no-unknown': [true, { ignoreAtRules: FRAMEWORK_AT_RULES }],
+      },
+    },
+  ],
 };
 
 const MAX_CONFIG_BYTES = 1024 * 1024;
@@ -244,18 +309,20 @@ function packageJsonConfig(root: string): unknown {
   return isObject(pkg) ? pkg['stylelint'] : undefined;
 }
 
-/** The root .stylelintignore's path, null without one, or a skip reason of its own. */
+/**
+ * The root .stylelintignore's text, null without one, or a skip reason of its own. The CLI hands the
+ * pass this text (written into its work directory), never the path: a link inside the repository is
+ * allowed here (ruling D8) and the file is read once (no time-of-check/time-of-use gap).
+ */
 function stylelintIgnore(root: string): string | null | { skip: string } {
-  const file = path.join(root, '.stylelintignore');
-  if (!repoEntryExists(file)) return null;
+  if (!repoEntryExists(path.join(root, '.stylelintignore'))) return null;
   try {
-    readRepoConfig(root, '.stylelintignore', MAX_CONFIG_BYTES);
+    return readRepoConfig(root, '.stylelintignore', MAX_CONFIG_BYTES);
   } catch (err) {
     if (!(err instanceof WeblintConfigError)) throw err;
     // configFile does not help here: the ignore file applies whatever the configuration.
     return { skip: `${err.message}; fix or remove .stylelintignore` };
   }
-  return file;
 }
 
 /**
@@ -266,26 +333,25 @@ function stylelintIgnore(root: string): string | null | { skip: string } {
 export function resolveStylelintConfig(
   root: string,
   configFile: string | null,
-): { config: StylelintConfig; source: string; ignoreFile: string | null } | { skip: string } {
-  const ignoreFile = stylelintIgnore(root);
-  if (ignoreFile !== null && typeof ignoreFile === 'object') return ignoreFile;
+): { config: StylelintConfig; source: string; ignore: string | null } | { skip: string } {
+  const ignore = stylelintIgnore(root);
+  if (ignore !== null && typeof ignore === 'object') return ignore;
   try {
     if (configFile === 'qualor-default') {
-      return { config: QUALOR_DEFAULT_STYLELINT, source: 'qualor-default', ignoreFile };
+      return { config: QUALOR_DEFAULT_STYLELINT, source: 'qualor-default', ignore };
     }
-    if (configFile !== null)
-      return { config: load(root, configFile), source: configFile, ignoreFile };
+    if (configFile !== null) return { config: load(root, configFile), source: configFile, ignore };
     for (const rel of STYLELINT_CONFIG_FILES) {
       if (rel === 'package.json') {
         const raw = packageJsonConfig(root);
         if (raw === undefined) continue;
         const source = 'package.json "stylelint"';
-        return { config: sanitizeStylelintConfig(raw, source), source, ignoreFile };
+        return { config: sanitizeStylelintConfig(raw, source), source, ignore };
       }
       if (repoEntryExists(path.join(root, rel)))
-        return { config: load(root, rel), source: rel, ignoreFile };
+        return { config: load(root, rel), source: rel, ignore };
     }
-    return { config: QUALOR_DEFAULT_STYLELINT, source: 'qualor-default', ignoreFile };
+    return { config: QUALOR_DEFAULT_STYLELINT, source: 'qualor-default', ignore };
   } catch (err) {
     if (!(err instanceof WeblintConfigError)) throw err;
     const sep = err.message.endsWith(' or') ? ' ' : '; ';

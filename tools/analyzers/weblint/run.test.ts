@@ -200,6 +200,69 @@ describe.skipIf(!have)('stylelint.mjs', () => {
     expect(p.info?.['parseErrors']).toBe(0);
   });
 
+  it("Qualor's default is silent on Angular, Vue, CSS Modules and Tailwind syntax (final review)", () => {
+    const css = [
+      '@import "tailwindcss" source("../src");',
+      '@tailwind base;',
+      '@config "./tailwind.config.js";',
+      '@plugin "@tailwindcss/typography";',
+      '@source "../node_modules/@acme/ui";',
+      '@reference "../app.css";',
+      '@custom-variant dark (&:where(.dark, .dark *));',
+      '@theme { --color-brand: #36c; }',
+      '@utility tab-4 { tab-size: 4; }',
+      '@variant dark { .x { color: red; } }',
+      '@screen md { .y { color: red; } }',
+      '@responsive { .z { color: red; } }',
+      '@variants hover { .w { color: red; } }',
+      '.btn { @apply font-bold py-2 px-4 rounded; }',
+      // In custom properties: declaration-property-value-no-unknown still checks real properties.
+      '.t { --c: theme(colors.blue.500); --m: --spacing(4); --b: --alpha(red / 50%); }',
+      ':host ::ng-deep .mat-card { padding: 0; }',
+      '.a :deep(.b) { color: red; }',
+      '.a :slotted(p) { color: red; }',
+      ':global(.dark) .c { color: red; }',
+      '.d ::v-deep .e { color: red; }',
+      '::v-global(.f) { color: red; }',
+      '::v-slotted(.g) { color: red; }',
+      ':local(.h) { color: red; }',
+      '.i { composes: base from "./base.css"; color: red; }',
+      ':export { brand: #36c; }',
+      ':import("./x.css") { imported: y; }',
+      // no-descending-specificity: off in the default
+      '.k a:hover { color: red; }',
+      'a { color: blue; }',
+      '',
+    ].join('\n');
+    const scss = [
+      '@use "sass:math";',
+      '@tailwind utilities;',
+      '.btn { @apply font-bold; }',
+      ':host ::ng-deep .m { padding: math.div(4px, 2); }',
+      '.n :deep(.o) { color: red; }',
+      ':export { brand: #36c; }',
+      '.p { composes: base; }',
+      // SCSS's own at-rules and functions stay allowed, as stylelint-config-recommended-scss has it
+      '@function double($x) { @return $x * 2; }',
+      '@mixin m { color: red; }',
+      '.q { width: double(2px); @include m; }',
+      '',
+    ].join('\n');
+    const root = repo({ 'src/app.css': css, 'src/app.scss': scss });
+    const p = stylelint(root, ['src/app.css', 'src/app.scss'], QUALOR_DEFAULT_STYLELINT);
+    expect(p.status, p.stderr).toBe(0);
+    expect(hits(p)).toEqual([]);
+    expect(p.info).toMatchObject({ files: 2, parseErrors: 0, invalidOptions: 0 });
+    // The carve-outs are narrow: an unknown at-rule, pseudo-class or property is still reported.
+    const bad = repo({ 'x.css': '@nope x;\na:nope { colr: red; }\n', 'y.scss': '@nope x;\n' });
+    expect(hits(stylelint(bad, ['x.css', 'y.scss'], QUALOR_DEFAULT_STYLELINT))).toEqual([
+      'at-rule-no-unknown x.css:1',
+      'property-no-unknown x.css:2',
+      'scss/at-rule-no-unknown y.scss:1',
+      'selector-pseudo-class-no-unknown x.css:2',
+    ]);
+  });
+
   it('parses .scss under a project config without SCSS syntax (Review Focus 3); a real syntax error is counted, not reported', () => {
     const root = repo({
       'src/b.scss': '$x: 1px;\n// c\n.a { width: $x; }\n',
@@ -270,7 +333,7 @@ describe.skipIf(!have)('stylelint.mjs', () => {
     expect(p.stderr).toContain('map.css not linted');
   });
 
-  it('exits 2 when stylelint throws on every file it lints', () => {
+  it('exits 2 when stylelint throws on every one of two or more files it lints', () => {
     const root = repo({ 'map.css': BAD_MAP, 'map2.css': BAD_MAP });
     const p = stylelint(root, ['map.css', 'map2.css'], {
       extends: ['stylelint-config-recommended'],
@@ -278,21 +341,33 @@ describe.skipIf(!have)('stylelint.mjs', () => {
     expect(p.status).toBe(2);
   });
 
+  it('counts a single file in scope that throws as a parse error, with a warning (final review, minor 7)', () => {
+    const root = repo({ 'map.css': BAD_MAP });
+    const p = stylelint(root, ['map.css'], { extends: ['stylelint-config-recommended'] });
+    expect(p.status, p.stderr).toBe(0);
+    expect(hits(p)).toEqual([]);
+    expect(p.info).toMatchObject({ files: 1, listed: 1, parseErrors: 1 });
+    expect(p.stderr).toContain('map.css not linted');
+  });
+
   it("exits 2 on stylelint's ConfigurationError, however many files there are", () => {
     const root = repo({ 'a.css': 'a {}\n', 'b.css': 'b {}\n' });
     const p = stylelint(root, ['a.css', 'b.css'], {}); // "No rules found within configuration"
     expect(p.status).toBe(2);
-    expect(p.stderr).toContain('ConfigurationError');
+    // The line the CLI logs at warn (final review, minor 6).
+    expect(p.stderr).toMatch(/^stylelint: fatal: ConfigurationError: No rules found/m);
   });
 
-  it('refuses an ignore file outside the root', () => {
-    const outside = repo({ '.stylelintignore': '*.css\n' });
-    const root = repo({ 'a.css': 'b {}\n' });
-    const p = stylelint(root, ['a.css'], { extends: ['stylelint-config-recommended'] }, [
+  it('reads the .stylelintignore copy the CLI wrote outside the root (final review, minor 1)', () => {
+    const work = repo({ 'stylelint-ignore.txt': 'b.css\n' });
+    const root = repo({ 'a.css': 'a {}\n', 'b.css': 'b {}\n' });
+    const p = stylelint(root, ['a.css', 'b.css'], { extends: ['stylelint-config-recommended'] }, [
       '--ignore-file',
-      path.join(outside, '.stylelintignore'),
+      path.join(work, 'stylelint-ignore.txt'),
     ]);
-    expect(p.status).toBe(2);
+    expect(p.status, p.stderr).toBe(0);
+    expect(hits(p)).toEqual(['block-no-empty a.css:1']);
+    expect(p.info).toMatchObject({ files: 1, listed: 2 });
   });
 
   it('lints only listed regular files inside the root: no links, no node_modules, nothing outside', () => {
@@ -566,9 +641,19 @@ describe.skipIf(!have)('htmlhint.mjs', () => {
     expect(p.info).toEqual({ files: 2, listed: 2, parseErrors: 1 });
   });
 
-  it('exits 2 when HTMLHint throws on every file', () => {
+  it('exits 2 when HTMLHint throws on every one of two or more files', () => {
+    const crash = '<!-- htmlhint constructor:true -->\n<div>\n';
+    const root = repo({ 'a.html': crash, 'b.html': crash });
+    expect(htmlhint(root, ['a.html', 'b.html']).status).toBe(2);
+  });
+
+  it('counts a single file in scope that crashes HTMLHint as a parse error, with a warning (final review, minor 7)', () => {
     const root = repo({ 'a.html': '<!-- htmlhint constructor:true -->\n<div>\n' });
-    expect(htmlhint(root, ['a.html']).status).toBe(2);
+    const p = htmlhint(root, ['a.html']);
+    expect(p.status, p.stderr).toBe(0);
+    expect(hits(p)).toEqual([]);
+    expect(p.info).toEqual({ files: 1, listed: 1, parseErrors: 1 });
+    expect(p.stderr).toContain('a.html not linted');
   });
 
   it('reports a repeated message on one line once', () => {

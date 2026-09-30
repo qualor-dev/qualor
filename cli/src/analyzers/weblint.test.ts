@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { parseConfig } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import { fakeContext, scanWithRecordedSarif } from '../../test/analyzers';
@@ -9,7 +9,7 @@ import { createLogger, silentLogger } from '../log';
 import { htmlhintAnalyzer } from './htmlhint';
 import { runAnalyzers } from './runner';
 import { stylelintAnalyzer } from './stylelint';
-import { logWeblintSummary } from './weblint';
+import { logWeblintSummary, weblintFailureDetail } from './weblint';
 
 const tmp = useTempDirs();
 const NODE = '/usr/bin/node';
@@ -130,18 +130,32 @@ describe('stylelint and htmlhint prepare (config.md §6, plan 8D)', () => {
     expect(p.run.version).toBeUndefined(); // from the SARIF driver
   });
 
-  it('passes the project .stylelintignore to the pass', async () => {
+  it('passes a copy of the project .stylelintignore in the work directory to the pass', async () => {
     const dir = fakeWeblintDir();
     const root = tmp();
     writeTree(root, { '.stylelintignore': 'vendor/\n', 'a.css': '' });
-    const p = await stylelintAnalyzer.prepare(
-      ctx(root, [file(root, 'a.css', 'css')], { QUALOR_WEBLINT_DIR: dir }),
-    );
+    const c = ctx(root, [file(root, 'a.css', 'css')], { QUALOR_WEBLINT_DIR: dir });
+    const p = await stylelintAnalyzer.prepare(c);
     if (!('run' in p)) throw new Error(JSON.stringify(p));
-    expect(p.run.args[p.run.args.indexOf('--ignore-file') + 1]).toBe(
-      path.join(root, '.stylelintignore'),
-    );
+    const ignore = p.run.args[p.run.args.indexOf('--ignore-file') + 1]!;
+    expect(path.dirname(ignore)).toBe(c.workDir);
+    expect(readFileSync(ignore, 'utf8')).toBe('vendor/\n');
   });
+
+  it.runIf(process.platform !== 'win32')(
+    'passes the text of a .stylelintignore that links inside the repository (D8, final review)',
+    async () => {
+      const root = tmp();
+      writeTree(root, { 'lint/ignore': 'gen/\n', 'a.css': '' });
+      symlinkSync('lint/ignore', path.join(root, '.stylelintignore'));
+      const c = ctx(root, [file(root, 'a.css', 'css')], { QUALOR_WEBLINT_DIR: fakeWeblintDir() });
+      const p = await stylelintAnalyzer.prepare(c);
+      if (!('run' in p)) throw new Error(JSON.stringify(p));
+      const ignore = p.run.args[p.run.args.indexOf('--ignore-file') + 1]!;
+      expect(path.dirname(ignore)).toBe(c.workDir);
+      expect(readFileSync(ignore, 'utf8')).toBe('gen/\n');
+    },
+  );
 
   it("skips with the resolver's reason on an executable project config", async () => {
     const root = tmp();
@@ -209,6 +223,53 @@ describe('stylelint and htmlhint prepare (config.md §6, plan 8D)', () => {
       quality: 'maintainability',
       severity: 'low',
     });
+  });
+
+  it("logs the pass's own reason at warn when it exits 2, never in the report (final review, minor 6)", async () => {
+    const dir = tmp('qualor-weblint-');
+    // What files.mjs's run() writes for stylelint's ConfigurationError on `{}`, after a per-file line.
+    writeFileSync(
+      path.join(dir, 'stylelint.mjs'),
+      [
+        "process.stderr.write('stylelint: a.css not linted: boom\\n');",
+        "process.stderr.write('stylelint: fatal: ConfigurationError: No rules found within configuration\\n');",
+        "process.stderr.write('ConfigurationError: No rules found within configuration\\n    at x (y.js:1:1)\\n');",
+        'process.exit(2);',
+      ].join('\n'),
+    );
+    const root = tmp();
+    writeTree(root, { 'a.css': 'a {}\n' });
+    const lines: string[] = [];
+    const [capture] = await runAnalyzers([stylelintAnalyzer], {
+      root,
+      config: parseConfig({ version: 1 }),
+      files: [file(root, 'a.css', 'css')],
+      log: createLogger('warn', (t) => lines.push(t)),
+      env: { ...process.env, QUALOR_WEBLINT_DIR: dir },
+    });
+    expect(capture).toMatchObject({ status: 'failed', reason: 'exited with code 2' });
+    expect(lines.join('\n')).toContain(
+      'stylelint: ConfigurationError: No rules found within configuration',
+    );
+  });
+
+  it('weblintFailureDetail: the fatal line, else the first line, one bounded line; nothing unless exit 2', () => {
+    expect(
+      weblintFailureDetail(
+        'htmlhint',
+        2,
+        'x not linted\nhtmlhint: fatal: --rules must name a JSON object\n  at y\n',
+      ),
+    ).toBe('--rules must name a JSON object');
+    expect(weblintFailureDetail('htmlhint', 2, '\nError: something\n  at y\n')).toBe(
+      'Error: something',
+    );
+    expect(
+      weblintFailureDetail('stylelint', 2, `stylelint: fatal: ${'x'.repeat(1000)}\u001b[31m`),
+    ).toHaveLength(300);
+    expect(weblintFailureDetail('stylelint', 2, 'a\u001b[2Jb')).toBe('a [2Jb');
+    expect(weblintFailureDetail('stylelint', 2, '')).toBeNull();
+    expect(weblintFailureDetail('stylelint', 1, 'stylelint: fatal: x')).toBeNull();
   });
 
   it('logs the pass summary: unknown rules and invalid options as warnings, never in the report', () => {

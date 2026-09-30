@@ -77,12 +77,24 @@ export function region(line, column, endLine, endColumn) {
 export const https = (url) =>
   typeof url === 'string' && url.startsWith('https://') ? url : undefined;
 
-/** Runs `main` and exits 2 with the error on stderr when it throws. */
+/**
+ * The one line the CLI logs at warn for a pass that exits 2: the error's name (unless a plain
+ * Error) and the first line of its message.
+ */
+export function fatalLine(err) {
+  const name = typeof err?.name === 'string' && err.name !== 'Error' ? `${err.name}: ` : '';
+  return `${name}${String(err?.message ?? err).split('\n')[0]}`;
+}
+
+/**
+ * Runs `main` and exits 2 when it throws, with `<tool>: fatal: <fatalLine>` and then the stack on
+ * stderr (the CLI logs the fatal line at warn, the rest at debug only).
+ */
 export async function run(tool, main) {
   try {
     await main(process.argv.slice(2));
   } catch (err) {
-    stderr(`${tool}: ${err?.stack ?? err}\n`);
+    stderr(`${tool}: fatal: ${fatalLine(err)}\n${err?.stack ?? ''}\n`);
     process.exit(2);
   }
 }

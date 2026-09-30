@@ -99,6 +99,31 @@ export function weblintScript(
   return { script: file };
 }
 
+const MAX_DETAIL_CHARS = 300;
+
+/**
+ * Why a pass exited 2, from its stderr (final review, 8D minor 6): the `<engine>: fatal: …` line
+ * files.mjs's `run()` writes, else the first non-empty line; control characters become spaces and
+ * the line is cut at 300 characters. Null for any other exit code or an empty stderr. For the log
+ * only, never a report `reason`.
+ */
+export function weblintFailureDetail(
+  engine: 'stylelint' | 'htmlhint',
+  exitCode: number | null,
+  stderr: string,
+): string | null {
+  if (exitCode !== 2) return null;
+  const lines = stderr.split(/\r?\n/).filter((l) => l.trim() !== '');
+  const prefix = `${engine}: fatal: `;
+  const fatal = lines.findLast((l) => l.startsWith(prefix));
+  const line = fatal === undefined ? lines[0] : fatal.slice(prefix.length);
+  if (line === undefined) return null;
+  const printable = [...line]
+    .map((c) => (c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f ? ' ' : c))
+    .join('');
+  return printable.trim().slice(0, MAX_DETAIL_CHARS);
+}
+
 /**
  * tools/analyzers/weblint/{stylelint,htmlhint}.mjs's one stdout JSON line. Unknown keys are
  * accepted (and dropped), so a runner may add fields without breaking an older CLI.

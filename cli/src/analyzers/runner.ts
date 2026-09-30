@@ -318,6 +318,8 @@ async function capture(
     if (result.spawnError !== undefined)
       return done('failed', spawnFailureReason(result.spawnErrorCode));
     if (result.exitCode === null || !run.okExitCodes.includes(result.exitCode)) {
+      const detail = run.failureDetail?.(result.exitCode, result.stderr) ?? null;
+      if (detail !== null) o.log.warn(`${analyzer.id}: ${detail}`);
       return done('failed', `exited with code ${result.exitCode ?? 'null'}`);
     }
     const sarif = readSarif(run.sarifPath, o.log);

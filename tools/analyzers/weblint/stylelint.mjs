@@ -6,8 +6,8 @@
 // config inline (its own search for configuration files never runs), `configBasedir` the
 // repository root (so the project's relative override and ignoreFiles globs mean what they say)
 // and `cwd` this directory (so no fallback lookup, and no default .stylelintignore, is ever taken
-// from the checkout). The project's .stylelintignore is applied here, relative to the root, with
-// stylelint's own `ignore` package. PostCSS configs and browserslist are never read. It never
+// from the checkout). The project's .stylelintignore, whose text the CLI copies into its work
+// directory, is applied here, relative to the root, with stylelint's own `ignore` package. PostCSS configs and browserslist are never read. It never
 // writes to the checkout (`fix: false`, `cache: false`).
 //   node stylelint.mjs --root <dir> --out <file.sarif> --files <list.json> --config <config.json>
 //                      [--ignore-file <path>]
@@ -17,8 +17,8 @@
 // listed the usable entries of the --files list; parseErrors counts the linted files that did not
 // parse or that stylelint threw on (skipped, ruling D12).
 // Exit 0 whenever the log is written, 2 on any error: a refused configuration, a stylelint
-// ConfigurationError, or a throw on every file linted.
-import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+// ConfigurationError, or a throw on every file linted when there are two or more.
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,6 @@ import scssPlugins from 'stylelint-scss';
 import { BUNDLED } from './bundled.mjs';
 import {
   https,
-  isRepoFile,
   listedFiles,
   option,
   readJson,
@@ -116,16 +115,13 @@ export function messageText(w) {
 
 /**
  * The project's .stylelintignore as a filter over root-relative paths, read with stylelint's own
- * `ignore` package (the copy stylelint resolves). The file must be a regular file inside the root.
+ * `ignore` package (the copy stylelint resolves). `ignoreFile` is the copy of its text the CLI
+ * wrote into its work directory, like the configuration, never the checkout's file.
  */
 function ignoreFilter(root, ignoreFile) {
   if (ignoreFile === undefined) return () => false;
-  const file = path.resolve(ignoreFile);
-  if (!isRepoFile(root, realpathSync(root), file)) {
-    throw new Error(`--ignore-file ${ignoreFile} is not a regular file inside the root`);
-  }
   const ignore = createRequire(fileURLToPath(import.meta.resolve('stylelint')))('ignore');
-  const ignorer = ignore().add(readFileSync(file, 'utf8'));
+  const ignorer = ignore().add(readFileSync(path.resolve(ignoreFile), 'utf8'));
   return (full) => ignorer.ignores(uriOf(root, full));
 }
 
@@ -206,7 +202,9 @@ async function main(args) {
     if (broken) parseErrors += 1;
   }
 
-  if (threw > 0 && threw === linted) {
+  // One file in scope that throws is a parse error like any other; only a throw on every one of
+  // several files says the pass itself is broken (final review, minor 7).
+  if (linted >= 2 && threw === linted) {
     throw new Error(`stylelint failed on every file it linted (${threw})`);
   }
 

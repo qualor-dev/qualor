@@ -7,7 +7,8 @@
 // parseErrors the files HTMLHint threw on (an in-file directive such as
 // `<!-- htmlhint constructor:true -->` crashes it), which are skipped, never the whole pass
 // (ruling D11).
-// Exit 0 whenever the log is written, 2 on any error, a throw on every listed file included.
+// Exit 0 whenever the log is written, 2 on any error, a throw on every one of two or more listed
+// files included.
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -80,7 +81,8 @@ async function main(args) {
       });
     }
   }
-  if (files.length > 0 && parseErrors === files.length) {
+  // A single file that throws is counted like any parse error (final review, minor 7).
+  if (files.length >= 2 && parseErrors === files.length) {
     throw new Error(`HTMLHint failed on every file (${parseErrors})`);
   }
   const sarifRules = [...used.values()]
