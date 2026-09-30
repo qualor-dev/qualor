@@ -1,0 +1,17 @@
+{
+  "name": "qualor-weblint",
+  "private": true,
+  "license": "MIT",
+  "description": "Qualor's HTML and CSS linters (config.md §6): stylelint with the configs Qualor bundles, and HTMLHint. Installed with npm ci into /opt/qualor/weblint, never with pnpm.",
+  "type": "module",
+  "dependencies": {
+    "htmlhint": "1.9.2",
+    "postcss-scss": "4.0.9",
+    "stylelint": "17.15.0",
+    "stylelint-config-recommended": "18.0.0",
+    "stylelint-config-recommended-scss": "17.0.1",
+    "stylelint-config-standard": "40.0.0",
+    "stylelint-config-standard-scss": "17.0.0",
+    "stylelint-scss": "7.3.0"
+  }
+}
