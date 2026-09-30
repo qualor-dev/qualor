@@ -1,1 +1,75 @@
-{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"htmlhint","version":"1.9.2","informationUri":"https://htmlhint.com","rules":[{"id":"alt-require","name":"alt-require","shortDescription":{"text":"alt-require"},"helpUri":"https://htmlhint.com/rules/alt-require"},{"id":"attr-no-duplication","name":"attr-no-duplication","shortDescription":{"text":"attr-no-duplication"},"helpUri":"https://htmlhint.com/rules/attr-no-duplication"},{"id":"title-require","name":"title-require","shortDescription":{"text":"title-require"},"helpUri":"https://htmlhint.com/rules/title-require"}]}},"results":[{"ruleId":"alt-require","level":"warning","message":{"text":"An alt attribute must be present on <img> elements."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"index.html"},"region":{"startLine":9,"startColumn":9}}}]},{"ruleId":"attr-no-duplication","level":"error","message":{"text":"Duplicate of attribute name [ class ] was found."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"index.html"},"region":{"startLine":8,"startColumn":20}}}]},{"ruleId":"title-require","level":"error","message":{"text":"<title> must be present in <head> tag."},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"index.html"},"region":{"startLine":5,"startColumn":1}}}]}]}]}
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "htmlhint",
+          "version": "1.9.2",
+          "informationUri": "https://htmlhint.com",
+          "rules": [
+            {
+              "id": "alt-require",
+              "name": "alt-require",
+              "shortDescription": { "text": "alt-require" },
+              "helpUri": "https://htmlhint.com/rules/alt-require"
+            },
+            {
+              "id": "attr-no-duplication",
+              "name": "attr-no-duplication",
+              "shortDescription": { "text": "attr-no-duplication" },
+              "helpUri": "https://htmlhint.com/rules/attr-no-duplication"
+            },
+            {
+              "id": "title-require",
+              "name": "title-require",
+              "shortDescription": { "text": "title-require" },
+              "helpUri": "https://htmlhint.com/rules/title-require"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "alt-require",
+          "level": "warning",
+          "message": { "text": "An alt attribute must be present on <img> elements." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "index.html" },
+                "region": { "startLine": 9, "startColumn": 9 }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "attr-no-duplication",
+          "level": "error",
+          "message": { "text": "Duplicate of attribute name [ class ] was found." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "index.html" },
+                "region": { "startLine": 8, "startColumn": 20 }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "title-require",
+          "level": "error",
+          "message": { "text": "<title> must be present in <head> tag." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "index.html" },
+                "region": { "startLine": 5, "startColumn": 1 }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
