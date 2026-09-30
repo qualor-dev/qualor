@@ -338,13 +338,19 @@ describeWithTools(['ruff'])('Ruff on untrusted checkouts (real Ruff)', () => {
       // The nearest configuration of strict/c.py: a Ruff that reads it stops with an error.
       'strict/pyproject.toml': '[tool.ruff]\nrequired-version = ">=99"\n',
       'strict/c.py': 'import os\n',
-      // A directory whose only configuration is a pyproject.toml, so its `extend` (to a file
-      // outside the repository that selects ALL) is the one a Ruff reading configuration would
-      // follow; at the root, ruff.toml takes precedence over pyproject.toml.
-      'ext/pyproject.toml': `[tool.ruff]\nextend = "${outside.replace(/\\/g, '/')}/extra.toml"\n`,
+      // A directory whose only configuration is a pyproject.toml, so its `extend` to a file
+      // outside the repository is one a Ruff reading configuration would follow (at the root,
+      // ruff.toml takes precedence over pyproject.toml). The extended file's per-file ignore
+      // survives the command line's --select: a Ruff that followed it drops ext/d.py's F401
+      // (probe of 2026-09-30, Ruff 0.16.9 without --isolated).
+      'ext/pyproject.toml': `[tool.ruff]\nextend = "${outside.replace(/\\/g, '/')}/ext.toml"\n`,
       'ext/d.py': 'import os\n',
     });
     writeFileSync(path.join(outside, 'extra.toml'), '[lint]\nselect = ["ALL"]\n');
+    writeFileSync(
+      path.join(outside, 'ext.toml'),
+      '[lint]\nselect = ["ALL"]\n[lint.per-file-ignores]\n"d.py" = ["F401"]\n',
+    );
     const bin = path.join(root, '.venv', 'bin');
     mkdirSync(bin, { recursive: true });
     const own = path.join(bin, process.platform === 'win32' ? 'ruff.exe' : 'ruff');
