@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 # The qualor/scanner image: the `qualor` CLI binary plus the pinned analyzer toolchain
 # of tools/analyzers/install.sh (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with a snapshot of its
-# vulnerability database in /opt/qualor/share/trivy, Ruff), Qualor's sonarjs pass in /opt/qualor/sonarjs
+# vulnerability database in /opt/qualor/share/trivy, Ruff, detekt's CLI jar in /opt/qualor/lib/detekt), Qualor's sonarjs pass in /opt/qualor/sonarjs
 # (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9, tools/analyzers/sonarjs), Qualor's HTML and CSS
 # linters in /opt/qualor/weblint (stylelint and HTMLHint, tools/analyzers/weblint) and what they need
-# to run: Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs) and git.
+# to run: Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs, detekt) and git.
 # Build from the repository root:
 #   docker build -f deploy/scanner/Dockerfile -t qualor/scanner:dev .
 # Every base image is pinned by version and digest (multi-arch index); bump both together.

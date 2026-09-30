@@ -210,6 +210,17 @@ describe('analyzer toolchain (plan 1D)', () => {
     expect(script).not.toMatch(/latest/);
   });
 
+  it('pins detekt by version and SHA-256 and installs its jar only after the check (plan 8E)', () => {
+    expect(script).toMatch(/^DETEKT_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^DETEKT_SHA256=[0-9a-f]{64}$/m);
+    expect(script).toContain(
+      'https://repo1.maven.org/maven2/io/gitlab/arturbosch/detekt/detekt-cli/$DETEKT_VERSION/detekt-cli-$DETEKT_VERSION-all.jar',
+    );
+    const fetched = script.indexOf('"$DETEKT_SHA256" detekt.jar');
+    expect(fetched).toBeGreaterThan(-1);
+    expect(fetched).toBeLessThan(script.indexOf('"$PREFIX/lib/detekt/detekt-cli.jar"'));
+  });
+
   it("pins Trivy's vulnerability database by the digest of its layer, checked before it is unpacked (plan 2B)", () => {
     expect(script).toMatch(/^TRIVY_SHA256_ARM64=[0-9a-f]{64}$/m);
     expect(script).toMatch(/^TRIVY_DB_DIGEST=sha256:[0-9a-f]{64}$/m);

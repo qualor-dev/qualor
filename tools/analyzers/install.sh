@@ -1,9 +1,9 @@
 #!/bin/sh
 # Installs the pinned analyzer toolchain (plan 1D, Task 2) into $QUALOR_TOOLS (default
-# /opt/qualor): PMD, SpotBugs, OpenGrep, Gitleaks, Trivy and Ruff, each checked against its SHA-256
+# /opt/qualor): PMD, SpotBugs, detekt, OpenGrep, Gitleaks, Trivy and Ruff, each checked against its SHA-256
 # before it is unpacked, and Trivy's vulnerability database (plan 2B), a snapshot pinned by the
 # digest of its OCI layer, into $QUALOR_TOOLS/share/trivy/db. Java (>= 17) must already be on
-# PATH for PMD and SpotBugs. The same versions are what the qualor/scanner image ships; bump them
+# PATH for PMD, SpotBugs and detekt. The same versions are what the qualor/scanner image ships; bump them
 # here only (tools/ci.test.ts checks the pins). `pnpm trivy-db:pin` moves the database pin to
 # the newest snapshot (upstream builds one every 6 hours; how long it keeps an old one is not
 # documented). QUALOR_DOWNLOAD_CACHE (optional, CI) names a directory that keeps Trivy's
@@ -42,6 +42,11 @@ RUFF_VERSION=0.16.9
 RUFF_SHA256_X64=1bfbb819b5d4f9af501748862276b60e412d336034d99387691a4d4bce7a6f13
 RUFF_SHA256_ARM64=a13061e8f471b49c9d2aa284c32dd54a0e5534d702d1a44e1d7f4c875569586d
 RUFF_SOURCE_SHA256=87df064eb5582c59e2575959b8b43ab6550c727d6a9875cc515d0299b826c067
+# detekt (plan 8E), the Kotlin analyzer: its CLI as one shaded jar from Maven Central, run by the
+# CLI with `java -jar` on the image's JRE (config.md §6). Maven Central's build, not the GitHub
+# release asset of the same name, which is a different build with another checksum.
+DETEKT_VERSION=1.23.8
+DETEKT_SHA256=3afe89a11120303c73c9bdda3d8fe558dd9070a6937d27819ddc04b275381245
 # Qualor's sonarjs pass (tools/analyzers/sonarjs, plan 8A/8B), which this script does not install:
 # the qualor/scanner and tools/analyzers Dockerfiles run `npm ci` from its package-lock.json and
 # read these pins. SONARJS_VERSION must equal that package.json's eslint-plugin-sonarjs (the last
@@ -96,6 +101,10 @@ tar -xzf "$TMP/spotbugs.tgz" -C "$PREFIX/lib"
 chmod +x "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/bin/spotbugs"
 ln -sf "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/bin/spotbugs" "$PREFIX/bin/spotbugs"
 
+fetch "https://repo1.maven.org/maven2/io/gitlab/arturbosch/detekt/detekt-cli/$DETEKT_VERSION/detekt-cli-$DETEKT_VERSION-all.jar" "$DETEKT_SHA256" detekt.jar
+mkdir -p "$PREFIX/lib/detekt"
+install -m 0644 "$TMP/detekt.jar" "$PREFIX/lib/detekt/detekt-cli.jar"
+
 fetch "$GH/opengrep/opengrep/releases/download/v$OPENGREP_VERSION/opengrep_manylinux_$OG_ARCH" "$OG_SHA" opengrep
 install -m 0755 "$TMP/opengrep" "$PREFIX/bin/opengrep"
 
@@ -133,4 +142,4 @@ chmod 0644 "$PREFIX/share/trivy/db/trivy.db" "$PREFIX/share/trivy/db/metadata.js
 # Only the current pins stay in the cache.
 [ -z "$CACHE" ] || find "$CACHE" -maxdepth 1 -type f ! -name "$TV_SHA" ! -name "${TRIVY_DB_DIGEST#sha256:}" -delete
 
-echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION, Ruff $RUFF_VERSION into $PREFIX/bin, and the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy"
+echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION, Ruff $RUFF_VERSION into $PREFIX/bin, detekt $DETEKT_VERSION into $PREFIX/lib/detekt, and the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy"
