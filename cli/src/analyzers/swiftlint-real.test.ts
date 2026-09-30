@@ -82,6 +82,65 @@ const SWIFTUI = [
   '',
 ].join('\n');
 
+/**
+ * What SwiftPM and the formatters write (ruling F27): `swift package init`'s Package.swift, with
+ * its two trailing commas, and a source with the swift.org header separator, a condition wrapped
+ * SwiftFormat's way (`{` on its own line) and a type nested two deep (the TCA/SwiftUI idiom).
+ */
+const FORMATTED: Record<string, string> = {
+  'Package.swift': [
+    '// swift-tools-version: 6.0',
+    '// The swift-tools-version declares the minimum version of Swift required to build this package.',
+    '',
+    'import PackageDescription',
+    '',
+    'let package = Package(',
+    '    name: "Feature",',
+    '    products: [',
+    '        .library(',
+    '            name: "Feature",',
+    '            targets: ["Feature"]),',
+    '    ],',
+    '    targets: [',
+    '        .target(',
+    '            name: "Feature"),',
+    '        .testTarget(',
+    '            name: "FeatureTests",',
+    '            dependencies: ["Feature"]',
+    '        ),',
+    '    ]',
+    ')',
+    '',
+  ].join('\n'),
+  'Sources/Feature/Feature.swift': [
+    '//===----------------------------------------------------------------------===//',
+    '//',
+    '// This source file is part of the Feature open source project',
+    '//',
+    '//===----------------------------------------------------------------------===//',
+    '',
+    'enum Feature {',
+    '    enum Action {',
+    '        enum Alert {',
+    '            case confirm',
+    '        }',
+    '    }',
+    '}',
+    '',
+    'func both(first: Bool, second: Bool) -> Bool {',
+    '    if first,',
+    '       second',
+    '    {',
+    '        return true',
+    '    }',
+    '    return false',
+    '}',
+    '',
+  ].join('\n'),
+};
+/** The rules the layer quiets on FORMATTED (ruling F27). */
+const FORMATTER_RULES = ['comment_spacing', 'nesting', 'opening_brace', 'trailing_comma'];
+
 describeWithSwiftlint()('swiftlint with the real binary (plan 8F)', () => {
   let requests = 0;
   const server = createServer((_req, res) => {
@@ -169,8 +228,8 @@ describeWithSwiftlint()('swiftlint with the real binary (plan 8F)', () => {
         symlinkSync(path.join(outside, 'O.swift'), path.join(root, 'Sources/L.swift'));
       }
       if (linux) {
-        // A file name, not a directory: discovery already leaves out a file below a directory
-        // with a line break in its name.
+        // A file name, not a directory: discovery skips a directory with a line break in its
+        // name (PATH_UNSUPPORTED).
         writeFileSync(path.join(root, 'Sources/new\nline.swift'), 'let n : Int = 1\n');
         // A root-level name with a colon, which a URI reader would take for a scheme.
         writeFileSync(path.join(root, 'a:b.swift'), 'let c : Int = 1\n');
@@ -240,9 +299,10 @@ describeWithSwiftlint()('swiftlint with the real binary (plan 8F)', () => {
     TIMEOUT,
     async () => {
       const root = tmp();
-      writeTree(root, { 'App/ContentView.swift': SWIFTUI });
+      writeTree(root, { 'App/ContentView.swift': SWIFTUI, ...FORMATTED });
       const capture = await lint(root);
       expect(capture.status, capture.reason ?? '').toBe('ok');
+      // Nothing from SwiftPM's template or the formatters' output either (ruling F27).
       expect(found(capture.sarif)).toEqual(['App/ContentView.swift:30 force_cast']);
     },
   );
@@ -254,12 +314,18 @@ describeWithSwiftlint()('swiftlint with the real binary (plan 8F)', () => {
       const root = tmp();
       writeTree(root, {
         'App/ContentView.swift': SWIFTUI,
+        ...FORMATTED,
         // A neutral project config: SwiftLint's own line_length, nothing else.
         '.swiftlint.yml': 'line_length: 120\n',
       });
       const capture = await lint(root);
       expect(capture.status, capture.reason ?? '').toBe('ok');
-      expect(found(capture.sarif)).toEqual([
+      // Every rule the layer quiets on FORMATTED fires under SwiftLint's own defaults.
+      const formatted = results(capture.sarif).filter((r) => Object.hasOwn(FORMATTED, uriOf(r)));
+      expect([...new Set(formatted.map((r) => r.ruleId))]).toEqual(
+        expect.arrayContaining(FORMATTER_RULES),
+      );
+      expect(found(capture.sarif).filter((f) => f.startsWith('App/'))).toEqual([
         'App/ContentView.swift:13 trailing_whitespace',
         'App/ContentView.swift:19 identifier_name',
         'App/ContentView.swift:19 identifier_name',
@@ -269,6 +335,95 @@ describeWithSwiftlint()('swiftlint with the real binary (plan 8F)', () => {
         'App/ContentView.swift:6 todo',
         'App/ContentView.swift:9 multiple_closures_with_trailing_closure',
       ]);
+    },
+  );
+
+  it(
+    'gives a CRLF file the findings and lines of its LF twin, none past its end (ruling F27)',
+    TIMEOUT,
+    async () => {
+      const sample = [
+        'import Foundation',
+        '',
+        'func total(first: Int, second: Int, third: Int) -> Int {',
+        '    return first + second + third',
+        '}',
+        '',
+        'let sum = total(first: 1,',
+        '                second: 2,',
+        '                third: 3)',
+        'let label : String = "sum"',
+        'let values = [',
+        '    total(first: 1, second: 2, third: 3),',
+        '    total(first: 4, second: 5, third: 6)',
+        ']',
+        'let anyValue: Any = sum',
+        'let forced = anyValue as! Int',
+        '',
+      ];
+      const root = tmp();
+      writeTree(root, {
+        'Lf/Sample.swift': sample.join('\n'),
+        'Crlf/Sample.swift': sample.join('\r\n'),
+      });
+      const capture = await lint(root);
+      expect(capture.status, capture.reason ?? '').toBe('ok');
+      const lf = found(capture.sarif).filter((f) => f.startsWith('Lf/'));
+      const crlf = found(capture.sarif).filter((f) => f.startsWith('Crlf/'));
+      expect(lf).toEqual(['Lf/Sample.swift:10 colon', 'Lf/Sample.swift:16 force_cast']);
+      expect(crlf).toEqual(lf.map((f) => f.replace('Lf/', 'Crlf/')));
+      // Through the normaliser: every finding has its snippet, so no message-only hash.
+      const out = normalizeCaptures([{ ...capture, mapping: engineMapping('swiftlint')! }], {
+        repoRoot: root,
+        readLines: fileLines(root),
+        knownPaths: new Set(['Lf/Sample.swift', 'Crlf/Sample.swift']),
+        log: silentLogger,
+      });
+      expect(out.warnings).toEqual([]);
+      expect(out.findings.every((f) => (f.location?.startLine ?? 0) <= sample.length - 1)).toBe(
+        true,
+      );
+    },
+  );
+
+  it(
+    'leaves a lone CR as it is: SwiftLint counts it as a line end, Qualor does not (ruling F27, accepted)',
+    TIMEOUT,
+    async () => {
+      const root = tmp();
+      // Qualor's line 1 holds `let one = 1\rlet two : Int = 2`; line 2 is `let three : Int = 3`.
+      writeTree(root, { 'Cr.swift': 'let one = 1\rlet two : Int = 2\nlet three : Int = 3\n' });
+      const capture = await lint(root);
+      expect(capture.status, capture.reason ?? '').toBe('ok');
+      // SwiftLint's lines 2 and 3: one line late after the CR. Such a file (classic Mac OS line
+      // ends) is rare; turning the CR into LF would move Qualor's lines the other way.
+      expect(found(capture.sarif)).toEqual(['Cr.swift:2 colon', 'Cr.swift:3 colon']);
+    },
+  );
+
+  it(
+    'warns about unknown rule ids and rule settings SwiftLint could not read (final review minor 9)',
+    TIMEOUT,
+    async () => {
+      const root = tmp();
+      writeTree(root, {
+        'A.swift': 'let value = 1\n',
+        '.swiftlint.yml': 'disabled_rules: [not_a_rule]\nnesting:\n  type_level: foo\n',
+      });
+      const lines: string[] = [];
+      const capture = await lint(root, process.env, lines);
+      expect(capture.status, capture.reason ?? '').toBe('ok');
+      const warn = lines.filter((l) => l.startsWith('warn: '));
+      expect(warn).toContainEqual(
+        expect.stringContaining(
+          'swiftlint: .swiftlint.yml: SwiftLint does not know the rule ids not_a_rule; it ignores them',
+        ),
+      );
+      expect(warn).toContainEqual(
+        expect.stringContaining(
+          'swiftlint: .swiftlint.yml: SwiftLint could not read the settings of nesting and uses their defaults',
+        ),
+      );
     },
   );
 

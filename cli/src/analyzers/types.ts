@@ -92,6 +92,13 @@ export interface AnalyzerCommand {
    * refuses); the report `reason` stays the fixed "exited with code N" (config.md §6).
    */
   failureDetail?(exitCode: number | null, stderr: string): string | null;
+  /**
+   * A run whose exit code is in `okExitCodes`: lines, built by the adapter from the tool's stderr
+   * tail, about configuration the tool ignored (SwiftLint: a rule setting it could not read). Each
+   * is logged at warn, never put in the report; the adapter bounds them (`reason.ts`) and never
+   * copies environment text into them.
+   */
+  configWarnings?(stderr: string): readonly string[];
 }
 
 export type Preparation =

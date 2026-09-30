@@ -21,10 +21,12 @@ import { useTempDirs, writeTree } from '../../test/tmp';
 import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { createLogger, silentLogger } from '../log';
 import { runAnalyzers } from './runner';
+import { crlfToLf } from './checked-copy';
 import {
   parseSwiftlintVersion,
   SWIFTLINT_KEPT_ENV,
   swiftlintAnalyzer,
+  swiftlintConfigWarnings,
   swiftlintFailureDetail,
 } from './swiftlint';
 import type { AnalyzerCommand, AnalyzerContext } from './types';
@@ -350,6 +352,83 @@ describe('swiftlintAnalyzer.prepare (config.md §6, plan 8F)', () => {
       'warn: swiftlint: explicit_self, custom_rules need SourceKit, which the bundled SwiftLint does not have; they do not run',
     );
     expect(text).toContain('swiftlint: .swiftlint.yml: left out reporter (config.md §6)');
+  });
+
+  it('gives SwiftLint CRLF line ends as LF, and a lone CR as it is (ruling F27)', async () => {
+    const files = {
+      'Crlf.swift': 'let a = f(1,\r\n        2)\r\nlet b = 1\r\n',
+      'Cr.swift': 'let c = 1\rlet d = 2\n',
+      'Mixed.swift': 'let e = 1\r\n\r\r\nlet g = "\r"\n',
+    };
+    const { ctx, root, work } = context(files);
+    await run(ctx);
+    const copy = (rel: string) => readFileSync(path.join(work, 'src', rel), 'latin1');
+    expect(copy('Crlf.swift')).toBe('let a = f(1,\n        2)\nlet b = 1\n');
+    // A lone CR is not a line end to Qualor (splitSourceLines), so it stays as it is.
+    expect(copy('Cr.swift')).toBe('let c = 1\rlet d = 2\n');
+    expect(copy('Mixed.swift')).toBe('let e = 1\n\r\nlet g = "\r"\n');
+    // Only the copy: the checkout keeps its bytes.
+    for (const [rel, text] of Object.entries(files)) {
+      expect(readFileSync(path.join(root, rel), 'latin1')).toBe(text);
+    }
+  });
+
+  it('crlfToLf replaces CR LF only, byte for byte, and returns a buffer without CR as it is', () => {
+    const utf8 = Buffer.from('let ü = "é"\r\n\r// ✓\r\n', 'utf8');
+    expect(crlfToLf(utf8).toString('utf8')).toBe('let ü = "é"\n\r// ✓\n');
+    const plain = Buffer.from('let a = 1\n');
+    expect(crlfToLf(plain)).toBe(plain);
+    // Bytes that are not UTF-8 survive unchanged around the replaced pairs.
+    expect([...crlfToLf(Buffer.from([0xff, 0x0d, 0x0a, 0xfe, 0x0d]))]).toEqual([
+      0xff, 0x0a, 0xfe, 0x0d,
+    ]);
+  });
+
+  it('warns once about rule ids SwiftLint does not know, as one bounded line (final review minor 9)', async () => {
+    const lines: string[] = [];
+    const long = 'z'.repeat(400);
+    const { ctx } = context(
+      {
+        'A.swift': 'let a = 1\n',
+        '.swiftlint.yml': `disabled_rules: [not_a_rule, "x\\ny", todo, ${long}]\nopt_in_rules: [all]\n`,
+      },
+      { lines },
+    );
+    await run(ctx);
+    const warn = lines.filter((l) => l.includes('does not know'));
+    expect(warn).toHaveLength(1);
+    expect(warn[0]).toMatch(
+      /^warn: swiftlint: \.swiftlint\.yml: SwiftLint does not know the rule ids not_a_rule, x\?y, z+/,
+    );
+    expect(warn[0]!.trim().length).toBeLessThanOrEqual('warn: swiftlint: '.length + 300);
+    const clean: string[] = [];
+    await run(context({ 'A.swift': 'let a = 1\n' }, { lines: clean }).ctx);
+    expect(clean.join('')).not.toContain('does not know');
+  });
+
+  it("surfaces SwiftLint's own warnings about rule settings it could not read, at warn (final review minor 9)", async () => {
+    // Recorded: SwiftLint 0.65.1's stderr for `nesting: {type_level: foo}`, `line_length:
+    // {warning: abc}` and `disabled_rules: [not_a_rule]` (its list of valid ids cut short), plus
+    // one made-up line naming an id outside the rule table, which is not repeated.
+    const stderr = [
+      "warning: Invalid configuration for 'nesting' rule. Falling back to default.",
+      "warning: Invalid configuration for 'line_length' rule. Falling back to default.",
+      "warning: Invalid configuration for 'not_a_rule' rule. Falling back to default.",
+      "warning: 'not_a_rule' is not a valid rule identifier",
+      'Valid rule identifiers:',
+      'accessibility_label_for_image',
+      "warning: Skipping enabled rule 'statement_position' because it requires SourceKit and SourceKit access is prohibited.",
+      '',
+    ].join('\n');
+    expect(swiftlintConfigWarnings(stderr, '.swiftlint.yml')).toEqual([
+      '.swiftlint.yml: SwiftLint could not read the settings of nesting, line_length and uses their defaults',
+    ]);
+    expect(swiftlintConfigWarnings('', '.swiftlint.yml')).toEqual([]);
+    const { ctx } = context({ 'A.swift': 'let a = 1\n', '.swiftlint.yml': 'nesting: 1\n' });
+    const cmd = await run(ctx);
+    expect(cmd.configWarnings?.(stderr)).toEqual([
+      '.swiftlint.yml: SwiftLint could not read the settings of nesting, line_length and uses their defaults',
+    ]);
   });
 
   it('is skipped, not unavailable, without swiftlint (ruling G6), and says a repository copy is never run', async () => {

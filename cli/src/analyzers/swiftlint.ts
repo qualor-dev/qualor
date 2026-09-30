@@ -1,11 +1,11 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { SWIFTLINT_VERSION, swiftlintVersionSupported } from '@qualor/shared';
+import { SWIFTLINT_RULES, SWIFTLINT_VERSION, swiftlintVersionSupported } from '@qualor/shared';
 import picomatch from 'picomatch';
 import { MAX_ANALYZED_BYTES } from '../discovery/discover';
-import { copyCheckedFiles, copyTarget } from './checked-copy';
+import { copyCheckedFiles, copyTarget, crlfToLf } from './checked-copy';
 import { deadProxyEnv } from './offline';
-import { detailLine, stderrLines } from './reason';
+import { detailLine, shown, stderrLines } from './reason';
 import { checkSwiftlintConfig, loadSwiftlintConfig } from './swiftlint-config';
 import { swiftlintSarif } from './swiftlint-sarif';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
@@ -68,6 +68,29 @@ export function swiftlintFailureDetail(stderr: string, workDir: string): string 
   return detailLine(line.split(workDir).join('<work>'));
 }
 
+/** SwiftLint's stderr line for a rule setting it could not read; it then uses the rule's defaults. */
+const INVALID_SETTING =
+  /^warning: Invalid configuration for '([a-z_]+)' rule\. Falling back to default\.$/;
+
+/**
+ * SwiftLint's own warnings about rule settings it could not read (`nesting: {type_level: foo}`), as
+ * one line for the warn log (final review minor 9): only ids of SwiftLint's rule table, built by
+ * Qualor, bounded (`detailLine`), never a raw stderr line. `source` is the configuration's name.
+ */
+export function swiftlintConfigWarnings(stderr: string, source: string): string[] {
+  const ids = new Set<string>();
+  for (const line of stderrLines(stderr)) {
+    const id = INVALID_SETTING.exec(line.trim())?.[1];
+    if (id !== undefined && SWIFTLINT_RULES.has(id)) ids.add(id);
+  }
+  if (ids.size === 0) return [];
+  return [
+    detailLine(
+      `${shown(source)}: SwiftLint could not read the settings of ${[...ids].join(', ')} and uses their defaults`,
+    ),
+  ];
+}
+
 async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   const settings = ctx.config.analyzers.swiftlint;
   // `qualor scan` stops with exit 2 on a configFile that is a URL or outside the repository
@@ -96,6 +119,13 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   if (plan.notRun.length > 0) {
     ctx.log.warn(
       `swiftlint: ${plan.notRun.join(', ')} need SourceKit, which the bundled SwiftLint does not have; they do not run`,
+    );
+  }
+  if (plan.unknownRules.length > 0) {
+    // SwiftLint ignores them with a warning of its own, in the debug log only (final review m9).
+    const ids = plan.unknownRules.map(shown).join(', ');
+    ctx.log.warn(
+      `swiftlint: ${detailLine(`${shown(plan.source)}: SwiftLint does not know the rule ids ${ids}; it ignores them`)}`,
     );
   }
   if (plan.dropped.length > 0) {
@@ -143,7 +173,9 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       f.size <= MAX_ANALYZED_BYTES && !f.path.split('/').slice(0, -1).includes('.swiftlint.yml'),
   );
   mkdirSync(input, { recursive: true });
-  const files = copyCheckedFiles(ctx.root, candidates, input);
+  // Ruling F27: SwiftLint counts a CR LF file's lines wrongly (twice as many, with false comma and
+  // colon findings), so its copy gets LF; each line keeps its number and columns.
+  const files = copyCheckedFiles(ctx.root, candidates, input, crlfToLf);
   const leftOut = kept.length - large - files.length;
   if (leftOut > 0) {
     ctx.log.warn(
@@ -193,6 +225,7 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       // Relative URIs are written raw: percent-encoded so the normaliser decodes the same name.
       transform: (output) => swiftlintSarif(output),
       failureDetail: (_code, stderr) => swiftlintFailureDetail(stderr, ctx.workDir),
+      configWarnings: (stderr) => swiftlintConfigWarnings(stderr, plan.source),
     },
   };
 }

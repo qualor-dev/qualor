@@ -50,6 +50,7 @@ import { truncateSync, writeFileSync } from 'node:fs';
 const [mode, out] = process.argv.slice(2);
 if (mode === 'ok') writeFileSync(out, JSON.stringify(${JSON.stringify(SARIF)}));
 else if (mode === 'crash') { process.stderr.write('boom\\n'); process.exit(2); }
+else if (mode === 'okwarn') { process.stderr.write('warning: setting ignored\\n'); writeFileSync(out, JSON.stringify(${JSON.stringify(SARIF)})); }
 else if (mode === 'garbage') writeFileSync(out, '{"runs": ${FAKE_SECRET}');
 else if (mode === 'hang') setInterval(() => {}, 1000);
 else if (mode === 'huge') { writeFileSync(out, ''); truncateSync(out, 256 * 1024 * 1024 + 1); }
@@ -130,6 +131,39 @@ describe('runAnalyzers', () => {
     });
     expect(c?.sarif).toEqual(SARIF);
     expect(c?.mapping).toBeDefined();
+  });
+
+  it('logs the configuration warnings an adapter reads from stderr at warn, only for a run that ended fine', async () => {
+    const { root, files, toolPath } = setup();
+    const seen: string[] = [];
+    const withWarnings = (id: AnalyzerId, mode: string): Analyzer => {
+      const base = fake(id, toolPath, mode);
+      return {
+        ...base,
+        prepare: async (ctx) => {
+          const prep = await base.prepare(ctx);
+          if (!('run' in prep)) throw new Error('unexpected');
+          return {
+            run: {
+              ...prep.run,
+              configWarnings: (stderr: string) => {
+                seen.push(stderr);
+                return stderr.includes('ignored') ? ['a setting was ignored'] : [];
+              },
+            },
+          };
+        },
+      };
+    };
+    const warnings: string[] = [];
+    const log = { ...silentLogger, warn: (m: string) => warnings.push(m) };
+    const captures = await runAnalyzers(
+      [withWarnings('eslint', 'okwarn'), withWarnings('pmd', 'crash')],
+      { root, files, config: config(), log },
+    );
+    expect(captures.map((c) => c.status)).toEqual(['ok', 'failed']);
+    expect(seen).toEqual(['warning: setting ignored\n']);
+    expect(warnings).toContain('eslint: a setting was ignored');
   });
 
   it('records failures: exit code, missing output, invalid JSON', async () => {

@@ -222,6 +222,15 @@ describe('detekt prepare (config.md §6)', () => {
     expect(copied(s.workDir)).toEqual([...names].sort());
   });
 
+  it('copies CRLF files byte for byte (only SwiftLint gets LF, ruling F27)', async () => {
+    const text = 'class A {\r\n    fun f() = 1\r\n}\r\n\r';
+    const s = setup({ 'src/A.kt': text });
+    const p = await detektAnalyzer.prepare(ctxFor(s));
+    if (!('run' in p)) throw new Error(JSON.stringify(p));
+    const copy = path.join(s.workDir, 'detekt-input', 'src', 'A.kt');
+    expect(readFileSync(copy, 'latin1')).toBe(text);
+  });
+
   it('leaves out links and files over 1 MiB with one warning, and skips when nothing is left (Review Focus 3, ruling E15)', async () => {
     const s = setup({ 'src/Big.kt': `// ${'x'.repeat(MAX_ANALYZED_BYTES)}\n` });
     const outside = path.join(tmp(), 'Out.kt');

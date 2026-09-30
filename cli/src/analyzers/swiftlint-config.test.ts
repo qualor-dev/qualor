@@ -181,7 +181,7 @@ describe('planSwiftlintConfig (config.md §6, plan 8F)', () => {
 
   it('turns included and excluded into globs relative to the configuration, refusing escapes', () => {
     const p = plan(
-      'included: [Sources, "./App"]\nexcluded: [Pods, "**/Generated", /etc, ../x, "!Sources", "~/x", "a\\\\b", "C:/x"]\n',
+      'included: [Sources, "./App"]\nexcluded: [Pods, "**/Generated", /etc, ../x, "!Sources", "~/x", "a\\\\b", "C:/x", "./!foo", ".//~x"]\n',
       'ios',
     );
     expect(p.included).toEqual(['ios/Sources', 'ios/Sources/**', 'ios/App', 'ios/App/**']);
@@ -198,6 +198,9 @@ describe('planSwiftlintConfig (config.md §6, plan 8F)', () => {
       'excluded: ~/x',
       'excluded: a\\b',
       'excluded: C:/x',
+      // Checked after the leading ./ is stripped too (final review minor 2).
+      'excluded: ./!foo',
+      'excluded: .//~x',
     ]);
     expect(written(p)).not.toHaveProperty('included');
     expect(written(p)).not.toHaveProperty('excluded');
@@ -295,11 +298,32 @@ describe('planSwiftlintConfig (config.md §6, plan 8F)', () => {
     expect(written(p)['identifier_name']).toEqual({ excluded: ['${CI_JOB_TOKEN}', '$HOME'] });
   });
 
-  it('writes the source name safely into the header', () => {
-    const p = planSwiftlintConfig({}, '', 'a\nwrite_baseline: x\u{2028}\u{e9}$.yml');
-    expect('yaml' in p && p.yaml.split('\n')[0]).toBe(
-      '# Written by Qualor from a?write_baseline: x??$.yml (config.md §6).',
+  it('writes the source name safely into the header, $ included (final review minor 2)', () => {
+    const p = planSwiftlintConfig({}, '', 'a\nwrite_baseline: x\u{2028}\u{e9}${HOME}.yml');
+    if (!('yaml' in p)) throw new Error(JSON.stringify(p));
+    expect(p.yaml.split('\n')[0]).toBe(
+      '# Written by Qualor from a?write_baseline: x???{HOME}.yml (config.md §6).',
     );
+    // SwiftLint replaces ${VAR} in the whole text, comments included.
+    expect(p.yaml).not.toContain('$');
+  });
+
+  it('lists rule ids SwiftLint does not know, once each (final review minor 9)', () => {
+    const p = plan(
+      [
+        'opt_in_rules: [all, also_bad, my_rule, force_unwrapping]',
+        'disabled_rules: [not_a_rule, todo, also_bad, all, custom_rules]',
+        'custom_rules:',
+        '  my_rule:',
+        '    regex: foo',
+        '',
+      ].join('\n'),
+    );
+    // `all` is an opt_in_rules value only; a custom rule's id and custom_rules are ids.
+    expect(p.unknownRules).toEqual(['also_bad', 'not_a_rule', 'all']);
+    const only = plan('only_rules: [colon, all, "bad\\nid"]\n');
+    expect(only.unknownRules).toEqual(['all', 'bad\nid']);
+    expect(plan('disabled_rules: [todo]\n').unknownRules).toEqual([]);
   });
 
   it('skips when writing the configuration throws (fix round 1, m4)', () => {
@@ -377,6 +401,8 @@ describe("Qualor's defaults layer (ruling F5)", () => {
 disabled_rules:
   - todo
   - multiple_closures_with_trailing_closure
+  - trailing_comma
+  - comment_spacing
 trailing_whitespace:
   ignores_empty_lines: true
 identifier_name:
@@ -384,6 +410,12 @@ identifier_name:
 line_length:
   ignores_urls: true
   ignores_comments: true
+opening_brace:
+  ignore_multiline_statement_conditions: true
+  ignore_multiline_type_headers: true
+  ignore_multiline_function_signatures: true
+nesting:
+  type_level: 2
 `,
     );
   });
@@ -391,10 +423,22 @@ line_length:
   it('is what SwiftLint gets without a project configuration, or with configFile: qualor-default', () => {
     const root = tmp();
     const expected = {
-      disabled_rules: ['todo', 'multiple_closures_with_trailing_closure', ...SOURCEKIT],
+      disabled_rules: [
+        'todo',
+        'multiple_closures_with_trailing_closure',
+        'trailing_comma',
+        'comment_spacing',
+        ...SOURCEKIT,
+      ],
       trailing_whitespace: { ignores_empty_lines: true },
       identifier_name: { excluded: ['i', 'j', 'k', 'x', 'y', 'z', 'id'] },
       line_length: { ignores_urls: true, ignores_comments: true },
+      opening_brace: {
+        ignore_multiline_statement_conditions: true,
+        ignore_multiline_type_headers: true,
+        ignore_multiline_function_signatures: true,
+      },
+      nesting: { type_level: 2 },
     };
     const none = loadSwiftlintConfig(root, null) as SwiftlintPlan;
     expect(none).toMatchObject({ source: QUALOR_DEFAULT, dropped: [], notRun: [] });

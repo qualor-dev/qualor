@@ -14,16 +14,26 @@ export const MAX_SWIFTLINT_CONFIG_ALIASES = 50;
 export const QUALOR_DEFAULT = 'qualor-default';
 
 /**
- * Ruling F5: what SwiftLint gets when the project has no configuration (or `configFile:
- * qualor-default`), in place of SwiftLint's bare defaults, which flag code the Xcode and SwiftUI
- * defaults produce: whitespace Xcode leaves on blank lines, every `// TODO`, loop and geometry
- * names (`i`, `x`), SwiftUI's `Button(action:) { … }`, and long URLs or comments. A project
- * configuration replaces it entirely. `"y"` is quoted: a bare `y` is a boolean in YAML 1.1.
+ * Rulings F5 and F27: what SwiftLint gets when the project has no configuration (or `configFile:
+ * qualor-default`), in place of SwiftLint's bare defaults, which flag code that Xcode, SwiftPM and
+ * the common formatters produce:
+ * - whitespace Xcode leaves on blank lines, every `// TODO`, loop and geometry names (`i`, `x`),
+ *   SwiftUI's `Button(action:) { … }`, and long URLs or comments;
+ * - trailing commas, which `swift package init`'s Package.swift template writes and swift-format
+ *   and SwiftFormat insert by default (Swift 6.1 allows them everywhere);
+ * - the swift.org file header separator `//===----…----===//` (comment_spacing);
+ * - `{` on its own line after a wrapped condition, type header or signature, SwiftFormat's default
+ *   brace wrapping (opening_brace);
+ * - types nested two deep, the SwiftUI and TCA namespacing idiom `Feature.Action.Alert` (nesting).
+ * A project configuration replaces it entirely. `"y"` is quoted: a bare `y` is a boolean in YAML
+ * 1.1.
  */
 export const QUALOR_SWIFTLINT_DEFAULTS = `# Qualor's defaults for a project without a SwiftLint configuration (config.md §6).
 disabled_rules:
   - todo
   - multiple_closures_with_trailing_closure
+  - trailing_comma
+  - comment_spacing
 trailing_whitespace:
   ignores_empty_lines: true
 identifier_name:
@@ -31,6 +41,12 @@ identifier_name:
 line_length:
   ignores_urls: true
   ignores_comments: true
+opening_brace:
+  ignore_multiline_statement_conditions: true
+  ignore_multiline_type_headers: true
+  ignore_multiline_function_signatures: true
+nesting:
+  type_level: 2
 `;
 
 /**
@@ -66,6 +82,9 @@ function yamsDecimal(t: Tags[number]): Tags[number] {
  * SwiftLint reads its configuration with Yams, a YAML 1.1 reader: `yes`/`on` are booleans there.
  * Qualor reads YAML 1.1 with Yams's booleans, so each value it keeps means to SwiftLint what it
  * meant in the project's file. Timestamps are left as text (Yams decides what a date is).
+ * Known differences, accepted (final review minor 2): a bare `0o17` or `1e3` is read as a string
+ * here (and written quoted), where Yams may read a number, so SwiftLint then refuses that rule
+ * setting and uses its default; an integer past 2^53 loses precision (a JavaScript number).
  */
 const YAML_OPTIONS = {
   version: '1.1' as const,
@@ -158,6 +177,11 @@ export interface SwiftlintPlan {
   dropped: string[];
   /** Rules the configuration asks for that the bundled SwiftLint cannot run (SourceKit). */
   notRun: string[];
+  /**
+   * Ids in the rule lists that SwiftLint does not know, as written (final review minor 9): it
+   * ignores them with a warning of its own, which Qualor logs only at debug.
+   */
+  unknownRules: string[];
   /** `qualor-default`, or the repository-relative path of the file read. */
   source: string;
 }
@@ -183,6 +207,31 @@ const LEFT_OUT = new Set([
   'analyzer_rules',
 ]);
 const NOT_FOLLOWED = ['parent_config', 'child_config'] as const;
+
+/**
+ * The ids in the rule lists that SwiftLint 0.65 does not know (it prints `'x' is not a valid rule
+ * identifier` and ignores it). `custom_rules` and each custom rule's id are ids; `all` is one only
+ * in opt_in_rules and enabled_rules (checked with the real 0.65.1).
+ */
+function unknownRuleIds(
+  lists: Partial<Record<(typeof RULE_LISTS)[number], string[]>>,
+  customRules: unknown,
+): string[] {
+  const custom =
+    customRules !== null && typeof customRules === 'object' && !Array.isArray(customRules)
+      ? Object.keys(customRules)
+      : [];
+  const known = (list: string, id: string) =>
+    SWIFTLINT_RULES.has(id) ||
+    id === 'custom_rules' ||
+    custom.includes(id) ||
+    (id === 'all' && (list === 'opt_in_rules' || list === 'enabled_rules'));
+  const unknown = new Set<string>();
+  for (const key of RULE_LISTS) {
+    for (const id of lists[key] ?? []) if (!known(key, id)) unknown.add(id);
+  }
+  return [...unknown];
+}
 const SOURCEKIT_RULES = [...SWIFTLINT_RULES].filter(([, r]) => r.sourceKit).map(([id]) => id);
 const needsSourceKit = (id: string) => SWIFTLINT_RULES.get(id)?.sourceKit === true;
 
@@ -266,11 +315,15 @@ function pathGlobs(
   if (entries === null) return { skip: `${key} must be a list of paths` };
   const globs: string[] = [];
   for (const raw of entries) {
-    const entry = raw.replace(/^(\.\/)+/, '').replace(/\/+$/, '');
+    // `./`, `.//` and `././` all name the configuration's directory.
+    const entry = raw.replace(/^(\.\/+)+/, '').replace(/\/+$/, '');
     const escapes =
       raw === '' ||
       raw.startsWith('!') ||
       raw.startsWith('~') ||
+      // `./!foo` and `./~x` too, once the leading `./` is stripped (final review minor 2).
+      entry.startsWith('!') ||
+      entry.startsWith('~') ||
       raw.includes('\\') ||
       path.posix.isAbsolute(raw) ||
       path.win32.isAbsolute(raw) ||
@@ -364,8 +417,9 @@ export function planSwiftlintConfig(
       dropped.push(shown(key));
     }
   }
-  // The name is shown as printable ASCII: a comment ends at any line break libyaml knows.
-  const header = `# Written by Qualor from ${name.replace(/[^\x20-\x7e]/g, '?')} (config.md §6).\n`;
+  // The name is shown as printable ASCII: a comment ends at any line break libyaml knows. `$` is
+  // `?` too: SwiftLint replaces `${VAR}` in the whole text, comments included (final review m2).
+  const header = `# Written by Qualor from ${name.replace(/[^\x20-\x23\x25-\x7e]/g, '?')} (config.md §6).\n`;
   let yaml: string;
   try {
     yaml = header + writeYaml(out);
@@ -377,7 +431,8 @@ export function planSwiftlintConfig(
     return { skip: `${name} cannot be written as YAML` };
   }
 
-  return { yaml, included, excluded, dropped, notRun, source };
+  const unknownRules = unknownRuleIds(lists, parsed['custom_rules']);
+  return { yaml, included, excluded, dropped, notRun, unknownRules, source };
 }
 
 function qualorDefault(): SwiftlintPlan {

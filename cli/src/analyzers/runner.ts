@@ -322,6 +322,9 @@ async function capture(
       if (detail !== null) o.log.warn(`${analyzer.id}: ${detail}`);
       return done('failed', `exited with code ${result.exitCode ?? 'null'}`);
     }
+    for (const line of run.configWarnings?.(result.stderr) ?? []) {
+      o.log.warn(`${analyzer.id}: ${line}`);
+    }
     const sarif = readSarif(run.sarifPath, o.log);
     if (typeof sarif === 'string') return done('failed', sarif);
     if (run.transform === undefined) return { ...done('ok', null), sarif: sarif.value };
