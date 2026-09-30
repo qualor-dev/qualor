@@ -332,6 +332,24 @@ describe('detekt prepare (config.md §6)', () => {
     );
   });
 
+  it("never logs the JVM's echo of JAVA_TOOL_OPTIONS and its kin, which may hold secrets (fix round 2)", () => {
+    const input = '/work/detekt-input';
+    const o = { input, projectConfig: null, projectConfigRel: null };
+    const picked = [
+      'Picked up JAVA_TOOL_OPTIONS: -Dhttp.proxyPassword=s3cret',
+      'NOTE: Picked up JDK_JAVA_OPTIONS: -Dx=s3cret',
+      'Picked up _JAVA_OPTIONS: -Dy=s3cret',
+    ].join('\n');
+    // Recorded stderr with the JVM's line first: the analysing line is found after it.
+    const crash = detektFailureDetail(`${picked}\n${typeStderr(`${input}/src/A.kt`)}`, o);
+    expect(crash).toBe(`src/A.kt: ${TYPE_MESSAGE}`);
+    expect(crash).not.toContain('s3cret');
+    // Only the JVM's lines and one line detekt wrote without an original message.
+    const other = detektFailureDetail(`${picked}\nError: something else\n`, o);
+    expect(other).toBe('Error: something else');
+    expect(detektFailureDetail(`${picked}\n`, o)).toBeNull();
+  });
+
   it('declares its id, languages and default jar', () => {
     expect(detektAnalyzer.id).toBe('detekt');
     expect(detektAnalyzer.languages).toEqual(['kotlin']);

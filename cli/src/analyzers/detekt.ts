@@ -21,7 +21,7 @@ import {
 } from './detekt-config';
 import { detektSarif } from './detekt-sarif';
 import { DEAD_PROXY_PROPERTIES, javaBinary } from './jvm';
-import { detailLine, shown } from './reason';
+import { detailLine, shown, stderrLines } from './reason';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
 
 /** Where tools/analyzers/install.sh puts detekt's CLI jar (config.md §4). */
@@ -120,7 +120,8 @@ export interface DetektPaths {
 /**
  * Why detekt failed, from its stderr (final review, minor 3): the `The original exception message
  * was: …` line, after the file detekt was analysing when there is one, else the first non-empty
- * line. The copy's paths become repository paths, so the line names the checkout file; then it is
+ * line; the JVM's `Picked up JAVA_TOOL_OPTIONS: …` echo is never chosen (`stderrLines`), since
+ * the CI's options may hold secrets. The copy's paths become repository paths, so the line names the checkout file; then it is
  * one bounded line (`detailLine`). For the log only, never a report `reason`.
  */
 export function detektFailureDetail(stderr: string, paths: DetektPaths): string | null {
@@ -134,10 +135,10 @@ export function detektFailureDetail(stderr: string, paths: DetektPaths): string 
     }
     return out;
   };
-  const lines = stderr.split(/\r?\n/).filter((l) => l.trim() !== '');
+  const lines = stderrLines(stderr);
   const message = lines.find((l) => l.startsWith(ORIGINAL_MESSAGE));
   if (message !== undefined) {
-    const file = lines[0]?.match(ANALYZING)?.[1];
+    const file = lines.map((l) => l.match(ANALYZING)?.[1]).find((f) => f !== undefined);
     return detailLine(shownPath(file === undefined ? message : `${file}: ${message}`));
   }
   const first = lines[0];

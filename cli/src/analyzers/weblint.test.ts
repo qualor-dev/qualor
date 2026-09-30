@@ -270,6 +270,14 @@ describe('stylelint and htmlhint prepare (config.md §6, plan 8D)', () => {
     expect(weblintFailureDetail('stylelint', 2, 'a\u001b[2Jb')).toBe('a [2Jb');
     expect(weblintFailureDetail('stylelint', 2, '')).toBeNull();
     expect(weblintFailureDetail('stylelint', 1, 'stylelint: fatal: x')).toBeNull();
+    // The shared stderr filter (fix round 2): a JVM-style option echo is never the detail.
+    expect(
+      weblintFailureDetail(
+        'htmlhint',
+        2,
+        'Picked up JAVA_TOOL_OPTIONS: -Dpw=s3cret\nError: boom\n',
+      ),
+    ).toBe('Error: boom');
   });
 
   it('logs the pass summary: unknown rules and invalid options as warnings, never in the report', () => {

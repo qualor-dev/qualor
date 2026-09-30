@@ -262,6 +262,33 @@ describeWithDetekt()('detekt failures say why (real detekt, final review minor 3
       expect(lines.join('\n')).not.toContain('detekt-input');
     },
   );
+
+  it(
+    "never logs the JVM's echo of JAVA_TOOL_OPTIONS, which may hold a secret (fix round 2)",
+    TIMEOUT,
+    async () => {
+      const root = tmp();
+      writeTree(root, {
+        'src/A.kt': MAGIC,
+        'config/detekt/detekt.yml': 'style:\n  MaxLineLength:\n    maxLineLength: abc\n',
+      });
+      const lines: string[] = [];
+      const [capture] = await runAnalyzers([detektAnalyzer], {
+        root,
+        config: parseConfig({ version: 1 }),
+        files: [kt(root, 'src/A.kt')],
+        log: createLogger('warn', (t) => lines.push(t)),
+        env: {
+          ...process.env,
+          JAVA_TOOL_OPTIONS: '-Dhttp.proxyPassword=s3cret',
+          JDK_JAVA_OPTIONS: '-Dother.password=s3cret',
+        },
+      });
+      expect(capture).toMatchObject({ status: 'failed', reason: 'exited with code 1' });
+      expect(lines.join('\n')).toContain('detekt: src/A.kt: The original exception message was:');
+      expect(lines.join('\n')).not.toContain('s3cret');
+    },
+  );
 });
 
 /** detekt's rule set provider interface: a jar that implements it is a detekt plugin. */

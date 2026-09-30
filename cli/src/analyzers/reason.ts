@@ -20,3 +20,18 @@ export function detailLine(line: string): string {
     .join('');
   return printable.trim().slice(0, MAX_DETAIL_CHARS);
 }
+
+/**
+ * The JVM's echo of its option variables, which it prints first on stderr: their values come from
+ * the CI configuration and may hold secrets (`-Dhttp.proxyPassword=…`), so no detail ever shows it.
+ */
+const JVM_OPTIONS_ECHO = /^(NOTE: )?Picked up (JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS):/;
+
+/**
+ * A tool's stderr as the lines a `failureDetail` may choose from: non-blank, and without the
+ * JVM's echo of `JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS` or `JDK_JAVA_OPTIONS` (fix round 2 of the
+ * Phase 8E final review).
+ */
+export function stderrLines(stderr: string): string[] {
+  return stderr.split(/\r?\n/).filter((l) => l.trim() !== '' && !JVM_OPTIONS_ECHO.test(l));
+}

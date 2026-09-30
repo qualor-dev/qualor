@@ -12,7 +12,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { Logger } from '../log';
 import { isInside, staysInside } from './binary';
-import { detailLine } from './reason';
+import { detailLine, stderrLines } from './reason';
 import type { AnalyzerContext } from './types';
 
 /** A repository configuration Qualor's HTML and CSS passes cannot use (config.md §6): a skip reason. */
@@ -125,7 +125,7 @@ export function weblintFailureDetail(
   stderr: string,
 ): string | null {
   if (exitCode !== 2) return null;
-  const lines = stderr.split(/\r?\n/).filter((l) => l.trim() !== '');
+  const lines = stderrLines(stderr);
   const prefix = `${engine}: fatal: `;
   const fatal = lines.findLast((l) => l.startsWith(prefix));
   const line = fatal === undefined ? lines[0] : fatal.slice(prefix.length);
