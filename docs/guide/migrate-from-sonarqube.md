@@ -32,11 +32,11 @@ Python is different: Qualor does not reimplement SonarQube's `python` rules, it 
 open-source tool, Ruff, that SonarQube's own `external_ruff` issues came from. A `python:` rule
 maps to Qualor's `ruff:` rule wherever it is the same Ruff rule, and once a maintainer has compared
 the two rules' documentation and marked the pair reviewed, it activates that Ruff rule in your
-Qualor `python` profile the same way a C#, JavaScript or TypeScript mapping does. Most `python:`
+Qualor `python` profile the same way a C#, JavaScript or TypeScript mapping does. All `python:`
 mappings are still awaiting that review: until then, they import issue statuses onto the matching
 Qualor issue (like every mapped rule does) but do not yet turn the rule on in your profile. Issues
 SonarQube imported from Ruff itself (`external_ruff`) already map one to one, with no review
-needed, because there `python:` and `ruff:` agree by construction: the rule key is Ruff's own.
+needed, because there `external_ruff:` and `ruff:` agree by construction: the rule key is Ruff's own.
 Issues SonarQube imported from Bandit (`external_bandit`) are not mapped yet.
 
 Qualor runs these bundled rules with their default configuration: eslint-plugin-sonarjs's

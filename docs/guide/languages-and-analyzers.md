@@ -93,14 +93,22 @@ analyzers:
     timeoutSeconds: 600                  # optional
 ```
 
-A code you list in `select` is never left out by `ignore`, even one `qualor-default` normally
-leaves out.
+A code you list in `select` is never left out by qualor-default's own ignores. A selector Ruff
+0.16 does not know (a typo such as `SIMM`) is a configuration error.
 
 Ruff never reads the project's own `ruff.toml`, `.ruff.toml` or `pyproject.toml` (the checkout's, a
 parent directory's, or yours): a scan must not run with settings a merge request itself controls.
 `# noqa` comments in the source are still honoured. Virtual environments and Python caches
 (`.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs`, `site-packages`) are
 never scanned.
+
+Only `.py` files are analysed: `.pyi` stubs and `.ipynb` notebooks are not.
+
+Qualor now runs Ruff itself, so if you imported your own Ruff SARIF before, remove that import
+(`--sarif` or the `qualor.yml` `sarif:` entry). `ruff` is a reserved engine id: a `sarif:` entry
+with `engine: ruff` is a configuration error. A Ruff SARIF you still import is reported as
+`ext-ruff`, and each of its findings counts once with the built-in `ruff` finding of the same
+code on the same line.
 
 Python files get the same metrics as the other languages (lines of code, functions, classes,
 cyclomatic and cognitive complexity) and count in duplication detection; a docstring counts as a
@@ -230,6 +238,12 @@ sarif:
   - path: reports/osv.sarif
     engine: osv-scanner            # optional; default: the SARIF tool name
 ```
+
+The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep` and the others) are
+reserved: `engine: ruff` is a configuration error, and a SARIF file from a tool Qualor runs itself
+is reported under `ext-<tool>`. Don't import Ruff SARIF any more: Qualor runs Ruff (see
+[Python](#python-ruff)); a Ruff SARIF you still import counts once with the built-in finding of the
+same code on the same line.
 
 ## Coverage
 

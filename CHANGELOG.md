@@ -40,9 +40,12 @@ All notable changes to Qualor are listed here, newest first. The format follows
   and `test_*.py`, `*_test.py` and `conftest.py` are test files by default.
 - New built-in excludes: `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`,
   `.eggs` and `site-packages` directories.
-- `ruff` is now a built-in engine id: a `qualor.yml` `sarif:` entry with `engine: ruff` no longer
-  validates, and an imported tool whose name becomes `ruff` (your own Ruff SARIF) is reported as
-  `ext-ruff`.
+- Qualor now runs Ruff itself. If you imported your own Ruff SARIF to cover Python, remove that
+  import (the `--sarif` flag, or the `qualor.yml` `sarif:` entry) and run Ruff with
+  `analyzers.ruff` instead. `ruff` is now a reserved engine id: a `sarif:` entry with
+  `engine: ruff` is a config error. A Ruff SARIF you still import is reported as `ext-ruff`, and
+  each of its findings counts once with the built-in `ruff` finding of the same code on the same
+  line (the built-in one is shown).
 
 ## [0.1.1] - 2026-09-29
 
