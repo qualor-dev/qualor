@@ -206,6 +206,18 @@ test.describe('on a phone', () => {
     await expect(role).toHaveValue(stored);
   });
 
+  test("a panel's subtitle lines up with its heading when it wraps under it", async ({ page }) => {
+    const id = await ids(page);
+    await page.goto(`/gates/${id.gate}`);
+    const heading = page.getByRole('heading', { name: 'Conditions', exact: true });
+    const sub = page.getByText('The gate fails when any of these conditions is true');
+    await expect(sub).toBeVisible();
+    const headingBox = (await heading.boundingBox())!;
+    const subBox = (await sub.boundingBox())!;
+    expect(subBox.y).toBeGreaterThanOrEqual(headingBox.y + headingBox.height);
+    expect(Math.abs(subBox.x - headingBox.x)).toBeLessThan(1);
+  });
+
   test("a gate's conditions keep Save and Remove in view", async ({ page }) => {
     const id = await ids(page);
     await page.goto(`/gates/${id.gate}`);
