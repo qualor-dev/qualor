@@ -17,6 +17,8 @@ This image holds files only: the complete corresponding source of the copyleft c
 - The MPL-2.0 and CDDL-1.0 Java libraries that SpotBugs and PMD bundle unmodified in their
   `lib/`, each as its `-sources.jar` from Maven Central: **Saxon-HE** 12.10 (MPL-2.0, in both),
   **Rhino** 1.7.15.1 (MPL-2.0, PMD) and **jsr250-api** 1.0 (CDDL-1.0, PMD).
+- **Trove4J** 1.0.20200330 (LGPL-2.1), inside the shaded jar of detekt's CLI: its `-sources.jar`
+  from Maven Central.
 - **Eclipse Temurin JRE** 17 (GPL-2.0 with the Classpath Exception): the source archive
   Adoptium publishes with that release.
 - Inside the `qualor` binary, which is the Bun runtime with the Qualor CLI's JavaScript bundle

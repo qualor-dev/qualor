@@ -35,7 +35,8 @@ export type Component =
   | 'gitleaks'
   | 'sonar-dotnet'
   | 'sonarjs'
-  | 'ruff';
+  | 'ruff'
+  | 'detekt';
 const COMPONENTS: readonly Component[] = [
   'opengrep',
   'spotbugs',
@@ -47,6 +48,7 @@ const COMPONENTS: readonly Component[] = [
   'sonar-dotnet',
   'sonarjs',
   'ruff',
+  'detekt',
 ];
 
 /** Where the manifest may download from: the SCM and each component's own upstream. */
@@ -172,7 +174,15 @@ export function loadManifest(root = REPO_ROOT): SourceEntry[] {
 export function installedVersion(
   installSh: string,
   tool:
-    'OPENGREP' | 'SPOTBUGS' | 'PMD' | 'TRIVY' | 'GITLEAKS' | 'SONARANALYZER' | 'SONARJS' | 'RUFF',
+    | 'OPENGREP'
+    | 'SPOTBUGS'
+    | 'PMD'
+    | 'TRIVY'
+    | 'GITLEAKS'
+    | 'SONARANALYZER'
+    | 'SONARJS'
+    | 'RUFF'
+    | 'DETEKT',
 ): string {
   const m = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh);
   if (!m?.[1]) throw new Error(`an install script has no ${tool}_VERSION`);
@@ -225,6 +235,7 @@ export function pinnedVersions(root = REPO_ROOT): Pins {
     'sonar-dotnet': installedVersion(installDotnetSh, 'SONARANALYZER'),
     sonarjs: installedVersion(installSh, 'SONARJS'),
     ruff: installedVersion(installSh, 'RUFF'),
+    detekt: installedVersion(installSh, 'DETEKT'),
   };
 }
 

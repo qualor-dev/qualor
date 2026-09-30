@@ -21,6 +21,7 @@ are attached to the release of that tag at <https://github.com/qualor-dev/qualor
 - **SpotBugs** 4.10.4 (LGPL-2.1): the source archive of its release.
 - The Java libraries SpotBugs and PMD bundle unmodified, as `-sources.jar` from Maven Central:
   **Saxon-HE** 12.10 (MPL-2.0), **Rhino** 1.7.15.1 (MPL-2.0) and **jsr250-api** 1.0 (CDDL-1.0).
+- **Trove4J** 1.0.20200330 (LGPL-2.1), inside detekt's jar: its source jar from Maven Central.
 - The **Eclipse Temurin JRE** 17.0.20+8 (GPL-2.0 with the Classpath Exception): Adoptium's
   `OpenJDK17U-jdk-sources_17.0.20_8.tar.gz`.
 - Inside the `qualor` binary (the Bun runtime with the CLI's bundle appended):

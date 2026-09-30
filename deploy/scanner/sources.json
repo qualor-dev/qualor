@@ -1123,6 +1123,21 @@
       "sha256": "f8d079415ceb2be83fc355adbadafe401307d5c309c7e6ade6638e6f9f42f42d",
       "pinnedAt": "Cargo.lock of Ruff 0.16.9's release source (tools/analyzers/install.sh RUFF_VERSION, RUFF_SOURCE_SHA256)",
       "why": "The scanner image ships the upstream Ruff 0.16.9 binary (MIT), the upstream release build for glibc, a Rust program that compiles in this MPL-2.0 crate; the crates.io archive is the crate's source at that version."
+    },
+    {
+      "file": "trove4j-1.0.20200330-sources.jar",
+      "name": "Trove4J (JetBrains' fork, inside the detekt CLI jar)",
+      "component": "detekt",
+      "componentVersion": "1.23.8",
+      "ref": "1.0.20200330",
+      "licence": "LGPL-2.1",
+      "fetch": {
+        "type": "https",
+        "url": "https://repo1.maven.org/maven2/org/jetbrains/intellij/deps/trove4j/1.0.20200330/trove4j-1.0.20200330-sources.jar"
+      },
+      "sha256": "2e0174e80b989eb5deafcfb77407c908a0abe1f67a80306f98aeca63246e5481",
+      "pinnedAt": "tools/analyzers/install.sh DETEKT_VERSION: detekt-cli 1.23.8 depends on kotlin-compiler-embeddable 2.0.21, which depends on org.jetbrains.intellij.deps:trove4j 1.0.20200330",
+      "why": "qualor/scanner ships detekt's CLI as one shaded jar (tools/analyzers/install.sh); its gnu/trove classes are Trove4J 1.0.20200330 (LGPL-2.1), unmodified. Everything else in the jar is Apache-2.0 or BSD/MIT-style (deploy/scanner/licenses/DETEKT-THIRD-PARTY.txt). This is Trove4J's source jar from Maven Central."
     }
   ]
 }

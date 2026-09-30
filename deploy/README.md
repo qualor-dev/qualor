@@ -5,11 +5,11 @@ Three images, all built from this repository. `qualor/server`, `qualor/scanner` 
 `qualor/scanner:<tag>` and `qualor/scanner-dotnet:<tag>` (the source repository is
 <https://github.com/qualor-dev/qualor>). To build them yourself:
 
-| Image                   | Dockerfile                         | What it is                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `qualor/server`         | `deploy/server/Dockerfile`         | the API, the web UI (`QUALOR_UI_DIR=/app/ui`) and the analysis worker in one Node process, plus PostgreSQL 18 built from source, which the server runs itself when `DATABASE_URL` is unset; distroless, user 65532, about 340 MB                                                                                                                                                                |
-| `qualor/scanner`        | `deploy/scanner/Dockerfile`        | the `qualor` CLI (entrypoint) with Node.js, a Temurin JRE 17, git, Qualor's own sonarjs pass (eslint-plugin-sonarjs 2.0.4), its own HTML and CSS linters (stylelint 17.15, HTMLHint 1.9.2) and the pinned analyzers of `tools/analyzers/install.sh` (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy, Ruff) with Trivy's vulnerability database; user `node`, about 3.0 GB (1.4 GB of it the database) |
-| `qualor/scanner-dotnet` | `deploy/scanner-dotnet/Dockerfile` | `qualor/scanner` plus the .NET 8 and .NET 10 SDKs, the bundled Roslynator analyzers and SonarAnalyzer.CSharp 9.32 of `tools/analyzers/install-dotnet.sh`, for C# projects; about 4.8 GB (about 1.8 GB more than `qualor/scanner`)                                                                                                                                                               |
+| Image                   | Dockerfile                         | What it is                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `qualor/server`         | `deploy/server/Dockerfile`         | the API, the web UI (`QUALOR_UI_DIR=/app/ui`) and the analysis worker in one Node process, plus PostgreSQL 18 built from source, which the server runs itself when `DATABASE_URL` is unset; distroless, user 65532, about 340 MB                                                                                                                                                                        |
+| `qualor/scanner`        | `deploy/scanner/Dockerfile`        | the `qualor` CLI (entrypoint) with Node.js, a Temurin JRE 17, git, Qualor's own sonarjs pass (eslint-plugin-sonarjs 2.0.4), its own HTML and CSS linters (stylelint 17.15, HTMLHint 1.9.2) and the pinned analyzers of `tools/analyzers/install.sh` (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy, Ruff, detekt) with Trivy's vulnerability database; user `node`, about 3.0 GB (1.4 GB of it the database) |
+| `qualor/scanner-dotnet` | `deploy/scanner-dotnet/Dockerfile` | `qualor/scanner` plus the .NET 8 and .NET 10 SDKs, the bundled Roslynator analyzers and SonarAnalyzer.CSharp 9.32 of `tools/analyzers/install-dotnet.sh`, for C# projects; about 4.8 GB (about 1.8 GB more than `qualor/scanner`)                                                                                                                                                                       |
 
 `qualor/server` also carries the enterprise plugin (`/app/enterprise/plugin.js`, built from
 `enterprise/`) under its own licence, the Qualor Enterprise Licence in
@@ -332,7 +332,7 @@ release is `0.1.0`.
 
 ## Releasing the images
 
-All three images contain copyleft software. The scanner: OpenGrep and SpotBugs (LGPL-2.1) and what
+All three images contain copyleft software. The scanner: OpenGrep and SpotBugs (LGPL-2.1), the Trove4J (LGPL-2.1) inside detekt's jar and what
 OpenGrep's release binary links or bundles (GMP, GNU Readline, certifi), the MPL-2.0 and CDDL-1.0
 Java libraries of SpotBugs and PMD, eslint-plugin-sonarjs (LGPL-3.0) and axe-core (MPL-2.0) in
 Qualor's own sonarjs pass, the MPL-2.0 Go modules compiled into Trivy and Gitleaks, the three
@@ -354,7 +354,7 @@ and never one without the other:
    the committed `deploy/<image>/SOURCES.md`), `SHA256SUMS`, `README.md` and the manifests there.
    It never runs what it downloads. About 1.9 GB for the scanner (the WebKit tar is 1.1 GB, the
    sonar-dotnet source about 120 MB, SonarJS about 20 MB, axe-core 4 MB and the three Ruff crate
-   archives under 100 KB together) and 120 MB for the server; a rerun keeps the files that still
+   archives under 100 KB together, Trove4J 0.5 MB) and 120 MB for the server; a rerun keeps the files that still
    verify.
 2. `pnpm deploy:release-images --tag <tag> [--also <tag>]…` checks those files again, builds the
    server and scanner images under a staging name (`qualor-release-staging/<image>:<tag>`, which
@@ -411,7 +411,7 @@ whether the source is still "complete" without them is a judgement call, and the
 `sources.json`). OpenGrep's `tests/semgrep-rules` submodule (test data) is left out the same way.
 The written offers in the NOTICE files remain, as a courtesy only.
 
-**Updating the sources.** Bumping OpenGrep, SpotBugs, PMD, Trivy, Gitleaks or Ruff in
+**Updating the sources.** Bumping OpenGrep, SpotBugs, PMD, Trivy, Gitleaks, Ruff or detekt in
 `tools/analyzers/install.sh`, Bun
 in `cli/scripts/targets.ts`, or the Temurin base of `deploy/scanner/Dockerfile`, fails
 `tools/deploy/sources.test.ts` until `sources.json` has the new sources. Every entry of the bumped
@@ -427,6 +427,8 @@ component has to be re-derived, not only its tag archive:
   in their `lib/`. Saxon-HE, which both bundle, is pinned once, under SpotBugs: a PMD bump fails
   the test through Rhino and jsr250-api, but not through Saxon, so check which Saxon-HE the new
   PMD's `lib/` holds (and SpotBugs', on a SpotBugs bump) and re-derive that entry by hand;
+- detekt: on a bump, re-derive the Trove4J version from `kotlin-compiler-embeddable`'s POM and the
+  jar's licence notes (`DETEKT-THIRD-PARTY.txt`);
 - Bun: its tag's archive and the WebKit and TinyCC commits in its `scripts/build/deps/webkit.ts`
   (`WEBKIT_VERSION`) and `scripts/build/deps/tinycc.ts` (`TINYCC_COMMIT`);
 - Temurin: Adoptium's `OpenJDK17U-jdk-sources_<version>.tar.gz` of the release;
