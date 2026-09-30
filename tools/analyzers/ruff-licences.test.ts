@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error: a plain ES module of the repository's tooling, without type declarations
-import { licenceProblem, lockChecksums, shippedCrates } from './ruff-licences.mjs';
+import {
+  cargoAuthors,
+  licenceProblem,
+  lockChecksums,
+  shippedCrates,
+  standardTexts,
+  // @ts-expect-error: a plain ES module of the repository's tooling, without type declarations
+} from './ruff-licences.mjs';
 
 describe('ruff-licences.mjs', () => {
   it('accepts permissive SPDX expressions, choices and legacy slashes', () => {
@@ -90,5 +96,47 @@ describe('ruff-licences.mjs', () => {
         name,
       ).toBe(true);
     }
+    // Every crate without a licence file carries its holders line and a standard text.
+    expect(text).not.toContain('its licence is the SPDX text named above');
+    const bare = [
+      ...text.matchAll(
+        /ships no licence file[^\n]*\n([^\n]+)\n\n--- (\S+) \(standard SPDX text\): text \d+/g,
+      ),
+    ];
+    expect(bare.map((m) => m[2]).sort()).toEqual(['MIT', 'MIT', 'MIT', 'MIT', 'MIT', 'MPL-2.0']);
+    for (const [, holders] of bare) {
+      expect(holders).toMatch(
+        /^(Copyright holders \(Cargo\.toml authors\): .+|no copyright holder declared)$/,
+      );
+    }
+  });
+
+  it('gives a crate without a licence file the standard text of its licence and its authors', () => {
+    const toml =
+      '[package]\nname = "fake"\nauthors = [\n    "A <a@example.com>",\n    "B",\n]\nlicense = "MIT"\n';
+    expect(cargoAuthors(toml)).toEqual(['A <a@example.com>', 'B']);
+    expect(cargoAuthors('[package]\nname = "fake"\n')).toEqual([]);
+    const mit = readFileSync('tools/analyzers/licence-texts/MIT.txt', 'utf8');
+    expect(standardTexts('fake', 'MIT', cargoAuthors(toml))).toEqual({
+      holders: 'Copyright holders (Cargo.toml authors): A <a@example.com>, B',
+      files: [{ file: 'MIT (standard SPDX text)', text: mit }],
+    });
+    const choice = standardTexts('fake', 'MIT OR Apache-2.0', []);
+    expect(choice.holders).toBe('no copyright holder declared');
+    expect(choice.files.map((f: { file: string }) => f.file)).toEqual([
+      'MIT (standard SPDX text)',
+      'Apache-2.0 (standard SPDX text)',
+    ]);
+    expect(mit).toContain('Permission is hereby granted, free of charge');
+  });
+
+  it('fails closed on a crate without a licence file whose licence has no standard text', () => {
+    expect(() => standardTexts('fake', 'BSD-3-Clause', [])).toThrow(
+      /no standard text for BSD-3-Clause/,
+    );
+    expect(() => standardTexts('fake', 'MIT AND ISC', [])).toThrow(/no standard text for ISC/);
+    expect(() => standardTexts('fake', 'Apache-2.0 WITH LLVM-exception', [])).toThrow(
+      /no standard text/,
+    );
   });
 });

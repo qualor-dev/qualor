@@ -255,12 +255,27 @@ describe('analyzer toolchain (plan 1D)', () => {
     }
     const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
       string,
-      { extends?: string; variables?: Record<string, string> } | undefined
+      | { extends?: string; variables?: Record<string, string>; before_script?: unknown[] }
+      | undefined
     >;
+    const template = gitlab['.analyzers'];
+    expect(template?.before_script).toContain('sh tools/analyzers/install.sh');
+    expect(template?.variables?.['QUALOR_REQUIRE_ANALYZERS']).toBe('1');
+    // A job's variables as GitLab resolves them: the template's under its own (`extends`).
+    const requiring: string[] = [];
     for (const [name, job] of Object.entries(gitlab)) {
-      if (name === '.analyzers' || job?.variables?.['QUALOR_REQUIRE_ANALYZERS'] !== '1') continue;
+      if (name.startsWith('.') || job === undefined || typeof job !== 'object') continue;
+      const inherited = job.extends === '.analyzers' ? template?.variables : undefined;
+      const variables = { ...inherited, ...job.variables };
+      if (variables['QUALOR_REQUIRE_ANALYZERS'] !== '1') continue;
+      requiring.push(name);
+      // Requiring the analyzers without the template would run without install.sh.
       expect(job.extends, name).toBe('.analyzers');
+      expect(job.before_script, `${name} must not replace the template's before_script`).toBe(
+        undefined,
+      );
     }
+    expect(requiring).toEqual(expect.arrayContaining(['test', 'fixtures', 'cli-binary']));
     expect(script.indexOf('"$PREFIX/bin/ruff"')).toBeGreaterThan(0);
   });
 
