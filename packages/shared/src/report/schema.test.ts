@@ -244,4 +244,8 @@ describe('scm.github (github.md §3)', () => {
       expect(parsed.error?.issues.map((i) => i.path.join('.'))).toContain(path);
     }
   });
+
+  it('accepts a Swift file (plan 8F)', () => {
+    expect(issues({ ...base, files: [{ ...file, language: 'swift' }] })).toEqual([]);
+  });
 });

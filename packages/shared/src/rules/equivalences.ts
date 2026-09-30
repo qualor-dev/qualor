@@ -32,7 +32,8 @@ export const EQUIVALENCES: Equivalences = equivalencesSchema.parse(data);
  * data-model.md §5.3: which engine's issue is primary when two engines report the same problem.
  * Higher wins; external engines (any id not listed) rank lowest. `gitleaks` > `semgrep` >
  * `spotbugs` > `roslyn` > `pmd` > `eslint` > `sonarjs` > `ruff` > `stylelint` > `htmlhint` >
- * `detekt` > external (plan 8D ruling D5, plan 8E ruling E4).
+ * `detekt` > `swiftlint` > external (plan 8D ruling D5, plan 8E ruling E4; swiftlint (plan 8F): the
+ * only Swift engine).
  */
 export const ENGINE_PRIORITY: readonly string[] = [
   'gitleaks',
@@ -46,6 +47,7 @@ export const ENGINE_PRIORITY: readonly string[] = [
   'stylelint',
   'htmlhint',
   'detekt',
+  'swiftlint',
 ];
 
 export function enginePriority(engineId: string): number {
@@ -90,6 +92,8 @@ export const EXTERNAL_BUILTIN_ALIASES: Readonly<Record<string, string>> = Object
   'ext-htmlhint': 'htmlhint',
   // Plan 8E ruling E5; detekt's own SARIF ids are `detekt.<ruleset>.<Rule>` (RULE_ID_NORMALISERS).
   'ext-detekt': 'detekt',
+  // Plan 8F ruling F4; SwiftLint's own SARIF ids are the bare rule ids, identical to ours.
+  'ext-swiftlint': 'swiftlint',
 });
 
 /** detekt 1.23 SARIF rule ids: `detekt.<rule set>.<Rule>` (`detekt.style.MagicNumber`). */

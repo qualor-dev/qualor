@@ -11,6 +11,7 @@ const SCANNABLE_LANGUAGES = [
   'html',
   'css',
   'kotlin',
+  'swift',
 ] as const;
 
 export const BUILTIN_EXCLUDES: readonly string[] = [
@@ -40,6 +41,10 @@ export const BUILTIN_EXCLUDES: readonly string[] = [
   '**/__pypackages__/**',
   '**/.eggs/**',
   '**/site-packages/**',
+  // Swift dependency checkouts and build output: CocoaPods, Carthage, Swift Package Manager (plan 8F).
+  '**/Pods/**',
+  '**/Carthage/**',
+  '**/.build/**',
 ];
 
 const enabled = z.union([z.literal('auto'), z.boolean()]).default('auto');
@@ -219,6 +224,16 @@ const analyzers = z
         enabled,
         configFile: z.string().min(1).nullable().default(null),
         timeoutSeconds: timeout(900),
+      })
+      .prefault({}),
+    // Swift (plan 8F): SwiftLint's static Linux build, with the project's .swiftlint.yml read and
+    // filtered by Qualor, or SwiftLint's default rules (config.md §6). `qualor-default` forces the
+    // default.
+    swiftlint: z
+      .strictObject({
+        enabled,
+        configFile: z.string().min(1).nullable().default(null),
+        timeoutSeconds: timeout(600),
       })
       .prefault({}),
   })

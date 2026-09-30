@@ -372,4 +372,28 @@ describe('BUILTIN_EXCLUDES', () => {
     expect(c.tests.include).toContain('**/src/androidTest/**');
     expect(c.tests.include).toContain('**/src/*Test/**');
   });
+
+  it('has analyzers.swiftlint with its defaults, knows Swift and excludes Swift dependencies (config.md §3, §3.1, §6)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.swiftlint).toEqual({
+      enabled: 'auto',
+      configFile: null,
+      timeoutSeconds: 600,
+    });
+    expect(parseConfig({ version: 1, languages: ['swift'] }).languages).toEqual(['swift']);
+    for (const glob of ['**/Pods/**', '**/Carthage/**', '**/.build/**']) {
+      expect(BUILTIN_EXCLUDES).toContain(glob);
+    }
+    expect(
+      parseConfig({ version: 1, analyzers: { swiftlint: { configFile: 'qualor-default' } } })
+        .analyzers.swiftlint.configFile,
+    ).toBe('qualor-default');
+    expect(() =>
+      parseConfig({ version: 1, analyzers: { swiftlint: { configFile: '' } } }),
+    ).toThrow();
+    expect(() => parseConfig({ version: 1, analyzers: { swiftlint: { args: [] } } })).toThrow();
+    expect(() =>
+      parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'swiftlint' }] }),
+    ).toThrow(/reserved/);
+  });
 });

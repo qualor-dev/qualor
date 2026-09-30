@@ -376,4 +376,43 @@ describe('cross-engine dedupe (data-model.md §5.3)', () => {
       duplicateOfIssueId: null,
     });
   });
+
+  it("dedupes a project's own imported SwiftLint SARIF (ext-swiftlint, identical ids) against the built-in SwiftLint rule, swiftlint primary (plan 8F ruling F4)", async () => {
+    const p = await h.project('dedupe/ext-swiftlint');
+    const sw = (path: string) => file(path, { language: 'swift' });
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('swiftlint'), engine('ext-swiftlint')],
+        files: [sw('Sources/Main.swift')],
+        findings: [
+          finding({
+            engineId: 'ext-swiftlint',
+            ruleId: 'force_cast',
+            path: 'Sources/Main.swift',
+            line: 1,
+          }),
+          finding({
+            engineId: 'swiftlint',
+            ruleId: 'force_cast',
+            path: 'Sources/Main.swift',
+            line: 1,
+          }),
+          finding({
+            engineId: 'ext-swiftlint',
+            ruleId: 'force_try',
+            path: 'Sources/Main.swift',
+            line: 1,
+          }),
+        ],
+      }),
+    );
+    const primary = await byRule(p, 'swiftlint:force_cast');
+    expect(primary).toMatchObject({ duplicateOfIssueId: null });
+    expect(await byRule(p, 'ext-swiftlint:force_cast')).toMatchObject({
+      status: 'open',
+      duplicateOfIssueId: primary!.id,
+    });
+    expect(await byRule(p, 'ext-swiftlint:force_try')).toMatchObject({ duplicateOfIssueId: null });
+  });
 });

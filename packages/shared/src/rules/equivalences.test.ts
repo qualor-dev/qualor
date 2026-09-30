@@ -108,6 +108,7 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       'ext-stylelint': 'stylelint',
       'ext-htmlhint': 'htmlhint',
       'ext-detekt': 'detekt',
+      'ext-swiftlint': 'swiftlint',
     });
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
@@ -156,6 +157,27 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       false,
     );
     expect(rulesEquivalent(rule('ext-bandit:tag-pair'), rule('htmlhint:tag-pair'))).toBe(false);
+  });
+
+  it('ranks swiftlint below every other built-in engine, above any external one (data-model.md §5.3)', () => {
+    for (const engine of ENGINE_PRIORITY.filter((e) => e !== 'swiftlint')) {
+      expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('swiftlint'));
+    }
+    expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('ext-swiftlint'));
+  });
+
+  it('pairs an imported SwiftLint SARIF (ext-swiftlint, identical ids) with the built-in rule (plan 8F ruling F4)', () => {
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-swiftlint']).toBe('swiftlint');
+    expect(normalizedRuleKey('ext-swiftlint:force_cast')).toBe('ext-swiftlint:force_cast');
+    expect(equivalentPartners('ext-swiftlint:force_cast')).toEqual(['swiftlint:force_cast']);
+    expect(equivalentPartners('swiftlint:force_cast')).toEqual(['ext-swiftlint:force_cast']);
+    expect(rulesEquivalent(rule('ext-swiftlint:force_cast'), rule('swiftlint:force_cast'))).toBe(
+      true,
+    );
+    expect(rulesEquivalent(rule('ext-swiftlint:force_cast'), rule('swiftlint:force_try'))).toBe(
+      false,
+    );
   });
 
   it('ranks detekt last of the built-ins and above any external engine (plan 8E ruling E4)', () => {
