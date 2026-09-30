@@ -1,10 +1,11 @@
 {
-  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. A curated entry stays reviewed:false until a person has compared both rules' public documentation; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it.",
+  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. A curated entry stays reviewed:false until a person has compared both rules' public documentation; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet.",
   "languages": {
     "js": { "language": "javascript", "engines": ["eslint", "sonarjs"] },
     "ts": { "language": "typescript", "engines": ["eslint", "sonarjs"] },
     "java": { "language": "java", "engines": ["pmd", "spotbugs"] },
-    "cs": { "language": "csharp", "engines": ["roslyn"] }
+    "cs": { "language": "csharp", "engines": ["roslyn"] },
+    "py": { "language": "python", "engines": ["ruff"] }
   },
   "aliases": { "squid": "java" },
   "repositories": [
@@ -27,6 +28,13 @@
       "repository": "external_roslyn",
       "engine": "roslyn",
       "reason": "Roslyn analyzer issues imported into SonarQube keep the analyzer's diagnostic ids."
+    },
+    {
+      "repository": "external_ruff",
+      "engine": "ruff",
+      "reason": "Ruff reports imported into SonarQube keep Ruff's own rule codes.",
+      "keysFile": "ruff-keys.json",
+      "defaultKeysFile": "ruff-default-keys.json"
     },
     {
       "repository": "pmd",
@@ -168,6 +176,674 @@
       "relation": "overlap",
       "reviewed": false,
       "reason": "All flag empty blocks; each PMD rule covers only some kinds of block."
+    },
+    {
+      "sonar": ["python:S2068"],
+      "qualor": ["ruff:S105", "ruff:S106", "ruff:S107"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag hardcoded password-like string literals; Ruff splits variable, call-argument and default cases."
+    },
+    {
+      "sonar": ["python:S4790"],
+      "qualor": ["ruff:S324", "ruff:S303"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag weak or insecure hash algorithms (e.g. MD5, SHA1) used for security purposes."
+    },
+    {
+      "sonar": ["python:S2245"],
+      "qualor": ["ruff:S311"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag the pseudo-random module used where cryptographic randomness is required."
+    },
+    {
+      "sonar": ["python:S5443"],
+      "qualor": ["ruff:S108"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag files created in a shared, predictable temporary directory."
+    },
+    {
+      "sonar": ["python:S5445"],
+      "qualor": ["ruff:S306"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag the insecure and predictable tempfile.mktemp function."
+    },
+    {
+      "sonar": ["python:S4830"],
+      "qualor": ["ruff:S501", "ruff:S323"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag disabling TLS/SSL certificate validation on outbound requests."
+    },
+    {
+      "sonar": ["python:S4423"],
+      "qualor": ["ruff:S502", "ruff:S503", "ruff:S504"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag SSL/TLS contexts configured with weak, unspecified or outdated protocol versions."
+    },
+    {
+      "sonar": ["python:S5547"],
+      "qualor": ["ruff:S304"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag use of a broken or weak symmetric cipher."
+    },
+    {
+      "sonar": ["python:S5542"],
+      "qualor": ["ruff:S305"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a cipher used in an insecure mode (e.g. ECB)."
+    },
+    {
+      "sonar": ["python:S4426"],
+      "qualor": ["ruff:S505"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag cryptographic keys generated with too small a size."
+    },
+    {
+      "sonar": ["python:S2612"],
+      "qualor": ["ruff:S103"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag files or directories created with overly permissive access rights."
+    },
+    {
+      "sonar": ["python:S4507"],
+      "qualor": ["ruff:S201"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a Flask application left with the debugger enabled."
+    },
+    {
+      "sonar": ["python:S5247"],
+      "qualor": ["ruff:S701", "ruff:S702"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag template engines configured without autoescaping, enabling injection."
+    },
+    {
+      "sonar": ["python:S2077"],
+      "qualor": ["ruff:S608"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag SQL statements built by formatting or concatenating untrusted input."
+    },
+    {
+      "sonar": ["python:S2755"],
+      "qualor": [
+        "ruff:S313",
+        "ruff:S314",
+        "ruff:S315",
+        "ruff:S316",
+        "ruff:S317",
+        "ruff:S318",
+        "ruff:S319"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag stdlib XML parsers that resolve external entities from untrusted input."
+    },
+    {
+      "sonar": ["python:S5332"],
+      "qualor": ["ruff:S312", "ruff:S321"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag cleartext protocols (telnet, FTP) used for network communication."
+    },
+    {
+      "sonar": ["python:S8392"],
+      "qualor": ["ruff:S104"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a socket bound to all network interfaces (0.0.0.0)."
+    },
+    {
+      "sonar": ["python:S1143"],
+      "qualor": ["ruff:B012"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag break, continue or return jumping out of a finally block."
+    },
+    {
+      "sonar": ["python:S1716"],
+      "qualor": ["ruff:F701", "ruff:F702"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag break or continue used outside of a loop."
+    },
+    {
+      "sonar": ["python:S2711"],
+      "qualor": ["ruff:F704", "ruff:F706"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag yield or return used outside of a function body."
+    },
+    {
+      "sonar": ["python:S2734"],
+      "qualor": ["ruff:PLE0101"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a return with a value inside a generator function."
+    },
+    {
+      "sonar": ["python:S5780"],
+      "qualor": ["ruff:F601"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a suspicious membership or equality test against a literal collection."
+    },
+    {
+      "sonar": ["python:S5781"],
+      "qualor": ["ruff:B033"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a set literal containing a duplicate value."
+    },
+    {
+      "sonar": ["python:S5953"],
+      "qualor": ["ruff:F821"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a reference to a name that is never defined."
+    },
+    {
+      "sonar": ["python:S3827"],
+      "qualor": ["ruff:F821", "ruff:F823"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag names used before they are defined or assigned in their scope."
+    },
+    {
+      "sonar": ["python:S1656"],
+      "qualor": ["ruff:PLW0127"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a variable assigned to itself, which has no effect."
+    },
+    {
+      "sonar": ["python:S1764"],
+      "qualor": ["ruff:PLR0124"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag an expression compared with itself, always true or false."
+    },
+    {
+      "sonar": ["python:S5905"],
+      "qualor": ["ruff:F631"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag an assert whose condition is a non-empty tuple literal, always truthy."
+    },
+    {
+      "sonar": ["python:S5747"],
+      "qualor": ["ruff:PLE0704"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a bare raise statement used outside of an except block."
+    },
+    {
+      "sonar": ["python:S3984"],
+      "qualor": ["ruff:PLW0133"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag an exception instance that is constructed but never raised."
+    },
+    {
+      "sonar": ["python:S905"],
+      "qualor": ["ruff:B018"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a statement whose value is discarded and that has no side effect."
+    },
+    {
+      "sonar": ["python:S5828"],
+      "qualor": ["ruff:PLW1501"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag an invalid mode string passed to the built-in open() function."
+    },
+    {
+      "sonar": ["python:S2275"],
+      "qualor": [
+        "ruff:F501",
+        "ruff:F502",
+        "ruff:F503",
+        "ruff:F506",
+        "ruff:F507",
+        "ruff:F521",
+        "ruff:F524",
+        "ruff:F525"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag % or .format() template/argument mismatches (F508, F509 left off: 8-target cap)."
+    },
+    {
+      "sonar": ["python:S3457"],
+      "qualor": ["ruff:F504", "ruff:F505", "ruff:F522", "ruff:F523"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag % or str.format() calls whose arguments don't match the placeholders used."
+    },
+    {
+      "sonar": ["python:S1515"],
+      "qualor": ["ruff:B023"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a closure, often in a loop, that captures a variable late instead of by value."
+    },
+    {
+      "sonar": ["python:S5722"],
+      "qualor": ["ruff:PLE0302"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a dunder method defined with a signature Python doesn't expect."
+    },
+    {
+      "sonar": ["python:S2823"],
+      "qualor": ["ruff:PLE0604"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag an __all__ list or tuple containing a non-string entry."
+    },
+    {
+      "sonar": ["python:S5807"],
+      "qualor": ["ruff:F822"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a name listed in __all__ that has no matching definition in the module."
+    },
+    {
+      "sonar": ["python:S8509"],
+      "qualor": ["ruff:PLE0241"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a class definition that lists the same base class more than once."
+    },
+    {
+      "sonar": ["python:S8512"],
+      "qualor": ["ruff:PIE794"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a class body that defines the same field or attribute twice."
+    },
+    {
+      "sonar": ["python:S8516"],
+      "qualor": ["ruff:B031"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag reusing an itertools.groupby group after it has already been iterated."
+    },
+    {
+      "sonar": ["python:S5795"],
+      "qualor": ["ruff:F632"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag using is or is not to compare against a literal, where == is intended."
+    },
+    {
+      "sonar": ["python:S1717"],
+      "qualor": ["ruff:W605"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag an invalid backslash escape sequence in a string that isn't a raw string."
+    },
+    {
+      "sonar": ["python:S6903"],
+      "qualor": ["ruff:DTZ003", "ruff:DTZ004"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag naive UTC datetime calls (utcnow/utcfromtimestamp) that drop timezone information."
+    },
+    {
+      "sonar": ["python:S1128"],
+      "qualor": ["ruff:F401"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag an import that the module never uses."
+    },
+    {
+      "sonar": ["python:S1481"],
+      "qualor": ["ruff:F841"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a local variable that is assigned but never read."
+    },
+    {
+      "sonar": ["python:S1854"],
+      "qualor": ["ruff:F841"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a value assigned to a variable that is overwritten before it is ever used."
+    },
+    {
+      "sonar": ["python:S2208"],
+      "qualor": ["ruff:F403"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a wildcard from-module-import that pollutes the namespace unpredictably."
+    },
+    {
+      "sonar": ["python:S6660"],
+      "qualor": ["ruff:E721"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag comparing types with == instead of isinstance()."
+    },
+    {
+      "sonar": ["python:S6661"],
+      "qualor": ["ruff:E731"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a lambda assigned directly to a name instead of using a def."
+    },
+    {
+      "sonar": ["python:S1066"],
+      "qualor": ["ruff:SIM102"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag nested if statements that could be collapsed into one with and."
+    },
+    {
+      "sonar": ["python:S2772"],
+      "qualor": ["ruff:PIE790"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag an unnecessary pass or ellipsis statement alongside real code."
+    },
+    {
+      "sonar": ["python:S2836"],
+      "qualor": ["ruff:PLW0120"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a loop's else clause that runs unconditionally and adds no value."
+    },
+    {
+      "sonar": ["python:S125"],
+      "qualor": ["ruff:ERA001"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag commented-out code left in the source."
+    },
+    {
+      "sonar": ["python:S1134"],
+      "qualor": ["ruff:FIX001"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a FIXME comment left in the code."
+    },
+    {
+      "sonar": ["python:S1135"],
+      "qualor": ["ruff:FIX002"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a TODO comment left in the code."
+    },
+    {
+      "sonar": ["python:FunctionComplexity"],
+      "qualor": ["ruff:C901"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a function whose cyclomatic complexity exceeds a threshold; the default thresholds differ."
+    },
+    {
+      "sonar": ["python:LineLength"],
+      "qualor": ["ruff:E501"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag source lines longer than a configured maximum; the default limits differ."
+    },
+    {
+      "sonar": ["python:S1131"],
+      "qualor": ["ruff:W291"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag trailing whitespace at the end of a line."
+    },
+    {
+      "sonar": ["python:S113"],
+      "qualor": ["ruff:W292"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a file that doesn't end with a newline character."
+    },
+    {
+      "sonar": ["python:S107"],
+      "qualor": ["ruff:PLR0913"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a function defined with too many parameters; the default thresholds differ."
+    },
+    {
+      "sonar": ["python:S1142"],
+      "qualor": ["ruff:PLR0911"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a function with too many return statements; the default thresholds differ."
+    },
+    {
+      "sonar": ["python:S1542"],
+      "qualor": ["ruff:N802"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag function or method names that don't follow the lowercase naming convention."
+    },
+    {
+      "sonar": ["python:S101"],
+      "qualor": ["ruff:N801"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag class names that don't follow the CapWords (PascalCase) convention."
+    },
+    {
+      "sonar": ["python:S1578"],
+      "qualor": ["ruff:N999"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag module (file) names that don't follow the expected naming convention."
+    },
+    {
+      "sonar": ["python:S2710"],
+      "qualor": ["ruff:N804"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a classmethod's first parameter not named cls."
+    },
+    {
+      "sonar": ["python:S5720"],
+      "qualor": ["ruff:N805"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag an instance method's first parameter not named self."
+    },
+    {
+      "sonar": ["python:S5806"],
+      "qualor": ["ruff:A001"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a variable or parameter name that shadows a Python builtin."
+    },
+    {
+      "sonar": ["python:S112"],
+      "qualor": ["ruff:TRY002"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag raising the generic Exception class instead of a more specific one."
+    },
+    {
+      "sonar": ["python:S2737"],
+      "qualor": ["ruff:TRY203"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag an except block that does nothing but re-raise the same exception."
+    },
+    {
+      "sonar": ["python:S8572"],
+      "qualor": ["ruff:TRY400"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag logging.error used instead of logging.exception inside an except block."
+    },
+    {
+      "sonar": ["python:S9154"],
+      "qualor": ["ruff:SIM117"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag nested with statements that could be combined into one."
+    },
+    {
+      "sonar": ["python:S9156"],
+      "qualor": ["ruff:B019"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a cache decorator applied to an instance method, which can leak memory."
+    },
+    {
+      "sonar": ["python:S6545"],
+      "qualor": ["ruff:UP006"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag the deprecated typing generic aliases (e.g. List) instead of the builtin generics."
+    },
+    {
+      "sonar": ["python:S6546"],
+      "qualor": ["ruff:UP007"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag typing.Union/Optional used instead of the newer X | Y union syntax."
+    },
+    {
+      "sonar": ["python:S7492"],
+      "qualor": ["ruff:C419"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a list or set comprehension passed directly to a call that only needs an iterable."
+    },
+    {
+      "sonar": ["python:S7505"],
+      "qualor": ["ruff:C417"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag map() used with a lambda where a comprehension would be clearer."
+    },
+    {
+      "sonar": ["python:S7506"],
+      "qualor": ["ruff:B035"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a dict comprehension whose key expression never changes across iterations."
+    },
+    {
+      "sonar": ["python:S7500"],
+      "qualor": ["ruff:C416"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a comprehension that just rebuilds its input unchanged; a constructor call is simpler."
+    },
+    {
+      "sonar": ["python:S7511"],
+      "qualor": ["ruff:C415"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a redundant slice reversal pattern where reversed() alone would do."
+    },
+    {
+      "sonar": ["python:S7517"],
+      "qualor": ["ruff:PLC0206"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag iterating a dict's keys and then indexing the dict, instead of using .items()."
+    },
+    {
+      "sonar": ["python:S8513"],
+      "qualor": ["ruff:PIE810"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag repeated startswith/endswith calls on one value that could take a tuple instead."
+    },
+    {
+      "sonar": ["python:S8492"],
+      "qualor": ["ruff:FURB132"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag checking membership before removing from a set instead of using discard()."
+    },
+    {
+      "sonar": ["python:S8517"],
+      "qualor": ["ruff:FURB192"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag sorted()[0] or sorted()[-1] used instead of min() or max()."
+    },
+    {
+      "sonar": ["python:S8519"],
+      "qualor": ["ruff:RUF015"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag building a full list just to take its first element instead of using next()."
+    },
+    {
+      "sonar": ["python:S8520"],
+      "qualor": ["ruff:RUF017"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag summing a list of lists with sum(), which is quadratic; extend or chain is linear."
+    },
+    {
+      "sonar": ["python:S8521"],
+      "qualor": ["ruff:SIM118"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag testing membership against dict.keys() instead of the dict itself."
+    },
+    {
+      "sonar": ["python:S8507"],
+      "qualor": ["ruff:PLC0132"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a TypeVar whose declared name string doesn't match the variable it's assigned to."
+    },
+    {
+      "sonar": ["python:S8515"],
+      "qualor": ["ruff:PLC0131"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a TypeVar or ParamSpec used inconsistently as both covariant and contravariant."
+    },
+    {
+      "sonar": ["python:S6730"],
+      "qualor": ["ruff:NPY001"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag NumPy's deprecated aliases for Python builtin types (e.g. np.float)."
+    },
+    {
+      "sonar": ["python:S6711"],
+      "qualor": ["ruff:NPY002"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag NumPy's legacy global random functions used instead of the newer Generator API."
+    },
+    {
+      "sonar": ["python:S6741"],
+      "qualor": ["ruff:PD011"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a pandas Series or DataFrame's .values used instead of .to_numpy()."
+    },
+    {
+      "sonar": ["python:S6734"],
+      "qualor": ["ruff:PD002"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag pandas calls using inplace=True instead of reassigning the result."
     }
   ]
 }

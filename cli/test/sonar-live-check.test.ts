@@ -285,7 +285,9 @@ describe('the live check against the fake SonarQube', () => {
     expect(summary.profiles).toMatchObject({
       total: 4,
       byLanguage: { ts: 2, java: 1, py: 1 },
-      skipped: { language_unsupported: 1 },
+      // Phase 8C: py (Team Python) is now supported (governed by ruff); its profile has no
+      // active rules in this fixture, so it skips as no_mapped_rules, not language_unsupported.
+      skipped: { no_mapped_rules: 1 },
     });
     expect(summary.profiles.activeRules).toBe(5);
     expect(summary.profiles.distinct.active).toBe(4);

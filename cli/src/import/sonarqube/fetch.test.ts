@@ -1,4 +1,4 @@
-import { issuesPageSchema, SONAR_MAPPING } from '@qualor/shared';
+import { issuesPageSchema, loadSonarMapping, SONAR_MAPPING } from '@qualor/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   type FakeIssue,
@@ -54,8 +54,24 @@ describe('reading SonarQube (import-sonarqube.md §4.4, §5)', () => {
     });
     expect(ts.inactive).toEqual(['typescript:S3504']);
     expect(ts.complete).toBe(true);
+    // Phase 8C: py is now supported (governed by ruff), so its empty profile is still read.
     expect(profiles.find((p) => p.key === 'p-py')).toMatchObject({ active: [], complete: true });
-    expect(fake.requests.filter((r) => r.query['qprofile'] === 'p-py')).toHaveLength(0);
+    expect(fake.requests.filter((r) => r.query['qprofile'] === 'p-py')).not.toHaveLength(0);
+  });
+
+  it('does not read the rules of a profile whose language the mapping does not support', async () => {
+    fake = await startFakeSonarQube(sampleSonarData());
+    const unsupported = loadSonarMapping({
+      languages: {},
+      aliases: {},
+      repositories: [],
+      rules: [],
+    });
+    const { client } = await connect();
+    const profiles = await fetchProfiles(client, unsupported);
+    expect(profiles.find((p) => p.key === 'p-py')).toMatchObject({ active: [], complete: true });
+    expect(profiles.find((p) => p.key === 'p-ts')).toMatchObject({ active: [], complete: true });
+    expect(fake.requests.filter((r) => typeof r.query['qprofile'] === 'string')).toHaveLength(0);
   });
 
   it("never takes another profile's activation of a rule: the profile is not read whole", async () => {

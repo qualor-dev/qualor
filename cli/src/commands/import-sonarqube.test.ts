@@ -141,8 +141,10 @@ describe('qualor import sonarqube (import-sonarqube.md §3, §12)', () => {
       rules: { pendingReview: [], statusOnly: ['typescript:S1440'] },
     });
     expect(report.profiles.find((p) => p.name === 'Team Python')).toMatchObject({
+      // Phase 8C: py is now supported (governed by ruff); Team Python has no active rules in
+      // this fixture, so it skips as no_mapped_rules, not language_unsupported.
       outcome: 'skipped',
-      reason: 'language_unsupported',
+      reason: 'no_mapped_rules',
     });
     expect(
       report.gates

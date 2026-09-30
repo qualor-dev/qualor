@@ -195,7 +195,7 @@ describe('planProfile (import-sonarqube.md §7)', () => {
   });
 
   it('skips unsupported languages, reserved or invalid names, and incompletely read profiles', () => {
-    expect(planProfile(profile({ language: 'py' })).skip).toBe('language_unsupported');
+    expect(planProfile(profile({ language: 'go' })).skip).toBe('language_unsupported');
     expect(planProfile(profile({ name: 'qualor  WAY' })).skip).toBe('name_reserved');
     expect(planProfile(profile({ name: 'x'.repeat(101) })).skip).toBe('name_invalid');
     expect(planProfile(profile({ name: '   ' })).skip).toBe('name_invalid');
@@ -275,10 +275,10 @@ describe('planProfile (import-sonarqube.md §7)', () => {
       if (p.skip !== null) expect(p.rows).toEqual([]);
     }
     // A language Qualor does not analyse is not classified: nothing of it is counted.
-    const py = planProfile(profile({ language: 'py', active }));
-    expect(py.skip).toBe('language_unsupported');
-    expect(add(py)).toBe(0);
-    expect(py.stats.active).toBe(0);
+    const go = planProfile(profile({ language: 'go', active }));
+    expect(go.skip).toBe('language_unsupported');
+    expect(add(go)).toBe(0);
+    expect(go.stats.active).toBe(0);
   });
 
   it('lists customised parameters as not imported', () => {
@@ -341,6 +341,32 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     const ts = planProfile(profile({ active: [rule('findbugs:NP_NULL_ON_SOME_PATH')] }), reviewed);
     expect(ts.stats.statusOnly).toEqual(['findbugs:NP_NULL_ON_SOME_PATH']);
     expect(ts.skip).toBe('no_mapped_rules');
+  });
+
+  it('plans a py profile: reviewed equivalents (external_ruff) become rows; curated python rows stay pending review (ruling C1, C3)', () => {
+    // Every curated python: row ships reviewed:false (ruling C1), so python:S1128 (-> ruff:F401)
+    // never becomes a row here, only a pendingReview entry; external_ruff:<code> (repository,
+    // always reviewed) is what actually activates a ruff rule. external_ruff:ERA001 is outside
+    // qualor-default, so it lands in mappedNotRun even though it is mapped.
+    const plan = planProfile(
+      profile({
+        language: 'py',
+        active: [
+          rule('external_ruff:F401', { language: 'py' }),
+          rule('external_ruff:ERA001', { language: 'py' }),
+          rule('python:S1128', { language: 'py' }),
+          rule('python:S9999', { language: 'py' }),
+        ],
+      }),
+    );
+    expect(plan.skip).toBeNull();
+    expect(plan.rows).toEqual([
+      { ruleKey: 'ruff:ERA001', active: true, severityOverride: null },
+      { ruleKey: 'ruff:F401', active: true, severityOverride: null },
+    ]);
+    expect(plan.stats.mappedNotRun).toEqual(['external_ruff:ERA001']);
+    expect(plan.stats.pendingReview).toEqual(['python:S1128']);
+    expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'python:S9999' })]);
   });
 });
 

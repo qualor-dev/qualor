@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import ruffKeys from '../../../rules/ruff-keys.json' with { type: 'json' };
 import sonaranalyzerDefaultKeys from '../../../rules/sonaranalyzer-csharp-default-keys.json' with { type: 'json' };
 import sonaranalyzerKeys from '../../../rules/sonaranalyzer-csharp-keys.json' with { type: 'json' };
 import sonarjsDefaultKeys from '../../../rules/sonarjs-default-keys.json' with { type: 'json' };
@@ -19,7 +20,48 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
   });
 
   it('knows no language it does not list', () => {
-    expect(SONAR_MAPPING.language('py')).toBeNull();
+    expect(SONAR_MAPPING.language('go')).toBeNull();
+  });
+
+  it('maps py to the python profile, governed by ruff (plan 8C)', () => {
+    expect(SONAR_MAPPING.language('py')).toEqual({ language: 'python', engines: ['ruff'] });
+  });
+
+  it('maps external_ruff statuses one to one, for codes the pinned Ruff has only', () => {
+    expect(SONAR_MAPPING.targets('external_ruff:SIM113')).toEqual([
+      { key: 'ruff:SIM113', relation: 'equivalent', reviewed: true, source: 'repository' },
+    ]);
+    expect(SONAR_MAPPING.targets('external_ruff:ZZZ999')).toEqual([]);
+    expect(SONAR_MAPPING.targets('python:S9999')).toEqual([]);
+  });
+
+  it('maps python:S1128 to ruff:F401 through the curated table', () => {
+    expect(SONAR_MAPPING.targets('python:S1128')).toContainEqual(
+      expect.objectContaining({ key: 'ruff:F401', relation: 'equivalent', source: 'table' }),
+    );
+  });
+
+  it('knows which Ruff targets qualor-default runs', () => {
+    expect(SONAR_MAPPING.runByBundledConfig('ruff:F401')).toBe(true);
+    expect(SONAR_MAPPING.runByBundledConfig('ruff:S608')).toBe(true);
+    expect(SONAR_MAPPING.runByBundledConfig('ruff:ERA001')).toBe(false);
+    expect(SONAR_MAPPING.runByBundledConfig('ruff:S101')).toBe(false);
+  });
+
+  it('names only codes the pinned Ruff has in every python row, with our own short reasons', () => {
+    const codes = new Set(ruffKeys);
+    const rows = raw.rules.filter((r) => r.sonar.some((s) => s.startsWith('python:')));
+    expect(rows.length).toBeGreaterThanOrEqual(40);
+    for (const row of rows) {
+      for (const q of row.qualor) {
+        expect(q.startsWith('ruff:'), q).toBe(true);
+        expect(codes.has(q.slice('ruff:'.length)), q).toBe(true);
+      }
+      expect(
+        row.sonar.every((s) => s.startsWith('python:')),
+        row.sonar.join(),
+      ).toBe(true);
+    }
   });
 
   it('maps csharpsquid rules the bundled SonarAnalyzer has to roslyn, one to one', () => {
@@ -218,6 +260,7 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     java: 'java',
     squid: 'java',
     csharpsquid: 'cs',
+    python: 'py',
   };
 
   it("keeps every curated target, and every repository row's engine, to an engine of its SonarQube rule's language", () => {
