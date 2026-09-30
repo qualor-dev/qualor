@@ -40,4 +40,19 @@ describe('lineUnits', () => {
       [3, 3, 2],
     ]);
   });
+
+  it('drops Python comments and docstrings, so two copies with other docs hash the same', async () => {
+    const tree = (await testParsers()).parse(
+      'python',
+      'def f(a):\n    """One."""\n    return a + 1  # x\n\n\ndef g(a):\n    """Two,\n    longer."""\n    return a + 1\n',
+    );
+    if (tree === null) throw new Error('timeout');
+    try {
+      const u = lineUnits(tree.rootNode, 'python');
+      expect(u.map((x) => x.startLine)).toEqual([1, 3, 6, 9]);
+      expect(u[1]?.hash).toBe(u[3]?.hash);
+    } finally {
+      tree.delete();
+    }
+  });
 });

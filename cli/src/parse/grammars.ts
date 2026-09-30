@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { Language, Parser, type Tree } from 'web-tree-sitter';
 
-export const GRAMMARS = ['typescript', 'tsx', 'javascript', 'java', 'csharp'] as const;
+export const GRAMMARS = ['typescript', 'tsx', 'javascript', 'java', 'csharp', 'python'] as const;
 export type GrammarId = (typeof GRAMMARS)[number];
 export type WasmAsset = 'core' | GrammarId;
 
@@ -14,6 +14,7 @@ const PACKAGE_FILES: Readonly<Record<WasmAsset, string>> = {
   javascript: 'tree-sitter-javascript/tree-sitter-javascript.wasm',
   java: 'tree-sitter-java/tree-sitter-java.wasm',
   csharp: 'tree-sitter-c-sharp/tree-sitter-c_sharp.wasm',
+  python: 'tree-sitter-python/tree-sitter-python.wasm',
 };
 
 export const DEFAULT_PARSE_TIMEOUT_MS = 10_000;

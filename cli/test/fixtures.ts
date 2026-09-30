@@ -15,7 +15,7 @@ export const FIXTURES_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../../fixtures',
 );
-export const FIXTURE_NAMES = ['ts-basic', 'java-basic', 'mixed-secrets'] as const;
+export const FIXTURE_NAMES = ['ts-basic', 'java-basic', 'mixed-secrets', 'python-basic'] as const;
 export const METRIC_FIELDS = [
   'ncloc',
   'commentLines',

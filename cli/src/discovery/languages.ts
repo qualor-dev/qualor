@@ -12,6 +12,7 @@ const TSX: LanguageInfo = { language: 'typescript', grammar: 'tsx' };
 const JS: LanguageInfo = { language: 'javascript', grammar: 'javascript' };
 const JAVA: LanguageInfo = { language: 'java', grammar: 'java' };
 const CSHARP: LanguageInfo = { language: 'csharp', grammar: 'csharp' };
+const PYTHON: LanguageInfo = { language: 'python', grammar: 'python' };
 
 const BY_EXTENSION = new Map<string, LanguageInfo>([
   ['.ts', TS],
@@ -24,6 +25,7 @@ const BY_EXTENSION = new Map<string, LanguageInfo>([
   ['.jsx', JS],
   ['.java', JAVA],
   ['.cs', CSHARP],
+  ['.py', PYTHON],
 ]);
 
 export function detectLanguage(

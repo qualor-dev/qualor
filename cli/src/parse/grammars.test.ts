@@ -9,6 +9,7 @@ const SAMPLES = {
   javascript: 'const C = () => <b />;\nfunction* g() { yield 1; }\n',
   java: 'class A { int m(int x) { return x > 0 ? 1 : 0; } }\n',
   csharp: 'class A { int M(int x) => x > 0 ? 1 : 0; }\n',
+  python: 'def f(x):\n    return 1 if x else 0\n',
 } as const;
 
 afterEach(() => registerEmbeddedAssets(null));
@@ -48,6 +49,7 @@ describe('wasmPath', () => {
   it('resolves the packaged files and prefers registered embedded paths', () => {
     expect(wasmPath('java')).toMatch(/tree-sitter-java\.wasm$/);
     expect(wasmPath('csharp')).toMatch(/tree-sitter-c_sharp\.wasm$/);
+    expect(wasmPath('python')).toMatch(/tree-sitter-python\.wasm$/);
     const require = createRequire(import.meta.url);
     const java = require.resolve('tree-sitter-java/tree-sitter-java.wasm');
     registerEmbeddedAssets({
@@ -57,8 +59,10 @@ describe('wasmPath', () => {
       javascript: 'js.wasm',
       java,
       csharp: 'cs.wasm',
+      python: 'py.wasm',
     });
     expect(wasmPath('core')).toBe('core.wasm');
+    expect(wasmPath('python')).toBe('py.wasm');
     expect(wasmPath('java')).toBe(java);
   });
 });

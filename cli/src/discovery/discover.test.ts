@@ -226,6 +226,32 @@ describe('discoverFiles', () => {
     ]);
   });
 
+  it('leaves Python virtual environments and caches out, and marks pytest files as tests (plan 8C)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'app/store.py': 'x = 1\n',
+      'tests/test_store.py': 'def test_x():\n    pass\n',
+      'app/store_test.py': 'x = 1\n',
+      'conftest.py': 'x = 1\n',
+      '.venv/lib/python3.12/site-packages/pkg/mod.py': 'x = 1\n',
+      'venv/bin/tool.py': 'x = 1\n',
+      'app/__pycache__/store.cpython-312.py': 'x = 1\n',
+      '.tox/py312/x.py': 'x = 1\n',
+    });
+    const files = discoverFiles({
+      root,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.kind]).sort()).toEqual([
+      ['app/store.py', 'python', 'main'],
+      ['app/store_test.py', 'python', 'test'],
+      ['conftest.py', 'python', 'test'],
+      ['tests/test_store.py', 'python', 'test'],
+    ]);
+  });
+
   it('keeps an empty directory tree empty', () => {
     const root = tmp();
     mkdirSync(path.join(root, 'empty', 'deeper'), { recursive: true });

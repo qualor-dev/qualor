@@ -1,7 +1,7 @@
 import type { Node } from 'web-tree-sitter';
 import type { GrammarId } from '../parse/grammars';
 
-export type SyntaxFamily = 'ecmascript' | 'java' | 'csharp';
+export type SyntaxFamily = 'ecmascript' | 'java' | 'csharp' | 'python';
 
 /**
  * Node tables of ruling C3 (node type names of the pinned grammars, C1). No rule looks at
@@ -40,6 +40,18 @@ export interface FamilyRules {
    * properties: only with a body, ruling D14 of plan 2D). Called for types in `functions`.
    */
   isFunction?(node: Node): boolean;
+  /**
+   * The operator of a node that is a logical expression counting as a decision, or null.
+   * Default: a `binary_expression` whose operator is `&&` or `||`. Python: `and`/`or`.
+   */
+  logicalOperator?(node: Node): string | null;
+  /**
+   * A clause type that is an `else if` of its own (Python's `elif_clause`): +1 complexity and a
+   * hybrid +1 cognitive increment without nesting, like an `else if` (plan 8C).
+   */
+  elseIfClause?: string;
+  /** Nodes that count as comments though they are not comment leaves (Python docstrings). */
+  isComment?(node: Node): boolean;
 }
 
 const ECMASCRIPT: FamilyRules = {
@@ -228,14 +240,76 @@ const CSHARP: FamilyRules = {
   isFunction: hasCSharpBody,
 };
 
+/** A statement that is a string alone: a docstring, or a bare string used as a comment (plan 8C). */
+function isPythonStringStatement(node: Node): boolean {
+  if (node.type !== 'expression_statement' || node.namedChildCount !== 1) return false;
+  const only = node.namedChild(0)?.type;
+  return only === 'string' || only === 'concatenated_string';
+}
+
+function pythonLogicalOperator(node: Node): string | null {
+  if (node.type !== 'boolean_operator') return null;
+  const op = node.childForFieldName('operator')?.type;
+  return op === 'and' || op === 'or' ? op : null;
+}
+
+const PYTHON: FamilyRules = {
+  comments: new Set(['comment']),
+  // `def` and `async def` alike, methods and nested functions included.
+  functions: new Set(['function_definition']),
+  lambdas: new Set(['lambda']),
+  classes: new Set(['class_definition']),
+  statements: new Set([
+    'expression_statement',
+    'return_statement',
+    'pass_statement',
+    'if_statement',
+    'for_statement',
+    'while_statement',
+    'try_statement',
+    'with_statement',
+    'raise_statement',
+    'assert_statement',
+    'import_statement',
+    'import_from_statement',
+    'future_import_statement',
+    'global_statement',
+    'nonlocal_statement',
+    'delete_statement',
+    'break_statement',
+    'continue_statement',
+    'match_statement',
+    'type_alias_statement',
+    'print_statement',
+    'exec_statement',
+  ]),
+  loops: new Set(['for_statement', 'while_statement']),
+  switches: new Set(['match_statement']),
+  // `except*` parses as an except_clause too.
+  catchClause: 'except_clause',
+  ternary: 'conditional_expression',
+  transparent: new Set(['parenthesized_expression']),
+  // A bare `case _:` is the default arm, not a decision.
+  isCase: (n) => n.type === 'case_clause' && n.namedChild(0)?.text !== '_',
+  // Python's `elif` is its own clause (elseIfClause), never a nested if_statement.
+  elseIf: () => null,
+  // Only called for if_statement: a for/while/try `else` is not a branch of an if.
+  plainElse: (n) => n.children.find((c) => c?.type === 'else_clause') ?? null,
+  elseIfClause: 'elif_clause',
+  isComment: isPythonStringStatement,
+  logicalOperator: pythonLogicalOperator,
+};
+
 export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   ecmascript: ECMASCRIPT,
   java: JAVA,
   csharp: CSHARP,
+  python: PYTHON,
 };
 
 export function familyOf(grammar: GrammarId): SyntaxFamily {
   if (grammar === 'java') return 'java';
   if (grammar === 'csharp') return 'csharp';
+  if (grammar === 'python') return 'python';
   return 'ecmascript';
 }

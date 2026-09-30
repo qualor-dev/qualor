@@ -1,0 +1,19 @@
+{
+  "description": "Python repo: tree-sitter-python metrics; Ruff findings are added in plan 8C Task 7",
+  "engines": [],
+  "findingsExhaustive": false,
+  "findings": [],
+  "files": {
+    "app/store.py": { "language": "python", "kind": "main", "lines": 51, "ncloc": 36, "commentLines": 3, "functions": 7, "classes": 1, "statements": 23, "complexity": 16, "cognitiveComplexity": 11 },
+    "tests/test_store.py": { "language": "python", "kind": "test", "lines": 5, "ncloc": 3, "commentLines": 0, "functions": 1, "classes": 0, "statements": 2, "complexity": 1, "cognitiveComplexity": 0 }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "app/store.py#ncloc": "51 lines - comment lines 1, 7, 23 (the two docstrings and the comment) - blank lines 5, 6, 12, 13, 16, 17, 20, 21, 24, 27, 35, 43 = 36",
+    "app/store.py#statements": "3 imports; find_order 3; checksum 1; archive 1; __init__ 1; classify if + 3 returns = 4; count n=0, for, if, continue, n+=, return = 6; describe match + 3 returns = 4; total 23 (docstrings are not statements)",
+    "app/store.py#complexity": "7 functions; classify if, and, elif, or = 4; count for, if, ?: = 3; describe case 1, case 2 | 3 = 2 (case _ adds nothing); total 16",
+    "app/store.py#cognitiveComplexity": "classify: if +1, and +1, elif +1, or +1, else +1 = 5; count: for +1, nested if +2, ?: inside the for +2 = 5; describe: match +1; total 11",
+    "tests/test_store.py#metrics": "import (1), def (4), assert (5): ncloc 3, statements 2, 1 function"
+  }
+}

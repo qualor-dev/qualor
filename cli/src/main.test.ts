@@ -16,7 +16,7 @@ describe('main', () => {
     expect(c.stdout()).toMatch(
       new RegExp(
         `^qualor ${VERSION.replaceAll('.', '\\.')} \\(${process.platform}-${process.arch}\\)\\n` +
-          'grammars: typescript \\(ABI 1[3-5]\\), tsx \\(ABI 1[3-5]\\), javascript \\(ABI 1[3-5]\\), java \\(ABI 1[3-5]\\), csharp \\(ABI 1[3-5]\\)\\n$',
+          'grammars: typescript \\(ABI 1[3-5]\\), tsx \\(ABI 1[3-5]\\), javascript \\(ABI 1[3-5]\\), java \\(ABI 1[3-5]\\), csharp \\(ABI 1[3-5]\\), python \\(ABI 1[3-5]\\)\\n$',
       ),
     );
   });

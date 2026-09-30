@@ -23,6 +23,7 @@
       "ssh2",
       "tree-sitter-java",
       "tree-sitter-javascript",
+      "tree-sitter-python",
       "tree-sitter-typescript"
     ],
     "peerDependencyRules": {

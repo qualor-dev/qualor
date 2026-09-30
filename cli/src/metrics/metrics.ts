@@ -52,7 +52,7 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
     const { node, nesting, inFunction } = frame;
     const type = node.type;
 
-    if (rules.comments.has(type)) {
+    if (rules.comments.has(type) || rules.isComment?.(node) === true) {
       for (let r = node.startPosition.row; r <= node.endPosition.row; r++) commentLines.add(r + 1);
       continue;
     }
@@ -94,6 +94,10 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
       const elseIf = rules.elseIf(node);
       if (elseIf !== null) elseIfs.add(elseIf.id);
       if (rules.plainElse(node) !== null) cognitive += 1;
+    } else if (type === rules.elseIfClause) {
+      // Python's `elif` (plan 8C): a decision, and a hybrid increment like an `else if`.
+      complexity++;
+      cognitive += 1;
     } else if (rules.loops.has(type) || type === rules.catchClause || type === rules.ternary) {
       complexity++;
       cognitive += 1 + nesting;
@@ -108,7 +112,7 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
       // logical operators (ruling C3 extension): pass the enclosing operator through unchanged.
       operator = frame.parentOperator;
     } else {
-      operator = logicalOperator(node);
+      operator = (rules.logicalOperator ?? logicalOperator)(node);
       if (operator !== null) {
         complexity++;
         if (frame.parentOperator !== operator) cognitive += 1; // a new run of like operators

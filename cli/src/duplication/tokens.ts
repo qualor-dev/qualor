@@ -26,11 +26,11 @@ interface PendingLine {
 
 /** report-format §8: tokens are tree-sitter leaves; comments removed; identifiers and literals verbatim. */
 export function lineUnits(root: Node, family: SyntaxFamily): LineUnit[] {
-  const comments = FAMILY_RULES[family].comments;
+  const { comments, isComment } = FAMILY_RULES[family];
   const byLine = new Map<number, PendingLine>();
   const stack: Node[] = [root];
   for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
-    if (comments.has(node.type)) continue;
+    if (comments.has(node.type) || isComment?.(node) === true) continue;
     const count = node.childCount;
     if (count > 0) {
       for (let i = count - 1; i >= 0; i--) {

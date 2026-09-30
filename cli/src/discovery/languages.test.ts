@@ -23,6 +23,15 @@ describe('detectLanguage', () => {
     for (const p of ['build.csx', 'Pages/Index.razor', 'Views/Home.cshtml']) {
       expect(detectLanguage(p, 'auto')).toEqual({ language: 'other', grammar: null });
     }
+    expect(detectLanguage('app/store.py', 'auto')).toEqual({
+      language: 'python',
+      grammar: 'python',
+    });
+    expect(detectLanguage('APP.PY', 'auto').language).toBe('python');
+    for (const p of ['stubs/a.pyi', 'gui.pyw', 'nb/analysis.ipynb', 'setup.cfg']) {
+      expect(detectLanguage(p, 'auto')).toEqual({ language: 'other', grammar: null });
+    }
+    expect(detectLanguage('a.py', ['java']).language).toBe('other');
   });
 
   it('treats unknown extensions, dotfiles and extension-less files as other', () => {
