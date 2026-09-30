@@ -1,10 +1,35 @@
 import { parse } from 'yaml';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseDryRunArgs, pinServerDigest } from './dry-run';
+import { VENDORED_GRAMMARS } from '../../cli/src/parse/vendored';
+import { binaryNote, parseDryRunArgs, pinServerDigest } from './dry-run';
 import { parseVersion } from './version';
 
 const current = parseVersion('0.0.0');
+
+describe("the release notes' binary line (plan 8F, final review minor 4)", () => {
+  const g = (name: string) => ({ name, version: '1.0.0', licence: 'MIT' });
+
+  it('names the Bun version and each vendored grammar, worded for any count', () => {
+    expect(binaryNote('1.3.0', [])).toBe('The `qualor` binaries are built with Bun 1.3.0.');
+    expect(binaryNote('1.3.0', [g('a')])).toBe(
+      'The `qualor` binaries are built with Bun 1.3.0 and embed a 1.0.0 (MIT), a grammar that is not an npm package.',
+    );
+    expect(binaryNote('1.3.0', [g('a'), g('b')])).toBe(
+      'The `qualor` binaries are built with Bun 1.3.0 and embed a 1.0.0 (MIT) and b 1.0.0 (MIT), grammars that are not npm packages.',
+    );
+    expect(binaryNote('1.3.0', [g('a'), g('b'), g('c')])).toBe(
+      'The `qualor` binaries are built with Bun 1.3.0 and embed a 1.0.0 (MIT), b 1.0.0 (MIT) and c 1.0.0 (MIT), grammars that are not npm packages.',
+    );
+  });
+
+  it('says what the binaries embed today', () => {
+    const swift = VENDORED_GRAMMARS.swift;
+    expect(binaryNote('1.3.0', Object.values(VENDORED_GRAMMARS))).toBe(
+      `The \`qualor\` binaries are built with Bun 1.3.0 and embed ${swift.name} ${swift.version} (${swift.licence}), a grammar that is not an npm package.`,
+    );
+  });
+});
 
 describe('pnpm release:dry-run arguments (release.md §10)', () => {
   it('defaults to the checkout version, every target, images and CLI sources', () => {

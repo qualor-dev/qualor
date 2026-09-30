@@ -100,6 +100,26 @@ export const CHART_SOURCE = path.join(REPO_ROOT, 'deploy', 'helm', 'qualor');
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 /**
+ * The release notes' last line (plan 8F): the Bun that built the binaries and the grammars they
+ * embed that no npm package ships (VENDORED_GRAMMARS), worded for any number of them.
+ */
+export function binaryNote(
+  bun: string,
+  grammars: readonly { name: string; version: string; licence: string }[],
+): string {
+  const built = `The \`qualor\` binaries are built with Bun ${bun}`;
+  const names = grammars.map((g) => `${g.name} ${g.version} (${g.licence})`);
+  const last = names.pop();
+  if (last === undefined) return `${built}.`;
+  const list = names.length === 0 ? last : `${names.join(', ')} and ${last}`;
+  const what =
+    names.length === 0
+      ? 'a grammar that is not an npm package'
+      : 'grammars that are not npm packages';
+  return `${built} and embed ${list}, ${what}.`;
+}
+
+/**
  * Ruling R-DIGEST: the chart in the repository pins the server by its tag (ruling RE6), but the
  * packaged chart of a release pins it by the digest the dry-run registry reported, so a published
  * chart always pulls exactly the image that was signed. Only `image.digest` changes.
@@ -322,12 +342,9 @@ export async function dryRun(o: DryRunOptions, root = DEFAULT_OUTPUT_ROOT): Prom
     if (notes.fromUnreleased) {
       process.stderr.write(`warning: CHANGELOG.md has no ${v.text} section; using Unreleased\n`);
     }
-    const grammars = Object.values(VENDORED_GRAMMARS)
-      .map((g) => `${g.name} ${g.version} (${g.licence})`)
-      .join(', ');
     writeFileSync(
       path.join(dir, 'release-notes.md'),
-      `${notes.notes}\n\nThe \`qualor\` binaries are built with Bun ${BUN_VERSION} and embed ${grammars}, a grammar that is not an npm package.\n`,
+      `${notes.notes}\n\n${binaryNote(BUN_VERSION, Object.values(VENDORED_GRAMMARS))}\n`,
     );
     copyFileSync(path.join(k.hostDir, 'cosign.pub'), path.join(dir, 'cosign.pub'));
     const manifest = buildManifest(

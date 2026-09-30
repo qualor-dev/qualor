@@ -61,11 +61,12 @@ pinned by SHA-256 in `tools/analyzers/install.sh` and installed as `/opt/qualor/
 `SWIFTLINT-THIRD-PARTY-NOTICES.txt` holds the licence text of each of the 21 components it is
 statically linked with:
 
-- the Swift 6.3.2 runtime and standard library, Foundation (swift-corelibs-foundation and
-  swift-foundation), Dispatch and the ICU 76.1 data of swift-foundation-icu (Apache-2.0 with the
-  Runtime Library Exception; the Unicode licence for ICU, given without the GPL-licensed
-  build-script sections of ICU's own licence file, which cover files that are not in the binary);
-- LLVM's libc++, libc++abi, libunwind and compiler-rt (Apache-2.0 with the LLVM Exception);
+- the Swift runtime and standard library of Swift 6.3.2, Foundation (swift-corelibs-foundation
+  and swift-foundation), Dispatch (swift-corelibs-libdispatch) and the ICU 76.1 data of
+  swift-foundation-icu (Apache-2.0 with the Runtime Library Exception; the Unicode licence for
+  ICU, given without the GPL-licensed build-script sections of ICU's own licence file, which cover
+  files that are not in the binary);
+- LLVM libc++, libc++abi, libunwind and compiler-rt (Apache-2.0 with the LLVM Exception);
 - musl 1.2.5 (MIT) and musl-fts 1.2.7 (BSD-3-Clause);
 - curl 8.15.0 (the curl licence);
 - BoringSSL at commit 817ab07 (OpenSSL and SSLeay licences, ISC, and MIT for fiat-crypto);

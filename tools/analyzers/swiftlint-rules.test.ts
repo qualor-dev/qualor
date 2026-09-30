@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveBinary } from '../../cli/src/analyzers/binary';
 import { describeWithSwiftlint, REQUIRE_ANALYZERS } from '../../cli/test/analyzers';
 // @ts-expect-error: a plain ES module of the repository's tooling, without type declarations
-import { buildTable, parseRulesTable, parseSkipped } from './swiftlint-rules.mjs';
+import { buildTable, markSourceKit, parseRulesTable, parseSkipped } from './swiftlint-rules.mjs';
 
 const TABLE = 'packages/shared/rules/swiftlint-rules.json';
 const swiftlint = resolveBinary('swiftlint', { root: process.cwd(), env: process.env });
@@ -44,6 +44,27 @@ describe('swiftlint-rules.mjs', () => {
     ).toEqual(['statement_position']);
   });
 
+  it('marks the skipped rules, and fails when the lint names none while the table has some (final review minor 3)', () => {
+    const rules = () => ({
+      colon: { sourceKit: false },
+      statement_position: { sourceKit: false },
+      unused_import: { sourceKit: true },
+    });
+    const skipped =
+      "warning: Skipping enabled rule 'statement_position' because it requires SourceKit and SourceKit access is prohibited.\n";
+    expect(markSourceKit(rules(), skipped)).toEqual({
+      colon: { sourceKit: false },
+      statement_position: { sourceKit: true },
+      unused_import: { sourceKit: true },
+    });
+    expect(() => markSourceKit(rules(), 'warning: SourceKit rules are not run\n')).toThrow(
+      /named no rule skipped for want of SourceKit, but the table has 1/,
+    );
+    expect(markSourceKit({ colon: { sourceKit: false } }, '')).toEqual({
+      colon: { sourceKit: false },
+    });
+  });
+
   it.runIf(REQUIRE_ANALYZERS)(
     'finds swiftlint where QUALOR_REQUIRE_ANALYZERS=1 requires it',
     () => {
@@ -60,7 +81,9 @@ describeWithSwiftlint()('the committed table and the installed SwiftLint', () =>
       version: string;
       rules: object;
     };
-    const fresh = buildTable(swiftlint as string);
+    // Under QUALOR_REQUIRE_ANALYZERS=1 this runs without a binary too: say so, not a TypeError.
+    if (swiftlint === null) throw new Error('swiftlint not found (tools/analyzers/install.sh)');
+    const fresh = buildTable(swiftlint);
     expect(committed.version).toBe(fresh.version);
     expect(committed.rules).toEqual(fresh.rules);
   });

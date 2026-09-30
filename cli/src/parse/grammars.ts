@@ -50,7 +50,7 @@ export function registerEmbeddedAssets(paths: Record<WasmAsset, string> | null):
 export function wasmPath(asset: WasmAsset): string {
   const fromBinary = embedded?.[asset];
   if (fromBinary !== undefined) return fromBinary;
-  if (asset in VENDORED_GRAMMARS) {
+  if (Object.hasOwn(VENDORED_GRAMMARS, asset)) {
     const { file } = VENDORED_GRAMMARS[asset as VendoredGrammar];
     return fileURLToPath(new URL(`../../grammars/${file}`, import.meta.url));
   }

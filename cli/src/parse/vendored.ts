@@ -1,8 +1,10 @@
 /**
  * Grammars no npm package ships as WASM (plan 8F): the upstream release's own WASM file, committed
- * in cli/grammars/ and checked against its SHA-256 by vendored.test.ts. A bump downloads the new
- * release asset over the old file, updates this entry, re-runs the metrics tests, and replaces
- * deploy/scanner/licenses/TREE-SITTER-SWIFT-LICENSE.txt with the tag's LICENSE.
+ * in cli/grammars/. `sha256` is the hash of the release asset at `url`, taken when it was
+ * downloaded; nothing is fetched at build time. vendored.test.ts hashes the committed file on every
+ * test run, so a changed file fails the tests; it does not re-download the asset. A bump downloads
+ * the new release asset over the old file, records its hash here, re-runs the metrics tests, and
+ * replaces deploy/scanner/licenses/TREE-SITTER-SWIFT-LICENSE.txt with the tag's LICENSE.
  */
 export const VENDORED_GRAMMARS = {
   swift: {

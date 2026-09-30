@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { VENDORED_GRAMMARS } from '../../cli/src/parse/vendored';
 
 /**
  * What swiftlint-static links (Verified facts F6 of plan 8F, plus musl-fts, which Foundation
@@ -94,7 +95,8 @@ describe('NOTICE.md (plan 8F)', () => {
       'SWIFTLINT-LICENSE.txt',
       'SWIFTLINT-THIRD-PARTY-NOTICES.txt',
       'TREE-SITTER-SWIFT-LICENSE.txt',
-      'tree-sitter-swift 0.7.3',
+      // From the pin, so a grammar bump fails here only until NOTICE.md names the new version.
+      `${VENDORED_GRAMMARS.swift.name} ${VENDORED_GRAMMARS.swift.version}`,
       'BoringSSL at commit 817ab07',
       'libxml2 2.14.5',
       'ICU 76.1',
@@ -109,5 +111,7 @@ describe('NOTICE.md (plan 8F)', () => {
     )?.[1];
     expect(notice).toContain(`| ${pinned} |`);
     expect(notice).toContain(`${SWIFTLINT_COMPONENTS.length} components`);
+    // Each component by the name its notices section has, not only their count (final review m5).
+    for (const component of SWIFTLINT_COMPONENTS) expect(notice, component).toContain(component);
   });
 });

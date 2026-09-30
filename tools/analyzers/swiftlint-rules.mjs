@@ -40,6 +40,24 @@ export function parseSkipped(stderr) {
   ].map((m) => m[1]);
 }
 
+/**
+ * Marks every rule the all-rules lint skipped for want of SourceKit. That list comes from
+ * SwiftLint's stderr wording ("Skipping enabled rule '…' because it requires SourceKit"), so a lint
+ * that names none while the table has SourceKit rules means the wording changed: fail rather than
+ * write a table that runs rules the static binary cannot (final review minor 3).
+ */
+export function markSourceKit(rules, stderr) {
+  const skipped = parseSkipped(stderr);
+  const expected = Object.values(rules).filter((r) => r.sourceKit).length;
+  if (skipped.length === 0 && expected > 0) {
+    throw new Error(
+      `the all-rules lint named no rule skipped for want of SourceKit, but the table has ${expected}: has SwiftLint's "Skipping enabled rule" wording changed?`,
+    );
+  }
+  for (const id of skipped) if (rules[id]) rules[id].sourceKit = true;
+  return rules;
+}
+
 export function buildTable(swiftlint) {
   // An empty directory: `swiftlint rules` must not read a .swiftlint.yml of the caller.
   const dir = mkdtempSync(path.join(os.tmpdir(), 'swiftlint-rules-'));
@@ -62,8 +80,7 @@ export function buildTable(swiftlint) {
       ['lint', '--quiet', '--no-cache', '--enable-all-rules', 'a.swift'],
       { cwd: dir, env, encoding: 'utf8' },
     );
-    const rules = parseRulesTable(table);
-    for (const id of parseSkipped(lint.stderr ?? '')) if (rules[id]) rules[id].sourceKit = true;
+    const rules = markSourceKit(parseRulesTable(table), lint.stderr ?? '');
     const sorted = Object.fromEntries(Object.entries(rules).sort(([a], [b]) => a.localeCompare(b)));
     return { version, rules: sorted };
   } finally {
