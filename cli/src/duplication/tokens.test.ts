@@ -55,4 +55,17 @@ describe('lineUnits', () => {
       tree.delete();
     }
   });
+
+  it('tokenises Kotlin: string templates balance and comments are left out (phase 8E)', async () => {
+    const parsers = await testParsers();
+    const tree = parsers.parse('kotlin', 'val s = "a ${b}" // c\n')!;
+    try {
+      // val, s, =, ", `a `, ${, b, }, " — the comment is not a token
+      expect(lineUnits(tree.rootNode, 'kotlin')).toMatchObject([
+        { startLine: 1, endLine: 1, tokens: 9, delta: 0 },
+      ]);
+    } finally {
+      tree.delete();
+    }
+  });
 });

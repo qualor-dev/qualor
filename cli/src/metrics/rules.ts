@@ -1,7 +1,8 @@
 import type { Node } from 'web-tree-sitter';
 import type { GrammarId } from '../parse/grammars';
 
-export type SyntaxFamily = 'ecmascript' | 'java' | 'csharp' | 'python' | 'markup' | 'stylesheet';
+export type SyntaxFamily =
+  'ecmascript' | 'java' | 'csharp' | 'python' | 'markup' | 'stylesheet' | 'kotlin';
 
 /**
  * Node tables of ruling C3 (node type names of the pinned grammars, C1). No rule looks at
@@ -63,6 +64,14 @@ export interface FamilyRules {
    * non-blank text are code lines.
    */
   rowWiseLeaves?: ReadonlySet<string>;
+  /** The node type of an `if` (default `if_statement`); Kotlin's `if` is an expression. */
+  ifType?: string;
+  /**
+   * Zero-width MISSING nodes the grammar inserts where the source is fine (Kotlin: a class member
+   * ending on the line of the body's `}`); a tree whose only problems are these is not reported
+   * as a syntax error (cli/src/metrics/errors.ts).
+   */
+  benignMissing?: ReadonlySet<string>;
 }
 
 const ECMASCRIPT: FamilyRules = {
@@ -343,6 +352,98 @@ const STYLESHEET = linesOnly(
   [],
 );
 
+/** The node after the `else` keyword of a Kotlin if_expression (its alternative), or null. */
+function kotlinElse(ifNode: Node): Node | null {
+  let seenElse = false;
+  for (const c of ifNode.children) {
+    if (c === null) continue;
+    if (seenElse && c.isNamed) return c;
+    if (c.type === 'else') seenElse = true;
+  }
+  return null;
+}
+
+/**
+ * The grammar's `statement` supertype (@tree-sitter-grammars/tree-sitter-kotlin 1.1.0
+ * node-types.json) without the declarations it also holds (class, object, function, type alias):
+ * a local function counts as a function, a local class as a class.
+ */
+const KOTLIN_STATEMENTS = new Set([
+  'annotated_expression',
+  'anonymous_function',
+  'as_expression',
+  'assignment',
+  'binary_expression',
+  'call_expression',
+  'callable_reference',
+  'character_literal',
+  'collection_literal',
+  'do_while_statement',
+  'float_literal',
+  'for_statement',
+  'identifier',
+  'if_expression',
+  'in_expression',
+  'index_expression',
+  'infix_expression',
+  'is_expression',
+  'labeled_expression',
+  'lambda_literal',
+  'multiline_string_literal',
+  'navigation_expression',
+  'number_literal',
+  'object_literal',
+  'parenthesized_expression',
+  'property_declaration',
+  'range_expression',
+  'return_expression',
+  'spread_expression',
+  'string_literal',
+  'super_expression',
+  'this_expression',
+  'throw_expression',
+  'try_expression',
+  'unary_expression',
+  'when_expression',
+  'while_statement',
+]);
+/** Kotlin has no statement node: a statement is an entry of a block or a lambda body. */
+const KOTLIN_STATEMENT_PARENTS = new Set(['block', 'lambda_literal']);
+
+const KOTLIN: FamilyRules = {
+  comments: new Set(['line_comment', 'block_comment']),
+  functions: new Set(['function_declaration', 'secondary_constructor', 'getter', 'setter']),
+  lambdas: new Set(['lambda_literal', 'anonymous_function']),
+  classes: new Set(['class_declaration', 'object_declaration', 'companion_object']),
+  statements: KOTLIN_STATEMENTS,
+  loops: new Set(['for_statement', 'while_statement', 'do_while_statement']),
+  switches: new Set(['when_expression']),
+  catchClause: 'catch_block',
+  // Kotlin has no conditional operator (`if` is an expression and counts as an if), and
+  // tree-sitter never produces a node of type ''.
+  ternary: '',
+  ifType: 'if_expression',
+  transparent: new Set(['parenthesized_expression']),
+  isCase: (n) => n.type === 'when_entry' && n.child(0)?.type !== 'else',
+  elseIf: (n) => {
+    const alt = kotlinElse(n);
+    return alt !== null && alt.type === 'if_expression' ? alt : null;
+  },
+  plainElse: (n) => {
+    const alt = kotlinElse(n);
+    return alt !== null && alt.type !== 'if_expression' ? alt : null;
+  },
+  // A script's (.kts) top-level calls are statements; a top-level property is a declaration.
+  isStatement: (n, parentType) =>
+    KOTLIN_STATEMENT_PARENTS.has(parentType) ||
+    (parentType === 'source_file' && n.type !== 'property_declaration'),
+  // A getter or setter is a function only with a body (`get() = …` or `get() { … }`).
+  isFunction: (n) =>
+    (n.type !== 'getter' && n.type !== 'setter') ||
+    n.children.some((c) => c?.type === 'function_body'),
+  benignMissing: new Set(['_class_member_semi']),
+};
+
 export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   ecmascript: ECMASCRIPT,
   java: JAVA,
@@ -350,6 +451,7 @@ export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   python: PYTHON,
   markup: MARKUP,
   stylesheet: STYLESHEET,
+  kotlin: KOTLIN,
 };
 
 export function familyOf(grammar: GrammarId): SyntaxFamily {
@@ -358,5 +460,6 @@ export function familyOf(grammar: GrammarId): SyntaxFamily {
   if (grammar === 'python') return 'python';
   if (grammar === 'html') return 'markup';
   if (grammar === 'css') return 'stylesheet';
+  if (grammar === 'kotlin') return 'kotlin';
   return 'ecmascript';
 }

@@ -9,6 +9,7 @@
   },
   "pnpm": {
     "overrides": {
+      "@tree-sitter-grammars/tree-sitter-kotlin>npm-check-updates": "-",
       "@xmldom/xmldom": "0.8.15"
     },
     "onlyBuiltDependencies": [
@@ -16,6 +17,7 @@
     ],
     "ignoredBuiltDependencies": [
       "@parcel/watcher",
+      "@tree-sitter-grammars/tree-sitter-kotlin",
       "cpu-features",
       "lmdb",
       "msgpackr-extract",

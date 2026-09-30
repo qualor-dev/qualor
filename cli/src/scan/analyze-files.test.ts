@@ -127,4 +127,24 @@ describe('analyzeFiles', () => {
       ),
     ).toBe(false);
   });
+
+  it('measures a one-line Kotlin class body without a PARSE_ERRORS warning (phase 8E)', async () => {
+    const root = tmp();
+    writeTree(root, { 'A.kt': 'class A { fun f() {} }\n', 'B.kt': 'fun broken( {\n' });
+    const warnings = new Warnings();
+    const kt = { language: 'kotlin', grammar: 'kotlin' } as const;
+    const out = analyzeFiles([scope(root, 'A.kt', kt)], {
+      parsers: await testParsers(),
+      warnings,
+      log: silentLogger,
+    });
+    expect(out[0]?.metrics).toMatchObject({ functions: 1, classes: 1 });
+    expect(warnings.list()).toEqual([]);
+    analyzeFiles([scope(root, 'B.kt', kt)], {
+      parsers: await testParsers(),
+      warnings,
+      log: silentLogger,
+    });
+    expect(warnings.list().map((w) => w.code)).toEqual(['PARSE_ERRORS']);
+  });
 });

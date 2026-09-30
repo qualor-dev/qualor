@@ -89,7 +89,7 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
       statements++;
     }
 
-    if (type === 'if_statement') {
+    if (type === (rules.ifType ?? 'if_statement')) {
       complexity++;
       if (elseIfs.has(node.id)) {
         cognitive += 1; // hybrid increment: no nesting penalty and no extra nesting level

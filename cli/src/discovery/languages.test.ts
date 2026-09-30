@@ -56,6 +56,20 @@ describe('detectLanguage', () => {
     });
   });
 
+  it('maps .kt and .kts to kotlin (phase 8E)', () => {
+    expect(detectLanguage('src/main/kotlin/App.kt', 'auto')).toEqual({
+      language: 'kotlin',
+      grammar: 'kotlin',
+    });
+    expect(detectLanguage('build.gradle.kts', 'auto')).toEqual({
+      language: 'kotlin',
+      grammar: 'kotlin',
+    });
+    expect(detectLanguage('App.KT', 'auto').language).toBe('kotlin');
+    expect(detectLanguage('App.kt', ['java'])).toEqual({ language: 'other', grammar: null });
+    expect(detectLanguage('App.ktm', 'auto')).toEqual({ language: 'other', grammar: null });
+  });
+
   it('honours an explicit languages list', () => {
     expect(detectLanguage('a.ts', ['java'])).toEqual({ language: 'other', grammar: null });
     expect(detectLanguage('A.java', ['java']).language).toBe('java');

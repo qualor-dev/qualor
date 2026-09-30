@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@tree-sitter-grammars/tree-sitter-kotlin>npm-check-updates': '-'
   '@xmldom/xmldom': 0.8.15
 
 importers:
@@ -59,6 +60,9 @@ importers:
       '@qualor/shared':
         specifier: workspace:*
         version: link:../packages/shared
+      '@tree-sitter-grammars/tree-sitter-kotlin':
+        specifier: 1.1.0
+        version: 1.1.0
       ignore:
         specifier: ^7.0.10
         version: 7.0.10
@@ -2124,6 +2128,14 @@ packages:
 
   '@testcontainers/postgresql@12.1.0':
     resolution: {integrity: sha512-Pjf2VSVNirEPfz36nidyrVAnZvc2YhajOznY4VgyEsvfTd5qiMNOuPq96drREvxAUtXl5SFLX7vXj7sSq4aTcA==}
+
+  '@tree-sitter-grammars/tree-sitter-kotlin@1.1.0':
+    resolution: {integrity: sha512-vlVXaxEE8t2kpJgfZpa8XVvxcnKw9AYtRTgy7KWjsDmAsadk06RxAT80IXOgGQnmM9i/orQn1nD84gPNUHu6DQ==}
+    peerDependencies:
+      tree-sitter: ^0.22.4
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -6030,6 +6042,11 @@ snapshots:
       - bare-buffer
       - react-native-b4a
       - supports-color
+
+  '@tree-sitter-grammars/tree-sitter-kotlin@1.1.0':
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
 
   '@types/chai@5.2.3':
     dependencies:

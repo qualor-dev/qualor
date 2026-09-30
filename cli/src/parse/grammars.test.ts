@@ -12,6 +12,7 @@ const SAMPLES = {
   python: 'def f(x):\n    return 1 if x else 0\n',
   html: '<!DOCTYPE html>\n<p class="a">x</p>\n<script>let a = 1;</script>\n',
   css: '.a > b:hover { color: #fff; margin: calc(1px + 2em); }\n',
+  kotlin: 'class A {\n    fun m(x: Int) = if (x > 0) 1 else 0\n}\n',
 } as const;
 
 afterEach(() => registerEmbeddedAssets(null));
@@ -52,6 +53,7 @@ describe('wasmPath', () => {
     expect(wasmPath('java')).toMatch(/tree-sitter-java\.wasm$/);
     expect(wasmPath('csharp')).toMatch(/tree-sitter-c_sharp\.wasm$/);
     expect(wasmPath('python')).toMatch(/tree-sitter-python\.wasm$/);
+    expect(wasmPath('kotlin')).toMatch(/tree-sitter-kotlin\.wasm$/);
     const require = createRequire(import.meta.url);
     const java = require.resolve('tree-sitter-java/tree-sitter-java.wasm');
     registerEmbeddedAssets({
@@ -64,6 +66,7 @@ describe('wasmPath', () => {
       python: 'py.wasm',
       html: 'html.wasm',
       css: 'css.wasm',
+      kotlin: 'kt.wasm',
     });
     expect(wasmPath('core')).toBe('core.wasm');
     expect(wasmPath('python')).toBe('py.wasm');

@@ -5,7 +5,8 @@ import type { DuplicationInput } from '../duplication/detect';
 import { lineUnits, type LineUnit } from '../duplication/tokens';
 import type { Logger } from '../log';
 import { computeMetrics, type FileMetrics } from '../metrics/metrics';
-import { familyOf } from '../metrics/rules';
+import { hasRealParseErrors } from '../metrics/errors';
+import { FAMILY_RULES, familyOf } from '../metrics/rules';
 import { DEFAULT_PARSE_TIMEOUT_MS, type Parsers } from '../parse/grammars';
 import type { Warnings } from '../warnings';
 
@@ -78,13 +79,13 @@ export function analyzeFiles(files: readonly ScopeFile[], o: AnalyzeOptions): An
       continue;
     }
     try {
-      if (tree.rootNode.hasError) {
+      const family = familyOf(file.grammar);
+      if (hasRealParseErrors(tree.rootNode, FAMILY_RULES[family].benignMissing)) {
         o.warnings.add(
           'PARSE_ERRORS',
           'files with syntax errors were measured on a best-effort basis',
         );
       }
-      const family = familyOf(file.grammar);
       analyzed.metrics = computeMetrics(tree.rootNode, family);
       if (o.collectUnits?.(file) === true) analyzed.units = lineUnits(tree.rootNode, family);
     } finally {

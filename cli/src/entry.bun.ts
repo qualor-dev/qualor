@@ -1,6 +1,7 @@
 // Entry point of the compiled binary (`bun build --compile`, ruling C2). The imports below make
 // bun embed the WASM files; at run time they are paths inside the binary's `$bunfs`.
 import coreWasm from 'web-tree-sitter/web-tree-sitter.wasm' with { type: 'file' };
+import kotlinWasm from '@tree-sitter-grammars/tree-sitter-kotlin/tree-sitter-kotlin.wasm' with { type: 'file' };
 import csharpWasm from 'tree-sitter-c-sharp/tree-sitter-c_sharp.wasm' with { type: 'file' };
 import cssWasm from 'tree-sitter-css/tree-sitter-css.wasm' with { type: 'file' };
 import htmlWasm from 'tree-sitter-html/tree-sitter-html.wasm' with { type: 'file' };
@@ -23,5 +24,6 @@ registerEmbeddedAssets({
   python: pythonWasm,
   html: htmlWasm,
   css: cssWasm,
+  kotlin: kotlinWasm,
 });
 process.exitCode = await main(process.argv.slice(2), processIO());
