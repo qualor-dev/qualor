@@ -61,6 +61,8 @@ jobs:
       # PATH as normal (sudo's secure_path would hide them from a step run under sudo).
       - run: sudo mkdir -p /opt/qualor/sonarjs && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs
       - run: sh tools/analyzers/install-sonarjs.sh
+      - run: sudo mkdir -p /opt/qualor/weblint && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/weblint
+      - run: sh tools/analyzers/install-weblint.sh
       - run: pnpm test:coverage
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
       # The dogfood job imports it with the scan (qualor.yml).
@@ -100,6 +102,8 @@ jobs:
       - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
       - run: sudo mkdir -p /opt/qualor/sonarjs && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs
       - run: sh tools/analyzers/install-sonarjs.sh
+      - run: sudo mkdir -p /opt/qualor/weblint && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/weblint
+      - run: sh tools/analyzers/install-weblint.sh
       - run: pnpm fixtures
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
   cli-binary:
@@ -128,6 +132,8 @@ jobs:
       - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
       - run: sudo mkdir -p /opt/qualor/sonarjs && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs
       - run: sh tools/analyzers/install-sonarjs.sh
+      - run: sudo mkdir -p /opt/qualor/weblint && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/weblint
+      - run: sh tools/analyzers/install-weblint.sh
       - run: pnpm --filter @qualor/cli build
       - run: pnpm --filter @qualor/cli smoke
       - run: pnpm --filter @qualor/cli smoke:process

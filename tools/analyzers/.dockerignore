@@ -2,3 +2,5 @@
 # the image installs it from package-lock.json and builds categories.json itself.
 sonarjs/node_modules
 sonarjs/categories.json
+# Likewise the local install of the weblint pass: the image installs it from package-lock.json.
+weblint/node_modules

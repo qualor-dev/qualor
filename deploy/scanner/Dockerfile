@@ -2,8 +2,9 @@
 # The qualor/scanner image: the `qualor` CLI binary plus the pinned analyzer toolchain
 # of tools/analyzers/install.sh (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with a snapshot of its
 # vulnerability database in /opt/qualor/share/trivy, Ruff), Qualor's sonarjs pass in /opt/qualor/sonarjs
-# (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9, tools/analyzers/sonarjs) and what they need to run:
-# Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs) and git.
+# (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9, tools/analyzers/sonarjs), Qualor's HTML and CSS
+# linters in /opt/qualor/weblint (stylelint and HTMLHint, tools/analyzers/weblint) and what they need
+# to run: Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs) and git.
 # Build from the repository root:
 #   docker build -f deploy/scanner/Dockerfile -t qualor/scanner:dev .
 # Every base image is pinned by version and digest (multi-arch index); bump both together.
@@ -72,6 +73,12 @@ COPY --from=gitleaks /gitleaks /opt/qualor/bin/gitleaks
 # the archive is deleted. The same script installs it in CI (tools/ci.test.ts checks that).
 COPY --chmod=0644 tools/analyzers/sonarjs/package.json tools/analyzers/sonarjs/package-lock.json tools/analyzers/sonarjs/run.mjs tools/analyzers/sonarjs/categories.mjs /tmp/sonarjs/
 RUN sh /tmp/install-sonarjs.sh && rm -rf /tmp/sonarjs /tmp/install-sonarjs.sh
+# Qualor's HTML and CSS linters (config.md §6, plan 8D): install-weblint.sh installs stylelint with
+# the configs Qualor bundles and HTMLHint from their lockfile, without install scripts, next to the
+# two runner scripts. The same script installs them in CI (tools/ci.test.ts checks that).
+COPY tools/analyzers/install-weblint.sh /tmp/
+COPY --chmod=0644 tools/analyzers/weblint/package.json tools/analyzers/weblint/package-lock.json tools/analyzers/weblint/bundled.mjs tools/analyzers/weblint/files.mjs tools/analyzers/weblint/stylelint.mjs tools/analyzers/weblint/htmlhint.mjs /tmp/weblint/
+RUN sh /tmp/install-weblint.sh && rm -rf /tmp/weblint /tmp/install-weblint.sh
 
 FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3db8ea4ae263ab4d0c3805933e5355f45 AS jre
 

@@ -451,6 +451,71 @@ describe('install-sonarjs.sh (plan 8A/8B, controller ruling 14)', () => {
   });
 });
 
+describe('install-weblint.sh (plan 8D)', () => {
+  const script = readFileSync('tools/analyzers/install-weblint.sh', 'utf8');
+
+  it('installs from the lockfile without scripts, with the ambient npm, and downloads nothing else', () => {
+    expect(script).toContain('(cd "$DEST" && npm ci --omit=dev --ignore-scripts');
+    expect(script).toContain('[ "${npm_major:-0}" -ge 10 ]');
+    expect(script).not.toMatch(/npx|npm@|curl|wget|latest/);
+  });
+
+  it('copies only the runtime files, never the tests or dev scripts', () => {
+    expect(script).toContain(
+      'package.json package-lock.json bundled.mjs files.mjs stylelint.mjs htmlhint.mjs',
+    );
+    expect(script).not.toMatch(/run\.test\.ts|licences\.mjs/);
+  });
+
+  it('pins every dependency exactly and locks each package by sha512', () => {
+    const pkg = JSON.parse(readFileSync('tools/analyzers/weblint/package.json', 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    for (const [name, version] of Object.entries(pkg.dependencies))
+      expect(version, name).toMatch(/^\d+\.\d+\.\d+$/);
+    const lock = JSON.parse(readFileSync('tools/analyzers/weblint/package-lock.json', 'utf8')) as {
+      packages: Record<string, { integrity?: string }>;
+    };
+    for (const [where, entry] of Object.entries(lock.packages)) {
+      if (where === '') continue;
+      expect(entry.integrity, where).toMatch(/^sha512-/);
+    }
+  });
+
+  it('runs in every GitHub job that requires the analyzers, unprivileged after a chown', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      if (!job.steps.some((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1')) continue;
+      const install = job.steps.findIndex(
+        (s) => s.run?.endsWith('sh tools/analyzers/install-weblint.sh') === true,
+      );
+      expect(install, name).toBeGreaterThan(0);
+      expect(job.steps[install - 1]?.run, name).toContain(
+        'chown -R "$(id -u):$(id -g)" /opt/qualor/weblint',
+      );
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      expect(uses, name).toBeGreaterThan(install);
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template after install.sh", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    const before = gitlab['.analyzers']?.before_script ?? [];
+    expect(before).toContain('sh tools/analyzers/install-weblint.sh');
+    expect(before.indexOf('sh tools/analyzers/install.sh')).toBeLessThan(
+      before.indexOf('sh tools/analyzers/install-weblint.sh'),
+    );
+  });
+
+  it('is installed by both images', () => {
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile'])
+      expect(readFileSync(file, 'utf8'), file).toMatch(/sh \/tmp\/install-weblint\.sh/);
+  });
+});
+
 describe("the CI cache of Trivy's downloads (plan 2B)", () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
   const pin = (name: string) => new RegExp(`^${name}=(.*)$`, 'm').exec(script)?.[1];
