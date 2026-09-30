@@ -1,6 +1,7 @@
 import type { IssueKind, Quality, Severity } from '../report/taxonomy';
 import type { EngineMapping } from './normalize';
 import type { SarifResult, SarifRule } from './types';
+import ruffCategories from '../../rules/ruff-categories.json' with { type: 'json' };
 
 function tags(rule: SarifRule | undefined): string[] {
   const t = rule?.properties?.['tags'];
@@ -219,6 +220,63 @@ const sonarjs: EngineMapping = {
     sonarCategory(String(rule?.properties?.['category'] ?? ''))?.defaultSeverity,
 };
 
+/** Ruff's own rule category per code (tools/analyzers/ruff-keys.ts, the pinned Ruff). */
+const RUFF_CATEGORY: Readonly<Record<string, string>> = ruffCategories;
+/** report-format.md §7.1: the security rules whose finding is usually exploitable as it stands. */
+const RUFF_HIGH = new Set([
+  'S102',
+  'S202',
+  'S301',
+  'S302',
+  'S307',
+  'S323',
+  'S501',
+  'S506',
+  'S602',
+  'S604',
+  'S605',
+  'S608',
+  'S610',
+  'S611',
+  'S701',
+  'S702',
+  'S704',
+]);
+
+/** report-format.md §7.1: quality and severity from Ruff's category; always an issue. */
+export function ruffRule(code: string): {
+  quality: Quality;
+  kind: IssueKind;
+  defaultSeverity: Severity;
+} {
+  const category = Object.hasOwn(RUFF_CATEGORY, code) ? RUFF_CATEGORY[code] : undefined;
+  switch (category) {
+    case 'security':
+      return {
+        quality: 'security',
+        kind: 'issue',
+        defaultSeverity: RUFF_HIGH.has(code) ? 'high' : 'medium',
+      };
+    case 'correctness':
+    case 'suspicious':
+      return { quality: 'reliability', kind: 'issue', defaultSeverity: 'medium' };
+    case 'style':
+    case 'pedantic':
+    case 'restriction':
+    case 'formatting':
+      return { quality: 'maintainability', kind: 'issue', defaultSeverity: 'low' };
+    default:
+      // complexity, performance, and a code this table does not know.
+      return { quality: 'maintainability', kind: 'issue', defaultSeverity: 'medium' };
+  }
+}
+
+/** Ruff (plan 8C): its SARIF `level` is always `error`, so the rule decides the severity. */
+const ruff: EngineMapping = {
+  rule: (r) => ruffRule(r.id),
+  severity: (result, rule) => ruffRule(rule?.id ?? result.ruleId ?? '').defaultSeverity,
+};
+
 export const ENGINE_MAPPINGS = {
   eslint,
   pmd,
@@ -228,6 +286,7 @@ export const ENGINE_MAPPINGS = {
   trivy,
   roslyn,
   sonarjs,
+  ruff,
 } as const satisfies Record<string, EngineMapping>;
 
 export function engineMapping(engineId: string): EngineMapping | undefined {

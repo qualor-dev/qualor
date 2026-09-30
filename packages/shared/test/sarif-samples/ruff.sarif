@@ -1,0 +1,354 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "fixes": [
+            {
+              "artifactChanges": [
+                {
+                  "artifactLocation": {
+                    "uri": "file:///fixture-root/app/store.py"
+                  },
+                  "replacements": [
+                    {
+                      "deletedRegion": {
+                        "endColumn": 1,
+                        "endLine": 4,
+                        "startColumn": 1,
+                        "startLine": 3
+                      }
+                    }
+                  ]
+                }
+              ],
+              "description": {
+                "text": "Remove unused import: `os`"
+              }
+            }
+          ],
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/app/store.py"
+                },
+                "region": {
+                  "endColumn": 10,
+                  "endLine": 3,
+                  "startColumn": 8,
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "`os` imported but unused"
+          },
+          "ruleId": "F401"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/app/store.py"
+                },
+                "region": {
+                  "endColumn": 62,
+                  "endLine": 9,
+                  "startColumn": 13,
+                  "startLine": 9
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Possible SQL injection vector through string-based query construction"
+          },
+          "ruleId": "S608"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/app/store.py"
+                },
+                "region": {
+                  "endColumn": 23,
+                  "endLine": 15,
+                  "startColumn": 12,
+                  "startLine": 15
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Probable use of insecure hash functions in `hashlib`: `md5`"
+          },
+          "ruleId": "S324"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/app/store.py"
+                },
+                "region": {
+                  "endColumn": 20,
+                  "endLine": 19,
+                  "startColumn": 5,
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "`subprocess` call with `shell=True` identified, security issue"
+          },
+          "ruleId": "S602"
+        },
+        {
+          "fixes": [
+            {
+              "artifactChanges": [
+                {
+                  "artifactLocation": {
+                    "uri": "file:///fixture-root/app/store.py"
+                  },
+                  "replacements": [
+                    {
+                      "deletedRegion": {
+                        "endColumn": 32,
+                        "endLine": 25,
+                        "startColumn": 30,
+                        "startLine": 25
+                      },
+                      "insertedContent": {
+                        "text": "None"
+                      }
+                    },
+                    {
+                      "deletedRegion": {
+                        "endColumn": 1,
+                        "endLine": 26,
+                        "startColumn": 1,
+                        "startLine": 26
+                      },
+                      "insertedContent": {
+                        "text": "        if items is None:\n            items = []\n"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "description": {
+                "text": "Replace with `None`; initialize within function"
+              }
+            }
+          ],
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/app/store.py"
+                },
+                "region": {
+                  "endColumn": 32,
+                  "endLine": 25,
+                  "startColumn": 30,
+                  "startLine": 25
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Do not use mutable data structures for argument defaults"
+          },
+          "ruleId": "B006"
+        },
+        {
+          "fixes": [
+            {
+              "artifactChanges": [
+                {
+                  "artifactLocation": {
+                    "uri": "file:///fixture-root/app/store.py"
+                  },
+                  "replacements": [
+                    {
+                      "deletedRegion": {
+                        "endColumn": 28,
+                        "endLine": 39,
+                        "startColumn": 16,
+                        "startLine": 39
+                      },
+                      "insertedContent": {
+                        "text": "item is None"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "description": {
+                "text": "Replace with `cond is None`"
+              }
+            }
+          ],
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///fixture-root/app/store.py"
+                },
+                "region": {
+                  "endColumn": 28,
+                  "endLine": 39,
+                  "startColumn": 24,
+                  "startLine": 39
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Comparison to `None` should be `cond is None`"
+          },
+          "ruleId": "E711"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/astral-sh/ruff",
+          "name": "ruff",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "## What it does\nChecks for uses of mutable objects as function argument defaults.\n\n## Why is this bad?\nFunction defaults are evaluated once, when the function is defined.\n\nThe same mutable object is then shared across all calls to the function.\nIf the object is modified, those modifications will persist across calls,\nwhich can lead to unexpected behavior.\n\nInstead, prefer to use immutable data structures, or take `None` as a\ndefault, and initialize a new mutable object inside the function body\nfor each call.\n\nArguments with immutable type annotations will be ignored by this rule.\nTypes outside of the standard library can be marked as immutable with the\n[`lint.flake8-bugbear.extend-immutable-calls`] configuration option.\n\n## Known problems\nMutable argument defaults can be used intentionally to cache computation\nresults. Replacing the default with `None` or an immutable data structure\ndoes not work for such usages. Instead, prefer the `@functools.lru_cache`\ndecorator from the standard library.\n\n## Example\n```python\ndef add_to_list(item, some_list=[]):\n    some_list.append(item)\n    return some_list\n\n\nl1 = add_to_list(0)  # [0]\nl2 = add_to_list(1)  # [0, 1]\n```\n\nUse instead:\n```python\ndef add_to_list(item, some_list=None):\n    if some_list is None:\n        some_list = []\n    some_list.append(item)\n    return some_list\n\n\nl1 = add_to_list(0)  # [0]\nl2 = add_to_list(1)  # [1]\n```\n\n## Options\n- `lint.flake8-bugbear.extend-immutable-calls`\n\n## Fix safety\n\nThis fix is marked as unsafe because it replaces the mutable default with `None`\nand initializes it in the function body, which may not be what the user intended,\nas described above.\n\n## References\n- [Python documentation: Default Argument Values](https://docs.python.org/3/tutorial/controlflow.html#default-argument-values)\n"
+              },
+              "help": {
+                "text": "Do not use mutable data structures for argument defaults"
+              },
+              "helpUri": "https://docs.astral.sh/ruff/rules/mutable-argument-default",
+              "id": "B006",
+              "properties": {
+                "id": "B006",
+                "kind": "flake8-bugbear",
+                "name": "mutable-argument-default",
+                "problem.severity": "error"
+              },
+              "shortDescription": {
+                "text": "Do not use mutable data structures for argument defaults"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "## What it does\nChecks for comparisons to `None` which are not using the `is` operator.\n\n## Why is this bad?\nAccording to [PEP 8], \"Comparisons to singletons like None should always be done with\n`is` or `is not`, never the equality operators.\"\n\n## Example\n```python\nif arg != None:\n    pass\nif None == arg:\n    pass\n```\n\nUse instead:\n```python\nif arg is not None:\n    pass\n```\n\n## Fix safety\n\nThis rule's fix is marked as unsafe, as it may alter runtime behavior when\nused with libraries that override the `==`/`__eq__` or `!=`/`__ne__` operators.\nIn these cases, `is`/`is not` may not be equivalent to `==`/`!=`. For more\ninformation, see [this issue].\n\n[PEP 8]: https://peps.python.org/pep-0008/#programming-recommendations\n[this issue]: https://github.com/astral-sh/ruff/issues/4560\n"
+              },
+              "help": {
+                "text": "Comparison to `None` should be `cond is None`"
+              },
+              "helpUri": "https://docs.astral.sh/ruff/rules/none-comparison",
+              "id": "E711",
+              "properties": {
+                "id": "E711",
+                "kind": "pycodestyle",
+                "name": "none-comparison",
+                "problem.severity": "error"
+              },
+              "shortDescription": {
+                "text": "Comparison to `None` should be `cond is None`"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "## What it does\nChecks for unused imports.\n\n## Why is this bad?\nUnused imports add a performance overhead at runtime, and risk creating\nimport cycles. They also increase the cognitive load of reading the code.\n\nIf an import statement is used to check for the availability or existence\nof a module, consider using `importlib.util.find_spec` instead.\n\nIf an import statement is used to re-export a symbol as part of a module's\npublic interface, consider using a \"redundant\" import alias, which\ninstructs Ruff (and other tools) to respect the re-export, and avoid\nmarking it as unused, as in:\n\n```python\nfrom module import member as member\n```\n\nAlternatively, you can use `__all__` to declare a symbol as part of the module's\ninterface, as in:\n\n```python\n# __init__.py\nimport some_module\n\n__all__ = [\"some_module\"]\n```\n\n## Preview\nWhen [preview] is enabled (and certain simplifying assumptions\nare met), we analyze all import statements for a given module\nwhen determining whether an import is used, rather than simply\nthe last of these statements. This can result in both different and\nmore import statements being marked as unused.\n\nFor example, if a module consists of\n\n```python\nimport a\nimport a.b\n```\n\nthen both statements are marked as unused under [preview], whereas\nonly the second is marked as unused under stable behavior.\n\nAs another example, if a module consists of\n\n```python\nimport a.b\nimport a\n\na.b.foo()\n```\n\nthen a diagnostic will be emitted for the second line under [preview],\nwhereas no diagnostic is emitted under stable behavior.\n\nNote that this behavior is somewhat subjective and is designed\nto conform to the developer's intuition rather than Python's actual\nexecution. To wit, the statement `import a.b` automatically executes\n`import a`, so in some sense `import a` is _always_ redundant\nin the presence of `import a.b`.\n\n\n## Fix safety\n\nFixes to remove unused imports are safe, except in `__init__.py` files.\n\nApplying fixes to `__init__.py` files is currently in preview. The fix offered depends on the\ntype of the unused import. Ruff will suggest a safe fix to export first-party imports with\neither a redundant alias or, if already present in the file, an `__all__` entry. If multiple\n`__all__` declarations are present, Ruff will not offer a fix. Ruff will suggest an unsafe fix\nto remove third-party and standard library imports -- the fix is unsafe because the module's\ninterface changes.\n\nSee [this FAQ section](https://docs.astral.sh/ruff/faq/#how-does-ruff-determine-which-of-my-imports-are-first-party-third-party-etc)\nfor more details on how Ruff\ndetermines whether an import is first or third-party.\n\n## Example\n\n```python\nimport numpy as np  # unused import\n\n\ndef area(radius):\n    return 3.14 * radius**2\n```\n\nUse instead:\n\n```python\ndef area(radius):\n    return 3.14 * radius**2\n```\n\nTo check the availability of a module, use `importlib.util.find_spec`:\n\n```python\nfrom importlib.util import find_spec\n\nif find_spec(\"numpy\") is not None:\n    print(\"numpy is installed\")\nelse:\n    print(\"numpy is not installed\")\n```\n\n## Options\n- `lint.ignore-init-module-imports`\n- `lint.pyflakes.allowed-unused-imports`\n\n## References\n- [Python documentation: `import`](https://docs.python.org/3/reference/simple_stmts.html#the-import-statement)\n- [Python documentation: `importlib.util.find_spec`](https://docs.python.org/3/library/importlib.html#importlib.util.find_spec)\n- [Typing documentation: interface conventions](https://typing.python.org/en/latest/spec/distributing.html#library-interface-public-and-private-symbols)\n\n[preview]: https://docs.astral.sh/ruff/preview/\n"
+              },
+              "help": {
+                "text": "`{name}` imported but unused; consider using `importlib.util.find_spec` to test for availability"
+              },
+              "helpUri": "https://docs.astral.sh/ruff/rules/unused-import",
+              "id": "F401",
+              "properties": {
+                "id": "F401",
+                "kind": "Pyflakes",
+                "name": "unused-import",
+                "problem.severity": "error"
+              },
+              "shortDescription": {
+                "text": "`{name}` imported but unused; consider using `importlib.util.find_spec` to test for availability"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "## What it does\nChecks for uses of weak or broken cryptographic hash functions in\n`hashlib` and `crypt` libraries.\n\n## Why is this bad?\nWeak or broken cryptographic hash functions may be susceptible to\ncollision attacks (where two different inputs produce the same hash) or\npre-image attacks (where an attacker can find an input that produces a\ngiven hash). This can lead to security vulnerabilities in applications\nthat rely on these hash functions.\n\nAvoid using weak or broken cryptographic hash functions in security\ncontexts. Instead, use a known secure hash function such as SHA256.\n\nNote: This rule targets the following weak algorithm names in `hashlib`:\n`md4`, `md5`, `sha`, and `sha1`. It also flags uses of `crypt.crypt` and\n`crypt.mksalt` when configured with `METHOD_CRYPT`, `METHOD_MD5`, or\n`METHOD_BLOWFISH`.\n\nIt does not attempt to lint OpenSSL- or platform-specific aliases and OIDs\n(for example: `\"sha-1\"`, `\"ssl3-sha1\"`, `\"ssl3-md5\"`, or\n`\"1.3.14.3.2.26\"`), nor variations with trailing spaces, as the set of\naccepted aliases depends on the underlying OpenSSL version and varies across\nplatforms and Python builds.\n\n## Example\n```python\nimport hashlib\n\n\ndef certificate_is_valid(certificate: bytes, known_hash: str) -> bool:\n    hash = hashlib.md5(certificate).hexdigest()\n    return hash == known_hash\n```\n\nUse instead:\n```python\nimport hashlib\n\n\ndef certificate_is_valid(certificate: bytes, known_hash: str) -> bool:\n    hash = hashlib.sha256(certificate).hexdigest()\n    return hash == known_hash\n```\n\nor add `usedforsecurity=False` if the hashing algorithm is not used in a security context, e.g.\nas a non-cryptographic one-way compression function:\n```python\nimport hashlib\n\n\ndef certificate_is_valid(certificate: bytes, known_hash: str) -> bool:\n    hash = hashlib.md5(certificate, usedforsecurity=False).hexdigest()\n    return hash == known_hash\n```\n\n\n## References\n- [Python documentation: `hashlib` — Secure hashes and message digests](https://docs.python.org/3/library/hashlib.html)\n- [Python documentation: `crypt` — Function to check Unix passwords](https://docs.python.org/3/library/crypt.html)\n- [Python documentation: `FIPS` - FIPS compliant hashlib implementation](https://docs.python.org/3/library/hashlib.html#hashlib.algorithms_guaranteed)\n- [Common Weakness Enumeration: CWE-327](https://cwe.mitre.org/data/definitions/327.html)\n- [Common Weakness Enumeration: CWE-328](https://cwe.mitre.org/data/definitions/328.html)\n- [Common Weakness Enumeration: CWE-916](https://cwe.mitre.org/data/definitions/916.html)\n"
+              },
+              "help": {
+                "text": "Probable use of insecure hash functions in `{library}`: `{string}`"
+              },
+              "helpUri": "https://docs.astral.sh/ruff/rules/hashlib-insecure-hash-function",
+              "id": "S324",
+              "properties": {
+                "id": "S324",
+                "kind": "flake8-bandit",
+                "name": "hashlib-insecure-hash-function",
+                "problem.severity": "error"
+              },
+              "shortDescription": {
+                "text": "Probable use of insecure hash functions in `{library}`: `{string}`"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "## What it does\nCheck for method calls that initiate a subprocess with a shell.\n\n## Why is this bad?\nStarting a subprocess with a shell can allow attackers to execute arbitrary\nshell commands. Consider starting the process without a shell call and\nsanitize the input to mitigate the risk of shell injection.\n\n## Example\n```python\nimport subprocess\n\nsubprocess.run(\"ls -l\", shell=True)\n```\n\nUse instead:\n```python\nimport subprocess\n\nsubprocess.run([\"ls\", \"-l\"])\n```\n\n## References\n- [Python documentation: `subprocess` — Subprocess management](https://docs.python.org/3/library/subprocess.html)\n- [Common Weakness Enumeration: CWE-78](https://cwe.mitre.org/data/definitions/78.html)\n"
+              },
+              "help": {
+                "text": "`subprocess` call with `shell=True` seems safe, but may be changed in the future; consider rewriting without `shell`"
+              },
+              "helpUri": "https://docs.astral.sh/ruff/rules/subprocess-popen-with-shell-equals-true",
+              "id": "S602",
+              "properties": {
+                "id": "S602",
+                "kind": "flake8-bandit",
+                "name": "subprocess-popen-with-shell-equals-true",
+                "problem.severity": "error"
+              },
+              "shortDescription": {
+                "text": "`subprocess` call with `shell=True` seems safe, but may be changed in the future; consider rewriting without `shell`"
+              }
+            },
+            {
+              "fullDescription": {
+                "text": "## What it does\nChecks for strings that resemble SQL statements involved in some form\nstring building operation.\n\n## Why is this bad?\nSQL injection is a common attack vector for web applications. Directly\ninterpolating user input into SQL statements should always be avoided.\nInstead, favor parameterized queries, in which the SQL statement is\nprovided separately from its parameters, as supported by `psycopg3`\nand other database drivers and ORMs.\n\n## Example\n```python\nquery = \"DELETE FROM foo WHERE id = '%s'\" % identifier\n```\n\n## References\n- [B608: Test for SQL injection](https://bandit.readthedocs.io/en/latest/plugins/b608_hardcoded_sql_expressions.html)\n- [psycopg3: Server-side binding](https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html#server-side-binding)\n"
+              },
+              "help": {
+                "text": "Possible SQL injection vector through string-based query construction"
+              },
+              "helpUri": "https://docs.astral.sh/ruff/rules/hardcoded-sql-expression",
+              "id": "S608",
+              "properties": {
+                "id": "S608",
+                "kind": "flake8-bandit",
+                "name": "hardcoded-sql-expression",
+                "problem.severity": "error"
+              },
+              "shortDescription": {
+                "text": "Possible SQL injection vector through string-based query construction"
+              }
+            }
+          ],
+          "version": "0.16.9"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

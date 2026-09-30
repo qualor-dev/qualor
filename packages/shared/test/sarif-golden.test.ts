@@ -31,6 +31,7 @@ const SAMPLE_FIXTURE: Record<string, SampleFixture> = {
   semgrep: { fixture: 'mixed-secrets', sourceRoots: [] },
   roslyn: { fixture: 'csharp-basic', sourceRoots: [] },
   'roslyn-sonar': { fixture: 'csharp-basic', sourceRoots: [], engineId: 'roslyn' },
+  ruff: { fixture: 'python-basic', sourceRoots: [] },
 };
 
 function readLines(fixture: string) {

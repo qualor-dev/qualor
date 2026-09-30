@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { engineMapping, ENGINE_MAPPINGS, sonarCategory } from './mappings';
+import { engineMapping, ENGINE_MAPPINGS, ruffRule, sonarCategory } from './mappings';
 import type { SarifResult, SarifRule } from './types';
 
 const rule = (id: string, properties: Record<string, unknown> = {}): SarifRule => ({
@@ -243,5 +243,34 @@ describe('sonarCategory (report-format.md §7.1)', () => {
         properties: { category: 'Security' },
       }),
     ).toBeUndefined();
+  });
+});
+
+describe('ruff (report-format.md §7.1, plan 8C)', () => {
+  it.each([
+    ['S608', 'security', 'high'],
+    ['S602', 'security', 'high'],
+    ['S324', 'security', 'medium'],
+    ['F841', 'reliability', 'medium'],
+    ['F401', 'reliability', 'medium'],
+    ['B006', 'reliability', 'medium'],
+    ['C901', 'maintainability', 'low'],
+    ['SIM102', 'maintainability', 'medium'],
+    ['E711', 'maintainability', 'low'],
+    ['E501', 'maintainability', 'low'],
+    ['ZZZ999', 'maintainability', 'medium'],
+  ])('%s → %s %s', (code, quality, defaultSeverity) => {
+    expect(ruffRule(code)).toEqual({ quality, kind: 'issue', defaultSeverity });
+  });
+
+  it("takes the severity from the rule, not from Ruff's SARIF level (always error)", () => {
+    const ruff = engineMapping('ruff')!;
+    expect(ruff.rule!({ id: 'E711' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(ruff.severity!({ ruleId: 'E711', level: 'error' } as never, { id: 'E711' })).toBe('low');
+    expect(ruff.severity!({ ruleId: 'S608', level: 'error' } as never, undefined)).toBe('high');
   });
 });

@@ -1,0 +1,218 @@
+{
+  "version": "0.16.9",
+  "rules": [
+    {
+      "id": "B006",
+      "shortDescription": "Do not use mutable data structures for argument defaults",
+      "helpUri": "https://docs.astral.sh/ruff/rules/mutable-argument-default",
+      "defaultSeverity": "medium",
+      "quality": "reliability",
+      "kind": "issue"
+    },
+    {
+      "id": "E711",
+      "shortDescription": "Comparison to `None` should be `cond is None`",
+      "helpUri": "https://docs.astral.sh/ruff/rules/none-comparison",
+      "defaultSeverity": "low",
+      "quality": "maintainability",
+      "kind": "issue"
+    },
+    {
+      "id": "F401",
+      "shortDescription": "`{name}` imported but unused; consider using `importlib.util.find_spec` to test for availability",
+      "helpUri": "https://docs.astral.sh/ruff/rules/unused-import",
+      "defaultSeverity": "medium",
+      "quality": "reliability",
+      "kind": "issue"
+    },
+    {
+      "id": "S324",
+      "shortDescription": "Probable use of insecure hash functions in `{library}`: `{string}`",
+      "helpUri": "https://docs.astral.sh/ruff/rules/hashlib-insecure-hash-function",
+      "defaultSeverity": "medium",
+      "quality": "security",
+      "kind": "issue"
+    },
+    {
+      "id": "S602",
+      "shortDescription": "`subprocess` call with `shell=True` seems safe, but may be changed in the future; consider rewriting without `shell`",
+      "helpUri": "https://docs.astral.sh/ruff/rules/subprocess-popen-with-shell-equals-true",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue"
+    },
+    {
+      "id": "S608",
+      "shortDescription": "Possible SQL injection vector through string-based query construction",
+      "helpUri": "https://docs.astral.sh/ruff/rules/hardcoded-sql-expression",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue"
+    }
+  ],
+  "findings": [
+    {
+      "engineId": "ruff",
+      "ruleId": "F401",
+      "message": "`os` imported but unused",
+      "severity": "medium",
+      "location": {
+        "path": "app/store.py",
+        "startLine": 3,
+        "startColumn": 8,
+        "endLine": 3,
+        "endColumn": 9
+      },
+      "lineHash": "0bc74ae3e502004a66c48e315b284bdd",
+      "contextHash": "1c4a35e7dfcbf4c5a0115c15a468245a",
+      "snippet": {
+        "startLine": 1,
+        "lines": [
+          "\"\"\"Order storage helpers.\"\"\"",
+          "import hashlib",
+          "import os",
+          "import subprocess",
+          "",
+          ""
+        ]
+      }
+    },
+    {
+      "engineId": "ruff",
+      "ruleId": "S608",
+      "message": "Possible SQL injection vector through string-based query construction",
+      "severity": "high",
+      "location": {
+        "path": "app/store.py",
+        "startLine": 9,
+        "startColumn": 13,
+        "endLine": 9,
+        "endColumn": 61
+      },
+      "lineHash": "d5f9572bde4775ec04f3f67fbe0e86a7",
+      "contextHash": "a9470840c3b451f0972cd136e03351b1",
+      "snippet": {
+        "startLine": 6,
+        "lines": [
+          "",
+          "# Queries are built by hand here on purpose (the fixture's S608).",
+          "def find_order(cursor, order_id):",
+          "    query = \"SELECT * FROM orders WHERE id = '%s'\" % order_id",
+          "    cursor.execute(query)",
+          "    return cursor.fetchone()",
+          ""
+        ]
+      }
+    },
+    {
+      "engineId": "ruff",
+      "ruleId": "S324",
+      "message": "Probable use of insecure hash functions in `hashlib`: `md5`",
+      "severity": "medium",
+      "location": {
+        "path": "app/store.py",
+        "startLine": 15,
+        "startColumn": 12,
+        "endLine": 15,
+        "endColumn": 22
+      },
+      "lineHash": "1fcd713d0fb0570f96408cb92992933e",
+      "contextHash": "9b330292375fc425b6d93b9d1d4c6983",
+      "snippet": {
+        "startLine": 12,
+        "lines": [
+          "",
+          "",
+          "def checksum(data):",
+          "    return hashlib.md5(data).hexdigest()",
+          "",
+          "",
+          "def archive(path):"
+        ]
+      }
+    },
+    {
+      "engineId": "ruff",
+      "ruleId": "S602",
+      "message": "`subprocess` call with `shell=True` identified, security issue",
+      "severity": "high",
+      "location": {
+        "path": "app/store.py",
+        "startLine": 19,
+        "startColumn": 5,
+        "endLine": 19,
+        "endColumn": 19
+      },
+      "lineHash": "abcb1b8aede930c2bfe34798a937edd3",
+      "contextHash": "1508fa021b5260a2ab3a248e3d7c11f4",
+      "snippet": {
+        "startLine": 16,
+        "lines": [
+          "",
+          "",
+          "def archive(path):",
+          "    subprocess.call(\"tar czf backup.tgz \" + path, shell=True)",
+          "",
+          "",
+          "class Store:"
+        ]
+      }
+    },
+    {
+      "engineId": "ruff",
+      "ruleId": "B006",
+      "message": "Do not use mutable data structures for argument defaults",
+      "severity": "medium",
+      "location": {
+        "path": "app/store.py",
+        "startLine": 25,
+        "startColumn": 30,
+        "endLine": 25,
+        "endColumn": 31
+      },
+      "lineHash": "038d20768ef973050663b50ebd1f3154",
+      "contextHash": "cc7c548c90bcceba387d5ba247e64c10",
+      "snippet": {
+        "startLine": 22,
+        "lines": [
+          "class Store:",
+          "    \"\"\"A tiny in-memory store.\"\"\"",
+          "",
+          "    def __init__(self, items=[]):",
+          "        self.items = items",
+          "",
+          "    def classify(self, total, member):"
+        ]
+      }
+    },
+    {
+      "engineId": "ruff",
+      "ruleId": "E711",
+      "message": "Comparison to `None` should be `cond is None`",
+      "severity": "low",
+      "location": {
+        "path": "app/store.py",
+        "startLine": 39,
+        "startColumn": 24,
+        "endLine": 39,
+        "endColumn": 27
+      },
+      "lineHash": "62d31b8b38ddb955cf4f66917658b67f",
+      "contextHash": "4e8a61f48e973ac298bf5c4ea354f11b",
+      "snippet": {
+        "startLine": 36,
+        "lines": [
+          "    def count(self, kind):",
+          "        n = 0",
+          "        for item in self.items:",
+          "            if item == None:",
+          "                continue",
+          "            n += 1 if item.kind == kind else 0",
+          "        return n"
+        ]
+      }
+    }
+  ],
+  "warnings": [],
+  "secretRegions": []
+}

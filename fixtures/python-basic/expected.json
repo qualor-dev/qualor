@@ -1,8 +1,15 @@
 {
-  "description": "Python repo: tree-sitter-python metrics; Ruff findings are added in plan 8C Task 7",
-  "engines": [],
-  "findingsExhaustive": false,
-  "findings": [],
+  "description": "Python repo: Ruff with qualor-default (F401, S608, S324, S602, B006, E711 in app/store.py; the test's assert is S101, which qualor-default leaves out) and tree-sitter-python metrics",
+  "engines": ["ruff"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "ruff:F401", "path": "app/store.py", "startLine": 3, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "ruff:S608", "path": "app/store.py", "startLine": 9, "severity": "high", "quality": "security" },
+    { "ruleKey": "ruff:S324", "path": "app/store.py", "startLine": 15, "severity": "medium", "quality": "security" },
+    { "ruleKey": "ruff:S602", "path": "app/store.py", "startLine": 19, "severity": "high", "quality": "security" },
+    { "ruleKey": "ruff:B006", "path": "app/store.py", "startLine": 25, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "ruff:E711", "path": "app/store.py", "startLine": 39, "severity": "low", "quality": "maintainability" }
+  ],
   "files": {
     "app/store.py": { "language": "python", "kind": "main", "lines": 51, "ncloc": 36, "commentLines": 3, "functions": 7, "classes": 1, "statements": 23, "complexity": 16, "cognitiveComplexity": 11 },
     "tests/test_store.py": { "language": "python", "kind": "test", "lines": 5, "ncloc": 3, "commentLines": 0, "functions": 1, "classes": 0, "statements": 2, "complexity": 1, "cognitiveComplexity": 0 }
@@ -14,6 +21,8 @@
     "app/store.py#statements": "3 imports; find_order 3; checksum 1; archive 1; __init__ 1; classify if + 3 returns = 4; count n=0, for, if, continue, n+=, return = 6; describe match + 3 returns = 4; total 23 (docstrings are not statements)",
     "app/store.py#complexity": "7 functions; classify if, and, elif, or = 4; count for, if, ?: = 3; describe case 1, case 2 | 3 = 2 (case _ adds nothing); total 16",
     "app/store.py#cognitiveComplexity": "classify: if +1, and +1, elif +1, or +1, else +1 = 5; count: for +1, nested if +2, ?: inside the for +2 = 5; describe: match +1; total 11",
-    "tests/test_store.py#metrics": "import (1), def (4), assert (5): ncloc 3, statements 2, 1 function"
+    "tests/test_store.py#metrics": "import (1), def (4), assert (5): ncloc 3, statements 2, 1 function",
+    "ruff#rules": "qualor-default: E4, E7, E9, F, B, PLE, S without S101, S110, S112, S311, S603, S606, S607, B008, B904, B905; tests/test_store.py's assert would be S101",
+    "ruff#severity": "report-format.md §7.1: S608 and S602 are in the high set; S324 security medium; F401 (suspicious) and B006 (suspicious) reliability medium; E711 (pedantic) maintainability low"
   }
 }
