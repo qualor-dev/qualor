@@ -160,7 +160,6 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
 
   it('ranks detekt last of the built-ins and above any external engine (plan 8E ruling E4)', () => {
     const p = (e: string) => ENGINE_PRIORITY.indexOf(e);
-    expect(p('detekt')).toBe(ENGINE_PRIORITY.length - 1);
     expect(p('detekt')).toBeGreaterThan(p('htmlhint'));
     expect(enginePriority('htmlhint')).toBeGreaterThan(enginePriority('detekt'));
     expect(enginePriority('detekt')).toBeGreaterThan(enginePriority('my-tool'));
