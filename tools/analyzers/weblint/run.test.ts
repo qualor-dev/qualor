@@ -247,6 +247,42 @@ describe.skipIf(!have)('stylelint.mjs', () => {
     );
     expect(p.status, p.stderr).toBe(0);
     expect(hits(p)).toEqual(['block-no-empty src/b.css:1']);
+    // files: linted (not ignored); listed: usable entries of the list (ruling D12)
+    expect(p.info).toMatchObject({ files: 2, listed: 4 });
+  });
+
+  // Ruling D12: stylelint rethrows everything but a CssSyntaxError.
+  // Balanced nesting 20,000 deep overflows the stack in declaration-block-no-duplicate-properties
+  // (a rule of stylelint-config-recommended, used alone to keep the test fast: the whole config
+  // spends seconds in no-duplicate-selectors first).
+  const DEEP = 'a{'.repeat(20000) + '}'.repeat(20000);
+  const BAD_MAP = 'a { color: red; }\n/*# sourceMappingURL=data:application/x-foo,zzz */\n';
+
+  it('counts and skips a file stylelint throws on (deep nesting, an undecodable source map), linting the rest', () => {
+    const root = repo({ 'deep.css': DEEP, 'map.css': BAD_MAP, 'ok.css': 'b {}\n' });
+    const p = stylelint(root, ['deep.css', 'map.css', 'ok.css'], {
+      rules: { 'declaration-block-no-duplicate-properties': true, 'block-no-empty': true },
+    });
+    expect(p.status, p.stderr).toBe(0);
+    expect(hits(p)).toEqual(['block-no-empty ok.css:1']);
+    expect(p.info).toMatchObject({ files: 3, listed: 3, parseErrors: 2 });
+    expect(p.stderr).toContain('deep.css not linted');
+    expect(p.stderr).toContain('map.css not linted');
+  });
+
+  it('exits 2 when stylelint throws on every file it lints', () => {
+    const root = repo({ 'map.css': BAD_MAP, 'map2.css': BAD_MAP });
+    const p = stylelint(root, ['map.css', 'map2.css'], {
+      extends: ['stylelint-config-recommended'],
+    });
+    expect(p.status).toBe(2);
+  });
+
+  it("exits 2 on stylelint's ConfigurationError, however many files there are", () => {
+    const root = repo({ 'a.css': 'a {}\n', 'b.css': 'b {}\n' });
+    const p = stylelint(root, ['a.css', 'b.css'], {}); // "No rules found within configuration"
+    expect(p.status).toBe(2);
+    expect(p.stderr).toContain('ConfigurationError');
   });
 
   it('refuses an ignore file outside the root', () => {
@@ -297,6 +333,7 @@ describe.skipIf(!have)('stylelint.mjs', () => {
     [{ processors: ['x'] }],
     [{ referenceFiles: ['a.css'] }],
     [{ overrides: [{ files: ['*.css'], referenceFiles: ['a.css'] }] }],
+    [{ overrides: [{ files: ['*.css'], overrides: [{ files: ['*.css'], rules: {} }] }] }],
   ])('refuses %j with exit 2 and runs nothing', (config) => {
     const root = repo({
       'a.css': 'a {}\n',
@@ -526,7 +563,12 @@ describe.skipIf(!have)('htmlhint.mjs', () => {
     const p = htmlhint(root, ['a.html', 'b.html']);
     expect(p.status, p.stderr).toBe(0);
     expect(hits(p)).toEqual(['tag-pair b.html:1']);
-    expect(p.info).toEqual({ files: 2, parseErrors: 1 });
+    expect(p.info).toEqual({ files: 2, listed: 2, parseErrors: 1 });
+  });
+
+  it('exits 2 when HTMLHint throws on every file', () => {
+    const root = repo({ 'a.html': '<!-- htmlhint constructor:true -->\n<div>\n' });
+    expect(htmlhint(root, ['a.html']).status).toBe(2);
   });
 
   it('reports a repeated message on one line once', () => {

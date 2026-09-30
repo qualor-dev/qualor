@@ -11,8 +11,13 @@
 // writes to the checkout (`fix: false`, `cache: false`).
 //   node stylelint.mjs --root <dir> --out <file.sarif> --files <list.json> --config <config.json>
 //                      [--ignore-file <path>]
-// Prints one JSON line {"files":N,"parseErrors":N,"unknownRules":[...],"invalidOptions":N}.
-// Exit 0 whenever the log is written, 2 on any error, a refused configuration included.
+// Prints one JSON line
+//   {"files":N,"listed":N,"parseErrors":N,"unknownRules":[...],"invalidOptions":N}:
+// files counts the files linted (listed, and not ignored by .stylelintignore or ignoreFiles),
+// listed the usable entries of the --files list; parseErrors counts the linted files that did not
+// parse or that stylelint threw on (skipped, ruling D12).
+// Exit 0 whenever the log is written, 2 on any error: a refused configuration, a stylelint
+// ConfigurationError, or a throw on every file linted.
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -31,6 +36,7 @@ import {
   region,
   required,
   run,
+  stderr,
   uriOf,
 } from './files.mjs';
 
@@ -59,13 +65,14 @@ export function resolveBundled(config, resolve = bundledPath) {
     const paths = list.map(resolve);
     return typeof value === 'string' ? paths[0] : paths;
   };
-  const block = (c) => {
+  const block = (c, nested = false) => {
     if (c === null || typeof c !== 'object' || Array.isArray(c)) {
       throw new Error('a stylelint config must be an object');
     }
     for (const key of ['processors', 'referenceFiles']) {
       if (key in c) throw new Error(`refusing ${key}`);
     }
+    if (nested && 'overrides' in c) throw new Error('refusing overrides inside an override');
     const out = structuredClone(c);
     if ('extends' in c) out.extends = names(c.extends, 'extends');
     if ('plugins' in c) out.plugins = names(c.plugins, 'plugins');
@@ -80,7 +87,7 @@ export function resolveBundled(config, resolve = bundledPath) {
   const top = block(config);
   if ('overrides' in config) {
     if (!Array.isArray(config.overrides)) throw new Error('overrides must be a list');
-    top.overrides = config.overrides.map(block);
+    top.overrides = config.overrides.map((o) => block(o, true));
   }
   return top;
 }
@@ -138,21 +145,37 @@ async function main(args) {
   const unknownRules = new Set();
   const invalidOptions = new Set();
   let parseErrors = 0;
+  let linted = 0;
+  let threw = 0;
   for (const file of files) {
     if (ignored(file)) continue;
-    const {
-      results: [res],
-    } = await stylelint.lint({
-      code: readFileSync(file, 'utf8'),
-      codeFilename: file,
-      config: structuredClone(config),
-      configBasedir: root,
-      cwd: here,
-      cache: false,
-      fix: false,
-      allowEmptyInput: true,
-    });
+    let res;
+    try {
+      ({
+        results: [res],
+      } = await stylelint.lint({
+        code: readFileSync(file, 'utf8'),
+        codeFilename: file,
+        config: structuredClone(config),
+        configBasedir: root,
+        cwd: here,
+        cache: false,
+        fix: false,
+        allowEmptyInput: true,
+      }));
+    } catch (err) {
+      // stylelint turns only a CssSyntaxError into a warning and rethrows the rest. A problem of
+      // the configuration fails the pass; one file's own (a nesting depth that overflows the
+      // stack, a source map PostCSS cannot decode) is counted and skipped (ruling D12).
+      if (err?.name === 'ConfigurationError') throw err;
+      linted += 1;
+      threw += 1;
+      parseErrors += 1;
+      stderr(`stylelint: ${uriOf(root, file)} not linted: ${err?.message ?? err}\n`);
+      continue;
+    }
     if (res === undefined || res.ignored) continue;
+    linted += 1;
     for (const w of res.invalidOptionWarnings ?? []) invalidOptions.add(w.text);
     let broken = false;
     for (const w of res.warnings) {
@@ -183,6 +206,10 @@ async function main(args) {
     if (broken) parseErrors += 1;
   }
 
+  if (threw > 0 && threw === linted) {
+    throw new Error(`stylelint failed on every file it linted (${threw})`);
+  }
+
   const rules = [...used].sort().map((id) => ({
     id,
     name: id,
@@ -206,7 +233,7 @@ async function main(args) {
     }),
   );
   process.stdout.write(
-    `${JSON.stringify({ files: files.length, parseErrors, unknownRules: [...unknownRules].sort(), invalidOptions: invalidOptions.size })}\n`,
+    `${JSON.stringify({ files: linted, listed: files.length, parseErrors, unknownRules: [...unknownRules].sort(), invalidOptions: invalidOptions.size })}\n`,
   );
 }
 

@@ -2,10 +2,12 @@
 // resolved (the project's .htmlhintrc, or Qualor's set). Never HTMLHint's command line, which
 // searches for .htmlhintrc up to the filesystem root and loads JavaScript rules (--rulesdir).
 //   node htmlhint.mjs --root <dir> --out <file.sarif> --files <list.json> --rules <rules.json>
-// Prints one JSON line {"files":N,"parseErrors":N}; parseErrors counts the files HTMLHint threw
-// on (an in-file directive such as `<!-- htmlhint constructor:true -->` crashes it), which are
-// skipped, never the whole pass (ruling D11).
-// Exit 0 whenever the log is written, 2 on any error.
+// Prints one JSON line {"files":N,"listed":N,"parseErrors":N}: files counts the files linted,
+// listed the usable entries of the --files list (the same number: HTMLHint has no ignore file),
+// parseErrors the files HTMLHint threw on (an in-file directive such as
+// `<!-- htmlhint constructor:true -->` crashes it), which are skipped, never the whole pass
+// (ruling D11).
+// Exit 0 whenever the log is written, 2 on any error, a throw on every listed file included.
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,6 +80,9 @@ async function main(args) {
       });
     }
   }
+  if (files.length > 0 && parseErrors === files.length) {
+    throw new Error(`HTMLHint failed on every file (${parseErrors})`);
+  }
   const sarifRules = [...used.values()]
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((r) => ({
@@ -106,7 +111,9 @@ async function main(args) {
       ],
     }),
   );
-  process.stdout.write(`${JSON.stringify({ files: files.length, parseErrors })}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ files: files.length, listed: files.length, parseErrors })}\n`,
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
