@@ -1,0 +1,13 @@
+/* Repositories (step 11): each project's connection and repository, as fields in its row. */
+.conn-cell select {
+  width: 18rem;
+  max-width: 100%;
+}
+.ref-cell input {
+  width: 16rem;
+  max-width: 100%;
+}
+.ref-cell :is(.hint, .field-error) {
+  display: block;
+  margin-top: 4px;
+}

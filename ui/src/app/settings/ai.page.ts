@@ -8,14 +8,18 @@ import {
   ElementRef,
   inject,
   Injector,
+  resource,
   signal,
   untracked,
   viewChild,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf, Organization, RequestBody, ResponseBody } from '../api/types';
 import { SessionStore } from '../auth/session';
+import { Meter } from '../charts/meter';
+import { OrgContext } from '../org/org-context';
 import { inputValue, isChecked } from '../shared/forms';
 import { llmProblemText } from './ai-text';
 
@@ -87,10 +91,16 @@ const PROJECT_PAGES = 20;
  * shown), each organisation's enablement and features, the excluded paths, the budgets (the fix
  * budget capped at this edition's ceiling, enterprise.md §7.2), prices, prompt storage, and a Test of the saved
  * provider. Refusals and test problems are shown in the page's own words (plan 1F ruling Y3).
+ *
+ * Step 8 of the redesign (spec §7.8): today's use of the current organisation against its budgets
+ * as meters (`GET /organizations/{id}/ai`; a failed read leaves an alert in its panel), then the
+ * settings in setting rows, panel by panel; the fields keep their ids.
  */
 @Component({
   selector: 'q-ai-settings-page',
+  imports: [Meter, RouterLink],
   templateUrl: './ai.page.html',
+  styleUrl: './ai.page.css',
 })
 export class AiSettingsPage {
   private readonly api = inject(Api);
@@ -98,7 +108,31 @@ export class AiSettingsPage {
   private readonly document = inject(DOCUMENT);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly session = inject(SessionStore);
+  protected readonly org = inject(OrgContext);
   protected readonly instanceAdmin = computed(() => this.session.user()?.isInstanceAdmin === true);
+  /** Today's use and the budgets of the organisation chosen in the header (llm.md §12.1). */
+  protected readonly today = resource({
+    params: () => (this.instanceAdmin() ? (this.org.currentId() ?? undefined) : undefined),
+    loader: ({ params }) =>
+      ok(
+        this.api.client.GET('/api/v0/organizations/{id}/ai', { params: { path: { id: params } } }),
+      ),
+  });
+  protected readonly todayValue = computed(() =>
+    this.today.hasValue() ? this.today.value() : null,
+  );
+  /** Whether today's token or cost budget is spent: every feature waits then, not only one. */
+  protected readonly budgetHold = computed(() => {
+    const t = this.todayValue();
+    if (!t?.enabled) return false;
+    const { tokensPerDay, costPerDayUsd } = t.budgets;
+    const cost = t.usage.costUsd;
+    // A budget of 0 allows none (its meter says so): nothing waits for midnight then.
+    return (
+      (tokensPerDay !== null && tokensPerDay > 0 && t.usage.tokens >= tokensPerDay) ||
+      (costPerDayUsd !== null && costPerDayUsd > 0 && cost !== null && cost >= costPerDayUsd)
+    );
+  });
 
   protected readonly settings = signal<Settings | null>(null);
   protected readonly organizations = signal<Organization[]>([]);
@@ -300,6 +334,8 @@ export class AiSettingsPage {
       async () => {
         const saved = await ok(this.api.client.PUT('/api/v0/system/llm', { body }));
         this.fill(saved);
+        // Budgets and the organisation's switch may have changed: the meters read them again.
+        this.today.reload();
         this.announcement.set(
           $localize`:@@ai.settings.saved:The AI assistant settings were saved.`,
         );

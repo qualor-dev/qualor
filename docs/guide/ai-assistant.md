@@ -184,10 +184,13 @@ and day (UTC)**:
 | Estimated cost in US dollars | off. It needs the model's prices per million tokens, which you enter |
 | Requests per person | 30 an hour, all features together |
 
+The top of the page shows today's use of the organisation chosen in the header against these
+budgets, one meter per budget, and says when a budget is reached for the day.
+
 **The community edition allows at most 25 fix suggestions per organisation per day**, whatever the
 fix budget says. Posting a suggestion to a merge request does not count again. Explanations and
 triage have no community ceiling: your budgets apply, since it is your key. With an
-[enterprise licence](./enterprise.md) your fix budget is the only limit. The hint under the field
+[enterprise licence](./enterprise.md) your fix budget is the only limit. The text beside the field
 says the ceiling of the edition the server runs as.
 
 If a licence lapses, a fix budget above 25 that you saved stays saved: the ceiling of 25 applies
@@ -254,7 +257,7 @@ Today's use and budgets for an organisation are at `GET /api/v0/organizations/{i
 | "The request was interrupted; ask again" | the server restarted, or the request failed unexpectedly, while it ran |
 | "Not posted: the merge request has a newer commit" | analyse the latest commit, then ask for a new fix |
 | "Not posted: the lines are not added lines of the merge request" / "the code on the merge request differs" | suggestions can only replace lines the merge request added, unchanged. Fix it by hand |
-| "The project is not mapped to GitLab or GitHub" | map it in **Settings → GitLab** or **GitHub** ([GitLab](./gitlab.md), [GitHub](./github.md)) |
+| "The project is not mapped to GitLab or GitHub" | map it in **Settings → Repositories** ([GitLab](./gitlab.md), [GitHub](./github.md)) |
 
 Error codes in the API: `AI_DISABLED` (409), `AI_NOT_ELIGIBLE` (409, with the reason in `detail`),
 `AI_POST_NOT_POSSIBLE` (409, with the reason in `detail`), `AI_QUOTA_EXCEEDED` (429 with

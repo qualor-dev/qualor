@@ -1,52 +1,211 @@
-<h1 i18n="@@settings.title">Settings</h1>
-<nav class="tabs" aria-label="Settings" i18n-aria-label="@@settings.tabs">
-  <a routerLink="tokens" routerLinkActive="active" i18n="@@settings.tab.tokens">Access tokens</a>
-  @if (linkedAccounts()) {
-    <a
-      routerLink="ee/linked-accounts"
-      routerLinkActive="active"
-      i18n="@@settings.tab.linkedAccounts"
-      >Linked accounts</a
-    >
-  }
-  @if (instanceAdmin()) {
-    <a routerLink="users" routerLinkActive="active" i18n="@@settings.tab.users">Users</a>
-    <a routerLink="ai" routerLinkActive="active" i18n="@@settings.tab.ai">AI assistant</a>
-    <a routerLink="license" routerLinkActive="active" i18n="@@settings.tab.license">Licence</a>
-  }
-  @if (auditLog()) {
-    <a routerLink="ee/audit-log" routerLinkActive="active" i18n="@@settings.tab.auditLog"
-      >Audit log</a
-    >
-  }
-  @if (auditSettings()) {
-    <a routerLink="ee/audit-settings" routerLinkActive="active" i18n="@@settings.tab.auditSettings"
-      >Audit settings</a
-    >
-  }
-  @if (sso()) {
-    <a routerLink="ee/sso" routerLinkActive="active" i18n="@@settings.tab.sso">Single sign-on</a>
-  }
-  @if (signIn()) {
-    <a routerLink="ee/sign-in" routerLinkActive="active" i18n="@@settings.tab.signIn">Sign-in</a>
-  }
-  @if (scim()) {
-    <a routerLink="ee/scim" routerLinkActive="active" i18n="@@settings.tab.scim">SCIM</a>
-  }
-  @if (instanceAdmin()) {
-    @for (e of otherExtensions(); track e.id) {
-      <a [routerLink]="['ee', e.id]" routerLinkActive="active">{{ e.label }}</a>
+<q-page-header [compact]="true">
+  <h1 pageTitle i18n="@@settings.title">Settings</h1>
+</q-page-header>
+
+<div class="page-body settings-layout">
+  <nav class="settings-nav" aria-label="Settings" i18n-aria-label="@@settings.tabs">
+    <div class="nav-group" role="group" aria-labelledby="settings-group-account">
+      <span id="settings-group-account" class="nav-group-title" i18n="@@settings.group.account"
+        >Your account</span
+      >
+      <ul>
+        <li>
+          <a
+            routerLink="tokens"
+            routerLinkActive="active"
+            ariaCurrentWhenActive="page"
+            i18n="@@settings.tab.tokens"
+            >Access tokens</a
+          >
+        </li>
+        @if (linkedAccounts()) {
+          <li>
+            <a
+              routerLink="ee/linked-accounts"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+              i18n="@@settings.tab.linkedAccounts"
+              >Linked accounts</a
+            >
+          </li>
+        }
+      </ul>
+    </div>
+    @if (organization()) {
+      <div class="nav-group" role="group" aria-labelledby="settings-group-organization">
+        <span
+          id="settings-group-organization"
+          class="nav-group-title"
+          i18n="@@settings.group.organization"
+          >Organization</span
+        >
+        <ul>
+          @if (org.can('org.members.read')) {
+            <li>
+              <a
+                routerLink="members"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.members"
+                >Members</a
+              >
+            </li>
+          }
+          @if (org.can('org.webhooks.manage')) {
+            <li>
+              <a
+                routerLink="webhooks"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.webhooks"
+                >Webhooks</a
+              >
+            </li>
+          }
+          @if (org.can('org.scm.manage')) {
+            <li>
+              <a
+                routerLink="gitlab"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.gitlab"
+                >GitLab</a
+              >
+            </li>
+            <li>
+              <a
+                routerLink="github"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.github"
+                >GitHub</a
+              >
+            </li>
+            <li>
+              <a
+                routerLink="repositories"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.repositories"
+                >Repositories</a
+              >
+            </li>
+          }
+          @if (auditLog()) {
+            <li>
+              <a
+                routerLink="ee/audit-log"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.auditLog"
+                >Audit log</a
+              >
+            </li>
+          }
+        </ul>
+      </div>
     }
-  }
-  @if (org.can('org.members.read')) {
-    <a routerLink="members" routerLinkActive="active" i18n="@@settings.tab.members">Members</a>
-  }
-  @if (org.can('org.webhooks.manage')) {
-    <a routerLink="webhooks" routerLinkActive="active" i18n="@@settings.tab.webhooks">Webhooks</a>
-  }
-  @if (org.can('org.scm.manage')) {
-    <a routerLink="gitlab" routerLinkActive="active" i18n="@@settings.tab.gitlab">GitLab</a>
-    <a routerLink="github" routerLinkActive="active" i18n="@@settings.tab.github">GitHub</a>
-  }
-</nav>
-<router-outlet />
+    @if (instanceAdmin()) {
+      <div class="nav-group" role="group" aria-labelledby="settings-group-instance">
+        <span id="settings-group-instance" class="nav-group-title" i18n="@@settings.group.instance"
+          >Instance</span
+        >
+        <ul>
+          <li>
+            <a
+              routerLink="organizations"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+              i18n="@@settings.tab.organizations"
+              >Organizations</a
+            >
+          </li>
+          <li>
+            <a
+              routerLink="users"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+              i18n="@@settings.tab.users"
+              >Users</a
+            >
+          </li>
+          @if (sso()) {
+            <li>
+              <a
+                routerLink="ee/sso"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.sso"
+                >Single sign-on</a
+              >
+            </li>
+          }
+          @if (signIn()) {
+            <li>
+              <a
+                routerLink="ee/sign-in"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.signIn"
+                >Sign-in</a
+              >
+            </li>
+          }
+          @if (scim()) {
+            <li>
+              <a
+                routerLink="ee/scim"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.scim"
+                >SCIM</a
+              >
+            </li>
+          }
+          <li>
+            <a
+              routerLink="ai"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+              i18n="@@settings.tab.ai"
+              >AI assistant</a
+            >
+          </li>
+          @if (auditSettings()) {
+            <li>
+              <a
+                routerLink="ee/audit-settings"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.auditSettings"
+                >Audit settings</a
+              >
+            </li>
+          }
+          <li>
+            <a
+              routerLink="license"
+              routerLinkActive="active"
+              ariaCurrentWhenActive="page"
+              i18n="@@settings.tab.license"
+              >Licence</a
+            >
+          </li>
+          @for (e of otherExtensions(); track e.id) {
+            <li>
+              <a
+                [routerLink]="['ee', e.id]"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                >{{ e.label }}</a
+              >
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  </nav>
+  <div class="settings-content">
+    <router-outlet />
+  </div>
+</div>

@@ -1,0 +1,19 @@
+:host {
+  display: block;
+  line-height: 0;
+}
+svg {
+  overflow: visible;
+}
+.spark-line {
+  fill: none;
+  stroke: var(--chart-spark);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.spark-end {
+  fill: var(--chart-accent);
+  stroke: var(--surface);
+  stroke-width: 2;
+}

@@ -17,6 +17,7 @@ import { ApiError, fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
 import { SessionStore } from '../auth/session';
 import { SystemInfo } from '../shell/system-info';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { isChecked } from '../shared/forms';
 import { ssoProblem } from './sso-settings-text';
@@ -51,10 +52,15 @@ interface Candidate {
  * deactivated (409 `LAST_BREAK_GLASS_ADMIN`). An admin who saves the limit without being listed is
  * warned that they will sign in with SSO from then on. While QUALOR_FORCE_PASSWORD_SIGN_IN is set
  * (`forced`), a note says the setting waits until it is removed.
+ *
+ * Step 9 of the redesign (spec §7.8): the choice and the picker in setting rows, the rules in a
+ * panel below; limiting password sign-in asks in the page's dialog instead of the browser's
+ * `confirm()`, with the same question.
  */
 @Component({
   selector: 'q-sign-in-settings-page',
   templateUrl: './sign-in.page.html',
+  styleUrl: './sign-in.page.css',
 })
 export class SignInSettingsPage {
   private readonly ee = inject(EeApi);
@@ -88,7 +94,10 @@ export class SignInSettingsPage {
     const me = this.session.user()?.id;
     return this.policy() === 'break_glass_only' && me !== undefined && !this.selected().has(me);
   });
+  /** The limit the dialog asks about, with the administrators picked; null while it is closed. */
+  protected readonly pendingLimit = signal<{ question: string; ids: string[] } | null>(null);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
 
   constructor() {
     effect(() => {
@@ -202,9 +211,42 @@ export class SignInSettingsPage {
         .filter((c) => this.selected().has(c.id))
         .map((c) => c.username)
         .join(', ');
-      const question = $localize`:@@signIn.confirmLimit:Limit password sign-in? Only these administrators will be able to sign in with a password: ${names}:names:. Everyone else signs in with single sign-on.`;
-      if (!window.confirm(question)) return;
+      this.pendingLimit.set({
+        question: $localize`:@@signIn.confirmLimit:Limit password sign-in? Only these administrators will be able to sign in with a password: ${names}:names:. Everyone else signs in with single sign-on.`,
+        ids,
+      });
+      openAfterRender(
+        this.injector,
+        () => this.confirmDialog()?.nativeElement,
+        () => this.pendingLimit() !== null,
+      );
+      return;
     }
+    await this.applySave(ids);
+  }
+
+  protected async confirmLimit(): Promise<void> {
+    const pending = this.pendingLimit();
+    if (!pending) return;
+    // Cleared first: the dialog's close event then finds nothing to cancel.
+    this.pendingLimit.set(null);
+    this.closeConfirm();
+    await this.applySave(pending.ids);
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing is saved. */
+  protected cancelLimit(): void {
+    this.pendingLimit.set(null);
+    this.closeConfirm();
+  }
+
+  private closeConfirm(): void {
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog?.open) closeModal(dialog);
+  }
+
+  private async applySave(ids: string[]): Promise<void> {
+    if (this.busy()) return;
     await this.run(async () => {
       try {
         const saved = await ok(

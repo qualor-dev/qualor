@@ -12,15 +12,23 @@
   color-scheme: light dark;
   --font: 'Schibsted Grotesk Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
-  --space-12: 3rem;
+  /* Spacing in px, not rem: a root font change must not skew the grid. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --content-max: 1360px;
+  --gutter: 40px;
+  /* Where sticky parts stop: under the sticky header (60px) with a gap. */
+  --sticky-top: 72px;
 
   /* The ink surfaces (header, sign-in panel, bands) stay dark in both schemes, as on the site. */
   --ink: #0a1b33;
@@ -36,6 +44,8 @@
   --surface-2: #f0f4fa;
   --border: #d7e0ec;
   --border-strong: #b9c7da;
+  /* The border of a form field: 3:1 on every surface a field sits on (WCAG 1.4.11). */
+  --control-border: #7d8da1;
   --text: #0a1b33;
   --text-muted: #4a5b73;
   --accent: #1f5fbf;
@@ -53,8 +63,32 @@
   --warn: #8a5a00;
   --warn-soft: #fcf0d6;
   --neutral-soft: #e8edf4;
+  --hairline: #e6ecf3;
+  --text-2: #33455f;
   --shadow: 0 1px 2px rgb(10 27 51 / 0.05), 0 8px 24px -12px rgb(10 27 51 / 0.14);
   --shadow-lift: 0 1px 2px rgb(10 27 51 / 0.06), 0 14px 32px -14px rgb(10 27 51 / 0.24);
+  --shadow-panel: 0 1px 2px rgb(10 27 51 / 0.04);
+
+  /* Charts (spec §3.1): colour is data; the chrome around it stays quiet. */
+  --chart-accent: #1f5fbf;
+  --chart-track: #e8effa;
+  --chart-grid: #e9eef5;
+  --chart-baseline: #c7d2e0;
+  --chart-crosshair: #8ea3c0;
+  --chart-spark: #7e8fa6;
+  /* Severity: an ordered heat ramp (validated --ordinal: monotone L, steps >= 0.06, light end
+     >= 2:1), always shown with its label; dark mode flips it so info sits nearest the surface. */
+  --sev-blocker: #8e1712;
+  --sev-high: #b3261e;
+  --sev-medium: #cf5028;
+  --sev-low: #dc8428;
+  --sev-info: #aeb8c8;
+  /* Ratings A–E; the letter carries the meaning. */
+  --rating-a: #157a51;
+  --rating-b: #3d7520;
+  --rating-c: #8a5a00;
+  --rating-d: #a84a14;
+  --rating-e: #b3261e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,6 +98,7 @@
     --surface-2: #10284a;
     --border: #1e3a61;
     --border-strong: #2d5184;
+    --control-border: #56749e;
     --text: #e6eefa;
     --text-muted: #9fb2cc;
     --accent: #8db6f7;
@@ -71,7 +106,8 @@
     --accent-text: #07142a;
     --accent-soft: #14305a;
     --primary: #2a6fd6;
-    --primary-hover: #3b7fe3;
+    /* Darker on hover: white keeps 4.5:1 on it (a lighter blue would not). */
+    --primary-hover: #1f5fbf;
     --focus: #8db6f7;
     --ok: #5fd39c;
     --ok-soft: #0f3a2c;
@@ -80,8 +116,27 @@
     --warn: #f0c35a;
     --warn-soft: #3a2c0c;
     --neutral-soft: #173257;
+    --hairline: #183256;
+    --text-2: #c4d2e6;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
     --shadow-lift: 0 1px 2px rgb(0 0 0 / 0.35), 0 14px 32px -14px rgb(0 0 0 / 0.6);
+    --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.25);
+    --chart-accent: #6ea4f5;
+    --chart-track: #14305a;
+    --chart-grid: #183256;
+    --chart-baseline: #2d5184;
+    --chart-crosshair: #6f86a8;
+    --chart-spark: #56708f;
+    --sev-blocker: #ffa197;
+    --sev-high: #f47f5b;
+    --sev-medium: #bf7f35;
+    --sev-low: #8a7a5e;
+    --sev-info: #566b8c;
+    --rating-a: #5fd39c;
+    --rating-b: #a6d96a;
+    --rating-c: #f0c35a;
+    --rating-d: #ffab6e;
+    --rating-e: #ff8a80;
   }
 }
 
@@ -96,7 +151,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.55 var(--font);
+  font: 14px/1.5 var(--font);
   font-feature-settings: 'ss01';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -112,14 +167,15 @@ h3 {
   text-wrap: balance;
 }
 h1 {
-  font-size: 1.9rem;
+  font-size: 30px;
+  letter-spacing: -0.025em;
 }
 h2 {
-  font-size: 1.2rem;
+  font-size: 18px;
   letter-spacing: -0.01em;
 }
 h3 {
-  font-size: 1.02rem;
+  font-size: 15px;
   letter-spacing: -0.005em;
 }
 p {
@@ -161,6 +217,18 @@ img {
   color: var(--text-muted);
 }
 
+/* `q-icon`: 16px by default, the colour of its text. */
+.icon {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.icon svg {
+  width: 100%;
+  height: 100%;
+}
+
 .page-header {
   display: flex;
   flex-wrap: wrap;
@@ -177,9 +245,7 @@ img {
 .eyebrow {
   display: block;
   margin-bottom: var(--space-2);
-  font: 600 0.72rem/1 var(--mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font: 600 12.5px/1.2 var(--font);
   color: var(--text-muted);
 }
 .page-header h1 + code,
@@ -196,7 +262,7 @@ img {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  font-size: 0.875rem;
+  font-size: 13.5px;
   font-weight: 550;
   text-decoration: none;
 }
@@ -219,12 +285,14 @@ img {
   align-items: center;
 }
 
+/* A panel: hairline border, 12px radius, barely lifted (spec §5). `.card` pads its content; a
+   `.panel` has a head, a body and a foot that pad themselves. */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-6);
-  box-shadow: var(--shadow);
+  padding: 22px;
+  box-shadow: var(--shadow-panel);
 }
 .card > :last-child {
   margin-bottom: 0;
@@ -232,6 +300,66 @@ img {
 .card h2,
 .card h3 {
   margin-bottom: var(--space-4);
+  font-size: 15px;
+  font-weight: 650;
+}
+.card.panel {
+  padding: 0;
+}
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  padding: 18px 22px 0;
+}
+.card .panel-head h2 {
+  margin: 0;
+}
+.panel-sub {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 450;
+}
+.panel-body {
+  padding: 16px 22px 20px;
+}
+/* A table straight inside a panel lines up with the panel's padding. */
+.card.panel > table,
+.card.panel > .panel-scroll {
+  margin-top: 10px;
+}
+.card.panel > table :is(th, td):first-child,
+.card.panel > .panel-scroll > table :is(th, td):first-child {
+  padding-left: 22px;
+}
+.card.panel > table :is(th, td):last-child,
+.card.panel > .panel-scroll > table :is(th, td):last-child {
+  padding-right: 22px;
+}
+/* An alert inside a panel, clear of its edges (.alert alone would set the page's margins). */
+.alert.panel-alert {
+  margin: 16px 22px;
+}
+.panel-foot {
+  padding: 12px 22px;
+  border-top: 1px solid var(--hairline);
+  font-size: 13px;
+  font-weight: 600;
+}
+.panel-foot a {
+  text-decoration: none;
+}
+.panel-foot a:hover {
+  text-decoration: underline;
+}
+/* A wide table inside a panel scrolls sideways instead of widening the page. */
+.panel-scroll {
+  /* Contains the absolutely positioned visually-hidden labels, which would widen the page. */
+  position: relative;
+  overflow-x: auto;
 }
 
 .grid-cards {
@@ -271,7 +399,7 @@ form.card > label.row {
 }
 /* A gate's status next to its heading: larger than a table badge. */
 .page-header > q-gate-badge .badge {
-  font-size: 0.875rem;
+  font-size: 13.5px;
   padding: 0.25rem 0.8rem;
 }
 /* Tables of the same kind, one per group, share their column widths. */
@@ -300,13 +428,13 @@ form.card > label.row {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 2.25rem;
-  padding: 0 var(--space-4);
+  min-height: 34px;
+  padding: 0 14px;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  font: 600 0.875rem/1 var(--font);
+  font: 600 13.5px/1 var(--font);
   letter-spacing: 0.005em;
   cursor: pointer;
   text-decoration: none;
@@ -357,6 +485,52 @@ form.card > label.row {
   background: var(--bad-soft);
   border-color: var(--bad);
 }
+/* A quiet button (spec §5): text only, for row actions at a table's right edge; .danger in red. */
+.btn-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-quiet:hover {
+  background: var(--surface-2);
+}
+.btn-quiet[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-quiet[aria-disabled='true']:hover {
+  background: none;
+}
+.btn-quiet.danger {
+  color: var(--bad);
+}
+.btn-quiet.danger:not([aria-disabled='true']):hover {
+  background: var(--bad-soft);
+}
+/* The confirming button of a destructive dialog: the same dark red in both schemes. */
+.btn-danger-solid {
+  border-color: #b3261e;
+  background: #b3261e;
+  color: #fff;
+}
+.btn-danger-solid:hover {
+  border-color: #9c1f18;
+  background: #9c1f18;
+}
+.btn-danger-solid[aria-disabled='true'],
+.btn-danger-solid[aria-disabled='true']:hover {
+  border-color: #b3261e;
+  background: #b3261e;
+}
 .btn-link {
   border: 0;
   background: none;
@@ -368,6 +542,48 @@ form.card > label.row {
   text-decoration: underline;
   text-underline-offset: 0.2em;
   cursor: pointer;
+}
+
+/* A floating action bar (spec §7.4's bulk bar): on ink, over the page's bottom edge, so opening it
+   never moves the content under the pointer. */
+.float-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  width: min(60rem, calc(100vw - 32px));
+  margin: 0;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-lg);
+  background: var(--ink);
+  color: var(--ink-text);
+  box-shadow: 0 18px 48px -16px rgb(10 27 51 / 0.6);
+  transform: translateX(-50%);
+}
+.float-bar .label {
+  color: var(--ink-text);
+}
+.float-bar select,
+.float-bar input:not([type]) {
+  border-color: var(--ink-line);
+  background-color: var(--ink-2);
+  color: var(--ink-text);
+}
+.float-bar input::placeholder {
+  color: var(--ink-muted);
+}
+.float-bar .btn:not(.btn-primary) {
+  border-color: var(--ink-line);
+  background: transparent;
+  color: var(--ink-text);
+}
+.float-bar .hint {
+  color: var(--ink-muted);
 }
 
 /* Form fields */
@@ -382,20 +598,20 @@ form.card > label.row {
 .field label,
 .label {
   font-weight: 600;
-  font-size: 0.8125rem;
+  font-size: 13px;
   color: var(--text);
 }
 input,
 select,
 textarea {
   font: inherit;
-  font-size: 0.9375rem;
+  font-size: 14px;
   color: var(--text);
   background: var(--surface);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
-  min-height: 2.5rem;
+  min-height: 36px;
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
@@ -443,15 +659,17 @@ textarea {
   min-height: 5rem;
   resize: vertical;
 }
-input[type='checkbox'] {
+/* A checkbox or a radio: the size of a line of text, not of a text field. */
+input:is([type='checkbox'], [type='radio']) {
   min-height: 0;
   width: 1.05rem;
   height: 1.05rem;
   margin: 0;
+  padding: 0;
   accent-color: var(--accent);
   cursor: pointer;
 }
-input[type='checkbox']:disabled {
+input:is([type='checkbox'], [type='radio']):disabled {
   cursor: not-allowed;
 }
 input[readonly] {
@@ -463,12 +681,14 @@ label.row {
 }
 .field-error {
   color: var(--bad);
-  font-size: 0.8125rem;
+  font-size: 13px;
   font-weight: 550;
+  /* It may quote a name without a break point ("a.very.long.user_name"). */
+  overflow-wrap: anywhere;
 }
 .hint {
   color: var(--text-muted);
-  font-size: 0.8125rem;
+  font-size: 13px;
 }
 
 /* A row of controls above a list: search, filters, sort. */
@@ -516,6 +736,8 @@ h3.subhead {
   margin: 0 0 var(--space-4);
   border: 1px solid var(--border);
   border-left-width: 4px;
+  /* It may quote a name without a break point: it wraps rather than widen the page. */
+  overflow-wrap: anywhere;
 }
 .table-wrap + .hint,
 .table-wrap + p {
@@ -545,7 +767,8 @@ h3.subhead {
   background: var(--warn-soft);
   border-bottom: 1px solid var(--warn);
   color: var(--text);
-  padding: var(--space-2) var(--space-6);
+  /* Its words start where the content column does, like the top bar's. */
+  padding: var(--space-2) max(var(--gutter), calc((100% - var(--content-max)) / 2));
 }
 .license-banner-bad {
   background: var(--bad-soft);
@@ -569,7 +792,7 @@ dl.facts {
 }
 dl.facts dt {
   font-weight: 600;
-  font-size: 0.8125rem;
+  font-size: 13px;
   color: var(--text-muted);
 }
 dl.facts dd {
@@ -624,20 +847,33 @@ table {
 th,
 td {
   text-align: left;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hairline);
   vertical-align: middle;
 }
+/* Sentence case, quiet: the header row names the columns, it does not shout them. */
 thead th {
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 12.5px;
   color: var(--text-muted);
-  font-weight: 650;
-  background: var(--surface-2);
+  font-weight: 550;
+  background: transparent;
   white-space: nowrap;
-  padding-top: var(--space-2);
-  padding-bottom: var(--space-2);
+  padding-top: 12px;
+  padding-bottom: 10px;
+  border-bottom-color: var(--border);
+}
+/*
+ * On a tablet or a phone the headers wrap and the cells sit closer, so a table fits its panel
+ * before it has to scroll (the panel's own 22px edge stays).
+ */
+@media (max-width: 64rem) {
+  thead th {
+    white-space: normal;
+  }
+  :is(th, td) {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
 }
 tbody th {
   font-weight: 600;
@@ -654,7 +890,6 @@ tbody tr:last-child > * {
 td.num,
 th.num {
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 td > a:first-child,
 tbody th > a:first-child {
@@ -668,7 +903,7 @@ tbody th > a:first-child:hover {
 td .muted code,
 td > code.muted,
 tbody th .muted {
-  font-size: 0.78rem;
+  font-size: 12px;
 }
 /* The last column of a table holds a row's actions; they sit at its right edge. */
 td.actions .row,
@@ -713,10 +948,10 @@ tbody tr:has(.empty-state):hover {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.35em;
-  padding: 0.1rem 0.6rem;
+  gap: 5px;
+  padding: 2px 9px 2px 7px;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 12px;
   font-weight: 650;
   line-height: 1.5;
   letter-spacing: 0.01em;
@@ -746,9 +981,6 @@ tbody tr:has(.empty-state):hover {
   background: var(--neutral-soft);
   color: var(--text-muted);
 }
-.badge-passed::before,
-.badge-failed::before,
-.badge-error::before,
 .badge-warn::before,
 .badge-blocker::before,
 .badge-high::before,
@@ -760,6 +992,26 @@ tbody tr:has(.empty-state):hover {
   height: 0.45em;
   border-radius: 50%;
   background: currentColor;
+}
+/* A severity's dot is the colour the charts draw it in (facets, distribution, legend). */
+.badge-blocker::before {
+  background: var(--sev-blocker);
+}
+.badge-high::before {
+  background: var(--sev-high);
+}
+.badge-medium::before {
+  background: var(--sev-medium);
+}
+.badge-low::before {
+  background: var(--sev-low);
+}
+.badge-info::before {
+  background: var(--sev-info);
+}
+.badge q-icon {
+  width: 13px;
+  height: 13px;
 }
 
 .badge-warn {
@@ -777,6 +1029,35 @@ tbody tr:has(.empty-state):hover {
 .badge-accent {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+/* Tones: the colour a chart mark takes from its item (a severity, a gate outcome, the accent). */
+.tone-accent {
+  --tone: var(--chart-accent);
+}
+.tone-blocker {
+  --tone: var(--sev-blocker);
+}
+.tone-high {
+  --tone: var(--sev-high);
+}
+.tone-medium {
+  --tone: var(--sev-medium);
+}
+.tone-low {
+  --tone: var(--sev-low);
+}
+.tone-info {
+  --tone: var(--sev-info);
+}
+.tone-passed {
+  --tone: var(--ok);
+}
+.tone-failed {
+  --tone: var(--bad);
+}
+.tone-none {
+  --tone: var(--border-strong);
 }
 
 /* Tabs (a nav of links) */
@@ -812,14 +1093,14 @@ tbody tr:has(.empty-state):hover {
   justify-items: start;
 }
 .metric-value {
-  font-size: 1.75rem;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
 }
 .metric-label {
   color: var(--text-muted);
-  font-size: 0.8125rem;
+  font-size: 13px;
   line-height: 1.35;
 }
 /* Ratings A–E as a coloured letter tile. */
@@ -829,7 +1110,7 @@ tbody tr:has(.empty-state):hover {
   width: 2.2rem;
   height: 2.2rem;
   border-radius: var(--radius);
-  font-size: 1.2rem;
+  font-size: 18px;
   background: var(--neutral-soft);
 }
 .metric-value[data-rating='A'] {
@@ -905,10 +1186,8 @@ tbody tr:has(.empty-state):hover {
   gap: var(--space-1);
 }
 .facet legend {
-  font-weight: 650;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 12.5px;
   color: var(--text-muted);
   margin-bottom: var(--space-2);
   padding: 0;
@@ -917,7 +1196,7 @@ tbody tr:has(.empty-state):hover {
   display: flex;
   gap: var(--space-2);
   align-items: center;
-  font-size: 0.875rem;
+  font-size: 13.5px;
   overflow-wrap: anywhere;
   padding: 0.2rem var(--space-2);
   margin: 0 calc(-1 * var(--space-2));
@@ -927,12 +1206,7 @@ tbody tr:has(.empty-state):hover {
 .facet label:hover {
   background: var(--surface-2);
 }
-.facet .count {
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-}
+/* The issues list's facet column (spec §7.4): collapsible groups, Clear, a bar per count. */
 
 details > summary {
   cursor: pointer;
@@ -962,6 +1236,36 @@ details[open] > summary {
   margin-bottom: var(--space-3);
 }
 
+/* The code on ink, headed by its file and line. */
+.code-window {
+  overflow: hidden;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-lg);
+  background: var(--ink);
+  box-shadow: var(--shadow);
+}
+.code-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ink-line);
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+.code-head:empty {
+  display: none;
+}
+.code-head code {
+  color: var(--ink-text);
+  overflow-wrap: anywhere;
+}
+.code-window .snippet {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
 .snippet {
   background: var(--ink);
   color: #dbe6f7;
@@ -1001,22 +1305,6 @@ details[open] > summary {
   min-width: 0;
   font-family: var(--mono);
 }
-.deliveries {
-  display: grid;
-  gap: var(--space-2);
-  padding-left: var(--space-6);
-  margin: 0;
-}
-.deliveries .excerpt {
-  margin: var(--space-1) 0 0;
-  max-height: 10rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface-2);
-  border-radius: var(--radius);
-}
 
 /* The history of an issue: a vertical timeline. */
 .timeline {
@@ -1055,11 +1343,12 @@ details[open] > summary {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-6);
-  padding: var(--space-3) var(--space-6);
+  min-height: 60px;
+  /* The bar's ends line up with the content column on a wide screen, as the page header does. */
+  padding: 0 max(var(--gutter), calc((100% - var(--content-max)) / 2));
   background: var(--ink);
   color: var(--ink-text);
-  border-bottom: 1px solid var(--ink-line);
-  box-shadow: 0 6px 20px -14px rgb(0 0 0 / 0.6);
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
 }
 .app-header a {
   color: var(--ink-muted);
@@ -1070,9 +1359,9 @@ details[open] > summary {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 10px;
   font-weight: 750;
-  font-size: 1.15rem;
+  font-size: 17px;
   letter-spacing: -0.01em;
   color: #fff !important;
   text-decoration: none;
@@ -1087,8 +1376,8 @@ details[open] > summary {
   flex: 1;
 }
 .app-nav a {
-  padding: var(--space-2) var(--space-3);
-  border-radius: 999px;
+  padding: 7px 12px;
+  border-radius: var(--radius);
   text-decoration: none;
   font-weight: 550;
   transition:
@@ -1101,67 +1390,437 @@ details[open] > summary {
 }
 .app-nav a.active {
   color: #fff;
-  background: rgb(77 142 240 / 0.2);
-  box-shadow: inset 0 0 0 1px rgb(77 142 240 / 0.45);
+  background: rgb(255 255 255 / 0.09);
 }
 .org-switch,
 .user-menu {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-size: 0.875rem;
+  font-size: 13.5px;
 }
 .org-switch label {
   color: var(--ink-muted);
 }
 .org-switch select {
-  min-height: 2rem;
+  min-height: 34px;
   background-color: var(--ink-2);
   color: var(--ink-text);
-  border-color: var(--ink-line);
+  border-color: rgb(255 255 255 / 0.14);
 }
-.user-name {
+/* The account: a button with the avatar and name, opening the user menu popover. */
+.user-button {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  height: 36px;
+  padding: 0 10px 0 6px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: var(--radius);
+  background: transparent;
   color: var(--ink-text);
-  font-weight: 600;
+  font: 550 13.5px var(--font);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.user-button:hover {
+  background: rgb(255 255 255 / 0.06);
+}
+.user-button .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-muted);
 }
 .avatar {
   display: inline-grid;
   place-items: center;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--cobalt);
   color: #fff;
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 12px;
   text-transform: uppercase;
 }
-.app-header .btn {
-  min-height: 2rem;
-  background: transparent;
-  color: var(--ink-text);
-  border-color: rgb(255 255 255 / 0.28);
+.menu-panel {
+  position: fixed;
+  inset: auto;
+  top: 56px;
+  right: var(--gutter);
+  margin: 0;
+  min-width: 14rem;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 16px 40px -16px rgb(10 27 51 / 0.35);
 }
-.app-header .btn:hover {
-  background: rgb(255 255 255 / 0.08);
-  border-color: rgb(255 255 255 / 0.5);
+.menu-who {
+  display: grid;
+  margin: 0 0 4px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+}
+.menu-panel a,
+.menu-panel button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: 500 13.5px var(--font);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu-panel a:hover,
+.menu-panel button:hover {
+  background: var(--surface-2);
+}
+.menu-panel .icon {
+  color: var(--text-muted);
 }
 .app-main {
-  max-width: 80rem;
+  display: block;
+}
+/* Pages that draw their own header band carry the host class `bleed`; the others keep a column. */
+.app-main > :not(router-outlet):not(.bleed),
+.page-body {
+  display: block;
+  max-width: calc(var(--content-max) + 2 * var(--gutter));
   margin: 0 auto;
-  padding: var(--space-8) var(--space-6) var(--space-12);
+  padding: var(--space-8) var(--gutter) var(--space-12);
 }
 .app-main:focus {
   outline: none;
+}
+/* A settings page (spec §7.8) opens with its title and a one-line intro, beside the navigation. */
+.settings-content > :not(router-outlet) > h2:first-child {
+  font-size: 22px;
+  margin-bottom: var(--space-2);
+}
+.settings-content > :not(router-outlet) > h2:first-child + p.muted {
+  max-width: 72ch;
+  margin-bottom: var(--space-6);
+}
+/* The same with the page's main action ("New token") at the right of the title. */
+.settings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-6);
+  margin-bottom: var(--space-6);
+}
+.settings-head > div {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+.settings-head h2 {
+  font-size: 22px;
+  margin-bottom: var(--space-2);
+}
+.settings-head p {
+  max-width: 72ch;
+  margin: 0;
+}
+.settings-head .btn q-icon {
+  margin-right: 6px;
+}
+/*
+ * Setting rows (spec §5): a settings form's name and explanation at the left (at most 20rem),
+ * its field at the right; one column on a narrow screen. Fields keep their content's width.
+ */
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+  gap: 8px 32px;
+  padding: 18px 22px;
+  border-top: 1px solid var(--hairline);
+}
+.setting-row:first-child {
+  border-top: 0;
+}
+.setting-text {
+  min-width: 0;
+}
+.setting-text > :is(label, .setting-name) {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.setting-text > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.setting-field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+.setting-field > :is(input:not([type='checkbox'], [type='radio'], [type='file']), select) {
+  width: 100%;
+  max-width: 36rem;
+}
+.setting-field > textarea {
+  width: 100%;
+  max-width: 44rem;
+}
+.setting-field > input.short {
+  max-width: 12rem;
+}
+.setting-field > input[type='file'] {
+  justify-self: start;
+  max-width: 100%;
+}
+/* A file picker is its own button, not a text field's box. */
+input[type='file'] {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+input[type='file']::file-selector-button {
+  min-height: 36px;
+  margin-right: var(--space-3);
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+input[type='file']:hover::file-selector-button {
+  background: var(--surface-2);
+}
+/* An option (a checkbox or a radio with its words): long words wrap beside the box, not under it. */
+.setting-field label.row {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+.setting-field label.row > input {
+  flex: none;
+  margin-top: 3px;
+}
+.setting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--hairline);
+}
+@media (max-width: 48rem) {
+  .setting-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* A panel per connection (GitLab, GitHub, single sign-on): its name or address, then its state. */
+.connection-list {
+  display: grid;
+  /* A definite column: a panel's field or table never widens the page on a phone. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.connection-list > * {
+  margin: 0;
+}
+.connection-head {
+  align-items: flex-start;
+  gap: 12px 24px;
+  padding-bottom: 18px;
+}
+.connection-title {
+  display: grid;
+  flex: 1 1 20rem;
+  gap: 4px;
+  min-width: 0;
+}
+.connection-title > * {
+  margin: 0;
+}
+.connection-url {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.connection-name {
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+/* The connection's kind, and the address of its identity provider when it has one. */
+.connection-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.connection-meta code {
+  overflow-wrap: anywhere;
+}
+.connection-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+/* A filter row above a settings table ("No password"). */
+.settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+/* A person in a table: the initial beside a name stack (the name, the user name below it). */
+.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 12rem;
+}
+.person .avatar {
+  flex-shrink: 0;
+}
+.name-stack {
+  display: grid;
+  min-width: 0;
+  font-weight: 600;
+}
+/* break-word, not anywhere: a column never narrows below a word, the table scrolls instead. */
+.name-stack > * {
+  overflow-wrap: break-word;
+}
+.name-stack .muted {
+  font-weight: 450;
+  font-size: 13px;
+}
+/* A search field with its magnifier inside (the rules, a profile's rules). */
+.search-field {
+  position: relative;
+  min-width: 0;
+}
+.search-field q-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search-field input {
+  padding-left: 34px;
+}
+/* "Load more" under a list: every list pages the same way. */
+.load-more {
+  margin: 16px 0 0;
+}
+/* A table's last column: its row's quiet actions, kept on one line. */
+.actions-col {
+  width: 1px;
+  text-align: right;
+}
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}
+/*
+ * People and their roles (Access, Members). On a phone each row stacks, the person beside Remove
+ * over the role, so no sideways scroll hides an action; there the role's select asks at once
+ * (shared/media.ts), so Change role steps aside.
+ */
+.since-label {
+  display: none;
+}
+@media (max-width: 40rem) {
+  .roles-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .roles-table tbody tr[data-key] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'person actions'
+      'role since';
+    align-items: center;
+    gap: 10px 12px;
+    padding: 14px 22px;
+  }
+  .roles-table tbody tr[data-key]:not(:last-child) {
+    border-bottom: 1px solid var(--hairline);
+  }
+  /* As specific as the panel's own edge (.card.panel … :first-child), and later. */
+  .card.panel .roles-table tbody tr[data-key] > * {
+    padding: 0;
+    border: 0;
+  }
+  .roles-table tbody tr[data-key] > th {
+    grid-area: person;
+  }
+  .roles-table .person {
+    min-width: 0;
+  }
+  .roles-table .role-cell {
+    grid-area: role;
+  }
+  .roles-table .since {
+    grid-area: since;
+    text-align: right;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .roles-table .since-label {
+    display: inline;
+  }
+  .roles-table .actions-col {
+    grid-area: actions;
+    width: auto;
+  }
+  .roles-table .change-role {
+    display: none;
+  }
+}
+/* A confirmation's question quotes names, which may have no break point. */
+#confirm-text {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 /* On a narrow screen the header scrolls away, and the navigation is one row that scrolls sideways. */
 @media (max-width: 56rem) {
   .app-header {
     position: static;
     justify-content: space-between;
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-2);
   }
   .app-nav {
     order: 3;
@@ -1174,16 +1833,25 @@ details[open] > summary {
   .app-nav a {
     white-space: nowrap;
   }
+  /* The organization switcher has a row of its own, under the brand and the account. */
+  .org-switch {
+    order: 2;
+    flex: 1 0 100%;
+  }
+  .org-switch select {
+    flex: 0 1 20rem;
+    min-width: 0;
+  }
 }
 @media (max-width: 40rem) {
-  .app-header {
-    padding: var(--space-3) var(--space-4);
-  }
-  .user-name > span:last-child {
-    display: none;
-  }
-  .app-main {
-    padding: var(--space-6) var(--space-4) var(--space-8);
+  /* Hidden on a phone visually only: the name stays the user button's accessible name. */
+  .user-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 }
 
@@ -1213,7 +1881,7 @@ details[open] > summary {
 }
 .hero-band h1 {
   color: #fff;
-  font-size: 2.2rem;
+  font-size: 32px;
   margin: 0;
 }
 .hero-band .muted,
@@ -1263,7 +1931,7 @@ details[open] > summary {
   color: #4a5b73;
 }
 .hero-band .btn {
-  min-height: 2.5rem;
+  min-height: 36px;
   background: var(--cobalt);
   color: #fff;
   border-color: var(--cobalt);
@@ -1292,107 +1960,434 @@ details[open] > summary {
     padding-bottom: var(--space-6);
   }
   .hero-band h1 {
-    font-size: 1.6rem;
+    font-size: 24px;
   }
 }
 
+/* The overview's verdict: the gate badge (a child component) as a large word. */
+.gate-word .badge {
+  padding: 0;
+  background: none;
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+}
+.gate-word .badge q-icon {
+  display: none;
+}
+
 /*
- * The pages outside the shell (sign-in, change password, server unavailable): the site's ink panel
- * with an illustration next to the form.
+ * Shared page parts (spec §5): stat lists, KPI strips, a segmented switch, chips and rule lists,
+ * first used by the project overview.
  */
-.auth-page {
+/* New code: the coverage lens and four figures. */
+.new-code {
   display: grid;
-  grid-template-columns: minmax(20rem, 5fr) 7fr;
-  min-height: 100vh;
-  background: var(--bg);
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
 }
-.auth-art {
+.stat-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.stat-list > div {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-  padding: var(--space-8);
-  background:
-    linear-gradient(180deg, var(--ink) 0%, rgb(10 27 51 / 0.2) 45%, rgb(10 27 51 / 0) 100%),
-    url('/art/signin.webp') center bottom / cover no-repeat,
-    var(--ink);
-  color: var(--ink-text);
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
 }
-.auth-art.offline {
-  background:
-    linear-gradient(
-      180deg,
-      var(--ink) 0%,
-      rgb(10 27 51 / 0.1) 40%,
-      rgb(10 27 51 / 0) 65%,
-      var(--ink) 85%
-    ),
-    url('/art/offline.webp') center 60% / 130% auto no-repeat,
-    var(--ink);
+.stat-list > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
-.auth-art .brand {
-  font-size: 1.3rem;
+.stat-list dt {
+  color: var(--text-2);
+  font-size: 13px;
 }
-.auth-art .tagline {
-  max-width: 22rem;
-  margin: var(--space-8) 0 0;
-  font-size: 1.6rem;
+.stat-list dd {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 1.2;
+}
+.stat-list dd.bad {
+  color: var(--bad);
+}
+
+/* The KPI strip: one panel, figures divided by hairlines. */
+.kpi {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 20px 22px;
+  border-right: 1px solid var(--hairline);
+}
+/* Of its type: a note after the figures (a paragraph) is no figure. */
+.kpi:last-of-type {
+  border-right: 0;
+}
+.kpi-label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 550;
+}
+.kpi-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.kpi-figure {
+  display: grid;
+  gap: 4px;
+}
+.kpi-value {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.kpi q-sparkline {
+  margin-top: 8px;
+}
+.ratings {
+  display: flex;
+  gap: 22px;
+  margin-top: 4px;
+}
+
+/* History: a segmented switch of the metric the chart shows. */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.segmented button {
+  flex: none;
+  white-space: nowrap;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-2);
+  font: 600 12.5px var(--font);
+  cursor: pointer;
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow:
+    0 1px 2px rgb(10 27 51 / 0.1),
+    0 0 0 1px var(--border);
+}
+.panel-total {
+  font-size: 22px;
+  font-weight: 700;
   letter-spacing: -0.02em;
+}
+.subhead {
+  margin: 18px 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.chip {
+  padding: 1px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.rule-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rule-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13.5px;
+}
+.rule-list li:last-child {
+  border-bottom: 0;
+}
+.rule-list code {
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+}
+.rule-list span {
+  font-weight: 650;
+}
+
+/* Dialogs (spec §5): a short "New …" form over the page. */
+.dialog {
+  width: min(32rem, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 64px -24px rgb(10 27 51 / 0.45);
+}
+.dialog::backdrop {
+  background: rgb(10 27 51 / 0.45);
+}
+.dialog-head {
+  padding: 20px 24px 0;
+}
+.dialog-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.dialog-body {
+  padding: 16px 24px 4px;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* A language as a chip (spec §7.7); on the ink band it turns light. */
+.lang-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+}
+.page-band .lang-chip {
+  border: 1px solid rgb(255 255 255 / 0.16);
+  background: rgb(255 255 255 / 0.08);
   color: #fff;
 }
-.auth-main {
-  display: grid;
-  place-items: center;
-  padding: var(--space-8) var(--space-6);
+/* The last row of a panel that adds to its table (a gate's condition, a profile's rule). */
+.panel-add {
+  padding: 16px 22px 20px;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--surface-2);
 }
-.auth-card {
-  width: min(25rem, 100%);
-  padding: var(--space-8);
+.panel-add-title {
+  margin: 0 0 12px;
+  font-size: 14px;
 }
-.auth-card h1 {
-  font-size: 1.6rem;
-  margin-bottom: var(--space-6);
+.panel-add-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
 }
-.auth-card .btn {
-  width: 100%;
-  min-height: 2.75rem;
-  font-size: 0.9375rem;
+.panel-add-fields .field {
+  margin: 0;
 }
-.auth-card input {
-  width: 100%;
+.panel-add-fields > .btn {
+  margin-top: 22px;
 }
-.auth-alt {
-  margin: var(--space-4) 0 0;
-  text-align: center;
+
+/* A link that leaves Qualor: a small text link with the external icon. */
+.external-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 550;
+  text-decoration: none;
 }
-.auth-card .auth-alt .btn-link {
-  width: auto;
+.external-link q-icon {
+  width: 12px;
+  height: 12px;
 }
-.auth-providers {
-  margin-bottom: var(--space-4);
+.external-link:hover {
+  text-decoration: underline;
 }
-.auth-or {
-  margin: var(--space-4) 0;
-  text-align: center;
+
+/* A coverage value's bar, under the number in a table cell. */
+.cov-bar {
+  display: block;
+  margin: 5px 0 0 auto;
+  width: 64px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--chart-track);
+  overflow: hidden;
 }
-@media (max-width: 52rem) {
-  .auth-page {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-  }
-  .auth-art {
-    min-height: 13rem;
-    padding: var(--space-6);
-  }
-  .auth-art .tagline {
-    margin-top: var(--space-4);
-    font-size: 1.25rem;
-  }
-  .auth-main {
-    place-items: start center;
-    padding: var(--space-6) var(--space-4);
-  }
+.cov-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--chart-accent);
+}
+
+/*
+ * The ink page band (q-page-header, spec §4): what pages project into it. Global, because the
+ * projected elements belong to the page's template, not to the band's.
+ */
+.page-band .page-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
+}
+.band-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.band-search {
+  display: flex;
+  gap: var(--space-2);
+}
+.band-search input {
+  width: 18rem;
+  max-width: 100%;
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.97);
+  color: #0a1b33;
+}
+.band-search input::placeholder {
+  color: #4a5b73;
+}
+/* Secondary buttons on ink; a destructive one keeps its red (steps 6+ put Delete in a band). */
+.page-band .btn:not(.btn-primary, .btn-danger, .btn-danger-solid) {
+  border-color: rgb(255 255 255 / 0.2);
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+.page-band .btn:not(.btn-primary, .btn-danger, .btn-danger-solid):hover {
+  border-color: rgb(255 255 255 / 0.35);
+  background: rgb(255 255 255 / 0.14);
+}
+.page-band .btn.btn-danger {
+  border-color: rgb(255 180 171 / 0.35);
+  background: rgb(255 255 255 / 0.04);
+  color: #ffb4ab;
+}
+.page-band .btn.btn-danger:hover {
+  border-color: rgb(255 180 171 / 0.6);
+  background: rgb(255 180 171 / 0.12);
+}
+.page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: 10px 0 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.page-meta code {
+  color: var(--ink-text);
+  font-size: 12.5px;
+}
+.page-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* A merge request's own title and its page, beside its chip on the band. */
+.page-meta-title {
+  color: var(--ink-text);
+  overflow-wrap: anywhere;
+}
+.page-meta .external-link {
+  color: var(--cobalt-bright);
+}
+.page-meta .icon {
+  width: 14px;
+  height: 14px;
+}
+.branch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  color: #fff !important;
+  font: 600 12.5px var(--mono);
+  text-decoration: none;
+}
+.branch-chip:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+.page-band .tabs {
+  gap: 28px;
+  margin: 22px 0 0;
+  border-bottom: 0;
+}
+.page-band .tabs a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0 13px;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-muted);
+}
+.page-band .tabs a:hover,
+.page-band .tabs a.active {
+  color: #fff;
+}
+.page-band .tabs a.active {
+  border-bottom-color: var(--cobalt-bright);
+}
+.tab-count {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  color: var(--ink-text);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 18px;
+}
+.page-band .badge {
+  font-size: 12.5px;
+  padding: 3px 10px 3px 8px;
+}
+.page-band .badge-failed {
+  background: rgb(214 69 58 / 0.18);
+  color: #ffb4ab;
+}
+.page-band .badge-passed {
+  background: rgb(95 211 156 / 0.16);
+  color: #8fe3bb;
+}
+.page-band .badge-none,
+.page-band .badge-error {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--ink-text);
+}
+/* A tag (Built-in) keeps its outline on ink, in the band's own muted text. */
+.page-band .badge-tag {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.3);
+  color: var(--ink-muted);
 }
 
 /* Not found: the illustration and the way back. */
@@ -1421,5 +2416,51 @@ details[open] > summary {
   *::before,
   *::after {
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 64rem) {
+  :root {
+    --gutter: 24px;
+  }
+}
+/* Scrolling to a control keeps it clear of the sticky header, and of a floating bar. */
+html {
+  scroll-padding-top: var(--sticky-top);
+}
+html:has(form.bulk) {
+  scroll-padding-bottom: 128px;
+}
+@media (max-width: 40rem) {
+  html:has(form.bulk) {
+    scroll-padding-bottom: 200px;
+  }
+}
+/* The header scrolls away on narrow screens (see .app-header): sticky parts go to the top. */
+@media (max-width: 56rem) {
+  :root {
+    --sticky-top: 12px;
+  }
+}
+@media (max-width: 40rem) {
+  :root {
+    --gutter: 16px;
+  }
+}
+
+@media (max-width: 40rem) {
+  .page-band .tabs {
+    flex-wrap: nowrap;
+    gap: 20px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .page-band .tabs a {
+    white-space: nowrap;
+  }
+  .segmented {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 }

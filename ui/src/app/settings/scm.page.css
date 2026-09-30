@@ -1,0 +1,78 @@
+/* GitLab and GitHub (spec §7.8): a panel per connection (global), its forms in setting rows. */
+.connection-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 0;
+}
+.connection-body > p {
+  margin: 0;
+}
+.connection-edit {
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+.connection-edit summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.connection-edit form {
+  margin: 12px -22px 0;
+}
+.connection-replacing {
+  margin: 0;
+  padding: 0 22px 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+/* GitHub: an App's facts, its test, and the fields that sit beside their button. */
+.app-facts {
+  margin: 0;
+  font-size: 13px;
+}
+.app-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+.app-test .field {
+  margin: 0;
+}
+.app-test input {
+  width: 18rem;
+  max-width: 100%;
+}
+.webhook-address > p {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+.setting-field.setting-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.setting-inline > input {
+  flex: 0 1 18rem;
+  width: auto;
+  min-width: 0;
+}
+.setting-inline > input.short {
+  flex-basis: 10rem;
+}
+.setting-inline > .field-error {
+  flex-basis: 100%;
+}
+.file-label {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.new-app-head {
+  padding-bottom: 14px;
+}
+.new-app-head h3 {
+  margin: 0;
+}

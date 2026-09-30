@@ -1,0 +1,22 @@
+/* Sign-in (spec §7.8): the choice and the picker in setting rows, the rules in a panel below. */
+.sign-in-form {
+  margin-bottom: 16px;
+}
+.sign-in-rules .panel-head {
+  padding-bottom: 14px;
+}
+.sign-in-rules h3 {
+  margin: 0;
+}
+.sign-in-rules .panel-body {
+  padding-top: 0;
+}
+#sign-in-rules {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.55;
+}

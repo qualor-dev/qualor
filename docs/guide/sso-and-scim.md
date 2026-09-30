@@ -310,9 +310,9 @@ and unlink their own linked accounts there. Two refusals keep people from lockin
   [Password sign-in](#password-sign-in-and-break-glass-admins)), and another link counts only on
   a connection in effect ([One connection or several](#one-connection-or-several)). A user
   without a password cannot set one themselves (changing a password needs the current one): ask
-  an instance admin to set one first (**Settings → Users → Reset a password**), which ends that
-  user's sessions and revokes their personal tokens. It counts only while password sign-in is
-  allowed for them. The emergency switch below does not count.
+  an instance admin to set one first (**Reset password** on the user's row in **Settings →
+  Users**), which ends that user's sessions and revokes their personal tokens. It counts only
+  while password sign-in is allowed for them. The emergency switch below does not count.
 
 Signing out of Qualor ends the Qualor session only: Qualor does no single logout, and signing out
 of the IdP does not end a Qualor session. A session lasts `QUALOR_SESSION_TTL_HOURS`, like any
@@ -435,8 +435,8 @@ one in effect to use this one instead, or restore the Enterprise plan."
   connection takes over at once. You cannot enable the first one again while another is enabled.
 - **People whose accounts are linked only to a connection not in effect** cannot sign in with
   single sign-on. They can sign in with a password if the password sign-in setting lets them; or
-  make their connection the one in effect, or set them a password (**Settings → Users → Reset a
-  password**).
+  make their connection the one in effect, or set them a password (**Reset password** on the
+  user's row in **Settings → Users**).
 - **Unlinking** counts only links on the connection in effect (409 `LAST_SIGN_IN_METHOD`).
 - **SCIM tokens** of a connection not in effect keep working while `scim` is licensed. On the
   Business plan `scim` is not, so SCIM stops there anyway
@@ -517,10 +517,11 @@ connection.
 https://qualor.example.com/api/v0/ee/scim/v2
 ```
 
-**The token.** In **Settings → SCIM**, in the connection's section, give a **Token name**
-(and optionally **Expires on (optional)**) and press **Create token**. The **SCIM token** looks
-like `qlr_scim_…`, is **shown once**, and is stored only as a hash; the list then shows only how
-it **Starts with**, and when it was **Last used**. A connection has **at most 5** active tokens (409
+**The token.** In **Settings → SCIM**, press **New token** in the connection's panel, give a
+**Token name** (and optionally **Expires on (optional)**) and press **Create token**. The **SCIM
+token** looks like `qlr_scim_…` and is **shown once**, in **Your new SCIM token**: copy it, then
+press **Done**. It is stored only as a hash; the list then shows only how it **Starts with**, and
+when it was **Last used**. A connection has **at most 5** active tokens (409
 `SCIM_TOKEN_LIMIT_REACHED`); a token may have an expiry (none by default); revoke one when you
 replace it (**Revoke**). Qualor's Gitleaks rule (`qualor-token`) finds `qlr_scim_` tokens like the
 other `qlr_` tokens, so a leaked one is reported as a secret. The IdP sends it as
@@ -608,10 +609,10 @@ After `sso` lapses:
   `FEATURE_NOT_LICENSED`;
 - **password sign-in is open to everyone who has a password**, whatever **Settings → Sign-in**
   says;
-- **users without a password cannot sign in** until an instance admin sets one in **Settings →
-  Users → Reset a password** (the **No password** filter lists them); they choose their own at the
-  next sign-in. Setting a password ends that user's sessions and revokes their personal tokens,
-  so their CI jobs need a new token;
+- **users without a password cannot sign in** until an instance admin sets one with **Reset
+  password** on their row in **Settings → Users** (the **No password** filter lists them); they
+  choose their own at the next sign-in. Setting a password ends that user's sessions and revokes
+  their personal tokens, so their CI jobs need a new token;
 - existing sessions stay valid until they expire, and API and CI tokens keep working;
 - memberships from group sync stay as they are; nothing syncs until the renewal;
 - connections, links, mappings and the sign-in setting are kept, and a renewed key restores them.

@@ -42,9 +42,10 @@ function verify(rawBody, headers, secret, maxAgeSeconds = 300) {
   it with `POST /api/v0/webhooks/{id}/regenerate-secret`.
 - Each attempt has 10 s to complete. A delivery gets 7 attempts with exponential backoff (1, 2, 4, 8,
   16, 32 minutes). Only a 2xx answer counts as success, and redirects are not followed.
-- **Recent deliveries** in the UI shows each delivery's status, response code and the first 1 KiB of
-  the answer. Deliveries are kept 30 days. Resend one with
-  `POST /api/v0/webhooks/{id}/deliveries/{deliveryId}/redeliver`.
+- In the UI, each webhook shows its last 20 deliveries as a strip (delivered above the line, failed
+  below it, pending on it) with the share delivered; **Recent deliveries** lists them with each one's
+  status, response code and the first 1 KiB of the answer. Deliveries are kept 30 days. Resend one
+  with `POST /api/v0/webhooks/{id}/deliveries/{deliveryId}/redeliver`.
 - Webhook URLs must be `https` and resolve to public addresses. To allow `http` or internal
   receivers (a chat bot on the intranet, say), an operator sets the instance setting in PostgreSQL:
 

@@ -1,0 +1,9 @@
+@if (view(); as v) {
+  <span class="delta" [class.delta-good]="v.tone === 'good'" [class.delta-bad]="v.tone === 'bad'">{{
+    v.text
+  }}</span>
+  @if (since(); as at) {
+    &ngsp;
+    <span class="delta-since" i18n="@@delta.since">since {{ at | dateTime: 'date' }}</span>
+  }
+}

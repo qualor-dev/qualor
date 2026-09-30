@@ -29,8 +29,13 @@ test.describe('as people other than the instance admin', () => {
     await expect(page.getByText('No one has a role on this project alone yet.')).toBeVisible();
     await expect(page.getByText(/enterprise licence/)).toHaveCount(0);
 
+    // The add form is in the "Add member" dialog (step 5), which starts on the user name.
+    await page.getByRole('button', { name: 'Add member' }).click();
+    const add = page.getByRole('dialog', { name: 'Give someone a role on this project' });
+    await expect(add.getByLabel('User name')).toBeFocused();
+    await expectAccessible(page);
     // The four-role select of the organization is not offered here: a grant is never admin.
-    const role = page.getByLabel('Role', { exact: true });
+    const role = add.getByLabel('Role', { exact: true });
     await expect(role.locator('option')).toHaveText(['Project admin', 'Maintainer', 'Viewer']);
     await expect(role).toHaveValue('viewer');
     await page.getByLabel('User name').fill(VICTOR.username);
@@ -64,7 +69,7 @@ test.describe('as people other than the instance admin', () => {
     await expectAccessible(page);
   });
 
-  test('an org admin changes a role to Viewer', async ({ page, guard }) => {
+  test('an org admin changes a role to Viewer', async ({ page }) => {
     await signIn(page, OLGA);
     await page.goto('/settings/members');
     await expect(page).toHaveTitle('Members · Qualor');
@@ -79,8 +84,11 @@ test.describe('as people other than the instance admin', () => {
     const pat = page.getByRole('row', { name: /pat/ });
     await expect(pat.getByLabel('Role of pat')).toHaveValue('project_admin');
     await pat.getByLabel('Role of pat').selectOption({ label: 'Viewer' });
-    guard.expectConfirm(true, 'Change the role of pat in Default to Viewer?');
+    // The page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
     await pat.getByRole('button', { name: 'Change role' }).click();
+    const ask = page.getByRole('dialog', { name: 'Change the role' });
+    await expect(ask).toContainText('Change the role of pat in Default to Viewer?');
+    await ask.getByRole('button', { name: 'Change role' }).click();
     await expect(page.getByRole('status')).toHaveText('pat is now Viewer.');
     await expect(pat.getByLabel('Role of pat')).toHaveValue('viewer');
     await expectAccessible(page);

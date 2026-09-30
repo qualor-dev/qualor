@@ -1,0 +1,53 @@
+/* The auth layout as a band of ink above the card (a phone, a short window), and its edge on dark. */
+/* A phone, and a window too short for the panel (a landscape phone): a band of ink above the card. */
+@media (max-width: 52rem), (max-height: 32rem) {
+  .auth-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .auth-art {
+    gap: var(--space-3);
+    padding: var(--space-5) var(--space-4) var(--space-6);
+  }
+  /* The words on flat ink at the left; a crop of the illustration faded in at the right. */
+  .auth-art > :not(.auth-illustration) {
+    position: relative;
+    z-index: 1;
+  }
+  .auth-illustration {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 50%;
+    min-height: 0;
+    margin: 0;
+    background: url('/art/signin.webp') 50% 72% / 150% auto no-repeat;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 70%);
+    mask-image: linear-gradient(90deg, transparent, #000 70%);
+    opacity: 0.7;
+  }
+  .auth-art.offline .auth-illustration {
+    background: url('/art/offline.webp') 45% center / auto 170% no-repeat;
+  }
+  .auth-art .tagline {
+    max-width: 14rem;
+    margin-top: var(--space-2);
+    font-size: 18px;
+  }
+  .auth-main {
+    place-items: start center;
+    padding: var(--space-6) var(--space-4);
+  }
+}
+
+/* On dark the ink panel and the page are nearly one colour: a hairline marks the panel's edge. */
+@media (prefers-color-scheme: dark) {
+  .auth-art {
+    box-shadow: inset -1px 0 0 var(--hairline);
+  }
+}
+@media (prefers-color-scheme: dark) and (max-width: 52rem),
+  (prefers-color-scheme: dark) and (max-height: 32rem) {
+  .auth-art {
+    box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+}

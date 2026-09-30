@@ -16,10 +16,13 @@ import type { ItemOf } from '../api/types';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { OrgContext } from '../org/org-context';
+import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus, rowAt, rowByKey } from '../shared/focus';
 import { inputValue } from '../shared/forms';
 import { KeysetList } from '../shared/keyset';
+import { Icon } from '../shared/icon';
 import { copyName } from '../shared/names';
+import { PageHeader } from '../shared/page-header';
 
 export type Profile = ItemOf<'/api/v0/quality-profiles'>;
 type Language = Profile['language'];
@@ -61,8 +64,10 @@ function depth(profile: Profile, byId: ReadonlyMap<string, Profile>): number {
  */
 @Component({
   selector: 'q-profiles-page',
-  imports: [LabelPipe, RouterLink],
+  imports: [Icon, LabelPipe, PageHeader, RouterLink],
   templateUrl: './profiles.page.html',
+  styleUrl: './profiles.page.css',
+  host: { class: 'bleed' },
 })
 export class ProfilesPage {
   private readonly api = inject(Api);
@@ -80,11 +85,12 @@ export class ProfilesPage {
       }),
     ),
   );
+  /** The profiles by language, in the languages' order; a language without one is left out. */
   protected readonly groups = computed(() =>
     LANGUAGES.map((language) => ({
       language,
       profiles: this.list.items().filter((p) => p.language === language),
-    })),
+    })).filter((group) => group.profiles.length > 0),
   );
   protected readonly names = computed(
     () => new Map(this.list.items().map((p) => [p.id, p.name] as const)),
@@ -106,6 +112,18 @@ export class ProfilesPage {
   /** The last change's result, for the live region. */
   protected readonly announcement = signal<string | null>(null);
   protected readonly busy = signal(false);
+  /** A refused creation other than its fields, shown in the dialog that is still open. */
+  protected readonly createError = signal<string | null>(null);
+  /** The profile the delete confirmation asks about; null while it is closed. */
+  protected readonly pendingDelete = signal<Profile | null>(null);
+  protected readonly deleteQuestion = computed(() => {
+    const profile = this.pendingDelete();
+    return profile
+      ? $localize`:@@profiles.confirmDelete:Delete the quality profile "${profile.name}:name:"?`
+      : '';
+  });
+  private readonly createDialog = viewChild<ElementRef<HTMLDialogElement>>('createDialog');
+  private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
   protected readonly languages = LANGUAGES;
   protected readonly inputValue = inputValue;
 
@@ -114,6 +132,18 @@ export class ProfilesPage {
       const organizationId = this.org.currentId();
       if (organizationId) void this.list.reset(organizationId);
     });
+  }
+
+  protected openCreate(): void {
+    this.nameError.set(null);
+    this.parentError.set(null);
+    this.createError.set(null);
+    openAfterRender(this.injector, () => this.createDialog()?.nativeElement);
+  }
+
+  protected closeCreate(): void {
+    const dialog = this.createDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
   }
 
   protected setName(event: Event): void {
@@ -194,10 +224,36 @@ export class ProfilesPage {
     });
   }
 
-  protected async remove(profile: Profile): Promise<void> {
-    const question = $localize`:@@profiles.confirmDelete:Delete the quality profile "${profile.name}:name:"?`;
-    if (this.busy() || !window.confirm(question)) return;
-    const index = this.list.items().findIndex((p) => p.id === profile.id);
+  protected remove(profile: Profile): void {
+    if (this.busy()) return;
+    this.pendingDelete.set(profile);
+    openAfterRender(
+      this.injector,
+      () => this.confirmDialog()?.nativeElement,
+      () => this.pendingDelete() !== null,
+    );
+  }
+
+  /** Cancel, Escape or the dialog closing otherwise: nothing is deleted. */
+  protected cancelDelete(): void {
+    this.pendingDelete.set(null);
+    const dialog = this.confirmDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+  }
+
+  protected async confirmDelete(): Promise<void> {
+    const profile = this.pendingDelete();
+    if (!profile) return;
+    this.cancelDelete();
+    await this.delete(profile);
+  }
+
+  private async delete(profile: Profile): Promise<void> {
+    // The row's place in its own language panel, where focus stays: the list's order is not the
+    // page's, whose rows are grouped by language (step 7 review). The built-in row always stays.
+    const row = rowByKey(this.host.nativeElement, profile.id);
+    const table = row?.closest('table') ?? undefined;
+    const index = row && table ? [...table.querySelectorAll('tbody tr[data-key]')].indexOf(row) : 0;
     await this.run(async () => {
       await done(
         this.api.client.DELETE('/api/v0/quality-profiles/{id}', {
@@ -211,7 +267,7 @@ export class ProfilesPage {
       keepFocus(
         this.injector,
         this.document,
-        () => rowAt(this.host.nativeElement, index)?.querySelector('button'),
+        () => rowAt(table, index)?.querySelector('button'),
         () => this.heading().nativeElement,
       );
     });
@@ -227,6 +283,7 @@ export class ProfilesPage {
     this.error.set(null);
     this.nameError.set(null);
     this.parentError.set(null);
+    this.createError.set(null);
     this.announcement.set(null);
     try {
       await action();
@@ -247,6 +304,9 @@ export class ProfilesPage {
             $localize`:@@profiles.parentInvalid:This profile cannot be the parent: it must be of the same language, and profiles inherit at most three levels deep.`,
           );
         }
+      } else if (kind === 'create') {
+        // The dialog is still open: the reason goes there.
+        this.createError.set(problemMessage(err));
       } else {
         this.error.set(problemMessage(err));
       }

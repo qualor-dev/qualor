@@ -1,0 +1,56 @@
+/* The AI assistant (spec §7.8): today's use as meters, then its settings in setting rows. */
+.ai-state {
+  margin: 0 0 16px;
+}
+.ai-panels {
+  display: grid;
+  gap: 16px;
+}
+.ai-panels > * {
+  margin: 0;
+}
+.ai-panels .panel-head {
+  padding-bottom: 14px;
+}
+.ai-panels .panel-head h3 {
+  margin: 0;
+}
+.ai-panels .panel-body {
+  padding-top: 0;
+}
+.ai-panels .panel-body > p:last-child {
+  margin-bottom: 0;
+}
+.ai-meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 18px 32px;
+}
+.ai-org-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+}
+.ai-excluded summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.ai-excluded .facet {
+  margin-top: 8px;
+}
+.ai-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.ai-hold {
+  margin: 16px 0 0;
+}

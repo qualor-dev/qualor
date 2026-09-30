@@ -1,19 +1,25 @@
-<h2 #heading tabindex="-1" i18n="@@linkedAccounts.title">Linked accounts</h2>
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@linkedAccounts.title">Linked accounts</h2>
+    @if (infoLoaded() && !licensed() && !infoError()) {
+      <p class="muted" i18n="@@linkedAccounts.notLicensed">
+        Linked accounts need an enterprise licence with the single sign-on feature.
+      </p>
+    } @else if (identities()) {
+      <p class="muted" i18n="@@linkedAccounts.intro">
+        The identity provider accounts you can sign in to Qualor with.
+      </p>
+    }
+  </div>
+</div>
 @if (ssoErrorMessage(); as message) {
   <p class="alert alert-error" role="alert" data-test="sso-error">{{ message }}</p>
 }
 @if (infoError(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
-} @else if (infoLoaded() && !licensed()) {
-  <p class="muted" i18n="@@linkedAccounts.notLicensed">
-    Linked accounts need an enterprise licence with the single sign-on feature.
-  </p>
 } @else if (loadError(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
 } @else if (identities(); as list) {
-  <p class="muted" i18n="@@linkedAccounts.intro">
-    The identity provider accounts you can sign in to Qualor with.
-  </p>
   <div role="status">
     @if (announcement(); as message) {
       <p class="alert alert-success">{{ message }}</p>
@@ -22,82 +28,125 @@
   @if (error(); as message) {
     <p class="alert alert-error" role="alert">{{ message }}</p>
   }
-  <div class="table-wrap">
-    <table>
-      <caption class="visually-hidden" i18n="@@linkedAccounts.caption">
-        Your linked identity provider accounts
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col" i18n="@@linkedAccounts.col.connection">Connection</th>
-          <th scope="col" i18n="@@linkedAccounts.col.linkedOn">Linked on</th>
-          <th scope="col" i18n="@@linkedAccounts.col.lastSignIn">Last sign-in</th>
-          <th scope="col">
-            <span class="visually-hidden" i18n="@@linkedAccounts.col.actions">Actions</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (i of list; track i.id) {
-          <tr [attr.data-key]="i.id">
-            <th scope="row">
-              {{ i.connectionName }}
-              <div class="muted">{{ i.protocol | label: 'ssoProtocol' }}</div>
-            </th>
-            <td>{{ i.createdAt | dateTime: 'date' }}</td>
-            <td>
-              @if (i.lastSignInAt; as at) {
-                {{ at | dateTime }}
-              } @else {
-                <span class="muted" i18n="@@linkedAccounts.never">Never</span>
-              }
-            </td>
-            <td class="actions">
-              @if (i.scim) {
-                <span class="hint">{{ scimManaged() }}</span>
-              } @else {
-                <button
-                  type="button"
-                  class="btn btn-danger"
-                  [attr.aria-disabled]="busy() ? true : null"
-                  (click)="unlink(i)"
-                  i18n="@@linkedAccounts.unlink"
-                >
-                  Unlink
-                </button>
-              }
-            </td>
-          </tr>
-        } @empty {
-          <tr>
-            <td colspan="4" class="muted" i18n="@@linkedAccounts.empty">
-              No identity provider account is linked to yours.
-            </td>
-          </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  @if (linkable().length > 0) {
-    <div class="card">
-      <h3 i18n="@@linkedAccounts.linkTitle">Link another account</h3>
-      <p class="hint" i18n="@@linkedAccounts.linkHint">
-        You sign in at the identity provider and come back here.
-      </p>
-      <div class="row">
-        @for (p of linkable(); track p.id) {
-          <button
-            type="button"
-            class="btn"
-            [attr.data-test]="'link-' + p.id"
-            [attr.aria-disabled]="busy() ? true : null"
-            (click)="link(p)"
-            i18n="@@linkedAccounts.link"
-          >
-            Link {{ p.name }}
-          </button>
-        }
-      </div>
+  <section class="card panel linked-panel" aria-labelledby="linked-accounts-title">
+    <div class="panel-head">
+      <h3 id="linked-accounts-title" i18n="@@linkedAccounts.yours">Your accounts</h3>
     </div>
+    <div class="panel-scroll">
+      <table>
+        <caption class="visually-hidden" i18n="@@linkedAccounts.caption">
+          Your linked identity provider accounts
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@linkedAccounts.col.connection">Connection</th>
+            <th scope="col" i18n="@@linkedAccounts.col.linkedOn">Linked on</th>
+            <th scope="col" i18n="@@linkedAccounts.col.lastSignIn">Last sign-in</th>
+            <th scope="col" class="linked-action">
+              <span class="visually-hidden" i18n="@@linkedAccounts.col.actions">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (i of list; track i.id) {
+            <tr [attr.data-key]="i.id">
+              <th scope="row">
+                <div class="name-stack">
+                  <span>{{ i.connectionName }}</span>
+                  <span class="muted">{{ i.protocol | label: 'ssoProtocol' }}</span>
+                </div>
+              </th>
+              <td class="nowrap">{{ i.createdAt | dateTime: 'date' }}</td>
+              <td class="nowrap">
+                @if (i.lastSignInAt; as at) {
+                  {{ at | dateTime }}
+                } @else {
+                  <span class="muted" i18n="@@linkedAccounts.never">Never</span>
+                }
+              </td>
+              <td class="linked-action">
+                @if (i.scim) {
+                  <span class="hint">{{ scimManaged() }}</span>
+                } @else {
+                  <button
+                    type="button"
+                    class="btn-quiet danger"
+                    [attr.aria-label]="unlinkLabel(i)"
+                    [attr.aria-disabled]="busy() ? true : null"
+                    (click)="unlink(i)"
+                    i18n="@@linkedAccounts.unlink"
+                  >
+                    Unlink
+                  </button>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="4" class="muted" i18n="@@linkedAccounts.empty">
+                No identity provider account is linked to yours.
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+  @if (linkable().length > 0) {
+    <section class="card panel linked-panel" aria-labelledby="link-title">
+      <div class="panel-head">
+        <h3 id="link-title" i18n="@@linkedAccounts.linkTitle">Link another account</h3>
+      </div>
+      <div class="panel-body link-body">
+        <p class="hint" i18n="@@linkedAccounts.linkHint">
+          You sign in at the identity provider and come back here.
+        </p>
+        <div class="row">
+          @for (p of linkable(); track p.id) {
+            <button
+              type="button"
+              class="btn"
+              [attr.data-test]="'link-' + p.id"
+              [attr.aria-disabled]="busy() ? true : null"
+              (click)="link(p)"
+              i18n="@@linkedAccounts.link"
+            >
+              Link {{ p.name }}
+            </button>
+          }
+        </div>
+      </div>
+    </section>
   }
+
+  <dialog
+    #confirmDialog
+    id="confirm-dialog"
+    class="dialog"
+    aria-labelledby="confirm-title"
+    aria-describedby="confirm-text"
+    (close)="cancelUnlink()"
+  >
+    <div class="dialog-head">
+      <h2 id="confirm-title" i18n="@@linkedAccounts.unlinkTitle">Unlink the account</h2>
+    </div>
+    <div class="dialog-body">
+      <p id="confirm-text">{{ pendingUnlink()?.question }}</p>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" autofocus (click)="cancelUnlink()" i18n="@@dialog.cancel">
+        Cancel
+      </button>
+      @if (pendingUnlink()) {
+        <button
+          type="button"
+          class="btn btn-danger-solid"
+          (click)="confirmUnlink()"
+          i18n="@@linkedAccounts.unlink"
+        >
+          Unlink
+        </button>
+      }
+    </div>
+  </dialog>
 }

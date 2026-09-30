@@ -8,7 +8,9 @@ import { clip } from '../shared/text';
 import { OrgContext } from '../org/org-context';
 import { inputValue } from '../shared/forms';
 import { KeysetList } from '../shared/keyset';
+import { Icon } from '../shared/icon';
 import { safeHelpUri } from '../shared/links';
+import { PageHeader } from '../shared/page-header';
 
 export type Rule = ItemOf<'/api/v0/rules'>;
 type Quality = Rule['quality'];
@@ -41,8 +43,10 @@ function oneOf<T extends string>(value: string, values: readonly string[]): T | 
  */
 @Component({
   selector: 'q-rules-page',
-  imports: [LabelPipe, RouterLink],
+  imports: [Icon, LabelPipe, PageHeader, RouterLink],
   templateUrl: './rules.page.html',
+  styleUrl: './rules.page.css',
+  host: { class: 'bleed' },
 })
 export class RulesPage {
   private readonly api = inject(Api);

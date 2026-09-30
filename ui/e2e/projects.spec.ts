@@ -27,6 +27,9 @@ test('the list is usable with the keyboard alone', async ({ page }) => {
   await expect(search).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Search' })).toBeFocused();
+  // The admin's "New project" follows the search in the band, then the list.
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'New project' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: SHOP.name })).toBeFocused();
 });
@@ -53,7 +56,8 @@ test('an expired session sends the next request to the login page', async ({ pag
 
 test('an organization admin creates a project', async ({ page }) => {
   await page.goto('/projects');
-  await page.getByText('New project').click();
+  await page.getByRole('button', { name: 'New project' }).click();
+  await expect(page.getByRole('dialog', { name: 'New project' })).toBeVisible();
   await page.getByLabel('Key').fill('acme/new-service');
   await page.getByLabel('Name').fill('New Service');
   await page.getByRole('button', { name: 'Create project' }).click();
@@ -63,4 +67,33 @@ test('an organization admin creates a project', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Quality gate' })).toContainText(
     'This branch has no analysis yet. Run qualor scan in its CI pipeline.',
   );
+});
+
+test("the summary's note on a partial list adds no second hairline, at any width", async ({
+  page,
+}) => {
+  // More projects than one page: the answer says so here (the seed has three).
+  await page.route(/\/api\/v0\/projects\?/, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { items: unknown[]; nextCursor: string | null };
+    return route.fulfill({ response, json: { ...body, nextCursor: 'e2e-more' } });
+  });
+  await page.goto('/projects');
+  await expect(page.locator('.portfolio-note')).toBeVisible();
+  const borders = () =>
+    page.locator('.portfolio .kpi').evaluateAll((kpis) =>
+      kpis.map((kpi) => {
+        const style = getComputedStyle(kpi);
+        return `${style.borderRightWidth} ${style.borderBottomWidth}`;
+      }),
+    );
+  // Four columns: hairlines between them only; the note draws its own line above it.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(await borders()).toEqual(['1px 0px', '1px 0px', '1px 0px', '0px 0px']);
+  // Two columns: a line under the first row only.
+  await page.setViewportSize({ width: 1000, height: 900 });
+  expect((await borders()).map((b) => b.split(' ')[1])).toEqual(['1px', '1px', '0px', '0px']);
+  // One column: a line under each but the last.
+  await page.setViewportSize({ width: 390, height: 900 });
+  expect((await borders()).map((b) => b.split(' ')[1])).toEqual(['1px', '1px', '1px', '0px']);
 });

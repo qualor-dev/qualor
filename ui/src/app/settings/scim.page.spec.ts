@@ -108,6 +108,44 @@ function type(root: HTMLElement, selector: string, value: string): void {
   input.dispatchEvent(new Event('input'));
 }
 
+/** Opens "New token" of the connection's panel and returns the dialog (step 9). */
+async function openCreate(
+  fixture: { whenStable(): Promise<unknown> },
+  root: HTMLElement,
+): Promise<HTMLDialogElement> {
+  button(
+    root.querySelector<HTMLElement>(`section[data-key="${CONNECTION}"]`)!,
+    'New token',
+  ).click();
+  await settle(fixture);
+  const dialog = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+  expect(dialog.open).toBe(true);
+  return dialog;
+}
+
+async function submit(fixture: { whenStable(): Promise<unknown> }, dialog: HTMLDialogElement) {
+  dialog.querySelector('form')!.dispatchEvent(new Event('submit'));
+  await settle(fixture);
+}
+
+/**
+ * Answers the page's confirmation dialog (step 9: it replaces the browser's `confirm()`) with
+ * the button `choice`, and returns the question it asked.
+ */
+async function answer(
+  fixture: { whenStable(): Promise<unknown> },
+  root: HTMLElement,
+  choice: string,
+): Promise<string> {
+  const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+  expect(ask.open).toBe(true);
+  const question = ask.querySelector('#confirm-text')?.textContent?.trim() ?? '';
+  button(ask, choice).click();
+  await settle(fixture);
+  expect(ask.open).toBe(false);
+  return question;
+}
+
 describe('ScimPage (sso-scim.md §12, §18)', () => {
   it('shows the base URL with a copy button', async () => {
     setup();
@@ -145,36 +183,131 @@ describe('ScimPage (sso-scim.md §12, §18)', () => {
     expect(table).toContain('Revoked');
   });
 
-  it('creates a token and shows it once', async () => {
+  it("creates a token in its connection's New token dialog, which shows it once", async () => {
     const server = setup({ tokens: [] });
     server.on('POST', TOKENS, {
       status: 201,
       body: { ...token({ name: 'Okta', lastUsedAt: null }), token: TOKEN },
     });
     const { fixture, root } = await render();
-    type(root, `#scim-name-${CONNECTION}`, 'Okta');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
-    await settle(fixture);
+    const newToken = button(root, 'New token');
+    expect(newToken.getAttribute('aria-label')).toBe('New token for Acme SSO');
+    const dialog = await openCreate(fixture, root);
+    expect(dialog.querySelector('h2')?.textContent?.trim()).toBe('New token for Acme SSO');
+    type(dialog, '#scim-token-name', 'Okta');
+    await submit(fixture, dialog);
     expect(server.requestsTo('POST', TOKENS).map((r) => r.body)).toEqual([
       { connectionId: CONNECTION, name: 'Okta', expiresAt: null },
     ]);
-    expect(root.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(TOKEN);
+    // The dialog now holds the token instead of the form.
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(TOKEN);
+    expect(dialog.querySelector('#scim-token-name')).toBeNull();
     expect(root.querySelector(`#scim-tokens-${CONNECTION}`)?.textContent).toContain('Okta');
-    button(root, 'Done').click();
+    // Done closes the dialog from its footer, once (the secret box has none of its own).
+    const dones = [...dialog.querySelectorAll('button')].filter(
+      (b) => b.textContent?.trim() === 'Done',
+    );
+    expect(dones).toHaveLength(1);
+    expect(dones[0]!.closest('.dialog-actions')).not.toBeNull();
+    button(dialog, 'Done').click();
     await settle(fixture);
+    expect(dialog.open).toBe(false);
     expect(root.querySelector('#secret-once')).toBeNull();
     expect(root.textContent).not.toContain(TOKEN);
     expect([...root.querySelectorAll('input')].map((i) => i.value)).not.toContain(TOKEN);
+    // Opened again: an empty form, never the earlier token.
+    const again = await openCreate(fixture, root);
+    expect(again.querySelector('#secret-once')).toBeNull();
+    expect(again.querySelector<HTMLInputElement>('#scim-token-name')?.value).toBe('');
+  });
+
+  it('forgets the token when its dialog closes', async () => {
+    const server = setup({ tokens: [] });
+    server.on('POST', TOKENS, { status: 201, body: { ...token(), token: TOKEN } });
+    const { fixture, root } = await render();
+    const dialog = await openCreate(fixture, root);
+    type(dialog, '#scim-token-name', 'Okta');
+    await submit(fixture, dialog);
+    expect(dialog.querySelector('#secret-once')).not.toBeNull();
+    dialog.removeAttribute('open');
+    dialog.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    expect(root.querySelector('#secret-once')).toBeNull();
+  });
+
+  it('opens its dialog again on the token when it was closed while the token was made', async () => {
+    const server = setup({ tokens: [] });
+    let reply = (): void => undefined;
+    server.on(
+      'POST',
+      TOKENS,
+      () =>
+        new Promise((resolve) => {
+          reply = () => resolve({ status: 201, body: { ...token(), token: TOKEN } });
+        }),
+    );
+    const { fixture, root } = await render();
+    const dialog = await openCreate(fixture, root);
+    type(dialog, '#scim-token-name', 'Okta');
+    await submit(fixture, dialog);
+    dialog.removeAttribute('open');
+    dialog.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    reply();
+    await settle(fixture);
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(TOKEN);
+  });
+
+  it('keeps its dialog open on Escape while the token shows', async () => {
+    const server = setup({ tokens: [] });
+    server.on('POST', TOKENS, { status: 201, body: { ...token(), token: TOKEN } });
+    const { fixture, root } = await render();
+    const dialog = await openCreate(fixture, root);
+    type(dialog, '#scim-token-name', 'Okta');
+    await submit(fixture, dialog);
+    const onSecret = new Event('cancel', { cancelable: true });
+    dialog.dispatchEvent(onSecret);
+    await settle(fixture);
+    expect(onSecret.defaultPrevented).toBe(true);
+    expect(dialog.querySelector<HTMLInputElement>('#secret-once')?.value).toBe(TOKEN);
+  });
+
+  it('drops a token that arrives after the page was left', async () => {
+    const server = setup({ tokens: [] });
+    let reply = (): void => undefined;
+    server.on(
+      'POST',
+      TOKENS,
+      () =>
+        new Promise((resolve) => {
+          reply = () => resolve({ status: 201, body: { ...token(), token: TOKEN } });
+        }),
+    );
+    const { fixture, root } = await render();
+    const dialog = await openCreate(fixture, root);
+    type(dialog, '#scim-token-name', 'Okta');
+    await submit(fixture, dialog);
+    // Closed, then the page left, while the server makes the token: nothing opens again.
+    dialog.removeAttribute('open');
+    dialog.dispatchEvent(new Event('close'));
+    const page_ = fixture.componentInstance as unknown as { secret: () => unknown };
+    fixture.destroy();
+    reply();
+    await settle();
+    expect(page_.secret()).toBeNull();
+    expect(dialog.open).toBe(false);
   });
 
   it('sends an expiry date as the end of that day in UTC', async () => {
     const server = setup({ tokens: [] });
     server.on('POST', TOKENS, { status: 201, body: { ...token(), token: TOKEN } });
     const { fixture, root } = await render();
-    type(root, `#scim-name-${CONNECTION}`, 'Okta');
-    type(root, `#scim-expiry-${CONNECTION}`, '2027-01-31');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
-    await settle(fixture);
+    const dialog = await openCreate(fixture, root);
+    type(dialog, '#scim-token-name', 'Okta');
+    type(dialog, '#scim-token-expiry', '2027-01-31');
+    await submit(fixture, dialog);
     expect(server.requestsTo('POST', TOKENS)[0]?.body).toEqual({
       connectionId: CONNECTION,
       name: 'Okta',
@@ -182,28 +315,44 @@ describe('ScimPage (sso-scim.md §12, §18)', () => {
     });
   });
 
-  it('shows the token limit clearly', async () => {
+  it('shows the token limit clearly, in the dialog that stays open', async () => {
     const server = setup();
     server.on('POST', TOKENS, { status: 409, body: problem(409, 'SCIM_TOKEN_LIMIT_REACHED') });
     const { fixture, root } = await render();
-    type(root, `#scim-name-${CONNECTION}`, 'Sixth');
-    root.querySelector('form')!.dispatchEvent(new Event('submit'));
-    await settle(fixture);
-    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+    const dialog = await openCreate(fixture, root);
+    type(dialog, '#scim-token-name', 'Sixth');
+    await submit(fixture, dialog);
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain(
       'as many active SCIM tokens as it can have (5)',
+    );
+  });
+
+  it('asks for a name before sending anything', async () => {
+    const server = setup();
+    const { fixture, root } = await render();
+    const dialog = await openCreate(fixture, root);
+    await submit(fixture, dialog);
+    expect(server.requestsTo('POST', TOKENS)).toHaveLength(0);
+    const name = dialog.querySelector<HTMLInputElement>('#scim-token-name')!;
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(dialog.querySelector('#scim-token-name-error')?.textContent).toContain(
+      'Give the token a name of 1 to 200 characters',
     );
   });
 
   it('revokes a token after a confirmation', async () => {
     const server = setup();
     server.on('DELETE', `${TOKENS}/${TOKEN_ID}`, { status: 204 });
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const { fixture, root } = await render();
     button(root, 'Revoke').click();
     await settle(fixture);
-    expect(confirm).toHaveBeenCalledWith(
+    expect(server.requestsTo('DELETE', `${TOKENS}/${TOKEN_ID}`)).toHaveLength(0);
+    expect(await answer(fixture, root, 'Revoke')).toBe(
       'Revoke the SCIM token Entra ID? The identity provider can no longer provision people with it.',
     );
+    expect(confirm).not.toHaveBeenCalled();
     expect(server.requestsTo('DELETE', `${TOKENS}/${TOKEN_ID}`)).toHaveLength(1);
     expect(root.querySelector('[role="status"]')?.textContent).toContain('Token Entra ID revoked.');
     confirm.mockRestore();
@@ -211,12 +360,11 @@ describe('ScimPage (sso-scim.md §12, §18)', () => {
 
   it('revokes nothing when the confirmation is declined', async () => {
     const server = setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { fixture, root } = await render();
     button(root, 'Revoke').click();
     await settle(fixture);
+    await answer(fixture, root, 'Cancel');
     expect(server.requestsTo('DELETE', `${TOKENS}/${TOKEN_ID}`)).toHaveLength(0);
-    confirm.mockRestore();
   });
 
   it('asks nothing of the enterprise API while scim is inactive', async () => {

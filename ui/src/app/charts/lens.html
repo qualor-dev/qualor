@@ -1,0 +1,27 @@
+<svg
+  [attr.width]="g().size"
+  [attr.height]="g().size"
+  [attr.viewBox]="viewBox()"
+  aria-hidden="true"
+  focusable="false"
+>
+  <circle class="lens-track" [attr.cx]="g().c" [attr.cy]="g().c" [attr.r]="g().r" />
+  <g class="lens-dots">
+    @for (dot of g().dots; track $index) {
+      <circle [attr.cx]="dot.x" [attr.cy]="dot.y" [attr.r]="dot.r" />
+    }
+  </g>
+  @if (g().level; as level) {
+    <line
+      class="lens-level"
+      [attr.x1]="level.x1"
+      [attr.x2]="level.x2"
+      [attr.y1]="level.y"
+      [attr.y2]="level.y"
+    />
+  }
+  <circle class="lens-ring" [attr.cx]="g().c" [attr.cy]="g().c" [attr.r]="g().r" />
+  @if (markPath(); as d) {
+    <path class="lens-mark" [attr.d]="d" />
+  }
+</svg>

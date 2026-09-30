@@ -1,167 +1,239 @@
-<div class="page-header">
-  <h1 #heading tabindex="-1" i18n="@@profiles.title">Quality profiles</h1>
-  <a routerLink="/rules" i18n="@@profiles.allRules">All rules</a>
-</div>
-<div role="status">
-  @if (announcement(); as message) {
-    <p class="alert alert-success">{{ message }}</p>
+<q-page-header [compact]="true">
+  <h1 pageTitle #heading tabindex="-1" i18n="@@profiles.title">Quality profiles</h1>
+  <div pageActions class="band-actions">
+    <a class="btn" routerLink="/rules" i18n="@@profiles.allRules">All rules</a>
+    @if (org.canChange('org.profiles.manage')) {
+      <button type="button" class="btn btn-primary" (click)="openCreate()">
+        <q-icon name="plus" /><ng-container i18n="@@profiles.newOpen">New profile</ng-container>
+      </button>
+    }
+  </div>
+</q-page-header>
+
+<div class="page-body">
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (list.error() ?? error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  <div class="profile-groups">
+    @for (group of groups(); track group.language) {
+      <section class="card panel" [attr.aria-labelledby]="'profiles-' + group.language">
+        <div class="panel-head">
+          <h2 [id]="'profiles-' + group.language">
+            <span class="lang-chip">{{ group.language | label: 'language' }}</span>
+          </h2>
+          <span class="panel-sub" i18n="@@profiles.count">{group.profiles.length, plural,
+            =1 {1 profile}
+            other {{{ group.profiles.length }} profiles}
+          }</span>
+        </div>
+        <div class="panel-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col" i18n="@@profiles.col.name">Name</th>
+                <th scope="col" class="col-parent" i18n="@@profiles.col.parent">Inherits from</th>
+                <th scope="col" class="col-rules" i18n="@@profiles.col.unsetRules">
+                  Rules it does not set
+                </th>
+                @if (org.canChange('org.profiles.manage')) {
+                  <th scope="col" class="actions-col">
+                    <span class="visually-hidden" i18n="@@profiles.col.actions">Actions</span>
+                  </th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (p of group.profiles; track p.id) {
+                <tr [attr.data-key]="p.id">
+                  <td>
+                    <div class="profile-name">
+                      <a [routerLink]="['/profiles', p.id]">{{ p.name }}</a>
+                      @if (p.isDefault) {
+                        <span class="badge badge-accent" i18n="@@profiles.default">Default</span>
+                      }
+                      @if (p.isBuiltin) {
+                        <span class="badge badge-tag" i18n="@@profiles.builtin">Built-in</span>
+                      }
+                    </div>
+                  </td>
+                  <td>{{ p.parentId ? (names().get(p.parentId) ?? '–') : '–' }}</td>
+                  <td>
+                    @if (p.unknownRules === 'activate') {
+                      <span i18n="@@profiles.newRulesActive">Active</span>
+                    } @else {
+                      <span class="muted" i18n="@@profiles.newRulesIgnored">Ignored</span>
+                    }
+                  </td>
+                  @if (org.canChange('org.profiles.manage')) {
+                    <td class="actions-col">
+                      <div class="row-actions">
+                        <button
+                          type="button"
+                          class="btn-quiet"
+                          [attr.aria-disabled]="busy() ? true : null"
+                          (click)="copy(p)"
+                          i18n="@@profiles.copy"
+                        >
+                          Copy
+                        </button>
+                        @if (!p.isDefault) {
+                          <button
+                            type="button"
+                            class="btn-quiet"
+                            [attr.aria-disabled]="busy() ? true : null"
+                            (click)="setDefault(p)"
+                            i18n="@@profiles.setDefault"
+                          >
+                            Make default
+                          </button>
+                        }
+                        @if (!p.isBuiltin) {
+                          <button
+                            type="button"
+                            class="btn-quiet danger"
+                            [attr.aria-disabled]="busy() ? true : null"
+                            (click)="remove(p)"
+                            i18n="@@profiles.delete"
+                          >
+                            Delete
+                          </button>
+                        }
+                      </div>
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    }
+  </div>
+  @if (list.nextCursor()) {
+    <p class="load-more">
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-disabled]="list.loading() ? true : null"
+        (click)="list.more()"
+        i18n="@@list.more"
+      >
+        Load more
+      </button>
+    </p>
   }
 </div>
-@if (list.error() ?? error(); as message) {
-  <p class="alert alert-error" role="alert">{{ message }}</p>
-}
-@for (group of groups(); track group.language) {
-  <section class="section" [attr.aria-labelledby]="'profiles-' + group.language">
-    <h2 [id]="'profiles-' + group.language">{{ group.language | label: 'language' }}</h2>
-    <div class="table-wrap fixed-cols">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col" i18n="@@profiles.col.name">Name</th>
-            <th scope="col" i18n="@@profiles.col.parent">Inherits from</th>
-            <th scope="col">
-              <span class="visually-hidden" i18n="@@profiles.col.actions">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (p of group.profiles; track p.id) {
-            <tr [attr.data-key]="p.id">
-              <td>
-                <a [routerLink]="['/profiles', p.id]">{{ p.name }}</a>
-                @if (p.isDefault) {
-                  <span class="badge badge-accent" i18n="@@profiles.default">Default</span>
-                }
-                @if (p.isBuiltin) {
-                  <span class="badge badge-tag" i18n="@@profiles.builtin">Built-in</span>
-                }
-              </td>
-              <td>{{ p.parentId ? (names().get(p.parentId) ?? '–') : '–' }}</td>
-              <td class="actions">
-                @if (org.canChange('org.profiles.manage')) {
-                  <div class="row">
-                    <button
-                      type="button"
-                      class="btn"
-                      [attr.aria-disabled]="busy() ? true : null"
-                      (click)="copy(p)"
-                      i18n="@@profiles.copy"
-                    >
-                      Copy
-                    </button>
-                    @if (!p.isDefault) {
-                      <button
-                        type="button"
-                        class="btn"
-                        [attr.aria-disabled]="busy() ? true : null"
-                        (click)="setDefault(p)"
-                        i18n="@@profiles.setDefault"
-                      >
-                        Make default
-                      </button>
-                    }
-                    @if (!p.isBuiltin) {
-                      <button
-                        type="button"
-                        class="btn btn-danger"
-                        [attr.aria-disabled]="busy() ? true : null"
-                        (click)="remove(p)"
-                        i18n="@@profiles.delete"
-                      >
-                        Delete
-                      </button>
-                    }
-                  </div>
-                }
-              </td>
-            </tr>
-          } @empty {
-            @if (list.loaded()) {
-              <tr>
-                <td colspan="3" class="muted" i18n="@@profiles.empty">
-                  No profile for this language.
-                </td>
-              </tr>
-            }
-          }
-        </tbody>
-      </table>
-    </div>
-  </section>
-}
-@if (list.nextCursor()) {
-  <p>
-    <button
-      type="button"
-      class="btn"
-      [attr.aria-disabled]="list.loading() ? true : null"
-      (click)="list.more()"
-      i18n="@@list.more"
-    >
-      Load more
-    </button>
-  </p>
-}
 
 @if (org.canChange('org.profiles.manage')) {
-  <form class="card" (submit)="create($event)">
-    <h2 i18n="@@profiles.new">New profile</h2>
-    <div class="row fields">
-      <div class="field">
-        <label for="profile-name" i18n="@@profiles.name">Name</label>
-        <input
-          id="profile-name"
-          required
-          maxlength="100"
-          [attr.aria-invalid]="nameError() ? true : null"
-          [attr.aria-describedby]="nameError() ? 'profile-name-error' : null"
-          [value]="newName()"
-          (input)="setName($event)"
-        />
-        @if (nameError(); as message) {
-          <span id="profile-name-error" class="field-error">{{ message }}</span>
-        }
+  <dialog #createDialog id="create-dialog" class="dialog" aria-labelledby="create-profile-title">
+    <form novalidate (submit)="create($event)">
+      <div class="dialog-head">
+        <h2 id="create-profile-title" i18n="@@profiles.new">New profile</h2>
       </div>
-      <div class="field">
-        <label for="profile-language" i18n="@@profiles.language">Language</label>
-        <select id="profile-language" (change)="setLanguage($event)">
-          @for (l of languages; track l) {
-            <option [value]="l" [selected]="l === newLanguage()">
-              {{ l | label: 'language' }}
+      <div class="dialog-body">
+        @if (createError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        <div class="field">
+          <label for="profile-name" i18n="@@profiles.name">Name</label>
+          <input
+            id="profile-name"
+            required
+            autofocus
+            autocomplete="off"
+            maxlength="100"
+            [attr.aria-invalid]="nameError() ? true : null"
+            [attr.aria-describedby]="nameError() ? 'profile-name-error' : null"
+            [value]="newName()"
+            (input)="setName($event)"
+          />
+          @if (nameError(); as message) {
+            <span id="profile-name-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+        <div class="field">
+          <label for="profile-language" i18n="@@profiles.language">Language</label>
+          <select id="profile-language" (change)="setLanguage($event)">
+            @for (l of languages; track l) {
+              <option [value]="l" [selected]="l === newLanguage()">
+                {{ l | label: 'language' }}
+              </option>
+            }
+          </select>
+        </div>
+        <div class="field">
+          <label for="profile-parent" i18n="@@profiles.parent">Inherits from</label>
+          <select
+            id="profile-parent"
+            [attr.aria-invalid]="parentError() ? true : null"
+            [attr.aria-describedby]="
+              parentError() ? 'profile-parent-error profile-parent-hint' : 'profile-parent-hint'
+            "
+            (change)="setParent($event)"
+          >
+            <option value="" [selected]="newParent() === ''" i18n="@@profiles.noParent">
+              Nothing
             </option>
+            @for (p of parents(); track p.id) {
+              <option [value]="p.id" [selected]="p.id === newParent()">{{ p.name }}</option>
+            }
+          </select>
+          @if (parentError(); as message) {
+            <span id="profile-parent-error" class="field-error" role="alert">{{ message }}</span>
           }
-        </select>
+          <span id="profile-parent-hint" class="hint" i18n="@@profiles.parentHint">
+            A profile keeps its parent. Profiles inherit at most three levels deep.
+          </span>
+        </div>
       </div>
-      <div class="field">
-        <label for="profile-parent" i18n="@@profiles.parent">Inherits from</label>
-        <select
-          id="profile-parent"
-          [attr.aria-invalid]="parentError() ? true : null"
-          [attr.aria-describedby]="parentError() ? 'profile-parent-error' : null"
-          (change)="setParent($event)"
+      <div class="dialog-actions">
+        <button type="button" class="btn" (click)="closeCreate()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [disabled]="!newName().trim()"
+          [attr.aria-disabled]="busy() ? true : null"
+          i18n="@@profiles.create"
         >
-          <option value="" [selected]="newParent() === ''" i18n="@@profiles.noParent">
-            Nothing
-          </option>
-          @for (p of parents(); track p.id) {
-            <option [value]="p.id" [selected]="p.id === newParent()">{{ p.name }}</option>
-          }
-        </select>
-        @if (parentError(); as message) {
-          <span id="profile-parent-error" class="field-error">{{ message }}</span>
-        }
+          Create profile
+        </button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog
+    #confirmDialog
+    id="confirm-dialog"
+    class="dialog"
+    aria-labelledby="confirm-title"
+    aria-describedby="confirm-text"
+    (close)="cancelDelete()"
+  >
+    <div class="dialog-head">
+      <h2 id="confirm-title" i18n="@@profiles.deleteTitle">Delete the quality profile</h2>
     </div>
-    <p class="hint" i18n="@@profiles.parentHint">
-      A profile keeps its parent. Profiles inherit at most three levels deep.
-    </p>
-    <button
-      type="submit"
-      class="btn btn-primary"
-      [disabled]="!newName().trim()"
-      i18n="@@profiles.create"
-    >
-      Create profile
-    </button>
-  </form>
+    <div class="dialog-body">
+      <p id="confirm-text">{{ deleteQuestion() }}</p>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" autofocus (click)="cancelDelete()" i18n="@@dialog.cancel">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-danger-solid"
+        (click)="confirmDelete()"
+        i18n="@@profiles.delete"
+      >
+        Delete
+      </button>
+    </div>
+  </dialog>
 }

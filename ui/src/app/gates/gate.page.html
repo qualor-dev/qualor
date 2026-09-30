@@ -1,10 +1,14 @@
-<p><a class="back-link" routerLink="/gates" i18n="@@gate.back">All quality gates</a></p>
 @if (gate.error(); as err) {
-  <p class="alert alert-error" role="alert">{{ problemMessage(err) }}</p>
+  <q-page-header [crumbs]="crumbs" [compact]="true">
+    <h1 pageTitle i18n="@@gate.unavailable">Quality gate unavailable</h1>
+  </q-page-header>
+  <div class="page-body">
+    <p class="alert alert-error" role="alert">{{ problemMessage(err) }}</p>
+  </div>
 } @else if (current(); as g) {
-  <div class="page-header">
-    <h1>{{ g.name }}</h1>
-    <div class="row">
+  <q-page-header [crumbs]="crumbs" [compact]="true">
+    <div pageTitle class="page-title">
+      <h1>{{ g.name }}</h1>
       @if (g.isDefault) {
         <span class="badge badge-accent" i18n="@@gate.default">Default</span>
       }
@@ -12,131 +16,326 @@
         <span class="badge badge-tag" i18n="@@gate.builtin">Built-in</span>
       }
     </div>
-  </div>
-  @if (g.isBuiltin) {
-    <p class="alert alert-info" i18n="@@gate.builtinHint">
-      The built-in gate cannot change. Copy it from the list of gates to make your own.
-    </p>
-  }
-  <h2 #conditionsHeading tabindex="-1" i18n="@@gate.conditions">Conditions</h2>
-  <div role="status">
-    @if (announcement(); as message) {
-      <p class="alert alert-success">{{ message }}</p>
-    }
-  </div>
-  @if (error(); as message) {
-    <p class="alert alert-error" role="alert">{{ message }}</p>
-  }
-  <div class="table-wrap">
-    <table #table>
-      <caption class="visually-hidden" i18n="@@gate.caption">
-        The gate fails when any of these conditions is true
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col" i18n="@@gate.col.condition">Fails when</th>
-          @if (editable()) {
-            <th scope="col">
-              <span class="visually-hidden" i18n="@@gate.col.actions">Actions</span>
-            </th>
-          }
-        </tr>
-      </thead>
-      <tbody>
-        @for (c of g.conditions; track c.id; let i = $index) {
-          <tr [attr.data-key]="c.id">
-            <td>
-              {{ c.metric | label: 'metric' }} {{ operatorLabel(c.operator) }}
-              {{ c.threshold | measure: c.metric }}
-            </td>
-            @if (editable()) {
-              <td class="actions">
-                <button
-                  type="button"
-                  class="btn btn-danger"
-                  [attr.aria-disabled]="busy() ? true : null"
-                  (click)="remove(c, i)"
-                  i18n="@@gate.removeCondition"
-                >
-                  Remove
-                </button>
-              </td>
-            }
-          </tr>
-        } @empty {
-          <tr>
-            <td [attr.colspan]="editable() ? 2 : 1" class="muted" i18n="@@gate.noConditions">
-              No conditions: this gate always passes.
-            </td>
-          </tr>
+    @if (canManage()) {
+      <div pageActions #actions class="band-actions">
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-disabled]="busy() ? true : null"
+          (click)="copy()"
+          i18n="@@gates.copy"
+        >
+          Copy
+        </button>
+        @if (!g.isBuiltin) {
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-disabled]="busy() ? true : null"
+            (click)="openRename()"
+            i18n="@@gate.rename"
+          >
+            Rename
+          </button>
         }
-      </tbody>
-    </table>
+        @if (!g.isDefault) {
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-disabled]="busy() ? true : null"
+            (click)="makeDefault()"
+            i18n="@@gates.setDefault"
+          >
+            Make default
+          </button>
+        }
+        @if (!g.isBuiltin) {
+          <button
+            type="button"
+            class="btn btn-danger"
+            [attr.aria-disabled]="busy() ? true : null"
+            (click)="askDelete()"
+            i18n="@@gates.delete"
+          >
+            Delete
+          </button>
+        }
+      </div>
+    }
+  </q-page-header>
+
+  <div class="page-body">
+    @if (g.isBuiltin) {
+      <p class="alert alert-info" i18n="@@gate.builtinHintBand">
+        The built-in gate cannot change. Copy it to make your own.
+      </p>
+    }
+    <div role="status">
+      @if (announcement(); as message) {
+        <p class="alert alert-success">{{ message }}</p>
+      }
+    </div>
+    @if (error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+
+    <section class="card panel" aria-labelledby="conditions-heading">
+      <div class="panel-head">
+        <h2 id="conditions-heading" #conditionsHeading tabindex="-1" i18n="@@gate.conditions">
+          Conditions
+        </h2>
+        <span class="panel-sub" i18n="@@gate.caption">
+          The gate fails when any of these conditions is true
+        </span>
+      </div>
+      <div class="panel-scroll">
+        <table #table aria-labelledby="conditions-heading" [class.conditions-editable]="editable()">
+          <thead>
+            @if (editable()) {
+              <tr>
+                <th scope="col" i18n="@@gate.col.metric">Metric</th>
+                <th scope="col" i18n="@@gate.col.failsWhen">Fails when the value</th>
+                <th scope="col" class="actions-col">
+                  <span class="visually-hidden" i18n="@@gate.col.actions">Actions</span>
+                </th>
+              </tr>
+            } @else {
+              <tr>
+                <th scope="col" i18n="@@gate.col.condition">Fails when</th>
+              </tr>
+            }
+          </thead>
+          <tbody>
+            @for (c of g.conditions; track c.id; let i = $index) {
+              <!-- Explicit roles: on a phone the editable rows stack (a grid), still a table. -->
+              <tr [attr.data-key]="c.id" [attr.role]="editable() ? 'row' : null">
+                @if (editable()) {
+                  <th scope="row" role="rowheader" class="cond-metric">
+                    {{ c.metric | label: 'metric' }}
+                  </th>
+                  <td role="cell" class="cond-edit">
+                    <div class="cond-fields">
+                      <label
+                        class="visually-hidden"
+                        [attr.for]="'cond-op-' + c.id"
+                        i18n="@@gate.operatorOf"
+                        >Operator of {{ c.metric | label: 'metric' }}</label
+                      >
+                      <select [id]="'cond-op-' + c.id" (change)="editOperator(c, $event)">
+                        @for (o of operators; track o) {
+                          <option [value]="o" [selected]="draftOperator(c) === o">
+                            {{ operatorLabel(o) }}
+                          </option>
+                        }
+                      </select>
+                      <label
+                        class="visually-hidden"
+                        [attr.for]="'cond-th-' + c.id"
+                        i18n="@@gate.thresholdOf"
+                        >Threshold of {{ c.metric | label: 'metric' }}</label
+                      >
+                      <input
+                        [id]="'cond-th-' + c.id"
+                        class="cond-threshold"
+                        type="text"
+                        inputmode="decimal"
+                        autocomplete="off"
+                        [value]="draftThreshold(c)"
+                        [attr.aria-invalid]="rowErrors()[c.id] ? true : null"
+                        [attr.aria-describedby]="rowErrors()[c.id] ? 'cond-error-' + c.id : null"
+                        (input)="editThreshold(c, $event)"
+                        (keydown.enter)="saveOnEnter(c, $event)"
+                        (keydown.escape)="dropDraft(c)"
+                      />
+                      @if (unit(c.metric, draftThreshold(c)); as u) {
+                        <span class="cond-unit">{{ u }}</span>
+                      }
+                    </div>
+                    @if (rowErrors()[c.id]; as message) {
+                      <span [id]="'cond-error-' + c.id" class="field-error" role="alert">{{
+                        message
+                      }}</span>
+                    }
+                  </td>
+                  <td role="cell" class="actions-col">
+                    <div class="row-actions">
+                      <button
+                        type="button"
+                        class="btn-quiet cond-save"
+                        [class.idle]="!changed(c)"
+                        [attr.aria-label]="saveLabel(c)"
+                        [attr.aria-disabled]="busy() ? true : null"
+                        (click)="save(c)"
+                        i18n="@@gate.save"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        class="btn-quiet danger"
+                        [attr.aria-disabled]="busy() ? true : null"
+                        (click)="remove(c, i)"
+                        i18n="@@gate.removeCondition"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </td>
+                } @else {
+                  <td>
+                    {{ c.metric | label: 'metric' }} {{ operatorLabel(c.operator) }}
+                    {{ c.threshold | measure: c.metric }}
+                  </td>
+                }
+              </tr>
+            } @empty {
+              <tr>
+                <td [attr.colspan]="editable() ? 3 : 1" class="muted" i18n="@@gate.noConditions">
+                  No conditions: this gate always passes.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      @if (editable()) {
+        <form class="panel-add" (submit)="add($event)">
+          <h3 class="panel-add-title" i18n="@@gate.addCondition">Add a condition</h3>
+          @if (catalogError(); as message) {
+            <p class="alert alert-error" role="alert" i18n="@@gate.metricsFailed">
+              The metrics could not be loaded: {{ message }}
+            </p>
+          }
+          <div class="panel-add-fields">
+            <div class="field">
+              <label for="condition-metric" i18n="@@gate.metric">Metric</label>
+              <select
+                id="condition-metric"
+                required
+                [attr.aria-invalid]="metricError() ? true : null"
+                [attr.aria-describedby]="metricError() ? 'condition-metric-error' : null"
+                (change)="chooseMetric($event)"
+              >
+                <option value="" [selected]="metric() === ''" i18n="@@gate.chooseMetric">
+                  Choose a metric
+                </option>
+                @for (m of options(); track m.key) {
+                  <option [value]="m.key" [selected]="m.key === metric()">{{ m.label }}</option>
+                }
+              </select>
+              @if (metricError(); as message) {
+                <span id="condition-metric-error" class="field-error">{{ message }}</span>
+              }
+            </div>
+            <div class="field">
+              <label for="condition-operator" i18n="@@gate.operator">Fails when the value</label>
+              <select id="condition-operator" (change)="chooseOperator($event)">
+                @for (o of operators; track o) {
+                  <option [value]="o" [selected]="operator() === o">{{ operatorLabel(o) }}</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="condition-threshold" i18n="@@gate.threshold">Threshold</label>
+              <input
+                id="condition-threshold"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
+                required
+                [attr.aria-invalid]="thresholdError() ? true : null"
+                [attr.aria-describedby]="thresholdError() ? 'condition-threshold-error' : null"
+                [value]="threshold()"
+                (input)="setThreshold($event)"
+              />
+              @if (thresholdError(); as message) {
+                <span id="condition-threshold-error" class="field-error">{{ message }}</span>
+              }
+            </div>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              [disabled]="!metric()"
+              [attr.aria-disabled]="busy() ? true : null"
+              i18n="@@gate.addSubmit"
+            >
+              Add condition
+            </button>
+          </div>
+        </form>
+      }
+    </section>
   </div>
 
-  @if (editable()) {
-    <form class="card" (submit)="add($event)">
-      <h2 i18n="@@gate.addCondition">Add a condition</h2>
-      @if (catalogError(); as message) {
-        <p class="alert alert-error" role="alert" i18n="@@gate.metricsFailed">
-          The metrics could not be loaded: {{ message }}
-        </p>
-      }
-      <div class="row fields">
-        <div class="field">
-          <label for="condition-metric" i18n="@@gate.metric">Metric</label>
-          <select
-            id="condition-metric"
-            required
-            [attr.aria-invalid]="metricError() ? true : null"
-            [attr.aria-describedby]="metricError() ? 'condition-metric-error' : null"
-            (change)="chooseMetric($event)"
+  @if (canManage() && !g.isBuiltin) {
+    <dialog #renameDialog id="rename-dialog" class="dialog" aria-labelledby="rename-title">
+      <form novalidate (submit)="rename($event)">
+        <div class="dialog-head">
+          <h2 id="rename-title" i18n="@@gate.renameTitle">Rename the quality gate</h2>
+        </div>
+        <div class="dialog-body">
+          <div class="field">
+            <label for="gate-rename" i18n="@@gates.nameLabel">Name</label>
+            <input
+              id="gate-rename"
+              required
+              autofocus
+              autocomplete="off"
+              maxlength="100"
+              [attr.aria-invalid]="renameError() ? true : null"
+              [attr.aria-describedby]="renameError() ? 'gate-rename-error' : null"
+              [value]="newName()"
+              (input)="setNewName($event)"
+            />
+            @if (renameError(); as message) {
+              <span id="gate-rename-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn" (click)="closeRename()" i18n="@@dialog.cancel">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-primary"
+            [disabled]="!newName().trim()"
+            [attr.aria-disabled]="busy() ? true : null"
+            i18n="@@gate.renameSubmit"
           >
-            <option value="" [selected]="metric() === ''" i18n="@@gate.chooseMetric">
-              Choose a metric
-            </option>
-            @for (m of options(); track m.key) {
-              <option [value]="m.key" [selected]="m.key === metric()">{{ m.label }}</option>
-            }
-          </select>
-          @if (metricError(); as message) {
-            <span id="condition-metric-error" class="field-error">{{ message }}</span>
-          }
+            Rename
+          </button>
         </div>
-        <div class="field">
-          <label for="condition-operator" i18n="@@gate.operator">Fails when the value</label>
-          <select id="condition-operator" (change)="chooseOperator($event)">
-            @for (o of operators; track o) {
-              <option [value]="o" [selected]="operator() === o">{{ operatorLabel(o) }}</option>
-            }
-          </select>
-        </div>
-        <div class="field">
-          <label for="condition-threshold" i18n="@@gate.threshold">Threshold</label>
-          <input
-            id="condition-threshold"
-            type="number"
-            step="any"
-            required
-            [attr.aria-invalid]="thresholdError() ? true : null"
-            [attr.aria-describedby]="thresholdError() ? 'condition-threshold-error' : null"
-            [value]="threshold()"
-            (input)="setThreshold($event)"
-          />
-          @if (thresholdError(); as message) {
-            <span id="condition-threshold-error" class="field-error">{{ message }}</span>
-          }
-        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      #confirmDialog
+      id="confirm-dialog"
+      class="dialog"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-text"
+    >
+      <div class="dialog-head">
+        <h2 id="confirm-title" i18n="@@gates.deleteTitle">Delete the quality gate</h2>
       </div>
-      <button
-        type="submit"
-        class="btn btn-primary"
-        [disabled]="!metric()"
-        [attr.aria-disabled]="busy() ? true : null"
-        i18n="@@gate.addSubmit"
-      >
-        Add condition
-      </button>
-    </form>
+      <div class="dialog-body">
+        <p id="confirm-text">{{ deleteQuestion() }}</p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" autofocus (click)="closeDelete()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-danger-solid"
+          (click)="confirmDelete()"
+          i18n="@@gates.delete"
+        >
+          Delete
+        </button>
+      </div>
+    </dialog>
   }
 }

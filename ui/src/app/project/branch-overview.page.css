@@ -1,0 +1,147 @@
+/* The project overview (spec §7.1): a 12-column grid of panels. */
+.overview {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 20px;
+}
+.overview > * {
+  margin: 0;
+}
+.gate-panel {
+  grid-column: span 8;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+.new-code-panel {
+  grid-column: span 4;
+}
+.kpi-strip {
+  grid-column: span 12;
+  display: grid;
+  grid-template-columns: 1.45fr 1fr 1fr 1fr 1.35fr;
+}
+.history-panel {
+  grid-column: span 8;
+}
+.open-issues-panel {
+  grid-column: span 4;
+  display: flex;
+  flex-direction: column;
+}
+.open-issues-panel .panel-body {
+  flex: 1;
+}
+.recent-panel {
+  grid-column: span 8;
+}
+.sources-panel {
+  grid-column: span 4;
+}
+
+/* The gate: the verdict at the left, the conditions at the right. */
+.gate-verdict {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 22px;
+  border-right: 1px solid var(--hairline);
+}
+.gate-title {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+.gate-name {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.gate-word-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.gate-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.gate-explanation {
+  margin: 0;
+  font-size: 13px;
+}
+.gate-conditions {
+  min-width: 0;
+}
+.gate-conditions table {
+  width: 100%;
+}
+.gate-conditions th,
+.gate-conditions td {
+  padding-left: 22px;
+  padding-right: 22px;
+}
+.condition-metric {
+  display: block;
+  font-weight: 600;
+}
+.condition-rule {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.condition-skipped {
+  margin: 10px 22px 0;
+}
+.gate-warnings {
+  margin: 12px 22px 0;
+}
+.gate-conditions > :last-child {
+  margin-bottom: 18px;
+}
+
+@media (max-width: 72rem) {
+  .gate-panel,
+  .new-code-panel,
+  .history-panel,
+  .open-issues-panel,
+  .recent-panel,
+  .sources-panel {
+    grid-column: span 12;
+  }
+  .kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .kpi:nth-child(odd) {
+    border-right: 0;
+  }
+}
+@media (max-width: 40rem) {
+  .gate-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gate-verdict {
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .kpi-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .kpi {
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+}
+/* The history's room while it loads: no layout jump when the chart arrives. */
+.chart-placeholder {
+  height: 364px;
+}

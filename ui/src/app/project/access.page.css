@@ -1,0 +1,46 @@
+/* Project → Access (spec §7.5): the grants beside the roles legend; add and confirm in dialogs. */
+.access-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 16px;
+}
+.access-head p {
+  margin: 0;
+}
+.access-head .btn q-icon {
+  margin-right: 6px;
+}
+.access-layout {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  align-items: start;
+}
+.access-layout > * {
+  margin: 0;
+}
+/* Beside the legend the grants need 72rem of screen; below it, the legend's roles sit in a row. */
+@media (max-width: 72rem) {
+  .access-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.roles-legend dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 10px 32px;
+  margin: 0;
+}
+.roles-legend dt {
+  margin-bottom: 4px;
+  font-weight: 650;
+}
+.roles-legend dd {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}

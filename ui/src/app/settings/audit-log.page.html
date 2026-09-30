@@ -1,373 +1,397 @@
-<h2 #heading tabindex="-1" i18n="@@audit.title">Audit log</h2>
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@audit.title">Audit log</h2>
+    @if (infoLoaded() && !licensed() && !infoError()) {
+      <p class="muted" i18n="@@audit.notLicensed">
+        The audit log needs an enterprise licence with the audit-log feature.
+      </p>
+    } @else if (licensed() && !allowed()) {
+      <p class="muted" i18n="@@audit.adminsOnly">
+        Only instance administrators and organization administrators read the audit log.
+      </p>
+    } @else if (allowed()) {
+      <p class="muted">
+        @if (instanceAdmin()) {
+          <span i18n="@@audit.introInstance">
+            Security events of the whole instance, newest first. Events are kept for the period set
+            in the audit settings.
+          </span>
+        } @else {
+          <span i18n="@@audit.introOrg">
+            Security events of {{ org.current()?.name }}, newest first. Events of the instance
+            itself are shown to instance administrators only.
+          </span>
+        }
+      </p>
+    }
+  </div>
+</div>
 @if (infoError(); as message) {
   <p class="alert alert-error" role="alert">{{ message }}</p>
-} @else if (infoLoaded() && !licensed()) {
-  <p class="muted" i18n="@@audit.notLicensed">
-    The audit log needs an enterprise licence with the audit-log feature.
-  </p>
-} @else if (licensed() && !allowed()) {
-  <p class="muted" i18n="@@audit.adminsOnly">
-    Only instance administrators and organization administrators read the audit log.
-  </p>
 } @else if (allowed()) {
-  <p class="muted">
+  <div class="audit-panels">
     @if (instanceAdmin()) {
-      <span i18n="@@audit.introInstance">
-        Security events of the whole instance, newest first. Events are kept for the period set in
-        the audit settings.
-      </span>
-    } @else {
-      <span i18n="@@audit.introOrg">
-        Security events of {{ org.current()?.name }}, newest first. Events of the instance itself
-        are shown to instance administrators only.
-      </span>
+      <section id="audit-head" class="card panel" aria-labelledby="audit-head-title">
+        <div class="panel-head">
+          <h3 id="audit-head-title" i18n="@@audit.head">Chain head</h3>
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-disabled]="verifying() ? true : null"
+            (click)="verify()"
+            i18n="@@audit.verify"
+          >
+            Verify chain
+          </button>
+        </div>
+        <div class="panel-body">
+          @if (headError(); as message) {
+            <p class="alert alert-error" role="alert">{{ message }}</p>
+          } @else if (head(); as h) {
+            @if (h.seq !== null && h.hash !== null) {
+              <dl class="facts">
+                <dt i18n="@@audit.headSeq">Newest event:</dt>
+                <dd>{{ h.seq }}</dd>
+                <dt i18n="@@audit.headHash">Its hash:</dt>
+                <dd class="row">
+                  <code>{{ hashStart(h.hash) }}…</code>
+                  <button
+                    type="button"
+                    class="btn-quiet"
+                    (click)="copyHash()"
+                    i18n="@@audit.copyHash"
+                  >
+                    Copy the full hash
+                  </button>
+                </dd>
+              </dl>
+              <p class="muted">
+                <span i18n="@@audit.headCount">{h.count, plural,
+                  =1 {1 event is kept.}
+                  other {{{ h.count }} events are kept.}
+                }</span>
+                @if (h.anchor; as anchor) {
+                  <span i18n="@@audit.headAnchor"
+                    >Events up to {{ anchor.throughSeq }} were removed by retention.</span
+                  >
+                }
+              </p>
+              <p class="hint" i18n="@@audit.headHint">
+                Note the head somewhere outside Qualor now and then: a later head must continue from
+                it.
+              </p>
+            } @else {
+              <p class="muted" i18n="@@audit.headEmpty">No event has been recorded yet.</p>
+            }
+            <p aria-live="polite" class="audit-copied">
+              @switch (copyState()) {
+                @case ('copied') {
+                  <span i18n="@@secret.copied">Copied.</span>
+                }
+                @case ('failed') {
+                  <span i18n="@@audit.copyFailed"
+                    >Copying failed: open an event's details to see its hash.</span
+                  >
+                }
+              }
+            </p>
+          }
+          <div role="status">
+            @if (verifying()) {
+              <p class="muted" i18n="@@audit.verifying">Verifying…</p>
+            }
+            @if (verification(); as v) {
+              @if (v.ok) {
+                <p id="audit-verify-result" class="alert alert-success">
+                  <span i18n="@@audit.verifyOk">{v.checked, plural,
+                    =1 {The chain is intact (1 event).}
+                    other {The chain is intact ({{ v.checked }} events).}
+                  }</span>
+                </p>
+              } @else if (v.break; as b) {
+                <p id="audit-verify-result" class="alert alert-error">
+                  <span i18n="@@audit.verifyBreak"
+                    >The chain breaks at event {{ b.seq }}: {{ breakText(b.reason) }}.</span
+                  >
+                </p>
+              }
+            }
+          </div>
+          @if (verifyError(); as message) {
+            <p class="alert alert-error" role="alert">{{ message }}</p>
+          }
+        </div>
+      </section>
     }
-  </p>
 
-  @if (instanceAdmin()) {
-    <section id="audit-head" class="card" aria-labelledby="audit-head-title">
-      <h3 id="audit-head-title" i18n="@@audit.head">Chain head</h3>
-      @if (headError(); as message) {
-        <p class="alert alert-error" role="alert">{{ message }}</p>
-      } @else if (head(); as h) {
-        @if (h.seq !== null && h.hash !== null) {
-          <dl class="facts">
-            <dt i18n="@@audit.headSeq">Newest event:</dt>
-            <dd>{{ h.seq }}</dd>
-            <dt i18n="@@audit.headHash">Its hash:</dt>
-            <dd class="row">
-              <code>{{ hashStart(h.hash) }}…</code>
-              <button type="button" class="btn" (click)="copyHash()" i18n="@@audit.copyHash">
-                Copy the full hash
-              </button>
-            </dd>
-          </dl>
-          <p class="muted">
-            <span i18n="@@audit.headCount">{h.count, plural,
-              =1 {1 event is kept.}
-              other {{{ h.count }} events are kept.}
-            }</span>
-            @if (h.anchor; as anchor) {
-              <span i18n="@@audit.headAnchor"
-                >Events up to {{ anchor.throughSeq }} were removed by retention.</span
-              >
-            }
-          </p>
-          <p class="muted" i18n="@@audit.headHint">
-            Note the head somewhere outside Qualor now and then: a later head must continue from it.
-          </p>
-        } @else {
-          <p class="muted" i18n="@@audit.headEmpty">No event has been recorded yet.</p>
-        }
-        <p aria-live="polite">
-          @switch (copyState()) {
-            @case ('copied') {
-              <span i18n="@@secret.copied">Copied.</span>
-            }
-            @case ('failed') {
-              <span i18n="@@audit.copyFailed"
-                >Copying failed: open an event's details to see its hash.</span
-              >
-            }
-          }
-        </p>
-      }
-      <p>
-        <button
-          type="button"
-          class="btn"
-          [attr.aria-disabled]="verifying() ? true : null"
-          (click)="verify()"
-          i18n="@@audit.verify"
-        >
-          Verify chain
-        </button>
-      </p>
-      <div role="status">
-        @if (verifying()) {
-          <p class="muted" i18n="@@audit.verifying">Verifying…</p>
-        }
-        @if (verification(); as v) {
-          @if (v.ok) {
-            <p id="audit-verify-result" class="alert alert-success">
-              <span i18n="@@audit.verifyOk">{v.checked, plural,
-                =1 {The chain is intact (1 event).}
-                other {The chain is intact ({{ v.checked }} events).}
-              }</span>
-            </p>
-          } @else if (v.break; as b) {
-            <p id="audit-verify-result" class="alert alert-error">
-              <span i18n="@@audit.verifyBreak"
-                >The chain breaks at event {{ b.seq }}: {{ breakText(b.reason) }}.</span
-              >
-            </p>
-          }
-        }
+    <form
+      class="card panel filters"
+      aria-labelledby="audit-filters-title"
+      novalidate
+      (submit)="submit($event)"
+    >
+      <div class="panel-head">
+        <h3 id="audit-filters-title" i18n="@@audit.filters">Filters</h3>
       </div>
-      @if (verifyError(); as message) {
-        <p class="alert alert-error" role="alert">{{ message }}</p>
-      }
-    </section>
-  }
-
-  <form class="card filters" novalidate (submit)="submit($event)">
-    <h3 i18n="@@audit.filters">Filters</h3>
-    <div class="row">
-      <div class="field">
-        <label for="audit-from" i18n="@@audit.from">From (UTC)</label>
-        <input
-          id="audit-from"
-          type="date"
-          [value]="from()"
-          [attr.aria-invalid]="fieldError().from ? true : null"
-          [attr.aria-describedby]="fieldError().from ? 'audit-from-error' : null"
-          (input)="set('from', $event)"
-        />
-        @if (fieldError().from; as message) {
-          <span id="audit-from-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <div class="field">
-        <label for="audit-to" i18n="@@audit.to">To (UTC, included)</label>
-        <input
-          id="audit-to"
-          type="date"
-          [value]="to()"
-          [attr.aria-invalid]="fieldError().to ? true : null"
-          [attr.aria-describedby]="fieldError().to ? 'audit-to-error' : null"
-          (input)="set('to', $event)"
-        />
-        @if (fieldError().to; as message) {
-          <span id="audit-to-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <div class="field">
-        <label for="audit-outcome" i18n="@@audit.outcome">Outcome</label>
-        <select id="audit-outcome" (change)="setOutcome($event)">
-          <option value="" [selected]="outcome() === ''" i18n="@@audit.outcomeAny">Any</option>
-          @for (o of outcomes; track o) {
-            <option [value]="o" [selected]="outcome() === o">{{ outcomeLabel(o) }}</option>
-          }
-        </select>
-      </div>
-    </div>
-    <div class="field">
-      <label for="audit-action" i18n="@@audit.action">Actions</label>
-      <input
-        id="audit-action"
-        autocomplete="off"
-        spellcheck="false"
-        maxlength="2000"
-        placeholder="project_member.*, auth.login"
-        i18n-placeholder="@@audit.actionPlaceholder"
-        [value]="actions()"
-        [attr.aria-invalid]="fieldError().action ? true : null"
-        [attr.aria-describedby]="
-          fieldError().action ? 'audit-action-hint audit-action-error' : 'audit-action-hint'
-        "
-        (input)="set('actions', $event)"
-      />
-      <span id="audit-action-hint" class="hint" i18n="@@audit.actionHint"
-        >Exact action names, or a prefix ending in .* (for example issue.*), separated by
-        commas.</span
-      >
-      @if (fieldError().action; as message) {
-        <span id="audit-action-error" class="field-error" role="alert">{{ message }}</span>
-      }
-    </div>
-    <div class="row">
-      <div class="field">
-        <label for="audit-user" i18n="@@audit.user">User name</label>
-        <input
-          id="audit-user"
-          autocomplete="off"
-          spellcheck="false"
-          maxlength="64"
-          [value]="username()"
-          [attr.aria-invalid]="fieldError().user ? true : null"
-          [attr.aria-describedby]="fieldError().user ? 'audit-user-error' : null"
-          (input)="set('username', $event)"
-        />
-        @if (fieldError().user; as message) {
-          <span id="audit-user-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      <div class="field">
-        <label for="audit-project" i18n="@@audit.project">Project key</label>
-        <input
-          id="audit-project"
-          autocomplete="off"
-          spellcheck="false"
-          maxlength="400"
-          [value]="projectKey()"
-          [attr.aria-invalid]="fieldError().project ? true : null"
-          [attr.aria-describedby]="fieldError().project ? 'audit-project-error' : null"
-          (input)="set('projectKey', $event)"
-        />
-        @if (fieldError().project; as message) {
-          <span id="audit-project-error" class="field-error" role="alert">{{ message }}</span>
-        }
-      </div>
-      @if (instanceAdmin()) {
+      <div class="panel-body audit-fields">
         <div class="field">
-          <label for="audit-organization" i18n="@@audit.organization">Organization</label>
-          <select id="audit-organization" (change)="setOrganization($event)">
-            <option value="" [selected]="organizationId() === ''" i18n="@@audit.organizationAll">
-              All organizations and the instance
-            </option>
-            @for (o of org.orgs(); track o.id) {
-              <option [value]="o.id" [selected]="organizationId() === o.id">{{ o.name }}</option>
+          <label for="audit-from" i18n="@@audit.from">From (UTC)</label>
+          <input
+            id="audit-from"
+            type="date"
+            [value]="from()"
+            [attr.aria-invalid]="fieldError().from ? true : null"
+            [attr.aria-describedby]="fieldError().from ? 'audit-from-error' : null"
+            (input)="set('from', $event)"
+          />
+          @if (fieldError().from; as message) {
+            <span id="audit-from-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+        <div class="field">
+          <label for="audit-to" i18n="@@audit.to">To (UTC, included)</label>
+          <input
+            id="audit-to"
+            type="date"
+            [value]="to()"
+            [attr.aria-invalid]="fieldError().to ? true : null"
+            [attr.aria-describedby]="fieldError().to ? 'audit-to-error' : null"
+            (input)="set('to', $event)"
+          />
+          @if (fieldError().to; as message) {
+            <span id="audit-to-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+        <div class="field">
+          <label for="audit-outcome" i18n="@@audit.outcome">Outcome</label>
+          <select id="audit-outcome" (change)="setOutcome($event)">
+            <option value="" [selected]="outcome() === ''" i18n="@@audit.outcomeAny">Any</option>
+            @for (o of outcomes; track o) {
+              <option [value]="o" [selected]="outcome() === o">{{ outcomeLabel(o) }}</option>
             }
           </select>
         </div>
-      }
-    </div>
-    <div class="row">
-      <button
-        type="submit"
-        class="btn btn-primary"
-        [attr.aria-disabled]="busy() ? true : null"
-        i18n="@@audit.apply"
-      >
-        Show events
-      </button>
-      @if (exportHref(); as href) {
-        <a
-          class="btn"
-          [attr.href]="href"
-          download
-          aria-describedby="audit-export-failed"
-          i18n="@@audit.export"
-          >Export JSON Lines</a
-        >
-        <span id="audit-export-failed" class="hint" i18n="@@audit.exportFailedHint"
-          >No file? Another of your exports may still be running, the licence may have lapsed, or
-          the audit chain may need repair.</span
-        >
-      } @else if (applied()) {
-        <span class="hint" i18n="@@audit.exportTooLong"
-          >Export at most {{ exportMaxDays }} days at a time.</span
-        >
-      }
-    </div>
-    <p class="hint" i18n="@@audit.exportHint">
-      The export holds the events of the period with the filters above, oldest first, one JSON
-      object per line with its hashes. Your browser saves it as it arrives.
-    </p>
-  </form>
-
-  @if (list.error() ?? error(); as message) {
-    <p class="alert alert-error" role="alert">{{ message }}</p>
-  }
-  <div class="table-wrap">
-    <table>
-      <caption class="visually-hidden" i18n="@@audit.caption">
-        Audit events, newest first
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col" i18n="@@audit.col.time">Time</th>
-          <th scope="col" i18n="@@audit.col.action">Action</th>
-          <th scope="col" i18n="@@audit.col.actor">Actor</th>
-          <th scope="col" i18n="@@audit.col.target">Target</th>
-          <th scope="col" i18n="@@audit.col.outcome">Outcome</th>
-          <th scope="col">
-            <span class="visually-hidden" i18n="@@audit.col.details">Details</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (e of list.items(); track e.seq) {
-          <tr [attr.data-key]="e.seq">
-            <td>{{ e.occurredAt | dateTime }}</td>
-            <th scope="row">
-              <code>{{ e.action }}</code>
-            </th>
-            <td>{{ actorText(e) }}</td>
-            <td class="prose-text">{{ targetText(e) }}</td>
-            <td>{{ outcomeText(e) }}</td>
-            <td class="actions">
-              <button
-                type="button"
-                class="btn"
-                [attr.aria-expanded]="isExpanded(e)"
-                [attr.aria-controls]="'audit-details-' + e.seq"
-                (click)="toggle(e)"
-              >
-                <span i18n="@@audit.details">Details</span>
-                <span class="visually-hidden" i18n="@@audit.detailsOf">of event {{ e.seq }}</span>
-              </button>
-            </td>
-          </tr>
-          @if (isExpanded(e)) {
-            <tr [id]="'audit-details-' + e.seq" class="details-row">
-              <td colspan="6">
-                <dl class="facts">
-                  <dt i18n="@@audit.d.seq">Event</dt>
-                  <dd>
-                    {{ e.seq }} · <code>{{ e.id }}</code>
-                  </dd>
-                  @if (e.organization; as o) {
-                    <dt i18n="@@audit.d.organization">Organization</dt>
-                    <dd>{{ o.key ?? o.id }}</dd>
-                  }
-                  @if (e.project; as p) {
-                    <dt i18n="@@audit.d.project">Project</dt>
-                    <dd>{{ p.key ?? p.id }}</dd>
-                  }
-                  @if (e.target; as t) {
-                    <dt i18n="@@audit.d.target">Target</dt>
-                    <dd class="prose-text">
-                      {{ t.type }} {{ t.label }} <code>{{ t.id }}</code>
-                    </dd>
-                  }
-                  @if (e.ip) {
-                    <dt i18n="@@audit.d.ip">IP address</dt>
-                    <dd>{{ e.ip }}</dd>
-                  }
-                  @if (e.userAgent) {
-                    <dt i18n="@@audit.d.userAgent">User agent</dt>
-                    <dd class="prose-text">{{ e.userAgent }}</dd>
-                  }
-                  <dt i18n="@@audit.d.details">Details</dt>
-                  <dd>
-                    <pre class="excerpt">{{ detailsText(e) }}</pre>
-                  </dd>
-                  <dt i18n="@@audit.d.prevHash">Previous hash</dt>
-                  <dd>
-                    <code class="prose-text">{{ e.prevHash }}</code>
-                  </dd>
-                  <dt i18n="@@audit.d.hash">Hash</dt>
-                  <dd>
-                    <code class="prose-text">{{ e.hash }}</code>
-                  </dd>
-                </dl>
-              </td>
-            </tr>
+        <div class="field audit-wide">
+          <label for="audit-action" i18n="@@audit.action">Actions</label>
+          <input
+            id="audit-action"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="2000"
+            placeholder="project_member.*, auth.login"
+            i18n-placeholder="@@audit.actionPlaceholder"
+            [value]="actions()"
+            [attr.aria-invalid]="fieldError().action ? true : null"
+            [attr.aria-describedby]="
+              fieldError().action ? 'audit-action-hint audit-action-error' : 'audit-action-hint'
+            "
+            (input)="set('actions', $event)"
+          />
+          <span id="audit-action-hint" class="hint" i18n="@@audit.actionHint"
+            >Exact action names, or a prefix ending in .* (for example issue.*), separated by
+            commas.</span
+          >
+          @if (fieldError().action; as message) {
+            <span id="audit-action-error" class="field-error" role="alert">{{ message }}</span>
           }
-        } @empty {
-          @if (list.loaded()) {
-            <tr>
-              <td colspan="6" class="muted" i18n="@@audit.empty">
-                No event matches these filters.
-              </td>
-            </tr>
+        </div>
+        <div class="field">
+          <label for="audit-user" i18n="@@audit.user">User name</label>
+          <input
+            id="audit-user"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="64"
+            [value]="username()"
+            [attr.aria-invalid]="fieldError().user ? true : null"
+            [attr.aria-describedby]="fieldError().user ? 'audit-user-error' : null"
+            (input)="set('username', $event)"
+          />
+          @if (fieldError().user; as message) {
+            <span id="audit-user-error" class="field-error" role="alert">{{ message }}</span>
           }
+        </div>
+        <div class="field">
+          <label for="audit-project" i18n="@@audit.project">Project key</label>
+          <input
+            id="audit-project"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="400"
+            [value]="projectKey()"
+            [attr.aria-invalid]="fieldError().project ? true : null"
+            [attr.aria-describedby]="fieldError().project ? 'audit-project-error' : null"
+            (input)="set('projectKey', $event)"
+          />
+          @if (fieldError().project; as message) {
+            <span id="audit-project-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+        @if (instanceAdmin()) {
+          <div class="field audit-org">
+            <label for="audit-organization" i18n="@@audit.organization">Organization</label>
+            <select id="audit-organization" (change)="setOrganization($event)">
+              <option value="" [selected]="organizationId() === ''" i18n="@@audit.organizationAll">
+                All organizations and the instance
+              </option>
+              @for (o of org.orgs(); track o.id) {
+                <option [value]="o.id" [selected]="organizationId() === o.id">{{ o.name }}</option>
+              }
+            </select>
+          </div>
         }
-      </tbody>
-    </table>
+      </div>
+      <div class="panel-foot audit-actions">
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          i18n="@@audit.apply"
+        >
+          Show events
+        </button>
+        @if (exportHref(); as href) {
+          <a
+            class="btn"
+            [attr.href]="href"
+            download
+            aria-describedby="audit-export-failed"
+            i18n="@@audit.export"
+            >Export JSON Lines</a
+          >
+          <span id="audit-export-failed" class="hint" i18n="@@audit.exportFailedHint"
+            >No file? Another of your exports may still be running, the licence may have lapsed, or
+            the audit chain may need repair.</span
+          >
+        } @else if (applied()) {
+          <span class="hint" i18n="@@audit.exportTooLong"
+            >Export at most {{ exportMaxDays }} days at a time.</span
+          >
+        }
+        <p class="hint audit-export-hint" i18n="@@audit.exportHint">
+          The export holds the events of the period with the filters above, oldest first, one JSON
+          object per line with its hashes. Your browser saves it as it arrives.
+        </p>
+      </div>
+    </form>
+
+    @if (list.error() ?? error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    <section class="card panel" aria-labelledby="audit-caption">
+      <div class="panel-scroll">
+        <table>
+          <caption id="audit-caption" class="visually-hidden" i18n="@@audit.caption">
+            Audit events, newest first
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" i18n="@@audit.col.time">Time</th>
+              <th scope="col" i18n="@@audit.col.action">Action</th>
+              <th scope="col" i18n="@@audit.col.actor">Actor</th>
+              <th scope="col" i18n="@@audit.col.target">Target</th>
+              <th scope="col" i18n="@@audit.col.outcome">Outcome</th>
+              <th scope="col" class="actions-col">
+                <span class="visually-hidden" i18n="@@audit.col.details">Details</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (e of list.items(); track e.seq) {
+              <tr [attr.data-key]="e.seq">
+                <td class="nowrap">{{ e.occurredAt | dateTime }}</td>
+                <th scope="row">
+                  <code>{{ e.action }}</code>
+                </th>
+                <td>{{ actorText(e) }}</td>
+                <td class="audit-target">{{ targetText(e) }}</td>
+                <td>{{ outcomeText(e) }}</td>
+                <td class="actions-col">
+                  <button
+                    type="button"
+                    class="btn-quiet"
+                    [attr.aria-expanded]="isExpanded(e)"
+                    [attr.aria-controls]="'audit-details-' + e.seq"
+                    (click)="toggle(e)"
+                  >
+                    <span i18n="@@audit.details">Details</span>
+                    <span class="visually-hidden" i18n="@@audit.detailsOf"
+                      >of event {{ e.seq }}</span
+                    >
+                  </button>
+                </td>
+              </tr>
+              @if (isExpanded(e)) {
+                <tr [id]="'audit-details-' + e.seq" class="details-row">
+                  <td colspan="6">
+                    <dl class="facts">
+                      <dt i18n="@@audit.d.seq">Event</dt>
+                      <dd>
+                        {{ e.seq }} · <code>{{ e.id }}</code>
+                      </dd>
+                      @if (e.organization; as o) {
+                        <dt i18n="@@audit.d.organization">Organization</dt>
+                        <dd>{{ o.key ?? o.id }}</dd>
+                      }
+                      @if (e.project; as p) {
+                        <dt i18n="@@audit.d.project">Project</dt>
+                        <dd>{{ p.key ?? p.id }}</dd>
+                      }
+                      @if (e.target; as t) {
+                        <dt i18n="@@audit.d.target">Target</dt>
+                        <dd class="prose-text">
+                          {{ t.type }} {{ t.label }} <code>{{ t.id }}</code>
+                        </dd>
+                      }
+                      @if (e.ip) {
+                        <dt i18n="@@audit.d.ip">IP address</dt>
+                        <dd>{{ e.ip }}</dd>
+                      }
+                      @if (e.userAgent) {
+                        <dt i18n="@@audit.d.userAgent">User agent</dt>
+                        <dd class="prose-text">{{ e.userAgent }}</dd>
+                      }
+                      <dt i18n="@@audit.d.details">Details</dt>
+                      <dd>
+                        <pre class="excerpt">{{ detailsText(e) }}</pre>
+                      </dd>
+                      <dt i18n="@@audit.d.prevHash">Previous hash</dt>
+                      <dd>
+                        <code class="prose-text">{{ e.prevHash }}</code>
+                      </dd>
+                      <dt i18n="@@audit.d.hash">Hash</dt>
+                      <dd>
+                        <code class="prose-text">{{ e.hash }}</code>
+                      </dd>
+                    </dl>
+                  </td>
+                </tr>
+              }
+            } @empty {
+              @if (list.loaded()) {
+                <tr>
+                  <td colspan="6" class="muted" i18n="@@audit.empty">
+                    No event matches these filters.
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (list.nextCursor()) {
+        <p class="panel-foot">
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-disabled]="list.loading() ? true : null"
+            (click)="list.more()"
+            i18n="@@list.more"
+          >
+            Load more
+          </button>
+        </p>
+      }
+    </section>
   </div>
-  @if (list.nextCursor()) {
-    <p>
-      <button
-        type="button"
-        class="btn"
-        [attr.aria-disabled]="list.loading() ? true : null"
-        (click)="list.more()"
-        i18n="@@list.more"
-      >
-        Load more
-      </button>
-    </p>
-  }
 }

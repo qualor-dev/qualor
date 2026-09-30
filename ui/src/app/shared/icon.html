@@ -1,0 +1,17 @@
+<svg
+  viewBox="0 0 24 24"
+  aria-hidden="true"
+  focusable="false"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  @for (d of icon().d; track $index) {
+    <path [attr.d]="d" />
+  }
+  @for (c of icon().c; track $index) {
+    <circle [attr.cx]="c[0]" [attr.cy]="c[1]" [attr.r]="c[2]" />
+  }
+</svg>

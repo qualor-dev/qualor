@@ -8,6 +8,7 @@ import { Component, input, signal } from '@angular/core';
 @Component({
   selector: 'q-copy-value',
   templateUrl: './copy-value.html',
+  styleUrl: './copy-value.css',
 })
 export class CopyValue {
   /** The field's id, unique on the page. */

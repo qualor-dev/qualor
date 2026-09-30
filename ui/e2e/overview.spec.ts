@@ -12,8 +12,23 @@ test('the project overview shows the failed gate, measures and trends', async ({
   await expect(
     gate.getByRole('row', { name: /Issues on new code is greater than 0/ }),
   ).toContainText('Failed');
-  await expect(page.getByRole('img', { name: /^Coverage went from 60\.8 %/ })).toBeVisible();
-  await expect(page.getByRole('img', { name: /^Lines of code went from/ })).toBeVisible();
+  // The history starts in June (the seed's earlier analyses) and switches between metrics.
+  const history = page.getByRole('region', { name: 'History' });
+  await expect(
+    history.getByRole('img', {
+      name: /^Issues went from \d+ on Jun 2, 2026 to \d+ on Sep 15, 2026$/,
+    }),
+  ).toBeVisible();
+  await history.getByRole('button', { name: 'Coverage' }).click();
+  await expect(history.getByRole('button', { name: 'Coverage' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(
+    history.getByRole('img', { name: /^Coverage went from [\d.]+ % on Jun 2, 2026/ }),
+  ).toBeVisible();
+  await history.getByRole('button', { name: 'Lines of code' }).click();
+  await expect(history.getByRole('img', { name: /^Lines of code went from/ })).toBeVisible();
   await expectAccessible(page);
 });
 
@@ -23,12 +38,36 @@ test('the branches tab lists the merge request, which has its own view', async (
   await page.getByRole('link', { name: 'Branches and merge requests' }).click();
   const title = `!${MERGE_REQUEST.id} ${MERGE_REQUEST.source} → main`;
   await expect(page.getByRole('row', { name: /main Main branch/ })).toContainText('Failed');
-  await page.getByLabel('Show').selectOption({ label: 'Merge requests' });
+  await page
+    .getByRole('group', { name: 'Show' })
+    .getByRole('button', { name: 'Merge requests' })
+    .click();
   await expect(page.getByRole('row', { name: /Main branch/ })).toHaveCount(0);
   await page.getByRole('link', { name: title }).click();
   await expect(page.locator('.branch-name')).toHaveText(title);
   await expect(page.getByRole('region', { name: /Quality gate/ })).toBeVisible();
   await expectAccessible(page);
+});
+
+test('deleting a merge request asks first, and Cancel leaves it', async ({ page }) => {
+  await page.goto('/projects');
+  await page.getByRole('link', { name: PAYMENTS.name }).click();
+  await page.getByRole('link', { name: 'Branches and merge requests' }).click();
+  const title = `!${MERGE_REQUEST.id} ${MERGE_REQUEST.source} → main`;
+  // The main branch cannot be deleted: only the merge request offers it.
+  await expect(page.getByRole('button', { name: /^Delete / })).toHaveCount(1);
+  const remove = page.getByRole('button', { name: `Delete ${title}` });
+  await remove.click();
+  const dialog = page.getByRole('dialog', { name: 'Delete this merge request?' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('This cannot be undone.');
+  // A destructive dialog starts on its safe choice.
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await expectAccessible(page);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(remove).toBeFocused();
+  await expect(page.getByRole('link', { name: title })).toBeVisible();
 });
 
 test('the project tabs work with the keyboard and mark the current one', async ({ page }) => {
@@ -84,4 +123,30 @@ test('an unknown page and the unavailable page say so, accessibly', async ({ pag
   await expectAccessible(page);
   await page.getByRole('button', { name: 'Try again' }).click();
   await expect(page).toHaveURL(/\/projects$/);
+});
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the overview and the user menu stay accessible at 390 px', async ({ page }) => {
+    await page.goto('/projects');
+    await page.getByRole('link', { name: PAYMENTS.name }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(PAYMENTS.name);
+    // The name is hidden on a phone, visually only: the button keeps it.
+    await expect(page.getByRole('button', { name: 'Administrator' })).toBeVisible();
+    await expectAccessible(page);
+  });
+
+  test('a wide table scrolls inside its panel, never the page', async ({ page }) => {
+    await page.goto('/projects');
+    await page.getByRole('link', { name: PAYMENTS.name }).click();
+    await page.getByRole('link', { name: 'Branches and merge requests' }).click();
+    // The actions column has a visually hidden header, placed out of the flow.
+    await expect(page.getByRole('button', { name: /^Delete / })).toHaveCount(1);
+    const width = await page.evaluate(() => ({
+      page: document.documentElement.scrollWidth,
+      screen: document.documentElement.clientWidth,
+    }));
+    expect(width.page).toBeLessThanOrEqual(width.screen);
+  });
 });

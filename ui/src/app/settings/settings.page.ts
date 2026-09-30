@@ -2,6 +2,7 @@ import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SessionStore } from '../auth/session';
 import { OrgContext } from '../org/org-context';
+import { PageHeader } from '../shared/page-header';
 import { SystemInfo } from '../shell/system-info';
 
 /** The enterprise settings entries the UI renders with its own screens (rbac-audit.md §17). */
@@ -20,13 +21,17 @@ const KNOWN_EXTENSIONS = new Set([
  * (plan 2A, scm.md §2) for those whose role manages them; the licence and the plugins' entries
  * (enterprise.md §10.4, §11) for instance admins. The audit log (feature `audit-log`) is also
  * listed for org admins, whose role has `org.audit.read`; the entries the UI knows carry its own
- * labels. Linked accounts (feature `sso`, sso-scim.md §18) are listed for every user. The tabs
- * only hide what a user cannot use; each page checks the role again and the server decides.
+ * labels. Linked accounts (feature `sso`, sso-scim.md §18) are listed for every user. The
+ * navigation only hides what a user cannot use; each page checks the role again and the server
+ * decides. Its entries sit under Your account, Organization and Instance (UI redesign spec §7.8);
+ * a group with nothing to show is left out.
  */
 @Component({
   selector: 'q-settings-page',
-  imports: [RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [PageHeader, RouterLink, RouterLinkActive, RouterOutlet],
   templateUrl: './settings.page.html',
+  styleUrl: './settings.page.css',
+  host: { class: 'bleed' },
 })
 export class SettingsPage {
   private readonly session = inject(SessionStore);
@@ -47,6 +52,14 @@ export class SettingsPage {
   protected readonly sso = computed(() => this.ids().has('sso') && this.instanceAdmin());
   protected readonly signIn = computed(() => this.ids().has('sign-in') && this.instanceAdmin());
   protected readonly scim = computed(() => this.ids().has('scim') && this.instanceAdmin());
+  /** The organization's entries: members, webhooks, the SCM connections and the audit log. */
+  protected readonly organization = computed(
+    () =>
+      this.org.can('org.members.read') ||
+      this.org.can('org.webhooks.manage') ||
+      this.org.can('org.scm.manage') ||
+      this.auditLog(),
+  );
   /** The entries of plugins the UI has no screen for (enterprise.md §10.4). */
   protected readonly otherExtensions = computed(() =>
     this.info.extensions().filter((e) => !KNOWN_EXTENSIONS.has(e.id)),

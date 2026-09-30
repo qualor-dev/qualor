@@ -3,6 +3,7 @@ import { Api, ok } from '../api/api';
 import type { ResponseBody } from '../api/types';
 import { can } from '../auth/permissions';
 import { SessionStore } from '../auth/session';
+import type { BranchView } from './branches';
 
 export type ProjectDto = ResponseBody<'/api/v0/projects/{id}', 'get'>;
 
@@ -35,8 +36,18 @@ export class CurrentProject {
     return project.id === this.id() ? project : null;
   });
 
+  /**
+   * The branch or merge request an overview shows, when it is not the main one: the frame names
+   * it on the band (spec §7.1). The overview sets it and clears it when it goes.
+   */
+  readonly shownBranch = signal<BranchView | null>(null);
+
   use(id: string): void {
     this.id.set(id);
+  }
+
+  showBranch(branch: BranchView | null): void {
+    this.shownBranch.set(branch);
   }
 
   /** The caller's permissions on project `id`, or undefined until it has loaded. */

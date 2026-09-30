@@ -1,0 +1,132 @@
+<figure class="line-chart">
+  <div class="chart-plot">
+    <svg
+      role="img"
+      tabindex="0"
+      [attr.aria-label]="summary()"
+      [attr.width]="width()"
+      [attr.height]="height()"
+      [attr.viewBox]="viewBox()"
+      (pointermove)="point($event)"
+      (pointerleave)="active.set(null)"
+      (focus)="focusIn()"
+      (blur)="active.set(null)"
+      (keydown)="key($event)"
+    >
+      @for (t of plot().yTicks; track t.value) {
+        <line
+          class="grid"
+          [class.base]="t.value === 0"
+          [attr.x1]="plot().left"
+          [attr.x2]="plot().right"
+          [attr.y1]="t.y"
+          [attr.y2]="t.y"
+        />
+        <text class="axis axis-y" text-anchor="end" [attr.x]="plot().left - 10" [attr.y]="t.y + 4">
+          {{ t.text }}
+        </text>
+      }
+      @for (t of plot().xTicks; track t.at) {
+        <text class="axis" text-anchor="middle" [attr.x]="t.x" [attr.y]="height() - 8">
+          {{ t.text }}
+        </text>
+      }
+      @for (band of plot().bands; track band.key) {
+        <polygon class="band tone-{{ band.tone }}" [attr.points]="band.area" />
+        <polyline class="band-edge" [attr.points]="band.edge" />
+      }
+      @if (plot().column; as col) {
+        @for (seg of col.segments; track seg.key) {
+          <rect
+            class="band-col tone-{{ seg.tone }}"
+            rx="3"
+            [attr.x]="col.x"
+            [attr.y]="seg.y"
+            [attr.width]="col.width"
+            [attr.height]="seg.height"
+          />
+        }
+      }
+      @if (plot().line; as line) {
+        <polygon class="area" [attr.points]="line.area" />
+        <polyline class="line" [attr.points]="line.points" />
+      }
+      @if (tip(); as tip) {
+        <!-- A single stacked column is the one point: a line through it would cross it out. -->
+        @if (!plot().column) {
+          <line
+            class="crosshair"
+            [attr.x1]="tip.x"
+            [attr.x2]="tip.x"
+            [attr.y1]="plot().top"
+            [attr.y2]="plot().bottom"
+          />
+        }
+        @if (tip.y !== null) {
+          <circle class="marker" r="4.5" [attr.cx]="tip.x" [attr.cy]="tip.y" />
+        }
+      }
+      @if (plot().end; as end) {
+        @if (end.marked) {
+          <circle class="marker" r="4.5" [attr.cx]="end.x" [attr.cy]="end.y" />
+          <text class="end-label" text-anchor="end" [attr.x]="end.x - 8" [attr.y]="end.y - 12">
+            {{ end.text }}
+          </text>
+        }
+      }
+    </svg>
+    @if (tip(); as tip) {
+      <div class="chart-tip" role="status" [class.flip]="tip.flip" [style.left.px]="tip.x">
+        <span class="tip-date">{{ tip.date }}</span
+        >&ngsp;
+        @if (tip.total !== null) {
+          <strong class="tip-total">{{ tip.total }}</strong
+          >&ngsp;
+        }
+        <ul>
+          @for (row of tip.rows; track row.key) {
+            <li class="tone-{{ row.tone }}">
+              <span class="tip-key" aria-hidden="true"></span><span>{{ row.label }}</span
+              >&ngsp;<span class="tip-value">{{ row.text }}</span
+              >&ngsp;
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  </div>
+  @if (series().length > 1) {
+    <ul class="chart-legend">
+      @for (s of series(); track s.key) {
+        <li class="tone-{{ s.tone }}">
+          <span class="swatch" aria-hidden="true"></span>{{ s.label }}
+        </li>
+      }
+    </ul>
+  }
+  <details class="chart-table">
+    <summary i18n="@@chart.showTable">Show as a table</summary>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col" i18n="@@trend.date">Date (UTC)</th>
+            @for (s of series(); track s.key) {
+              <th scope="col" class="num">{{ s.label }}</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of columns(); track c.date) {
+            <tr>
+              <td>{{ c.date | dateTime: 'date' }}</td>
+              @for (v of c.values; track $index) {
+                <td class="num">{{ v | measure: metric() }}</td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </details>
+</figure>

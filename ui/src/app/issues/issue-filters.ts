@@ -117,6 +117,17 @@ export function toggle(f: IssueFilters, filter: ListFilter, value: string): Issu
   return { ...f, [filter]: next.slice(0, BOUNDS[filter]) };
 }
 
+/** A group's values back to their default: Open for the status, none for the others. */
+export function clearFilter(f: IssueFilters, filter: ListFilter): IssueFilters {
+  return { ...f, [filter]: filter === 'status' ? ['open'] : [] };
+}
+
+/** Whether a group differs from its default, so that clearing it changes the list. */
+export function isFiltered(f: IssueFilters, filter: ListFilter): boolean {
+  const values = f[filter];
+  return filter === 'status' ? !(values.length === 1 && values[0] === 'open') : values.length > 0;
+}
+
 /** The `GET /issues` query for a page (facets only with the first page). */
 export function apiQuery(f: IssueFilters, branchId: string, cursor: string | null) {
   const many = (values: string[]) => (values.length > 0 ? values : undefined);

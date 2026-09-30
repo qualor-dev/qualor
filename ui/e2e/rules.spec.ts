@@ -112,6 +112,10 @@ test('a new profile inherits from a parent, which cannot be deleted while it has
   const parentId = (await parentLink.getAttribute('href'))?.split('/').at(-1);
   expect(parentId).toBeTruthy();
 
+  // The form is in the "New profile" dialog (step 7), which starts on the name.
+  await page.getByRole('button', { name: 'New profile' }).click();
+  await expect(page.getByLabel('Name', { exact: true })).toBeFocused();
+  await expectAccessible(page);
   // The built-in name is refused in any spelling, before the server is asked.
   await page.getByLabel('Name', { exact: true }).fill('qualor-WAY');
   await page.getByRole('button', { name: 'Create profile' }).click();
@@ -124,22 +128,83 @@ test('a new profile inherits from a parent, which cannot be deleted while it has
   // Inherited: the parent switched eqeqeq to Blocker in an earlier test.
   await expect(page.getByRole('row', { name: /eslint:eqeqeq/ })).toContainText('Inherited');
 
-  await page.getByRole('link', { name: 'All quality profiles' }).click();
+  await page
+    .getByRole('navigation', { name: 'Breadcrumb' })
+    .getByRole('link', { name: 'Quality profiles' })
+    .click();
   const ts = page.getByRole('region', { name: 'TypeScript' });
   const child = ts.getByRole('row', { name: /^Refunds TypeScript/ });
   await expect(child).toContainText('Payments TypeScript');
   guard.allowFailedLoad(`/api/v0/quality-profiles/${parentId}`, 409);
-  guard.expectConfirm();
+  // The page's own dialog asks (a browser confirm() would fail the guard of fixtures.ts).
+  const ask = page.getByRole('dialog', { name: 'Delete the quality profile' });
   await ts
     .getByRole('row', { name: /^Payments TypeScript/ })
     .getByRole('button', { name: 'Delete' })
     .click();
+  await ask.getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByRole('alert')).toHaveText(
     'Other profiles inherit from this one; delete them first.',
   );
-  guard.expectConfirm();
   await child.getByRole('button', { name: 'Delete' }).click();
+  await ask.getByRole('button', { name: 'Delete' }).click();
   await expect(child).toHaveCount(0);
   await expect(ts.getByRole('link', { name: 'Payments TypeScript' })).toBeVisible();
   await expectAccessible(page);
 });
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the profiles and a profile fit the screen, their wide tables scroll in their panels', async ({
+    page,
+  }) => {
+    const fits = async () => {
+      const width = await page.evaluate(() => ({
+        page: document.documentElement.scrollWidth,
+        screen: document.documentElement.clientWidth,
+      }));
+      expect(width.page).toBeLessThanOrEqual(width.screen);
+    };
+    await page.goto('/profiles');
+    const ts = page.getByRole('region', { name: 'TypeScript' });
+    await expect(ts.getByRole('link', { name: 'Payments TypeScript' })).toBeVisible();
+    await fits();
+    // No cell paints over the next one: each keeps its content inside.
+    const spilling = await page.evaluate(
+      () =>
+        [...document.querySelectorAll('.profile-groups tbody td')].filter(
+          (cell) => cell.scrollWidth > cell.clientWidth + 1,
+        ).length,
+    );
+    expect(spilling).toBe(0);
+
+    await ts.getByRole('link', { name: 'Payments TypeScript' }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Payments TypeScript');
+    const rule = page.getByRole('row', { name: /eslint:eqeqeq/ });
+    await expect(rule).toBeVisible();
+    await fits();
+    // A rule's name reads in words: "Require === and !==" takes a line or two, not five.
+    const lines = await rule.locator('.rule-name').evaluate((name) => {
+      const style = getComputedStyle(name);
+      const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
+      return name.getBoundingClientRect().height / line;
+    });
+    expect(lines).toBeLessThan(2.5);
+  });
+});
+
+for (const width of [390, 1440]) {
+  test(`a rule's key sits under its name, not beside it, at ${width}px (final review)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/rules');
+    const row = page.locator('tbody tr').first();
+    await expect(row.locator('.rule-name')).toBeVisible();
+    const name = (await row.locator('.rule-name').boundingBox())!;
+    const key = (await row.locator('.rule-key').boundingBox())!;
+    expect(key.y).toBeGreaterThanOrEqual(name.y + name.height - 1);
+    expect(Math.abs(key.x - name.x)).toBeLessThanOrEqual(1);
+  });
+}

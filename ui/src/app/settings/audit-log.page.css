@@ -1,0 +1,75 @@
+/* The audit log (spec §7.8): the chain head, the filters and the events, each a panel. */
+.audit-panels {
+  display: grid;
+  /* A definite column: the events table scrolls in its panel instead of widening the page. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.audit-panels > * {
+  margin: 0;
+}
+.audit-panels .panel-head {
+  padding-bottom: 14px;
+}
+.audit-panels .panel-head h3 {
+  margin: 0;
+}
+.audit-panels .panel-body {
+  padding-top: 0;
+}
+.audit-panels .panel-body > p {
+  margin: 8px 0 0;
+}
+.audit-copied:empty {
+  display: none;
+}
+.audit-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 12px 20px;
+}
+.audit-fields .field {
+  margin: 0;
+}
+.audit-fields :is(input, select) {
+  width: 100%;
+}
+.audit-wide {
+  grid-column: 1 / -1;
+}
+.audit-wide input {
+  max-width: 36rem;
+}
+.audit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.audit-export-hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+.excerpt {
+  max-height: 12rem;
+  margin: 0;
+  padding: 6px 10px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* A target wraps between words only: on a phone the table scrolls rather than breaking "admin". */
+.audit-target {
+  min-width: 8rem;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+/* "All organizations and the instance" takes two columns' width wherever there are two. */
+@media (min-width: 40.01rem) {
+  .audit-org {
+    grid-column: span 2;
+  }
+}

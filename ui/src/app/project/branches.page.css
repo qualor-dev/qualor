@@ -1,0 +1,50 @@
+/* The branches tab (spec §7.3): the kind switch, then the table in a panel. */
+.branches-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.branch-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 16rem;
+}
+.branch-cell > q-icon {
+  margin-top: 3px;
+  color: var(--text-muted);
+}
+.branch-text {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  min-width: 0;
+}
+.branch-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.branch-title > a {
+  font-weight: 600;
+  text-decoration: none;
+}
+.branch-title > a:hover {
+  text-decoration: underline;
+}
+.branches-status:not(:empty) {
+  margin-bottom: 16px;
+}
+.branches-status .alert {
+  margin: 0;
+}
+.actions-col {
+  width: 1px;
+  text-align: right;
+}
+.delete-name {
+  overflow-wrap: anywhere;
+}

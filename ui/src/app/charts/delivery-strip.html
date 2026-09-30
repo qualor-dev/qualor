@@ -1,0 +1,64 @@
+@if (bars().length > 0) {
+  <div class="strip">
+    <span class="strip-caption" i18n="@@strip.caption">{bars().length, plural,
+      =1 {Last delivery}
+      other {Last {{ bars().length }} deliveries}
+    }</span>
+    <div class="strip-plot">
+      <svg
+        role="img"
+        tabindex="0"
+        [attr.aria-label]="summary()"
+        [attr.width]="width"
+        [attr.height]="height"
+        [attr.viewBox]="viewBox"
+        (pointermove)="point($event)"
+        (pointerleave)="active.set(null)"
+        (focus)="focusIn()"
+        (blur)="active.set(null)"
+        (keydown)="key($event)"
+      >
+        <line class="baseline" x1="0" [attr.x2]="width" [attr.y1]="line" [attr.y2]="line" />
+        @for (bar of bars(); track bar.key) {
+          <rect
+            class="bar status-{{ bar.status }}"
+            rx="1.5"
+            [class.active]="active() === $index"
+            [attr.data-key]="bar.key"
+            [attr.x]="bar.x"
+            [attr.y]="bar.y"
+            width="7"
+            [attr.height]="bar.height"
+          />
+        }
+      </svg>
+      @if (tip(); as tip) {
+        <div class="chart-tip" role="status" [class.flip]="tip.flip" [style.left.px]="tip.x">
+          <strong>{{ tip.status }}</strong
+          >&ngsp;<span class="tip-date">{{ tip.at }}</span
+          >&ngsp;<span class="tip-detail">{{ tip.detail }}</span>
+        </div>
+      }
+    </div>
+    @if (counts().percent !== null) {
+      <p class="strip-rate">
+        <strong i18n="@@strip.rate">{{ counts().percent }}% delivered</strong>&ngsp;<span
+          class="muted"
+          i18n="@@strip.rateOf"
+          >{{ counts().succeeded }} of {{ counts().finished }}</span
+        >
+      </p>
+    }
+    @if (counts().pending > 0) {
+      <p class="strip-pending muted">
+        <span class="pending-mark" aria-hidden="true"></span
+        ><span i18n="@@strip.pending">{counts().pending, plural,
+          =1 {1 pending}
+          other {{{ counts().pending }} pending}
+        }</span>
+      </p>
+    }
+  </div>
+} @else {
+  <p class="muted strip-none" i18n="@@webhooks.noDeliveries">No deliveries yet.</p>
+}

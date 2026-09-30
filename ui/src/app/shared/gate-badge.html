@@ -1,5 +1,9 @@
 @if (text(); as text) {
-  <span class="badge badge-{{ tone() }}">{{ text }}</span>
+  <span class="badge badge-{{ tone() }}"><q-icon [name]="icon()" />{{ text }}</span>
 } @else {
-  <span class="badge badge-none" i18n="@@gate.notAnalyzed">Not analyzed</span>
+  <span class="badge badge-none"
+    ><q-icon name="minus" /><ng-container i18n="@@gate.notAnalyzed"
+      >Not analyzed</ng-container
+    ></span
+  >
 }

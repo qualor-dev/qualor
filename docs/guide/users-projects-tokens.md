@@ -7,7 +7,11 @@ GitLab/GitHub connections. The first start creates the organisation `default`. T
 on organisations, users, projects or lines of code, in the community edition or with an
 [enterprise licence](./enterprise.md). Most companies need only `default`.
 
-An instance admin creates more organisations through the API (`POST /api/v0/organizations`).
+An instance admin creates more organisations in **Settings → Organizations** with **New
+organization**. Give it a name and a key of 2 to 64 lowercase letters, digits and hyphens. The key
+is what the CLI and the audit log use. Neither can be changed later. You become the new
+organisation's Organization admin, and the organisation switcher in the header lists it. The same
+screen calls `POST /api/v0/organizations`.
 
 ## Users and roles
 
@@ -62,8 +66,8 @@ Each user in `GET /api/v0/users` carries `hasPassword` and `sso` (`identities`, 
 linked accounts, and `scim`).
 
 **After the `sso` licence lapses**, users without a password cannot sign in. Give one a password
-in **Settings → Users**, under **Reset a password**: they choose their own at their next sign-in,
-as any user whose password was reset does. Setting (resetting) a password ends that user's
+in **Settings → Users**, with **Reset password** on their row: they choose their own at their
+next sign-in, as any user whose password was reset does. Setting (resetting) a password ends that user's
 sessions and revokes their personal tokens, so their CI jobs need a new token. The same works for
 a user whose only linked connection was deleted. Only an instance admin can give a user without a
 password one: changing your own password needs the current one. Who else may use a password is set in **Settings → Sign-in**.
@@ -106,7 +110,7 @@ curl -fsS -X PATCH -H "Authorization: Bearer $QUALOR_ADMIN_TOKEN" -H 'Content-Ty
 | `mainBranchName` | the default branch |
 | `newCodeDefinition` | how new code is defined on the main branch; see [Quality gates](./quality-gates.md#new-code) |
 | `qualityGateId` | a gate for this project, or `null` for the organisation's default gate |
-| `scmConnectionId`, `scmProjectRef` | the GitLab/GitHub mapping. **Settings → GitLab** also sets it. Only an org admin can change it (403 `FORBIDDEN` otherwise, even for a Project admin) |
+| `scmConnectionId`, `scmProjectRef` | the GitLab/GitHub mapping. **Settings → Repositories** also sets it. Only an org admin can change it (403 `FORBIDDEN` otherwise, even for a Project admin) |
 
 To assign a quality profile to one project, use `PUT /api/v0/projects/<id>/quality-profiles/<language>`
 with the body `{"profileId": "..."}`. Send `null` to return that language to the organisation's

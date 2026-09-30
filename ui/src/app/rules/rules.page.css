@@ -1,0 +1,61 @@
+/* Rules (spec §7.7): a flat filter bar, the table in a panel, a rule opening in its row. */
+.rules-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-bottom: 20px;
+}
+.search-field {
+  flex: 1 1 16rem;
+  max-width: 28rem;
+}
+.search-field input {
+  width: 100%;
+}
+.toolbar-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toolbar-field .label {
+  margin: 0;
+}
+.rule-cell {
+  min-width: 16rem;
+}
+/* The chevron beside the name, the key under the name: a grid, not the global inline row. */
+.rule-cell summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-2);
+  font-weight: 600;
+}
+.rule-name {
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+.rule-details {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 8px 18px;
+  max-width: 60rem;
+}
+.rule-details p {
+  margin: 0;
+}
+.rule-key {
+  display: block;
+  grid-column: 2;
+  margin: 2px 0 0;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.rule-languages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}

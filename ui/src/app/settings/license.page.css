@@ -1,0 +1,93 @@
+/* Licence (spec §7.8): a plan panel, then the key form in a setting row. */
+.license-panels {
+  display: grid;
+  /* A definite column: a long state or key never widens the page on a phone. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+/* The state's words may be long ("The key was rejected: …"): they wrap inside the pill. */
+.license-state .badge {
+  white-space: normal;
+}
+.license-panels > * {
+  margin: 0;
+}
+.license-panels .panel-head {
+  padding-bottom: 14px;
+}
+.license-panels .panel-head h3,
+.license-state {
+  margin: 0;
+}
+.license-plan {
+  display: grid;
+  gap: 20px;
+  padding-top: 0;
+}
+.license-time {
+  max-width: 28rem;
+}
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 24px;
+  margin: 0;
+  font-size: 13.5px;
+}
+.facts dt {
+  color: var(--text-muted);
+}
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.license-features h4,
+.license-plugins h4 {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+}
+.feature-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 6px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+}
+.feature-checks li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.feature-checks q-icon {
+  color: var(--text-muted);
+}
+.feature-checks li.active q-icon {
+  color: var(--ok);
+}
+.license-plugins ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+}
+.plugin-error {
+  overflow-wrap: anywhere;
+}
+/* A sentence with a code in it flows as one, not as separate items. */
+.facts dd.fact-sentence {
+  display: block;
+}
+/* On a phone each value goes under its label, with the whole width. */
+@media (max-width: 40rem) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .facts dd + dt {
+    margin-top: 10px;
+  }
+}

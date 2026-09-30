@@ -1,0 +1,52 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+/**
+ * The guide names the screens as they are (AGENTS.md rule 9). A name the redesign removed must not
+ * survive anywhere in it, however the Markdown wraps it: each page is read with its emphasis
+ * dropped and its line breaks folded into spaces (UI redesign, step 8 review).
+ */
+const REMOVED = [
+  // Step 8: the form under Settings → Users became "Reset password" on the user's row.
+  'Settings → Users → Reset a password',
+  // Step 9: SCIM tokens are made in the "New token" dialog of the connection's panel.
+  "in the connection's section, give a Token name",
+  // Step 11: the mapping of projects to repositories moved from the GitLab page to Repositories.
+  'Projects table of Settings → GitLab',
+  'Projects table on the same page',
+  'Settings → GitLab also sets it',
+  'has a test action per project',
+  'The test on Settings → GitLab says which',
+  'map it in Settings → GitLab or GitHub',
+  // Step 11: organisations are created in Settings → Organizations.
+  'creates more organisations through the API',
+  // Step 10: Change password is in the user menu, under the name at the top right.
+  'Change password at the top right',
+  // Steps 6 and 7: Copy is a button of the row (and of a gate's band).
+  'Quality gates → copy',
+  'Quality profiles → copy',
+  // Step 11: the UI calls them "Rules it does not set" (the list) and "Not set here" (a profile).
+  'Unknown rules, meaning',
+];
+
+const guide = new URL('../../docs/guide/', import.meta.url);
+const pages = readdirSync(guide)
+  .filter((name) => name.endsWith('.md'))
+  .map((name) => ({
+    name,
+    text: readFileSync(new URL(name, guide), 'utf8').replaceAll('**', '').replace(/\s+/g, ' '),
+  }));
+
+describe('the user guide', () => {
+  it('has pages to read', () => {
+    expect(pages.length).toBeGreaterThan(0);
+  });
+
+  for (const removed of REMOVED) {
+    it(`never names "${removed}"`, () => {
+      expect(pages.filter((page) => page.text.includes(removed)).map((page) => page.name)).toEqual(
+        [],
+      );
+    });
+  }
+});

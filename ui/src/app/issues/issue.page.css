@@ -1,0 +1,133 @@
+/* An issue (spec §7.4): the story on the left, details and actions in a sticky right column. */
+.issue-back {
+  margin: 0 0 16px;
+}
+.issue-layout {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 22rem;
+  align-items: start;
+}
+.issue-main,
+.issue-aside {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+@media (max-width: 64rem) {
+  .issue-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* The column stays in view; taller than the screen, it scrolls within itself, so its end is never
+   out of reach. The inset leaves room for the cards' focus rings and shadows. */
+@media (min-width: 64.01rem) {
+  .issue-aside {
+    position: sticky;
+    top: var(--sticky-top);
+    max-height: calc(100vh - var(--sticky-top) - 16px);
+    margin: -4px;
+    padding: 4px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: 12px;
+    scrollbar-width: thin;
+  }
+}
+.issue-main > *,
+.issue-aside > * {
+  margin: 0;
+}
+.issue-header h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  line-height: 1.3;
+}
+.issue-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+}
+.issue-header > p + p {
+  margin-top: 10px;
+}
+.rule-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin: -8px 0 12px;
+  color: var(--text-muted);
+}
+.rule-meta code {
+  overflow-wrap: anywhere;
+}
+.timeline li + li {
+  margin-top: 16px;
+}
+.timeline-what {
+  margin: 0;
+}
+.timeline .timeline-when {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.timeline .timeline-comment {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.details-list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 0;
+  font-size: 13.5px;
+}
+.details-list dt {
+  color: var(--text-muted);
+}
+.details-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.issue-actions textarea {
+  width: 100%;
+  min-height: 5.5rem;
+}
+.transitions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.severity-form {
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+.severity-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.readonly-note {
+  margin: 0;
+}
+/* The status beside the severity only at one column, where the details come after the story. */
+.issue-status-tag {
+  display: none;
+}
+@media (max-width: 64rem) {
+  .issue-status-tag {
+    display: inline-flex;
+  }
+}
+/* The AI assistant shows nothing to a viewer without it: its place takes no gap of the column. */
+q-ai-panel:empty {
+  display: none;
+}

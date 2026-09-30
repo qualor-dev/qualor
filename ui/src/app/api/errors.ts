@@ -95,6 +95,8 @@ export function problemMessage(err: unknown): string {
       return $localize`:@@error.featureNotLicensed:This feature needs an active Qualor Enterprise licence.`;
     case 'PROJECT_KEY_TAKEN':
       return $localize`:@@error.projectKeyTaken:A project with this key already exists.`;
+    case 'ORG_KEY_TAKEN':
+      return $localize`:@@error.orgKeyTaken:An organization with this key already exists.`;
     case 'USERNAME_TAKEN':
       return $localize`:@@error.usernameTaken:This username is already taken.`;
     case 'EMAIL_TAKEN':

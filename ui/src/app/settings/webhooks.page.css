@@ -1,0 +1,87 @@
+/* Webhooks (spec §7.8): a panel each, its deliveries as a strip and in a table. */
+/* Definite columns: a delivery table scrolls in its panel instead of widening the page. */
+.webhook-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.webhook-list > * {
+  margin: 0;
+}
+.webhook-head {
+  align-items: flex-start;
+  gap: 12px 24px;
+}
+.webhook-title {
+  display: grid;
+  flex: 1 1 20rem;
+  gap: 8px;
+  min-width: 0;
+}
+.webhook-url {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.webhook-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.webhook-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.webhook-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.webhook-body > p {
+  margin: 0;
+}
+.webhook-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.deliveries summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.deliveries .panel-scroll {
+  margin-top: 8px;
+}
+/* The result's word in text colour after a dot of the status colour (never colour alone). */
+.delivery-result::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--chart-spark);
+  vertical-align: 1px;
+}
+.delivery-result.status-succeeded::before {
+  background: var(--ok);
+}
+.delivery-result.status-failed::before {
+  background: var(--bad);
+}
+.excerpt {
+  max-height: 8rem;
+  margin: 0;
+  padding: 6px 10px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

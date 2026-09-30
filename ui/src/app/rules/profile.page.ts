@@ -24,6 +24,8 @@ import { keepFocus, rowAt, rowByKey } from '../shared/focus';
 import { inputValue, isChecked } from '../shared/forms';
 import { KeysetList } from '../shared/keyset';
 import { RULE_Q_MAX_LENGTH, ruleSearch } from './rules.page';
+import { Icon } from '../shared/icon';
+import { type Crumb, PageHeader } from '../shared/page-header';
 
 export type ProfileRule = ItemOf<'/api/v0/quality-profiles/{id}/rules'>;
 type Severity = NonNullable<ProfileRule['severityOverride']>;
@@ -55,7 +57,7 @@ function sourceLabel(source: ProfileRule['source']): string {
     case 'inherited':
       return $localize`:@@profile.source.inherited:Inherited`;
     default:
-      return $localize`:@@profile.source.default:Unknown-rule default`;
+      return $localize`:@@profile.source.notSet:Not set here`;
   }
 }
 
@@ -81,8 +83,10 @@ function sourceLabel(source: ProfileRule['source']): string {
  */
 @Component({
   selector: 'q-profile-page',
-  imports: [LabelPipe, RouterLink],
+  imports: [Icon, LabelPipe, PageHeader, RouterLink],
   templateUrl: './profile.page.html',
+  styleUrl: './profile.page.css',
+  host: { class: 'bleed' },
 })
 export class ProfilePage {
   private readonly api = inject(Api);
@@ -102,6 +106,27 @@ export class ProfilePage {
   protected readonly current = computed(() =>
     this.profile.hasValue() ? this.profile.value() : null,
   );
+  protected readonly crumbs: Crumb[] = [
+    { label: $localize`:@@profile.crumb:Quality profiles`, link: '/profiles' },
+  ];
+  /** The parent's id: a string, so a changed profile of the same parent asks nothing again. */
+  private readonly parentId = computed(() => this.current()?.parentId ?? undefined);
+  /** The parent profile, for its name on the band (spec §7.7: the profile's facts). */
+  protected readonly parent = resource({
+    params: () => this.parentId(),
+    loader: ({ params }) =>
+      ok(
+        this.api.client.GET('/api/v0/quality-profiles/{id}', { params: { path: { id: params } } }),
+      ),
+  });
+  protected readonly parentName = computed(() =>
+    this.parent.hasValue() ? this.parent.value().name : null,
+  );
+  /** Why the parent could not be read, if it could not (its name is missing on the band then). */
+  protected readonly parentError = computed(() => {
+    const err = this.parent.error();
+    return err ? problemMessage(err) : null;
+  });
   protected readonly editable = computed(() => {
     const p = this.current();
     return !!p && !p.isBuiltin && this.org.canChange('org.profiles.manage', p.organizationId);
