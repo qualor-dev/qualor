@@ -26,13 +26,15 @@ interface PendingLine {
 
 /** report-format §8: tokens are tree-sitter leaves; comments removed; identifiers and literals verbatim. */
 export function lineUnits(root: Node, family: SyntaxFamily): LineUnit[] {
-  const { comments, isComment } = FAMILY_RULES[family];
+  const rules = FAMILY_RULES[family];
+  const { comments, isComment } = rules;
   const byLine = new Map<number, PendingLine>();
   const stack: Node[] = [root];
   for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
     if (comments.has(node.type) || isComment?.(node) === true) continue;
     const count = node.childCount;
-    if (count > 0) {
+    // An atom (tree-sitter-css `#fff`, `1px`) is one token: its children hide part of its text.
+    if (count > 0 && rules.atoms?.has(node.type) !== true) {
       for (let i = count - 1; i >= 0; i--) {
         const child = node.child(i);
         if (child !== null) stack.push(child);

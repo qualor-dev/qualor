@@ -10,6 +10,8 @@ const SAMPLES = {
   java: 'class A { int m(int x) { return x > 0 ? 1 : 0; } }\n',
   csharp: 'class A { int M(int x) => x > 0 ? 1 : 0; }\n',
   python: 'def f(x):\n    return 1 if x else 0\n',
+  html: '<!DOCTYPE html>\n<p class="a">x</p>\n<script>let a = 1;</script>\n',
+  css: '.a > b:hover { color: #fff; margin: calc(1px + 2em); }\n',
 } as const;
 
 afterEach(() => registerEmbeddedAssets(null));
@@ -60,6 +62,8 @@ describe('wasmPath', () => {
       java,
       csharp: 'cs.wasm',
       python: 'py.wasm',
+      html: 'html.wasm',
+      css: 'css.wasm',
     });
     expect(wasmPath('core')).toBe('core.wasm');
     expect(wasmPath('python')).toBe('py.wasm');

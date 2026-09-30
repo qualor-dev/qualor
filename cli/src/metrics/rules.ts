@@ -1,7 +1,7 @@
 import type { Node } from 'web-tree-sitter';
 import type { GrammarId } from '../parse/grammars';
 
-export type SyntaxFamily = 'ecmascript' | 'java' | 'csharp' | 'python';
+export type SyntaxFamily = 'ecmascript' | 'java' | 'csharp' | 'python' | 'markup' | 'stylesheet';
 
 /**
  * Node tables of ruling C3 (node type names of the pinned grammars, C1). No rule looks at
@@ -52,6 +52,17 @@ export interface FamilyRules {
   elseIfClause?: string;
   /** Nodes that count as comments though they are not comment leaves (Python docstrings). */
   isComment?(node: Node): boolean;
+  /**
+   * Node types whose whole text is one leaf for metrics and one token for duplication, because
+   * the grammar hides part of their text from their children (tree-sitter-css `color_value`:
+   * only `#` is a child of `#fff`; `integer_value`: only the unit of `1px`).
+   */
+  atoms?: ReadonlySet<string>;
+  /**
+   * Leaf types that span rows (HTML text and `<script>`/`<style>` bodies): only their rows with
+   * non-blank text are code lines.
+   */
+  rowWiseLeaves?: ReadonlySet<string>;
 }
 
 const ECMASCRIPT: FamilyRules = {
@@ -302,16 +313,50 @@ const PYTHON: FamilyRules = {
   logicalOperator: pythonLogicalOperator,
 };
 
+const NONE: ReadonlySet<string> = new Set();
+
+/** Markup and style sheets (plan 8D): lines and comments only, no functions or decisions. */
+function linesOnly(comments: string[], atoms: string[], rowWise: string[]): FamilyRules {
+  return {
+    comments: new Set(comments),
+    functions: NONE,
+    lambdas: NONE,
+    classes: NONE,
+    statements: NONE,
+    loops: NONE,
+    switches: NONE,
+    catchClause: '',
+    ternary: '',
+    transparent: NONE,
+    isCase: () => false,
+    elseIf: () => null,
+    plainElse: () => null,
+    atoms: new Set(atoms),
+    rowWiseLeaves: new Set(rowWise),
+  };
+}
+
+const MARKUP = linesOnly(['comment'], ['doctype'], ['text', 'raw_text']);
+const STYLESHEET = linesOnly(
+  ['comment', 'js_comment'],
+  ['color_value', 'integer_value', 'float_value'],
+  [],
+);
+
 export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   ecmascript: ECMASCRIPT,
   java: JAVA,
   csharp: CSHARP,
   python: PYTHON,
+  markup: MARKUP,
+  stylesheet: STYLESHEET,
 };
 
 export function familyOf(grammar: GrammarId): SyntaxFamily {
   if (grammar === 'java') return 'java';
   if (grammar === 'csharp') return 'csharp';
   if (grammar === 'python') return 'python';
+  if (grammar === 'html') return 'markup';
+  if (grammar === 'css') return 'stylesheet';
   return 'ecmascript';
 }

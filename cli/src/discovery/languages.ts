@@ -13,6 +13,10 @@ const JS: LanguageInfo = { language: 'javascript', grammar: 'javascript' };
 const JAVA: LanguageInfo = { language: 'java', grammar: 'java' };
 const CSHARP: LanguageInfo = { language: 'csharp', grammar: 'csharp' };
 const PYTHON: LanguageInfo = { language: 'python', grammar: 'python' };
+const HTML: LanguageInfo = { language: 'html', grammar: 'html' };
+const CSS: LanguageInfo = { language: 'css', grammar: 'css' };
+/** SCSS is linted as CSS (stylelint with postcss-scss) but has no grammar: no metrics, no duplication. */
+const SCSS: LanguageInfo = { language: 'css', grammar: null };
 
 const BY_EXTENSION = new Map<string, LanguageInfo>([
   ['.ts', TS],
@@ -26,6 +30,10 @@ const BY_EXTENSION = new Map<string, LanguageInfo>([
   ['.java', JAVA],
   ['.cs', CSHARP],
   ['.py', PYTHON],
+  ['.html', HTML],
+  ['.htm', HTML],
+  ['.css', CSS],
+  ['.scss', SCSS],
 ]);
 
 export function detectLanguage(

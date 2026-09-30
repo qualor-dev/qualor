@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { captureIO } from '../test/io';
 import { useTempDirs, writeTree } from '../test/tmp';
 import { main } from './main';
+import { GRAMMARS } from './parse/grammars';
 import { VERSION } from './index';
 
 const tmp = useTempDirs();
@@ -13,12 +14,15 @@ describe('main', () => {
   it('prints the version, the platform and the embedded grammar ABI versions', async () => {
     const c = captureIO();
     expect(await main(['version'], c.io)).toBe(0);
+    const grammars = GRAMMARS.map((g) => `${g} \\(ABI 1[3-5]\\)`).join(', ');
     expect(c.stdout()).toMatch(
       new RegExp(
         `^qualor ${VERSION.replaceAll('.', '\\.')} \\(${process.platform}-${process.arch}\\)\\n` +
-          'grammars: typescript \\(ABI 1[3-5]\\), tsx \\(ABI 1[3-5]\\), javascript \\(ABI 1[3-5]\\), java \\(ABI 1[3-5]\\), csharp \\(ABI 1[3-5]\\), python \\(ABI 1[3-5]\\)\\n$',
+          `grammars: ${grammars}\\n$`,
       ),
     );
+    expect(GRAMMARS).toContain('python');
+    expect(c.stdout()).toContain('html (ABI 14), css (ABI 15)');
   });
 
   it('prints the usage for help', async () => {

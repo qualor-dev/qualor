@@ -252,6 +252,27 @@ describe('discoverFiles', () => {
     ]);
   });
 
+  it('excludes committed minified CSS like minified JS; keeps HTML, CSS and SCSS (config.md §3.1, plan 8D)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'static/css/bootstrap.min.css': '.a{color:red}\n',
+      'src/a.css': '.a { color: red; }\n',
+      'src/b.scss': '$x: 1;\n',
+      'site/index.html': '<p>x</p>\n',
+    });
+    const files = discoverFiles({
+      root,
+      config: parseConfig({ version: 1 }),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.grammar])).toEqual([
+      ['site/index.html', 'html', 'html'],
+      ['src/a.css', 'css', 'css'],
+      ['src/b.scss', 'css', null],
+    ]);
+  });
+
   it('keeps an empty directory tree empty', () => {
     const root = tmp();
     mkdirSync(path.join(root, 'empty', 'deeper'), { recursive: true });

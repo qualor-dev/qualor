@@ -57,10 +57,16 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
       continue;
     }
     const count = node.childCount;
-    if (count === 0) {
+    if (count === 0 || rules.atoms?.has(type) === true) {
       // Zero-width leaves are tokens inserted by error recovery; whitespace-only leaves (JSX text) are not code.
       if (node.endIndex > node.startIndex && node.text.trim() !== '') {
-        for (let r = node.startPosition.row; r <= node.endPosition.row; r++) codeLines.add(r + 1);
+        if (rules.rowWiseLeaves?.has(type) === true) {
+          node.text.split('\n').forEach((row, i) => {
+            if (row.trim() !== '') codeLines.add(node.startPosition.row + i + 1);
+          });
+        } else {
+          for (let r = node.startPosition.row; r <= node.endPosition.row; r++) codeLines.add(r + 1);
+        }
       }
       continue;
     }

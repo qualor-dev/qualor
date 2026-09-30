@@ -40,6 +40,22 @@ describe('detectLanguage', () => {
     }
   });
 
+  it('detects HTML and CSS; SCSS is css without a grammar; Less stays other (plan 8D)', () => {
+    expect(detectLanguage('site/index.html', 'auto')).toEqual({
+      language: 'html',
+      grammar: 'html',
+    });
+    expect(detectLanguage('old/page.HTM', 'auto')).toEqual({ language: 'html', grammar: 'html' });
+    expect(detectLanguage('src/a.css', 'auto')).toEqual({ language: 'css', grammar: 'css' });
+    expect(detectLanguage('src/b.scss', 'auto')).toEqual({ language: 'css', grammar: null });
+    expect(detectLanguage('src/c.less', 'auto')).toEqual({ language: 'other', grammar: null });
+    expect(detectLanguage('src/d.sass', 'auto')).toEqual({ language: 'other', grammar: null });
+    expect(detectLanguage('src/a.css', ['typescript'])).toEqual({
+      language: 'other',
+      grammar: null,
+    });
+  });
+
   it('honours an explicit languages list', () => {
     expect(detectLanguage('a.ts', ['java'])).toEqual({ language: 'other', grammar: null });
     expect(detectLanguage('A.java', ['java']).language).toBe('java');
