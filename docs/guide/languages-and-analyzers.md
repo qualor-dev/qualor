@@ -21,8 +21,8 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, HTML and CSS; SCSS gets findings only.
-Other files still get findings from Gitleaks, Trivy, OpenGrep and external SARIF.
+detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, HTML and CSS; SCSS gets
+findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and external SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
 
@@ -250,18 +250,25 @@ copy for SwiftLint. It keeps what chooses and configures rules (`disabled_rules`
 only to narrow the Swift files that are checked. Qualor leaves out what would write files, fetch
 from the network or change the exit code (`reporter`, `strict`, `baseline`, `write_baseline`,
 `cache_path`, `check_for_updates` and similar), `analyzer_rules`, and every key SwiftLint does not
-know; the scan log lists them. A warning stays a warning: Qualor's own gate decides what fails.
+know; the scan log lists them. A rule id in the rule lists that SwiftLint does not know is
+ignored by SwiftLint, and a rule setting it cannot read makes it use that rule's defaults; the
+scan log warns about both. A warning stays a warning: Qualor's own gate decides what fails.
 Configurations in subdirectories (a nested `.swiftlint.yml`) are not read. A configuration with
 `parent_config` or `child_config` makes SwiftLint skip, because Qualor does not fetch or follow
 other configurations: make it self-contained, or use Qualor's default.
 
-Without a `.swiftlint.yml`, SwiftLint's default rules run with six adjustments, so a SwiftUI
-project is not buried in style findings:
+Without a `.swiftlint.yml`, SwiftLint's default rules run with the adjustments below, so a
+project is not buried in style findings about code that Xcode, `swift package init`, swift-format
+and SwiftFormat write: blank-line indentation, `// TODO`, short loop names, SwiftUI's
+`Button(action:) { … }`, trailing commas, `//===----===//` file headers, `{` on its own line
+after a wrapped condition, and types nested two deep (`Feature.Action.Alert`):
 
 ```yaml
 disabled_rules:
   - todo
   - multiple_closures_with_trailing_closure
+  - trailing_comma
+  - comment_spacing
 trailing_whitespace:
   ignores_empty_lines: true
 identifier_name:
@@ -269,6 +276,12 @@ identifier_name:
 line_length:
   ignores_urls: true
   ignores_comments: true
+opening_brace:
+  ignore_multiline_statement_conditions: true
+  ignore_multiline_type_headers: true
+  ignore_multiline_function_signatures: true
+nesting:
+  type_level: 2
 ```
 
 A configuration of your own replaces them: SwiftLint then runs as your own configuration says.
@@ -288,14 +301,15 @@ which is the way out of a configuration Qualor cannot use. Every other problem w
 configuration makes SwiftLint skip, with the reason in the scan log (`enabled: auto`), or fail the
 scan with exit 3 (`enabled: true`): a `configFile` that does not exist, a file that is not valid
 YAML or not a mapping, is not UTF-8, is larger than 1 MiB or is a link that leaves the repository,
-`only_rules` combined with `disabled_rules` or `opt_in_rules`, and `parent_config` or
-`child_config`. The regular expressions in your rule settings are run by SwiftLint as written, so
+`only_rules` combined with `disabled_rules`, `opt_in_rules` or `enabled_rules`, and `parent_config`
+or `child_config`. The regular expressions in your rule settings are run by SwiftLint as written, so
 `timeoutSeconds` is what stops one that never finishes.
 
 SwiftLint checks the `.swift` files in scope whose names end in exactly `.swift`. Files larger than
 1 MiB, files reached through a symbolic link, and names with a line break are not passed; the log
-says how many. `Pods/`, `Carthage/` and `.build/` are never scanned. Without the `qualor/scanner`
-image SwiftLint is skipped, and so is a SwiftLint of another minor version on the `PATH`.
+says how many. `Pods/`, `Carthage/` and `.build/` are never scanned. SwiftLint gets files with
+Windows (CRLF) line ends as LF, so its line numbers match yours on a `core.autocrlf` checkout too.
+SwiftLint is skipped when no swiftlint 0.65.x is on the `PATH` or in the image.
 
 An error in SwiftLint is a high-severity issue. A warning is medium for SwiftLint's `lint` rules
 (the ones about correctness) and low for its style, idiomatic, metrics and performance rules.
@@ -436,13 +450,14 @@ sarif:
     engine: osv-scanner            # optional; default: the SARIF tool name
 ```
 
-The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`, `detekt`, `swiftlint` and
-the others) are reserved: `engine: ruff` is a configuration error, and a SARIF file from a tool
-Qualor runs itself is reported under `ext-<tool>`. Don't import Ruff, stylelint, HTMLHint, detekt or SwiftLint
-SARIF any more: Qualor runs Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
-[CSS and SCSS](#css-and-scss-stylelint) and [HTML](#html-htmlhint)) and detekt (see
-[Kotlin](#kotlin-detekt)) and SwiftLint (see [Swift](#swift-swiftlint)) itself; a SARIF file you still
-import for one of them counts once with the built-in finding of the same code on the same line.
+The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`,
+`detekt`, `swiftlint` and the others) are reserved: `engine: ruff` is a configuration error, and a
+SARIF file from a tool Qualor runs itself is reported under `ext-<tool>`. Don't import Ruff,
+stylelint, HTMLHint, detekt or SwiftLint SARIF any more: Qualor runs Ruff (see
+[Python](#python-ruff)), stylelint and HTMLHint (see [CSS and SCSS](#css-and-scss-stylelint) and
+[HTML](#html-htmlhint)) and detekt (see [Kotlin](#kotlin-detekt)) and SwiftLint (see
+[Swift](#swift-swiftlint)) itself; a SARIF file you still import for one of them counts once with
+the built-in finding of the same code on the same line.
 
 ## Coverage
 

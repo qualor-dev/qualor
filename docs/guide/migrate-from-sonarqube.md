@@ -55,9 +55,9 @@ Kotlin projects are scanned by detekt, but SonarQube's own Kotlin rules have no 
 yet, so Kotlin quality profiles are reported as not supported, and Kotlin issue statuses, including
 those of detekt findings SonarQube imported (`external_detekt`), are not imported yet.
 
-Swift quality profiles are read but have nothing to map, because SonarSource's own Swift rules are not
-SwiftLint's rules. The statuses of SwiftLint issues that SonarQube imported (`external_swiftlint`)
-carry over.
+Swift quality profiles are read but have nothing to map, because SonarSource's own Swift rules are
+not SwiftLint's rules. The statuses of SwiftLint issues that SonarQube imported
+(`external_swiftlint`) carry over.
 
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says

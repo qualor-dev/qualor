@@ -39,12 +39,18 @@ All notable changes to Qualor are listed here, newest first. The format follows
   `qualor/scanner` runs SwiftLint 0.65.1 (MIT), its static Linux build with no Swift toolchain, on
   them as a new `swiftlint` engine (rule keys such as `swiftlint:force_cast`). It uses the
   repository's own `.swiftlint.yml`, read and filtered by Qualor (settings that write files, fetch
-  URLs or change the exit code are ignored), or, without one, SwiftLint's default rules with a few
-  adjustments (`todo` and `multiple_closures_with_trailing_closure` off, `trailing_whitespace`
-  ignoring empty lines, `identifier_name` excluding `i`, `j`, `k`, `x`, `y`, `z` and `id`,
-  `line_length` ignoring URLs and comments). The rules that need SourceKit, and custom rules, do
-  not run; Swift files over 1 MiB are not passed to SwiftLint. A `.swiftlint.yml` Qualor cannot use
-  (`parent_config` or `child_config`, invalid YAML, larger than 1 MiB) makes SwiftLint skip (fail
+  URLs or change the exit code are ignored), or, without one, SwiftLint's default rules with
+  adjustments for code that Xcode, SwiftPM and the common formatters write (`todo`,
+  `multiple_closures_with_trailing_closure`, `trailing_comma` and `comment_spacing` off,
+  `trailing_whitespace` ignoring empty lines, `identifier_name` excluding `i`, `j`, `k`, `x`, `y`,
+  `z` and `id`, `line_length` ignoring URLs and comments, `opening_brace` accepting `{` on its own
+  line after a wrapped condition, type header or signature, and `nesting` allowing types two
+  deep). The rules that need SourceKit, and custom rules, do not run; Swift files over 1 MiB are
+  not passed to SwiftLint, and files with CRLF line ends are passed with LF ends, so SwiftLint's
+  line numbers are right. Rule ids SwiftLint does not know and rule settings it cannot read (it
+  then uses the rule's defaults) are warned about in the scan log. A `.swiftlint.yml` Qualor
+  cannot use (`parent_config` or `child_config`, `only_rules` combined with `disabled_rules`,
+  `opt_in_rules` or `enabled_rules`, invalid YAML, larger than 1 MiB) makes SwiftLint skip (fail
   under `analyzers.swiftlint.enabled: true`); `analyzers.swiftlint.configFile: qualor-default`
   uses the defaults instead, and a `configFile` that is a URL or outside the repository stops the
   scan with exit 2. Turn it off with `analyzers.swiftlint.enabled: false`.
@@ -103,6 +109,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - `Pods/`, `Carthage/` and `.build/` are built-in excludes. Trivy skips them too, so a dependency
   lockfile that lives only inside one of them is no longer scanned; the lockfiles at the repository
   root (`Podfile.lock`, `Package.resolved`, `Cartfile.resolved`) still are.
+- A directory whose name holds a line break (LF, CR, U+0085, U+2028 or U+2029) is skipped with a
+  `PATH_UNSUPPORTED` report warning. The files below one were left out without a warning before,
+  except below a U+0085 name, which were scanned.
 
 ## [0.2.0] - 2026-09-30
 

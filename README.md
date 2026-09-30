@@ -2,12 +2,12 @@
 
 Open-source, self-hosted code quality platform: a SonarQube alternative without lines-of-code
 licensing, for GitLab, GitHub and any other CI. Qualor runs existing open-source analyzers
-(ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swift, Ruff for Python, stylelint and HTMLHint for
-CSS and HTML, OpenGrep, Gitleaks, Trivy, SonarQube-compatible rules for C#, JavaScript and
-TypeScript, or any SARIF), tracks their issues across commits, measures coverage, duplication and
-complexity, and applies a quality gate to new code.
-MIT, except `enterprise/`: source-available under the Qualor Enterprise Licence, and inert
-without a licence key ([licence keys](https://qualor.dev/enterprise)).
+(ESLint, PMD, SpotBugs, Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swift, Ruff
+for Python, stylelint and HTMLHint for CSS and HTML, OpenGrep, Gitleaks, Trivy, SonarQube-compatible
+rules for C#, JavaScript and TypeScript, or any SARIF), tracks their issues across commits, measures
+coverage, duplication and complexity, and applies a quality gate to new code. MIT, except
+`enterprise/`: source-available under the Qualor Enterprise Licence, and inert without a licence key
+([licence keys](https://qualor.dev/enterprise)).
 
 Repository: <https://github.com/qualor-dev/qualor>. Homepage: <https://qualor.dev>. Images:
 [`qualor/*` on Docker Hub](https://hub.docker.com/u/qualor). GitLab CI/CD component:
@@ -232,14 +232,14 @@ repository commits generated coverage output, add it to `sources.exclude` in `qu
 `qualor import sonarqube` copies a SonarQube Server (9.9 LTA or later, Community Build included) or
 SonarQube Cloud organisation's setup into one Qualor organisation: quality gates (for conditions on
 metrics Qualor has), which gate each project uses (with `--create-projects`, the projects
-themselves), quality profiles for JavaScript, TypeScript, C#, Java and Python (Kotlin and Swift profiles are not imported), and the main
-branch's issues marked false positive, won't fix or accepted. C#, JavaScript and TypeScript rules
-map one to one to Qualor's bundled SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32,
-eslint-plugin-sonarjs 2.0.4, LGPL-3.0) wherever the bundled version has the rule key SonarQube
-reports. Ruff findings imported into SonarQube map one to one; for SonarQube's own Python rules,
-issue statuses import where a Ruff rule is the same rule, and profiles follow once those mappings
-are reviewed. It only reads SonarQube (`GET` requests), and `--dry-run` shows what would change
-without writing anything:
+themselves), quality profiles for JavaScript, TypeScript, C#, Java and Python (Kotlin and Swift
+profiles are not imported), and the main branch's issues marked false positive, won't fix or
+accepted. C#, JavaScript and TypeScript rules map one to one to Qualor's bundled
+SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0)
+wherever the bundled version has the rule key SonarQube reports. Ruff findings imported into
+SonarQube map one to one; for SonarQube's own Python rules, issue statuses import where a Ruff rule
+is the same rule, and profiles follow once those mappings are reviewed. It only reads SonarQube
+(`GET` requests), and `--dry-run` shows what would change without writing anything:
 
 ```sh
 SONAR_TOKEN=… QUALOR_URL=https://qualor.example.com QUALOR_TOKEN=… qualor import sonarqube --url https://sonar.example.com --dry-run
