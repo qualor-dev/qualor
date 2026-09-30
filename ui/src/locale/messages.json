@@ -207,6 +207,7 @@
     "label.language.python": "Python",
     "label.language.html": "HTML",
     "label.language.css": "CSS",
+    "label.language.kotlin": "Kotlin",
     "label.language.any": "Other engines",
     "gateWarning.definitionFallback": "No earlier version was found for the new-code baseline; the last 30 days are new code instead.",
     "gateWarning.baselineMissing": "The fixed new-code baseline no longer exists; the last 30 days are new code instead.",

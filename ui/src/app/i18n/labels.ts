@@ -64,6 +64,7 @@ const LABELS: Record<LabelKind, Record<string, string>> = {
     python: $localize`:@@label.language.python:Python`,
     html: $localize`:@@label.language.html:HTML`,
     css: $localize`:@@label.language.css:CSS`,
+    kotlin: $localize`:@@label.language.kotlin:Kotlin`,
     '*': $localize`:@@label.language.any:Other engines`,
   },
   /** The `warnings` of a gate result (gates.md §5, §6; server gates/stage.ts, shared evaluate.ts). */
