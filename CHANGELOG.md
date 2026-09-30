@@ -42,6 +42,13 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - `stylelint` and `htmlhint` are reserved engine ids: a `qualor.yml` `sarif:` entry with
   `engine: stylelint` or `engine: htmlhint` no longer validates, and a SARIF tool with that name
   becomes `ext-stylelint` / `ext-htmlhint`, so issues imported that way before get new rule keys.
+- `.html`, `.htm` and `.css` files were language `other`; they now count in lines of code and
+  duplication, which can move a new-code duplication condition. `.scss` files, `other` before too,
+  are now language `css` (linted by stylelint, without metrics).
+- Qualor now runs stylelint and HTMLHint itself. If you imported your own stylelint or HTMLHint
+  SARIF, remove that import (the `--sarif` flag, or the `qualor.yml` `sarif:` entry). A stylelint
+  or HTMLHint SARIF you still import is reported as `ext-stylelint` / `ext-htmlhint`, and each of
+  its findings counts once with the built-in finding of the same code on the same line.
 - `**/*.min.css` is a built-in exclude, like `**/*.min.js`.
 - A report with `html` or `css` files needs a server of this version; upgrade the server with the
   scanner.

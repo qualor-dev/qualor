@@ -125,6 +125,11 @@ alike: `tag-pair`, `attr-no-duplication`, `src-not-empty`, `alt-require`, `attr-
 and `frame-title-require`. `<!-- htmlhint … -->` comments in a file work as in HTMLHint. Custom
 rules (`--rulesdir`) are not supported.
 
+Server-side templates (Django, Jinja, Twig and the like) are not HTML until they are rendered:
+`{% if %}…{% else %}…{% endif %}` around tags gives `tag-pair` findings that are not real. In a
+project with such templates, leave them out with `sources.exclude` (for example
+`templates/**`), or put a `.htmlhintrc` at the repository root with the rules that suit them.
+
 Qualor now runs HTMLHint itself, so if you imported your own HTMLHint SARIF before, remove that
 import (`--sarif` or the `qualor.yml` `sarif:` entry). `htmlhint` is a reserved engine id: a
 `sarif:` entry with `engine: htmlhint` is a configuration error. An HTMLHint SARIF you still import
@@ -143,7 +148,12 @@ run: stylelint is skipped and the scan log says why. Set `analyzers.stylelint.co
 qualor-default` to use Qualor's configuration instead.
 
 Without a configuration, Qualor uses `stylelint-config-recommended`, the rules that catch mistakes,
-plus `stylelint-config-recommended-scss` for SCSS. Findings of those rules are reliability issues of
+plus `stylelint-config-recommended-scss` for SCSS. It leaves out `no-descending-specificity`, and it
+accepts framework syntax those configurations do not know: Angular's `::ng-deep`; Vue's `:deep()`,
+`:slotted()`, `:global()` and `::v-deep`; CSS Modules' `:global`, `:local`, `:export`, `:import`
+and `composes`; and Tailwind's at-rules (`@tailwind`, `@apply`, `@config`, `@theme`, `@utility`,
+`@variant`, `@custom-variant`, `@plugin`, `@source`, `@reference`, `@screen`) and functions
+(`theme()`, `screen()`, `--alpha()`, `--spacing()`). Findings of those rules are reliability issues of
 medium severity; findings of other rules (conventions such as `stylelint-config-standard`'s) are
 maintainability issues of low severity. SCSS is parsed with `postcss-scss` even when your
 configuration does not say so. Less and indented Sass (`.sass`) are not checked, and SCSS files get
