@@ -300,6 +300,17 @@ async function scanRuff(root: string, env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
+/** Every regular file under `dir` (relative path → bytes); symbolic links are not followed. */
+function snapshot(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const e of readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (!e.isFile()) continue;
+    const abs = path.join(e.parentPath, e.name);
+    out[path.relative(dir, abs).split(path.sep).join('/')] = readFileSync(abs).toString('base64');
+  }
+  return out;
+}
+
 describeWithTools(['ruff'])('Ruff on untrusted checkouts (real Ruff)', () => {
   it("reads no Ruff configuration, writes nothing, and never runs the checkout's own ruff or Python", async () => {
     const root = tmp();
@@ -327,6 +338,11 @@ describeWithTools(['ruff'])('Ruff on untrusted checkouts (real Ruff)', () => {
       // The nearest configuration of strict/c.py: a Ruff that reads it stops with an error.
       'strict/pyproject.toml': '[tool.ruff]\nrequired-version = ">=99"\n',
       'strict/c.py': 'import os\n',
+      // A directory whose only configuration is a pyproject.toml, so its `extend` (to a file
+      // outside the repository that selects ALL) is the one a Ruff reading configuration would
+      // follow; at the root, ruff.toml takes precedence over pyproject.toml.
+      'ext/pyproject.toml': `[tool.ruff]\nextend = "${outside.replace(/\\/g, '/')}/extra.toml"\n`,
+      'ext/d.py': 'import os\n',
     });
     writeFileSync(path.join(outside, 'extra.toml'), '[lint]\nselect = ["ALL"]\n');
     const bin = path.join(root, '.venv', 'bin');
@@ -334,13 +350,21 @@ describeWithTools(['ruff'])('Ruff on untrusted checkouts (real Ruff)', () => {
     const own = path.join(bin, process.platform === 'win32' ? 'ruff.exe' : 'ruff');
     writeFileSync(own, '#!/bin/sh\ntouch "$0.ran"\n');
     chmodSync(own, 0o755);
+    const before = snapshot(root);
     const { capture, keys } = await scanRuff(root, {
       ...process.env,
       PATH: `${bin}${path.delimiter}${process.env['PATH'] ?? ''}`,
     });
     expect(capture.status, capture.reason ?? '').toBe('ok');
     // qualor-default only: F401 for `import os`, nothing of ALL (no D100, ANN001, …).
-    expect(keys).toEqual(['F401 app.py:1', 'F401 excluded.py:1', 'F401 strict/c.py:1']);
+    expect(keys).toEqual([
+      'F401 app.py:1',
+      'F401 excluded.py:1',
+      'F401 ext/d.py:1',
+      'F401 strict/c.py:1',
+    ]);
+    // Every planted file byte-identical, and no file added (no .ruff_cache, no ran-* marker).
+    expect(snapshot(root)).toEqual(before);
     expect(readFileSync(path.join(root, 'app.py'), 'utf8')).toBe(source);
     expect(existsSync(path.join(root, '.ruff_cache'))).toBe(false);
     expect(existsSync(path.join(outside, 'cache'))).toBe(false);
