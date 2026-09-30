@@ -231,4 +231,33 @@ describe('cross-engine dedupe (data-model.md §5.3)', () => {
     expect(primary).toMatchObject({ duplicateOfIssueId: null });
     expect(await byRule(p, 'sonarjs:S1871')).toMatchObject({ duplicateOfIssueId: primary!.id });
   });
+
+  it("dedupes a project's own imported Ruff SARIF (ext-ruff) against the built-in ruff rule of the same code, ruff primary", async () => {
+    const p = await h.project('dedupe/ext-ruff');
+    const py = (path: string) => file(path, { language: 'python' });
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('ruff'), engine('ext-ruff')],
+        files: [py('app.py')],
+        findings: [
+          finding({ engineId: 'ext-ruff', ruleId: 'F401', path: 'app.py', line: 1 }),
+          finding({ engineId: 'ruff', ruleId: 'F401', path: 'app.py', line: 1 }),
+          finding({ engineId: 'ext-ruff', ruleId: 'F811', path: 'app.py', line: 1 }),
+          finding({ engineId: 'ext-ruff', ruleId: 'E711', path: 'app.py', line: 3 }),
+          finding({ engineId: 'ruff', ruleId: 'E711', path: 'app.py', line: 4 }),
+        ],
+      }),
+    );
+    const primary = await byRule(p, 'ruff:F401');
+    expect(primary).toMatchObject({ duplicateOfIssueId: null });
+    expect(await byRule(p, 'ext-ruff:F401')).toMatchObject({
+      status: 'open',
+      duplicateOfIssueId: primary!.id,
+    });
+    // Another code on the same line, and the same code on another line, stay separate issues.
+    expect(await byRule(p, 'ext-ruff:F811')).toMatchObject({ duplicateOfIssueId: null });
+    expect(await byRule(p, 'ext-ruff:E711')).toMatchObject({ duplicateOfIssueId: null });
+    expect(await byRule(p, 'ruff:E711')).toMatchObject({ duplicateOfIssueId: null });
+  });
 });

@@ -5,6 +5,7 @@ import {
   enginePriority,
   EQUIVALENCES,
   equivalentPartners,
+  EXTERNAL_BUILTIN_ALIASES,
   rulesEquivalent,
 } from './equivalences';
 
@@ -97,5 +98,18 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       rulesEquivalent(rule('eslint:sonarjs/cognitive-complexity'), rule('sonarjs:S3776')),
     ).toBe(true);
     expect(enginePriority('eslint')).toBeGreaterThan(enginePriority('sonarjs'));
+  });
+
+  it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
+    expect(EXTERNAL_BUILTIN_ALIASES).toEqual({ 'ext-ruff': 'ruff' });
+    expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
+    expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
+    expect(rulesEquivalent(rule('ext-ruff:F401'), rule('ruff:F401'))).toBe(true);
+    expect(rulesEquivalent(rule('ruff:S602'), rule('ext-ruff:S602'))).toBe(true);
+    expect(rulesEquivalent(rule('ext-ruff:F401'), rule('ruff:F811'))).toBe(false);
+    expect(rulesEquivalent(rule('ext-bandit:F401'), rule('ruff:F401'))).toBe(false);
+    expect(equivalentPartners('ext-ruff:')).toEqual([]);
+    expect(equivalentPartners('ruff')).toEqual([]);
+    expect(enginePriority('ruff')).toBeGreaterThan(enginePriority('ext-ruff'));
   });
 });

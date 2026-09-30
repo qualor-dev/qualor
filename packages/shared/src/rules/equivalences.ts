@@ -70,9 +70,39 @@ for (const { rules } of EQUIVALENCES.pairs) {
   }
 }
 
-/** The rule keys that equivalences.json lists as a curated pair with `key` (any engine). */
+/**
+ * External engine id → built-in engine: a rule of the external engine is equivalent to the
+ * built-in rule with the identical rule id (`ext-ruff:F401` ↔ `ruff:F401`), so a project that
+ * still imports its own SARIF of a tool Qualor now runs does not see every finding twice. The
+ * built-in engine is primary: `enginePriority` ranks every external engine lowest.
+ */
+export const EXTERNAL_BUILTIN_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  'ext-ruff': 'ruff',
+});
+
+const BUILTIN_TO_EXTERNAL = new Map(
+  Object.entries(EXTERNAL_BUILTIN_ALIASES).map(([external, builtin]) => [builtin, external]),
+);
+
+/** The key of the same rule id under the aliased engine (either direction), or null. */
+function aliasPartner(key: string): string | null {
+  const colon = key.indexOf(':');
+  if (colon <= 0 || colon === key.length - 1) return null;
+  const engineId = key.slice(0, colon);
+  const other = Object.hasOwn(EXTERNAL_BUILTIN_ALIASES, engineId)
+    ? EXTERNAL_BUILTIN_ALIASES[engineId]
+    : BUILTIN_TO_EXTERNAL.get(engineId);
+  return other === undefined ? null : other + key.slice(colon);
+}
+
+/**
+ * The rule keys equivalent to `key` by name: its curated pairs in equivalences.json (any engine)
+ * plus, for an aliased engine, the rule of the same id on the other side of the alias.
+ */
 export function equivalentPartners(key: string): readonly string[] {
-  return PARTNERS.get(key) ?? [];
+  const curated = PARTNERS.get(key) ?? [];
+  const alias = aliasPartner(key);
+  return alias === null || curated.includes(alias) ? curated : [...curated, alias];
 }
 
 /** A rule's own CWE list plus its engine's curated default (`engineCwe`). */
@@ -85,11 +115,13 @@ export function effectiveCwe(rule: EquivalenceRule): number[] {
 
 /**
  * data-model.md §5.3: rules of two different engines are equivalent when they share at
- * least one CWE or the pair is listed in equivalences.json. Rules of one engine never are.
+ * least one CWE, the pair is listed in equivalences.json, or one is a rule of an aliased external
+ * engine and the other the built-in rule of the same id (`EXTERNAL_BUILTIN_ALIASES`). Rules of one
+ * engine never are.
  */
 export function rulesEquivalent(a: EquivalenceRule, b: EquivalenceRule): boolean {
   if (a.engineId === b.engineId) return false;
-  if (PAIRS.has(pairKey(a.key, b.key))) return true;
+  if (PAIRS.has(pairKey(a.key, b.key)) || aliasPartner(a.key) === b.key) return true;
   const cwe = new Set(effectiveCwe(a));
   return effectiveCwe(b).some((c) => cwe.has(c));
 }
