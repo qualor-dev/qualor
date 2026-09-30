@@ -147,6 +147,14 @@
                 </div>
               </td>
             </tr>
+          } @empty {
+            @if (list.loaded() && noPasswordOnly()) {
+              <tr>
+                <td colspan="4" class="muted" i18n="@@users.noneWithoutPassword">
+                  Every user can sign in with a password.
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>
@@ -362,22 +370,12 @@
         Cancel
       </button>
       @if (pending()?.kind === 'admin') {
-        <button
-          type="button"
-          class="btn btn-danger-solid"
-          (click)="confirmPending()"
-          i18n="@@users.revokeAdmin"
-        >
-          Remove admin
+        <button type="button" class="btn btn-danger-solid" (click)="confirmPending()">
+          <ng-container i18n="@@users.revokeAdmin">Remove admin</ng-container>
         </button>
       } @else {
-        <button
-          type="button"
-          class="btn btn-danger-solid"
-          (click)="confirmPending()"
-          i18n="@@users.deactivate"
-        >
-          Deactivate
+        <button type="button" class="btn btn-danger-solid" (click)="confirmPending()">
+          <ng-container i18n="@@users.deactivate">Deactivate</ng-container>
         </button>
       }
     </div>

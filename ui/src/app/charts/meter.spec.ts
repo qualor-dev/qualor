@@ -37,12 +37,24 @@ describe('Meter', () => {
     expect(root.querySelector('[role="meter"]')?.getAttribute('aria-valuetext')).toBe(
       '250 of 200, budget reached for today',
     );
+    // The track's value stays in its range; its words carry the real one.
+    expect(root.querySelector('[role="meter"]')?.getAttribute('aria-valuenow')).toBe('200');
   });
 
   it('says that a budget of 0 allows none', async () => {
     const root = await render(0, 0);
     expect(text(root.querySelector('.meter-value'))).toBe('0 of 0');
     expect(text(root.querySelector('.meter-note'))).toBe('None allowed: the budget is 0');
+    expect(root.querySelector('[role="meter"]')?.getAttribute('aria-valuetext')).toBe(
+      '0 of 0, none allowed: the budget is 0',
+    );
+  });
+
+  it('sets its figures proportionally, so grouped thousands and cents stay tight', async () => {
+    const root = await render(1_234, 1_000_000);
+    expect(getComputedStyle(root.querySelector('.meter-value')!).fontVariantNumeric).not.toContain(
+      'tabular-nums',
+    );
   });
 
   it('says when no budget is set, and draws no track', async () => {

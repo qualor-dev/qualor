@@ -94,7 +94,12 @@ export class DeliveryStrip {
   protected readonly summary = computed(() => {
     const { succeeded, failed, pending } = this.counts();
     const total = this.shown().length;
-    return $localize`:@@strip.summary:Last ${total}:total: deliveries: ${succeeded}:succeeded: delivered, ${failed}:failed: failed, ${pending}:pending: pending.`;
+    // One delivery is one ("Last delivery"), as the caption says it.
+    const last =
+      total === 1
+        ? $localize`:@@strip.lastOne:Last delivery`
+        : $localize`:@@strip.lastMany:Last ${total}:total: deliveries`;
+    return $localize`:@@strip.summaryOf:${last}:last:: ${succeeded}:succeeded: delivered, ${failed}:failed: failed, ${pending}:pending: pending.`;
   });
 
   protected readonly tip = computed(() => {

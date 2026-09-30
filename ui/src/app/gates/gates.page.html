@@ -19,6 +19,9 @@
     <p class="alert alert-error" role="alert">{{ message }}</p>
   }
   <section class="card panel" aria-labelledby="gates-caption">
+    @if (usageError(); as message) {
+      <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
+    }
     <div class="panel-scroll">
       <table #table>
         <caption id="gates-caption" class="visually-hidden" i18n="@@gates.caption">
@@ -52,8 +55,8 @@
               </td>
               <td class="summary">{{ summary(gate) }}</td>
               <td class="num usage">
-                @if (usageOf(gate) !== null) {
-                  {{ usageOf(gate) }}
+                @if (usageOf(gate); as used) {
+                  {{ used }}
                 } @else {
                   <span class="muted">–</span>
                 }

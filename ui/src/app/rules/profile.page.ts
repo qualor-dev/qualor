@@ -57,7 +57,7 @@ function sourceLabel(source: ProfileRule['source']): string {
     case 'inherited':
       return $localize`:@@profile.source.inherited:Inherited`;
     default:
-      return $localize`:@@profile.source.default:Unknown-rule default`;
+      return $localize`:@@profile.source.notSet:Not set here`;
   }
 }
 
@@ -122,6 +122,11 @@ export class ProfilePage {
   protected readonly parentName = computed(() =>
     this.parent.hasValue() ? this.parent.value().name : null,
   );
+  /** Why the parent could not be read, if it could not (its name is missing on the band then). */
+  protected readonly parentError = computed(() => {
+    const err = this.parent.error();
+    return err ? problemMessage(err) : null;
+  });
   protected readonly editable = computed(() => {
     const p = this.current();
     return !!p && !p.isBuiltin && this.org.canChange('org.profiles.manage', p.organizationId);

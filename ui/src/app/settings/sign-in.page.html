@@ -1,7 +1,11 @@
 <div class="settings-head">
   <div>
     <h2 #heading tabindex="-1" i18n="@@signIn.title">Sign-in</h2>
-    @if (infoLoaded() && !licensed() && !infoError()) {
+    @if (licensed() && instanceAdmin()) {
+      <p class="muted" i18n="@@signIn.intro">
+        Who may still sign in with a password once single sign-on is on.
+      </p>
+    } @else if (infoLoaded() && !licensed() && !infoError()) {
       <p class="muted" i18n="@@sso.notLicensed">
         Single sign-on needs an enterprise licence with the sso feature.
       </p>
@@ -31,6 +35,39 @@
   @if (error(); as message) {
     <p class="alert alert-error" role="alert">{{ message }}</p>
   }
+
+  <section class="card panel sign-in-rules" aria-labelledby="sign-in-rules-title">
+    <div class="panel-head">
+      <h3 id="sign-in-rules-title" i18n="@@signIn.rulesTitle">
+        How Qualor keeps you from being locked out
+      </h3>
+    </div>
+    <div class="panel-body">
+      <ul id="sign-in-rules">
+        <li i18n="@@signIn.rule.tokens">
+          API and CI tokens keep working whatever you choose here.
+        </li>
+        <li i18n="@@signIn.rule.needs">
+          Limiting password sign-in needs at least one break-glass administrator who is an active
+          instance administrator with a password, and at least one enabled single sign-on
+          connection.
+        </li>
+        <li i18n="@@signIn.rule.others">
+          Everyone else signs in with single sign-on. Their password, if they have one, is kept and
+          works again when you set password sign-in back to everyone.
+        </li>
+        <li i18n="@@signIn.rule.last">
+          While password sign-in is limited, the last break-glass administrator who can still use a
+          password cannot be deactivated or lose the instance administrator role. Set password
+          sign-in back to everyone first.
+        </li>
+        <li i18n="@@signIn.rule.emergency">
+          If the identity provider fails, set QUALOR_FORCE_PASSWORD_SIGN_IN=true and restart the
+          server: everyone with a password can sign in with it until you remove the variable.
+        </li>
+      </ul>
+    </div>
+  </section>
 
   <form class="card panel sign-in-form" novalidate (submit)="save($event)">
     <div class="setting-row">
@@ -137,39 +174,6 @@
     </div>
   </form>
 
-  <section class="card panel sign-in-rules" aria-labelledby="sign-in-rules-title">
-    <div class="panel-head">
-      <h3 id="sign-in-rules-title" i18n="@@signIn.rulesTitle">
-        How Qualor keeps you from being locked out
-      </h3>
-    </div>
-    <div class="panel-body">
-      <ul id="sign-in-rules">
-        <li i18n="@@signIn.rule.tokens">
-          API and CI tokens keep working whatever you choose here.
-        </li>
-        <li i18n="@@signIn.rule.needs">
-          Limiting password sign-in needs at least one break-glass administrator who is an active
-          instance administrator with a password, and at least one enabled single sign-on
-          connection.
-        </li>
-        <li i18n="@@signIn.rule.others">
-          Everyone else signs in with single sign-on. Their password, if they have one, is kept and
-          works again when you set password sign-in back to everyone.
-        </li>
-        <li i18n="@@signIn.rule.last">
-          While password sign-in is limited, the last break-glass administrator who can still use a
-          password cannot be deactivated or lose the instance administrator role. Set password
-          sign-in back to everyone first.
-        </li>
-        <li i18n="@@signIn.rule.emergency">
-          If the identity provider fails, set QUALOR_FORCE_PASSWORD_SIGN_IN=true and restart the
-          server: everyone with a password can sign in with it until you remove the variable.
-        </li>
-      </ul>
-    </div>
-  </section>
-
   <dialog
     #confirmDialog
     id="confirm-dialog"
@@ -189,13 +193,8 @@
         Cancel
       </button>
       @if (pendingLimit()) {
-        <button
-          type="button"
-          class="btn btn-primary"
-          (click)="confirmLimit()"
-          i18n="@@signIn.limitTitle"
-        >
-          Limit password sign-in
+        <button type="button" class="btn btn-primary" (click)="confirmLimit()">
+          <ng-container i18n="@@signIn.limitTitle">Limit password sign-in</ng-container>
         </button>
       }
     </div>

@@ -11,6 +11,7 @@ import {
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
 import type { Connection } from './gitlab.page';
+import { testProblemText } from './gitlab-text';
 import { RepositoriesPage } from './repositories.page';
 
 const CONNECTION: Connection = {
@@ -224,6 +225,24 @@ describe('RepositoriesPage (scm.md §2.3, github.md §2.3)', () => {
     await settle(fixture);
     expect(root.querySelector('#ref-p1')?.getAttribute('aria-invalid')).toBeNull();
     expect(root.querySelector('#ref-error-p1')).toBeNull();
+  });
+
+  it('says a failed check in the error colour, not in the green news', async () => {
+    const server = setup();
+    server.on('POST', '/api/v0/scm-connections/c1/test', {
+      body: { ok: false, user: null, project: null, problem: { code: 'not_found', message: 'x' } },
+    });
+    const { fixture, root } = await render();
+    const row = root.querySelector('tbody tr')!;
+    choose(root, '#conn-p1', 'c1');
+    type(root, '#ref-p1', 'acme/api');
+    await settle(fixture);
+    button(root, 'Check', row).click();
+    await settle(fixture);
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
+    expect(root.querySelector('p[role="alert"]')?.textContent).toContain(
+      testProblemText('not_found'),
+    );
   });
 
   it('maps a project to a GitHub connection with the owner/repo hint', async () => {

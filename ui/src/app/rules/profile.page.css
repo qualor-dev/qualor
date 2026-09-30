@@ -12,22 +12,9 @@
   align-items: center;
   gap: 8px 12px;
 }
-.search-field {
-  position: relative;
-  min-width: 0;
-}
-.search-field q-icon {
-  position: absolute;
-  top: 50%;
-  left: 10px;
-  transform: translateY(-50%);
-  color: var(--text-muted);
-  pointer-events: none;
-}
 .search-field input {
   width: 16rem;
   max-width: 100%;
-  padding-left: 34px;
 }
 .scope {
   display: inline-flex;

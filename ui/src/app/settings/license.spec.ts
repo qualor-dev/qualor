@@ -503,3 +503,49 @@ describe('SettingsPage navigation (enterprise.md §10.4, §11)', () => {
     expect(links).not.toContain('Audit log');
   });
 });
+
+describe('LicensePage: step 11', () => {
+  it('says what the page is for in one line', async () => {
+    setup(ACTIVE_UPLOADED);
+    const { root } = await render();
+    expect(root.querySelector('.settings-head p')?.textContent?.trim()).toBe(
+      'The plan this server runs on, and the licence key it reads.',
+    );
+  });
+
+  it('names the grace period once in its state, the date in the time left', async () => {
+    setup({
+      ...COMMUNITY,
+      edition: 'enterprise',
+      state: 'grace',
+      source: 'environment',
+      license: ACME,
+    });
+    const { root } = await render();
+    expect(root.querySelector('.license-state .badge')?.textContent?.trim()).toBe('Grace period');
+  });
+
+  it('gives the state and each plugin an icon beside its words', async () => {
+    setup({
+      ...ACTIVE_UPLOADED,
+      plugins: [
+        { name: 'qualor-enterprise', state: 'loaded', features: [], error: null },
+        { name: 'broken', state: 'failed', features: [], error: 'register timed out' },
+      ],
+    });
+    const { root } = await render();
+    expect(root.querySelector('.license-state .badge q-icon')).not.toBeNull();
+    expect(root.querySelectorAll('.license-plugins .badge q-icon')).toHaveLength(2);
+  });
+
+  it('ties a failed plugin to the features it leaves off, in one sentence', async () => {
+    setup({
+      ...ACTIVE_UPLOADED,
+      plugins: [{ name: 'broken', state: 'failed', features: [], error: 'register timed out' }],
+    });
+    const { root } = await render();
+    expect(root.querySelector('#license-plan [role="alert"]')?.textContent?.trim()).toBe(
+      'The plugin broken could not load, so the features it brings are not active. The server log says why.',
+    );
+  });
+});

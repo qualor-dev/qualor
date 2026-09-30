@@ -1069,6 +1069,8 @@ describe('WebhooksPage', () => {
     const root = fixture.nativeElement as HTMLElement;
     const first = root.querySelector<HTMLElement>('section')!;
     expect(first.querySelector('.webhook-state')?.textContent?.trim()).toBe('Active');
+    // A state wears an icon as well as its word, as a connection's does.
+    expect(first.querySelector('.webhook-state q-icon')).not.toBeNull();
     const toggle = button(first, 'Switch off');
     toggle.click();
     await settle(fixture);
@@ -1076,6 +1078,7 @@ describe('WebhooksPage', () => {
     // The same panel and the same button, now saying what it would do next.
     expect(root.querySelector('section')).toBe(first);
     expect(first.querySelector('.webhook-state')?.textContent?.trim()).toBe('Switched off');
+    expect(first.querySelector('.webhook-state q-icon')).not.toBeNull();
     expect(toggle.textContent?.trim()).toBe('Switch on');
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'Webhook https://a.example.com/ switched off.',

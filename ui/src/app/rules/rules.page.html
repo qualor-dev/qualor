@@ -75,7 +75,10 @@
             <tr>
               <td class="rule-cell">
                 <details>
-                  <summary>{{ rule.name }}</summary>
+                  <summary>
+                    <span class="rule-name">{{ rule.name }}</span>
+                    <code class="rule-key">{{ rule.key }}</code>
+                  </summary>
                   <div class="rule-details">
                     @if (rule.descriptionMd; as description) {
                       <p class="prose-text">{{ description }}</p>
@@ -92,7 +95,6 @@
                     }
                   </div>
                 </details>
-                <code class="rule-key">{{ rule.key }}</code>
               </td>
               <td class="nowrap">{{ rule.quality | label: 'quality' }}</td>
               <td>

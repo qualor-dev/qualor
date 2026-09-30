@@ -41,12 +41,16 @@
           </div>
           <div class="webhook-side">
             @if (w.active) {
-              <span class="badge badge-passed webhook-state" i18n="@@webhooks.isActive"
-                >Active</span
+              <span class="badge badge-passed webhook-state"
+                ><q-icon name="check" /><ng-container i18n="@@webhooks.isActive"
+                  >Active</ng-container
+                ></span
               >
             } @else {
-              <span class="badge badge-none webhook-state" i18n="@@webhooks.isOff"
-                >Switched off</span
+              <span class="badge badge-none webhook-state"
+                ><q-icon name="minus" /><ng-container i18n="@@webhooks.isOff"
+                  >Switched off</ng-container
+                ></span
               >
             }
             @if (canManage()) {
@@ -186,13 +190,8 @@
           />
         </div>
         <div class="dialog-actions">
-          <button
-            type="button"
-            class="btn btn-primary"
-            (click)="closeCreate()"
-            i18n="@@secret.done"
-          >
-            Done
+          <button type="button" class="btn btn-primary" (click)="closeCreate()">
+            <ng-container i18n="@@secret.done">Done</ng-container>
           </button>
         </div>
       } @else {

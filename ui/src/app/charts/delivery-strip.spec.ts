@@ -80,6 +80,10 @@ describe('DeliveryStrip', () => {
     expect(pending.root.querySelector('.strip-rate')).toBeNull();
     expect(text(pending.root.querySelector('.strip-pending'))).toBe('1 pending');
     expect(text(pending.root.querySelector('.strip-caption'))).toBe('Last delivery');
+    // One delivery is one, for a screen reader too.
+    expect(pending.root.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toBe(
+      'Last delivery: 0 delivered, 0 failed, 1 pending.',
+    );
   });
 
   it('draws at most the last 20 deliveries', async () => {

@@ -62,6 +62,9 @@ export function metricOptions(catalog: Catalog): MetricOption[] {
  * itself at "80." while a decimal is typed (UI redesign, step 6 review). A comma counts as the
  * decimal point, as a phone's keypad offers it in many languages.
  */
+/** A rating's letters, 1 to 5 (the server's scale). */
+const RATING_LETTERS = ['A', 'B', 'C', 'D', 'E'];
+
 export function parseThreshold(text: string): number {
   const t = text.trim().replace(',', '.');
   return /^[+-]?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i.test(t) ? Number(t) : NaN;
@@ -168,7 +171,8 @@ export class GatePage {
   /** Operator and threshold typed into a condition's row, by condition id, until saved. */
   protected readonly drafts = signal<Readonly<Record<string, Draft>>>({});
   /** Why a row's change was refused, shown in that row. */
-  protected readonly rowError = signal<{ id: string; message: string } | null>(null);
+  /** Each refused row's reason, by condition id: rows are refused one by one. */
+  protected readonly rowErrors = signal<Readonly<Record<string, string>>>({});
   protected readonly deleteQuestion = computed(() => {
     const gate = this.current();
     if (!gate) return '';
@@ -191,7 +195,9 @@ export class GatePage {
         this.announcement.set(null);
         this.busy.set(false);
         this.drafts.set({});
-        this.rowError.set(null);
+        this.rowErrors.set({});
+        // A dialog of the previous gate does not survive the route's reuse.
+        this.closeRename();
       });
     });
   }
@@ -229,10 +235,13 @@ export class GatePage {
     return null;
   }
 
-  /** "%" after a percentage's threshold. */
-  protected unit(metric: string): string {
+  /** "%" after a percentage's threshold; a rating's letter after its number ("1" is A). */
+  protected unit(metric: string, threshold = ''): string {
     const key = metric.startsWith('new_') ? metric.slice(4) : metric;
-    return this.metrics().find((m) => m.key === key)?.type === 'percent' ? '%' : '';
+    const type = this.metrics().find((m) => m.key === key)?.type;
+    if (type === 'percent') return '%';
+    if (type === 'rating') return RATING_LETTERS[Math.round(parseThreshold(threshold)) - 1] ?? '';
+    return '';
   }
 
   protected async add(event: Event): Promise<void> {
@@ -290,7 +299,8 @@ export class GatePage {
       keepFocus(
         this.injector,
         this.document,
-        () => rowAt(this.table()?.nativeElement, index)?.querySelector('button'),
+        // The next row's Remove (its Save is out of sight until the row changes).
+        () => rowAt(this.table()?.nativeElement, index)?.querySelector('button.danger'),
         () => this.heading()?.nativeElement,
       );
     });
@@ -328,7 +338,27 @@ export class GatePage {
 
   private setDraft(condition: Condition, draft: Draft): void {
     this.drafts.update((all) => ({ ...all, [condition.id]: draft }));
-    if (this.rowError()?.id === condition.id) this.rowError.set(null);
+    this.clearRowError(condition);
+  }
+
+  private clearRowError(condition: Condition): void {
+    this.rowErrors.update((all) =>
+      Object.fromEntries(Object.entries(all).filter(([id]) => id !== condition.id)),
+    );
+  }
+
+  /** Enter in a row's threshold saves it, as Save would; nothing changed, nothing is sent. */
+  protected saveOnEnter(condition: Condition, event: Event): void {
+    event.preventDefault();
+    if (this.changed(condition)) void this.save(condition);
+  }
+
+  /** Escape drops a row's draft: the stored operator and threshold come back. */
+  protected dropDraft(condition: Condition): void {
+    this.drafts.update((all) =>
+      Object.fromEntries(Object.entries(all).filter(([id]) => id !== condition.id)),
+    );
+    this.clearRowError(condition);
   }
 
   protected saveLabel(condition: Condition): string {
@@ -338,16 +368,18 @@ export class GatePage {
   protected async save(condition: Condition): Promise<void> {
     const draft = this.drafts()[condition.id];
     if (!draft || this.busy()) return;
+    // An older refusal (of the band's actions) is not about this row.
+    this.error.set(null);
     const text = draft.threshold.trim();
     const problem = this.thresholdProblem(condition.metric, text);
     if (problem) {
-      this.rowError.set({ id: condition.id, message: problem });
+      this.rowErrors.update((all) => ({ ...all, [condition.id]: problem }));
       return;
     }
     const gateId = this.gateId();
     const generation = this.generation;
     this.busy.set(true);
-    this.rowError.set(null);
+    this.clearRowError(condition);
     this.announcement.set(null);
     try {
       const saved = await ok(
@@ -372,12 +404,10 @@ export class GatePage {
       );
     } catch (err) {
       if (generation !== this.generation) return;
-      this.rowError.set({
-        id: condition.id,
-        message: fieldErrors(err)['body.threshold']
-          ? $localize`:@@gate.thresholdInvalid:This value is outside what the metric allows (ratings 1–5, percentages 0–100).`
-          : problemMessage(err),
-      });
+      const message = fieldErrors(err)['body.threshold']
+        ? $localize`:@@gate.thresholdInvalid:This value is outside what the metric allows (ratings 1–5, percentages 0–100).`
+        : problemMessage(err);
+      this.rowErrors.update((all) => ({ ...all, [condition.id]: message }));
     } finally {
       if (generation === this.generation) this.busy.set(false);
     }

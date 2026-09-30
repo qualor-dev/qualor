@@ -130,10 +130,6 @@ export class TokensPage {
     this.scopesError.set(null);
   }
 
-  protected scopesText(token: Token): string {
-    return token.scopes.map(scopeLabel).join(', ');
-  }
-
   protected isExpired(token: Token): boolean {
     return token.expiresAt !== null && Date.parse(token.expiresAt) <= Date.now();
   }

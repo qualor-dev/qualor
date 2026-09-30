@@ -86,9 +86,20 @@ export class Meter {
         ? this.valueText()
         : $localize`:@@meter.spokenNote:${this.valueText()}:value:, ${note}:note:`;
     }
-    return this.state() === 'reached'
-      ? $localize`:@@meter.reachedSpoken:${this.valueText()}:value:, budget reached for today`
-      : this.valueText();
+    switch (this.state()) {
+      case 'reached':
+        return $localize`:@@meter.reachedSpoken:${this.valueText()}:value:, budget reached for today`;
+      case 'off':
+        return $localize`:@@meter.offSpoken:${this.valueText()}:value:, none allowed: the budget is 0`;
+      default:
+        return this.valueText();
+    }
+  });
+
+  /** The track's value within its range; past a budget its words say the real one. */
+  protected readonly trackValue = computed(() => {
+    const max = this.max();
+    return max === null ? this.value() : Math.min(this.value(), max);
   });
 
   private format(n: number): string {

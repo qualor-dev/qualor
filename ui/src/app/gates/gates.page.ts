@@ -6,6 +6,7 @@ import {
   type ElementRef,
   inject,
   Injector,
+  LOCALE_ID,
   resource,
   signal,
   viewChild,
@@ -57,6 +58,7 @@ export class GatesPage {
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  private readonly locale = inject(LOCALE_ID);
   private readonly session = inject(SessionStore);
   protected readonly org = inject(OrgContext);
 
@@ -117,6 +119,12 @@ export class GatesPage {
   protected readonly usagePartial = computed(
     () => this.usage.hasValue() && this.usage.value().partial,
   );
+  /** Why the projects could not be counted, in the panel whose column shows dashes then. */
+  protected readonly usageError = computed(() =>
+    this.usage.error()
+      ? $localize`:@@gates.usageFailed:The projects using each gate could not be counted.`
+      : null,
+  );
 
   constructor() {
     effect(() => {
@@ -125,11 +133,16 @@ export class GatesPage {
     });
   }
 
-  /** The projects using a gate; null while unknown. */
-  protected usageOf(gate: Gate): number | null {
+  /**
+   * The projects using a gate, in the page's figures ("1,198"); null while unknown, and when the
+   * organisation has no project at all, where a column of zeros would say nothing.
+   */
+  protected usageOf(gate: Gate): string | null {
     if (!this.usage.hasValue()) return null;
     const { counts } = this.usage.value();
-    return (counts.get(gate.id) ?? 0) + (gate.isDefault ? (counts.get(null) ?? 0) : 0);
+    if (counts.size === 0) return null;
+    const used = (counts.get(gate.id) ?? 0) + (gate.isDefault ? (counts.get(null) ?? 0) : 0);
+    return new Intl.NumberFormat(this.locale).format(used);
   }
 
   /** "2 conditions, 1 on new code": what a gate checks, at a glance. */
@@ -246,6 +259,8 @@ export class GatesPage {
         this.api.client.DELETE('/api/v0/quality-gates/{id}', { params: { path: { id: gate.id } } }),
       );
       await this.list.refresh();
+      // Its projects now use the default gate: count again.
+      this.usage.reload();
       this.announcement.set($localize`:@@gates.deleted:Quality gate ${gate.name}:name: deleted.`);
       keepFocus(
         this.injector,

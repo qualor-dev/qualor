@@ -410,3 +410,13 @@ describe('AuditSettingsPage (rbac-audit.md §11, §14, §17)', () => {
     expect(other.requests.filter((r) => r.path.startsWith('/api/v0/ee/'))).toEqual([]);
   });
 });
+
+describe('AuditSettingsPage: step 11', () => {
+  it('says what the page is for in one line', async () => {
+    setup();
+    const { root } = await render();
+    expect(root.querySelector('.settings-head p')?.textContent?.trim()).toBe(
+      'How long the audit log keeps its events, and where it sends them.',
+    );
+  });
+});

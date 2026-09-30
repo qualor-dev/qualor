@@ -28,7 +28,13 @@
           Copy
         </button>
         @if (!g.isBuiltin) {
-          <button type="button" class="btn" (click)="openRename()" i18n="@@gate.rename">
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-disabled]="busy() ? true : null"
+            (click)="openRename()"
+            i18n="@@gate.rename"
+          >
             Rename
           </button>
         }
@@ -44,7 +50,13 @@
           </button>
         }
         @if (!g.isBuiltin) {
-          <button type="button" class="btn btn-danger" (click)="askDelete()" i18n="@@gates.delete">
+          <button
+            type="button"
+            class="btn btn-danger"
+            [attr.aria-disabled]="busy() ? true : null"
+            (click)="askDelete()"
+            i18n="@@gates.delete"
+          >
             Delete
           </button>
         }
@@ -54,8 +66,8 @@
 
   <div class="page-body">
     @if (g.isBuiltin) {
-      <p class="alert alert-info" i18n="@@gate.builtinHint">
-        The built-in gate cannot change. Copy it from the list of gates to make your own.
+      <p class="alert alert-info" i18n="@@gate.builtinHintBand">
+        The built-in gate cannot change. Copy it to make your own.
       </p>
     }
     <div role="status">
@@ -77,7 +89,7 @@
         </span>
       </div>
       <div class="panel-scroll">
-        <table #table [class.conditions-editable]="editable()">
+        <table #table aria-labelledby="conditions-heading" [class.conditions-editable]="editable()">
           <thead>
             @if (editable()) {
               <tr>
@@ -129,37 +141,35 @@
                         inputmode="decimal"
                         autocomplete="off"
                         [value]="draftThreshold(c)"
-                        [attr.aria-invalid]="rowError()?.id === c.id ? true : null"
-                        [attr.aria-describedby]="
-                          rowError()?.id === c.id ? 'cond-error-' + c.id : null
-                        "
+                        [attr.aria-invalid]="rowErrors()[c.id] ? true : null"
+                        [attr.aria-describedby]="rowErrors()[c.id] ? 'cond-error-' + c.id : null"
                         (input)="editThreshold(c, $event)"
+                        (keydown.enter)="saveOnEnter(c, $event)"
+                        (keydown.escape)="dropDraft(c)"
                       />
-                      @if (unit(c.metric); as u) {
+                      @if (unit(c.metric, draftThreshold(c)); as u) {
                         <span class="cond-unit">{{ u }}</span>
                       }
                     </div>
-                    @if (rowError(); as problem) {
-                      @if (problem.id === c.id) {
-                        <span [id]="'cond-error-' + c.id" class="field-error" role="alert">{{
-                          problem.message
-                        }}</span>
-                      }
+                    @if (rowErrors()[c.id]; as message) {
+                      <span [id]="'cond-error-' + c.id" class="field-error" role="alert">{{
+                        message
+                      }}</span>
                     }
                   </td>
                   <td role="cell" class="actions-col">
                     <div class="row-actions">
-                      @if (changed(c)) {
-                        <button
-                          type="button"
-                          class="btn-quiet"
-                          [attr.aria-label]="saveLabel(c)"
-                          (click)="save(c)"
-                          i18n="@@gate.save"
-                        >
-                          Save
-                        </button>
-                      }
+                      <button
+                        type="button"
+                        class="btn-quiet cond-save"
+                        [class.idle]="!changed(c)"
+                        [attr.aria-label]="saveLabel(c)"
+                        [attr.aria-disabled]="busy() ? true : null"
+                        (click)="save(c)"
+                        i18n="@@gate.save"
+                      >
+                        Save
+                      </button>
                       <button
                         type="button"
                         class="btn-quiet danger"

@@ -290,11 +290,11 @@ export class GitLabPage {
       if (generation !== this.orgGeneration) return;
       const text = gitlabTestText(result);
       this.results.update((all) => ({ ...all, [connection.id]: text }));
-      this.outcomes.update((all) => ({
-        ...all,
-        [connection.id]: result.ok && result.user ? 'ok' : 'failed',
-      }));
-      this.announcement.set(text);
+      const passed = result.ok && !!result.user;
+      this.outcomes.update((all) => ({ ...all, [connection.id]: passed ? 'ok' : 'failed' }));
+      // A failure reads as one: the error alert, never the green news of a success.
+      if (passed) this.announcement.set(text);
+      else this.error.set(text);
     });
   }
 

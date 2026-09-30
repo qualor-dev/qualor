@@ -468,3 +468,33 @@ describe('AiSettingsPage (llm.md §3, §18)', () => {
     expect(server.requestsTo('GET', '/api/v0/system/llm')).toHaveLength(0);
   });
 });
+
+describe('AiSettingsPage: step 11', () => {
+  it('says that a reached token or cost budget holds back every feature', async () => {
+    const server = setup(CONFIGURED);
+    server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, {
+      body: orgAi({ usage: { tokens: 1_000_000 }, budgets: { tokensPerDay: 1_000_000 } }),
+    });
+    const { root } = await render();
+    expect(root.querySelector('#ai-today')?.textContent).toContain(
+      'Every feature waits until midnight UTC: the token or cost budget for today is reached.',
+    );
+  });
+
+  it('says so when there is no organization to show, instead of loading forever', async () => {
+    const server = setup(CONFIGURED);
+    server.on('GET', '/api/v0/organizations', { body: page([]) });
+    const { root } = await render();
+    const today = root.querySelector('#ai-today')!;
+    expect(today.querySelector('h3')?.textContent?.trim()).toBe('Today (UTC)');
+    expect(today.textContent).toContain('There is no organization yet.');
+    expect(today.textContent).not.toContain('Loading');
+  });
+
+  it('says what is sent once, under its heading', async () => {
+    setup(CONFIGURED);
+    const { root } = await render();
+    const sent = root.querySelector('#ai-data-sent .panel-body p')?.textContent?.trim() ?? '';
+    expect(sent.startsWith('The rule, the finding')).toBe(true);
+  });
+});

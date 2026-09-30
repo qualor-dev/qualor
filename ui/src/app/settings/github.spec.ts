@@ -189,7 +189,7 @@ describe('GitHubPage (github.md §2)', () => {
     });
     const { fixture, root } = await render();
     const state = () => root.querySelector('section .connection-state')?.textContent?.trim();
-    expect(state()).toBe('Not tested');
+    expect(state()).toBe('Not tested yet');
     type(root, '#test-ref-g1', 'acme/api');
     button(root, 'Test').click();
     await settle(fixture);
@@ -198,6 +198,11 @@ describe('GitHubPage (github.md §2)', () => {
       projectRef: 'acme/api',
     });
     expect(root.textContent).toContain(githubProblemText('not_installed'));
+    // A failed test reads as the failure it is, never in the green news of a success.
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
+    expect(root.querySelector('p[role="alert"]')?.textContent).toContain(
+      githubProblemText('not_installed'),
+    );
   });
 
   it('has a sentence of its own for every test code', () => {

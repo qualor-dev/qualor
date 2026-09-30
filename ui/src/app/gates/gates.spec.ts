@@ -266,6 +266,67 @@ describe('GatesPage', () => {
     expect(root.querySelector('.usage-note')).toBeNull();
   });
 
+  it('shows dashes, not zeros, for an organization without projects', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-gates', {
+      body: page([gate('g1', 'Qualor way', { isDefault: true }), gate('g2', 'Strict')]),
+    });
+    server.on('GET', '/api/v0/projects', { body: page([]) });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('tr[data-key="g1"] td.usage')?.textContent?.trim()).toBe('–');
+    expect(root.querySelector('tr[data-key="g2"] td.usage')?.textContent?.trim()).toBe('–');
+  });
+
+  it('says in the panel when the projects could not be counted', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-gates', { body: page([gate('g2', 'Strict')]) });
+    server.on('GET', '/api/v0/projects', { status: 500, body: problem(500, 'INTERNAL') });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('tr[data-key="g2"] td.usage')?.textContent?.trim()).toBe('–');
+    expect(root.querySelector('section.panel [role="alert"]')?.textContent?.trim()).toBe(
+      'The projects using each gate could not be counted.',
+    );
+  });
+
+  it('groups large counts, and counts again after a delete moves projects to the default', async () => {
+    const server = setup(true);
+    let deleted = false;
+    server.on('GET', '/api/v0/quality-gates', () => ({
+      body: page([
+        gate('g1', 'Qualor way', { isDefault: true }),
+        ...(deleted ? [] : [gate('g2', 'Strict')]),
+      ]),
+    }));
+    // 1 200 projects over three pages; two use Strict until it is deleted.
+    server.on('GET', '/api/v0/projects', (request) => {
+      const all = Array.from({ length: 1200 }, (_, i) =>
+        project(`p${i}`, !deleted && i < 2 ? 'g2' : null),
+      );
+      const start = Number(request.query.get('cursor') ?? 0);
+      const next = start + 500 < all.length ? String(start + 500) : null;
+      return { body: page(all.slice(start, start + 500), next) };
+    });
+    server.on('DELETE', '/api/v0/quality-gates/g2', () => {
+      deleted = true;
+      return { status: 204 };
+    });
+    const fixture = TestBed.createComponent(GatesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const usage = (id: string) =>
+      root.querySelector(`tr[data-key="${id}"] td.usage`)?.textContent?.trim();
+    expect(usage('g1')).toBe('1,198');
+    buttonIn(root.querySelector('tr[data-key="g2"]')!, 'Delete').click();
+    await settle(fixture);
+    buttonIn(dialogIn(root, 'confirm-dialog'), 'Delete').click();
+    await settle(fixture);
+    expect(usage('g1')).toBe('1,200');
+  });
+
   it('says so when the counts cover only the first 5 000 projects', async () => {
     const server = setup(false);
     server.on('GET', '/api/v0/quality-gates', { body: page([gate('g2', 'Strict')]) });
@@ -444,7 +505,7 @@ describe('GatePage', () => {
     fixture.componentRef.setInput('gateId', 'g2');
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    root.querySelector<HTMLButtonElement>('tbody button')!.click();
+    root.querySelector<HTMLButtonElement>('tbody button.danger')!.click();
     await settle(fixture);
     expect(server.requestsTo('DELETE', '/api/v0/quality-gates/g2/conditions/c1')).toHaveLength(1);
     expect(server.requestsTo('GET', '/api/v0/quality-gates/g2')).toHaveLength(2);
@@ -494,6 +555,14 @@ describe('GatePage on the band (step 6)', () => {
     expect(actions(root)).toEqual(['Copy']);
     expect(root.querySelector('.page-title')?.textContent).toContain('Default');
     expect(root.querySelector('.page-title')?.textContent).toContain('Built-in');
+    // A member may not copy (create) a gate: the band offers nothing.
+    TestBed.resetTestingModule();
+    const member = setup(false);
+    member.on('GET', '/api/v0/quality-gates/g1', {
+      body: gate('g1', 'Qualor way', { isBuiltin: true, isDefault: true }),
+    });
+    const other = await renderGate(member, 'g1');
+    expect(actions(other.root)).toEqual([]);
   });
 
   it('renames the gate in a dialog, and keeps a refused name there', async () => {
@@ -638,7 +707,8 @@ describe('GatePage on the band (step 6)', () => {
     });
     const { fixture, root } = await renderGate(server);
     const row = root.querySelector('tr[data-key="c1"]')!;
-    expect(buttonIn(row, 'Save')).toBeUndefined();
+    // Intended change (step 11): Save keeps its place, out of sight until the row changes.
+    expect(buttonIn(row, 'Save').classList).toContain('idle');
     const threshold = root.querySelector<HTMLInputElement>('#cond-th-c1')!;
     threshold.value = '85';
     threshold.dispatchEvent(new Event('input'));
@@ -651,7 +721,7 @@ describe('GatePage on the band (step 6)', () => {
       operator: 'lt',
       threshold: 85,
     });
-    expect(buttonIn(row, 'Save')).toBeUndefined();
+    expect(buttonIn(row, 'Save').classList).toContain('idle');
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'Condition changed: Coverage on new code is less than 85 %.',
     );
@@ -868,7 +938,7 @@ describe('gates: focus, announcements and route reuse (fix round 1)', () => {
     fixture.componentRef.setInput('gateId', 'g2');
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    const first = root.querySelector<HTMLButtonElement>('tr[data-key="c1"] button')!;
+    const first = root.querySelector<HTMLButtonElement>('tr[data-key="c1"] button.danger')!;
     first.focus();
     first.click();
     await settle(fixture);
@@ -878,7 +948,7 @@ describe('gates: focus, announcements and route reuse (fix round 1)', () => {
     expect(document.activeElement).toBe(first);
     release();
     await settle(fixture);
-    expect(document.activeElement).toBe(root.querySelector('tr[data-key="c2"] button'));
+    expect(document.activeElement).toBe(root.querySelector('tr[data-key="c2"] button.danger'));
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'Condition removed: Coverage.',
     );
@@ -893,7 +963,7 @@ describe('gates: focus, announcements and route reuse (fix round 1)', () => {
     fixture.componentRef.setInput('gateId', 'g2');
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    const only = root.querySelector<HTMLButtonElement>('tbody button')!;
+    const only = root.querySelector<HTMLButtonElement>('tbody button.danger')!;
     only.focus();
     only.click();
     await settle(fixture);
@@ -965,7 +1035,7 @@ describe('gates: focus, announcements and route reuse (fix round 1)', () => {
     expect(root.querySelector('#condition-threshold-error')).toBeNull();
     expect(root.querySelector('[role="alert"]')).toBeNull();
     // The new gate is usable at once (the old change no longer holds the page busy).
-    expect(root.querySelector('tbody button')?.getAttribute('aria-disabled')).toBeNull();
+    expect(root.querySelector('tbody button.danger')?.getAttribute('aria-disabled')).toBeNull();
   });
 });
 
@@ -980,5 +1050,159 @@ describe('copyName', () => {
     const emoji = copyName('😀'.repeat(50), format);
     expect(emoji.length).toBeLessThanOrEqual(100);
     expect(() => encodeURIComponent(emoji)).not.toThrow();
+  });
+});
+
+describe('GatePage: editing in place, and busy states (step 11)', () => {
+  const RATING = {
+    key: 'security_rating',
+    name: 'Security rating',
+    type: 'rating' as const,
+    direction: 'lower_is_better' as const,
+    scopes: ['overall' as const, 'new' as const],
+    domain: 'security',
+  };
+  const TWO: Gate['conditions'] = [
+    { id: 'c1', metric: 'new_coverage', operator: 'lt' as const, threshold: 80 },
+    { id: 'c2', metric: 'coverage', operator: 'lt' as const, threshold: 70 },
+  ];
+
+  async function renderGate(server: FakeServer, conditions: Gate['conditions'] = TWO) {
+    server.on('GET', '/api/v0/quality-gates/g2', { body: gate('g2', 'Strict', { conditions }) });
+    server.on('GET', '/api/v0/metrics', { body: [COVERAGE, RATING] });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g2');
+    await settle(fixture);
+    return { fixture, root: fixture.nativeElement as HTMLElement };
+  }
+
+  function type(root: HTMLElement, id: string, value: string): HTMLInputElement {
+    const input = root.querySelector<HTMLInputElement>(`#cond-th-${id}`)!;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    return input;
+  }
+
+  it('names the conditions table by its heading', async () => {
+    const { root } = await renderGate(setup(true));
+    expect(root.querySelector('table')?.getAttribute('aria-labelledby')).toBe('conditions-heading');
+  });
+
+  it('saves an edit with Enter, and drops a draft with Escape', async () => {
+    const server = setup(true);
+    server.on('PATCH', '/api/v0/quality-gates/g2/conditions/c1', {
+      body: { id: 'c1', metric: 'new_coverage', operator: 'lt', threshold: 85 },
+    });
+    const { fixture, root } = await renderGate(server);
+    type(root, 'c1', '85').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await settle(fixture);
+    expect(server.requestsTo('PATCH', '/api/v0/quality-gates/g2/conditions/c1')).toHaveLength(1);
+    const input = type(root, 'c2', '60');
+    await settle(fixture);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await settle(fixture);
+    expect(input.value).toBe('70');
+    expect(server.requestsTo('PATCH', '/api/v0/quality-gates/g2/conditions/c2')).toHaveLength(0);
+  });
+
+  it("keeps Save's place while nothing changed, so the fields never move", async () => {
+    const { fixture, root } = await renderGate(setup(true));
+    const save = () => root.querySelector<HTMLButtonElement>('tr[data-key="c1"] button.cond-save')!;
+    expect(getComputedStyle(save()).visibility).toBe('hidden');
+    type(root, 'c1', '85');
+    await settle(fixture);
+    expect(getComputedStyle(save()).visibility).toBe('visible');
+  });
+
+  it("writes a rating threshold's letter beside its number", async () => {
+    const { fixture, root } = await renderGate(setup(true), [
+      { id: 'c3', metric: 'security_rating', operator: 'gt', threshold: 1 },
+    ]);
+    const letter = () => root.querySelector('tr[data-key="c3"] .cond-unit')?.textContent?.trim();
+    expect(letter()).toBe('A');
+    type(root, 'c3', '3');
+    await settle(fixture);
+    expect(letter()).toBe('C');
+  });
+
+  it('says a built-in gate is copied from its own band', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g1', {
+      body: gate('g1', 'Qualor way', { isBuiltin: true, isDefault: true }),
+    });
+    server.on('GET', '/api/v0/metrics', { body: [COVERAGE] });
+    const fixture = TestBed.createComponent(GatePage);
+    fixture.componentRef.setInput('gateId', 'g1');
+    await settle(fixture);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'The built-in gate cannot change. Copy it to make your own.',
+    );
+  });
+
+  it('shows each refused row its own reason, and a save clears an older page error', async () => {
+    const server = setup(true);
+    server.on('POST', '/api/v0/quality-gates/g2/set-default', {
+      status: 403,
+      body: problem(403, 'FORBIDDEN'),
+    });
+    const { fixture, root } = await renderGate(server);
+    buttonIn(root, 'Make default').click();
+    await settle(fixture);
+    expect(root.querySelector('.page-body > [role="alert"], [role="alert"]')).not.toBeNull();
+    type(root, 'c1', '101');
+    type(root, 'c2', '-1');
+    await settle(fixture);
+    for (const id of ['c1', 'c2']) {
+      root.querySelector<HTMLButtonElement>(`tr[data-key="${id}"] button.cond-save`)!.click();
+      await settle(fixture);
+    }
+    expect(root.querySelector('#cond-error-c1')?.textContent).toContain(
+      'Enter a number from 0 to 100.',
+    );
+    expect(root.querySelector('#cond-error-c2')?.textContent).toContain(
+      'Enter a number from 0 to 100.',
+    );
+    // The band's refusal is older than these: a save clears it.
+    expect(root.textContent).not.toContain('You are not allowed to do this.');
+  });
+
+  it('marks Save, Remove, Rename and Delete busy while a change runs', async () => {
+    const server = setup(true);
+    let answer!: () => void;
+    server.on(
+      'PATCH',
+      '/api/v0/quality-gates/g2/conditions/c1',
+      () =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve({ body: { id: 'c1', metric: 'new_coverage', operator: 'lt', threshold: 85 } });
+        }),
+    );
+    const { fixture, root } = await renderGate(server);
+    type(root, 'c1', '85');
+    await settle(fixture);
+    root.querySelector<HTMLButtonElement>('tr[data-key="c1"] button.cond-save')!.click();
+    await settle(fixture);
+    const busy = (text: string) =>
+      [...root.querySelectorAll('.band-actions button, tbody button')]
+        .filter((b) => b.textContent?.trim() === text)
+        .every((b) => b.getAttribute('aria-disabled') === 'true');
+    expect(['Remove', 'Rename', 'Delete'].map(busy)).toEqual([true, true, true]);
+    answer();
+    await settle(fixture);
+    expect(['Remove', 'Rename', 'Delete'].map(busy)).toEqual([false, false, false]);
+  });
+
+  it('closes the rename dialog when the route shows another gate', async () => {
+    const server = setup(true);
+    server.on('GET', '/api/v0/quality-gates/g3', { body: gate('g3', 'Other') });
+    const { fixture, root } = await renderGate(server);
+    buttonIn(root, 'Rename').click();
+    await settle(fixture);
+    const rename = root.querySelector<HTMLDialogElement>('dialog#rename-dialog')!;
+    expect(rename.open).toBe(true);
+    fixture.componentRef.setInput('gateId', 'g3');
+    await settle(fixture);
+    expect(rename.open).toBe(false);
   });
 });

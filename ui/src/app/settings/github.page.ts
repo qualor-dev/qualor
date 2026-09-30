@@ -459,7 +459,9 @@ export class GitHubPage {
         const text = githubTestText(result);
         this.results.update((all) => ({ ...all, [connection.id]: text }));
         this.outcomes.update((all) => ({ ...all, [connection.id]: result.ok ? 'ok' : 'failed' }));
-        this.announcement.set(text);
+        // A failure reads as one: the error alert, never the green news of a success.
+        if (result.ok) this.announcement.set(text);
+        else this.error.set(text);
       },
       (err) => {
         if (fieldErrors(err)['body.projectRef'] === undefined) return false;

@@ -339,7 +339,8 @@ img {
 .card.panel > .panel-scroll > table :is(th, td):last-child {
   padding-right: 22px;
 }
-.panel-alert {
+/* An alert inside a panel, clear of its edges (.alert alone would set the page's margins). */
+.alert.panel-alert {
   margin: 16px 22px;
 }
 .panel-foot {
@@ -1714,6 +1715,32 @@ details[open] > summary {
   justify-self: start;
   max-width: 100%;
 }
+/* A file picker is its own button, not a text field's box. */
+input[type='file'] {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+input[type='file']::file-selector-button {
+  min-height: 36px;
+  margin-right: var(--space-3);
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+input[type='file']:hover::file-selector-button {
+  background: var(--surface-2);
+}
 /* An option (a checkbox or a radio with its words): long words wrap beside the box, not under it. */
 .setting-field label.row {
   flex-wrap: nowrap;
@@ -1820,6 +1847,22 @@ details[open] > summary {
 .name-stack .muted {
   font-weight: 450;
   font-size: 13px;
+}
+/* A search field with its magnifier inside (the rules, a profile's rules). */
+.search-field {
+  position: relative;
+  min-width: 0;
+}
+.search-field q-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search-field input {
+  padding-left: 34px;
 }
 /* "Load more" under a list: every list pages the same way. */
 .load-more {
@@ -2181,10 +2224,10 @@ details[open] > summary {
   letter-spacing: -0.02em;
 }
 .subhead {
-  margin: 18px 0 6px;
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--text-2);
+  margin: 18px 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
 }
 .link-row {
   display: flex;
@@ -2557,9 +2600,6 @@ details[open] > summary {
   text-align: center;
 }
 .auth-card .auth-alt .btn-link,
-.auth-card .btn-quiet {
-  width: auto;
-}
 .auth-providers {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

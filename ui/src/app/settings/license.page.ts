@@ -143,6 +143,11 @@ export class LicensePage {
     };
   });
 
+  /** The plugins the server could not load: their features stay off whatever the key says. */
+  protected readonly failedPlugins = computed(
+    () => this.status()?.plugins.filter((p) => p.state === 'failed') ?? [],
+  );
+
   /** Each feature the key lists (and any active beyond it), and whether it is active now. */
   protected readonly features = computed(() => {
     const s = this.status();

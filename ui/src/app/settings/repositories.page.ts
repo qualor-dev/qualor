@@ -205,7 +205,9 @@ export class RepositoriesPage {
         const text =
           this.providerOf(project) === 'github' ? githubTestText(result) : gitlabTestText(result);
         this.results.update((all) => ({ ...all, [project.id]: text }));
-        this.announcement.set(text);
+        // A failure reads as one: the error alert, never the green news of a success.
+        if (result.ok) this.announcement.set(text);
+        else this.error.set(text);
       },
       // A refusal of a mapping edited meanwhile is dropped too (handled, so no page alert).
       (err) =>

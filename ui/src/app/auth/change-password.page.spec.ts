@@ -88,13 +88,27 @@ describe('ChangePasswordPage', () => {
 
   it('sits in the auth layout, Sign out a quiet button under the form', async () => {
     const { root } = await render();
-    expect(root.querySelector('q-auth-layout main.auth-page .auth-card h1')?.textContent).toContain(
+    expect(root.querySelector('q-auth-layout main.auth-main .auth-card h1')?.textContent).toContain(
       'Change your password',
     );
     const signOut = [...root.querySelectorAll('button')].find(
       (b) => b.textContent?.trim() === 'Sign out',
     );
     expect(signOut?.classList.contains('btn-quiet')).toBe(true);
+  });
+
+  it('offers Cancel back to the app to someone who chose to change it, and no Cancel when forced', async () => {
+    const forced = await render();
+    const cancel = (root: HTMLElement) =>
+      [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel');
+    expect(cancel(forced.root)).toBeUndefined();
+    forced.fixture.destroy();
+    TestBed.inject(SessionStore).set(me());
+    const chosen = await render();
+    cancel(chosen.root)!.click();
+    await settle(chosen.fixture);
+    expect(TestBed.inject(Router).url).toBe('/projects');
+    expect(server.requestsTo('PUT', '/api/v0/auth/me/password')).toEqual([]);
   });
 
   it('lets a user who must change the password sign out instead', async () => {

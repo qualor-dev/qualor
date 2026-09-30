@@ -13,6 +13,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf, Organization, RequestBody, ResponseBody } from '../api/types';
@@ -97,7 +98,7 @@ const PROJECT_PAGES = 20;
  */
 @Component({
   selector: 'q-ai-settings-page',
-  imports: [Meter],
+  imports: [Meter, RouterLink],
   templateUrl: './ai.page.html',
   styleUrl: './ai.page.css',
 })
@@ -120,6 +121,17 @@ export class AiSettingsPage {
   protected readonly todayValue = computed(() =>
     this.today.hasValue() ? this.today.value() : null,
   );
+  /** Whether today's token or cost budget is spent: every feature waits then, not only one. */
+  protected readonly budgetHold = computed(() => {
+    const t = this.todayValue();
+    if (!t?.enabled) return false;
+    const { tokensPerDay, costPerDayUsd } = t.budgets;
+    const cost = t.usage.costUsd;
+    return (
+      (tokensPerDay !== null && t.usage.tokens >= tokensPerDay) ||
+      (costPerDayUsd !== null && cost !== null && cost >= costPerDayUsd)
+    );
+  });
 
   protected readonly settings = signal<Settings | null>(null);
   protected readonly organizations = signal<Organization[]>([]);

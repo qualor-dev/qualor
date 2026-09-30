@@ -125,7 +125,9 @@ describe('RulesPage', () => {
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
     const row = root.querySelector('tbody tr')!;
-    expect(row.querySelector('details > summary')?.textContent?.trim()).toBe('Rule eslint:a');
+    expect(row.querySelector('details > summary .rule-name')?.textContent?.trim()).toBe(
+      'Rule eslint:a',
+    );
     expect(row.querySelector('code.rule-key')?.textContent?.trim()).toBe('eslint:a');
     expect([...row.querySelectorAll('.lang-chip')].map((c) => c.textContent?.trim())).toEqual([
       'TypeScript',
@@ -286,7 +288,8 @@ describe('ProfilesPage', () => {
     root.querySelector('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
     expect(root.querySelector('#profile-parent-error')).toBeNull();
-    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+    // The refusal stays in the dialog that asked (step 7 review).
+    expect(root.querySelector('#create-dialog [role="alert"]')?.textContent).toContain(
       'This organization has as many quality profiles as it can have.',
     );
   });
@@ -936,5 +939,75 @@ describe('profiles: step 7 review', () => {
     const root = fixture.nativeElement as HTMLElement;
     const cell = root.querySelector<HTMLElement>('tr[data-key="eslint:eqeqeq"] td')!;
     expect(parseFloat(getComputedStyle(cell).minWidth)).toBeGreaterThanOrEqual(200);
+  });
+});
+
+describe('profiles and rules: step 11', () => {
+  it('keeps a rule key under its name, above the description that opens', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/rules', { body: page([rule('eslint:a', null)]) });
+    const fixture = TestBed.createComponent(RulesPage);
+    await settle(fixture);
+    const summary = (fixture.nativeElement as HTMLElement).querySelector(
+      'tbody details > summary',
+    )!;
+    expect(summary.querySelector('.rule-name')?.textContent?.trim()).toBe('Rule eslint:a');
+    expect(summary.querySelector('code.rule-key')?.textContent?.trim()).toBe('eslint:a');
+  });
+
+  it('gives the rules a profile does not set one name, in the list and in its table', async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-profiles', { body: page([profile('p1', 'Qualor way')]) });
+    const list = TestBed.createComponent(ProfilesPage);
+    await settle(list);
+    const head = (list.nativeElement as HTMLElement).querySelectorAll('thead th');
+    expect([...head].map((th) => th.textContent?.trim())).toContain('Rules it does not set');
+    TestBed.resetTestingModule();
+    const other = setup(false);
+    other.on('GET', '/api/v0/quality-profiles/p2', { body: profile('p2', 'Payments') });
+    other.on('GET', '/api/v0/quality-profiles/p2/rules', {
+      body: page([profileRule('eslint:eqeqeq', { source: 'default' })]),
+    });
+    const one = TestBed.createComponent(ProfilePage);
+    one.componentRef.setInput('profileId', 'p2');
+    await settle(one);
+    expect((one.nativeElement as HTMLElement).querySelector('tbody')?.textContent).toContain(
+      'Not set here',
+    );
+  });
+
+  it('names the parent in one sentence, and says so when it cannot be loaded', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles/p2', {
+      body: profile('p2', 'Payments', { parentId: 'p1' }),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p1', {
+      status: 500,
+      body: problem(500, 'INTERNAL'),
+    });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', { body: page([]) });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.page-meta')?.textContent).toContain(
+      'Inherits from another profile',
+    );
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+      'The parent profile could not be loaded',
+    );
+  });
+
+  it('marks Create profile busy while the server answers', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles', { body: page([]) });
+    server.on('POST', '/api/v0/quality-profiles', () => new Promise(() => undefined));
+    const fixture = TestBed.createComponent(ProfilesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    type(root, '#profile-name', 'Payments');
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(button(root, 'Create profile').getAttribute('aria-disabled')).toBe('true');
   });
 });

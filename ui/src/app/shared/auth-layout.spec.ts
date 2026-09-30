@@ -17,15 +17,19 @@ describe('AuthLayout (spec §7.9)', () => {
     const fixture = TestBed.createComponent(Host);
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
-    const main = el.querySelector('main.auth-page')!;
-    const art = main.querySelector('aside.auth-art')!;
+    // The main landmark is the card's column: the brand panel is beside it, not in it.
+    const page = el.querySelector('.auth-page')!;
+    expect(page.tagName).toBe('DIV');
+    const art = page.querySelector('aside.auth-art')!;
+    expect(art.closest('main')).toBeNull();
+    const main = page.querySelector('main.auth-main')!;
     expect(art.textContent).toContain('Qualor');
     expect(art.textContent).toContain(
       'Open-source code quality for teams that host their own GitLab or GitHub.',
     );
     // The mark is decoration: the word next to it names the product.
     expect(art.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-    expect(main.querySelector('.auth-main #projected')?.textContent).toBe('Card');
+    expect(main.querySelector('#projected')?.textContent).toBe('Card');
     expect(art.classList.contains('offline')).toBe(false);
     // The illustration is its own element under the words (step 10 review), never behind them.
     const illustration = art.querySelector('.auth-illustration');

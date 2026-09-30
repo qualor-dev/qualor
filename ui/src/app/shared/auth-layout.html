@@ -1,4 +1,5 @@
-<main class="auth-page">
+<!-- The main landmark is the card's column; the brand panel is a complementary aside. -->
+<div class="auth-page">
   <aside class="auth-art" [class.offline]="art() === 'offline'">
     <span class="brand">
       <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
@@ -15,7 +16,7 @@
     </p>
     <div class="auth-illustration" aria-hidden="true"></div>
   </aside>
-  <div class="auth-main">
+  <main class="auth-main">
     <ng-content />
-  </div>
-</main>
+  </main>
+</div>

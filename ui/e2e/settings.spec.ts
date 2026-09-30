@@ -565,3 +565,15 @@ test('an organization admin adds a member by name, changes the role and removes 
   await expect(page.getByRole('status')).toHaveText('dora removed.');
   await expect(dora).toHaveCount(0);
 });
+
+test('the AI settings keep Save and Test in reach while the long form scrolls', async ({
+  page,
+}) => {
+  await page.goto('/settings/ai');
+  for (const name of ['Save', 'Test']) {
+    const button = page.getByRole('button', { name, exact: true });
+    await expect(button).toBeVisible();
+    const box = (await button.boundingBox())!;
+    expect(box.y + box.height, name).toBeLessThanOrEqual(page.viewportSize()!.height);
+  }
+});

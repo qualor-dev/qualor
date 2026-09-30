@@ -278,3 +278,16 @@ describe('SignInSettingsPage (sso-scim.md §10, §18)', () => {
     expect(server.requestsTo('GET', SETTINGS)).toHaveLength(0);
   });
 });
+
+describe('SignInSettingsPage: step 11', () => {
+  it('says what the page is for, and the lock-out rules come before Save', async () => {
+    setup();
+    const { root } = await render();
+    expect(root.querySelector('.settings-head p')?.textContent?.trim()).toBe(
+      'Who may still sign in with a password once single sign-on is on.',
+    );
+    const rules = root.querySelector('.sign-in-rules')!;
+    const form = root.querySelector('form.sign-in-form')!;
+    expect(rules.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

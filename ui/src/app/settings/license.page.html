@@ -1,7 +1,11 @@
 <div class="settings-head">
   <div>
     <h2 #heading tabindex="-1" i18n="@@license.title">Licence</h2>
-    @if (!instanceAdmin()) {
+    @if (instanceAdmin()) {
+      <p class="muted" i18n="@@license.intro">
+        The plan this server runs on, and the licence key it reads.
+      </p>
+    } @else {
       <p class="muted" i18n="@@license.adminsOnly">
         Only instance administrators manage the licence.
       </p>
@@ -38,36 +42,56 @@
         <p class="license-state">
           @switch (s.state) {
             @case ('active') {
-              <span class="badge badge-passed" i18n="@@license.state.active"
-                >Enterprise edition, active until {{ s.license?.expires | dateTime: 'date' }}</span
+              <span class="badge badge-passed"
+                ><q-icon name="check" /><ng-container i18n="@@license.state.active"
+                  >Enterprise edition, active until
+                  {{ s.license?.expires | dateTime: 'date' }}</ng-container
+                ></span
               >
             }
             @case ('grace') {
-              <span class="badge badge-warn" i18n="@@license.state.grace"
-                >Grace period: enterprise features stop on
-                {{ s.license?.graceEndsAt | dateTime: 'date' }}</span
+              <span class="badge badge-warn"
+                ><q-icon name="alert" /><ng-container i18n="@@license.state.graceShort"
+                  >Grace period</ng-container
+                ></span
               >
             }
             @case ('expired') {
-              <span class="badge badge-failed" i18n="@@license.state.expired"
-                >Expired: running as the community edition</span
+              <span class="badge badge-failed"
+                ><q-icon name="cross" /><ng-container i18n="@@license.state.expired"
+                  >Expired: running as the community edition</ng-container
+                ></span
               >
             }
             @case ('invalid') {
               @if (rejectedReason(); as reason) {
-                <span class="badge badge-failed" i18n="@@license.state.invalid"
-                  >The key was rejected: {{ reason }}</span
+                <span class="badge badge-failed"
+                  ><q-icon name="cross" /><ng-container i18n="@@license.state.invalid"
+                    >The key was rejected: {{ reason }}</ng-container
+                  ></span
                 >
               } @else {
-                <span class="badge badge-failed">{{ texts.rejectedAtStart() }}</span>
+                <span class="badge badge-failed"
+                  ><q-icon name="cross" />{{ texts.rejectedAtStart() }}</span
+                >
               }
             }
             @default {
-              <span class="badge badge-none" i18n="@@license.state.none">Community edition</span>
+              <span class="badge badge-none"
+                ><q-icon name="minus" /><ng-container i18n="@@license.state.none"
+                  >Community edition</ng-container
+                ></span
+              >
             }
           }
         </p>
       </div>
+      @for (p of failedPlugins(); track p.name) {
+        <p class="alert alert-error panel-alert" role="alert" i18n="@@license.pluginFailed">
+          The plugin {{ p.name }} could not load, so the features it brings are not active. The
+          server log says why.
+        </p>
+      }
       <div class="panel-body license-plan">
         @if (timeLeft(); as t) {
           <q-meter
@@ -156,9 +180,16 @@
                   <code>{{ p.name }}</code
                   >&ngsp;
                   @if (p.state === 'loaded') {
-                    <span class="badge badge-passed" i18n="@@license.plugin.loaded">loaded</span>
+                    <span class="badge badge-passed"
+                      ><q-icon name="check" /><ng-container i18n="@@license.plugin.loaded"
+                        >loaded</ng-container
+                      ></span
+                    >
                   } @else {
-                    <span class="badge badge-failed" i18n="@@license.plugin.failed">failed</span
+                    <span class="badge badge-failed"
+                      ><q-icon name="cross" /><ng-container i18n="@@license.plugin.failed"
+                        >failed</ng-container
+                      ></span
                     >&ngsp;<span class="plugin-error">{{ p.error }}</span>
                   }
                 </li>

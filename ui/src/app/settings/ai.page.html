@@ -46,12 +46,21 @@
   <div class="ai-panels">
     <section id="ai-today" class="card panel" aria-labelledby="ai-today-heading">
       <div class="panel-head">
-        <h3 id="ai-today-heading" i18n="@@ai.today.title">
-          Today in {{ org.current()?.name }} (UTC)
+        <h3 id="ai-today-heading">
+          @if (org.current(); as current) {
+            <ng-container i18n="@@ai.today.title">Today in {{ current.name }} (UTC)</ng-container>
+          } @else {
+            <ng-container i18n="@@ai.today.titleNone">Today (UTC)</ng-container>
+          }
         </h3>
       </div>
       <div class="panel-body">
-        @if (today.error()) {
+        @if (!org.currentId() && !org.organizations.isLoading()) {
+          <p class="muted" i18n="@@ai.today.noOrganization">
+            There is no organization yet. Create one in
+            <a routerLink="/settings/organizations">Organizations</a>.
+          </p>
+        } @else if (today.error()) {
           <p class="alert alert-error" i18n="@@ai.today.failed">Today's use could not be read.</p>
         } @else if (todayValue(); as t) {
           @if (!t.enabled) {
@@ -94,6 +103,12 @@
                 />
               }
             </div>
+            @if (budgetHold()) {
+              <p class="alert alert-warn ai-hold" i18n="@@ai.today.held">
+                Every feature waits until midnight UTC: the token or cost budget for today is
+                reached.
+              </p>
+            }
           }
         } @else {
           <p class="muted" i18n="@@ai.today.loading">Loading…</p>
@@ -107,17 +122,16 @@
       </div>
       <div class="panel-body">
         @if (targetHost(); as host) {
-          <p i18n="@@ai.settings.dataSent">
-            What is sent: the rule, the finding's message, the file path, the language and the code
-            around the issue (±3 lines), after secrets are redacted, to {{ host }}. Nothing is sent
-            until an organisation and a feature are enabled and a person asks.
+          <p i18n="@@ai.settings.dataSentTo">
+            The rule, the finding's message, the file path, the language and the code around the
+            issue (±3 lines), after secrets are redacted, to {{ host }}. Nothing is sent until an
+            organisation and a feature are enabled and a person asks.
           </p>
         } @else {
-          <p i18n="@@ai.settings.dataSentNoHost">
-            What is sent: the rule, the finding's message, the file path, the language and the code
-            around the issue (±3 lines), after secrets are redacted, to the provider configured
-            below. Nothing is sent until an organisation and a feature are enabled and a person
-            asks.
+          <p i18n="@@ai.settings.dataSentToProvider">
+            The rule, the finding's message, the file path, the language and the code around the
+            issue (±3 lines), after secrets are redacted, to the provider configured below. Nothing
+            is sent until an organisation and a feature are enabled and a person asks.
           </p>
         }
         <p class="hint" i18n="@@ai.settings.neverSent">

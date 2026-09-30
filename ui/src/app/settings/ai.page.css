@@ -40,8 +40,17 @@
   margin-top: 8px;
 }
 .ai-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.ai-hold {
+  margin: 16px 0 0;
 }

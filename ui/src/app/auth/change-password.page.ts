@@ -38,6 +38,11 @@ export class ChangePasswordPage {
     void this.auth.logout();
   }
 
+  /** A change chosen from the user menu may be left: back to the projects, nothing changed. */
+  protected cancel(): void {
+    void this.router.navigate(['/projects']);
+  }
+
   protected async submit(event: Event): Promise<void> {
     event.preventDefault();
     if (this.busy()) return;

@@ -1,7 +1,11 @@
 <div class="settings-head">
   <div>
     <h2 #heading tabindex="-1" i18n="@@auditSettings.title">Audit settings</h2>
-    @if (infoLoaded() && !licensed() && !infoError()) {
+    @if (licensed() && instanceAdmin()) {
+      <p class="muted" i18n="@@auditSettings.intro">
+        How long the audit log keeps its events, and where it sends them.
+      </p>
+    } @else if (infoLoaded() && !licensed() && !infoError()) {
       <p class="muted" i18n="@@audit.notLicensed">
         The audit log needs an enterprise licence with the audit-log feature.
       </p>

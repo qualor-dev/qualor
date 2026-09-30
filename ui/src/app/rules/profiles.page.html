@@ -37,7 +37,9 @@
               <tr>
                 <th scope="col" i18n="@@profiles.col.name">Name</th>
                 <th scope="col" class="col-parent" i18n="@@profiles.col.parent">Inherits from</th>
-                <th scope="col" class="col-rules" i18n="@@profiles.col.newRules">New rules</th>
+                <th scope="col" class="col-rules" i18n="@@profiles.col.unsetRules">
+                  Rules it does not set
+                </th>
                 @if (org.canChange('org.profiles.manage')) {
                   <th scope="col" class="actions-col">
                     <span class="visually-hidden" i18n="@@profiles.col.actions">Actions</span>
@@ -197,6 +199,7 @@
           type="submit"
           class="btn btn-primary"
           [disabled]="!newName().trim()"
+          [attr.aria-disabled]="busy() ? true : null"
           i18n="@@profiles.create"
         >
           Create profile

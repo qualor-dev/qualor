@@ -161,7 +161,7 @@ describe('GitLabPage (scm.md §2)', () => {
     server.on('POST', '/api/v0/scm-connections/c1/test', () => ({ body: answer }));
     const { fixture, root } = await render();
     const state = () => root.querySelector('section .connection-state')?.textContent?.trim();
-    expect(state()).toBe('Not tested');
+    expect(state()).toBe('Not tested yet');
     button(root, 'Test').click();
     await settle(fixture);
     expect(server.requestsTo('POST', '/api/v0/scm-connections/c1/test')[0]?.body).toEqual({});
@@ -179,6 +179,11 @@ describe('GitLabPage (scm.md §2)', () => {
     expect(text).toContain(testProblemText('token_refused'));
     expect(text).not.toContain('HTTP 401');
     expect(state()).toBe('Test failed');
+    // A failed test reads as the failure it is, never in the green news of a success.
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
+    expect(root.querySelector('p[role="alert"]')?.textContent).toContain(
+      testProblemText('token_refused'),
+    );
     // A 403 is a missing permission of a valid token, in words of its own.
     expect(testProblemText('permission_missing')).toContain('Maintainer role');
   });

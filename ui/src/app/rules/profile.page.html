@@ -19,12 +19,19 @@
     <p pageMeta class="page-meta">
       <span class="lang-chip">{{ p.language | label: 'language' }}</span>
       @if (p.parentId; as parentId) {
-        <span
-          ><ng-container i18n="@@profile.inheritsFrom">Inherits from</ng-container>&ngsp;
+        <!-- One sentence each, so a translation may put the name where its language wants it. -->
+        <span>
           @if (parentName(); as name) {
-            <a class="profile-parent" [routerLink]="['/profiles', parentId]">{{ name }}</a>
+            <ng-container i18n="@@profile.inheritsFromNamed"
+              >Inherits from
+              <a class="profile-parent" [routerLink]="['/profiles', parentId]">{{
+                name
+              }}</a></ng-container
+            >
           } @else {
-            <span>–</span>
+            <ng-container i18n="@@profile.inheritsFromOther"
+              >Inherits from another profile</ng-container
+            >
           }
         </span>
       }
@@ -43,6 +50,11 @@
   </q-page-header>
 
   <div class="page-body">
+    @if (parentError(); as message) {
+      <p class="alert alert-error" role="alert" i18n="@@profile.parentFailed">
+        The parent profile could not be loaded: {{ message }}
+      </p>
+    }
     @if (p.isBuiltin) {
       <p class="alert alert-info" i18n="@@profile.builtinHint">
         A built-in profile cannot change. Copy it from the list of profiles to make your own.

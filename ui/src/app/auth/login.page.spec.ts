@@ -165,7 +165,7 @@ describe('LoginPage single sign-on (sso-scim.md §18)', () => {
         { id: 'c2', name: 'Corp SAML', protocol: 'saml', startUrl: '/api/v0/ee/sso/c2/start' },
       ],
     });
-    expect(el.querySelector('q-auth-layout main.auth-page .auth-card h1')?.textContent).toContain(
+    expect(el.querySelector('q-auth-layout main.auth-main .auth-card h1')?.textContent).toContain(
       'Sign in to Qualor',
     );
     for (const id of ['c1', 'c2']) {
