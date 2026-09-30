@@ -2,13 +2,14 @@ import { existsSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { parseConfig } from '@qualor/shared';
+import { engineMapping, parseConfig } from '@qualor/shared';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { describeWithSwiftlint } from '../../test/analyzers';
 import { useTempDirs, writeTree } from '../../test/tmp';
 import { discoverFiles } from '../discovery/discover';
 import { createLogger, silentLogger } from '../log';
 import { Warnings } from '../warnings';
+import { fileLines, normalizeCaptures } from './normalize';
 import { runAnalyzers } from './runner';
 import { swiftlintAnalyzer } from './swiftlint';
 
@@ -160,6 +161,8 @@ describeWithSwiftlint()('swiftlint with the real binary (plan 8F)', () => {
         'Sources/a b#ü.swift': 'let x : Int = 1\n',
         'Sources/-dash.swift': 'let y : Int = 1\n',
         'Sources/$(HOME)${HOME}.swift': 'let z : Int = 1\n',
+        'Sources/100%.swift': 'let p : Int = 1\n',
+        'Sources/p%41q.swift': 'let q : Int = 1\n',
       });
       writeFileSync(path.join(outside, 'O.swift'), 'let o : Int = 1\n');
       if (posix) {
@@ -169,17 +172,39 @@ describeWithSwiftlint()('swiftlint with the real binary (plan 8F)', () => {
         // A file name, not a directory: discovery already leaves out a file below a directory
         // with a line break in its name.
         writeFileSync(path.join(root, 'Sources/new\nline.swift'), 'let n : Int = 1\n');
+        // A root-level name with a colon, which a URI reader would take for a scheme.
+        writeFileSync(path.join(root, 'a:b.swift'), 'let c : Int = 1\n');
         writeFileSync(path.join(root, 'Sources/ls\u2028x.swift'), 'let s : Int = 1\n');
       }
       const lines: string[] = [];
       const capture = await lint(root, process.env, lines);
       expect(capture.status, capture.reason ?? '').toBe('ok');
-      const uris = [...new Set(results(capture.sarif).map(uriOf))].sort();
-      expect(uris.map(decodeURIComponent)).toEqual([
-        'Sources/$(HOME)${HOME}.swift',
-        'Sources/-dash.swift',
-        'Sources/a b#ü.swift',
-      ]);
+      // Through the normaliser, as runScan does: every finding keeps its repository path.
+      const known = discoverFiles({
+        root,
+        config: parseConfig({ version: 1 }),
+        warnings: new Warnings(),
+        log: silentLogger,
+      }).map((f) => f.path);
+      const out = normalizeCaptures([{ ...capture, mapping: engineMapping('swiftlint')! }], {
+        repoRoot: root,
+        readLines: fileLines(root),
+        knownPaths: new Set(known),
+        log: silentLogger,
+      });
+      expect(out.warnings).toEqual([]);
+      const colon = out.findings.filter((f) => f.ruleId === 'colon');
+      expect(colon).toHaveLength(results(capture.sarif).filter((r) => r.ruleId === 'colon').length);
+      expect([...new Set(colon.map((f) => f.location?.path))].sort()).toEqual(
+        [
+          'Sources/$(HOME)${HOME}.swift',
+          'Sources/-dash.swift',
+          'Sources/100%.swift',
+          'Sources/a b#ü.swift',
+          'Sources/p%41q.swift',
+          ...(linux ? ['a:b.swift'] : []),
+        ].sort(),
+      );
       if (linux) {
         expect(lines.join('')).toContain(
           'swiftlint: 2 file(s) whose path has a line break were left out',

@@ -7,6 +7,7 @@ import { copyCheckedFiles, copyTarget } from './checked-copy';
 import { deadProxyEnv } from './offline';
 import { detailLine, stderrLines } from './reason';
 import { checkSwiftlintConfig, loadSwiftlintConfig } from './swiftlint-config';
+import { swiftlintSarif } from './swiftlint-sarif';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
 
 const NOT_INSTALLED =
@@ -105,17 +106,23 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
     return { skip: 'the work directory path has a line break, which SwiftLint would split' };
   }
 
-  // Ruling F6: by the exact `.swift` name, not by the detected language.
+  // Rulings F6 and F26: a file the scan detects as Swift (a `languages:` override away from swift
+  // is respected) whose name ends in exactly `.swift`.
   const otherCase = ctx.files.filter((f) => f.language === 'swift' && !swiftName(f.path)).length;
   if (otherCase > 0) {
     ctx.log.warn(
       `swiftlint: ${otherCase} Swift file(s) whose name does not end in .swift were left out (SwiftLint lints only *.swift)`,
     );
   }
-  const named = ctx.files.filter((f) => swiftName(f.path));
+  const named = ctx.files.filter((f) => f.language === 'swift' && swiftName(f.path));
   const lineBreaks = named.filter((f) => LINE_BREAK.test(f.path)).length;
   if (lineBreaks > 0) {
     ctx.log.warn(`swiftlint: ${lineBreaks} file(s) whose path has a line break were left out`);
+  }
+  if (named.length === lineBreaks) {
+    return {
+      skip: 'no Swift file left to lint: names SwiftLint cannot read (case or line break)',
+    };
   }
   const inScope = plan.included.length > 0 ? picomatch(plan.included, { dot: true }) : () => true;
   const excluded = plan.excluded.length > 0 ? picomatch(plan.excluded, { dot: true }) : () => false;
@@ -183,6 +190,8 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       // 0: no violation or warnings only; 2: a violation at error severity (fact F4).
       okExitCodes: [0, 2],
       version,
+      // Relative URIs are written raw: percent-encoded so the normaliser decodes the same name.
+      transform: (output) => swiftlintSarif(output),
       failureDetail: (_code, stderr) => swiftlintFailureDetail(stderr, ctx.workDir),
     },
   };

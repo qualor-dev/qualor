@@ -7,9 +7,16 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import { parseConfig, SWIFTLINT_VERSION, type QualorConfigInput } from '@qualor/shared';
+import {
+  engineMapping,
+  parseConfig,
+  SWIFTLINT_VERSION,
+  type QualorConfigInput,
+} from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import { fakeContext, recorded, scanWithRecordedSarif } from '../../test/analyzers';
+import { normalizeCaptures } from './normalize';
+import { swiftlintSarif } from './swiftlint-sarif';
 import { useTempDirs, writeTree } from '../../test/tmp';
 import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { createLogger, silentLogger } from '../log';
@@ -274,7 +281,7 @@ describe('swiftlintAnalyzer.prepare (config.md §6, plan 8F)', () => {
     }
   });
 
-  it('picks files by their exact .swift name, not by the detected language (ruling F6)', async () => {
+  it('lints only Swift files whose name ends in exactly .swift; a language override is respected (rulings F6, F26)', async () => {
     const lines: string[] = [];
     const { ctx, root, work } = context(
       { 'A.swift': 'let a = 1\n', 'Package.SWIFT': 'let p = 1\n', 'B.Swift': 'let b = 1\n' },
@@ -284,15 +291,13 @@ describe('swiftlintAnalyzer.prepare (config.md §6, plan 8F)', () => {
       scope(root, 'A.swift'),
       scope(root, 'Package.SWIFT'),
       scope(root, 'B.Swift'),
-      // A language override: still a .swift name, so SwiftLint lints it.
+      // A language override away from swift (`languages:` in qualor.yml): not linted.
       scope(root, 'C.swift', 'other'),
       scope(root, 'Sources/.swift'),
     ];
     writeTree(root, { 'C.swift': 'let c = 1\n' });
     await run({ ...ctx, files });
-    expect(listed(work)).toBe(
-      `${path.join(work, 'src', 'A.swift')}\n${path.join(work, 'src', 'C.swift')}\n`,
-    );
+    expect(listed(work)).toBe(`${path.join(work, 'src', 'A.swift')}\n`);
     expect(lines.join('')).toContain(
       'swiftlint: 3 Swift file(s) whose name does not end in .swift were left out (SwiftLint lints only *.swift)',
     );
@@ -322,7 +327,7 @@ describe('swiftlintAnalyzer.prepare (config.md §6, plan 8F)', () => {
     const { ctx, root } = context({ 'X.SWIFT': 'let a = 1\n' });
     const files = [scope(root, 'X.SWIFT'), scope(root, 'new\nline.swift')];
     expect(await swiftlintAnalyzer.prepare({ ...ctx, files })).toEqual({
-      skip: 'no Swift file left to lint (qualor-default: included/excluded)',
+      skip: 'no Swift file left to lint: names SwiftLint cannot read (case or line break)',
     });
     const big = context({ 'Big.swift': `// ${'x'.repeat(MAX_ANALYZED_BYTES)}\n` });
     expect(await swiftlintAnalyzer.prepare(big.ctx)).toEqual({
@@ -489,6 +494,80 @@ describe('swiftlintAnalyzer.prepare (config.md §6, plan 8F)', () => {
       report.issues.map(() => 'Sources/App/Store.swift'),
     );
     expect(report.issues).toHaveLength(5);
+    // The recorded SARIF is re-recorded on each SwiftLint bump (fixtures/README.md), so the
+    // driver's semanticVersion always names the pinned SwiftLint.
     expect(report.engines[0]?.version).toBe(SWIFTLINT_VERSION);
+  });
+
+  it('keeps the repository path of a file named with %, a colon, a space, # or ü (fix round 1, Important 1)', async () => {
+    // SwiftLint writes the relative path raw; the normaliser decodes a relative URI.
+    const names = [
+      '100%.swift',
+      'p%41q.swift',
+      'p%zz.swift',
+      'a:b.swift',
+      'Sources/a b#ü.swift',
+      'Sources/x?y.swift',
+    ];
+    const sarif = {
+      version: '2.1.0',
+      runs: [
+        {
+          tool: { driver: { name: 'SwiftLint', semanticVersion: SWIFTLINT_VERSION } },
+          results: names.map((uri) => ({
+            ruleId: 'colon',
+            level: 'warning',
+            message: { text: 'Colon spacing should be correct' },
+            locations: [
+              {
+                physicalLocation: {
+                  artifactLocation: { uri },
+                  region: { startLine: 1, startColumn: 6 },
+                },
+              },
+            ],
+          })),
+        },
+      ],
+    };
+    const { ctx } = context({ 'A.swift': 'let a = 1\n' });
+    const cmd = await run(ctx);
+    expect(cmd.transform).toBeDefined();
+    const out = normalizeCaptures(
+      [
+        {
+          engineId: 'swiftlint',
+          kind: 'builtin',
+          status: 'ok',
+          reason: null,
+          durationMs: 1,
+          version: SWIFTLINT_VERSION,
+          required: false,
+          sarif: cmd.transform!(sarif, ''),
+          mapping: engineMapping('swiftlint')!,
+        },
+      ],
+      { repoRoot: '/repo', readLines: () => null, knownPaths: new Set(names), log: silentLogger },
+    );
+    expect(out.findings.map((f) => f.location?.path).sort()).toEqual([...names].sort());
+    // An absolute file URI (never written for the copy) is left as it is.
+    const uri = 'file:///w/src/A%20b.swift';
+    const absolute = swiftlintSarif({
+      version: '2.1.0',
+      runs: [
+        {
+          tool: { driver: { name: 'SwiftLint' } },
+          results: [
+            {
+              ruleId: 'colon',
+              message: { text: 'x' },
+              locations: [{ physicalLocation: { artifactLocation: { uri } } }],
+            },
+          ],
+        },
+      ],
+    });
+    const loc = absolute.runs[0]?.results?.[0]?.locations?.[0];
+    expect(loc?.physicalLocation?.artifactLocation?.uri).toBe(uri);
   });
 });
