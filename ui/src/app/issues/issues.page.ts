@@ -128,7 +128,7 @@ function bulkSummary(result: BulkResult): string {
   selector: 'q-issues-page',
   imports: [DateTimePipe, Distribution, Icon, LabelPipe, RouterLink],
   templateUrl: './issues.page.html',
-  styleUrl: './issues.page.css',
+  styleUrls: ['./issues.page.css', './issue-filters.css'],
 })
 export class IssuesPage {
   private readonly api = inject(Api);

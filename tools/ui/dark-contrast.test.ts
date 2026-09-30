@@ -135,7 +135,12 @@ describe('the pages outside the shell', () => {
   it('mark the edge of their ink panel on dark, where the page is nearly the same colour', () => {
     // The ink panel against the dark page is 1.07:1 (step 10 review).
     expect(contrast(schemes.dark['ink']!, schemes.dark['bg']!)).toBeLessThan(1.5);
-    const dark = styles
+    // The auth layout's band rules load with it (ui/src/app/shared/auth-layout.band.css).
+    const band = readFileSync(
+      new URL('../../ui/src/app/shared/auth-layout.band.css', import.meta.url),
+      'utf8',
+    );
+    const dark = band
       .split('@media (prefers-color-scheme: dark)')
       .slice(1)
       .map((rest) => rest.replace(/\s+/g, ' '));
