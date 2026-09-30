@@ -23,6 +23,7 @@ import { keepFocus, rowAt, rowByKey } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
+import { onPhone } from '../shared/media';
 
 export type Member = ItemOf<'/api/v0/organizations/{id}/members'>;
 /** The longest name `GET /users/lookup` accepts (usernames are 1 to 64 characters). */
@@ -122,6 +123,8 @@ export class MembersPage {
 
   protected choose(member: Member, event: Event): void {
     this.chosen.update((all) => ({ ...all, [member.userId]: inputValue(event) as Role }));
+    // A phone's row has no room for Change role, and its picker commits once: the select asks.
+    if (onPhone(this.document)) this.changeRole(member);
   }
 
   protected setUsername(event: Event): void {

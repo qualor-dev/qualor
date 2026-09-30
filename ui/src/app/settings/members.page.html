@@ -29,7 +29,7 @@
   }
   <section class="card panel" aria-labelledby="members-caption">
     <div class="panel-scroll">
-      <table #table>
+      <table #table class="roles-table">
         <caption id="members-caption" class="visually-hidden" i18n="@@members.caption">
           Members of the organization and their roles
         </caption>
@@ -46,8 +46,9 @@
         </thead>
         <tbody>
           @for (m of list.items(); track m.userId) {
-            <tr [attr.data-key]="m.userId">
-              <th scope="row">
+            <!-- Explicit roles: on a phone the rows stack (a grid), still a table. -->
+            <tr [attr.data-key]="m.userId" role="row">
+              <th scope="row" role="rowheader">
                 <div class="person">
                   <span class="avatar" aria-hidden="true">{{
                     (m.displayName || m.username).charAt(0)
@@ -65,7 +66,7 @@
                   </div>
                 </div>
               </th>
-              <td>
+              <td role="cell" class="role-cell">
                 @if (canManage()) {
                   <label
                     class="visually-hidden"
@@ -85,11 +86,11 @@
                 }
               </td>
               @if (canManage()) {
-                <td class="actions-col">
+                <td role="cell" class="actions-col">
                   <div class="row-actions">
                     <button
                       type="button"
-                      class="btn-quiet"
+                      class="btn-quiet change-role"
                       [attr.aria-disabled]="busy() || chosenRole(m) === m.role ? true : null"
                       (click)="changeRole(m)"
                       i18n="@@members.changeRole"

@@ -23,6 +23,7 @@ import { keepFocus, rowAt, rowByKey } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
+import { onPhone } from '../shared/media';
 import { CurrentProject } from './current-project';
 
 /** The roles a project grant may carry (rbac-audit.md §3.2: `admin` is organisation-wide only). */
@@ -134,6 +135,8 @@ export class AccessPage {
 
   protected choose(grant: ProjectGrant, event: Event): void {
     this.chosen.update((all) => ({ ...all, [grant.userId]: inputValue(event) as GrantRole }));
+    // A phone's row has no room for Change role, and its picker commits once: the select asks.
+    if (onPhone(this.document)) this.changeRole(grant);
   }
 
   protected setUsername(event: Event): void {

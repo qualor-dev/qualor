@@ -118,3 +118,12 @@
 .readonly-note {
   margin: 0;
 }
+/* The status beside the severity only at one column, where the details come after the story. */
+.issue-status-tag {
+  display: none;
+}
+@media (max-width: 64rem) {
+  .issue-status-tag {
+    display: inline-flex;
+  }
+}

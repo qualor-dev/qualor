@@ -31,7 +31,7 @@
         </h2>
       </div>
       <div class="panel-scroll">
-        <table #table>
+        <table #table class="roles-table">
           <caption class="visually-hidden" i18n="@@access.caption">
             People with a role on this project
           </caption>
@@ -49,21 +49,22 @@
           </thead>
           <tbody>
             @for (g of list.items(); track g.userId) {
-              <tr [attr.data-key]="g.userId">
-                <th scope="row">
-                  <div class="grant-user">
+              <!-- Explicit roles: on a phone the rows stack (a grid), still a table. -->
+              <tr [attr.data-key]="g.userId" role="row">
+                <th scope="row" role="rowheader">
+                  <div class="person">
                     <span class="avatar" aria-hidden="true">{{
                       (g.displayName || g.username).charAt(0)
                     }}</span>
-                    <div class="grant-names">
-                      <span class="grant-username">{{ g.username }}</span>
+                    <div class="name-stack">
+                      <span>{{ g.username }}</span>
                       @if (g.displayName) {
                         <span class="muted">{{ g.displayName }}</span>
                       }
                     </div>
                   </div>
                 </th>
-                <td>
+                <td role="cell" class="role-cell">
                   @if (canManage()) {
                     <label
                       class="visually-hidden"
@@ -82,15 +83,19 @@
                     {{ roleText(g.role) }}
                   }
                 </td>
-                <td class="since nowrap">
-                  <span [title]="g.createdAt | dateTime">{{ g.createdAt | dateTime: 'date' }}</span>
+                <td role="cell" class="since nowrap">
+                  <!-- Named in the row on a phone, where the column headers are out of sight. -->
+                  <span class="since-label" aria-hidden="true" i18n="@@access.addedOn">Added</span
+                  >&ngsp;<span [title]="g.createdAt | dateTime">{{
+                    g.createdAt | dateTime: 'date'
+                  }}</span>
                 </td>
                 @if (canManage()) {
-                  <td class="actions-col">
+                  <td role="cell" class="actions-col">
                     <div class="row-actions">
                       <button
                         type="button"
-                        class="btn-quiet"
+                        class="btn-quiet change-role"
                         [attr.aria-disabled]="busy() || chosenRole(g) === g.role ? true : null"
                         (click)="changeRole(g)"
                         i18n="@@access.changeRole"
@@ -150,20 +155,26 @@
         <h2 id="roles-legend-heading" i18n="@@access.legend.title">Roles on a project</h2>
       </div>
       <dl class="panel-body">
-        <dt i18n="@@access.legend.projectAdmin">Project admin</dt>
-        <dd i18n="@@access.legend.projectAdminText">
-          Changes the project's settings (not its repository mapping) and analysis tokens, deletes
-          branches and merge requests, and runs the SonarQube status import. And all a Maintainer
-          does.
-        </dd>
-        <dt i18n="@@access.legend.maintainer">Maintainer</dt>
-        <dd i18n="@@access.legend.maintainerText">
-          Uploads analyses, triages issues and uses the AI assistant. And all a Viewer does.
-        </dd>
-        <dt i18n="@@access.legend.viewer">Viewer</dt>
-        <dd i18n="@@access.legend.viewerText">
-          Reads the project: its code, issues, quality gate, quality profile and AI answers.
-        </dd>
+        <div>
+          <dt i18n="@@access.legend.projectAdmin">Project admin</dt>
+          <dd i18n="@@access.legend.projectAdminText">
+            Changes the project's settings (not its repository mapping) and analysis tokens, deletes
+            branches and merge requests, and runs the SonarQube status import. And all a Maintainer
+            does.
+          </dd>
+        </div>
+        <div>
+          <dt i18n="@@access.legend.maintainer">Maintainer</dt>
+          <dd i18n="@@access.legend.maintainerText">
+            Uploads analyses, triages issues and uses the AI assistant. And all a Viewer does.
+          </dd>
+        </div>
+        <div>
+          <dt i18n="@@access.legend.viewer">Viewer</dt>
+          <dd i18n="@@access.legend.viewerText">
+            Reads the project: its code, issues, quality gate, quality profile and AI answers.
+          </dd>
+        </div>
       </dl>
     </section>
   </div>

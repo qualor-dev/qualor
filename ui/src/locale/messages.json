@@ -405,6 +405,7 @@
     "access.col.added": "Added",
     "access.col.actions": "Actions",
     "access.roleOf": "Role of {$INTERPOLATION} on this project",
+    "access.addedOn": "Added",
     "access.changeRole": " Change role ",
     "access.remove": " Remove ",
     "access.empty": " No one has a role on this project alone yet. ",

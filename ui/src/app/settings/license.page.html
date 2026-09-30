@@ -104,7 +104,7 @@
             <dd>{{ l.graceEndsAt | dateTime: 'date' }}</dd>
           }
           <dt i18n="@@license.source">Where the key comes from</dt>
-          <dd>
+          <dd class="fact-sentence">
             @switch (s.source) {
               @case ('environment') {
                 <ng-container i18n="@@license.source.environment"

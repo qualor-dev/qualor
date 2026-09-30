@@ -857,6 +857,19 @@ thead th {
   padding-bottom: 10px;
   border-bottom-color: var(--border);
 }
+/*
+ * On a tablet or a phone the headers wrap and the cells sit closer, so a table fits its panel
+ * before it has to scroll (the panel's own 22px edge stays).
+ */
+@media (max-width: 64rem) {
+  thead th {
+    white-space: normal;
+  }
+  :is(th, td) {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
 tbody th {
   font-weight: 600;
 }
@@ -1789,6 +1802,67 @@ details[open] > summary {
   justify-content: flex-end;
   gap: 4px;
   white-space: nowrap;
+}
+/*
+ * People and their roles (Access, Members). On a phone each row stacks, the person beside Remove
+ * over the role, so no sideways scroll hides an action; there the role's select asks at once
+ * (shared/media.ts), so Change role steps aside.
+ */
+.since-label {
+  display: none;
+}
+@media (max-width: 40rem) {
+  .roles-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .roles-table tbody tr[data-key] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'person actions'
+      'role since';
+    align-items: center;
+    gap: 10px 12px;
+    padding: 14px 22px;
+  }
+  .roles-table tbody tr[data-key]:not(:last-child) {
+    border-bottom: 1px solid var(--hairline);
+  }
+  /* As specific as the panel's own edge (.card.panel … :first-child), and later. */
+  .card.panel .roles-table tbody tr[data-key] > * {
+    padding: 0;
+    border: 0;
+  }
+  .roles-table tbody tr[data-key] > th {
+    grid-area: person;
+  }
+  .roles-table .person {
+    min-width: 0;
+  }
+  .roles-table .role-cell {
+    grid-area: role;
+  }
+  .roles-table .since {
+    grid-area: since;
+    text-align: right;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .roles-table .since-label {
+    display: inline;
+  }
+  .roles-table .actions-col {
+    grid-area: actions;
+    width: auto;
+  }
+  .roles-table .change-role {
+    display: none;
+  }
 }
 /* A confirmation's question quotes names, which may have no break point. */
 #confirm-text {

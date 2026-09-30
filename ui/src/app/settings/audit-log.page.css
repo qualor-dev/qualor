@@ -67,3 +67,9 @@
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
+/* "All organizations and the instance" takes two columns' width wherever there are two. */
+@media (min-width: 40.01rem) {
+  .audit-org {
+    grid-column: span 2;
+  }
+}

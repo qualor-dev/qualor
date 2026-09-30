@@ -289,6 +289,36 @@ describe('MembersPage (rbac-audit.md §17)', () => {
     expect(row(root, BOB).querySelector('select')?.value).toBe('member');
   });
 
+  it('asks on a phone as soon as a role is chosen: there the select stands for Change role', async () => {
+    // A phone's picker commits once; the row has no room for a Change role button (step 11).
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 40rem)' }));
+    try {
+      const server = setup();
+      const { fixture, root } = await render();
+      choose(row(root, BOB), 'select', 'admin');
+      await settle(fixture);
+      const ask = dialog(root, 'confirm-dialog');
+      expect(ask.open).toBe(true);
+      expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
+        'Change the role of bob in Default to Organization admin?',
+      );
+      button(ask, 'Cancel').click();
+      await settle(fixture);
+      expect(server.requests.filter((r) => r.method === 'PUT')).toEqual([]);
+      expect(row(root, BOB).querySelector('select')?.value).toBe('member');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('asks nothing at full width until Change role: arrowing through the roles opens no dialog', async () => {
+    setup();
+    const { fixture, root } = await render();
+    choose(row(root, BOB), 'select', 'admin');
+    await settle(fixture);
+    expect(dialog(root, 'confirm-dialog').open).toBe(false);
+  });
+
   it('asks in its own words before admins demote themselves', async () => {
     setup();
     const { fixture, root } = await render();

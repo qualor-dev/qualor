@@ -83,6 +83,61 @@ test.describe('on a phone', () => {
     expect(await lines(account.locator('td').nth(0))).toBe(1);
     expect(await lines(account.locator('td').nth(1))).toBe(1);
   });
+
+  test("each licence fact's value has the width under its label", async ({ page }) => {
+    await page.goto('/settings/license');
+    const facts = page.locator('dl.facts');
+    await expect(facts.locator('dt').first()).toBeVisible();
+    const pairs = await facts.evaluate((dl) =>
+      [...dl.querySelectorAll('dt')].map((dt) => {
+        const dd = dt.nextElementSibling!;
+        const label = dt.getBoundingClientRect();
+        const value = dd.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(dd);
+        // A new line starts below the last one's bottom (a code's box sits a pixel off its words).
+        let lines = 0;
+        let bottom = -Infinity;
+        for (const box of [...range.getClientRects()].sort((a, b) => a.top - b.top)) {
+          if (box.top >= bottom - 2) lines += 1;
+          bottom = Math.max(bottom, box.bottom);
+        }
+        return {
+          label: dt.textContent?.trim(),
+          left: value.left - label.left,
+          below: value.top >= label.bottom,
+          lines,
+        };
+      }),
+    );
+    for (const pair of pairs) {
+      expect(pair.left, pair.label).toBeLessThanOrEqual(1);
+      expect(pair.below, pair.label).toBe(true);
+    }
+    // A sentence stays one: "The QUALOR_LICENSE variable" on one line, its code among its words.
+    expect(pairs.find((p) => p.label === 'Where the key comes from')?.lines).toBe(1);
+  });
+});
+
+test('the audit Organization select shows its words at every width beside a phone', async ({
+  page,
+}) => {
+  await page.goto('/settings/ee/audit-log');
+  const select = page.locator('#audit-organization');
+  await expect(select).toBeVisible();
+  for (const width of [768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const { box, need } = await select.evaluate((el: HTMLSelectElement) => {
+      const style = getComputedStyle(el);
+      const context = document.createElement('canvas').getContext('2d')!;
+      context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      return {
+        box: el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        need: context.measureText(el.options[el.selectedIndex]!.text.trim()).width,
+      };
+    });
+    expect(box, `${width}px`).toBeGreaterThanOrEqual(need);
+  }
 });
 
 test.describe('as people other than the instance admin', () => {

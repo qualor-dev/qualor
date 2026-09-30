@@ -77,7 +77,7 @@
         </span>
       </div>
       <div class="panel-scroll">
-        <table #table>
+        <table #table [class.conditions-editable]="editable()">
           <thead>
             @if (editable()) {
               <tr>
@@ -95,10 +95,13 @@
           </thead>
           <tbody>
             @for (c of g.conditions; track c.id; let i = $index) {
-              <tr [attr.data-key]="c.id">
+              <!-- Explicit roles: on a phone the editable rows stack (a grid), still a table. -->
+              <tr [attr.data-key]="c.id" [attr.role]="editable() ? 'row' : null">
                 @if (editable()) {
-                  <th scope="row" class="cond-metric">{{ c.metric | label: 'metric' }}</th>
-                  <td class="cond-edit">
+                  <th scope="row" role="rowheader" class="cond-metric">
+                    {{ c.metric | label: 'metric' }}
+                  </th>
+                  <td role="cell" class="cond-edit">
                     <div class="cond-fields">
                       <label
                         class="visually-hidden"
@@ -144,7 +147,7 @@
                       }
                     }
                   </td>
-                  <td class="actions-col">
+                  <td role="cell" class="actions-col">
                     <div class="row-actions">
                       @if (changed(c)) {
                         <button

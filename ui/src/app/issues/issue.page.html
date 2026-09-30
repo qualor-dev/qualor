@@ -15,6 +15,8 @@
           @if (i.severityOverridden) {
             <span class="muted" i18n="@@issue.overridden">(set by a person)</span>
           }
+          <!-- At one column the details and actions come after the story: the status stays here. -->
+          <span class="badge badge-tag issue-status-tag">{{ i.status | label: 'status' }}</span>
           @if (i.inNewCode) {
             <span class="badge badge-accent" i18n="@@issue.newCode">New code</span>
           }

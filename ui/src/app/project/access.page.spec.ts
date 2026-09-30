@@ -150,11 +150,12 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     expect([...root.querySelectorAll('thead th')].map((th) => th.textContent?.trim())).toContain(
       'Added',
     );
-    const since = row(root, BOB).querySelector('td.since span');
+    const since = row(root, BOB).querySelector('td.since span[title]');
     expect(since?.textContent?.trim()).toBe('Sep 1, 2026');
     expect(since?.getAttribute('title')).toBe('Sep 1, 2026, 12:00 AM UTC');
-    // The avatar keeps its circle when a long name wraps beside it.
-    expect(getComputedStyle(row(root, BOB).querySelector('.avatar')!).flexShrink).toBe('0');
+    // The person as every table shows one (styles.css): the avatar keeps its circle beside a
+    // name that wraps.
+    expect(row(root, BOB).querySelector('.person > .avatar + .name-stack')).not.toBeNull();
     const legend = root.querySelector('[aria-labelledby="roles-legend-heading"]');
     expect(legend?.querySelector('h2')?.textContent?.trim()).toBe('Roles on a project');
     expect([...(legend?.querySelectorAll('dt') ?? [])].map((d) => d.textContent?.trim())).toEqual([
@@ -311,6 +312,36 @@ describe('AccessPage (rbac-audit.md §16, §17)', () => {
     await settle(fixture);
     expect(server.requests.filter((r) => r.method === 'PUT')).toEqual([]);
     expect(row(root, BOB).querySelector('select')?.value).toBe('viewer');
+  });
+
+  it('asks on a phone as soon as a role is chosen: there the select stands for Change role', async () => {
+    // A phone's picker commits once; the row has no room for a Change role button (step 11).
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 40rem)' }));
+    try {
+      const server = setup();
+      const { fixture, root } = await render();
+      choose(row(root, BOB), 'select', 'project_admin');
+      await settle(fixture);
+      const ask = dialog(root, 'confirm-dialog');
+      expect(ask.open).toBe(true);
+      expect(ask.querySelector('#confirm-text')?.textContent?.trim()).toBe(
+        'Change the role of bob on Payments to Project admin?',
+      );
+      button(ask, 'Cancel').click();
+      await settle(fixture);
+      expect(server.requests.filter((r) => r.method === 'PUT')).toEqual([]);
+      expect(row(root, BOB).querySelector('select')?.value).toBe('viewer');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('asks nothing at full width until Change role: arrowing through the roles opens no dialog', async () => {
+    setup();
+    const { fixture, root } = await render();
+    choose(row(root, BOB), 'select', 'project_admin');
+    await settle(fixture);
+    expect(dialog(root, 'confirm-dialog').open).toBe(false);
   });
 
   it('explains the grant limit when the server refuses one more', async () => {

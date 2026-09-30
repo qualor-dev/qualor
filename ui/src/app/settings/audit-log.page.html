@@ -228,7 +228,7 @@
           }
         </div>
         @if (instanceAdmin()) {
-          <div class="field">
+          <div class="field audit-org">
             <label for="audit-organization" i18n="@@audit.organization">Organization</label>
             <select id="audit-organization" (change)="setOrganization($event)">
               <option value="" [selected]="organizationId() === ''" i18n="@@audit.organizationAll">
