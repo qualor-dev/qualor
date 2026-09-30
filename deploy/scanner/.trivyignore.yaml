@@ -95,6 +95,9 @@ vulnerabilities:
   - id: CVE-2025-69720
     statement: ncurses; no Debian fix. The scanner runs non-interactively in CI.
     expired_at: 2026-12-31
+  - id: CVE-2026-84782
+    statement: libssl3/openssl DTLS handshake retransmission information disclosure; no Debian fix. The scanner never speaks DTLS (git/curl use TLS over TCP only).
+    expired_at: 2026-12-31
 
   # npm, bundled with Node.js 22 (npm 10.9.9 in Node 22.23.3, the latest), is in the image only for
   # the project's own `npm ci` before the scan; Qualor never runs it. Fixed in npm 11.
@@ -125,6 +128,14 @@ vulnerabilities:
   - id: CVE-2026-48815
     paths: ['usr/local/lib/node_modules/npm/**']
     statement: sigstore bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
+    expired_at: 2026-12-31
+  - id: CVE-2026-102276
+    paths: ['usr/local/lib/node_modules/npm/**']
+    statement: brace-expansion bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
+    expired_at: 2026-12-31
+  - id: CVE-2026-102278
+    paths: ['usr/local/lib/node_modules/npm/**']
+    statement: brace-expansion bundled by npm 10.9.9, the npm of the latest Node.js 22; Qualor never runs npm.
     expired_at: 2026-12-31
 
   # PMD 7.27.0 bundles the all-in-one jline 3.21.0 jar; PMD uses its terminal only, never the
