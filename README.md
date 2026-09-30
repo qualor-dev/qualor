@@ -192,8 +192,10 @@ themselves), quality profiles for JavaScript, TypeScript, C#, Java and Python, a
 branch's issues marked false positive, won't fix or accepted. C#, JavaScript and TypeScript rules
 map one to one to Qualor's bundled SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32,
 eslint-plugin-sonarjs 2.0.4, LGPL-3.0) wherever the bundled version has the rule key SonarQube
-reports; Python rules map one to one to Ruff wherever a Ruff rule is the same rule. It only reads
-SonarQube (`GET` requests), and `--dry-run` shows what would change without writing anything:
+reports. Ruff findings imported into SonarQube map one to one; for SonarQube's own Python rules,
+issue statuses import where a Ruff rule is the same rule, and profiles follow once those mappings
+are reviewed. It only reads SonarQube (`GET` requests), and `--dry-run` shows what would change
+without writing anything:
 
 ```sh
 SONAR_TOKEN=… QUALOR_URL=https://qualor.example.com QUALOR_TOKEN=… qualor import sonarqube --url https://sonar.example.com --dry-run
