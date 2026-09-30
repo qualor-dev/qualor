@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-30
+
 ### Added
 
 - SonarQube-compatible rules: `qualor/scanner-dotnet` adds SonarAnalyzer.CSharp 9.32 to the .NET
@@ -16,9 +18,22 @@ All notable changes to Qualor are listed here, newest first. The format follows
   own SonarAnalyzer reference replaces the bundled one; an ESLint issue and the sonarjs rule that
   decorates it count once. Turn them off with `analyzers.roslyn.sonarAnalyzer: false` and
   `analyzers.sonarjs.enabled: false`.
+- **Settings → Organizations**: an instance admin sees every organisation and creates one with
+  **New organization**.
+- The **Branches** tab of a project deletes a branch or merge request, after a confirmation.
 
 ### Changed
 
+- The web UI is redesigned, in the light and dark themes, and every page fits a phone and a
+  tablet. A project's overview shows the quality gate's verdict with the condition that failed,
+  the measures on new code, coverage, issues, duplication and size with their trends, and the
+  history of open issues. The issues list has a filter bar and collapsible facets, and an issue
+  shows its code, the AI assistant and its history beside its details. A quality gate's
+  conditions are changed in their own rows. Settings are grouped as **Your account**,
+  **Organization** and **Instance**, and creating or deleting something asks in a dialog. The
+  account, **Change password** and **Sign out** are in a menu on the top bar.
+- Projects are mapped to their GitLab and GitHub repositories on a page of their own, **Settings →
+  Repositories**, instead of the **Projects** table of **Settings → GitLab**.
 - `sonarjs` is now a built-in engine id. A `qualor.yml` `sarif:` entry with `engine: sonarjs` no
   longer validates (pick another id), and an imported tool whose name becomes `sonarjs` is reported
   as `ext-sonarjs`.
