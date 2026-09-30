@@ -201,7 +201,7 @@ describe('analyzer toolchain (plan 1D)', () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
 
   it('pins every tool to an exact version and a SHA-256', () => {
-    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS', 'TRIVY', 'RUFF']) {
+    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS', 'TRIVY', 'RUFF', 'SWIFTLINT']) {
       expect(script, tool).toMatch(new RegExp(`^${tool}_VERSION=\\d+\\.\\d+\\.\\d+$`, 'm'));
       expect(script, tool).toMatch(new RegExp(`^${tool}_SHA256(_X64)?=[0-9a-f]{64}$`, 'm'));
     }
@@ -255,6 +255,25 @@ describe('analyzer toolchain (plan 1D)', () => {
     expect(shared).toContain(`export const RUFF_VERSION = '${pinned}';`);
   });
 
+  it('pins SwiftLint per architecture and installs only its static binary, checked before unzip (plan 8F)', () => {
+    expect(script).toMatch(/^SWIFTLINT_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^SWIFTLINT_SHA256_X64=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^SWIFTLINT_SHA256_ARM64=[0-9a-f]{64}$/m);
+    const fetchLine =
+      'fetch "$GH/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/swiftlint_linux_$SL_ARCH.zip" "$SL_SHA" swiftlint.zip';
+    expect(script).toContain(fetchLine);
+    // fetch() checks the SHA-256 before anything is unpacked; only swiftlint-static is extracted.
+    expect(script.indexOf(fetchLine)).toBeLessThan(
+      script.indexOf('unzip -q -o "$TMP/swiftlint.zip" swiftlint-static -d "$TMP"'),
+    );
+    expect(script).toContain('install -m 0755 "$TMP/swiftlint-static" "$PREFIX/bin/swiftlint"');
+    // The zip's dynamically linked `swiftlint` is never unpacked or installed.
+    expect(script).not.toContain('"$TMP/swiftlint"');
+    // The CLI's pin and the image's must agree (packages/shared/src/rules/swiftlint.ts, Task 6).
+    const pinned = /^SWIFTLINT_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(pinned).toBe('0.65.1');
+  });
+
   it('installs the toolchain (Ruff included) in every job that requires the analyzers (plan 8C)', () => {
     const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
     for (const [name, job] of Object.entries(github.jobs)) {
@@ -288,6 +307,7 @@ describe('analyzer toolchain (plan 1D)', () => {
     }
     expect(requiring).toEqual(expect.arrayContaining(['test', 'fixtures', 'cli-binary']));
     expect(script.indexOf('"$PREFIX/bin/ruff"')).toBeGreaterThan(0);
+    expect(script.indexOf('"$PREFIX/bin/swiftlint"')).toBeGreaterThan(0);
   });
 
   it('installs the toolchain and requires it in the test, fixtures and cli-binary jobs', () => {
