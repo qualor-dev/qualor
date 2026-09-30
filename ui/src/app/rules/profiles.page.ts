@@ -26,7 +26,16 @@ import { PageHeader } from '../shared/page-header';
 
 export type Profile = ItemOf<'/api/v0/quality-profiles'>;
 type Language = Profile['language'];
-const LANGUAGES: Language[] = ['typescript', 'javascript', 'java', 'csharp', 'python', '*'];
+const LANGUAGES: Language[] = [
+  'typescript',
+  'javascript',
+  'java',
+  'csharp',
+  'python',
+  'html',
+  'css',
+  '*',
+];
 /** data-model.md §4.4: a profile is at most the third level of its chain. */
 const MAX_PROFILE_DEPTH = 3;
 

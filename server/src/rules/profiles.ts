@@ -10,8 +10,9 @@ export const MAX_PROFILE_DEPTH = 3;
 /**
  * Ruling P2: engines whose rules belong to a language; their findings are governed by the
  * profile of the finding's file language (Roslyn: plan 2D; sonarjs: phase 8A, JS/TS only;
- * ruff: plan 8C, Python only). Every other engine (Semgrep, Gitleaks, Trivy, any external SARIF)
- * — and any file-less finding or file of language `other` — is governed by `*`.
+ * ruff: plan 8C, Python only; stylelint/htmlhint: plan 8D, css/html only). Every other engine
+ * (Semgrep, Gitleaks, Trivy, any external SARIF) — and any file-less finding or file of language
+ * `other` — is governed by `*`.
  */
 export const LANGUAGE_BOUND_ENGINES: ReadonlySet<string> = new Set([
   'eslint',
@@ -20,6 +21,8 @@ export const LANGUAGE_BOUND_ENGINES: ReadonlySet<string> = new Set([
   'spotbugs',
   'roslyn',
   'ruff',
+  'stylelint',
+  'htmlhint',
 ]);
 
 export interface RuleSetting {

@@ -14,6 +14,8 @@ export const PROFILE_LANGUAGES = [
   'java',
   'csharp',
   'python',
+  'html',
+  'css',
   '*',
 ] as const;
 export type ProfileLanguage = (typeof PROFILE_LANGUAGES)[number];

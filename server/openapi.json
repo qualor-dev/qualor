@@ -12184,6 +12184,8 @@
                 "java",
                 "csharp",
                 "python",
+                "html",
+                "css",
                 "*"
               ]
             },
@@ -12226,6 +12228,8 @@
                               "java",
                               "csharp",
                               "python",
+                              "html",
+                              "css",
                               "*"
                             ]
                           },
@@ -12368,6 +12372,8 @@
                       "java",
                       "csharp",
                       "python",
+                      "html",
+                      "css",
                       "*"
                     ]
                   },
@@ -12416,6 +12422,8 @@
                         "java",
                         "csharp",
                         "python",
+                        "html",
+                        "css",
                         "*"
                       ]
                     },
@@ -12572,6 +12580,8 @@
                         "java",
                         "csharp",
                         "python",
+                        "html",
+                        "css",
                         "*"
                       ]
                     },
@@ -12741,6 +12751,8 @@
                         "java",
                         "csharp",
                         "python",
+                        "html",
+                        "css",
                         "*"
                       ]
                     },
@@ -12991,6 +13003,8 @@
                         "java",
                         "csharp",
                         "python",
+                        "html",
+                        "css",
                         "*"
                       ]
                     },
@@ -13147,6 +13161,8 @@
                         "java",
                         "csharp",
                         "python",
+                        "html",
+                        "css",
                         "*"
                       ]
                     },
@@ -13841,6 +13857,8 @@
                           "java",
                           "csharp",
                           "python",
+                          "html",
+                          "css",
                           "*"
                         ]
                       },
@@ -13870,6 +13888,8 @@
                                   "java",
                                   "csharp",
                                   "python",
+                                  "html",
+                                  "css",
                                   "*"
                                 ]
                               },
@@ -14044,6 +14064,8 @@
                 "java",
                 "csharp",
                 "python",
+                "html",
+                "css",
                 "*"
               ]
             },
@@ -14068,6 +14090,8 @@
                         "java",
                         "csharp",
                         "python",
+                        "html",
+                        "css",
                         "*"
                       ]
                     },
@@ -14097,6 +14121,8 @@
                                 "java",
                                 "csharp",
                                 "python",
+                                "html",
+                                "css",
                                 "*"
                               ]
                             },
