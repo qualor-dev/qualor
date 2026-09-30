@@ -12187,6 +12187,7 @@
                 "html",
                 "css",
                 "kotlin",
+                "swift",
                 "*"
               ]
             },
@@ -12232,6 +12233,7 @@
                               "html",
                               "css",
                               "kotlin",
+                              "swift",
                               "*"
                             ]
                           },
@@ -12377,6 +12379,7 @@
                       "html",
                       "css",
                       "kotlin",
+                      "swift",
                       "*"
                     ]
                   },
@@ -12428,6 +12431,7 @@
                         "html",
                         "css",
                         "kotlin",
+                        "swift",
                         "*"
                       ]
                     },
@@ -12587,6 +12591,7 @@
                         "html",
                         "css",
                         "kotlin",
+                        "swift",
                         "*"
                       ]
                     },
@@ -12759,6 +12764,7 @@
                         "html",
                         "css",
                         "kotlin",
+                        "swift",
                         "*"
                       ]
                     },
@@ -13012,6 +13018,7 @@
                         "html",
                         "css",
                         "kotlin",
+                        "swift",
                         "*"
                       ]
                     },
@@ -13171,6 +13178,7 @@
                         "html",
                         "css",
                         "kotlin",
+                        "swift",
                         "*"
                       ]
                     },
@@ -13868,6 +13876,7 @@
                           "html",
                           "css",
                           "kotlin",
+                          "swift",
                           "*"
                         ]
                       },
@@ -13900,6 +13909,7 @@
                                   "html",
                                   "css",
                                   "kotlin",
+                                  "swift",
                                   "*"
                                 ]
                               },
@@ -14077,6 +14087,7 @@
                 "html",
                 "css",
                 "kotlin",
+                "swift",
                 "*"
               ]
             },
@@ -14104,6 +14115,7 @@
                         "html",
                         "css",
                         "kotlin",
+                        "swift",
                         "*"
                       ]
                     },
@@ -14136,6 +14148,7 @@
                                 "html",
                                 "css",
                                 "kotlin",
+                                "swift",
                                 "*"
                               ]
                             },

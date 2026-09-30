@@ -7,6 +7,14 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     expect(governingLanguage('roslyn', 'csharp')).toBe('csharp');
   });
 
+  it('lets the swift profile govern swiftlint findings on Swift files (plan 8F)', () => {
+    expect(governingLanguage('swiftlint', 'swift')).toBe('swift');
+    expect(governingLanguage('swiftlint', null)).toBe('*');
+    for (const engine of ['semgrep', 'gitleaks', 'trivy', 'osv-scanner']) {
+      expect(governingLanguage(engine, 'swift')).toBe('*');
+    }
+  });
+
   it('lets the kotlin profile govern detekt findings on Kotlin files (phase 8E)', () => {
     expect(governingLanguage('detekt', 'kotlin')).toBe('kotlin');
     expect(governingLanguage('detekt', null)).toBe('*');

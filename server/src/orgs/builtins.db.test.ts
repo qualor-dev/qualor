@@ -165,6 +165,26 @@ describe('built-in profiles and gate (data-model.md §4.4, gates.md §7)', () =>
     expect(kotlin).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
   });
 
+  it('adds the swift built-in to an organisation that has every other built-in (plan 8F, no migration)', async () => {
+    const [org] = await t.db
+      .insert(organizations)
+      .values({ key: 'pre-swift', name: 'Before Swift' })
+      .returning();
+    for (const language of PROFILE_LANGUAGES.filter((l) => l !== 'swift')) {
+      await t.db.insert(qualityProfiles).values({
+        organizationId: org!.id,
+        name: BUILTIN_NAME,
+        language,
+        isBuiltin: true,
+        isDefault: true,
+        unknownRules: 'activate',
+      });
+    }
+    await bootstrap(t.db, admin);
+    const swift = (await profilesOf(org!.id)).filter((p) => p.language === 'swift');
+    expect(swift).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
+  });
+
   it('adds the python built-in to an organisation that has every other built-in (plan 8C, no migration)', async () => {
     const [org] = await t.db
       .insert(organizations)
