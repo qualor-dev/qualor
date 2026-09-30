@@ -1,6 +1,7 @@
 import type { IssueKind, Quality, Severity } from '../report/taxonomy';
 import type { EngineMapping } from './normalize';
 import type { SarifResult, SarifRule } from './types';
+import { swiftlintQuality, swiftlintSeverity } from '../rules/swiftlint';
 import ruffCategories from '../../rules/ruff-categories.json' with { type: 'json' };
 
 function tags(rule: SarifRule | undefined): string[] {
@@ -361,6 +362,20 @@ const detekt: EngineMapping = {
           : detektDefaultSeverity(r),
 };
 
+/**
+ * SwiftLint (Swift, plan 8F, report-format.md §7.1): quality and severity from the rule's SwiftLint
+ * kind (swiftlint-rules.json), not only from its configured warning/error.
+ */
+const swiftlint: EngineMapping = {
+  rule: (r) => ({
+    quality: swiftlintQuality(r.id),
+    kind: 'issue',
+    defaultSeverity: swiftlintSeverity(r.id, 'warning'),
+  }),
+  severity: (result, rule) =>
+    swiftlintSeverity(result.ruleId ?? rule?.id ?? '', result.level ?? 'warning'),
+};
+
 export const ENGINE_MAPPINGS = {
   eslint,
   pmd,
@@ -374,6 +389,7 @@ export const ENGINE_MAPPINGS = {
   stylelint,
   htmlhint,
   detekt,
+  swiftlint,
 } as const satisfies Record<string, EngineMapping>;
 
 export function engineMapping(engineId: string): EngineMapping | undefined {

@@ -387,3 +387,40 @@ describe('detekt (report-format.md 7.1, phase 8E)', () => {
     expect(engineMapping('ext-detekt')).toBeUndefined();
   });
 });
+
+describe('swiftlint (report-format.md 7.1, phase 8F)', () => {
+  it('takes quality and severity from the rule kind', () => {
+    const m = engineMapping('swiftlint')!;
+    expect(m.rule!({ id: 'duplicate_conditions' })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(m.rule!({ id: 'line_length' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(
+      m.severity!({ ruleId: 'force_cast', level: 'error' } as never, { id: 'force_cast' }),
+    ).toBe('high');
+    expect(
+      m.severity!({ ruleId: 'force_unwrapping', level: 'warning' } as never, {
+        id: 'force_unwrapping',
+      }),
+    ).toBe('low');
+    expect(
+      m.severity!({ ruleId: 'duplicate_conditions', level: 'warning' } as never, undefined),
+    ).toBe('medium');
+  });
+
+  it('maps level none to info and a missing level to a warning', () => {
+    const m = engineMapping('swiftlint')!;
+    expect(m.severity!({ ruleId: 'line_length', level: 'none' } as never, undefined)).toBe('info');
+    expect(m.severity!({ ruleId: 'duplicate_conditions' } as never, undefined)).toBe('medium');
+  });
+
+  it('gives the external ext-swiftlint engine no mapping', () => {
+    expect(engineMapping('ext-swiftlint')).toBeUndefined();
+  });
+});

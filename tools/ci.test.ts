@@ -271,7 +271,8 @@ describe('analyzer toolchain (plan 1D)', () => {
     expect(script).not.toContain('"$TMP/swiftlint"');
     // The CLI's pin and the image's must agree (packages/shared/src/rules/swiftlint.ts, Task 6).
     const pinned = /^SWIFTLINT_VERSION=(.+)$/m.exec(script)?.[1];
-    expect(pinned).toBe('0.65.1');
+    const shared = readFileSync('packages/shared/src/rules/swiftlint.ts', 'utf8');
+    expect(shared).toContain(`export const SWIFTLINT_VERSION = '${pinned}';`);
   });
 
   it('installs the toolchain (Ruff included) in every job that requires the analyzers (plan 8C)', () => {

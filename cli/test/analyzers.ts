@@ -8,6 +8,7 @@ import {
   engineMapping,
   parseConfig,
   splitSourceLines,
+  swiftlintVersionSupported,
   type NormalizeWarning,
   type Quality,
   type QualorConfig,
@@ -81,6 +82,23 @@ export function describeWithTools(
 export function describeWithDetekt(): typeof describe {
   const ok = existsSync(DEFAULT_DETEKT_JAR) && toolInstalled('java');
   return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+/**
+ * Plan 8F: real SwiftLint runs under `QUALOR_REQUIRE_ANALYZERS=1` (it then fails when missing), or
+ * when the resolved `swiftlint version` is of the supported minor (ruling F18), so a Homebrew
+ * SwiftLint of another version on a developer machine skips these tests instead of failing them.
+ */
+export function describeWithSwiftlint(): typeof describe {
+  const ok = swiftlintInstalledSupported();
+  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+function swiftlintInstalledSupported(): boolean {
+  const bin = resolveBinary('swiftlint', { root: process.cwd(), env: process.env });
+  if (bin === null) return false;
+  const r = spawnSync(bin, ['version'], { encoding: 'utf8', timeout: 30_000 });
+  return r.status === 0 && swiftlintVersionSupported((r.stdout ?? '').trim());
 }
 
 /**
