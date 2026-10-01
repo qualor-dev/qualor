@@ -320,8 +320,8 @@ describe.runIf(posix)('run.mjs with stand-in tools (plan 9C)', () => {
       gs,
       [
         '#!/bin/sh',
-        'for a in "$@"; do case "$a" in -out=*) out="${a#-out=}" ;; esac; last="$a"; done',
-        'echo "$last $out" >> "$FAKE_DIR/gosec.args"',
+        'for a in "$@"; do case "$a" in -out=*) out="${a#-out=}" ;; esac; prev="$last"; last="$a"; done',
+        'echo "$prev $last $out" >> "$FAKE_DIR/gosec.args"',
         `printf '%s' '${JSON.stringify({ runs: [{ tool: { driver: { name: 'gosec', rules: [{ id: 'G401', properties: { tags: ['security', 'MEDIUM'] } }] } }, results: [{ ruleId: 'G401', level: 'warning', message: { text: 'weak' }, locations: [{ physicalLocation: { artifactLocation: { uri: 'a.go' }, region: { startLine: 3 } } }] }] }] })}' > "$out"`,
         '',
       ].join('\n'),
@@ -370,7 +370,7 @@ describe.runIf(posix)('run.mjs with stand-in tools (plan 9C)', () => {
     // One run per package, each writing its own scratch file, never the spec's out.
     const scratch = path.join(work, 'gosec-package.sarif');
     expect(readFileSync(path.join(fake, 'gosec.args'), 'utf8')).toBe(
-      `./one ${scratch}\n./two ${scratch}\n`,
+      `-- ./one ${scratch}\n-- ./two ${scratch}\n`,
     );
     const sarif = JSON.parse(readFileSync(out, 'utf8'));
     expect(
@@ -423,7 +423,7 @@ describe.runIf(posix)('run.mjs with stand-in tools (plan 9C)', () => {
     );
     expect(runner.main(['--spec', spec], { out: () => {}, err: () => {} })).toBe(0);
     expect(readFileSync(path.join(fake, 'staticcheck.args'), 'utf8').trim()).toBe(
-      '-f json -fail none ex/store',
+      '-f json -fail none -- ex/store',
     );
     const sarif = JSON.parse(readFileSync(path.join(work, 'o.sarif'), 'utf8'));
     expect(
@@ -502,7 +502,7 @@ describe.runIf(posix)('run.mjs with stand-in tools (plan 9C)', () => {
     ).toBe(0);
     // gen/ has no in-scope file: never passed; ex/cmd cannot load: not passed either.
     expect(readFileSync(path.join(fake, 'staticcheck.args'), 'utf8').trim()).toBe(
-      '-f json -fail none ex/store',
+      '-f json -fail none -- ex/store',
     );
     const sarif = JSON.parse(readFileSync(path.join(work, 'out.sarif'), 'utf8'));
     expect(sarif.runs[0].tool.driver).toMatchObject({
@@ -656,7 +656,7 @@ describe.runIf(posix)('run.mjs with stand-in tools (plan 9C)', () => {
       [
         '#!/bin/sh',
         'case "$1" in',
-        '  list) cat "$FAKE_DIR/list.json" ;;',
+        '  list) echo "$@" > "$FAKE_DIR/list.args"; cat "$FAKE_DIR/list.json" ;;',
         '  vet) echo "$@" > "$FAKE_DIR/vet.args"; cat "$FAKE_DIR/vet.json"; printf "# ex/m/bad\nvet: bad/b.go:3:23: undefined: undefinedThing\n" >&2; exit 1 ;;',
         'esac',
         '',
@@ -697,7 +697,10 @@ describe.runIf(posix)('run.mjs with stand-in tools (plan 9C)', () => {
       }),
     ).toBe(0);
     expect(readFileSync(path.join(fake, 'vet.args'), 'utf8').trim()).toBe(
-      'vet -json ex/m/bad ex/m/good',
+      'vet -json -- ex/m/bad ex/m/good',
+    );
+    expect(readFileSync(path.join(fake, 'list.args'), 'utf8').trim()).toBe(
+      'list -e -json=ImportPath,Dir,Error,DepsErrors -- ./...',
     );
     expect(err).toEqual([
       'go: warning: the root module: go vet exited 1: vet: bad/b.go:3:23: undefined: undefinedThing\n',

@@ -372,7 +372,7 @@ function toolRun(spec, m, packages, toRepo, say, label) {
     const r = capture(
       outFile,
       spec.toolPath,
-      ['-f', 'json', '-fail', 'none', ...importPaths],
+      ['-f', 'json', '-fail', 'none', '--', ...importPaths],
       m.dir,
     );
     if (r.error) throw runError('staticcheck', r.error);
@@ -384,7 +384,7 @@ function toolRun(spec, m, packages, toRepo, say, label) {
     return staticcheckResults(text, toRepo);
   }
   if (spec.tool === 'govet') {
-    const r = capture(outFile, spec.go, ['vet', '-json', ...importPaths], m.dir);
+    const r = capture(outFile, spec.go, ['vet', '-json', '--', ...importPaths], m.dir);
     if (r.error) throw runError('go', r.error);
     if (r.status !== 0) say(`${label}: go vet exited ${r.status}: ${detail(r.stderr)}`);
     return vetResults(splitJsonObjects(readBounded(outFile)), toRepo);
@@ -404,6 +404,9 @@ function toolRun(spec, m, packages, toRepo, say, label) {
       '-quiet',
       '-exclude-generated',
       ...(spec.gosecExclude.length > 0 ? [`-exclude=${spec.gosecExclude.join(',')}`] : []),
+      // `--` ends the flags (go list, go vet, staticcheck and gosec all accept it), so no package
+      // argument is ever read as a flag.
+      '--',
       p.dir,
     ];
     const r = capture(outFile, spec.toolPath, args, m.dir);
@@ -463,7 +466,7 @@ export function run(spec, warn) {
       const listed = capture(
         listFile,
         spec.go,
-        ['list', '-e', '-json=ImportPath,Dir,Error,DepsErrors', './...'],
+        ['list', '-e', '-json=ImportPath,Dir,Error,DepsErrors', '--', './...'],
         m.dir,
       );
       if (listed.error) throw runError('go', listed.error);
