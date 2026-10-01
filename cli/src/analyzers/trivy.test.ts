@@ -97,46 +97,7 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
         '--list-all-pkgs',
         '--ignorefile',
         work('trivyignore'),
-        '--skip-dirs',
-        '**/node_modules',
-        '--skip-dirs',
-        '**/.git',
-        '--skip-dirs',
-        '**/dist',
-        '--skip-dirs',
-        '**/build',
-        '--skip-dirs',
-        '**/target',
-        '--skip-dirs',
-        '**/vendor',
-        '--skip-dirs',
-        '**/obj',
-        '--skip-dirs',
-        '**/bin/Debug',
-        '--skip-dirs',
-        '**/bin/Release',
-        '--skip-dirs',
-        '**/.venv',
-        '--skip-dirs',
-        '**/venv',
-        '--skip-dirs',
-        '**/.tox',
-        '--skip-dirs',
-        '**/.nox',
-        '--skip-dirs',
-        '**/__pycache__',
-        '--skip-dirs',
-        '**/__pypackages__',
-        '--skip-dirs',
-        '**/.eggs',
-        '--skip-dirs',
-        '**/site-packages',
-        '--skip-dirs',
-        '**/Pods',
-        '--skip-dirs',
-        '**/Carthage',
-        '--skip-dirs',
-        '**/.build',
+        ...skipDirs().flatMap((d) => ['--skip-dirs', d]),
         '--timeout',
         '600s',
         '--format',
@@ -155,7 +116,11 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     });
     expect(typeof transform).toBe('function');
     expect(dropEnv).toBe(isTrivyVariable);
-    expect(skipDirs()).toHaveLength(20);
+    // The built-in directory excludes, as Trivy globs: membership, never a count (other languages
+    // add their own).
+    for (const dir of ['**/node_modules', '**/.git', '**/.build', '**/testdata']) {
+      expect(skipDirs(), dir).toContain(dir);
+    }
   });
 
   it('passes a root .trivyignore, and warns about a database older than 14 days', async () => {

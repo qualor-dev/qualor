@@ -411,6 +411,7 @@
               "css",
               "kotlin",
               "swift",
+              "go",
               "other"
             ]
           },

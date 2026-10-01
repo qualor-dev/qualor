@@ -103,12 +103,14 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
   });
 
   it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
-    expect(EXTERNAL_BUILTIN_ALIASES).toEqual({
+    expect(EXTERNAL_BUILTIN_ALIASES).toMatchObject({
       'ext-ruff': 'ruff',
       'ext-stylelint': 'stylelint',
       'ext-htmlhint': 'htmlhint',
       'ext-detekt': 'detekt',
       'ext-swiftlint': 'swiftlint',
+      'ext-staticcheck': 'staticcheck',
+      'ext-gosec': 'gosec',
     });
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
@@ -159,8 +161,8 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(rulesEquivalent(rule('ext-bandit:tag-pair'), rule('htmlhint:tag-pair'))).toBe(false);
   });
 
-  it('ranks swiftlint below every other built-in engine, above any external one (data-model.md §5.3)', () => {
-    for (const engine of ENGINE_PRIORITY.filter((e) => e !== 'swiftlint')) {
+  it('ranks swiftlint below every built-in engine before it, above any external one (data-model.md §5.3)', () => {
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('swiftlint'))) {
       expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('swiftlint'));
     }
     expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('my-tool'));
@@ -211,5 +213,23 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(
       rulesEquivalent(rule('ext-bandit:detekt.style.MagicNumber'), rule('detekt:MagicNumber')),
     ).toBe(false);
+  });
+
+  it('ranks the Go engines after swiftlint, staticcheck above govet above gosec, all above external ones (plan 9C)', () => {
+    const at = (e: string) => ENGINE_PRIORITY.indexOf(e);
+    expect(at('staticcheck')).toBeGreaterThan(at('swiftlint'));
+    expect(at('govet')).toBeGreaterThan(at('staticcheck'));
+    expect(at('gosec')).toBeGreaterThan(at('govet'));
+    expect(enginePriority('gosec')).toBeGreaterThan(enginePriority('my-tool'));
+  });
+
+  it('pairs go vet with staticcheck where both report the same mistake, and imported staticcheck/gosec SARIF with the built-in rules (plan 9C)', () => {
+    expect(rulesEquivalent(rule('govet:printf'), rule('staticcheck:SA5009'))).toBe(true);
+    expect(rulesEquivalent(rule('govet:bools'), rule('staticcheck:SA4000'))).toBe(true);
+    expect(rulesEquivalent(rule('govet:printf'), rule('staticcheck:SA4000'))).toBe(false);
+    expect(equivalentPartners('ext-staticcheck:SA4006')).toEqual(['staticcheck:SA4006']);
+    expect(equivalentPartners('gosec:G401')).toEqual(['ext-gosec:G401']);
+    expect(enginePriority('staticcheck')).toBeGreaterThan(enginePriority('govet'));
+    expect(enginePriority('gosec')).toBeGreaterThan(enginePriority('ext-gosec'));
   });
 });

@@ -99,6 +99,7 @@
             "**/*Tests/**",
             "**/test_*.py",
             "**/*_test.py",
+            "**/*_test.go",
             "**/conftest.py"
           ],
           "type": "array",
@@ -138,7 +139,8 @@
               "html",
               "css",
               "kotlin",
-              "swift"
+              "swift",
+              "go"
             ]
           }
         }
@@ -624,6 +626,92 @@
             }
           },
           "additionalProperties": false
+        },
+        "staticcheck": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "govet": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "gosec": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "exclude": {
+              "default": [
+                "G104",
+                "G115"
+              ],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^G\\d{3}$"
+              }
+            },
+            "timeoutSeconds": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -670,7 +758,8 @@
                   "auto",
                   "lcov",
                   "cobertura",
-                  "jacoco"
+                  "jacoco",
+                  "gocover"
                 ]
               }
             },

@@ -10,7 +10,8 @@ import { parseLcov, type ParsedCoverage } from './lcov';
 import { CoverageAccumulator, type FileCoverage } from './model';
 import { ancestorDirs, PathResolver, repoRelativeDir } from './resolve';
 
-export type CoverageFormat = 'lcov' | 'cobertura' | 'jacoco';
+/** `gocover`: the Go coverage profile (plan 9C); its parser joins COVERAGE_PARSERS in Task 8. */
+export type CoverageFormat = 'lcov' | 'cobertura' | 'jacoco' | 'gocover';
 
 const COVERAGE_PARSERS: Partial<
   Record<CoverageFormat, (absPath: string) => Promise<ParsedCoverage>>

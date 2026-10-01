@@ -248,4 +248,8 @@ describe('scm.github (github.md §3)', () => {
   it('accepts a Swift file (plan 8F)', () => {
     expect(issues({ ...base, files: [{ ...file, language: 'swift' }] })).toEqual([]);
   });
+
+  it('accepts a Go file (plan 9C)', () => {
+    expect(issues({ ...base, files: [{ ...file, language: 'go' }] })).toEqual([]);
+  });
 });

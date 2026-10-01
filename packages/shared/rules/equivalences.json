@@ -271,6 +271,14 @@
       "reason": "eslint-plugin-sonarjs decorates the ESLint rule use-isnan as S2688"
     },
     {
+      "rules": ["govet:printf", "staticcheck:SA5009"],
+      "reason": "Both report a Printf-style call whose format verbs do not match its arguments; on fixtures/go-basic both flag store/store.go line 45 (plan 9C, G4)."
+    },
+    {
+      "rules": ["govet:bools", "staticcheck:SA4000"],
+      "reason": "Both report a boolean expression with the same operand on both sides of && or ||; on fixtures/go-basic both flag store/store.go line 50 (plan 9C, G4)."
+    },
+    {
       "rules": ["eslint:sonarjs/function-name", "sonarjs:S100"],
       "reason": "The project's own eslint-plugin-sonarjs reports S100 as sonarjs/function-name"
     },
