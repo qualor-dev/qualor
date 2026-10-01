@@ -318,6 +318,27 @@ describe('discoverFiles', () => {
     ]);
   });
 
+  it('leaves Go test data, generated protobuf code and vendored modules out; Go tests are tests (plan 9C)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'store/store.go': 'package store\n',
+      'store/store_test.go': 'package store\n',
+      'store/testdata/broken.go': 'not go\n',
+      'api/v1/api.pb.go': 'package v1\n',
+      'vendor/github.com/acme/dep/dep.go': 'package dep\n',
+    });
+    const files = discoverFiles({
+      root,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.kind])).toEqual([
+      ['store/store.go', 'go', 'main'],
+      ['store/store_test.go', 'go', 'test'],
+    ]);
+  });
+
   it('keeps an empty directory tree empty', () => {
     const root = tmp();
     mkdirSync(path.join(root, 'empty', 'deeper'), { recursive: true });

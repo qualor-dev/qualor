@@ -24,6 +24,7 @@
       "protobufjs",
       "ssh2",
       "tree-sitter-css",
+      "tree-sitter-go",
       "tree-sitter-html",
       "tree-sitter-java",
       "tree-sitter-javascript",

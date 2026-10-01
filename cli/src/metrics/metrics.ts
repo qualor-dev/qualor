@@ -93,7 +93,7 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
       childNesting = inFunction ? nesting + 1 : 0;
       childInFunction = true;
     }
-    if (rules.classes.has(type)) classes++;
+    if (rules.classes.has(type) && (rules.isClass?.(node) ?? true)) classes++;
     if (rules.statements.has(type) && (rules.isStatement?.(node, frame.parentType) ?? true)) {
       statements++;
     }
