@@ -1,4 +1,5 @@
 import type { GateResult } from '@qualor/shared';
+import { marked } from 'marked';
 import { describe, expect, it } from 'vitest';
 import { safeCodeSpan, safePlainValue } from '@qualor/shared';
 import {
@@ -197,13 +198,13 @@ describe('summary, inline note and commit status (scm.md §5)', () => {
       [
         '#### Most severe new issues',
         '',
-        `1. 🔴 **High** · security · \` semgrep:@all /merge \` · [\` src/a.ts:12 \`](${I})`,
+        `1. 🔴 **High** · security · \` semgrep:@all /merge \` · [\` src/a.ts:12 \`](${I})\\`,
       ].join('\n'),
     );
     expect(body).toContain(
-      '2. 🟠 **Medium** · maintainability · ` eslint:no-console ` · `` src/`x`.ts ``\n   ` plain `',
+      '2. 🟠 **Medium** · maintainability · ` eslint:no-console ` · `` src/`x`.ts ``\\\n   ` plain `',
     );
-    expect(body).toContain('3. 🟠 **Medium** · reliability · ` r `\n   ` /merge `');
+    expect(body).toContain('3. 🟠 **Medium** · reliability · ` r `\\\n   ` /merge `');
     expect(body).toContain(
       `2 new issues are commented inline; 1 could not be placed on the diff. · **[Open in Qualor →](${B})**`,
     );
@@ -384,9 +385,17 @@ describe('summary, inline note and commit status (scm.md §5)', () => {
       ],
       topIssuesTotal: 3,
     });
-    expect(body).toContain(`1. 🟡 **Low** · security · \` k \` · [details](${I})`);
-    expect(body).toContain('2. 🔵 **Info** · unknown · ` k ` · ` a.ts:1 `');
-    expect(body).toContain('3. ➖ **Unknown** · security · ` k `');
+    expect(body).toContain(`1. 🟡 **Low** · security · \` k \` · [details](${I})\\`);
+    expect(body).toContain('2. 🔵 **Info** · unknown · ` k ` · ` a.ts:1 `\\');
+    expect(body).toContain('3. ➖ **Unknown** · security · ` k `\\');
+  });
+
+  it('puts each issue’s message on a line of its own (a CommonMark hard break)', () => {
+    // CommonMark without `breaks`: a plain line break would join the message to the heading.
+    const html = marked.parse(summary(), { async: false, gfm: true, breaks: false });
+    expect(html).toMatch(/<code>src\/a\.ts:12<\/code><\/a><br>\s*<code>/);
+    expect(html).toMatch(/<code>r<\/code><br>\s*<code>\/merge<\/code>/);
+    expect(html).not.toContain('\\');
   });
 
   it('stays within 16 KiB by listing fewer issues', () => {
@@ -640,6 +649,16 @@ describe('adversarial corpus (scm.md §6)', () => {
     expect(lines.filter((l) => l.startsWith('| ❌ | Duplication')).length).toBeGreaterThan(10);
     for (const line of lines.filter((l) => l.startsWith('|'))) expect(line, line).toMatch(/\|$/);
     expect(lines.at(-1)).toMatch(/\|$/);
+  });
+
+  it("accepts the catalog's own names in the table, such as Won't fix issues", () => {
+    const body = summary({
+      gate: gate('failed', [
+        { metric: 'accepted_issues', operator: 'gt', threshold: 0, value: 4, status: 'failed' },
+      ]),
+    });
+    checkBody(body, SUMMARY_MAX_BYTES);
+    expect(body).toContain("| ❌ | Won't fix issues | 4 | ≤ 0 |");
   });
 
   it('keeps table cells and the commit status free of report-controlled text', () => {

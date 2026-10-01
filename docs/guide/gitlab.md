@@ -172,9 +172,10 @@ If GitLab's certificate comes from a private CA, give the server that CA with `N
 - **One summary comment** per merge request, edited in place on every analysis. It holds the
   verdict, a table of every gate condition with its value and the value it requires (conditions the
   gate skipped are listed with the reason), the count of new issues by severity, the ten most severe
-  ones with their rule and a link to each in Qualor, and a link to the branch in Qualor. GitLab lets only a comment's author edit it, so after the token is replaced by one of
-  another user, Qualor posts a new summary and deletes the old one. With a token below Maintainer the
-  old summary stays; delete it by hand.
+  ones with their rule and a link to each in Qualor, and a link to the branch in Qualor. GitLab lets
+  only a comment's author edit it, so after the token is replaced by one of another user, Qualor
+  posts a new summary and deletes the old one. With a token below Maintainer the old summary stays;
+  delete it by hand.
 - **A discussion on each new issue** that sits on an added line, up to 50 per merge request. Qualor
   resolves the discussion when the issue is fixed. It never reopens a thread a person resolved, and
   it leaves alone a thread a person replied in.

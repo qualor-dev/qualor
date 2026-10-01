@@ -170,7 +170,7 @@ describe('GitLab decoration: commit status and summary (scm.md §4, §5.1–§5.
     expect(summary?.body).toContain('**1 new issue** in this merge request');
     expect(summary?.body).toContain('**By severity:** 🟠 1 medium');
     expect(summary?.body).toMatch(
-      /^1\. 🟠 \*\*Medium\*\* · \w+ · ` [^`]+ ` · \S*` src\/a\.ts:3 `\S*\n {3}` Unexpected console statement\. `$/m,
+      /^1\. 🟠 \*\*Medium\*\* · \w+ · ` [^`]+ ` · \S*` src\/a\.ts:3 `\S*\\\n {3}` Unexpected console statement\. `$/m,
     );
     // Without a pipeline, the status names the merge request's source branch as its ref.
     expect(statusesOf(gitlabId).map((s) => [s.state, s.ref])).toEqual([['failed', 'feature/x']]);

@@ -274,7 +274,7 @@ function skipReason(reason: string, smallChangesetLines: number | null | undefin
 function conditionTable(input: SummaryInput): string[] {
   const rows = input.gate.conditions.map(
     (c) =>
-      `| ${CONDITION_ICON[c.status] ?? SKIPPED} | ${metricLabel(c.metric)} | ${cellValue(c.metric, c.value)} | ${required(c)} |`,
+      `| ${Object.hasOwn(CONDITION_ICON, c.status) ? CONDITION_ICON[c.status] : SKIPPED} | ${metricLabel(c.metric)} | ${cellValue(c.metric, c.value)} | ${required(c)} |`,
   );
   const ignored = Array.isArray(input.gate.ignoredConditions) ? input.gate.ignoredConditions : [];
   for (const c of ignored) {
@@ -334,7 +334,9 @@ function issueItem(issue: IssueLine, index: number): string[] {
   const link = qualorLink(where ?? 'details', issue.url);
   if (link !== null) parts.push(link);
   else if (where !== null) parts.push(where);
-  return [parts.join(' · '), `   ${codeSpan(issue.message, MAX_MESSAGE_CHARS)}`];
+  // A trailing backslash is a CommonMark hard break: the message goes on its own line on GitLab
+  // and in a GitHub check run, where a single line break renders as a space.
+  return [`${parts.join(' · ')}\\`, `   ${codeSpan(issue.message, MAX_MESSAGE_CHARS)}`];
 }
 
 /** Why there are no inline comments, or how many there are; null when there is nothing to say. */

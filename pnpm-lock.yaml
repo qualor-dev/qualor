@@ -207,6 +207,9 @@ importers:
       jose:
         specifier: 6.2.12
         version: 6.2.12
+      marked:
+        specifier: 18.0.14
+        version: 18.0.14
       xml-crypto:
         specifier: 6.3.2
         version: 6.3.2

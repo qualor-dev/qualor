@@ -66,7 +66,8 @@ const LINK_UNSAFE = /[()[\]<>`\\ "']/g;
 
 /**
  * `[label](url)` for one of Qualor's own links (`QUALOR_PUBLIC_URL` with ids it generated), or
- * null when `url` is null or not a plain http(s) URL. `label` is fixed text.
+ * null when `url` is null or not a plain http(s) URL. `label` is fixed text or a {@link codeSpan}
+ * (never a raw value).
  */
 export function qualorLink(label: string, url: string | null): string | null {
   if (url === null || !URL.canParse(url)) return null;
