@@ -4,6 +4,7 @@
 # 10 SDKs and Roslynator from install-dotnet.sh (plan 2D), Qualor's sonarjs pass in
 # /opt/qualor/sonarjs (plan 8A/8B) and Qualor's HTML and CSS linters in /opt/qualor/weblint
 # (stylelint and HTMLHint, plan 8D).
+# Also Go 1.27.1, staticcheck and gosec, and Qualor's Go runner from install-go.sh (plan 9C).
 #   docker build -t qualor-analyzers tools/analyzers
 # Pinned by version and digest (multi-arch index); bump both together.
 FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7
@@ -22,6 +23,9 @@ RUN sh /tmp/install-sonarjs.sh && rm -rf /tmp/sonarjs /tmp/install-sonarjs.sh /t
 COPY install-weblint.sh /tmp/
 COPY --chmod=0644 weblint/package.json weblint/package-lock.json weblint/bundled.mjs weblint/files.mjs weblint/stylelint.mjs weblint/htmlhint.mjs /tmp/weblint/
 RUN sh /tmp/install-weblint.sh && rm -rf /tmp/weblint /tmp/install-weblint.sh
+COPY install-go.sh /tmp/
+COPY --chmod=0644 golang/run.mjs /tmp/golang/
+RUN QUALOR_GO_SRC=/tmp/golang sh /tmp/install-go.sh && rm -rf /tmp/golang /tmp/install-go.sh
 COPY install-dotnet.sh /tmp/install-dotnet.sh
 RUN sh /tmp/install-dotnet.sh && rm /tmp/install-dotnet.sh
 ENV DOTNET_ROOT=/opt/qualor/share/dotnet \

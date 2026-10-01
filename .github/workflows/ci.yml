@@ -63,6 +63,10 @@ jobs:
       - run: sh tools/analyzers/install-sonarjs.sh
       - run: sudo mkdir -p /opt/qualor/weblint && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/weblint
       - run: sh tools/analyzers/install-weblint.sh
+      # Plan 9C: Go, staticcheck, gosec and Qualor's Go runner; /opt/qualor/bin goes first on PATH
+      # so the runner image's own Go (if any) does not shadow the pinned one.
+      - run: sudo sh tools/analyzers/install-go.sh
+      - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm test:coverage
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
       # The dogfood job imports it with the scan (qualor.yml).
@@ -104,6 +108,10 @@ jobs:
       - run: sh tools/analyzers/install-sonarjs.sh
       - run: sudo mkdir -p /opt/qualor/weblint && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/weblint
       - run: sh tools/analyzers/install-weblint.sh
+      # Plan 9C: Go, staticcheck, gosec and Qualor's Go runner; /opt/qualor/bin goes first on PATH
+      # so the runner image's own Go (if any) does not shadow the pinned one.
+      - run: sudo sh tools/analyzers/install-go.sh
+      - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm fixtures
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
   cli-binary:
@@ -134,6 +142,10 @@ jobs:
       - run: sh tools/analyzers/install-sonarjs.sh
       - run: sudo mkdir -p /opt/qualor/weblint && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/weblint
       - run: sh tools/analyzers/install-weblint.sh
+      # Plan 9C: Go, staticcheck, gosec and Qualor's Go runner; /opt/qualor/bin goes first on PATH
+      # so the runner image's own Go (if any) does not shadow the pinned one.
+      - run: sudo sh tools/analyzers/install-go.sh
+      - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm --filter @qualor/cli build
       - run: pnpm --filter @qualor/cli smoke
       - run: pnpm --filter @qualor/cli smoke:process
