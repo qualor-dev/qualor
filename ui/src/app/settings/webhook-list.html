@@ -14,7 +14,7 @@
   <p class="alert alert-error" role="alert">{{ message }}</p>
 }
 <div class="webhook-list" #hooks>
-  @for (w of list.items(); track w.id) {
+  @for (w of visible(); track w.id) {
     <section class="card panel" [attr.data-key]="w.id" [attr.aria-label]="w.url">
       <div class="panel-head webhook-head">
         <div class="webhook-title">
@@ -22,6 +22,24 @@
           <div class="webhook-events">
             @for (e of w.events; track e) {
               <span class="badge badge-tag">{{ eventLabel(e) }}</span>
+            }
+            @if (projectId() === null) {
+              @if (w.projectId === null) {
+                <span class="badge badge-tag webhook-scope" i18n="@@webhooks.scopeAll"
+                  >All projects</span
+                >
+              } @else if (projectName(w.projectId); as name) {
+                <span class="badge badge-tag webhook-scope"
+                  ><ng-container i18n="@@webhooks.scopeProject">Project:</ng-container>&ngsp;<a
+                    [routerLink]="['/projects', w.projectId, 'settings']"
+                    >{{ name }}</a
+                  ></span
+                >
+              } @else {
+                <span class="badge badge-tag webhook-scope" i18n="@@webhooks.scopeDeleted"
+                  >Project: (deleted)</span
+                >
+              }
             }
           </div>
         </div>
@@ -135,7 +153,11 @@
     </section>
   } @empty {
     @if (list.loaded()) {
-      <p class="muted" i18n="@@webhooks.empty">No webhooks yet.</p>
+      @if (projectId() === null) {
+        <p class="muted" i18n="@@webhooks.empty">No webhooks yet.</p>
+      } @else {
+        <p class="muted" i18n="@@webhooks.emptyProject">No webhooks for this project yet.</p>
+      }
     }
   }
 </div>
@@ -183,7 +205,13 @@
     } @else {
       <form novalidate (submit)="create($event)">
         <div class="dialog-head">
-          <h2 id="create-webhook-title" i18n="@@webhooks.new">New webhook for every project</h2>
+          @if (projectId() === null) {
+            <h2 id="create-webhook-title" i18n="@@webhooks.newTitle">New webhook</h2>
+          } @else {
+            <h2 id="create-webhook-title" i18n="@@webhooks.newForProject">
+              New webhook for this project
+            </h2>
+          }
         </div>
         <div class="dialog-body">
           @if (createError(); as message) {
@@ -211,6 +239,19 @@
               <span id="webhook-url-error" class="field-error" role="alert">{{ message }}</span>
             }
           </div>
+          @if (projectId() === null) {
+            <div class="field">
+              <label for="webhook-scope" i18n="@@webhooks.scope">Applies to</label>
+              <select id="webhook-scope" [value]="scope()" (change)="setScope($event)">
+                <option value="" [selected]="scope() === ''" i18n="@@webhooks.scopeAll">
+                  All projects
+                </option>
+                @for (p of sortedProjects(); track p.id) {
+                  <option [value]="p.id" [selected]="scope() === p.id">{{ p.name }}</option>
+                }
+              </select>
+            </div>
+          }
           <fieldset
             class="facet"
             [attr.aria-describedby]="eventsError() ? 'webhook-events-error' : null"

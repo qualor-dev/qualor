@@ -1,0 +1,219 @@
+import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { FakeServer, me, ORG_ID, page, provideFakeServer, settle } from '../../testing/fake-server';
+import { SessionStore } from '../auth/session';
+import { inScope, type Webhook, WebhookList } from './webhook-list';
+import { WebhooksPage } from './webhooks.page';
+
+const PAYMENTS = '0190a6c2-0000-7000-8000-0000000000a1';
+const BILLING = '0190a6c2-0000-7000-8000-0000000000a2';
+const PROJECTS = [
+  { id: PAYMENTS, name: 'Payments' },
+  { id: BILLING, name: 'Billing' },
+];
+
+function webhook(id: string, url: string, overrides: Partial<Webhook> = {}): Webhook {
+  return {
+    id,
+    organizationId: ORG_ID,
+    projectId: null,
+    url,
+    events: ['analysis.completed'],
+    active: true,
+    createdAt: '',
+    updatedAt: '',
+    ...overrides,
+  };
+}
+
+function setup(): FakeServer {
+  const server = new FakeServer();
+  server.on('GET', '/api/v0/organizations', {
+    body: page([{ id: ORG_ID, key: 'default', name: 'Default', createdAt: '', updatedAt: '' }]),
+  });
+  TestBed.configureTestingModule({
+    providers: [provideRouter([{ path: '**', children: [] }]), provideFakeServer(server)],
+  });
+  TestBed.inject(SessionStore).set(me({ admin: true }));
+  return server;
+}
+
+function render(inputs: { projectId?: string | null; projects?: typeof PROJECTS } = {}) {
+  const fixture = TestBed.createComponent(WebhookList);
+  fixture.componentRef.setInput('organizationId', ORG_ID);
+  fixture.componentRef.setInput('canManage', true);
+  fixture.componentRef.setInput('projectId', inputs.projectId ?? null);
+  fixture.componentRef.setInput('projects', inputs.projects ?? PROJECTS);
+  return fixture;
+}
+
+function tags(root: HTMLElement, section: number): string[] {
+  const panel = root.querySelectorAll('section')[section]!;
+  return [...panel.querySelectorAll('.webhook-scope')].map((t) => t.textContent!.trim());
+}
+
+function fillAndSubmit(root: HTMLElement, url: string): void {
+  const field = root.querySelector<HTMLInputElement>('#webhook-url')!;
+  field.value = url;
+  field.dispatchEvent(new Event('input'));
+  root.querySelector('dialog#create-dialog form')!.dispatchEvent(new Event('submit'));
+}
+
+describe('inScope', () => {
+  it('keeps everything in organisation scope and one project webhooks in project scope', () => {
+    const all = webhook('a', 'https://a.example.com/');
+    const mine = webhook('b', 'https://b.example.com/', { projectId: PAYMENTS });
+    expect(inScope(all, null)).toBe(true);
+    expect(inScope(mine, null)).toBe(true);
+    expect(inScope(all, PAYMENTS)).toBe(false);
+    expect(inScope(mine, PAYMENTS)).toBe(true);
+    expect(inScope(mine, BILLING)).toBe(false);
+  });
+});
+
+describe('WebhookList: scope', () => {
+  it('tags each webhook with its scope and links a project to its settings', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/webhooks', {
+      body: page([
+        webhook('w1', 'https://a.example.com/'),
+        webhook('w2', 'https://b.example.com/', { projectId: PAYMENTS }),
+        webhook('w3', 'https://c.example.com/', {
+          projectId: '0190a6c2-0000-7000-8000-0000000000ff',
+        }),
+      ]),
+    });
+    const fixture = render();
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(tags(root, 0)).toEqual(['All projects']);
+    expect(tags(root, 1)).toEqual(['Project: Payments']);
+    const link = root
+      .querySelectorAll('section')[1]!
+      .querySelector<HTMLAnchorElement>('.webhook-scope a')!;
+    expect(link.getAttribute('href')).toBe(`/projects/${PAYMENTS}/settings`);
+    expect(tags(root, 2)).toEqual(['Project: (deleted)']);
+    expect(root.querySelectorAll('section')[2]!.querySelector('.webhook-scope a')).toBeNull();
+  });
+
+  it('offers All projects first, then the projects by name, and sends the chosen one', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/webhooks', { body: page([]) });
+    server.on('POST', '/api/v0/webhooks', {
+      status: 201,
+      body: { ...webhook('w9', 'https://ci.example.com/hook'), secret: 'whsec_x' },
+    });
+    const fixture = render();
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const create = root.querySelector<HTMLDialogElement>('dialog#create-dialog')!;
+    const select = root.querySelector<HTMLSelectElement>('#webhook-scope')!;
+    expect([...select.options].map((o) => o.textContent!.trim())).toEqual([
+      'All projects',
+      'Billing',
+      'Payments',
+    ]);
+
+    select.value = PAYMENTS;
+    select.dispatchEvent(new Event('change'));
+    fillAndSubmit(root, 'https://ci.example.com/hook');
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/webhooks')[0]?.body).toEqual({
+      organizationId: ORG_ID,
+      url: 'https://ci.example.com/hook',
+      events: ['analysis.completed', 'gate.status_changed'],
+      projectId: PAYMENTS,
+    });
+    // Done, then the next one for all projects: no projectId key at all.
+    [...create.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Done')!.click();
+    await settle(fixture);
+    [...root.querySelectorAll('button')]
+      .find((b) => b.textContent?.trim() === 'New webhook')!
+      .click();
+    await settle(fixture);
+    expect(root.querySelector<HTMLSelectElement>('#webhook-scope')!.value).toBe('');
+    fillAndSubmit(root, 'https://other.example.com/hook');
+    await settle(fixture);
+    const second = server.requestsTo('POST', '/api/v0/webhooks')[1]!.body as Record<
+      string,
+      unknown
+    >;
+    expect('projectId' in second).toBe(false);
+  });
+
+  it('lists only the project webhooks, reading every page, with the scope fixed', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/webhooks', (request) =>
+      request.query.get('cursor') === 'c2'
+        ? { body: page([webhook('w3', 'https://c.example.com/', { projectId: PAYMENTS })]) }
+        : {
+            body: {
+              items: [
+                webhook('w1', 'https://a.example.com/'),
+                webhook('w2', 'https://b.example.com/', { projectId: BILLING }),
+              ],
+              nextCursor: 'c2',
+            },
+          },
+    );
+    server.on('POST', '/api/v0/webhooks', {
+      status: 201,
+      body: {
+        ...webhook('w9', 'https://ci.example.com/hook', { projectId: PAYMENTS }),
+        secret: 's',
+      },
+    });
+    const fixture = render({ projectId: PAYMENTS });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const gets = server.requestsTo('GET', '/api/v0/webhooks');
+    expect(gets).toHaveLength(2);
+    expect(gets[1]!.query.get('cursor')).toBe('c2');
+    const urls = [...root.querySelectorAll('section .webhook-url')].map((e) => e.textContent);
+    expect(urls).toEqual(['https://c.example.com/']);
+    expect(root.querySelector('#webhook-scope')).toBeNull();
+
+    fillAndSubmit(root, 'https://ci.example.com/hook');
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/webhooks')[0]?.body).toMatchObject({
+      projectId: PAYMENTS,
+    });
+  });
+
+  it('says so when the project has no webhook', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/webhooks', {
+      body: page([webhook('w1', 'https://a.example.com/')]),
+    });
+    const fixture = render({ projectId: PAYMENTS });
+    await settle(fixture);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'No webhooks for this project yet.',
+    );
+  });
+});
+
+describe('WebhooksPage: projects of the scope', () => {
+  it('reads every page of the organization projects for the tags and the select', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/webhooks', {
+      body: page([webhook('w1', 'https://b.example.com/', { projectId: PAYMENTS })]),
+    });
+    const project = (id: string, name: string) => ({ id, key: name.toLowerCase(), name });
+    server.on('GET', '/api/v0/projects', (request) =>
+      request.query.get('cursor') === 'p2'
+        ? { body: page([project(PAYMENTS, 'Payments')]) }
+        : { body: { items: [project(BILLING, 'Billing')], nextCursor: 'p2' } },
+    );
+    const fixture = TestBed.createComponent(WebhooksPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const gets = server.requestsTo('GET', '/api/v0/projects');
+    expect(gets).toHaveLength(2);
+    expect(gets[0]!.query.get('organizationId')).toBe(ORG_ID);
+    expect(gets[0]!.query.get('limit')).toBe('100');
+    expect(gets[1]!.query.get('cursor')).toBe('p2');
+    expect(tags(root, 0)).toEqual(['Project: Payments']);
+    expect(root.querySelectorAll('#webhook-scope option')).toHaveLength(3);
+  });
+});

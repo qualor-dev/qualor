@@ -23,6 +23,7 @@ import { keepFocus } from '../shared/focus';
 import { clearField, inputValue, isChecked } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
+import { RouterLink } from '@angular/router';
 import { SecretOnce } from './secret-once';
 
 export type Webhook = ItemOf<'/api/v0/webhooks'>;
@@ -36,6 +37,11 @@ const EXCERPT_MAX_LENGTH = 1024;
 /** C0 controls but tab and line feed, DEL, and the C1 controls. */
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+
+/** A webhook belongs to a scope: organisation scope (null) shows all, a project only its own. */
+export function inScope(w: Webhook, projectId: string | null): boolean {
+  return projectId === null || w.projectId === projectId;
+}
 
 function eventLabel(event: WebhookEvent): string {
   return event === 'analysis.completed'
@@ -57,8 +63,10 @@ export function excerptText(excerpt: string | null): string {
  * switch it on or off, delete it, and read its last deliveries. The generated secret is shown
  * once (`SecretOnce`) and dropped on "Done", on closing its dialog, on the next addition, on a
  * change of organisation and when the page is left. A URL the server refuses (https only, public
- * hosts only: its SSRF checks, 422 on `body.url`) is reported on the URL field. Redelivery,
- * secret rotation and per-project webhooks stay in the API (plan 1F ruling Y7).
+ * hosts only: its SSRF checks, 422 on `body.url`) is reported on the URL field. Each webhook
+ * carries a scope tag (all projects, or one project); the organisation's list can add a webhook
+ * for one project, a project's list (`projectId` set) shows its own webhooks only and adds to
+ * itself.
  *
  * Step 8 of the redesign (spec §7.8): each webhook a panel with its URL, its events as tags, its
  * state and quiet Switch off / Switch on and Delete; its last 20 deliveries as a strip with the
@@ -68,7 +76,7 @@ export function excerptText(excerpt: string | null): string {
  */
 @Component({
   selector: 'q-webhook-list',
-  imports: [DateTimePipe, DeliveryStrip, Icon, SecretOnce],
+  imports: [DateTimePipe, DeliveryStrip, Icon, RouterLink, SecretOnce],
   templateUrl: './webhook-list.html',
   styleUrl: './webhook-list.css',
   host: { tabindex: '-1' },
@@ -82,6 +90,18 @@ export class WebhookList {
   readonly organizationId = input<string | null>(null);
   /** The role may add, switch and delete webhooks. */
   readonly canManage = input(false);
+  /** Null: the organisation's scope, every webhook; an id: only that project's webhooks. */
+  readonly projectId = input<string | null>(null);
+  /** The organisation's projects: names for the scope tags and the select. */
+  readonly projects = input<readonly { id: string; name: string }[]>([]);
+  protected readonly visible = computed(() =>
+    this.list.items().filter((w) => inScope(w, this.projectId())),
+  );
+  protected readonly sortedProjects = computed(() =>
+    [...this.projects()].sort((a, b) => a.name.localeCompare(b.name)),
+  );
+  /** The scope the dialog's select holds: '' for all projects. */
+  protected readonly scope = signal('');
   protected readonly list = new KeysetList<Webhook, string>((organizationId, cursor) =>
     ok(
       this.api.client.GET('/api/v0/webhooks', {
@@ -132,6 +152,7 @@ export class WebhookList {
   private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
   /** Counts organisation changes: an answer for an earlier organisation is dropped. */
   private orgGeneration = 0;
+  private loadToken = 0;
   /** The latest delivery request per webhook: an older answer is dropped. */
   private readonly deliveryRequests = new Map<string, number>();
   private deliveryRequest = 0;
@@ -139,6 +160,7 @@ export class WebhookList {
   constructor() {
     effect(() => {
       const organizationId = this.organizationId();
+      const projectId = this.projectId();
       untracked(() => {
         // Whatever belonged to the previous organisation goes, whether or not this one is shown.
         this.orgGeneration++;
@@ -146,12 +168,12 @@ export class WebhookList {
         this.announcement.set(null);
         this.deliveries.set({});
         this.deliveryRequests.clear();
-        if (organizationId) void this.list.reset(organizationId);
+        if (organizationId) void this.load(organizationId, projectId !== null);
       });
     });
     // Each listed webhook's strip: its deliveries are read once it is listed.
     effect(() => {
-      const webhooks = this.list.items();
+      const webhooks = this.visible();
       untracked(() => {
         const known = this.deliveries();
         for (const webhook of webhooks) {
@@ -163,6 +185,24 @@ export class WebhookList {
       this.destroyed = true;
       this.secret.set(null);
     });
+  }
+
+  /** Loads the first page; a project's panel reads on to the last one, as it filters on the client. */
+  private async load(organizationId: string, all: boolean): Promise<void> {
+    const token = ++this.loadToken;
+    await this.list.reset(organizationId);
+    while (all && token === this.loadToken && this.list.nextCursor() && !this.list.error()) {
+      await this.list.more();
+    }
+  }
+
+  /** The tag of a webhook's scope: the project's name, or null when the project is gone. */
+  protected projectName(id: string | null): string | null {
+    return this.projects().find((p) => p.id === id)?.name ?? null;
+  }
+
+  protected setScope(event: Event): void {
+    this.scope.set(inputValue(event));
   }
 
   /**
@@ -190,6 +230,7 @@ export class WebhookList {
   protected openCreate(): void {
     this.secret.set(null);
     this.url.set('');
+    this.scope.set('');
     this.events.set(new Set(EVENTS));
     this.urlError.set(null);
     this.eventsError.set(null);
@@ -225,10 +266,13 @@ export class WebhookList {
     this.secret.set(null);
     this.createError.set(null);
     const generation = this.orgGeneration;
+    const projectId = this.projectId() ?? (this.scope() || null);
     await this.run(
       async () => {
         const created = await ok(
-          this.api.client.POST('/api/v0/webhooks', { body: { organizationId, url, events } }),
+          this.api.client.POST('/api/v0/webhooks', {
+            body: { organizationId, url, events, ...(projectId ? { projectId } : {}) },
+          }),
         );
         // Added to the organisation that was current when asked: never shown under another one,
         // nor kept by a page that was left meanwhile.

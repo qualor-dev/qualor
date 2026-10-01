@@ -8,11 +8,16 @@
     } @else {
       <p class="muted" i18n="@@webhooks.intro">
         Qualor posts a signed JSON message to each active webhook when an analysis completes or a
-        quality gate status changes, for every project of the organization.
+        quality gate status changes, for every project of the organization or for the one it is
+        added to.
       </p>
     }
   </div>
 </div>
 @if (canRead()) {
-  <q-webhook-list [organizationId]="org.currentId()" [canManage]="canManage()" />
+  <q-webhook-list
+    [organizationId]="org.currentId()"
+    [canManage]="canManage()"
+    [projects]="projects()"
+  />
 }
