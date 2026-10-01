@@ -5,7 +5,9 @@
 # binary that needs no Swift runtime), detekt's CLI jar in /opt/qualor/lib/detekt), Qualor's
 # sonarjs pass in /opt/qualor/sonarjs (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9,
 # tools/analyzers/sonarjs), Qualor's HTML and CSS linters in
-# /opt/qualor/weblint (stylelint and HTMLHint, tools/analyzers/weblint) and what they need to run:
+# /opt/qualor/weblint (stylelint and HTMLHint, tools/analyzers/weblint), Qualor's Ruby pass in
+# /opt/qualor/rubocop (Ruby built from source and RuboCop, at the versions of
+# tools/analyzers/install-rubocop.sh) and what they need to run:
 # Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs, detekt) and git.
 # Build from the repository root:
 #   docker build -f deploy/scanner/Dockerfile -t qualor/scanner:dev .
@@ -81,12 +83,19 @@ RUN sh /tmp/install-sonarjs.sh && rm -rf /tmp/sonarjs /tmp/install-sonarjs.sh
 COPY tools/analyzers/install-weblint.sh /tmp/
 COPY --chmod=0644 tools/analyzers/weblint/package.json tools/analyzers/weblint/package-lock.json tools/analyzers/weblint/bundled.mjs tools/analyzers/weblint/files.mjs tools/analyzers/weblint/stylelint.mjs tools/analyzers/weblint/htmlhint.mjs /tmp/weblint/
 RUN sh /tmp/install-weblint.sh && rm -rf /tmp/weblint /tmp/install-weblint.sh
+# Qualor's Ruby pass (config.md §6, plan 9B): install-rubocop.sh builds Ruby from its release
+# source (checked against its SHA-256) into /opt/qualor/rubocop, with RuboCop and the gems of
+# tools/analyzers/rubocop/gems.lock (each checked against its SHA-256) and Qualor's runner. The
+# same script installs it in CI (tools/ci.test.ts checks that).
+COPY tools/analyzers/install-rubocop.sh /tmp/
+COPY --chmod=0644 tools/analyzers/rubocop/gems.lock tools/analyzers/rubocop/run.rb /tmp/rubocop/
+RUN QUALOR_RUBOCOP_SRC=/tmp/rubocop sh /tmp/install-rubocop.sh && rm -rf /tmp/rubocop /tmp/install-rubocop.sh
 
 FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3db8ea4ae263ab4d0c3805933e5355f45 AS jre
 
 FROM node:22.23.3-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates \
+  && apt-get install -y --no-install-recommends git ca-certificates libyaml-0-2 \
   && rm -rf /var/lib/apt/lists/* \
   # CI runners check out as another user than the image's; the scanner only reads the checkout.
   && git config --system --add safe.directory '*'

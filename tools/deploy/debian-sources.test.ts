@@ -139,6 +139,7 @@ describe('the committed Debian source manifests', () => {
     expect(finalStage(readFileSync('deploy/scanner/Dockerfile', 'utf8')).aptPackages).toEqual([
       'ca-certificates',
       'git',
+      'libyaml-0-2',
     ]);
   });
 

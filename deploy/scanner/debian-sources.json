@@ -3,7 +3,8 @@
   "base": "node:22.23.3-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c",
   "aptPackages": [
     "ca-certificates",
-    "git"
+    "git",
+    "libyaml-0-2"
   ],
   "sourcesIndexes": [
     "https://deb.debian.org/debian/dists/bookworm/main/source/Sources.xz",
@@ -1685,6 +1686,35 @@
           "size": 8196,
           "sha256": "23194c9b0642533fb27fe8c33391d3fa838a55e17e5a88a419ed31548b0721c9",
           "sha1": "515d4096188f5aca43d79a6ddc17e029d9c3129a"
+        }
+      ]
+    },
+    {
+      "source": "libyaml",
+      "version": "0.2.5-1",
+      "binaries": [
+        "libyaml-0-2"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/liby/libyaml",
+      "files": [
+        {
+          "name": "libyaml_0.2.5-1.dsc",
+          "size": 2071,
+          "sha256": "1edbf86e5cd76937ff62892ba6c2537456d645d834d4cd4a82430b8be7051bf4",
+          "sha1": "dbf88ef7db7667d2e3f39e0c0d12b5d52be024dd"
+        },
+        {
+          "name": "libyaml_0.2.5.orig.tar.gz",
+          "size": 85055,
+          "sha256": "fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e",
+          "sha1": "db474288fde305468602e051d963c6936ef5a9ae"
+        },
+        {
+          "name": "libyaml_0.2.5-1.debian.tar.xz",
+          "size": 5324,
+          "sha256": "8730e0510129e516c3c7c1cda7428e02a0a122699e57ed203f835a338a686d1f",
+          "sha1": "de733ba5904f1da6e24f017a44f2128d2e8635b7"
         }
       ]
     },
