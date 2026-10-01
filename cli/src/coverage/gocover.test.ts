@@ -86,10 +86,15 @@ describe('parseGoCover on an untrusted profile', () => {
   });
 
   it('does not count repeated blocks of a merged profile against the cap', async () => {
-    const block = 'x/a.go:1.1,50000.2 1 1\n';
-    const parsed = await parseGoCover(profile('mode: set\n' + block.repeat(2000)));
+    // Scaled-down caps keep it fast under --coverage: 2000 copies of a 500-line block are 1M line
+    // visits (under the visit cap) and 500 distinct lines (under the 1000-line cap the 1M would pass).
+    const block = 'x/a.go:1.1,500.2 1 1\n';
+    const parsed = await parseGoCover(profile('mode: set\n' + block.repeat(2000)), {
+      distinctLines: 1000,
+      lineVisits: 2_000_000,
+    });
     expect(parsed.truncated).toBeUndefined();
-    expect(parsed.files.get('x/a.go')?.lines.size).toBe(50000);
+    expect(parsed.files.get('x/a.go')?.lines.size).toBe(500);
   });
 
   it('keeps what it read and flags the report when the distinct lines pass the cap', async () => {
