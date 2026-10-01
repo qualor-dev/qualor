@@ -119,7 +119,11 @@ describe('ProjectSettingsPage index', () => {
       orgRole: 'member',
     });
     const scroll = vi.fn();
+    const original = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = scroll;
+    onTestFinished(() => {
+      Element.prototype.scrollIntoView = original;
+    });
     const { root, navigate, fixture } = await render();
     document.body.appendChild(root);
     root.querySelector<HTMLAnchorElement>('nav.settings-index a[href="#danger"]')!.click();
