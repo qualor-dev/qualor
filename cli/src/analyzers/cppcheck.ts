@@ -148,9 +148,15 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
 /**
  * cppcheck joins a database entry's `arguments` into one command line and splits it again, so a
  * kept argument with a quote, a backslash or white space could become other arguments: dropped.
- * Ruling D9-17: so is a file whose repository path has one (its `-c <file>` argument).
  */
 const UNSAFE_ARGUMENT = /["\\\s]/;
+/**
+ * Ruling D9-18 (revising D9-17): a file whose repository path has a quote or a control character
+ * is left out of cppcheck's database (its `-c <file>` argument). White space is kept: cppcheck
+ * 2.22 quotes such an argument and does not split it (cppcheck-real.test.ts guards this).
+ */
+// eslint-disable-next-line no-control-regex
+const UNSAFE_FILE_PATH = /["\u0000-\u001f\u007f]/;
 /** Options of the sanitised arguments whose separate value cppcheck's rewrite leaves out. */
 const DROPPED_VALUE_OPTIONS = new Set(['-include', '-idirafter', '-isysroot', '-x', '-target']);
 const INCLUDE_OPTION = /^(-I|-isystem|-iquote)(.*)$/;
@@ -200,7 +206,7 @@ function writeProject(
     // readCompileCommands keeps entries of scope files only.
     const f = scope.get(e.repoPath);
     if (f === undefined) return [];
-    if (UNSAFE_ARGUMENT.test(f.path)) {
+    if (UNSAFE_FILE_PATH.test(f.path)) {
       unsafeFiles++;
       return [];
     }
@@ -236,7 +242,7 @@ function writeProject(
   });
   if (unsafeFiles > 0) {
     ctx.log.warn(
-      `cppcheck: ${unsafeFiles} file(s) whose path has a quote, backslash or space left out (cppcheck splits the database's arguments again)`,
+      `cppcheck: ${unsafeFiles} file(s) whose path has a quote or a control character left out of the compile database`,
     );
   }
   if (entries.length === 0)

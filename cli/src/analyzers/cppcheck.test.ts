@@ -37,6 +37,8 @@ async function run(ctx: AnalyzerContext): Promise<AnalyzerCommand> {
   return p.run;
 }
 
+const dbEntry = (file: string) => ({ directory: '.', file, arguments: ['cc', '-c', file] });
+
 const XML = (errors: string) =>
   `<?xml version="1.0"?><results version="2"><cppcheck version="2.22.0"/><errors>${errors}</errors></results>`;
 
@@ -254,38 +256,66 @@ describe('cppcheckAnalyzer.prepare (config.md §6.2, plan 9D)', () => {
     );
   });
 
-  it('leaves out a file whose path has a space, which cppcheck would split into options (ruling D9-17)', async () => {
-    const lines: string[] = [];
-    const { ctx, work, root } = context(
-      {
-        'a -I/etc x/b.c': 'int b;\n',
-        'ok.c': 'int a;\n',
-        'compile_commands.json': '[]',
-      },
-      { lines },
-    );
-    const entry = (file: string) => ({ directory: '.', file, arguments: ['cc', '-c', file] });
+  it('keeps a file whose path has a space in the database (ruling D9-18)', async () => {
+    const { ctx, work, root } = context({
+      'a -I/etc x/b.c': 'int b;\n',
+      'ok.c': 'int a;\n',
+      'compile_commands.json': '[]',
+    });
     writeTree(root, {
-      'compile_commands.json': JSON.stringify([entry('a -I/etc x/b.c'), entry('ok.c')]),
+      'compile_commands.json': JSON.stringify([dbEntry('a -I/etc x/b.c'), dbEntry('ok.c')]),
     });
     await run(ctx);
     const input = path.join(work, 'src');
     const written = JSON.parse(
       readFileSync(path.join(work, 'cppcheck-compile-commands.json'), 'utf8'),
-    ) as { file: string }[];
-    expect(written.map((e) => e.file)).toEqual([path.join(input, 'ok.c')]);
-    const text = lines.join('\n');
-    expect(text).toContain(
-      'warn: cppcheck: 1 file(s) whose path has a quote, backslash or space left out',
-    );
-    expect(text).not.toContain('-I/etc');
-
-    // With no file left, cppcheck is skipped rather than given an empty database.
-    const only = context({ 'sp ace.c': 'int s;\n', 'compile_commands.json': '[]' });
-    writeTree(only.root, { 'compile_commands.json': JSON.stringify([entry('sp ace.c')]) });
-    const p = await cppcheckAnalyzer.prepare(only.ctx);
-    expect(p).toEqual({ skip: expect.stringContaining('names no C or C++ file of the scan') });
+    ) as { file: string; arguments: string[] }[];
+    expect(written.map((e) => e.file)).toEqual([
+      path.join(input, 'a -I', 'etc x', 'b.c'),
+      path.join(input, 'ok.c'),
+    ]);
+    expect(written[0]?.arguments).toEqual(['cc', '-c', path.join(input, 'a -I', 'etc x', 'b.c')]);
   });
+
+  // No Windows file name holds a quote or a control character.
+  it.skipIf(process.platform === 'win32')(
+    'leaves out a file whose path has a quote or a control character, with a count (ruling D9-18)',
+    async () => {
+      const lines: string[] = [];
+      const { ctx, work, root } = context(
+        {
+          'q"x.c': 'int q;\n',
+          'tab\tx.c': 'int t;\n',
+          'ok.c': 'int a;\n',
+          'compile_commands.json': '[]',
+        },
+        { lines },
+      );
+      writeTree(root, {
+        'compile_commands.json': JSON.stringify([
+          dbEntry('q"x.c'),
+          dbEntry('tab\tx.c'),
+          dbEntry('ok.c'),
+        ]),
+      });
+      await run(ctx);
+      const written = JSON.parse(
+        readFileSync(path.join(work, 'cppcheck-compile-commands.json'), 'utf8'),
+      ) as { file: string }[];
+      expect(written.map((e) => e.file)).toEqual([path.join(work, 'src', 'ok.c')]);
+      const text = lines.join('\n');
+      expect(text).toContain(
+        'warn: cppcheck: 2 file(s) whose path has a quote or a control character left out of the compile database',
+      );
+      expect(text).not.toContain('q"x');
+
+      // With no file left, cppcheck is skipped rather than given an empty database.
+      const only = context({ 'q"only.c': 'int s;\n', 'compile_commands.json': '[]' });
+      writeTree(only.root, { 'compile_commands.json': JSON.stringify([dbEntry('q"only.c')]) });
+      const p = await cppcheckAnalyzer.prepare(only.ctx);
+      expect(p).toEqual({ skip: expect.stringContaining('names no C or C++ file of the scan') });
+    },
+  );
 
   it('keeps only an allowlist of variables', async () => {
     const { ctx } = context({ 'a.c': 'int a;\n' });

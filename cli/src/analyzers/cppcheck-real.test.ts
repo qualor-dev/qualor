@@ -1,4 +1,4 @@
-import { existsSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import {
@@ -124,4 +124,64 @@ describeWithCppcheck()('cppcheck with the real binary (plan 9D)', () => {
     const keys = results(capture.sarif).map(key).sort();
     expect(keys).toEqual(['src/-dash.c:1 zerodiv', 'src/a b#ü.c:1 arrayIndexOutOfBounds']);
   });
+
+  it(
+    'does not split a database file path with spaces into options: no injected -I or -D (ruling D9-18)',
+    TIMEOUT,
+    async () => {
+      const root = tmp();
+      const zerodiv = (name: string) => `static int ${name}(void) { int z = 0; return 1 / z; }\n`;
+      const entry = (file: string, ...flags: string[]) => ({
+        directory: '.',
+        file,
+        arguments: ['cc', ...flags, '-c', file],
+      });
+      const files: Record<string, string> = {
+        // Split on blanks, `<copy>/a -Iinc /b.c` would carry -Iinc, and `a -DX /d.c` -DX.
+        'a -Iinc /b.c': '#include "inj.h"\nint b(void) { return leak(); }\n',
+        'inc/inj.h': zerodiv('leak'),
+        'a -DX /d.c': '#ifdef X\nint d(void) { int z = 0; return 1 / z; }\n#endif\n',
+        // Controls: the same through real options, so the probes above can fail.
+        'ctl.c': '#include "y.h"\nint c(void) { return leak2(); }\n',
+        'ctl/y.h': zerodiv('leak2'),
+        'defx.c': '#ifdef X\nint e(void) { int z = 0; return 1 / z; }\n#endif\n',
+      };
+      const db = [
+        entry('a -Iinc /b.c'),
+        entry('a -DX /d.c'),
+        entry('ctl.c', '-Ictl'),
+        entry('defx.c', '-DX'),
+      ];
+      // The literal `a -I` / `etc ` layout reaches a host header in /etc, where the test may write.
+      const host = `/etc/qualor-9d-probe-${process.pid}.h`;
+      let hostProbe = false;
+      try {
+        writeFileSync(host, zerodiv('hostLeak'));
+        hostProbe = true;
+        files['a -I/etc /e.c'] =
+          `#include "${path.basename(host)}"\nint h(void) { return hostLeak(); }\n`;
+        db.push(entry('a -I/etc /e.c'));
+      } catch {
+        // not root: the relative probe above covers the same parsing
+      }
+      try {
+        writeTree(root, { ...files, 'compile_commands.json': JSON.stringify(db) });
+        const lines: string[] = [];
+        const { capture } = await scanRepoWith(
+          cppcheckAnalyzer,
+          root,
+          process.env,
+          createLogger('debug', (t) => lines.push(t)),
+        );
+        expect(capture.status, capture.reason ?? '').toBe('ok');
+        expect(results(capture.sarif).map(key).sort()).toEqual([
+          'ctl/y.h:1 zerodiv',
+          'defx.c:2 zerodiv',
+        ]);
+        if (hostProbe) expect(lines.join('')).not.toMatch(/located outside the repository/);
+      } finally {
+        if (hostProbe) rmSync(host, { force: true });
+      }
+    },
+  );
 });
