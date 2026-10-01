@@ -139,6 +139,27 @@ describe('copyDependencies', () => {
     expect(existsSync(path.join(target, 'vendor/acme/lib/composer/inner.php'))).toBe(true);
   });
 
+  it('leaves out autoload.php, composer/ and bin/ whatever their case (ruling A9-15)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'vendor/Autoload.PHP.php': '<?php // kept: another name',
+      'vendor/AUTOLOAD.php': '<?php // autoload',
+      'vendor/Composer/autoload_real.php': '<?php // composer',
+      'vendor/BIN/tool.php': '<?php // proxy',
+      'vendor/acme/lib/src/Thing.php': '<?php class Thing {}',
+    });
+    const target = tmp();
+    expect(copyDependencies(root, 'vendor', target)).toEqual({
+      files: 2,
+      skipped: 0,
+      truncated: false,
+      tooLarge: false,
+    });
+    for (const absent of ['vendor/AUTOLOAD.php', 'vendor/Composer', 'vendor/BIN']) {
+      expect(existsSync(path.join(target, absent)), absent).toBe(false);
+    }
+  });
+
   it('stops at the limit', () => {
     const root = tmp();
     writeTree(root, {

@@ -2,6 +2,7 @@ import { detektAnalyzer } from './detekt';
 import { eslintAnalyzer } from './eslint';
 import { gitleaksAnalyzer } from './gitleaks';
 import { htmlhintAnalyzer } from './htmlhint';
+import { phpstanAnalyzer } from './phpstan';
 import { pmdAnalyzer } from './pmd';
 import { roslynAnalyzer } from './roslyn';
 import { ruffAnalyzer } from './ruff';
@@ -29,5 +30,6 @@ export function builtinAnalyzers(): Analyzer[] {
     roslynAnalyzer,
     stylelintAnalyzer,
     htmlhintAnalyzer,
+    phpstanAnalyzer,
   ];
 }

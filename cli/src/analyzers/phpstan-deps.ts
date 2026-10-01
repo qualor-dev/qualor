@@ -21,6 +21,9 @@ export const MAX_DEPENDENCY_BYTES = 1024 * 1024 * 1024;
 export const DEPENDENCIES_TOO_LARGE =
   'PHP dependencies are larger than 1 GiB (the .php files below vendor/); PHPStan is skipped rather than run with part of them';
 
+/** The entries of `<vendorDir>/` that are Composer's own, never copied (config.md §6). */
+const EXCLUDED_TOP_LEVEL: ReadonlySet<string> = new Set(['composer', 'bin', 'autoload.php']);
+
 export type PhpDependencies =
   { kind: 'none' } | { kind: 'installed'; vendorDir: string } | { kind: 'skip'; reason: string };
 
@@ -142,8 +145,9 @@ export function copyDependencies(
       continue;
     }
     for (const e of entries) {
-      if (rel === '' && (e.name === 'composer' || e.name === 'bin' || e.name === 'autoload.php'))
-        continue;
+      // Compared case-insensitively (ruling A9-15): on a case-insensitive file system
+      // `Autoload.php` is the file Composer writes.
+      if (rel === '' && EXCLUDED_TOP_LEVEL.has(e.name.toLowerCase())) continue;
       const childRel = rel === '' ? e.name : `${rel}/${e.name}`;
       // A Dirent of a link is neither a directory nor a file: links are never followed.
       if (e.isDirectory()) {

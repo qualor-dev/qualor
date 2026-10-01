@@ -22,7 +22,7 @@ const SPLIT = /[,;]/;
 /** The copy of the in-scope Kotlin files detekt reads, below the work directory. */
 const INPUT_DIR = 'detekt-input';
 
-function isFile(p: string): boolean {
+export function isFile(p: string): boolean {
   try {
     return statSync(p).isFile();
   } catch {

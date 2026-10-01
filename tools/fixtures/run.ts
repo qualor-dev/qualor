@@ -81,6 +81,14 @@ export const DETEKT_JAR = 'detekt-jar';
 const DETEKT_JAR_FILE = '/opt/qualor/lib/detekt/detekt-cli.jar';
 
 /**
+ * A pseudo-tool: PHPStan's phar in the scanner image's place (config.md §6, plan 9A). Like the
+ * detekt jar, its absence is a normal skip on a plain host; a fixture's scan environment drops
+ * QUALOR_PHPSTAN_PHAR, so only the default path is ever checked here.
+ */
+export const PHPSTAN_PHAR = 'phpstan-phar';
+const PHPSTAN_PHAR_FILE = '/opt/qualor/lib/phpstan/phpstan.phar';
+
+/**
  * The binaries each built-in engine needs (any one of an inner list). The harness checks the same
  * places the CLI does: PATH and the scanner image's /opt/qualor/bin.
  */
@@ -110,6 +118,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   detekt: [['java'], [DETEKT_JAR]],
   // Plan 8F: SwiftLint's static binary, from install.sh (/opt/qualor/bin).
   swiftlint: [['swiftlint']],
+  // Plan 9A: php and, like detekt above, the image-bundled phar.
+  phpstan: [['php'], [PHPSTAN_PHAR]],
 };
 
 /**
@@ -131,6 +141,7 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === TRIVY_DATABASE) return existsSync(TRIVY_DATABASE_FILE);
   if (name === SONARJS_PASS) return existsSync(SONARJS_PASS_FILE);
   if (name === DETEKT_JAR) return existsSync(DETEKT_JAR_FILE);
+  if (name === PHPSTAN_PHAR) return existsSync(PHPSTAN_PHAR_FILE);
   if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
   return findTool(name, env) !== null;
 }
