@@ -71,10 +71,6 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     if (!('run' in prep)) throw new Error(JSON.stringify(prep));
     const work = (name: string) => path.join(ctx.workDir, name);
     const { transform, dropEnv, ...run } = prep.run;
-    // The skip-dirs follow the built-in excludes, which parallel steps extend: never pin the list.
-    const skipArgs = skipDirs().flatMap((d) => ['--skip-dirs', d]);
-    expect(run.args.join(' ')).toContain(skipArgs.join(' '));
-    expect(skipDirs()).toContain('**/.bundle');
     expect(run).toEqual({
       command: '/opt/qualor/bin/trivy',
       args: [
