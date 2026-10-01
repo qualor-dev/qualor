@@ -21,7 +21,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Changed
 
-- `**/testdata/**` and `**/*.pb.go` are built-in excludes (Trivy's `--skip-dirs` included), and
+- `**/testdata/**` and `**/*.pb.go` are built-in excludes (Trivy's `--skip-dirs` included); the
+  `testdata/` exclude applies to every language, so secret and dependency scanning skip it too, and
   `**/*_test.go` files are tests by default. `.go` files were `other` and now count in lines of
   code and duplication.
 - `staticcheck`, `govet` and `gosec` are reserved engine ids: a `qualor.yml` `sarif:` entry with one

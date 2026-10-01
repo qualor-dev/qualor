@@ -109,7 +109,8 @@ These always apply, and you can only add to them: `node_modules`, `.git`, `dist`
 .NET `obj/`, `bin/Debug`, `bin/Release`, generated C# (`*.g.cs`, `*.g.i.cs`, `*.Designer.cs`),
 Python virtual environments and caches (`.venv`, `venv`, `.tox`, `.nox`, `__pycache__`,
 `__pypackages__`, `.eggs`, `site-packages`), Swift's `Pods/`, `Carthage/` and `.build/`, Go's
-`testdata/` directories and generated `*.pb.go` files, binary files, and nested git repositories.
+`testdata/` directories (in every language, so secret and dependency scanning skip them too) and
+generated `*.pb.go` files, binary files, and nested git repositories.
 Files over 1 MiB are skipped for metrics and duplication, but analyzers still see them (detekt and
 SwiftLint are the exception: they are not given Kotlin or Swift files over 1 MiB).
 

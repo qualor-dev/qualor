@@ -359,8 +359,7 @@ whose `go` line needs a newer Go than 1.27.1, whose `replace` points at a direct
 repository, or that contains a symbolic link out of it, is skipped with a log line.
 
 One case is not covered. Qualor does not look for links inside the directories Go itself ignores
-(names starting with `.` or `_`, `testdata`) or inside Qualor's built-in excluded directories
-(`node_modules` and the like). If your code explicitly imports a package from one of them, `go`
+(names starting with `.` or `_`, `testdata`) or inside `node_modules`. If your code explicitly imports a package from one of them, `go`
 could compile a file that is linked outside the repository. Findings on files outside the
 repository are dropped, so only a compiler message could repeat a line of such a file in the scan
 log or in the report. Don't scan repositories you do not trust in a job that can read secrets or
@@ -381,7 +380,8 @@ bug checks medium, unused code medium, simplifications and style low; go vet fin
 gosec findings take gosec's own HIGH/MEDIUM/LOW. Where go vet and staticcheck report the same
 mistake on one line (`printf`/`SA5009`, `bools`/`SA4000`), the server keeps one issue.
 `testdata/` directories and generated `*.pb.go` files are never scanned, and `*_test.go` files are
-tests.
+tests. The `testdata/` exclude applies to every language, so secret and dependency scanning skip
+`testdata/` directories too.
 
 Go files get the same metrics as the other languages (lines of code, functions, types,
 cyclomatic and cognitive complexity) and count in duplication detection. The three analyzers are
