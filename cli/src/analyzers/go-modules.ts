@@ -1,6 +1,5 @@
-import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { readdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { BUILTIN_EXCLUDES } from '@qualor/shared';
 import type { ScopeFile } from '../discovery/discover';
 import { isInside, staysInside, within } from './binary';
 import { compareGoVersions, parseGoMod } from './go-mod';
@@ -42,15 +41,12 @@ export function goIgnores(name: string): boolean {
 }
 
 /**
- * Qualor's built-in excluded directories (`**\/<name>\/**` of BUILTIN_EXCLUDES: node_modules,
- * dist, …) except `vendor`, which go reads. Ruling G9-7: the link walk does not enter them; a link
- * inside one is not detected, an accepted cost (the scan never reports their files).
+ * Directories the link walk does not enter beyond goIgnores: only `node_modules`, where an `npm
+ * link`ed package may point anywhere and go never looks. Ruling G9-19: every other built-in excluded
+ * name (`build`, `dist`, `target`, `obj`, …) is an ordinary Go package directory go reads, so it is
+ * walked; `vendor` is walked too. A link inside `node_modules` is not detected, an accepted cost.
  */
-export const WALK_SKIPPED_DIRS: ReadonlySet<string> = new Set(
-  BUILTIN_EXCLUDES.map((g) => /^\*\*\/([^/*]+)\/\*\*$/.exec(g)?.[1]).filter(
-    (n): n is string => n !== undefined && n !== 'vendor',
-  ),
-);
+export const WALK_SKIPPED_DIRS: ReadonlySet<string> = new Set(['node_modules']);
 
 /**
  * The first entry below `dirs` that is a symbolic link whose target lies outside the repository
@@ -93,7 +89,7 @@ export function escapingLink(dirs: string | readonly string[], root: string): st
         }
         if (!within(realRoot, target)) return repoPath(root, full);
         if (isDirectory(target)) pending.push(full);
-      } else if (e.isDirectory() && !existsSync(path.join(full, 'go.mod'))) {
+      } else if (e.isDirectory() && !holdsGoMod(full)) {
         pending.push(full);
       }
     }
@@ -148,22 +144,46 @@ function checkModule(
   return { dir, rel, modulePath: mod.module };
 }
 
+/**
+ * True when the directory `dir` holds a go.mod go would take: an entry that is not a directory once
+ * links are followed. A dangling link is none, as for go; a link out of the repository is one, and
+ * checkModule then refuses it.
+ */
+function holdsGoMod(dir: string): boolean {
+  try {
+    return !statSync(path.join(dir, 'go.mod')).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /** config.md §6: the scan's Go modules, each with the in-scope Go files below it, or why not. */
 export function planGoModules(
   root: string,
   files: readonly ScopeFile[],
   goVersion: string,
 ): GoModulePlan {
-  const modDirs = files
-    .filter((f) => f.path === 'go.mod' || f.path.endsWith('/go.mod'))
-    .map((f) => (f.path === 'go.mod' ? '' : f.path.slice(0, -'/go.mod'.length)))
-    .sort((a, b) => b.length - a.length);
+  // Ruling G9-19: the owner is the nearest go.mod on disk at or above the file's directory, as go
+  // finds it, whether or not the go.mod itself is in scope (`sources.include` may name only .go
+  // files); checkModule reads it through readRepoConfig.
+  const owners = new Map<string, string | null>();
+  const ownerOf = (dir: string): string | null => {
+    const known = owners.get(dir);
+    if (known !== undefined) return known;
+    const owner = holdsGoMod(dir === '' ? root : path.join(root, ...dir.split('/')))
+      ? dir
+      : dir === ''
+        ? null
+        : ownerOf(dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '');
+    owners.set(dir, owner);
+    return owner;
+  };
   const counts = new Map<string, number>();
   let outside = 0;
   for (const f of files) {
     if (f.language !== 'go') continue;
-    const owner = modDirs.find((d) => d === '' || f.path.startsWith(`${d}/`));
-    if (owner === undefined) outside += 1;
+    const owner = ownerOf(f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '');
+    if (owner === null) outside += 1;
     else counts.set(owner, (counts.get(owner) ?? 0) + 1);
   }
   const modules: GoModule[] = [];

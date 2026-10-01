@@ -216,6 +216,22 @@ describe('the Go analyzers prepare a runner spec (config.md §6, plan 9C)', () =
     );
   });
 
+  it('analyses a module whose go.mod a narrow sources.include leaves out of scope (ruling G9-19)', async () => {
+    const lines: string[] = [];
+    const { ctx, root, work } = context(
+      { 'go.mod': 'module ex/m\n\ngo 1.24\n', 'services/billing/b.go': 'package billing\n' },
+      { lines },
+    );
+    // `sources.include: ['**/*.go']`: the go.mod is on disk but not in scope.
+    const narrow = { ...ctx, files: ctx.files.filter((f) => f.path.endsWith('.go')) };
+    await run(narrow);
+    const spec = JSON.parse(readFileSync(path.join(work, 'staticcheck-spec.json'), 'utf8')) as {
+      modules: { dir: string; rel: string }[];
+    };
+    expect(spec.modules).toEqual([{ dir: root, rel: '' }]);
+    expect(lines.join('')).not.toContain('outside every module');
+  });
+
   it('logs a left-out module and a refused module cache once per scan, not once per Go engine', async () => {
     const lines: string[] = [];
     const { ctx, root } = context(

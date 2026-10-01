@@ -53,6 +53,63 @@ describe('planGoModules (config.md §6, plan 9C)', () => {
     });
   });
 
+  it('finds the nearest go.mod on disk when sources.include leaves it out of scope (ruling G9-19)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'go.mod': 'module ex/root\n\ngo 1.24\n',
+      'services/billing/go.mod': 'module ex/billing\n\ngo 1.24\n',
+      'services/billing/notes/go.mod/README': 'a directory named go.mod is no module\n',
+    });
+    // `sources.include: ['services/billing/**']` keeps the module's files but not the root go.mod;
+    // `['**/*.go']` keeps no go.mod at all.
+    const files = scope(root, {
+      'services/billing/b.go': 'package billing\n',
+      'services/billing/notes/n.go': 'package notes\n',
+      'services/billing/internal/tax/t.go': 'package tax\n',
+      'cmd/c.go': 'package main\n',
+    });
+    expect(planGoModules(root, files, GO)).toEqual({
+      modules: [
+        { dir: root, rel: '', modulePath: 'ex/root', files: 1 },
+        {
+          dir: path.join(root, 'services', 'billing'),
+          rel: 'services/billing',
+          modulePath: 'ex/billing',
+          files: 3,
+        },
+      ],
+      skipped: [],
+      outside: 0,
+    });
+    // The checks still apply to a go.mod found on disk.
+    writeFileSync(path.join(root, 'go.mod'), 'module ex/root\n\ngo 1.99\n');
+    expect(planGoModules(root, files, GO).skipped).toEqual([
+      {
+        rel: '',
+        reason:
+          'go.mod needs Go 1.99, newer than this Go 1.27.1; Qualor never downloads a toolchain (GOTOOLCHAIN=local)',
+      },
+    ]);
+  });
+
+  it.runIf(posix)(
+    'refuses a go.mod linked out of the repository and ignores a dangling one, as go does',
+    () => {
+      const root = tmp();
+      const outside = tmp();
+      writeFileSync(path.join(outside, 'go.mod'), 'module ex/out\n\ngo 1.24\n');
+      writeTree(root, { 'go.mod': 'module ex/root\n\ngo 1.24\n' });
+      const files = scope(root, { 'a/a.go': 'package a\n', 'b/b.go': 'package b\n' });
+      symlinkSync(path.join(outside, 'go.mod'), path.join(root, 'a', 'go.mod'));
+      symlinkSync(path.join(root, 'missing'), path.join(root, 'b', 'go.mod'));
+      expect(planGoModules(root, files, GO)).toEqual({
+        modules: [{ dir: root, rel: '', modulePath: 'ex/root', files: 1 }],
+        skipped: [{ rel: 'a', reason: 'a/go.mod is outside the repository' }],
+        outside: 0,
+      });
+    },
+  );
+
   it('leaves out a module that needs a newer Go, names no module, cannot be parsed or is too big', () => {
     const root = tmp();
     const files = scope(root, {
@@ -195,7 +252,7 @@ describe('planGoModules (config.md §6, plan 9C)', () => {
   );
 
   it.runIf(posix)(
-    'does not walk what go never reads or Qualor excludes, but still the module itself and vendor/ (ruling G9-7)',
+    'does not walk node_modules or what go never reads, but still the module itself and vendor/ (rulings G9-7, G9-19)',
     () => {
       const root = tmp();
       const outside = tmp();
@@ -204,18 +261,18 @@ describe('planGoModules (config.md §6, plan 9C)', () => {
         'go.mod': 'module ex/m\n\ngo 1.24\n',
         'm.go': 'package m\n',
       });
-      // An `npm link`ed package, editor and tool directories, test data: go reads none of them.
-      for (const d of ['node_modules/@acme', '.cache', '_build', 'pkg/testdata', 'dist']) {
+      // An `npm link`ed package (node_modules, which go never looks into), and directories go
+      // ignores itself: editor and tool directories, test data.
+      for (const d of ['node_modules/@acme', '.cache', '_build', 'pkg/testdata']) {
         mkdirSync(path.join(root, ...d.split('/')), { recursive: true });
       }
       symlinkSync(outside, path.join(root, 'node_modules', '@acme', 'lib'));
       symlinkSync(path.join(outside, 'secret.go'), path.join(root, '.cache', 'x.go'));
       symlinkSync(path.join(outside, 'secret.go'), path.join(root, '_build', 'x.go'));
       symlinkSync(path.join(outside, 'secret.go'), path.join(root, 'pkg', 'testdata', 'x.go'));
-      symlinkSync(path.join(outside, 'secret.go'), path.join(root, 'dist', 'x.go'));
       symlinkSync(path.join(outside, 'secret.go'), path.join(root, '_x.go'));
       expect(planGoModules(root, files, GO)).toMatchObject({ modules: [{ rel: '' }], skipped: [] });
-      // A link named like an excluded directory is still a link go may follow.
+      // A link named like a skipped directory is still a link go may follow.
       symlinkSync(outside, path.join(root, 'build'));
       expect(planGoModules(root, files, GO).skipped).toEqual([
         {
@@ -223,6 +280,26 @@ describe('planGoModules (config.md §6, plan 9C)', () => {
           reason: 'build is a symbolic link out of the repository, which Go would follow',
         },
       ]);
+    },
+  );
+
+  it.runIf(posix)(
+    'walks build, dist, target, obj and bin/Debug: ordinary Go package directories (ruling G9-19)',
+    () => {
+      for (const d of ['build', 'dist', 'target', 'obj', 'bin/Debug']) {
+        const root = tmp();
+        const outside = tmp();
+        writeFileSync(path.join(outside, 'secret.go'), 'package x\n');
+        const files = scope(root, { 'go.mod': 'module ex/m\n\ngo 1.24\n', 'm.go': 'package m\n' });
+        mkdirSync(path.join(root, ...d.split('/')), { recursive: true });
+        symlinkSync(path.join(outside, 'secret.go'), path.join(root, ...d.split('/'), 'x.go'));
+        expect(planGoModules(root, files, GO).skipped).toEqual([
+          {
+            rel: '',
+            reason: `${d}/x.go is a symbolic link out of the repository, which Go would follow`,
+          },
+        ]);
+      }
     },
   );
 });
