@@ -40,7 +40,10 @@
           <h3 id="snippet-heading" class="visually-hidden" i18n="@@issue.code">Code</h3>
           <div class="code-head">
             @if (i.path) {
-              <code>{{ i.path }}</code>
+              @let f = codeFileLink(projectId(), i.branchId, i.path, i.startLine);
+              <a [routerLink]="f.commands" [queryParams]="f.queryParams" [fragment]="f.fragment"
+                ><code>{{ i.path }}</code></a
+              >
             }
             @if (i.startLine) {
               &ngsp;<span i18n="@@issue.code.line">Line {{ i.startLine }}</span>
@@ -49,7 +52,52 @@
           <pre
             class="snippet"
             tabindex="0"
-          ><code>@for (line of s.lines; track $index) {<span class="snippet-line" [class.hit]="s.startLine + $index === i.startLine"><span class="ln">{{ s.startLine + $index }}</span>{{ line }}</span>}</code></pre>
+          ><code>@for (line of s.lines; track $index) {<span class="snippet-line" [class.hit]="s.startLine + $index === i.startLine" [class.related]="relatedMarks().has(s.startLine + $index)"><span class="ln">{{ s.startLine + $index }}</span>@for (n of relatedMarks().get(s.startLine + $index) ?? []; track n) {<span class="step-mark" aria-hidden="true">{{ n }}</span>}{{ line }}</span>}</code></pre>
+        </section>
+      }
+
+      @if (related().length > 0) {
+        <section class="card panel related" aria-labelledby="related-heading">
+          <div class="panel-head">
+            <h3 id="related-heading" i18n="@@issue.related">Related locations</h3>
+            <p class="panel-sub" i18n="@@issue.related.sub">
+              Places the analyzer links to this issue, in its order.
+            </p>
+          </div>
+          <ol class="related-steps panel-body">
+            @for (l of relatedShown(); track $index) {
+              @let f = codeFileLink(projectId(), i.branchId, l.path, l.startLine);
+              <li>
+                <span class="step-no" aria-hidden="true">{{ $index + 1 }}</span>
+                <div>
+                  <p class="prose-text">{{ l.message ?? relatedFallback }}</p>
+                  <p class="related-where">
+                    <a
+                      [routerLink]="f.commands"
+                      [queryParams]="f.queryParams"
+                      [fragment]="f.fragment"
+                      ><code>{{ relatedRange(l) }}</code></a
+                    >
+                    @if (l.path === i.path) {
+                      <span class="badge badge-tag" i18n="@@issue.related.thisFile">This file</span>
+                    }
+                  </p>
+                </div>
+              </li>
+            }
+          </ol>
+          @if (!relatedExpanded() && related().length > 5) {
+            <div class="panel-foot">
+              <button
+                type="button"
+                class="btn-quiet"
+                (click)="relatedExpanded.set(true)"
+                i18n="@@issue.related.more"
+              >
+                {{ related().length - 5 }} more
+              </button>
+            </div>
+          }
         </section>
       }
 

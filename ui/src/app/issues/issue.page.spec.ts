@@ -190,6 +190,69 @@ describe('IssuePage', () => {
     expect(link.textContent?.trim()).toBe('Rule documentation');
   });
 
+  describe('related locations', () => {
+    async function renderWith(overrides: Partial<IssueDetail>) {
+      server.on('GET', `/api/v0/issues/${ID}`, { body: detail(overrides) });
+      return render();
+    }
+    const panelOf = (root: HTMLElement) =>
+      root.querySelector('[aria-labelledby="related-heading"]');
+
+    it('lists related locations in report order, linking to the file page (spec §6.1)', async () => {
+      const { root } = await renderWith({
+        path: 'src/refunds/limits.ts',
+        startLine: 12,
+        snippet: { startLine: 10, lines: ['a', 'b', 'c', 'd', 'e'] },
+        secondaryLocations: [
+          { path: 'src/refunds/limits.ts', startLine: 11, message: 'Policy read from the order' },
+          { path: 'src/payments/gateway.ts', startLine: 40, endLine: 44 },
+        ],
+      });
+      const panel = panelOf(root)!;
+      expect(panel.querySelector('h3')?.textContent?.trim()).toBe('Related locations');
+      const steps = [...panel.querySelectorAll('li')];
+      expect(steps.map((li) => li.querySelector('.step-no')?.textContent?.trim())).toEqual([
+        '1',
+        '2',
+      ]);
+      expect(steps[0]!.textContent).toContain('Policy read from the order');
+      expect(steps[0]!.textContent).toContain('This file');
+      expect(steps[1]!.textContent).toContain('Related location');
+      expect(steps[1]!.querySelector('a')?.textContent?.trim()).toBe(
+        'src/payments/gateway.ts:40–44',
+      );
+      const href = steps[1]!.querySelector('a')!.getAttribute('href')!;
+      expect(href).toContain('/code/file?');
+      expect(href).toContain('path=src%2Fpayments%2Fgateway.ts');
+      expect(href).toContain('#L40');
+      // Step 1 lies inside the snippet (lines 10–14): its gutter carries the marker.
+      const marked = root.querySelector('.snippet-line.related');
+      expect(marked?.querySelector('.ln')?.textContent?.trim()).toBe('11');
+      expect(marked?.querySelector('.step-mark')?.textContent?.trim()).toBe('1');
+    });
+
+    it('collapses more than 5 related locations behind "N more"', async () => {
+      const many = Array.from({ length: 7 }, (_, i) => ({ path: 'src/a.ts', startLine: 100 + i }));
+      const { root, fixture } = await renderWith({ secondaryLocations: many });
+      expect(panelOf(root)!.querySelectorAll('li')).toHaveLength(5);
+      buttonIn(root, '2 more')!.click();
+      await settle(fixture);
+      expect(panelOf(root)!.querySelectorAll('li')).toHaveLength(7);
+    });
+
+    it('shows no related-locations panel when there are none', async () => {
+      const { root } = await renderWith({ secondaryLocations: [] });
+      expect(panelOf(root)).toBeNull();
+    });
+
+    it("links the primary location's path to the file page", async () => {
+      const { root } = await renderWith({ path: 'src/a.ts', startLine: 3 });
+      const link = root.querySelector<HTMLAnchorElement>('.code-head a')!;
+      expect(link.textContent?.trim()).toBe('src/a.ts');
+      expect(link.getAttribute('href')).toContain('#L3');
+    });
+  });
+
   it('asks for a comment before a false positive, then sends it', async () => {
     server.on('POST', `/api/v0/issues/${ID}/transition`, {
       body: detail({ status: 'false_positive' }),

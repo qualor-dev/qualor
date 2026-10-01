@@ -131,3 +131,59 @@
 q-ai-panel:empty {
   display: none;
 }
+
+/* Related locations (spec §6.1): numbered steps, echoed in the snippet's gutter. */
+.related-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  list-style: none;
+}
+.related-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.related-steps p {
+  margin: 0;
+}
+.related-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 2px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.step-no {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+}
+.step-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  user-select: none;
+}
+.snippet-line.related {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
