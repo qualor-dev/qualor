@@ -72,7 +72,7 @@
 }
 .map-panel {
   position: sticky;
-  top: 76px;
+  top: var(--sticky-top);
 }
 .map-caption {
   margin: 14px 0 0;

@@ -27,7 +27,7 @@
     flex-direction: column;
     gap: 0.25rem;
     position: sticky;
-    top: 1rem;
+    top: var(--sticky-top);
   }
 
   .settings-index a {

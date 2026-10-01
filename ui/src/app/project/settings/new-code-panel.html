@@ -138,6 +138,11 @@
     </div>
 
     @if (canSeeBaseline()) {
+      @if (baselineFailed()) {
+        <p class="alert alert-error" role="alert" i18n="@@newCode.baselineFailed">
+          The current baseline could not be loaded. Try again later.
+        </p>
+      }
       @if (baselineView(); as b) {
         <div class="baseline">
           @if (b.revision) {

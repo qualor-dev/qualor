@@ -19,7 +19,11 @@ svg {
   border-radius: 6px;
   background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--hairline);
-  touch-action: none;
+  /*
+   * A touch never traps the page: a vertical swipe scrolls it in both layouts. Across a phone's
+   * horizontal strip a sideways drag still moves the cursor (pan-x is not needed there).
+   */
+  touch-action: pan-y;
 }
 svg:focus-visible {
   outline: 2px solid var(--focus);
@@ -63,6 +67,7 @@ rect {
   fill: none;
   stroke: var(--text);
   stroke-width: 2px;
+  pointer-events: none;
 }
 .cursor {
   stroke: var(--text);

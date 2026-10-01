@@ -231,6 +231,22 @@ describe('GateProfilesPanel profiles (spec §3.2)', () => {
     expect(rowSelect(java!).value).toBe(P_JAVA_DEFAULT);
   });
 
+  it('does not read the profiles again when the project is read again', async () => {
+    const server = setup();
+    const { fixture } = await render();
+    const assigned = `/api/v0/projects/${PROJECT}/quality-profiles`;
+    const before = [
+      server.requestsTo('GET', assigned).length,
+      server.requestsTo('GET', '/api/v0/quality-profiles').length,
+    ];
+    fixture.componentRef.setInput('project', project());
+    await settle(fixture);
+    expect([
+      server.requestsTo('GET', assigned).length,
+      server.requestsTo('GET', '/api/v0/quality-profiles').length,
+    ]).toEqual(before);
+  });
+
   it('tags only the rows that use the organisation default', async () => {
     setup();
     const { root } = await render();
@@ -254,11 +270,21 @@ describe('GateProfilesPanel profiles (spec §3.2)', () => {
     choose(rowSelect(ts!), P_TS_STRICT);
     await settle(fixture);
     expect(rowSelect(ts!).getAttribute('aria-busy')).toBe('true');
+    // Busy, not disabled: the select keeps focus and stays in the tab order.
+    expect(rowSelect(ts!).disabled).toBe(false);
+    expect(rowSelect(ts!).getAttribute('aria-disabled')).toBe('true');
+    // A change meanwhile is ignored and put back.
+    choose(rowSelect(ts!), P_TS_DEFAULT);
+    await settle(fixture);
+    expect(
+      server.requestsTo('PUT', `/api/v0/projects/${PROJECT}/quality-profiles/typescript`),
+    ).toHaveLength(1);
     release();
     await settle(fixture);
     const put = server.requestsTo('PUT', `/api/v0/projects/${PROJECT}/quality-profiles/typescript`);
     expect(put[0]?.body).toEqual({ profileId: P_TS_STRICT });
     expect(rowSelect(ts!).getAttribute('aria-busy')).toBeNull();
+    expect(rowSelect(ts!).getAttribute('aria-disabled')).toBeNull();
     expect(rowSelect(ts!).value).toBe(P_TS_STRICT);
     expect(ts!.querySelector('.badge')).toBeNull();
     expect(root.querySelector('[role=status]')?.textContent).toContain(

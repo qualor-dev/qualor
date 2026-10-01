@@ -52,7 +52,7 @@
           <pre
             class="snippet"
             tabindex="0"
-          ><code>@for (line of s.lines; track $index) {<span class="snippet-line" [class.hit]="s.startLine + $index === i.startLine" [class.related]="relatedMarks().has(s.startLine + $index)"><span class="ln">{{ s.startLine + $index }}</span>@for (n of relatedMarks().get(s.startLine + $index) ?? []; track n) {<span class="step-mark" aria-hidden="true">{{ n }}</span>}{{ line }}</span>}</code></pre>
+          ><code>@for (line of s.lines; track $index) {<span class="snippet-line" [class.hit]="s.startLine + $index === i.startLine" [class.related]="relatedMarks().has(s.startLine + $index)"><span class="ln">{{ s.startLine + $index }}</span>@if (relatedMarks().get(s.startLine + $index); as marks) {<span class="step-marks" aria-hidden="true">@for (n of marks; track n) {<span class="step-mark">{{ n }}</span>}</span>}{{ line }}</span>}</code></pre>
         </section>
       }
 
@@ -184,7 +184,14 @@
           @if (i.path) {
             <dt i18n="@@issue.details.file">File</dt>
             <dd>
-              <code>{{ i.path }}{{ i.startLine ? ':' + i.startLine : '' }}</code>
+              @let file = codeFileLink(projectId(), i.branchId, i.path, i.startLine);
+              <a
+                class="details-file"
+                [routerLink]="file.commands"
+                [queryParams]="file.queryParams"
+                [fragment]="file.fragment"
+                ><code>{{ i.path }}{{ i.startLine ? ':' + i.startLine : '' }}</code></a
+              >
             </dd>
           }
           <dt i18n="@@issue.details.firstSeen">First seen</dt>

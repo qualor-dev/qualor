@@ -77,7 +77,7 @@
                 [attr.aria-label]="languageName(row.language)"
                 [attr.aria-busy]="rowBusy()[row.language] ? 'true' : null"
                 [attr.aria-invalid]="rowError()[row.language] ? 'true' : null"
-                [disabled]="rowBusy()[row.language] === true"
+                [attr.aria-disabled]="rowBusy()[row.language] ? 'true' : null"
                 (change)="chooseProfile(row, $event)"
               >
                 @if (row.profileId === null) {

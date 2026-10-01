@@ -91,7 +91,13 @@ export class FilePage {
   protected readonly detail = computed<FileDetail | null>(() =>
     this.file.hasValue() ? this.file.value() : null,
   );
+  /**
+   * Nothing to show: the server does not have the file (404), the URL names no path, or the
+   * project has loaded without a main branch and the URL names no branch.
+   */
   protected readonly notFound = computed(() => {
+    if (!this.path()) return true;
+    if (this.branchId() === null && this.project.current() !== null) return true;
     const err = this.file.error();
     return err instanceof ApiError && err.status === 404;
   });

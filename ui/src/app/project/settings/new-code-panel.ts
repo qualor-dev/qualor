@@ -124,6 +124,7 @@ export class NewCodePanel {
         }),
       ),
   });
+  protected readonly baselineFailed = computed(() => this.baseline.status() === 'error');
   protected readonly baselineView = computed(() => {
     if (!this.baseline.hasValue()) return null;
     const b = this.baseline.value();

@@ -137,7 +137,7 @@ describe('CodePage (spec §4.2)', () => {
     expect(f.querySelector('.cov-bar')).toBeNull();
     expect([...f.querySelectorAll('td')].map(flat)[3]).toBe('—');
     expect(f.querySelector('.badge')).toBeNull();
-    expect(rows[2]!.querySelector('.badge')?.textContent?.trim()).toBe('test');
+    expect(rows[2]!.querySelector('.badge.badge-tag')?.textContent?.trim()).toBe('test');
   });
 
   it('links a directory count to its path with a trailing slash, a file count to its exact path', async () => {

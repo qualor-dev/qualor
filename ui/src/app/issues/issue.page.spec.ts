@@ -177,6 +177,22 @@ describe('IssuePage', () => {
     expect(root.querySelector('.code-window')).toBeNull();
   });
 
+  it('links the File entry to the file page at the line, also without a snippet', async () => {
+    server.on('GET', `/api/v0/issues/${ID}`, {
+      body: detail({ path: 'src/refunds/limits.ts', startLine: 44, snippet: null }),
+    });
+    const { root } = await render();
+    expect(root.querySelector('.code-window')).toBeNull();
+    const file = [...root.querySelectorAll('dl.details-list dt')].find(
+      (dt) => dt.textContent?.trim() === 'File',
+    );
+    const link = file?.nextElementSibling?.querySelector('a');
+    expect(link?.textContent?.trim()).toBe('src/refunds/limits.ts:44');
+    expect(link?.getAttribute('href')).toBe(
+      '/projects/p1/code/file?branch=b1&path=src%2Frefunds%2Flimits.ts#L44',
+    );
+  });
+
   it('links an http(s) rule documentation in a new tab without an opener or referrer', async () => {
     server.on('GET', `/api/v0/issues/${ID}`, {
       body: detail({
@@ -229,6 +245,10 @@ describe('IssuePage', () => {
       const marked = root.querySelector('.snippet-line.related');
       expect(marked?.querySelector('.ln')?.textContent?.trim()).toBe('11');
       expect(marked?.querySelector('.step-mark')?.textContent?.trim()).toBe('1');
+      // The marks sit together in one gutter overlay, out of the code text's flow.
+      const marks = marked?.querySelector('.step-marks');
+      expect(marks?.getAttribute('aria-hidden')).toBe('true');
+      expect(marks?.querySelectorAll('.step-mark')).toHaveLength(1);
     });
 
     it('collapses more than 5 related locations behind "N more"', async () => {

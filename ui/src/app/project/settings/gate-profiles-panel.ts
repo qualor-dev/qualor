@@ -58,8 +58,12 @@ export class GateProfilesPanel {
   protected readonly error = signal<string | null>(null);
   protected readonly announcement = signal<string | null>(null);
 
+  /** Primitives: another panel's save reads the project again, which must not refetch these. */
+  private readonly projectId = computed(() => this.project().id);
+  private readonly organizationId = computed(() => this.project().organizationId);
+
   private readonly gates = resource({
-    params: () => this.project().organizationId,
+    params: () => this.organizationId(),
     loader: async ({ params: organizationId }): Promise<Gate[]> => {
       const all: Gate[] = [];
       let cursor: string | undefined;
@@ -90,7 +94,7 @@ export class GateProfilesPanel {
   );
 
   private readonly assignments = resource({
-    params: () => ({ id: this.project().id, organizationId: this.project().organizationId }),
+    params: () => ({ id: this.projectId(), organizationId: this.organizationId() }),
     loader: async ({ params }): Promise<ProfileRow[]> => {
       const assigned = await ok(
         this.api.client.GET('/api/v0/projects/{id}/quality-profiles', {

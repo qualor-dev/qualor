@@ -301,6 +301,19 @@ describe('NewCodePanel (spec §3.1)', () => {
       ]);
     });
 
+    it('says so in an alert when the baseline cannot be loaded', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/projects/new-code-baseline', {
+        status: 500,
+        body: problem(500, 'INTERNAL'),
+      });
+      const { root } = await render();
+      expect(root.querySelector('.baseline')).toBeNull();
+      expect(root.querySelector('.alert-error[role=alert]')?.textContent?.trim()).toBe(
+        'The current baseline could not be loaded. Try again later.',
+      );
+    });
+
     it('is not requested without project.analyze', async () => {
       const server = setup();
       const { root } = await render({ canSeeBaseline: false });

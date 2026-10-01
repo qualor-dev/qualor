@@ -169,14 +169,30 @@ q-ai-panel:empty {
   font-size: 12px;
   font-weight: 650;
 }
+/*
+ * The snippet's step marks overlay the right end of the line-number gutter (absolutely placed), so
+ * a marked line's code starts in the same column as every other line's.
+ */
+.snippet-line {
+  position: relative;
+}
+.step-marks {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--space-4) + 3rem - 4px);
+  display: flex;
+  gap: 2px;
+  transform: translate(-100%, -50%);
+  pointer-events: none;
+}
 .step-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
-  margin-right: 6px;
   border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ink);
   background: var(--accent);
   color: var(--accent-text);
   font-size: 10px;
@@ -184,6 +200,7 @@ q-ai-panel:empty {
   line-height: 1;
   user-select: none;
 }
-.snippet-line.related {
+/* The primary line keeps its own highlight when a step also points at it. */
+.snippet-line.related:not(.hit) {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }

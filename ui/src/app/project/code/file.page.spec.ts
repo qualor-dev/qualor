@@ -263,6 +263,34 @@ describe('FilePage (spec §4.3)', () => {
     expect(root.querySelector('q-line-map')).toBeNull();
   });
 
+  it('shows the not-found empty state without a path, and asks for nothing', async () => {
+    const server = setup();
+    const { root } = await render('/?branch=b-main');
+    expect(root.textContent).toContain("This file is not in the branch's latest analysis.");
+    expect(root.querySelector('.empty-state a')?.getAttribute('href')).toBe(
+      '/projects/p1/code?branch=b-main',
+    );
+    expect(server.requestsTo('GET', FILE(MAIN))).toHaveLength(0);
+  });
+
+  it('shows the not-found empty state when no branch can be resolved', async () => {
+    const server = setup();
+    server.on('GET', `/api/v0/projects/${PROJECT}`, {
+      body: {
+        id: PROJECT,
+        organizationId: ORG_ID,
+        key: 'acme/payments',
+        name: 'Payments',
+        mainBranchName: 'main',
+        mainBranch: null,
+        permissions: [...MEMBER_PROJECT_PERMISSIONS],
+      },
+    });
+    const { root } = await render('/?path=src%2Fa.ts');
+    expect(root.textContent).toContain("This file is not in the branch's latest analysis.");
+    expect(server.requestsTo('GET', FILE(MAIN))).toHaveLength(0);
+  });
+
   it('shows another error as an alert', async () => {
     const server = setup();
     server.on('GET', FILE(MAIN), { status: 500, body: problem(500, 'INTERNAL') });
