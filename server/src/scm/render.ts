@@ -248,9 +248,16 @@ function cellValue(metric: string, value: number | null): string {
     : formatValue(value);
 }
 
+/** The sign of the passing side: a gate fails `gt t` above t, so it requires `≤ t`. */
+function requiredSign(operator: string): string | null {
+  if (operator === 'gt') return '≤';
+  if (operator === 'lt') return '≥';
+  return null;
+}
+
 /** The passing side of a condition: a gate fails `gt t` above t, so it requires `≤ t`. */
 function required(c: { operator: string; threshold: number }): string {
-  const sign = c.operator === 'gt' ? '≤' : c.operator === 'lt' ? '≥' : null;
+  const sign = requiredSign(c.operator);
   return sign === null ? 'unknown' : `${sign} ${formatThreshold(c.threshold)}`;
 }
 
@@ -311,10 +318,18 @@ function contextLine(input: SummaryInput, request: string): string {
   const total = input.newIssues.total;
   if (total !== null) {
     const n = count(total);
-    const issues = n === 0 ? 'no new issues' : `${n} new ${n === 1 ? 'issue' : 'issues'}`;
+    const issues = n === 0 ? 'no new issues' : `${n} new ${plural(n, 'issue', 'issues')}`;
     parts.push(`**${issues}** in this ${request}`);
   }
   return parts.join(' · ');
+}
+
+function plural(n: number, one: string, many: string): string {
+  return n === 1 ? one : many;
+}
+
+function location(path: string, line: number | null): string {
+  return line === null ? path : `${path}:${line}`;
 }
 
 function issueItem(issue: IssueLine, index: number): string[] {
@@ -327,9 +342,7 @@ function issueItem(issue: IssueLine, index: number): string[] {
     codeSpan(issue.ruleKey),
   ];
   const where =
-    issue.path === null
-      ? null
-      : codeSpan(issue.line === null ? issue.path : `${issue.path}:${issue.line}`, MAX_PATH_CHARS);
+    issue.path === null ? null : codeSpan(location(issue.path, issue.line), MAX_PATH_CHARS);
   // A link's text is a code span or fixed text, never a value.
   const link = qualorLink(where ?? 'details', issue.url);
   if (link !== null) parts.push(link);
