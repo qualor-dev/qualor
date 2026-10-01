@@ -663,7 +663,7 @@
     },
     {
       "source": "expat",
-      "version": "2.5.0-1+deb12u3",
+      "version": "2.5.0-1+deb12u4",
       "binaries": [
         "libexpat1"
       ],
@@ -671,10 +671,10 @@
       "directory": "pool/updates/main/e/expat",
       "files": [
         {
-          "name": "expat_2.5.0-1+deb12u3.dsc",
+          "name": "expat_2.5.0-1+deb12u4.dsc",
           "size": 1427,
-          "sha256": "67388db2780dbb8f10cd2d5ace402b655272649dc345825fdc50612007af78d9",
-          "sha1": "309a1e852aeabb41f85d9ba34c27e045cd6f6d1b"
+          "sha256": "e1537fb367ee0036f87b3bc2e8f44de9fb042b7c141643aaaa187bca0f25b0e4",
+          "sha1": "a316863049259d40dfe11cf0418dec488b554312"
         },
         {
           "name": "expat_2.5.0.orig.tar.gz",
@@ -683,10 +683,10 @@
           "sha1": "03d9882ede56aa48919fbf50fe17614630257a82"
         },
         {
-          "name": "expat_2.5.0-1+deb12u3.debian.tar.xz",
-          "size": 50900,
-          "sha256": "1d3fe684581e73766f03c6486dc5e0c068b915da4ae8e778e820495cd9ae44b7",
-          "sha1": "6ba0f06de7e3d2b72dd081a8a9f304dde5f8f5ea"
+          "name": "expat_2.5.0-1+deb12u4.debian.tar.xz",
+          "size": 64488,
+          "sha256": "f522d550e0a3ff992c293f2c49d44a1248985863d64005f91e086afc5d295908",
+          "sha1": "fc4536d4cd05ba769d849e77fc0bac47e0db1333"
         }
       ]
     },
