@@ -6,6 +6,7 @@ import {
   DestroyRef,
   effect,
   inject,
+  InjectionToken,
   Injector,
   input,
   signal,
@@ -13,7 +14,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Api, done, ok } from '../api/api';
-import { fieldErrors, problemMessage } from '../api/errors';
+import { ApiError, fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
 import { DeliveryStrip, deliveryStatusLabel, type StripDelivery } from '../charts/delivery-strip';
 import { clip } from '../shared/text';
@@ -37,6 +38,24 @@ const EXCERPT_MAX_LENGTH = 1024;
 /** C0 controls but tab and line feed, DEL, and the C1 controls. */
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+
+/** How long after a redelivery the deliveries are read again (the receiver has been called). */
+const REREAD_DELAY_MS = 3000;
+
+/**
+ * Schedules a function once and returns what cancels it. A token so that specs can fire the re-read
+ * after a redelivery by hand instead of waiting for the clock.
+ */
+export const REREAD_AFTER_REDELIVERY = new InjectionToken<(run: () => void) => () => void>(
+  'REREAD_AFTER_REDELIVERY',
+  {
+    providedIn: 'root',
+    factory: () => (run) => {
+      const timer = setTimeout(run, REREAD_DELAY_MS);
+      return () => clearTimeout(timer);
+    },
+  },
+);
 
 /** A webhook belongs to a scope: organisation scope (null) shows all, a project only its own. */
 export function inScope(w: Webhook, projectId: string | null): boolean {
@@ -66,7 +85,8 @@ export function excerptText(excerpt: string | null): string {
  * hosts only: its SSRF checks, 422 on `body.url`) is reported on the URL field. Each webhook
  * carries a scope tag (all projects, or one project); the organisation's list can add a webhook
  * for one project, a project's list (`projectId` set) shows its own webhooks only and adds to
- * itself.
+ * itself. A manager can send a delivery again (its answer is read after a few seconds) and rotate
+ * a webhook's secret: the new one is shown once, like the first, and dropped the same ways.
  *
  * Step 8 of the redesign (spec §7.8): each webhook a panel with its URL, its events as tags, its
  * state and quiet Switch off / Switch on and Delete; its last 20 deliveries as a strip with the
@@ -161,6 +181,19 @@ export class WebhookList {
   /** The latest delivery request per webhook: an older answer is dropped. */
   private readonly deliveryRequests = new Map<string, number>();
   private deliveryRequest = 0;
+  private readonly rereadAfter = inject(REREAD_AFTER_REDELIVERY);
+  /** The pending re-read per webhook; cancelled with the list or the organisation. */
+  private readonly rereads = new Map<string, () => void>();
+  /** Deliveries being sent again, by id. */
+  protected readonly redelivering = signal<ReadonlySet<string>>(new Set());
+  /** A refused redelivery, by delivery id: shown in that delivery's row. */
+  protected readonly redeliverErrors = signal<Record<string, string>>({});
+  /** The webhook whose secret the rotation dialog is about; null while it is closed. */
+  protected readonly rotating = signal<Webhook | null>(null);
+  private readonly rotatedSecret = signal<string | null>(null);
+  protected readonly rotated = this.rotatedSecret.asReadonly();
+  protected readonly rotateError = signal<string | null>(null);
+  private readonly rotateDialog = viewChild<ElementRef<HTMLDialogElement>>('rotateDialog');
 
   constructor() {
     effect(() => {
@@ -173,6 +206,12 @@ export class WebhookList {
         this.announcement.set(null);
         this.deliveries.set({});
         this.deliveryRequests.clear();
+        this.cancelRereads();
+        this.redelivering.set(new Set());
+        this.redeliverErrors.set({});
+        this.rotatedSecret.set(null);
+        this.rotating.set(null);
+        this.rotateError.set(null);
         // Whatever load-all was running is superseded, also when no organisation is left.
         this.loadToken++;
         if (organizationId) void this.load(organizationId, projectId !== null);
@@ -192,6 +231,8 @@ export class WebhookList {
       this.destroyed = true;
       this.loadToken++;
       this.secretValue.set(null);
+      this.rotatedSecret.set(null);
+      this.cancelRereads();
     });
   }
 
@@ -414,6 +455,117 @@ export class WebhookList {
     }
   }
 
+  private cancelRereads(): void {
+    for (const cancel of this.rereads.values()) cancel();
+    this.rereads.clear();
+  }
+
+  /** Sends a delivery again: the new one is queued on top, and the table is read again soon. */
+  protected async redeliver(webhook: Webhook, delivery: Delivery): Promise<void> {
+    if (this.redelivering().has(delivery.id)) return;
+    const generation = this.orgGeneration;
+    const mark = (on: boolean) =>
+      this.redelivering.update((set) => {
+        const next = new Set(set);
+        if (on) next.add(delivery.id);
+        else next.delete(delivery.id);
+        return next;
+      });
+    mark(true);
+    this.redeliverErrors.update((all) =>
+      Object.fromEntries(Object.entries(all).filter(([id]) => id !== delivery.id)),
+    );
+    this.announcement.set(null);
+    try {
+      const queued = await ok(
+        this.api.client.POST('/api/v0/webhooks/{id}/deliveries/{deliveryId}/redeliver', {
+          params: { path: { id: webhook.id, deliveryId: delivery.id } },
+        }),
+      );
+      if (generation !== this.orgGeneration || this.destroyed) return;
+      this.deliveries.update((all) => {
+        const known = all[webhook.id];
+        const rest = Array.isArray(known) ? known : [];
+        return { ...all, [webhook.id]: [queued, ...rest].slice(0, DELIVERIES_SHOWN) };
+      });
+      this.announcement.set($localize`:@@webhooks.redelivered:Delivery sent again.`);
+      this.rereads.get(webhook.id)?.();
+      this.rereads.set(
+        webhook.id,
+        this.rereadAfter(() => {
+          this.rereads.delete(webhook.id);
+          if (generation === this.orgGeneration && !this.destroyed) {
+            void this.loadDeliveries(webhook, true);
+          }
+        }),
+      );
+    } catch (err) {
+      if (generation !== this.orgGeneration || this.destroyed) return;
+      const message = redeliverMessage(err);
+      this.redeliverErrors.update((all) => ({ ...all, [delivery.id]: message }));
+    } finally {
+      if (generation === this.orgGeneration) mark(false);
+    }
+  }
+
+  /** Asks in the rotation dialog; nothing is sent until its "Rotate secret". */
+  protected askRotate(webhook: Webhook): void {
+    if (this.busy()) return;
+    this.rotatedSecret.set(null);
+    this.rotateError.set(null);
+    this.rotating.set(webhook);
+    openAfterRender(
+      this.injector,
+      () => this.rotateDialog()?.nativeElement,
+      () => this.rotating() !== null,
+    );
+  }
+
+  protected async confirmRotate(): Promise<void> {
+    const webhook = this.rotating();
+    if (!webhook || this.busy()) return;
+    this.rotateError.set(null);
+    const generation = this.orgGeneration;
+    await this.run(
+      async () => {
+        const updated = await ok(
+          this.api.client.POST('/api/v0/webhooks/{id}/regenerate-secret', {
+            params: { path: { id: webhook.id } },
+          }),
+        );
+        if (generation !== this.orgGeneration || this.destroyed) return;
+        this.rotatedSecret.set(updated.secret ?? null);
+        this.list.items.update((items) =>
+          items.map((w) => (w.id === updated.id ? stripSecret(updated) : w)),
+        );
+      },
+      (err) => this.rotateError.set(problemMessage(err)),
+    );
+    if (generation !== this.orgGeneration || this.destroyed) return;
+    // Closed while the server answered: it opens again, or the new secret could never be copied.
+    if (this.rotated() !== null || this.rotateError() !== null) {
+      openAfterRender(this.injector, () => this.rotateDialog()?.nativeElement);
+    }
+  }
+
+  /** Escape does not close the dialog while it shows the new secret. */
+  protected keepRotated(event: Event): void {
+    if (this.rotated()) event.preventDefault();
+  }
+
+  /** Cancel, Done or the dialog closing otherwise: the secret is dropped. */
+  protected closeRotate(): void {
+    const dialog = this.rotateDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    this.forgetRotation();
+  }
+
+  protected forgetRotation(): void {
+    this.rotatedSecret.set(null);
+    this.rotateError.set(null);
+    this.rotating.set(null);
+  }
+
   /** The deliveries of a webhook once they have loaded. */
   protected loaded(webhook: Webhook): Delivery[] | null {
     const value = this.deliveries()[webhook.id];
@@ -454,6 +606,27 @@ export class WebhookList {
       this.busy.set(false);
     }
   }
+}
+
+function stripSecret(webhook: Webhook & { secret?: string | null }): Webhook {
+  const rest: Webhook & { secret?: string | null } = { ...webhook };
+  delete rest.secret;
+  return rest;
+}
+
+/** What a refused redelivery says in its row (api.md `POST .../redeliver`). */
+function redeliverMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.status) {
+      case 404:
+        return $localize`:@@webhooks.redeliverGone:This delivery is no longer kept.`;
+      case 409:
+        return $localize`:@@webhooks.redeliverOff:The webhook is switched off: switch it on to send again.`;
+      case 429:
+        return $localize`:@@webhooks.redeliverRate:Too many redeliveries; try again in a minute.`;
+    }
+  }
+  return problemMessage(err);
 }
 
 function badUrl(): string {

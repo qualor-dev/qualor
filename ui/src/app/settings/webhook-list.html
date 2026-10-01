@@ -74,6 +74,15 @@
               </button>
               <button
                 type="button"
+                class="btn-quiet"
+                [attr.aria-disabled]="busy() ? true : null"
+                (click)="askRotate(w)"
+                i18n="@@webhooks.rotate"
+              >
+                Rotate secret
+              </button>
+              <button
+                type="button"
                 class="btn-quiet danger"
                 [attr.aria-disabled]="busy() ? true : null"
                 (click)="remove(w)"
@@ -118,6 +127,13 @@
                           <th scope="col" i18n="@@webhooks.col.event">Event</th>
                           <th scope="col" i18n="@@webhooks.col.result">Result</th>
                           <th scope="col" i18n="@@webhooks.col.answer">Receiver's answer</th>
+                          @if (canManage()) {
+                            <th scope="col">
+                              <span class="visually-hidden" i18n="@@webhooks.col.actions"
+                                >Actions</span
+                              >
+                            </th>
+                          }
                         </tr>
                       </thead>
                       <tbody>
@@ -140,6 +156,22 @@
                                 <pre class="excerpt">{{ excerpt }}</pre>
                               }
                             </td>
+                            @if (canManage()) {
+                              <td>
+                                <button
+                                  type="button"
+                                  class="btn-quiet"
+                                  [attr.aria-disabled]="redelivering().has(d.id) ? true : null"
+                                  (click)="redeliver(w, d)"
+                                  i18n="@@webhooks.redeliver"
+                                >
+                                  Send again
+                                </button>
+                                @if (redeliverErrors()[d.id]; as message) {
+                                  <p class="field-error" role="alert">{{ message }}</p>
+                                }
+                              </td>
+                            }
                           </tr>
                         }
                       </tbody>
@@ -290,6 +322,58 @@
           </button>
         </div>
       </form>
+    }
+  </dialog>
+
+  <dialog
+    #rotateDialog
+    id="rotate-secret"
+    class="dialog"
+    aria-labelledby="rotate-title"
+    (cancel)="keepRotated($event)"
+    (close)="forgetRotation()"
+  >
+    <div class="dialog-head">
+      <h2 id="rotate-title" i18n="@@webhooks.rotateTitle">Rotate the secret</h2>
+    </div>
+    @if (rotated(); as value) {
+      <div class="dialog-body">
+        <q-secret-once
+          [value]="value"
+          label="Webhook secret"
+          i18n-label="@@webhooks.secret"
+          [showDone]="false"
+          (done)="closeRotate()"
+        />
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-primary" (click)="closeRotate()">
+          <ng-container i18n="@@secret.done">Done</ng-container>
+        </button>
+      </div>
+    } @else {
+      <div class="dialog-body">
+        @if (rotateError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        <p i18n="@@webhooks.rotateText">
+          The old secret stops signing at once. Update the receiver with the new one.
+        </p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" autofocus (click)="closeRotate()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          (click)="confirmRotate()"
+          i18n="@@webhooks.rotate"
+        >
+          Rotate secret
+        </button>
+      </div>
     }
   </dialog>
 

@@ -1,3 +1,4 @@
+import type { Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
@@ -10,7 +11,7 @@ import {
   settle,
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
-import { inScope, type Webhook, WebhookList } from './webhook-list';
+import { inScope, REREAD_AFTER_REDELIVERY, type Webhook, WebhookList } from './webhook-list';
 import { WebhooksPage } from './webhooks.page';
 
 const PAYMENTS = '0190a6c2-0000-7000-8000-0000000000a1';
@@ -34,13 +35,13 @@ function webhook(id: string, url: string, overrides: Partial<Webhook> = {}): Web
   };
 }
 
-function setup(): FakeServer {
+function setup(extra: Provider[] = []): FakeServer {
   const server = new FakeServer();
   server.on('GET', '/api/v0/organizations', {
     body: page([{ id: ORG_ID, key: 'default', name: 'Default', createdAt: '', updatedAt: '' }]),
   });
   TestBed.configureTestingModule({
-    providers: [provideRouter([{ path: '**', children: [] }]), provideFakeServer(server)],
+    providers: [provideRouter([{ path: '**', children: [] }]), provideFakeServer(server), ...extra],
   });
   TestBed.inject(SessionStore).set(me({ admin: true }));
   return server;
@@ -345,5 +346,183 @@ describe('WebhooksPage: the projects are read', () => {
     expect(tags(root, 0)).toEqual(['Project']);
     expect(root.querySelector('p.alert-error[role="alert"]')).not.toBeNull();
     expect(root.textContent).not.toContain('(deleted)');
+  });
+});
+
+describe('WebhookList: send a delivery again, rotate the secret', () => {
+  const DELIVERY = {
+    id: 'd1',
+    event: 'analysis.completed',
+    status: 'failed',
+    attempts: 3,
+    responseCode: 500,
+    responseExcerpt: null,
+    nextAttemptAt: null,
+    createdAt: '2026-10-01T10:00:00.000Z',
+  };
+  const AGAIN = { ...DELIVERY, id: 'd2', status: 'pending', attempts: 0, responseCode: null };
+
+  /** The re-read after a redelivery is scheduled through a stub: the spec fires it by hand. */
+  function setupAgain(canManage = true) {
+    const scheduled: { run: () => void; cancelled: boolean }[] = [];
+    const server = setup([
+      {
+        provide: REREAD_AFTER_REDELIVERY,
+        useValue: (run: () => void) => {
+          const entry = { run, cancelled: false };
+          scheduled.push(entry);
+          return () => (entry.cancelled = true);
+        },
+      },
+    ]);
+    server.on('GET', '/api/v0/webhooks', {
+      body: page([webhook('w1', 'https://a.example.com/')]),
+    });
+    let deliveries = [DELIVERY];
+    server.on('GET', '/api/v0/webhooks/w1/deliveries', () => ({ body: page(deliveries) }));
+    const fixture = render();
+    fixture.componentRef.setInput('canManage', canManage);
+    return {
+      server,
+      fixture,
+      scheduled,
+      setDeliveries: (d: (typeof DELIVERY)[]) => (deliveries = d),
+    };
+  }
+
+  function sendAgain(root: HTMLElement): HTMLButtonElement | undefined {
+    return [...root.querySelectorAll<HTMLButtonElement>('.deliveries button')].find(
+      (b) => b.textContent?.trim() === 'Send again',
+    );
+  }
+
+  function rowButton(root: HTMLElement, text: string): HTMLButtonElement {
+    return [...root.querySelectorAll<HTMLButtonElement>('section .row-actions button')].find(
+      (b) => b.textContent?.trim() === text,
+    )!;
+  }
+
+  function dialogButton(dialog: HTMLElement, text: string): HTMLButtonElement {
+    return [...dialog.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!;
+  }
+
+  it('offers Send again on each delivery to managers only', async () => {
+    const { fixture } = setupAgain(false);
+    await settle(fixture);
+    expect(sendAgain(fixture.nativeElement)).toBeUndefined();
+    expect(fixture.nativeElement.querySelector('dialog#rotate-secret')).toBeNull();
+  });
+
+  it('posts the redelivery, shows the queued delivery on top, and reads again later', async () => {
+    const { server, fixture, scheduled, setDeliveries } = setupAgain();
+    server.on('POST', '/api/v0/webhooks/w1/deliveries/d1/redeliver', { status: 202, body: AGAIN });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    sendAgain(root)!.click();
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/webhooks/w1/deliveries/d1/redeliver')).toHaveLength(
+      1,
+    );
+    const rows = [...root.querySelectorAll('.deliveries tbody tr')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain('Pending');
+    expect(server.requestsTo('GET', '/api/v0/webhooks/w1/deliveries')).toHaveLength(1);
+    expect(scheduled).toHaveLength(1);
+    setDeliveries([{ ...AGAIN, status: 'succeeded', responseCode: 200 }, DELIVERY]);
+    scheduled[0]!.run();
+    await settle(fixture);
+    expect(server.requestsTo('GET', '/api/v0/webhooks/w1/deliveries')).toHaveLength(2);
+    expect(root.querySelector('.deliveries tbody tr')!.textContent).toContain('HTTP 200');
+  });
+
+  it.each([
+    [404, 'NOT_FOUND', 'This delivery is no longer kept.'],
+    [409, 'CONFLICT', 'The webhook is switched off: switch it on to send again.'],
+    [429, 'RATE_LIMITED', 'Too many redeliveries; try again in a minute.'],
+    [500, 'INTERNAL', 'The request failed (HTTP 500, INTERNAL).'],
+  ])('shows a %s in the delivery row', async (status, code, text) => {
+    const { server, fixture, scheduled } = setupAgain();
+    server.on('POST', '/api/v0/webhooks/w1/deliveries/d1/redeliver', {
+      status,
+      body: problem(status, code),
+    });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    sendAgain(root)!.click();
+    await settle(fixture);
+    expect(root.querySelector('.deliveries tbody tr')!.textContent).toContain(text);
+    expect(root.querySelectorAll('.deliveries tbody tr')).toHaveLength(1);
+    expect(scheduled).toHaveLength(0);
+  });
+
+  it.each(['destroy', 'organisation'] as const)(
+    'cancels the re-read when the list is left by %s',
+    async (how) => {
+      const { server, fixture, scheduled } = setupAgain();
+      server.on('POST', '/api/v0/webhooks/w1/deliveries/d1/redeliver', {
+        status: 202,
+        body: AGAIN,
+      });
+      await settle(fixture);
+      sendAgain(fixture.nativeElement)!.click();
+      await settle(fixture);
+      expect(scheduled).toHaveLength(1);
+      expect(scheduled[0]!.cancelled).toBe(false);
+      if (how === 'destroy') {
+        fixture.destroy();
+      } else {
+        fixture.componentRef.setInput('organizationId', '0190a6c2-0000-7000-8000-0000000000bb');
+        await settle(fixture);
+      }
+      expect(scheduled[0]!.cancelled).toBe(true);
+    },
+  );
+
+  it('rotates the secret in its dialog, shows it once, and keeps it through Escape', async () => {
+    const { server, fixture } = setupAgain();
+    server.on('POST', '/api/v0/webhooks/w1/regenerate-secret', {
+      body: { ...webhook('w1', 'https://a.example.com/'), secret: 'whsec_new' },
+    });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const dialog = root.querySelector<HTMLDialogElement>('dialog#rotate-secret')!;
+    rowButton(root, 'Rotate secret').click();
+    await settle(fixture);
+    expect(dialog.open).toBe(true);
+    expect(dialog.textContent).toContain(
+      'The old secret stops signing at once. Update the receiver with the new one.',
+    );
+    expect(dialog.querySelector('q-secret-once')).toBeNull();
+    dialogButton(dialog, 'Rotate secret').click();
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/webhooks/w1/regenerate-secret')).toHaveLength(1);
+    expect(dialog.querySelector<HTMLInputElement>('q-secret-once input')!.value).toBe('whsec_new');
+    const cancel = new Event('cancel', { cancelable: true });
+    dialog.dispatchEvent(cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    dialogButton(dialog, 'Done').click();
+    await settle(fixture);
+    expect(dialog.querySelector('q-secret-once')).toBeNull();
+    expect(dialog.open).toBe(false);
+    expect(root.textContent).not.toContain('whsec_new');
+  });
+
+  it('shows a refused rotation in the dialog', async () => {
+    const { server, fixture } = setupAgain();
+    server.on('POST', '/api/v0/webhooks/w1/regenerate-secret', {
+      status: 409,
+      body: problem(409, 'CONFLICT'),
+    });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const dialog = root.querySelector<HTMLDialogElement>('dialog#rotate-secret')!;
+    rowButton(root, 'Rotate secret').click();
+    await settle(fixture);
+    dialogButton(dialog, 'Rotate secret').click();
+    await settle(fixture);
+    expect(dialog.querySelector('[role="alert"]')!.textContent).toContain(
+      'Someone else changed this at the same time.',
+    );
+    expect(dialog.querySelector('q-secret-once')).toBeNull();
   });
 });
