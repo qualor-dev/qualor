@@ -603,6 +603,7 @@ describe('ProjectPage Access tab (rbac-audit.md §17)', () => {
       'Overview',
       'Branches and merge requests',
       'Issues',
+      'Code',
       'Access',
       'Settings',
     ]);

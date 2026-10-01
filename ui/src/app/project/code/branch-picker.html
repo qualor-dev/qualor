@@ -1,0 +1,8 @@
+<label class="branch-picker">
+  <span class="visually-hidden" i18n="@@code.branchPicker">Branch or merge request</span>
+  <select [value]="branchId() ?? ''" (change)="pick($event)">
+    @for (o of options(); track o.id) {
+      <option [value]="o.id" [selected]="o.id === branchId()">{{ o.title }}</option>
+    }
+  </select>
+</label>

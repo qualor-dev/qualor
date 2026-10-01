@@ -64,6 +64,13 @@
           <span class="tab-count" aria-hidden="true">{{ issueCount() }}</span>
         }
       </a>
+      <a
+        routerLink="code"
+        routerLinkActive="active"
+        ariaCurrentWhenActive="page"
+        i18n="@@project.tab.code"
+        >Code</a
+      >
       @if (showAccess()) {
         <a
           routerLink="access"

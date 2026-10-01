@@ -93,6 +93,7 @@ describe('ProjectPage', () => {
       'Overview',
       'Branches and merge requests',
       'Issues',
+      'Code',
     ]);
   });
 
