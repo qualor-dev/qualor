@@ -146,6 +146,11 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
 }
 
 /** Options of the sanitised arguments whose separate value cppcheck's rewrite leaves out. */
+/**
+ * cppcheck joins a database entry's `arguments` into one command line and splits it again, so a
+ * kept argument with a quote, a backslash or white space could become other arguments: dropped.
+ */
+const UNSAFE_ARGUMENT = /["\\\s]/;
 const DROPPED_VALUE_OPTIONS = new Set(['-include', '-idirafter', '-isysroot', '-x', '-target']);
 const INCLUDE_OPTION = /^(-I|-isystem|-iquote)(.*)$/;
 
@@ -174,11 +179,21 @@ function writeProject(
   const roots = [path.resolve(ctx.root), realRootOf(ctx.root)];
   const toCopy = (dir: string): string | null => {
     for (const root of roots) {
-      if (within(root, dir)) return path.join(input, path.relative(root, dir));
+      if (within(root, dir)) {
+        const rel = path.relative(root, dir);
+        // The part of the path the database chose (separators aside) must also be one argument.
+        if (UNSAFE_ARGUMENT.test(rel.split(path.sep).join('/'))) return null;
+        return path.join(input, rel);
+      }
     }
     return null;
   };
   let droppedIncludes = 0;
+  let droppedUnsafe = 0;
+  const keep = (args: string[], a: string) => {
+    if (UNSAFE_ARGUMENT.test(a)) droppedUnsafe++;
+    else args.push(a);
+  };
   const entries = read.entries.flatMap((e) => {
     // readCompileCommands keeps entries of scope files only.
     const f = scope.get(e.repoPath);
@@ -189,13 +204,17 @@ function writeProject(
       const flag = INCLUDE_OPTION.exec(a);
       if (flag !== null) {
         const value = flag[2] !== '' ? (flag[2] ?? '') : (e.args[++i] ?? '');
+        if (/["\s]/.test(value)) {
+          droppedUnsafe++;
+          continue;
+        }
         const mapped = value === '' ? null : toCopy(path.resolve(e.directory, value));
         if (mapped !== null) args.push(`-I${mapped}`);
         else droppedIncludes++;
       } else if (/^-[DU]./.test(a) || a.startsWith('-std=')) {
-        args.push(a);
+        keep(args, a);
       } else if ((a === '-D' || a === '-U') && i + 1 < e.args.length) {
-        args.push(`${a}${e.args[++i] ?? ''}`);
+        keep(args, `${a}${e.args[++i] ?? ''}`);
       } else if (DROPPED_VALUE_OPTIONS.has(a)) {
         i++;
       }
@@ -209,6 +228,11 @@ function writeProject(
       },
     ];
   });
+  if (droppedUnsafe > 0) {
+    ctx.log.info(
+      `cppcheck: ${droppedUnsafe} argument(s) with a quote, backslash or space left out (cppcheck splits the database's arguments again)`,
+    );
+  }
   if (droppedIncludes > 0) {
     ctx.log.info(
       `cppcheck: ${droppedIncludes} include director(ies) outside the repository left out (cppcheck uses its own library for system headers)`,

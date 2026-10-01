@@ -447,6 +447,13 @@ describe('BUILTIN_EXCLUDES', () => {
     expect(bad({ compileCommands: '' })).toThrow();
     expect(bad({ compileCommands: true })).toThrow();
     expect(bad({ args: ['--addon=misra'] })).toThrow();
+    // select names only the default-off ids (D9-14): any other id would have no effect.
+    expect(bad({ select: ['nullPointer'] })).toThrow();
+    expect(bad({ select: ['uninitmembervar'] })).toThrow();
+    expect(
+      parseConfig({ version: 1, analyzers: { cppcheck: { select: ['uninitMemberVarNoCtor'] } } })
+        .analyzers.cppcheck.select,
+    ).toEqual(['uninitMemberVarNoCtor']);
     expect(() =>
       parseConfig({ version: 1, analyzers: { 'clang-tidy': { load: 'x.so' } } } as never),
     ).toThrow();

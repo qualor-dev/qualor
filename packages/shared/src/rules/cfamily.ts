@@ -22,11 +22,11 @@ export const DEFAULT_CPPCHECK_ENABLE: readonly CppcheckEnableGroup[] = [
  * Ruling D9-14: ids Qualor turns off by default (52 of fmt's 59 findings, mostly false positives on
  * union members). `analyzers.cppcheck.select` lists ids to turn back on.
  */
-export const DEFAULT_CPPCHECK_SUPPRESSED: readonly string[] = [
+export const DEFAULT_CPPCHECK_SUPPRESSED = [
   'uninitMemberVar',
   'uninitMemberVarPrivate',
   'uninitMemberVarNoCtor',
-];
+] as const;
 
 /** The default-suppressed ids that a project's `select` did not turn back on. */
 export function cppcheckSuppressed(select: readonly string[]): string[] {

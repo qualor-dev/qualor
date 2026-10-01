@@ -43,7 +43,7 @@ describeWithCppcheck()('cppcheck with the real binary (plan 9D)', () => {
   );
 
   it(
-    'never reads a project file, addon or cppcheck.cfg the checkout plants, nor writes outside the work dir',
+    'runs no addon named by a project file or cppcheck.cfg the checkout plants (cppcheck reads cppcheck.cfg only beside its binary)',
     TIMEOUT,
     async () => {
       const root = tmp();

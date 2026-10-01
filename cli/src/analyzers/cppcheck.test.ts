@@ -209,6 +209,51 @@ describe('cppcheckAnalyzer.prepare (config.md §6.2, plan 9D)', () => {
     ]);
   });
 
+  it('drops a kept argument with a quote, backslash or space, which cppcheck would split again', async () => {
+    const lines: string[] = [];
+    const { ctx, work, root } = context(
+      { 'src/a.cpp': 'int a;\n', 'inc/x.h': 'int x;\n', 'compile_commands.json': '[]' },
+      { lines },
+    );
+    const db = [
+      {
+        directory: '.',
+        file: 'src/a.cpp',
+        arguments: [
+          'g++',
+          '-DA="x"',
+          '-DB=1 -DC',
+          '-D',
+          'X\\Y',
+          '-I',
+          'inc "q',
+          '-Isp ace',
+          '-Iinc',
+          '-std=c++17 -include',
+          '-DOK',
+          '-c',
+          'src/a.cpp',
+        ],
+      },
+    ];
+    writeTree(root, { 'compile_commands.json': JSON.stringify(db) });
+    await run(ctx);
+    const input = path.join(work, 'src');
+    const written = JSON.parse(
+      readFileSync(path.join(work, 'cppcheck-compile-commands.json'), 'utf8'),
+    ) as { arguments: string[] }[];
+    expect(written[0]?.arguments).toEqual([
+      'c++',
+      `-I${path.join(input, 'inc')}`,
+      '-DOK',
+      '-c',
+      path.join(input, 'src', 'a.cpp'),
+    ]);
+    expect(lines.join('\n')).toContain(
+      'cppcheck: 6 argument(s) with a quote, backslash or space left out',
+    );
+  });
+
   it('keeps only an allowlist of variables', async () => {
     const { ctx } = context({ 'a.c': 'int a;\n' });
     const cmd = await run(ctx);

@@ -665,7 +665,11 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+                "enum": [
+                  "uninitMemberVar",
+                  "uninitMemberVarPrivate",
+                  "uninitMemberVarNoCtor"
+                ]
               }
             },
             "includePaths": {

@@ -178,8 +178,16 @@ function safeValue(v: string): boolean {
   );
 }
 
+/** Options whose value is a file or directory to read headers from. */
+const HEADER_PATH_OPTIONS = new Set(['-I', '-isystem', '-iquote', '-idirafter', '-include']);
+const HEADER_PATH_ATTACHED = /^(-I|-isystem|-iquote|-idirafter)(.+)$/;
+/** A device or process file (`/dev/stdin`, `/proc/self/...`): never a header to read. */
+const DEVICE_PATH = /^\/(dev|proc)(\/|$)/;
+
 function keptFlag(a: string): boolean {
   if (NATIVE.test(a)) return false;
+  const header = HEADER_PATH_ATTACHED.exec(a);
+  if (header !== null && DEVICE_PATH.test(header[2] ?? '')) return false;
   if (KEPT_EXACT.has(a) || KEPT_PREFIX.test(a) || KEPT_ATTACHED.test(a) || DRIVER_MODE.test(a))
     return true;
   if (WARNING.test(a)) return !a.startsWith('-Werror') && a !== '-Wfatal-errors';
@@ -216,7 +224,8 @@ export function sanitizeArguments(
     const a = args[i] ?? '';
     if (KEPT_WITH_VALUE.has(a) && i + 1 < args.length) {
       const value = args[++i] ?? '';
-      if (safeValue(value)) kept.push(a, value);
+      if (safeValue(value) && !(HEADER_PATH_OPTIONS.has(a) && DEVICE_PATH.test(value)))
+        kept.push(a, value);
       else dropped++;
     } else if (UNSAFE_TEXT.test(a)) {
       dropped++;

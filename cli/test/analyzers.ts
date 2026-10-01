@@ -506,7 +506,7 @@ export function sarifResults(sarif: unknown): KeyedResult[] {
   return (sarif as { runs: { results?: KeyedResult[] }[] }).runs[0]?.results ?? [];
 }
 
-/** `path:line ruleId`, the URI decoded (an outside path stays absolute). */
+/** `path:line ruleId`, the URI decoded (C/C++ results outside the repository are dropped). */
 export function resultKey(r: KeyedResult): string {
   const loc = r.locations[0]!.physicalLocation;
   return `${decodeURIComponent(loc.artifactLocation.uri)}:${loc.region.startLine} ${r.ruleId}`;

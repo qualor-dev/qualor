@@ -7,6 +7,7 @@ import {
   cFamilyEnv,
   hasLineBreak,
   realRootOf,
+  redactForeignPaths,
 } from './cfamily-common';
 import { checkClangTidyConfig, loadClangTidyConfig } from './clang-tidy-config';
 import { clangTidyFixesToSarif } from './clang-tidy-fixes';
@@ -22,6 +23,25 @@ const NO_DEFAULT_CONFIG_MAJOR = 16;
 /** `clang-tidy --version`: `LLVM version 22.1.8` (Debian: `Debian LLVM version 14.0.6`). */
 export function parseClangTidyVersion(stdout: string): string | null {
   return /LLVM version (\d+\.\d+\.\d+)/.exec(stdout)?.[1] ?? null;
+}
+
+/** A path's continuation after the work directory (`/clang-tidy.json:3`), kept as written. */
+const PATH_REST = /^[^\s'"`<>|]*/;
+
+/**
+ * A stderr line for the log: the work directory shown as `<work>`, and every other absolute path
+ * outside the repository redacted (ruling D9-11), so no host path reaches a failure reason.
+ */
+export function clangTidyDetail(line: string, work: string, bases: readonly string[]): string {
+  const [head = '', ...rest] = line.split(work);
+  const parts = [
+    redactForeignPaths(head, bases),
+    ...rest.map((s) => {
+      const kept = PATH_REST.exec(s)?.[0] ?? '';
+      return kept + redactForeignPaths(s.slice(kept.length), bases);
+    }),
+  ];
+  return detailLine(parts.join('<work>'));
 }
 
 const REGEX_META = /[.*+?^${}()|[\]\\]/g;
@@ -117,6 +137,7 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   // clang-tidy writes no file when it finds nothing (fact F8).
   writeFileSync(out, '');
   const realRoot = realRootOf(ctx.root);
+  const bases = [ctx.root, realRoot];
   const own = cFamilyEnv(work);
   const major = Number(version.split('.')[0]);
   const inScope = new Set(ctx.files.map((f) => f.path));
@@ -167,13 +188,13 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       failureDetail: (_code, stderr) => {
         const lines = stderrLines(stderr);
         const line = lines.find((l) => l.startsWith('Error: ')) ?? lines.at(-1);
-        return line === undefined ? null : detailLine(line.split(work).join('<work>'));
+        return line === undefined ? null : clangTidyDetail(line, work, bases);
       },
       configWarnings: (stderr) =>
         stderrLines(stderr)
           .filter((l) => l.startsWith('Error: '))
           .slice(0, 1)
-          .map((l) => detailLine(l.split(work).join('<work>'))),
+          .map((l) => clangTidyDetail(l, work, bases)),
     },
   };
 }

@@ -421,6 +421,28 @@ describe('nothing from the database is ever run (Review Focus 1)', () => {
     expect(r.dropped).toBe(3);
   });
 
+  it('drops an include or header under /dev or /proc, attached or separate (a device or process file)', () => {
+    const r = sanitizeArguments([
+      'cc',
+      '-include',
+      '/dev/stdin',
+      '-isystem',
+      '/proc/self/cwd',
+      '-isystem/proc/1/root',
+      '-I/dev/fd/0',
+      '-iquote',
+      '/dev',
+      '-idirafter/proc',
+      '-isystem',
+      '/devices/x',
+      '-I/usr/include/x',
+      '-c',
+      'a.c',
+    ]);
+    expect(r.kept).toEqual(['-isystem', '/devices/x', '-I/usr/include/x']);
+    expect(r.dropped).toBe(6);
+  });
+
   it('a value option at the end, with no value, is dropped', () => {
     expect(sanitizeArguments(['cc', '-DA', '-I'])).toEqual({
       compiler: 'cc',

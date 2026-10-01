@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { BUILTIN_ENGINES, ENGINE_ID_PATTERN } from '../report/taxonomy';
-import { CPPCHECK_ENABLE_GROUPS, DEFAULT_CPPCHECK_ENABLE } from '../rules/cfamily';
+import {
+  CPPCHECK_ENABLE_GROUPS,
+  DEFAULT_CPPCHECK_ENABLE,
+  DEFAULT_CPPCHECK_SUPPRESSED,
+} from '../rules/cfamily';
 import { RUFF_SELECTOR, RUFF_VERSION, ruffSelectorKnown } from '../rules/ruff';
 
 const SCANNABLE_LANGUAGES = [
@@ -272,10 +276,8 @@ const analyzers = z
       .strictObject({
         enabled,
         enable: z.array(z.enum(CPPCHECK_ENABLE_GROUPS)).default([...DEFAULT_CPPCHECK_ENABLE]),
-        // Ids that are off by default (ruling D9-14) and that this project wants on.
-        select: z
-          .array(z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/, { message: 'must be a cppcheck id' }))
-          .default([]),
+        // Ids that are off by default (ruling D9-14) and that this project wants on: only those.
+        select: z.array(z.enum(DEFAULT_CPPCHECK_SUPPRESSED)).default([]),
         includePaths: z.array(repoDir).default([]),
         defines: z.array(define).default([]),
         compileCommands,

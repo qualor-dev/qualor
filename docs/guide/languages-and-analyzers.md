@@ -425,10 +425,9 @@ the same LLVM major as your compiler where you can. Your `.clang-tidy` at the re
 used for `Checks`, `CheckOptions` and the header and implementation file extensions; without one,
 Qualor runs the bug-finding groups (`bugprone-*`, `clang-analyzer-*`, `performance-*`,
 `portability-*`, `concurrency-*`, minus a few noisy checks). A `.clang-tidy` that sets its own
-`Checks` replaces Qualor's default
-checks. Settings that pass compiler arguments, load other configurations or turn warnings into
-errors (`ExtraArgs`, `InheritParentConfig`, `WarningsAsErrors`...) are ignored, and so are nested
-`.clang-tidy` files. Analyzer options that name a file (`clang-analyzer-...:Config`) are dropped
+`Checks` replaces Qualor's default checks. Settings that pass compiler arguments, load other
+configurations or turn warnings into errors (`ExtraArgs`, `InheritParentConfig`,
+`WarningsAsErrors`...) are ignored, and so are nested `.clang-tidy` files. Analyzer options that name a file (`clang-analyzer-...:Config`) are dropped
 too. The scan log says what was left out.
 
 Qualor never runs your build. It reads `compile_commands.json` itself and passes on only include

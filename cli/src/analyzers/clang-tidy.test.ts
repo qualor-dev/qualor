@@ -8,7 +8,12 @@ import {
 import { describe, expect, it } from 'vitest';
 import { cFamilyContext } from '../../test/analyzers';
 import { useTempDirs } from '../../test/tmp';
-import { clangTidyAnalyzer, headerFilter, parseClangTidyVersion } from './clang-tidy';
+import {
+  clangTidyAnalyzer,
+  clangTidyDetail,
+  headerFilter,
+  parseClangTidyVersion,
+} from './clang-tidy';
 import type { AnalyzerCommand, AnalyzerContext } from './types';
 
 const tmp = useTempDirs();
@@ -320,5 +325,35 @@ describe('clangTidyAnalyzer.prepare (config.md §6.2, plan 9D)', () => {
 
   it('escapes the repository root for the header filter', () => {
     expect(headerFilter('/r/a.b+c', '/real/x')).toBe('^(/r/a\\.b\\+c|/real/x)/');
+  });
+
+  it('redacts host paths outside the repository in failure reasons and config warnings, keeping <work> (ruling D9-11)', async () => {
+    const { ctx, root, work } = context({
+      'a.cpp': 'int a;\n',
+      'compile_commands.json': DB([{ directory: '.', file: 'a.cpp', arguments: ['c++', 'a.cpp'] }]),
+    });
+    const cmd = await run(ctx);
+    const inRepo = path.join(root, 'src', 'a.h');
+    // No 'Error: ' line: the last line is the reason.
+    const detail = cmd.failureDetail!(
+      1,
+      `x\nfatal error: '/usr/include/host-secret.h' file not found (from ${inRepo})\n`,
+    );
+    expect(detail).not.toContain('host-secret');
+    expect(detail).toContain('<outside the repository>');
+    expect(detail).toContain('src/a.h');
+    expect(
+      cmd.configWarnings!(
+        `Error: parsing ${path.join(work, 'clang-tidy.json')}: bad key; see /opt/ci/secret.yml\n`,
+      ),
+    ).toEqual([
+      `Error: parsing <work>${path.sep}clang-tidy.json: bad key; see <outside the repository>`,
+    ]);
+  });
+
+  it('keeps the continuation of a <work> path and redacts what follows', () => {
+    expect(
+      clangTidyDetail('Error: /w/x.json:3: see /etc/passwd.', '/w', [path.resolve('/r')]),
+    ).toBe('Error: <work>/x.json:3: see <outside the repository>.');
   });
 });
