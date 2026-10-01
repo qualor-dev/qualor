@@ -103,13 +103,15 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
   });
 
   it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
-    expect(EXTERNAL_BUILTIN_ALIASES).toEqual({
+    expect(EXTERNAL_BUILTIN_ALIASES).toMatchObject({
       'ext-ruff': 'ruff',
       'ext-stylelint': 'stylelint',
       'ext-htmlhint': 'htmlhint',
       'ext-detekt': 'detekt',
       'ext-swiftlint': 'swiftlint',
     });
+    expect(EXTERNAL_BUILTIN_ALIASES).toHaveProperty('ext-phpstan', 'phpstan');
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-phpstan']).toBe('phpstan');
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
     expect(rulesEquivalent(rule('ext-ruff:F401'), rule('ruff:F401'))).toBe(true);
@@ -159,12 +161,39 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(rulesEquivalent(rule('ext-bandit:tag-pair'), rule('htmlhint:tag-pair'))).toBe(false);
   });
 
-  it('ranks swiftlint below every other built-in engine, above any external one (data-model.md §5.3)', () => {
-    for (const engine of ENGINE_PRIORITY.filter((e) => e !== 'swiftlint')) {
+  it('ranks swiftlint below every built-in engine listed before it, above any external one (data-model.md §5.3)', () => {
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('swiftlint'))) {
       expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('swiftlint'));
     }
     expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('my-tool'));
     expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('ext-swiftlint'));
+  });
+
+  it('ranks phpstan below every built-in engine listed before it and above any external engine (plan 9A)', () => {
+    expect(ENGINE_PRIORITY.indexOf('phpstan')).toBeGreaterThan(
+      ENGINE_PRIORITY.indexOf('swiftlint'),
+    );
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('phpstan'))) {
+      expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('phpstan'));
+    }
+    expect(enginePriority('phpstan')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(enginePriority('phpstan')).toBeGreaterThan(enginePriority('ext-phpstan'));
+  });
+
+  it('pairs an imported PHPStan SARIF (ext-phpstan, identical ids) with the built-in rule (plan 9A)', () => {
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-phpstan']).toBe('phpstan');
+    expect(equivalentPartners('ext-phpstan:variable.undefined')).toEqual([
+      'phpstan:variable.undefined',
+    ]);
+    expect(equivalentPartners('phpstan:variable.undefined')).toEqual([
+      'ext-phpstan:variable.undefined',
+    ]);
+    expect(
+      rulesEquivalent(rule('ext-phpstan:arguments.count'), rule('phpstan:arguments.count')),
+    ).toBe(true);
+    expect(rulesEquivalent(rule('ext-phpstan:arguments.count'), rule('phpstan:method.void'))).toBe(
+      false,
+    );
   });
 
   it('pairs an imported SwiftLint SARIF (ext-swiftlint, identical ids) with the built-in rule (plan 8F ruling F4)', () => {

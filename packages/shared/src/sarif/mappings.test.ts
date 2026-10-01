@@ -424,3 +424,22 @@ describe('swiftlint (report-format.md 7.1, phase 8F)', () => {
     expect(engineMapping('ext-swiftlint')).toBeUndefined();
   });
 });
+
+describe('phpstan (report-format.md §7.1, plan 9A)', () => {
+  it('takes quality and severity from the identifier, never from the level', () => {
+    const phpstan = engineMapping('phpstan')!;
+    expect(phpstan.rule!({ id: 'parameter.phpDocType' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(
+      phpstan.severity!({ ruleId: 'variable.undefined', level: 'warning' } as never, {
+        id: 'variable.undefined',
+      }),
+    ).toBe('medium');
+    expect(phpstan.severity!({ ruleId: 'method.unused', level: 'error' } as never, undefined)).toBe(
+      'low',
+    );
+  });
+});

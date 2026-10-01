@@ -99,7 +99,8 @@
             "**/*Tests/**",
             "**/test_*.py",
             "**/*_test.py",
-            "**/conftest.py"
+            "**/conftest.py",
+            "**/*Test.php"
           ],
           "type": "array",
           "items": {
@@ -138,7 +139,8 @@
               "html",
               "css",
               "kotlin",
-              "swift"
+              "swift",
+              "php"
             ]
           }
         }
@@ -618,6 +620,50 @@
             },
             "timeoutSeconds": {
               "default": 600,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "phpstan": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "level": {
+              "default": 2,
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10
+                },
+                {
+                  "type": "string",
+                  "const": "max"
+                }
+              ]
+            },
+            "memoryLimit": {
+              "default": "2G",
+              "type": "string",
+              "pattern": "^(-1|[1-9][0-9]{0,5}[MG])$"
+            },
+            "timeoutSeconds": {
+              "default": 900,
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 86400
