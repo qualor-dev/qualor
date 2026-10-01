@@ -47,6 +47,12 @@ async function scan(
 }
 
 /** Every file below `dir`, relative, with its bytes. */
+/** Ruby code that writes `ran-<who>` into `dir`: a marker that shows when something runs it. */
+function rubyWrites(dir: string, who: string): string {
+  const file = path.join(dir, `ran-${who}`);
+  return `File.write(${JSON.stringify(file)}, "x")\n`;
+}
+
 function snapshot(dir: string): Map<string, string> {
   return new Map(
     readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -69,8 +75,7 @@ describeWithRubocop()('RuboCop on untrusted checkouts (real RuboCop, plan 9B)', 
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const port = (server.address() as AddressInfo).port;
     // Each marker writes ran-<who> into the repository root if anything runs it.
-    const marker = (who: string) =>
-      `File.write(${JSON.stringify(path.join(root, `ran-${who}`))}, "x")\n`;
+    const marker = (who: string) => rubyWrites(root, who);
     try {
       writeTree(root, {
         'app/a.rb': 'def f\n  x = 1\nend\n',
@@ -118,8 +123,7 @@ describeWithRubocop()('RuboCop on untrusted checkouts (real RuboCop, plan 9B)', 
     // AllCops/Exclude) unless --ignore-parent-exclusion: the work directory sits below `outer`
     // here, as it would below a TMPDIR inside the checkout, and the checkout below it too.
     const outer = tmp();
-    const marker = (who: string) =>
-      `File.write(${JSON.stringify(path.join(outer, `ran-${who}`))}, "x")\n`;
+    const marker = (who: string) => rubyWrites(outer, who);
     const hostile = (who: string) =>
       `<% ${marker(who).trim()} %>\nAllCops:\n  Exclude:\n    - '**/*'\n`;
     writeTree(outer, {

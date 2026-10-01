@@ -37,13 +37,19 @@ function gemsIn(gemDir, only) {
     .filter((g) => only === undefined || only.includes(g.name));
 }
 
+/** Orders gems by name, by UTF-16 code units (not by locale). */
+function byName(a, b) {
+  if (a.name === b.name) return 0;
+  return a.name < b.name ? -1 : 1;
+}
+
 /** The text of RUBOCOP-DEPENDENCIES.txt for the pass installed at `rubocopDir`. */
 export function dependenciesText(rubocopDir) {
   const abi = readdirSync(path.join(rubocopDir, 'ruby/lib/ruby/gems'))[0];
   const gems = [
     ...gemsIn(path.join(rubocopDir, 'gems')),
     ...gemsIn(path.join(rubocopDir, 'ruby/lib/ruby/gems', abi), ['racc']),
-  ].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  ].sort(byName);
   const problems = gems
     .filter((g) => g.licences.length === 0 || !g.licences.some((l) => ALLOWED.has(l)))
     .map((g) => `${g.name} ${g.version}: ${g.licences.join(', ') || 'no licence declared'}`);

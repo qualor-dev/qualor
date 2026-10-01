@@ -27,12 +27,13 @@ const COMMENT =
  */
 export function tableFrom(json: unknown): RubocopTable {
   const j = rubocopTableSchema.omit({ $comment: true }).parse(json);
-  const cops = Object.entries(j.cops).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  // The default sort: by UTF-16 code units, not by locale.
+  const names = Object.keys(j.cops).sort();
   return rubocopTableSchema.parse({
     $comment: COMMENT,
     version: j.version,
     targetRubies: j.targetRubies,
-    cops: Object.fromEntries(cops),
+    cops: Object.fromEntries(names.map((name) => [name, j.cops[name]])),
   });
 }
 
