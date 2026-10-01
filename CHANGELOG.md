@@ -6,6 +6,11 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- sonarjs: S2430 no longer reports calls to HTTP-verb methods such as `client.GET()` or
+  `client.POST()` (openapi-fetch style clients) as constructors called without `new`.
+
 ## [0.3.1] - 2026-10-01
 
 ### Added

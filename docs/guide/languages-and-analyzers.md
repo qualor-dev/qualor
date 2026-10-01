@@ -77,6 +77,10 @@ an empty function, and a few others), only your ESLint's finding is kept; sonarj
 not a duplicate. Turn sonarjs off entirely with `analyzers.sonarjs.enabled: false`. Without the
 `qualor/scanner` image it is skipped, the same as a project without Trivy's vulnerability database.
 
+Calls to HTTP-verb methods such as `client.GET()` or `api.POST()` (the request methods of
+openapi-fetch style clients) are not reported by S2430, the rule for constructors called without
+`new`.
+
 ## Python (Ruff)
 
 Ruff runs with Qualor's own rule selection, `qualor-default`: Pyflakes (unused imports, undefined
