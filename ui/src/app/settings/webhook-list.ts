@@ -212,6 +212,8 @@ export class WebhookList {
         this.rotatedSecret.set(null);
         this.rotating.set(null);
         this.rotateError.set(null);
+        const rotateDialog = this.rotateDialog()?.nativeElement;
+        if (rotateDialog) closeModal(rotateDialog);
         // Whatever load-all was running is superseded, also when no organisation is left.
         this.loadToken++;
         if (organizationId) void this.load(organizationId, projectId !== null);
@@ -523,7 +525,13 @@ export class WebhookList {
 
   protected async confirmRotate(): Promise<void> {
     const webhook = this.rotating();
-    if (!webhook || this.busy()) return;
+    if (!webhook) {
+      // Nothing is pending (the organisation changed meanwhile): the dialog has no business open.
+      const dialog = this.rotateDialog()?.nativeElement;
+      if (dialog) closeModal(dialog);
+      return;
+    }
+    if (this.busy()) return;
     this.rotateError.set(null);
     const generation = this.orgGeneration;
     await this.run(

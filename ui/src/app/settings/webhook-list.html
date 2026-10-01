@@ -119,6 +119,16 @@
               @if (items.length > 0) {
                 <details class="deliveries" (toggle)="openDeliveries(w, $event)">
                   <summary i18n="@@webhooks.deliveries">Recent deliveries</summary>
+                  <p class="deliveries-tools">
+                    <button
+                      type="button"
+                      class="btn-quiet"
+                      (click)="loadDeliveries(w, true)"
+                      i18n="@@webhooks.refreshDeliveries"
+                    >
+                      Refresh
+                    </button>
+                  </p>
                   <div class="panel-scroll">
                     <table>
                       <thead>

@@ -525,4 +525,51 @@ describe('WebhookList: send a delivery again, rotate the secret', () => {
     );
     expect(dialog.querySelector('q-secret-once')).toBeNull();
   });
+
+  it('reads the deliveries again on Refresh, for read-only roles too', async () => {
+    const { server, fixture, setDeliveries } = setupAgain(false);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelectorAll('.deliveries tbody tr')).toHaveLength(1);
+    setDeliveries([{ ...AGAIN, status: 'succeeded', responseCode: 200 }, DELIVERY]);
+    [...root.querySelectorAll<HTMLButtonElement>('.deliveries button')]
+      .find((b) => b.textContent?.trim() === 'Refresh')!
+      .click();
+    await settle(fixture);
+    expect(server.requestsTo('GET', '/api/v0/webhooks/w1/deliveries')).toHaveLength(2);
+    expect(root.querySelectorAll('.deliveries tbody tr')).toHaveLength(2);
+  });
+
+  async function showRotated() {
+    const ctx = setupAgain();
+    ctx.server.on('POST', '/api/v0/webhooks/w1/regenerate-secret', {
+      body: { ...webhook('w1', 'https://a.example.com/'), secret: 'whsec_new' },
+    });
+    await settle(ctx.fixture);
+    const root = ctx.fixture.nativeElement as HTMLElement;
+    const dialog = root.querySelector<HTMLDialogElement>('dialog#rotate-secret')!;
+    rowButton(root, 'Rotate secret').click();
+    await settle(ctx.fixture);
+    dialogButton(dialog, 'Rotate secret').click();
+    await settle(ctx.fixture);
+    expect(dialog.querySelector('q-secret-once')).not.toBeNull();
+    return { ...ctx, root, dialog };
+  }
+
+  it('drops a shown rotated secret and closes the dialog when the organisation changes', async () => {
+    const { fixture, root, dialog } = await showRotated();
+    fixture.componentRef.setInput('organizationId', '0190a6c2-0000-7000-8000-0000000000bb');
+    await settle(fixture);
+    expect(dialog.querySelector('q-secret-once')).toBeNull();
+    expect(dialog.open).toBe(false);
+    expect(root.textContent).not.toContain('whsec_new');
+  });
+
+  it('drops a shown rotated secret when the dialog closes otherwise', async () => {
+    const { fixture, root, dialog } = await showRotated();
+    dialog.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    expect(dialog.querySelector('q-secret-once')).toBeNull();
+    expect(root.textContent).not.toContain('whsec_new');
+  });
 });
