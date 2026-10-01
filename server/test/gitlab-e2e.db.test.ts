@@ -322,7 +322,7 @@ describe('GitLab end to end, against the fake GitLab (scm.md §11)', () => {
     expect(statuses(head).map((s) => s.state)).toEqual(['failed']);
     expect(statuses(head)[0]?.description).toBe('Quality gate failed: new_issues 1 > 0');
     const [summary] = summaries();
-    expect(summary?.body).toContain('### Qualor: quality gate failed');
+    expect(summary?.body).toContain('### ❌ Qualor: quality gate failed');
     expect(summary?.body).toContain('1 new issue is commented inline.');
     const [thread] = threads();
     expect(thread?.notes[0]?.position).toMatchObject({
@@ -364,11 +364,11 @@ describe('GitLab end to end, against the fake GitLab (scm.md §11)', () => {
       () =>
         statuses(head).at(-1)?.state === 'success' &&
         thread?.notes[0]?.resolved === true &&
-        summaries()[0]?.body.includes('### Qualor: quality gate passed') === true,
+        summaries()[0]?.body.includes('### ✅ Qualor: quality gate passed') === true,
       'the re-decoration',
     );
     expect(summaries()).toHaveLength(1);
-    expect(summaries()[0]?.body).toContain('### Qualor: quality gate passed');
+    expect(summaries()[0]?.body).toContain('### ✅ Qualor: quality gate passed');
 
     // A fix removes the flagged line: a new head, a new analysis, the same summary note.
     write(root, { 'src/b.ts': 'export const b = 1;\n' });

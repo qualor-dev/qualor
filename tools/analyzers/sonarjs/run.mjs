@@ -82,7 +82,34 @@ const CRASHED_RULE = /rule '(sonarjs\/[\w-]+)'|Rule: "(sonarjs\/[\w-]+)"/;
 // SonarJS 2.0.4 was built against) defaulted itself; ESLint 9 fills them only from a core rule's
 // own meta.defaultOptions, which the plugin's wrapper does not carry, so without these they crash
 // on create. The values are ESLint 9's defaults, i.e. what the same rules did under ESLint 8.
+// S2430 (new-cap) gets ESLint's full default options plus one exception: a call to an HTTP-verb
+// method such as `client.GET()` (openapi-fetch style clients) is not a constructor call. ESLint
+// tests the pattern against the callee's source text and keeps its built-in exceptions
+// (`Number()`, `String()`, ...) whatever the options say, so `Foo()`, `obj.Foo()`, `obj.GETTER()`
+// and `obj.Get()` are still reported.
 const OPTIONS = {
+  'sonarjs/new-cap': [
+    {
+      capIsNew: true,
+      capIsNewExceptions: [
+        'Array',
+        'Boolean',
+        'Date',
+        'Error',
+        'Function',
+        'Number',
+        'Object',
+        'RegExp',
+        'String',
+        'Symbol',
+        'BigInt',
+      ],
+      capIsNewExceptionPattern: String.raw`\.(?:GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS|TRACE)$`,
+      newIsCap: true,
+      newIsCapExceptions: [],
+      properties: true,
+    },
+  ],
   'sonarjs/no-empty-function': [{ allow: [] }],
   'sonarjs/no-unused-expressions': [
     {

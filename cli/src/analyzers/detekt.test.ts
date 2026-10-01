@@ -350,7 +350,7 @@ describe('detekt prepare (config.md §6)', () => {
       'Picked up _JAVA_OPTIONS: -Dy=s3cret',
     ].join('\n');
     // Recorded stderr with the JVM's line first: the analysing line is found after it.
-    const crash = detektFailureDetail(`${picked}\n${typeStderr(`${input}/src/A.kt`)}`, o);
+    const crash = detektFailureDetail(`${picked}\n` + typeStderr(`${input}/src/A.kt`), o);
     expect(crash).toBe(`src/A.kt: ${TYPE_MESSAGE}`);
     expect(crash).not.toContain('s3cret');
     // Only the JVM's lines and one line detekt wrote without an original message.

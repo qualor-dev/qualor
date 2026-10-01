@@ -1,0 +1,37 @@
+:host {
+  display: block;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.gate-link {
+  margin: 0;
+}
+
+.profiles-heading {
+  margin: 0;
+  padding: var(--space-4) 22px var(--space-2);
+  border-top: 1px solid var(--hairline);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.profile-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+}
+
+.profile-cell select {
+  min-width: 14rem;
+  max-width: 100%;
+}
+
+.profile-cell .field-error {
+  flex-basis: 100%;
+}

@@ -55,7 +55,13 @@ function packageDirs(dir) {
     visit(path.join(pkgDir, 'node_modules'));
   };
   visit(dir);
-  return out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return out.sort(compareStrings);
+}
+
+/** Code-unit order, the same on every platform (no locale). */
+function compareStrings(a, b) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }
 
 /** The text of WEBLINT-DEPENDENCIES.txt for the tree at `dir`; throws on a disallowed licence. */

@@ -1,0 +1,52 @@
+<section class="card panel" id="main-branch">
+  <div class="panel-head">
+    <h2 tabindex="-1" i18n="@@project.settings.mainBranch">Main branch</h2>
+  </div>
+  <div class="panel-body">
+    <div role="status">
+      @if (announcement(); as message) {
+        <p class="alert alert-success">{{ message }}</p>
+      }
+    </div>
+    @if (error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    <div class="setting-row">
+      <div class="setting-text">
+        <label for="main-branch-name" i18n="@@mainBranch.label">Main branch</label>
+        <p id="main-branch-hint" i18n="@@mainBranch.hint">
+          Analyses of the previous main branch stay on that branch. New code on the new main branch
+          starts from its own analyses.
+        </p>
+      </div>
+      <div class="setting-field">
+        <input
+          id="main-branch-name"
+          class="name-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          [value]="name()"
+          [attr.aria-invalid]="nameError() ? 'true' : null"
+          [attr.aria-describedby]="nameError() ? 'main-branch-error' : 'main-branch-hint'"
+          (input)="setName($event)"
+        />
+        @if (nameError(); as message) {
+          <span id="main-branch-error" class="field-error" role="alert">{{ message }}</span>
+        }
+        <div class="actions">
+          <button
+            type="button"
+            class="btn"
+            [class.btn-primary]="dirty()"
+            [disabled]="!dirty() || busy()"
+            (click)="save()"
+            i18n="@@mainBranch.save"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

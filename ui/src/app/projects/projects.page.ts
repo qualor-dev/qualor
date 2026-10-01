@@ -10,6 +10,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { Location } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { ApiError, fieldErrors, problemMessage } from '../api/errors';
@@ -49,6 +50,7 @@ export class ProjectsPage {
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   protected readonly org = inject(OrgContext);
 
   /** `?q=`: a case-insensitive search on key and name (router input binding). */
@@ -140,6 +142,12 @@ export class ProjectsPage {
   protected readonly inputValue = inputValue;
 
   constructor() {
+    // A notice another page passed along with the navigation (a deleted project). The navigation
+    // in flight carries it; the history entry has it after a reload.
+    const state: unknown =
+      this.router.currentNavigation()?.extras.state ?? this.location.getState();
+    const notice = (state as { notice?: unknown } | null)?.notice;
+    if (typeof notice === 'string' && notice !== '') this.announcement.set(notice);
     effect(() => {
       const q = (this.q() ?? '').trim().slice(0, MAX_TEXT);
       this.search.set(q);

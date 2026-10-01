@@ -367,7 +367,7 @@ describe('GitHub end to end, against the fake GitHub (github.md §11, §12)', ()
     expect(summaries()).toHaveLength(1);
     const summaryId = summaries()[0]?.id;
     expect(summaries()[0]?.user).toMatchObject({ login: `${fake.slug}[bot]`, type: 'Bot' });
-    expect(summaries()[0]?.body).toContain('### Qualor: quality gate failed');
+    expect(summaries()[0]?.body).toContain('### ❌ Qualor: quality gate failed');
     const [decorated] = await ctx.db.select().from(branches).where(eq(branches.id, prBranch!.id));
     expect(decorated).toMatchObject({
       mrTitle: 'Compare a and b',
@@ -411,7 +411,7 @@ describe('GitHub end to end, against the fake GitHub (github.md §11, §12)', ()
     // Another digest (the annotation is gone): a new check run beside the first (§6.1).
     expect(runs()).toHaveLength(2);
     expect(summaries()).toHaveLength(1);
-    expect(summaries()[0]?.body).toContain('### Qualor: quality gate passed');
+    expect(summaries()[0]?.body).toContain('### ✅ Qualor: quality gate passed');
 
     // The check run's Re-run (a signed check_run.rerequested): one decoration, which changes nothing.
     const newest = runs().at(-1)!;

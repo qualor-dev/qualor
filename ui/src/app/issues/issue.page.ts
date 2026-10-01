@@ -20,6 +20,7 @@ import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { can } from '../auth/permissions';
 import { branchView, findBranch, notFound } from '../project/branches';
+import { codeFileLink } from '../project/code-links';
 import { CurrentProject } from '../project/current-project';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { inputValue } from '../shared/forms';
@@ -30,6 +31,7 @@ import { safeHelpUri } from '../shared/links';
 import { RetryOffer } from '../shared/retry';
 import { AiPanel } from './ai-panel';
 import { SEVERITIES } from './issue-filters';
+import { readRelatedLocations, type RelatedLocation } from './related-locations';
 import {
   allowedTargets,
   COMMENT_MAX_LENGTH,
@@ -140,6 +142,30 @@ export class IssuePage {
   );
 
   protected readonly snippet = computed(() => readSnippet(this.current()?.snippet));
+  protected readonly related = computed(() =>
+    readRelatedLocations(this.current()?.secondaryLocations),
+  );
+  protected readonly relatedExpanded = signal(false);
+  protected readonly relatedShown = computed(() =>
+    this.relatedExpanded() ? this.related() : this.related().slice(0, 5),
+  );
+  /** Snippet line → step numbers (1-based) of related locations in the primary file. */
+  protected readonly relatedMarks = computed(() => {
+    const issue = this.current();
+    const marks = new Map<number, number[]>();
+    this.related().forEach((l, index) => {
+      if (l.path !== issue?.path) return;
+      marks.set(l.startLine, [...(marks.get(l.startLine) ?? []), index + 1]);
+    });
+    return marks;
+  });
+  protected readonly relatedFallback = $localize`:@@issue.related.none:Related location`;
+  protected readonly codeFileLink = codeFileLink;
+  protected relatedRange(l: RelatedLocation): string {
+    return l.endLine && l.endLine !== l.startLine
+      ? `${l.path}:${l.startLine}–${l.endLine}`
+      : `${l.path}:${l.startLine}`;
+  }
   protected readonly helpUri = computed(() => safeHelpUri(this.current()?.rule.helpUri));
   protected readonly targets = computed(() => allowedTargets(this.current()?.status ?? ''));
   protected readonly comment = signal('');
@@ -188,6 +214,7 @@ export class IssuePage {
         this.error.set(null);
         this.announcement.set(null);
         this.busy.set(false);
+        this.relatedExpanded.set(false);
         this.retryOffer.clear();
         if (valid) void this.changelog.reset(id);
       });

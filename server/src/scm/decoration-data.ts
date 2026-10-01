@@ -1,4 +1,10 @@
-import type { GateResult, Severity } from '@qualor/shared';
+import {
+  DEFAULT_SMALL_CHANGESET_LINES,
+  type GateResult,
+  type Quality,
+  type Severity,
+} from '@qualor/shared';
+import { z } from 'zod';
 import { and, asc, count, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import {
@@ -10,6 +16,8 @@ import {
   rules,
   scmConnections,
 } from '../db/schema';
+import { SMALL_CHANGESET_SETTING } from '../gates/stage';
+import { instanceSetting } from '../settings';
 import { readScmContext } from './context';
 import { mergeRequestTitle, SUMMARY_TOP_ISSUES, type IssueLine, type SummaryInput } from './render';
 
@@ -117,11 +125,14 @@ async function summaryIssues(
     .select({
       id: issues.id,
       severity: issues.severity,
+      quality: issues.quality,
+      ruleKey: rules.key,
       path: issues.path,
       line: issues.startLine,
       message: issues.message,
     })
     .from(issues)
+    .innerJoin(rules, eq(rules.id, issues.ruleId))
     .where(where)
     .orderBy(
       asc(issues.severityRank),
@@ -135,6 +146,8 @@ async function summaryIssues(
     top: rows.map((r) => ({
       id: r.id,
       severity: r.severity as Severity,
+      quality: r.quality as Quality,
+      ruleKey: r.ruleKey,
       path: r.path,
       line: r.line,
       message: r.message,
@@ -167,6 +180,8 @@ export interface SummaryData {
   top: IssueLine[];
   total: number;
   newIssues: SummaryInput['newIssues'];
+  /** The instance's small-changeset threshold, for the reason of a skipped condition. */
+  smallChangesetLines: number;
 }
 
 /** The summary's issue list, its total and the new-issue counts (scm.md §5.2). */
@@ -176,7 +191,17 @@ export async function summaryData(
   publicUrl: string | null,
 ): Promise<SummaryData> {
   const { top, total } = await summaryIssues(db, loaded, publicUrl);
-  return { top, total, newIssues: await newIssueCounts(db, loaded.analysis.id) };
+  return {
+    top,
+    total,
+    newIssues: await newIssueCounts(db, loaded.analysis.id),
+    smallChangesetLines: await instanceSetting(
+      db,
+      SMALL_CHANGESET_SETTING,
+      z.number().int().min(0),
+      DEFAULT_SMALL_CHANGESET_LINES,
+    ),
+  };
 }
 
 /**

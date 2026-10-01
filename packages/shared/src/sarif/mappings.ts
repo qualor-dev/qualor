@@ -1,6 +1,6 @@
 import type { IssueKind, Quality, Severity } from '../report/taxonomy';
 import type { EngineMapping } from './normalize';
-import type { SarifResult, SarifRule } from './types';
+import type { SarifLevel, SarifResult, SarifRule } from './types';
 import { phpstanRule } from '../rules/phpstan';
 import { rubocopQuality, rubocopSeverity } from '../rules/rubocop';
 import { swiftlintQuality, swiftlintSeverity } from '../rules/swiftlint';
@@ -348,22 +348,20 @@ const detektRuleset = (r: SarifRule | undefined): string =>
   String(r?.properties?.['ruleset'] ?? '');
 const detektDefaultSeverity = (r: SarifRule | undefined): Severity =>
   DETEKT_LOW.has(detektRuleset(r)) ? 'low' : 'medium';
+// A project's own `severity: error | info` arrives as SARIF level error / note; detekt's own
+// default is warning, which takes the rule set's default instead of a flat medium.
+const DETEKT_LEVEL_SEVERITY: ReadonlyMap<SarifLevel | undefined, Severity> = new Map([
+  ['error', 'high'],
+  ['note', 'low'],
+  ['none', 'info'],
+]);
 
 const detekt: EngineMapping = {
   rule: (r) => ({
     quality: DETEKT_RELIABILITY.has(detektRuleset(r)) ? 'reliability' : 'maintainability',
     defaultSeverity: detektDefaultSeverity(r),
   }),
-  // A project's own `severity: error | info` arrives as SARIF level error / note; detekt's own
-  // default is warning, which takes the rule set's default instead of a flat medium.
-  severity: (result, r) =>
-    result.level === 'error'
-      ? 'high'
-      : result.level === 'note'
-        ? 'low'
-        : result.level === 'none'
-          ? 'info'
-          : detektDefaultSeverity(r),
+  severity: (result, r) => DETEKT_LEVEL_SEVERITY.get(result.level) ?? detektDefaultSeverity(r),
 };
 
 /**

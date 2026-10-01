@@ -23,36 +23,52 @@ export const QUALOR_DEFAULT_HTMLHINT_RULES: Readonly<Record<string, boolean>> = 
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const ESCAPE = "set analyzers.htmlhint.configFile: qualor-default to use Qualor's own rules";
 
+/** Just past the JSON string that opens at `start` (its closing quote), or the text's end. */
+function stringEnd(src: string, start: number): number {
+  let i = start + 1;
+  while (i < src.length) {
+    const c = src.charAt(i);
+    if (c === '"') return i + 1;
+    // An escape takes the next character with it, a quote included.
+    i += c === '\\' ? 2 : 1;
+  }
+  return src.length;
+}
+
+/**
+ * The comment that starts at `i`, or null: where it ends and what replaces it (nothing for a line
+ * comment, which stops before its line break; spaces with the line breaks kept for a block one).
+ */
+function commentAt(src: string, i: number): { end: number; text: string } | null {
+  if (src[i] !== '/') return null;
+  if (src[i + 1] === '/') {
+    const lineBreak = src.indexOf('\n', i);
+    return { end: lineBreak < 0 ? src.length : lineBreak, text: '' };
+  }
+  if (src[i + 1] !== '*') return null;
+  const end = src.indexOf('*/', i + 2);
+  if (end < 0) throw new SyntaxError('unterminated comment');
+  return { end: end + 2, text: src.slice(i, end + 2).replace(/[^\n]/g, ' ') };
+}
+
 /** JSON with `//` and `/* *\/` comments, as HTMLHint reads .htmlhintrc (strip-json-comments). */
 export function parseJsonc(text: string): unknown {
   const src = text.replace(/^\uFEFF/, '');
   let out = '';
-  let inString = false;
   for (let i = 0; i < src.length;) {
-    const c = src.charAt(i);
-    if (inString) {
-      out += c;
-      if (c === '\\') {
-        out += src[i + 1] ?? '';
-        i += 2;
-        continue;
-      }
-      if (c === '"') inString = false;
+    if (src[i] === '"') {
+      const end = stringEnd(src, i);
+      out += src.slice(i, end);
+      i = end;
+      continue;
+    }
+    const comment = commentAt(src, i);
+    if (comment === null) {
+      out += src.charAt(i);
       i += 1;
-    } else if (c === '"') {
-      inString = true;
-      out += c;
-      i += 1;
-    } else if (c === '/' && src[i + 1] === '/') {
-      while (i < src.length && src[i] !== '\n') i += 1;
-    } else if (c === '/' && src[i + 1] === '*') {
-      const end = src.indexOf('*/', i + 2);
-      if (end < 0) throw new SyntaxError('unterminated comment');
-      out += src.slice(i, end + 2).replace(/[^\n]/g, ' ');
-      i = end + 2;
     } else {
-      out += c;
-      i += 1;
+      out += comment.text;
+      i = comment.end;
     }
   }
   return JSON.parse(out);

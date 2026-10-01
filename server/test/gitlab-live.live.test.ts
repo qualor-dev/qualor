@@ -474,7 +474,7 @@ describe(`decoration against a running GitLab (scm.md §11)`, () => {
     const [summary] = ours(list, 'summary');
     const [thread] = ours(list, 'issue');
     expect(summary?.notes[0]?.author.id).toBe(glUser.id);
-    expect(summary?.notes[0]?.body).toContain('### Qualor: quality gate failed');
+    expect(summary?.notes[0]?.body).toContain('### ❌ Qualor: quality gate failed');
     expect(thread?.notes[0]?.position).toMatchObject({
       new_path: FILE,
       new_line: FLAGGED_LINE,
@@ -634,7 +634,7 @@ describe(`decoration against a running GitLab (scm.md §11)`, () => {
         (await settled()) &&
         latest.length === 1 &&
         latest[0]?.status === 'success' &&
-        ours(now, 'summary')[0]?.notes[0]?.body.includes('### Qualor: quality gate passed') &&
+        ours(now, 'summary')[0]?.notes[0]?.body.includes('### ✅ Qualor: quality gate passed') &&
         ours(now, 'issue')[0]?.notes[0]?.resolved === true
       );
     }, 'the re-decoration after the false positive');

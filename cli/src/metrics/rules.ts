@@ -509,6 +509,12 @@ function swiftElse(ifNode: Node): Node | null {
   return null;
 }
 
+/** Swift's `&&` and `||`, each its own node type. */
+const SWIFT_LOGICAL_OPERATORS: ReadonlyMap<string, string> = new Map([
+  ['conjunction_expression', '&&'],
+  ['disjunction_expression', '||'],
+]);
+
 /** tree-sitter-swift 0.7.3 (plan 8F, probe F7). */
 const SWIFT: FamilyRules = {
   comments: new Set(['comment', 'multiline_comment']),
@@ -550,8 +556,7 @@ const SWIFT: FamilyRules = {
   // `statements` directly); with get/set, the accessors count instead.
   isFunction: (n) =>
     n.type !== 'computed_property' || n.children.some((c) => c?.type === 'statements'),
-  logicalOperator: (n) =>
-    n.type === 'conjunction_expression' ? '&&' : n.type === 'disjunction_expression' ? '||' : null,
+  logicalOperator: (n) => SWIFT_LOGICAL_OPERATORS.get(n.type) ?? null,
   branches: new Set(['guard_statement']),
   statementParents: new Set(['statements', 'source_file']),
 };

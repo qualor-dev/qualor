@@ -28,7 +28,7 @@ first release is `0.1.0`.
 | [`qualor/scanner`](https://hub.docker.com/r/qualor/scanner) | the `qualor` CLI (its entrypoint), Node.js, a JRE 17, git and the pinned analyzers, with Trivy's database | ~4.1 GB |
 | [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet) | `qualor/scanner` plus the .NET 8 and .NET 10 SDKs and Roslynator, for C# | ~5.8 GB |
 
-**Tags.** Every release is tagged with its full version (`0.3.1`) and its minor version (`0.3`), which
+**Tags.** Every release is tagged with its full version (`0.3.2`) and its minor version (`0.3`), which
 moves to the newest patch release of that minor. While Qualor is in 0.x there is no `0` tag: a new
 minor version may change behaviour, so you move to it on purpose. From 1.0 on, releases are also
 tagged with their major version (`1`). The examples use `0.3`. Pin the full version where you want
@@ -199,7 +199,7 @@ ingress:
 Install, wait, and read the first admin password:
 
 ```sh
-helm install qualor oci://registry-1.docker.io/qualor/qualor --version 0.3.1 -n qualor -f values.yaml
+helm install qualor oci://registry-1.docker.io/qualor/qualor --version 0.3.2 -n qualor -f values.yaml
 kubectl -n qualor rollout status statefulset/qualor
 kubectl -n qualor get secret qualor-secrets -o jsonpath='{.data.QUALOR_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d
 ```
@@ -312,8 +312,8 @@ admits it:
 
 ```sh
 kubectl -n qualor scale statefulset/qualor --replicas=0
-kubectl -n qualor run qualor-restore --rm -i --restart=Never --image=qualor/server:0.3.1 \
-  --overrides='{"spec":{"automountServiceAccountToken":false,"enableServiceLinks":false,"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"runAsGroup":65532,"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch","seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"data-qualor-0"}},{"name":"tmp","emptyDir":{"sizeLimit":"64Mi"}}],"containers":[{"name":"qualor-restore","image":"qualor/server:0.3.1","imagePullPolicy":"IfNotPresent","args":["restore"],"stdin":true,"stdinOnce":true,"env":[{"name":"QUALOR_SECRET_KEY","valueFrom":{"secretKeyRef":{"name":"qualor-secrets","key":"QUALOR_SECRET_KEY"}}}],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"data","mountPath":"/var/lib/qualor"},{"name":"tmp","mountPath":"/tmp"}]}]}}' \
+kubectl -n qualor run qualor-restore --rm -i --restart=Never --image=qualor/server:0.3.2 \
+  --overrides='{"spec":{"automountServiceAccountToken":false,"enableServiceLinks":false,"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"runAsGroup":65532,"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch","seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"data-qualor-0"}},{"name":"tmp","emptyDir":{"sizeLimit":"64Mi"}}],"containers":[{"name":"qualor-restore","image":"qualor/server:0.3.2","imagePullPolicy":"IfNotPresent","args":["restore"],"stdin":true,"stdinOnce":true,"env":[{"name":"QUALOR_SECRET_KEY","valueFrom":{"secretKeyRef":{"name":"qualor-secrets","key":"QUALOR_SECRET_KEY"}}}],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"data","mountPath":"/var/lib/qualor"},{"name":"tmp","mountPath":"/tmp"}]}]}}' \
   < qualor-YYYY-MM-DD.dump
 kubectl -n qualor scale statefulset/qualor --replicas=1
 ```
@@ -457,8 +457,8 @@ With an [external PostgreSQL](#external-postgresql), use its own tools: `pg_dump
 
 1. Read the release notes.
 2. Back up the database (above).
-3. Set the new version in `.env` (`QUALOR_VERSION=0.3.1`, or its minor tag `0.3`). With the minor tag
-   `0.3`, patch releases (`0.3.1`, `0.3.2`) need no change here; a new minor version needs a new tag.
+3. Set the new version in `.env` (`QUALOR_VERSION=0.3.2`, or its minor tag `0.3`). With the minor tag
+   `0.3`, patch releases (`0.3.2`, `0.3.2`) need no change here; a new minor version needs a new tag.
    Then:
 
    ```sh
@@ -471,7 +471,7 @@ With an [external PostgreSQL](#external-postgresql), use its own tools: `pg_dump
    On Kubernetes:
 
    ```sh
-   helm upgrade qualor oci://registry-1.docker.io/qualor/qualor --version 0.3.1 -n qualor -f values.yaml
+   helm upgrade qualor oci://registry-1.docker.io/qualor/qualor --version 0.3.2 -n qualor -f values.yaml
    ```
 
    Migrations run the same way; with the embedded database the pod is replaced, not doubled.

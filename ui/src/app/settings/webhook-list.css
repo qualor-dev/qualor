@@ -85,3 +85,6 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+:host {
+  display: block;
+}

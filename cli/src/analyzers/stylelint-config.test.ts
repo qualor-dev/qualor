@@ -283,8 +283,10 @@ describe('resolveStylelintConfig (config.md §6, plan 8D)', () => {
 
 describe('resolveStylelintConfig never loads or runs anything from the checkout (config.md §6)', () => {
   /** A module that leaves a marker file when anything requires or imports it. */
-  const marker = (root: string, name: string) =>
-    `require('node:fs').writeFileSync(${JSON.stringify(path.join(root, `${name}.ran`))}, 'ran');\nmodule.exports = {};\n`;
+  const marker = (root: string, name: string) => {
+    const file = JSON.stringify(path.join(root, name + '.ran'));
+    return `require('node:fs').writeFileSync(${file}, 'ran');\nmodule.exports = {};\n`;
+  };
   const ran = (root: string) =>
     readdirSync(root, { recursive: true })
       .map(String)

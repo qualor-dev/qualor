@@ -344,8 +344,10 @@ test('an organization admin adds a webhook and sees its secret once', async ({ p
   ).toBeVisible();
   // The form is in the "New webhook" dialog (step 8), which then shows the secret.
   await page.getByRole('button', { name: 'New webhook' }).click();
-  const create = page.getByRole('dialog', { name: 'New webhook for every project' });
+  const create = page.getByRole('dialog', { name: 'New webhook', exact: true });
   await expect(create.getByLabel('URL')).toBeFocused();
+  // Every project unless the admin picks one (Task 10's "Applies to").
+  await expect(create.getByLabel('Applies to')).toHaveValue('');
   await create.getByLabel('URL').fill('https://ci.example.com/qualor-hook');
   await create.getByRole('button', { name: 'Add webhook' }).click();
   const shown = page.getByRole('dialog', { name: "The webhook's secret" });

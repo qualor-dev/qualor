@@ -93,6 +93,7 @@ describe('ProjectPage', () => {
       'Overview',
       'Branches and merge requests',
       'Issues',
+      'Code',
     ]);
   });
 
@@ -253,5 +254,42 @@ describe('ProjectPage', () => {
     expect(root.querySelector('.page-meta-title')).toBeNull();
     expect(root.querySelector('a.external-link')).toBeNull();
     expect(root.querySelector('a[href^="javascript"]')).toBeNull();
+  });
+
+  describe('Settings tab', () => {
+    const tabs = (root: HTMLElement) =>
+      [...root.querySelectorAll('nav[aria-label="Project"] a')].map((a) => a.textContent?.trim());
+
+    function asRole(role: 'admin' | 'member', projectPermissions: string[]): void {
+      server.on('GET', `/api/v0/projects/${ID}`, {
+        body: { ...PROJECT, permissions: projectPermissions },
+      });
+      const base = me();
+      TestBed.inject(SessionStore).set({
+        ...base,
+        memberships: [
+          {
+            ...base.memberships[0]!,
+            role,
+            permissions: role === 'admin' ? ['org.read', 'org.webhooks.manage'] : ['org.read'],
+          },
+        ],
+      });
+    }
+
+    it('is a tab, after Access, for a holder of project.settings', async () => {
+      asRole('member', ['project.read', 'project.settings']);
+      expect(tabs(await render(ID))).toContain('Settings');
+    });
+
+    it('is a tab for an org admin who holds org.webhooks.manage', async () => {
+      asRole('admin', ['project.read']);
+      expect(tabs(await render(ID))).toContain('Settings');
+    });
+
+    it('is no tab for a viewer', async () => {
+      asRole('member', ['project.read']);
+      expect(tabs(await render(ID))).not.toContain('Settings');
+    });
   });
 });

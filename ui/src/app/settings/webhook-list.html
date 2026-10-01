@@ -1,0 +1,418 @@
+<div role="status">
+  @if (announcement(); as message) {
+    <p class="alert alert-success">{{ message }}</p>
+  }
+</div>
+@if (list.error() ?? error(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+}
+<div class="webhook-list" #hooks>
+  @for (w of visible(); track w.id) {
+    <section class="card panel" [attr.data-key]="w.id" [attr.aria-label]="w.url">
+      <div class="panel-head webhook-head">
+        <div class="webhook-title">
+          <code class="webhook-url">{{ w.url }}</code>
+          <div class="webhook-events">
+            @for (e of w.events; track e) {
+              <span class="badge badge-tag">{{ eventLabel(e) }}</span>
+            }
+            @if (projectId() === null) {
+              @if (w.projectId === null) {
+                <span class="badge badge-tag webhook-scope" i18n="@@webhooks.scopeAll"
+                  >All projects</span
+                >
+              } @else if (projectName(w.projectId); as name) {
+                <span class="badge badge-tag webhook-scope"
+                  ><ng-container i18n="@@webhooks.scopeProject">Project:</ng-container>&ngsp;<a
+                    [routerLink]="['/projects', w.projectId, 'settings']"
+                    >{{ name }}</a
+                  ></span
+                >
+              } @else if (projectsState() === 'loading') {
+                <span class="badge badge-tag webhook-scope" i18n="@@webhooks.scopeLoading"
+                  >Project: …</span
+                >
+              } @else if (projectsState() === 'failed') {
+                <span class="badge badge-tag webhook-scope" i18n="@@webhooks.scopeUnknown"
+                  >Project</span
+                >
+              } @else {
+                <span class="badge badge-tag webhook-scope" i18n="@@webhooks.scopeDeleted"
+                  >Project: (deleted)</span
+                >
+              }
+            }
+          </div>
+        </div>
+        <div class="webhook-side">
+          @if (w.active) {
+            <span class="badge badge-passed webhook-state"
+              ><q-icon name="check" /><ng-container i18n="@@webhooks.isActive"
+                >Active</ng-container
+              ></span
+            >
+          } @else {
+            <span class="badge badge-none webhook-state"
+              ><q-icon name="minus" /><ng-container i18n="@@webhooks.isOff"
+                >Switched off</ng-container
+              ></span
+            >
+          }
+          @if (canManage()) {
+            <div class="row-actions">
+              <button
+                type="button"
+                class="btn-quiet"
+                [attr.aria-disabled]="busy() ? true : null"
+                (click)="toggleActive(w)"
+              >
+                @if (w.active) {
+                  <ng-container i18n="@@webhooks.switchOff">Switch off</ng-container>
+                } @else {
+                  <ng-container i18n="@@webhooks.switchOn">Switch on</ng-container>
+                }
+              </button>
+              <button
+                type="button"
+                class="btn-quiet"
+                [attr.aria-disabled]="busy() ? true : null"
+                (click)="askRotate(w)"
+                i18n="@@webhooks.rotate"
+              >
+                Rotate secret
+              </button>
+              <button
+                type="button"
+                class="btn-quiet danger"
+                [attr.aria-disabled]="busy() ? true : null"
+                (click)="remove(w)"
+                i18n="@@webhooks.delete"
+              >
+                Delete
+              </button>
+            </div>
+          }
+        </div>
+      </div>
+      <div class="panel-body webhook-body">
+        @switch (deliveries()[w.id]) {
+          @case ('loading') {
+            <p class="muted" i18n="@@webhooks.deliveriesLoading">Loading…</p>
+          }
+          @case ('failed') {
+            <p class="alert alert-error webhook-failed" role="alert">
+              <span i18n="@@webhooks.deliveriesUnavailable"
+                >The deliveries could not be loaded.</span
+              >&ngsp;<button
+                type="button"
+                class="btn-quiet"
+                (click)="loadDeliveries(w)"
+                i18n="@@webhooks.retry"
+              >
+                Try again
+              </button>
+            </p>
+          }
+          @default {
+            @if (loaded(w); as items) {
+              <q-delivery-strip [deliveries]="strips()[w.id] ?? []" />
+              @if (items.length > 0) {
+                <details class="deliveries" (toggle)="openDeliveries(w, $event)">
+                  <summary i18n="@@webhooks.deliveries">Recent deliveries</summary>
+                  <p class="deliveries-tools">
+                    <button
+                      type="button"
+                      class="btn-quiet"
+                      (click)="loadDeliveries(w, true)"
+                      i18n="@@webhooks.refreshDeliveries"
+                    >
+                      Refresh
+                    </button>
+                  </p>
+                  <div class="panel-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th scope="col" i18n="@@webhooks.col.when">When</th>
+                          <th scope="col" i18n="@@webhooks.col.event">Event</th>
+                          <th scope="col" i18n="@@webhooks.col.result">Result</th>
+                          <th scope="col" i18n="@@webhooks.col.answer">Receiver's answer</th>
+                          @if (canManage()) {
+                            <th scope="col">
+                              <span class="visually-hidden" i18n="@@webhooks.col.actions"
+                                >Actions</span
+                              >
+                            </th>
+                          }
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (d of items; track d.id) {
+                          <tr>
+                            <td class="nowrap">{{ d.createdAt | dateTime }}</td>
+                            <td>{{ eventLabel(d.event) }}</td>
+                            <td class="nowrap">
+                              <span class="delivery-result status-{{ d.status }}">{{
+                                deliveryStatusLabel(d.status)
+                              }}</span>
+                              @if (d.responseCode !== null) {
+                                &ngsp;<span class="muted" i18n="@@webhooks.http"
+                                  >HTTP {{ d.responseCode }}</span
+                                >
+                              }
+                            </td>
+                            <td>
+                              @if (excerptText(d.responseExcerpt); as excerpt) {
+                                <pre class="excerpt">{{ excerpt }}</pre>
+                              }
+                            </td>
+                            @if (canManage()) {
+                              <td>
+                                <button
+                                  type="button"
+                                  class="btn-quiet"
+                                  [attr.aria-disabled]="redelivering().has(d.id) ? true : null"
+                                  (click)="redeliver(w, d)"
+                                  i18n="@@webhooks.redeliver"
+                                >
+                                  Send again
+                                </button>
+                                @if (redeliverErrors()[d.id]; as message) {
+                                  <p class="field-error" role="alert">{{ message }}</p>
+                                }
+                              </td>
+                            }
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              }
+            }
+          }
+        }
+      </div>
+    </section>
+  } @empty {
+    @if (list.loaded() && (projectId() === null || complete())) {
+      @if (projectId() === null) {
+        <p class="muted" i18n="@@webhooks.empty">No webhooks yet.</p>
+      } @else {
+        <p class="muted" i18n="@@webhooks.emptyProject">No webhooks for this project yet.</p>
+      }
+    }
+  }
+</div>
+@if (list.nextCursor() && (projectId() === null || complete())) {
+  <p class="load-more">
+    <button
+      type="button"
+      class="btn"
+      [attr.aria-disabled]="list.loading() ? true : null"
+      (click)="list.more()"
+      i18n="@@list.more"
+    >
+      Load more
+    </button>
+  </p>
+}
+
+@if (canManage()) {
+  <dialog
+    #createDialog
+    id="create-dialog"
+    class="dialog"
+    aria-labelledby="create-webhook-title"
+    (cancel)="keepSecret($event)"
+    (close)="forget()"
+  >
+    @if (secret(); as value) {
+      <div class="dialog-head">
+        <h2 id="create-webhook-title" i18n="@@webhooks.secretTitle">The webhook's secret</h2>
+      </div>
+      <div class="dialog-body">
+        <q-secret-once
+          [value]="value"
+          label="Webhook secret"
+          i18n-label="@@webhooks.secret"
+          [showDone]="false"
+          (done)="closeCreate()"
+        />
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-primary" (click)="closeCreate()">
+          <ng-container i18n="@@secret.done">Done</ng-container>
+        </button>
+      </div>
+    } @else {
+      <form novalidate (submit)="create($event)">
+        <div class="dialog-head">
+          @if (projectId() === null) {
+            <h2 id="create-webhook-title" i18n="@@webhooks.newTitle">New webhook</h2>
+          } @else {
+            <h2 id="create-webhook-title" i18n="@@webhooks.newForProject">
+              New webhook for this project
+            </h2>
+          }
+        </div>
+        <div class="dialog-body">
+          @if (createError(); as message) {
+            <p class="alert alert-error" role="alert">{{ message }}</p>
+          }
+          <div class="field">
+            <label for="webhook-url" i18n="@@webhooks.url">URL</label>
+            <input
+              #urlField
+              id="webhook-url"
+              type="url"
+              required
+              autofocus
+              maxlength="2048"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://"
+              i18n-placeholder="@@webhooks.urlPlaceholder"
+              [attr.aria-invalid]="urlError() ? true : null"
+              [attr.aria-describedby]="urlError() ? 'webhook-url-error' : null"
+              [value]="url()"
+              (input)="setUrl($event)"
+            />
+            @if (urlError(); as message) {
+              <span id="webhook-url-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+          @if (projectId() === null) {
+            <div class="field">
+              <label for="webhook-scope" i18n="@@webhooks.scope">Applies to</label>
+              <select id="webhook-scope" [value]="scope()" (change)="setScope($event)">
+                <option value="" [selected]="scope() === ''" i18n="@@webhooks.scopeAllOption">
+                  All projects
+                </option>
+                @for (p of sortedProjects(); track p.id) {
+                  <option [value]="p.id" [selected]="scope() === p.id">{{ p.name }}</option>
+                }
+              </select>
+            </div>
+          }
+          <fieldset
+            class="facet"
+            [attr.aria-describedby]="eventsError() ? 'webhook-events-error' : null"
+          >
+            <legend i18n="@@webhooks.events">Events</legend>
+            @for (e of allEvents; track e) {
+              <label>
+                <input
+                  type="checkbox"
+                  [checked]="events().has(e)"
+                  (change)="toggleEvent(e, $event)"
+                />
+                <span>{{ eventLabel(e) }}</span>
+              </label>
+            }
+            @if (eventsError(); as message) {
+              <span id="webhook-events-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </fieldset>
+          <p class="hint" i18n="@@webhooks.secretHint">
+            Qualor generates the signing secret and shows it once.
+          </p>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn" (click)="closeCreate()" i18n="@@dialog.cancel">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-primary"
+            [attr.aria-disabled]="busy() ? true : null"
+            i18n="@@webhooks.create"
+          >
+            Add webhook
+          </button>
+        </div>
+      </form>
+    }
+  </dialog>
+
+  <dialog
+    #rotateDialog
+    id="rotate-secret"
+    class="dialog"
+    aria-labelledby="rotate-title"
+    (cancel)="keepRotated($event)"
+    (close)="forgetRotation()"
+  >
+    <div class="dialog-head">
+      <h2 id="rotate-title" i18n="@@webhooks.rotateTitle">Rotate the secret</h2>
+    </div>
+    @if (rotated(); as value) {
+      <div class="dialog-body">
+        <q-secret-once
+          [value]="value"
+          label="Webhook secret"
+          i18n-label="@@webhooks.secret"
+          [showDone]="false"
+          (done)="closeRotate()"
+        />
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-primary" (click)="closeRotate()">
+          <ng-container i18n="@@secret.done">Done</ng-container>
+        </button>
+      </div>
+    } @else {
+      <div class="dialog-body">
+        @if (rotateError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        <p i18n="@@webhooks.rotateText">
+          The old secret stops signing at once. Update the receiver with the new one.
+        </p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" autofocus (click)="closeRotate()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          (click)="confirmRotate()"
+          i18n="@@webhooks.rotate"
+        >
+          Rotate secret
+        </button>
+      </div>
+    }
+  </dialog>
+
+  <dialog
+    #confirmDialog
+    id="confirm-dialog"
+    class="dialog"
+    aria-labelledby="confirm-title"
+    aria-describedby="confirm-text"
+    (close)="cancelDelete()"
+  >
+    <div class="dialog-head">
+      <h2 id="confirm-title" i18n="@@webhooks.deleteTitle">Delete the webhook</h2>
+    </div>
+    <div class="dialog-body">
+      <p id="confirm-text">{{ pendingDelete()?.question }}</p>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" autofocus (click)="cancelDelete()" i18n="@@dialog.cancel">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-danger-solid"
+        (click)="confirmDelete()"
+        i18n="@@webhooks.delete"
+      >
+        Delete
+      </button>
+    </div>
+  </dialog>
+}

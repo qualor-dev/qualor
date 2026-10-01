@@ -1,0 +1,201 @@
+<div class="tree-head">
+  <q-branch-picker
+    [projectId]="projectId()"
+    [branchId]="branchId() ?? undefined"
+    (picked)="pickBranch($event)"
+  />
+  <nav class="crumbs" aria-label="Directory" i18n-aria-label="@@code.crumbs">
+    @if (crumbs().length > 0) {
+      <a [routerLink]="[]" [queryParams]="dirLink('').queryParams">{{ projectName() }}</a>
+    } @else {
+      <span aria-current="page">{{ projectName() }}</span>
+    }
+    @for (c of crumbs(); track c.dir; let last = $last) {
+      <span class="crumb-sep" aria-hidden="true">/</span>
+      @if (last) {
+        <span aria-current="page">{{ c.name }}</span>
+      } @else {
+        <a [routerLink]="[]" [queryParams]="dirLink(c.dir).queryParams">{{ c.name }}</a>
+      }
+    }
+  </nav>
+  @if (summary(); as s) {
+    <p class="code-summary">
+      @if (s.files !== null) {
+        <span i18n="@@code.sum.files">{s.files, plural,
+          =1 {1 file}
+          other {{{ count(s.files) }} files}
+        }</span>
+      }
+      @if (s.ncloc !== null) {
+        <span i18n="@@code.sum.ncloc">{{ count(s.ncloc) }} lines of code</span>
+      }
+      @if (s.coverage !== null) {
+        <span i18n="@@code.sum.coverage">{{ percent(s.coverage) }} coverage</span>
+      }
+      @if (s.issues !== null) {
+        <span i18n="@@code.sum.issues">{s.issues, plural,
+          =1 {1 open issue}
+          other {{{ count(s.issues) }} open issues}
+        }</span>
+      }
+    </p>
+  }
+</div>
+
+<section class="card panel">
+  @if (list.error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  @if (empty()) {
+    <div class="empty-state">
+      <img src="art/empty.webp" alt="" width="900" height="675" />
+      <p i18n="@@code.empty">No files analysed on this branch yet.</p>
+      <a routerLink="/docs/quick-start" i18n="@@code.empty.link">Read the quick start</a>
+    </div>
+  } @else {
+    <div class="panel-scroll">
+      <table [attr.aria-busy]="list.loading()">
+        <caption class="visually-hidden" i18n="@@code.caption">
+          Files and directories with their measures
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" [attr.aria-sort]="ariaSort('name')">
+              <button type="button" class="sort" (click)="sortBy('name')" i18n="@@code.col.name">
+                Name
+              </button>
+            </th>
+            <th scope="col" class="num" [attr.aria-sort]="ariaSort('ncloc')">
+              <button type="button" class="sort" (click)="sortBy('ncloc')" i18n="@@code.col.ncloc">
+                Lines of code
+              </button>
+            </th>
+            <th scope="col" class="num" [attr.aria-sort]="ariaSort('complexity')">
+              <button
+                type="button"
+                class="sort"
+                (click)="sortBy('complexity')"
+                i18n="@@code.col.complexity"
+              >
+                Complexity
+              </button>
+            </th>
+            <th scope="col" class="num" [attr.aria-sort]="ariaSort('coverage')">
+              <button
+                type="button"
+                class="sort"
+                (click)="sortBy('coverage')"
+                i18n="@@code.col.coverage"
+              >
+                Coverage
+              </button>
+            </th>
+            <th scope="col" class="num" [attr.aria-sort]="ariaSort('duplicated_lines_density')">
+              <button
+                type="button"
+                class="sort"
+                (click)="sortBy('duplicated_lines_density')"
+                i18n="@@code.col.duplication"
+              >
+                Duplication
+              </button>
+            </th>
+            <th scope="col" class="num" [attr.aria-sort]="ariaSort('issues')">
+              <button
+                type="button"
+                class="sort"
+                (click)="sortBy('issues')"
+                i18n="@@code.col.issues"
+              >
+                Open issues
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rowViews(); track row.item.path + row.item.type) {
+            @let item = row.item;
+            <tr>
+              <td>
+                <div class="entry">
+                  <q-icon [name]="item.type === 'dir' ? 'folder' : 'file'" />
+                  @if (item.type === 'dir') {
+                    <a
+                      class="entry-name mono"
+                      [routerLink]="[]"
+                      [queryParams]="dirLink(item.path).queryParams"
+                      >{{ item.name }}</a
+                    >
+                  } @else {
+                    <a
+                      class="entry-name mono"
+                      [routerLink]="fileLink(item.path).commands"
+                      [queryParams]="fileLink(item.path).queryParams"
+                      [fragment]="fileLink(item.path).fragment"
+                      >{{ item.name }}</a
+                    >
+                    @if (item.language) {
+                      <span class="lang-dot" [attr.title]="item.language" aria-hidden="true"></span>
+                    }
+                    @if (item.kind === 'test') {
+                      <span class="badge badge-tag" i18n="@@code.tag.test">test</span>
+                    }
+                  }
+                </div>
+              </td>
+              <td class="num">{{ count(row.ncloc) }}</td>
+              <td class="num">{{ count(row.complexity) }}</td>
+              <td class="num">
+                @let cov = row.coverage;
+                @if (cov !== null) {
+                  <span class="cov">
+                    <span class="cov-value">{{ percent(cov) }}</span>
+                    <span class="cov-track" aria-hidden="true"
+                      ><span
+                        class="cov-bar"
+                        [attr.data-tone]="tone(cov)"
+                        [style.width]="barWidth(cov)"
+                      ></span
+                    ></span>
+                  </span>
+                } @else {
+                  —
+                }
+              </td>
+              <td class="num">{{ percent(row.duplication) }}</td>
+              <td class="num">
+                @if (row.issues; as n) {
+                  <a
+                    class="issues-link"
+                    [routerLink]="['/projects', projectId(), 'issues']"
+                    [queryParams]="issuesParams(item)"
+                    >{{ count(n) }}</a
+                  >
+                } @else {
+                  {{ count(row.issues) }}
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (list.nextCursor()) {
+      <p class="code-note" i18n="@@code.sortedWithin">
+        Sorted within the {{ list.items().length }} loaded entries
+      </p>
+      <p class="load-more">
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-disabled]="list.loading() ? true : null"
+          (click)="list.more()"
+          i18n="@@code.more"
+        >
+          Show more
+        </button>
+      </p>
+    }
+  }
+</section>

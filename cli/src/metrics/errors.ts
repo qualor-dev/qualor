@@ -34,14 +34,20 @@ export function hasRealParseErrors(root: Node, benignMissing?: ReadonlySet<strin
       if (benignMissing?.has(node.type) !== true) return true;
       continue;
     }
-    let visible = false;
-    for (const child of node.children) {
-      if (child !== null && (child.hasError || child.isMissing)) {
-        stack.push(child);
-        visible = true;
-      }
-    }
+    const visible = pushErrorChildren(node, stack);
     if (!visible && sexpHasRealError(node, benignMissing)) return true;
   }
   return false;
+}
+
+/** Pushes the visible children of `node` that report an error; true when there was one. */
+function pushErrorChildren(node: Node, stack: Node[]): boolean {
+  let visible = false;
+  for (const child of node.children) {
+    if (child !== null && (child.hasError || child.isMissing)) {
+      stack.push(child);
+      visible = true;
+    }
+  }
+  return visible;
 }

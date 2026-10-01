@@ -93,7 +93,7 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$PREFIX/bin" "$PREFIX/lib"
 
 fetch() { # url sha256 file
-  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o "$TMP/$3" "$1"
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused -o "$TMP/$3" "$1"
   echo "$2  $TMP/$3" | sha256sum -c - >/dev/null || { echo "checksum mismatch: $1" >&2; exit 1; }
 }
 
@@ -154,10 +154,10 @@ install -m 0755 "$TMP/trivy" "$PREFIX/bin/trivy"
 # The database is an OCI artifact: an anonymous pull token, then the layer by its digest (the
 # registry redirects to its blob storage, https only), checked like every download.
 if ! from_cache "${TRIVY_DB_DIGEST#sha256:}" trivy-db.tar.gz; then
-  TOKEN="$(curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+  TOKEN="$(curl -fsSL --proto '=https' --tlsv1.2 --retry 7 --retry-connrefused \
     'https://ghcr.io/token?scope=repository:aquasecurity/trivy-db:pull' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
   [ -n "$TOKEN" ] || { echo "no ghcr.io pull token for aquasecurity/trivy-db" >&2; exit 1; }
-  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -H "Authorization: Bearer $TOKEN" \
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused -H "Authorization: Bearer $TOKEN" \
     -o "$TMP/trivy-db.tar.gz" "https://ghcr.io/v2/aquasecurity/trivy-db/blobs/$TRIVY_DB_DIGEST" \
     || { echo "the pinned Trivy database $TRIVY_DB_DIGEST is gone from ghcr.io: run pnpm trivy-db:pin" >&2; exit 1; }
 fi

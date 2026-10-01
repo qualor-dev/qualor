@@ -131,3 +131,76 @@
 q-ai-panel:empty {
   display: none;
 }
+
+/* Related locations (spec §6.1): numbered steps, echoed in the snippet's gutter. */
+.related-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  list-style: none;
+}
+.related-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.related-steps p {
+  margin: 0;
+}
+.related-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 2px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.step-no {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+}
+/*
+ * The snippet's step marks overlay the right end of the line-number gutter (absolutely placed), so
+ * a marked line's code starts in the same column as every other line's.
+ */
+.snippet-line {
+  position: relative;
+}
+.step-marks {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--space-4) + 3rem - 4px);
+  display: flex;
+  gap: 2px;
+  transform: translate(-100%, -50%);
+  pointer-events: none;
+}
+.step-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ink);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  user-select: none;
+}
+/* The primary line keeps its own highlight when a step also points at it. */
+.snippet-line.related:not(.hit) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}

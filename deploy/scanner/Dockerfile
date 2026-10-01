@@ -58,7 +58,7 @@ ARG GITLEAKS_SOURCE_SHA256=e90fb266d75837e75894c778bf594ab8e2787f12dce5a62651f21
 ARG GITLEAKS_GO_UPGRADES="golang.org/x/crypto@v0.57.0 golang.org/x/text@v0.42.0"
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOFLAGS=-trimpath
 WORKDIR /src
-RUN curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o /tmp/gitleaks.tar.gz \
+RUN curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused -o /tmp/gitleaks.tar.gz \
     "https://github.com/gitleaks/gitleaks/archive/refs/tags/v${GITLEAKS_VERSION}.tar.gz" \
   && echo "${GITLEAKS_SOURCE_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c - \
   && tar -xzf /tmp/gitleaks.tar.gz --strip-components=1 \

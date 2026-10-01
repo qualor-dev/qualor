@@ -2,11 +2,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { SWIFTLINT_RULES, SWIFTLINT_VERSION, swiftlintVersionSupported } from '@qualor/shared';
 import picomatch from 'picomatch';
-import { MAX_ANALYZED_BYTES } from '../discovery/discover';
+import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { copyCheckedFiles, copyTarget, crlfToLf } from './checked-copy';
 import { deadProxyEnv } from './offline';
 import { detailLine, shown, stderrLines } from './reason';
-import { checkSwiftlintConfig, loadSwiftlintConfig } from './swiftlint-config';
+import { checkSwiftlintConfig, loadSwiftlintConfig, type SwiftlintPlan } from './swiftlint-config';
 import { swiftlintSarif } from './swiftlint-sarif';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
 
@@ -91,13 +91,10 @@ export function swiftlintConfigWarnings(stderr: string, source: string): string[
   ];
 }
 
-async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
-  const settings = ctx.config.analyzers.swiftlint;
-  // `qualor scan` stops with exit 2 on a configFile that is a URL or outside the repository
-  // (checkConfig) before any analyzer runs; this is the same check for any other caller.
-  const plan = loadSwiftlintConfig(ctx.root, settings.configFile);
-  if ('error' in plan) return { skip: plan.error };
-  if ('skip' in plan) return plan;
+/** The SwiftLint binary and its supported version, or why it cannot run. */
+async function resolveSwiftlint(
+  ctx: AnalyzerContext,
+): Promise<{ swiftlint: string; version: string } | Preparation> {
   const swiftlint = ctx.resolveBinary('swiftlint');
   if (swiftlint === null) {
     return {
@@ -116,6 +113,11 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       skip: `SwiftLint ${version} is not supported: this Qualor runs SwiftLint ${minor}.x (the qualor/scanner image's ${SWIFTLINT_VERSION})`,
     };
   }
+  return { swiftlint, version };
+}
+
+/** What the plan leaves out or SwiftLint cannot run, for the log. */
+function logPlan(ctx: AnalyzerContext, plan: SwiftlintPlan): void {
   if (plan.notRun.length > 0) {
     ctx.log.warn(
       `swiftlint: ${plan.notRun.join(', ')} need SourceKit, which the bundled SwiftLint does not have; they do not run`,
@@ -124,18 +126,24 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   if (plan.unknownRules.length > 0) {
     // SwiftLint ignores them with a warning of its own, in the debug log only (final review m9).
     const ids = plan.unknownRules.map(shown).join(', ');
-    ctx.log.warn(
-      `swiftlint: ${detailLine(`${shown(plan.source)}: SwiftLint does not know the rule ids ${ids}; it ignores them`)}`,
+    const detail = detailLine(
+      `${shown(plan.source)}: SwiftLint does not know the rule ids ${ids}; it ignores them`,
     );
+    ctx.log.warn(`swiftlint: ${detail}`);
   }
   if (plan.dropped.length > 0) {
     ctx.log.info(`swiftlint: ${plan.source}: left out ${plan.dropped.join(', ')} (config.md §6)`);
   }
-  const input = path.join(ctx.workDir, INPUT_DIR);
-  if (LINE_BREAK.test(input)) {
-    return { skip: 'the work directory path has a line break, which SwiftLint would split' };
-  }
+}
 
+/**
+ * The Swift files SwiftLint lints that the plan keeps in scope (before the size bound), or why
+ * none is left.
+ */
+function filesInScope(
+  ctx: AnalyzerContext,
+  plan: SwiftlintPlan,
+): readonly ScopeFile[] | { skip: string } {
   // Rulings F6 and F26: a file the scan detects as Swift (a `languages:` override away from swift
   // is respected) whose name ends in exactly `.swift`.
   const otherCase = ctx.files.filter((f) => f.language === 'swift' && !swiftName(f.path)).length;
@@ -162,6 +170,15 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   if (kept.length === 0) {
     return { skip: `no Swift file left to lint (${plan.source}: included/excluded)` };
   }
+  return kept;
+}
+
+/** The checked copy of the files in scope below `input`, or why none could be copied. */
+function copyInput(
+  ctx: AnalyzerContext,
+  kept: readonly ScopeFile[],
+  input: string,
+): ScopeFile[] | { skip: string } {
   // Ruling F7: the analysis bound of config.md §3.1.
   const large = kept.filter((f) => f.size > MAX_ANALYZED_BYTES).length;
   if (large > 0) {
@@ -183,6 +200,29 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
     );
   }
   if (files.length === 0) return { skip: 'no Swift file in scope that SwiftLint can be given' };
+  return files;
+}
+
+async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
+  const settings = ctx.config.analyzers.swiftlint;
+  // `qualor scan` stops with exit 2 on a configFile that is a URL or outside the repository
+  // (checkConfig) before any analyzer runs; this is the same check for any other caller.
+  const plan = loadSwiftlintConfig(ctx.root, settings.configFile);
+  if ('error' in plan) return { skip: plan.error };
+  if ('skip' in plan) return plan;
+  const binary = await resolveSwiftlint(ctx);
+  if (!('version' in binary)) return binary;
+  const { swiftlint, version } = binary;
+  logPlan(ctx, plan);
+  const input = path.join(ctx.workDir, INPUT_DIR);
+  if (LINE_BREAK.test(input)) {
+    return { skip: 'the work directory path has a line break, which SwiftLint would split' };
+  }
+
+  const kept = filesInScope(ctx, plan);
+  if ('skip' in kept) return kept;
+  const files = copyInput(ctx, kept, input);
+  if ('skip' in files) return files;
 
   const configPath = path.join(ctx.workDir, 'swiftlint.yml');
   const list = path.join(ctx.workDir, 'swiftlint-files.xcfilelist');

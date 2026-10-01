@@ -39,6 +39,44 @@ export function dedupe(messages) {
   });
 }
 
+/** HTMLHint's message type as a SARIF level: error and warning as they are, anything else a note. */
+function levelOf(type) {
+  if (type === 'error' || type === 'warning') return type;
+  return 'note';
+}
+
+/** One HTMLHint message as a SARIF result. */
+function sarifResult(root, file, m) {
+  return {
+    ruleId: m.rule.id,
+    level: levelOf(m.type),
+    message: { text: m.message },
+    locations: [
+      {
+        physicalLocation: {
+          artifactLocation: { uri: uriOf(root, file) },
+          region: region(m.line, m.col),
+        },
+      },
+    ],
+  };
+}
+
+/** The rules HTMLHint reported, by id, as SARIF rule descriptors. */
+function sarifRules(used) {
+  return [...used.values()]
+    .sort((a, b) => {
+      if (a.id === b.id) return 0;
+      return a.id < b.id ? -1 : 1;
+    })
+    .map((r) => ({
+      id: r.id,
+      name: r.id,
+      shortDescription: { text: r.description ?? r.id },
+      helpUri: `https://htmlhint.com/rules/${r.id}`,
+    }));
+}
+
 async function main(args) {
   const root = path.resolve(required(args, '--root'));
   const out = path.resolve(required(args, '--out'));
@@ -66,33 +104,13 @@ async function main(args) {
     for (const m of messages) {
       if (!m.rule?.id) continue;
       used.set(m.rule.id, m.rule);
-      results.push({
-        ruleId: m.rule.id,
-        level: m.type === 'error' ? 'error' : m.type === 'warning' ? 'warning' : 'note',
-        message: { text: m.message },
-        locations: [
-          {
-            physicalLocation: {
-              artifactLocation: { uri: uriOf(root, file) },
-              region: region(m.line, m.col),
-            },
-          },
-        ],
-      });
+      results.push(sarifResult(root, file, m));
     }
   }
   // A single file that throws is counted like any parse error (final review, minor 7).
   if (files.length >= 2 && parseErrors === files.length) {
     throw new Error(`HTMLHint failed on every file (${parseErrors})`);
   }
-  const sarifRules = [...used.values()]
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .map((r) => ({
-      id: r.id,
-      name: r.id,
-      shortDescription: { text: r.description ?? r.id },
-      helpUri: `https://htmlhint.com/rules/${r.id}`,
-    }));
   writeFileSync(
     out,
     JSON.stringify({
@@ -105,7 +123,7 @@ async function main(args) {
               name: 'htmlhint',
               version,
               informationUri: 'https://htmlhint.com',
-              rules: sarifRules,
+              rules: sarifRules(used),
             },
           },
           results,

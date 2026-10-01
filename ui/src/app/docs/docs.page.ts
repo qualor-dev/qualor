@@ -67,7 +67,8 @@ export class DocsPage {
       const doc = this.doc();
       const fragment = this.fragment();
       if (doc === null) return;
-      this.title.setTitle(`${doc.title} · ${$localize`:@@docs.title:Documentation`} · Qualor`);
+      const docs = $localize`:@@docs.title:Documentation`;
+      this.title.setTitle(`${doc.title} · ${docs} · Qualor`);
       const view = this.document.defaultView;
       const target = fragment === null ? null : this.document.getElementById(fragment);
       if (target !== null) target.scrollIntoView();

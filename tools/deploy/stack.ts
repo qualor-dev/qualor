@@ -259,6 +259,18 @@ export function stopStack(stack: Pick<Stack, 'name' | 'envFile' | 'dir'>): void 
 }
 
 /** A signed-in browser-style session against the public API (cookie plus CSRF header). */
+/** undici's "fetch failed": the connection broke (its `cause` says how), not a timeout. */
+function isConnectionFailure(err: unknown): boolean {
+  return err instanceof TypeError && err.cause !== undefined;
+}
+
+/** The error with its cause in the message: "fetch failed" alone does not say what broke. */
+function withCause(err: unknown): unknown {
+  if (!(err instanceof Error) || !(err.cause instanceof Error)) return err;
+  const code = (err.cause as NodeJS.ErrnoException).code;
+  return new Error(`${err.message} (${code ?? err.cause.message})`, { cause: err.cause });
+}
+
 export class Api {
   private cookie = '';
   private csrf = '';
@@ -284,16 +296,30 @@ export class Api {
   }
 
   async json<T>(method: string, apiPath: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.base}${apiPath}`, {
-      method,
-      headers: {
-        cookie: this.cookie,
-        ...(method === 'GET' ? {} : { 'x-qualor-csrf': this.csrf }),
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
+    const send = () =>
+      fetch(`${this.base}${apiPath}`, {
+        method,
+        headers: {
+          cookie: this.cookie,
+          ...(method === 'GET' ? {} : { 'x-qualor-csrf': this.csrf }),
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    let res: Response;
+    try {
+      res = await send();
+    } catch (err) {
+      // A scan runs synchronously (spawnSync) for minutes, so the keep-alive socket of the last
+      // call can be closed under it unnoticed and the next request dies with "fetch failed"
+      // (CI dogfood, 2026-09-30 and 2026-10-01). A GET is safe to send once more; a timeout is not
+      // a dropped connection and is not retried.
+      if (method !== 'GET' || !isConnectionFailure(err)) throw withCause(err);
+      res = await send().catch((again: unknown) => {
+        throw withCause(again);
+      });
+    }
     const text = await res.text();
     if (!res.ok)
       throw new Error(`${method} ${apiPath}: status ${res.status} ${text.slice(0, 500)}`);

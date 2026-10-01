@@ -39,7 +39,7 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 get() { # url file
-  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o "$TMP/$2" "$1"
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused -o "$TMP/$2" "$1"
 }
 
 DOTNET_ROOT="$PREFIX/share/dotnet"

@@ -1,6 +1,6 @@
 {
   "name": "@qualor/server",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -43,6 +43,7 @@
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",
     "jose": "6.2.12",
+    "marked": "18.0.14",
     "xml-crypto": "6.3.2"
   }
 }

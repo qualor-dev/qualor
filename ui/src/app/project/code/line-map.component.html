@@ -1,0 +1,87 @@
+<div class="line-map" [class.horizontal]="horizontal()">
+  <div class="plot" [style.height]="extent()">
+    <svg
+      role="img"
+      tabindex="0"
+      preserveAspectRatio="none"
+      [attr.viewBox]="viewBox()"
+      [attr.aria-label]="summary()"
+      (pointermove)="point($event)"
+      (pointerleave)="active.set(null)"
+      (focus)="focusIn()"
+      (blur)="active.set(null)"
+      (keydown)="key($event)"
+    >
+      @for (r of runs(); track r.key) {
+        <rect
+          [attr.class]="r.cls"
+          [attr.x]="r.x"
+          [attr.y]="r.y"
+          [attr.width]="r.width"
+          [attr.height]="r.height"
+        />
+      }
+      @for (m of markers(); track m.key) {
+        <rect
+          [attr.class]="m.cls"
+          [attr.data-issue]="m.id"
+          [attr.x]="m.x"
+          [attr.y]="m.y"
+          [attr.width]="m.width"
+          [attr.height]="m.height"
+          (click)="open($event, m.id)"
+        />
+      }
+      @if (hl(); as h) {
+        <rect
+          class="hl"
+          [attr.x]="h.x"
+          [attr.y]="h.y"
+          [attr.width]="h.width"
+          [attr.height]="h.height"
+        />
+      }
+      @if (cursor(); as c) {
+        <line class="cursor" [attr.x1]="c.x1" [attr.x2]="c.x2" [attr.y1]="c.y1" [attr.y2]="c.y2" />
+      }
+    </svg>
+    <div
+      class="chart-tip"
+      aria-live="polite"
+      [class.hidden]="!tip()"
+      [class.flip]="tip()?.flip"
+      [style.top.%]="horizontal() ? null : tip()?.at"
+      [style.left.%]="horizontal() ? tip()?.at : null"
+    >
+      @if (tip(); as t) {
+        <strong>{{ t.line }}</strong
+        >:&ngsp;<span class="tip-what">{{ t.what }}</span>
+      }
+    </div>
+  </div>
+  <ul class="legend" aria-hidden="true">
+    <li class="legend-lane">
+      <span class="legend-name" i18n="@@lineMap.lane.coverage">Coverage</span>
+      <span class="key"><span class="swatch cov-covered"></span>{{ labels.covered }}</span>
+      <span class="key"><span class="swatch cov-uncovered"></span>{{ labels.uncovered }}</span>
+      <span class="key"><span class="swatch cov-partial"></span>{{ labels.partial }}</span>
+    </li>
+    <li class="legend-lane">
+      <span class="key"
+        ><span class="swatch new"></span><span i18n="@@lineMap.lane.new">New code</span></span
+      >
+    </li>
+    <li class="legend-lane">
+      <span class="key"
+        ><span class="swatch dup"></span
+        ><span i18n="@@lineMap.lane.duplication">Duplicated blocks</span></span
+      >
+    </li>
+    <li class="legend-lane">
+      <span class="key"
+        ><span class="swatch marker-key"></span
+        ><span i18n="@@lineMap.lane.issues">Issues, by severity</span></span
+      >
+    </li>
+  </ul>
+</div>

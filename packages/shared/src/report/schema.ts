@@ -65,7 +65,7 @@ const location = z
     path: ['endLine'],
   });
 
-const secondaryLocation = z.object({
+export const secondaryLocation = z.object({
   path: repoPath,
   startLine: line,
   startColumn: column.optional(),
