@@ -136,6 +136,10 @@ describe('runAnalyzers', () => {
   it('logs the configuration warnings an adapter reads from stderr at warn, only for a run that ended fine', async () => {
     const { root, files, toolPath } = setup();
     const seen: string[] = [];
+    const configWarnings = (stderr: string) => {
+      seen.push(stderr);
+      return stderr.includes('ignored') ? ['a setting was ignored'] : [];
+    };
     const withWarnings = (id: AnalyzerId, mode: string): Analyzer => {
       const base = fake(id, toolPath, mode);
       return {
@@ -143,15 +147,7 @@ describe('runAnalyzers', () => {
         prepare: async (ctx) => {
           const prep = await base.prepare(ctx);
           if (!('run' in prep)) throw new Error('unexpected');
-          return {
-            run: {
-              ...prep.run,
-              configWarnings: (stderr: string) => {
-                seen.push(stderr);
-                return stderr.includes('ignored') ? ['a setting was ignored'] : [];
-              },
-            },
-          };
+          return { run: { ...prep.run, configWarnings } };
         },
       };
     };

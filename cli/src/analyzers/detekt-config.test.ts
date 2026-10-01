@@ -141,7 +141,7 @@ describe('detektConfig (config.md §6)', () => {
   });
 
   const aliases = (n: number) =>
-    `x: &t "1"\nstyle:\n${Array.from({ length: n }, (_, i) => `  k${i}: *t\n`).join('')}`;
+    'x: &t "1"\nstyle:\n' + Array.from({ length: n }, (_, i) => `  k${i}: *t\n`).join('');
   const deep = `${'['.repeat(20_000)}${']'.repeat(20_000)}\n`;
 
   it.each([

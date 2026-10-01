@@ -80,10 +80,8 @@ export function docLink(href: string, page: string): DocLink {
   if (guidePage !== undefined) return { kind: 'page', route: pageRoute(guidePage), fragment };
   if (target.startsWith('..')) return { kind: 'external', href };
   const kind = path.endsWith('/') ? 'tree' : 'blob';
-  return {
-    kind: 'external',
-    href: `${REPOSITORY}/${kind}/main/${target}${fragment === null ? '' : `#${fragment}`}`,
-  };
+  const anchor = fragment === null ? '' : '#' + fragment;
+  return { kind: 'external', href: `${REPOSITORY}/${kind}/main/${target}${anchor}` };
 }
 
 /** The route of a guide page: README is the docs home. */
@@ -110,15 +108,13 @@ export function slugger(): (text: string) => string {
 
 /** The text of inline nodes, as a heading's anchor and the table of contents read it. */
 export function plainText(nodes: readonly DocInline[]): string {
-  return nodes
-    .map((n) =>
-      n.kind === 'text' || n.kind === 'code'
-        ? n.text
-        : n.kind === 'br'
-          ? ' '
-          : plainText(n.children),
-    )
-    .join('');
+  return nodes.map(inlineText).join('');
+}
+
+function inlineText(n: DocInline): string {
+  if (n.kind === 'text' || n.kind === 'code') return n.text;
+  if (n.kind === 'br') return ' ';
+  return plainText(n.children);
 }
 
 /** marked decodes entities in `text` but keeps them in `raw`; inline text tokens carry both. */

@@ -45,8 +45,8 @@ const found = (sarif: unknown) =>
 
 /**
  * A SwiftUI screen as Xcode writes one, with no SwiftLint configuration: the indentation Xcode
- * leaves on a blank line (line 13), a `// TODO`, `Button(action:) { … }`, loop and geometry names,
- * a comment with a long URL, and one genuine finding, a force cast (line 30).
+ * leaves on a blank line (line 13), a to-do marker comment, `Button(action:) { … }`, loop and
+ * geometry names, a comment with a long URL, and one genuine finding, a force cast (line 30).
  */
 const SWIFTUI = [
   'import SwiftUI',

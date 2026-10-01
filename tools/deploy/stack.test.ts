@@ -94,6 +94,32 @@ describe('a stack script that hangs or is interrupted', () => {
     }
   });
 
+  it('retries a GET once when the connection drops, and names the cause when it gives up', async () => {
+    // The first connection is reset as its request arrives, like a keep-alive socket the stack
+    // closed while a blocking scan held the event loop; later ones answer.
+    let connections = 0;
+    const server = net.createServer((socket) => {
+      connections += 1;
+      socket.once('data', () => {
+        if (connections === 1) socket.resetAndDestroy();
+        else socket.end('HTTP/1.1 200 OK\r\nconnection: close\r\ncontent-length: 7\r\n\r\n{"a":1}');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const api = new Api(`http://127.0.0.1:${port}`, 2_000);
+      expect(await api.json('GET', '/x')).toEqual({ a: 1 });
+      expect(connections).toBe(2);
+      connections = 0;
+      // Not a GET: it may have reached the server, so it is not sent twice.
+      await expect(api.json('POST', '/x', {})).rejects.toThrow(/fetch failed \(.+\)/);
+      expect(connections).toBe(1);
+    } finally {
+      server.close();
+    }
+  });
+
   it('tears the started stacks down on SIGINT and SIGTERM, from before the first one starts', () => {
     const before = [process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')];
     const dispose = stopStacksOnSignal();
