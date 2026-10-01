@@ -318,6 +318,33 @@ describe('discoverFiles', () => {
     ]);
   });
 
+  it('leaves Bundler directories and the Rails schema out, and marks RSpec and Minitest files as tests (plan 9B)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'app/models/order.rb': 'x = 1\n',
+      'spec/models/order_spec.rb': 'x = 1\n',
+      'spec/support/helpers.rb': 'x = 1\n',
+      'test/models/order_test.rb': 'x = 1\n',
+      Gemfile: 'source "https://rubygems.org"\n',
+      '.bundle/ruby/3.3.0/gems/x/lib/x.rb': 'x = 1\n',
+      'db/schema.rb': 'x = 1\n',
+      'vendor/bundle/ruby/gems/y.rb': 'x = 1\n',
+    });
+    const files = discoverFiles({
+      root,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.kind]).sort()).toEqual([
+      ['Gemfile', 'ruby', 'main'],
+      ['app/models/order.rb', 'ruby', 'main'],
+      ['spec/models/order_spec.rb', 'ruby', 'test'],
+      ['spec/support/helpers.rb', 'ruby', 'test'],
+      ['test/models/order_test.rb', 'ruby', 'test'],
+    ]);
+  });
+
   it('keeps an empty directory tree empty', () => {
     const root = tmp();
     mkdirSync(path.join(root, 'empty', 'deeper'), { recursive: true });

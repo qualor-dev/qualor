@@ -1,0 +1,21 @@
+{
+  "description": "Ruby repo: tree-sitter-ruby metrics; RuboCop findings are added in plan 9B Task 7",
+  "engines": [],
+  "findingsExhaustive": false,
+  "findings": [],
+  "files": {
+    "app/models/order.rb": { "language": "ruby", "kind": "main", "lines": 64, "ncloc": 50, "commentLines": 2, "functions": 9, "classes": 1, "statements": 24, "complexity": 17, "cognitiveComplexity": 9 },
+    "spec/order_spec.rb": { "language": "ruby", "kind": "test", "lines": 7, "ncloc": 6, "commentLines": 0, "functions": 0, "classes": 0, "statements": 4, "complexity": 0, "cognitiveComplexity": 0 },
+    "Gemfile": { "language": "ruby", "kind": "main", "lines": 3, "ncloc": 2, "commentLines": 0, "functions": 0, "classes": 0, "statements": 2, "complexity": 0, "cognitiveComplexity": 0 }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "app/models/order.rb#ncloc": "64 lines - comment lines 1, 5 - blank lines 2, 4, 8, 12, 24, 32, 36, 40, 44, 50, 58, 60 = 50",
+    "app/models/order.rb#functions": "initialize, total, kind, load, run, same?, safe_parse, count_free, self.helper = 9",
+    "app/models/order.rb#statements": "require 1, attr_reader 1, private 1; initialize 1; total 3 + then, then, else = 6; kind case + 3 = 4; load 1; run 1; same? 1; safe_parse JSON.parse + nil = 2; count_free n = 0, items.each, the unless modifier, n = 4; helper 1; total 24",
+    "app/models/order.rb#complexity": "9 functions; total if, &&, elsif, || = 4; kind when ×2 = 2; safe_parse rescue 1; count_free unless modifier 1; total 17",
+    "app/models/order.rb#cognitiveComplexity": "total if +1, && +1, elsif +1, || +1, else +1 = 5; kind case +1; safe_parse rescue +1; count_free the unless modifier inside the block +2; total 9",
+    "spec/order_spec.rb#metrics": "require_relative, RSpec.describe, it, expect: 4 statements; blocks are not functions"
+  }
+}

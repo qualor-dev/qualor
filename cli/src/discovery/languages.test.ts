@@ -82,6 +82,31 @@ describe('detectLanguage', () => {
     expect(detectLanguage('a.swift', ['java']).language).toBe('other');
   });
 
+  it('maps Ruby files to ruby, by extension and by name (plan 9B)', () => {
+    for (const p of [
+      'app/models/order.rb',
+      'lib/tasks/db.rake',
+      'x.gemspec',
+      'config.ru',
+      'Gemfile',
+      'sub/Rakefile',
+      'A.RB',
+    ]) {
+      expect(detectLanguage(p, 'auto'), p).toEqual({ language: 'ruby', grammar: 'ruby' });
+    }
+    for (const p of [
+      'Gemfile.lock',
+      'app/views/a.html.erb',
+      'gemfile',
+      '.rubocop.yml',
+      '.ruby-version',
+    ]) {
+      expect(detectLanguage(p, 'auto'), p).toEqual({ language: 'other', grammar: null });
+    }
+    expect(detectLanguage('a.rb', ['java']).language).toBe('other');
+    expect(detectLanguage('Gemfile', ['java']).language).toBe('other');
+  });
+
   it('honours an explicit languages list', () => {
     expect(detectLanguage('a.ts', ['java'])).toEqual({ language: 'other', grammar: null });
     expect(detectLanguage('A.java', ['java']).language).toBe('java');

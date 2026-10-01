@@ -2,7 +2,15 @@ import type { Node } from 'web-tree-sitter';
 import type { GrammarId } from '../parse/grammars';
 
 export type SyntaxFamily =
-  'ecmascript' | 'java' | 'csharp' | 'python' | 'markup' | 'stylesheet' | 'kotlin' | 'swift';
+  | 'ecmascript'
+  | 'java'
+  | 'csharp'
+  | 'python'
+  | 'markup'
+  | 'stylesheet'
+  | 'kotlin'
+  | 'swift'
+  | 'ruby';
 
 /**
  * Node tables of ruling C3 (node type names of the pinned grammars, C1). No rule looks at
@@ -86,6 +94,17 @@ export interface FamilyRules {
    * list of expression types, which tree-sitter-swift has many of.
    */
   statementParents?: ReadonlySet<string>;
+  /**
+   * Node types left out of every metric and of duplication, with everything below them (Ruby's
+   * data after `__END__`, plan 9B): neither code nor comment.
+   */
+  skipped?: ReadonlySet<string>;
+  /**
+   * A child of this node that counts as one statement though this node is no statement parent
+   * (Ruby's endless `def x = expr`: the expression, plan 9B). Asked of the parent, so no rule has
+   * to look at `node.parent`.
+   */
+  statementChild?(node: Node): Node | null;
 }
 
 const ECMASCRIPT: FamilyRules = {
@@ -528,6 +547,87 @@ const SWIFT: FamilyRules = {
   statementParents: new Set(['statements', 'source_file']),
 };
 
+/** Ruby nodes that are never statements: definitions, clauses of a body, heredoc bodies (plan 9B). */
+const RUBY_NOT_STATEMENTS = new Set([
+  'method',
+  'singleton_method',
+  'class',
+  'module',
+  'singleton_class',
+  'rescue',
+  'else',
+  'ensure',
+  'heredoc_body',
+  'empty_statement',
+]);
+
+/**
+ * The plain `else` of an `if` chain: tree-sitter-ruby nests each `elsif` in the previous one and
+ * puts the chain's `else` in the last. Named children only: the keywords are anonymous leaves of
+ * the same type names.
+ */
+function rubyElse(ifNode: Node): Node | null {
+  let current = ifNode;
+  for (;;) {
+    const elsif = current.namedChildren.find((c) => c?.type === 'elsif');
+    if (elsif === undefined || elsif === null) {
+      return current.namedChildren.find((c) => c?.type === 'else') ?? null;
+    }
+    current = elsif;
+  }
+}
+
+function rubyLogicalOperator(node: Node): string | null {
+  if (node.type !== 'binary') return null;
+  const op = node.childForFieldName('operator')?.type;
+  return op === '&&' || op === '||' || op === 'and' || op === 'or' ? op : null;
+}
+
+/** tree-sitter-ruby 0.23.1 (plan 9B, fact F9). */
+const RUBY: FamilyRules = {
+  comments: new Set(['comment']),
+  skipped: new Set(['uninterpreted']),
+  functions: new Set(['method', 'singleton_method']),
+  // Blocks and lambdas are closures: a function context, not a function.
+  lambdas: new Set(['lambda', 'block', 'do_block']),
+  classes: new Set(['class', 'module']),
+  statements: new Set(),
+  // Every expression of a body is a statement; an endless method's expression too (statementChild).
+  statementParents: new Set([
+    'program',
+    'body_statement',
+    'then',
+    'else',
+    'do',
+    'block_body',
+    'begin',
+    'ensure',
+  ]),
+  isStatement: (n) => !RUBY_NOT_STATEMENTS.has(n.type),
+  // `def x = expr`: the expression (field `body`) is the method's one statement. A normal def's
+  // body is a body_statement, whose expressions count through statementParents. Asked of the def
+  // itself (O(children)); no rule reads node.parent (O(depth) in web-tree-sitter).
+  statementChild: (n) => {
+    if (n.type !== 'method' && n.type !== 'singleton_method') return null;
+    const body = n.childForFieldName('body');
+    return body === null || body.type === 'body_statement' ? null : body;
+  },
+  loops: new Set(['while', 'until', 'for', 'while_modifier', 'until_modifier']),
+  // Branches without an else chain of their own (an `unless … else` adds nothing for its else).
+  branches: new Set(['unless', 'if_modifier', 'unless_modifier', 'rescue_modifier']),
+  switches: new Set(['case', 'case_match']),
+  catchClause: 'rescue',
+  ternary: 'conditional',
+  transparent: new Set(['parenthesized_statements']),
+  isCase: (n) => n.type === 'when' || n.type === 'in_clause',
+  // `elsif` is its own clause (elseIfClause), never a nested `if`.
+  elseIf: () => null,
+  plainElse: rubyElse,
+  ifType: 'if',
+  elseIfClause: 'elsif',
+  logicalOperator: rubyLogicalOperator,
+};
+
 export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   ecmascript: ECMASCRIPT,
   java: JAVA,
@@ -537,6 +637,7 @@ export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   stylesheet: STYLESHEET,
   kotlin: KOTLIN,
   swift: SWIFT,
+  ruby: RUBY,
 };
 
 export function familyOf(grammar: GrammarId): SyntaxFamily {
@@ -547,5 +648,6 @@ export function familyOf(grammar: GrammarId): SyntaxFamily {
   if (grammar === 'css') return 'stylesheet';
   if (grammar === 'kotlin') return 'kotlin';
   if (grammar === 'swift') return 'swift';
+  if (grammar === 'ruby') return 'ruby';
   return 'ecmascript';
 }
