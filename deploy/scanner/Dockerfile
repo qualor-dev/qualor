@@ -3,7 +3,7 @@
 # tools/analyzers/install.sh (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with a snapshot of its
 # vulnerability database in /opt/qualor/share/trivy, Ruff, SwiftLint's static build (a musl
 # binary that needs no Swift runtime), detekt's CLI jar in /opt/qualor/lib/detekt, PHPStan's phar in
-# /opt/qualor/lib/phpstan), Qualor's
+# /opt/qualor/lib/phpstan), cppcheck (built from source, `install-cppcheck.sh`), Qualor's
 # sonarjs pass in /opt/qualor/sonarjs (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9,
 # tools/analyzers/sonarjs), Qualor's HTML and CSS linters in
 # /opt/qualor/weblint (stylelint and HTMLHint, tools/analyzers/weblint), Qualor's Ruby pass in
@@ -127,6 +127,10 @@ COPY tools/analyzers/install-go.sh /tmp/
 COPY --chmod=0644 tools/analyzers/golang/run.mjs /tmp/golang/
 RUN QUALOR_GO_SRC=/tmp/golang sh /tmp/install-go.sh && rm -rf /tmp/golang /tmp/install-go.sh
 COPY --from=gotools /out/staticcheck /out/gosec /opt/qualor/bin/
+# cppcheck (plan 9D, config.md §6.2), built from its pinned tag archive (no Linux release binary)
+# with this stage's g++ and make; only the binary and its library files reach /opt/qualor.
+COPY tools/analyzers/install-cppcheck.sh /tmp/
+RUN sh /tmp/install-cppcheck.sh && rm /tmp/install-cppcheck.sh
 
 FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3db8ea4ae263ab4d0c3805933e5355f45 AS jre
 

@@ -80,4 +80,14 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     expect(PROFILE_LANGUAGES).toEqual(expect.arrayContaining(['html', 'css']));
     expect(PROFILE_LANGUAGES.at(-1)).toBe('*');
   });
+
+  it('lets the c and cpp profiles govern cppcheck and clang-tidy findings (plan 9D)', () => {
+    for (const engine of ['cppcheck', 'clang-tidy']) {
+      expect(governingLanguage(engine, 'c'), engine).toBe('c');
+      expect(governingLanguage(engine, 'cpp'), engine).toBe('cpp');
+      expect(governingLanguage(engine, null), engine).toBe('*');
+    }
+    for (const engine of ['semgrep', 'gitleaks', 'trivy'])
+      expect(governingLanguage(engine, 'cpp')).toBe('*');
+  });
 });

@@ -103,18 +103,21 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
   });
 
   it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
-    expect(EXTERNAL_BUILTIN_ALIASES).toMatchObject({
+    // The whole alias table, strictly: every Phase 9 engine with an imported-SARIF twin (plans
+    // 9A-9D; go vet has none).
+    expect(EXTERNAL_BUILTIN_ALIASES).toEqual({
       'ext-ruff': 'ruff',
       'ext-stylelint': 'stylelint',
       'ext-htmlhint': 'htmlhint',
       'ext-detekt': 'detekt',
       'ext-swiftlint': 'swiftlint',
+      'ext-phpstan': 'phpstan',
       'ext-rubocop': 'rubocop',
       'ext-staticcheck': 'staticcheck',
       'ext-gosec': 'gosec',
+      'ext-cppcheck': 'cppcheck',
+      'ext-clang-tidy': 'clang-tidy',
     });
-    expect(EXTERNAL_BUILTIN_ALIASES).toHaveProperty('ext-phpstan', 'phpstan');
-    expect(EXTERNAL_BUILTIN_ALIASES['ext-phpstan']).toBe('phpstan');
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
     expect(rulesEquivalent(rule('ext-ruff:F401'), rule('ruff:F401'))).toBe(true);
@@ -197,6 +200,16 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(rulesEquivalent(rule('ext-phpstan:arguments.count'), rule('phpstan:method.void'))).toBe(
       false,
     );
+  });
+
+  it('ranks cppcheck above clang-tidy, both below the earlier built-in engines and above any external one (plan 9D)', () => {
+    const at = (e: string) => ENGINE_PRIORITY.indexOf(e);
+    expect(at('cppcheck')).toBeGreaterThan(at('swiftlint'));
+    expect(at('clang-tidy')).toBe(at('cppcheck') + 1);
+    expect(enginePriority('cppcheck')).toBeGreaterThan(enginePriority('clang-tidy'));
+    expect(enginePriority('clang-tidy')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-cppcheck']).toBe('cppcheck');
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-clang-tidy']).toBe('clang-tidy');
   });
 
   it('pairs an imported SwiftLint SARIF (ext-swiftlint, identical ids) with the built-in rule (plan 8F ruling F4)', () => {
@@ -288,5 +301,24 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(equivalentPartners('gosec:G401')).toEqual(['ext-gosec:G401']);
     expect(enginePriority('staticcheck')).toBeGreaterThan(enginePriority('govet'));
     expect(enginePriority('gosec')).toBeGreaterThan(enginePriority('ext-gosec'));
+  });
+
+  it('pairs the cppcheck and clang-tidy rules that report the same defect (plan 9D)', () => {
+    for (const [a, b] of [
+      ['cppcheck:zerodiv', 'clang-tidy:clang-analyzer-core.DivideZero'],
+      ['cppcheck:nullPointer', 'clang-tidy:clang-analyzer-core.NullDereference'],
+      ['cppcheck:mismatchAllocDealloc', 'clang-tidy:clang-analyzer-unix.MismatchedDeallocator'],
+      ['cppcheck:memleak', 'clang-tidy:clang-analyzer-unix.Malloc'],
+      ['cppcheck:doubleFree', 'clang-tidy:clang-analyzer-unix.Malloc'],
+      ['cppcheck:deallocuse', 'clang-tidy:clang-analyzer-unix.Malloc'],
+      ['cppcheck:arrayIndexOutOfBounds', 'clang-tidy:clang-analyzer-security.ArrayBound'],
+      ['cppcheck:duplicateBranch', 'clang-tidy:bugprone-branch-clone'],
+      ['cppcheck:duplicateExpression', 'clang-tidy:misc-redundant-expression'],
+      ['cppcheck:accessMoved', 'clang-tidy:bugprone-use-after-move'],
+    ] as const) {
+      expect(rulesEquivalent(rule(a), rule(b)), `${a} ~ ${b}`).toBe(true);
+      expect(rulesEquivalent(rule(b), rule(a)), `${b} ~ ${a}`).toBe(true);
+      expect(equivalentPartners(a), a).toContain(b);
+    }
   });
 });

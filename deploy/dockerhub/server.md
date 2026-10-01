@@ -15,9 +15,11 @@ makes the code worse. MIT licensed, with no limit on lines, users or projects.
 - **It judges only the code you changed.** A quality gate on new code, a summary and a status on
   every GitLab merge request and GitHub pull request, and new issues marked on the lines that
   caused them.
-- **Your analyzers, one list.** ESLint, PMD, SpotBugs, detekt for Kotlin, SwiftLint for Swift, staticcheck, go vet and gosec for Go, Roslyn and Roslynator for C#, OpenGrep,
-  Gitleaks, Trivy, SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs
-  2.0.4, LGPL-3.0) or any SARIF. The same finding from two tools shows once.
+- **Your analyzers, one list.** ESLint, PMD, SpotBugs, detekt for Kotlin, SwiftLint for Swift,
+  PHPStan for PHP, RuboCop for Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy
+  for C and C++, Roslyn and Roslynator for C#, OpenGrep, Gitleaks, Trivy, SonarQube-compatible rules
+  (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0) or any SARIF. The same finding
+  from two tools shows once.
 - **Issues that survive a refactor.** Qualor recognises an issue by its code, not its line number,
   so the issue keeps its history and its status when the code moves.
 - **Coverage, duplication, complexity.** Coverage from LCOV, Cobertura and JaCoCo, cognitive

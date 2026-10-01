@@ -42,6 +42,8 @@ stages: [check]
     - sh tools/analyzers/install-weblint.sh
     - sh tools/analyzers/install-rubocop.sh
     - sh tools/analyzers/install-go.sh
+    - sh tools/analyzers/install-cppcheck.sh
+    - sh tools/analyzers/install-clang-tidy.sh
     - !reference [default, before_script]
 
 lint:

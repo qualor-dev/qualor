@@ -688,6 +688,119 @@ describe('install-go.sh (plan 9C)', () => {
   });
 });
 
+describe('install-cppcheck.sh (plan 9D)', () => {
+  const script = readFileSync('tools/analyzers/install-cppcheck.sh', 'utf8');
+
+  it('pins cppcheck by version and the SHA-256 of its tag archive, checked before tar', () => {
+    expect(script).toMatch(/^CPPCHECK_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^CPPCHECK_SHA256=[0-9a-f]{64}$/m);
+    const check = 'echo "$CPPCHECK_SHA256  $TMP/cppcheck.tar.gz" | sha256sum -c -';
+    expect(script).toContain(check);
+    expect(script.indexOf(check)).toBeLessThan(script.indexOf('tar -xzf "$TMP/cppcheck.tar.gz"'));
+    expect(script).toContain(
+      '"https://github.com/cppcheck-opensource/cppcheck/archive/refs/tags/$CPPCHECK_VERSION.tar.gz"',
+    );
+    const pinned = /^CPPCHECK_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(readFileSync('packages/shared/src/rules/cfamily.ts', 'utf8')).toContain(
+      `export const CPPCHECK_VERSION = '${pinned}';`,
+    );
+  });
+
+  it('builds only the cppcheck target and installs no addon, rule or report script', () => {
+    // The comments name what the script leaves out ("no addons", "`make install` would …"):
+    // only its commands count here.
+    const code = script
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('#'))
+      .join('\n');
+    expect(code).toContain('MATCHCOMPILER=yes');
+    expect(code).toMatch(/^make -C "\$TMP\/src" [^\n]* cppcheck >\/dev\/null$/m);
+    expect(code).not.toMatch(/HAVE_RULES=yes|addons|htmlreport|make install|curl[^\n]*\| *sh/);
+    expect(code).toContain('cp -R "$TMP/src/cfg" "$TMP/src/platforms" "$FILESDIR/"');
+    // cppcheck prints `Cppcheck X.Y` for some .0 releases: the check compares major.minor, the
+    // rule of cppcheckVersionSupported.
+    expect(code).toContain(
+      '"Cppcheck ${CPPCHECK_VERSION%.*}" | "Cppcheck ${CPPCHECK_VERSION%.*}."*)',
+    );
+  });
+
+  it('runs in every GitHub job that requires the analyzers, before the tests', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (uses === -1) continue;
+      const install = job.steps.findIndex(
+        (s) => s.run === 'sudo sh tools/analyzers/install-cppcheck.sh',
+      );
+      expect(install, name).toBeGreaterThan(0);
+      expect(uses, name).toBeGreaterThan(install);
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template, and in both images", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    expect(gitlab['.analyzers']?.before_script ?? []).toContain(
+      'sh tools/analyzers/install-cppcheck.sh',
+    );
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile']) {
+      expect(readFileSync(file, 'utf8'), file).toMatch(/sh \/tmp\/install-cppcheck\.sh/);
+    }
+  });
+});
+
+describe('install-clang-tidy.sh (plan 9D, CI and the toolbox only)', () => {
+  const script = readFileSync('tools/analyzers/install-clang-tidy.sh', 'utf8');
+
+  it('pins the PyPI wheel per architecture, checked before unzip, and installs only the binary and its headers', () => {
+    expect(script).toMatch(/^CLANG_TIDY_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^CLANG_TIDY_SHA256_X64=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^CLANG_TIDY_SHA256_ARM64=[0-9a-f]{64}$/m);
+    // Each wheel's full PyPI URL is pinned beside its SHA-256 and must name the pinned version, so
+    // a bump of CLANG_TIDY_VERSION alone cannot leave a stale URL behind.
+    const version = /^CLANG_TIDY_VERSION=(.+)$/m.exec(script)?.[1] ?? '';
+    for (const arch of ['X64', 'ARM64']) {
+      const url = new RegExp(`^CLANG_TIDY_URL_${arch}=(\\S+)$`, 'm').exec(script)?.[1] ?? '';
+      expect(url, arch).toMatch(
+        /^https:\/\/files\.pythonhosted\.org\/packages\/[0-9a-f]+\/[0-9a-f]+\/[0-9a-f]+\/clang_tidy-/,
+      );
+      expect(url, arch).toContain(`/clang_tidy-${version}-py2.py3-none-manylinux_`);
+      expect(url, arch).not.toContain('$');
+    }
+    const check = 'echo "$CT_SHA  $TMP/clang-tidy.whl" | sha256sum -c -';
+    expect(script).toContain(check);
+    expect(script.indexOf(check)).toBeLessThan(script.indexOf('unzip -q "$TMP/clang-tidy.whl"'));
+    expect(script).toContain("'clang_tidy/data/bin/clang-tidy' 'clang_tidy/data/lib/*'");
+    expect(script).not.toMatch(/pip install|run-clang-tidy|clang-apply-replacements/);
+  });
+
+  it('is never installed by the scanner image (decision 2), but by the toolbox and every analyzers job', () => {
+    expect(readFileSync('deploy/scanner/Dockerfile', 'utf8')).not.toMatch(/clang-tidy/);
+    expect(readFileSync('tools/analyzers/Dockerfile', 'utf8')).toMatch(
+      /sh \/tmp\/install-clang-tidy\.sh/,
+    );
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (uses === -1) continue;
+      const install = job.steps.findIndex(
+        (s) => s.run === 'sudo sh tools/analyzers/install-clang-tidy.sh',
+      );
+      expect(install, name).toBeGreaterThan(0);
+      expect(uses, name).toBeGreaterThan(install);
+    }
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    expect(gitlab['.analyzers']?.before_script ?? []).toContain(
+      'sh tools/analyzers/install-clang-tidy.sh',
+    );
+  });
+});
+
 describe("the CI cache of Trivy's downloads (plan 2B)", () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
   const pin = (name: string) => new RegExp(`^${name}=(.*)$`, 'm').exec(script)?.[1];

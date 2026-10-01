@@ -12,7 +12,8 @@ export type SyntaxFamily =
   | 'swift'
   | 'php'
   | 'ruby'
-  | 'go';
+  | 'go'
+  | 'cfamily';
 
 /**
  * Node tables of ruling C3 (node type names of the pinned grammars, C1). No rule looks at
@@ -109,7 +110,8 @@ export interface FamilyRules {
   statementChild?(node: Node): Node | null;
   /**
    * Extra check for node types in `classes` that are classes only in some shapes (Go's
-   * `type_spec`: only a struct or interface type, plan 9C). Absent: every such node is a class.
+   * `type_spec`: only a struct or interface type, plan 9C; C/C++ `struct`, `union`, `class`: only
+   * a definition with a body, plan 9D). Absent: every such node is a class.
    */
   isClass?(node: Node): boolean;
 }
@@ -738,6 +740,73 @@ const GO: FamilyRules = {
   statementParents: new Set(['statement_list']),
 };
 
+/** Where a C/C++ `declaration` is a statement: inside a block, a `case` or after a label (plan 9D). */
+const CFAMILY_DECLARATION_PARENTS = new Set([
+  'compound_statement',
+  'case_statement',
+  'labeled_statement',
+]);
+
+function cLogicalOperator(node: Node): string | null {
+  if (node.type !== 'binary_expression') return null;
+  const op = node.childForFieldName('operator')?.type;
+  if (op === '&&' || op === 'and') return '&&';
+  if (op === '||' || op === 'or') return '||';
+  return null;
+}
+
+/** tree-sitter-c 0.24.1 and tree-sitter-cpp 0.23.4 (plan 9D, fact F9): one set of rules. */
+const CFAMILY: FamilyRules = {
+  comments: new Set(['comment']),
+  // Only with a body: see isFunction (`= default`, `= 0` and declarations have none).
+  functions: new Set(['function_definition']),
+  lambdas: new Set(['lambda_expression']),
+  // Only definitions: see isClass. `enum` is not a class.
+  classes: new Set(['class_specifier', 'struct_specifier', 'union_specifier']),
+  statements: new Set([
+    'expression_statement',
+    'declaration',
+    'if_statement',
+    'for_statement',
+    'for_range_loop',
+    'while_statement',
+    'do_statement',
+    'return_statement',
+    'break_statement',
+    'continue_statement',
+    'goto_statement',
+    'switch_statement',
+    'labeled_statement',
+    'try_statement',
+    'throw_statement',
+    'co_return_statement',
+    'co_yield_statement',
+  ]),
+  loops: new Set(['for_statement', 'for_range_loop', 'while_statement', 'do_statement']),
+  switches: new Set(['switch_statement']),
+  catchClause: 'catch_clause',
+  ternary: 'conditional_expression',
+  transparent: new Set(['parenthesized_expression']),
+  isCase: (n) => n.type === 'case_statement' && n.child(0)?.type === 'case',
+  // `if … else if …` is if_statement > else_clause > if_statement, as in JavaScript.
+  elseIf: (n) =>
+    n.childForFieldName('alternative')?.namedChildren.find((c) => c?.type === 'if_statement') ??
+    null,
+  plainElse: (n) => {
+    const alt = n.childForFieldName('alternative');
+    if (alt === null) return null;
+    return alt.namedChildren.some((c) => c?.type === 'if_statement') ? null : alt;
+  },
+  // A file-level declaration and a `for` initialiser are not statements.
+  isStatement: (n, parentType) =>
+    n.type !== 'declaration' || CFAMILY_DECLARATION_PARENTS.has(parentType),
+  // A function-try-block (`int f() try { … } catch (…) { … }`) has its try_statement as the
+  // `body` field in tree-sitter-cpp 0.23.4, so it counts too (Review Focus 5).
+  isFunction: (n) => n.childForFieldName('body') !== null,
+  isClass: (n) => n.childForFieldName('body') !== null,
+  logicalOperator: cLogicalOperator,
+};
+
 export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   ecmascript: ECMASCRIPT,
   java: JAVA,
@@ -750,6 +819,7 @@ export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   php: PHP,
   ruby: RUBY,
   go: GO,
+  cfamily: CFAMILY,
 };
 
 export function familyOf(grammar: GrammarId): SyntaxFamily {
@@ -763,5 +833,6 @@ export function familyOf(grammar: GrammarId): SyntaxFamily {
   if (grammar === 'php') return 'php';
   if (grammar === 'ruby') return 'ruby';
   if (grammar === 'go') return 'go';
+  if (grammar === 'c' || grammar === 'cpp') return 'cfamily';
   return 'ecmascript';
 }

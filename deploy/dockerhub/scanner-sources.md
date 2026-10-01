@@ -29,6 +29,9 @@ are attached to the release of that tag at <https://github.com/qualor-dev/qualor
   1.3.13 pins, without its test suites, benchmarks and website; **TinyCC** (LGPL-2.1) from Bun's
   fork `oven-sh/tinycc` at the commit Bun pins; and **Bun** 1.3.13 itself (MIT), whose build
   scripts pin, patch and build both.
+- **cppcheck** 2.22.0 (GPL-3.0-or-later): its tag archive, from which `qualor/scanner` builds
+  `/opt/qualor/bin/cppcheck`, with the simplecpp (0BSD), tinyxml2 (zlib) and picojson
+  (BSD-2-Clause) sources it compiles in.
 - **Debian** (`/sources/debian/`): the source package of every Debian package installed in the
   image (the base system, git, ca-certificates and their dependencies, among them glibc, bash,
   coreutils, perl and gnutls) at the installed version: the `.dsc` and the files it lists.

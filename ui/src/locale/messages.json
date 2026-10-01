@@ -230,6 +230,8 @@
     "label.language.php": "PHP",
     "label.language.ruby": "Ruby",
     "label.language.go": "Go",
+    "label.language.c": "C",
+    "label.language.cpp": "C++",
     "label.language.any": "Other engines",
     "gateWarning.definitionFallback": "No earlier version was found for the new-code baseline; the last 30 days are new code instead.",
     "gateWarning.baselineMissing": "The fixed new-code baseline no longer exists; the last 30 days are new code instead.",

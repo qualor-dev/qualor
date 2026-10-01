@@ -3,11 +3,12 @@
 Open-source, self-hosted code quality platform: a SonarQube alternative without lines-of-code
 licensing, for GitLab, GitHub and any other CI. Qualor runs existing open-source analyzers (ESLint,
 PMD, SpotBugs, Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swift, RuboCop for
-Ruby, staticcheck, go vet and gosec for Go, Ruff for Python, PHPStan for PHP, stylelint and HTMLHint
-for CSS and HTML, OpenGrep, Gitleaks, Trivy, SonarQube-compatible rules for C#, JavaScript and
-TypeScript, or any SARIF), tracks their issues across commits, measures coverage, duplication and
-complexity, and applies a quality gate to new code. MIT, except `enterprise/`: source-available
-under the Qualor Enterprise Licence, and inert without a licence key
+Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy for C and C++, Ruff for Python,
+PHPStan for PHP, stylelint and HTMLHint for CSS and HTML, OpenGrep, Gitleaks, Trivy,
+SonarQube-compatible rules for C#, JavaScript and TypeScript, or any SARIF), tracks their issues
+across commits, measures coverage, duplication and complexity, and applies a quality gate to new
+code. MIT, except `enterprise/`: source-available under the Qualor Enterprise Licence, and inert
+without a licence key
 ([licence keys](https://qualor.dev/enterprise)).
 
 Repository: <https://github.com/qualor-dev/qualor>. Homepage: <https://qualor.dev>. Images:
@@ -204,6 +205,12 @@ modules and skips packages whose dependencies are missing. Nothing the repositor
 (no `go generate`, no cgo). See
 [Go (staticcheck, go vet, gosec)](docs/guide/languages-and-analyzers.md#go-staticcheck-go-vet-gosec).
 
+### C and C++
+
+`qualor/scanner` runs cppcheck 2.22.0 on C and C++ files, with no build and no setup. clang-tidy
+(LLVM 14 or newer) runs when your own job has it and a `compile_commands.json`; no image bundles
+it. See [C and C++ (cppcheck, clang-tidy)](docs/guide/languages-and-analyzers.md#c-and-c-cppcheck-clang-tidy).
+
 ### C#
 
 Roslyn analyzers need the project's own build (its SDK, restored packages and arguments), so
@@ -257,9 +264,9 @@ repository commits generated coverage output, add it to `sources.exclude` in `qu
 `qualor import sonarqube` copies a SonarQube Server (9.9 LTA or later, Community Build included) or
 SonarQube Cloud organisation's setup into one Qualor organisation: quality gates (for conditions on
 metrics Qualor has), which gate each project uses (with `--create-projects`, the projects
-themselves), quality profiles for JavaScript, TypeScript, C#, Java, Python, PHP, Ruby and Go (Kotlin
-and Swift profiles are not imported), and the main branch's issues marked false positive, won't fix
-or accepted. C#, JavaScript and TypeScript rules map one to one to Qualor's bundled
+themselves), quality profiles for JavaScript, TypeScript, C#, Java, Python, PHP, Ruby, Go, C and C++
+(Kotlin and Swift profiles are not imported), and the main branch's issues marked false positive,
+won't fix or accepted. C#, JavaScript and TypeScript rules map one to one to Qualor's bundled
 SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0)
 wherever the bundled version has the rule key SonarQube reports. Ruff and RuboCop findings imported
 into SonarQube map one to one; for SonarQube's own Python and Ruby rules, reviewed mappings

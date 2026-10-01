@@ -387,6 +387,40 @@ describe('discoverFiles', () => {
     ]);
   });
 
+  it('makes .h files C++ when the scope holds C++, and leaves CMake output out (plan 9D)', () => {
+    const cpp = tmp();
+    writeTree(cpp, {
+      'include/shape.h': 'class A {};\n',
+      'src/shape.cpp': 'int f() { return 1; }\n',
+      // Not under build/ (excluded already), so only the new glob can leave it out.
+      'x/CMakeFiles/y.c': 'int g;\n',
+      'cmake-build-debug/gen.h': 'int h;\n',
+      'out/_deps/fmt-src/fmt.h': 'int i;\n',
+    });
+    const files = discoverFiles({
+      root: cpp,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.grammar])).toEqual([
+      ['include/shape.h', 'cpp', 'cpp'],
+      ['src/shape.cpp', 'cpp', 'cpp'],
+    ]);
+    const c = tmp();
+    writeTree(c, { 'src/stack.h': 'int a;\n', 'src/stack.c': 'int b;\n' });
+    const cFiles = discoverFiles({
+      root: c,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(cFiles.map((f) => [f.path, f.language])).toEqual([
+      ['src/stack.c', 'c'],
+      ['src/stack.h', 'c'],
+    ]);
+  });
+
   it('keeps an empty directory tree empty', () => {
     const root = tmp();
     mkdirSync(path.join(root, 'empty', 'deeper'), { recursive: true });

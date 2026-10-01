@@ -279,6 +279,49 @@
       "reason": "Both report a boolean expression with the same operand on both sides of && or ||; on fixtures/go-basic both flag store/store.go line 50 (plan 9C, G4)."
     },
     {
+      "rules": ["cppcheck:zerodiv", "clang-tidy:clang-analyzer-core.DivideZero"],
+      "reason": "Both report a division by a value that is zero on some path (plan 9D, fact F12)."
+    },
+    {
+      "rules": ["cppcheck:nullPointer", "clang-tidy:clang-analyzer-core.NullDereference"],
+      "reason": "Both report the dereference of a pointer that is null on some path."
+    },
+    {
+      "rules": [
+        "cppcheck:mismatchAllocDealloc",
+        "clang-tidy:clang-analyzer-unix.MismatchedDeallocator"
+      ],
+      "reason": "Both report memory released by a function that does not match its allocation (new[]/delete, malloc/delete) (fact F12)."
+    },
+    {
+      "rules": ["cppcheck:memleak", "clang-tidy:clang-analyzer-unix.Malloc"],
+      "reason": "unix.Malloc reports leaks of malloc'd memory, which cppcheck's memleak also reports, at the same line."
+    },
+    {
+      "rules": ["cppcheck:doubleFree", "clang-tidy:clang-analyzer-unix.Malloc"],
+      "reason": "unix.Malloc reports a second free of the same memory, cppcheck's doubleFree too."
+    },
+    {
+      "rules": ["cppcheck:deallocuse", "clang-tidy:clang-analyzer-unix.Malloc"],
+      "reason": "unix.Malloc reports a use after free, cppcheck's deallocuse too."
+    },
+    {
+      "rules": ["cppcheck:arrayIndexOutOfBounds", "clang-tidy:clang-analyzer-security.ArrayBound"],
+      "reason": "Both report an array access outside its bounds."
+    },
+    {
+      "rules": ["cppcheck:duplicateBranch", "clang-tidy:bugprone-branch-clone"],
+      "reason": "Both report if/else branches with identical code."
+    },
+    {
+      "rules": ["cppcheck:duplicateExpression", "clang-tidy:misc-redundant-expression"],
+      "reason": "Both report the same expression on both sides of an operator."
+    },
+    {
+      "rules": ["cppcheck:accessMoved", "clang-tidy:bugprone-use-after-move"],
+      "reason": "Both report a variable used after it was moved from."
+    },
+    {
       "rules": ["eslint:sonarjs/function-name", "sonarjs:S100"],
       "reason": "The project's own eslint-plugin-sonarjs reports S100 as sonarjs/function-name"
     },

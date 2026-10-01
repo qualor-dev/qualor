@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import {
   compareFixture,
+  cppcheckVersionSupported,
   DEPENDENCY_ENGINES,
   engineRuleDefaults,
   expectedSchema,
@@ -104,6 +105,28 @@ export const RUBOCOP_PASS = 'rubocop-pass';
 const RUBOCOP_PASS_FILES = ['/opt/qualor/rubocop/run.rb', '/opt/qualor/rubocop/ruby/bin/ruby'];
 
 /**
+ * Plan 9D: the fixtures' cppcheck findings are cppcheck 2.22's (fact F12), and the engine skips
+ * another minor: this pseudo-tool is present only for a cppcheck of the pinned minor.
+ */
+export const CPPCHECK_PINNED = 'cppcheck-pinned';
+
+/** Plan 9D: present only for a clang-tidy of the major install-clang-tidy.sh pins (22). */
+export const CLANG_TIDY_PINNED = 'clang-tidy-pinned';
+
+function pinnedClangTidyMajor(): string | null {
+  const script = readFileSync(path.join(root, 'tools/analyzers/install-clang-tidy.sh'), 'utf8');
+  return /^CLANG_TIDY_VERSION=(\d+)\./m.exec(script)?.[1] ?? null;
+}
+
+/** What `<tool> --version` prints, matched by `re`'s first group; null without the tool. */
+function toolVersion(tool: string, re: RegExp, env: Record<string, string | undefined>): string | null {
+  const bin = findTool(tool, env);
+  if (bin === null) return null;
+  const r = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 30_000 });
+  return r.status === 0 ? (re.exec(r.stdout ?? '')?.[1] ?? null) : null;
+}
+
+/**
  * The binaries each built-in engine needs (any one of an inner list). The harness checks the same
  * places the CLI does: PATH and the scanner image's /opt/qualor/bin.
  */
@@ -141,6 +164,10 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   staticcheck: [['node'], ['go'], ['staticcheck'], [GO_RUNNER]],
   govet: [['node'], ['go'], [GO_RUNNER]],
   gosec: [['node'], ['go'], ['gosec'], [GO_RUNNER]],
+  // Plan 9D: cppcheck of the pinned minor, built by install-cppcheck.sh (/opt/qualor/bin).
+  cppcheck: [[CPPCHECK_PINNED]],
+  // Plan 9D: clang-tidy of the pinned major, from install-clang-tidy.sh (tests only, decision 2).
+  'clang-tidy': [[CLANG_TIDY_PINNED]],
 };
 
 /**
@@ -166,6 +193,14 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
   if (name === RUBOCOP_PASS) return RUBOCOP_PASS_FILES.every((f) => existsSync(f));
   if (name === GO_RUNNER) return existsSync(GO_RUNNER_FILE);
+  if (name === CPPCHECK_PINNED) {
+    const v = toolVersion('cppcheck', /^Cppcheck (\S+)$/m, env);
+    return v !== null && cppcheckVersionSupported(v);
+  }
+  if (name === CLANG_TIDY_PINNED) {
+    const major = toolVersion('clang-tidy', /LLVM version (\d+)\./, env);
+    return major !== null && major === pinnedClangTidyMajor();
+  }
   return findTool(name, env) !== null;
 }
 

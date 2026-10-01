@@ -264,4 +264,27 @@ describe('built-in profiles and gate (data-model.md §4.4, gates.md §7)', () =>
     const ruby = (await profilesOf(org!.id)).filter((p) => p.language === 'ruby');
     expect(ruby).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
   });
+
+  it('adds the c and cpp built-ins to an organisation that has every other built-in (plan 9D, no migration)', async () => {
+    const [org] = await t.db
+      .insert(organizations)
+      .values({ key: 'pre-cfamily', name: 'Before C' })
+      .returning();
+    for (const language of PROFILE_LANGUAGES.filter((l) => l !== 'c' && l !== 'cpp')) {
+      await t.db.insert(qualityProfiles).values({
+        organizationId: org!.id,
+        name: BUILTIN_NAME,
+        language,
+        isBuiltin: true,
+        isDefault: true,
+        unknownRules: 'activate',
+      });
+    }
+    await bootstrap(t.db, admin);
+    const added = (await profilesOf(org!.id)).filter(
+      (p) => p.language === 'c' || p.language === 'cpp',
+    );
+    expect(added.map((p) => p.language).sort()).toEqual(['c', 'cpp']);
+    expect(added.every((p) => p.isBuiltin && p.isDefault && p.name === BUILTIN_NAME)).toBe(true);
+  });
 });

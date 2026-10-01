@@ -20,6 +20,8 @@ export const LANGUAGES = [
   'php',
   'ruby',
   'go',
+  'c',
+  'cpp',
   'other',
 ] as const;
 export type Language = (typeof LANGUAGES)[number];
@@ -43,6 +45,8 @@ export const BUILTIN_ENGINES = [
   'staticcheck',
   'govet',
   'gosec',
+  'cppcheck',
+  'clang-tidy',
 ] as const;
 export type BuiltinEngine = (typeof BUILTIN_ENGINES)[number];
 

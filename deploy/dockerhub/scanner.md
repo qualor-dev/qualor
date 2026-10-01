@@ -1,6 +1,6 @@
 # qualor/scanner
 
-Short description: Code quality scanner: JS/TS, Java, Kotlin, Swift, Python, HTML, CSS; Gitleaks, Trivy; one gate
+Short description: Code quality scanner: JS/TS, Java, Kotlin, Swift, Python, PHP, Ruby, Go, C/C++, HTML, CSS; one gate
 
 Categories: Developer tools, Integration & delivery, Security
 
@@ -63,7 +63,9 @@ The scan needs the full git history (`GIT_DEPTH: 0`, `fetch-depth: 0`). Install 
 TypeScript project's dependencies before `qualor scan`, run `composer install --no-scripts
 --no-plugins` for a PHP project (PHPStan reads `vendor/`, never runs it), and build a Java project
 first (SpotBugs analyses compiled classes). For Go, run `go mod download` (or vendor the
-dependencies) first: Qualor never downloads modules.
+dependencies) first: Qualor never downloads modules. C and C++ need no build for cppcheck; for
+clang-tidy, scan in the job that built the project, with your own clang-tidy and its
+`compile_commands.json`.
 
 ### What is inside
 
@@ -82,9 +84,12 @@ dependencies) first: Qualor never downloads modules.
   vulnerability database (the scan never downloads one); detekt 1.23.8 (Kotlin, Apache-2.0)
   in `/opt/qualor/lib/detekt`; SwiftLint 0.65.1 (Swift, MIT), its static Linux build, in
   `/opt/qualor/bin/swiftlint`; PHPStan 2.2.16 (PHP, MIT) in `/opt/qualor/lib/phpstan`, on Debian's
-  PHP 8.2; RuboCop 1.91.0 on Ruby 4.0.7 (Ruby, MIT), in `/opt/qualor/rubocop`; and, for Go, Go
-  1.27.1 in `/opt/qualor/lib/go`, with staticcheck 2026.2.1 (MIT) and gosec 2.29.0 (Apache-2.0) in
-  `/opt/qualor/bin`; they run offline. No Semgrep or OpenGrep rules are bundled yet
+  PHP 8.2; RuboCop 1.91.0 on Ruby 4.0.7 (Ruby, MIT), in `/opt/qualor/rubocop`; for Go, Go 1.27.1
+  in `/opt/qualor/lib/go`, with staticcheck 2026.2.1 (MIT) and gosec 2.29.0 (Apache-2.0) in
+  `/opt/qualor/bin`, which run offline; and cppcheck 2.22.0 (C and C++, GPL-3.0-or-later), built
+  from source, in `/opt/qualor/bin/cppcheck`: its source is in `qualor/scanner-sources`. clang-tidy
+  is not in the image: run `qualor scan` in the job that built your project to use your own. No
+  Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
 - Runs as the user `node` (uid 1000) in `/src`; about 3.9 GB. Every base image is pinned by
@@ -128,7 +133,8 @@ BSD-3-Clause and Apache-2.0), PHP 8.2 from Debian (PHP License 3.01), Go (BSD-3-
 Google's patent grant), staticcheck (MIT), gosec (Apache-2.0), SwiftLint (MIT; its static build
 links the Swift runtime, libc++, musl, curl, BoringSSL, libxml2, zlib and mimalloc, none of them
 copyleft), Ruby 4.0.7 (under its BSD-2-Clause option) with RuboCop and its gems (MIT, Ruby or
-BSD-2-Clause), eslint-plugin-sonarjs 2.0.4 (LGPL-3.0, the last release before the SONAR
+BSD-2-Clause), cppcheck 2.22.0 (GPL-3.0-or-later, built from source; the source is in
+`qualor/scanner-sources`), eslint-plugin-sonarjs 2.0.4 (LGPL-3.0, the last release before the SONAR
 Source-Available License; its own npm dependency tree includes axe-core, MPL-2.0), the Temurin JRE
 (GPL-2.0 with the Classpath Exception), Node.js (MIT), and the Bun runtime inside the `qualor`
 binary (MIT; it links JavaScriptCore/WebKit and TinyCC, LGPL). The notices are in

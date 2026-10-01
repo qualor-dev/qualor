@@ -248,6 +248,22 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['go:S1135']);
   });
 
+  it('classifies a C++ profile: curated overlap rows carry statuses only, the rest unmapped (plan 9D)', () => {
+    const plan = planProfile(
+      profile({
+        language: 'cpp',
+        active: [rule('cpp:S2259', { language: 'cpp' }), rule('cpp:S3715', { language: 'cpp' })],
+      }),
+    );
+    expect(plan.language).toBe('cpp');
+    expect(plan.rows).toEqual([]);
+    // Every Task 11 row is `overlap`: an overlap target only carries issue statuses, reviewed or not,
+    // so it lands in statusOnly; pendingReview holds unreviewed `equivalent` targets only.
+    expect(plan.stats.statusOnly).toContain('cpp:S2259');
+    expect(plan.stats.pendingReview).toEqual([]);
+    expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['cpp:S3715']);
+  });
+
   it('never turns off a target whose left-off rule is an unreviewed equivalent', () => {
     const mapping = loadSonarMapping({
       ...structuredClone(raw),

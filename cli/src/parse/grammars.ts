@@ -18,6 +18,8 @@ export const GRAMMARS = [
   'php',
   'ruby',
   'go',
+  'c',
+  'cpp',
 ] as const;
 export type GrammarId = (typeof GRAMMARS)[number];
 export type WasmAsset = 'core' | GrammarId;
@@ -42,6 +44,8 @@ const PACKAGE_FILES: Readonly<Record<Exclude<WasmAsset, VendoredGrammar>, string
   php: 'tree-sitter-php/tree-sitter-php.wasm',
   ruby: 'tree-sitter-ruby/tree-sitter-ruby.wasm',
   go: 'tree-sitter-go/tree-sitter-go.wasm',
+  c: 'tree-sitter-c/tree-sitter-c.wasm',
+  cpp: 'tree-sitter-cpp/tree-sitter-cpp.wasm',
 };
 
 export const DEFAULT_PARSE_TIMEOUT_MS = 10_000;

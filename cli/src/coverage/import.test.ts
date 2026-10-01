@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { coverageSummary, loadFixture } from '../../test/fixtures';
@@ -173,5 +174,111 @@ describe('detectFormat / expandReportPaths', () => {
     ]);
     expect(expandReportPaths(root, 'target/site/jacoco/jacoco.xml')).toHaveLength(1);
     expect(expandReportPaths(root, 'nope.xml')).toEqual([]);
+  });
+});
+
+// Tool versions that produced cli/test/coverage/{gcovr.xml,gcovr.info,llvm-cov.info}
+// (node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7;
+// libclang-rt-14-dev is needed for clang's -fprofile-instr-generate runtime):
+// gcc (Debian 12.2.0-14+deb12u1) 12.2.0
+// clang 1:14.0-55.7~deb12u1
+// libclang-rt-14-dev 1:14.0.6-12
+// llvm 1:14.0-55.7~deb12u1
+// python3-venv 3.11.2-1+b1
+// colorlog==6.12.0
+// gcovr==8.6
+// Jinja2==3.1.6
+// lxml==6.1.3
+// MarkupSafe==3.0.3
+// pip==23.0.1
+// Pygments==2.21.0
+// setuptools==66.1.1
+describe('C and C++ coverage reports (plan 9D, fact F10)', () => {
+  const LIB =
+    'int clamp(int v, int lo, int hi) {\n    if (v < lo) return lo;\n    if (v > hi) return hi;\n    return v;\n}\n';
+  const MAIN =
+    'int clamp(int v, int lo, int hi);\nint main(void) { return clamp(5, 0, 3) == 3 ? 0 : 1; }\n';
+  const recorded = (name: string) => readFileSync(path.resolve('cli/test/coverage', name), 'utf8');
+
+  /** The recorded report of another machine (/w/src, /b), imported into a repository with src/. */
+  async function importRecorded(file: string, format: 'lcov' | 'cobertura') {
+    const root = tmp();
+    writeTree(root, {
+      'src/lib.c': LIB,
+      'src/main.c': MAIN,
+      [`reports/${file}`]: recorded(file),
+    });
+    const warnings = new Warnings();
+    const map = await importCoverage({
+      root,
+      reports: [{ path: `reports/${file}`, format }],
+      files: [main('src/lib.c', 5), main('src/main.c', 2)],
+      pathPrefixes: [],
+      warnings,
+      log: silentLogger,
+    });
+    return { map, warnings: warnings.list() };
+  }
+
+  it("maps gcovr's Cobertura (src/lib.c under <source>/w</source>) onto src/ by suffix", async () => {
+    const { map, warnings } = await importRecorded('gcovr.xml', 'cobertura');
+    expect(warnings).toEqual([]);
+    expect(Object.fromEntries(map)).toEqual({
+      'src/lib.c': {
+        covered: [[1, 3]],
+        uncovered: [[4, 4]],
+        branches: [
+          [2, 2, 1],
+          [3, 2, 1],
+        ],
+      },
+      'src/main.c': { covered: [[2, 2]], uncovered: [], branches: [] },
+    });
+  });
+
+  // gcovr.info (a VER: line per file, ignored):
+  //   lib.c:  DA:1,1 DA:2,1 DA:3,1 DA:4,0 -> covered 1-3, uncovered 4
+  //           BRDA:2,0,0,- BRDA:2,0,1,1 -> [2,2,1] ('-' is not covered)
+  //           BRDA:3,0,0,1 BRDA:3,0,1,- -> [3,2,1]
+  //   main.c: DA:2,1 -> covered 2; no BRDA
+  it("maps gcovr's LCOV (absolute SF:/w/src/…, a VER: line) onto src/ by suffix", async () => {
+    const { map, warnings } = await importRecorded('gcovr.info', 'lcov');
+    expect(warnings).toEqual([]);
+    expect(Object.fromEntries(map)).toEqual({
+      'src/lib.c': {
+        covered: [[1, 3]],
+        uncovered: [[4, 4]],
+        branches: [
+          [2, 2, 1],
+          [3, 2, 1],
+        ],
+      },
+      'src/main.c': { covered: [[2, 2]], uncovered: [], branches: [] },
+    });
+  });
+
+  // llvm-cov.info (FN/FNDA lines, ignored):
+  //   lib.c:  DA:1,1 DA:2,1 DA:3,1 DA:4,0 DA:5,1 -> covered 1-3 and 5, uncovered 4
+  //           BRDA:2,0,0,0 BRDA:2,0,1,1 -> [2,2,1]
+  //           BRDA:3,0,0,1 BRDA:3,0,1,0 -> [3,2,1]
+  //   main.c: DA:2,1 -> covered 2
+  //           BRDA:2,0,0,1 BRDA:2,0,1,0 -> [2,2,1]
+  it("maps llvm-cov's LCOV (absolute SF:/w/src/…, FN/FNDA lines) onto src/ by suffix", async () => {
+    const { map, warnings } = await importRecorded('llvm-cov.info', 'lcov');
+    expect(warnings).toEqual([]);
+    expect(Object.fromEntries(map)).toEqual({
+      'src/lib.c': {
+        covered: [
+          [1, 3],
+          [5, 5],
+        ],
+        uncovered: [[4, 4]],
+        branches: [
+          [2, 2, 1],
+          [3, 2, 1],
+        ],
+      },
+      'src/main.c': { covered: [[2, 2]], uncovered: [], branches: [[2, 2, 1]] },
+    });
   });
 });

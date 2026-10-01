@@ -21,6 +21,7 @@ vulnerability database pinned by digest), compiled into the
 | Go (the go command and toolchain of the staticcheck, govet and gosec engines) | 1.27.1                                         | BSD-3-Clause with Google's patent grant (`GO-LICENSE.txt`); its vendored packages carry their own licence files in `/opt/qualor/lib/go/src` (BSD-3-Clause; github.com/google/pprof Apache-2.0) | https://go.dev/dl/                                                                                    |
 | staticcheck (the staticcheck engine, Go)                                      | 2026.2.1                                       | MIT (`STATICCHECK-LICENSE.txt`, with its LICENSE-THIRD-PARTY)                                                                                                                                  | https://github.com/dominikh/go-tools/tree/2026.2.1                                                    |
 | gosec (the gosec engine, Go)                                                  | 2.29.0                                         | Apache-2.0 (`GOSEC-LICENSE.txt`); the modules linked into it: `GOSEC-THIRD-PARTY.txt`                                                                                                          | https://github.com/securego/gosec/tree/v2.29.0                                                        |
+| cppcheck (the cppcheck engine, C and C++)                                     | 2.22.0                                         | GPL-3.0-or-later (`CPPCHECK-LICENSE.txt`, with the simplecpp 0BSD, tinyxml2 zlib and picojson BSD-2-Clause licences of what it compiles in)                                                    | https://github.com/cppcheck-opensource/cppcheck/tree/2.22.0                                           |
 | PMD                                                                           | 7.27.0                                         | BSD-style, with Apache-2.0 parts (`PMD-LICENSE.txt`); its bundled libraries: see below                                                                                                         | https://github.com/pmd/pmd/tree/pmd_releases/7.27.0                                                   |
 | Gitleaks                                                                      | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`); its MPL-2.0 Go modules: see below                                                                                                                                | https://github.com/gitleaks/gitleaks/tree/v8.30.1                                                     |
 | Trivy                                                                         | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                                        | https://github.com/aquasecurity/trivy/tree/v0.74.0                                                    |
@@ -146,16 +147,17 @@ mpdecimal. The Python packages are MIT, BSD, Apache-2.0, PSF or 0BSD (chardet 7)
 
 The npm packages compiled into the `qualor` binary are ignore, picomatch, saxes, xmlchars, yaml,
 zod, web-tree-sitter and the tree-sitter grammars for Java, JavaScript, TypeScript, C#, Python,
-HTML, CSS, Kotlin, PHP, Ruby and Go (`tree-sitter-c-sharp` 0.23.5, MIT,
+HTML, CSS, Kotlin, PHP, Ruby, Go, C and C++ (`tree-sitter-c-sharp` 0.23.5, MIT,
 `TREE-SITTER-C-SHARP-LICENSE.txt`; `tree-sitter-html` 0.23.2, `tree-sitter-css` 0.25.0,
 `@tree-sitter-grammars/tree-sitter-kotlin` 1.1.0, tree-sitter-php 0.24.2,
-tree-sitter-ruby 0.23.1 and tree-sitter-go 0.25.0, all MIT; tree-sitter-go's `LICENSE` is in
-`qualor/npm/tree-sitter-go@0.25.0/`), in the versions `pnpm-lock.yaml` locks. The Swift grammar,
-tree-sitter-swift 0.7.3 (MIT, `TREE-SITTER-SWIFT-LICENSE.txt`), is vendored in the CLI's source
-(`cli/grammars`), because no npm package ships it as WebAssembly. The `qualor` binary, and so this
-grammar, is the same in `qualor/scanner` and `qualor/scanner-dotnet`: the image only adds the .NET
-SDKs and Roslynator around it. The image keeps the licence files of every production dependency of
-the CLI, as installed, in `/opt/qualor/licenses/qualor/npm/`.
+tree-sitter-ruby 0.23.1, tree-sitter-go 0.25.0, tree-sitter-c 0.24.1 and tree-sitter-cpp 0.23.4,
+all MIT; tree-sitter-go's `LICENSE` is in `qualor/npm/tree-sitter-go@0.25.0/`), in the versions
+`pnpm-lock.yaml` locks. The Swift grammar, tree-sitter-swift 0.7.3 (MIT,
+`TREE-SITTER-SWIFT-LICENSE.txt`), is vendored in the CLI's source (`cli/grammars`), because no npm
+package ships it as WebAssembly. The `qualor` binary, and so this grammar, is the same in
+`qualor/scanner` and `qualor/scanner-dotnet`: the image only adds the .NET SDKs and Roslynator
+around it. The image keeps the licence files of every production dependency of the CLI, as
+installed, in `/opt/qualor/licenses/qualor/npm/`.
 
 PHPStan is PHPStan's own phar, unmodified, pinned by SHA-256 in `tools/analyzers/install.sh` and
 installed as `/opt/qualor/lib/phpstan/phpstan.phar`. `PHPSTAN-DEPENDENCIES.txt` lists the 67
@@ -201,6 +203,13 @@ Ruby's default gems that have a licence of their own (MIT: bundler, did_you_mean
 prism, psych and syntax_suggest), taken from their release `.gem` files at the versions Ruby ships
 (`tools/analyzers/rubocop/licence-gems.lock`); the other default gems are under Ruby's licence. None
 is copyleft, so none needs a source offer.
+
+cppcheck is built in the image from its 2.22.0 tag archive (pinned by SHA-256 in
+`tools/analyzers/install-cppcheck.sh`), unmodified, and installed as `/opt/qualor/bin/cppcheck`
+with its library files in `/opt/qualor/share/cppcheck`. It is free software under the GNU General
+Public License version 3 or later; the archive it is built from is its complete corresponding
+source, published in `qualor/scanner-sources` with the same tag. Qualor runs it as a separate
+program and does not link it. clang-tidy is not part of this image.
 
 The Ruff binary is the upstream release build for glibc, a Rust program.
 
@@ -261,6 +270,8 @@ files attached to the Qualor release page of the same tag:
   eslint-plugin-jsx-a11y): its source on GitHub's own release tag archive;
 - SonarAnalyzer.CSharp 9.32.0.97167 (LGPL-3.0), software only in `qualor/scanner-dotnet`: the
   source tree of its tag's commit, without its integration-test harness;
+- cppcheck 2.22.0 (GPL-3.0-or-later), built in the image: its tag archive, with the simplecpp
+  (0BSD), tinyxml2 (zlib) and picojson (BSD-2-Clause) sources it compiles in;
 - the eleven MPL-2.0 Go modules compiled into Trivy 0.74.0 and the five compiled into Gitleaks
   8.30.1: each module's source zip from the Go module proxy (`proxy.golang.org`) at the version the
   binary names;

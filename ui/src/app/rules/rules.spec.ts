@@ -248,6 +248,8 @@ describe('ProfilesPage', () => {
       ['php', 'PHP'],
       ['ruby', 'Ruby'],
       ['go', 'Go'],
+      ['c', 'C'],
+      ['cpp', 'C++'],
       ['*', 'Other engines'],
     ];
     for (const entry of expected) expect(shown).toContainEqual(entry);

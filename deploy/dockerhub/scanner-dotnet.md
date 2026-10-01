@@ -29,6 +29,7 @@ Everything in `qualor/scanner` stays, the Go analyzers (staticcheck, go vet and 
   .NET CLI telemetry turned off (`DOTNET_CLI_TELEMETRY_OPTOUT=1`).
 - The Roslynator analyzers 5.0.0, bundled in `/opt/qualor/dotnet/analyzers`
   (`QUALOR_DOTNET_ANALYZERS`).
+- Everything else of `qualor/scanner`, cppcheck for C and C++ included.
 - SonarAnalyzer.CSharp 9.32 (SonarQube-compatible rules, `roslyn:S####`), bundled next to
   Roslynator. A project's own reference to SonarAnalyzer.CSharp replaces the bundled one, so there
   is never a duplicate-analyzer error.

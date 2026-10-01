@@ -16,6 +16,8 @@ size, complexity, duplication and coverage.
 | PHP | **PHPStan** 2.2 (MIT) at level 2, with Qualor's own configuration | .php files are in scope, run by the qualor/scanner image |
 | Ruby | **RuboCop** 1.91 (MIT), Qualor's selection: RuboCop's Lint and Security cops | Ruby files are in scope (.rb, .rake, .gemspec, .ru, Gemfile, Rakefile), run by the qualor/scanner image |
 | Go | **staticcheck** 2026.2.1 (MIT), **go vet** (Go 1.27.1) and **gosec** 2.29.0 (Apache-2.0, security), offline | `.go` files and a `go.mod` are in scope, run by the `qualor/scanner` image |
+| C | **cppcheck** (2.22.0, GPL-3.0-or-later); **clang-tidy** (yours, LLVM 14+, with a compile database) | `.c`/`.h` files exist |
+| C++ | the same | `.cpp`/`.cc`/`.cxx`/`.hpp`/`.h`... files exist |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -24,8 +26,8 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, PHP, Ruby, Go, HTML and
-CSS; SCSS gets findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and
+detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C, C++, C#, Python, PHP, Ruby, Go, HTML
+and CSS; SCSS gets findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and
 external SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
@@ -585,6 +587,69 @@ build-command: 'dotnet build MySolution.sln --no-incremental' }`. For GitHub, us
 - `qualor dotnet abort` cleans up when the build fails, so no hook is left behind.
 - A plain `qualor scan` does not analyse C#.
 
+## C and C++ (cppcheck, clang-tidy)
+
+The `qualor/scanner` image runs **cppcheck** 2.22.0 on your C and C++ files, with no build and no
+setup: errors plus the `warning`, `performance` and `portability` checks. Add `style` for more
+(it is much noisier):
+
+```yaml
+analyzers:
+  cppcheck:
+    enable: [warning, style, performance, portability]
+    includePaths: [include]          # used when there is no compile_commands.json
+    defines: [HAVE_CONFIG_H]
+```
+
+When your repository has a `compile_commands.json` (at the root or in `build/`, or named by
+`compileCommands`), Qualor gives cppcheck its include paths, defines and language standard.
+Inline suppressions (`// cppcheck-suppress nullPointer`) work.
+
+`uninitMemberVar`, `uninitMemberVarPrivate` and `uninitMemberVarNoCtor` are off by default (they
+mostly flag union members); turn them on with `select: [uninitMemberVar]` under `cppcheck`.
+
+**clang-tidy** runs when the job that scans also has `clang-tidy` (LLVM 14 or newer) on `PATH` and a
+compile database, typically the job that built your project:
+
+```sh
+cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build
+qualor scan          # finds build/compile_commands.json
+```
+
+No Qualor image bundles clang-tidy: it needs your build's headers and flags. Use a clang-tidy of
+the same LLVM major as your compiler where you can. Your `.clang-tidy` at the repository root is
+used for `Checks`, `CheckOptions` and the header and implementation file extensions; without one,
+Qualor runs the bug-finding groups (`bugprone-*`, `clang-analyzer-*`, `performance-*`,
+`portability-*`, `concurrency-*`, minus a few noisy checks). A `.clang-tidy` that sets its own
+`Checks` replaces Qualor's default checks. Settings that pass compiler arguments, load other
+configurations or turn warnings into errors (`ExtraArgs`, `InheritParentConfig`,
+`WarningsAsErrors`...) are ignored, and so are nested `.clang-tidy` files. Analyzer options that
+name a file (`clang-analyzer-...:Config`) are dropped too. The scan log says what was left out.
+
+Qualor never runs your build. It reads `compile_commands.json` itself and passes on only include
+paths, defines, the language standard and harmless flags (`-I`, `-D`, `-U`, `-std` and a short list
+of others); the compiler is never taken from the database, and plugins, `-Xclang` options and
+response files (`@file`) are dropped.
+Code the tools cannot compile (a missing generated header, an unknown macro) is reported as a
+warning, not as an issue. A `.h` file counts as C++ when your repository has C++ files, else as C.
+Any C++ file in scope, a fuzzer included, makes the `.h` files C++.
+`CMakeFiles/`, `cmake-build-*/` and `_deps/` are never scanned.
+
+Only code of your repository is reported. A finding that clang-tidy or cppcheck places in a system
+header or in a directory outside the checkout is dropped, and a path outside the repository that a
+message quotes is replaced by a placeholder. Headers you include from outside the repository (an
+absolute `-I`) are still read for the analysis.
+
+Both tools are skipped, with the reason in the scan log, when they are missing, when cppcheck is
+not version 2.22, when clang-tidy is older than LLVM 14, or when there is no compile database for
+clang-tidy; `enabled: true` fails the scan (exit 3) instead. `cppcheck` and `clang-tidy` are
+reserved engine ids: a SARIF file of your own from them is reported as `ext-cppcheck` or
+`ext-clang-tidy` and counted once with the built-in finding. Rule keys look like
+`cppcheck:nullPointer` and `clang-tidy:bugprone-use-after-move`.
+
+C and C++ files get the same metrics as the other languages (lines of code, functions, classes,
+complexity) and duplication detection.
+
 ## Secrets (Gitleaks)
 
 Gitleaks scans the working tree with its built-in rules, or with `.gitleaks.toml` at the repository
@@ -647,10 +712,10 @@ sarif:
 ```
 
 The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`,
-`detekt`, `swiftlint`, `phpstan` and the others) are reserved: `engine: ruff` is a configuration
-error, and a SARIF file from a tool Qualor runs itself is reported under `ext-<tool>`. Don't import
-Ruff, stylelint, HTMLHint, detekt, SwiftLint, PHPStan, staticcheck or gosec SARIF any more: Qualor
-runs Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
+`detekt`, `swiftlint`, `phpstan`, `cppcheck`, `clang-tidy` and the others) are reserved: `engine:
+ruff` is a configuration error, and a SARIF file from a tool Qualor runs itself is reported under
+`ext-<tool>`. Don't import Ruff, stylelint, HTMLHint, detekt, SwiftLint, PHPStan, staticcheck or
+gosec SARIF any more: Qualor runs Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
 [CSS and SCSS](#css-and-scss-stylelint) and [HTML](#html-htmlhint)), detekt (see
 [Kotlin](#kotlin-detekt)), SwiftLint (see [Swift](#swift-swiftlint)), PHPStan (see
 [PHP](#php-phpstan)) and staticcheck and gosec (see [Go](#go-staticcheck-go-vet-gosec)) itself; a
@@ -706,17 +771,31 @@ Or pass `--coverage <path>` on the command line. Test files are excluded from co
 imports no coverage report at all, the coverage conditions have **no value**, and they do not fail the
 gate. The UI shows a warning instead.
 
+### C and C++
+
+Use gcovr (GCC) or llvm-cov (Clang); Qualor reads both without options:
+
+```sh
+gcovr -r . --cobertura coverage.xml          # or: --lcov coverage.info
+llvm-cov export -format=lcov -instr-profile=default.profdata ./tests > coverage.info
+```
+
+The report names the files as the build saw them. When the build ran outside the checkout (another
+directory or another machine), those paths do not match the repository: set `pathPrefixes` to the
+directory the report names, for example `pathPrefixes: [/build/src]`.
+
 ## What is scanned
 
 Every file in the working tree (`sources.include`, default `**/*`), minus what `.gitignore` ignores,
-minus the built-in excludes (`node_modules`, `dist`,
-`build`, `target`, `vendor`, `*.min.js`, `*.min.css`, .NET `obj/` and generated `*.g.cs` / `*.Designer.cs`,
-Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs` and
-`site-packages`, Bundler's `.bundle` directories, Rails' generated `db/schema.rb`, and binary
-files), minus your own `sources.exclude`. Test files are recognised by
-`tests.include` (by default `*.test.*`, `*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`,
-`test_*.py`, `*_test.py`, `conftest.py`, `*Test.php`, `src/androidTest/`, `src/*Test/`, `*_spec.rb`,
-`*_test.rb`, `spec/**/*.rb` and `test/**/*.rb`). `src/*Test/` is meant
+minus the built-in excludes (`node_modules`, `dist`, `build`, `target`, `vendor`, `*.min.js`,
+`*.min.css`, .NET `obj/` and generated `*.g.cs` / `*.Designer.cs`, CMake's `CMakeFiles/`,
+`cmake-build-*/` and `_deps/`, Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`,
+`__pypackages__`, `.eggs` and `site-packages`, Bundler's `.bundle` directories, Rails' generated
+`db/schema.rb`, Go's `testdata/` directories and generated `*.pb.go` files, and binary files), minus
+your own `sources.exclude`. Test files are recognised by `tests.include` (by default `*.test.*`,
+`*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`, `test_*.py`, `*_test.py`, `conftest.py`,
+`*Test.php`, `src/androidTest/`, `src/*Test/`, `*_spec.rb`, `*_test.rb`, `spec/**/*.rb`,
+`test/**/*.rb` and `*_test.go`). `src/*Test/` is meant
 for Kotlin Multiplatform's `commonTest` and `jvmTest`, but applies to every language: a Gradle
 `src/integrationTest` or `src/functionalTest` is test code too, and leaves lines of code,
 complexity, duplication and coverage.

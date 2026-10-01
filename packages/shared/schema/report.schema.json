@@ -414,6 +414,8 @@
               "php",
               "ruby",
               "go",
+              "c",
+              "cpp",
               "other"
             ]
           },

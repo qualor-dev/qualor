@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import { engineMapping, filelessHash, parseConfig } from '@qualor/shared';
+import { BUILTIN_EXCLUDES, engineMapping, filelessHash, parseConfig } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import {
   ANALYZER_OUTPUT_DIR,
@@ -120,10 +120,24 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     });
     expect(typeof transform).toBe('function');
     expect(dropEnv).toBe(isTrivyVariable);
-    // The built-in directory excludes, as Trivy globs: membership, never a count (other languages
-    // add their own).
-    for (const dir of ['**/node_modules', '**/.git', '**/.build', '**/testdata']) {
-      expect(skipDirs(), dir).toContain(dir);
+    // The built-in directory excludes, as Trivy globs: derived from BUILTIN_EXCLUDES, plus
+    // membership of each language's own directories, never a count (plans 9B, 9C, 9D).
+    expect(skipDirs()).toEqual(
+      BUILTIN_EXCLUDES.filter((g) => g.startsWith('**/') && g.endsWith('/**')).map((g) =>
+        g.slice(0, -3),
+      ),
+    );
+    for (const d of [
+      '**/node_modules',
+      '**/.git',
+      '**/.build',
+      '**/.bundle',
+      '**/testdata',
+      '**/CMakeFiles',
+      '**/cmake-build-*',
+      '**/_deps',
+    ]) {
+      expect(skipDirs(), d).toContain(d);
     }
   });
 

@@ -1,3 +1,5 @@
+import { clangTidyAnalyzer } from './clang-tidy';
+import { cppcheckAnalyzer } from './cppcheck';
 import { detektAnalyzer } from './detekt';
 import { eslintAnalyzer } from './eslint';
 import { gitleaksAnalyzer } from './gitleaks';
@@ -37,5 +39,7 @@ export function builtinAnalyzers(): Analyzer[] {
     staticcheckAnalyzer,
     govetAnalyzer,
     gosecAnalyzer,
+    cppcheckAnalyzer,
+    clangTidyAnalyzer,
   ];
 }

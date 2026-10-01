@@ -1,0 +1,26 @@
+{
+  "description": "C++ repo with a compile database: cppcheck and clang-tidy (Qualor's default checks) on Qualor's rewrite of compile_commands.json; tree-sitter-cpp metrics",
+  "engines": ["cppcheck", "clang-tidy"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "cppcheck:mismatchAllocDealloc", "path": "src/shape.cpp", "startLine": 29, "severity": "high", "quality": "reliability" },
+    { "ruleKey": "cppcheck:zerodiv", "path": "src/shape.cpp", "startLine": 36, "severity": "high", "quality": "reliability" },
+    { "ruleKey": "clang-tidy:bugprone-use-after-move", "path": "src/shape.cpp", "startLine": 27, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "clang-tidy:clang-analyzer-cplusplus.Move", "path": "src/shape.cpp", "startLine": 27, "severity": "high", "quality": "reliability" },
+    { "ruleKey": "clang-tidy:clang-analyzer-unix.MismatchedDeallocator", "path": "src/shape.cpp", "startLine": 29, "severity": "high", "quality": "reliability" },
+    { "ruleKey": "clang-tidy:clang-analyzer-core.DivideZero", "path": "src/shape.cpp", "startLine": 36, "severity": "high", "quality": "reliability" }
+  ],
+  "files": {
+    "include/shape.h": { "language": "cpp", "kind": "main", "lines": 13, "ncloc": 11, "commentLines": 0, "functions": 2, "classes": 1, "statements": 1, "complexity": 2, "cognitiveComplexity": 0 },
+    "src/shape.cpp": { "language": "cpp", "kind": "main", "lines": 39, "ncloc": 34, "commentLines": 0, "functions": 5, "classes": 1, "statements": 15, "complexity": 7, "cognitiveComplexity": 2 }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "include/shape.h#language": ".h is C++ because the scope holds src/shape.cpp (config.md §6.2)",
+    "include/shape.h#metrics": "Shape(name) and name() have bodies; ~Shape = default and area = 0 do not; one statement, return name_",
+    "src/shape.cpp#metrics": "Square(side), area, total, describe, ratio; complexity 5 + range for + if = 7; statements: return; sum, for, sum +=, return; kept, counts, counts[0] =, result, delete, return; zero, if, return a / zero, return a = 15",
+    "cppcheck#compileCommands": "Qualor rewrites compile_commands.json into the copy: -std=c++17, -Iinclude (mapped), -DSHAPES=1; -fplugin and -o are dropped (decision 7)",
+    "clang-tidy#dedupe": "zerodiv/DivideZero (36) and mismatchAllocDealloc/MismatchedDeallocator (29) are equivalence pairs (Task 6): the server keeps the cppcheck issue of each pair (data-model.md §5.3); the report carries both"
+  }
+}

@@ -28,20 +28,28 @@ All notable changes to Qualor are listed here, newest first. The format follows
   statuses), and keeps the statuses of issues SonarQube imported from RuboCop.
 - Go: `.go` files are language `go`, with metrics, duplication and a `go` quality profile, and three
   engines run from `qualor/scanner`: `staticcheck` (staticcheck 2026.2.1), `govet` (go vet of Go
-  1.27.1) and `gosec` (gosec 2.29.0, security; G104, G115 and G304 left out by default). They analyse each
-  Go module offline: run `go mod download` (or vendor your dependencies) before `qualor scan`; a
-  package whose dependencies are missing is not analysed and the log says so. Nothing the repository
-  asks for is run (no `go generate`, no other toolchain, no cgo), and a module that replaces a
-  dependency with an outside directory or links out of the repository is skipped. Go coverage
-  profiles (`go test -coverprofile`) import as the new `gocover` format. `qualor import sonarqube`
-  maps the statuses of issues SonarQube imported from go vet, and 18 curated `go:` rules (statuses
-  only until reviewed).
+  1.27.1) and `gosec` (gosec 2.29.0, security; G104, G115 and G304 left out by default). They
+  analyse each Go module offline: run `go mod download` (or vendor your dependencies) before
+  `qualor scan`; a package whose dependencies are missing is not analysed and the log says so.
+  Nothing the repository asks for is run (no `go generate`, no other toolchain, no cgo), and a
+  module that replaces a dependency with an outside directory or links out of the repository is
+  skipped. Go coverage profiles (`go test -coverprofile`) import as the new `gocover` format.
+  `qualor import sonarqube` maps the statuses of issues SonarQube imported from go vet, and 18
+  curated `go:` rules (statuses only until reviewed).
+- C and C++: `qualor/scanner` runs cppcheck 2.22.0 (GPL-3.0-or-later, built from source; its
+  source ships in `qualor/scanner-sources`) as the `cppcheck` engine, on by default, with no build
+  needed. A clang-tidy (LLVM 14+) on `PATH` runs as the `clang-tidy` engine when the job also has a
+  `compile_commands.json`; no image bundles it. Qualor reads compile databases and `.clang-tidy`
+  itself and never passes plugins, response files or compiler wrappers. C and C++ files get metrics
+  and duplication (tree-sitter-c 0.24.1, tree-sitter-cpp 0.23.4), built-in C and C++ quality
+  profiles, and `qualor import sonarqube` maps common C/C++ rules (pending review). gcovr and
+  llvm-cov coverage reports already work.
 
 ### Changed
 
-- A report that holds PHP, Ruby or Go files, or findings of the `phpstan`, `rubocop`,
-  `staticcheck`, `govet` or `gosec` engine, is refused (422) by a Qualor server older than this
-  release: upgrade the server before the scanner.
+- A report that holds PHP, Ruby, Go, C or C++ files, or findings of the `phpstan`, `rubocop`,
+  `staticcheck`, `govet`, `gosec`, `cppcheck` or `clang-tidy` engine, is refused (422) by a Qualor
+  server older than this release: upgrade the server before the scanner.
 - `.php` files were language `other`; they now count in lines of code, complexity and
   duplication, and `*Test.php` files are test files by default.
 - PHPStan is skipped when `composer.json` requires packages but `vendor/` is not installed: run
@@ -66,6 +74,10 @@ All notable changes to Qualor are listed here, newest first. The format follows
   or `ext-gosec` and is counted once with the built-in finding; remove it, Qualor runs these tools
   itself.
 - `qualor/scanner` is about 77 MB larger (compressed) with the Go toolchain.
+- `.c`, `.cpp`, `.h` and the other C/C++ files were `other`; they now count as `c` or `cpp` in
+  lines of code and duplication. `CMakeFiles/`, `cmake-build-*/` and `_deps/` are built-in
+  excludes. `cppcheck` and `clang-tidy` are reserved engine ids (`ext-cppcheck` and
+  `ext-clang-tidy` are the names of your own imported SARIF of these tools, and count once).
 
 ## [0.3.1] - 2026-10-01
 

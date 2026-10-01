@@ -15,7 +15,7 @@ stored anywhere.
 | Issues marked **False positive**, **Won't fix** or **Accepted** on the main branch | the same status on the matching Qualor issue, with the latest comment |
 | Quality gates | Qualor gates, for conditions on metrics Qualor has |
 | Projects, and which gate each one uses | project assignments. With `--create-projects`, the projects themselves |
-| Quality profiles for JavaScript, TypeScript, C#, Java, Python and PHP | listed in the plan. Rule activation and severity overrides move as the SonarSource-to-analyzer rule mappings are reviewed. Until a profile has reviewed mappings it is reported as skipped, and your Qualor profiles stay as they are |
+| Quality profiles for JavaScript, TypeScript, C#, Java, Python, PHP, Ruby, Go, C and C++ | listed in the plan. Rule activation and severity overrides move as the SonarSource-to-analyzer rule mappings are reviewed. Until a profile has reviewed mappings it is reported as skipped, and your Qualor profiles stay as they are |
 
 The statuses of issues that SonarQube imported from ESLint, PMD, SpotBugs, Roslyn or Ruff
 (`external_*` rules) map one to one. SonarQube Server 9.9 does not let anyone resolve such external
@@ -88,6 +88,10 @@ staticcheck or gosec: `go:S1656` is equivalent to staticcheck's `SA4018`, three 
 (reviewed against the public descriptions), and the other 14, mostly security rules matched to
 gosec by name, are unreviewed. The other rows only overlap or are unreviewed, so they import issue
 statuses only. golangci-lint's imported issues (`external_golangci-lint`) are not mapped.
+
+C and C++ quality profiles are read. A short list of common SonarQube C/C++ rules maps to
+cppcheck and clang-tidy rules, pending review: the import carries issue statuses for them but does
+not activate rules in a profile. MISRA rules are not mapped.
 
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says

@@ -1,5 +1,5 @@
 {
-  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules. PHP (Phase 9A): php:S#### rows are curated, keys only, each compared against both rules' public documentation and sources (SonarSource's public sonar-php repository, PHPStan's docs and source; committed reviewed, as the python rows), each target a PHPStan identifier that fires at Qualor's default level; SonarQube imports PHPStan reports as the single rule external_phpstan:phpstan.finding, which cannot be mapped; external_psalm and phpsecurity are not mapped. Ruby (Phase 9B): external_rubocop maps to rubocop one to one for the cops of the pinned RuboCop (rubocop-keys.json); ruby:S#### rows are curated, keys only, each compared against both rules' public documentation; rubydre is SonarQube's newer repository for the same RSPEC ids (rubydre-only rules: public name and parameters only; kept as overlap). Go (Phase 9C): external_govet maps to govet one to one; go:S#### rows are curated (keys and our own reasons only); the rows whose SonarQube rule has a public description (SonarSource's public sonar-go repository) were compared against it and the pinned tool's sources by an automated review on 2026-10-01 and are reviewed, and a row is equivalent only where both scopes match at default settings, otherwise overlap; the rest (the gosec rows, known by rule name only) stay reviewed:false overlap and import issue statuses only until a person compares both rules' documentation; external_golangci-lint keys are linter names and are not mapped.",
+  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules. PHP (Phase 9A): php:S#### rows are curated, keys only, each compared against both rules' public documentation and sources (SonarSource's public sonar-php repository, PHPStan's docs and source; committed reviewed, as the python rows), each target a PHPStan identifier that fires at Qualor's default level; SonarQube imports PHPStan reports as the single rule external_phpstan:phpstan.finding, which cannot be mapped; external_psalm and phpsecurity are not mapped. Ruby (Phase 9B): external_rubocop maps to rubocop one to one for the cops of the pinned RuboCop (rubocop-keys.json); ruby:S#### rows are curated, keys only, each compared against both rules' public documentation; rubydre is SonarQube's newer repository for the same RSPEC ids (rubydre-only rules: public name and parameters only; kept as overlap). Go (Phase 9C): external_govet maps to govet one to one; go:S#### rows are curated (keys and our own reasons only); the rows whose SonarQube rule has a public description (SonarSource's public sonar-go repository) were compared against it and the pinned tool's sources by an automated review on 2026-10-01 and are reviewed, and a row is equivalent only where both scopes match at default settings, otherwise overlap; the rest (the gosec rows, known by rule name only) stay reviewed:false overlap and import issue statuses only until a person compares both rules' documentation; external_golangci-lint keys are linter names and are not mapped. C and C++ (Phase 9D): c:S#### and cpp:S#### rows are curated, keys only, `reviewed: false` until compared against both rules' public documentation; SonarQube has no repository of imported cppcheck or clang-tidy issues, and MISRA keys (`c:M23_…`) are not mapped.",
   "languages": {
     "js": {
       "language": "javascript",
@@ -33,7 +33,15 @@
       "language": "ruby",
       "engines": ["rubocop"]
     },
-    "go": { "language": "go", "engines": ["staticcheck", "govet", "gosec"] }
+    "go": { "language": "go", "engines": ["staticcheck", "govet", "gosec"] },
+    "c": {
+      "language": "c",
+      "engines": ["cppcheck", "clang-tidy"]
+    },
+    "cpp": {
+      "language": "cpp",
+      "engines": ["cppcheck", "clang-tidy"]
+    }
   },
   "aliases": {
     "squid": "java",
@@ -1313,6 +1321,279 @@
       "relation": "overlap",
       "reviewed": false,
       "reason": "Both flag debugging features left on; gosec the exposed net/http/pprof endpoint."
+    },
+    {
+      "sonar": ["c:S2259", "cpp:S2259"],
+      "qualor": [
+        "cppcheck:nullPointer",
+        "cppcheck:nullPointerRedundantCheck",
+        "clang-tidy:clang-analyzer-core.NullDereference"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report dereferencing a pointer that can be null."
+    },
+    {
+      "sonar": ["c:S3584", "cpp:S3584"],
+      "qualor": [
+        "cppcheck:memleak",
+        "cppcheck:memleakOnRealloc",
+        "clang-tidy:clang-analyzer-unix.Malloc"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report allocated memory that is never released."
+    },
+    {
+      "sonar": ["c:S3529", "cpp:S3529"],
+      "qualor": [
+        "cppcheck:deallocuse",
+        "clang-tidy:clang-analyzer-unix.Malloc",
+        "clang-tidy:clang-analyzer-cplusplus.NewDelete"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report memory used after it was released."
+    },
+    {
+      "sonar": ["c:S3520", "cpp:S3520"],
+      "qualor": [
+        "cppcheck:doubleFree",
+        "clang-tidy:clang-analyzer-unix.Malloc",
+        "clang-tidy:clang-analyzer-cplusplus.NewDelete"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report memory released twice."
+    },
+    {
+      "sonar": ["c:S3518", "cpp:S3518"],
+      "qualor": [
+        "cppcheck:zerodiv",
+        "cppcheck:zerodivcond",
+        "clang-tidy:clang-analyzer-core.DivideZero"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report a division whose divisor can be zero."
+    },
+    {
+      "sonar": ["c:S836", "cpp:S836"],
+      "qualor": [
+        "cppcheck:uninitvar",
+        "cppcheck:uninitdata",
+        "clang-tidy:clang-analyzer-core.uninitialized.Assign",
+        "clang-tidy:clang-analyzer-core.uninitialized.UndefReturn"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report reading a variable before it is initialised."
+    },
+    {
+      "sonar": ["c:S3519", "cpp:S3519"],
+      "qualor": [
+        "cppcheck:arrayIndexOutOfBounds",
+        "cppcheck:bufferAccessOutOfBounds",
+        "clang-tidy:clang-analyzer-security.ArrayBound"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report memory accessed outside its bounds."
+    },
+    {
+      "sonar": ["c:S1764", "cpp:S1764"],
+      "qualor": ["cppcheck:duplicateExpression", "clang-tidy:misc-redundant-expression"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report the same expression on both sides of an operator."
+    },
+    {
+      "sonar": ["c:S1656", "cpp:S1656"],
+      "qualor": ["cppcheck:selfAssignment", "clang-tidy:clang-diagnostic-self-assign"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report a variable assigned to itself."
+    },
+    {
+      "sonar": ["c:S2275", "cpp:S2275"],
+      "qualor": ["cppcheck:wrongPrintfScanfArgNum", "clang-tidy:clang-diagnostic-format"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report printf-style calls whose arguments do not match the format."
+    },
+    {
+      "sonar": ["c:S1079", "cpp:S1079"],
+      "qualor": ["cppcheck:invalidscanf"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report a scanf `%s` without a field width."
+    },
+    {
+      "sonar": ["c:S1862", "cpp:S1862"],
+      "qualor": ["cppcheck:multiCondition"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report an else-if condition that repeats an earlier one."
+    },
+    {
+      "sonar": ["c:S3923", "cpp:S3923"],
+      "qualor": ["cppcheck:duplicateBranch", "clang-tidy:bugprone-branch-clone"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report conditional branches with identical code."
+    },
+    {
+      "sonar": ["c:S1763", "cpp:S1763"],
+      "qualor": ["cppcheck:unreachableCode"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report code that can never run."
+    },
+    {
+      "sonar": ["c:S2095", "cpp:S2095"],
+      "qualor": ["cppcheck:resourceLeak"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report a file or resource that is not closed."
+    },
+    {
+      "sonar": ["c:S3588", "cpp:S3588"],
+      "qualor": ["cppcheck:useClosedFile", "clang-tidy:clang-analyzer-unix.Stream"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report a stream used after it was closed."
+    },
+    {
+      "sonar": ["cpp:S1232"],
+      "qualor": [
+        "cppcheck:mismatchAllocDealloc",
+        "clang-tidy:clang-analyzer-unix.MismatchedDeallocator"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report memory released with a function that does not match its allocation."
+    },
+    {
+      "sonar": ["c:S3135", "cpp:S3135"],
+      "qualor": ["cppcheck:pointerSize", "clang-tidy:bugprone-sizeof-expression"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report sizeof applied to a pointer where the pointee was meant."
+    },
+    {
+      "sonar": ["c:S1913", "cpp:S1913"],
+      "qualor": ["cppcheck:sizeofsizeof", "clang-tidy:bugprone-sizeof-expression"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report sizeof applied to a sizeof expression."
+    },
+    {
+      "sonar": ["c:S935", "cpp:S935"],
+      "qualor": ["cppcheck:missingReturn", "clang-tidy:clang-diagnostic-return-type"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report a non-void function path without a return value."
+    },
+    {
+      "sonar": ["cpp:S2107"],
+      "qualor": ["cppcheck:uninitMemberVar", "clang-tidy:cppcoreguidelines-pro-type-member-init"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report member variables a constructor leaves uninitialised."
+    },
+    {
+      "sonar": ["cpp:S5417"],
+      "qualor": ["clang-tidy:bugprone-move-forwarding-reference"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report std::move applied to a forwarding reference."
+    },
+    {
+      "sonar": ["cpp:S1044"],
+      "qualor": [
+        "cppcheck:catchExceptionByValue",
+        "clang-tidy:misc-throw-by-value-catch-by-reference"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report exceptions caught by value."
+    },
+    {
+      "sonar": ["cpp:S1048"],
+      "qualor": ["cppcheck:exceptThrowInDestructor", "clang-tidy:bugprone-exception-escape"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report a destructor that can throw."
+    },
+    {
+      "sonar": ["c:S946", "cpp:S946"],
+      "qualor": ["cppcheck:autoVariables", "clang-tidy:clang-analyzer-core.StackAddressEscape"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report the address of a local variable outliving it."
+    },
+    {
+      "sonar": ["c:S6655", "cpp:S6655"],
+      "qualor": ["cppcheck:invalidLifetime", "cppcheck:returnDanglingLifetime"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report using a variable outside its lifetime."
+    },
+    {
+      "sonar": ["cpp:S5553"],
+      "qualor": ["cppcheck:danglingTemporaryLifetime"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report a reference or pointer to a temporary that is already gone."
+    },
+    {
+      "sonar": ["c:S3590", "cpp:S3590"],
+      "qualor": ["cppcheck:autovarInvalidDeallocation"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report freeing memory that was not allocated on the heap."
+    },
+    {
+      "sonar": ["c:S3949", "cpp:S3949"],
+      "qualor": ["cppcheck:integerOverflow"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report integer arithmetic that overflows."
+    },
+    {
+      "sonar": ["cpp:S5184"],
+      "qualor": ["cppcheck:unusedScopedObject", "clang-tidy:bugprone-unused-raii"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report a scoped (RAII) object destroyed at once because it is unnamed."
+    },
+    {
+      "sonar": ["cpp:S6223"],
+      "qualor": ["cppcheck:uselessCallsRemove"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report std::remove results that are ignored."
+    },
+    {
+      "sonar": ["c:S2245", "cpp:S2245"],
+      "qualor": ["clang-tidy:cert-msc30-c", "clang-tidy:cert-msc50-cpp"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report rand()-style generators used where randomness matters."
+    },
+    {
+      "sonar": ["c:S8986", "cpp:S8986"],
+      "qualor": ["cppcheck:nullPointerOutOfMemory"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report an allocation result used without a null check."
+    },
+    {
+      "sonar": ["c:S1081", "cpp:S1081"],
+      "qualor": ["clang-tidy:clang-analyzer-security.insecureAPI.gets"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both report gets() and similar unbounded input functions."
     }
   ]
 }
