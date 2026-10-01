@@ -49,6 +49,12 @@ export function classify(text) {
   return null;
 }
 
+/** Code-unit order of two strings, as `<` compares them. */
+function compareText(x, y) {
+  if (x < y) return -1;
+  return x > y ? 1 : 0;
+}
+
 function main([go, out, ...binaries]) {
   if (!go || !out || binaries.length === 0) {
     throw new Error('usage: node tools/analyzers/go-licences.mjs <go> <out> <gosec binary>...');
@@ -69,8 +75,8 @@ function main([go, out, ...binaries]) {
     GONOSUMDB: '',
   };
   const sections = [];
-  const sorted = [...modules.values()].sort((a, b) =>
-    a.path === b.path ? (a.version < b.version ? -1 : 1) : a.path < b.path ? -1 : 1,
+  const sorted = [...modules.values()].sort(
+    (a, b) => compareText(a.path, b.path) || compareText(a.version, b.version),
   );
   for (const m of sorted) {
     const info = JSON.parse(

@@ -25,41 +25,49 @@ const GO_VERSION_TEXT = /^(\d+)\.(\d+)(?:\.(\d+))?(?:(rc|beta)(\d+))?$/;
 export function goModTokens(line: string): string[] | null {
   const out: string[] = [];
   let i = 0;
-  while (i < line.length) {
+  while (i < line.length && !line.startsWith('//', i)) {
     const c = line[i] as string;
     if (c === ' ' || c === '\t' || c === '\r') {
       i += 1;
-    } else if (line.startsWith('//', i)) {
-      break;
-    } else if (c === '"') {
-      let j = i + 1;
-      let escaped = false;
-      for (; j < line.length; j++) {
-        const d = line[j];
-        if (escaped) escaped = false;
-        else if (d === '\\') escaped = true;
-        else if (d === '"') break;
-      }
-      if (j >= line.length) return null;
-      try {
-        out.push(JSON.parse(line.slice(i, j + 1)) as string);
-      } catch {
-        return null;
-      }
-      i = j + 1;
-    } else if (c === '`') {
-      const j = line.indexOf('`', i + 1);
-      if (j < 0) return null;
-      out.push(line.slice(i + 1, j));
-      i = j + 1;
-    } else {
-      let j = i;
-      while (j < line.length && !/[\s"`]/.test(line[j] as string) && !line.startsWith('//', j)) j++;
-      out.push(line.slice(i, j));
-      i = j;
+      continue;
     }
+    const token = readToken(line, i);
+    if (token === null) return null;
+    out.push(token.text);
+    i = token.end;
   }
   return out;
+}
+
+/** The token that starts at `i` (not a blank, not `//`) and the index after it; null: unreadable. */
+function readToken(line: string, i: number): { text: string; end: number } | null {
+  const c = line[i];
+  if (c === '"') return readInterpreted(line, i);
+  if (c === '`') {
+    const j = line.indexOf('`', i + 1);
+    return j < 0 ? null : { text: line.slice(i + 1, j), end: j + 1 };
+  }
+  let j = i;
+  while (j < line.length && !/[\s"`]/.test(line[j] as string) && !line.startsWith('//', j)) j++;
+  return { text: line.slice(i, j), end: j };
+}
+
+/** An "interpreted" string that starts at `i`, decoded; null when it is not closed or not valid. */
+function readInterpreted(line: string, i: number): { text: string; end: number } | null {
+  let j = i + 1;
+  let escaped = false;
+  for (; j < line.length; j++) {
+    const d = line[j];
+    if (escaped) escaped = false;
+    else if (d === '\\') escaped = true;
+    else if (d === '"') break;
+  }
+  if (j >= line.length) return null;
+  try {
+    return { text: JSON.parse(line.slice(i, j + 1)) as string, end: j + 1 };
+  } catch {
+    return null;
+  }
 }
 
 function directive(mod: GoMod, verb: string, args: string[]): string | null {
@@ -97,32 +105,42 @@ function directive(mod: GoMod, verb: string, args: string[]): string | null {
 }
 
 export function parseGoMod(text: string): GoMod | { error: string } {
-  const mod: GoMod = { module: null, go: null, toolchain: null, replaces: [] };
-  let block: string | null = null;
+  const state: ParseState = {
+    mod: { module: null, go: null, toolchain: null, replaces: [] },
+    block: null,
+  };
   const lines = text.split('\n');
   for (let n = 0; n < lines.length; n++) {
     const tokens = goModTokens(lines[n] as string);
     if (tokens === null) return { error: `line ${n + 1} cannot be read` };
-    if (tokens.length === 0) continue;
-    if (block !== null) {
-      if (tokens.length === 1 && tokens[0] === ')') {
-        block = null;
-        continue;
-      }
-      const err = directive(mod, block, tokens);
-      if (err !== null) return { error: `line ${n + 1}: ${err}` };
-      continue;
-    }
-    const [verb, ...args] = tokens as [string, ...string[]];
-    if (args.length === 1 && args[0] === '(') {
-      block = verb;
-      continue;
-    }
-    const err = directive(mod, verb, args);
+    const err = tokens.length === 0 ? null : parseLine(state, tokens as [string, ...string[]]);
     if (err !== null) return { error: `line ${n + 1}: ${err}` };
   }
-  if (block !== null) return { error: 'a ( block is not closed' };
-  return mod;
+  if (state.block !== null) return { error: 'a ( block is not closed' };
+  return state.mod;
+}
+
+interface ParseState {
+  mod: GoMod;
+  /** The verb of the open `verb (` block, if any. */
+  block: string | null;
+}
+
+/** One go.mod line's tokens (not none): a directive, or a block's start, line or end. */
+function parseLine(state: ParseState, tokens: [string, ...string[]]): string | null {
+  if (state.block !== null) {
+    if (tokens.length === 1 && tokens[0] === ')') {
+      state.block = null;
+      return null;
+    }
+    return directive(state.mod, state.block, tokens);
+  }
+  const [verb, ...args] = tokens;
+  if (args.length === 1 && args[0] === '(') {
+    state.block = verb;
+    return null;
+  }
+  return directive(state.mod, verb, args);
 }
 
 /** [major, minor, kind (0 language version, 1 beta, 2 rc, 3 release), n] as the go command orders them. */

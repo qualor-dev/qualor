@@ -29,6 +29,41 @@ const LEVEL: Readonly<Record<string, string>> = {
   fatal: 'error',
 };
 
+/** One offense as a SARIF result at `uri`. */
+function offenseResult(offense: z.infer<typeof offenseSchema>, uri: string): unknown {
+  const l = offense.location;
+  const region: Record<string, number> = {
+    startLine: l.start_line,
+    startColumn: l.start_column,
+    endLine: l.last_line,
+  };
+  // RuboCop's last column is inclusive; SARIF's end column is the one after.
+  if (l.last_line > l.start_line || l.last_column + 1 > l.start_column)
+    region['endColumn'] = l.last_column + 1;
+  return {
+    ruleId: offense.cop_name,
+    level: LEVEL[offense.severity] ?? 'warning',
+    message: { text: offense.message },
+    locations: [{ physicalLocation: { artifactLocation: { uri }, region } }],
+  };
+}
+
+/** The log lines for what the conversion dropped (rubocopJsonToSarif). */
+function logDropped(
+  log: Logger | undefined,
+  n: { unlisted: number; unparsable: number; outside: number },
+): void {
+  if (n.unlisted > 0) {
+    log?.warn(
+      `rubocop: RuboCop reported ${n.unlisted} file(s) Qualor did not give it; their findings were dropped`,
+    );
+  }
+  if (n.unparsable > 0)
+    log?.debug(`rubocop: ${n.unparsable} file(s) RuboCop could not parse (Lint/Syntax dropped)`);
+  if (n.outside > 0)
+    log?.debug(`rubocop: ${n.outside} offense(s) of cops outside the selection dropped`);
+}
+
 /**
  * RuboCop's `--format json` report → SARIF 2.1.0 (config.md §6). Paths are relative to the
  * checked copy, i.e. the repository's own, and percent-encoded by segment so the normaliser
@@ -60,41 +95,15 @@ export function rubocopJsonToSarif(
     }
     const uri = file.path.split('/').map(encodeURIComponent).join('/');
     for (const offense of file.offenses) {
-      if (offense.cop_name === RUBOCOP_SYNTAX_COP) {
-        unparsable++;
-        continue;
+      if (offense.cop_name === RUBOCOP_SYNTAX_COP) unparsable++;
+      else if (!o.cops.has(offense.cop_name)) outside++;
+      else {
+        used.add(offense.cop_name);
+        results.push(offenseResult(offense, uri));
       }
-      if (!o.cops.has(offense.cop_name)) {
-        outside++;
-        continue;
-      }
-      used.add(offense.cop_name);
-      const l = offense.location;
-      const region: Record<string, number> = {
-        startLine: l.start_line,
-        startColumn: l.start_column,
-        endLine: l.last_line,
-      };
-      // RuboCop's last column is inclusive; SARIF's end column is the one after.
-      if (l.last_line > l.start_line || l.last_column + 1 > l.start_column)
-        region['endColumn'] = l.last_column + 1;
-      results.push({
-        ruleId: offense.cop_name,
-        level: LEVEL[offense.severity] ?? 'warning',
-        message: { text: offense.message },
-        locations: [{ physicalLocation: { artifactLocation: { uri }, region } }],
-      });
     }
   }
-  if (unlisted > 0) {
-    o.log?.warn(
-      `rubocop: RuboCop reported ${unlisted} file(s) Qualor did not give it; their findings were dropped`,
-    );
-  }
-  if (unparsable > 0)
-    o.log?.debug(`rubocop: ${unparsable} file(s) RuboCop could not parse (Lint/Syntax dropped)`);
-  if (outside > 0)
-    o.log?.debug(`rubocop: ${outside} offense(s) of cops outside the selection dropped`);
+  logDropped(o.log, { unlisted, unparsable, outside });
   const rules = [...used].sort().map((id) => {
     const helpUri = rubocopHelpUri(id);
     return {

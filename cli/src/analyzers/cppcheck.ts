@@ -22,6 +22,7 @@ import {
   checkCompileCommandsSetting,
   findCompileCommands,
   readCompileCommands,
+  type CompileEntry,
 } from './compile-commands';
 import { cppcheckXmlToSarif } from './cppcheck-xml';
 import { detailLine, shown } from './reason';
@@ -40,23 +41,21 @@ function logNotAnalysed(ctx: AnalyzerContext, counts: ReadonlyMap<string, number
   if (counts.size === 0) return;
   const total = [...counts.values()].reduce((a, b) => a + b, 0);
   const ids = [...counts].map(([id, n]) => `${shown(id)} ${n}`).join(', ');
-  ctx.log.warn(
-    `cppcheck: ${detailLine(`${total} result(s) say it could not fully analyse the code (${ids}); they are not issues`)}`,
+  const detail = detailLine(
+    `${total} result(s) say it could not fully analyse the code (${ids}); they are not issues`,
   );
+  ctx.log.warn(`cppcheck: ${detail}`);
 }
 
-async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
-  const settings = ctx.config.analyzers.cppcheck;
-  const db = findCompileCommands(ctx.root, settings.compileCommands);
-  if ('skip' in db) return db;
+/** The cppcheck to run and its version, or why there is none (never the checkout's own). */
+async function findCppcheck(
+  ctx: AnalyzerContext,
+): Promise<{ cppcheck: string; version: string } | { skip: string } | { unavailable: string }> {
   const cppcheck = ctx.resolveBinary('cppcheck');
   if (cppcheck === null) {
-    return {
-      skip:
-        ctx.repoBinary('cppcheck') === null
-          ? NOT_INSTALLED
-          : `${NOT_INSTALLED}; the repository's own cppcheck is never run`,
-    };
+    const own =
+      ctx.repoBinary('cppcheck') === null ? '' : "; the repository's own cppcheck is never run";
+    return { skip: `${NOT_INSTALLED}${own}` };
   }
   const probe = await ctx.exec(cppcheck, ['--version'], { timeoutMs: 30_000, cwd: ctx.workDir });
   const version = probe.exitCode === 0 ? parseCppcheckVersion(probe.stdout) : null;
@@ -67,7 +66,13 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       skip: `cppcheck ${shown(version)} is not supported: this Qualor runs cppcheck ${minor}.x (the qualor/scanner image's ${CPPCHECK_VERSION})`,
     };
   }
+  return { cppcheck, version };
+}
 
+/** The scope's C/C++ files copied into `<work>/src`, the directory cppcheck runs in. */
+function copyInput(
+  ctx: AnalyzerContext,
+): { copied: ScopeFile[]; input: string } | { skip: string } {
   const cFiles = ctx.files.filter((f) => C_LANGUAGES.has(f.language));
   const lineBreaks = cFiles.filter((f) => hasLineBreak(f.path)).length;
   if (lineBreaks > 0)
@@ -87,9 +92,70 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
     );
   }
   if (copied.length === 0) return { skip: 'no C or C++ file in scope that cppcheck can be given' };
+  return { copied, input };
+}
 
+/** cppcheck's input arguments: Qualor's rewritten database, or a file list with the settings. */
+function inputArgs(
+  ctx: AnalyzerContext,
+  db: { rel: string } | { none: string },
+  copy: { copied: ScopeFile[]; input: string },
+): string[] | { skip: string } {
+  const { copied, input } = copy;
+  if ('rel' in db) {
+    const project = writeProject(ctx, db.rel, copied, input);
+    if ('skip' in project) return project;
+    return [`--project=${project.file}`];
+  }
+  const settings = ctx.config.analyzers.cppcheck;
+  // cppcheck reads a lone .h as C: a C++ header is analysed where a source includes it.
+  const listed = copied.filter((f) => !(f.language === 'cpp' && isCHeader(f.path)));
+  if (listed.length === 0) return { skip: 'no C or C++ source file in scope for cppcheck' };
+  const list = path.join(ctx.workDir, 'cppcheck-files.txt');
+  writeFileSync(list, listed.map((f) => `${f.path}\n`).join(''));
+  return [
+    `--file-list=${list}`,
+    ...settings.includePaths.map((dir) => `-I${path.join(input, ...dir.split('/'))}`),
+    ...settings.defines.map((d) => `-D${d}`),
+  ];
+}
+
+/** The run's transform: cppcheck's xmlv2 as SARIF, with one log line per kind of dropped result. */
+function cppcheckTransform(
+  ctx: AnalyzerContext,
+  version: string,
+  input: string,
+): (output: unknown) => unknown {
+  return (output) => {
+    const { log, notAnalysed, outside } = cppcheckXmlToSarif(String(output), {
+      version,
+      base: input,
+    });
+    logNotAnalysed(ctx, notAnalysed);
+    // Ruling D9-9: a count only, never the foreign path.
+    if (outside > 0) {
+      ctx.log.warn(
+        `cppcheck: ${outside} result(s) or note(s) located outside the repository were dropped`,
+      );
+    }
+    return log;
+  };
+}
+
+async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
+  const settings = ctx.config.analyzers.cppcheck;
+  const db = findCompileCommands(ctx.root, settings.compileCommands);
+  if ('skip' in db) return db;
+  const found = await findCppcheck(ctx);
+  if (!('cppcheck' in found)) return found;
+  const { cppcheck, version } = found;
+  const copy = copyInput(ctx);
+  if ('skip' in copy) return copy;
+  const input = copy.input;
   const out = path.join(ctx.workDir, 'cppcheck.xml');
   const jobs = Math.max(1, Math.min(4, availableParallelism()));
+  const files = inputArgs(ctx, db, copy);
+  if (!Array.isArray(files)) return files;
   const args = [
     '-q',
     `-j${jobs}`,
@@ -100,21 +166,8 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
     '--output-format=xmlv2',
     `--output-file=${out}`,
     `--relative-paths=${input}`,
+    ...files,
   ];
-  if ('rel' in db) {
-    const project = writeProject(ctx, db.rel, copied, input);
-    if ('skip' in project) return project;
-    args.push(`--project=${project.file}`);
-  } else {
-    // cppcheck reads a lone .h as C: a C++ header is analysed where a source includes it.
-    const listed = copied.filter((f) => !(f.language === 'cpp' && isCHeader(f.path)));
-    if (listed.length === 0) return { skip: 'no C or C++ source file in scope for cppcheck' };
-    const list = path.join(ctx.workDir, 'cppcheck-files.txt');
-    writeFileSync(list, listed.map((f) => `${f.path}\n`).join(''));
-    args.push(`--file-list=${list}`);
-    for (const dir of settings.includePaths) args.push(`-I${path.join(input, ...dir.split('/'))}`);
-    for (const d of settings.defines) args.push(`-D${d}`);
-  }
   const own = cFamilyEnv(ctx.workDir);
   return {
     run: {
@@ -127,20 +180,7 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       outputFormat: 'text',
       okExitCodes: [0],
       version,
-      transform: (output) => {
-        const { log, notAnalysed, outside } = cppcheckXmlToSarif(String(output), {
-          version,
-          base: input,
-        });
-        logNotAnalysed(ctx, notAnalysed);
-        // Ruling D9-9: a count only, never the foreign path.
-        if (outside > 0) {
-          ctx.log.warn(
-            `cppcheck: ${outside} result(s) or note(s) located outside the repository were dropped`,
-          );
-        }
-        return log;
-      },
+      transform: cppcheckTransform(ctx, version, input),
     },
   };
 }
@@ -160,6 +200,87 @@ const UNSAFE_FILE_PATH = /["\u0000-\u001f\u007f]/;
 /** Options of the sanitised arguments whose separate value cppcheck's rewrite leaves out. */
 const DROPPED_VALUE_OPTIONS = new Set(['-include', '-idirafter', '-isysroot', '-x', '-target']);
 const INCLUDE_OPTION = /^(-I|-isystem|-iquote)(.*)$/;
+
+/** The state of one rewrite of database arguments for cppcheck (writeProject). */
+interface Rewrite {
+  /** A directory as its place in the checked copy; null outside the repository or unsafe. */
+  toCopy: (dir: string) => string | null;
+  droppedIncludes: number;
+  droppedUnsafe: number;
+}
+
+/** A kept argument, unless cppcheck's re-splitting could turn it into others. */
+function keepArg(r: Rewrite, args: string[], a: string): void {
+  if (UNSAFE_ARGUMENT.test(a)) r.droppedUnsafe++;
+  else args.push(a);
+}
+
+/** An include directory of the entry, mapped into the copy (or dropped and counted). */
+function addInclude(r: Rewrite, args: string[], dir: { directory: string; value: string }): void {
+  if (/["\s]/.test(dir.value)) {
+    r.droppedUnsafe++;
+    return;
+  }
+  const mapped = dir.value === '' ? null : r.toCopy(path.resolve(dir.directory, dir.value));
+  if (mapped === null) r.droppedIncludes++;
+  else args.push(`-I${mapped}`);
+}
+
+/** One argument of an entry (with its value), rewritten into `args`; returns how many it used. */
+function rewriteStep(r: Rewrite, e: CompileEntry, at: { i: number; args: string[] }): number {
+  const { i, args } = at;
+  const a = e.args[i] ?? '';
+  const flag = INCLUDE_OPTION.exec(a);
+  if (flag !== null) {
+    const attached = flag[2] ?? '';
+    const value = attached === '' ? (e.args[i + 1] ?? '') : attached;
+    addInclude(r, args, { directory: e.directory, value });
+    return attached === '' ? 2 : 1;
+  }
+  if (/^-[DU]./.test(a) || a.startsWith('-std=')) {
+    keepArg(r, args, a);
+    return 1;
+  }
+  if ((a === '-D' || a === '-U') && i + 1 < e.args.length) {
+    keepArg(r, args, `${a}${e.args[i + 1] ?? ''}`);
+    return 2;
+  }
+  return DROPPED_VALUE_OPTIONS.has(a) ? 2 : 1;
+}
+
+/** An entry's arguments for cppcheck: includes mapped into the copy, `-D`, `-U` and `-std=`. */
+function rewriteArgs(r: Rewrite, e: CompileEntry): string[] {
+  const args: string[] = [];
+  let i = 0;
+  while (i < e.args.length) i += rewriteStep(r, e, { i, args });
+  return args;
+}
+
+/** The directory `dir` as its place in the checked copy `input`; null outside the repository. */
+function copyMapper(ctx: AnalyzerContext, input: string): (dir: string) => string | null {
+  const roots = [path.resolve(ctx.root), realRootOf(ctx.root)];
+  return (dir) => {
+    const root = roots.find((r) => within(r, dir));
+    if (root === undefined) return null;
+    const rel = path.relative(root, dir);
+    // The part of the path the database chose (separators aside) must also be one argument.
+    return UNSAFE_ARGUMENT.test(rel.split(path.sep).join('/')) ? null : path.join(input, rel);
+  };
+}
+
+/** The info lines of a rewrite: the arguments left out of cppcheck's database, as counts. */
+function logRewrite(ctx: AnalyzerContext, r: Rewrite): void {
+  if (r.droppedUnsafe > 0) {
+    ctx.log.info(
+      `cppcheck: ${r.droppedUnsafe} argument(s) with a quote, backslash or space left out (cppcheck splits the database's arguments again)`,
+    );
+  }
+  if (r.droppedIncludes > 0) {
+    ctx.log.info(
+      `cppcheck: ${r.droppedIncludes} include director(ies) outside the repository left out (cppcheck uses its own library for system headers)`,
+    );
+  }
+}
 
 /**
  * Decision 7: Qualor's rewrite of the compile database for cppcheck, in the checked copy: the
@@ -183,25 +304,8 @@ function writeProject(
       `cppcheck: ${shown(rel)}: ${read.droppedArgs} argument(s) outside Qualor's allowlist dropped, ${read.ignoredEntries} entr(ies) for no file of the scan ignored`,
     );
   }
-  const roots = [path.resolve(ctx.root), realRootOf(ctx.root)];
-  const toCopy = (dir: string): string | null => {
-    for (const root of roots) {
-      if (within(root, dir)) {
-        const rel = path.relative(root, dir);
-        // The part of the path the database chose (separators aside) must also be one argument.
-        if (UNSAFE_ARGUMENT.test(rel.split(path.sep).join('/'))) return null;
-        return path.join(input, rel);
-      }
-    }
-    return null;
-  };
-  let droppedIncludes = 0;
-  let droppedUnsafe = 0;
+  const r: Rewrite = { toCopy: copyMapper(ctx, input), droppedIncludes: 0, droppedUnsafe: 0 };
   let unsafeFiles = 0;
-  const keep = (args: string[], a: string) => {
-    if (UNSAFE_ARGUMENT.test(a)) droppedUnsafe++;
-    else args.push(a);
-  };
   const entries = read.entries.flatMap((e) => {
     // readCompileCommands keeps entries of scope files only.
     const f = scope.get(e.repoPath);
@@ -210,31 +314,11 @@ function writeProject(
       unsafeFiles++;
       return [];
     }
-    const args: string[] = [];
-    for (let i = 0; i < e.args.length; i++) {
-      const a = e.args[i] ?? '';
-      const flag = INCLUDE_OPTION.exec(a);
-      if (flag !== null) {
-        const value = flag[2] !== '' ? (flag[2] ?? '') : (e.args[++i] ?? '');
-        if (/["\s]/.test(value)) {
-          droppedUnsafe++;
-          continue;
-        }
-        const mapped = value === '' ? null : toCopy(path.resolve(e.directory, value));
-        if (mapped !== null) args.push(`-I${mapped}`);
-        else droppedIncludes++;
-      } else if (/^-[DU]./.test(a) || a.startsWith('-std=')) {
-        keep(args, a);
-      } else if ((a === '-D' || a === '-U') && i + 1 < e.args.length) {
-        keep(args, `${a}${e.args[++i] ?? ''}`);
-      } else if (DROPPED_VALUE_OPTIONS.has(a)) {
-        i++;
-      }
-    }
+    const args = rewriteArgs(r, e);
     const file = copyTarget(input, f);
     return [
       {
-        directory: toCopy(e.directory) ?? input,
+        directory: r.toCopy(e.directory) ?? input,
         file,
         arguments: [f.language === 'c' ? 'cc' : 'c++', ...args, '-c', file],
       },
@@ -247,16 +331,7 @@ function writeProject(
   }
   if (entries.length === 0)
     return { skip: `${shown(rel)} names no C or C++ file of the scan that cppcheck can take` };
-  if (droppedUnsafe > 0) {
-    ctx.log.info(
-      `cppcheck: ${droppedUnsafe} argument(s) with a quote, backslash or space left out (cppcheck splits the database's arguments again)`,
-    );
-  }
-  if (droppedIncludes > 0) {
-    ctx.log.info(
-      `cppcheck: ${droppedIncludes} include director(ies) outside the repository left out (cppcheck uses its own library for system headers)`,
-    );
-  }
+  logRewrite(ctx, r);
   const file = path.join(ctx.workDir, 'cppcheck-compile-commands.json');
   writeFileSync(file, JSON.stringify(entries));
   return { file };

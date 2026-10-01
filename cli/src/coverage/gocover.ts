@@ -44,11 +44,8 @@ export async function parseGoCover(
   if (size > MAX_GO_COVER_BYTES) {
     throw new Error(`Go coverage profile too large (over ${MAX_GO_COVER_BYTES} bytes)`);
   }
-  const files = new Map<string, CoverageRecord>();
+  const acc: Accumulated = { files: new Map(), distinct: 0, visits: 0, truncated: false };
   let sawMode = false;
-  let distinct = 0;
-  let visits = 0;
-  let truncated = false;
   const lines = createInterface({
     input: createReadStream(absPath, { encoding: 'utf8' }),
     crlfDelay: Infinity,
@@ -61,25 +58,55 @@ export async function parseGoCover(
       continue;
     }
     if (!sawMode) throw new Error('not a Go coverage profile (no mode line)');
-    const m = BLOCK.exec(line);
-    if (m === null) throw new Error(`unexpected line in a Go coverage profile: ${line.slice(0, 80)}`);
-    const [, file = '', l1, , l2, c2, statements, count] = m;
-    if (Number(statements) === 0 || climbs(file)) continue;
-    const start = Number(l1);
-    const end = Number(c2) <= 1 && Number(l2) > start ? Number(l2) - 1 : Number(l2);
-    if (start < 1 || start > MAX_LINE || end < start || end - start >= MAX_BLOCK_LINES) continue;
-    if (truncated) continue; // keep reading to validate the rest, add nothing
-    visits += end - start + 1;
-    if (visits > limits.lineVisits) {
-      truncated = true;
-      continue;
-    }
-    const record = recordFor(files, file.startsWith('_/') ? file.slice(1) : file);
-    const before = record.lines.size;
-    for (let l = start; l <= end; l++) record.hit(l, Number(count));
-    distinct += record.lines.size - before;
-    if (distinct > limits.distinctLines) truncated = true;
+    const block = blockOf(line);
+    // Once truncated, the rest is still read to validate it, but nothing is added.
+    if (block !== null && !acc.truncated) addBlock(acc, block, limits);
   }
   if (!sawMode) throw new Error('empty Go coverage profile');
+  const { files, truncated } = acc;
   return truncated ? { files, sourceDirs: [], truncated } : { files, sourceDirs: [] };
+}
+
+interface Block {
+  file: string;
+  start: number;
+  end: number;
+  count: number;
+}
+
+interface Accumulated {
+  files: Map<string, CoverageRecord>;
+  distinct: number;
+  visits: number;
+  truncated: boolean;
+}
+
+/** A profile line as the block to add; null for a block that is skipped. Throws on any other line. */
+function blockOf(line: string): Block | null {
+  const m = BLOCK.exec(line);
+  if (m === null) throw new Error(`unexpected line in a Go coverage profile: ${line.slice(0, 80)}`);
+  const [, file = '', l1, , l2, c2, statements, count] = m;
+  if (Number(statements) === 0 || climbs(file)) return null;
+  const start = Number(l1);
+  const end = Number(c2) <= 1 && Number(l2) > start ? Number(l2) - 1 : Number(l2);
+  if (start < 1 || start > MAX_LINE || end < start || end - start >= MAX_BLOCK_LINES) return null;
+  return { file: file.startsWith('_/') ? file.slice(1) : file, start, end, count: Number(count) };
+}
+
+/** Adds a block's lines, or marks the profile truncated once a limit is passed. */
+function addBlock(
+  acc: Accumulated,
+  b: Block,
+  limits: { distinctLines: number; lineVisits: number },
+): void {
+  acc.visits += b.end - b.start + 1;
+  if (acc.visits > limits.lineVisits) {
+    acc.truncated = true;
+    return;
+  }
+  const record = recordFor(acc.files, b.file);
+  const before = record.lines.size;
+  for (let l = b.start; l <= b.end; l++) record.hit(l, b.count);
+  acc.distinct += record.lines.size - before;
+  if (acc.distinct > limits.distinctLines) acc.truncated = true;
 }

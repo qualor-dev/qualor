@@ -83,6 +83,47 @@ function optionPairs(value: unknown): [unknown, unknown][] {
   return value !== null && typeof value === 'object' ? Object.entries(value) : [[null, null]];
 }
 
+type Planned = { value: unknown } | { error: string };
+
+/** `Checks` as one comma-separated list of globs. */
+function planChecks(value: unknown): Planned {
+  const list = Array.isArray(value) ? value.map(scalar) : [scalar(value)];
+  if (list.some((s) => s === null))
+    return { error: 'Checks must be a string or a list of strings' };
+  const globs = (list as string[])
+    .join(',')
+    .replace(/\s+/g, '')
+    .replace(/,+/g, ',')
+    .replace(/^,|,$/g, '');
+  if (!CHECK_GLOBS.test(globs)) return { error: 'Checks holds characters no check name uses' };
+  return { value: globs };
+}
+
+/** `CheckOptions` as a mapping, without the options that name files (listed in `droppedOptions`). */
+function planCheckOptions(value: unknown, droppedOptions: string[]): Planned {
+  const options: Record<string, string> = {};
+  for (const [k, v] of optionPairs(value)) {
+    const s = scalar(v);
+    if (typeof k !== 'string' || !OPTION_KEY.test(k) || s === null) {
+      return { error: 'CheckOptions must be a mapping or a list of key/value pairs' };
+    }
+    const reason = optionDropReason(k, s);
+    if (reason === null) options[k] = s;
+    else droppedOptions.push(`${shown(k)} (${reason})`);
+  }
+  return { value: options };
+}
+
+/** One kept key of a `.clang-tidy`, as Qualor writes it, or why the file is refused. */
+function planKey(key: string, value: unknown, droppedOptions: string[]): Planned {
+  if (key === 'Checks') return planChecks(value);
+  if (key === 'CheckOptions') return planCheckOptions(value, droppedOptions);
+  if (!Array.isArray(value) || !value.every((e) => typeof e === 'string' && EXTENSION.test(e))) {
+    return { error: `${key} must be a list of extensions` };
+  }
+  return { value };
+}
+
 /** The configuration Qualor writes from a parsed `.clang-tidy` (null: Qualor's default checks). */
 export function planClangTidyConfig(
   parsed: Record<string, unknown> | null,
@@ -103,40 +144,11 @@ export function planClangTidyConfig(
   for (const [key, value] of Object.entries(parsed)) {
     if (!KEPT.has(key)) {
       dropped.push(shown(key));
-    } else if (key === 'Checks') {
-      const list = Array.isArray(value) ? value.map(scalar) : [scalar(value)];
-      if (list.some((s) => s === null)) {
-        return { skip: `${name}: Checks must be a string or a list of strings` };
-      }
-      const globs = (list as string[])
-        .join(',')
-        .replace(/\s+/g, '')
-        .replace(/,+/g, ',')
-        .replace(/^,|,$/g, '');
-      if (!CHECK_GLOBS.test(globs))
-        return { skip: `${name}: Checks holds characters no check name uses` };
-      out['Checks'] = globs;
-    } else if (key === 'CheckOptions') {
-      const options: Record<string, string> = {};
-      for (const [k, v] of optionPairs(value)) {
-        const s = scalar(v);
-        if (typeof k !== 'string' || !OPTION_KEY.test(k) || s === null) {
-          return { skip: `${name}: CheckOptions must be a mapping or a list of key/value pairs` };
-        }
-        const reason = optionDropReason(k, s);
-        if (reason === null) options[k] = s;
-        else droppedOptions.push(`${shown(k)} (${reason})`);
-      }
-      out['CheckOptions'] = options;
-    } else {
-      if (
-        !Array.isArray(value) ||
-        !value.every((e) => typeof e === 'string' && EXTENSION.test(e))
-      ) {
-        return { skip: `${name}: ${key} must be a list of extensions` };
-      }
-      out[key] = value;
+      continue;
     }
+    const kept = planKey(key, value, droppedOptions);
+    if ('error' in kept) return { skip: `${name}: ${kept.error}` };
+    out[key] = kept.value;
   }
   if (!('Checks' in out)) out['Checks'] = CLANG_TIDY_BUILTIN_CHECKS;
   // `Checks` first, as clang-tidy's own --dump-config writes it.
@@ -153,22 +165,33 @@ export function loadClangTidyConfig(
   root: string,
   configFile: string | null,
 ): ClangTidyPlan | { skip: string } | { error: string } {
-  if (configFile === CLANG_TIDY_QUALOR_DEFAULT)
-    return planClangTidyConfig(null, CLANG_TIDY_QUALOR_DEFAULT);
-  let rel: string;
-  if (configFile !== null) {
-    const bad = checkRepoFileSetting('analyzers.clang-tidy', 'configFile', configFile);
-    if (bad !== null) return { error: bad };
-    if (!repoEntryExists(path.resolve(root, configFile))) {
-      return { skip: `configFile ${shown(configFile)} does not exist` };
-    }
-    rel = configFile;
-  } else {
-    if (!repoEntryExists(path.join(root, '.clang-tidy'))) {
-      return planClangTidyConfig(null, CLANG_TIDY_QUALOR_DEFAULT);
-    }
-    rel = '.clang-tidy';
+  const chosen = configFileOf(root, configFile);
+  if (chosen === null) return planClangTidyConfig(null, CLANG_TIDY_QUALOR_DEFAULT);
+  if (typeof chosen !== 'string') return chosen;
+  return readAndPlan(root, chosen);
+}
+
+/**
+ * The repository path of the `.clang-tidy` to read: `configFile`, else the root's `.clang-tidy`;
+ * null for Qualor's default checks (none, or `qualor-default`).
+ */
+function configFileOf(
+  root: string,
+  configFile: string | null,
+): string | null | { skip: string } | { error: string } {
+  if (configFile === CLANG_TIDY_QUALOR_DEFAULT) return null;
+  if (configFile === null)
+    return repoEntryExists(path.join(root, '.clang-tidy')) ? '.clang-tidy' : null;
+  const bad = checkRepoFileSetting('analyzers.clang-tidy', 'configFile', configFile);
+  if (bad !== null) return { error: bad };
+  if (!repoEntryExists(path.resolve(root, configFile))) {
+    return { skip: `configFile ${shown(configFile)} does not exist` };
   }
+  return configFile;
+}
+
+/** A `.clang-tidy` read as UTF-8 YAML and planned, or why it cannot be. */
+function readAndPlan(root: string, rel: string): ClangTidyPlan | { skip: string } {
   let text: string;
   try {
     const bytes = readRepoConfigBytes(root, rel, MAX_CLANG_TIDY_CONFIG_BYTES, rel);

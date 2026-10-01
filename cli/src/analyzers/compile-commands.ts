@@ -38,39 +38,65 @@ export function checkCompileCommandsSetting(
   return typeof setting === 'string' ? checkRepoFileSetting(key, 'compileCommands', setting) : null;
 }
 
+interface SplitState {
+  words: string[];
+  word: string;
+  inWord: boolean;
+  quote: '"' | "'" | null;
+}
+
+/** One character of splitCommand outside quotes; returns how many characters it used. */
+function splitUnquoted(s: SplitState, c: string, next: string | undefined): number {
+  if (c === "'" || c === '"') {
+    s.quote = c;
+    s.inWord = true;
+    return 1;
+  }
+  if (c === '\\' && next !== undefined) {
+    s.word += next;
+    s.inWord = true;
+    return 2;
+  }
+  if (/\s/.test(c)) {
+    if (s.inWord) s.words.push(s.word);
+    s.word = '';
+    s.inWord = false;
+    return 1;
+  }
+  s.word += c;
+  s.inWord = true;
+  return 1;
+}
+
+/** One character of splitCommand (two for an escape); returns how many characters it used. */
+function splitStep(s: SplitState, c: string, next: string | undefined): number {
+  if (s.quote === "'") {
+    if (c === "'") s.quote = null;
+    else s.word += c;
+    return 1;
+  }
+  if (s.quote === '"') {
+    if (c === '\\' && next !== undefined && '"\\$`\n'.includes(next)) {
+      s.word += next;
+      return 2;
+    }
+    if (c === '"') s.quote = null;
+    else s.word += c;
+    return 1;
+  }
+  return splitUnquoted(s, c, next);
+}
+
 /** POSIX shell word splitting without any expansion (CMake writes `command` this way). */
 export function splitCommand(command: string): string[] {
-  const words: string[] = [];
-  let word = '';
-  let inWord = false;
-  let quote: '"' | "'" | null = null;
-  for (let i = 0; i < command.length; i++) {
-    const c = command.charAt(i);
-    if (quote === "'") {
-      if (c === "'") quote = null;
-      else word += c;
-    } else if (quote === '"') {
-      if (c === '"') quote = null;
-      else if (c === '\\' && i + 1 < command.length && '"\\$`\n'.includes(command.charAt(i + 1)))
-        word += command[++i];
-      else word += c;
-    } else if (c === "'" || c === '"') {
-      quote = c;
-      inWord = true;
-    } else if (c === '\\' && i + 1 < command.length) {
-      word += command[++i];
-      inWord = true;
-    } else if (/\s/.test(c)) {
-      if (inWord) words.push(word);
-      word = '';
-      inWord = false;
-    } else {
-      word += c;
-      inWord = true;
-    }
+  const s: SplitState = { words: [], word: '', inWord: false, quote: null };
+  let i = 0;
+  while (i < command.length) {
+    const next = i + 1 < command.length ? command.charAt(i + 1) : undefined;
+    i += splitStep(s, command.charAt(i), next);
   }
-  if (inWord) words.push(word);
-  return words;
+  if (s.inWord) s.words.push(s.word);
+  return s.words;
 }
 
 /** Options whose value is the next argument when it is not attached. */
@@ -209,40 +235,43 @@ export function sanitizeArguments(
   kept: string[];
   dropped: number;
 } {
+  const programName = (a: string | undefined) =>
+    path.posix.basename((a ?? '').replaceAll('\\', '/'));
   let i = 0;
-  while (
-    i < args.length &&
-    LAUNCHERS.has(path.posix.basename((args[i] ?? '').replaceAll('\\', '/')))
-  )
-    i++;
-  const first = args[i] ?? '';
-  const base = path.posix.basename(first.replaceAll('\\', '/'));
-  const compiler = COMPILER_NAME.test(base) ? base : language === 'c' ? 'cc' : 'c++';
+  while (i < args.length && LAUNCHERS.has(programName(args[i]))) i++;
+  const base = programName(args[i]);
+  let compiler = language === 'c' ? 'cc' : 'c++';
+  if (COMPILER_NAME.test(base)) compiler = base;
   const kept: string[] = [];
   let dropped = 0;
-  for (i += 1; i < args.length; i++) {
-    const a = args[i] ?? '';
-    if (KEPT_WITH_VALUE.has(a) && i + 1 < args.length) {
-      const value = args[++i] ?? '';
-      if (safeValue(value) && !(HEADER_PATH_OPTIONS.has(a) && DEVICE_PATH.test(value)))
-        kept.push(a, value);
-      else dropped++;
-    } else if (UNSAFE_TEXT.test(a)) {
-      dropped++;
-    } else if (ROUTINE_WITH_VALUE.has(a)) {
-      i++;
-    } else if (DROPPED_WITH_VALUE.has(a)) {
-      i++;
-      dropped++;
-    } else if (keptFlag(a)) {
-      kept.push(a);
-    } else if (ROUTINE.test(a) || (!a.startsWith('-') && !a.startsWith('@') && SOURCE.test(a))) {
-      // a routine build option, or the input file (also absolute, as CMake writes it)
-    } else {
-      dropped++;
-    }
+  i += 1;
+  while (i < args.length) {
+    const step = sanitizeStep(args, i);
+    kept.push(...step.kept);
+    dropped += step.dropped;
+    i += step.used;
   }
   return { compiler, kept, dropped };
+}
+
+/** One argument of sanitizeArguments (with its value): what it keeps and drops, and how many it uses. */
+function sanitizeStep(
+  args: readonly string[],
+  i: number,
+): { kept: string[]; dropped: number; used: number } {
+  const a = args[i] ?? '';
+  if (KEPT_WITH_VALUE.has(a) && i + 1 < args.length) {
+    const value = args[i + 1] ?? '';
+    const ok = safeValue(value) && !(HEADER_PATH_OPTIONS.has(a) && DEVICE_PATH.test(value));
+    return ok ? { kept: [a, value], dropped: 0, used: 2 } : { kept: [], dropped: 1, used: 2 };
+  }
+  if (UNSAFE_TEXT.test(a)) return { kept: [], dropped: 1, used: 1 };
+  if (ROUTINE_WITH_VALUE.has(a)) return { kept: [], dropped: 0, used: 2 };
+  if (DROPPED_WITH_VALUE.has(a)) return { kept: [], dropped: 1, used: 2 };
+  if (keptFlag(a)) return { kept: [a], dropped: 0, used: 1 };
+  // A routine build option, or the input file (also absolute, as CMake writes it): not counted.
+  const routine = ROUTINE.test(a) || (!a.startsWith('-') && !a.startsWith('@') && SOURCE.test(a));
+  return { kept: [], dropped: routine ? 0 : 1, used: 1 };
 }
 
 export interface CompileEntry {
@@ -255,11 +284,16 @@ export interface CompileEntry {
 
 type RawEntry = { directory?: unknown; file?: unknown; arguments?: unknown; command?: unknown };
 
-export function readCompileCommands(
-  root: string,
-  rel: string,
-  scope: ReadonlyMap<string, ScopeFile>,
-): { entries: CompileEntry[]; droppedArgs: number; ignoredEntries: number } | { skip: string } {
+/** A database entry with a `directory`, a `file`, and `arguments` (strings) or a `command`. */
+function isRawEntry(raw: RawEntry | null): boolean {
+  if (raw === null || typeof raw !== 'object') return false;
+  if (typeof raw.directory !== 'string' || typeof raw.file !== 'string') return false;
+  if (typeof raw.command === 'string') return true;
+  return Array.isArray(raw.arguments) && raw.arguments.every((a) => typeof a === 'string');
+}
+
+/** The compile database's JSON array, or why it is not read. */
+function readJsonArray(root: string, rel: string): { array: unknown[] } | { skip: string } {
   const name = shown(rel);
   let bytes: Buffer;
   try {
@@ -275,21 +309,25 @@ export function readCompileCommands(
     return { skip: `${name} is not valid JSON` };
   }
   if (!Array.isArray(parsed)) return { skip: `${name} is not a JSON array of entries` };
+  return { array: parsed };
+}
+
+export function readCompileCommands(
+  root: string,
+  rel: string,
+  scope: ReadonlyMap<string, ScopeFile>,
+): { entries: CompileEntry[]; droppedArgs: number; ignoredEntries: number } | { skip: string } {
+  const name = shown(rel);
+  const parsed = readJsonArray(root, rel);
+  if ('skip' in parsed) return parsed;
   const realRoot = realRootOf(root);
   const dbDir = path.dirname(path.resolve(root, rel));
   const entries: CompileEntry[] = [];
   const seen = new Set<string>();
   let droppedArgs = 0;
   let ignoredEntries = 0;
-  for (const [index, raw] of (parsed as RawEntry[]).entries()) {
-    const ok =
-      raw !== null &&
-      typeof raw === 'object' &&
-      typeof raw.directory === 'string' &&
-      typeof raw.file === 'string' &&
-      ((Array.isArray(raw.arguments) && raw.arguments.every((a) => typeof a === 'string')) ||
-        typeof raw.command === 'string');
-    if (!ok)
+  for (const [index, raw] of (parsed.array as RawEntry[]).entries()) {
+    if (!isRawEntry(raw))
       return {
         skip: `${name}: entry ${index + 1} needs "directory", "file", and "arguments" or "command"`,
       };

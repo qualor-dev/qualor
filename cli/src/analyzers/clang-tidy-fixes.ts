@@ -58,6 +58,121 @@ export interface ClangTidyConversion {
   unplaced: number;
 }
 
+/** The Diagnostics of every YAML document of clang-tidy's export. */
+function parseDiagnostics(text: string): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  if (text.trim() === '') return diagnostics;
+  for (const d of parseAllDocuments(text, { prettyErrors: false })) {
+    if (d.errors.length > 0) throw new Error('clang-tidy export is not YAML');
+    const value = d.toJS({ maxAliasCount: 100 }) as { Diagnostics?: unknown } | null;
+    if (value === null || value === undefined) continue;
+    if (typeof value !== 'object') throw new Error('clang-tidy export is not a YAML mapping');
+    const list = value.Diagnostics ?? [];
+    if (!Array.isArray(list)) throw new Error('clang-tidy export has no Diagnostics list');
+    diagnostics.push(...(list as Diagnostic[]));
+  }
+  return diagnostics;
+}
+
+/** What placing a location needs: both spellings of the root, the scope, the files read so far. */
+interface Placing {
+  root: string;
+  realRoot: string;
+  scope: ReadonlySet<string> | undefined;
+  files: Map<string, Source | null>;
+}
+
+/** A repository file's bytes and line starts, read once (null: not a plain file of the root). */
+function sourceOf(pl: Placing, base: string, abs: string): Source | null {
+  let source = pl.files.get(abs);
+  if (source === undefined) {
+    // readPlainFile checks that `abs` resolves to `realRoot` + its path relative to `base`.
+    const bytes = readPlainFile(base, pl.realRoot, abs);
+    source = bytes === null ? null : { bytes, lineStarts: lineStartsOf(bytes) };
+    pl.files.set(abs, source);
+  }
+  return source;
+}
+
+/** A clang-tidy place (path and byte offset) as a SARIF location on a file of the scan, or null. */
+function place(pl: Placing, p: Place | undefined, build: string): SarifLocation | null {
+  if (typeof p?.FilePath !== 'string' || typeof p.FileOffset !== 'number') return null;
+  const abs = path.resolve(build, p.FilePath);
+  const base = [pl.root, pl.realRoot].find((b) => within(b, abs) && abs !== b);
+  if (base === undefined) return null;
+  const segments = path.relative(base, abs).split(path.sep);
+  if (pl.scope !== undefined && !pl.scope.has(segments.join('/'))) return null;
+  const source = sourceOf(pl, base, abs);
+  const offset = p.FileOffset;
+  if (source === null || !Number.isInteger(offset) || offset < 0 || offset > source.bytes.length) {
+    return null;
+  }
+  const line = lineIndex(source.lineStarts, offset);
+  const lineStart = source.lineStarts[line] ?? 0;
+  // A column in UTF-16 code units, as SARIF counts them by default.
+  const column = source.bytes.subarray(lineStart, offset).toString('utf8').length + 1;
+  return {
+    physicalLocation: {
+      artifactLocation: { uri: segments.map(encodeURIComponent).join('/') },
+      region: { startLine: line + 1, startColumn: column },
+    },
+  };
+}
+
+/** A diagnostic's notes that can be placed, and how many cannot (ruling D9-9). */
+function placedNotes(
+  pl: Placing,
+  d: Diagnostic,
+  build: string,
+): { notes: SarifLocation[]; unplaced: number } {
+  const notes: SarifLocation[] = [];
+  let unplaced = 0;
+  for (const n of Array.isArray(d.Notes) ? (d.Notes as (Place | null)[]) : []) {
+    const loc = n === null || typeof n !== 'object' ? null : place(pl, n, build);
+    if (loc === null) {
+      // Ruling D9-9: a note in a host header (an analyzer path through a function there, an
+      // "included from" chain) never reaches the report, its message included.
+      unplaced++;
+      continue;
+    }
+    notes.push({
+      ...loc,
+      ...(typeof n?.Message === 'string' && { message: { text: redactRoots(pl, n.Message) } }),
+    });
+  }
+  return { notes, unplaced };
+}
+
+/** Ruling D9-11: no host path in a kept message or note text. */
+function redactRoots(pl: Placing, text: string): string {
+  return redactForeignPaths(text, [pl.root, pl.realRoot]);
+}
+
+/** One diagnostic as a result, or what it counts as when it is none. */
+function convertDiagnostic(
+  pl: Placing,
+  d: Diagnostic | null,
+): { result: SarifResult; unplaced: number } | 'compile-error' | 'unplaced' {
+  if (d === null || typeof d !== 'object') return 'unplaced';
+  if (d.Level === 'Error') return 'compile-error';
+  const name = d.DiagnosticName;
+  const build = typeof d.BuildDirectory === 'string' ? d.BuildDirectory : pl.root;
+  const primary = place(pl, d.DiagnosticMessage, build);
+  if (typeof name !== 'string' || !CHECK_NAME.test(name) || primary === null) return 'unplaced';
+  const { notes, unplaced } = placedNotes(pl, d, build);
+  const message = d.DiagnosticMessage?.Message;
+  return {
+    result: {
+      ruleId: name,
+      level: 'warning',
+      message: { text: typeof message === 'string' ? redactRoots(pl, message) : name },
+      locations: [primary],
+      ...(notes.length > 0 && { relatedLocations: notes }),
+    },
+    unplaced,
+  };
+}
+
 /**
  * config.md §6.2: clang-tidy's `--export-fixes` YAML as SARIF 2.1.0. Paths resolve against each
  * diagnostic's BuildDirectory; byte offsets become lines and columns from the repository file
@@ -69,104 +184,23 @@ export function clangTidyFixesToSarif(
   text: string,
   o: { root: string; version: string; scope?: ReadonlySet<string> },
 ): ClangTidyConversion {
-  const diagnostics: Diagnostic[] = [];
-  if (text.trim() !== '') {
-    for (const d of parseAllDocuments(text, { prettyErrors: false })) {
-      if (d.errors.length > 0) throw new Error('clang-tidy export is not YAML');
-      const value = d.toJS({ maxAliasCount: 100 }) as { Diagnostics?: unknown } | null;
-      if (value === null || value === undefined) continue;
-      if (typeof value !== 'object') throw new Error('clang-tidy export is not a YAML mapping');
-      const list = value.Diagnostics ?? [];
-      if (!Array.isArray(list)) throw new Error('clang-tidy export has no Diagnostics list');
-      diagnostics.push(...(list as Diagnostic[]));
-    }
-  }
+  const diagnostics = parseDiagnostics(text);
   const root = path.resolve(o.root);
-  const realRoot = realRootOf(root);
-  // Ruling D9-11: no host path in a kept message or note text.
-  const redact = (t: string) => redactForeignPaths(t, [root, realRoot]);
-  const files = new Map<string, Source | null>();
-  const place = (p: Place | undefined, build: string): SarifLocation | null => {
-    if (typeof p?.FilePath !== 'string' || typeof p.FileOffset !== 'number') return null;
-    const abs = path.resolve(build, p.FilePath);
-    const base = [root, realRoot].find((b) => within(b, abs) && abs !== b);
-    if (base === undefined) return null;
-    const segments = path.relative(base, abs).split(path.sep);
-    if (o.scope !== undefined && !o.scope.has(segments.join('/'))) return null;
-    let source = files.get(abs);
-    if (source === undefined) {
-      // readPlainFile checks that `abs` resolves to `realRoot` + its path relative to `base`.
-      const bytes = readPlainFile(base, realRoot, abs);
-      source = bytes === null ? null : { bytes, lineStarts: lineStartsOf(bytes) };
-      files.set(abs, source);
-    }
-    const offset = p.FileOffset;
-    if (
-      source === null ||
-      !Number.isInteger(offset) ||
-      offset < 0 ||
-      offset > source.bytes.length
-    ) {
-      return null;
-    }
-    const line = lineIndex(source.lineStarts, offset);
-    const lineStart = source.lineStarts[line] ?? 0;
-    // A column in UTF-16 code units, as SARIF counts them by default.
-    const column = source.bytes.subarray(lineStart, offset).toString('utf8').length + 1;
-    return {
-      physicalLocation: {
-        artifactLocation: { uri: segments.map(encodeURIComponent).join('/') },
-        region: { startLine: line + 1, startColumn: column },
-      },
-    };
-  };
+  const pl: Placing = { root, realRoot: realRootOf(root), scope: o.scope, files: new Map() };
   const rules = new Map<string, SarifRule>();
   const results: SarifResult[] = [];
   let compileErrors = 0;
   let unplaced = 0;
   for (const d of diagnostics) {
-    if (d === null || typeof d !== 'object') {
-      unplaced++;
-      continue;
+    const converted = convertDiagnostic(pl, d);
+    if (converted === 'compile-error') compileErrors++;
+    else if (converted === 'unplaced') unplaced++;
+    else {
+      unplaced += converted.unplaced;
+      const name = converted.result.ruleId as string;
+      if (!rules.has(name)) rules.set(name, { id: name });
+      results.push(converted.result);
     }
-    if (d.Level === 'Error') {
-      compileErrors++;
-      continue;
-    }
-    const name = d.DiagnosticName;
-    const build = typeof d.BuildDirectory === 'string' ? d.BuildDirectory : root;
-    const primary = place(d.DiagnosticMessage, build);
-    if (typeof name !== 'string' || !CHECK_NAME.test(name) || primary === null) {
-      unplaced++;
-      continue;
-    }
-    const notes: SarifLocation[] = [];
-    for (const n of Array.isArray(d.Notes) ? (d.Notes as (Place | null)[]) : []) {
-      const loc = n === null || typeof n !== 'object' ? null : place(n, build);
-      if (loc === null) {
-        // Ruling D9-9: a note in a host header (an analyzer path through a function there, an
-        // "included from" chain) never reaches the report, its message included.
-        unplaced++;
-        continue;
-      }
-      notes.push({
-        ...loc,
-        ...(typeof n?.Message === 'string' && { message: { text: redact(n.Message) } }),
-      });
-    }
-    if (!rules.has(name)) rules.set(name, { id: name });
-    results.push({
-      ruleId: name,
-      level: 'warning',
-      message: {
-        text:
-          typeof d.DiagnosticMessage?.Message === 'string'
-            ? redact(d.DiagnosticMessage.Message)
-            : name,
-      },
-      locations: [primary],
-      ...(notes.length > 0 && { relatedLocations: notes }),
-    });
   }
   return {
     log: {

@@ -81,7 +81,8 @@ function context(
     config: o.config ?? {},
     exec: (command) => {
       const name = path.basename(command);
-      const stdout = name === 'go' ? v.go : name === 'staticcheck' ? v.staticcheck : v.gosec;
+      const byName: Record<string, string | undefined> = { go: v.go, staticcheck: v.staticcheck };
+      const stdout = byName[name] ?? v.gosec;
       return { exitCode: 0, timedOut: false, durationMs: 1, stdout, stderr: '' };
     },
   });

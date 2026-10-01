@@ -152,7 +152,8 @@ function scanPlan(
     const plan = planGoModules(ctx.root, ctx.files, goVersion);
     for (const s of plan.skipped) {
       const name = s.rel === '' ? 'the root module' : shown(s.rel);
-      ctx.log.warn(`go: ${detailLine(`${name} is not analysed: ${s.reason}`)}`);
+      const detail = detailLine(`${name} is not analysed: ${s.reason}`);
+      ctx.log.warn(`go: ${detail}`);
     }
     if (plan.outside > 0) {
       ctx.log.warn(
@@ -173,13 +174,10 @@ function scanPlan(
   };
 }
 
-async function prepareGo(ctx: AnalyzerContext, tool: GoTool): Promise<Preparation> {
-  const goFiles = ctx.files.filter((f) => f.language === 'go');
-  if (goFiles.length === 0) return { skip: 'no Go file in scope' };
-  const runner = goRunnerScript(ctx);
-  if (!('script' in runner)) return runner;
-  const node = ctx.resolveBinary('node');
-  if (node === null) return { unavailable: 'the Go analyzers need node on PATH' };
+type NotRun = { skip: string } | { unavailable: string };
+
+/** The go command and its version, or why the Go engines cannot run. */
+async function findGo(ctx: AnalyzerContext): Promise<{ go: string; goVersion: string } | NotRun> {
   const go = ctx.resolveBinary('go');
   if (go === null) return { skip: notInstalled(ctx, 'go') };
   const goVersion = await probe(ctx, go, ['version'], parseGoVersion);
@@ -189,35 +187,57 @@ async function prepareGo(ctx: AnalyzerContext, tool: GoTool): Promise<Preparatio
       skip: `Go ${goVersion} is not supported: the Go analyzers need Go ${GO_MIN_VERSION} or newer (the qualor/scanner image has Go ${GO_VERSION})`,
     };
   }
-  let toolPath = go;
-  let version = goVersion;
-  if (tool !== 'govet') {
-    const bin = ctx.resolveBinary(tool);
-    if (bin === null) return { skip: notInstalled(ctx, tool) };
-    const parse = tool === 'staticcheck' ? parseStaticcheckVersion : parseGosecVersion;
-    const v = await probe(ctx, bin, ['-version'], parse);
-    if (v === null) return { unavailable: `\`${tool} -version\` printed no version` };
-    const pinned = tool === 'staticcheck' ? STATICCHECK_VERSION : GOSEC_VERSION;
-    const supported =
-      tool === 'staticcheck' ? staticcheckVersionSupported(v) : gosecVersionSupported(v);
-    if (!supported) {
-      const minor = pinned.split('.').slice(0, 2).join('.');
-      return {
-        skip: `${tool} ${v} is not supported: this Qualor runs ${tool} ${minor}.x (the qualor/scanner image's ${pinned})`,
-      };
-    }
-    toolPath = bin;
-    version = v;
+  return { go, goVersion };
+}
+
+/** staticcheck or gosec and its version, or why it cannot run. */
+async function findTool(
+  ctx: AnalyzerContext,
+  tool: 'staticcheck' | 'gosec',
+): Promise<{ toolPath: string; version: string } | NotRun> {
+  const bin = ctx.resolveBinary(tool);
+  if (bin === null) return { skip: notInstalled(ctx, tool) };
+  const staticcheck = tool === 'staticcheck';
+  const v = await probe(
+    ctx,
+    bin,
+    ['-version'],
+    staticcheck ? parseStaticcheckVersion : parseGosecVersion,
+  );
+  if (v === null) return { unavailable: `\`${tool} -version\` printed no version` };
+  const pinned = staticcheck ? STATICCHECK_VERSION : GOSEC_VERSION;
+  const supported = staticcheck ? staticcheckVersionSupported(v) : gosecVersionSupported(v);
+  if (!supported) {
+    const minor = pinned.split('.').slice(0, 2).join('.');
+    return {
+      skip: `${tool} ${v} is not supported: this Qualor runs ${tool} ${minor}.x (the qualor/scanner image's ${pinned})`,
+    };
   }
+  return { toolPath: bin, version: v };
+}
+
+async function prepareGo(ctx: AnalyzerContext, tool: GoTool): Promise<Preparation> {
+  const goFiles = ctx.files.filter((f) => f.language === 'go');
+  if (goFiles.length === 0) return { skip: 'no Go file in scope' };
+  const runner = goRunnerScript(ctx);
+  if (!('script' in runner)) return runner;
+  const node = ctx.resolveBinary('node');
+  if (node === null) return { unavailable: 'the Go analyzers need node on PATH' };
+  const found = await findGo(ctx);
+  if (!('go' in found)) return found;
+  const { go, goVersion } = found;
+  const t = tool === 'govet' ? { toolPath: go, version: goVersion } : await findTool(ctx, tool);
+  if (!('toolPath' in t)) return t;
+  const { toolPath, version } = t;
   const { plan, logCache } = scanPlan(ctx, goVersion);
   if (plan.modules.length === 0) {
     const first = plan.skipped[0];
-    return {
-      skip:
-        first === undefined
-          ? 'no Go module in scope: Qualor analyses Go modules (a go.mod above the files)'
-          : `no Go module Qualor can analyse: ${first.reason}`,
-    };
+    if (first === undefined) {
+      return {
+        skip: 'no Go module in scope: Qualor analyses Go modules (a go.mod above the files)',
+      };
+    }
+    return { skip: `no Go module Qualor can analyse: ${first.reason}` };
   }
   const cache = goModuleCache(ctx.env, ctx.root, ctx.workDir);
   if (cache.warning !== null && logCache()) ctx.log.warn(`go: ${cache.warning}`);

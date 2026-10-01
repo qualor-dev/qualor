@@ -1,8 +1,8 @@
-import { readdirSync, realpathSync, statSync } from 'node:fs';
+import { readdirSync, realpathSync, statSync, type Dirent } from 'node:fs';
 import path from 'node:path';
 import type { ScopeFile } from '../discovery/discover';
 import { isInside, staysInside, within } from './binary';
-import { compareGoVersions, parseGoMod } from './go-mod';
+import { compareGoVersions, parseGoMod, type GoModReplace } from './go-mod';
 import { deadProxyEnv } from './offline';
 import { shown } from './reason';
 import { readRepoConfig, WeblintConfigError } from './weblint';
@@ -31,6 +31,8 @@ export interface GoModulePlan {
 }
 
 const repoPath = (root: string, abs: string) => path.relative(root, abs).split(path.sep).join('/');
+/** The directory of a repository path ('' for the root). */
+const parentOf = (rel: string) => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '');
 
 /**
  * Names go itself never reads below a module (`go help packages`: directories, and files, whose
@@ -65,36 +67,48 @@ export function escapingLink(dirs: string | readonly string[], root: string): st
   const walked = new Set<string>();
   let seen = 0;
   for (let d = pending.pop(); d !== undefined; d = pending.pop()) {
-    let entries;
-    try {
-      const realDir = realpathSync(d);
-      if (walked.has(realDir)) continue;
-      walked.add(realDir);
-      entries = readdirSync(d, { withFileTypes: true });
-    } catch {
-      continue;
-    }
+    const entries = unwalkedEntries(d, walked);
     for (const e of entries) {
-      if (goIgnores(e.name)) continue;
-      if (e.isDirectory() && WALK_SKIPPED_DIRS.has(e.name)) continue;
+      if (goIgnores(e.name) || (e.isDirectory() && WALK_SKIPPED_DIRS.has(e.name))) continue;
       seen += 1;
       if (seen > MAX_MODULE_ENTRIES) return TOO_MANY_ENTRIES;
       const full = path.join(d, e.name);
-      if (e.isSymbolicLink()) {
-        let target: string;
-        try {
-          target = realpathSync(full);
-        } catch {
-          continue;
-        }
-        if (!within(realRoot, target)) return repoPath(root, full);
-        if (isDirectory(target)) pending.push(full);
-      } else if (e.isDirectory() && !holdsGoMod(full)) {
-        pending.push(full);
-      }
+      if (leadsOut(e, full, { realRoot, pending })) return repoPath(root, full);
     }
   }
   return null;
+}
+
+/** The entries of `d`, unless its real directory was walked already or cannot be read. */
+function unwalkedEntries(d: string, walked: Set<string>): Dirent[] {
+  try {
+    const realDir = realpathSync(d);
+    if (walked.has(realDir)) return [];
+    walked.add(realDir);
+    return readdirSync(d, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * True for a link out of the repository; a directory to walk (a link to one inside the repository,
+ * or a directory with no go.mod of its own) goes onto `walk.pending`. A dangling link is ignored.
+ */
+function leadsOut(e: Dirent, full: string, walk: { realRoot: string; pending: string[] }): boolean {
+  if (!e.isSymbolicLink()) {
+    if (e.isDirectory() && !holdsGoMod(full)) walk.pending.push(full);
+    return false;
+  }
+  let target: string;
+  try {
+    target = realpathSync(full);
+  } catch {
+    return false;
+  }
+  if (!within(walk.realRoot, target)) return true;
+  if (isDirectory(target)) walk.pending.push(full);
+  return false;
 }
 
 function isDirectory(p: string): boolean {
@@ -125,23 +139,37 @@ function checkModule(
     return `${goModRel} needs Go ${shown(mod.go)}, newer than this Go ${goVersion}; Qualor never downloads a toolchain (GOTOOLCHAIN=local)`;
   }
   const dir = rel === '' ? root : path.join(root, ...rel.split('/'));
-  // go reads a directory replacement as source, so it is walked for links out like the module.
+  const replaced = replacedDirs(root, dir, { goModRel, replaces: mod.replaces });
+  if (typeof replaced === 'string') return replaced;
+  const link = escapingLink([dir, ...replaced], root);
+  if (link === TOO_MANY_ENTRIES) {
+    const below = rel === '' ? 'the root' : shown(rel);
+    return `more than ${MAX_MODULE_ENTRIES} entries below ${below}: not checked for links, so not analysed`;
+  }
+  if (link !== null)
+    return `${shown(link)} is a symbolic link out of the repository, which Go would follow`;
+  return { dir, rel, modulePath: mod.module };
+}
+
+/**
+ * The directories a module's `replace` lines name (go reads a directory replacement as source, so
+ * it is walked for links out like the module), or why the module is not analysed.
+ */
+function replacedDirs(
+  root: string,
+  dir: string,
+  mod: { goModRel: string; replaces: readonly GoModReplace[] },
+): string[] | string {
   const replaced: string[] = [];
   for (const r of mod.replaces) {
     if (r.targetVersion !== null) continue;
     const target = path.resolve(dir, r.target);
     if (!staysInside(root, target)) {
-      return `${goModRel} replaces ${shown(r.old)} with ${shown(r.target)}, a directory outside the repository, which Qualor does not read`;
+      return `${mod.goModRel} replaces ${shown(r.old)} with ${shown(r.target)}, a directory outside the repository, which Qualor does not read`;
     }
     replaced.push(target);
   }
-  const link = escapingLink([dir, ...replaced], root);
-  if (link === TOO_MANY_ENTRIES) {
-    return `more than ${MAX_MODULE_ENTRIES} entries below ${rel === '' ? 'the root' : shown(rel)}: not checked for links, so not analysed`;
-  }
-  if (link !== null)
-    return `${shown(link)} is a symbolic link out of the repository, which Go would follow`;
-  return { dir, rel, modulePath: mod.module };
+  return replaced;
 }
 
 /**
@@ -170,11 +198,9 @@ export function planGoModules(
   const ownerOf = (dir: string): string | null => {
     const known = owners.get(dir);
     if (known !== undefined) return known;
-    const owner = holdsGoMod(dir === '' ? root : path.join(root, ...dir.split('/')))
-      ? dir
-      : dir === ''
-        ? null
-        : ownerOf(dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '');
+    let owner: string | null = null;
+    if (holdsGoMod(dir === '' ? root : path.join(root, ...dir.split('/')))) owner = dir;
+    else if (dir !== '') owner = ownerOf(parentOf(dir));
     owners.set(dir, owner);
     return owner;
   };
@@ -182,7 +208,7 @@ export function planGoModules(
   let outside = 0;
   for (const f of files) {
     if (f.language !== 'go') continue;
-    const owner = ownerOf(f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '');
+    const owner = ownerOf(parentOf(f.path));
     if (owner === null) outside += 1;
     else counts.set(owner, (counts.get(owner) ?? 0) + 1);
   }
@@ -210,13 +236,10 @@ export function goModuleCache(
   const own = path.join(workDir, 'gomodcache');
   const gopath = env['GOPATH']?.split(path.delimiter).find((p) => p !== '');
   const home = env['HOME'];
-  const candidate =
-    env['GOMODCACHE'] ||
-    (gopath !== undefined
-      ? path.join(gopath, 'pkg', 'mod')
-      : home
-        ? path.join(home, 'go', 'pkg', 'mod')
-        : '');
+  let fallback = '';
+  if (gopath !== undefined) fallback = path.join(gopath, 'pkg', 'mod');
+  else if (home) fallback = path.join(home, 'go', 'pkg', 'mod');
+  const candidate = env['GOMODCACHE'] || fallback;
   if (candidate === '' || !path.isAbsolute(candidate)) return { dir: own, warning: null };
   if (isInside(root, candidate)) {
     return {

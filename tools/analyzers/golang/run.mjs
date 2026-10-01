@@ -89,30 +89,35 @@ function fatal(message) {
 
 /** The top-level JSON objects of a stream such as `go list -json` and `go vet -json` print. */
 export function splitJsonObjects(text) {
-  const out = [];
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escaped = false;
+  const s = { out: [], depth: 0, start: -1, inString: false, escaped: false };
   for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (c === '\\') escaped = true;
-      else if (c === '"') inString = false;
-    } else if (c === '"') {
-      inString = true;
-    } else if (c === '{') {
-      if (depth === 0) start = i;
-      depth += 1;
-    } else if (c === '}') {
-      depth -= 1;
-      if (depth < 0) throw new Error('unbalanced JSON output');
-      if (depth === 0) out.push(JSON.parse(text.slice(start, i + 1)));
-    }
+    if (s.inString) stringChar(s, text[i]);
+    else structureChar(s, text, i);
   }
-  if (depth !== 0 || inString) throw new Error('truncated JSON output');
-  return out;
+  if (s.depth !== 0 || s.inString) throw new Error('truncated JSON output');
+  return s.out;
+}
+
+/** One character inside a JSON string (splitJsonObjects). */
+function stringChar(s, c) {
+  if (s.escaped) s.escaped = false;
+  else if (c === '\\') s.escaped = true;
+  else if (c === '"') s.inString = false;
+}
+
+/** One character outside JSON strings: a string's start, or a brace (splitJsonObjects). */
+function structureChar(s, text, i) {
+  const c = text[i];
+  if (c === '"') {
+    s.inString = true;
+  } else if (c === '{') {
+    if (s.depth === 0) s.start = i;
+    s.depth += 1;
+  } else if (c === '}') {
+    s.depth -= 1;
+    if (s.depth < 0) throw new Error('unbalanced JSON output');
+    if (s.depth === 0) s.out.push(JSON.parse(text.slice(s.start, i + 1)));
+  }
 }
 
 export function realOr(p) {
@@ -157,12 +162,17 @@ export function encodeUri(rel) {
 
 const positive = (n) => Number.isInteger(n) && n > 0;
 
-function finding(ruleId, level, text, rel, startLine, startColumn, endLine, endColumn) {
-  const region = { startLine };
-  if (positive(startColumn)) region.startColumn = startColumn;
-  if (positive(endLine) && endLine >= startLine) {
-    region.endLine = endLine;
-    if (positive(endColumn)) region.endColumn = endColumn;
+/**
+ * A result: `rule` is { ruleId, level, text }, `at` is { startLine, startColumn, endLine,
+ * endColumn } (only startLine required; the others are kept when they are valid).
+ */
+function finding(rule, rel, at) {
+  const { ruleId, level, text } = rule;
+  const region = { startLine: at.startLine };
+  if (positive(at.startColumn)) region.startColumn = at.startColumn;
+  if (positive(at.endLine) && at.endLine >= at.startLine) {
+    region.endLine = at.endLine;
+    if (positive(at.endColumn)) region.endColumn = at.endColumn;
   }
   return {
     rel,
@@ -190,16 +200,12 @@ export function staticcheckResults(text, toRepo) {
     if (typeof d.code !== 'string' || rel === null || !positive(d.location?.line)) continue;
     const sameFile = d.end?.file === d.location.file;
     results.push(
-      finding(
-        d.code,
-        'warning',
-        String(d.message ?? ''),
-        rel,
-        d.location.line,
-        d.location.column,
-        sameFile ? d.end.line : undefined,
-        sameFile ? d.end.column : undefined,
-      ),
+      finding({ ruleId: d.code, level: 'warning', text: String(d.message ?? '') }, rel, {
+        startLine: d.location.line,
+        startColumn: d.location.column,
+        endLine: sameFile ? d.end.line : undefined,
+        endColumn: sameFile ? d.end.column : undefined,
+      }),
     );
   }
   return { results, problems };
@@ -207,38 +213,42 @@ export function staticcheckResults(text, toRepo) {
 
 /** `go vet -json` objects (`{pkg: {analyzer: [{posn, end, message}] | {error}}}`) → results. */
 export function vetResults(objects, toRepo) {
-  const results = [];
-  const problems = [];
+  const out = { results: [], problems: [] };
   for (const obj of objects) {
     for (const analyzers of Object.values(obj ?? {})) {
       for (const [name, entries] of Object.entries(analyzers ?? {})) {
-        if (!Array.isArray(entries)) {
-          if (typeof entries?.error === 'string') problems.push(detail(entries.error));
-          continue;
-        }
-        for (const e of entries) {
-          const m = POSN.exec(String(e?.posn ?? ''));
-          const rel = m === null ? null : toRepo(m[1]);
-          if (m === null || rel === null) continue;
-          const end = POSN.exec(String(e?.end ?? ''));
-          const sameFile = end !== null && end[1] === m[1];
-          results.push(
-            finding(
-              name,
-              'warning',
-              String(e.message ?? ''),
-              rel,
-              Number(m[2]),
-              Number(m[3]),
-              sameFile ? Number(end[2]) : undefined,
-              sameFile ? Number(end[3]) : undefined,
-            ),
-          );
-        }
+        vetAnalyzer(out, { name, entries }, toRepo);
       }
     }
   }
-  return { results, problems };
+  return out;
+}
+
+/** One analyzer's go vet entries (or its error) into `out` (vetResults). */
+function vetAnalyzer(out, { name, entries }, toRepo) {
+  if (!Array.isArray(entries)) {
+    if (typeof entries?.error === 'string') out.problems.push(detail(entries.error));
+    return;
+  }
+  for (const e of entries) {
+    const r = vetFinding(name, e, toRepo);
+    if (r !== null) out.results.push(r);
+  }
+}
+
+/** One go vet entry as a result, or null when it is not on a repository file. */
+function vetFinding(name, e, toRepo) {
+  const m = POSN.exec(String(e?.posn ?? ''));
+  const rel = m === null ? null : toRepo(m[1]);
+  if (m === null || rel === null) return null;
+  const end = POSN.exec(String(e?.end ?? ''));
+  const sameFile = end !== null && end[1] === m[1];
+  return finding({ ruleId: name, level: 'warning', text: String(e.message ?? '') }, rel, {
+    startLine: Number(m[2]),
+    startColumn: Number(m[3]),
+    endLine: sameFile ? Number(end[2]) : undefined,
+    endColumn: sameFile ? Number(end[3]) : undefined,
+  });
 }
 
 /**
@@ -277,17 +287,9 @@ export function gosecResults(log, packageDir, toRepo) {
       continue;
     const rel = toRepo(gosecFile(uri, packageDir));
     if (rel === null) continue;
+    const level = typeof r.level === 'string' ? r.level : 'warning';
     results.push(
-      finding(
-        r.ruleId,
-        typeof r.level === 'string' ? r.level : 'warning',
-        String(r.message?.text ?? ''),
-        rel,
-        loc.region.startLine,
-        loc.region.startColumn,
-        loc.region.endLine,
-        loc.region.endColumn,
-      ),
+      finding({ ruleId: r.ruleId, level, text: String(r.message?.text ?? '') }, rel, loc.region),
     );
   }
   return { results, rules };
@@ -389,9 +391,15 @@ function toolRun(spec, m, packages, toRepo, say, label) {
     if (r.status !== 0) say(`${label}: go vet exited ${r.status}: ${detail(r.stderr)}`);
     return vetResults(splitJsonObjects(readBounded(outFile)), toRepo);
   }
-  // gosec writes each URI relative to the package directory it was given, so two packages' `a.go`
-  // would be indistinguishable in one run (pre-flight scan): one run per package, each URI resolved
-  // against that package's directory. The scratch file is never the spec's `out`.
+  return gosecRun({ spec, m, outFile }, packages, { toRepo, say, label });
+}
+
+/**
+ * gosec writes each URI relative to the package directory it was given, so two packages' `a.go`
+ * would be indistinguishable in one run (pre-flight scan): one run per package, each URI resolved
+ * against that package's directory. The scratch file is never the spec's `out`.
+ */
+function gosecRun({ spec, m, outFile }, packages, { toRepo, say, label }) {
   const sarifFile = path.join(spec.workDir, 'gosec-package.sarif');
   const results = [];
   const rules = [];
@@ -426,99 +434,111 @@ function toolRun(spec, m, packages, toRepo, say, label) {
   return { results, rules, problems: [] };
 }
 
-export function run(spec, warn) {
-  const realRoot = realOr(spec.root);
-  const toRepo = (file) => {
-    if (typeof file !== 'string' || file === '') return null;
-    const abs = path.resolve(file);
-    for (const base of [spec.root, realRoot]) {
-      const rel = path.relative(base, abs);
-      if (rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) {
-        return rel.split(path.sep).join('/');
-      }
-    }
-    return null;
-  };
-  const inScope = new Set(spec.files);
-  const scopeDirs = new Set(
-    spec.files.map((f) => realOr(path.join(spec.root, ...path.posix.dirname(f).split('/')))),
-  );
-  let warnings = 0;
-  const say = (line) => {
-    if (warnings < MAX_WARNINGS) warn(bounded(line));
-    warnings += 1;
-  };
-  const summary = {
-    tool: spec.tool,
-    modules: 0,
-    packages: 0,
-    notLoaded: 0,
-    results: 0,
-    outOfScope: 0,
-  };
-  const seen = new Set();
-  const results = [];
-  const gosecRules = new Map();
-  for (const m of spec.modules) {
-    const label = m.rel === '' ? 'the root module' : m.rel;
-    try {
-      const listFile = path.join(spec.workDir, 'go-list.json');
-      const listed = capture(
-        listFile,
-        spec.go,
-        ['list', '-e', '-json=ImportPath,Dir,Error,DepsErrors', '--', './...'],
-        m.dir,
-      );
-      if (listed.error) throw runError('go', listed.error);
-      if (listed.status !== 0) {
-        say(`${label}: go list failed: ${detail(listed.stderr)}`);
-        continue;
-      }
-      const { packages, failed } = plannedPackages(
-        splitJsonObjects(readBounded(listFile)),
-        m.dir,
-        scopeDirs,
-      );
-      summary.modules += 1;
-      summary.packages += packages.length;
-      summary.notLoaded += failed.length;
-      if (failed.length > 0) {
-        const hint = failed.some((f) => MISSING_DEPENDENCY.test(f.error))
-          ? '; their dependencies are not on disk: run `go mod download` before `qualor scan`, vendor them, or set GOMODCACHE (config.md §6)'
-          : '';
-        say(
-          `${label}: ${failed.length} package(s) not analysed, e.g. ${failed[0].importPath}: ${detail(failed[0].error)}${hint}`,
-        );
-      }
-      if (packages.length === 0) continue;
-      const out = toolRun(spec, m, packages, toRepo, say, label);
-      for (const r of out.results) {
-        if (!inScope.has(r.rel)) {
-          summary.outOfScope += 1;
-          continue;
-        }
-        const key = JSON.stringify([
-          r.sarif.ruleId,
-          r.rel,
-          r.sarif.locations[0].physicalLocation.region,
-          r.sarif.message.text,
-        ]);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        results.push(r.sarif);
-      }
-      for (const rule of out.rules ?? [])
-        if (!gosecRules.has(rule.id)) gosecRules.set(rule.id, rule);
-      if (out.problems.length > 0) {
-        say(
-          `${label}: ${out.problems.length} package(s) could not be type-checked and were not analysed, e.g. ${out.problems[0]}`,
-        );
-      }
-    } catch (err) {
-      if (err?.fatal === true) throw err;
-      say(`${label}: ${detail(err instanceof Error ? err.message : String(err))}`);
+/** A file's repository path through either spelling of the root, or null outside it. */
+function repoPathOf(roots, file) {
+  if (typeof file !== 'string' || file === '') return null;
+  const abs = path.resolve(file);
+  for (const base of roots) {
+    const rel = path.relative(base, abs);
+    if (rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) {
+      return rel.split(path.sep).join('/');
     }
   }
+  return null;
+}
+
+/** A module's packages to analyse (null when go list failed), with the summary and warnings. */
+function modulePackages(st, m, label) {
+  const listFile = path.join(st.spec.workDir, 'go-list.json');
+  const listed = capture(
+    listFile,
+    st.spec.go,
+    ['list', '-e', '-json=ImportPath,Dir,Error,DepsErrors', '--', './...'],
+    m.dir,
+  );
+  if (listed.error) throw runError('go', listed.error);
+  if (listed.status !== 0) {
+    st.say(`${label}: go list failed: ${detail(listed.stderr)}`);
+    return null;
+  }
+  const { packages, failed } = plannedPackages(
+    splitJsonObjects(readBounded(listFile)),
+    m.dir,
+    st.scopeDirs,
+  );
+  st.summary.modules += 1;
+  st.summary.packages += packages.length;
+  st.summary.notLoaded += failed.length;
+  if (failed.length > 0) {
+    const hint = failed.some((f) => MISSING_DEPENDENCY.test(f.error))
+      ? '; their dependencies are not on disk: run `go mod download` before `qualor scan`, vendor them, or set GOMODCACHE (config.md §6)'
+      : '';
+    st.say(
+      `${label}: ${failed.length} package(s) not analysed, e.g. ${failed[0].importPath}: ${detail(failed[0].error)}${hint}`,
+    );
+  }
+  return packages;
+}
+
+/** One tool result: counted when out of scope, dropped when already seen, else kept. */
+function addResult(st, r) {
+  if (!st.inScope.has(r.rel)) {
+    st.summary.outOfScope += 1;
+    return;
+  }
+  const key = JSON.stringify([
+    r.sarif.ruleId,
+    r.rel,
+    r.sarif.locations[0].physicalLocation.region,
+    r.sarif.message.text,
+  ]);
+  if (st.seen.has(key)) return;
+  st.seen.add(key);
+  st.results.push(r.sarif);
+}
+
+/** One module: its packages, the tool run on them, and its results; a non-fatal error is a warning. */
+function runModule(st, m) {
+  const label = m.rel === '' ? 'the root module' : m.rel;
+  try {
+    const packages = modulePackages(st, m, label);
+    if (packages === null || packages.length === 0) return;
+    const out = toolRun(st.spec, m, packages, st.toRepo, st.say, label);
+    for (const r of out.results) addResult(st, r);
+    for (const rule of out.rules ?? [])
+      if (!st.gosecRules.has(rule.id)) st.gosecRules.set(rule.id, rule);
+    if (out.problems.length > 0) {
+      st.say(
+        `${label}: ${out.problems.length} package(s) could not be type-checked and were not analysed, e.g. ${out.problems[0]}`,
+      );
+    }
+  } catch (err) {
+    if (err?.fatal === true) throw err;
+    st.say(`${label}: ${detail(err instanceof Error ? err.message : String(err))}`);
+  }
+}
+
+export function run(spec, warn) {
+  const roots = [spec.root, realOr(spec.root)];
+  let warnings = 0;
+  const st = {
+    spec,
+    toRepo: (file) => repoPathOf(roots, file),
+    inScope: new Set(spec.files),
+    scopeDirs: new Set(
+      spec.files.map((f) => realOr(path.join(spec.root, ...path.posix.dirname(f).split('/')))),
+    ),
+    say: (line) => {
+      if (warnings < MAX_WARNINGS) warn(bounded(line));
+      warnings += 1;
+    },
+    summary: { tool: spec.tool, modules: 0, packages: 0, notLoaded: 0, results: 0, outOfScope: 0 },
+    seen: new Set(),
+    results: [],
+    gosecRules: new Map(),
+  };
+  for (const m of spec.modules) runModule(st, m);
+  const { summary, results, gosecRules } = st;
   summary.results = results.length;
   const used = new Set(results.map((r) => r.ruleId));
   const rules =

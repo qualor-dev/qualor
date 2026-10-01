@@ -110,6 +110,18 @@ const LEVEL: ReadonlyMap<string, 'error' | 'warning'> = new Map([
   ['warning', 'warning'],
 ]);
 
+/** The rule of an id, with its first result's severity and CWE. */
+function ruleOf(e: XmlError): SarifRule {
+  const cwe = e.cwe !== undefined && /^\d+$/.test(e.cwe) && e.cwe !== '0' ? e.cwe : null;
+  return {
+    id: e.id,
+    properties: {
+      cppcheckSeverity: e.severity,
+      ...(cwe !== null && { tags: [`external/cwe/cwe-${cwe}`] }),
+    },
+  };
+}
+
 export interface CppcheckConversion {
   log: SarifLog;
   /** Results that are no finding (decision 6), by id, in first-seen order. */
@@ -148,23 +160,10 @@ export function cppcheckXmlToSarif(
       outside++;
       continue;
     }
-    const related: SarifLocation[] = [];
-    for (const l of rest) {
-      const r = location(l, base, true);
-      if (r === null) outside++;
-      else related.push(r);
-    }
-    if (!rules.has(e.id)) {
-      rules.set(e.id, {
-        id: e.id,
-        properties: {
-          cppcheckSeverity: e.severity,
-          ...(e.cwe !== undefined &&
-            /^\d+$/.test(e.cwe) &&
-            e.cwe !== '0' && { tags: [`external/cwe/cwe-${e.cwe}`] }),
-        },
-      });
-    }
+    const placed = rest.map((l) => location(l, base, true));
+    const related = placed.filter((r): r is SarifLocation => r !== null);
+    outside += placed.length - related.length;
+    if (!rules.has(e.id)) rules.set(e.id, ruleOf(e));
     results.push({
       ruleId: e.id,
       level: LEVEL.get(e.severity) ?? 'note',

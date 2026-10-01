@@ -9,7 +9,7 @@ import {
   realRootOf,
   redactForeignPaths,
 } from './cfamily-common';
-import { checkClangTidyConfig, loadClangTidyConfig } from './clang-tidy-config';
+import { checkClangTidyConfig, loadClangTidyConfig, type ClangTidyPlan } from './clang-tidy-config';
 import { clangTidyFixesToSarif } from './clang-tidy-fixes';
 import { findCompileCommands, readCompileCommands } from './compile-commands';
 import { detailLine, shown, stderrLines } from './reason';
@@ -54,27 +54,15 @@ export function headerFilter(root: string, realRoot: string): string {
 /** LLVM's GNU response-file syntax: one double-quoted path per line, `\` and `"` escaped. */
 const quoted = (p: string) => `"${p.replace(/["\\]/g, '\\$&')}"`;
 
-async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
-  const settings = ctx.config.analyzers['clang-tidy'];
-  const db = findCompileCommands(ctx.root, settings.compileCommands);
-  if ('skip' in db) return db;
-  if ('none' in db) {
-    return {
-      skip: `no compile database (${db.none}); clang-tidy needs the project's compile_commands.json (config.md §6.2)`,
-    };
-  }
-  const plan = loadClangTidyConfig(ctx.root, settings.configFile);
-  if ('error' in plan) return { skip: plan.error };
-  if ('skip' in plan) return plan;
-  // Never the checkout's own clang-tidy (ruling V3).
+/** The clang-tidy to run and its version, or why there is none (never the checkout's own, ruling V3). */
+async function findClangTidy(
+  ctx: AnalyzerContext,
+): Promise<{ bin: string; version: string } | { skip: string } | { unavailable: string }> {
   const bin = ctx.resolveBinary('clang-tidy');
   if (bin === null) {
-    return {
-      skip:
-        ctx.repoBinary('clang-tidy') === null
-          ? NOT_INSTALLED
-          : `${NOT_INSTALLED}; the repository's own clang-tidy is never run`,
-    };
+    const own =
+      ctx.repoBinary('clang-tidy') === null ? '' : "; the repository's own clang-tidy is never run";
+    return { skip: `${NOT_INSTALLED}${own}` };
   }
   const probe = await ctx.exec(bin, ['--version'], { timeoutMs: 30_000, cwd: ctx.workDir });
   const version = probe.exitCode === 0 ? parseClangTidyVersion(probe.stdout) : null;
@@ -84,19 +72,18 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       skip: `clang-tidy ${version} is too old: Qualor runs clang-tidy ${CLANG_TIDY_MIN_MAJOR} or newer`,
     };
   }
-  const cFiles = ctx.files.filter((f) => C_LANGUAGES.has(f.language));
-  const lineBreaks = cFiles.filter((f) => hasLineBreak(f.path)).length;
-  if (lineBreaks > 0) {
-    ctx.log.warn(`clang-tidy: ${lineBreaks} file(s) whose path has a line break were left out`);
-  }
-  const scope = new Map(cFiles.filter((f) => !hasLineBreak(f.path)).map((f) => [f.path, f]));
-  const read = readCompileCommands(ctx.root, db.rel, scope);
-  if ('skip' in read) return read;
-  if (read.entries.length === 0)
-    return { skip: `${shown(db.rel)} names no C or C++ file of the scan` };
-  if (read.droppedArgs > 0) {
+  return { bin, version };
+}
+
+/** The log lines for what Qualor left out of the database and the `.clang-tidy` (config.md §6.2). */
+function logLeftOut(
+  ctx: AnalyzerContext,
+  plan: ClangTidyPlan,
+  db: { rel: string; droppedArgs: number },
+): void {
+  if (db.droppedArgs > 0) {
     ctx.log.info(
-      `clang-tidy: ${shown(db.rel)}: ${read.droppedArgs} compiler argument(s) left out (config.md §6.2)`,
+      `clang-tidy: ${shown(db.rel)}: ${db.droppedArgs} compiler argument(s) left out (config.md §6.2)`,
     );
   }
   if (plan.dropped.length > 0) {
@@ -110,6 +97,58 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       `clang-tidy: ${shown(plan.source)}: left out CheckOptions ${plan.droppedOptions.join(', ')} (config.md §6.2)`,
     );
   }
+}
+
+/** The run's transform: the export as SARIF, with one log line per kind of dropped diagnostic. */
+function clangTidyTransform(
+  ctx: AnalyzerContext,
+  version: string,
+  inScope: ReadonlySet<string>,
+): (output: unknown) => unknown {
+  return (output) => {
+    const r = clangTidyFixesToSarif(String(output), { root: ctx.root, version, scope: inScope });
+    if (r.compileErrors > 0) {
+      ctx.log.warn(
+        `clang-tidy: ${r.compileErrors} compile error(s): clang-tidy could not compile every translation unit (a missing header or flag); those diagnostics are not issues`,
+      );
+    }
+    // Rulings D9-9/D9-11: a count only, never the path (outside the repository, a repository
+    // file outside the scan, an offset past the end, a malformed entry; notes included).
+    if (r.unplaced > 0) {
+      ctx.log.warn(
+        `clang-tidy: ${r.unplaced} diagnostic(s) could not be placed on a file of the scan`,
+      );
+    }
+    return r.log;
+  };
+}
+
+async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
+  const settings = ctx.config.analyzers['clang-tidy'];
+  const db = findCompileCommands(ctx.root, settings.compileCommands);
+  if ('skip' in db) return db;
+  if ('none' in db) {
+    return {
+      skip: `no compile database (${db.none}); clang-tidy needs the project's compile_commands.json (config.md §6.2)`,
+    };
+  }
+  const plan = loadClangTidyConfig(ctx.root, settings.configFile);
+  if ('error' in plan) return { skip: plan.error };
+  if ('skip' in plan) return plan;
+  const found = await findClangTidy(ctx);
+  if (!('bin' in found)) return found;
+  const { bin, version } = found;
+  const cFiles = ctx.files.filter((f) => C_LANGUAGES.has(f.language));
+  const lineBreaks = cFiles.filter((f) => hasLineBreak(f.path)).length;
+  if (lineBreaks > 0) {
+    ctx.log.warn(`clang-tidy: ${lineBreaks} file(s) whose path has a line break were left out`);
+  }
+  const scope = new Map(cFiles.filter((f) => !hasLineBreak(f.path)).map((f) => [f.path, f]));
+  const read = readCompileCommands(ctx.root, db.rel, scope);
+  if ('skip' in read) return read;
+  if (read.entries.length === 0)
+    return { skip: `${shown(db.rel)} names no C or C++ file of the scan` };
+  logLeftOut(ctx, plan, { rel: db.rel, droppedArgs: read.droppedArgs });
   const work = ctx.workDir;
   // Qualor's own database (Task 7's sanitised arguments). The compiler is named by the file's
   // language, never taken from the checkout's database: clang reads a driver mode and a target
@@ -165,26 +204,7 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       // 1: a translation unit did not compile; the others were analysed (fact F8).
       okExitCodes: [0, 1],
       version,
-      transform: (output) => {
-        const r = clangTidyFixesToSarif(String(output), {
-          root: ctx.root,
-          version,
-          scope: inScope,
-        });
-        if (r.compileErrors > 0) {
-          ctx.log.warn(
-            `clang-tidy: ${r.compileErrors} compile error(s): clang-tidy could not compile every translation unit (a missing header or flag); those diagnostics are not issues`,
-          );
-        }
-        // Rulings D9-9/D9-11: a count only, never the path (outside the repository, a repository
-        // file outside the scan, an offset past the end, a malformed entry; notes included).
-        if (r.unplaced > 0) {
-          ctx.log.warn(
-            `clang-tidy: ${r.unplaced} diagnostic(s) could not be placed on a file of the scan`,
-          );
-        }
-        return r.log;
-      },
+      transform: clangTidyTransform(ctx, version, inScope),
       failureDetail: (_code, stderr) => {
         const lines = stderrLines(stderr);
         const line = lines.find((l) => l.startsWith('Error: ')) ?? lines.at(-1);
