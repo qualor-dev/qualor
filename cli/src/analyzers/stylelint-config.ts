@@ -190,6 +190,60 @@ function names(value: unknown, what: string, allowed: readonly string[]): unknow
   return value;
 }
 
+function rules(value: unknown, where: string): unknown {
+  if (!isObject(value)) throw new WeblintConfigError(`${where} rules must be an object`);
+  for (const id of Object.keys(value)) {
+    // `constructor`, `toString`, `__proto__`…: stylelint looks rules up on a plain object.
+    if (id in Object.prototype)
+      throw new WeblintConfigError(`${where} rules sets "${id}", which is not a stylelint rule`);
+  }
+  return value;
+}
+
+function overrides(value: unknown, where: string): unknown {
+  if (!Array.isArray(value)) throw new WeblintConfigError(`${where} overrides must be a list`);
+  return value.map((entry, i) => {
+    const b = block(entry, `${where} overrides[${i}]`, OVERRIDE_KEYS);
+    if (!isGlobs(b['files']))
+      throw new WeblintConfigError(`${where} overrides[${i}] has no "files" globs`);
+    return b;
+  });
+}
+
+function globs(key: 'files' | 'ignoreFiles', value: unknown, where: string): unknown {
+  if (!isGlobs(value)) throw new WeblintConfigError(`${where} ${key} must be globs`);
+  if (key === 'ignoreFiles') {
+    for (const glob of [value].flat() as string[]) {
+      if (leavesRoot(glob))
+        throw new WeblintConfigError(`${where} ignoreFiles "${glob}" is outside the repository`);
+    }
+  }
+  return value;
+}
+
+/** One allowed key's value as Qualor passes it on, or a WeblintConfigError. */
+function blockValue(key: string, value: unknown, where: string): unknown {
+  switch (key) {
+    case 'extends':
+      return names(value, `${where} extends`, STYLELINT_BUNDLED.extends);
+    case 'plugins':
+      return names(value, `${where} plugins`, STYLELINT_BUNDLED.plugins);
+    case 'customSyntax':
+      if (typeof value !== 'string')
+        throw new WeblintConfigError(`${where} customSyntax must be a package name`);
+      return names(value, `${where} customSyntax`, STYLELINT_BUNDLED.customSyntax);
+    case 'rules':
+      return rules(value, where);
+    case 'overrides':
+      return overrides(value, where);
+    case 'files':
+    case 'ignoreFiles':
+      return globs(key, value, where);
+    default:
+      return value;
+  }
+}
+
 function block(raw: unknown, where: string, allowed: ReadonlySet<string>): StylelintConfig {
   if (!isObject(raw))
     throw new WeblintConfigError(`${where} is not a stylelint configuration object`);
@@ -198,43 +252,7 @@ function block(raw: unknown, where: string, allowed: ReadonlySet<string>): Style
     if (IGNORED_KEYS.has(key)) continue;
     if (!allowed.has(key))
       throw new WeblintConfigError(`${where} sets "${key}", which Qualor does not support`);
-    if (key === 'extends') out[key] = names(value, `${where} extends`, STYLELINT_BUNDLED.extends);
-    else if (key === 'plugins')
-      out[key] = names(value, `${where} plugins`, STYLELINT_BUNDLED.plugins);
-    else if (key === 'customSyntax') {
-      if (typeof value !== 'string')
-        throw new WeblintConfigError(`${where} customSyntax must be a package name`);
-      out[key] = names(value, `${where} customSyntax`, STYLELINT_BUNDLED.customSyntax);
-    } else if (key === 'rules') {
-      if (!isObject(value)) throw new WeblintConfigError(`${where} rules must be an object`);
-      for (const id of Object.keys(value)) {
-        // `constructor`, `toString`, `__proto__`…: stylelint looks rules up on a plain object.
-        if (id in Object.prototype)
-          throw new WeblintConfigError(
-            `${where} rules sets "${id}", which is not a stylelint rule`,
-          );
-      }
-      out[key] = value;
-    } else if (key === 'overrides') {
-      if (!Array.isArray(value)) throw new WeblintConfigError(`${where} overrides must be a list`);
-      out[key] = value.map((entry, i) => {
-        const b = block(entry, `${where} overrides[${i}]`, OVERRIDE_KEYS);
-        if (!isGlobs(b['files']))
-          throw new WeblintConfigError(`${where} overrides[${i}] has no "files" globs`);
-        return b;
-      });
-    } else if (key === 'files' || key === 'ignoreFiles') {
-      if (!isGlobs(value)) throw new WeblintConfigError(`${where} ${key} must be globs`);
-      if (key === 'ignoreFiles') {
-        for (const glob of [value].flat() as string[]) {
-          if (leavesRoot(glob))
-            throw new WeblintConfigError(
-              `${where} ignoreFiles "${glob}" is outside the repository`,
-            );
-        }
-      }
-      out[key] = value;
-    } else out[key] = value;
+    out[key] = blockValue(key, value, where);
   }
   return out;
 }
@@ -325,6 +343,20 @@ function stylelintIgnore(root: string): string | null | { skip: string } {
   }
 }
 
+/** The configuration in the first of stylelint's own search places at the root, or null. */
+function searchedConfig(root: string): { config: StylelintConfig; source: string } | null {
+  for (const rel of STYLELINT_CONFIG_FILES) {
+    if (rel === 'package.json') {
+      const raw = packageJsonConfig(root);
+      if (raw === undefined) continue;
+      const source = 'package.json "stylelint"';
+      return { config: sanitizeStylelintConfig(raw, source), source };
+    }
+    if (repoEntryExists(path.join(root, rel))) return { config: load(root, rel), source: rel };
+  }
+  return null;
+}
+
 /**
  * config.md §6: the stylelint configuration Qualor runs — `configFile`, else the first of
  * stylelint's own search places at the repository root, else Qualor's default — or the reason
@@ -341,16 +373,8 @@ export function resolveStylelintConfig(
       return { config: QUALOR_DEFAULT_STYLELINT, source: 'qualor-default', ignore };
     }
     if (configFile !== null) return { config: load(root, configFile), source: configFile, ignore };
-    for (const rel of STYLELINT_CONFIG_FILES) {
-      if (rel === 'package.json') {
-        const raw = packageJsonConfig(root);
-        if (raw === undefined) continue;
-        const source = 'package.json "stylelint"';
-        return { config: sanitizeStylelintConfig(raw, source), source, ignore };
-      }
-      if (repoEntryExists(path.join(root, rel)))
-        return { config: load(root, rel), source: rel, ignore };
-    }
+    const found = searchedConfig(root);
+    if (found !== null) return { ...found, ignore };
     return { config: QUALOR_DEFAULT_STYLELINT, source: 'qualor-default', ignore };
   } catch (err) {
     if (!(err instanceof WeblintConfigError)) throw err;

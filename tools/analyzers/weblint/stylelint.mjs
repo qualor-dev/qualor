@@ -125,6 +125,86 @@ function ignoreFilter(root, ignoreFile) {
   return (full) => ignorer.ignores(uriOf(root, full));
 }
 
+/**
+ * stylelint's result for one file as `{ res }` (undefined when it returned none), or
+ * `{ threw: true }` when it threw on the file.
+ */
+async function lintFile(root, file, config) {
+  try {
+    const {
+      results: [res],
+    } = await stylelint.lint({
+      code: readFileSync(file, 'utf8'),
+      codeFilename: file,
+      config: structuredClone(config),
+      configBasedir: root,
+      cwd: here,
+      cache: false,
+      fix: false,
+      allowEmptyInput: true,
+    });
+    return { res };
+  } catch (err) {
+    // stylelint turns only a CssSyntaxError into a warning and rethrows the rest. A problem of
+    // the configuration fails the pass; one file's own (a nesting depth that overflows the
+    // stack, a source map PostCSS cannot decode) is counted and skipped (ruling D12).
+    if (err?.name === 'ConfigurationError') throw err;
+    stderr(`stylelint: ${uriOf(root, file)} not linted: ${err?.message ?? err}\n`);
+    return { threw: true };
+  }
+}
+
+/** One stylelint warning as a SARIF result. */
+function sarifResult(root, file, w) {
+  return {
+    ruleId: w.rule,
+    level: w.severity === 'warning' ? 'warning' : 'error',
+    message: { text: messageText(w) },
+    locations: [
+      {
+        physicalLocation: {
+          artifactLocation: { uri: uriOf(root, file) },
+          region: region(w.line, w.column, w.endLine, w.endColumn),
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Adds one linted file's warnings to `found` (its results, the rules they use, unknown rules and
+ * invalid options); true when the file did not parse.
+ */
+function addWarnings(root, file, res, found) {
+  for (const w of res.invalidOptionWarnings ?? []) found.invalidOptions.add(w.text);
+  let broken = false;
+  for (const w of res.warnings) {
+    if (w.rule === 'CssSyntaxError') {
+      broken = true;
+      continue;
+    }
+    if (w.rule.startsWith('--')) continue; // --report-needless-disables and the like: not findings
+    if (!found.known.has(w.rule)) {
+      found.unknownRules.add(w.rule);
+      continue;
+    }
+    found.used.add(w.rule);
+    found.results.push(sarifResult(root, file, w));
+  }
+  return broken;
+}
+
+/** The rules the findings use as SARIF rule descriptors, by id. */
+function sarifRules(used, known, possibleErrors) {
+  return [...used].sort().map((id) => ({
+    id,
+    name: id,
+    shortDescription: { text: id },
+    ...(known.get(id) && { helpUri: known.get(id) }),
+    properties: { category: possibleErrors.has(id) ? 'possible-error' : 'convention' },
+  }));
+}
+
 async function main(args) {
   const root = path.resolve(required(args, '--root'));
   const out = path.resolve(required(args, '--out'));
@@ -143,63 +223,19 @@ async function main(args) {
   let parseErrors = 0;
   let linted = 0;
   let threw = 0;
+  const found = { known, used, results, unknownRules, invalidOptions };
   for (const file of files) {
     if (ignored(file)) continue;
-    let res;
-    try {
-      ({
-        results: [res],
-      } = await stylelint.lint({
-        code: readFileSync(file, 'utf8'),
-        codeFilename: file,
-        config: structuredClone(config),
-        configBasedir: root,
-        cwd: here,
-        cache: false,
-        fix: false,
-        allowEmptyInput: true,
-      }));
-    } catch (err) {
-      // stylelint turns only a CssSyntaxError into a warning and rethrows the rest. A problem of
-      // the configuration fails the pass; one file's own (a nesting depth that overflows the
-      // stack, a source map PostCSS cannot decode) is counted and skipped (ruling D12).
-      if (err?.name === 'ConfigurationError') throw err;
+    const outcome = await lintFile(root, file, config);
+    if (outcome.threw) {
       linted += 1;
       threw += 1;
       parseErrors += 1;
-      stderr(`stylelint: ${uriOf(root, file)} not linted: ${err?.message ?? err}\n`);
       continue;
     }
-    if (res === undefined || res.ignored) continue;
+    if (outcome.res === undefined || outcome.res.ignored) continue;
     linted += 1;
-    for (const w of res.invalidOptionWarnings ?? []) invalidOptions.add(w.text);
-    let broken = false;
-    for (const w of res.warnings) {
-      if (w.rule === 'CssSyntaxError') {
-        broken = true;
-        continue;
-      }
-      if (w.rule.startsWith('--')) continue; // --report-needless-disables and the like: not findings
-      if (!known.has(w.rule)) {
-        unknownRules.add(w.rule);
-        continue;
-      }
-      used.add(w.rule);
-      results.push({
-        ruleId: w.rule,
-        level: w.severity === 'warning' ? 'warning' : 'error',
-        message: { text: messageText(w) },
-        locations: [
-          {
-            physicalLocation: {
-              artifactLocation: { uri: uriOf(root, file) },
-              region: region(w.line, w.column, w.endLine, w.endColumn),
-            },
-          },
-        ],
-      });
-    }
-    if (broken) parseErrors += 1;
+    if (addWarnings(root, file, outcome.res, found)) parseErrors += 1;
   }
 
   // One file in scope that throws is a parse error like any other; only a throw on every one of
@@ -208,13 +244,7 @@ async function main(args) {
     throw new Error(`stylelint failed on every file it linted (${threw})`);
   }
 
-  const rules = [...used].sort().map((id) => ({
-    id,
-    name: id,
-    shortDescription: { text: id },
-    ...(known.get(id) && { helpUri: known.get(id) }),
-    properties: { category: possibleErrors.has(id) ? 'possible-error' : 'convention' },
-  }));
+  const rules = sarifRules(used, known, possibleErrors);
   writeFileSync(
     out,
     JSON.stringify({

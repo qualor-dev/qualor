@@ -40,6 +40,26 @@ export function readRepoConfig(root: string, rel: string, maxBytes: number): str
   return readRepoConfigBytes(root, rel, maxBytes).toString('utf8');
 }
 
+const notRegular = (name: string) => new WeblintConfigError(`${name} is not a regular file`);
+
+/** The descriptor's regular file, of at most `maxBytes` (type and size taken from `fd`). */
+function readRegularFile(fd: number, maxBytes: number, name: string): Buffer {
+  const stat = fstatSync(fd);
+  if (!stat.isFile()) throw notRegular(name);
+  const tooLarge = () =>
+    new WeblintConfigError(`${name} is larger than ${maxBytes / 1024 / 1024} MiB`);
+  if (stat.size > maxBytes) throw tooLarge();
+  const buf = Buffer.alloc(maxBytes + 1);
+  let length = 0;
+  for (;;) {
+    const n = readSync(fd, buf, length, buf.length - length, null);
+    if (n === 0) break;
+    length += n;
+    if (length > maxBytes) throw tooLarge();
+  }
+  return buf.subarray(0, length);
+}
+
 /**
  * `readRepoConfig`'s raw bytes, for a caller that checks the encoding itself (detekt). `name` is
  * what the messages call the file (default `rel`).
@@ -53,9 +73,8 @@ export function readRepoConfigBytes(
   const file = path.resolve(root, rel);
   if (!repoEntryExists(file)) throw new WeblintConfigError(`${name} cannot be read`);
   if (!staysInside(root, file)) throw new WeblintConfigError(`${name} is outside the repository`);
-  const notRegular = () => new WeblintConfigError(`${name} is not a regular file`);
   try {
-    if (!statSync(file).isFile()) throw notRegular();
+    if (!statSync(file).isFile()) throw notRegular(name);
   } catch (err) {
     if (err instanceof WeblintConfigError) throw err;
     throw new WeblintConfigError(`${name} cannot be read`);
@@ -67,20 +86,7 @@ export function readRepoConfigBytes(
     throw new WeblintConfigError(`${name} cannot be read`);
   }
   try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) throw notRegular();
-    const tooLarge = () =>
-      new WeblintConfigError(`${name} is larger than ${maxBytes / 1024 / 1024} MiB`);
-    if (stat.size > maxBytes) throw tooLarge();
-    const buf = Buffer.alloc(maxBytes + 1);
-    let length = 0;
-    for (;;) {
-      const n = readSync(fd, buf, length, buf.length - length, null);
-      if (n === 0) break;
-      length += n;
-      if (length > maxBytes) throw tooLarge();
-    }
-    return buf.subarray(0, length);
+    return readRegularFile(fd, maxBytes, name);
   } catch (err) {
     if (err instanceof WeblintConfigError) throw err;
     throw new WeblintConfigError(`${name} cannot be read`);

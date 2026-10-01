@@ -29,17 +29,18 @@ export function dropNonRuleResults(output: unknown, log: Logger): unknown {
   const runs = (output as { runs?: unknown }).runs;
   if (!Array.isArray(runs)) return output;
   let dropped = 0;
-  for (const run of runs as { results?: unknown }[]) {
-    if (!Array.isArray(run.results)) continue;
-    run.results = run.results.filter((r: unknown) => {
+  const kept = (runs as { results?: unknown }[]).map((run) => {
+    if (!Array.isArray(run.results)) return run;
+    const results = run.results.filter((r: unknown) => {
       const id = (r as { ruleId?: unknown } | null)?.ruleId;
       const keep = typeof id === 'string' && RULE_CODE.test(id) && !NOT_FINDINGS.has(id);
       if (!keep) dropped++;
       return keep;
     });
-  }
+    return { ...run, results };
+  });
   if (dropped > 0) log.debug(`ruff: ${dropped} result(s) that are not rule findings dropped`);
-  return output;
+  return { ...output, runs: kept };
 }
 
 /**

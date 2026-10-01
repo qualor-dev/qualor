@@ -17,7 +17,8 @@ export const QUALOR_DEFAULT = 'qualor-default';
  * Rulings F5 and F27: what SwiftLint gets when the project has no configuration (or `configFile:
  * qualor-default`), in place of SwiftLint's bare defaults, which flag code that Xcode, SwiftPM and
  * the common formatters produce:
- * - whitespace Xcode leaves on blank lines, every `// TODO`, loop and geometry names (`i`, `x`),
+ * - whitespace Xcode leaves on blank lines, every to-do marker comment, loop and geometry names
+ *   (`i`, `x`),
  *   SwiftUI's `Button(action:) { … }`, and long URLs or comments;
  * - trailing commas, which `swift package init`'s Package.swift template writes and swift-format
  *   and SwiftFormat insert by default (Swift 6.1 allows them everywhere);
@@ -187,6 +188,7 @@ export interface SwiftlintPlan {
 }
 
 const RULE_LISTS = ['only_rules', 'opt_in_rules', 'enabled_rules', 'disabled_rules'] as const;
+type RuleLists = Partial<Record<(typeof RULE_LISTS)[number], string[]>>;
 /**
  * Global keys that write files, fetch URLs, change severities or the exit code, or apply only to
  * `swiftlint analyze` (config.md §6).
@@ -213,10 +215,7 @@ const NOT_FOLLOWED = ['parent_config', 'child_config'] as const;
  * identifier` and ignores it). `custom_rules` and each custom rule's id are ids; `all` is one only
  * in opt_in_rules and enabled_rules (checked with the real 0.65.1).
  */
-function unknownRuleIds(
-  lists: Partial<Record<(typeof RULE_LISTS)[number], string[]>>,
-  customRules: unknown,
-): string[] {
+function unknownRuleIds(lists: RuleLists, customRules: unknown): string[] {
   const custom =
     customRules !== null && typeof customRules === 'object' && !Array.isArray(customRules)
       ? Object.keys(customRules)
@@ -345,6 +344,107 @@ function pathGlobs(
   return globs;
 }
 
+/** What `planSwiftlintConfig` keeps and leaves out while it reads the project's configuration. */
+interface Kept {
+  /** The configuration written for SwiftLint. */
+  out: Record<string, unknown>;
+  included: string[];
+  excluded: string[];
+  dropped: string[];
+  notRun: string[];
+}
+
+/** The rule lists the configuration sets, or why one of them is not a list of ids. */
+function ruleLists(
+  parsed: Record<string, unknown>,
+  name: string,
+): { lists: RuleLists } | { skip: string } {
+  const lists: RuleLists = {};
+  for (const key of RULE_LISTS) {
+    if (!Object.hasOwn(parsed, key)) continue;
+    const list = stringList(parsed[key]);
+    if (list === null) return { skip: `${name}: ${key} must be a list of rule identifiers` };
+    lists[key] = list;
+  }
+  return { lists };
+}
+
+/**
+ * The project's rule choices with the SourceKit rules taken out (only_rules) or disabled (every
+ * other configuration), into `kept`; a skip reason when SwiftLint would refuse them or no rule is
+ * left, else null.
+ */
+function keepRuleChoices(
+  lists: RuleLists,
+  parsed: Record<string, unknown>,
+  name: string,
+  kept: Kept,
+): string | null {
+  const only = lists.only_rules ?? [];
+  const optIn = [...(lists.opt_in_rules ?? []), ...(lists.enabled_rules ?? [])];
+  const disabled = lists.disabled_rules ?? [];
+  if (
+    only.length > 0 &&
+    (optIn.length > 0 || disabled.length > 0 || Object.hasOwn(parsed, 'enabled_rules'))
+  ) {
+    return `${name}: only_rules cannot be combined with disabled_rules, opt_in_rules or enabled_rules (SwiftLint refuses such a configuration)`;
+  }
+  if (only.length > 0) {
+    kept.notRun.push(...only.filter(needsSourceKit));
+    const run = only.filter((id) => !needsSourceKit(id));
+    if (run.length === 0) {
+      return `${name}: every rule in only_rules needs SourceKit, which the bundled SwiftLint does not have`;
+    }
+    kept.out['only_rules'] = run;
+  } else {
+    kept.notRun.push(...optIn.filter(needsSourceKit));
+    const run = optIn.filter((id) => !needsSourceKit(id));
+    if (run.length > 0) kept.out['opt_in_rules'] = run;
+    kept.out['disabled_rules'] = [...new Set([...disabled, ...SOURCEKIT_RULES])];
+  }
+  return null;
+}
+
+/**
+ * One key of the configuration other than a rule list, into `kept`: paths as globs, rule settings
+ * as they are, everything else left out. A skip reason (without the file's name), else null.
+ */
+function keepSetting(key: string, value: unknown, dir: string, kept: Kept): string | null {
+  if ((RULE_LISTS as readonly string[]).includes(key)) return null;
+  if (key === 'included' || key === 'excluded') {
+    const globs = pathGlobs(key, value, dir, kept.dropped);
+    if (!Array.isArray(globs)) return globs.skip;
+    kept[key].push(...globs);
+  } else if (key === 'custom_rules') {
+    kept.notRun.push('custom_rules');
+  } else if (key === 'indentation' || (SWIFTLINT_RULES.has(key) && !LEFT_OUT.has(key))) {
+    // Rule settings are kept as they are, regular expressions included (ruling F11).
+    kept.out[key] = value;
+  } else {
+    kept.dropped.push(shown(key));
+  }
+  return null;
+}
+
+/** The configuration file Qualor writes, or why it cannot be written. */
+function configYaml(
+  name: string,
+  out: Record<string, unknown>,
+): { yaml: string } | { skip: string } {
+  // The name is shown as printable ASCII: a comment ends at any line break libyaml knows. `$` is
+  // `?` too: SwiftLint replaces `${VAR}` in the whole text, comments included (final review m2).
+  const header = `# Written by Qualor from ${name.replace(/[^\x20-\x23\x25-\x7e]/g, '?')} (config.md §6).\n`;
+  try {
+    return { yaml: header + writeYaml(out) };
+  } catch (err) {
+    if (err instanceof UnwritableString) {
+      return { skip: `${name} holds a lone UTF-16 surrogate, which SwiftLint cannot read` };
+    }
+    // A value nested past the stack (fix round 1, Minor 4).
+    return { skip: `${name} cannot be written as YAML` };
+  }
+}
+
 /**
  * The configuration SwiftLint gets (config.md §6): the project's rule choices and rule settings,
  * the SourceKit rules disabled, and nothing that writes, fetches or changes the exit code. Every
@@ -357,82 +457,27 @@ export function planSwiftlintConfig(
   source: string,
 ): SwiftlintPlan | { skip: string } {
   const name = shown(source);
-  for (const key of NOT_FOLLOWED) {
-    if (Object.hasOwn(parsed, key)) {
-      return {
-        skip: `${name} uses ${key}, which Qualor does not follow (config.md §6); make it self-contained, or set analyzers.swiftlint.configFile: qualor-default`,
-      };
-    }
-  }
-  const lists: Partial<Record<(typeof RULE_LISTS)[number], string[]>> = {};
-  for (const key of RULE_LISTS) {
-    if (!Object.hasOwn(parsed, key)) continue;
-    const list = stringList(parsed[key]);
-    if (list === null) return { skip: `${name}: ${key} must be a list of rule identifiers` };
-    lists[key] = list;
-  }
-  const only = lists.only_rules ?? [];
-  const optIn = [...(lists.opt_in_rules ?? []), ...(lists.enabled_rules ?? [])];
-  const disabled = lists.disabled_rules ?? [];
-  if (
-    only.length > 0 &&
-    (optIn.length > 0 || disabled.length > 0 || Object.hasOwn(parsed, 'enabled_rules'))
-  ) {
+  const notFollowed = NOT_FOLLOWED.find((key) => Object.hasOwn(parsed, key));
+  if (notFollowed !== undefined) {
     return {
-      skip: `${name}: only_rules cannot be combined with disabled_rules, opt_in_rules or enabled_rules (SwiftLint refuses such a configuration)`,
+      skip: `${name} uses ${notFollowed}, which Qualor does not follow (config.md §6); make it self-contained, or set analyzers.swiftlint.configFile: qualor-default`,
     };
   }
-  const out: Record<string, unknown> = {};
-  const dropped: string[] = [];
-  const notRun: string[] = [];
-  if (only.length > 0) {
-    notRun.push(...only.filter(needsSourceKit));
-    const kept = only.filter((id) => !needsSourceKit(id));
-    if (kept.length === 0) {
-      return {
-        skip: `${name}: every rule in only_rules needs SourceKit, which the bundled SwiftLint does not have`,
-      };
-    }
-    out['only_rules'] = kept;
-  } else {
-    notRun.push(...optIn.filter(needsSourceKit));
-    const kept = optIn.filter((id) => !needsSourceKit(id));
-    if (kept.length > 0) out['opt_in_rules'] = kept;
-    out['disabled_rules'] = [...new Set([...disabled, ...SOURCEKIT_RULES])];
-  }
-  const included: string[] = [];
-  const excluded: string[] = [];
+  const read = ruleLists(parsed, name);
+  if ('skip' in read) return read;
+  const kept: Kept = { out: {}, included: [], excluded: [], dropped: [], notRun: [] };
+  const choicesSkip = keepRuleChoices(read.lists, parsed, name, kept);
+  if (choicesSkip !== null) return { skip: choicesSkip };
   for (const [key, value] of Object.entries(parsed)) {
-    if ((RULE_LISTS as readonly string[]).includes(key)) continue;
-    if (key === 'included' || key === 'excluded') {
-      const globs = pathGlobs(key, value, dir, dropped);
-      if (!Array.isArray(globs)) return { skip: `${name}: ${globs.skip}` };
-      (key === 'included' ? included : excluded).push(...globs);
-    } else if (key === 'custom_rules') {
-      notRun.push('custom_rules');
-    } else if (key === 'indentation' || (SWIFTLINT_RULES.has(key) && !LEFT_OUT.has(key))) {
-      // Rule settings are kept as they are, regular expressions included (ruling F11).
-      out[key] = value;
-    } else {
-      dropped.push(shown(key));
-    }
+    const skip = keepSetting(key, value, dir, kept);
+    if (skip !== null) return { skip: `${name}: ${skip}` };
   }
-  // The name is shown as printable ASCII: a comment ends at any line break libyaml knows. `$` is
-  // `?` too: SwiftLint replaces `${VAR}` in the whole text, comments included (final review m2).
-  const header = `# Written by Qualor from ${name.replace(/[^\x20-\x23\x25-\x7e]/g, '?')} (config.md §6).\n`;
-  let yaml: string;
-  try {
-    yaml = header + writeYaml(out);
-  } catch (err) {
-    if (err instanceof UnwritableString) {
-      return { skip: `${name} holds a lone UTF-16 surrogate, which SwiftLint cannot read` };
-    }
-    // A value nested past the stack (fix round 1, Minor 4).
-    return { skip: `${name} cannot be written as YAML` };
-  }
+  const written = configYaml(name, kept.out);
+  if ('skip' in written) return written;
 
-  const unknownRules = unknownRuleIds(lists, parsed['custom_rules']);
-  return { yaml, included, excluded, dropped, notRun, unknownRules, source };
+  const { included, excluded, dropped, notRun } = kept;
+  const unknownRules = unknownRuleIds(read.lists, parsed['custom_rules']);
+  return { yaml: written.yaml, included, excluded, dropped, notRun, unknownRules, source };
 }
 
 function qualorDefault(): SwiftlintPlan {

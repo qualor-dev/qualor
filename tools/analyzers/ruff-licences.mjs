@@ -128,7 +128,19 @@ export function shippedCrates(metadata) {
     .map((id) => packages.get(id))
     .filter((p) => p.source !== null)
     .map((p) => ({ name: p.name, version: p.version, license: p.license ?? '' }))
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.version < b.version ? -1 : 1));
+    .sort(byNameThenVersion);
+}
+
+/** By name, then by version (as strings); never 0, as the two are unique together. */
+function byNameThenVersion(a, b) {
+  if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+  return a.version < b.version ? -1 : 1;
+}
+
+/** By name alone, keeping the order of crates that share one. */
+function byName(a, b) {
+  if (a.name === b.name) return 0;
+  return a.name < b.name ? -1 : 1;
 }
 
 /** `name@version` → the sha256 Cargo.lock records for its .crate archive. */
@@ -201,6 +213,54 @@ export function standardTexts(name, expression, authors) {
   return { holders, files };
 }
 
+/** Crate `c`'s .crate archive in `cache`, downloaded once and checked against Cargo.lock's `sum`. */
+function fetchCrate(cache, c, sum) {
+  if (!sum) throw new Error(`${c.name}@${c.version} is not in Cargo.lock`);
+  const file = path.join(cache, `${c.name}-${c.version}.crate`);
+  if (!existsSync(file)) {
+    execFileSync('curl', [
+      '-fsSL',
+      '--proto',
+      '=https',
+      '--proto-redir',
+      '=https',
+      '--tlsv1.2',
+      '--retry',
+      '3',
+      '-o',
+      file,
+      `https://static.crates.io/crates/${c.name}/${c.name}-${c.version}.crate`,
+    ]);
+  }
+  const got = createHash('sha256').update(readFileSync(file)).digest('hex');
+  if (got !== sum) throw new Error(`checksum mismatch: ${c.name}@${c.version}`);
+  return file;
+}
+
+/**
+ * The licence files of crate `c`'s archive `file`, or, when it ships none, the standard texts of
+ * the licences it names, after adding the lines that say so and name its holders to `lines`.
+ */
+function crateLicenceFiles(file, c, lines) {
+  const found = licenceTexts(file);
+  if (found.length > 0) return found;
+  const toml = execFileSync(
+    'tar',
+    ['-xzOf', path.basename(file), `${c.name}-${c.version}/Cargo.toml`],
+    {
+      cwd: path.dirname(file),
+      encoding: 'utf8',
+    },
+  );
+  const standard = standardTexts(c.name, c.license, cargoAuthors(toml));
+  lines.push(
+    '',
+    '(the crate ships no licence file: the standard SPDX text of each licence it names)',
+    standard.holders,
+  );
+  return standard.files;
+}
+
 function main([sourceDir, ...metadataFiles]) {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const repo = path.resolve(here, '../..');
@@ -213,9 +273,7 @@ function main([sourceDir, ...metadataFiles]) {
     for (const c of shippedCrates(JSON.parse(readFileSync(file, 'utf8'))))
       crates.set(`${c.name}@${c.version}`, c);
   }
-  const list = [...crates.values()].sort((a, b) =>
-    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
-  );
+  const list = [...crates.values()].sort(byName);
   const problems = list.map((c) => licenceProblem(c.name, c.license)).filter((p) => p !== null);
   if (problems.length > 0) throw new Error(`disallowed licences:\n${problems.join('\n')}`);
   const cache = path.join(repo, '.tmp/crates');
@@ -223,49 +281,12 @@ function main([sourceDir, ...metadataFiles]) {
   const texts = new Map(); // text → its number, printed once
   const sections = [];
   for (const c of list) {
-    const sum = checksums.get(`${c.name}@${c.version}`);
-    if (!sum) throw new Error(`${c.name}@${c.version} is not in Cargo.lock`);
-    const file = path.join(cache, `${c.name}-${c.version}.crate`);
-    if (!existsSync(file)) {
-      execFileSync('curl', [
-        '-fsSL',
-        '--proto',
-        '=https',
-        '--proto-redir',
-        '=https',
-        '--tlsv1.2',
-        '--retry',
-        '3',
-        '-o',
-        file,
-        `https://static.crates.io/crates/${c.name}/${c.name}-${c.version}.crate`,
-      ]);
-    }
-    const got = createHash('sha256').update(readFileSync(file)).digest('hex');
-    if (got !== sum) throw new Error(`checksum mismatch: ${c.name}@${c.version}`);
+    const file = fetchCrate(cache, c, checksums.get(`${c.name}@${c.version}`));
     const lines = [
       `${c.name} ${c.version} (${c.license})`,
       `https://crates.io/crates/${c.name}/${c.version}`,
     ];
-    let found = licenceTexts(file);
-    if (found.length === 0) {
-      const toml = execFileSync(
-        'tar',
-        ['-xzOf', path.basename(file), `${c.name}-${c.version}/Cargo.toml`],
-        {
-          cwd: path.dirname(file),
-          encoding: 'utf8',
-        },
-      );
-      const standard = standardTexts(c.name, c.license, cargoAuthors(toml));
-      lines.push(
-        '',
-        '(the crate ships no licence file: the standard SPDX text of each licence it names)',
-        standard.holders,
-      );
-      found = standard.files;
-    }
-    for (const { file: name, text } of found) {
+    for (const { file: name, text } of crateLicenceFiles(file, c, lines)) {
       if (!texts.has(text)) texts.set(text, texts.size + 1);
       lines.push('', `--- ${name}: text ${texts.get(text)}`);
     }
