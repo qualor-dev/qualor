@@ -207,7 +207,11 @@ async function decorateMergeRequest(
             : { maxThreadUpdates: deps.maxThreadUpdates }),
         })
       : { commented: 0, unplaced: 0 };
-  const { top, total, newIssues } = await summaryData(deps.db, loaded, deps.publicUrl);
+  const { top, total, newIssues, smallChangesetLines } = await summaryData(
+    deps.db,
+    loaded,
+    deps.publicUrl,
+  );
   const body = summaryBody({
     projectId: loaded.project.id,
     revision,
@@ -218,6 +222,7 @@ async function decorateMergeRequest(
     inline: { ...inline, skipped },
     branchUrl: branchUrl(deps.publicUrl, loaded),
     mergeRequestHead: head !== null && head !== revision ? head : null,
+    smallChangesetLines,
   });
   const { own, foreign } = summaryNotes(listed.items, me.id, loaded.project.id);
   if (own) {

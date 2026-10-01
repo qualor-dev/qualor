@@ -94,7 +94,7 @@ describe('a false positive re-decorates the pull request (github.md §8, G5)', (
     await runDecorations(h, githubDeps(h));
     expect(fake.checkRuns.at(-1)).toMatchObject({ conclusion: 'success', annotations: [] });
     const summary = fake.comments.find((c) => markerOf(c.body)?.kind === 'summary');
-    expect(summary?.body).toContain('### Qualor: quality gate passed');
+    expect(summary?.body).toContain('### ✅ Qualor: quality gate passed');
 
     fake.clearRequests();
     await runGateJobs();

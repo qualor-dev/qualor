@@ -46,6 +46,12 @@ export function outsideCodeSpans(line: string): string {
 
 /** Characters Qualor's own fixed text may use outside code spans. */
 export const FIXED_TEXT = /^[A-Za-z0-9 .,;:()’…*|\-<>·]*$/;
+/**
+ * {@link FIXED_TEXT} plus the fixed symbols of the summary comment: the status and severity
+ * markers, the comparison signs of the Required column, the dash of a skipped row, the arrow of
+ * its link and the percent sign of a value.
+ */
+export const SUMMARY_FIXED_TEXT = /^(?:[A-Za-z0-9 .,;:()’…*|\-<>·✅❌➖⛔🔴🟠🟡🔵≤≥—→%]|⚠️)*$/u;
 export const FORBIDDEN_ANYWHERE =
   // eslint-disable-next-line no-control-regex -- matching control characters is the point
   /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b\u200e\u200f\u2028-\u202e\u2060-\u206f\u115f\u1160\u2800\u3164\uffa0\ufeff\ud800-\udfff]|[\u{e0000}-\u{e007f}]/u;

@@ -1,7 +1,12 @@
 import type { GateResult } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import { safeCodeSpan, safePlainValue } from '@qualor/shared';
-import { FIXED_TEXT, FORBIDDEN_ANYWHERE, outsideCodeSpans } from '../../test/markdown-check';
+import {
+  FIXED_TEXT,
+  FORBIDDEN_ANYWHERE,
+  outsideCodeSpans,
+  SUMMARY_FIXED_TEXT,
+} from '../../test/markdown-check';
 import { codeSpan, markerOf, plainValue, qualorLink, summaryMarker } from './markdown';
 import {
   commitStatusFor,
@@ -65,6 +70,8 @@ function summary(overrides: Partial<SummaryInput> = {}): string {
       {
         id: ISSUE,
         severity: 'high',
+        quality: 'security',
+        ruleKey: 'semgrep:@all /merge',
         path: 'src/a.ts',
         line: 12,
         message: HOSTILE,
@@ -73,12 +80,23 @@ function summary(overrides: Partial<SummaryInput> = {}): string {
       {
         id: ISSUE,
         severity: 'medium',
+        quality: 'maintainability',
+        ruleKey: 'eslint:no-console',
         path: 'src/`x`.ts',
         line: null,
         message: 'plain',
         url: null,
       },
-      { id: ISSUE, severity: 'medium', path: null, line: null, message: '/merge', url: null },
+      {
+        id: ISSUE,
+        severity: 'medium',
+        quality: 'reliability',
+        ruleKey: 'r',
+        path: null,
+        line: null,
+        message: '/merge',
+        url: null,
+      },
     ],
     topIssuesTotal: 3,
     inline: { commented: 2, unplaced: 1, skipped: null },
@@ -155,19 +173,133 @@ describe('comment safety (scm.md §6)', () => {
 });
 
 describe('summary, inline note and commit status (scm.md §5)', () => {
-  it('shows the verdict, the failed and no-value conditions, counts, issues and the link', () => {
+  const B = `https://q.example/projects/${PROJECT}/branches/b1`;
+  const I = `https://q.example/projects/${PROJECT}/issues/${ISSUE}`;
+
+  it('shows the verdict, every condition, the counts, the issues and the link', () => {
     const body = summary();
-    expect(body).toContain('### Qualor: quality gate failed');
-    expect(body).toContain('Analysis of ` abcdef012345 ` · quality gate `` Qualor `way` @all ``');
-    expect(body).toContain('| `new_issues` | 3 | > 0 | failed |');
-    expect(body).toContain('| `new_duplicated_lines_density` | no value | > 3 | no value |');
-    expect(body).not.toContain('new_coverage');
-    expect(body).toContain('**New issues:** 3 (1 high, 2 medium)');
-    expect(body).toContain('- **Medium** `` src/`x`.ts `` ` plain `');
-    expect(body).toContain('- **Medium** ` /merge `');
-    expect(body).toContain('2 new issues are commented inline; 1 could not be placed on the diff.');
-    expect(body).toContain(`[View in Qualor](https://q.example/projects/${PROJECT}/branches/b1)`);
-    expect(body).toContain(`[details](https://q.example/projects/${PROJECT}/issues/${ISSUE})`);
+    const lines = body.split('\n');
+    expect(lines[1]).toBe('### ❌ Qualor: quality gate failed');
+    expect(body).toContain(
+      '`` Qualor `way` @all `` · analysis ` abcdef012345 ` · **3 new issues** in this merge request',
+    );
+    expect(body).toContain(
+      [
+        '| | Condition | Value | Required |',
+        '|---|---|---|---|',
+        '| ❌ | New issues | 3 | ≤ 0 |',
+        '| ✅ | Coverage on new code | 91.3% | ≥ 80 |',
+        '| ➖ | Duplication on new code | — | ≤ 3 |',
+      ].join('\n'),
+    );
+    expect(body).toContain('**By severity:** 🔴 1 high · 🟠 2 medium');
+    expect(body).toContain(
+      [
+        '#### Most severe new issues',
+        '',
+        `1. 🔴 **High** · security · \` semgrep:@all /merge \` · [\` src/a.ts:12 \`](${I})`,
+      ].join('\n'),
+    );
+    expect(body).toContain(
+      '2. 🟠 **Medium** · maintainability · ` eslint:no-console ` · `` src/`x`.ts ``\n   ` plain `',
+    );
+    expect(body).toContain('3. 🟠 **Medium** · reliability · ` r `\n   ` /merge `');
+    expect(body).toContain(
+      `2 new issues are commented inline; 1 could not be placed on the diff. · **[Open in Qualor →](${B})**`,
+    );
+    expect(body).not.toContain('View in Qualor');
+  });
+
+  it('puts an icon on the headline for every gate status', () => {
+    const head = (g: GateResult) => summary({ gate: g }).split('\n')[1];
+    expect(head(gate('passed'))).toBe('### ✅ Qualor: quality gate passed');
+    expect(head(failed)).toBe('### ❌ Qualor: quality gate failed');
+    expect(head(gate('error'))).toBe('### ⚠️ Qualor: the quality gate could not be evaluated');
+    expect(head(gate('none'))).toBe('### ➖ Qualor: no quality gate');
+    expect(head({ ...gate('passed'), status: 'weird' } as unknown as GateResult)).toBe(
+      '### ⚠️ Qualor: quality gate status unknown',
+    );
+  });
+
+  it('shows a plain gate name in bold, and any other in a code span', () => {
+    const named = (name: string) =>
+      summary({ gate: { ...failed, gate: { id: 'g', name } } }).split('\n')[3];
+    expect(named('Qualor way')).toBe(
+      '**Qualor way** · analysis ` abcdef012345 ` · **3 new issues** in this merge request',
+    );
+    expect(named('Équipe 2')).toMatch(/^\*\*Équipe 2\*\* · /);
+    for (const odd of ['a_b_', '**x', ' lead', 'www.evil.example', 'deadbeef1', 'x‮y', '#1'])
+      expect(named(odd), odd).toMatch(/^`/);
+    expect(summary({ gate: gate('none') }).split('\n')[3]).toMatch(/^analysis ` abcdef012345 ` · /);
+  });
+
+  it('counts new issues in the request’s words, or says they are not available', () => {
+    const line = (total: number | null, vocabulary?: 'github') =>
+      summary({ newIssues: { total, bySeverity: {} }, ...(vocabulary ? { vocabulary } : {}) });
+    expect(line(1)).toContain('· **1 new issue** in this merge request');
+    expect(line(0)).toContain('· **no new issues** in this merge request');
+    expect(line(25, 'github')).toContain('· **25 new issues** in this pull request');
+    const none = line(null);
+    expect(none.split('\n')[3]).toBe('`` Qualor `way` @all `` · analysis ` abcdef012345 `');
+    expect(none).toContain('**New issues:** not available (no new-code baseline)');
+    expect(none).not.toContain('**By severity:**');
+  });
+
+  it('marks every severity, and only the non-zero ones', () => {
+    const body = summary({
+      newIssues: {
+        total: 15,
+        bySeverity: { blocker: 1, high: 2, medium: 3, low: 4, info: 5 },
+      },
+    });
+    expect(body).toContain(
+      '**By severity:** ⛔ 1 blocker · 🔴 2 high · 🟠 3 medium · 🟡 4 low · 🔵 5 info',
+    );
+    expect(summary({ newIssues: { total: 0, bySeverity: { high: 0 } } })).not.toContain(
+      'By severity',
+    );
+  });
+
+  it('writes the passing side as Required, labels metrics from the catalog, and skips rows', () => {
+    const g: GateResult = {
+      ...gate('passed', [
+        { metric: 'new_coverage', operator: 'lt', threshold: 80, value: 100, status: 'passed' },
+        { metric: 'coverage', operator: 'lt', threshold: 50.5, value: 0, status: 'failed' },
+        { metric: 'new_high_issues', operator: 'gt', threshold: 2, value: 1, status: 'passed' },
+        {
+          metric: 'new_security_rating',
+          operator: 'gt',
+          threshold: 1,
+          value: 1,
+          status: 'passed',
+        },
+        { metric: 'my_metric', operator: 'gt', threshold: 1, value: 2.25, status: 'failed' },
+        { metric: 'Bad Key|', operator: 'gt', threshold: 1, value: 2, status: 'failed' },
+      ]),
+      ignoredConditions: [
+        { metric: 'new_line_coverage', reason: 'small_changeset' },
+        { metric: 'ncloc', reason: 'overall_on_branch' },
+        { metric: 'new_branch_coverage', reason: 'weird' as never },
+      ],
+    };
+    const body = summary({ gate: g, smallChangesetLines: 20 });
+    expect(body).toContain(
+      [
+        '| ✅ | Coverage on new code | 100.0% | ≥ 80 |',
+        '| ❌ | Coverage | 0.0% | ≥ 50.5 |',
+        '| ✅ | New high issues | 1 | ≤ 2 |',
+        '| ✅ | Security rating on new code | 1 | ≤ 1 |',
+        '| ❌ | `my_metric` | 2.3 | ≤ 1 |',
+        '| ❌ | unknown metric | 2 | ≤ 1 |',
+        '| ➖ | Line coverage on new code | — | skipped: fewer than 20 new lines |',
+        '| ➖ | Lines of code | — | skipped: overall condition on a branch |',
+        '| ➖ | Condition coverage on new code | — | skipped |',
+      ].join('\n'),
+    );
+    expect(summary({ gate: g })).toContain(
+      '| ➖ | Line coverage on new code | — | skipped: small change |',
+    );
+    expect(summary({ gate: gate('passed') })).not.toContain('| Condition |');
   });
 
   it('says why no inline comments were made, and when the merge request moved on', () => {
@@ -198,23 +330,83 @@ describe('summary, inline note and commit status (scm.md §5)', () => {
       branchUrl: null,
       mergeRequestHead: null,
     });
-    expect(passed).toContain('### Qualor: no quality gate');
+    expect(passed).toContain('### ➖ Qualor: no quality gate');
     expect(passed).toContain('**New issues:** not available (no new-code baseline)');
-    expect(passed).not.toContain('View in Qualor');
+    expect(passed).not.toContain('Most severe');
+    expect(passed).not.toContain('Open in Qualor');
+  });
+
+  it('ends with how many more issues there are, where they are, and the link', () => {
+    const tail = (o: Partial<SummaryInput>) => summary(o).split('\n').at(-1);
+    const none = { commented: 0, unplaced: 0, skipped: null };
+    expect(tail({ topIssuesTotal: 25, inline: { ...none, commented: 25 } })).toBe(
+      `…and 22 more, all commented inline · **[Open in Qualor →](${B})**`,
+    );
+    expect(
+      tail({ topIssuesTotal: 25, inline: { ...none, commented: 25 }, vocabulary: 'github' }),
+    ).toBe(`…and 22 more, all annotated inline · **[Open in Qualor →](${B})**`);
+    expect(summary({ topIssuesTotal: 25, inline: { commented: 20, unplaced: 5, skipped: null } }))
+      .toContain(`   \` /merge \`
+
+…and 22 more
+
+20 new issues are commented inline; 5 could not be placed on the diff. · **[Open in Qualor →](${B})**`);
+    expect(tail({ topIssuesTotal: 25, inline: none })).toBe(
+      `…and 22 more · **[Open in Qualor →](${B})**`,
+    );
+    expect(tail({ topIssuesTotal: 25, branchUrl: null, inline: none })).toBe('…and 22 more');
+    expect(tail({ inline: none })).toBe(`**[Open in Qualor →](${B})**`);
+    expect(tail({ inline: { ...none, commented: 1 } })).toBe(
+      `1 new issue is commented inline. · **[Open in Qualor →](${B})**`,
+    );
+    expect(tail({ topIssuesTotal: 25, inline: { ...none, skipped: 'stale' } })).toBe(
+      `Inline comments wait for the analysis of the merge request’s latest commit. · **[Open in Qualor →](${B})**`,
+    );
+    expect(tail({ mergeRequestHead: 'f'.repeat(40) })).toMatch(/is now at ` ffffffffffff `\.$/);
+  });
+
+  it('links an issue without a place with fixed text, and shows a place without a link', () => {
+    const issue = {
+      id: ISSUE,
+      severity: 'low' as const,
+      quality: 'security' as const,
+      ruleKey: 'k',
+      path: null,
+      line: null,
+      message: 'm',
+      url: null,
+    };
+    const body = summary({
+      topIssues: [
+        { ...issue, url: I },
+        { ...issue, severity: 'info', quality: 'bogus' as never, path: 'a.ts', line: 1 },
+        { ...issue, severity: 'bogus' as never },
+      ],
+      topIssuesTotal: 3,
+    });
+    expect(body).toContain(`1. 🟡 **Low** · security · \` k \` · [details](${I})`);
+    expect(body).toContain('2. 🔵 **Info** · unknown · ` k ` · ` a.ts:1 `');
+    expect(body).toContain('3. ➖ **Unknown** · security · ` k `');
   });
 
   it('stays within 16 KiB by listing fewer issues', () => {
     const many = Array.from({ length: 10 }, () => ({
       id: ISSUE,
       severity: 'high' as const,
-      path: `src/${'d/'.repeat(90)}f.ts`,
+      quality: 'security' as const,
+      ruleKey: '界'.repeat(100),
+      path: `src/${'界'.repeat(200)}`,
       line: 1,
-      message: '界'.repeat(300),
+      message: '😀'.repeat(300),
       url: null,
     }));
     const body = summary({ topIssues: many, topIssuesTotal: 500 });
     expect(Buffer.byteLength(body, 'utf8')).toBeLessThanOrEqual(SUMMARY_MAX_BYTES);
-    expect(body).toMatch(/- … and \d+ more/);
+    const listed = body.split('\n').filter((l) => /^\d+\. /.test(l)).length;
+    expect(listed).toBeGreaterThan(0);
+    expect(listed).toBeLessThan(10);
+    expect(body).toContain(`…and ${500 - listed} more`);
+    expect(body.split('\n').at(-1)).toContain('Open in Qualor');
   });
 
   it('maps every gate status to a commit status with a catalog-only description', () => {
@@ -319,7 +511,8 @@ const CORPUS: readonly (readonly [string, string])[] = [
 ];
 
 /** Qualor's own links in the bodies of this file. */
-const OWN_LINK = /\[(?:details|View in Qualor)\]\(https:\/\/q\.example\/[A-Za-z0-9/-]*\)/g;
+const OWN_LINK =
+  /\[(?:details|View in Qualor|Open in Qualor →| )\]\(https:\/\/q\.example\/[A-Za-z0-9/-]*\)/g;
 
 function checkBody(body: string, maxBytes: number): void {
   expect(Buffer.byteLength(body, 'utf8')).toBeLessThanOrEqual(maxBytes);
@@ -330,8 +523,10 @@ function checkBody(body: string, maxBytes: number): void {
     expect(line, line).not.toMatch(/^\s*\//);
     if (index === 0) continue; // the marker, checked by markerOf above
     let markdown = outsideCodeSpans(line).replace(OWN_LINK, ' ');
-    if (markdown.startsWith('### ')) markdown = markdown.slice(4); // the fixed heading
-    expect(markdown, line).toMatch(FIXED_TEXT);
+    markdown = markdown.replace(/^#{3,4} /, ''); // the fixed headings
+    expect(markdown, line).toMatch(
+      maxBytes === SUMMARY_MAX_BYTES ? SUMMARY_FIXED_TEXT : FIXED_TEXT,
+    );
     // `<` and `>` only as the comparison of a condition, never an HTML tag or autolink.
     expect(markdown, line).not.toMatch(/<\S/);
   }
@@ -365,6 +560,8 @@ describe('adversarial corpus (scm.md §6)', () => {
     const issue = {
       id: ISSUE,
       severity: 'high' as const,
+      quality: 'security' as const,
+      ruleKey: value,
       path: value,
       line: 7,
       message: value,
@@ -440,7 +637,7 @@ describe('adversarial corpus (scm.md §6)', () => {
     checkBody(body, SUMMARY_MAX_BYTES);
     const lines = body.split('\n');
     // The table was shortened at a row's end: every row is whole.
-    expect(lines.filter((l) => l.startsWith('| `')).length).toBeGreaterThan(10);
+    expect(lines.filter((l) => l.startsWith('| ❌ | Duplication')).length).toBeGreaterThan(10);
     for (const line of lines.filter((l) => l.startsWith('|'))) expect(line, line).toMatch(/\|$/);
     expect(lines.at(-1)).toMatch(/\|$/);
   });
@@ -468,6 +665,8 @@ describe('adversarial corpus (scm.md §6)', () => {
         {
           id: ISSUE,
           severity: 'low',
+          quality: 'security',
+          ruleKey: 'k',
           path: null,
           line: null,
           message: 'm',

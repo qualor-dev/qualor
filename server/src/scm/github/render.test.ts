@@ -123,7 +123,7 @@ describe('the summary in GitHub’s words (github.md §6.2)', () => {
   it('drops the marker line for the check run', () => {
     const body = summaryBody(input({ commented: 0, unplaced: 0, skipped: null }));
     expect(body.split('\n')[0]).toMatch(/^<!-- qualor:summary /);
-    expect(checkRunSummary(body).startsWith('### Qualor:')).toBe(true);
+    expect(checkRunSummary(body).startsWith('### ✅ Qualor:')).toBe(true);
   });
 
   it('keeps GitLab’s words when no vocabulary is given', () => {
@@ -192,6 +192,8 @@ describe('GitHub bounds and hostile values (github.md §6.1, §6.4, §7)', () =>
         topIssues: Array.from({ length: 10 }, () => ({
           id: PROJECT,
           severity: 'high' as const,
+          quality: 'security' as const,
+          ruleKey: value,
           path: value,
           line: 7,
           message: value,
@@ -207,10 +209,10 @@ describe('GitHub bounds and hostile values (github.md §6.1, §6.4, §7)', () =>
       expect(body).not.toMatch(FORBIDDEN);
       expect(Buffer.byteLength(body, 'utf8')).toBeLessThanOrEqual(SUMMARY_MAX_BYTES);
       for (const line of body.split('\n').slice(1))
-        expect(line).not.toMatch(/^\s*(?:[/@<!]|#(?!## ))/);
+        expect(line).not.toMatch(/^\s*(?:[/@<!]|#(?!##+ ))/);
       const output = checkRunSummary(body);
       expect(output.length).toBeLessThanOrEqual(GITHUB_SUMMARY_MAX_CHARS);
-      expect(output.startsWith('### Qualor: ')).toBe(true);
+      expect(output.startsWith('### ❌ Qualor: ')).toBe(true);
     },
   );
 

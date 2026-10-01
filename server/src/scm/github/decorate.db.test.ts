@@ -128,7 +128,7 @@ describe('GitHub decoration (github.md §5–§6)', () => {
         annotations: [],
       }),
     ]);
-    expect(runsOf(repoId)[0]?.summary?.startsWith('### Qualor: quality gate failed')).toBe(true);
+    expect(runsOf(repoId)[0]?.summary?.startsWith('### ❌ Qualor: quality gate failed')).toBe(true);
     expect(fake.comments.filter((c) => c.repoId === repoId)).toEqual([]);
   });
 
