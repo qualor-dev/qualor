@@ -1,0 +1,151 @@
+.mono {
+  font-family: var(--mono);
+}
+.file-head {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.crumbs a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.crumbs a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.crumb-root {
+  font-family: var(--font);
+}
+.crumb-file {
+  color: var(--text);
+  font-weight: 700;
+}
+.file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.issues-in-file {
+  font-weight: 600;
+}
+
+/* The page's panels: the tiles across, then the map at the left of the lists. */
+.file {
+  display: grid;
+  grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  transition: opacity 0.15s;
+}
+.file.reloading {
+  opacity: 0.6;
+}
+.file > * {
+  margin: 0;
+}
+.file-tiles {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.file-tiles .kpi-value {
+  font-size: 24px;
+}
+.file-tiles [data-tile='coverage'] .kpi-value {
+  font-size: 18px;
+  line-height: 1.35;
+}
+.map-panel {
+  position: sticky;
+  top: 76px;
+}
+.map-caption {
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.file-lists {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.dups {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+.dup-here {
+  font-weight: 600;
+}
+.dup-arrow {
+  color: var(--text-muted);
+}
+.none {
+  margin: 0;
+}
+.note {
+  margin: 0;
+  padding: 10px 22px 14px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.panel-body > .note {
+  padding: 10px 0 0;
+}
+.issues-table .rule {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.issues-table tr.on-line {
+  background: var(--accent-soft);
+}
+.file-placeholder {
+  min-height: 320px;
+}
+
+@media (max-width: 64rem) {
+  .file-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .file-tiles .kpi:nth-child(3n + 1) {
+    border-right: 0;
+  }
+}
+@media (max-width: 40rem) {
+  .file {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .map-panel {
+    position: static;
+  }
+  .file-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* Two a row: the tiles are the strip's 2nd to 7th children (its heading is the first). */
+  .file-tiles .kpi {
+    border-right: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .file-tiles .kpi:nth-child(odd) {
+    border-right: 0;
+  }
+}

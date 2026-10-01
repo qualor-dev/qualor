@@ -29,6 +29,12 @@ export const projectRoutes: Routes = [
     loadComponent: () => import('./code/code.page').then((m) => m.CodePage),
   },
   {
+    // spec §4.3: `?branch=&path=` (the path as a query param, never a path segment), `#L<n>`.
+    path: 'code/file',
+    title: $localize`:@@title.file:File`,
+    loadComponent: () => import('./code/file.page').then((m) => m.FilePage),
+  },
+  {
     // rbac-audit.md §17: the project's role grants, in every edition; the tab is shown to org admins.
     path: 'access',
     title: $localize`:@@title.access:Access`,
