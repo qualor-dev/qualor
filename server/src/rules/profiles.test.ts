@@ -23,6 +23,13 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     }
   });
 
+  it('lets the ruby profile govern rubocop findings on Ruby files (plan 9B)', () => {
+    expect(governingLanguage('rubocop', 'ruby')).toBe('ruby');
+    expect(governingLanguage('rubocop', null)).toBe('*');
+    for (const engine of ['semgrep', 'gitleaks', 'trivy'])
+      expect(governingLanguage(engine, 'ruby')).toBe('*');
+  });
+
   it('lets the kotlin profile govern detekt findings on Kotlin files (phase 8E)', () => {
     expect(governingLanguage('detekt', 'kotlin')).toBe('kotlin');
     expect(governingLanguage('detekt', null)).toBe('*');

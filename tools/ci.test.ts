@@ -805,3 +805,84 @@ describe('release engineering jobs (plan 4A)', () => {
     }
   });
 });
+
+describe('install-rubocop.sh (plan 9B)', () => {
+  const script = readFileSync('tools/analyzers/install-rubocop.sh', 'utf8');
+  const lock = readFileSync('tools/analyzers/rubocop/gems.lock', 'utf8');
+  const entries = lock.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('#'));
+
+  it("pins Ruby's source and every gem by SHA-256, checked before use, and resolves nothing online", () => {
+    expect(script).toMatch(/^RUBY_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^RUBY_SHA256=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^RUBOCOP_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toContain(
+      'fetch "https://cache.ruby-lang.org/pub/ruby/${RUBY_VERSION%.*}/ruby-$RUBY_VERSION.tar.gz" "$RUBY_SHA256" ruby.tar.gz',
+    );
+    expect(script).toContain(
+      'fetch "https://rubygems.org/downloads/$name-$version.gem" "$sha" "$name-$version.gem"',
+    );
+    expect(script).toContain('install --local --ignore-dependencies --no-document');
+    expect(script).not.toMatch(/bundle install|--source|latest|wget/);
+    expect(entries.length).toBeGreaterThanOrEqual(13);
+    for (const e of entries) expect(e, e).toMatch(/^[a-z][a-z0-9_-]* \d+(\.\d+)+ [0-9a-f]{64}$/);
+    const pinned = /^RUBOCOP_VERSION=(.+)$/m.exec(script)?.[1] ?? '';
+    expect(entries.some((e) => e.startsWith(`rubocop ${pinned} `))).toBe(true);
+  });
+
+  it('pins the .gem files it takes the default gems’ licence files from (B9-15)', () => {
+    const licenceLock = readFileSync('tools/analyzers/rubocop/licence-gems.lock', 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '' && !l.startsWith('#'));
+    expect(licenceLock.map((e) => e.split(' ')[0])).toEqual(
+      expect.arrayContaining(['prism', 'syntax_suggest']),
+    );
+    for (const e of licenceLock)
+      expect(e, e).toMatch(/^[a-z][a-z0-9_-]* \d+(\.\d+)+ [0-9a-f]{64}$/);
+    expect(script).toContain(
+      'fetch "https://rubygems.org/downloads/$name-$version.gem" "$sha" "licence/$name-$version.gem"',
+    );
+    expect(script).toContain('done <"$SRC/licence-gems.lock"');
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile'])
+      expect(readFileSync(file, 'utf8'), file).toMatch(/rubocop\/licence-gems\.lock/);
+  });
+
+  it('pins the same RuboCop as the CLI (packages/shared/src/rules/rubocop.ts)', () => {
+    const pinned = /^RUBOCOP_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(readFileSync('packages/shared/src/rules/rubocop.ts', 'utf8')).toContain(
+      `export const RUBOCOP_VERSION = '${pinned}';`,
+    );
+  });
+
+  it('runs in every GitHub job that requires the analyzers, before the tests', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      if (!job.steps.some((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1')) continue;
+      const install = job.steps.findIndex(
+        (s) => s.run?.endsWith('sudo sh tools/analyzers/install-rubocop.sh') === true,
+      );
+      expect(install, name).toBeGreaterThan(0);
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      expect(uses, name).toBeGreaterThan(install);
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template after install.sh", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    const before = gitlab['.analyzers']?.before_script ?? [];
+    expect(before).toContain('sh tools/analyzers/install-rubocop.sh');
+    expect(before.indexOf('sh tools/analyzers/install.sh')).toBeLessThan(
+      before.indexOf('sh tools/analyzers/install-rubocop.sh'),
+    );
+  });
+
+  it('is installed by both images, and the scanner image has the libyaml its Ruby links', () => {
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile'])
+      expect(readFileSync(file, 'utf8'), file).toMatch(/sh \/tmp\/install-rubocop\.sh/);
+    expect(readFileSync('deploy/scanner/Dockerfile', 'utf8')).toMatch(
+      /apt-get install -y --no-install-recommends [^\n]*\blibyaml-0-2\b/,
+    );
+  });
+});

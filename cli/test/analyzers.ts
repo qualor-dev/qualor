@@ -126,6 +126,16 @@ function swiftlintInstalledSupported(): boolean {
 }
 
 /**
+ * Plan 9B: real RuboCop needs Qualor's pass in /opt/qualor/rubocop (tools/analyzers/install-rubocop.sh,
+ * which both CIs' analyzer jobs run); `QUALOR_REQUIRE_ANALYZERS=1` makes it run, and fail, when missing.
+ */
+export function describeWithRubocop(): typeof describe {
+  const ok =
+    existsSync('/opt/qualor/rubocop/run.rb') && existsSync('/opt/qualor/rubocop/ruby/bin/ruby');
+  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+/**
  * Plan 2D (probe P6), Linux only (ruling R8): a real `dotnet build` writes the hook into
  * MSBuild's user directory, and only Linux lets a test isolate it there (`XDG_DATA_HOME`). Never
  * on Windows, where it would land in the developer's real profile. Never on macOS either: since

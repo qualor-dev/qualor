@@ -32,8 +32,9 @@ export const EQUIVALENCES: Equivalences = equivalencesSchema.parse(data);
  * data-model.md §5.3: which engine's issue is primary when two engines report the same problem.
  * Higher wins; external engines (any id not listed) rank lowest. `gitleaks` > `semgrep` >
  * `spotbugs` > `roslyn` > `pmd` > `eslint` > `sonarjs` > `ruff` > `stylelint` > `htmlhint` >
- * `detekt` > `swiftlint` > `phpstan` > external (plan 8D ruling D5, plan 8E ruling E4; swiftlint
- * (plan 8F): the only Swift engine; phpstan (plan 9A): the only PHP engine).
+ * `detekt` > `swiftlint` > `phpstan` > `rubocop` > external (plan 8D ruling D5, plan 8E ruling E4;
+ * swiftlint (plan 8F): the only Swift engine; phpstan (plan 9A): the only PHP engine; rubocop
+ * (plan 9B): the only Ruby engine).
  */
 export const ENGINE_PRIORITY: readonly string[] = [
   'gitleaks',
@@ -49,6 +50,7 @@ export const ENGINE_PRIORITY: readonly string[] = [
   'detekt',
   'swiftlint',
   'phpstan',
+  'rubocop',
 ];
 
 export function enginePriority(engineId: string): number {
@@ -97,6 +99,8 @@ export const EXTERNAL_BUILTIN_ALIASES: Readonly<Record<string, string>> = Object
   'ext-swiftlint': 'swiftlint',
   // Plan 9A; a PHPStan SARIF converter's rule ids are PHPStan's identifiers, identical to ours.
   'ext-phpstan': 'phpstan',
+  // Plan 9B; RuboCop SARIF converters keep the cop name as the rule id.
+  'ext-rubocop': 'rubocop',
 });
 
 /** detekt 1.23 SARIF rule ids: `detekt.<rule set>.<Rule>` (`detekt.style.MagicNumber`). */

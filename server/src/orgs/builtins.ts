@@ -19,6 +19,7 @@ export const PROFILE_LANGUAGES = [
   'kotlin',
   'swift',
   'php',
+  'ruby',
   '*',
 ] as const;
 export type ProfileLanguage = (typeof PROFILE_LANGUAGES)[number];

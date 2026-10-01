@@ -136,3 +136,14 @@ regexes = [
   '''^-----BEGIN ENCRYPTED PRIVATE KEY-----\x5cn`\);\n    expect\(\(\) => signKey\(\{ \.\.\.base, keyFile: disguised \}\)\)\.toThrow\(sameError\);\n''',
 ]
 paths = ['''^tools/license/license-tool\.test\.ts$''']
+
+[[allowlists]]
+description = "a RuboCop cop name in the generated RuboCop tables (plan 9B): generic-api-key reads the name after `Lint/IneffectiveAccessModifier` (its `Access`) as a key"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^Lint/InheritException$''']
+paths = [
+  '''^packages/shared/rules/rubocop-default-keys\.json$''',
+  '''^packages/shared/rules/rubocop-keys\.json$''',
+]

@@ -15,6 +15,9 @@ vulnerability database pinned by digest), compiled into the
 | detekt (the detekt engine, Kotlin)                                            | 1.23.8                                         | Apache-2.0 (`DETEKT-LICENSE.txt`); the libraries its jar bundles: see below (`DETEKT-THIRD-PARTY.txt`), Trove4J LGPL-2.1 (`TROVE4J-LICENSE.txt`)                                            | https://github.com/detekt/detekt/tree/v1.23.8                                                         |
 | SwiftLint (the swiftlint engine, Swift)                                       | 0.65.1                                         | MIT (`SWIFTLINT-LICENSE.txt`, with mimalloc's MIT licence); what its static build links: see below (`SWIFTLINT-THIRD-PARTY-NOTICES.txt`)                                                    | https://github.com/realm/SwiftLint/tree/0.65.1                                                        |
 | PHPStan (the phpstan engine, PHP)                                             | 2.2.16                                         | MIT (`PHPSTAN-LICENSE.txt`); the Composer packages inside its phar (MIT, BSD-3-Clause, Apache-2.0; Nette's under its BSD-3-Clause option): see `PHPSTAN-DEPENDENCIES.txt`                   | https://github.com/phpstan/phpstan/tree/2.2.16                                                        |
+| Ruby (the rubocop engine's runtime)                                           | 4.0.7                                          | Ruby's licence, used under its BSD-2-Clause option (`RUBY-BSDL.txt`; `RUBY-COPYING.txt`; `RUBY-LEGAL.txt` lists the parts under other permissive licences)                                  | https://www.ruby-lang.org/                                                                            |
+| RuboCop and the gems it runs on                                               | 1.91.0                                         | MIT; json and racc: Ruby's licence or BSD-2-Clause (`RUBOCOP-DEPENDENCIES.txt`)                                                                                                             | https://github.com/rubocop/rubocop/tree/v1.91.0                                                       |
+| Ruby's MIT default gems (prism, syntax_suggest, bundler, psych, …)            | those of Ruby 4.0.7                            | MIT, each with its own licence text (`RUBOCOP-DEPENDENCIES.txt`); the other default gems: Ruby's licence (`RUBY-BSDL.txt`)                                                                  | https://github.com/ruby/prism                                                                         |
 | PMD                                                                           | 7.27.0                                         | BSD-style, with Apache-2.0 parts (`PMD-LICENSE.txt`); its bundled libraries: see below                                                                                                      | https://github.com/pmd/pmd/tree/pmd_releases/7.27.0                                                   |
 | Gitleaks                                                                      | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`); its MPL-2.0 Go modules: see below                                                                                                                             | https://github.com/gitleaks/gitleaks/tree/v8.30.1                                                     |
 | Trivy                                                                         | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                                     | https://github.com/aquasecurity/trivy/tree/v0.74.0                                                    |
@@ -140,14 +143,15 @@ mpdecimal. The Python packages are MIT, BSD, Apache-2.0, PSF or 0BSD (chardet 7)
 
 The npm packages compiled into the `qualor` binary are ignore, picomatch, saxes, xmlchars, yaml,
 zod, web-tree-sitter and the tree-sitter grammars for Java, JavaScript, TypeScript, C#, Python,
-HTML, CSS, Kotlin and PHP (`tree-sitter-c-sharp` 0.23.5, MIT, `TREE-SITTER-C-SHARP-LICENSE.txt`;
-`tree-sitter-html` 0.23.2, `tree-sitter-css` 0.25.0, `@tree-sitter-grammars/tree-sitter-kotlin`
-1.1.0 and `tree-sitter-php` 0.24.2, all MIT), in the versions `pnpm-lock.yaml` locks. The Swift
-grammar, tree-sitter-swift 0.7.3 (MIT, `TREE-SITTER-SWIFT-LICENSE.txt`), is vendored in the CLI's
-source (`cli/grammars`), because no npm package ships it as WebAssembly. The `qualor` binary, and so
-this grammar, is the same in `qualor/scanner` and `qualor/scanner-dotnet`: the image only adds the
-.NET SDKs and Roslynator around it. The image keeps the licence files of every production dependency
-of the CLI, as installed, in `/opt/qualor/licenses/qualor/npm/`.
+HTML, CSS, Kotlin, PHP and Ruby (`tree-sitter-c-sharp` 0.23.5, MIT,
+`TREE-SITTER-C-SHARP-LICENSE.txt`; `tree-sitter-html` 0.23.2, `tree-sitter-css` 0.25.0,
+`@tree-sitter-grammars/tree-sitter-kotlin` 1.1.0, tree-sitter-php 0.24.2 and
+tree-sitter-ruby 0.23.1, all MIT), in the versions `pnpm-lock.yaml` locks. The Swift grammar,
+tree-sitter-swift 0.7.3 (MIT, `TREE-SITTER-SWIFT-LICENSE.txt`), is vendored in the CLI's source
+(`cli/grammars`), because no npm package ships it as WebAssembly. The `qualor` binary, and so this
+grammar, is the same in `qualor/scanner` and `qualor/scanner-dotnet`: the image only adds the .NET
+SDKs and Roslynator around it. The image keeps the licence files of every production dependency of
+the CLI, as installed, in `/opt/qualor/licenses/qualor/npm/`.
 
 PHPStan is PHPStan's own phar, unmodified, pinned by SHA-256 in `tools/analyzers/install.sh` and
 installed as `/opt/qualor/lib/phpstan/phpstan.phar`. `PHPSTAN-DEPENDENCIES.txt` lists the 67
@@ -174,6 +178,16 @@ are installed at image build with `npm ci --omit=dev` from
 `tools/analyzers/weblint/package-lock.json`. Every package in that installed npm tree is
 permissively licensed (MIT, ISC, BSD, MIT-0, BlueOak-1.0.0, CC0-1.0 and Python-2.0,
 `WEBLINT-DEPENDENCIES.txt`), so none of it needs a source offer.
+
+Ruby is built from its release source in the image (`tools/analyzers/install-rubocop.sh`); of its
+bundled gems only racc is kept, and its default json is replaced by json 2.21.2. RuboCop 1.91.0
+and the 13 gems it runs on are the unmodified upstream releases, pinned by SHA-256 in
+`tools/analyzers/rubocop/gems.lock` and installed offline into `/opt/qualor/rubocop`;
+`RUBOCOP-DEPENDENCIES.txt` lists each with its licence. It also carries the licence texts of
+Ruby's default gems that have a licence of their own (MIT: bundler, did_you_mean, error_highlight,
+prism, psych and syntax_suggest), taken from their release `.gem` files at the versions Ruby ships
+(`tools/analyzers/rubocop/licence-gems.lock`); the other default gems are under Ruby's licence. None
+is copyleft, so none needs a source offer.
 
 The Ruff binary is the upstream release build for glibc, a Rust program.
 

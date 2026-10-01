@@ -104,4 +104,27 @@ describe('lineUnits', () => {
       tree.delete();
     }
   });
+
+  it('drops Ruby comments and __END__ data, and counts #{ as a bracket (plan 9B)', async () => {
+    const parsers = await testParsers();
+    const unitsOf = (source: string) => {
+      const tree = parsers.parse('ruby', source);
+      if (tree === null) throw new Error('timeout');
+      try {
+        return lineUnits(tree.rootNode, 'ruby');
+      } finally {
+        tree.delete();
+      }
+    };
+    const copies = unitsOf('def f(a)\n  # One.\n  a + 1 # x\nend\n\ndef g(a)\n  a + 1\nend\n');
+    expect(copies.map((u) => u.startLine)).toEqual([1, 3, 4, 6, 7, 8]);
+    expect(copies[1]?.hash).toBe(copies[4]?.hash);
+    expect(unitsOf('s = "a #{b} c"\nf(a,\n  b)\n').map((u) => [u.startLine, u.delta])).toEqual([
+      [1, 0],
+      [2, 1],
+      [3, -1],
+    ]);
+    expect(unitsOf('x = 1\n__END__\nnot ruby (\n').map((u) => u.startLine)).toEqual([1]);
+    expect(unitsOf('=begin\nzz\n=end\nx = 2\n').map((u) => u.startLine)).toEqual([4]);
+  });
 });

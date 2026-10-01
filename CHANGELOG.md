@@ -16,11 +16,21 @@ All notable changes to Qualor are listed here, newest first. The format follows
   in `vendor/` are read as symbols, never run. Unknown classes, methods and functions are not
   reported. `qualor import sonarqube` imports PHP profiles where a PHPStan rule is the same rule.
   `QUALOR_PHPSTAN_PHAR` names another phar.
+- Ruby: `.rb`, `.rake`, `.gemspec`, `.ru`, `Gemfile` and `Rakefile` are a language of their own
+  (`ruby`) with metrics and duplication, and a new `rubocop` engine
+  runs RuboCop 1.91 (MIT) on Ruby 4.0.7 from `qualor/scanner` with Qualor's own selection
+  (`qualor-default`: RuboCop's Lint and Security cops, minus a few that misfire in a Qualor
+  scan; the guide lists them). It never reads the project's `.rubocop.yml`;
+  choose cops with `analyzers.rubocop.select` and `ignore`, and the parsed Ruby version with
+  `targetRubyVersion`. A `ruby` quality profile is created for every organisation.
+  `qualor import sonarqube` imports Ruby profiles where a RuboCop cop checks the same thing (two
+  rules are equivalent and activate their cop; the others are overlaps that only import issue
+  statuses), and keeps the statuses of issues SonarQube imported from RuboCop.
 
 ### Changed
 
-- A report that holds PHP files or `phpstan` findings is refused (422) by an older Qualor server:
-  upgrade the server before the scanner.
+- A report that holds PHP or Ruby files, or `phpstan` or `rubocop` findings, is refused (422) by
+  a Qualor server older than this release: upgrade the server before the scanner.
 - `.php` files were language `other`; they now count in lines of code, complexity and
   duplication, and `*Test.php` files are test files by default.
 - PHPStan is skipped when `composer.json` requires packages but `vendor/` is not installed: run
@@ -28,6 +38,14 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - `phpstan` is now a built-in engine id: a `sarif:` entry with `engine: phpstan` no longer
   validates, and your own PHPStan SARIF import is reported as `ext-phpstan` and counted once.
 - The `qualor/scanner` image is about 25 MB larger (compressed): Debian's PHP 8.2 and PHPStan.
+- `.rb`, `.rake`, `.gemspec`, `.ru`, `Gemfile` and `Rakefile` were language `other`; they now count
+  in lines of code, complexity and duplication, which can move the new-code duplication condition.
+  `*_spec.rb`, `*_test.rb` and Ruby files below `spec/` and `test/` are test files by default.
+- New built-in excludes: `.bundle` directories and `db/schema.rb`.
+- `rubocop` is now a built-in engine id: a `sarif:` entry with `engine: rubocop` no longer
+  validates. Qualor runs RuboCop itself: remove your own RuboCop SARIF import; one you keep is
+  reported as `ext-rubocop` and counts once with the built-in finding.
+- `qualor/scanner` grows by about 9 MB compressed (Ruby and RuboCop).
 
 ## [0.3.1] - 2026-10-01
 

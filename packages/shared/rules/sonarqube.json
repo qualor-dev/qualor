@@ -1,5 +1,5 @@
 {
-  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules. PHP (Phase 9A): php:S#### rows are curated, keys only, each compared against both rules' public documentation and sources (SonarSource's public sonar-php repository, PHPStan's docs and source; committed reviewed, as the python rows), each target a PHPStan identifier that fires at Qualor's default level; SonarQube imports PHPStan reports as the single rule external_phpstan:phpstan.finding, which cannot be mapped; external_psalm and phpsecurity are not mapped.",
+  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules. PHP (Phase 9A): php:S#### rows are curated, keys only, each compared against both rules' public documentation and sources (SonarSource's public sonar-php repository, PHPStan's docs and source; committed reviewed, as the python rows), each target a PHPStan identifier that fires at Qualor's default level; SonarQube imports PHPStan reports as the single rule external_phpstan:phpstan.finding, which cannot be mapped; external_psalm and phpsecurity are not mapped. Ruby (Phase 9B): external_rubocop maps to rubocop one to one for the cops of the pinned RuboCop (rubocop-keys.json); ruby:S#### rows are curated, keys only, each compared against both rules' public documentation; rubydre is SonarQube's newer repository for the same RSPEC ids (rubydre-only rules: public name and parameters only; kept as overlap).",
   "languages": {
     "js": {
       "language": "javascript",
@@ -28,10 +28,15 @@
     "php": {
       "language": "php",
       "engines": ["phpstan"]
+    },
+    "ruby": {
+      "language": "ruby",
+      "engines": ["rubocop"]
     }
   },
   "aliases": {
-    "squid": "java"
+    "squid": "java",
+    "rubydre": "ruby"
   },
   "repositories": [
     {
@@ -116,6 +121,13 @@
       "reason": "SonarSource's own TypeScript analyser's rule ids are reused verbatim by Qualor's bundled eslint-plugin-sonarjs.",
       "keysFile": "sonarjs-keys.json",
       "defaultKeysFile": "sonarjs-default-keys.json"
+    },
+    {
+      "repository": "external_rubocop",
+      "engine": "rubocop",
+      "reason": "RuboCop reports imported into SonarQube keep RuboCop's own cop names.",
+      "keysFile": "rubocop-keys.json",
+      "defaultKeysFile": "rubocop-default-keys.json"
     }
   ],
   "rules": [
@@ -873,6 +885,295 @@
       "relation": "overlap",
       "reviewed": true,
       "reason": "Both flag unused parameters; PHPStan's identifier covers constructors only, not other functions."
+    },
+    {
+      "sonar": ["ruby:S100"],
+      "qualor": ["rubocop:Naming/MethodName"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both check method names against a convention: a configurable regex on one side, a named case style on the other."
+    },
+    {
+      "sonar": ["ruby:S101"],
+      "qualor": ["rubocop:Naming/ClassAndModuleCamelCase"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag class names that are not CamelCase; the cop also checks module names and takes no regex."
+    },
+    {
+      "sonar": ["ruby:S103"],
+      "qualor": ["rubocop:Layout/LineLength"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag over-long lines; the limits differ and the cop exempts URIs, heredocs and qualified names by default."
+    },
+    {
+      "sonar": ["ruby:S105"],
+      "qualor": ["rubocop:Layout/IndentationStyle"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag tab characters; the cop looks at indentation only, the SonarQube rule at a tab anywhere in the file."
+    },
+    {
+      "sonar": ["ruby:S107"],
+      "qualor": ["rubocop:Metrics/ParameterLists"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag methods with too many parameters; the cop also caps optional parameters and its default limit is lower."
+    },
+    {
+      "sonar": ["ruby:S108"],
+      "qualor": [
+        "rubocop:Lint/EmptyBlock",
+        "rubocop:Lint/EmptyConditionalBody",
+        "rubocop:Lint/EmptyWhen",
+        "rubocop:Lint/EmptyEnsure"
+      ],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag empty bodies; the cops split this by block, if/elsif/unless, when and ensure, each with its own exemptions."
+    },
+    {
+      "sonar": ["ruby:S117"],
+      "qualor": [
+        "rubocop:Naming/VariableName",
+        "rubocop:Naming/BlockParameterName",
+        "rubocop:Naming/MethodParameterName"
+      ],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both check parameter names against a convention; the cops also check local variables and a minimum name length."
+    },
+    {
+      "sonar": ["ruby:S122"],
+      "qualor": ["rubocop:Style/Semicolon"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both target several statements on one line; the cop looks for semicolons, trailing ones included."
+    },
+    {
+      "sonar": ["ruby:S126"],
+      "qualor": ["rubocop:Style/MissingElse"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both ask for a final else; the SonarQube rule only after an elsif chain, the cop by default on every if and case."
+    },
+    {
+      "sonar": ["ruby:S131"],
+      "qualor": ["rubocop:Style/MissingElse"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both ask for an else on a case; the cop by default also asks for one on every if."
+    },
+    {
+      "sonar": ["ruby:S134"],
+      "qualor": ["rubocop:Metrics/BlockNesting"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag control structures nested past a limit, 3 by default; the cop skips modifier if and unless forms."
+    },
+    {
+      "sonar": ["ruby:S138"],
+      "qualor": ["rubocop:Metrics/MethodLength"],
+      "relation": "equivalent",
+      "reviewed": true,
+      "reason": "Both flag a method whose body has too many lines of code; only the default limit differs."
+    },
+    {
+      "sonar": ["ruby:S1066"],
+      "qualor": ["rubocop:Style/SoleNestedConditional"],
+      "relation": "equivalent",
+      "reviewed": true,
+      "reason": "Both flag an if or unless whose only content is another conditional that could be merged into it."
+    },
+    {
+      "sonar": ["ruby:S1110"],
+      "qualor": ["rubocop:Style/RedundantParentheses"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag needless parentheses; the SonarQube rule only doubled pairs, the cop many single redundant pairs too."
+    },
+    {
+      "sonar": ["ruby:S1145"],
+      "qualor": ["rubocop:Lint/LiteralAsCondition"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a literal true or false as an if condition; the cop covers any literal, loops, case and && / || too."
+    },
+    {
+      "sonar": ["ruby:S1172"],
+      "qualor": ["rubocop:Lint/UnusedMethodArgument", "rubocop:Lint/UnusedBlockArgument"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag method or block parameters that are never used; the cops skip empty bodies and differ in exemptions."
+    },
+    {
+      "sonar": ["ruby:S1314"],
+      "qualor": ["rubocop:Style/NumericLiteralPrefix"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both target octal literals written with a bare leading zero; the cop wants a 0o prefix, the rule a decimal."
+    },
+    {
+      "sonar": ["ruby:S1451"],
+      "qualor": ["rubocop:Style/Copyright"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both check files for a header notice; one matches a given header text, the cop a copyright-line pattern."
+    },
+    {
+      "sonar": ["ruby:S1481"],
+      "qualor": ["rubocop:Lint/UselessAssignment"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag unused local variables; the cop flags any assignment whose value is never read, reassignments too."
+    },
+    {
+      "sonar": ["ruby:S1656"],
+      "qualor": ["rubocop:Lint/SelfAssignment"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a variable assigned to itself; the cop also covers attributes, constants, indexes and multiple assignment."
+    },
+    {
+      "sonar": ["ruby:S1763"],
+      "qualor": ["rubocop:Lint/UnreachableCode"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag statements after return, break or next; the cop also after raise, throw, exit, redo and retry."
+    },
+    {
+      "sonar": ["ruby:S1764"],
+      "qualor": ["rubocop:Lint/BinaryOperatorWithIdenticalOperands"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag the same operand on both sides of an operator; the cop leaves out arithmetic and shift operators."
+    },
+    {
+      "sonar": ["ruby:S1862"],
+      "qualor": ["rubocop:Lint/DuplicateElsifCondition", "rubocop:Lint/DuplicateCaseCondition"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a condition repeated in an if/elsif chain or a when value repeated in a case; matching details differ."
+    },
+    {
+      "sonar": ["ruby:S1871"],
+      "qualor": ["rubocop:Lint/DuplicateBranch"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag branches with identical bodies; the cop also checks rescue clauses and has no one-line-branch exemption."
+    },
+    {
+      "sonar": ["ruby:S1940"],
+      "qualor": ["rubocop:Style/InverseMethods"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a negated comparison that has an inverse operator; the cop also flags negated predicates and select/reject."
+    },
+    {
+      "sonar": ["ruby:S3776"],
+      "qualor": ["rubocop:Metrics/PerceivedComplexity"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both bound how hard a method's control flow is to follow, but compute different scores with different limits."
+    },
+    {
+      "sonar": ["ruby:S7794"],
+      "qualor": ["rubocop:Style/RedundantException"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag raise or fail given RuntimeError explicitly, the class raise already uses by default."
+    },
+    {
+      "sonar": ["ruby:S7817"],
+      "qualor": ["rubocop:Style/RescueStandardError"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a bare rescue; the cop accepts rescue StandardError, which still names no specific exception class."
+    },
+    {
+      "sonar": ["ruby:S7870"],
+      "qualor": ["rubocop:Style/UnlessElse"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both target confusing unless use; the cop flags only an unless that has an else branch."
+    },
+    {
+      "sonar": ["ruby:S7874"],
+      "qualor": ["rubocop:Lint/Void"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a discarded non-mutating result such as sort; the cop needs an option for methods and flags void literals."
+    },
+    {
+      "sonar": ["ruby:S7907"],
+      "qualor": ["rubocop:Naming/PredicatePrefix"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag predicate method names starting with is_; the cop also forbids has_, have_ and does_ by default."
+    },
+    {
+      "sonar": ["ruby:S7916"],
+      "qualor": ["rubocop:Style/AndOr"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag and/or where && and || belong; the cop's default style checks conditions only, style always checks all."
+    },
+    {
+      "sonar": ["ruby:S7917"],
+      "qualor": ["rubocop:Style/EmptyLiteral"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag Array.new and Hash.new without arguments; the cop also flags String.new, Array[] and Hash[]."
+    },
+    {
+      "sonar": ["ruby:S8419"],
+      "qualor": ["rubocop:Lint/ShadowedArgument"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a parameter overwritten before it is read; the cop also checks block parameters."
+    },
+    {
+      "sonar": ["ruby:S8421"],
+      "qualor": ["rubocop:Lint/UnderscorePrefixedVariableName"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a variable whose leading underscore marks it unused although the code does use it."
+    },
+    {
+      "sonar": ["ruby:S8422"],
+      "qualor": ["rubocop:Style/TrailingUnderscoreVariable"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag needless trailing underscore targets at the end of a multiple assignment."
+    },
+    {
+      "sonar": ["ruby:S8423"],
+      "qualor": ["rubocop:Lint/CircularArgumentReference"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag an optional parameter whose default value is the parameter itself."
+    },
+    {
+      "sonar": ["ruby:S8424"],
+      "qualor": ["rubocop:Lint/ConstantReassignment"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag assigning a new value to a constant that already has one."
+    },
+    {
+      "sonar": ["ruby:S8425"],
+      "qualor": ["rubocop:Lint/ConstantResolution"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both target ambiguous constant lookup; the cop asks for a leading :: on every constant or on a configured list."
+    },
+    {
+      "sonar": ["ruby:S8426"],
+      "qualor": ["rubocop:Style/RedundantAssignment"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a local variable assigned and then only returned as the method's last expression."
     }
   ]
 }

@@ -443,3 +443,29 @@ describe('phpstan (report-format.md §7.1, plan 9A)', () => {
     );
   });
 });
+
+describe('rubocop (report-format.md §7.1, plan 9B)', () => {
+  it('maps quality and severity from the department, never from the SARIF level', () => {
+    const rubocop = engineMapping('rubocop')!;
+    expect(rubocop.rule!({ id: 'Security/Eval' })).toEqual({
+      quality: 'security',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(rubocop.rule!({ id: 'Style/StringLiterals' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(
+      rubocop.severity!({ ruleId: 'Lint/UselessAssignment', level: 'note' } as never, undefined),
+    ).toBe('medium');
+    expect(
+      rubocop.severity!({ ruleId: 'Security/YAMLLoad', level: 'warning' } as never, undefined),
+    ).toBe('high');
+  });
+
+  it('gives the external ext-rubocop engine no mapping', () => {
+    expect(engineMapping('ext-rubocop')).toBeUndefined();
+  });
+});

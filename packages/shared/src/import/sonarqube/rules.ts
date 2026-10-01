@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import data from '../../../rules/sonarqube.json' with { type: 'json' };
+import rubocopDefaultKeys from '../../../rules/rubocop-default-keys.json' with { type: 'json' };
+import rubocopKeys from '../../../rules/rubocop-keys.json' with { type: 'json' };
 import ruffDefaultKeys from '../../../rules/ruff-default-keys.json' with { type: 'json' };
 import ruffKeys from '../../../rules/ruff-keys.json' with { type: 'json' };
 import sonaranalyzerCsharpDefaultKeys from '../../../rules/sonaranalyzer-csharp-default-keys.json' with { type: 'json' };
@@ -16,9 +18,11 @@ import {
 /**
  * Spec §6.2, §6.4 ("Keys files"): the bare rule ids a repository row's `keysFile` names, loaded
  * with the same static-import style `sonarqube.json` itself uses so the Bun-compiled CLI binary
- * bundles them (no runtime fs read). Each file is a sorted JSON array of `S####` ids only. A
- * `defaultKeysFile` holds the subset the bundled configuration actually runs (SonarAnalyzer's
- * rules enabled by default, eslint-plugin-sonarjs's `recommended` ones).
+ * bundles them (no runtime fs read). Each file is a sorted JSON array of the bundled tool's own
+ * bare rule ids: `S####` ids (SonarAnalyzer, eslint-plugin-sonarjs), Ruff codes or RuboCop cop
+ * names (`Lint/UselessAssignment`). A `defaultKeysFile` holds the subset the bundled
+ * configuration actually runs (SonarAnalyzer's rules enabled by default, eslint-plugin-sonarjs's
+ * `recommended` ones, the codes and cops of `qualor-default`).
  */
 const KEYS_FILES: Readonly<Record<string, readonly string[]>> = {
   'sonaranalyzer-csharp-keys.json': sonaranalyzerCsharpKeys,
@@ -27,6 +31,8 @@ const KEYS_FILES: Readonly<Record<string, readonly string[]>> = {
   'sonarjs-default-keys.json': sonarjsDefaultKeys,
   'ruff-keys.json': ruffKeys,
   'ruff-default-keys.json': ruffDefaultKeys,
+  'rubocop-keys.json': rubocopKeys,
+  'rubocop-default-keys.json': rubocopDefaultKeys,
 };
 
 export type ProfileLanguage = Exclude<Language, 'other'>;

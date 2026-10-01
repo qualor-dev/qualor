@@ -5,6 +5,7 @@ import { htmlhintAnalyzer } from './htmlhint';
 import { phpstanAnalyzer } from './phpstan';
 import { pmdAnalyzer } from './pmd';
 import { roslynAnalyzer } from './roslyn';
+import { rubocopAnalyzer } from './rubocop';
 import { ruffAnalyzer } from './ruff';
 import { semgrepAnalyzer } from './semgrep';
 import { sonarjsAnalyzer } from './sonarjs';
@@ -31,5 +32,6 @@ export function builtinAnalyzers(): Analyzer[] {
     stylelintAnalyzer,
     htmlhintAnalyzer,
     phpstanAnalyzer,
+    rubocopAnalyzer,
   ];
 }

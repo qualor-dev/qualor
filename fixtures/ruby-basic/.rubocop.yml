@@ -1,0 +1,6 @@
+# Qualor never reads this file (config.md §6): if it did, the findings below would change.
+Lint/UselessAssignment:
+  Enabled: false
+Style/StringLiterals:
+  Enabled: true
+  EnforcedStyle: single_quotes

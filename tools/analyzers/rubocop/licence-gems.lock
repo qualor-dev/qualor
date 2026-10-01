@@ -1,0 +1,13 @@
+# The default gems of Ruby RUBY_VERSION (tools/analyzers/install-rubocop.sh) under a licence of their
+# own (MIT; Ruby's other default gems are under Ruby's licence, licenses/COPYING and BSDL). The
+# built Ruby keeps no licence file of theirs, so install-rubocop.sh fetches the `ruby`-platform .gem
+# of each version Ruby ships, as `name version sha256`, checks it, and unpacks only its licence
+# files into licenses/gems/<name>-<version>/ (tools/analyzers/rubocop/licences.mjs lists them). A
+# Ruby bump: update each version to its default gemspec and hash the .gem (rubygems.org's
+# /api/v1/versions/<name>.json has the sha); the install fails on a version Ruby does not ship.
+bundler 4.0.20 7978a8ac648767f5e635bc522445b79e80a52b907a39a36c2d8085ed6bc762ae
+did_you_mean 2.0.0 914a5803e310063240799d547c10693a97eef906bbcbdbe23b46d60a96de765a
+error_highlight 0.7.2 796bcca7048861e3c8e52bf07258ea6adeee711aa351532ecaee6760392b0345
+prism 1.8.1 b260c1844ee0c7ead9c938f7fd63b95888c87cc054dfb64043204eccff8116ac
+psych 5.3.1 eb7a57cef10c9d70173ff74e739d843ac3b2c019a003de48447b2963d81b1974
+syntax_suggest 2.0.3 37de319d635e7b1ca3c0540b684620c517f18ab8edfbb55ff37ff5c5111c6804

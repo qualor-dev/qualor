@@ -100,7 +100,11 @@
             "**/test_*.py",
             "**/*_test.py",
             "**/conftest.py",
-            "**/*Test.php"
+            "**/*Test.php",
+            "**/*_spec.rb",
+            "**/*_test.rb",
+            "**/spec/**/*.rb",
+            "**/test/**/*.rb"
           ],
           "type": "array",
           "items": {
@@ -140,7 +144,8 @@
               "css",
               "kotlin",
               "swift",
-              "php"
+              "php",
+              "ruby"
             ]
           }
         }
@@ -664,6 +669,55 @@
             },
             "timeoutSeconds": {
               "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "rubocop": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "select": {
+              "default": [
+                "qualor-default"
+              ],
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "ignore": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "targetRubyVersion": {
+              "default": "4.0",
+              "type": [
+                "string",
+                "number"
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 600,
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 86400

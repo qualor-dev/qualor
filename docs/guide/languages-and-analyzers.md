@@ -14,6 +14,7 @@ size, complexity, duplication and coverage.
 | Kotlin | **detekt** 1.23.8 (Apache-2.0), your `detekt.yml` or detekt's default rule set with the settings detekt recommends for Jetpack Compose | `.kt` or `.kts` files are in scope, run by the `qualor/scanner` image |
 | Swift | **SwiftLint** 0.65.1 (MIT), your `.swiftlint.yml` or SwiftLint's default rules with a few adjustments | `.swift` files are in scope, run by the `qualor/scanner` image |
 | PHP | **PHPStan** 2.2 (MIT) at level 2, with Qualor's own configuration | .php files are in scope, run by the qualor/scanner image |
+| Ruby | **RuboCop** 1.91 (MIT), Qualor's selection: RuboCop's Lint and Security cops | Ruby files are in scope (.rb, .rake, .gemspec, .ru, Gemfile, Rakefile), run by the qualor/scanner image |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -22,8 +23,8 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, PHP, HTML and CSS; SCSS
-gets findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and external
+detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, PHP, Ruby, HTML and CSS;
+SCSS gets findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and external
 SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
@@ -385,6 +386,75 @@ PHP files get the same metrics as the other languages (lines of code, functions,
 cyclomatic and cognitive complexity) and count in duplication detection. `*Test.php` files are
 test files by default.
 
+## Ruby (RuboCop)
+
+The `qualor/scanner` image runs RuboCop 1.91 on your Ruby files: `.rb`, `.rake`, `.gemspec`, `.ru`,
+`Gemfile` and `Rakefile`. It has its own Ruby, so no Ruby, gem or bundle is needed on the runner and
+nothing is installed or built. `.erb` templates are not analysed.
+
+Qualor chooses the cops itself. The project's `.rubocop.yml` (and `.rubocop_todo.yml`, a file in a
+subdirectory or your home directory) is **never read**: RuboCop runs Ruby code that a configuration
+file names (ERB, `require`, plugins), and a scan must not run code from the checkout. Choose cops in
+`qualor.yml` instead. Inline comments in your code are honoured: `# rubocop:disable Lint/Foo` (and
+`# rubocop:todo`) silences that cop on that line or block. A cop that is not selected is not turned
+on by a `# rubocop:enable` comment.
+
+`qualor-default` runs RuboCop's Lint and Security cops that RuboCop enables by default: the ones
+that find bugs and security problems, not style. It leaves out the 12 cops below, because they
+misfire in a Qualor scan:
+
+- `Lint/CopDirectiveSyntax`, `Lint/MissingCopEnableDirective`,
+  `Lint/RedundantCopDisableDirective` and `Lint/RedundantCopEnableDirective` judge your
+  `rubocop:` comments against a configuration Qualor does not use.
+- `Lint/AmbiguousBlockAssociation`, `Lint/AssignmentInCondition`, `Lint/ConstantDefinitionInBlock`,
+  `Lint/MissingSuper`, `Lint/UnderscorePrefixedVariableName`, `Lint/UnusedBlockArgument` and
+  `Lint/UnusedMethodArgument` flag idioms that are normal in Rails callbacks, RSpec and DSL blocks.
+- `Lint/ScriptPermission` checks file permissions, which Qualor does not keep when it reads your
+  files, so it would flag every Ruby script with a `#!` line.
+
+Select any of them by name if you want it.
+
+A file that RuboCop cannot parse gets no findings (a syntax error is not reported as an issue).
+
+```yaml
+analyzers:
+  rubocop:
+    enabled: auto              # true, false, or auto: on when Ruby files are in scope
+    select: [qualor-default, Style, Naming]   # departments, cop names, or qualor-default
+    ignore: [Style/Documentation]             # departments or cop names to leave out
+    targetRubyVersion: '3.3'   # the Ruby syntax RuboCop parses; default 4.0
+    timeoutSeconds: 600        # optional
+```
+
+`select` takes RuboCop departments (`Lint`, `Security`, `Style`, `Layout`, `Naming`, `Metrics` and
+the others), cop names (`Style/StringLiterals`) and `qualor-default`. A department means the cops
+RuboCop enables by default in it; a cop name turns that cop on even if RuboCop leaves it disabled
+or pending. `ignore` removes departments or cops from the result. An unknown department or cop, or
+a `targetRubyVersion` that RuboCop 1.91 does not parse (it accepts 2.0 to 4.1), is a configuration
+error: the scan stops with exit 2.
+
+RuboCop checks the Ruby files in scope. Files larger than 1 MiB, files reached through a symbolic
+link and names with a line break are not passed. `.bundle/` directories and `db/schema.rb` are never
+scanned. Qualor runs RuboCop offline, with its own configuration and a clean environment (no
+`RUBYOPT`, `GEM_*` or `BUNDLE_*`). RuboCop is skipped when the image's RuboCop is missing or is a
+different minor version than 1.91, with the reason in the scan log. Rule keys look like
+`rubocop:Lint/UselessAssignment`.
+
+Plugin cops (`rubocop-rails`, `rubocop-rspec`, `rubocop-performance`) do not run: the plugins are
+not installed, and a configuration cannot load them.
+
+Qualor runs RuboCop itself, so if you imported your own RuboCop SARIF before, remove that import
+(`--sarif` or the `qualor.yml` `sarif:` entry). `rubocop` is a reserved engine id: a `sarif:` entry
+with `engine: rubocop` is a configuration error. A RuboCop SARIF you still import is reported as
+`ext-rubocop`, and each of its findings counts once with the built-in `rubocop` finding of the same
+rule on the same line.
+
+Ruby files get the same metrics as the other languages (lines of code, functions, classes,
+cyclomatic and cognitive complexity) and count in duplication detection. Functions are `def` and
+`def self.` methods; classes are `class` and `module` definitions; blocks and lambdas are not
+counted as functions. `*_spec.rb`, `*_test.rb` and Ruby files below `spec/` and `test/` are test
+files by default.
+
 ## Java (PMD and SpotBugs)
 
 - **PMD** reads the source. The default ruleset `qualor-default` is PMD's own
@@ -519,6 +589,21 @@ Ruff, stylelint, HTMLHint, detekt, SwiftLint or PHPStan SARIF any more: Qualor r
 [Swift](#swift-swiftlint)) and PHPStan (see [PHP](#php-phpstan)) itself; a SARIF file you still
 import for one of them counts once with the built-in finding of the same code on the same line.
 
+**Brakeman** (Rails security scanner) is not bundled, because its licence restricts commercial use.
+If your use is covered by that licence, run it yourself and import its SARIF:
+
+```sh
+brakeman -f sarif -o brakeman.sarif
+```
+
+```yaml
+sarif:
+  - path: brakeman.sarif
+```
+
+RuboCop is the other direction: it is built in (see [Ruby](#ruby-rubocop)), so don't import its
+SARIF.
+
 ## Coverage
 
 Qualor imports **LCOV**, **Cobertura XML** and **JaCoCo XML**. Run your tests with coverage before the
@@ -534,8 +619,13 @@ coverage:
       format: cobertura
     - path: coverage/cobertura.xml                      # PHPUnit: --coverage-cobertura coverage/cobertura.xml (needs pcov or Xdebug)
       format: cobertura
+    - path: coverage/coverage.xml                     # Ruby: SimpleCov + simplecov-cobertura
+      format: cobertura
   pathPrefixes: []   # prefixes to strip or try when report paths do not match repository paths
 ```
+
+For Ruby, add `gem "simplecov-cobertura"` to the test group of your Gemfile and
+`SimpleCov.formatter = SimpleCov::Formatter::CoberturaFormatter` to the test helper.
 
 Or pass `--coverage <path>` on the command line. Test files are excluded from coverage. If a scan
 imports no coverage report at all, the coverage conditions have **no value**, and they do not fail the
@@ -547,9 +637,11 @@ Every file in the working tree (`sources.include`, default `**/*`), minus what `
 minus the built-in excludes (`node_modules`, `dist`,
 `build`, `target`, `vendor`, `*.min.js`, `*.min.css`, .NET `obj/` and generated `*.g.cs` / `*.Designer.cs`,
 Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs` and
-`site-packages`, and binary files), minus your own `sources.exclude`. Test files are recognised by
+`site-packages`, Bundler's `.bundle` directories, Rails' generated `db/schema.rb`, and binary
+files), minus your own `sources.exclude`. Test files are recognised by
 `tests.include` (by default `*.test.*`, `*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`,
-`test_*.py`, `*_test.py`, `conftest.py`, `*Test.php`, `src/androidTest/`, `src/*Test/`). `src/*Test/` is meant
+`test_*.py`, `*_test.py`, `conftest.py`, `*Test.php`, `src/androidTest/`, `src/*Test/`, `*_spec.rb`,
+`*_test.rb`, `spec/**/*.rb` and `test/**/*.rb`). `src/*Test/` is meant
 for Kotlin Multiplatform's `commonTest` and `jvmTest`, but applies to every language: a Gradle
 `src/integrationTest` or `src/functionalTest` is test code too, and leaves lines of code,
 complexity, duplication and coverage.

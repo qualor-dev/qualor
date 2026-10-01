@@ -18,6 +18,7 @@ export const LANGUAGES = [
   'kotlin',
   'swift',
   'php',
+  'ruby',
   'other',
 ] as const;
 export type Language = (typeof LANGUAGES)[number];
@@ -37,6 +38,7 @@ export const BUILTIN_ENGINES = [
   'detekt',
   'swiftlint',
   'phpstan',
+  'rubocop',
 ] as const;
 export type BuiltinEngine = (typeof BUILTIN_ENGINES)[number];
 

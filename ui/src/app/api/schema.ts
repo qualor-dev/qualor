@@ -5893,7 +5893,7 @@ export interface paths {
                     limit?: number;
                     cursor?: string;
                     organizationId: string;
-                    language?: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                    language?: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                 };
                 header?: never;
                 path?: never;
@@ -5915,7 +5915,7 @@ export interface paths {
                                 organizationId: string;
                                 name: string;
                                 /** @enum {string} */
-                                language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                                language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                                 parentId: string | null;
                                 isDefault: boolean;
                                 isBuiltin: boolean;
@@ -5984,7 +5984,7 @@ export interface paths {
                         organizationId: string;
                         name: string;
                         /** @enum {string} */
-                        language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                        language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                         /** Format: uuid */
                         parentId?: string;
                     };
@@ -6004,7 +6004,7 @@ export interface paths {
                             organizationId: string;
                             name: string;
                             /** @enum {string} */
-                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                             parentId: string | null;
                             isDefault: boolean;
                             isBuiltin: boolean;
@@ -6102,7 +6102,7 @@ export interface paths {
                             organizationId: string;
                             name: string;
                             /** @enum {string} */
-                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                             parentId: string | null;
                             isDefault: boolean;
                             isBuiltin: boolean;
@@ -6256,7 +6256,7 @@ export interface paths {
                             organizationId: string;
                             name: string;
                             /** @enum {string} */
-                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                             parentId: string | null;
                             isDefault: boolean;
                             isBuiltin: boolean;
@@ -6358,7 +6358,7 @@ export interface paths {
                             organizationId: string;
                             name: string;
                             /** @enum {string} */
-                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                             parentId: string | null;
                             isDefault: boolean;
                             isBuiltin: boolean;
@@ -6458,7 +6458,7 @@ export interface paths {
                             organizationId: string;
                             name: string;
                             /** @enum {string} */
-                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                             parentId: string | null;
                             isDefault: boolean;
                             isBuiltin: boolean;
@@ -6823,7 +6823,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             /** @enum {string} */
-                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                             profile: {
                                 /** Format: uuid */
                                 id: string;
@@ -6831,7 +6831,7 @@ export interface paths {
                                 organizationId: string;
                                 name: string;
                                 /** @enum {string} */
-                                language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                                language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                                 parentId: string | null;
                                 isDefault: boolean;
                                 isBuiltin: boolean;
@@ -6908,7 +6908,7 @@ export interface paths {
                 header?: never;
                 path: {
                     id: string;
-                    language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                    language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                 };
                 cookie?: never;
             };
@@ -6928,7 +6928,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             /** @enum {string} */
-                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                            language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                             profile: {
                                 /** Format: uuid */
                                 id: string;
@@ -6936,7 +6936,7 @@ export interface paths {
                                 organizationId: string;
                                 name: string;
                                 /** @enum {string} */
-                                language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "*";
+                                language: "typescript" | "javascript" | "java" | "csharp" | "python" | "html" | "css" | "kotlin" | "swift" | "php" | "ruby" | "*";
                                 parentId: string | null;
                                 isDefault: boolean;
                                 isBuiltin: boolean;

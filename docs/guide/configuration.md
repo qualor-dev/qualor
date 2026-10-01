@@ -44,10 +44,11 @@ sources:
 tests:
   include: ['**/*.test.*', '**/*.spec.*', '**/__tests__/**', '**/src/test/**', '**/*Tests/**',
             '**/test_*.py', '**/*_test.py', '**/conftest.py', '**/*Test.php',
-            '**/src/androidTest/**', '**/src/*Test/**']
+            '**/src/androidTest/**', '**/src/*Test/**', '**/*_spec.rb', '**/*_test.rb',
+            '**/spec/**/*.rb', '**/test/**/*.rb']
   exclude: []
 
-languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin, swift, php]
+languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin, swift, php, ruby]
 
 analyzers:
   eslint:    { enabled: auto, configFile: null, args: [], timeoutSeconds: 900 }
@@ -57,6 +58,7 @@ analyzers:
   spotbugs:  { enabled: auto, classDirs: [target/classes, build/classes/java/main], auxClasspathFile: null, timeoutSeconds: 1200 }
   detekt:    { enabled: auto, configFile: null, timeoutSeconds: 900 }
   swiftlint: { enabled: auto, configFile: null, timeoutSeconds: 600 }
+  rubocop:   { enabled: auto, select: [qualor-default], ignore: [], targetRubyVersion: '4.0', timeoutSeconds: 600 }
   semgrep:   { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
   gitleaks:  { enabled: true, configFile: null, timeoutSeconds: 300 }
   trivy:     { enabled: auto, timeoutSeconds: 600 }
@@ -106,10 +108,10 @@ These always apply, and you can only add to them: `node_modules`, `.git`, `dist`
 (sources only; SpotBugs still reads the classes), `vendor`, `*.min.js`, `*.min.css`, `.qualor/`,
 .NET `obj/`, `bin/Debug`, `bin/Release`, generated C# (`*.g.cs`, `*.g.i.cs`, `*.Designer.cs`),
 Python virtual environments and caches (`.venv`, `venv`, `.tox`, `.nox`, `__pycache__`,
-`__pypackages__`, `.eggs`, `site-packages`), Swift's `Pods/`, `Carthage/` and `.build/`, binary
-files, and nested git repositories. Files over 1 MiB are skipped for metrics and duplication, but
-analyzers still see them (detekt and SwiftLint are the exception: they are not given Kotlin or Swift
-files over 1 MiB).
+`__pypackages__`, `.eggs`, `site-packages`), Swift's `Pods/`, `Carthage/` and `.build/`, Bundler's
+`.bundle/`, Rails' `db/schema.rb`, binary files, and nested git repositories. Files over 1 MiB are
+skipped for metrics and duplication, but analyzers still see them (detekt and SwiftLint are the
+exception: they are not given Kotlin or Swift files over 1 MiB).
 
 ## Environment variables (scanner)
 
@@ -130,6 +132,7 @@ The server's variables (such as `QUALOR_PUBLIC_URL`, `QUALOR_SCM_INTERNAL_HOSTS`
 | `QUALOR_WEBLINT_DIR` | directory of the HTML and CSS linters (default `/opt/qualor/weblint`, in the `qualor/scanner` image); absolute and outside the repository |
 | `QUALOR_DETEKT_JAR` | another location for detekt's jar (absolute, outside the checkout; default `/opt/qualor/lib/detekt/detekt-cli.jar`, set in `qualor/scanner`) |
 | `QUALOR_PHPSTAN_PHAR` | another PHPStan phar (absolute, outside the checkout, PHPStan 2.2; default `/opt/qualor/lib/phpstan/phpstan.phar`, set in `qualor/scanner`) |
+| `QUALOR_RUBOCOP_DIR` | directory of the RuboCop pass (default `/opt/qualor/rubocop`, in the `qualor/scanner` image); absolute and outside the checkout |
 | `QUALOR_DOTNET_ANALYZERS` | directory of the bundled Roslyn analyzer DLLs (set in `qualor/scanner-dotnet`) |
 | `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | a proxy between the runner and the server (`http://` proxies) |
 

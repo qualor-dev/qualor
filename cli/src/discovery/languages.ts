@@ -18,6 +18,7 @@ const CSS: LanguageInfo = { language: 'css', grammar: 'css' };
 const KOTLIN: LanguageInfo = { language: 'kotlin', grammar: 'kotlin' };
 const SWIFT: LanguageInfo = { language: 'swift', grammar: 'swift' };
 const PHP: LanguageInfo = { language: 'php', grammar: 'php' };
+const RUBY: LanguageInfo = { language: 'ruby', grammar: 'ruby' };
 /** SCSS is linted as CSS (stylelint with postcss-scss) but has no grammar: no metrics, no duplication. */
 const SCSS: LanguageInfo = { language: 'css', grammar: null };
 
@@ -41,6 +42,16 @@ const BY_EXTENSION = new Map<string, LanguageInfo>([
   ['.kts', KOTLIN],
   ['.swift', SWIFT],
   ['.php', PHP],
+  ['.rb', RUBY],
+  ['.rake', RUBY],
+  ['.gemspec', RUBY],
+  ['.ru', RUBY],
+]);
+
+/** Ruby files known by their whole name (plan 9B); case-sensitive, as Bundler and Rake are. */
+const BY_NAME = new Map<string, LanguageInfo>([
+  ['Gemfile', RUBY],
+  ['Rakefile', RUBY],
 ]);
 
 export function detectLanguage(
@@ -49,8 +60,8 @@ export function detectLanguage(
 ): LanguageInfo {
   const name = repoPath.slice(repoPath.lastIndexOf('/') + 1);
   const dot = name.lastIndexOf('.');
-  if (dot <= 0) return OTHER;
-  const info = BY_EXTENSION.get(name.slice(dot).toLowerCase());
+  const info =
+    BY_NAME.get(name) ?? (dot <= 0 ? undefined : BY_EXTENSION.get(name.slice(dot).toLowerCase()));
   if (info === undefined) return OTHER;
   if (languages !== 'auto' && !(languages as readonly string[]).includes(info.language)) {
     return OTHER;

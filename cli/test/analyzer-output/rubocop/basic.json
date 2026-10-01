@@ -1,0 +1,131 @@
+{
+  "metadata": {
+    "rubocop_version": "1.91.0",
+    "ruby_engine": "ruby",
+    "ruby_version": "4.0.7",
+    "ruby_patchlevel": "0",
+    "ruby_platform": "x86_64-linux"
+  },
+  "files": [
+    { "path": "Gemfile", "offenses": [] },
+    {
+      "path": "app/models/order.rb",
+      "offenses": [
+        {
+          "severity": "warning",
+          "message": "Useless assignment to variable - `discount`.",
+          "cop_name": "Lint/UselessAssignment",
+          "corrected": false,
+          "correctable": true,
+          "location": {
+            "start_line": 14,
+            "start_column": 5,
+            "last_line": 14,
+            "last_column": 12,
+            "length": 8,
+            "line": 14,
+            "column": 5
+          }
+        },
+        {
+          "severity": "warning",
+          "message": "Avoid using `Marshal.load`.",
+          "cop_name": "Security/MarshalLoad",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 34,
+            "start_column": 13,
+            "last_line": 34,
+            "last_column": 16,
+            "length": 4,
+            "line": 34,
+            "column": 13
+          }
+        },
+        {
+          "severity": "warning",
+          "message": "The use of `eval` is a serious security risk.",
+          "cop_name": "Security/Eval",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 38,
+            "start_column": 5,
+            "last_line": 38,
+            "last_column": 8,
+            "length": 4,
+            "line": 38,
+            "column": 5
+          }
+        },
+        {
+          "severity": "warning",
+          "message": "Binary operator `==` has identical operands.",
+          "cop_name": "Lint/BinaryOperatorWithIdenticalOperands",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 42,
+            "start_column": 5,
+            "last_line": 42,
+            "last_column": 18,
+            "length": 14,
+            "line": 42,
+            "column": 5
+          }
+        },
+        {
+          "severity": "warning",
+          "message": "Avoid rescuing the `Exception` class. Perhaps you meant to rescue `StandardError`?",
+          "cop_name": "Lint/RescueException",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 47,
+            "start_column": 3,
+            "last_line": 48,
+            "last_column": 7,
+            "length": 24,
+            "line": 47,
+            "column": 3
+          }
+        },
+        {
+          "severity": "warning",
+          "message": "Useless `private` access modifier.",
+          "cop_name": "Lint/UselessAccessModifier",
+          "corrected": false,
+          "correctable": true,
+          "location": {
+            "start_line": 59,
+            "start_column": 3,
+            "last_line": 59,
+            "last_column": 9,
+            "length": 7,
+            "line": 59,
+            "column": 3
+          }
+        },
+        {
+          "severity": "warning",
+          "message": "`private` (on line 59) does not make singleton methods private. Use `private_class_method` or `private` inside a `class << self` block instead.",
+          "cop_name": "Lint/IneffectiveAccessModifier",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 61,
+            "start_column": 3,
+            "last_line": 61,
+            "last_column": 5,
+            "length": 3,
+            "line": 61,
+            "column": 3
+          }
+        }
+      ]
+    },
+    { "path": "spec/order_spec.rb", "offenses": [] }
+  ],
+  "summary": { "offense_count": 7, "target_file_count": 3, "inspected_file_count": 3 }
+}

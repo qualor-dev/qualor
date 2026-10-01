@@ -402,6 +402,36 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'php:S9999' })]);
   });
 
+  it('plans a ruby profile: reviewed equivalent ruby rows and external_rubocop rows activate cops; overlap rows are status only (plan 9B)', () => {
+    // Rulings B9-11/B9-12: external_rubocop:Lint/UselessAssignment activates a cop qualor-default
+    // runs; ruby:S1066 → Style/SoleNestedConditional is equivalent but outside qualor-default
+    // (mapped, not run); ruby:S8423, ruby:S7916 and ruby:S134 are overlaps, so status only.
+    const ruby = (key: string) => rule(key, { language: 'ruby' });
+    const plan = planProfile(
+      profile({
+        language: 'ruby',
+        active: [
+          ruby('ruby:S1066'),
+          ruby('ruby:S8423'),
+          ruby('ruby:S7916'),
+          ruby('ruby:S134'),
+          ruby('external_rubocop:Lint/UselessAssignment'),
+          ruby('ruby:S9999'),
+        ],
+      }),
+    );
+    expect(plan.skip).toBeNull();
+    expect(plan.language).toBe('ruby');
+    expect(plan.rows).toEqual([
+      { ruleKey: 'rubocop:Lint/UselessAssignment', active: true, severityOverride: null },
+      { ruleKey: 'rubocop:Style/SoleNestedConditional', active: true, severityOverride: null },
+    ]);
+    expect(plan.stats.mappedNotRun).toEqual(['ruby:S1066']);
+    expect(plan.stats.pendingReview).toEqual([]);
+    expect(plan.stats.statusOnly).toEqual(['ruby:S8423', 'ruby:S7916', 'ruby:S134']);
+    expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'ruby:S9999' })]);
+  });
+
   it('keeps an unreviewed python row out of the profile and lists it as pending review', () => {
     const mapping = loadSonarMapping({
       ...structuredClone(raw),

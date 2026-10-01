@@ -40,6 +40,7 @@ stages: [check]
     - sh tools/analyzers/install.sh
     - sh tools/analyzers/install-sonarjs.sh
     - sh tools/analyzers/install-weblint.sh
+    - sh tools/analyzers/install-rubocop.sh
     - !reference [default, before_script]
 
 lint:

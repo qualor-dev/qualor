@@ -12238,6 +12238,7 @@
                 "kotlin",
                 "swift",
                 "php",
+                "ruby",
                 "*"
               ]
             },
@@ -12285,6 +12286,7 @@
                               "kotlin",
                               "swift",
                               "php",
+                              "ruby",
                               "*"
                             ]
                           },
@@ -12432,6 +12434,7 @@
                       "kotlin",
                       "swift",
                       "php",
+                      "ruby",
                       "*"
                     ]
                   },
@@ -12485,6 +12488,7 @@
                         "kotlin",
                         "swift",
                         "php",
+                        "ruby",
                         "*"
                       ]
                     },
@@ -12646,6 +12650,7 @@
                         "kotlin",
                         "swift",
                         "php",
+                        "ruby",
                         "*"
                       ]
                     },
@@ -12820,6 +12825,7 @@
                         "kotlin",
                         "swift",
                         "php",
+                        "ruby",
                         "*"
                       ]
                     },
@@ -13075,6 +13081,7 @@
                         "kotlin",
                         "swift",
                         "php",
+                        "ruby",
                         "*"
                       ]
                     },
@@ -13236,6 +13243,7 @@
                         "kotlin",
                         "swift",
                         "php",
+                        "ruby",
                         "*"
                       ]
                     },
@@ -13935,6 +13943,7 @@
                           "kotlin",
                           "swift",
                           "php",
+                          "ruby",
                           "*"
                         ]
                       },
@@ -13969,6 +13978,7 @@
                                   "kotlin",
                                   "swift",
                                   "php",
+                                  "ruby",
                                   "*"
                                 ]
                               },
@@ -14148,6 +14158,7 @@
                 "kotlin",
                 "swift",
                 "php",
+                "ruby",
                 "*"
               ]
             },
@@ -14177,6 +14188,7 @@
                         "kotlin",
                         "swift",
                         "php",
+                        "ruby",
                         "*"
                       ]
                     },
@@ -14211,6 +14223,7 @@
                                 "kotlin",
                                 "swift",
                                 "php",
+                                "ruby",
                                 "*"
                               ]
                             },

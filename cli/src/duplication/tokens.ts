@@ -9,16 +9,17 @@ export interface LineUnit {
   endLine: number;
   tokens: number;
   /**
-   * Opening minus closing brackets: `( [ { ${` and `\(` (Swift interpolation) count +1,
-   * `) ] }` count -1.
+   * Opening minus closing brackets: `( [ { ${`, `\(` (Swift interpolation) and `#{` (Ruby
+   * interpolation) count +1, `) ] }` count -1.
    */
   delta: number;
   /** First 16 hex characters of SHA-256 over the token texts joined with U+0000. */
   hash: string;
 }
 
-// `\(` is Swift's string interpolation (tree-sitter-swift's token for backslash + `(`).
-const OPENERS = new Set(['(', '[', '{', '${', '\\(']);
+// `\(` is Swift's string interpolation (tree-sitter-swift's token for backslash + `(`); `#{` is
+// Ruby's (plan 9B).
+const OPENERS = new Set(['(', '[', '{', '${', '\\(', '#{']);
 const CLOSERS = new Set([')', ']', '}']);
 
 interface PendingLine {
@@ -31,11 +32,12 @@ interface PendingLine {
 /** report-format §8: tokens are tree-sitter leaves; comments removed; identifiers and literals verbatim. */
 export function lineUnits(root: Node, family: SyntaxFamily): LineUnit[] {
   const rules = FAMILY_RULES[family];
-  const { comments, isComment } = rules;
+  const { comments, isComment, skipped } = rules;
   const byLine = new Map<number, PendingLine>();
   const stack: Node[] = [root];
   for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
-    if (comments.has(node.type) || isComment?.(node) === true) continue;
+    if (comments.has(node.type) || isComment?.(node) === true || skipped?.has(node.type) === true)
+      continue;
     const count = node.childCount;
     // An atom (tree-sitter-css `#fff`, `1px`) is one token: its children hide part of its text.
     if (count > 0 && rules.atoms?.has(node.type) !== true) {

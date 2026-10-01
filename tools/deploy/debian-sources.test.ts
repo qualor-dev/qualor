@@ -137,7 +137,7 @@ describe('the committed Debian source manifests', () => {
       expect(m.base, image).toMatch(/@sha256:[0-9a-f]{64}$/);
     }
     const scannerApt = finalStage(readFileSync('deploy/scanner/Dockerfile', 'utf8')).aptPackages;
-    expect(scannerApt).toEqual(expect.arrayContaining(['ca-certificates', 'git']));
+    expect(scannerApt).toEqual(expect.arrayContaining(['ca-certificates', 'git', 'libyaml-0-2']));
     // Plan 9A: Debian's PHP CLI for PHPStan, one php<major.minor>-cli.
     expect(scannerApt.filter((p) => /^php\d+\.\d+-cli$/.test(p))).toHaveLength(1);
   });

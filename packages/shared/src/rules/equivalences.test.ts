@@ -109,6 +109,7 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       'ext-htmlhint': 'htmlhint',
       'ext-detekt': 'detekt',
       'ext-swiftlint': 'swiftlint',
+      'ext-rubocop': 'rubocop',
     });
     expect(EXTERNAL_BUILTIN_ALIASES).toHaveProperty('ext-phpstan', 'phpstan');
     expect(EXTERNAL_BUILTIN_ALIASES['ext-phpstan']).toBe('phpstan');
@@ -240,5 +241,32 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(
       rulesEquivalent(rule('ext-bandit:detekt.style.MagicNumber'), rule('detekt:MagicNumber')),
     ).toBe(false);
+  });
+
+  it('ranks rubocop below every built-in engine listed before it and above any external engine (plan 9B)', () => {
+    expect(ENGINE_PRIORITY.indexOf('rubocop')).toBeGreaterThan(
+      ENGINE_PRIORITY.indexOf('swiftlint'),
+    );
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('rubocop'))) {
+      expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('rubocop'));
+    }
+    expect(enginePriority('rubocop')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(enginePriority('rubocop')).toBeGreaterThan(enginePriority('ext-rubocop'));
+  });
+
+  it('pairs an imported RuboCop SARIF (ext-rubocop, identical ids) with the built-in rule (plan 9B)', () => {
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-rubocop']).toBe('rubocop');
+    expect(equivalentPartners('ext-rubocop:Lint/UselessAssignment')).toEqual([
+      'rubocop:Lint/UselessAssignment',
+    ]);
+    expect(equivalentPartners('rubocop:Lint/UselessAssignment')).toEqual([
+      'ext-rubocop:Lint/UselessAssignment',
+    ]);
+    expect(rulesEquivalent(rule('ext-rubocop:Security/Eval'), rule('rubocop:Security/Eval'))).toBe(
+      true,
+    );
+    expect(rulesEquivalent(rule('ext-rubocop:Security/Eval'), rule('rubocop:Security/Open'))).toBe(
+      false,
+    );
   });
 });
