@@ -3,7 +3,8 @@
 # Ruff, detekt and SwiftLint (its static build) from install.sh, and bun. Also the .NET 8 and
 # 10 SDKs and Roslynator from install-dotnet.sh (plan 2D), Qualor's sonarjs pass in
 # /opt/qualor/sonarjs (plan 8A/8B) and Qualor's HTML and CSS linters in /opt/qualor/weblint
-# (stylelint and HTMLHint, plan 8D).
+# (stylelint and HTMLHint, plan 8D), and cppcheck built from source by install-cppcheck.sh
+# (plan 9D).
 #   docker build -t qualor-analyzers tools/analyzers
 # Pinned by version and digest (multi-arch index); bump both together.
 FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7
@@ -12,6 +13,10 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY install.sh install-sonarjs.sh /tmp/
 RUN sh /tmp/install.sh
+# cppcheck, built from its pinned tag archive as deploy/scanner/Dockerfile and CI build it
+# (plan 9D; tools/analyzers/install-cppcheck.sh, tools/ci.test.ts).
+COPY install-cppcheck.sh /tmp/
+RUN sh /tmp/install-cppcheck.sh && rm /tmp/install-cppcheck.sh
 ENV PATH=/opt/qualor/bin:$PATH
 # Qualor's sonarjs pass into /opt/qualor/sonarjs, as deploy/scanner/Dockerfile and CI install it
 # (plan 8A/8B; tools/analyzers/install-sonarjs.sh, tools/ci.test.ts).

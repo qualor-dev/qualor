@@ -36,7 +36,8 @@ export type Component =
   | 'sonar-dotnet'
   | 'sonarjs'
   | 'ruff'
-  | 'detekt';
+  | 'detekt'
+  | 'cppcheck';
 const COMPONENTS: readonly Component[] = [
   'opengrep',
   'spotbugs',
@@ -49,6 +50,7 @@ const COMPONENTS: readonly Component[] = [
   'sonarjs',
   'ruff',
   'detekt',
+  'cppcheck',
 ];
 
 /** Where the manifest may download from: the SCM and each component's own upstream. */
@@ -169,7 +171,8 @@ export function loadManifest(root = REPO_ROOT): SourceEntry[] {
 
 /**
  * `<TOOL>_VERSION=` of the given install script's text: `tools/analyzers/install.sh` for every
- * tool but SONARANALYZER, which is pinned in `tools/analyzers/install-dotnet.sh` instead.
+ * tool but SONARANALYZER, which is pinned in `tools/analyzers/install-dotnet.sh` instead, and
+ * CPPCHECK, pinned in `tools/analyzers/install-cppcheck.sh`.
  */
 export function installedVersion(
   installSh: string,
@@ -182,7 +185,8 @@ export function installedVersion(
     | 'SONARANALYZER'
     | 'SONARJS'
     | 'RUFF'
-    | 'DETEKT',
+    | 'DETEKT'
+    | 'CPPCHECK',
 ): string {
   const m = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh);
   if (!m?.[1]) throw new Error(`an install script has no ${tool}_VERSION`);
@@ -223,6 +227,11 @@ export function pinnedVersions(root = REPO_ROOT): Pins {
     path.join(root, 'tools/analyzers/install-dotnet.sh'),
     'utf8',
   );
+  // cppcheck is built from source by its own script (plan 9D).
+  const installCppcheckSh = readFileSync(
+    path.join(root, 'tools/analyzers/install-cppcheck.sh'),
+    'utf8',
+  );
   return {
     opengrep: installedVersion(installSh, 'OPENGREP'),
     spotbugs: installedVersion(installSh, 'SPOTBUGS'),
@@ -236,6 +245,7 @@ export function pinnedVersions(root = REPO_ROOT): Pins {
     sonarjs: installedVersion(installSh, 'SONARJS'),
     ruff: installedVersion(installSh, 'RUFF'),
     detekt: installedVersion(installSh, 'DETEKT'),
+    cppcheck: installedVersion(installCppcheckSh, 'CPPCHECK'),
   };
 }
 
@@ -248,6 +258,7 @@ const TAG: Partial<Record<Component, (version: string) => string>> = {
   spotbugs: (v) => v,
   bun: (v) => `bun-v${v}`,
   temurin: (v) => `jdk-${v}`,
+  cppcheck: (v) => v,
 };
 
 /** Why the manifest does not match the shipped versions (a bump without its sources). */

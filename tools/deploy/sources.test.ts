@@ -24,6 +24,7 @@ import {
 const manifest = loadManifest();
 const installSh = readFileSync('tools/analyzers/install.sh', 'utf8');
 const installDotnetSh = readFileSync('tools/analyzers/install-dotnet.sh', 'utf8');
+const installCppcheckSh = readFileSync('tools/analyzers/install-cppcheck.sh', 'utf8');
 const byName = (name: string): SourceEntry | undefined => manifest.find((e) => e.name === name);
 const scannerDebian = loadDebianManifest('scanner');
 
@@ -223,6 +224,11 @@ describe('consistency with the shipped versions', () => {
     expect(detektVersion).toMatch(/^\d+\.\d+\.\d+$/);
     expect(installedVersion(installSh, 'DETEKT')).toBe(detektVersion);
     expect(pinnedVersions().detekt).toBe(detektVersion);
+    // cppcheck is pinned in its own build script (plan 9D).
+    const cppcheckVersion = /^CPPCHECK_VERSION=(\S+)$/m.exec(installCppcheckSh)?.[1];
+    expect(cppcheckVersion).toBe('2.22.0');
+    expect(installedVersion(installCppcheckSh, 'CPPCHECK')).toBe(cppcheckVersion);
+    expect(pinnedVersions().cppcheck).toBe(cppcheckVersion);
     expect(pinnedVersions()).toEqual({
       opengrep: '1.30.0',
       spotbugs: '4.10.4',
@@ -235,6 +241,7 @@ describe('consistency with the shipped versions', () => {
       sonarjs: '2.0.4',
       ruff: '0.16.9',
       detekt: detektVersion,
+      cppcheck: cppcheckVersion,
     });
   });
 
@@ -275,6 +282,7 @@ describe('consistency with the shipped versions', () => {
       { 'sonar-dotnet': '9.33.0.0' },
       { sonarjs: '2.0.5' },
       { ruff: '0.17.0' },
+      { cppcheck: '2.23.0' },
     ];
     for (const bump of bumps) {
       expect(versionProblems(manifest, { ...pinnedVersions(), ...bump })).not.toEqual([]);

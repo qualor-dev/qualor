@@ -548,6 +548,69 @@ describe('install-weblint.sh (plan 8D)', () => {
   });
 });
 
+describe('install-cppcheck.sh (plan 9D)', () => {
+  const script = readFileSync('tools/analyzers/install-cppcheck.sh', 'utf8');
+
+  it('pins cppcheck by version and the SHA-256 of its tag archive, checked before tar', () => {
+    expect(script).toMatch(/^CPPCHECK_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^CPPCHECK_SHA256=[0-9a-f]{64}$/m);
+    const check = 'echo "$CPPCHECK_SHA256  $TMP/cppcheck.tar.gz" | sha256sum -c -';
+    expect(script).toContain(check);
+    expect(script.indexOf(check)).toBeLessThan(script.indexOf('tar -xzf "$TMP/cppcheck.tar.gz"'));
+    expect(script).toContain(
+      '"https://github.com/cppcheck-opensource/cppcheck/archive/refs/tags/$CPPCHECK_VERSION.tar.gz"',
+    );
+    const pinned = /^CPPCHECK_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(readFileSync('packages/shared/src/rules/cfamily.ts', 'utf8')).toContain(
+      `export const CPPCHECK_VERSION = '${pinned}';`,
+    );
+  });
+
+  it('builds only the cppcheck target and installs no addon, rule or report script', () => {
+    // The comments name what the script leaves out ("no addons", "`make install` would …"):
+    // only its commands count here.
+    const code = script
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('#'))
+      .join('\n');
+    expect(code).toContain('MATCHCOMPILER=yes');
+    expect(code).toMatch(/^make -C "\$TMP\/src" [^\n]* cppcheck >\/dev\/null$/m);
+    expect(code).not.toMatch(/HAVE_RULES=yes|addons|htmlreport|make install|curl[^\n]*\| *sh/);
+    expect(code).toContain('cp -R "$TMP/src/cfg" "$TMP/src/platforms" "$FILESDIR/"');
+    // cppcheck prints `Cppcheck X.Y` for some .0 releases: the check compares major.minor, the
+    // rule of cppcheckVersionSupported.
+    expect(code).toContain(
+      '"Cppcheck ${CPPCHECK_VERSION%.*}" | "Cppcheck ${CPPCHECK_VERSION%.*}."*)',
+    );
+  });
+
+  it('runs in every GitHub job that requires the analyzers, before the tests', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (uses === -1) continue;
+      const install = job.steps.findIndex(
+        (s) => s.run === 'sudo sh tools/analyzers/install-cppcheck.sh',
+      );
+      expect(install, name).toBeGreaterThan(0);
+      expect(uses, name).toBeGreaterThan(install);
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template, and in both images", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    expect(gitlab['.analyzers']?.before_script ?? []).toContain(
+      'sh tools/analyzers/install-cppcheck.sh',
+    );
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile']) {
+      expect(readFileSync(file, 'utf8'), file).toMatch(/sh \/tmp\/install-cppcheck\.sh/);
+    }
+  });
+});
+
 describe("the CI cache of Trivy's downloads (plan 2B)", () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
   const pin = (name: string) => new RegExp(`^${name}=(.*)$`, 'm').exec(script)?.[1];

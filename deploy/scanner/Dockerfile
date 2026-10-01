@@ -2,7 +2,8 @@
 # The qualor/scanner image: the `qualor` CLI binary plus the pinned analyzer toolchain of
 # tools/analyzers/install.sh (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with a snapshot of its
 # vulnerability database in /opt/qualor/share/trivy, Ruff, SwiftLint's static build (a musl
-# binary that needs no Swift runtime), detekt's CLI jar in /opt/qualor/lib/detekt), Qualor's
+# binary that needs no Swift runtime), detekt's CLI jar in /opt/qualor/lib/detekt), cppcheck
+# (built from source, `install-cppcheck.sh`), Qualor's
 # sonarjs pass in /opt/qualor/sonarjs (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9,
 # tools/analyzers/sonarjs), Qualor's HTML and CSS linters in
 # /opt/qualor/weblint (stylelint and HTMLHint, tools/analyzers/weblint) and what they need to run:
@@ -68,6 +69,10 @@ COPY tools/analyzers/install.sh tools/analyzers/install-sonarjs.sh /tmp/
 RUN sh /tmp/install.sh
 # The Gitleaks built above replaces install.sh's release binary of the same version.
 COPY --from=gitleaks /gitleaks /opt/qualor/bin/gitleaks
+# cppcheck (plan 9D, config.md §6.2), built from its pinned tag archive (no Linux release binary)
+# with this stage's g++ and make; only the binary and its library files reach /opt/qualor.
+COPY tools/analyzers/install-cppcheck.sh /tmp/
+RUN sh /tmp/install-cppcheck.sh && rm /tmp/install-cppcheck.sh
 # Qualor's sonarjs pass (config.md §6): install-sonarjs.sh installs eslint-plugin-sonarjs on
 # Qualor's own ESLint 9 from its lockfile without install scripts, and builds categories.json from
 # the RSPEC metadata of the SonarJS source archive at the plugin's commit (install.sh's SONARJS_*
