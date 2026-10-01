@@ -1,0 +1,101 @@
+<section class="card panel" id="gate">
+  <div class="panel-head">
+    <h2 tabindex="-1" i18n="@@project.settings.gate">Quality gate and profiles</h2>
+  </div>
+  <div class="panel-body">
+    <div role="status">
+      @if (announcement(); as message) {
+        <p class="alert alert-success">{{ message }}</p>
+      }
+    </div>
+    @if (error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    <div class="setting-row">
+      <div class="setting-text">
+        <label for="project-gate" i18n="@@gate.label">Quality gate</label>
+        <p i18n="@@gate.hint">
+          The conditions the project's analyses must meet. Without a choice the organisation's
+          default gate applies.
+        </p>
+      </div>
+      <div class="setting-field">
+        <select id="project-gate" (change)="chooseGate($event)">
+          @for (g of gateList(); track g.id) {
+            <option [value]="g.id" [selected]="g.id === chosenGate()">
+              {{ gateName(g) }}
+            </option>
+          }
+        </select>
+        @if (gatesFailed()) {
+          <span class="field-error" role="alert" i18n="@@gate.loadFailed"
+            >The gates could not be loaded. Try again later.</span
+          >
+        }
+        @if (chosenGate(); as id) {
+          <p class="gate-link">
+            <a class="btn-quiet" [routerLink]="['/gates', id]" i18n="@@gate.view">View gate</a>
+          </p>
+        }
+        <div class="actions">
+          <button
+            type="button"
+            class="btn btn-primary"
+            [disabled]="!gateDirty() || busy()"
+            (click)="saveGate()"
+            i18n="@@gate.save"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <h3 id="profiles-heading" class="profiles-heading" i18n="@@gate.profiles.heading">
+    Quality profile per language
+  </h3>
+  @if (profilesFailed()) {
+    <p class="alert alert-error" role="alert" i18n="@@gate.profiles.loadFailed">
+      The profiles could not be loaded. Try again later.
+    </p>
+  }
+  <table aria-labelledby="profiles-heading">
+    <thead>
+      <tr>
+        <th scope="col" i18n="@@gate.profiles.language">Language</th>
+        <th scope="col" i18n="@@gate.profiles.profile">Profile</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (row of rows(); track row.language) {
+        <tr [attr.data-key]="row.language">
+          <th scope="row">{{ languageName(row.language) }}</th>
+          <td>
+            <div class="profile-cell">
+              <select
+                [attr.aria-label]="languageName(row.language)"
+                [attr.aria-busy]="rowBusy()[row.language] ? 'true' : null"
+                [attr.aria-invalid]="rowError()[row.language] ? 'true' : null"
+                [disabled]="rowBusy()[row.language] === true"
+                (change)="chooseProfile(row, $event)"
+              >
+                @if (row.profileId === null) {
+                  <option value="" selected i18n="@@gate.profiles.none">No profile</option>
+                }
+                @for (o of optionsOf(row); track o.id) {
+                  <option [value]="o.id" [selected]="o.id === row.profileId">{{ o.name }}</option>
+                }
+              </select>
+              @if (row.source === 'default') {
+                <span class="badge badge-accent" i18n="@@gate.profiles.default">Default</span>
+              }
+              @if (rowError()[row.language]; as message) {
+                <span class="field-error" role="alert">{{ message }}</span>
+              }
+            </div>
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</section>

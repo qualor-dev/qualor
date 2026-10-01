@@ -43,12 +43,8 @@
             [canSeeBaseline]="canAnalyze()"
             (saved)="store.reload()"
           />
+          <q-gate-profiles-panel [project]="p" (saved)="store.reload()" />
         }
-        <section class="card panel" id="gate">
-          <div class="panel-head">
-            <h2 tabindex="-1" i18n="@@project.settings.gate">Quality gate and profiles</h2>
-          </div>
-        </section>
         <section class="card panel" id="main-branch">
           <div class="panel-head">
             <h2 tabindex="-1" i18n="@@project.settings.mainBranch">Main branch</h2>
