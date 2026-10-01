@@ -208,6 +208,14 @@
           i18n="@@overview.newIssuesLink"
           >Open issues in new code</a
         >
+        <a
+          class="browse-code"
+          [routerLink]="['/projects', projectId(), 'code']"
+          [queryParams]="{ branch: b.id }"
+          ><ng-container i18n="@@overview.browseCodeLink">Browse code</ng-container>&ngsp;<q-icon
+            name="chevron-down"
+            class="chevron-next"
+        /></a>
       </div>
     </section>
 

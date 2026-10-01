@@ -145,3 +145,10 @@
 .chart-placeholder {
   height: 364px;
 }
+
+/* The one chevron icon points down; turned a quarter, it reads as "go on" beside the link. */
+.chevron-next {
+  display: inline-block;
+  vertical-align: middle;
+  transform: rotate(-90deg);
+}
