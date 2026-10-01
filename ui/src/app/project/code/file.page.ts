@@ -125,12 +125,12 @@ export class FilePage {
     const m = d.measures;
     const cov = m['coverage'] ?? null;
     const c = this.conditions();
-    const coverage =
-      cov === null
-        ? '—'
-        : c
-          ? $localize`:@@file.tile.coverageConditions:${this.percent(cov)}:coverage: · ${this.count(c.covered)}:covered: of ${this.count(c.total)}:total: conditions`
-          : this.percent(cov);
+    let coverage = '—';
+    if (cov !== null) {
+      coverage = c
+        ? $localize`:@@file.tile.coverageConditions:${this.percent(cov)}:coverage: · ${this.count(c.covered)}:covered: of ${this.count(c.total)}:total: conditions`
+        : this.percent(cov);
+    }
     return [
       {
         key: 'ncloc',

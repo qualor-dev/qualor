@@ -26,15 +26,10 @@ type Tone = 'a' | 'b' | 'c' | 'd' | 'e';
 
 /** Coverage in the rating scale's colours: A from 80 % up, then one step per ten points. */
 export function coverageTone(coverage: number): Tone {
-  return coverage >= 80
-    ? 'a'
-    : coverage >= 70
-      ? 'b'
-      : coverage >= 60
-        ? 'c'
-        : coverage >= 50
-          ? 'd'
-          : 'e';
+  if (coverage >= 80) return 'a';
+  if (coverage >= 70) return 'b';
+  if (coverage >= 60) return 'c';
+  return coverage >= 50 ? 'd' : 'e';
 }
 
 /**
@@ -189,7 +184,8 @@ export class CodePage {
 
   protected ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
     const s = this.sort();
-    return s.key !== key ? 'none' : s.dir === 'asc' ? 'ascending' : 'descending';
+    if (s.key !== key) return 'none';
+    return s.dir === 'asc' ? 'ascending' : 'descending';
   }
 
   protected count(value: number | null | undefined): string {

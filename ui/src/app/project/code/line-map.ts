@@ -64,9 +64,18 @@ function coverageRuns(coverage: FileDetail['coverage'], lines: number): Lane<Cov
     ),
   ].sort((a, b) => a - b);
 
-  const pieces: (Run & { value: CoverageState })[] = [];
+  const pieces: CoverageRun[] = [];
   for (const r of uncovered) pieces.push({ ...r, value: 'uncovered' });
-  const point = (line: number) => ({ from: line, to: line, value: 'partial' as const });
+  pieces.push(...coveredPieces(covered, partial));
+  return { runs: joinPieces(pieces) };
+}
+
+type CoverageRun = Run & { value: CoverageState };
+
+/** The covered runs cut around the partly covered lines, plus those lines in no covered run. */
+function coveredPieces(covered: readonly Run[], partial: readonly number[]): CoverageRun[] {
+  const pieces: CoverageRun[] = [];
+  const point = (line: number): CoverageRun => ({ from: line, to: line, value: 'partial' });
   let p = 0;
   for (const r of covered) {
     let from = r.from;
@@ -81,10 +90,14 @@ function coverageRuns(coverage: FileDetail['coverage'], lines: number): Lane<Cov
     if (from <= r.to) pieces.push({ from, to: r.to, value: 'covered' });
   }
   for (const line of partial.slice(p)) pieces.push(point(line));
+  return pieces;
+}
 
+/** Pieces as disjoint runs in line order, adjacent equal states joined. */
+function joinPieces(pieces: CoverageRun[]): CoverageRun[] {
   // A line the server listed as both covered and uncovered is shown uncovered (its first run).
   pieces.sort((x, y) => x.from - y.from || (x.value === 'uncovered' ? -1 : 1));
-  const runs: (Run & { value: CoverageState })[] = [];
+  const runs: CoverageRun[] = [];
   for (const piece of pieces) {
     const last = runs.at(-1);
     const from = last ? Math.max(piece.from, last.to + 1) : piece.from;
@@ -92,7 +105,12 @@ function coverageRuns(coverage: FileDetail['coverage'], lines: number): Lane<Cov
     if (last && last.value === piece.value && from === last.to + 1) last.to = piece.to;
     else runs.push({ from, to: piece.to, value: piece.value });
   }
-  return { runs };
+  return runs;
+}
+
+function newCodeRuns(newLines: FileDetail['newLines'], lines: number): Run[] {
+  if (newLines !== 'all') return mergeRanges(newLines ?? [], lines);
+  return lines > 0 ? [{ from: 1, to: lines }] : [];
 }
 
 export function buildLineMap(detail: FileDetail): LineMap {
@@ -102,12 +120,7 @@ export function buildLineMap(detail: FileDetail): LineMap {
   return {
     lines,
     coverage: coverageRuns(detail.coverage, lines),
-    newCode:
-      newLines === 'all'
-        ? lines > 0
-          ? [{ from: 1, to: lines }]
-          : []
-        : mergeRanges(newLines ?? [], lines),
+    newCode: newCodeRuns(newLines, lines),
     duplication: mergeRanges(
       detail.duplications.map((d) => [d.startLine, d.endLine] as const),
       lines,

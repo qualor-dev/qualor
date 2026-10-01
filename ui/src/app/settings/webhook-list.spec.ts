@@ -225,6 +225,15 @@ describe('WebhooksPage: projects of the scope', () => {
   });
 });
 
+/** A reply that is only given once `release` is called. */
+function held<T>(reply: T): { promise: Promise<T>; release: () => void } {
+  let release: () => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    release = () => resolve(reply);
+  });
+  return { promise, release };
+}
+
 describe('WebhookList: reading every page of a project', () => {
   it('does not hang when a refresh is still running as the last page comes', async () => {
     const server = setup();
@@ -239,13 +248,17 @@ describe('WebhookList: reading every page of a project', () => {
         pageTwoCalls++;
         const reply = { body: page([two]) };
         if (pageTwoCalls > 1) return reply;
-        return new Promise((resolve) => (releasePageTwo = () => resolve(reply)));
+        const hold = held(reply);
+        releasePageTwo = hold.release;
+        return hold.promise;
       }
       firstCalls++;
       const reply = { body: { items: [one], nextCursor: 'c2' } };
       // The refresh after the creation (the second cursor-less read) is held.
       if (firstCalls !== 2) return reply;
-      return new Promise((resolve) => (releaseRefresh = () => resolve(reply)));
+      const hold = held(reply);
+      releaseRefresh = hold.release;
+      return hold.promise;
     });
     server.on('POST', '/api/v0/webhooks', {
       status: 201,
@@ -316,12 +329,9 @@ describe('WebhooksPage: the projects are read', () => {
     });
     let release: () => void = () => undefined;
     server.on('GET', '/api/v0/projects', () => {
-      return new Promise((resolve) => {
-        release = () =>
-          resolve({
-            body: page([{ id: PAYMENTS, key: 'payments', name: 'Payments' }]),
-          });
-      });
+      const hold = held({ body: page([{ id: PAYMENTS, key: 'payments', name: 'Payments' }]) });
+      release = hold.release;
+      return hold.promise;
     });
     const fixture = TestBed.createComponent(WebhooksPage);
     await settle(fixture);

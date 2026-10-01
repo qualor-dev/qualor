@@ -49,9 +49,10 @@ export class WebhooksPage {
   private readonly projectsDone = signal(false);
   private projectsToken = 0;
   protected readonly projectsError = this.projectList.error;
-  protected readonly projectsState = computed<'loading' | 'ready' | 'failed'>(() =>
-    this.projectList.error() !== null ? 'failed' : this.projectsDone() ? 'ready' : 'loading',
-  );
+  protected readonly projectsState = computed<'loading' | 'ready' | 'failed'>(() => {
+    if (this.projectList.error() !== null) return 'failed';
+    return this.projectsDone() ? 'ready' : 'loading';
+  });
   private readonly list = viewChild(WebhookList);
   private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
   protected readonly headingFocus = (): HTMLElement | null => this.heading()?.nativeElement ?? null;

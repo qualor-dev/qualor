@@ -45,7 +45,10 @@ export class BranchPicker {
   });
 
   protected readonly options = computed(() => {
-    const rank = (b: Branch) => (b.isMain ? 0 : b.kind === 'branch' ? 1 : 2);
+    const rank = (b: Branch) => {
+      if (b.isMain) return 0;
+      return b.kind === 'branch' ? 1 : 2;
+    };
     return (this.branches.hasValue() ? this.branches.value() : [])
       .map((branch, index) => ({ branch, index }))
       .sort((a, b) => rank(a.branch) - rank(b.branch) || a.index - b.index)

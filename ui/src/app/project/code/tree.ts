@@ -8,7 +8,8 @@ export type TreeSort = {
 
 /** Byte order like the server's name sort: no locale, upper case before lower case. */
 function byName(a: TreeItem, b: TreeItem): number {
-  return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  if (a.name < b.name) return -1;
+  return a.name > b.name ? 1 : 0;
 }
 
 /**
