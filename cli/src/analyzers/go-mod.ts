@@ -49,6 +49,9 @@ function readToken(line: string, i: number): { text: string; end: number } | nul
   }
   let j = i;
   while (j < line.length && !/[\s"`]/.test(line[j] as string) && !line.startsWith('//', j)) j++;
+  // A blank other than space, tab or CR (\f, \v, U+00A0, U+2028…): go refuses it ("unexpected
+  // input character") and so does this reader, which would otherwise never move past it.
+  if (j === i) return null;
   return { text: line.slice(i, j), end: j };
 }
 

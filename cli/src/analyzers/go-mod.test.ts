@@ -60,6 +60,67 @@ describe('parseGoMod (config.md §6, plan 9C)', () => {
     expect(goModTokens('replace `open')).toBeNull();
   });
 
+  // Go's go.mod lexer skips only space, tab and CR between tokens and refuses any other blank
+  // ("unexpected input character"); a line with one cannot be read, and the reader never loops.
+  it.each([
+    ['form feed', '\f'],
+    ['vertical tab', '\v'],
+    ['no-break space', ' '],
+    ['line separator', ' '],
+    ['paragraph separator', ' '],
+    ['ideographic space', '　'],
+    ['byte order mark', '﻿'],
+  ])('refuses a line with a %s between tokens', (_name, blank) => {
+    expect(goModTokens(`module a${blank}b`)).toBeNull();
+    expect(goModTokens(`${blank}module a`)).toBeNull();
+    expect(parseGoMod(`module a\ngo${blank}1.24\n`)).toEqual({ error: 'line 2 cannot be read' });
+  });
+
+  it('ends on any input', () => {
+    // A seeded generator (mulberry32) over go.mod's punctuation, blanks and letters.
+    let seed = 0x9c0ffee;
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const alphabet = [
+      ...'ab1.()=>/"`\\ \t\r\n\f\v',
+      ' ',
+      ' ',
+      ' ',
+      ' ',
+      ' ',
+      ' ',
+      ' ',
+      '　',
+      '﻿',
+      '\u0085',
+      '\0',
+      'é',
+      '😀',
+      'module ',
+      'replace ',
+      'go ',
+      '=> ',
+      '//',
+    ];
+    for (let n = 0; n < 2000; n++) {
+      const length = Math.floor(random() * 40);
+      let text = '';
+      for (let k = 0; k < length; k++) text += alphabet[Math.floor(random() * alphabet.length)];
+      const result = parseGoMod(text);
+      expect(result, JSON.stringify(text)).toBeTypeOf('object');
+      for (const line of text.split('\n')) {
+        const tokens = goModTokens(line);
+        // Each token takes at least one character of the line, so a line never yields more.
+        if (tokens !== null)
+          expect(tokens.length, JSON.stringify(line)).toBeLessThanOrEqual(line.length);
+      }
+    }
+  });
+
   it('orders Go versions as the go command does', () => {
     expect(compareGoVersions('1.24', '1.27.1')).toBeLessThan(0);
     expect(compareGoVersions('1.27', '1.27.1')).toBeLessThan(0);
