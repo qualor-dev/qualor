@@ -1,10 +1,3 @@
-@if (canManage()) {
-  <div class="webhook-toolbar">
-    <button type="button" class="btn btn-primary" (click)="openCreate()">
-      <q-icon name="plus" /><ng-container i18n="@@webhooks.newOpen">New webhook</ng-container>
-    </button>
-  </div>
-}
 <div role="status">
   @if (announcement(); as message) {
     <p class="alert alert-success">{{ message }}</p>
@@ -34,6 +27,14 @@
                     [routerLink]="['/projects', w.projectId, 'settings']"
                     >{{ name }}</a
                   ></span
+                >
+              } @else if (projectsState() === 'loading') {
+                <span class="badge badge-tag webhook-scope" i18n="@@webhooks.scopeLoading"
+                  >Project: …</span
+                >
+              } @else if (projectsState() === 'failed') {
+                <span class="badge badge-tag webhook-scope" i18n="@@webhooks.scopeUnknown"
+                  >Project</span
                 >
               } @else {
                 <span class="badge badge-tag webhook-scope" i18n="@@webhooks.scopeDeleted"
@@ -152,7 +153,7 @@
       </div>
     </section>
   } @empty {
-    @if (list.loaded()) {
+    @if (list.loaded() && (projectId() === null || complete())) {
       @if (projectId() === null) {
         <p class="muted" i18n="@@webhooks.empty">No webhooks yet.</p>
       } @else {
@@ -161,7 +162,7 @@
     }
   }
 </div>
-@if (list.nextCursor()) {
+@if (list.nextCursor() && (projectId() === null || complete())) {
   <p class="load-more">
     <button
       type="button"

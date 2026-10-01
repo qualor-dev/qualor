@@ -1,8 +1,19 @@
-import { Component, computed, effect, inject, untracked, viewChild } from '@angular/core';
+import {
+  Component,
+  computed,
+  DestroyRef,
+  effect,
+  type ElementRef,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { Api, ok } from '../api/api';
 import type { ItemOf } from '../api/types';
 import { KeysetList } from '../shared/keyset';
 import { OrgContext } from '../org/org-context';
+import { Icon } from '../shared/icon';
 import { WebhookList } from './webhook-list';
 
 export { excerptText, type Webhook } from './webhook-list';
@@ -14,7 +25,7 @@ export { excerptText, type Webhook } from './webhook-list';
  */
 @Component({
   selector: 'q-webhooks-page',
-  imports: [WebhookList],
+  imports: [Icon, WebhookList],
   templateUrl: './webhooks.page.html',
 })
 export class WebhooksPage {
@@ -35,13 +46,28 @@ export class WebhooksPage {
   protected readonly projects = computed(() =>
     this.projectList.items().map(({ id, name }) => ({ id, name })),
   );
+  private readonly projectsDone = signal(false);
+  private projectsToken = 0;
+  protected readonly projectsError = this.projectList.error;
+  protected readonly projectsState = computed<'loading' | 'ready' | 'failed'>(() =>
+    this.projectList.error() !== null ? 'failed' : this.projectsDone() ? 'ready' : 'loading',
+  );
   private readonly list = viewChild(WebhookList);
+  private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
+  protected readonly headingFocus = (): HTMLElement | null => this.heading()?.nativeElement ?? null;
+
+  protected openCreate(): void {
+    this.list()?.openCreate();
+  }
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => this.projectsToken++);
     effect(() => {
       const organizationId = this.org.currentId();
       const admin = this.canRead();
       untracked(() => {
+        this.projectsToken++;
+        this.projectsDone.set(false);
         this.projectList.clear();
         if (organizationId && admin) void this.loadProjects(organizationId);
       });
@@ -49,10 +75,10 @@ export class WebhooksPage {
   }
 
   private async loadProjects(organizationId: string): Promise<void> {
+    const token = ++this.projectsToken;
     await this.projectList.reset(organizationId);
-    while (this.projectList.nextCursor() && !this.projectList.error()) {
-      await this.projectList.more();
-    }
+    await this.projectList.loadRest(() => token === this.projectsToken);
+    if (token === this.projectsToken) this.projectsDone.set(true);
   }
 
   /** The secret the list shows, for the page's tests; null while there is none. */

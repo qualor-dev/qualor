@@ -1,6 +1,6 @@
 <div class="settings-head">
   <div>
-    <h2 tabindex="-1" i18n="@@webhooks.title">Webhooks</h2>
+    <h2 #heading tabindex="-1" i18n="@@webhooks.title">Webhooks</h2>
     @if (!canRead()) {
       <p class="muted" i18n="@@webhooks.adminsOnly">
         Only organization administrators manage webhooks.
@@ -13,11 +13,21 @@
       </p>
     }
   </div>
+  @if (canManage()) {
+    <button type="button" class="btn btn-primary" (click)="openCreate()">
+      <q-icon name="plus" /><ng-container i18n="@@webhooks.newOpen">New webhook</ng-container>
+    </button>
+  }
 </div>
 @if (canRead()) {
   <q-webhook-list
     [organizationId]="org.currentId()"
     [canManage]="canManage()"
     [projects]="projects()"
+    [projectsState]="projectsState()"
+    [focusFallback]="headingFocus"
   />
+  @if (projectsError(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
 }

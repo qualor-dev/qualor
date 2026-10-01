@@ -1,6 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { FakeServer, me, ORG_ID, page, provideFakeServer, settle } from '../../testing/fake-server';
+import {
+  FakeServer,
+  me,
+  ORG_ID,
+  page,
+  problem,
+  provideFakeServer,
+  settle,
+} from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
 import { inScope, type Webhook, WebhookList } from './webhook-list';
 import { WebhooksPage } from './webhooks.page';
@@ -127,9 +135,7 @@ describe('WebhookList: scope', () => {
     // Done, then the next one for all projects: no projectId key at all.
     [...create.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Done')!.click();
     await settle(fixture);
-    [...root.querySelectorAll('button')]
-      .find((b) => b.textContent?.trim() === 'New webhook')!
-      .click();
+    fixture.componentInstance.openCreate();
     await settle(fixture);
     expect(root.querySelector<HTMLSelectElement>('#webhook-scope')!.value).toBe('');
     fillAndSubmit(root, 'https://other.example.com/hook');
@@ -215,5 +221,91 @@ describe('WebhooksPage: projects of the scope', () => {
     expect(gets[1]!.query.get('cursor')).toBe('p2');
     expect(tags(root, 0)).toEqual(['Project: Payments']);
     expect(root.querySelectorAll('#webhook-scope option')).toHaveLength(3);
+  });
+});
+
+describe('WebhookList: reading every page of a project', () => {
+  it('does not hang when a refresh runs while the last pages are still coming', async () => {
+    const server = setup();
+    let secondCalls = 0;
+    let release: () => void = () => undefined;
+    server.on('GET', '/api/v0/webhooks', (request) => {
+      if (request.query.get('cursor') !== 'c2') {
+        return {
+          body: {
+            items: [webhook('w1', 'https://a.example.com/', { projectId: PAYMENTS })],
+            nextCursor: 'c2',
+          },
+        };
+      }
+      secondCalls++;
+      const reply = {
+        body: page([webhook('w2', 'https://b.example.com/', { projectId: PAYMENTS })]),
+      };
+      if (secondCalls > 1) return reply;
+      return new Promise((resolve) => (release = () => resolve(reply)));
+    });
+    server.on('POST', '/api/v0/webhooks', {
+      status: 201,
+      body: {
+        ...webhook('w9', 'https://ci.example.com/hook', { projectId: PAYMENTS }),
+        secret: 's',
+      },
+    });
+    const fixture = render({ projectId: PAYMENTS });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    // The second page is held: the list is not complete, so it does not claim to be empty.
+    expect(root.textContent).not.toContain('No webhooks for this project yet.');
+    fillAndSubmit(root, 'https://ci.example.com/hook');
+    await settle(fixture);
+    release();
+    await settle(fixture);
+    const urls = [...root.querySelectorAll('section .webhook-url')].map((e) => e.textContent);
+    expect(urls).toEqual(['https://a.example.com/', 'https://b.example.com/']);
+  });
+});
+
+describe('WebhooksPage: the projects are read', () => {
+  it('shows a neutral tag until the projects are in, then the name or (deleted)', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/webhooks', {
+      body: page([
+        webhook('w1', 'https://a.example.com/', { projectId: PAYMENTS }),
+        webhook('w2', 'https://b.example.com/', { projectId: BILLING }),
+      ]),
+    });
+    let release: () => void = () => undefined;
+    server.on('GET', '/api/v0/projects', () => {
+      return new Promise((resolve) => {
+        release = () =>
+          resolve({
+            body: page([{ id: PAYMENTS, key: 'payments', name: 'Payments' }]),
+          });
+      });
+    });
+    const fixture = TestBed.createComponent(WebhooksPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(tags(root, 0)).toEqual(['Project: …']);
+    expect(root.textContent).not.toContain('(deleted)');
+    release();
+    await settle(fixture);
+    expect(tags(root, 0)).toEqual(['Project: Payments']);
+    expect(tags(root, 1)).toEqual(['Project: (deleted)']);
+  });
+
+  it('shows a bare Project tag and an alert when the projects cannot be read', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/webhooks', {
+      body: page([webhook('w1', 'https://a.example.com/', { projectId: PAYMENTS })]),
+    });
+    server.on('GET', '/api/v0/projects', { status: 500, body: problem(500, 'INTERNAL') });
+    const fixture = TestBed.createComponent(WebhooksPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(tags(root, 0)).toEqual(['Project']);
+    expect(root.querySelector('p.alert-error[role="alert"]')).not.toBeNull();
+    expect(root.textContent).not.toContain('(deleted)');
   });
 });

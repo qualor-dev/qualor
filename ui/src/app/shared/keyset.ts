@@ -100,6 +100,18 @@ export class KeysetList<T, P, R extends KeysetPage<T> = KeysetPage<T>> {
   }
 
   /**
+   * Follows the next cursors to the end while `current()` holds (a superseded caller stops). While
+   * another load is running (a `refresh`, which makes `more` a no-op) it waits a task instead of
+   * spinning, then goes on with whatever cursor that load left.
+   */
+  async loadRest(current: () => boolean): Promise<void> {
+    while (current() && this.nextCursor() !== null && !this.error()) {
+      if (this.loading()) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      else await this.more();
+    }
+  }
+
+  /**
    * Reloads the first page, then follows the next cursors to the end (at most `maxPages` pages),
    * so an entry just added at the end of an oldest-first list is on screen.
    */

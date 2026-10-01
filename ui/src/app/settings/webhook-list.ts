@@ -1,7 +1,7 @@
 import { DOCUMENT } from '@angular/common';
+import type { ElementRef } from '@angular/core';
 import {
   Component,
-  ElementRef,
   computed,
   DestroyRef,
   effect,
@@ -79,19 +79,23 @@ export function excerptText(excerpt: string | null): string {
   imports: [DateTimePipe, DeliveryStrip, Icon, RouterLink, SecretOnce],
   templateUrl: './webhook-list.html',
   styleUrl: './webhook-list.css',
-  host: { tabindex: '-1' },
 })
 export class WebhookList {
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
-  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   /** The organisation whose webhooks are listed. */
   readonly organizationId = input<string | null>(null);
   /** The role may add, switch and delete webhooks. */
   readonly canManage = input(false);
   /** Null: the organisation's scope, every webhook; an id: only that project's webhooks. */
   readonly projectId = input<string | null>(null);
+  /** Where focus goes when a deleted row leaves nothing to focus: the embedding page's heading. */
+  readonly focusFallback = input<() => HTMLElement | null>(() => null);
+  /** Whether `projects` is still being read, complete, or could not be read. */
+  readonly projectsState = input<'loading' | 'ready' | 'failed'>('ready');
+  /** The project-scope list has been read to its last page. */
+  protected readonly complete = signal(false);
   /** The organisation's projects: names for the scope tags and the select. */
   readonly projects = input<readonly { id: string; name: string }[]>([]);
   protected readonly visible = computed(() =>
@@ -128,7 +132,8 @@ export class WebhookList {
   protected readonly url = signal('');
   protected readonly events = signal<ReadonlySet<WebhookEvent>>(new Set(EVENTS));
   /** The new webhook's secret, until "Done", the next addition or leaving the page. */
-  readonly secret = signal<string | null>(null);
+  private readonly secretValue = signal<string | null>(null);
+  readonly secret = this.secretValue.asReadonly();
   protected readonly error = signal<string | null>(null);
   /** A refused addition other than its fields, shown in the dialog that is still open. */
   protected readonly createError = signal<string | null>(null);
@@ -164,7 +169,7 @@ export class WebhookList {
       untracked(() => {
         // Whatever belonged to the previous organisation goes, whether or not this one is shown.
         this.orgGeneration++;
-        this.secret.set(null);
+        this.secretValue.set(null);
         this.announcement.set(null);
         this.deliveries.set({});
         this.deliveryRequests.clear();
@@ -183,17 +188,18 @@ export class WebhookList {
     });
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
-      this.secret.set(null);
+      this.loadToken++;
+      this.secretValue.set(null);
     });
   }
 
   /** Loads the first page; a project's panel reads on to the last one, as it filters on the client. */
   private async load(organizationId: string, all: boolean): Promise<void> {
     const token = ++this.loadToken;
+    this.complete.set(false);
     await this.list.reset(organizationId);
-    while (all && token === this.loadToken && this.list.nextCursor() && !this.list.error()) {
-      await this.list.more();
-    }
+    if (all) await this.list.loadRest(() => token === this.loadToken);
+    if (token === this.loadToken) this.complete.set(true);
   }
 
   /** The tag of a webhook's scope: the project's name, or null when the project is gone. */
@@ -227,8 +233,8 @@ export class WebhookList {
   }
 
   /** Opens "New webhook" on an empty URL and both events. */
-  protected openCreate(): void {
-    this.secret.set(null);
+  openCreate(): void {
+    this.secretValue.set(null);
     this.url.set('');
     this.scope.set('');
     this.events.set(new Set(EVENTS));
@@ -246,7 +252,7 @@ export class WebhookList {
   }
 
   protected forget(): void {
-    this.secret.set(null);
+    this.secretValue.set(null);
     // The secret is gone: the page no longer asks to copy it.
     if (this.secretShown) {
       this.secretShown = false;
@@ -263,7 +269,7 @@ export class WebhookList {
     if (!url) this.urlError.set(badUrl());
     if (events.length === 0) this.eventsError.set(noEvent());
     if (!url || events.length === 0) return;
-    this.secret.set(null);
+    this.secretValue.set(null);
     this.createError.set(null);
     const generation = this.orgGeneration;
     const projectId = this.projectId() ?? (this.scope() || null);
@@ -277,7 +283,7 @@ export class WebhookList {
         // Added to the organisation that was current when asked: never shown under another one,
         // nor kept by a page that was left meanwhile.
         if (generation !== this.orgGeneration || this.destroyed) return;
-        this.secret.set(created.secret ?? null);
+        this.secretValue.set(created.secret ?? null);
         this.secretShown = created.secret !== undefined && created.secret !== null;
         clearField(this.urlField(), this.url);
         this.announcement.set(
@@ -364,7 +370,7 @@ export class WebhookList {
         this.injector,
         this.document,
         () => this.sectionAt(index)?.querySelector('button'),
-        () => this.host.nativeElement,
+        () => this.focusFallback()(),
       );
     });
   }
@@ -432,7 +438,7 @@ export class WebhookList {
         onError(err);
       } else {
         this.error.set(problemMessage(err));
-        keepFocus(this.injector, this.document, () => this.host.nativeElement);
+        keepFocus(this.injector, this.document, () => this.focusFallback()());
       }
     } finally {
       this.busy.set(false);
