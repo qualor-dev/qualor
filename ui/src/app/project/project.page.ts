@@ -7,7 +7,7 @@ import { Icon } from '../shared/icon';
 import { type Crumb, PageHeader } from '../shared/page-header';
 import { mergeRequestLink, notFound } from './branches';
 import { CurrentProject } from './current-project';
-import { settingsVisible } from './settings/project-settings.page';
+import { settingsVisible } from './settings/settings-visibility';
 
 /**
  * A project's frame on the ink page band (spec §7.1): its name with the main branch's gate, the

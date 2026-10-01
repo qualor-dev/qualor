@@ -9,7 +9,7 @@ import {
   settle,
 } from '../../../testing/fake-server';
 import { SessionStore } from '../../auth/session';
-import { ProjectSettingsPage, settingsVisible } from './project-settings.page';
+import { ProjectSettingsPage } from './project-settings.page';
 
 const PROJECT = '0190a6c2-0000-7000-8000-0000000000f1';
 
@@ -112,12 +112,21 @@ describe('ProjectSettingsPage', () => {
   });
 });
 
-describe('settingsVisible', () => {
-  it('follows each permission on its own', () => {
-    expect(settingsVisible(['project.read'], false)).toBe(false);
-    expect(settingsVisible(['project.read', 'project.delete'], false)).toBe(true);
-    expect(settingsVisible(['project.read', 'project.settings'], false)).toBe(true);
-    expect(settingsVisible(['project.read', 'project.tokens.manage'], false)).toBe(true);
-    expect(settingsVisible(['project.read'], true)).toBe(true);
+describe('ProjectSettingsPage index', () => {
+  it('scrolls to the panel and focuses its heading when an index link is clicked', async () => {
+    setup({
+      projectPermissions: ['project.read', 'project.settings', 'project.delete'],
+      orgRole: 'member',
+    });
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { root, navigate, fixture } = await render();
+    document.body.appendChild(root);
+    root.querySelector<HTMLAnchorElement>('nav.settings-index a[href="#danger"]')!.click();
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.contexts[0]).toBe(root.querySelector('#danger'));
+    expect(document.activeElement).toBe(root.querySelector('#danger h2'));
+    expect(navigate).toHaveBeenCalledWith([], { fragment: 'danger', replaceUrl: true });
+    fixture.destroy();
   });
 });

@@ -4,7 +4,7 @@
 
 .settings-panels {
   display: grid;
-  gap: var(--space-4, 1rem);
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -16,7 +16,7 @@
   .settings {
     display: grid;
     grid-template-columns: 12rem 1fr;
-    gap: var(--space-6, 1.5rem);
+    gap: var(--space-6);
     align-items: start;
   }
 
@@ -30,7 +30,7 @@
 
   .settings-index a {
     padding: 0.25rem 0.5rem;
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--radius-sm);
     color: var(--text-muted);
     text-decoration: none;
   }
