@@ -18,7 +18,7 @@ code, and the smaller `qualor/scanner` for the rest.
 
 ### Tags
 
-The same tags as `qualor/scanner`: the full version, such as `0.3.1`, and the minor tag, such as
+The same tags as `qualor/scanner`: the full version, such as `0.3.2`, and the minor tag, such as
 `0.3`. There is no `latest` tag.
 
 ### What it adds to qualor/scanner

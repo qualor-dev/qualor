@@ -25,7 +25,7 @@ In the repository (or the organisation) go to **Settings → Secrets and variabl
 | Kind | Name | Value |
 |---|---|---|
 | Variable | `QUALOR_URL` | `https://qualor.example.com` |
-| Variable | `QUALOR_SCANNER_IMAGE` | `qualor/scanner:0.3`, or a full version such as `qualor/scanner:0.3.1` |
+| Variable | `QUALOR_SCANNER_IMAGE` | `qualor/scanner:0.3`, or a full version such as `qualor/scanner:0.3.2` |
 | Secret | `QUALOR_TOKEN` | the token |
 
 For C#, add the variable `QUALOR_SCANNER_DOTNET_IMAGE` with `qualor/scanner-dotnet:0.3` instead.

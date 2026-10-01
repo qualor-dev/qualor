@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-01
+
 ### Changed
 
 - The summary comment on GitLab merge requests and GitHub pull requests is easier to read: a status

@@ -59,9 +59,9 @@ include:
 
 ```yaml
 include:
-  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.3.1
+  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.3.2
     inputs:
-      image-tag: '0.3.1'
+      image-tag: '0.3.2'
       # image: mirror.acme.internal/qualor/scanner   # your own copy of the image, without the tag
 ```
 
@@ -74,8 +74,8 @@ your instance, turn on **Settings → General → Visibility → CI/CD Catalog p
 run a pipeline for the release tag (**Build → Pipelines → Run pipeline**). That pipeline creates the
 release the catalog needs; an import alone runs none.
 
-Pin the component and the image to the same release. Use a full version (`@0.3.1`,
-`image-tag: '0.3.1'`) where every pipeline must run exactly the same analyzers.
+Pin the component and the image to the same release. Use a full version (`@0.3.2`,
+`image-tag: '0.3.2'`) where every pipeline must run exactly the same analyzers.
 
 The job runs in merge request pipelines and on the default branch. It uploads the analysis, fails
 with the quality gate, and keeps GitLab's **Code Quality**, **SAST** and **Dependency Scanning**
@@ -84,7 +84,7 @@ and Dependency Scanning widgets need GitLab Ultimate. The Code Quality report wo
 
 | Input | Default | Meaning |
 |---|---|---|
-| `image-tag` | required | the scanner image tag, such as `0.3` or `0.3.1` |
+| `image-tag` | required | the scanner image tag, such as `0.3` or `0.3.2` |
 | `image` | `qualor/scanner` | the scanner image, without the tag |
 | `stage` | `test` | the stage of the job |
 | `job-name` | `qualor` | the job's name |
@@ -203,7 +203,7 @@ Either:
 | The analysis appears as a branch, not a merge request | the job ran in a branch pipeline. Use `merge_request_event` rules |
 | No comments | no connection or mapping, `QUALOR_SCM_INTERNAL_HOSTS` missing, or the token lacks the `api` scope. **Check** on **Settings → Repositories** says which |
 | Comments on merge requests, but no commit status on the default branch | the token's role is below Maintainer, and the branch is protected. Give the token the Maintainer role |
-| `@0.3` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.3.1`, or see the steps above |
+| `@0.3` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.3.2`, or see the steps above |
 | Comments but no links | `QUALOR_PUBLIC_URL` is not set on the server |
 
 More in [Troubleshooting](./troubleshooting.md).

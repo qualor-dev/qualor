@@ -43,8 +43,8 @@ The signatures are not recorded in the public Rekor transparency log, so every c
 carries `--insecure-ignore-tlog=true`; without it, cosign looks for a log entry and fails.
 
 ```sh
-cosign verify --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true qualor/server:0.3.1
-cosign verify-attestation --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true --type spdxjson qualor/server:0.3.1
+cosign verify --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true qualor/server:0.3.2
+cosign verify-attestation --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true --type spdxjson qualor/server:0.3.2
 curl -fsSLO https://qualor.dev/cosign.pub
 cosign verify-blob --key cosign.pub --insecure-ignore-tlog=true --bundle SHA256SUMS.bundle SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
