@@ -50,7 +50,7 @@ installed="$(node -p 'require("'"$DEST"'/node_modules/eslint-plugin-sonarjs/pack
   exit 1
 }
 
-curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o "$TMP/sonarjs.tar.gz" \
+curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused -o "$TMP/sonarjs.tar.gz" \
   "https://github.com/SonarSource/SonarJS/archive/${SONARJS_COMMIT}.tar.gz"
 echo "${SONARJS_SOURCE_SHA256}  $TMP/sonarjs.tar.gz" | sha256sum -c - >/dev/null \
   || { echo "install-sonarjs.sh: checksum mismatch: SonarJS ${SONARJS_COMMIT}" >&2; exit 1; }

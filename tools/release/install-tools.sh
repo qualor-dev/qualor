@@ -38,7 +38,7 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$PREFIX/bin"
 
 fetch() { # url sha256 file
-  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o "$TMP/$3" "$1"
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused -o "$TMP/$3" "$1"
   echo "$2  $TMP/$3" | sha256sum -c - >/dev/null || { echo "checksum mismatch: $1" >&2; exit 1; }
 }
 
