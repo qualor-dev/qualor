@@ -66,6 +66,7 @@ const LABELS: Record<LabelKind, Record<string, string>> = {
     css: $localize`:@@label.language.css:CSS`,
     kotlin: $localize`:@@label.language.kotlin:Kotlin`,
     swift: $localize`:@@label.language.swift:Swift`,
+    php: $localize`:@@label.language.php:PHP`,
     '*': $localize`:@@label.language.any:Other engines`,
   },
   /** The `warnings` of a gate result (gates.md §5, §6; server gates/stage.ts, shared evaluate.ts). */

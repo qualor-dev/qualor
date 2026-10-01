@@ -15,6 +15,14 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     }
   });
 
+  it('lets the php profile govern phpstan findings on PHP files (plan 9A)', () => {
+    expect(governingLanguage('phpstan', 'php')).toBe('php');
+    expect(governingLanguage('phpstan', null)).toBe('*');
+    for (const engine of ['semgrep', 'gitleaks', 'trivy', 'osv-scanner']) {
+      expect(governingLanguage(engine, 'php')).toBe('*');
+    }
+  });
+
   it('lets the kotlin profile govern detekt findings on Kotlin files (phase 8E)', () => {
     expect(governingLanguage('detekt', 'kotlin')).toBe('kotlin');
     expect(governingLanguage('detekt', null)).toBe('*');
