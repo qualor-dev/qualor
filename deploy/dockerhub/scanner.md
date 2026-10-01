@@ -85,7 +85,7 @@ first (SpotBugs analyses compiled classes).
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
 - Runs as the user `node` (uid 1000) in `/src`; about 3.5 GB (PHP and PHPStan add about
-  28 MB compressed). Every base image is pinned by digest.
+  25 MB compressed). Every base image is pinned by digest.
 
 ### Environment
 

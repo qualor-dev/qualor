@@ -27,7 +27,7 @@ All notable changes to Qualor are listed here, newest first. The format follows
   `composer install` (scripts and plugins are not needed) before the scan.
 - `phpstan` is now a built-in engine id: a `sarif:` entry with `engine: phpstan` no longer
   validates, and your own PHPStan SARIF import is reported as `ext-phpstan` and counted once.
-- The `qualor/scanner` image is about 28 MB larger (compressed): Debian's PHP 8.2 and PHPStan.
+- The `qualor/scanner` image is about 25 MB larger (compressed): Debian's PHP 8.2 and PHPStan.
 
 ## [0.3.1] - 2026-10-01
 
