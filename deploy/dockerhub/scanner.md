@@ -61,7 +61,8 @@ qualor:
 
 The scan needs the full git history (`GIT_DEPTH: 0`, `fetch-depth: 0`). Install a JavaScript or
 TypeScript project's dependencies before `qualor scan`, and build a Java project first (SpotBugs
-analyses compiled classes).
+analyses compiled classes). C and C++ need no build for cppcheck; for clang-tidy, scan in the job
+that built the project, with your own clang-tidy and its `compile_commands.json`.
 
 ### What is inside
 
@@ -79,7 +80,9 @@ analyses compiled classes).
   Gitleaks 8.30.1, Trivy 0.74.0 and Ruff 0.16.9 (Python), with a snapshot of Trivy's
   vulnerability database (the scan never downloads one); detekt 1.23.8 (Kotlin, Apache-2.0)
   in `/opt/qualor/lib/detekt`; and SwiftLint 0.65.1 (Swift, MIT), its static Linux build, in
-  `/opt/qualor/bin/swiftlint`. No Semgrep or OpenGrep rules are bundled yet
+  `/opt/qualor/bin/swiftlint`; and cppcheck 2.22.0 (C and C++, GPL-3.0-or-later), built from
+  source, in `/opt/qualor/bin/cppcheck`: its source is in `qualor/scanner-sources`. clang-tidy is
+  not in the image: run `qualor scan` in the job that built your project to use your own. No Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
 - Runs as the user `node` (uid 1000) in `/src`; about 3.5 GB. Every base image is pinned by
@@ -118,7 +121,8 @@ An interrupted scan exits 128 plus the signal number (130 for SIGINT, 143 for SI
 The Qualor CLI is MIT-licensed. The image bundles third-party software under its own licences:
 OpenGrep and SpotBugs (LGPL-2.1), PMD (BSD-style, with Apache-2.0 parts), Gitleaks and Trivy (MIT and Apache-2.0, with MPL-2.0 Go modules), Ruff (MIT, with
 three MPL-2.0 crates compiled in), detekt (Apache-2.0; Trove4J, LGPL-2.1, inside its jar), SwiftLint (MIT; its static build links
-the Swift runtime, libc++, musl, curl, BoringSSL, libxml2, zlib and mimalloc, none of them copyleft), eslint-plugin-sonarjs 2.0.4
+the Swift runtime, libc++, musl, curl, BoringSSL, libxml2, zlib and mimalloc, none of them copyleft), cppcheck 2.22.0 (GPL-3.0-or-later, built from source; the source is in
+`qualor/scanner-sources`), eslint-plugin-sonarjs 2.0.4
 (LGPL-3.0, the last release before the SONAR Source-Available License; its own npm dependency tree
 includes axe-core, MPL-2.0), the
 Temurin JRE (GPL-2.0 with the Classpath Exception), Node.js (MIT), and the Bun runtime inside the

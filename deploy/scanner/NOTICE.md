@@ -21,6 +21,7 @@ vulnerability database pinned by digest), compiled into the
 | eslint-plugin-sonarjs (Qualor's own `sonarjs` pass)                           | 2.0.4                                          | LGPL-3.0 (`ESLINT-PLUGIN-SONARJS-LICENSE.txt`); its npm dependency tree, axe-core (MPL-2.0) included: see below (`SONARJS-DEPENDENCIES.txt`)                                                | https://github.com/SonarSource/SonarJS/tree/273825f98b35b29b409fbf4f89efce075c651d96                  |
 | Ruff (the ruff engine)                                                        | 0.16.9                                         | MIT (`RUFF-LICENSE.txt`, which also carries the licences of the projects Ruff derives from); the Rust crates it compiles in: see below (`RUFF-DEPENDENCIES.txt`)                            | https://github.com/astral-sh/ruff/tree/0.16.9                                                         |
 | stylelint and HTMLHint (Qualor's HTML and CSS linters, `/opt/qualor/weblint`) | 17.15.0 and 1.9.2                              | MIT; their npm dependency tree (MIT, ISC, BSD, MIT-0, BlueOak-1.0.0, CC0-1.0, Python-2.0): see below (`WEBLINT-DEPENDENCIES.txt`)                                                           | https://github.com/stylelint/stylelint/tree/17.15.0, https://github.com/htmlhint/HTMLHint/tree/v1.9.2 |
+| cppcheck (the cppcheck engine, C and C++)                                     | 2.22.0                                         | GPL-3.0-or-later (`CPPCHECK-LICENSE.txt`, with the simplecpp 0BSD, tinyxml2 zlib and picojson BSD-2-Clause licences of what it compiles in)                                                 | https://github.com/cppcheck-opensource/cppcheck/tree/2.22.0                                           |
 | Eclipse Temurin JRE                                                           | 17.0.20+8                                      | GPL-2.0 with the Classpath Exception (`/opt/java/openjdk/legal/`)                                                                                                                           | `qualor/scanner-sources`                                                                              |
 | Node.js                                                                       | 22.23.3                                        | MIT and bundled licences (`NODE-LICENSE.txt`)                                                                                                                                               | https://github.com/nodejs/node/tree/v22.23.3                                                          |
 | npm, Corepack and Yarn (from the Node.js image)                               | 10.9.9, 0.36.0, 1.22.22                        | Artistic-2.0, MIT, BSD-2-Clause (the `LICENSE` in each package's directory)                                                                                                                 | https://github.com/nodejs/docker-node                                                                 |
@@ -139,7 +140,8 @@ mpdecimal. The Python packages are MIT, BSD, Apache-2.0, PSF or 0BSD (chardet 7)
 
 The npm packages compiled into the `qualor` binary are ignore, picomatch, saxes, xmlchars, yaml,
 zod, web-tree-sitter and the tree-sitter grammars for Java, JavaScript, TypeScript, C#, Python,
-HTML, CSS and Kotlin (`tree-sitter-c-sharp` 0.23.5, MIT, `TREE-SITTER-C-SHARP-LICENSE.txt`;
+HTML, CSS, Kotlin, C and C++ (tree-sitter-c 0.24.1 and tree-sitter-cpp 0.23.4, MIT;
+`tree-sitter-c-sharp` 0.23.5, MIT, `TREE-SITTER-C-SHARP-LICENSE.txt`;
 `tree-sitter-html` 0.23.2, `tree-sitter-css` 0.25.0 and `@tree-sitter-grammars/tree-sitter-kotlin` 1.1.0,
 all MIT), in the
 versions `pnpm-lock.yaml` locks. The Swift grammar, tree-sitter-swift 0.7.3 (MIT,
@@ -162,6 +164,13 @@ are installed at image build with `npm ci --omit=dev` from
 `tools/analyzers/weblint/package-lock.json`. Every package in that installed npm tree is
 permissively licensed (MIT, ISC, BSD, MIT-0, BlueOak-1.0.0, CC0-1.0 and Python-2.0,
 `WEBLINT-DEPENDENCIES.txt`), so none of it needs a source offer.
+
+cppcheck is built in the image from its 2.22.0 tag archive (pinned by SHA-256 in
+`tools/analyzers/install-cppcheck.sh`), unmodified, and installed as `/opt/qualor/bin/cppcheck`
+with its library files in `/opt/qualor/share/cppcheck`. It is free software under the GNU General
+Public License version 3 or later; the archive it is built from is its complete corresponding
+source, published in `qualor/scanner-sources` with the same tag. Qualor runs it as a separate
+program and does not link it. clang-tidy is not part of this image.
 
 The Ruff binary is the upstream release build for glibc, a Rust program.
 
@@ -222,6 +231,8 @@ files attached to the Qualor release page of the same tag:
   eslint-plugin-jsx-a11y): its source on GitHub's own release tag archive;
 - SonarAnalyzer.CSharp 9.32.0.97167 (LGPL-3.0), software only in `qualor/scanner-dotnet`: the
   source tree of its tag's commit, without its integration-test harness;
+- cppcheck 2.22.0 (GPL-3.0-or-later), built in the image: its tag archive, with the simplecpp
+  (0BSD), tinyxml2 (zlib) and picojson (BSD-2-Clause) sources it compiles in;
 - the eleven MPL-2.0 Go modules compiled into Trivy 0.74.0 and the five compiled into Gitleaks
   8.30.1: each module's source zip from the Go module proxy (`proxy.golang.org`) at the version the
   binary names;

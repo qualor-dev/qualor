@@ -6,6 +6,26 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- C and C++: `qualor/scanner` runs cppcheck 2.22.0 (GPL-3.0-or-later, built from source; its
+  source ships in `qualor/scanner-sources`) as the `cppcheck` engine, on by default, with no build
+  needed. A clang-tidy (LLVM 14+) on `PATH` runs as the `clang-tidy` engine when the job also has a
+  `compile_commands.json`; no image bundles it. Qualor reads compile databases and `.clang-tidy`
+  itself and never passes plugins, response files or compiler wrappers. C and C++ files get metrics
+  and duplication (tree-sitter-c 0.24.1, tree-sitter-cpp 0.23.4), built-in C and C++ quality
+  profiles, and `qualor import sonarqube` maps common C/C++ rules (pending review). gcovr and
+  llvm-cov coverage reports already work.
+
+### Changed
+
+- `.c`, `.cpp`, `.h` and the other C/C++ files were `other`; they now count as `c` or `cpp` in
+  lines of code and duplication. `CMakeFiles/`, `cmake-build-*/` and `_deps/` are built-in
+  excludes. `cppcheck` and `clang-tidy` are reserved engine ids (`ext-cppcheck` and
+  `ext-clang-tidy` are the names of your own imported SARIF of these tools, and count once).
+- A scanner that finds C or C++ files needs a server of this release: an older server refuses its
+  report. Upgrade the server first.
+
 ## [0.3.1] - 2026-10-01
 
 ### Added

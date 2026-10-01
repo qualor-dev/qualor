@@ -61,6 +61,10 @@ Swift quality profiles are read but have nothing to map, because SonarSource's o
 not SwiftLint's rules. The statuses of SwiftLint issues that SonarQube imported
 (`external_swiftlint`) carry over.
 
+C and C++ quality profiles are read. A short list of common SonarQube C/C++ rules maps to
+cppcheck and clang-tidy rules, pending review: the import carries issue statuses for them but does
+not activate rules in a profile. MISRA rules are not mapped.
+
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says
 so. SonarQube's `css` and `Web` rules are not mapped yet.

@@ -47,7 +47,7 @@ tests:
             '**/src/*Test/**']
   exclude: []
 
-languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin, swift]
+languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin, swift, c, cpp]
 
 analyzers:
   eslint:    { enabled: auto, configFile: null, args: [], timeoutSeconds: 900 }
@@ -57,6 +57,18 @@ analyzers:
   spotbugs:  { enabled: auto, classDirs: [target/classes, build/classes/java/main], auxClasspathFile: null, timeoutSeconds: 1200 }
   detekt:    { enabled: auto, configFile: null, timeoutSeconds: 900 }
   swiftlint: { enabled: auto, configFile: null, timeoutSeconds: 600 }
+  cppcheck:                          # C and C++: cppcheck 2.22.0 in qualor/scanner
+    enabled: auto
+    enable: [warning, performance, portability]   # cppcheck --enable groups (errors always); add style for more
+    includePaths: []                 # repository directories for -I, used without a compile database
+    defines: []                      # NAME or NAME=value for -D, used without a compile database
+    compileCommands: null            # null: compile_commands.json, then build/compile_commands.json; false: none; or a repository path
+    timeoutSeconds: 1800
+  clang-tidy:                        # C and C++: the clang-tidy (LLVM 14+) on PATH, never bundled
+    enabled: auto
+    configFile: null                 # default: .clang-tidy at the repository root; qualor-default: Qualor's checks
+    compileCommands: null            # as for cppcheck
+    timeoutSeconds: 3600
   semgrep:   { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
   gitleaks:  { enabled: true, configFile: null, timeoutSeconds: 300 }
   trivy:     { enabled: auto, timeoutSeconds: 600 }

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const script = readFileSync('tools/analyzers/install-cppcheck.sh', 'utf8');
@@ -39,7 +39,37 @@ describe('cppcheck licence and source (plan 9D, decision 1)', () => {
     );
   });
 
-  // Task 12 writes NOTICE.md and turns this into `it` (with the check that the docs name no
-  // other cppcheck version than the pin).
-  it.todo('NOTICE.md names cppcheck, its licence file and its source');
+  it('NOTICE.md names cppcheck, its licence file and its source', () => {
+    const notice = readFileSync('deploy/scanner/NOTICE.md', 'utf8');
+    const row = notice.split('\n').find((l) => /^\| cppcheck/.test(l)) ?? '';
+    expect(row.split('|').map((c) => c.trim())[2]).toBe(version);
+    expect(notice).toContain('GPL-3.0-or-later');
+    expect(notice).toContain('CPPCHECK-LICENSE.txt');
+    expect(notice).toContain(`https://github.com/cppcheck-opensource/cppcheck/tree/${version}`);
+    expect(notice).toContain('qualor/scanner-sources');
+    expect(notice).toContain('tree-sitter-c 0.24.1');
+    expect(notice).toContain('tree-sitter-cpp 0.23.4');
+  });
+
+  it('names no other cppcheck version than the pinned one in the docs (CHANGELOG history aside)', () => {
+    const docs = [
+      'README.md',
+      'deploy/README.md',
+      'deploy/scanner/NOTICE.md',
+      ...readdirSync('deploy/dockerhub')
+        .filter((f) => f.endsWith('.md'))
+        .map((f) => `deploy/dockerhub/${f}`),
+      ...readdirSync('docs/guide')
+        .filter((f) => f.endsWith('.md'))
+        .map((f) => `docs/guide/${f}`),
+    ];
+    const named: string[] = [];
+    for (const file of docs) {
+      for (const m of readFileSync(file, 'utf8').matchAll(/cppcheck\W{0,4}(\d+\.\d+\.\d+)/gi)) {
+        named.push(`${file}: ${m[1]}`);
+      }
+    }
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.filter((n) => !n.endsWith(`: ${version}`))).toEqual([]);
+  });
 });

@@ -5,11 +5,11 @@ Three images, all built from this repository. `qualor/server`, `qualor/scanner` 
 `qualor/scanner:<tag>` and `qualor/scanner-dotnet:<tag>` (the source repository is
 <https://github.com/qualor-dev/qualor>). To build them yourself:
 
-| Image                   | Dockerfile                         | What it is                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ----------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `qualor/server`         | `deploy/server/Dockerfile`         | the API, the web UI (`QUALOR_UI_DIR=/app/ui`) and the analysis worker in one Node process, plus PostgreSQL 18 built from source, which the server runs itself when `DATABASE_URL` is unset; distroless, user 65532, about 340 MB                                                                                                                                                                                   |
-| `qualor/scanner`        | `deploy/scanner/Dockerfile`        | the `qualor` CLI (entrypoint) with Node.js, a Temurin JRE 17, git, Qualor's own sonarjs pass (eslint-plugin-sonarjs 2.0.4), its own HTML and CSS linters (stylelint 17.15, HTMLHint 1.9.2) and the pinned analyzers of `tools/analyzers/install.sh` (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy, Ruff, detekt, SwiftLint) with Trivy's vulnerability database; user `node`, about 3.5 GB (1.4 GB of it the database) |
-| `qualor/scanner-dotnet` | `deploy/scanner-dotnet/Dockerfile` | `qualor/scanner` plus the .NET 8 and .NET 10 SDKs, the bundled Roslynator analyzers and SonarAnalyzer.CSharp 9.32 of `tools/analyzers/install-dotnet.sh`, for C# projects; about 5.3 GB (about 1.8 GB more than `qualor/scanner`)                                                                                                                                                                                  |
+| Image                   | Dockerfile                         | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `qualor/server`         | `deploy/server/Dockerfile`         | the API, the web UI (`QUALOR_UI_DIR=/app/ui`) and the analysis worker in one Node process, plus PostgreSQL 18 built from source, which the server runs itself when `DATABASE_URL` is unset; distroless, user 65532, about 340 MB                                                                                                                                                                                                                                                                 |
+| `qualor/scanner`        | `deploy/scanner/Dockerfile`        | the `qualor` CLI (entrypoint) with Node.js, a Temurin JRE 17, git, Qualor's own sonarjs pass (eslint-plugin-sonarjs 2.0.4), its own HTML and CSS linters (stylelint 17.15, HTMLHint 1.9.2) and the pinned analyzers of `tools/analyzers/install.sh` (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy, Ruff, detekt, SwiftLint), cppcheck 2.22.0 for C and C++ (built from source; clang-tidy is not bundled) with Trivy's vulnerability database; user `node`, about 3.5 GB (1.4 GB of it the database) |
+| `qualor/scanner-dotnet` | `deploy/scanner-dotnet/Dockerfile` | `qualor/scanner` plus the .NET 8 and .NET 10 SDKs, the bundled Roslynator analyzers and SonarAnalyzer.CSharp 9.32 of `tools/analyzers/install-dotnet.sh`, for C# projects; about 5.3 GB (about 1.8 GB more than `qualor/scanner`)                                                                                                                                                                                                                                                                |
 
 `qualor/server` also carries the enterprise plugin (`/app/enterprise/plugin.js`, built from
 `enterprise/`) under its own licence, the Qualor Enterprise Licence in
@@ -336,7 +336,7 @@ All three images contain copyleft software. The scanner: OpenGrep and SpotBugs (
 (LGPL-2.1, inside detekt's jar), what OpenGrep's release binary links or bundles (GMP, GNU Readline,
 certifi), the MPL-2.0 and CDDL-1.0 Java libraries of SpotBugs and PMD, eslint-plugin-sonarjs
 (LGPL-3.0) and axe-core (MPL-2.0) in Qualor's own sonarjs pass, the MPL-2.0 Go modules compiled into
-Trivy and Gitleaks, the three MPL-2.0 crates compiled into Ruff, the Temurin JRE (GPL-2.0 with the
+Trivy and Gitleaks, the three MPL-2.0 crates compiled into Ruff, cppcheck (GPL-3.0-or-later, built in the image from its tag archive), the Temurin JRE (GPL-2.0 with the
 Classpath Exception), the JavaScriptCore/WebKit and TinyCC that Bun links into the `qualor` binary,
 and its Debian packages. `qualor/scanner-dotnet` adds one more, SonarAnalyzer.CSharp (LGPL-3.0), on
 top of everything the scanner already carries. The server: its Debian packages (glibc, the GCC
@@ -411,7 +411,7 @@ whether the source is still "complete" without them is a judgement call, and the
 The written offers in the NOTICE files remain, as a courtesy only.
 
 **Updating the sources.** Bumping OpenGrep, SpotBugs, PMD, Trivy, Gitleaks, Ruff or detekt in
-`tools/analyzers/install.sh`, Bun
+`tools/analyzers/install.sh`, cppcheck in `tools/analyzers/install-cppcheck.sh`, Bun
 in `cli/scripts/targets.ts`, or the Temurin base of `deploy/scanner/Dockerfile`, fails
 `tools/deploy/sources.test.ts` until `sources.json` has the new sources. Every entry of the bumped
 component has to be re-derived, not only its tag archive:
@@ -442,7 +442,14 @@ component has to be re-derived, not only its tag archive:
 - Ruff: `tools/analyzers/ruff-licences.mjs` regenerates `RUFF-DEPENDENCIES.txt` from the new
   release's `Cargo.lock` and fails on a licence outside its allowlist; re-derive the MPL-2.0 crate
   entries (`colored`, `option-ext`, `version-ranges`, unless the new `Cargo.lock` swaps one out) by
-  their new `Cargo.lock` checksums.
+  their new `Cargo.lock` checksums;
+- cppcheck: the tag archive only (`CPPCHECK_VERSION` and `CPPCHECK_SHA256` in
+  `install-cppcheck.sh`, the `cppcheck` entry of `sources.json`, and `CPPCHECK_VERSION` in
+  `packages/shared/src/rules/cfamily.ts`, which `tools/ci.test.ts` ties to the script). Check
+  `externals/` of the new archive for a library added or removed, and regenerate
+  `deploy/scanner/licenses/CPPCHECK-LICENSE.txt` from it (plan 9D Task 5 Step 5's command). The
+  docs print the version; `tools/deploy/cppcheck-notices.test.ts` fails until they name the new
+  one.
 
 Take each SHA-256 from a download you checked, then run `pnpm deploy:sources --index`. The Debian
 `.dsc` files are checked against the SHA-256 in Debian's `Sources` index, which
