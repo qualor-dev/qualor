@@ -102,9 +102,8 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(enginePriority('eslint')).toBeGreaterThan(enginePriority('sonarjs'));
   });
 
-  it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
-    // The whole alias table, strictly: every Phase 9 engine with an imported-SARIF twin (plans
-    // 9A-9D; go vet has none).
+  it('aliases every built-in engine that has an imported-SARIF twin, and no other', () => {
+    // The whole alias table, strictly: plans 8C-8F and every Phase 9 engine (9A-9D; go vet has none).
     expect(EXTERNAL_BUILTIN_ALIASES).toEqual({
       'ext-ruff': 'ruff',
       'ext-stylelint': 'stylelint',
@@ -118,6 +117,9 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       'ext-cppcheck': 'cppcheck',
       'ext-clang-tidy': 'clang-tidy',
     });
+  });
+
+  it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
     expect(rulesEquivalent(rule('ext-ruff:F401'), rule('ruff:F401'))).toBe(true);
