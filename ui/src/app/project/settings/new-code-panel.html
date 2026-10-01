@@ -1,0 +1,176 @@
+<section class="card panel" id="new-code">
+  <div class="panel-head">
+    <h2 tabindex="-1" i18n="@@project.settings.newCode">New code</h2>
+  </div>
+  <div class="panel-body">
+    <p class="hint" i18n="@@newCode.intro">
+      Issues and measures on new code count what changed since this point on the main branch.
+    </p>
+    <div role="status">
+      @if (announcement(); as message) {
+        <p class="alert alert-success">{{ message }}</p>
+      }
+    </div>
+    @if (error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    <div
+      class="choices"
+      role="radiogroup"
+      aria-label="New code definition"
+      i18n-aria-label="@@newCode.group"
+    >
+      <label class="choice-card" [class.checked]="form().choice === 'default'">
+        <input
+          type="radio"
+          name="new-code"
+          [checked]="form().choice === 'default'"
+          (change)="choose('default')"
+        />
+        <span class="choice-text">
+          <span class="choice-title" i18n="@@newCode.default"
+            >Default ({{ defaultDays }} days)</span
+          >
+          <span class="choice-hint" i18n="@@newCode.defaultHint"
+            >What Qualor uses when nothing is chosen.</span
+          >
+        </span>
+      </label>
+
+      <label class="choice-card" [class.checked]="form().choice === 'days'">
+        <input
+          type="radio"
+          name="new-code"
+          [checked]="form().choice === 'days'"
+          (change)="choose('days')"
+        />
+        <span class="choice-text">
+          <span class="choice-title" i18n="@@newCode.days">Last days</span>
+          <span class="choice-hint" i18n="@@newCode.daysHint"
+            >Code changed in the last number of days you set, from 1 to 3650.</span
+          >
+        </span>
+      </label>
+      @if (form().choice === 'days') {
+        <div class="field choice-extra">
+          <label for="new-code-days" i18n="@@newCode.daysLabel">Number of days</label>
+          <input
+            id="new-code-days"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            class="days-input"
+            [value]="form().days"
+            [attr.aria-invalid]="daysError() ? 'true' : null"
+            [attr.aria-describedby]="daysError() ? 'new-code-days-error' : null"
+            (input)="setDays($event)"
+          />
+          @if (daysError(); as message) {
+            <span id="new-code-days-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+      }
+
+      <label class="choice-card" [class.checked]="form().choice === 'previous_version'">
+        <input
+          type="radio"
+          name="new-code"
+          [checked]="form().choice === 'previous_version'"
+          (change)="choose('previous_version')"
+        />
+        <span class="choice-text">
+          <span class="choice-title" i18n="@@newCode.previousVersion"
+            >Since the previous version</span
+          >
+          <span class="choice-hint" i18n="@@newCode.previousVersionHint"
+            >Set project.version in qualor.yml so each release starts a new period.</span
+          >
+        </span>
+      </label>
+
+      <label class="choice-card" [class.checked]="form().choice === 'analysis'">
+        <input
+          type="radio"
+          name="new-code"
+          [checked]="form().choice === 'analysis'"
+          (change)="choose('analysis')"
+        />
+        <span class="choice-text">
+          <span class="choice-title" i18n="@@newCode.analysis">From a specific analysis</span>
+          <span class="choice-hint" i18n="@@newCode.analysisHint"
+            >Everything changed after one of the main branch's recent analyses.</span
+          >
+        </span>
+      </label>
+      @if (form().choice === 'analysis') {
+        <div class="field choice-extra">
+          <label for="new-code-analysis" i18n="@@newCode.analysisLabel">Analysis</label>
+          <select
+            id="new-code-analysis"
+            [attr.aria-invalid]="analysisError() ? 'true' : null"
+            [attr.aria-describedby]="analysisError() ? 'new-code-analysis-error' : null"
+            (change)="setAnalysis($event)"
+          >
+            <option value="" [selected]="form().analysisId === ''" i18n="@@newCode.analysisChoose">
+              Choose an analysis
+            </option>
+            @for (option of analysisOptions(); track option.id) {
+              <option [value]="option.id" [selected]="option.id === form().analysisId">
+                {{ option.label }}
+              </option>
+            }
+          </select>
+          @if (analysesFailed()) {
+            <span class="field-error" role="alert" i18n="@@newCode.analysesFailed"
+              >The analyses could not be loaded. Try again later.</span
+            >
+          }
+          @if (analysisError(); as message) {
+            <span id="new-code-analysis-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+      }
+    </div>
+
+    @if (canSeeBaseline()) {
+      @if (baselineView(); as b) {
+        <div class="baseline">
+          @if (b.revision) {
+            <p>
+              <ng-container i18n="@@newCode.baseline"
+                >New code is currently measured from analysis</ng-container
+              >{{ ' ' }}<code>{{ b.revision }}</code> · {{ b.date }}
+            </p>
+          } @else {
+            <p i18n="@@newCode.noBaseline">
+              No baseline yet: the main branch has no earlier analysis.
+            </p>
+          }
+          @if (b.fallback) {
+            <p class="alert alert-warn" i18n="@@newCode.warn.fallback">
+              No analysis has a version label yet, so the last 30 days are used. Set project.version
+              in qualor.yml.
+            </p>
+          }
+          @if (b.missing) {
+            <p class="alert alert-warn" i18n="@@newCode.warn.missing">
+              The baseline analysis is no longer available; the last 30 days are used.
+            </p>
+          }
+        </div>
+      }
+    }
+
+    <div class="actions">
+      <button
+        type="button"
+        class="btn btn-primary"
+        [disabled]="!dirty() || busy()"
+        (click)="save()"
+        i18n="@@newCode.save"
+      >
+        Save
+      </button>
+    </div>
+  </div>
+</section>

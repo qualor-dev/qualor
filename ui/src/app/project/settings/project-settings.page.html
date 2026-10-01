@@ -37,11 +37,13 @@
     </nav>
     <div class="settings-panels">
       @if (s.settings) {
-        <section class="card panel" id="new-code">
-          <div class="panel-head">
-            <h2 tabindex="-1" i18n="@@project.settings.newCode">New code</h2>
-          </div>
-        </section>
+        @if (project(); as p) {
+          <q-new-code-panel
+            [project]="p"
+            [canSeeBaseline]="canAnalyze()"
+            (saved)="store.reload()"
+          />
+        }
         <section class="card panel" id="gate">
           <div class="panel-head">
             <h2 tabindex="-1" i18n="@@project.settings.gate">Quality gate and profiles</h2>

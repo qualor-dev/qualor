@@ -12,6 +12,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { can } from '../../auth/permissions';
 import { SessionStore } from '../../auth/session';
 import { CurrentProject } from '../current-project';
+import { NewCodePanel } from './new-code-panel';
 
 /**
  * Project → Settings: one panel per setting, each shown for its own permission (spec §3). The
@@ -20,11 +21,12 @@ import { CurrentProject } from '../current-project';
  */
 @Component({
   selector: 'q-project-settings-page',
+  imports: [NewCodePanel],
   templateUrl: './project-settings.page.html',
   styleUrl: './project-settings.page.css',
 })
 export class ProjectSettingsPage {
-  private readonly store = inject(CurrentProject);
+  protected readonly store = inject(CurrentProject);
   private readonly session = inject(SessionStore);
   private readonly router = inject(Router);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -42,6 +44,12 @@ export class ProjectSettingsPage {
       delete: can(p.permissions, 'project.delete'),
       webhooks: this.session.orgCan(p.organizationId, 'org.webhooks.manage'),
     };
+  });
+
+  /** `project.analyze`: the new-code panel reads the baseline only for those who may analyse. */
+  protected readonly canAnalyze = computed(() => {
+    const p = this.project();
+    return p !== null && can(p.permissions, 'project.analyze');
   });
 
   constructor() {
