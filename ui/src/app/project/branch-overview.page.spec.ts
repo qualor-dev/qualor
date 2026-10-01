@@ -245,6 +245,16 @@ describe('BranchOverviewPage', () => {
     expect(text(sources?.querySelector('.rule-list li'))).toBe('eslint:eqeqeq 2');
   });
 
+  it('links to the Code tab for the branch it shows, the main branch and a merge request alike', async () => {
+    for (const id of ['b-main', 'b-mr']) {
+      const { fixture, root } = await render(id);
+      const link = [...root.querySelectorAll('a')].find((a) => text(a) === 'Browse code');
+      expect(link?.getAttribute('href')).toBe(`/projects/${PROJECT}/code?branch=${id}`);
+      expect(link?.querySelector('q-icon')).not.toBeNull();
+      fixture.destroy();
+    }
+  });
+
   it('switches the history to one metric', async () => {
     const { fixture, root } = await render();
     const buttons = [...root.querySelectorAll<HTMLButtonElement>('.segmented button')];

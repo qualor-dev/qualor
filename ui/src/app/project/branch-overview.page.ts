@@ -23,6 +23,7 @@ import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { GateBadge } from '../shared/gate-badge';
+import { Icon } from '../shared/icon';
 import { MeasurePipe } from '../shared/measure.pipe';
 import { branchView, findBranch, mainBranchView } from './branches';
 import { CurrentProject } from './current-project';
@@ -67,6 +68,7 @@ const SPARK_POINTS = 12;
     Delta,
     Distribution,
     GateBadge,
+    Icon,
     LabelPipe,
     Lens,
     LineChart,

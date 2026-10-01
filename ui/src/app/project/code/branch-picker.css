@@ -1,0 +1,4 @@
+.branch-picker select {
+  min-width: 12rem;
+  max-width: 24rem;
+}

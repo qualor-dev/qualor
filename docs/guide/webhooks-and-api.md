@@ -2,9 +2,10 @@
 
 ## Webhooks
 
-**Settings → Webhooks** (org admins) creates a webhook for every project of the organisation. A
-webhook for one project only is created through the API, with `POST /api/v0/webhooks` and
-`projectId`. You choose the events:
+**Settings → Webhooks** (org admins) creates a webhook with **New webhook**. Its **Applies to**
+field is **All projects** or one project. A webhook for one project is also listed under
+**Project → Settings → Webhooks**, where **New webhook** creates one for that project. Through the
+API, send `projectId` to `POST /api/v0/webhooks` for a single project. You choose the events:
 
 | Event | Sent when |
 |---|---|
@@ -38,14 +39,17 @@ function verify(rawBody, headers, secret, maxAgeSeconds = 300) {
 }
 ```
 
-- Qualor generates the secret (`whsec_…`) and shows it **once**, when the webhook is created. Replace
-  it with `POST /api/v0/webhooks/{id}/regenerate-secret`.
+- Qualor generates the secret (`whsec_…`) and shows it **once**, when the webhook is created. To replace
+  it, press **Rotate secret** on the webhook (API: `POST /api/v0/webhooks/{id}/regenerate-secret`).
+  The old secret stops signing at once, so update the receiver with the new one, which is shown
+  once.
 - Each attempt has 10 s to complete. A delivery gets 7 attempts with exponential backoff (1, 2, 4, 8,
   16, 32 minutes). Only a 2xx answer counts as success, and redirects are not followed.
 - In the UI, each webhook shows its last 20 deliveries as a strip (delivered above the line, failed
   below it, pending on it) with the share delivered; **Recent deliveries** lists them with each one's
-  status, response code and the first 1 KiB of the answer. Deliveries are kept 30 days. Resend one
-  with `POST /api/v0/webhooks/{id}/deliveries/{deliveryId}/redeliver`.
+  status, response code and the first 1 KiB of the answer. Deliveries are kept 30 days. **Refresh**
+  reloads the list. **Send again** on a delivery sends it once more (API:
+  `POST /api/v0/webhooks/{id}/deliveries/{deliveryId}/redeliver`).
 - Webhook URLs must be `https` and resolve to public addresses. To allow `http` or internal
   receivers (a chat bot on the intranet, say), an operator sets the instance setting in PostgreSQL:
 

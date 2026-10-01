@@ -371,6 +371,24 @@ describe('ProjectsPage', () => {
     expect(button.getAttribute('aria-disabled')).toBeNull();
   });
 
+  it('announces the notice passed in the navigation state (a deleted project)', async () => {
+    server.on('GET', '/api/v0/projects', { body: page([]) });
+    await TestBed.inject(Router).navigate(['/projects'], {
+      state: { notice: 'Project Payments deleted.' },
+    });
+    const { root } = await render();
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(
+      'Project Payments deleted.',
+    );
+  });
+
+  it('shows no notice without one in the navigation state', async () => {
+    server.on('GET', '/api/v0/projects', { body: page([]) });
+    await TestBed.inject(Router).navigate(['/projects']);
+    const { root } = await render();
+    expect(root.querySelector('[role="status"] .alert')).toBeNull();
+  });
+
   it('offers project creation to organization admins only', async () => {
     TestBed.resetTestingModule();
     configure(false);

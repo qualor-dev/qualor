@@ -34,6 +34,8 @@ export const ICONS = {
   'log-out': {
     d: ['M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3', 'M10 16l-4-4 4-4', 'M6 12h10'],
   },
+  folder: { d: ['M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'] },
+  file: { d: ['M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', 'M14 3v5h5'] },
   key: { d: ['M10.5 13.5L20 4', 'M16 8l2.5 2.5', 'M13.5 10.5L16 13'], c: [[7.5, 16.5, 3.5]] },
 } as const satisfies Record<
   string,

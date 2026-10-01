@@ -21,6 +21,13 @@ export const MERGE_REQUEST = { id: '42', source: 'feature/refund-limits' };
 /** An issue message and a rule description that carry HTML; both must stay text. */
 export const XSS_MESSAGE = 'Avoid <img src=x onerror="alert(1)"> in refund notes';
 export const XSS_RULE_TEXT = '<script>alert("rule")</script>';
+/**
+ * The open issue of Payments API with three related locations (seed.ts): src/refunds/limits.ts:10,
+ * src/payments/gateway.ts:88–92 and src/payments/gateway.ts:140.
+ */
+export const RELATED_ISSUE_MESSAGE = 'Detected eval() with a non-literal argument.';
+/** Payments API's own webhook and second analysis token (seed.ts). */
+export const PROJECT_WEBHOOK_URL = 'https://hooks.example.com/payments';
 
 export const STORAGE_STATE = '../.tmp/playwright/admin.json';
 

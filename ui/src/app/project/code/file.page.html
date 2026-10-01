@@ -1,0 +1,181 @@
+<div class="file-head">
+  <nav class="crumbs mono" aria-label="File path" i18n-aria-label="@@file.crumbs">
+    <a
+      class="crumb-root"
+      [routerLink]="dirLink('').commands"
+      [queryParams]="dirLink('').queryParams"
+      >{{ projectName() }}</a
+    >
+    @for (c of crumbs(); track c.dir) {
+      <span class="crumb-sep" aria-hidden="true">/</span>
+      <a [routerLink]="dirLink(c.dir).commands" [queryParams]="dirLink(c.dir).queryParams">{{
+        c.name
+      }}</a>
+    }
+    <span class="crumb-sep" aria-hidden="true">/</span>
+    <span class="crumb-file" aria-current="page">{{ name() }}</span>
+  </nav>
+  <p class="file-meta">
+    @if (detail(); as d) {
+      <span class="file-lang">{{ d.language }}</span>
+      @if (d.kind === 'test') {
+        <span class="badge badge-tag" i18n="@@file.tag.test">test</span>
+      } @else {
+        <span class="badge badge-tag" i18n="@@file.tag.main">main</span>
+      }
+    }
+    <a
+      class="issues-in-file"
+      [routerLink]="['/projects', projectId(), 'issues']"
+      [queryParams]="issuesParams()"
+      i18n="@@file.issuesLink"
+      >Issues in this file</a
+    >
+  </p>
+</div>
+
+@if (failure(); as message) {
+  <section class="card panel">
+    <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
+  </section>
+} @else if (notFound()) {
+  <section class="card panel">
+    <div class="empty-state">
+      <img src="art/empty.webp" alt="" width="900" height="675" />
+      <p i18n="@@file.notFound">This file is not in the branch's latest analysis.</p>
+      <a
+        [routerLink]="dirLink(dir()).commands"
+        [queryParams]="dirLink(dir()).queryParams"
+        i18n="@@file.notFound.link"
+        >Back to its directory</a
+      >
+    </div>
+  </section>
+} @else if (detail(); as d) {
+  <div class="file" [class.reloading]="file.isLoading()">
+    <section class="card panel kpi-strip file-tiles" aria-labelledby="file-tiles-heading">
+      <h2 id="file-tiles-heading" class="visually-hidden" i18n="@@file.measures">Measures</h2>
+      @for (t of tiles(); track t.key) {
+        <div class="kpi" [attr.data-tile]="t.key">
+          <span class="kpi-label">{{ t.label }}</span>
+          <span class="kpi-value">{{ t.value }}</span>
+        </div>
+      }
+    </section>
+
+    <section #mapPanel class="card panel map-panel" aria-labelledby="map-heading">
+      <div class="panel-head">
+        <h2 id="map-heading" i18n="@@file.map">Line map</h2>
+      </div>
+      <div class="panel-body">
+        @if (map(); as m) {
+          <q-line-map [map]="m" [highlight]="highlight()" (openIssue)="openIssue($event)" />
+        }
+        <p class="map-caption" i18n="@@file.map.caption">Source code stays in your repository.</p>
+      </div>
+    </section>
+
+    <div class="file-lists">
+      <section class="card panel" aria-labelledby="dups-heading">
+        <div class="panel-head">
+          <h2 id="dups-heading" i18n="@@file.dups">Duplicated blocks</h2>
+        </div>
+        <div class="panel-body">
+          @if (d.duplications.length === 0) {
+            <p class="muted none" i18n="@@file.dups.none">No duplicated blocks in this file.</p>
+          } @else {
+            <ul class="dups">
+              @for (b of d.duplications; track $index) {
+                <li>
+                  <a
+                    class="dup-here"
+                    [routerLink]="[]"
+                    queryParamsHandling="preserve"
+                    [fragment]="'L' + b.startLine"
+                    i18n="@@file.dups.lines"
+                    >Lines {{ b.startLine }}–{{ b.endLine }}</a
+                  >&ngsp;<span
+                    class="dup-arrow"
+                    role="img"
+                    aria-label="duplicated in"
+                    i18n-aria-label="@@file.dups.with"
+                    >↔</span
+                  >&ngsp;
+                  @for (o of b.others; track $index; let last = $last) {
+                    <a
+                      class="dup-other"
+                      [routerLink]="otherLink(o.path, o.startLine).commands"
+                      [queryParams]="otherLink(o.path, o.startLine).queryParams"
+                      [fragment]="otherLink(o.path, o.startLine).fragment"
+                      ><span class="mono">{{ o.path }}</span
+                      >&ngsp;{{ o.startLine }}–{{ o.endLine }}</a
+                    >{{ last ? '' : ', ' }}
+                  }
+                  @if (b.othersTotal > b.others.length) {
+                    &ngsp;<span class="muted" i18n="@@file.dups.more"
+                      >+{{ b.othersTotal - b.others.length }} more</span
+                    >
+                  }
+                </li>
+              }
+            </ul>
+          }
+          @if (d.duplicationsTruncated) {
+            <p class="note" i18n="@@file.dups.truncated">Only the first blocks are listed.</p>
+          }
+        </div>
+      </section>
+
+      <section class="card panel" aria-labelledby="file-issues-heading">
+        <div class="panel-head">
+          <h2 id="file-issues-heading" i18n="@@file.issues">Issues</h2>
+        </div>
+        @if (issues().length === 0) {
+          <div class="panel-body">
+            <p class="muted none" i18n="@@file.issues.none">No issues in this file.</p>
+          </div>
+        } @else {
+          <div class="panel-scroll">
+            <table class="issues-table">
+              <thead>
+                <tr>
+                  <th scope="col" class="num" i18n="@@file.issues.line">Line</th>
+                  <th scope="col" i18n="@@file.issues.severity">Severity</th>
+                  <th scope="col" i18n="@@file.issues.message">Message</th>
+                  <th scope="col" i18n="@@file.issues.rule">Rule</th>
+                  <th scope="col" i18n="@@file.issues.status">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (i of issues(); track i.id) {
+                  <tr [class.on-line]="i.startLine !== null && i.startLine === highlight()">
+                    <td class="num">{{ i.startLine ?? '—' }}</td>
+                    <td class="nowrap">
+                      <span class="badge badge-{{ i.severity }}">{{
+                        i.severity | label: 'severity'
+                      }}</span>
+                    </td>
+                    <td>
+                      <a
+                        class="issue-link"
+                        [routerLink]="['/projects', projectId(), 'issues', i.id]"
+                        >{{ i.message }}</a
+                      >
+                    </td>
+                    <td class="mono rule">{{ i.ruleKey }}</td>
+                    <td class="nowrap">{{ i.status | label: 'status' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+        @if (d.issuesTruncated) {
+          <p class="note" i18n="@@file.issues.truncated">Only the first 500 issues are listed.</p>
+        }
+      </section>
+    </div>
+  </div>
+} @else if (file.isLoading()) {
+  <div class="card panel file-placeholder" aria-busy="true"></div>
+}

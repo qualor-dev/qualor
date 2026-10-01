@@ -9908,7 +9908,46 @@
                       "type": "string"
                     },
                     "snippet": {},
-                    "secondaryLocations": {},
+                    "secondaryLocations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "startLine": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "startColumn": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "endLine": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "endColumn": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "message": {
+                            "type": "string",
+                            "maxLength": 4000
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "startLine"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "firstSeenAnalysisId": {
                       "anyOf": [
                         {
@@ -10333,7 +10372,46 @@
                       "type": "string"
                     },
                     "snippet": {},
-                    "secondaryLocations": {},
+                    "secondaryLocations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "startLine": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "startColumn": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "endLine": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "endColumn": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "message": {
+                            "type": "string",
+                            "maxLength": 4000
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "startLine"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "firstSeenAnalysisId": {
                       "anyOf": [
                         {
@@ -10798,7 +10876,46 @@
                       "type": "string"
                     },
                     "snippet": {},
-                    "secondaryLocations": {},
+                    "secondaryLocations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "startLine": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "startColumn": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "endLine": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "endColumn": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "message": {
+                            "type": "string",
+                            "maxLength": 4000
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "startLine"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "firstSeenAnalysisId": {
                       "anyOf": [
                         {

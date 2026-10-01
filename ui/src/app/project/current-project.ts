@@ -46,8 +46,21 @@ export class CurrentProject {
     this.id.set(id);
   }
 
+  /**
+   * Lets go of the project, after it was deleted: no request for it fires again, and the frame
+   * can no longer show it.
+   */
+  forget(): void {
+    this.id.set(null);
+  }
+
   showBranch(branch: BranchView | null): void {
     this.shownBranch.set(branch);
+  }
+
+  /** Reads the project again, after a panel changed it. */
+  reload(): void {
+    this.project.reload();
   }
 
   /** The caller's permissions on project `id`, or undefined until it has loaded. */

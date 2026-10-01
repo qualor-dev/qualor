@@ -4952,7 +4952,14 @@ export interface paths {
                             updatedAt: string;
                             fingerprint: string;
                             snippet: unknown;
-                            secondaryLocations: unknown;
+                            secondaryLocations: {
+                                path: string;
+                                startLine: number;
+                                startColumn?: number;
+                                endLine?: number;
+                                endColumn?: number;
+                                message?: string;
+                            }[];
                             firstSeenAnalysisId: string | null;
                             lastSeenAnalysisId: string | null;
                             resolvedBy: {
@@ -5080,7 +5087,14 @@ export interface paths {
                             updatedAt: string;
                             fingerprint: string;
                             snippet: unknown;
-                            secondaryLocations: unknown;
+                            secondaryLocations: {
+                                path: string;
+                                startLine: number;
+                                startColumn?: number;
+                                endLine?: number;
+                                endColumn?: number;
+                                message?: string;
+                            }[];
                             firstSeenAnalysisId: string | null;
                             lastSeenAnalysisId: string | null;
                             resolvedBy: {
@@ -5244,7 +5258,14 @@ export interface paths {
                             updatedAt: string;
                             fingerprint: string;
                             snippet: unknown;
-                            secondaryLocations: unknown;
+                            secondaryLocations: {
+                                path: string;
+                                startLine: number;
+                                startColumn?: number;
+                                endLine?: number;
+                                endColumn?: number;
+                                message?: string;
+                            }[];
                             firstSeenAnalysisId: string | null;
                             lastSeenAnalysisId: string | null;
                             resolvedBy: {

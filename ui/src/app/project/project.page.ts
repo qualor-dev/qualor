@@ -7,6 +7,7 @@ import { Icon } from '../shared/icon';
 import { type Crumb, PageHeader } from '../shared/page-header';
 import { mergeRequestLink, notFound } from './branches';
 import { CurrentProject } from './current-project';
+import { settingsVisible } from './settings/settings-visibility';
 
 /**
  * A project's frame on the ink page band (spec §7.1): its name with the main branch's gate, the
@@ -50,6 +51,17 @@ export class ProjectPage {
   protected readonly showAccess = computed(() => {
     const project = this.current();
     return project !== null && this.session.orgCan(project.organizationId, 'org.members.read');
+  });
+  /**
+   * The Settings tab: for whoever holds a project setting permission, or the organisation's
+   * `org.webhooks.manage` (the Webhooks panel).
+   */
+  protected readonly showSettings = computed(() => {
+    const p = this.current();
+    return (
+      p !== null &&
+      settingsVisible(p.permissions, this.session.orgCan(p.organizationId, 'org.webhooks.manage'))
+    );
   });
   /** The main branch's open issues, the Issues tab's count. */
   protected readonly issueCount = computed(() => {

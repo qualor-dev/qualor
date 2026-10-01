@@ -1,0 +1,62 @@
+<section class="card panel danger" id="danger">
+  <div class="panel-head">
+    <h2 tabindex="-1" i18n="@@project.settings.danger">Danger zone</h2>
+  </div>
+  <div class="panel-body">
+    <p class="hint" i18n="@@projectDelete.intro">
+      Deleting a project removes it for good. This cannot be undone.
+    </p>
+    <div class="actions">
+      <button type="button" class="btn btn-danger" (click)="open()">
+        <ng-container i18n="@@projectDelete.open">Delete project</ng-container>
+      </button>
+    </div>
+  </div>
+</section>
+
+<dialog
+  #dialog
+  id="delete-project"
+  class="dialog"
+  aria-labelledby="delete-project-title"
+  aria-describedby="delete-project-text"
+>
+  <form novalidate (submit)="confirm($event)">
+    <div class="dialog-head">
+      <h2 id="delete-project-title" i18n="@@projectDelete.title">Delete the project</h2>
+    </div>
+    <div class="dialog-body">
+      @if (error(); as message) {
+        <p class="alert alert-error" role="alert">{{ message }}</p>
+      }
+      <p id="delete-project-text" i18n="@@projectDelete.goes">
+        Branches and merge requests, analyses, issues and their history, analysis tokens and project
+        webhooks.
+      </p>
+      <div class="field">
+        <label for="delete-confirm-key" i18n="@@projectDelete.typeKey"
+          >Type the project key <code>{{ project().key }}</code> to confirm</label
+        >
+        <input
+          id="delete-confirm-key"
+          autofocus
+          autocomplete="off"
+          spellcheck="false"
+          [value]="typed()"
+          (input)="setTyped($event)"
+        />
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" (click)="close()" i18n="@@dialog.cancel">Cancel</button>
+      <button
+        type="submit"
+        class="btn btn-danger-solid"
+        [attr.aria-disabled]="matches() && !busy() ? null : true"
+        i18n="@@projectDelete.confirm"
+      >
+        Delete project
+      </button>
+    </div>
+  </form>
+</dialog>

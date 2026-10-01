@@ -1,0 +1,13 @@
+:host {
+  display: block;
+}
+
+.setting-field > .name-input {
+  max-width: 22rem;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}

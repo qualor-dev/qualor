@@ -1,0 +1,118 @@
+/* Not .code-head: that global class is the ink code window of styles.css. */
+.tree-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.crumbs a {
+  text-decoration: none;
+}
+.crumbs a:hover {
+  text-decoration: underline;
+}
+.crumbs [aria-current='page'] {
+  font-weight: 600;
+}
+.crumb-sep {
+  color: var(--text-muted);
+}
+.code-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 0 auto;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.panel > .alert {
+  margin: 16px;
+}
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 12rem;
+}
+.entry > q-icon {
+  flex: none;
+  color: var(--text-muted);
+}
+.entry-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lang-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+button.sort {
+  all: unset;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border-radius: 4px;
+}
+button.sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+th[aria-sort='ascending'] button.sort::after {
+  content: ' ▲';
+  font-size: 0.75em;
+}
+th[aria-sort='descending'] button.sort::after {
+  content: ' ▼';
+  font-size: 0.75em;
+}
+.cov {
+  display: inline-grid;
+  justify-items: end;
+  gap: 4px;
+}
+.cov-track {
+  display: block;
+  width: 4.5rem;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.cov-bar {
+  display: block;
+  height: 100%;
+  background: var(--border-strong);
+}
+.cov-bar[data-tone='a'] {
+  background: var(--rating-a);
+}
+.cov-bar[data-tone='b'] {
+  background: var(--rating-b);
+}
+.cov-bar[data-tone='c'] {
+  background: var(--rating-c);
+}
+.cov-bar[data-tone='d'] {
+  background: var(--rating-d);
+}
+.cov-bar[data-tone='e'] {
+  background: var(--rating-e);
+}
+.code-note {
+  margin: 0;
+  padding: 10px 16px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
