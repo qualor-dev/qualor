@@ -1,4 +1,4 @@
-import { ISSUE_KINDS, QUALITIES, SEVERITIES } from '@qualor/shared';
+import { ISSUE_KINDS, QUALITIES, SEVERITIES, secondaryLocation } from '@qualor/shared';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -81,7 +81,7 @@ export const issueDetailSchema = issueSchema.extend({
   }),
   fingerprint: z.string(),
   snippet: z.unknown(),
-  secondaryLocations: z.unknown(),
+  secondaryLocations: z.array(secondaryLocation),
   firstSeenAnalysisId: z.uuid().nullable(),
   lastSeenAnalysisId: z.uuid().nullable(),
   resolvedBy: z.object({ id: z.uuid(), username: z.string() }).nullable(),
@@ -243,7 +243,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
       },
       fingerprint: issue.fingerprint,
       snippet: issue.snippet ?? null,
-      secondaryLocations: issue.secondaryLocations,
+      secondaryLocations: issue.secondaryLocations as z.infer<typeof secondaryLocation>[],
       firstSeenAnalysisId: issue.firstSeenAnalysisId,
       lastSeenAnalysisId: issue.lastSeenAnalysisId,
       resolvedBy: resolver ?? null,
