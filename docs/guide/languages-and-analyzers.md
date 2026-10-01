@@ -13,6 +13,7 @@ size, complexity, duplication and coverage.
 | CSS, SCSS | **stylelint** 17.15, the project's JSON/YAML config or Qualor's default | `.css` or `.scss` files are in scope, run by the `qualor/scanner` image |
 | Kotlin | **detekt** 1.23.8 (Apache-2.0), your `detekt.yml` or detekt's default rule set with the settings detekt recommends for Jetpack Compose | `.kt` or `.kts` files are in scope, run by the `qualor/scanner` image |
 | Swift | **SwiftLint** 0.65.1 (MIT), your `.swiftlint.yml` or SwiftLint's default rules with a few adjustments | `.swift` files are in scope, run by the `qualor/scanner` image |
+| PHP | **PHPStan** 2.2 (MIT) at level 2, with Qualor's own configuration | .php files are in scope, run by the qualor/scanner image |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -21,8 +22,9 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, HTML and CSS; SCSS gets
-findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and external SARIF.
+detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, PHP, HTML and CSS; SCSS
+gets findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and external
+SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
 
@@ -325,6 +327,63 @@ Swift files get the same metrics as the other languages (lines of code, function
 cyclomatic and cognitive complexity) and count in duplication detection. `*Tests/**` folders
 are test files by default.
 
+## PHP (PHPStan)
+
+The `qualor/scanner` image runs PHPStan 2.2 (MIT) on your `.php` files, on Debian's PHP 8.2. It
+runs at **level 2**, which checks for undefined variables, calls with the wrong number of
+arguments, using the result of a call that returns nothing (`void`), calls on values that are not
+objects, and invalid PHPDoc. Raise the level to get stricter checks, from 0 to 10 or `max`:
+
+```yaml
+analyzers:
+  phpstan:
+    enabled: auto        # true, false, or auto: on when PHP files are in scope
+    level: 5             # 0-10 or max; default 2
+    memoryLimit: 2G      # PHPStan's --memory-limit; raise it for a big project
+    timeoutSeconds: 900  # optional
+```
+
+Qualor never reads your `phpstan.neon` (or `phpstan.neon.dist`) and never loads PHPStan
+extensions, bootstrap files or Composer's autoloader: they are PHP code that a merge request
+controls, and a scan must not run it. The level and the other settings come from `qualor.yml`.
+`@phpstan-ignore` comments in the code are honoured. PHPStan runs on a copy of your sources.
+
+**Install your dependencies before the scan.** PHPStan needs to know the classes your code
+extends and calls. Run `composer install --no-scripts --no-plugins` in the job first; that is
+enough. Qualor reads the PHP files in `vendor/` as data, to learn their symbols, and never runs
+them (not Composer's autoloader, scripts or plugins either). A project whose `composer.json`
+requires packages is skipped when `vendor/` is not installed, with the reason in the scan log;
+without that, every inherited class would give false findings. A project that requires no
+packages runs without `vendor/`. PHPStan is also skipped when the installed dependencies are
+larger than 1 GiB or hold more than 200,000 files, because reading part of them would flood the
+result with false findings. A custom `config.vendor-dir` in `composer.json` is followed.
+
+Qualor never reports "unknown class", "unknown method" or "unknown function" (and the matching
+property, constant, trait and interface checks). Whether a symbol is known depends on what your
+job installed and on framework magic that PHPStan understands only with extensions such as
+Larastan, which Qualor does not load. Run your own PHPStan for those checks.
+
+A file PHPStan cannot parse is left out of the analysis with a warning in the scan log, and
+PHPStan runs again on the rest, so one broken file does not hide the other findings. `.phtml` and
+`.inc` files are not analysed, only files whose name ends in `.php`, and neither are files larger
+than 1 MiB or reached through a symbolic link. PHPStan runs with `php -n` (no `php.ini`) and
+without `PHPRC`, `PHP_INI_SCAN_DIR`, `COMPOSER*`, `PHPSTAN_*` and `XDEBUG_*` in its environment.
+`QUALOR_PHPSTAN_PHAR` names another PHPStan phar (see [Configuration](./configuration.md)); it
+must be PHPStan 2.2.
+
+An issue's rule key is `phpstan:` and PHPStan's identifier, for example
+`phpstan:variable.undefined`.
+
+Qualor runs PHPStan itself, so if you imported your own PHPStan SARIF before, remove that import
+(`--sarif` or the `qualor.yml` `sarif:` entry). `phpstan` is a reserved engine id: a `sarif:`
+entry with `engine: phpstan` is a configuration error. A PHPStan SARIF you still import is
+reported as `ext-phpstan`, and each of its findings counts once with the built-in `phpstan`
+finding of the same rule on the same line.
+
+PHP files get the same metrics as the other languages (lines of code, functions, classes,
+cyclomatic and cognitive complexity) and count in duplication detection. `*Test.php` files are
+test files by default.
+
 ## Java (PMD and SpotBugs)
 
 - **PMD** reads the source. The default ruleset `qualor-default` is PMD's own
@@ -451,13 +510,13 @@ sarif:
 ```
 
 The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`,
-`detekt`, `swiftlint` and the others) are reserved: `engine: ruff` is a configuration error, and a
-SARIF file from a tool Qualor runs itself is reported under `ext-<tool>`. Don't import Ruff,
-stylelint, HTMLHint, detekt or SwiftLint SARIF any more: Qualor runs Ruff (see
+`detekt`, `swiftlint`, `phpstan` and the others) are reserved: `engine: ruff` is a configuration
+error, and a SARIF file from a tool Qualor runs itself is reported under `ext-<tool>`. Don't import
+Ruff, stylelint, HTMLHint, detekt, SwiftLint or PHPStan SARIF any more: Qualor runs Ruff (see
 [Python](#python-ruff)), stylelint and HTMLHint (see [CSS and SCSS](#css-and-scss-stylelint) and
 [HTML](#html-htmlhint)) and detekt (see [Kotlin](#kotlin-detekt)) and SwiftLint (see
-[Swift](#swift-swiftlint)) itself; a SARIF file you still import for one of them counts once with
-the built-in finding of the same code on the same line.
+[Swift](#swift-swiftlint)) and PHPStan (see [PHP](#php-phpstan)) itself; a SARIF file you still
+import for one of them counts once with the built-in finding of the same code on the same line.
 
 ## Coverage
 
@@ -471,6 +530,8 @@ coverage:
     - path: '**/target/site/jacoco/jacoco.xml'          # Maven + JaCoCo
       format: jacoco
     - path: '**/coverage.cobertura.xml'                 # .NET: coverlet / dotnet-coverage
+      format: cobertura
+    - path: coverage/cobertura.xml                      # PHPUnit: --coverage-cobertura coverage/cobertura.xml (needs pcov or Xdebug)
       format: cobertura
   pathPrefixes: []   # prefixes to strip or try when report paths do not match repository paths
 ```
@@ -487,7 +548,7 @@ minus the built-in excludes (`node_modules`, `dist`,
 Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs` and
 `site-packages`, and binary files), minus your own `sources.exclude`. Test files are recognised by
 `tests.include` (by default `*.test.*`, `*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`,
-`test_*.py`, `*_test.py`, `conftest.py`, `src/androidTest/`, `src/*Test/`). `src/*Test/` is meant
+`test_*.py`, `*_test.py`, `conftest.py`, `*Test.php`, `src/androidTest/`, `src/*Test/`). `src/*Test/` is meant
 for Kotlin Multiplatform's `commonTest` and `jvmTest`, but applies to every language: a Gradle
 `src/integrationTest` or `src/functionalTest` is test code too, and leaves lines of code,
 complexity, duplication and coverage.
