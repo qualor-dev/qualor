@@ -66,7 +66,6 @@
   "Lint/SafeNavigationChain",
   "Lint/SafeNavigationConsistency",
   "Lint/SafeNavigationWithEmpty",
-  "Lint/ScriptPermission",
   "Lint/SelfAssignment",
   "Lint/SendWithMixinArgument",
   "Lint/ShadowedArgument",

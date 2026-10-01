@@ -11,8 +11,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - Ruby: `.rb`, `.rake`, `.gemspec`, `.ru`, `Gemfile` and `Rakefile` are a language of their own
   (`ruby`) with metrics and duplication, and a new `rubocop` engine
   runs RuboCop 1.91 (MIT) on Ruby 4.0.7 from `qualor/scanner` with Qualor's own selection
-  (`qualor-default`: RuboCop's Lint and Security cops, minus a few that misfire without the
-  project's own configuration; the guide lists them). It never reads the project's `.rubocop.yml`;
+  (`qualor-default`: RuboCop's Lint and Security cops, minus a few that misfire in a Qualor
+  scan; the guide lists them). It never reads the project's `.rubocop.yml`;
   choose cops with `analyzers.rubocop.select` and `ignore`, and the parsed Ruby version with
   `targetRubyVersion`. A `ruby` quality profile is created for every organisation.
   `qualor import sonarqube` imports Ruby profiles where a RuboCop cop checks the same thing (three

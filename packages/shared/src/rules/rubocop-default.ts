@@ -43,6 +43,8 @@ export const RUBOCOP_DEFAULT_EXCLUDE: readonly string[] = [
   'Lint/UnderscorePrefixedVariableName',
   'Lint/UnusedBlockArgument',
   'Lint/UnusedMethodArgument',
+  // It judges file modes, which the checked copy the CLI scans does not keep (plan 9B, B9-12b).
+  'Lint/ScriptPermission',
 ];
 
 /** `Lint` of `Lint/UselessAssignment`; the whole string when it has no `/`. */

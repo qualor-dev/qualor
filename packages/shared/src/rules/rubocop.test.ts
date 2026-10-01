@@ -24,6 +24,16 @@ describe('rubocopSelection (config.md §6, plan 9B)', () => {
     expect(defaultKeys).not.toContain(RUBOCOP_SYNTAX_COP);
   });
 
+  it('leaves Lint/ScriptPermission out of qualor-default (the checked copy has no exec bit), but a user can select it', () => {
+    expect(RUBOCOP_DEFAULT_EXCLUDE).toContain('Lint/ScriptPermission');
+    expect(defaultKeys).not.toContain('Lint/ScriptPermission');
+    expect(rubocopSelection(['qualor-default'], [])).not.toContain('Lint/ScriptPermission');
+    expect(rubocopSelection(['qualor-default', 'Lint/ScriptPermission'], [])).toContain(
+      'Lint/ScriptPermission',
+    );
+    expect(rubocopSelection(['Lint'], [])).toContain('Lint/ScriptPermission');
+  });
+
   it('expands a department into its cops RuboCop enables by default, and takes a cop by name whatever its state', () => {
     const style = rubocopSelection(['Style'], []);
     expect(style.length).toBeGreaterThan(100);

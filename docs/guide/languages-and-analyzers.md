@@ -340,8 +340,8 @@ file names (ERB, `require`, plugins), and a scan must not run code from the chec
 on by a `# rubocop:enable` comment.
 
 `qualor-default` runs RuboCop's Lint and Security cops that RuboCop enables by default: the ones
-that find bugs and security problems, not style. It leaves out the 11 cops below, because they
-misfire without the project's own RuboCop configuration:
+that find bugs and security problems, not style. It leaves out the 12 cops below, because they
+misfire in a Qualor scan:
 
 - `Lint/CopDirectiveSyntax`, `Lint/MissingCopEnableDirective`,
   `Lint/RedundantCopDisableDirective` and `Lint/RedundantCopEnableDirective` judge your
@@ -349,6 +349,10 @@ misfire without the project's own RuboCop configuration:
 - `Lint/AmbiguousBlockAssociation`, `Lint/AssignmentInCondition`, `Lint/ConstantDefinitionInBlock`,
   `Lint/MissingSuper`, `Lint/UnderscorePrefixedVariableName`, `Lint/UnusedBlockArgument` and
   `Lint/UnusedMethodArgument` flag idioms that are normal in Rails callbacks, RSpec and DSL blocks.
+- `Lint/ScriptPermission` checks file permissions, which Qualor does not keep when it reads your
+  files, so it would flag every Ruby script with a `#!` line.
+
+Select any of them by name if you want it.
 
 A file that RuboCop cannot parse gets no findings (a syntax error is not reported as an issue).
 
