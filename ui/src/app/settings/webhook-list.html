@@ -286,7 +286,7 @@
             <div class="field">
               <label for="webhook-scope" i18n="@@webhooks.scope">Applies to</label>
               <select id="webhook-scope" [value]="scope()" (change)="setScope($event)">
-                <option value="" [selected]="scope() === ''" i18n="@@webhooks.scopeAll">
+                <option value="" [selected]="scope() === ''" i18n="@@webhooks.scopeAllOption">
                   All projects
                 </option>
                 @for (p of sortedProjects(); track p.id) {

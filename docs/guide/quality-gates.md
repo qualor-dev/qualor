@@ -157,8 +157,11 @@ On a branch's overview, **Browse code** opens the tab for that branch.
 
 A file's page shows its measures, its duplicated blocks and its issues, and a **Line map**: a strip
 for the whole file with four lanes, **Coverage**, **New code**, **Duplicated blocks** and **Issues,
-by severity**. Hover over or focus a mark to read what it is. Links from the issue list or the
-duplicated blocks jump to a line (the address ends in `#L<line>`).
+by severity**. Move the pointer over the map to read what is on each line, or press Tab to focus
+it and move line by line with the arrow keys (Page Up and Page Down jump further, Home and End go to
+the first and last line, Escape lets go). Click an issue's mark, or press Enter on its line, to open
+the issue. Links from the issue list or the duplicated blocks jump to a line (the address ends in
+`#L<line>`).
 
 **Source code stays in your repository.** Qualor keeps measures, line numbers and messages, never
 the text of your files. The map shows where things are, not the code itself; open the file in your
@@ -170,4 +173,5 @@ Some analyzers report an issue together with the other places that explain it, f
 that assigned a bad value. SARIF calls them related locations, and Qualor keeps the ones in the
 SARIF reports it receives. An issue that has some shows **Related locations** on its page: a
 numbered list in the analyzer's order, each with its message and a link to that file and line in the
-Code tab. An issue without any shows no such panel.
+Code tab. When there are more than five, the first five show and the rest wait behind **N more**.
+An issue without any shows no such panel.
