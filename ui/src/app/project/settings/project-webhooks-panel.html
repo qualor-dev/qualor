@@ -1,0 +1,22 @@
+<section class="card panel" id="webhooks">
+  <div class="panel-head">
+    <h2 #heading tabindex="-1" i18n="@@project.settings.webhooks">Webhooks</h2>
+    @if (canManage()) {
+      <button type="button" class="btn btn-primary" (click)="openCreate()">
+        <q-icon name="plus" /><ng-container i18n="@@webhooks.newOpen">New webhook</ng-container>
+      </button>
+    }
+  </div>
+  <div class="panel-body">
+    <p class="hint" i18n="@@projectWebhooks.intro">
+      Qualor posts to these only for this project. Webhooks for every project are in
+      <a routerLink="/settings/webhooks">Settings → Webhooks</a>.
+    </p>
+  </div>
+  <q-webhook-list
+    [organizationId]="project().organizationId"
+    [projectId]="project().id"
+    [canManage]="canManage()"
+    [focusFallback]="headingFocus"
+  />
+</section>

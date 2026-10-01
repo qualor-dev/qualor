@@ -99,7 +99,7 @@ describe('ProjectSettingsPage', () => {
   it('shows only Webhooks to a caller who holds org.webhooks.manage and no project setting', async () => {
     setup({ projectPermissions: ['project.read'], orgRole: 'admin' });
     const { root, navigate } = await render();
-    expect(texts(root, '.card.panel h2')).toEqual(['Webhooks']);
+    expect(texts(root, '.card.panel > .panel-head h2')).toEqual(['Webhooks']);
     expect(root.querySelector('.card.panel')?.id).toBe('webhooks');
     expect(navigate).not.toHaveBeenCalled();
   });

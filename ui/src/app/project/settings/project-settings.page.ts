@@ -17,6 +17,7 @@ import { MainBranchPanel } from './main-branch-panel';
 import { NewCodePanel } from './new-code-panel';
 import { DeleteProjectPanel } from './delete-project-panel';
 import { ProjectTokensPanel } from './project-tokens-panel';
+import { ProjectWebhooksPanel } from './project-webhooks-panel';
 
 /**
  * Project → Settings: one panel per setting, each shown for its own permission (spec §3). The
@@ -31,6 +32,7 @@ import { ProjectTokensPanel } from './project-tokens-panel';
     MainBranchPanel,
     NewCodePanel,
     ProjectTokensPanel,
+    ProjectWebhooksPanel,
   ],
   templateUrl: './project-settings.page.html',
   styleUrl: './project-settings.page.css',
