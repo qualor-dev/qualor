@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import data from '../../../rules/sonarqube.json' with { type: 'json' };
+import rubocopDefaultKeys from '../../../rules/rubocop-default-keys.json' with { type: 'json' };
+import rubocopKeys from '../../../rules/rubocop-keys.json' with { type: 'json' };
 import ruffDefaultKeys from '../../../rules/ruff-default-keys.json' with { type: 'json' };
 import ruffKeys from '../../../rules/ruff-keys.json' with { type: 'json' };
 import sonaranalyzerCsharpDefaultKeys from '../../../rules/sonaranalyzer-csharp-default-keys.json' with { type: 'json' };
@@ -27,6 +29,8 @@ const KEYS_FILES: Readonly<Record<string, readonly string[]>> = {
   'sonarjs-default-keys.json': sonarjsDefaultKeys,
   'ruff-keys.json': ruffKeys,
   'ruff-default-keys.json': ruffDefaultKeys,
+  'rubocop-keys.json': rubocopKeys,
+  'rubocop-default-keys.json': rubocopDefaultKeys,
 };
 
 export type ProfileLanguage = Exclude<Language, 'other'>;

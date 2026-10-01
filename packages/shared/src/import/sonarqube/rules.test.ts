@@ -5,6 +5,7 @@ import sonaranalyzerKeys from '../../../rules/sonaranalyzer-csharp-keys.json' wi
 import sonarjsDefaultKeys from '../../../rules/sonarjs-default-keys.json' with { type: 'json' };
 import sonarjsKeys from '../../../rules/sonarjs-keys.json' with { type: 'json' };
 import raw from '../../../rules/sonarqube.json' with { type: 'json' };
+import rubocopKeys from '../../../rules/rubocop-keys.json' with { type: 'json' };
 import { engineOf, loadSonarMapping, SONAR_MAPPING } from './rules';
 
 const table = (patch: Record<string, unknown>) =>
@@ -73,6 +74,73 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
         row.sonar.every((s) => s.startsWith('python:')),
         row.sonar.join(),
       ).toBe(true);
+    }
+  });
+
+  it('maps ruby to the ruby profile, governed by rubocop (plan 9B)', () => {
+    expect(SONAR_MAPPING.language('ruby')).toEqual({ language: 'ruby', engines: ['rubocop'] });
+  });
+
+  it('maps external_rubocop statuses one to one, for cops the pinned RuboCop has only', () => {
+    expect(SONAR_MAPPING.targets('external_rubocop:Lint/UselessAssignment')).toEqual([
+      {
+        key: 'rubocop:Lint/UselessAssignment',
+        relation: 'equivalent',
+        reviewed: true,
+        source: 'repository',
+      },
+    ]);
+    expect(SONAR_MAPPING.targets('external_rubocop:Rails/Output')).toEqual([]);
+    expect(SONAR_MAPPING.targets('ruby:S9999')).toEqual([]);
+  });
+
+  it('reads rubydre:S#### as the same RSPEC rule as ruby:S####', () => {
+    expect(SONAR_MAPPING.targets('rubydre:S1764')).toEqual(SONAR_MAPPING.targets('ruby:S1764'));
+    expect(SONAR_MAPPING.targets('ruby:S1764')).toContainEqual(
+      expect.objectContaining({
+        key: 'rubocop:Lint/BinaryOperatorWithIdenticalOperands',
+        source: 'table',
+      }),
+    );
+  });
+
+  it('knows which RuboCop targets qualor-default runs', () => {
+    expect(SONAR_MAPPING.runByBundledConfig('rubocop:Lint/UselessAssignment')).toBe(true);
+    expect(SONAR_MAPPING.runByBundledConfig('rubocop:Security/Eval')).toBe(true);
+    expect(SONAR_MAPPING.runByBundledConfig('rubocop:Style/AndOr')).toBe(false);
+    expect(SONAR_MAPPING.runByBundledConfig('rubocop:Lint/UnusedMethodArgument')).toBe(false);
+  });
+
+  it('names only cops the pinned RuboCop has in every ruby row, reviewed, with our own short reasons', () => {
+    const cops = new Set(rubocopKeys);
+    const rows = raw.rules.filter((r) => r.sonar.some((s) => s.startsWith('ruby:')));
+    expect(rows.length).toBeGreaterThanOrEqual(25);
+    for (const row of rows) {
+      const id = row.sonar.join();
+      expect(
+        row.sonar.every((s) => /^ruby:S\d+$/.test(s)),
+        id,
+      ).toBe(true);
+      for (const q of row.qualor) {
+        expect(q.startsWith('rubocop:'), q).toBe(true);
+        expect(cops.has(q.slice('rubocop:'.length)), q).toBe(true);
+      }
+      // Ruling B9-4: compared row by row, so committed reviewed.
+      expect(row.reviewed, id).toBe(true);
+      expect(row.reason.trim().length, id).toBeGreaterThan(0);
+      expect(row.reason.length, id).toBeLessThanOrEqual(120);
+      expect(row.reason, id).not.toMatch(/[\r\n]/);
+    }
+    // Pinned by plan.test.ts: one row qualor-default runs, one it does not, both equivalent.
+    // (ruby:S8423 replaces the brief's ruby:S1764, which the review found to be an overlap.)
+    for (const [sonar, cop] of [
+      ['ruby:S8423', 'rubocop:Lint/CircularArgumentReference'],
+      ['ruby:S7916', 'rubocop:Style/AndOr'],
+    ] as const) {
+      expect(rows.find((r) => r.sonar.includes(sonar))).toMatchObject({
+        qualor: [cop],
+        relation: 'equivalent',
+      });
     }
   });
 
@@ -251,11 +319,14 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     },
   );
 
-  it('ships every curated non-python entry unreviewed and every python entry reviewed', () => {
-    // python: rows were reviewed on 2026-10-01 (see the file's $comment); the rest await a person.
+  it('ships every curated entry unreviewed except the python and ruby entries, which are reviewed', () => {
+    // python: rows were reviewed on 2026-10-01 (see the file's $comment), ruby: rows by plan 9B
+    // (ruling B9-4); the rest await a person.
     for (const entry of raw.rules) {
-      const python = entry.sonar.every((s) => s.startsWith('python:'));
-      expect(entry.reviewed, entry.sonar.join(',')).toBe(python);
+      const reviewedLanguage = entry.sonar.every(
+        (s) => s.startsWith('python:') || s.startsWith('ruby:'),
+      );
+      expect(entry.reviewed, entry.sonar.join(',')).toBe(reviewedLanguage);
     }
   });
 
@@ -277,6 +348,7 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     squid: 'java',
     csharpsquid: 'cs',
     python: 'py',
+    ruby: 'ruby',
   };
 
   it("keeps every curated target, and every repository row's engine, to an engine of its SonarQube rule's language", () => {
