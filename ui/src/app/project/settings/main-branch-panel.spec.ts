@@ -69,6 +69,7 @@ describe('MainBranchPanel (spec §3.3)', () => {
     setup();
     const { root, fixture } = await render();
     expect(save(root).disabled).toBe(true);
+    expect(save(root).className).toBe('btn');
     type(field(root), '   ');
     await settle(fixture);
     expect(save(root).disabled).toBe(true);
@@ -78,6 +79,8 @@ describe('MainBranchPanel (spec §3.3)', () => {
     type(field(root), 'trunk');
     await settle(fixture);
     expect(save(root).disabled).toBe(false);
+    expect(save(root).classList).toContain('btn');
+    expect(save(root).classList).toContain('btn-primary');
   });
 
   it('sends the trimmed name, emits saved and announces the new main branch', async () => {

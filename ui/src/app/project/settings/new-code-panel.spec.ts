@@ -160,10 +160,13 @@ describe('NewCodePanel (spec §3.1)', () => {
     });
     const { root, fixture, saved } = await render();
     expect(save(root).disabled).toBe(true);
+    expect(save(root).className).toBe('btn');
     await pick(root, fixture, 1);
     type(root, '#new-code-days', '14');
     await settle(fixture);
     expect(save(root).disabled).toBe(false);
+    expect(save(root).classList).toContain('btn');
+    expect(save(root).classList).toContain('btn-primary');
     save(root).click();
     await settle(fixture);
     const [patch] = server.requestsTo('PATCH', `/api/v0/projects/${PROJECT}`);

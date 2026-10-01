@@ -95,6 +95,9 @@ describe('ProjectWebhooksPanel (spec §3.5)', () => {
       (b) => b.textContent?.trim() === 'New webhook',
     ) as HTMLButtonElement;
     expect(open).toBeDefined();
+    expect(open.classList.contains('btn')).toBe(true);
+    expect(open.classList.contains('btn-primary')).toBe(false);
+    expect(open.querySelector('q-icon')).not.toBeNull();
     open.click();
     await settle(fixture);
     expect(root.querySelector('dialog[open]')).not.toBeNull();

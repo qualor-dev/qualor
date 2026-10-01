@@ -37,7 +37,8 @@
         <div class="actions">
           <button
             type="button"
-            class="btn btn-primary"
+            class="btn"
+            [class.btn-primary]="dirty()"
             [disabled]="!dirty() || busy()"
             (click)="save()"
             i18n="@@mainBranch.save"

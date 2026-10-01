@@ -2,7 +2,7 @@
   <div class="panel-head">
     <h2 #heading tabindex="-1" i18n="@@project.settings.webhooks">Webhooks</h2>
     @if (canManage()) {
-      <button type="button" class="btn btn-primary" (click)="openCreate()">
+      <button type="button" class="btn" (click)="openCreate()">
         <q-icon name="plus" /><ng-container i18n="@@webhooks.newOpen">New webhook</ng-container>
       </button>
     }

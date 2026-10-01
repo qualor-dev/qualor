@@ -149,6 +149,7 @@ describe('GateProfilesPanel gate (spec §3.2)', () => {
       root.querySelector<HTMLAnchorElement>('a[href="/gates/' + G1 + '"]')?.textContent,
     ).toContain('View gate');
     expect(save(root).disabled).toBe(true);
+    expect(save(root).className).toBe('btn');
   });
 
   it('selects the project gate and points the link at it', async () => {
@@ -168,6 +169,8 @@ describe('GateProfilesPanel gate (spec §3.2)', () => {
     choose(gateSelect(root), G2);
     await settle(fixture);
     expect(save(root).disabled).toBe(false);
+    expect(save(root).classList).toContain('btn');
+    expect(save(root).classList).toContain('btn-primary');
     save(root).click();
     await settle(fixture);
     expect(server.requestsTo('PATCH', `/api/v0/projects/${PROJECT}`)[0]?.body).toEqual({

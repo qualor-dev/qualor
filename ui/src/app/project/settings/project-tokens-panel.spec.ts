@@ -91,7 +91,9 @@ describe('ProjectTokensPanel (spec §3.4)', () => {
     const head = section.querySelector('.panel-head')!;
     expect(head.querySelector('h2')?.textContent?.trim()).toBe('Analysis tokens');
     expect(head.querySelector('h2')?.getAttribute('tabindex')).toBe('-1');
-    expect(button(head, 'New token').classList.contains('btn-primary')).toBe(true);
+    expect(button(head, 'New token').classList.contains('btn')).toBe(true);
+    expect(button(head, 'New token').classList.contains('btn-primary')).toBe(false);
+    expect(button(head, 'New token').querySelector('q-icon')).not.toBeNull();
     expect(root.querySelectorAll('tbody tr[data-key]')).toHaveLength(2);
     const first = root.querySelector('tr[data-key="t1"]')!;
     expect(first.textContent).toContain('ci');

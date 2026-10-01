@@ -40,7 +40,8 @@
         <div class="actions">
           <button
             type="button"
-            class="btn btn-primary"
+            class="btn"
+            [class.btn-primary]="gateDirty()"
             [disabled]="!gateDirty() || busy()"
             (click)="saveGate()"
             i18n="@@gate.save"
