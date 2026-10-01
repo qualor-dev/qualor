@@ -173,6 +173,8 @@ export class WebhookList {
         this.announcement.set(null);
         this.deliveries.set({});
         this.deliveryRequests.clear();
+        // Whatever load-all was running is superseded, also when no organisation is left.
+        this.loadToken++;
         if (organizationId) void this.load(organizationId, projectId !== null);
       });
     });
@@ -200,6 +202,14 @@ export class WebhookList {
     await this.list.reset(organizationId);
     if (all) await this.list.loadRest(() => token === this.loadToken);
     if (token === this.loadToken) this.complete.set(true);
+  }
+
+  /** Reloads after a change; a project's panel then reads on to the last page again. */
+  private async refreshList(): Promise<void> {
+    await this.list.refresh();
+    if (this.projectId() === null) return;
+    const token = this.loadToken;
+    await this.list.loadRest(() => token === this.loadToken);
   }
 
   /** The tag of a webhook's scope: the project's name, or null when the project is gone. */
@@ -289,7 +299,7 @@ export class WebhookList {
         this.announcement.set(
           $localize`:@@webhooks.created:Webhook added. Copy its secret now: it is shown only this once.`,
         );
-        await this.list.refresh();
+        await this.refreshList();
       },
       (err) => this.createError.set(problemMessage(err)),
     );
@@ -360,7 +370,7 @@ export class WebhookList {
       await done(
         this.api.client.DELETE('/api/v0/webhooks/{id}', { params: { path: { id: webhook.id } } }),
       );
-      await this.list.refresh();
+      await this.refreshList();
       this.deliveryRequests.delete(webhook.id);
       this.deliveries.update((all) =>
         Object.fromEntries(Object.entries(all).filter(([id]) => id !== webhook.id)),

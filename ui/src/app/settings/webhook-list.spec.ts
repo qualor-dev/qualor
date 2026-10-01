@@ -225,25 +225,26 @@ describe('WebhooksPage: projects of the scope', () => {
 });
 
 describe('WebhookList: reading every page of a project', () => {
-  it('does not hang when a refresh runs while the last pages are still coming', async () => {
+  it('does not hang when a refresh is still running as the last page comes', async () => {
     const server = setup();
-    let secondCalls = 0;
-    let release: () => void = () => undefined;
+    let firstCalls = 0;
+    let pageTwoCalls = 0;
+    let releasePageTwo: () => void = () => undefined;
+    let releaseRefresh: () => void = () => undefined;
+    const one = webhook('w1', 'https://a.example.com/', { projectId: BILLING });
+    const two = webhook('w2', 'https://b.example.com/', { projectId: PAYMENTS });
     server.on('GET', '/api/v0/webhooks', (request) => {
-      if (request.query.get('cursor') !== 'c2') {
-        return {
-          body: {
-            items: [webhook('w1', 'https://a.example.com/', { projectId: PAYMENTS })],
-            nextCursor: 'c2',
-          },
-        };
+      if (request.query.get('cursor') === 'c2') {
+        pageTwoCalls++;
+        const reply = { body: page([two]) };
+        if (pageTwoCalls > 1) return reply;
+        return new Promise((resolve) => (releasePageTwo = () => resolve(reply)));
       }
-      secondCalls++;
-      const reply = {
-        body: page([webhook('w2', 'https://b.example.com/', { projectId: PAYMENTS })]),
-      };
-      if (secondCalls > 1) return reply;
-      return new Promise((resolve) => (release = () => resolve(reply)));
+      firstCalls++;
+      const reply = { body: { items: [one], nextCursor: 'c2' } };
+      // The refresh after the creation (the second cursor-less read) is held.
+      if (firstCalls !== 2) return reply;
+      return new Promise((resolve) => (releaseRefresh = () => resolve(reply)));
     });
     server.on('POST', '/api/v0/webhooks', {
       status: 201,
@@ -255,14 +256,51 @@ describe('WebhookList: reading every page of a project', () => {
     const fixture = render({ projectId: PAYMENTS });
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
-    // The second page is held: the list is not complete, so it does not claim to be empty.
+    // Nothing of this project is on the first page: the list is not complete, so it says nothing.
+    expect(root.querySelectorAll('section')).toHaveLength(0);
     expect(root.textContent).not.toContain('No webhooks for this project yet.');
+    expect(root.textContent).not.toContain('Load more');
     fillAndSubmit(root, 'https://ci.example.com/hook');
     await settle(fixture);
-    release();
+    expect(firstCalls).toBe(2);
+    // The last page answers while the refresh is still running: the loop must wait, not spin.
+    releasePageTwo();
+    await settle(fixture);
+    expect(root.textContent).not.toContain('No webhooks for this project yet.');
+    releaseRefresh();
     await settle(fixture);
     const urls = [...root.querySelectorAll('section .webhook-url')].map((e) => e.textContent);
-    expect(urls).toEqual(['https://a.example.com/', 'https://b.example.com/']);
+    expect(urls).toEqual(['https://b.example.com/']);
+    expect(root.textContent).not.toContain('Load more');
+  }, 5000);
+
+  it('reads on to the last page again after a change leaves a next page', async () => {
+    const server = setup();
+    let created = false;
+    server.on('GET', '/api/v0/webhooks', (request) => {
+      const mine = (id: string) =>
+        webhook(id, `https://${id}.example.com/`, { projectId: PAYMENTS });
+      if (request.query.get('cursor') === 'c2') return { body: page([mine('w2')]) };
+      return { body: created ? { items: [mine('w1')], nextCursor: 'c2' } : page([mine('w1')]) };
+    });
+    server.on('POST', '/api/v0/webhooks', () => {
+      created = true;
+      return {
+        status: 201,
+        body: {
+          ...webhook('w9', 'https://ci.example.com/hook', { projectId: PAYMENTS }),
+          secret: 's',
+        },
+      };
+    });
+    const fixture = render({ projectId: PAYMENTS });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelectorAll('section')).toHaveLength(1);
+    fillAndSubmit(root, 'https://ci.example.com/hook');
+    await settle(fixture);
+    const urls = [...root.querySelectorAll('section .webhook-url')].map((e) => e.textContent);
+    expect(urls).toEqual(['https://w1.example.com/', 'https://w2.example.com/']);
   });
 });
 
