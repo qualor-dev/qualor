@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import { engineMapping, filelessHash, parseConfig } from '@qualor/shared';
+import { BUILTIN_EXCLUDES, engineMapping, filelessHash, parseConfig } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import {
   ANALYZER_OUTPUT_DIR,
@@ -97,52 +97,7 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
         '--list-all-pkgs',
         '--ignorefile',
         work('trivyignore'),
-        '--skip-dirs',
-        '**/node_modules',
-        '--skip-dirs',
-        '**/.git',
-        '--skip-dirs',
-        '**/dist',
-        '--skip-dirs',
-        '**/build',
-        '--skip-dirs',
-        '**/target',
-        '--skip-dirs',
-        '**/vendor',
-        '--skip-dirs',
-        '**/obj',
-        '--skip-dirs',
-        '**/bin/Debug',
-        '--skip-dirs',
-        '**/bin/Release',
-        '--skip-dirs',
-        '**/.venv',
-        '--skip-dirs',
-        '**/venv',
-        '--skip-dirs',
-        '**/.tox',
-        '--skip-dirs',
-        '**/.nox',
-        '--skip-dirs',
-        '**/__pycache__',
-        '--skip-dirs',
-        '**/__pypackages__',
-        '--skip-dirs',
-        '**/.eggs',
-        '--skip-dirs',
-        '**/site-packages',
-        '--skip-dirs',
-        '**/Pods',
-        '--skip-dirs',
-        '**/Carthage',
-        '--skip-dirs',
-        '**/.build',
-        '--skip-dirs',
-        '**/CMakeFiles',
-        '--skip-dirs',
-        '**/cmake-build-*',
-        '--skip-dirs',
-        '**/_deps',
+        ...skipDirs().flatMap((d) => ['--skip-dirs', d]),
         '--timeout',
         '600s',
         '--format',
@@ -161,7 +116,14 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     });
     expect(typeof transform).toBe('function');
     expect(dropEnv).toBe(isTrivyVariable);
-    expect(skipDirs()).toHaveLength(23);
+    expect(skipDirs()).toEqual(
+      BUILTIN_EXCLUDES.filter((g) => g.startsWith('**/') && g.endsWith('/**')).map((g) =>
+        g.slice(0, -3),
+      ),
+    );
+    for (const d of ['**/CMakeFiles', '**/cmake-build-*', '**/_deps', '**/node_modules']) {
+      expect(skipDirs()).toContain(d);
+    }
   });
 
   it('passes a root .trivyignore, and warns about a database older than 14 days', async () => {

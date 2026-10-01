@@ -110,6 +110,11 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       'ext-detekt': 'detekt',
       'ext-swiftlint': 'swiftlint',
     });
+    expect(Object.keys(EXTERNAL_BUILTIN_ALIASES)).toEqual(
+      expect.arrayContaining(['ext-cppcheck', 'ext-clang-tidy']),
+    );
+    expect(EXTERNAL_BUILTIN_ALIASES).toHaveProperty('ext-cppcheck', 'cppcheck');
+    expect(EXTERNAL_BUILTIN_ALIASES).toHaveProperty('ext-clang-tidy', 'clang-tidy');
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
     expect(rulesEquivalent(rule('ext-ruff:F401'), rule('ruff:F401'))).toBe(true);
