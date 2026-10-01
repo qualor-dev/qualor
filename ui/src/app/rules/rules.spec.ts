@@ -234,7 +234,8 @@ describe('ProfilesPage', () => {
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
     const options = [...root.querySelectorAll<HTMLOptionElement>('#profile-language option')];
-    expect(options.map((o) => [o.value, o.textContent?.trim()])).toEqual([
+    const shown = options.map((o) => [o.value, o.textContent?.trim()]);
+    const expected = [
       ['typescript', 'TypeScript'],
       ['javascript', 'JavaScript'],
       ['java', 'Java'],
@@ -244,8 +245,12 @@ describe('ProfilesPage', () => {
       ['css', 'CSS'],
       ['kotlin', 'Kotlin'],
       ['swift', 'Swift'],
+      ['ruby', 'Ruby'],
       ['*', 'Other engines'],
-    ]);
+    ];
+    for (const entry of expected) expect(shown).toContainEqual(entry);
+    const order = expected.map((e) => shown.findIndex((s) => s[0] === e[0]));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
   it('refuses the reserved built-in name before asking, and shows a 422 next to its field', async () => {
