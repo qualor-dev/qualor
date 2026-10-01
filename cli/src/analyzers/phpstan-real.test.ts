@@ -331,6 +331,50 @@ describeWithPhpstan()('PHPStan on untrusted checkouts (real PHPStan, Review Focu
   }
 
   it(
+    'fires every curated SonarQube target at the default level (import-sonarqube.md §6.1)',
+    TIMEOUT,
+    async () => {
+      // One snippet per target, each in its own namespace (two snippets declaring the same class
+      // would confuse PHPStan). Task 10's rows may only name identifiers listed here.
+      const SNIPPETS: Record<string, string> = {
+        'variable.undefined': 'function f(): int { return $x; }',
+        'arguments.count':
+          'function f(int $a): int { return $a; } function g(): int { return f(1, 2); }',
+        'function.void': 'function v(): void {} function g(): void { $x = v(); echo $x; }',
+        'method.void':
+          'final class A { public function v(): void {} public function g(): void { $x = $this->v(); echo $x; } }',
+        'staticMethod.void':
+          'final class A { public static function s(): void {} public function g(): void { $x = self::s(); echo $x; } }',
+        'catch.notThrowable':
+          'final class NotEx {} function f(): void { try { echo 1; } catch (NotEx $e) { echo 2; } }',
+        'array.duplicateKey': 'function f(): array { return ["a" => 1, "a" => 2]; }',
+        'constructor.unusedParameter':
+          'final class A { public function __construct(int $unused) {} }',
+      };
+      const ids = Object.keys(SNIPPETS);
+      const root = tmp();
+      writeTree(
+        root,
+        Object.fromEntries(
+          ids.map((id, i) => [`s/${id}.php`, `<?php\nnamespace S${i};\n${SNIPPETS[id]}\n`]),
+        ),
+      );
+      const { capture, keys } = await scanPhp(root);
+      expect(capture.status, capture.reason ?? '').toBe('ok');
+      for (const id of ids) expect(keys, id).toContain(`${id} s/${id}.php:3`);
+      const sonarTable = JSON.parse(
+        readFileSync('packages/shared/rules/sonarqube.json', 'utf8'),
+      ) as {
+        rules: { sonar: string[]; qualor: string[] }[];
+      };
+      const targets = sonarTable.rules
+        .filter((r) => r.sonar.some((s) => s.startsWith('php:')))
+        .flatMap((r) => r.qualor);
+      for (const t of targets) expect(ids, t).toContain(t.slice('phpstan:'.length));
+    },
+  );
+
+  it(
     'is skipped when composer.json requires packages that are not installed',
     TIMEOUT,
     async () => {

@@ -1,5 +1,5 @@
 {
-  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules.",
+  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules. PHP (Phase 9A): php:S#### rows are curated, keys only, each compared against both rules' public documentation (committed reviewed, as the python rows), each target a PHPStan identifier that fires at Qualor's default level; SonarQube imports PHPStan reports as the single rule external_phpstan:phpstan.finding, which cannot be mapped; external_psalm and phpsecurity are not mapped.",
   "languages": {
     "js": {
       "language": "javascript",
@@ -24,6 +24,10 @@
     "swift": {
       "language": "swift",
       "engines": ["swiftlint"]
+    },
+    "php": {
+      "language": "php",
+      "engines": ["phpstan"]
     }
   },
   "aliases": {
@@ -827,6 +831,55 @@
       "relation": "overlap",
       "reviewed": true,
       "reason": "Both flag pandas calls using inplace=True instead of reassigning the result."
+    },
+    {
+      "sonar": ["php:S836"],
+      "qualor": ["phpstan:variable.undefined"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag reading a variable never assigned; PHPStan's identifier also covers every other undefined variable."
+    },
+    {
+      "sonar": ["php:S2014"],
+      "qualor": ["phpstan:variable.undefined"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "PHPStan reports $this in a static method as an undefined variable, among all other undefined variables."
+    },
+    {
+      "sonar": ["php:S930"],
+      "qualor": ["phpstan:arguments.count"],
+      "relation": "equivalent",
+      "reviewed": true,
+      "reason": "Both flag a call that passes more or fewer arguments than the function or method accepts."
+    },
+    {
+      "sonar": ["php:S3699"],
+      "qualor": ["phpstan:function.void", "phpstan:method.void", "phpstan:staticMethod.void"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag using the result of a call that returns nothing; PHPStan only when the return type is void."
+    },
+    {
+      "sonar": ["php:S5708"],
+      "qualor": ["phpstan:catch.notThrowable"],
+      "relation": "equivalent",
+      "reviewed": true,
+      "reason": "Both flag a catch clause naming a class that does not implement Throwable."
+    },
+    {
+      "sonar": ["php:S4143"],
+      "qualor": ["phpstan:array.duplicateKey"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a key's value replaced before use: SonarQube in successive assignments, PHPStan in one array literal."
+    },
+    {
+      "sonar": ["php:S1172"],
+      "qualor": ["phpstan:constructor.unusedParameter"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag unused parameters; PHPStan's identifier covers constructors only, not other functions."
     }
   ]
 }
