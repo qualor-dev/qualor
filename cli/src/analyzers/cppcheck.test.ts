@@ -93,6 +93,32 @@ describe('cppcheckAnalyzer.prepare (config.md §6.2, plan 9D)', () => {
     expect(cmd.args.some((a) => /cppcheck\.cfg|\.cppcheck$|\.py$|rules\.xml/.test(a))).toBe(false);
   });
 
+  it('suppresses the uninitMemberVar ids by default; select turns them back on (ruling D9-14)', async () => {
+    const files = { 'src/a.cpp': 'struct S { int a; S() {} };\n' };
+    const off = await run(context(files).ctx);
+    for (const id of ['uninitMemberVar', 'uninitMemberVarPrivate', 'uninitMemberVarNoCtor'])
+      expect(off.args).toContain(`--suppress=${id}`);
+    const some = await run(
+      context(files, {
+        config: { analyzers: { cppcheck: { select: ['uninitMemberVar'] } } },
+      }).ctx,
+    );
+    expect(some.args).not.toContain('--suppress=uninitMemberVar');
+    expect(some.args).toContain('--suppress=uninitMemberVarPrivate');
+    const on = await run(
+      context(files, {
+        config: {
+          analyzers: {
+            cppcheck: {
+              select: ['uninitMemberVar', 'uninitMemberVarPrivate', 'uninitMemberVarNoCtor'],
+            },
+          },
+        },
+      }).ctx,
+    );
+    expect(on.args.some((a) => a.startsWith('--suppress='))).toBe(false);
+  });
+
   it('passes enable, includePaths (inside the copy) and defines from the settings', async () => {
     const { ctx, work } = context(
       { 'src/a.c': 'int a;\n', 'include/x.h': 'int x;\n' },

@@ -402,6 +402,7 @@ describe('BUILTIN_EXCLUDES', () => {
     expect(c.analyzers.cppcheck).toEqual({
       enabled: 'auto',
       enable: ['warning', 'performance', 'portability'],
+      select: [],
       includePaths: [],
       defines: [],
       compileCommands: null,

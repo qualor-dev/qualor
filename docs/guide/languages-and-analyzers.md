@@ -409,6 +409,9 @@ When your repository has a `compile_commands.json` (at the root or in `build/`, 
 `compileCommands`), Qualor gives cppcheck its include paths, defines and language standard.
 Inline suppressions (`// cppcheck-suppress nullPointer`) work.
 
+`uninitMemberVar`, `uninitMemberVarPrivate` and `uninitMemberVarNoCtor` are off by default (they
+mostly flag union members); turn them on with `select: [uninitMemberVar]` under `cppcheck`.
+
 **clang-tidy** runs when the job that scans also has `clang-tidy` (LLVM 14 or newer) on `PATH` and a
 compile database, typically the job that built your project:
 
@@ -421,10 +424,12 @@ No Qualor image bundles clang-tidy: it needs your build's headers and flags. Use
 the same LLVM major as your compiler where you can. Your `.clang-tidy` at the repository root is
 used for `Checks`, `CheckOptions` and the header and implementation file extensions; without one,
 Qualor runs the bug-finding groups (`bugprone-*`, `clang-analyzer-*`, `performance-*`,
-`portability-*`, `concurrency-*`, minus a few noisy checks). Settings that pass compiler arguments,
-load other configurations or turn warnings into errors (`ExtraArgs`, `InheritParentConfig`,
-`WarningsAsErrors`...) are ignored, and so are nested `.clang-tidy` files. Analyzer options that
-name a file (`clang-analyzer-...:Config`) are dropped too. The scan log says what was left out.
+`portability-*`, `concurrency-*`, minus a few noisy checks). A `.clang-tidy` that sets its own
+`Checks` replaces Qualor's default
+checks. Settings that pass compiler arguments, load other configurations or turn warnings into
+errors (`ExtraArgs`, `InheritParentConfig`, `WarningsAsErrors`...) are ignored, and so are nested
+`.clang-tidy` files. Analyzer options that name a file (`clang-analyzer-...:Config`) are dropped
+too. The scan log says what was left out.
 
 Qualor never runs your build. It reads `compile_commands.json` itself and passes on only include
 paths, defines, the language standard and harmless flags (`-I`, `-D`, `-U`, `-std` and a short list
@@ -432,6 +437,7 @@ of others); the compiler is never taken from the database, and plugins, `-Xclang
 response files (`@file`) are dropped.
 Code the tools cannot compile (a missing generated header, an unknown macro) is reported as a
 warning, not as an issue. A `.h` file counts as C++ when your repository has C++ files, else as C.
+Any C++ file in scope, a fuzzer included, makes the `.h` files C++.
 `CMakeFiles/`, `cmake-build-*/` and `_deps/` are never scanned.
 
 Only code of your repository is reported. A finding that clang-tidy or cppcheck places in a system

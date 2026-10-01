@@ -272,6 +272,10 @@ const analyzers = z
       .strictObject({
         enabled,
         enable: z.array(z.enum(CPPCHECK_ENABLE_GROUPS)).default([...DEFAULT_CPPCHECK_ENABLE]),
+        // Ids that are off by default (ruling D9-14) and that this project wants on.
+        select: z
+          .array(z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/, { message: 'must be a cppcheck id' }))
+          .default([]),
         includePaths: z.array(repoDir).default([]),
         defines: z.array(define).default([]),
         compileCommands,

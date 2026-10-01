@@ -1,7 +1,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
-import { CPPCHECK_VERSION, cppcheckVersionSupported, type QualorConfig } from '@qualor/shared';
+import {
+  CPPCHECK_VERSION,
+  cppcheckSuppressed,
+  cppcheckVersionSupported,
+  type QualorConfig,
+} from '@qualor/shared';
 import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { isCHeader } from '../discovery/languages';
 import { within } from './binary';
@@ -90,6 +95,8 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
     `-j${jobs}`,
     `--enable=${settings.enable.join(',')}`,
     '--inline-suppr',
+    // Ruling D9-14: the default-off ids, unless `select` names them.
+    ...cppcheckSuppressed(settings.select).map((id) => `--suppress=${id}`),
     '--output-format=xmlv2',
     `--output-file=${out}`,
     `--relative-paths=${input}`,

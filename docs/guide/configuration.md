@@ -60,6 +60,7 @@ analyzers:
   cppcheck:                          # C and C++: cppcheck 2.22.0 in qualor/scanner
     enabled: auto
     enable: [warning, performance, portability]   # cppcheck --enable groups (errors always); add style for more
+    select: []                       # cppcheck ids to turn on that are off by default (uninitMemberVar*)
     includePaths: []                 # repository directories for -I, used without a compile database
     defines: []                      # NAME or NAME=value for -D, used without a compile database
     compileCommands: null            # null: compile_commands.json, then build/compile_commands.json; false: none; or a repository path
