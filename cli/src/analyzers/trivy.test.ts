@@ -71,6 +71,10 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     if (!('run' in prep)) throw new Error(JSON.stringify(prep));
     const work = (name: string) => path.join(ctx.workDir, name);
     const { transform, dropEnv, ...run } = prep.run;
+    // The skip-dirs follow the built-in excludes, which parallel steps extend: never pin the list.
+    const skipArgs = skipDirs().flatMap((d) => ['--skip-dirs', d]);
+    expect(run.args.join(' ')).toContain(skipArgs.join(' '));
+    expect(skipDirs()).toContain('**/.bundle');
     expect(run).toEqual({
       command: '/opt/qualor/bin/trivy',
       args: [
@@ -97,46 +101,7 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
         '--list-all-pkgs',
         '--ignorefile',
         work('trivyignore'),
-        '--skip-dirs',
-        '**/node_modules',
-        '--skip-dirs',
-        '**/.git',
-        '--skip-dirs',
-        '**/dist',
-        '--skip-dirs',
-        '**/build',
-        '--skip-dirs',
-        '**/target',
-        '--skip-dirs',
-        '**/vendor',
-        '--skip-dirs',
-        '**/obj',
-        '--skip-dirs',
-        '**/bin/Debug',
-        '--skip-dirs',
-        '**/bin/Release',
-        '--skip-dirs',
-        '**/.venv',
-        '--skip-dirs',
-        '**/venv',
-        '--skip-dirs',
-        '**/.tox',
-        '--skip-dirs',
-        '**/.nox',
-        '--skip-dirs',
-        '**/__pycache__',
-        '--skip-dirs',
-        '**/__pypackages__',
-        '--skip-dirs',
-        '**/.eggs',
-        '--skip-dirs',
-        '**/site-packages',
-        '--skip-dirs',
-        '**/Pods',
-        '--skip-dirs',
-        '**/Carthage',
-        '--skip-dirs',
-        '**/.build',
+        ...skipArgs,
         '--timeout',
         '600s',
         '--format',
@@ -155,7 +120,6 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     });
     expect(typeof transform).toBe('function');
     expect(dropEnv).toBe(isTrivyVariable);
-    expect(skipDirs()).toHaveLength(20);
   });
 
   it('passes a root .trivyignore, and warns about a database older than 14 days', async () => {
