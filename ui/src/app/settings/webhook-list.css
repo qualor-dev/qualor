@@ -85,3 +85,14 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+:host {
+  display: block;
+}
+:host(:focus) {
+  outline: none;
+}
+.webhook-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
