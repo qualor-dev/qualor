@@ -106,6 +106,7 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
       w('qualor-phpstan.php'),
       s.phar,
       w('phpstan.json'),
+      w('src'),
       'analyse',
       '--configuration',
       w('phpstan.neon'),
@@ -376,11 +377,39 @@ describe('phpstan helpers', () => {
     );
   });
 
+  it('names the files the wrapper left out because PHPStan cannot parse them, as repository paths (ruling A9-19)', async () => {
+    const s = setup({ 'src/Cart.php': '<?php\n' });
+    const p = await s.analyzer.prepare(s.ctx);
+    if (!('run' in p)) throw new Error(JSON.stringify(p));
+    const input = path.join(s.workDir, 'src');
+    writeFileSync(
+      path.join(s.workDir, 'phpstan.json.left-out.json'),
+      JSON.stringify([
+        path.join(input, 'src', 'Broken.php'),
+        path.join(input, 'x\u0007.php'),
+        // Never a path outside the copy.
+        path.join(s.workDir, 'phpstan.neon'),
+      ]),
+    );
+    p.run.transform?.({ totals: {}, files: [], errors: [] }, '');
+    expect(s.lines.join('')).toContain(
+      'warn: phpstan: 2 PHP file(s) PHPStan cannot parse were left out: src/Broken.php, x?.php',
+    );
+  });
+
+  it('pins how the wrapper leaves out files PHPStan cannot parse (ruling A9-19)', () => {
+    expect(PHPSTAN_WRAPPER).toContain("($message['identifier'] ?? null) !== 'phpstan.parse'");
+    // Only a copy below <input>, the wrapper's third argument, is ever deleted.
+    expect(PHPSTAN_WRAPPER).toContain('$input = realpath($argv[3]);');
+    expect(PHPSTAN_WRAPPER).toContain('strpos($real, $input . DIRECTORY_SEPARATOR) === 0');
+    expect(PHPSTAN_WRAPPER).toContain("$out . '.left-out.json'");
+  });
+
   it('pins what the wrapper does (fact P5)', () => {
     expect(PHPSTAN_WRAPPER.startsWith('<?php\n')).toBe(true);
     expect(PHPSTAN_WRAPPER).toContain("fopen($out, 'xb')");
     expect(PHPSTAN_WRAPPER).toContain(
-      'proc_open(array_merge($php, [$phar], array_slice($argv, 3))',
+      '$command = array_merge($php, [$phar], array_slice($argv, 4));',
     );
     expect(PHPSTAN_WRAPPER).toContain('exit(3);');
     expect(PHPSTAN_WRAPPER).toContain('exit(4);');

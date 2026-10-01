@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { PHPSTAN_PHP_VERSION, PHPSTAN_VERSION, phpstanVersionSupported } from '@qualor/shared';
 import { isInside } from './binary';
@@ -88,39 +88,86 @@ export const PHPSTAN_WRAPPER = `<?php
 // exit 0: <out> is PHPStan's JSON report and lists no general error;
 // exit 3: the report lists general errors (printed on stderr);
 // exit 4: there is no report (PHPStan's output printed on stderr).
+// A file below <input> that PHPStan cannot parse makes it report nothing else (its "severe
+// errors"): those copies are deleted, listed in <out>.left-out.json, and PHPStan runs once more
+// (ruling A9-19).
 declare(strict_types=1);
-if ($argc < 3) {
-    fwrite(STDERR, "qualor-phpstan: usage: qualor-phpstan.php <phar> <out> <args...>\\n");
+if ($argc < 4) {
+    fwrite(STDERR, "qualor-phpstan: usage: qualor-phpstan.php <phar> <out> <input> <args...>\\n");
     exit(4);
 }
 $phar = $argv[1];
 $out = $argv[2];
+$input = realpath($argv[3]);
+if ($input === false) {
+    fwrite(STDERR, "qualor-phpstan: the input directory does not exist\\n");
+    exit(4);
+}
 // Ruling A9-18: PHPStan's php reads no php.ini either.
 $php = array_merge([PHP_BINARY], ${phpArray(PHP_OPTIONS)});
-$fh = fopen($out, 'xb');
-if ($fh === false) {
-    fwrite(STDERR, "qualor-phpstan: cannot create the report file\\n");
-    exit(4);
+$command = array_merge($php, [$phar], array_slice($argv, 4));
+
+/** Runs PHPStan with its standard output in $out; returns its report, or exits 4 without one. */
+function qualor_phpstan_run(array $command, string $out): array
+{
+    $fh = fopen($out, 'xb');
+    if ($fh === false) {
+        fwrite(STDERR, "qualor-phpstan: cannot create the report file\\n");
+        exit(4);
+    }
+    $proc = proc_open($command, [0 => ['pipe', 'r'], 1 => $fh, 2 => STDERR], $pipes);
+    if ($proc === false) {
+        fwrite(STDERR, "qualor-phpstan: cannot start PHPStan\\n");
+        exit(4);
+    }
+    fclose($pipes[0]);
+    $code = proc_close($proc);
+    fclose($fh);
+    $text = (string) file_get_contents($out);
+    // PHPStan exits 0 (no finding) or 1 (findings or general errors); any other code is a crash
+    // whose output, even if it looks like a report, is not trusted.
+    if ($code !== 0 && $code !== 1) {
+        fwrite(STDERR, "qualor-phpstan: PHPStan wrote no report (exit code $code)\\n" . substr($text, 0, 4000) . "\\n");
+        exit(4);
+    }
+    $report = json_decode($text, true);
+    if (!is_array($report) || !isset($report['totals'], $report['files']) || !is_array($report['errors'] ?? null)) {
+        fwrite(STDERR, "qualor-phpstan: PHPStan wrote no report (exit code $code)\\n" . substr($text, 0, 4000) . "\\n");
+        exit(4);
+    }
+    return $report;
 }
-$proc = proc_open(array_merge($php, [$phar], array_slice($argv, 3)), [0 => ['pipe', 'r'], 1 => $fh, 2 => STDERR], $pipes);
-if ($proc === false) {
-    fwrite(STDERR, "qualor-phpstan: cannot start PHPStan\\n");
-    exit(4);
+
+$report = qualor_phpstan_run($command, $out);
+$leftOut = [];
+foreach (is_array($report['files']) ? $report['files'] : [] as $file => $result) {
+    foreach (is_array($result['messages'] ?? null) ? $result['messages'] : [] as $message) {
+        if (!is_array($message) || ($message['identifier'] ?? null) !== 'phpstan.parse') {
+            continue;
+        }
+        $real = realpath((string) $file);
+        if ($real !== false && strpos($real, $input . DIRECTORY_SEPARATOR) === 0 && is_file($real) && unlink($real)) {
+            $leftOut[] = $real;
+        }
+        break;
+    }
 }
-fclose($pipes[0]);
-$code = proc_close($proc);
-fclose($fh);
-$text = (string) file_get_contents($out);
-// PHPStan exits 0 (no finding) or 1 (findings or general errors); any other code is a crash whose
-// output, even if it looks like a report, is not trusted.
-if ($code !== 0 && $code !== 1) {
-    fwrite(STDERR, "qualor-phpstan: PHPStan wrote no report (exit code $code)\\n" . substr($text, 0, 4000) . "\\n");
-    exit(4);
-}
-$report = json_decode($text, true);
-if (!is_array($report) || !isset($report['totals'], $report['files']) || !is_array($report['errors'] ?? null)) {
-    fwrite(STDERR, "qualor-phpstan: PHPStan wrote no report (exit code $code)\\n" . substr($text, 0, 4000) . "\\n");
-    exit(4);
+if ($leftOut !== []) {
+    file_put_contents($out . '.left-out.json', json_encode($leftOut, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+    unlink($out);
+    $left = 0;
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($input, FilesystemIterator::SKIP_DOTS)) as $entry) {
+        if ($entry->isFile()) {
+            $left++;
+            break;
+        }
+    }
+    if ($left === 0) {
+        // Nothing is left to analyse: PHPStan would refuse an empty path, and there is no finding.
+        file_put_contents($out, '{"totals":{"errors":0,"file_errors":0},"files":[],"errors":[]}');
+        exit(0);
+    }
+    $report = qualor_phpstan_run($command, $out);
 }
 if ($report['errors'] !== []) {
     foreach (array_slice($report['errors'], 0, 20) as $error) {
@@ -150,6 +197,34 @@ export function phpstanFailureDetail(stderr: string, workDir: string): string | 
 
 /** The environment PHPStan's php gets over the analyzer environment (config.md §6). */
 const phpEnv = () => ({ ...deadProxyEnv(), LC_ALL: 'C.UTF-8' });
+
+/**
+ * Ruling A9-19: the files the wrapper left out because PHPStan cannot parse them (`<out>.left-out.json`,
+ * absolute paths of the copy), named by their repository paths in a warning.
+ */
+function warnLeftOut(file: string, input: string, ctx: AnalyzerContext): void {
+  let paths: unknown;
+  try {
+    paths = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return;
+  }
+  if (!Array.isArray(paths)) return;
+  const prefix = `${input.replaceAll('\\', '/').replace(/\/+$/, '')}/`;
+  const repo = paths
+    .filter((p): p is string => typeof p === 'string')
+    .map((p) => p.replaceAll('\\', '/'))
+    .filter((p) => p.startsWith(prefix))
+    .map((p) => shown(p.slice(prefix.length)));
+  if (repo.length === 0) return;
+  const listed = repo.slice(0, MAX_LEFT_OUT_LISTED).join(', ');
+  const more =
+    repo.length > MAX_LEFT_OUT_LISTED ? `, and ${repo.length - MAX_LEFT_OUT_LISTED} more` : '';
+  ctx.log.warn(
+    `phpstan: ${repo.length} PHP file(s) PHPStan cannot parse were left out: ${listed}${more}`,
+  );
+}
+const MAX_LEFT_OUT_LISTED = 20;
 
 /** PHPStan reads only names ending in exactly `.php` (its default fileExtensions). */
 const phpName = (repoPath: string) => {
@@ -292,6 +367,7 @@ async function prepare(
         wrapper,
         phar,
         out,
+        input,
         'analyse',
         '--configuration',
         neon,
@@ -307,14 +383,16 @@ async function prepare(
       // The wrapper's verdict (exit 0: a report without general errors), never PHPStan's own code.
       okExitCodes: [0],
       version,
-      transform: (output) =>
-        phpstanSarif(output, {
+      transform: (output) => {
+        warnLeftOut(`${out}.left-out.json`, input, ctx);
+        return phpstanSarif(output, {
           input,
           workDir: ctx.workDir,
           version,
           withDependencies,
           log: ctx.log,
-        }),
+        });
+      },
       failureDetail: (_code, stderr) => phpstanFailureDetail(stderr, ctx.workDir),
     },
   };
