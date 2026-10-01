@@ -65,6 +65,18 @@ const timeout = (seconds: number) => z.number().int().positive().max(86_400).def
  * A Ruff selector (or a value `extra` allows): the shape first, then — so a typo is a config error
  * naming it, not a Ruff exit 2 — `ALL` or a prefix of a code Ruff RUFF_VERSION has.
  */
+const ruffSelector = (extra: (s: string) => boolean, shape: string) =>
+  z.string().superRefine((s, ctx) => {
+    if (extra(s)) return;
+    if (!RUFF_SELECTOR.test(s)) ctx.addIssue({ code: 'custom', message: shape });
+    else if (!ruffSelectorKnown(s)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `unknown Ruff rule selector "${s}": no rule of Ruff ${RUFF_VERSION} starts with it`,
+      });
+    }
+  });
+
 /**
  * A RuboCop selector (or a value `extra` allows): the shape first, then — so a typo is a config
  * error naming it, not a RuboCop exit 2 — a department or a cop RuboCop RUBOCOP_VERSION has.
@@ -77,18 +89,6 @@ const rubocopSelector = (extra: (s: string) => boolean, shape: string) =>
       ctx.addIssue({
         code: 'custom',
         message: `unknown RuboCop department or cop "${s}": RuboCop ${RUBOCOP_VERSION} has none of that name`,
-      });
-    }
-  });
-
-const ruffSelector = (extra: (s: string) => boolean, shape: string) =>
-  z.string().superRefine((s, ctx) => {
-    if (extra(s)) return;
-    if (!RUFF_SELECTOR.test(s)) ctx.addIssue({ code: 'custom', message: shape });
-    else if (!ruffSelectorKnown(s)) {
-      ctx.addIssue({
-        code: 'custom',
-        message: `unknown Ruff rule selector "${s}": no rule of Ruff ${RUFF_VERSION} starts with it`,
       });
     }
   });
