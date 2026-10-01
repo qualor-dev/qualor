@@ -77,6 +77,71 @@ describe('importCoverage', () => {
       'COVERAGE_REPORT_INVALID',
     ]);
   });
+
+  it('reproduces the go-basic coverage numbers from its Go profile (plan 9C)', async () => {
+    const { dir, config, expected } = loadFixture('go-basic');
+    const warnings = new Warnings();
+    const map = await importCoverage({
+      root: dir,
+      reports: config.coverage.reports,
+      files: [main('store/store.go', 61), main('cmd/gobasic/main.go', 14), main('tools/next.go', 9)],
+      pathPrefixes: config.coverage.pathPrefixes,
+      warnings,
+      log: silentLogger,
+    });
+    expect(coverageSummary(map)).toMatchObject({
+      lines_to_cover: expected.coverage?.lines_to_cover,
+      uncovered_lines: expected.coverage?.uncovered_lines,
+      conditions_to_cover: 0,
+      uncovered_conditions: 0,
+    });
+    expect(map.get('store/store.go')).toEqual({
+      covered: [[17, 17], [22, 24], [29, 32], [35, 35]],
+      uncovered: [[40, 40], [45, 45], [50, 53], [55, 55], [60, 60]],
+      branches: [],
+    });
+    expect(warnings.list()).toEqual([]);
+  });
+
+  it('resolves the import paths of a module in a subdirectory to its files (plan 9C)', async () => {
+    const root = tmp();
+    writeTree(root, {
+      'svc/coverage.out':
+        'mode: set\ngithub.com/acme/repo/svc/store/store.go:3.2,4.1 1 1\ngithub.com/acme/repo/svc/store/store.go:5.2,6.1 1 0\n',
+      'svc/store/store.go': 'package store\n',
+      'other/store/store.go': 'package store\n',
+    });
+    const warnings = new Warnings();
+    const map = await importCoverage({
+      root,
+      reports: [{ path: 'svc/coverage.out', format: 'auto' }],
+      files: [main('svc/store/store.go', 10), main('other/store/store.go', 10)],
+      pathPrefixes: [],
+      warnings,
+      log: silentLogger,
+    });
+    expect(map.get('svc/store/store.go')).toEqual({ covered: [[3, 3]], uncovered: [[5, 5]], branches: [] });
+    expect(map.has('other/store/store.go')).toBe(false);
+    expect(warnings.list()).toEqual([]);
+  });
+
+  it('never maps a profile path that climbs out of the repository onto a file (untrusted profile)', async () => {
+    const root = tmp();
+    writeTree(root, {
+      'coverage.out': 'mode: set\n../../etc/store.go:1.1,2.1 1 1\nexample.com/m/../../store.go:1.1,2.1 1 1\n',
+      'store.go': 'package store\n',
+    });
+    const warnings = new Warnings();
+    const map = await importCoverage({
+      root,
+      reports: [{ path: 'coverage.out', format: 'auto' }],
+      files: [main('store.go', 10)],
+      pathPrefixes: [],
+      warnings,
+      log: silentLogger,
+    });
+    expect(map.size).toBe(0);
+  });
 });
 
 describe('detectFormat / expandReportPaths', () => {

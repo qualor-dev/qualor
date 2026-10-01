@@ -1,5 +1,5 @@
 {
-  "description": "Go repo, two modules: tree-sitter-go metrics; staticcheck, go vet and gosec findings are added in plan 9C Task 10, the coverage profile in Task 8",
+  "description": "Go repo, two modules: tree-sitter-go metrics; staticcheck, go vet and gosec findings are added in plan 9C Task 10, the coverage profile is coverage.out",
   "engines": [],
   "findingsExhaustive": false,
   "findings": [],
@@ -10,8 +10,9 @@
     "tools/next.go": { "language": "go", "kind": "main", "lines": 9, "ncloc": 7, "commentLines": 1, "functions": 1, "classes": 0, "statements": 3, "complexity": 2, "cognitiveComplexity": 1 }
   },
   "duplications": [],
-  "coverage": null,
+  "coverage": { "lines_to_cover": 20, "uncovered_lines": 11, "conditions_to_cover": 0, "uncovered_conditions": 0, "coverage": 45.0 },
   "notes": {
+    "coverage": "store.go covered 17, 22-24, 29-32, 35 (9 lines; 18, 25, 33 end at column 1), uncovered 40, 45, 50-53, 55, 60 (8); main.go 11-13 uncovered (3); tools/ is another module, not in the profile; 9 / 20 = 45.0",
     "store/store.go#ncloc": "61 lines - 8 comment lines (9, 15, 20, 27, 38, 43, 48, 58) - 9 blank lines (2, 8, 14, 19, 26, 37, 42, 47, 57) = 44",
     "store/store.go#functions": "New, Add, Total, Snapshot, Describe, Grade, Fingerprint = 7; Store is the one struct type",
     "store/store.go#statements": "New 1; Add 3; Total: sum :=, for, return, the if, sum += = 5; Snapshot 1; Describe 1; Grade: if, return \"C\", return \"A\", return \"B\" = 4; Fingerprint 1; total 16",
