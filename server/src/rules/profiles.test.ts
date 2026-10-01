@@ -15,6 +15,16 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     }
   });
 
+  it('lets the go profile govern the Go engines on Go files (plan 9C)', () => {
+    for (const engine of ['staticcheck', 'govet', 'gosec']) {
+      expect(governingLanguage(engine, 'go'), engine).toBe('go');
+      expect(governingLanguage(engine, null), engine).toBe('*');
+    }
+    for (const engine of ['semgrep', 'gitleaks', 'trivy']) {
+      expect(governingLanguage(engine, 'go'), engine).toBe('*');
+    }
+  });
+
   it('lets the kotlin profile govern detekt findings on Kotlin files (phase 8E)', () => {
     expect(governingLanguage('detekt', 'kotlin')).toBe('kotlin');
     expect(governingLanguage('detekt', null)).toBe('*');
