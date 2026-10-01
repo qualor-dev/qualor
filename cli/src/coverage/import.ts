@@ -135,6 +135,9 @@ export async function importCoverage(o: ImportCoverageOptions): Promise<Map<stri
         o.log.warn(`cannot parse coverage report ${abs}: ${err instanceof Error ? err.message : String(err)}`);
         continue;
       }
+      if (parsed.truncated === true) {
+        o.warnings.add('COVERAGE_REPORT_TRUNCATED', 'a coverage report was too large; the part past the limit was ignored');
+      }
       const baseDirs = [
         ...parsed.sourceDirs.map((d) => sourceDirToRepo(o.root, d)).filter((d): d is string => d !== null),
         ...ancestorDirs(repoRelativeDir(o.root, abs)),

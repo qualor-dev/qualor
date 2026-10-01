@@ -1,7 +1,7 @@
 import { createReadStream, statSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { ParsedCoverage } from './lcov';
-import { recordFor, type CoverageRecord } from './model';
+import { MAX_LINE, recordFor, type CoverageRecord } from './model';
 
 /** `go test -coverprofile`'s first line (repeated when profiles are concatenated). */
 export const GO_COVER_MODE = /^mode: (set|count|atomic)$/;
@@ -12,9 +12,10 @@ const BLOCK = /^(.+):(\d+)\.(\d+),(\d+)\.(\d+) (\d+) (\d+)$/;
 export const MAX_GO_COVER_BYTES = 128 * 1024 * 1024;
 /** A block this long (or one starting past the line limit) is not Go source; it is skipped. */
 const MAX_BLOCK_LINES = 100_000;
-const MAX_START_LINE = 10_000_000;
-/** Lines claimed by all blocks together; stops a small file from costing minutes and gigabytes. */
-const MAX_TOTAL_LINES = 5_000_000;
+/** Distinct lines kept over all files (growth of the line maps); more are not added (memory). */
+const MAX_DISTINCT_LINES = 20_000_000;
+/** Line visits over all blocks, repeats included; bounds the time a small file can cost. */
+const MAX_LINE_VISITS = 400_000_000;
 
 /** A path that climbs out of the repository with `..` is never mapped onto a file. */
 const climbs = (file: string) => file.replaceAll('\\', '/').split('/').includes('..');
@@ -27,13 +28,27 @@ const climbs = (file: string) => file.replaceAll('\\', '/').split('/').includes(
  * returns analysed repository files); `_/abs/path` is what go writes outside a module. Entries
  * with `..` segments are dropped.
  */
-export async function parseGoCover(absPath: string): Promise<ParsedCoverage> {
-  if (statSync(absPath).size > MAX_GO_COVER_BYTES) {
+export async function parseGoCover(
+  absPath: string,
+  limits: { distinctLines: number; lineVisits: number } = {
+    distinctLines: MAX_DISTINCT_LINES,
+    lineVisits: MAX_LINE_VISITS,
+  },
+): Promise<ParsedCoverage> {
+  let size: number;
+  try {
+    size = statSync(absPath).size;
+  } catch {
+    throw new Error('cannot read the Go coverage profile');
+  }
+  if (size > MAX_GO_COVER_BYTES) {
     throw new Error(`Go coverage profile too large (over ${MAX_GO_COVER_BYTES} bytes)`);
   }
   const files = new Map<string, CoverageRecord>();
   let sawMode = false;
-  let claimed = 0;
+  let distinct = 0;
+  let visits = 0;
+  let truncated = false;
   const lines = createInterface({
     input: createReadStream(absPath, { encoding: 'utf8' }),
     crlfDelay: Infinity,
@@ -52,12 +67,19 @@ export async function parseGoCover(absPath: string): Promise<ParsedCoverage> {
     if (Number(statements) === 0 || climbs(file)) continue;
     const start = Number(l1);
     const end = Number(c2) <= 1 && Number(l2) > start ? Number(l2) - 1 : Number(l2);
-    if (start < 1 || start > MAX_START_LINE || end - start >= MAX_BLOCK_LINES) continue;
-    claimed += Math.max(end - start + 1, 0);
-    if (claimed > MAX_TOTAL_LINES) throw new Error('Go coverage profile claims too many lines');
+    if (start < 1 || start > MAX_LINE || end < start || end - start >= MAX_BLOCK_LINES) continue;
+    if (truncated) continue; // keep reading to validate the rest, add nothing
+    visits += end - start + 1;
+    if (visits > limits.lineVisits) {
+      truncated = true;
+      continue;
+    }
     const record = recordFor(files, file.startsWith('_/') ? file.slice(1) : file);
+    const before = record.lines.size;
     for (let l = start; l <= end; l++) record.hit(l, Number(count));
+    distinct += record.lines.size - before;
+    if (distinct > limits.distinctLines) truncated = true;
   }
   if (!sawMode) throw new Error('empty Go coverage profile');
-  return { files, sourceDirs: [] };
+  return truncated ? { files, sourceDirs: [], truncated } : { files, sourceDirs: [] };
 }

@@ -85,10 +85,33 @@ describe('parseGoCover on an untrusted profile', () => {
     expect(lines(parsed.files.get('x/a.go'))).toEqual([[5, 1]]);
   });
 
-  it('stops when the blocks of a profile claim an absurd number of lines in total', async () => {
-    const block = (n: number) => `x/a${n}.go:1.1,99999.2 1 1\n`;
+  it('does not count repeated blocks of a merged profile against the cap', async () => {
+    const block = 'x/a.go:1.1,50000.2 1 1\n';
+    const parsed = await parseGoCover(profile('mode: set\n' + block.repeat(2000)));
+    expect(parsed.truncated).toBeUndefined();
+    expect(parsed.files.get('x/a.go')?.lines.size).toBe(50000);
+  });
+
+  it('keeps what it read and flags the report when the distinct lines pass the cap', async () => {
     let text = 'mode: set\n';
-    for (let i = 0; i < 100; i++) text += block(i);
-    await expect(parseGoCover(profile(text))).rejects.toThrow(/too many/);
+    for (let i = 0; i < 10; i++) text += `x/a${i}.go:1.1,100.2 1 1\n`;
+    const parsed = await parseGoCover(profile(text), { distinctLines: 250, lineVisits: 1_000_000 });
+    expect(parsed.truncated).toBe(true);
+    expect([...parsed.files.keys()]).toEqual(['x/a0.go', 'x/a1.go', 'x/a2.go']);
+  });
+
+  it('flags the report when the repeated work passes the visit cap', async () => {
+    const parsed = await parseGoCover(profile('mode: set\n' + 'x/a.go:1.1,100.2 1 1\n'.repeat(50)), {
+      distinctLines: 1000,
+      lineVisits: 1000,
+    });
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.files.get('x/a.go')?.lines.size).toBe(100);
+  });
+
+  it('skips a block that ends before it starts and reports a missing file cleanly', async () => {
+    const parsed = await parseGoCover(profile('mode: set\nx/a.go:9.1,3.5 1 1\nx/a.go:4.1,4.5 1 1\n'));
+    expect(lines(parsed.files.get('x/a.go'))).toEqual([[4, 1]]);
+    await expect(parseGoCover(path.join(tmp(), 'nope.out'))).rejects.toThrow('cannot read the Go coverage profile');
   });
 });
