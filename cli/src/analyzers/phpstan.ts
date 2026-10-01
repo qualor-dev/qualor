@@ -34,6 +34,24 @@ export function parsePhpstanVersion(stdout: string): string | null {
 export const isPhpVariable = (name: string): boolean =>
   /^(PHPRC|PHP_INI_SCAN_DIR|COMPOSER(_.*)?|PHPSTAN_.*|XDEBUG_(CONFIG|MODE|SESSION))$/i.test(name);
 
+/**
+ * Ruling A9-18: the options of every php Qualor starts for PHPStan (the version probe, the wrapper
+ * and the PHPStan it runs). `-n`: no php.ini and no scan directory at all, so neither PHPRC nor a
+ * php.ini of the checkout can make php run a file first (`auto_prepend_file`). Only the extensions
+ * the phar cannot run without are loaded, from php's own extension directory; a php that has them
+ * built in warns on stderr and goes on. Warnings go to stderr, never into the report on stdout.
+ */
+export const PHP_OPTIONS: readonly string[] = [
+  '-n',
+  '-d',
+  'display_errors=stderr',
+  '-d',
+  'extension=phar',
+  '-d',
+  'extension=tokenizer',
+];
+const phpArray = (values: readonly string[]) => `[${values.map((v) => `'${v}'`).join(', ')}]`;
+
 /** A NEON double-quoted string: JSON's escapes, and `%%` for `%` (Nette expands `%name%`). */
 export function neonString(value: string): string {
   return JSON.stringify(value).replaceAll('%', '%%');
@@ -77,12 +95,14 @@ if ($argc < 3) {
 }
 $phar = $argv[1];
 $out = $argv[2];
+// Ruling A9-18: PHPStan's php reads no php.ini either.
+$php = array_merge([PHP_BINARY], ${phpArray(PHP_OPTIONS)});
 $fh = fopen($out, 'xb');
 if ($fh === false) {
     fwrite(STDERR, "qualor-phpstan: cannot create the report file\\n");
     exit(4);
 }
-$proc = proc_open(array_merge([PHP_BINARY, $phar], array_slice($argv, 3)), [0 => ['pipe', 'r'], 1 => $fh, 2 => STDERR], $pipes);
+$proc = proc_open(array_merge($php, [$phar], array_slice($argv, 3)), [0 => ['pipe', 'r'], 1 => $fh, 2 => STDERR], $pipes);
 if ($proc === false) {
     fwrite(STDERR, "qualor-phpstan: cannot start PHPStan\\n");
     exit(4);
@@ -127,6 +147,9 @@ export function phpstanFailureDetail(stderr: string, workDir: string): string | 
   const line = next === undefined ? first : `${first}: ${next.trim()}`;
   return detailLine(line.split(workDir).join('<work>'));
 }
+
+/** The environment PHPStan's php gets over the analyzer environment (config.md §6). */
+const phpEnv = () => ({ ...deadProxyEnv(), LC_ALL: 'C.UTF-8' });
 
 /** PHPStan reads only names ending in exactly `.php` (its default fileExtensions). */
 const phpName = (repoPath: string) => {
@@ -185,9 +208,13 @@ async function prepare(
 
   // The work directory is the probe's working directory too: PHPStan's start-up would load a
   // composer.json, vendor/autoload.php or phpstan.neon from it (fact P4), and it holds none.
-  const probe = await ctx.exec(phpBinary, [phar, '--version'], {
+  // Ruling A9-18: the probe is php with PHPStan too, under the run's own php options and
+  // environment rules.
+  const probe = await ctx.exec(phpBinary, [...PHP_OPTIONS, phar, '--version'], {
     timeoutMs: 60_000,
     cwd: ctx.workDir,
+    env: phpEnv(),
+    dropEnv: isPhpVariable,
   });
   const version = probe.exitCode === 0 ? parsePhpstanVersion(probe.stdout) : null;
   if (version === null) return { unavailable: 'php <phar> --version printed no PHPStan version' };
@@ -261,6 +288,7 @@ async function prepare(
       command: phpBinary,
       // Never --pro, --fix, --autoload-file, --generate-baseline or --xdebug (config.md §6).
       args: [
+        ...PHP_OPTIONS,
         wrapper,
         phar,
         out,
@@ -273,7 +301,7 @@ async function prepare(
         `--memory-limit=${settings.memoryLimit}`,
       ],
       cwd: ctx.workDir,
-      env: { ...deadProxyEnv(), LC_ALL: 'C.UTF-8' },
+      env: phpEnv(),
       dropEnv: isPhpVariable,
       sarifPath: out,
       // The wrapper's verdict (exit 0: a report without general errors), never PHPStan's own code.

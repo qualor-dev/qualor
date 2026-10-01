@@ -13,6 +13,7 @@ import { createDetektAnalyzer } from './detekt';
 import { builtinAnalyzers } from './registry';
 import {
   emergencyCleanup,
+  execEnv,
   mapLimit,
   removeActiveWorkDirs,
   requiredFailures,
@@ -863,5 +864,23 @@ describe('mapLimit', () => {
     });
     expect(out).toEqual([10, 20, 30, 40, 50, 60]);
     expect(peak).toBe(2);
+  });
+});
+
+describe('execEnv (ruling A9-18)', () => {
+  const root = path.resolve('/repo');
+  const base = { PATH: '/usr/bin', PHPRC: '/repo', KEEP: 'k' };
+  it('is the analyzer environment itself without env or dropEnv', () => {
+    expect(execEnv(base, {}, root)).toBe(base);
+  });
+  it('drops names, adds env, and sanitizes again', () => {
+    const env = execEnv(
+      base,
+      { env: { LC_ALL: 'C.UTF-8', QUALOR_SERVER_TOKEN: 'secret' }, dropEnv: (n) => n === 'PHPRC' },
+      root,
+    );
+    expect(env).toMatchObject({ PATH: '/usr/bin', KEEP: 'k', LC_ALL: 'C.UTF-8' });
+    expect(env).not.toHaveProperty('PHPRC');
+    expect(env).not.toHaveProperty('QUALOR_SERVER_TOKEN');
   });
 });

@@ -14,7 +14,9 @@ import {
   PHPSTAN_WRAPPER,
   phpstanFailureDetail,
   phpstanNeon,
+  PHP_OPTIONS,
 } from './phpstan';
+import type { ExecOptions } from './types';
 import { DEPENDENCIES_NOT_INSTALLED, DEPENDENCIES_TOO_LARGE } from './phpstan-deps';
 
 const tmp = useTempDirs();
@@ -53,14 +55,16 @@ function setup(
   writeFileSync(phar, 'phar');
   const workDir = tmp();
   const probes: { command: string; args: readonly string[]; cwd?: string }[] = [];
+  const probeOptions: ExecOptions[] = [];
   const lines: string[] = [];
   const ctx = {
     ...fakeContext(root, {
       binaries: o.php === null ? {} : { php: o.php ?? PHP },
       workDir,
       config: o.config ?? {},
-      exec: (command: string, args: readonly string[], options: { cwd?: string }) => {
+      exec: (command: string, args: readonly string[], options: ExecOptions) => {
         probes.push({ command, args, cwd: options.cwd });
+        probeOptions.push(options);
         return {
           exitCode: 0,
           timedOut: false,
@@ -79,6 +83,7 @@ function setup(
     workDir,
     ctx,
     probes,
+    probeOptions,
     lines,
     analyzer: createPhpstanAnalyzer({ defaultPhar: phar, ...o.limits }),
   };
@@ -97,6 +102,7 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
     const w = (name: string) => path.join(s.workDir, name);
     expect(p.run.command).toBe(PHP);
     expect(p.run.args).toEqual([
+      ...PHP_OPTIONS,
       w('qualor-phpstan.php'),
       s.phar,
       w('phpstan.json'),
@@ -138,7 +144,39 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
     }
     expect(p.run.dropEnv?.('PATH')).toBe(false);
     // The version probe runs in the work directory too.
-    expect(s.probes).toEqual([{ command: PHP, args: [s.phar, '--version'], cwd: s.workDir }]);
+    expect(s.probes).toEqual([
+      { command: PHP, args: [...PHP_OPTIONS, s.phar, '--version'], cwd: s.workDir },
+    ]);
+  });
+
+  it('starts every php without a php.ini and without the variables that configure php (ruling A9-18)', async () => {
+    const s = setup({ 'src/Cart.php': '<?php\n' });
+    const p = await s.analyzer.prepare(s.ctx);
+    if (!('run' in p)) throw new Error(JSON.stringify(p));
+    // -n: no php.ini, no scan directory; only the extensions PHPStan's phar needs, from php's own
+    // extension directory; warnings never on stdout (the report).
+    expect(PHP_OPTIONS).toEqual([
+      '-n',
+      '-d',
+      'display_errors=stderr',
+      '-d',
+      'extension=phar',
+      '-d',
+      'extension=tokenizer',
+    ]);
+    expect(p.run.args.slice(0, PHP_OPTIONS.length)).toEqual(PHP_OPTIONS);
+    // The wrapper starts PHPStan with the same options.
+    expect(PHPSTAN_WRAPPER).toContain(
+      "$php = array_merge([PHP_BINARY], ['-n', '-d', 'display_errors=stderr', '-d', 'extension=phar', '-d', 'extension=tokenizer']);",
+    );
+    // The version probe: the run's environment rules too.
+    const probe = s.probeOptions[0]!;
+    expect(probe.env).toMatchObject({ LC_ALL: 'C.UTF-8', HTTPS_PROXY: 'http://127.0.0.1:9' });
+    for (const name of ['PHPRC', 'PHP_INI_SCAN_DIR', 'COMPOSER_HOME', 'PHPSTAN_X', 'XDEBUG_MODE']) {
+      expect(probe.dropEnv?.(name), name).toBe(true);
+      expect(p.run.dropEnv?.(name), name).toBe(true);
+    }
+    expect(probe.dropEnv?.('PATH')).toBe(false);
   });
 
   it('passes the level and memory limit, and copies installed dependencies to deps/, never to vendor/', async () => {
@@ -342,7 +380,7 @@ describe('phpstan helpers', () => {
     expect(PHPSTAN_WRAPPER.startsWith('<?php\n')).toBe(true);
     expect(PHPSTAN_WRAPPER).toContain("fopen($out, 'xb')");
     expect(PHPSTAN_WRAPPER).toContain(
-      'proc_open(array_merge([PHP_BINARY, $phar], array_slice($argv, 3))',
+      'proc_open(array_merge($php, [$phar], array_slice($argv, 3))',
     );
     expect(PHPSTAN_WRAPPER).toContain('exit(3);');
     expect(PHPSTAN_WRAPPER).toContain('exit(4);');

@@ -7,7 +7,14 @@ import type { Logger } from '../log';
 import { findRepoBinary, resolveBinary } from './binary';
 import { confineAnalyzerEnv, mergeAnalyzerEnv, sanitizeAnalyzerEnv } from './env';
 import { killActiveProcesses, runProcess } from './process';
-import type { Analyzer, AnalyzerContext, DotnetRun, Preparation, SarifCapture } from './types';
+import type {
+  Analyzer,
+  AnalyzerContext,
+  DotnetRun,
+  ExecOptions,
+  Preparation,
+  SarifCapture,
+} from './types';
 
 /** Same bound as external SARIF (ruling C10): larger JSON risks V8's string limit. */
 const MAX_SARIF_BYTES = 256 * 1024 * 1024;
@@ -66,6 +73,26 @@ function readSarif(file: string, log: Logger): { value: unknown } | string {
     );
     return 'SARIF output is not valid JSON';
   }
+}
+
+/**
+ * The environment of an adapter's `ctx.exec` command: the analyzer environment as it is, or, with
+ * the command's own `env` and `dropEnv` (ruling A9-18), merged and filtered like a run's, then
+ * sanitized and confined again. Exported for direct testing.
+ */
+export function execEnv(
+  analyzerEnv: Record<string, string>,
+  options: Pick<ExecOptions, 'env' | 'dropEnv'>,
+  root: string,
+): Record<string, string> {
+  if (options.env === undefined && options.dropEnv === undefined) return analyzerEnv;
+  const merged = mergeAnalyzerEnv(analyzerEnv, options.env);
+  const dropEnv = options.dropEnv;
+  const kept =
+    dropEnv === undefined
+      ? merged
+      : Object.fromEntries(Object.entries(merged).filter(([name]) => !dropEnv(name)));
+  return confineAnalyzerEnv(sanitizeAnalyzerEnv(kept), root);
 }
 
 /** Fix-round-2 finding 5: only a missing binary is "not installed"; anything else (e.g.
@@ -229,7 +256,7 @@ async function capture(
             command,
             args,
             cwd: options.cwd ?? o.root,
-            env: analyzerEnv,
+            env: execEnv(analyzerEnv, options, o.root),
             timeoutMs: options.timeoutMs,
           },
           o.log,
