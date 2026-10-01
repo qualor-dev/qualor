@@ -15,6 +15,7 @@ import { CurrentProject } from '../current-project';
 import { GateProfilesPanel } from './gate-profiles-panel';
 import { MainBranchPanel } from './main-branch-panel';
 import { NewCodePanel } from './new-code-panel';
+import { ProjectTokensPanel } from './project-tokens-panel';
 
 /**
  * Project → Settings: one panel per setting, each shown for its own permission (spec §3). The
@@ -23,7 +24,7 @@ import { NewCodePanel } from './new-code-panel';
  */
 @Component({
   selector: 'q-project-settings-page',
-  imports: [GateProfilesPanel, MainBranchPanel, NewCodePanel],
+  imports: [GateProfilesPanel, MainBranchPanel, NewCodePanel, ProjectTokensPanel],
   templateUrl: './project-settings.page.html',
   styleUrl: './project-settings.page.css',
 })
