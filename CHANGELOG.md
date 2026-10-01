@@ -15,7 +15,7 @@ All notable changes to Qualor are listed here, newest first. The format follows
   scan; the guide lists them). It never reads the project's `.rubocop.yml`;
   choose cops with `analyzers.rubocop.select` and `ignore`, and the parsed Ruby version with
   `targetRubyVersion`. A `ruby` quality profile is created for every organisation.
-  `qualor import sonarqube` imports Ruby profiles where a RuboCop cop checks the same thing (three
+  `qualor import sonarqube` imports Ruby profiles where a RuboCop cop checks the same thing (two
   rules are equivalent and activate their cop; the others are overlaps that only import issue
   statuses), and keeps the statuses of issues SonarQube imported from RuboCop.
 

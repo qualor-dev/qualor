@@ -133,9 +133,13 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     }
     // Pinned by plan.test.ts (ruling B9-12): ruby:S1066 is equivalent but outside
     // qualor-default; ruby:S8423 and ruby:S7916 are overlaps (ruling B9-11: rubydre-only rules
-    // have a public name only), so they stay status only.
+    // have a public name only), so they stay status only. ruby:S134 is an overlap: the cop's
+    // CountModifierForms: false leaves modifier if/unless uncounted. ruby:S138 and ruby:S1066 are
+    // the only equivalent ruby rows.
     const pinned = [
       ['ruby:S1066', 'rubocop:Style/SoleNestedConditional', 'equivalent'],
+      ['ruby:S138', 'rubocop:Metrics/MethodLength', 'equivalent'],
+      ['ruby:S134', 'rubocop:Metrics/BlockNesting', 'overlap'],
       ['ruby:S8423', 'rubocop:Lint/CircularArgumentReference', 'overlap'],
       ['ruby:S7916', 'rubocop:Style/AndOr', 'overlap'],
     ] as const;

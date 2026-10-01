@@ -386,7 +386,7 @@ describe('planProfile (import-sonarqube.md §7)', () => {
   it('plans a ruby profile: reviewed equivalent ruby rows and external_rubocop rows activate cops; overlap rows are status only (plan 9B)', () => {
     // Rulings B9-11/B9-12: external_rubocop:Lint/UselessAssignment activates a cop qualor-default
     // runs; ruby:S1066 → Style/SoleNestedConditional is equivalent but outside qualor-default
-    // (mapped, not run); ruby:S8423 and ruby:S7916 are overlaps, so status only.
+    // (mapped, not run); ruby:S8423, ruby:S7916 and ruby:S134 are overlaps, so status only.
     const ruby = (key: string) => rule(key, { language: 'ruby' });
     const plan = planProfile(
       profile({
@@ -395,6 +395,7 @@ describe('planProfile (import-sonarqube.md §7)', () => {
           ruby('ruby:S1066'),
           ruby('ruby:S8423'),
           ruby('ruby:S7916'),
+          ruby('ruby:S134'),
           ruby('external_rubocop:Lint/UselessAssignment'),
           ruby('ruby:S9999'),
         ],
@@ -408,7 +409,7 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     ]);
     expect(plan.stats.mappedNotRun).toEqual(['ruby:S1066']);
     expect(plan.stats.pendingReview).toEqual([]);
-    expect(plan.stats.statusOnly).toEqual(['ruby:S8423', 'ruby:S7916']);
+    expect(plan.stats.statusOnly).toEqual(['ruby:S8423', 'ruby:S7916', 'ruby:S134']);
     expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'ruby:S9999' })]);
   });
 

@@ -922,9 +922,9 @@
     {
       "sonar": ["ruby:S134"],
       "qualor": ["rubocop:Metrics/BlockNesting"],
-      "relation": "equivalent",
+      "relation": "overlap",
       "reviewed": true,
-      "reason": "Both flag if, loop, case and rescue structures nested deeper than a limit, 3 by default on both sides."
+      "reason": "Both flag control structures nested past a limit, 3 by default; the cop skips modifier if and unless forms."
     },
     {
       "sonar": ["ruby:S138"],
