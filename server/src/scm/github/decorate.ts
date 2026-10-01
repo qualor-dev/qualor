@@ -328,6 +328,7 @@ export async function decorateGitHub(
         branchUrl: branchUrl(deps.publicUrl, loaded),
         mergeRequestHead: head,
         vocabulary: 'github',
+        smallChangesetLines: data.smallChangesetLines,
       });
     const rejectedInline: Inline = {
       commented: 0,

@@ -166,9 +166,12 @@ describe('GitLab decoration: commit status and summary (scm.md §4, §5.1–§5.
     const [summary] = summaries(gitlabId);
     expect(summaries(gitlabId)).toHaveLength(1);
     expect(summary?.authorId).toBe(fake.botUserId);
-    expect(summary?.body).toContain('### Qualor: quality gate failed');
-    expect(summary?.body).toContain('**New issues:** 1 (1 medium)');
-    expect(summary?.body).toContain('` src/a.ts:3 ` ` Unexpected console statement. `');
+    expect(summary?.body).toContain('### ❌ Qualor: quality gate failed');
+    expect(summary?.body).toContain('**1 new issue** in this merge request');
+    expect(summary?.body).toContain('**By severity:** 🟠 1 medium');
+    expect(summary?.body).toMatch(
+      /^1\. 🟠 \*\*Medium\*\* · \w+ · ` [^`]+ ` · \S*` src\/a\.ts:3 `\S*\\\n {3}` Unexpected console statement\. `$/m,
+    );
     // Without a pipeline, the status names the merge request's source branch as its ref.
     expect(statusesOf(gitlabId).map((s) => [s.state, s.ref])).toEqual([['failed', 'feature/x']]);
     // The merge request's title and URL land on the branch, the title without controls.
@@ -203,7 +206,7 @@ describe('GitLab decoration: commit status and summary (scm.md §4, §5.1–§5.
     );
     await runDecorations(h, decorationDeps(h));
     expect(summaries(gitlabId)).toHaveLength(1);
-    expect(summaries(gitlabId)[0]?.body).toContain('### Qualor: quality gate passed');
+    expect(summaries(gitlabId)[0]?.body).toContain('### ✅ Qualor: quality gate passed');
     expect(statusesOf(gitlabId).map((s) => s.state)).toEqual(['failed', 'success']);
     // Another analysis with the same result posts no status and edits nothing.
     fake.clearRequests();
@@ -262,7 +265,7 @@ describe('GitLab decoration: commit status and summary (scm.md §4, §5.1–§5.
     // The old summary is gone, the reply in the thread is left alone, and one summary is new.
     expect(fake.discussions(gitlabId, 12).some((d) => d.id === old.id)).toBe(false);
     expect(summaries(gitlabId).map((n) => n.authorId)).toEqual([5, fake.botUserId]);
-    expect(summaries(gitlabId)[1]?.body).toContain('### Qualor: quality gate failed');
+    expect(summaries(gitlabId)[1]?.body).toContain('### ❌ Qualor: quality gate failed');
     expect(writes().filter((w) => w.startsWith('DELETE'))).toEqual([
       `DELETE/projects/${gitlabId}/merge_requests/12/notes/${oldNoteId}`,
     ]);

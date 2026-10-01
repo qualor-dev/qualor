@@ -130,6 +130,29 @@ describe.skipIf(!have && !required)('sonarjs run.mjs', { timeout: 120_000 }, () 
     expect(ids).toEqual(['S1186', 'S905']);
   });
 
+  it('does not report HTTP-verb client methods as constructors (S2430), and still reports the rest', () => {
+    const lines = [
+      'client.GET();',
+      'this.api.client.POST();',
+      'a.b.DELETE();',
+      'Foo();',
+      'obj.Foo();',
+      'obj.GETTER();',
+      'obj.Get();',
+      'Number(1);',
+      '',
+    ];
+    const { log, info } = run(repo({ 'a.js': lines.join('\n') }));
+    expect(info.disabledRules).toEqual([]);
+    const hits = log.runs[0].results
+      .filter((r: { ruleId: string }) => r.ruleId === 'S2430')
+      .map(
+        (r: { locations: { physicalLocation: { region: { startLine: number } } }[] }) =>
+          lines[r.locations[0]!.physicalLocation.region.startLine - 1],
+      );
+    expect(hits).toEqual(['Foo();', 'obj.Foo();', 'obj.GETTER();', 'obj.Get();']);
+  });
+
   it('never loads the project ESLint config (untrusted checkout)', () => {
     const root = repo({
       'eslint.config.js': 'throw new Error("project config executed")',

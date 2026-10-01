@@ -6,6 +6,19 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The summary comment on GitLab merge requests and GitHub pull requests is easier to read: a status
+  icon in the headline, the gate name, the commit and the number of new issues on one line, a table
+  of every gate condition (passed ones too) with its value and the value it requires, the conditions
+  the gate skipped and why, severity markers, a numbered list of the most severe new issues with
+  their quality, rule and a link to each in Qualor, and an **Open in Qualor** link.
+
+### Fixed
+
+- sonarjs: S2430 no longer reports calls to HTTP-verb methods such as `client.GET()` or
+  `client.POST()` (openapi-fetch style clients) as constructors called without `new`.
+
 ## [0.3.1] - 2026-10-01
 
 ### Added

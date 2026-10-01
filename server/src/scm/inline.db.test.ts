@@ -435,6 +435,6 @@ describe('GitLab inline discussions (scm.md §5.4)', () => {
     expect(placed).toHaveLength(MAX_INLINE_THREADS);
     expect(placed.some((d) => d.notes[0]?.position?.['new_line'] === 60)).toBe(true);
     expect(summary(gitlabId)).toContain('50 new issues are commented inline.');
-    expect(summary(gitlabId)).toContain('- … and 50 more');
+    expect(summary(gitlabId)).toContain('\n…and 50 more\n');
   });
 });
