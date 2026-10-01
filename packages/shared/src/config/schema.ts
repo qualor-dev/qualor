@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BUILTIN_ENGINES, ENGINE_ID_PATTERN } from '../report/taxonomy';
+import { CPPCHECK_ENABLE_GROUPS, DEFAULT_CPPCHECK_ENABLE } from '../rules/cfamily';
 import { RUFF_SELECTOR, RUFF_VERSION, ruffSelectorKnown } from '../rules/ruff';
 
 const SCANNABLE_LANGUAGES = [
@@ -12,6 +13,8 @@ const SCANNABLE_LANGUAGES = [
   'css',
   'kotlin',
   'swift',
+  'c',
+  'cpp',
 ] as const;
 
 export const BUILTIN_EXCLUDES: readonly string[] = [
@@ -45,6 +48,11 @@ export const BUILTIN_EXCLUDES: readonly string[] = [
   '**/Pods/**',
   '**/Carthage/**',
   '**/.build/**',
+  // C and C++ build output: CMake's own directories, CLion's build directories and CMake
+  // FetchContent checkouts (plan 9D). `**/build/**` is excluded above already.
+  '**/CMakeFiles/**',
+  '**/cmake-build-*/**',
+  '**/_deps/**',
 ];
 
 const enabled = z.union([z.literal('auto'), z.boolean()]).default('auto');
@@ -87,6 +95,28 @@ const noToken = z.object({ token: z.never().optional() });
 const languages = z
   .union([z.literal('auto'), z.array(z.enum(SCANNABLE_LANGUAGES))])
   .default('auto');
+
+/** A repository-relative directory: no absolute path, `..` segment or backslash (plan 9D). */
+const repoDir = z
+  .string()
+  .min(1)
+  .refine(
+    (p) =>
+      !p.startsWith('/') &&
+      !/^[A-Za-z]:/.test(p) &&
+      !p.includes('\\') &&
+      !p.split('/').includes('..'),
+    { message: 'must be a directory inside the repository, written with /' },
+  );
+/** `-D` values: a macro name, optionally `=value`, without whitespace (plan 9D). */
+const define = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*(=\S*)?$/, {
+  message: 'must be NAME or NAME=value without spaces',
+});
+/** null: look for compile_commands.json; false: none; else a repository file (config.md §6.2). */
+const compileCommands = z
+  .union([z.literal(false), z.string().min(1)])
+  .nullable()
+  .default(null);
 
 const analyzers = z
   .strictObject({
@@ -234,6 +264,29 @@ const analyzers = z
         enabled,
         configFile: z.string().min(1).nullable().default(null),
         timeoutSeconds: timeout(600),
+      })
+      .prefault({}),
+    // C and C++ (plan 9D, config.md §6.2): cppcheck built into qualor/scanner, run on a checked
+    // copy of the files, with Qualor's rewrite of a compile database when there is one.
+    cppcheck: z
+      .strictObject({
+        enabled,
+        enable: z.array(z.enum(CPPCHECK_ENABLE_GROUPS)).default([...DEFAULT_CPPCHECK_ENABLE]),
+        includePaths: z.array(repoDir).default([]),
+        defines: z.array(define).default([]),
+        compileCommands,
+        timeoutSeconds: timeout(1800),
+      })
+      .prefault({}),
+    // The clang-tidy on PATH (never bundled), only with a compile database; the project's
+    // .clang-tidy is read and filtered by Qualor (config.md §6.2). `qualor-default` forces
+    // Qualor's checks.
+    'clang-tidy': z
+      .strictObject({
+        enabled,
+        configFile: z.string().min(1).nullable().default(null),
+        compileCommands,
+        timeoutSeconds: timeout(3600),
       })
       .prefault({}),
   })

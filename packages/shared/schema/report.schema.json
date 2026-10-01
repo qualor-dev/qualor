@@ -411,6 +411,8 @@
               "css",
               "kotlin",
               "swift",
+              "c",
+              "cpp",
               "other"
             ]
           },

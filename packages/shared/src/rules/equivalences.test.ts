@@ -103,7 +103,7 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
   });
 
   it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
-    expect(EXTERNAL_BUILTIN_ALIASES).toEqual({
+    expect(EXTERNAL_BUILTIN_ALIASES).toMatchObject({
       'ext-ruff': 'ruff',
       'ext-stylelint': 'stylelint',
       'ext-htmlhint': 'htmlhint',
@@ -159,12 +159,22 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(rulesEquivalent(rule('ext-bandit:tag-pair'), rule('htmlhint:tag-pair'))).toBe(false);
   });
 
-  it('ranks swiftlint below every other built-in engine, above any external one (data-model.md §5.3)', () => {
-    for (const engine of ENGINE_PRIORITY.filter((e) => e !== 'swiftlint')) {
+  it('ranks swiftlint below every earlier built-in engine, above any external one (data-model.md §5.3)', () => {
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('swiftlint'))) {
       expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('swiftlint'));
     }
     expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('my-tool'));
     expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('ext-swiftlint'));
+  });
+
+  it('ranks cppcheck above clang-tidy, both below the earlier built-in engines and above any external one (plan 9D)', () => {
+    const at = (e: string) => ENGINE_PRIORITY.indexOf(e);
+    expect(at('cppcheck')).toBeGreaterThan(at('swiftlint'));
+    expect(at('clang-tidy')).toBe(at('cppcheck') + 1);
+    expect(enginePriority('cppcheck')).toBeGreaterThan(enginePriority('clang-tidy'));
+    expect(enginePriority('clang-tidy')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-cppcheck']).toBe('cppcheck');
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-clang-tidy']).toBe('clang-tidy');
   });
 
   it('pairs an imported SwiftLint SARIF (ext-swiftlint, identical ids) with the built-in rule (plan 8F ruling F4)', () => {

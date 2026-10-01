@@ -396,4 +396,64 @@ describe('BUILTIN_EXCLUDES', () => {
       parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'swiftlint' }] }),
     ).toThrow(/reserved/);
   });
+
+  it('has analyzers.cppcheck and analyzers.clang-tidy, knows C and C++, excludes CMake output (plan 9D)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.cppcheck).toEqual({
+      enabled: 'auto',
+      enable: ['warning', 'performance', 'portability'],
+      includePaths: [],
+      defines: [],
+      compileCommands: null,
+      timeoutSeconds: 1800,
+    });
+    expect(c.analyzers['clang-tidy']).toEqual({
+      enabled: 'auto',
+      configFile: null,
+      compileCommands: null,
+      timeoutSeconds: 3600,
+    });
+    expect(parseConfig({ version: 1, languages: ['c', 'cpp'] }).languages).toEqual(['c', 'cpp']);
+    for (const glob of ['**/CMakeFiles/**', '**/cmake-build-*/**', '**/_deps/**']) {
+      expect(BUILTIN_EXCLUDES).toContain(glob);
+    }
+    const ok = parseConfig({
+      version: 1,
+      analyzers: {
+        cppcheck: {
+          enable: ['style'],
+          includePaths: ['include', 'lib/inc'],
+          defines: ['DEBUG', 'LEVEL=2'],
+          compileCommands: false,
+        },
+        'clang-tidy': {
+          configFile: 'qualor-default',
+          compileCommands: 'out/compile_commands.json',
+        },
+      },
+    });
+    expect(ok.analyzers.cppcheck.compileCommands).toBe(false);
+    expect(ok.analyzers['clang-tidy'].compileCommands).toBe('out/compile_commands.json');
+    const bad = (cppcheck: unknown) => () =>
+      parseConfig({ version: 1, analyzers: { cppcheck } } as never);
+    expect(bad({ enable: ['all'] })).toThrow();
+    expect(bad({ enable: ['information'] })).toThrow();
+    expect(bad({ includePaths: ['/usr/include'] })).toThrow();
+    expect(bad({ includePaths: ['../outside'] })).toThrow();
+    expect(bad({ includePaths: ['a\\b'] })).toThrow();
+    expect(bad({ defines: ['-fplugin=x.so'] })).toThrow();
+    expect(bad({ defines: ['A B'] })).toThrow();
+    expect(bad({ compileCommands: '' })).toThrow();
+    expect(bad({ compileCommands: true })).toThrow();
+    expect(bad({ args: ['--addon=misra'] })).toThrow();
+    expect(() =>
+      parseConfig({ version: 1, analyzers: { 'clang-tidy': { load: 'x.so' } } } as never),
+    ).toThrow();
+    for (const engine of ['cppcheck', 'clang-tidy']) {
+      expect(
+        () => parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine }] }),
+        engine,
+      ).toThrow(/reserved/);
+    }
+  });
 });
