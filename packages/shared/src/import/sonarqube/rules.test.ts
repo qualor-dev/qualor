@@ -5,6 +5,7 @@ import sonaranalyzerKeys from '../../../rules/sonaranalyzer-csharp-keys.json' wi
 import sonarjsDefaultKeys from '../../../rules/sonarjs-default-keys.json' with { type: 'json' };
 import sonarjsKeys from '../../../rules/sonarjs-keys.json' with { type: 'json' };
 import raw from '../../../rules/sonarqube.json' with { type: 'json' };
+import { GOSEC_RULES, GOVET_ANALYZERS, STATICCHECK_CHECKS } from '../../rules/golang';
 import { engineOf, loadSonarMapping, SONAR_MAPPING } from './rules';
 
 const table = (patch: Record<string, unknown>) =>
@@ -20,7 +21,7 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
   });
 
   it('knows no language it does not list', () => {
-    expect(SONAR_MAPPING.language('go')).toBeNull();
+    expect(SONAR_MAPPING.language('abap')).toBeNull();
   });
 
   it('maps py to the python profile, governed by ruff (plan 8C)', () => {
@@ -33,6 +34,53 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
       { key: 'swiftlint:force_cast', relation: 'equivalent', reviewed: true, source: 'repository' },
     ]);
     expect(SONAR_MAPPING.targets('swift:S1481')).toEqual([]); // SonarSource's own Swift rules: unmapped
+  });
+
+  it('maps the go language, and the statuses of go vet issues SonarQube imported (plan 9C)', () => {
+    expect(SONAR_MAPPING.language('go')).toEqual({
+      language: 'go',
+      engines: ['staticcheck', 'govet', 'gosec'],
+    });
+    expect(SONAR_MAPPING.targets('external_govet:printf')).toEqual([
+      { key: 'govet:printf', relation: 'equivalent', reviewed: true, source: 'repository' },
+    ]);
+    // golangci-lint's SonarQube keys are linter names, not checks: never mapped.
+    expect(SONAR_MAPPING.targets('external_golangci-lint:govet')).toEqual([]);
+    expect(SONAR_MAPPING.targets('go:S1656')).toEqual([
+      { key: 'staticcheck:SA4018', relation: 'equivalent', reviewed: false, source: 'table' },
+    ]);
+    // Same idea, different scope (staticcheck leaves float operands and shifts alone): overlap.
+    expect(SONAR_MAPPING.targets('go:S1764')).toEqual([
+      { key: 'staticcheck:SA4000', relation: 'overlap', reviewed: false, source: 'table' },
+    ]);
+    expect(SONAR_MAPPING.targets('go:S9999')).toEqual([]);
+  });
+
+  it('names only rule ids the pinned Go tools have in every go row, unreviewed, with our own short reasons (plan 9C)', () => {
+    const known = (key: string) => {
+      const [engine, id = ''] = key.split(':');
+      if (engine === 'staticcheck') return STATICCHECK_CHECKS.has(id);
+      if (engine === 'govet') return GOVET_ANALYZERS.has(id);
+      if (engine === 'gosec') return GOSEC_RULES.has(id);
+      return false;
+    };
+    const rows = raw.rules.filter((r) => r.sonar.some((s) => s.startsWith('go:')));
+    expect(rows.length).toBe(19);
+    for (const row of rows) {
+      expect(
+        row.sonar.every((s) => s.startsWith('go:')),
+        row.sonar.join(),
+      ).toBe(true);
+      expect(row.reviewed, row.sonar.join()).toBe(false);
+      for (const q of row.qualor) expect(known(q), q).toBe(true);
+      // The table schema caps every reason at 120 characters (the "holds no SonarSource text" test).
+      expect(row.reason.length, row.sonar.join()).toBeLessThanOrEqual(120);
+    }
+    // Only a row whose SonarQube rule's public description matches the target's scope is
+    // equivalent (ruling B9-11's rule, applied to Go).
+    expect(rows.filter((r) => r.relation === 'equivalent').map((r) => r.sonar.join())).toEqual([
+      'go:S1656',
+    ]);
   });
 
   it('maps external_ruff statuses one to one, for codes the pinned Ruff has only', () => {
@@ -277,6 +325,7 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     squid: 'java',
     csharpsquid: 'cs',
     python: 'py',
+    go: 'go',
   };
 
   it("keeps every curated target, and every repository row's engine, to an engine of its SonarQube rule's language", () => {

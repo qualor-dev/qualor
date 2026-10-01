@@ -1,5 +1,5 @@
 {
-  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules.",
+  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules. Go (Phase 9C): external_govet maps to govet one to one; go:S#### rows are curated (keys and our own reasons only) and stay reviewed:false until a person compares both rules' documentation, so they import issue statuses only; a row is equivalent only where the SonarQube rule's public description has the target's scope at its default settings, otherwise overlap; external_golangci-lint keys are linter names and are not mapped.",
   "languages": {
     "js": {
       "language": "javascript",
@@ -24,7 +24,8 @@
     "swift": {
       "language": "swift",
       "engines": ["swiftlint"]
-    }
+    },
+    "go": { "language": "go", "engines": ["staticcheck", "govet", "gosec"] }
   },
   "aliases": {
     "squid": "java"
@@ -54,6 +55,11 @@
       "repository": "external_swiftlint",
       "engine": "swiftlint",
       "reason": "SwiftLint reports imported into SonarQube keep SwiftLint's rule identifiers."
+    },
+    {
+      "repository": "external_govet",
+      "engine": "govet",
+      "reason": "go vet reports imported into SonarQube keep go vet's analyzer names (an unknown key stays unmapped)."
     },
     {
       "repository": "external_ruff",
@@ -827,6 +833,146 @@
       "relation": "overlap",
       "reviewed": true,
       "reason": "Both flag pandas calls using inplace=True instead of reassigning the result."
+    },
+    {
+      "sonar": ["go:S1764"],
+      "qualor": ["staticcheck:SA4000"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag identical operands on a binary operator; staticcheck skips float operands and shifts."
+    },
+    {
+      "sonar": ["go:S1656"],
+      "qualor": ["staticcheck:SA4018"],
+      "relation": "equivalent",
+      "reviewed": false,
+      "reason": "Both flag a variable assigned to itself."
+    },
+    {
+      "sonar": ["go:S1763"],
+      "qualor": ["govet:unreachable"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag code after a jump; go vet also follows panics, endless loops and branches that all return."
+    },
+    {
+      "sonar": ["go:S1125"],
+      "qualor": ["staticcheck:S1002"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both target redundant boolean literals; staticcheck only comparisons with == or !=."
+    },
+    {
+      "sonar": ["go:S108"],
+      "qualor": ["staticcheck:SA9003"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag an empty block; staticcheck only an empty if or else branch, and only when enabled."
+    },
+    {
+      "sonar": ["go:S2068"],
+      "qualor": ["gosec:G101"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag hard-coded credentials; gosec matches credential-like names and values."
+    },
+    {
+      "sonar": ["go:S6437"],
+      "qualor": ["gosec:G101"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag a secret written into the code."
+    },
+    {
+      "sonar": ["go:S4790"],
+      "qualor": [
+        "gosec:G401",
+        "gosec:G406",
+        "gosec:G501",
+        "gosec:G505",
+        "gosec:G506",
+        "gosec:G507"
+      ],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag weak hash functions (MD5, SHA-1, MD4, RIPEMD-160); gosec also flags their imports."
+    },
+    {
+      "sonar": ["go:S5547"],
+      "qualor": ["gosec:G405", "gosec:G502", "gosec:G503"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag weak ciphers (DES, RC4); gosec also flags their imports."
+    },
+    {
+      "sonar": ["go:S4423"],
+      "qualor": ["gosec:G402"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag weak TLS versions; gosec's rule covers other TLS settings too."
+    },
+    {
+      "sonar": ["go:S4830"],
+      "qualor": ["gosec:G402"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag TLS connections that skip certificate verification."
+    },
+    {
+      "sonar": ["go:S5527"],
+      "qualor": ["gosec:G402"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag TLS connections that skip host name verification."
+    },
+    {
+      "sonar": ["go:S2245"],
+      "qualor": ["gosec:G404"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag math/rand where a cryptographic random source is expected."
+    },
+    {
+      "sonar": ["go:S2077"],
+      "qualor": ["gosec:G201", "gosec:G202", "gosec:G701"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag SQL queries built from formatted or concatenated strings."
+    },
+    {
+      "sonar": ["go:S2612"],
+      "qualor": ["gosec:G301", "gosec:G302", "gosec:G306", "gosec:G307"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag file or directory permissions that are too open."
+    },
+    {
+      "sonar": ["go:S5443"],
+      "qualor": ["gosec:G303"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag temporary files at predictable paths in shared directories."
+    },
+    {
+      "sonar": ["go:S5445"],
+      "qualor": ["gosec:G303"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag temporary files created insecurely."
+    },
+    {
+      "sonar": ["go:S4426"],
+      "qualor": ["gosec:G403"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag cryptographic keys that are too short (RSA below 2048 bits)."
+    },
+    {
+      "sonar": ["go:S4507"],
+      "qualor": ["gosec:G108"],
+      "relation": "overlap",
+      "reviewed": false,
+      "reason": "Both flag debugging features left on; gosec the exposed net/http/pprof endpoint."
     }
   ]
 }
