@@ -55,6 +55,11 @@ export interface AnalyzerContext {
 export interface ExecOptions {
   timeoutMs: number;
   cwd?: string;
+  /**
+   * Set over the analyzer environment for this command only, then sanitized again like a run's
+   * `env` (the Go version probes: GOTOOLCHAIN=local, ruling G9-15).
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 export interface AnalyzerCommand {

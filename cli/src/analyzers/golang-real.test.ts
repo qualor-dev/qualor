@@ -9,7 +9,13 @@ import {
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { parseConfig, STATICCHECK_VERSION, type QualorConfigInput } from '@qualor/shared';
+import {
+  GO_VERSION,
+  GOSEC_VERSION,
+  parseConfig,
+  STATICCHECK_VERSION,
+  type QualorConfigInput,
+} from '@qualor/shared';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { describeWithGo } from '../../test/analyzers';
 import { useTempDirs, writeTree } from '../../test/tmp';
@@ -93,63 +99,73 @@ describeWithGo()('the Go engines with the real tools (plan 9C)', { timeout: 300_
   });
   afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
-  it('never runs, fetches or switches what a checkout or a CI variable asks for', async () => {
-    const root = tmp();
-    const outside = tmp();
-    const marker = path.join(outside, 'exec.sh');
-    writeFileSync(marker, `#!/bin/sh\ntouch ${outside}/exec-marker\nexec "$@"\n`);
-    chmodSync(marker, 0o755);
-    writeTree(outside, {
-      'mod/go.mod': 'module ex/outside\n\ngo 1.24\n',
-      'mod/bad.go': 'package outside\n\nfunc F(x int) bool { return x == x }\n',
-    });
-    writeTree(root, {
-      'go.mod': 'module ex/hostile\n\ngo 1.24\n\ntoolchain go1.99.1\n',
-      'go.work': `go 1.24\n\nuse (\n\t.\n\t${outside}/mod\n)\n`,
-      '.golangci.yml': `linters-settings:\n  custom:\n    evil:\n      path: ${outside}/plugin.so\n`,
-      'main.go': [
-        'package main',
-        '',
-        `//go:generate sh -c "touch ${outside}/generate-marker"`,
-        '',
-        'import "fmt"',
-        '',
-        'func main() {',
-        '\tx := 1',
-        '\tif x == x {',
-        '\t\tfmt.Printf("%d\\n", "s")',
-        '\t}',
-        '}',
-        '',
-      ].join('\n'),
-      'cgo.go': `package main\n\n// #cgo LDFLAGS: -Wl,--version-script=${outside}/cgo-marker\n// int f() { return 1; }\nimport "C"\n\nfunc viaC() int { return int(C.f()) }\n`,
-    });
-    // An existing but empty GOROOT: the version probes (ctx.exec, which keeps the CI's environment)
-    // still print a version, while a GOROOT that leaked into the runner's environment would make
-    // package loading fail and the engines not `ok`. A missing directory would fail the probe itself
-    // (`go version` exits 2: "cannot find GOROOT directory", pre-flight scan).
-    const emptyGoroot = path.join(outside, 'empty-goroot');
-    mkdirSync(emptyGoroot);
-    const { by } = await scan(root, {
-      ...process.env,
-      GOTOOLCHAIN: 'auto',
-      GOPROXY: `http://127.0.0.1:${port}`,
-      GOFLAGS: `-toolexec=${marker}`,
-      GOPACKAGESDRIVER: marker,
-      GOSEC_AI_API_KEY: 'not-a-key',
-      GOROOT: emptyGoroot,
-    });
-    for (const id of ['staticcheck', 'govet', 'gosec'])
-      expect(by(id).status, `${id}: ${by(id).reason ?? ''}`).toBe('ok');
-    expect(results(by('staticcheck').sarif).map(where).sort()).toEqual([
-      'main.go:10 SA5009',
-      'main.go:9 SA4000',
-    ]);
-    expect(results(by('govet').sarif).map(where)).toEqual(['main.go:10 printf']);
-    expect(requests).toBe(0);
-    for (const m of ['exec-marker', 'generate-marker', 'cgo-marker'])
-      expect(existsSync(path.join(outside, m)), m).toBe(false);
-  });
+  // `auto` with the go.mod's toolchain line, and a CI that names a toolchain itself (ruling G9-15:
+  // the version probes too run with GOTOOLCHAIN=local).
+  it.each(['auto', 'go1.99.1'])(
+    'never runs, fetches or switches what a checkout or a CI variable asks for (GOTOOLCHAIN=%s)',
+    async (toolchain) => {
+      const root = tmp();
+      const outside = tmp();
+      const marker = path.join(outside, 'exec.sh');
+      writeFileSync(marker, `#!/bin/sh\ntouch ${outside}/exec-marker\nexec "$@"\n`);
+      chmodSync(marker, 0o755);
+      writeTree(outside, {
+        'mod/go.mod': 'module ex/outside\n\ngo 1.24\n',
+        'mod/bad.go': 'package outside\n\nfunc F(x int) bool { return x == x }\n',
+      });
+      writeTree(root, {
+        'go.mod': 'module ex/hostile\n\ngo 1.24\n\ntoolchain go1.99.1\n',
+        'go.work': `go 1.24\n\nuse (\n\t.\n\t${outside}/mod\n)\n`,
+        '.golangci.yml': `linters-settings:\n  custom:\n    evil:\n      path: ${outside}/plugin.so\n`,
+        'main.go': [
+          'package main',
+          '',
+          `//go:generate sh -c "touch ${outside}/generate-marker"`,
+          '',
+          'import "fmt"',
+          '',
+          'func main() {',
+          '\tx := 1',
+          '\tif x == x {',
+          '\t\tfmt.Printf("%d\\n", "s")',
+          '\t}',
+          '}',
+          '',
+        ].join('\n'),
+        'cgo.go': `package main\n\n// #cgo LDFLAGS: -Wl,--version-script=${outside}/cgo-marker\n// int f() { return 1; }\nimport "C"\n\nfunc viaC() int { return int(C.f()) }\n`,
+      });
+      // An existing but empty GOROOT: the version probes (ctx.exec, which keeps the CI's environment)
+      // still print a version, while a GOROOT that leaked into the runner's environment would make
+      // package loading fail and the engines not `ok`. A missing directory would fail the probe itself
+      // (`go version` exits 2: "cannot find GOROOT directory", pre-flight scan).
+      const emptyGoroot = path.join(outside, 'empty-goroot');
+      mkdirSync(emptyGoroot);
+      const { by } = await scan(root, {
+        ...process.env,
+        GOTOOLCHAIN: toolchain,
+        GOPROXY: `http://127.0.0.1:${port}`,
+        GOFLAGS: `-toolexec=${marker}`,
+        GOPACKAGESDRIVER: marker,
+        GOSEC_AI_API_KEY: 'not-a-key',
+        GOROOT: emptyGoroot,
+      });
+      for (const id of ['staticcheck', 'govet', 'gosec'])
+        expect(by(id).status, `${id}: ${by(id).reason ?? ''}`).toBe('ok');
+      expect(results(by('staticcheck').sarif).map(where).sort()).toEqual([
+        'main.go:10 SA5009',
+        'main.go:9 SA4000',
+      ]);
+      expect(results(by('govet').sarif).map(where)).toEqual(['main.go:10 printf']);
+      expect(requests).toBe(0);
+      expect([by('staticcheck').version, by('govet').version, by('gosec').version]).toEqual([
+        STATICCHECK_VERSION,
+        GO_VERSION,
+        GOSEC_VERSION,
+      ]);
+      for (const m of ['exec-marker', 'generate-marker', 'cgo-marker'])
+        expect(existsSync(path.join(outside, m)), m).toBe(false);
+    },
+  );
 
   it('leaves out a module that replaces a dependency with an outside directory or links out, and analyses the others', async () => {
     const root = tmp();

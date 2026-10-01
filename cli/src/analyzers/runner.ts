@@ -229,7 +229,13 @@ async function capture(
             command,
             args,
             cwd: options.cwd ?? o.root,
-            env: analyzerEnv,
+            env:
+              options.env === undefined
+                ? analyzerEnv
+                : confineAnalyzerEnv(
+                    sanitizeAnalyzerEnv(mergeAnalyzerEnv(analyzerEnv, options.env)),
+                    o.root,
+                  ),
             timeoutMs: options.timeoutMs,
           },
           o.log,

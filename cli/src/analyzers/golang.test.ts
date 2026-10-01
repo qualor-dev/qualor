@@ -318,6 +318,28 @@ describe('the Go analyzers prepare a runner spec (config.md §6, plan 9C)', () =
     expect(capture?.unavailable ?? false).toBe(false);
   });
 
+  it('probes the versions with GOTOOLCHAIN=local, GOENV=off and an empty GOFLAGS (ruling G9-15)', async () => {
+    const seen: [string, Readonly<Record<string, string>> | undefined][] = [];
+    for (const analyzer of [staticcheckAnalyzer, govetAnalyzer, gosecAnalyzer]) {
+      const { ctx } = context(MODULE);
+      const exec = ctx.exec;
+      await run(
+        {
+          ...ctx,
+          exec: (command, args, options) => {
+            seen.push([path.basename(command), options.env]);
+            return exec(command, args, options);
+          },
+        },
+        analyzer,
+      );
+    }
+    expect(seen.map(([name]) => name)).toEqual(['go', 'staticcheck', 'go', 'go', 'gosec']);
+    for (const [name, env] of seen) {
+      expect(env, name).toEqual({ GOTOOLCHAIN: 'local', GOENV: 'off', GOFLAGS: '' });
+    }
+  });
+
   it('reads the versions the tools print', () => {
     expect(parseGoVersion('go version go1.27.1 linux/amd64\n')).toBe('1.27.1');
     expect(parseGoVersion('go version go1.28rc1 linux/arm64')).toBe('1.28rc1');

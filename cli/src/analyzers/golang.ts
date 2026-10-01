@@ -103,13 +103,28 @@ function notInstalled(ctx: AnalyzerContext, name: string): string {
     : `${base}; the repository's own ${name} is never run`;
 }
 
+/**
+ * Ruling G9-15: a version probe keeps the CI's environment (ctx.exec) but never its Go toolchain
+ * choice: a CI-set GOTOOLCHAIN=go1.xx, a go env file or GOFLAGS would make `go version` download
+ * and run another toolchain.
+ */
+const PROBE_ENV: Readonly<Record<string, string>> = Object.freeze({
+  GOTOOLCHAIN: 'local',
+  GOENV: 'off',
+  GOFLAGS: '',
+});
+
 async function probe(
   ctx: AnalyzerContext,
   binary: string,
   args: readonly string[],
   parse: (stdout: string) => string | null,
 ): Promise<string | null> {
-  const r = await ctx.exec(binary, args, { timeoutMs: 30_000, cwd: ctx.workDir });
+  const r = await ctx.exec(binary, args, {
+    timeoutMs: 30_000,
+    cwd: ctx.workDir,
+    env: PROBE_ENV,
+  });
   return r.exitCode === 0 ? parse(r.stdout) : null;
 }
 

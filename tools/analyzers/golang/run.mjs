@@ -1,6 +1,7 @@
 // Qualor's Go runner (plan 9C, config.md §6). The CLI runs it with node, in the environment it
 // built (GOTOOLCHAIN=local, GOPROXY=off, GOFLAGS=, GOWORK=off, CGO_ENABLED=0, …), on the Go
-// modules it planned; it sets those Go settings again for every command it starts (GO_SETTINGS). Per module it asks `go list` which packages load offline, runs one tool
+// modules it planned; it sets those Go settings again for every command it starts
+// (GO_SETTINGS). Per module it asks `go list` which packages load offline, runs one tool
 // (staticcheck, go vet or gosec) on the loadable packages that hold in-scope files, and writes one
 // SARIF 2.1.0 log with repository-relative locations. No dependencies; MIT.
 //   node run.mjs --spec <spec.json>
