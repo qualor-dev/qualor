@@ -1,4 +1,12 @@
-import { lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+  type Dirent,
+} from 'node:fs';
 import path from 'node:path';
 import { staysInside } from './binary';
 import { readPlainFile } from './checked-copy';
@@ -117,15 +125,62 @@ export function phpDependencies(root: string): PhpDependencies {
   return required ? { kind: 'skip', reason: DEPENDENCIES_NOT_INSTALLED } : { kind: 'none' };
 }
 
+/** Whether a directory entry of `<vendorDir>/<rel>` is Composer's own (config.md §6). */
+function composerOwn(rel: string, name: string, isDirectory: boolean): boolean {
+  // Compared case-insensitively (ruling A9-15): on a case-insensitive file system
+  // `Autoload.php` is the file Composer writes.
+  const lower = name.toLowerCase();
+  if (rel === '' && EXCLUDED_TOP_LEVEL.has(lower)) return true;
+  // Composer's own files directly in <vendorDir>/composer/ (or a file of that name); its
+  // subdirectories are packages.
+  if (rel === '' && lower === COMPOSER_DIR) return !isDirectory;
+  return rel.toLowerCase() === COMPOSER_DIR && !isDirectory;
+}
+
+const joinRel = (rel: string, name: string) => (rel === '' ? name : `${rel}/${name}`);
+
+function directoryEntries(dir: string): Dirent[] {
+  try {
+    return lstatSync(dir).isDirectory() ? readdirSync(dir, { withFileTypes: true }) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The `.php` files below `base` to copy, `/`-separated and relative to it; no link followed. */
+function* vendorPhpFiles(base: string): Generator<string> {
+  const stack: string[] = [''];
+  while (stack.length > 0) {
+    const rel = stack.pop() as string;
+    const dir = path.join(base, ...rel.split('/').filter((s) => s !== ''));
+    for (const e of directoryEntries(dir)) {
+      if (composerOwn(rel, e.name, e.isDirectory())) continue;
+      const childRel = joinRel(rel, e.name);
+      // A Dirent of a link is neither a directory nor a file: links are never followed.
+      if (e.isDirectory()) stack.push(childRel);
+      if (e.isFile() && e.name.endsWith('.php')) yield childRel;
+    }
+  }
+}
+
+function writeNew(out: string, bytes: Buffer): boolean {
+  try {
+    mkdirSync(path.dirname(out), { recursive: true });
+    writeFileSync(out, bytes, { flag: 'wx' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * config.md §6: the `.php` files below `<root>/<vendorDir>`, without the files directly in its
  * `composer/` directory (its subdirectories are `composer/*` packages), its `bin/` directory and
- * its `autoload.php`, copied the checked way (`readPlainFile`: a regular
- * file, no link anywhere on its path, at most 1 MiB) to `<target>/<vendorDir>/`. No link is
- * followed while walking. PHPStan only scans this copy for symbols; it never lives at
- * `<cwd>/vendor`, where PHPStan would `require` an autoloader (fact P4). Past `maxBytes` in all
- * (ruling A9-14) the partial copy is removed and `tooLarge` is set: the caller skips PHPStan with
- * `DEPENDENCIES_TOO_LARGE`.
+ * its `autoload.php`, copied the checked way (`readPlainFile`: a regular file, no link anywhere on
+ * its path, at most 1 MiB) to `<target>/<vendorDir>/`. No link is followed while walking. PHPStan
+ * only scans this copy for symbols; it never lives at `<cwd>/vendor`, where PHPStan would
+ * `require` an autoloader (fact P4). Past `maxBytes` in all (ruling A9-14) the partial copy is
+ * removed and `tooLarge` is set: the caller skips PHPStan with `DEPENDENCIES_TOO_LARGE`.
  */
 export function copyDependencies(
   root: string,
@@ -141,59 +196,25 @@ export function copyDependencies(
     return { files: 0, skipped: 0, truncated: false, tooLarge: false };
   }
   const base = path.join(root, ...vendorDir.split('/'));
+  const outBase = path.join(target, ...vendorDir.split('/'));
   let files = 0;
   let skipped = 0;
-  let truncated = false;
   let bytesCopied = 0;
-  const stack: string[] = [''];
-  while (stack.length > 0 && !truncated) {
-    const rel = stack.pop() as string;
-    const dir = rel === '' ? base : path.join(base, ...rel.split('/'));
-    let entries;
-    try {
-      if (!lstatSync(dir).isDirectory()) continue;
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
+  for (const rel of vendorPhpFiles(base)) {
+    if (files >= limit) return { files, skipped, truncated: true, tooLarge: false };
+    const bytes = readPlainFile(root, realRoot, path.join(base, ...rel.split('/')));
+    if (bytes === null) {
+      skipped++;
       continue;
     }
-    for (const e of entries) {
-      // Compared case-insensitively (ruling A9-15): on a case-insensitive file system
-      // `Autoload.php` is the file Composer writes.
-      if (rel === '' && EXCLUDED_TOP_LEVEL.has(e.name.toLowerCase())) continue;
-      // Composer's own files directly in <vendorDir>/composer/ (or a file of that name).
-      if (rel === '' && e.name.toLowerCase() === COMPOSER_DIR && !e.isDirectory()) continue;
-      if (rel.toLowerCase() === COMPOSER_DIR && !e.isDirectory()) continue;
-      const childRel = rel === '' ? e.name : `${rel}/${e.name}`;
-      // A Dirent of a link is neither a directory nor a file: links are never followed.
-      if (e.isDirectory()) {
-        stack.push(childRel);
-        continue;
-      }
-      if (!e.isFile() || !e.name.endsWith('.php')) continue;
-      if (files >= limit) {
-        truncated = true;
-        break;
-      }
-      const bytes = readPlainFile(root, realRoot, path.join(dir, e.name));
-      if (bytes === null) {
-        skipped++;
-        continue;
-      }
-      bytesCopied += bytes.length;
-      if (bytesCopied > maxBytes) {
-        // Ruling A9-14: no partial copy is left for PHPStan to scan; the caller skips it.
-        rmSync(path.join(target, ...vendorDir.split('/')), { recursive: true, force: true });
-        return { files: 0, skipped, truncated: false, tooLarge: true };
-      }
-      const out = path.join(target, ...vendorDir.split('/'), ...childRel.split('/'));
-      try {
-        mkdirSync(path.dirname(out), { recursive: true });
-        writeFileSync(out, bytes, { flag: 'wx' });
-        files++;
-      } catch {
-        skipped++;
-      }
+    bytesCopied += bytes.length;
+    if (bytesCopied > maxBytes) {
+      // Ruling A9-14: no partial copy is left for PHPStan to scan; the caller skips it.
+      rmSync(outBase, { recursive: true, force: true });
+      return { files: 0, skipped, truncated: false, tooLarge: true };
     }
+    if (writeNew(path.join(outBase, ...rel.split('/')), bytes)) files++;
+    else skipped++;
   }
-  return { files, skipped, truncated, tooLarge: false };
+  return { files, skipped, truncated: false, tooLarge: false };
 }

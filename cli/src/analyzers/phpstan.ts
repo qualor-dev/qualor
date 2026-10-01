@@ -51,7 +51,7 @@ export const PHP_OPTIONS: readonly string[] = [
   '-d',
   'extension=tokenizer',
 ];
-const phpArray = (values: readonly string[]) => `[${values.map((v) => `'${v}'`).join(', ')}]`;
+const phpArray = (values: readonly string[]) => `[${values.map((v) => "'" + v + "'").join(', ')}]`;
 
 /** A NEON double-quoted string: JSON's escapes, and `%%` for `%` (Nette expands `%name%`). */
 export function neonString(value: string): string {
@@ -265,6 +265,58 @@ interface DependencyLimits {
   bytes: number;
 }
 
+/** The phar to run: `QUALOR_PHPSTAN_PHAR` or the image's; otherwise why PHPStan does not run. */
+function pharOf(ctx: AnalyzerContext, defaultPhar: string): string | Preparation {
+  const override = ctx.env['QUALOR_PHPSTAN_PHAR'];
+  if (override === undefined || override === '') {
+    // Ruling G6: a tool that comes with the qualor/scanner image is a skip on a plain host.
+    return isFile(defaultPhar) ? defaultPhar : { skip: NOT_INSTALLED };
+  }
+  if (!path.isAbsolute(override) || isInside(ctx.root, override)) {
+    return { unavailable: 'QUALOR_PHPSTAN_PHAR must be an absolute path outside the repository' };
+  }
+  if (!isFile(override))
+    return { unavailable: `QUALOR_PHPSTAN_PHAR ${shown(override)} is not a file` };
+  return override;
+}
+
+/**
+ * The installed dependencies copied for PHPStan's `scanDirectories`: the copy's directory, `null`
+ * to run without them, or why PHPStan does not run.
+ */
+function dependencyCopy(
+  ctx: AnalyzerContext,
+  deps: { vendorDir: string; requiresPackages: boolean },
+  limits: DependencyLimits,
+): string | null | Preparation {
+  const target = path.join(ctx.workDir, 'deps');
+  const c = copyDependencies(ctx.root, deps.vendorDir, target, limits.files, limits.bytes);
+  ctx.log.debug(
+    `phpstan: ${c.files} dependency file(s) read from ${shown(deps.vendorDir)}/, ${c.skipped} left out`,
+  );
+  // Rulings A9-14, A9-15: PHPStan with part of the symbols would report what it cannot see as
+  // false positives, so past either cap it does not run at all.
+  if (c.tooLarge || c.truncated) {
+    if (c.truncated) {
+      ctx.log.debug(
+        `phpstan: ${shown(deps.vendorDir)}/ has more than ${limits.files} PHP files; PHPStan is skipped`,
+      );
+    }
+    rmSync(target, { recursive: true, force: true });
+    return { skip: DEPENDENCIES_TOO_LARGE };
+  }
+  if (c.skipped > 0) {
+    ctx.log.warn(
+      `phpstan: ${c.skipped} dependency file(s) below ${shown(deps.vendorDir)}/ not read (a link, a file larger than 1 MiB or one that cannot be read)`,
+    );
+  }
+  if (c.files > 0) return target;
+  // Rulings A9-15, A9-17: installed.json is there but no dependency file could be read (vendor/
+  // is a link, or holds only Composer's own files) while packages are required: the same as
+  // dependencies not installed. Without such a require PHPStan runs without them.
+  return deps.requiresPackages ? { skip: DEPENDENCIES_NOT_INSTALLED } : null;
+}
+
 async function prepare(
   ctx: AnalyzerContext,
   defaultPhar: string,
@@ -274,19 +326,8 @@ async function prepare(
   const php = ctx.files.filter((f) => f.language === 'php');
   if (php.length === 0) return { skip: 'no PHP files in scope' };
 
-  let phar = defaultPhar;
-  const override = ctx.env['QUALOR_PHPSTAN_PHAR'];
-  if (override !== undefined && override !== '') {
-    if (!path.isAbsolute(override) || isInside(ctx.root, override)) {
-      return { unavailable: 'QUALOR_PHPSTAN_PHAR must be an absolute path outside the repository' };
-    }
-    if (!isFile(override))
-      return { unavailable: `QUALOR_PHPSTAN_PHAR ${shown(override)} is not a file` };
-    phar = override;
-  } else if (!isFile(defaultPhar)) {
-    // Ruling G6: a tool that comes with the qualor/scanner image is a skip on a plain host.
-    return { skip: NOT_INSTALLED };
-  }
+  const phar = pharOf(ctx, defaultPhar);
+  if (typeof phar !== 'string') return phar;
   const phpBinary = ctx.resolveBinary('php');
   if (phpBinary === null) {
     return { unavailable: 'PHPStan needs php 7.4 or later (PATH or the qualor/scanner image)' };
@@ -339,38 +380,8 @@ async function prepare(
   }
   if (copied.length === 0) return { skip: 'no PHP file in scope that PHPStan can be given' };
 
-  let depsDir: string | null = null;
-  if (deps.kind === 'installed') {
-    const target = path.join(ctx.workDir, 'deps');
-    const c = copyDependencies(ctx.root, deps.vendorDir, target, limits.files, limits.bytes);
-    ctx.log.debug(
-      `phpstan: ${c.files} dependency file(s) read from ${shown(deps.vendorDir)}/, ${c.skipped} left out`,
-    );
-    // Rulings A9-14, A9-15: PHPStan with part of the symbols would report what it cannot see as
-    // false positives, so past either cap it does not run at all.
-    if (c.tooLarge || c.truncated) {
-      if (c.truncated) {
-        ctx.log.debug(
-          `phpstan: ${shown(deps.vendorDir)}/ has more than ${limits.files} PHP files; PHPStan is skipped`,
-        );
-      }
-      rmSync(target, { recursive: true, force: true });
-      return { skip: DEPENDENCIES_TOO_LARGE };
-    }
-    if (c.skipped > 0) {
-      ctx.log.warn(
-        `phpstan: ${c.skipped} dependency file(s) below ${shown(deps.vendorDir)}/ not read (a link, a file larger than 1 MiB or one that cannot be read)`,
-      );
-    }
-    if (c.files > 0) {
-      depsDir = target;
-    } else if (deps.requiresPackages) {
-      // Rulings A9-15, A9-17: installed.json is there but no dependency file could be read
-      // (vendor/ is a link, or holds only Composer's own files) while packages are required: the
-      // same as dependencies not installed. Without such a require PHPStan runs without them.
-      return { skip: DEPENDENCIES_NOT_INSTALLED };
-    }
-  }
+  const depsDir = deps.kind === 'installed' ? dependencyCopy(ctx, deps, limits) : null;
+  if (depsDir !== null && typeof depsDir !== 'string') return depsDir;
 
   const neon = path.join(ctx.workDir, 'phpstan.neon');
   const wrapper = path.join(ctx.workDir, 'qualor-phpstan.php');

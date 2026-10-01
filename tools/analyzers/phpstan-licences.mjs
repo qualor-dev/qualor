@@ -160,57 +160,82 @@ foreach ($i['versions'] as $name => $v) {
 echo json_encode(['root' => $i['root'], 'packages' => $out]);
 `;
 
-function main(argv) {
-  const record = argv[0] === '--record';
-  const phar = record ? argv[1] : argv[0];
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const repo = path.resolve(here, '../..');
-  const version = /^PHPSTAN_VERSION=(.+)$/m.exec(
-    readFileSync(path.join(repo, 'tools/analyzers/install.sh'), 'utf8'),
-  )?.[1];
-  const dump = JSON.parse(
-    execFileSync('php', ['-r', DUMP, phar], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }),
-  );
-  if (dump.root.pretty_version !== version)
-    throw new Error(`the phar is ${dump.root.pretty_version}, install.sh pins ${version}`);
-  const lockUrl = `${RAW}/phpstan/phpstan-src/${dump.root.reference}/composer.lock`;
-  const packages = Object.entries(dump.packages).sort(([a], [b]) => (a < b ? -1 : 1));
+/** The lock entry of a package: from the phar commit's lock, or its downgraded manifest. */
+function packageEntry(lock, name, pkg, manifestOf) {
+  if (!PHAR_DOWNGRADES.includes(name)) return { entry: lockEntry(lock, name, pkg), url: null };
+  const url = manifestUrl(lock, name, pkg);
+  return { entry: manifestEntry(lock, name, pkg, manifestOf(url)), url };
+}
 
-  if (record) {
-    // Trust on first use, for a person to check (Step 4b): the lock, then each package without a
-    // licence file in the phar, at the commit the phar records.
-    const lockBytes = curl(lockUrl);
-    const lock = JSON.parse(lockBytes.toString('utf8'));
-    const out = { [lockUrl]: sha(lockBytes) };
-    for (const [name, pkg] of packages) {
-      let entry;
-      if (PHAR_DOWNGRADES.includes(name)) {
-        const url = manifestUrl(lock, name, pkg);
-        const bytes = curl(url);
-        out[url] = sha(bytes);
-        entry = manifestEntry(lock, name, pkg, JSON.parse(bytes.toString('utf8')));
-      } else {
-        entry = lockEntry(lock, name, pkg);
-      }
-      if (Object.keys(pkg.files).length > 0) continue;
-      const gh = githubRepo(entry.source?.url ?? '');
-      if (gh === null || pkg.reference === null)
-        throw new Error(`${name}: no licence file and no GitHub source`);
-      const found = LICENCE_NAMES.map((n) => `${RAW}/${gh}/${pkg.reference}/${n}`).find((u) => {
-        try {
-          out[u] = sha(curl(u));
-          return true;
-        } catch {
-          return false;
-        }
-      });
-      if (found === undefined)
-        throw new Error(`${name}: no licence file at ${gh}@${pkg.reference}`);
-    }
-    console.log(JSON.stringify({ phpstan: version, files: out }, null, 2));
-    return;
+/** Trust on first use (Step 4b): the sha256 of every fetched input, for a person to check. */
+function recordPins(version, lockUrl, packages) {
+  // The lock, then each package without a licence file in the phar, at the commit the phar
+  // records.
+  const lockBytes = curl(lockUrl);
+  const lock = JSON.parse(lockBytes.toString('utf8'));
+  const out = { [lockUrl]: sha(lockBytes) };
+  const manifestOf = (url) => {
+    const bytes = curl(url);
+    out[url] = sha(bytes);
+    return JSON.parse(bytes.toString('utf8'));
+  };
+  for (const [name, pkg] of packages) {
+    const { entry } = packageEntry(lock, name, pkg, manifestOf);
+    if (Object.keys(pkg.files).length === 0) recordLicenceFile(name, pkg, entry, out);
   }
+  console.log(JSON.stringify({ phpstan: version, files: out }, null, 2));
+}
 
+function recordLicenceFile(name, pkg, entry, out) {
+  const gh = githubRepo(entry.source?.url ?? '');
+  if (gh === null || pkg.reference === null)
+    throw new Error(`${name}: no licence file and no GitHub source`);
+  const found = LICENCE_NAMES.map((n) => `${RAW}/${gh}/${pkg.reference}/${n}`).find((u) => {
+    try {
+      out[u] = sha(curl(u));
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (found === undefined) throw new Error(`${name}: no licence file at ${gh}@${pkg.reference}`);
+}
+
+/** A package's licence files: those inside the phar, or the pinned one from its source. */
+function licenceFiles(name, pkg, entry, pins) {
+  const files = Object.entries(pkg.files);
+  if (files.length > 0) return { files, where: 'inside the phar' };
+  const gh = githubRepo(entry.source?.url ?? '');
+  if (gh === null || pkg.reference === null)
+    throw new Error(`${name}: no licence file and no GitHub source`);
+  const url = pinnedUrl(pins, `${RAW}/${gh}/${pkg.reference}/`);
+  if (url === null) throw new Error(`${name}: no pinned licence file for ${gh}@${pkg.reference}`);
+  return {
+    files: [[url.slice(url.lastIndexOf('/') + 1), checkedText(curl(url), url, pins)]],
+    where: `${url} (sha256 ${pins.files[url]})`,
+  };
+}
+
+/** One package's section of PHPSTAN-DEPENDENCIES.txt; its texts are numbered in `texts`. */
+function packageSection(lock, name, pkg, pins, texts, problems) {
+  const manifestOf = (url) => JSON.parse(checkedText(curl(url), url, pins));
+  const { entry, url: manifest } = packageEntry(lock, name, pkg, manifestOf);
+  const licence = chosenLicence(entry.license ?? []);
+  if (licence === null)
+    problems.push(`${name}: ${(entry.license ?? []).join(' OR ') || 'no licence'} is not allowed`);
+  const { files, where } = licenceFiles(name, pkg, entry, pins);
+  const lines = [`${name} ${pkg.version} (${licence ?? (entry.license ?? []).join(' OR ')})`];
+  if (manifest !== null) lines.push(`licences from: ${manifest} (sha256 ${pins.files[manifest]})`);
+  lines.push(`licence files: ${where}`);
+  for (const [file, text] of files) {
+    if (!texts.has(text)) texts.set(text, texts.size + 1);
+    lines.push(`--- ${file}: text ${texts.get(text)}`);
+  }
+  return lines.join('\n');
+}
+
+/** Writes deploy/scanner/licenses/PHPSTAN-DEPENDENCIES.txt from the pinned inputs only. */
+function generate(repo, version, lockUrl, packages) {
   const pins = JSON.parse(
     readFileSync(path.join(repo, 'tools/analyzers/phpstan-licence-pins.json'), 'utf8'),
   );
@@ -218,44 +243,10 @@ function main(argv) {
     throw new Error(`phpstan-licence-pins.json is for ${pins.phpstan}, install.sh pins ${version}`);
   const lock = JSON.parse(checkedText(curl(lockUrl), lockUrl, pins));
   const texts = new Map();
-  const sections = [];
   const problems = [];
-  for (const [name, pkg] of packages) {
-    let entry;
-    let from = null;
-    if (PHAR_DOWNGRADES.includes(name)) {
-      const url = manifestUrl(lock, name, pkg);
-      entry = manifestEntry(lock, name, pkg, JSON.parse(checkedText(curl(url), url, pins)));
-      from = `licences from: ${url} (sha256 ${pins.files[url]})`;
-    } else {
-      entry = lockEntry(lock, name, pkg);
-    }
-    const licence = chosenLicence(entry.license ?? []);
-    if (licence === null)
-      problems.push(
-        `${name}: ${(entry.license ?? []).join(' OR ') || 'no licence'} is not allowed`,
-      );
-    let files = Object.entries(pkg.files);
-    let where = 'inside the phar';
-    if (files.length === 0) {
-      const gh = githubRepo(entry.source?.url ?? '');
-      if (gh === null || pkg.reference === null)
-        throw new Error(`${name}: no licence file and no GitHub source`);
-      const url = pinnedUrl(pins, `${RAW}/${gh}/${pkg.reference}/`);
-      if (url === null)
-        throw new Error(`${name}: no pinned licence file for ${gh}@${pkg.reference}`);
-      files = [[url.slice(url.lastIndexOf('/') + 1), checkedText(curl(url), url, pins)]];
-      where = `${url} (sha256 ${pins.files[url]})`;
-    }
-    const lines = [`${name} ${pkg.version} (${licence ?? (entry.license ?? []).join(' OR ')})`];
-    if (from !== null) lines.push(from);
-    lines.push(`licence files: ${where}`);
-    for (const [file, text] of files) {
-      if (!texts.has(text)) texts.set(text, texts.size + 1);
-      lines.push(`--- ${file}: text ${texts.get(text)}`);
-    }
-    sections.push(lines.join('\n'));
-  }
+  const sections = packages.map(([name, pkg]) =>
+    packageSection(lock, name, pkg, pins, texts, problems),
+  );
   if (problems.length > 0) throw new Error(`disallowed licences:\n${problems.join('\n')}`);
   const bar = '='.repeat(78);
   const body = [...texts].map(([text, n]) => `${bar}\ntext ${n}\n\n${text.trimEnd()}`).join('\n\n');
@@ -275,6 +266,26 @@ function main(argv) {
     ].join('\n'),
   );
   console.log(`${sections.length} packages, ${texts.size} distinct licence texts`);
+}
+
+function main(argv) {
+  const record = argv[0] === '--record';
+  const phar = record ? argv[1] : argv[0];
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const repo = path.resolve(here, '../..');
+  const version = /^PHPSTAN_VERSION=(.+)$/m.exec(
+    readFileSync(path.join(repo, 'tools/analyzers/install.sh'), 'utf8'),
+  )?.[1];
+  const dump = JSON.parse(
+    execFileSync('php', ['-r', DUMP, phar], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }),
+  );
+  if (dump.root.pretty_version !== version)
+    throw new Error(`the phar is ${dump.root.pretty_version}, install.sh pins ${version}`);
+  const lockUrl = `${RAW}/phpstan/phpstan-src/${dump.root.reference}/composer.lock`;
+  const packages = Object.entries(dump.packages).sort(([a], [b]) => (a < b ? -1 : 1));
+
+  if (record) recordPins(version, lockUrl, packages);
+  else generate(repo, version, lockUrl, packages);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main(process.argv.slice(2));

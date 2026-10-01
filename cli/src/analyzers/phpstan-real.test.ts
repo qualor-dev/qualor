@@ -27,7 +27,7 @@ const GENERATED_FILES = 120;
 const phpString = (s: string) => `'${s.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`;
 /** A top-level statement that leaves `ran-<who>` in `markers` if PHP ever runs it. */
 const marker = (markers: string, who: string) =>
-  `file_put_contents(${phpString(path.join(markers, `ran-${who}`))}, 'x');\n`;
+  `file_put_contents(${phpString(path.join(markers, 'ran-' + who))}, 'x');\n`;
 
 async function scanPhp(
   root: string,
@@ -103,7 +103,7 @@ function hostileCheckout(
         name,
         `parameters:\n  level: 9\n  paths: [src]\n  bootstrapFiles: [boot-${name}.php]\nincludes: [extra.neon]\nrules: [App\\EvilRule]\n`,
       ],
-      [`boot-${name}.php`, `<?php\n${m(`bootstrap-${name}`)}`],
+      [`boot-${name}.php`, `<?php\n${m('bootstrap-' + name)}`],
     ]),
   );
   writeTree(root, {
