@@ -30,32 +30,57 @@ export function parsePhpstanVersion(stdout: string): string | null {
 /**
  * config.md §6: variables that configure PHP or PHPStan behind the command line's back. PHPRC and
  * PHP_INI_SCAN_DIR name ini files (`auto_prepend_file` runs PHP before PHPStan, fact P4); COMPOSER
- * renames the composer.json PHPStan's start-up reads.
+ * renames the composer.json PHPStan's start-up reads; XDEBUG_* configure Xdebug.
  */
 export const isPhpVariable = (name: string): boolean =>
-  /^(PHPRC|PHP_INI_SCAN_DIR|COMPOSER(_.*)?|PHPSTAN_.*|XDEBUG_(CONFIG|MODE|SESSION))$/i.test(name);
+  /^(PHPRC|PHP_INI_SCAN_DIR|COMPOSER(_.*)?|PHPSTAN_.*|XDEBUG_.*)$/i.test(name);
+
+/** Ruling A9-23: the name, in the work directory, of the only php.ini PHPStan's php reads. */
+export const PHP_INI_NAME = 'qualor-php.ini';
 
 /**
- * Ruling A9-18: the options of every php Qualor starts for PHPStan (the version probe, the wrapper
- * and the PHPStan it runs). `-n`: no php.ini and no scan directory at all, so neither PHPRC nor a
- * php.ini of the checkout can make php run a file first (`auto_prepend_file`). Only the extensions
- * the phar cannot run without are loaded, from php's own extension directory; a php that has them
- * built in warns on stderr and goes on. Warnings go to stderr, never into the report on stdout.
- * `pcre.jit=0` (ruling A9-22): PHPStan compiles the regexes it finds in scanned code, and PCRE's JIT is
- * the reachable path of libpcre2 CVE-2026-103111; without JIT that path is not taken.
+ * Ruling A9-23 (replacing A9-18's `php -n`): `<work>/qualor-php.ini`, the whole php configuration
+ * of every php Qualor starts for PHPStan (the version probe, the wrapper, PHPStan and its worker
+ * processes), so neither PHPRC nor a php.ini of the checkout can make php run a file first
+ * (`auto_prepend_file`). With an empty PHP_INI_SCAN_DIR (phpEnv) no scan directory is read, not
+ * even the system's conf.d, so only the extensions the phar cannot run without are loaded, from
+ * php's own extension directory (Debian builds both as shared modules; a php that has them built in
+ * warns on stderr and goes on). Warnings go to stderr, never into the report on stdout.
+ * `pcre.jit = 0` (ruling A9-22): PHPStan compiles the regexes it finds in scanned code, and PCRE's
+ * JIT is the reachable path of libpcre2 CVE-2026-103111. An ini file rather than `-d` options
+ * because PHPStan starts its worker processes as `php -c <the loaded php.ini>`: `-d` options are
+ * not passed on, the loaded php.ini is.
  */
-export const PHP_OPTIONS: readonly string[] = [
-  '-n',
-  '-d',
-  'display_errors=stderr',
-  '-d',
-  'extension=phar',
-  '-d',
-  'extension=tokenizer',
-  '-d',
-  'pcre.jit=0',
-];
-const phpArray = (values: readonly string[]) => `[${values.map((v) => "'" + v + "'").join(', ')}]`;
+export const PHP_INI = [
+  '; Written by Qualor (config.md §6, ruling A9-23): the whole php configuration of PHPStan.',
+  'display_errors = stderr',
+  'extension = phar',
+  'extension = tokenizer',
+  'pcre.jit = 0',
+  '',
+].join('\n');
+
+/** The options of every php Qualor starts for PHPStan: Qualor's php.ini (`ini`) and no other. */
+export const phpOptions = (ini: string): string[] => ['-c', ini];
+
+/**
+ * The environment PHPStan's php gets over the analyzer environment (config.md §6). An empty
+ * PHP_INI_SCAN_DIR: php reads no scan directory at all, not even the system's (ruling A9-23).
+ * PHPStan's worker processes inherit it.
+ */
+export const phpEnv = (): Record<string, string> => ({
+  ...deadProxyEnv(),
+  LC_ALL: 'C.UTF-8',
+  PHP_INI_SCAN_DIR: '',
+});
+
+/**
+ * The names removed from PHPStan's php environment: every PHP or PHPStan variable of the job
+ * (isPhpVariable), but never phpEnv's own empty PHP_INI_SCAN_DIR, which has replaced the job's
+ * (on Windows in any spelling, mergeAnalyzerEnv). A lower-case spelling on POSIX is dropped.
+ */
+export const dropPhpVariable = (name: string): boolean =>
+  name !== 'PHP_INI_SCAN_DIR' && isPhpVariable(name);
 
 /** A NEON double-quoted string: JSON's escapes, and `%%` for `%` (Nette expands `%name%`). */
 export function neonString(value: string): string {
@@ -108,8 +133,14 @@ if ($input === false) {
     fwrite(STDERR, "qualor-phpstan: the input directory does not exist\\n");
     exit(4);
 }
-// Ruling A9-18: PHPStan's php reads no php.ini either.
-$php = array_merge([PHP_BINARY], ${phpArray(PHP_OPTIONS)});
+// Ruling A9-23: PHPStan's php reads Qualor's php.ini too, the one this php was started with; its
+// worker processes get it from PHPStan the same way.
+$ini = php_ini_loaded_file();
+if (!is_string($ini) || ini_get('pcre.jit') !== '0') {
+    fwrite(STDERR, "qualor-phpstan: php was not started with Qualor's php.ini\\n");
+    exit(4);
+}
+$php = [PHP_BINARY, '-c', $ini];
 $command = array_merge($php, [$phar], array_slice($argv, 4));
 
 /** Runs PHPStan with its standard output in $out; returns its report, or exits 4 without one. */
@@ -205,9 +236,6 @@ export function phpstanFailureDetail(stderr: string, workDir: string): string | 
   const line = next === undefined ? first : `${first}: ${next.trim()}`;
   return detailLine(line.split(workDir).join('<work>'));
 }
-
-/** The environment PHPStan's php gets over the analyzer environment (config.md §6). */
-const phpEnv = () => ({ ...deadProxyEnv(), LC_ALL: 'C.UTF-8' });
 
 /**
  * Ruling A9-19: the files the wrapper left out because PHPStan cannot parse them, named by their
@@ -356,13 +384,15 @@ async function prepare(
 
   // The work directory is the probe's working directory too: PHPStan's start-up would load a
   // composer.json, vendor/autoload.php or phpstan.neon from it (fact P4), and it holds none.
-  // Ruling A9-18: the probe is php with PHPStan too, under the run's own php options and
+  // Rulings A9-18, A9-23: the probe is php with PHPStan too, under the run's own php.ini and
   // environment rules.
-  const probe = await ctx.exec(phpBinary, [...PHP_OPTIONS, phar, '--version'], {
+  const ini = path.join(ctx.workDir, PHP_INI_NAME);
+  writeFileSync(ini, PHP_INI);
+  const probe = await ctx.exec(phpBinary, [...phpOptions(ini), phar, '--version'], {
     timeoutMs: 60_000,
     cwd: ctx.workDir,
     env: phpEnv(),
-    dropEnv: isPhpVariable,
+    dropEnv: dropPhpVariable,
   });
   const version = probe.exitCode === 0 ? parsePhpstanVersion(probe.stdout) : null;
   if (version === null) return { unavailable: 'php <phar> --version printed no PHPStan version' };
@@ -406,7 +436,10 @@ async function prepare(
       command: phpBinary,
       // Never --pro, --fix, --autoload-file, --generate-baseline or --xdebug (config.md §6).
       args: [
-        ...PHP_OPTIONS,
+        ...phpOptions(ini),
+        // The wrapper's own php only (`-d` is not passed on): it reads PHPStan's whole report.
+        '-d',
+        'memory_limit=-1',
         wrapper,
         phar,
         out,
@@ -421,7 +454,7 @@ async function prepare(
       ],
       cwd: ctx.workDir,
       env: phpEnv(),
-      dropEnv: isPhpVariable,
+      dropEnv: dropPhpVariable,
       sarifPath: out,
       // The wrapper's verdict (exit 0: a report without general errors), never PHPStan's own code.
       okExitCodes: [0],

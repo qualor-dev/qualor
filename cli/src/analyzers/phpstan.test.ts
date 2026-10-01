@@ -18,15 +18,17 @@ import type { ScopeFile } from '../discovery/discover';
 import { createLogger } from '../log';
 import {
   createPhpstanAnalyzer,
+  dropPhpVariable,
   isPhpVariable,
   neonString,
   parsePhpstanVersion,
+  PHP_INI,
   PHPSTAN_WRAPPER,
   phpstanFailureDetail,
   phpstanNeon,
-  PHP_OPTIONS,
   warnLeftOut,
 } from './phpstan';
+import { execEnv } from './runner';
 import type { ExecOptions } from './types';
 import { DEPENDENCIES_NOT_INSTALLED, DEPENDENCIES_TOO_LARGE } from './phpstan-deps';
 
@@ -125,7 +127,10 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
     const w = (name: string) => path.join(s.workDir, name);
     expect(p.run.command).toBe(PHP);
     expect(p.run.args).toEqual([
-      ...PHP_OPTIONS,
+      '-c',
+      w('qualor-php.ini'),
+      '-d',
+      'memory_limit=-1',
       w('qualor-phpstan.php'),
       s.phar,
       w('phpstan.json'),
@@ -155,11 +160,20 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
     );
     expect(readFileSync(path.join(s.workDir, 'src', 'src', 'Cart.php'), 'utf8')).toBe('<?php\n');
     // Nothing PHPStan's start-up looks for is in its working directory (fact P4).
-    expect(readdirSync(s.workDir).sort()).toEqual(['phpstan.neon', 'qualor-phpstan.php', 'src']);
-    expect(p.run.env).toMatchObject({ LC_ALL: 'C.UTF-8', HTTPS_PROXY: 'http://127.0.0.1:9' });
+    expect(readdirSync(s.workDir).sort()).toEqual([
+      'phpstan.neon',
+      'qualor-php.ini',
+      'qualor-phpstan.php',
+      'src',
+    ]);
+    expect(p.run.env).toMatchObject({
+      LC_ALL: 'C.UTF-8',
+      HTTPS_PROXY: 'http://127.0.0.1:9',
+      PHP_INI_SCAN_DIR: '',
+    });
     for (const name of [
       'PHPRC',
-      'PHP_INI_SCAN_DIR',
+      'php_ini_scan_dir',
       'COMPOSER',
       'COMPOSER_HOME',
       'phpstan_arena',
@@ -169,40 +183,62 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
     expect(p.run.dropEnv?.('PATH')).toBe(false);
     // The version probe runs in the work directory too.
     expect(s.probes).toEqual([
-      { command: PHP, args: [...PHP_OPTIONS, s.phar, '--version'], cwd: s.workDir },
+      { command: PHP, args: ['-c', w('qualor-php.ini'), s.phar, '--version'], cwd: s.workDir },
     ]);
   });
 
-  it('starts every php without a php.ini and without the variables that configure php (ruling A9-18)', async () => {
+  it('starts every php with Qualor’s php.ini only and without the variables that configure php (rulings A9-18, A9-23)', async () => {
     const s = setup({ 'src/Cart.php': '<?php\n' });
     const p = await s.analyzer.prepare(s.ctx);
     if (!('run' in p)) throw new Error(JSON.stringify(p));
-    // -n: no php.ini, no scan directory; only the extensions PHPStan's phar needs, from php's own
-    // extension directory; warnings never on stdout (the report).
-    expect(PHP_OPTIONS).toEqual([
-      '-n',
-      '-d',
-      'display_errors=stderr',
-      '-d',
-      'extension=phar',
-      '-d',
-      'extension=tokenizer',
-      '-d',
-      'pcre.jit=0',
+    const ini = path.join(s.workDir, 'qualor-php.ini');
+    // The whole configuration: only the extensions PHPStan's phar needs, from php's own extension
+    // directory; warnings never on stdout (the report); no PCRE JIT (ruling A9-22).
+    expect(readFileSync(ini, 'utf8')).toBe(PHP_INI);
+    expect(PHP_INI.split('\n').filter((l) => l !== '' && !l.startsWith(';'))).toEqual([
+      'display_errors = stderr',
+      'extension = phar',
+      'extension = tokenizer',
+      'pcre.jit = 0',
     ]);
-    expect(p.run.args.slice(0, PHP_OPTIONS.length)).toEqual(PHP_OPTIONS);
-    // The wrapper starts PHPStan with the same options.
-    expect(PHPSTAN_WRAPPER).toContain(
-      "$php = array_merge([PHP_BINARY], ['-n', '-d', 'display_errors=stderr', '-d', 'extension=phar', '-d', 'extension=tokenizer', '-d', 'pcre.jit=0']);",
-    );
+    expect(p.run.args.slice(0, 4)).toEqual(['-c', ini, '-d', 'memory_limit=-1']);
+    expect(s.probes[0]!.args.slice(0, 2)).toEqual(['-c', ini]);
+    // The wrapper starts PHPStan with the php.ini it was started with (PHPStan passes it on to its
+    // workers), and refuses to run under any other.
+    expect(PHPSTAN_WRAPPER).toContain('$ini = php_ini_loaded_file();');
+    expect(PHPSTAN_WRAPPER).toContain("ini_get('pcre.jit') !== '0'");
+    expect(PHPSTAN_WRAPPER).toContain("$php = [PHP_BINARY, '-c', $ini];");
+    expect(PHPSTAN_WRAPPER).not.toContain('memory_limit');
     // The version probe: the run's environment rules too.
     const probe = s.probeOptions[0]!;
-    expect(probe.env).toMatchObject({ LC_ALL: 'C.UTF-8', HTTPS_PROXY: 'http://127.0.0.1:9' });
-    for (const name of ['PHPRC', 'PHP_INI_SCAN_DIR', 'COMPOSER_HOME', 'PHPSTAN_X', 'XDEBUG_MODE']) {
+    expect(probe.env).toMatchObject({
+      LC_ALL: 'C.UTF-8',
+      HTTPS_PROXY: 'http://127.0.0.1:9',
+      PHP_INI_SCAN_DIR: '',
+    });
+    for (const name of ['PHPRC', 'COMPOSER_HOME', 'PHPSTAN_X', 'XDEBUG_MODE', 'XDEBUG_TRIGGER']) {
       expect(probe.dropEnv?.(name), name).toBe(true);
       expect(p.run.dropEnv?.(name), name).toBe(true);
     }
     expect(probe.dropEnv?.('PATH')).toBe(false);
+    // The process environment: the job's PHPRC, PHP_INI_SCAN_DIR (any spelling) and XDEBUG_* are
+    // gone, and PHP_INI_SCAN_DIR is the empty one (no scan directory at all).
+    for (const options of [probe, p.run]) {
+      const env = execEnv(
+        {
+          PATH: '/usr/bin',
+          PHPRC: s.root,
+          PHP_INI_SCAN_DIR: path.join(s.root, 'php.d'),
+          php_ini_scan_dir: path.join(s.root, 'php.d'),
+          XDEBUG_TRIGGER: '1',
+        },
+        { env: options.env!, dropEnv: options.dropEnv! },
+        s.root,
+      );
+      expect(env['PHP_INI_SCAN_DIR']).toBe('');
+      expect(Object.keys(env).filter((k) => isPhpVariable(k))).toEqual(['PHP_INI_SCAN_DIR']);
+      expect(env['PATH']).toBe('/usr/bin');
+    }
   });
 
   it('passes the level and memory limit, and copies installed dependencies to deps/, never to vendor/', async () => {
@@ -238,7 +274,13 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
     const cwd = readdirSync(p.run.cwd);
     expect(cwd).not.toContain('vendor');
     expect(cwd).not.toContain('composer.json');
-    expect(cwd.sort()).toEqual(['deps', 'phpstan.neon', 'qualor-phpstan.php', 'src']);
+    expect(cwd.sort()).toEqual([
+      'deps',
+      'phpstan.neon',
+      'qualor-php.ini',
+      'qualor-phpstan.php',
+      'src',
+    ]);
   });
 
   const installed = {
@@ -377,11 +419,17 @@ describe('phpstan helpers', () => {
       'XDEBUG_CONFIG',
       'XDEBUG_MODE',
       'xdebug_session',
+      'XDEBUG_TRIGGER',
+      'XDEBUG_OTHER',
     ]) {
       expect(isPhpVariable(n), n).toBe(true);
     }
-    for (const n of ['PATH', 'PHP_BINARY_X', 'MYCOMPOSER', 'HOME', 'XDEBUG_OTHER'])
+    for (const n of ['PATH', 'PHP_BINARY_X', 'MYCOMPOSER', 'HOME', 'XDEBUG'])
       expect(isPhpVariable(n), n).toBe(false);
+    // Ruling A9-23: phpEnv's own empty PHP_INI_SCAN_DIR stays; every other spelling goes.
+    expect(dropPhpVariable('PHP_INI_SCAN_DIR')).toBe(false);
+    expect(dropPhpVariable('php_ini_scan_dir')).toBe(true);
+    expect(dropPhpVariable('PHPRC')).toBe(true);
   });
 
   it('writes NEON strings PHPStan reads back exactly (fact P3)', () => {

@@ -366,8 +366,9 @@ Larastan, which Qualor does not load. Run your own PHPStan for those checks.
 A file PHPStan cannot parse is left out of the analysis with a warning in the scan log, and
 PHPStan runs again on the rest, so one broken file does not hide the other findings. `.phtml` and
 `.inc` files are not analysed, only files whose name ends in `.php`, and neither are files larger
-than 1 MiB or reached through a symbolic link. PHPStan runs with `php -n` (no `php.ini`) and
-without `PHPRC`, `PHP_INI_SCAN_DIR`, `COMPOSER*`, `PHPSTAN_*` and `XDEBUG_*` in its environment.
+than 1 MiB or reached through a symbolic link. PHPStan, its worker processes included, runs with
+a `php.ini` of Qualor's own instead of yours or the system's, reads no additional `.ini` files, and
+gets none of your `PHPRC`, `PHP_INI_SCAN_DIR`, `COMPOSER*`, `PHPSTAN_*` and `XDEBUG_*` variables.
 `QUALOR_PHPSTAN_PHAR` names another PHPStan phar (see [Configuration](./configuration.md)); it
 must be PHPStan 2.2.
 
