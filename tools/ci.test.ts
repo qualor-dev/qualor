@@ -765,6 +765,13 @@ describe('install-rubocop.sh (plan 9B)', () => {
     expect(entries.some((e) => e.startsWith(`rubocop ${pinned} `))).toBe(true);
   });
 
+  it('pins the same RuboCop as the CLI (packages/shared/src/rules/rubocop.ts)', () => {
+    const pinned = /^RUBOCOP_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(readFileSync('packages/shared/src/rules/rubocop.ts', 'utf8')).toContain(
+      `export const RUBOCOP_VERSION = '${pinned}';`,
+    );
+  });
+
   it('runs in every GitHub job that requires the analyzers, before the tests', () => {
     const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
     for (const [name, job] of Object.entries(github.jobs)) {

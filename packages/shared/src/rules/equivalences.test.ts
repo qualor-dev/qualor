@@ -103,12 +103,13 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
   });
 
   it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
-    expect(EXTERNAL_BUILTIN_ALIASES).toEqual({
+    expect(EXTERNAL_BUILTIN_ALIASES).toMatchObject({
       'ext-ruff': 'ruff',
       'ext-stylelint': 'stylelint',
       'ext-htmlhint': 'htmlhint',
       'ext-detekt': 'detekt',
       'ext-swiftlint': 'swiftlint',
+      'ext-rubocop': 'rubocop',
     });
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
@@ -159,8 +160,8 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(rulesEquivalent(rule('ext-bandit:tag-pair'), rule('htmlhint:tag-pair'))).toBe(false);
   });
 
-  it('ranks swiftlint below every other built-in engine, above any external one (data-model.md §5.3)', () => {
-    for (const engine of ENGINE_PRIORITY.filter((e) => e !== 'swiftlint')) {
+  it('ranks swiftlint below every built-in engine listed before it, above any external one (data-model.md §5.3)', () => {
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('swiftlint'))) {
       expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('swiftlint'));
     }
     expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('my-tool'));
@@ -211,5 +212,32 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(
       rulesEquivalent(rule('ext-bandit:detekt.style.MagicNumber'), rule('detekt:MagicNumber')),
     ).toBe(false);
+  });
+
+  it('ranks rubocop below every built-in engine listed before it and above any external engine (plan 9B)', () => {
+    expect(ENGINE_PRIORITY.indexOf('rubocop')).toBeGreaterThan(
+      ENGINE_PRIORITY.indexOf('swiftlint'),
+    );
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('rubocop'))) {
+      expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('rubocop'));
+    }
+    expect(enginePriority('rubocop')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(enginePriority('rubocop')).toBeGreaterThan(enginePriority('ext-rubocop'));
+  });
+
+  it('pairs an imported RuboCop SARIF (ext-rubocop, identical ids) with the built-in rule (plan 9B)', () => {
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-rubocop']).toBe('rubocop');
+    expect(equivalentPartners('ext-rubocop:Lint/UselessAssignment')).toEqual([
+      'rubocop:Lint/UselessAssignment',
+    ]);
+    expect(equivalentPartners('rubocop:Lint/UselessAssignment')).toEqual([
+      'ext-rubocop:Lint/UselessAssignment',
+    ]);
+    expect(rulesEquivalent(rule('ext-rubocop:Security/Eval'), rule('rubocop:Security/Eval'))).toBe(
+      true,
+    );
+    expect(rulesEquivalent(rule('ext-rubocop:Security/Eval'), rule('rubocop:Security/Open'))).toBe(
+      false,
+    );
   });
 });

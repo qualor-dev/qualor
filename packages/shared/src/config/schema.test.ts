@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { RUBOCOP_DEFAULT_TARGET_RUBY } from '../rules/rubocop';
 import { BUILTIN_EXCLUDES, ConfigError, interpolateEnv, parseConfig } from './schema';
 
 function errorPaths(raw: unknown): string[] {
@@ -394,6 +395,44 @@ describe('BUILTIN_EXCLUDES', () => {
     expect(() => parseConfig({ version: 1, analyzers: { swiftlint: { args: [] } } })).toThrow();
     expect(() =>
       parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'swiftlint' }] }),
+    ).toThrow(/reserved/);
+  });
+
+  it('has analyzers.rubocop with its defaults, knows Ruby, its test files and its excludes (plan 9B)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.rubocop).toEqual({
+      enabled: 'auto',
+      select: ['qualor-default'],
+      ignore: [],
+      targetRubyVersion: RUBOCOP_DEFAULT_TARGET_RUBY,
+      timeoutSeconds: 600,
+    });
+    expect(parseConfig({ version: 1, languages: ['ruby'] }).languages).toEqual(['ruby']);
+    for (const glob of ['**/*_spec.rb', '**/*_test.rb', '**/spec/**/*.rb', '**/test/**/*.rb'])
+      expect(c.tests.include).toContain(glob);
+    for (const glob of ['**/.bundle/**', '**/db/schema.rb'])
+      expect(BUILTIN_EXCLUDES).toContain(glob);
+  });
+
+  it('validates RuboCop selectors and target Rubies, and reserves the rubocop engine id', () => {
+    const rubocop = (r: object) =>
+      parseConfig({ version: 1, analyzers: { rubocop: r } }).analyzers.rubocop;
+    expect(
+      rubocop({ select: ['qualor-default', 'Style', 'Style/StringLiterals'], ignore: ['Security'] })
+        .select,
+    ).toEqual(['qualor-default', 'Style', 'Style/StringLiterals']);
+    expect(rubocop({ targetRubyVersion: 3.3 }).targetRubyVersion).toBe(3.3);
+    expect(rubocop({ targetRubyVersion: '2.7' }).targetRubyVersion).toBe('2.7');
+    expect(() => rubocop({ select: [] })).toThrow(/at least one/);
+    expect(() => rubocop({ select: ['Lint/NotACop'] })).toThrow(
+      /unknown RuboCop department or cop "Lint\/NotACop"/,
+    );
+    expect(() => rubocop({ select: ['rails'] })).toThrow(/RuboCop department/);
+    expect(() => rubocop({ ignore: ['qualor-default'] })).toThrow(/RuboCop department/);
+    expect(() => rubocop({ targetRubyVersion: '9.9' })).toThrow(/Ruby version RuboCop/);
+    expect(() => rubocop({ configFile: '.rubocop.yml' })).toThrow();
+    expect(() =>
+      parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'rubocop' }] }),
     ).toThrow(/reserved/);
   });
 });

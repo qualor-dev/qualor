@@ -1,5 +1,13 @@
 import { z } from 'zod';
 import { BUILTIN_ENGINES, ENGINE_ID_PATTERN } from '../report/taxonomy';
+import {
+  normalizeTargetRuby,
+  RUBOCOP_DEFAULT_TARGET_RUBY,
+  RUBOCOP_SELECTOR,
+  RUBOCOP_TARGET_RUBIES,
+  RUBOCOP_VERSION,
+  rubocopSelectorKnown,
+} from '../rules/rubocop';
 import { RUFF_SELECTOR, RUFF_VERSION, ruffSelectorKnown } from '../rules/ruff';
 
 const SCANNABLE_LANGUAGES = [
@@ -12,6 +20,7 @@ const SCANNABLE_LANGUAGES = [
   'css',
   'kotlin',
   'swift',
+  'ruby',
 ] as const;
 
 export const BUILTIN_EXCLUDES: readonly string[] = [
@@ -45,6 +54,9 @@ export const BUILTIN_EXCLUDES: readonly string[] = [
   '**/Pods/**',
   '**/Carthage/**',
   '**/.build/**',
+  // Ruby: Bundler's local settings and install directory, and Rails' generated schema (plan 9B).
+  '**/.bundle/**',
+  '**/db/schema.rb',
 ];
 
 const enabled = z.union([z.literal('auto'), z.boolean()]).default('auto');
@@ -53,6 +65,22 @@ const timeout = (seconds: number) => z.number().int().positive().max(86_400).def
  * A Ruff selector (or a value `extra` allows): the shape first, then — so a typo is a config error
  * naming it, not a Ruff exit 2 — `ALL` or a prefix of a code Ruff RUFF_VERSION has.
  */
+/**
+ * A RuboCop selector (or a value `extra` allows): the shape first, then — so a typo is a config
+ * error naming it, not a RuboCop exit 2 — a department or a cop RuboCop RUBOCOP_VERSION has.
+ */
+const rubocopSelector = (extra: (s: string) => boolean, shape: string) =>
+  z.string().superRefine((s, ctx) => {
+    if (extra(s)) return;
+    if (!RUBOCOP_SELECTOR.test(s)) ctx.addIssue({ code: 'custom', message: shape });
+    else if (!rubocopSelectorKnown(s)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `unknown RuboCop department or cop "${s}": RuboCop ${RUBOCOP_VERSION} has none of that name`,
+      });
+    }
+  });
+
 const ruffSelector = (extra: (s: string) => boolean, shape: string) =>
   z.string().superRefine((s, ctx) => {
     if (extra(s)) return;
@@ -236,6 +264,37 @@ const analyzers = z
         timeoutSeconds: timeout(600),
       })
       .prefault({}),
+    // Ruby (plan 9B): RuboCop on Qualor's own Ruby, with Qualor's own cop selection, never the
+    // project's RuboCop configuration (config.md §6).
+    rubocop: z
+      .strictObject({
+        enabled,
+        select: z
+          .array(
+            rubocopSelector(
+              (s) => s === 'qualor-default',
+              'a RuboCop department (Lint, Security, Style…), a cop (Style/StringLiterals) or qualor-default',
+            ),
+          )
+          .min(1, { message: 'list at least one department or cop, or set enabled: false' })
+          .default(['qualor-default']),
+        ignore: z
+          .array(
+            rubocopSelector(
+              () => false,
+              'a RuboCop department (Lint, Style…) or a cop (Style/StringLiterals)',
+            ),
+          )
+          .default([]),
+        targetRubyVersion: z
+          .union([z.string(), z.number()])
+          .refine((v) => RUBOCOP_TARGET_RUBIES.includes(normalizeTargetRuby(v)), {
+            message: `a Ruby version RuboCop ${RUBOCOP_VERSION} can parse (${RUBOCOP_TARGET_RUBIES.join(', ')})`,
+          })
+          .default(RUBOCOP_DEFAULT_TARGET_RUBY),
+        timeoutSeconds: timeout(600),
+      })
+      .prefault({}),
   })
   .prefault({});
 
@@ -285,6 +344,10 @@ export const configSchema = z
             '**/test_*.py',
             '**/*_test.py',
             '**/conftest.py',
+            '**/*_spec.rb',
+            '**/*_test.rb',
+            '**/spec/**/*.rb',
+            '**/test/**/*.rb',
           ]),
         exclude: globs,
       })
