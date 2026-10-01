@@ -424,3 +424,41 @@ describe('swiftlint (report-format.md 7.1, phase 8F)', () => {
     expect(engineMapping('ext-swiftlint')).toBeUndefined();
   });
 });
+
+describe('cppcheck and clang-tidy (plan 9D)', () => {
+  it('cppcheck takes quality and severity from cppcheck severity, carried in properties', () => {
+    const m = engineMapping('cppcheck')!;
+    expect(m.rule!({ id: 'nullPointer', properties: { cppcheckSeverity: 'error' } })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(
+      m.rule!({ id: 'passedByValue', properties: { cppcheckSeverity: 'performance' } }),
+    ).toEqual({ quality: 'maintainability', kind: 'issue', defaultSeverity: 'low' });
+    const r = (cppcheckSeverity: string, level = 'warning') =>
+      ({ ruleId: 'x', level, properties: { cppcheckSeverity } }) as never;
+    expect(m.severity!(r('warning', 'error'), undefined)).toBe('medium');
+    expect(m.severity!(r('style'), undefined)).toBe('low');
+    // An external cppcheck SARIF (ext-cppcheck) has only levels.
+    expect(m.severity!({ ruleId: 'x', level: 'error' } as never, { id: 'x' })).toBe('high');
+    expect(m.severity!({ ruleId: 'x', level: 'note' } as never, { id: 'x' })).toBe('low');
+  });
+
+  it('clang-tidy takes quality and severity from the check group', () => {
+    const m = engineMapping('clang-tidy')!;
+    expect(m.rule!({ id: 'clang-analyzer-core.DivideZero' })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(m.rule!({ id: 'readability-identifier-length' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(
+      m.severity!({ ruleId: 'bugprone-use-after-move', level: 'warning' } as never, undefined),
+    ).toBe('medium');
+  });
+});

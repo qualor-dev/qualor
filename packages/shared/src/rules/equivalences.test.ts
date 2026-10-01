@@ -227,4 +227,23 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       rulesEquivalent(rule('ext-bandit:detekt.style.MagicNumber'), rule('detekt:MagicNumber')),
     ).toBe(false);
   });
+
+  it('pairs the cppcheck and clang-tidy rules that report the same defect (plan 9D)', () => {
+    for (const [a, b] of [
+      ['cppcheck:zerodiv', 'clang-tidy:clang-analyzer-core.DivideZero'],
+      ['cppcheck:nullPointer', 'clang-tidy:clang-analyzer-core.NullDereference'],
+      ['cppcheck:mismatchAllocDealloc', 'clang-tidy:clang-analyzer-unix.MismatchedDeallocator'],
+      ['cppcheck:memleak', 'clang-tidy:clang-analyzer-unix.Malloc'],
+      ['cppcheck:doubleFree', 'clang-tidy:clang-analyzer-unix.Malloc'],
+      ['cppcheck:deallocuse', 'clang-tidy:clang-analyzer-unix.Malloc'],
+      ['cppcheck:arrayIndexOutOfBounds', 'clang-tidy:clang-analyzer-security.ArrayBound'],
+      ['cppcheck:duplicateBranch', 'clang-tidy:bugprone-branch-clone'],
+      ['cppcheck:duplicateExpression', 'clang-tidy:misc-redundant-expression'],
+      ['cppcheck:accessMoved', 'clang-tidy:bugprone-use-after-move'],
+    ] as const) {
+      expect(rulesEquivalent(rule(a), rule(b)), `${a} ~ ${b}`).toBe(true);
+      expect(rulesEquivalent(rule(b), rule(a)), `${b} ~ ${a}`).toBe(true);
+      expect(equivalentPartners(a), a).toContain(b);
+    }
+  });
 });
