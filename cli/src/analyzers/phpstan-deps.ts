@@ -22,7 +22,13 @@ export const DEPENDENCIES_TOO_LARGE =
   'PHP dependencies are larger than 1 GiB (the .php files below vendor/); PHPStan is skipped rather than run with part of them';
 
 /** The entries of `<vendorDir>/` that are Composer's own, never copied (config.md §6). */
-const EXCLUDED_TOP_LEVEL: ReadonlySet<string> = new Set(['composer', 'bin', 'autoload.php']);
+const EXCLUDED_TOP_LEVEL: ReadonlySet<string> = new Set(['bin', 'autoload.php']);
+/**
+ * `<vendorDir>/composer/` holds Composer's own files (its autoloader, `installed.php`,
+ * `platform_check.php`), never copied, and the packages of the `composer` vendor (`composer/pcre`,
+ * `composer/semver`, …) as subdirectories, copied like any other package.
+ */
+const COMPOSER_DIR = 'composer';
 
 export type PhpDependencies =
   | { kind: 'none' }
@@ -112,8 +118,9 @@ export function phpDependencies(root: string): PhpDependencies {
 }
 
 /**
- * config.md §6: the `.php` files below `<root>/<vendorDir>`, without its top-level `composer/` and
- * `bin/` directories and its `autoload.php`, copied the checked way (`readPlainFile`: a regular
+ * config.md §6: the `.php` files below `<root>/<vendorDir>`, without the files directly in its
+ * `composer/` directory (its subdirectories are `composer/*` packages), its `bin/` directory and
+ * its `autoload.php`, copied the checked way (`readPlainFile`: a regular
  * file, no link anywhere on its path, at most 1 MiB) to `<target>/<vendorDir>/`. No link is
  * followed while walking. PHPStan only scans this copy for symbols; it never lives at
  * `<cwd>/vendor`, where PHPStan would `require` an autoloader (fact P4). Past `maxBytes` in all
@@ -153,6 +160,9 @@ export function copyDependencies(
       // Compared case-insensitively (ruling A9-15): on a case-insensitive file system
       // `Autoload.php` is the file Composer writes.
       if (rel === '' && EXCLUDED_TOP_LEVEL.has(e.name.toLowerCase())) continue;
+      // Composer's own files directly in <vendorDir>/composer/ (or a file of that name).
+      if (rel === '' && e.name.toLowerCase() === COMPOSER_DIR && !e.isDirectory()) continue;
+      if (rel.toLowerCase() === COMPOSER_DIR && !e.isDirectory()) continue;
       const childRel = rel === '' ? e.name : `${rel}/${e.name}`;
       // A Dirent of a link is neither a directory nor a file: links are never followed.
       if (e.isDirectory()) {

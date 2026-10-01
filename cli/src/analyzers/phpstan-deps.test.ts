@@ -147,6 +147,35 @@ describe('copyDependencies', () => {
     expect(existsSync(path.join(target, 'vendor/acme/lib/composer/inner.php'))).toBe(true);
   });
 
+  it("copies the composer/* packages below composer/, never Composer's own files there", () => {
+    // composer/pcre, composer/semver, …: their Preg::match(…, &$matches) would otherwise be
+    // unknown and every caller's $matches a false variable.undefined (Task 12, composer/composer).
+    const root = tmp();
+    writeTree(root, {
+      'vendor/composer/autoload_real.php': '<?php // composer',
+      'vendor/composer/ClassLoader.php': '<?php // composer',
+      'vendor/composer/platform_check.php': '<?php // composer',
+      'vendor/composer/pcre/src/Preg.php': '<?php class Preg {}',
+      'vendor/Composer/semver/src/Semver.php': '<?php class Semver {}',
+    });
+    const target = tmp();
+    expect(copyDependencies(root, 'vendor', target)).toEqual({
+      files: 2,
+      skipped: 0,
+      truncated: false,
+      tooLarge: false,
+    });
+    expect(existsSync(path.join(target, 'vendor/composer/pcre/src/Preg.php'))).toBe(true);
+    expect(existsSync(path.join(target, 'vendor/Composer/semver/src/Semver.php'))).toBe(true);
+    for (const absent of [
+      'vendor/composer/autoload_real.php',
+      'vendor/composer/ClassLoader.php',
+      'vendor/composer/platform_check.php',
+    ]) {
+      expect(existsSync(path.join(target, absent)), absent).toBe(false);
+    }
+  });
+
   it('leaves out autoload.php, composer/ and bin/ whatever their case (ruling A9-15)', () => {
     const root = tmp();
     writeTree(root, {
