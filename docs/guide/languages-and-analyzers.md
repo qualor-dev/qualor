@@ -475,6 +475,8 @@ coverage:
   pathPrefixes: []   # prefixes to strip or try when report paths do not match repository paths
 ```
 
+For C and C++, `gcovr --lcov` or `gcovr --cobertura`, and `llvm-cov export -format=lcov`, produce reports Qualor reads; if the build runs outside the checkout (the reports name another machine's directory), set `pathPrefixes` to that directory.
+
 Or pass `--coverage <path>` on the command line. Test files are excluded from coverage. If a scan
 imports no coverage report at all, the coverage conditions have **no value**, and they do not fail the
 gate. The UI shows a warning instead.
