@@ -415,6 +415,9 @@ describe('BUILTIN_EXCLUDES', () => {
     expect(() =>
       parseConfig({ version: 1, analyzers: { gosec: { exclude: ['g104'] } } }),
     ).toThrow();
+    expect(() => parseConfig({ version: 1, analyzers: { gosec: { exclude: ['G999'] } } })).toThrow(
+      /not a rule of gosec/,
+    );
     expect(() =>
       parseConfig({ version: 1, analyzers: { staticcheck: { checks: ['all'] } } }),
     ).toThrow();

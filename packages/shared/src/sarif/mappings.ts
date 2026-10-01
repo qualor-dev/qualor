@@ -3,6 +3,7 @@ import type { EngineMapping } from './normalize';
 import type { SarifResult, SarifRule } from './types';
 import { swiftlintQuality, swiftlintSeverity } from '../rules/swiftlint';
 import ruffCategories from '../../rules/ruff-categories.json' with { type: 'json' };
+import { gosecSeverity, govetRule, staticcheckRule } from '../rules/golang';
 
 function tags(rule: SarifRule | undefined): string[] {
   const t = rule?.properties?.['tags'];
@@ -376,6 +377,24 @@ const swiftlint: EngineMapping = {
     swiftlintSeverity(result.ruleId ?? rule?.id ?? '', result.level ?? 'warning'),
 };
 
+/** staticcheck (Go, plan 9C, report-format.md §7.1): quality and severity from the check id. */
+const staticcheck: EngineMapping = {
+  rule: (r) => staticcheckRule(r.id),
+  severity: (result, rule) => staticcheckRule(result.ruleId ?? rule?.id ?? '').defaultSeverity,
+};
+
+/** go vet (Go, plan 9C): reliability, except unkeyed composite literals. */
+const govet: EngineMapping = {
+  rule: (r) => govetRule(r.id),
+  severity: (result, rule) => govetRule(result.ruleId ?? rule?.id ?? '').defaultSeverity,
+};
+
+/** gosec (Go, plan 9C): security; severity from the HIGH/MEDIUM/LOW tag on gosec's own rule. */
+const gosec: EngineMapping = {
+  rule: (r) => ({ quality: 'security', kind: 'issue', defaultSeverity: gosecSeverity(tags(r)) }),
+  severity: (_result, r) => gosecSeverity(tags(r)),
+};
+
 export const ENGINE_MAPPINGS = {
   eslint,
   pmd,
@@ -390,6 +409,9 @@ export const ENGINE_MAPPINGS = {
   htmlhint,
   detekt,
   swiftlint,
+  staticcheck,
+  govet,
+  gosec,
 } as const satisfies Record<string, EngineMapping>;
 
 export function engineMapping(engineId: string): EngineMapping | undefined {

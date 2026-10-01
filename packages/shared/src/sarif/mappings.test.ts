@@ -423,4 +423,34 @@ describe('swiftlint (report-format.md 7.1, phase 8F)', () => {
   it('gives the external ext-swiftlint engine no mapping', () => {
     expect(engineMapping('ext-swiftlint')).toBeUndefined();
   });
+
+  it('maps the Go engines by check id, analyzer and gosec severity tag (report-format.md §7.1, plan 9C)', () => {
+    const sc = engineMapping('staticcheck')!;
+    expect(sc.rule!({ id: 'SA5009' })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(sc.severity!({ ruleId: 'S1002', level: 'warning' } as never, undefined)).toBe('low');
+    const vet = engineMapping('govet')!;
+    expect(vet.rule!({ id: 'copylocks' })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    const gs = engineMapping('gosec')!;
+    const g401 = { id: 'G401', properties: { tags: ['security', 'MEDIUM'] } };
+    expect(gs.rule!(g401)).toEqual({
+      quality: 'security',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(
+      gs.severity!({ ruleId: 'G402', level: 'error' } as never, {
+        id: 'G402',
+        properties: { tags: ['security', 'HIGH'] },
+      }),
+    ).toBe('high');
+    expect(gs.severity!({ ruleId: 'G999' } as never, undefined)).toBe('medium');
+  });
 });

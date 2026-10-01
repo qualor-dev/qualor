@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   GO_MIN_VERSION,
+  GO_RULES_TABLE,
+  GO_VERSION,
+  GOSEC_DEFAULT_EXCLUDE,
+  GOSEC_RULES,
+  GOVET_ANALYZERS,
+  STATICCHECK_CHECKS,
+  gosecSeverity,
+  govetRule,
+  staticcheckRule,
   GOSEC_VERSION,
   goVersionSupported,
   gosecVersionSupported,
@@ -31,5 +40,81 @@ describe('the Go version policy (config.md §6, plan 9C)', () => {
     expect(gosecVersionSupported(`${g}.${n}.4`)).toBe(true);
     expect(gosecVersionSupported(`${g}.${n - 1}.0`)).toBe(false);
     expect(gosecVersionSupported('')).toBe(false);
+  });
+});
+
+describe('the Go rule tables and their mapping (report-format.md §7.1, plan 9C)', () => {
+  it('describe the pinned tools', () => {
+    expect(GO_RULES_TABLE).toEqual({
+      go: GO_VERSION,
+      staticcheck: STATICCHECK_VERSION,
+      gosec: GOSEC_VERSION,
+    });
+    for (const id of ['SA5009', 'SA4000', 'S1002', 'U1000'])
+      expect(STATICCHECK_CHECKS.has(id), id).toBe(true);
+    for (const a of ['printf', 'copylocks', 'bools', 'unreachable'])
+      expect(GOVET_ANALYZERS.has(a), a).toBe(true);
+    for (const g of [...GOSEC_DEFAULT_EXCLUDE, 'G401', 'G501'])
+      expect(GOSEC_RULES.has(g), g).toBe(true);
+  });
+
+  it('grades staticcheck by check family', () => {
+    expect(staticcheckRule('SA5009')).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(staticcheckRule('SA2000')).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(staticcheckRule('SA4000')).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(staticcheckRule('SA1019')).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(staticcheckRule('SA6002')).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(staticcheckRule('U1000')).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    for (const id of ['S1002', 'ST1003', 'QF1001', 'compile', '']) {
+      expect(staticcheckRule(id), id).toEqual({
+        quality: 'maintainability',
+        kind: 'issue',
+        defaultSeverity: 'low',
+      });
+    }
+  });
+
+  it('grades go vet as reliability, unkeyed fields as style', () => {
+    expect(govetRule('printf')).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(govetRule('composites')).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+  });
+
+  it("takes gosec's severity from its rule's tag", () => {
+    expect(gosecSeverity(['security', 'HIGH'])).toBe('high');
+    expect(gosecSeverity(['security', 'MEDIUM'])).toBe('medium');
+    expect(gosecSeverity(['security', 'LOW'])).toBe('low');
+    expect(gosecSeverity([])).toBe('medium');
   });
 });

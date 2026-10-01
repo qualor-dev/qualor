@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BUILTIN_ENGINES, ENGINE_ID_PATTERN } from '../report/taxonomy';
-import { GOSEC_DEFAULT_EXCLUDE, GOSEC_RULE_ID } from '../rules/golang';
+import { GOSEC_DEFAULT_EXCLUDE, GOSEC_RULE_ID, GOSEC_RULES, GOSEC_VERSION } from '../rules/golang';
 import { RUFF_SELECTOR, RUFF_VERSION, ruffSelectorKnown } from '../rules/ruff';
 
 const SCANNABLE_LANGUAGES = [
@@ -249,7 +249,14 @@ const analyzers = z
       .strictObject({
         enabled,
         exclude: z
-          .array(z.string().regex(GOSEC_RULE_ID, 'a gosec rule id such as G104'))
+          .array(
+            z
+              .string()
+              .regex(GOSEC_RULE_ID, 'a gosec rule id such as G104')
+              .refine((id) => GOSEC_RULES.has(id), {
+                message: `not a rule of gosec ${GOSEC_VERSION}`,
+              }),
+          )
           .default([...GOSEC_DEFAULT_EXCLUDE]),
         timeoutSeconds: timeout(900),
       })
