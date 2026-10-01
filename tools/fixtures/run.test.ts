@@ -7,6 +7,7 @@ import {
   checkGitLabReports,
   checkFixtureStatic,
   checkSonarFixture,
+  CPPCHECK_PINNED,
   exit3Acceptable,
   findTool,
   isDotnetFixture,
@@ -68,6 +69,10 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(unavailableEngines(['sonarjs'], (t) => t === 'node')).toEqual(['sonarjs']);
     expect(unavailableEngines(['sonarjs'], (t) => t === SONARJS_PASS)).toEqual(['sonarjs']);
     expect(unavailableEngines(['sonarjs'], (t) => ['node', SONARJS_PASS].includes(t))).toEqual([]);
+    // Plan 9D: cppcheck counts only at the pinned minor (the harness's has() runs --version).
+    expect(unavailableEngines(['cppcheck'], () => false)).toEqual(['cppcheck']);
+    expect(unavailableEngines(['cppcheck'], (t) => t === 'cppcheck')).toEqual(['cppcheck']);
+    expect(unavailableEngines(['cppcheck'], (t) => t === CPPCHECK_PINNED)).toEqual([]);
     // Plan 8E: detekt needs java and the image's jar.
     expect(unavailableEngines(['detekt'], (t) => t === 'java')).toEqual(['detekt']);
     expect(unavailableEngines(['detekt'], (t) => t === DETEKT_JAR)).toEqual(['detekt']);

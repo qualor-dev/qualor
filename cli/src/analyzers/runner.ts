@@ -45,7 +45,11 @@ export interface RunAnalyzersOptions {
   dotnet?: DotnetRun | null;
 }
 
-function readSarif(file: string, log: Logger): { value: unknown } | string {
+function readSarif(
+  file: string,
+  log: Logger,
+  format: 'json' | 'text' = 'json',
+): { value: unknown } | string {
   let size: number;
   try {
     size = statSync(file).size;
@@ -54,6 +58,13 @@ function readSarif(file: string, log: Logger): { value: unknown } | string {
   }
   if (size > MAX_SARIF_BYTES)
     return `SARIF output is larger than ${MAX_SARIF_BYTES / 1024 / 1024} MiB`;
+  if (format === 'text') {
+    try {
+      return { value: readFileSync(file, 'utf8') };
+    } catch {
+      return 'produced no SARIF output';
+    }
+  }
   try {
     return { value: JSON.parse(readFileSync(file, 'utf8')) as unknown };
   } catch (err) {
@@ -325,8 +336,10 @@ async function capture(
     for (const line of run.configWarnings?.(result.stderr) ?? []) {
       o.log.warn(`${analyzer.id}: ${line}`);
     }
-    const sarif = readSarif(run.sarifPath, o.log);
+    const sarif = readSarif(run.sarifPath, o.log, run.outputFormat ?? 'json');
     if (typeof sarif === 'string') return done('failed', sarif);
+    if (run.outputFormat === 'text' && run.transform === undefined)
+      return done('failed', 'output could not be converted to SARIF');
     if (run.transform === undefined) return { ...done('ok', null), sarif: sarif.value };
     let converted: unknown;
     try {

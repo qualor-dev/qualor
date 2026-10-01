@@ -1,3 +1,4 @@
+import { cppcheckAnalyzer } from './cppcheck';
 import { detektAnalyzer } from './detekt';
 import { eslintAnalyzer } from './eslint';
 import { gitleaksAnalyzer } from './gitleaks';
@@ -29,5 +30,6 @@ export function builtinAnalyzers(): Analyzer[] {
     roslynAnalyzer,
     stylelintAnalyzer,
     htmlhintAnalyzer,
+    cppcheckAnalyzer,
   ];
 }

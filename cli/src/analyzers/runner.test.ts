@@ -235,6 +235,57 @@ describe('runAnalyzers', () => {
     expect(JSON.stringify(captures)).not.toContain(FAKE_SECRET);
   });
 
+  it("passes a text output's UTF-8 to transform when outputFormat is text (plan 9D)", async () => {
+    const root = tmp();
+    const work = tmp();
+    const out = path.join(work, 'out.xml');
+    const textRun = (transform?: (o: unknown) => unknown): Analyzer => ({
+      id: 'cppcheck',
+      languages: [],
+      prepare: () =>
+        Promise.resolve({
+          run: {
+            command: process.execPath,
+            args: [
+              '-e',
+              `require('fs').writeFileSync(${JSON.stringify(out)}, '<results>é</results>')`,
+            ],
+            cwd: root,
+            sarifPath: out,
+            okExitCodes: [0],
+            outputFormat: 'text',
+            ...(transform !== undefined && { transform }),
+          },
+        }),
+    });
+    const [capture] = await runAnalyzers(
+      [
+        textRun((output) => ({
+          version: '2.1.0',
+          runs: [{ tool: { driver: { name: String(output) } }, results: [] }],
+        })),
+      ],
+      { root, config: parseConfig({ version: 1 }), files: [], log: silentLogger, env: process.env },
+    );
+    expect(capture?.status).toBe('ok');
+    expect(
+      (capture?.sarif as { runs: { tool: { driver: { name: string } } }[] }).runs[0]?.tool.driver
+        .name,
+    ).toBe('<results>é</results>');
+    // Text without a transform is no SARIF: a fixed failure, the text never quoted.
+    const [bare] = await runAnalyzers([textRun()], {
+      root,
+      config: parseConfig({ version: 1 }),
+      files: [],
+      log: silentLogger,
+      env: process.env,
+    });
+    expect(bare).toMatchObject({
+      status: 'failed',
+      reason: 'output could not be converted to SARIF',
+    });
+  });
+
   it('never hands an adapter a binary the repository planted (ruling V3)', async () => {
     const { root, files } = setup();
     const exe = process.platform === 'win32' ? '.exe' : '';
@@ -429,6 +480,7 @@ describe('runAnalyzers', () => {
       'roslyn',
       'stylelint',
       'htmlhint',
+      'cppcheck',
     ] as const;
     // Membership and relative order (config.md §3), never the whole list.
     expect(ids).toEqual(expect.arrayContaining([...order]));

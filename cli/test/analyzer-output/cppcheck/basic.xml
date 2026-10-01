@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<results version="2">
+    <cppcheck version="2.22.0"/>
+    <errors>
+        <error id="syntaxError" severity="error" msg="Unmatched &apos;{&apos;. Configuration: &apos;&apos;." verbose="Unmatched &apos;{&apos;. Configuration: &apos;&apos;." file0="src/broken.c">
+            <location file="src/broken.c" line="2" column="13"/>
+        </error>
+        <error id="memleak" severity="error" msg="Memory leak: buf" verbose="Memory leak: buf" cwe="401" hash="7579901449686184848" file0="src/main.c">
+            <location file="src/main.c" line="18" column="9"/>
+            <symbol>buf</symbol>
+        </error>
+        <error id="memleak" severity="error" msg="Memory leak: buf" verbose="Memory leak: buf" cwe="401" hash="17268850537178038548" file0="src/main.c">
+            <location file="src/main.c" line="21" column="5"/>
+            <symbol>buf</symbol>
+        </error>
+        <error id="zerodiv" severity="error" msg="Division by zero." verbose="Division by zero." cwe="369" hash="14668287140144428794" file0="src/main.c">
+            <location file="src/main.c" line="9" column="18" info="Division by zero"/>
+        </error>
+        <error id="arrayIndexOutOfBounds" severity="error" msg="Array &apos;s-&gt;items[8]&apos; accessed at index 8, which is out of bounds." verbose="Array &apos;s-&gt;items[8]&apos; accessed at index 8, which is out of bounds." cwe="788" hash="2376743336319078495" file0="src/stack.c">
+            <location file="src/stack.c" line="17" column="20" info="Array index out of bounds"/>
+        </error>
+        <error id="nullPointerOutOfMemory" severity="warning" msg="If memory allocation fails, then there is a possible null pointer dereference: copy" verbose="If memory allocation fails, then there is a possible null pointer dereference: copy" cwe="476" hash="16472845524505892057" file0="src/stack.c">
+            <location file="src/stack.c" line="23" column="9" info="Null pointer dereference"/>
+            <location file="src/stack.c" line="21" column="23" info="Assignment &apos;copy=malloc(sizeof(int)*8)&apos;, assigned value is 0"/>
+            <location file="src/stack.c" line="21" column="23" info="Assuming allocation function fails"/>
+            <symbol>copy</symbol>
+        </error>
+    </errors>
+</results>

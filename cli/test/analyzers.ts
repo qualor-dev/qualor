@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   engineMapping,
+  cppcheckVersionSupported,
   parseConfig,
   splitSourceLines,
   swiftlintVersionSupported,
@@ -24,10 +25,11 @@ import { fileLines, normalizeCaptures, type NormalizedEngines } from '../src/ana
 import type { ProcessResult } from '../src/analyzers/process';
 import { runAnalyzers } from '../src/analyzers/runner';
 import type { Analyzer, AnalyzerContext, ExecOptions, SarifCapture } from '../src/analyzers/types';
-import { discoverFiles } from '../src/discovery/discover';
-import { silentLogger } from '../src/log';
+import { discoverFiles, type ScopeFile } from '../src/discovery/discover';
+import { createLogger, silentLogger, type Logger } from '../src/log';
 import { Warnings } from '../src/warnings';
 import { FIXTURES_DIR, loadFixture } from './fixtures';
+import { writeTree } from './tmp';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /** Recorded real tool output that is not SARIF, or SARIF only the CLI tests use. */
@@ -383,4 +385,127 @@ export function scanWithRecordedSarif(
     return { ...f, ruleKey, quality: quality.get(ruleKey) };
   });
   return { issues, warnings: out.warnings, engines: out.engines };
+}
+
+/** Plan 9D: a C/C++ `ScopeFile`; `.c` and `.h` are C unless `language` says otherwise. */
+export function cFamilyScopeFile(
+  root: string,
+  rel: string,
+  language: 'c' | 'cpp' = /\.[ch]$/.test(rel) ? 'c' : 'cpp',
+): ScopeFile {
+  return {
+    path: rel,
+    absPath: path.join(root, rel),
+    language,
+    grammar: language,
+    kind: 'main',
+    size: 10,
+  };
+}
+
+export interface CFamilyContextOptions {
+  /** What `resolveBinary` finds, by tool name (`{ cppcheck: '/opt/qualor/bin/cppcheck' }`). */
+  binaries: Readonly<Record<string, string>>;
+  /** What `<tool> --version` prints. */
+  versionStdout: string;
+  config?: Omit<QualorConfigInput, 'version'>;
+  /** Receives every log line (`createLogger('debug')`: info without a prefix, `warn: …`). */
+  lines?: string[];
+  /** Per-file language overrides of `cFamilyScopeFile`'s default. */
+  languages?: Readonly<Record<string, 'c' | 'cpp'>>;
+}
+
+/**
+ * Plan 9D: a temporary repository holding `files`, a work directory, and a `prepare()` context
+ * whose scope is the repository's C/C++ sources. No process is ever started.
+ */
+export function cFamilyContext(
+  tmp: () => string,
+  files: Record<string, string>,
+  o: CFamilyContextOptions,
+): { ctx: AnalyzerContext; root: string; work: string } {
+  const root = tmp();
+  const work = tmp();
+  writeTree(root, files);
+  const base = fakeContext(root, {
+    binaries: o.binaries,
+    workDir: work,
+    config: o.config ?? {},
+    exec: () => ({
+      exitCode: 0,
+      timedOut: false,
+      durationMs: 1,
+      stdout: o.versionStdout,
+      stderr: '',
+    }),
+  });
+  const lines = o.lines ?? [];
+  const sources = Object.keys(files).filter((f) => /\.(c|h|cc|cpp|hpp)$/.test(f));
+  return {
+    ctx: {
+      ...base,
+      files: sources.map((f) => cFamilyScopeFile(root, f, o.languages?.[f])),
+      log: createLogger('debug', (t) => lines.push(t)),
+    },
+    root,
+    work,
+  };
+}
+
+/**
+ * Plan 9D: real cppcheck runs under `QUALOR_REQUIRE_ANALYZERS=1`, or when the resolved
+ * `cppcheck --version` is of the pinned minor (the tests' expectations are 2.22's), so a
+ * distribution's other cppcheck on a developer machine skips these tests instead of failing them.
+ */
+export function describeWithCppcheck(): typeof describe {
+  const bin = resolveBinary('cppcheck', { root: process.cwd(), env: process.env });
+  let ok = false;
+  if (bin !== null) {
+    const r = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 30_000 });
+    const v = /^Cppcheck (\S+)$/.exec((r.stdout ?? '').trim())?.[1];
+    ok = v !== undefined && cppcheckVersionSupported(v);
+  }
+  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+/** Plan 9D: a SARIF result of a C/C++ engine, as far as the real-binary tests read it. */
+export interface KeyedResult {
+  ruleId: string;
+  locations: {
+    physicalLocation: { artifactLocation: { uri: string }; region: { startLine: number } };
+  }[];
+}
+
+export function sarifResults(sarif: unknown): KeyedResult[] {
+  return (sarif as { runs: { results?: KeyedResult[] }[] }).runs[0]?.results ?? [];
+}
+
+/** `path:line ruleId`, the URI decoded (an outside path stays absolute). */
+export function resultKey(r: KeyedResult): string {
+  const loc = r.locations[0]!.physicalLocation;
+  return `${decodeURIComponent(loc.artifactLocation.uri)}:${loc.region.startLine} ${r.ruleId}`;
+}
+
+/**
+ * Plan 9D: runs one real analyzer over `root` with the default configuration, and normalises its
+ * capture as a scan does (out-of-repository results dropped, with their warning). `log` receives
+ * the analyzer's log lines (silent by default).
+ */
+export async function scanRepoWith(
+  analyzer: Analyzer,
+  root: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  log: Logger = silentLogger,
+): Promise<{ capture: SarifCapture; out: NormalizedEngines }> {
+  const config = parseConfig({ version: 1 });
+  const files = discoverFiles({ root, config, warnings: new Warnings(), log: silentLogger });
+  const [capture] = await runAnalyzers([analyzer], { root, config, files, log, env });
+  if (capture === undefined) throw new Error('no capture');
+  const out = normalizeCaptures([capture], {
+    repoRoot: root,
+    readLines: fileLines(root),
+    knownPaths: new Set(files.map((f) => f.path)),
+    log: silentLogger,
+  });
+  return { capture, out };
 }

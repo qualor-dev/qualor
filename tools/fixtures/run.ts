@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import {
   compareFixture,
+  cppcheckVersionSupported,
   DEPENDENCY_ENGINES,
   engineRuleDefaults,
   expectedSchema,
@@ -81,6 +82,20 @@ export const DETEKT_JAR = 'detekt-jar';
 const DETEKT_JAR_FILE = '/opt/qualor/lib/detekt/detekt-cli.jar';
 
 /**
+ * Plan 9D: the fixtures' cppcheck findings are cppcheck 2.22's (fact F12), and the engine skips
+ * another minor: this pseudo-tool is present only for a cppcheck of the pinned minor.
+ */
+export const CPPCHECK_PINNED = 'cppcheck-pinned';
+
+/** What `<tool> --version` prints, matched by `re`'s first group; null without the tool. */
+function toolVersion(tool: string, re: RegExp, env: Record<string, string | undefined>): string | null {
+  const bin = findTool(tool, env);
+  if (bin === null) return null;
+  const r = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 30_000 });
+  return r.status === 0 ? (re.exec(r.stdout ?? '')?.[1] ?? null) : null;
+}
+
+/**
  * The binaries each built-in engine needs (any one of an inner list). The harness checks the same
  * places the CLI does: PATH and the scanner image's /opt/qualor/bin.
  */
@@ -110,6 +125,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   detekt: [['java'], [DETEKT_JAR]],
   // Plan 8F: SwiftLint's static binary, from install.sh (/opt/qualor/bin).
   swiftlint: [['swiftlint']],
+  // Plan 9D: cppcheck of the pinned minor, built by install-cppcheck.sh (/opt/qualor/bin).
+  cppcheck: [[CPPCHECK_PINNED]],
 };
 
 /**
@@ -132,6 +149,10 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === SONARJS_PASS) return existsSync(SONARJS_PASS_FILE);
   if (name === DETEKT_JAR) return existsSync(DETEKT_JAR_FILE);
   if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
+  if (name === CPPCHECK_PINNED) {
+    const v = toolVersion('cppcheck', /^Cppcheck (\S+)$/m, env);
+    return v !== null && cppcheckVersionSupported(v);
+  }
   return findTool(name, env) !== null;
 }
 
