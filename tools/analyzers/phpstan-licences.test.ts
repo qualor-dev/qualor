@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import {
+  checkedPhar,
   checkedText,
   chosenLicence,
   githubRepo,
@@ -18,6 +21,17 @@ const pinned = /^PHPSTAN_VERSION=(.+)$/m.exec(
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
 describe('phpstan-licences.mjs', () => {
+  it('opens only the phar install.sh pins by sha256', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'qualor-phar-'));
+    const phar = path.join(dir, 'phpstan.phar');
+    writeFileSync(phar, 'not the pinned phar');
+    onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+    const pin = (hex: string) => `PHPSTAN_VERSION=2.2.16\nPHPSTAN_SHA256=${hex}\n`;
+    expect(checkedPhar(phar, pin(sha256('not the pinned phar')))).toBe(phar);
+    expect(() => checkedPhar(phar, pin('0'.repeat(64)))).toThrow(/install\.sh pins 0{64}/);
+    expect(() => checkedPhar(phar, 'PHPSTAN_VERSION=2.2.16\n')).toThrow(/no PHPSTAN_SHA256/);
+  });
+
   it('takes an allowed licence out of a Composer choice, and refuses anything else', () => {
     expect(chosenLicence(['MIT'])).toBe('MIT');
     expect(chosenLicence(['BSD-3-Clause', 'GPL-2.0-only', 'GPL-3.0-only'])).toBe('BSD-3-Clause');

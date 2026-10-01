@@ -268,16 +268,31 @@ function generate(repo, version, lockUrl, packages) {
   console.log(`${sections.length} packages, ${texts.size} distinct licence texts`);
 }
 
+/**
+ * The phar the generator reads, checked against install.sh's PHPSTAN_SHA256 before php opens it
+ * (`php -r` with `require 'phar://…'` runs the phar's stub): only the pinned phar is ever run.
+ */
+export function checkedPhar(phar, installSh) {
+  const expected = /^PHPSTAN_SHA256=([0-9a-f]{64})$/m.exec(installSh)?.[1];
+  if (expected === undefined) throw new Error('install.sh pins no PHPSTAN_SHA256');
+  const actual = createHash('sha256').update(readFileSync(phar)).digest('hex');
+  if (actual !== expected)
+    throw new Error(`${phar} has sha256 ${actual}, install.sh pins ${expected}`);
+  return phar;
+}
+
 function main(argv) {
   const record = argv[0] === '--record';
   const phar = record ? argv[1] : argv[0];
   const here = path.dirname(fileURLToPath(import.meta.url));
   const repo = path.resolve(here, '../..');
-  const version = /^PHPSTAN_VERSION=(.+)$/m.exec(
-    readFileSync(path.join(repo, 'tools/analyzers/install.sh'), 'utf8'),
-  )?.[1];
+  const installSh = readFileSync(path.join(repo, 'tools/analyzers/install.sh'), 'utf8');
+  const version = /^PHPSTAN_VERSION=(.+)$/m.exec(installSh)?.[1];
   const dump = JSON.parse(
-    execFileSync('php', ['-r', DUMP, phar], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }),
+    execFileSync('php', ['-r', DUMP, checkedPhar(phar, installSh)], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    }),
   );
   if (dump.root.pretty_version !== version)
     throw new Error(`the phar is ${dump.root.pretty_version}, install.sh pins ${version}`);
