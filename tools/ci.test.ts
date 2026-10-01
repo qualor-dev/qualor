@@ -611,6 +611,56 @@ describe('install-cppcheck.sh (plan 9D)', () => {
   });
 });
 
+describe('install-clang-tidy.sh (plan 9D, CI and the toolbox only)', () => {
+  const script = readFileSync('tools/analyzers/install-clang-tidy.sh', 'utf8');
+
+  it('pins the PyPI wheel per architecture, checked before unzip, and installs only the binary and its headers', () => {
+    expect(script).toMatch(/^CLANG_TIDY_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^CLANG_TIDY_SHA256_X64=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^CLANG_TIDY_SHA256_ARM64=[0-9a-f]{64}$/m);
+    // Each wheel's full PyPI URL is pinned beside its SHA-256 and must name the pinned version, so
+    // a bump of CLANG_TIDY_VERSION alone cannot leave a stale URL behind.
+    const version = /^CLANG_TIDY_VERSION=(.+)$/m.exec(script)?.[1] ?? '';
+    for (const arch of ['X64', 'ARM64']) {
+      const url = new RegExp(`^CLANG_TIDY_URL_${arch}=(\\S+)$`, 'm').exec(script)?.[1] ?? '';
+      expect(url, arch).toMatch(
+        /^https:\/\/files\.pythonhosted\.org\/packages\/[0-9a-f]+\/[0-9a-f]+\/[0-9a-f]+\/clang_tidy-/,
+      );
+      expect(url, arch).toContain(`/clang_tidy-${version}-py2.py3-none-manylinux_`);
+      expect(url, arch).not.toContain('$');
+    }
+    const check = 'echo "$CT_SHA  $TMP/clang-tidy.whl" | sha256sum -c -';
+    expect(script).toContain(check);
+    expect(script.indexOf(check)).toBeLessThan(script.indexOf('unzip -q "$TMP/clang-tidy.whl"'));
+    expect(script).toContain("'clang_tidy/data/bin/clang-tidy' 'clang_tidy/data/lib/*'");
+    expect(script).not.toMatch(/pip install|run-clang-tidy|clang-apply-replacements/);
+  });
+
+  it('is never installed by the scanner image (decision 2), but by the toolbox and every analyzers job', () => {
+    expect(readFileSync('deploy/scanner/Dockerfile', 'utf8')).not.toMatch(/clang-tidy/);
+    expect(readFileSync('tools/analyzers/Dockerfile', 'utf8')).toMatch(
+      /sh \/tmp\/install-clang-tidy\.sh/,
+    );
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (uses === -1) continue;
+      const install = job.steps.findIndex(
+        (s) => s.run === 'sudo sh tools/analyzers/install-clang-tidy.sh',
+      );
+      expect(install, name).toBeGreaterThan(0);
+      expect(uses, name).toBeGreaterThan(install);
+    }
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    expect(gitlab['.analyzers']?.before_script ?? []).toContain(
+      'sh tools/analyzers/install-clang-tidy.sh',
+    );
+  });
+});
+
 describe("the CI cache of Trivy's downloads (plan 2B)", () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
   const pin = (name: string) => new RegExp(`^${name}=(.*)$`, 'm').exec(script)?.[1];

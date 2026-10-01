@@ -87,6 +87,14 @@ const DETEKT_JAR_FILE = '/opt/qualor/lib/detekt/detekt-cli.jar';
  */
 export const CPPCHECK_PINNED = 'cppcheck-pinned';
 
+/** Plan 9D: present only for a clang-tidy of the major install-clang-tidy.sh pins (22). */
+export const CLANG_TIDY_PINNED = 'clang-tidy-pinned';
+
+function pinnedClangTidyMajor(): string | null {
+  const script = readFileSync(path.join(root, 'tools/analyzers/install-clang-tidy.sh'), 'utf8');
+  return /^CLANG_TIDY_VERSION=(\d+)\./m.exec(script)?.[1] ?? null;
+}
+
 /** What `<tool> --version` prints, matched by `re`'s first group; null without the tool. */
 function toolVersion(tool: string, re: RegExp, env: Record<string, string | undefined>): string | null {
   const bin = findTool(tool, env);
@@ -127,6 +135,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   swiftlint: [['swiftlint']],
   // Plan 9D: cppcheck of the pinned minor, built by install-cppcheck.sh (/opt/qualor/bin).
   cppcheck: [[CPPCHECK_PINNED]],
+  // Plan 9D: clang-tidy of the pinned major, from install-clang-tidy.sh (tests only, decision 2).
+  'clang-tidy': [[CLANG_TIDY_PINNED]],
 };
 
 /**
@@ -152,6 +162,10 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === CPPCHECK_PINNED) {
     const v = toolVersion('cppcheck', /^Cppcheck (\S+)$/m, env);
     return v !== null && cppcheckVersionSupported(v);
+  }
+  if (name === CLANG_TIDY_PINNED) {
+    const major = toolVersion('clang-tidy', /LLVM version (\d+)\./, env);
+    return major !== null && major === pinnedClangTidyMajor();
   }
   return findTool(name, env) !== null;
 }

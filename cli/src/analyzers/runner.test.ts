@@ -481,6 +481,7 @@ describe('runAnalyzers', () => {
       'stylelint',
       'htmlhint',
       'cppcheck',
+      'clang-tidy',
     ] as const;
     // Membership and relative order (config.md §3), never the whole list.
     expect(ids).toEqual(expect.arrayContaining([...order]));

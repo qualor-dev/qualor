@@ -55,6 +55,7 @@ jobs:
       - run: sudo --preserve-env=QUALOR_DOWNLOAD_CACHE sh tools/analyzers/install.sh
         env: { QUALOR_DOWNLOAD_CACHE: '${{ runner.temp }}/qualor-downloads' }
       - run: sudo sh tools/analyzers/install-cppcheck.sh
+      - run: sudo sh tools/analyzers/install-clang-tidy.sh
       - run: sudo sh tools/analyzers/install-dotnet.sh
       - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
       # /opt/qualor already exists (root, from install.sh above); hand this one subdirectory to the
@@ -100,6 +101,7 @@ jobs:
       - run: sudo --preserve-env=QUALOR_DOWNLOAD_CACHE sh tools/analyzers/install.sh
         env: { QUALOR_DOWNLOAD_CACHE: '${{ runner.temp }}/qualor-downloads' }
       - run: sudo sh tools/analyzers/install-cppcheck.sh
+      - run: sudo sh tools/analyzers/install-clang-tidy.sh
       - run: sudo sh tools/analyzers/install-dotnet.sh
       - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
       - run: sudo mkdir -p /opt/qualor/sonarjs && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs
@@ -131,6 +133,7 @@ jobs:
       - run: sudo --preserve-env=QUALOR_DOWNLOAD_CACHE sh tools/analyzers/install.sh
         env: { QUALOR_DOWNLOAD_CACHE: '${{ runner.temp }}/qualor-downloads' }
       - run: sudo sh tools/analyzers/install-cppcheck.sh
+      - run: sudo sh tools/analyzers/install-clang-tidy.sh
       - run: sudo sh tools/analyzers/install-dotnet.sh
       - run: echo "DOTNET_ROOT=/opt/qualor/share/dotnet" >> "$GITHUB_ENV" && echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
       - run: sudo mkdir -p /opt/qualor/sonarjs && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/sonarjs

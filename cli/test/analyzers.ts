@@ -468,6 +468,32 @@ export function describeWithCppcheck(): typeof describe {
   return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
 }
 
+/** Plan 9D: the clang-tidy major the CI and the toolbox install (tools/analyzers/install-clang-tidy.sh). */
+export function pinnedClangTidyMajor(): string {
+  const script = readFileSync(
+    path.resolve(here, '../../tools/analyzers/install-clang-tidy.sh'),
+    'utf8',
+  );
+  const major = /^CLANG_TIDY_VERSION=(\d+)\./m.exec(script)?.[1];
+  if (major === undefined) throw new Error('install-clang-tidy.sh pins no CLANG_TIDY_VERSION');
+  return major;
+}
+
+/**
+ * Plan 9D: real clang-tidy runs under `QUALOR_REQUIRE_ANALYZERS=1`, or with a clang-tidy of the
+ * pinned major (the tests' expectations are that LLVM's), so a distribution's clang-tidy 14–21 on a
+ * developer machine skips these tests instead of failing them.
+ */
+export function describeWithClangTidy(): typeof describe {
+  const bin = resolveBinary('clang-tidy', { root: process.cwd(), env: process.env });
+  let ok = false;
+  if (bin !== null) {
+    const r = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 30_000 });
+    ok = /LLVM version (\d+)\./.exec(r.stdout ?? '')?.[1] === pinnedClangTidyMajor();
+  }
+  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
 /** Plan 9D: a SARIF result of a C/C++ engine, as far as the real-binary tests read it. */
 export interface KeyedResult {
   ruleId: string;

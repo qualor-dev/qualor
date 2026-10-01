@@ -1,3 +1,4 @@
+import { clangTidyAnalyzer } from './clang-tidy';
 import { cppcheckAnalyzer } from './cppcheck';
 import { detektAnalyzer } from './detekt';
 import { eslintAnalyzer } from './eslint';
@@ -31,5 +32,6 @@ export function builtinAnalyzers(): Analyzer[] {
     stylelintAnalyzer,
     htmlhintAnalyzer,
     cppcheckAnalyzer,
+    clangTidyAnalyzer,
   ];
 }
