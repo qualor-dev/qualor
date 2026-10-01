@@ -87,8 +87,8 @@ Common additions:
 
 A **quality profile** decides which analyzer rules become issues, and at which severity. There is one
 profile per language (`typescript`, `javascript`, `java`, `csharp`, `python`, `html`, `css`,
-`kotlin`, `swift`) plus `*` for everything else: secrets, dependencies, OpenGrep, external SARIF,
-and files without a language. The built-in profiles are called "Qualor way".
+`kotlin`, `swift`, `ruby`) plus `*` for everything else: secrets, dependencies, OpenGrep, external
+SARIF, and files without a language. The built-in profiles are called "Qualor way".
 
 - Press **Copy** in a built-in profile's row of **Quality profiles**, then turn rules on or off in
   the copy, override a severity, and make the copy the default.

@@ -61,6 +61,18 @@ Swift quality profiles are read but have nothing to map, because SonarSource's o
 not SwiftLint's rules. The statuses of SwiftLint issues that SonarQube imported
 (`external_swiftlint`) carry over.
 
+Ruby is like Python: Qualor runs RuboCop, the open-source tool SonarQube's own `external_rubocop`
+issues came from. A Ruby quality profile (`ruby:` and `rubydre:` rule keys alike) is mapped to a
+RuboCop cop where a cop checks the same kind of thing, and each of those mappings was compared with
+both rules' public descriptions and is marked reviewed. Only three of them (`ruby:S134`,
+`ruby:S138` and `ruby:S1066`, nesting depth, method length and collapsible `if`) are **equivalent**
+and turn a cop on in your Qualor `ruby` profile. The other mapped Ruby rules are **overlaps**: the
+two rules flag some of the same code, so they only carry issue statuses onto the matching Qualor
+issue, matched by file and line. The statuses of RuboCop issues that SonarQube imported
+(`external_rubocop`) carry over. As with Ruff, a cop that `qualor-default` does not run (the three
+equivalent rules above map to `Metrics` and `Style` cops, which it leaves out) is reported as
+**mapped but not run by the bundled configuration**; turn it on with `analyzers.rubocop.select`.
+
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says
 so. SonarQube's `css` and `Web` rules are not mapped yet.

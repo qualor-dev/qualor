@@ -79,7 +79,8 @@ analyses compiled classes).
   Gitleaks 8.30.1, Trivy 0.74.0 and Ruff 0.16.9 (Python), with a snapshot of Trivy's
   vulnerability database (the scan never downloads one); detekt 1.23.8 (Kotlin, Apache-2.0)
   in `/opt/qualor/lib/detekt`; and SwiftLint 0.65.1 (Swift, MIT), its static Linux build, in
-  `/opt/qualor/bin/swiftlint`. No Semgrep or OpenGrep rules are bundled yet
+  `/opt/qualor/bin/swiftlint`; and RuboCop 1.91.0 on Ruby 4.0.7 (Ruby, MIT), in
+  `/opt/qualor/rubocop`. No Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
 - Runs as the user `node` (uid 1000) in `/src`; about 3.5 GB. Every base image is pinned by
@@ -118,7 +119,8 @@ An interrupted scan exits 128 plus the signal number (130 for SIGINT, 143 for SI
 The Qualor CLI is MIT-licensed. The image bundles third-party software under its own licences:
 OpenGrep and SpotBugs (LGPL-2.1), PMD (BSD-style, with Apache-2.0 parts), Gitleaks and Trivy (MIT and Apache-2.0, with MPL-2.0 Go modules), Ruff (MIT, with
 three MPL-2.0 crates compiled in), detekt (Apache-2.0; Trove4J, LGPL-2.1, inside its jar), SwiftLint (MIT; its static build links
-the Swift runtime, libc++, musl, curl, BoringSSL, libxml2, zlib and mimalloc, none of them copyleft), eslint-plugin-sonarjs 2.0.4
+the Swift runtime, libc++, musl, curl, BoringSSL, libxml2, zlib and mimalloc, none of them copyleft), Ruby 4.0.7 (under its BSD-2-Clause option) with RuboCop and its gems (MIT,
+Ruby or BSD-2-Clause), eslint-plugin-sonarjs 2.0.4
 (LGPL-3.0, the last release before the SONAR Source-Available License; its own npm dependency tree
 includes axe-core, MPL-2.0), the
 Temurin JRE (GPL-2.0 with the Classpath Exception), Node.js (MIT), and the Bun runtime inside the
