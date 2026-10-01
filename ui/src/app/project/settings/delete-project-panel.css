@@ -1,0 +1,13 @@
+:host {
+  display: block;
+}
+
+.panel.danger {
+  border-color: var(--bad);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}

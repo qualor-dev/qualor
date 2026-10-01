@@ -15,6 +15,7 @@ import { CurrentProject } from '../current-project';
 import { GateProfilesPanel } from './gate-profiles-panel';
 import { MainBranchPanel } from './main-branch-panel';
 import { NewCodePanel } from './new-code-panel';
+import { DeleteProjectPanel } from './delete-project-panel';
 import { ProjectTokensPanel } from './project-tokens-panel';
 
 /**
@@ -24,7 +25,13 @@ import { ProjectTokensPanel } from './project-tokens-panel';
  */
 @Component({
   selector: 'q-project-settings-page',
-  imports: [GateProfilesPanel, MainBranchPanel, NewCodePanel, ProjectTokensPanel],
+  imports: [
+    DeleteProjectPanel,
+    GateProfilesPanel,
+    MainBranchPanel,
+    NewCodePanel,
+    ProjectTokensPanel,
+  ],
   templateUrl: './project-settings.page.html',
   styleUrl: './project-settings.page.css',
 })
