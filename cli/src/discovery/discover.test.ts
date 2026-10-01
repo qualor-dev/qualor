@@ -318,6 +318,27 @@ describe('discoverFiles', () => {
     ]);
   });
 
+  it('marks PHPUnit classes as tests and leaves vendor/ out (plan 9A)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'src/Cart.php': '<?php\n',
+      'tests/CartTest.php': '<?php\n',
+      'tests/Support/Helper.php': '<?php\n',
+      'vendor/acme/lib/src/Thing.php': '<?php\n',
+    });
+    const files = discoverFiles({
+      root,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.kind]).sort()).toEqual([
+      ['src/Cart.php', 'php', 'main'],
+      ['tests/CartTest.php', 'php', 'test'],
+      ['tests/Support/Helper.php', 'php', 'main'],
+    ]);
+  });
+
   it('keeps an empty directory tree empty', () => {
     const root = tmp();
     mkdirSync(path.join(root, 'empty', 'deeper'), { recursive: true });

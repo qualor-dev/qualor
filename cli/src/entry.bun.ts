@@ -7,6 +7,7 @@ import cssWasm from 'tree-sitter-css/tree-sitter-css.wasm' with { type: 'file' }
 import htmlWasm from 'tree-sitter-html/tree-sitter-html.wasm' with { type: 'file' };
 import javaWasm from 'tree-sitter-java/tree-sitter-java.wasm' with { type: 'file' };
 import javascriptWasm from 'tree-sitter-javascript/tree-sitter-javascript.wasm' with { type: 'file' };
+import phpWasm from 'tree-sitter-php/tree-sitter-php.wasm' with { type: 'file' };
 import pythonWasm from 'tree-sitter-python/tree-sitter-python.wasm' with { type: 'file' };
 import tsxWasm from 'tree-sitter-typescript/tree-sitter-tsx.wasm' with { type: 'file' };
 import typescriptWasm from 'tree-sitter-typescript/tree-sitter-typescript.wasm' with { type: 'file' };
@@ -27,5 +28,6 @@ registerEmbeddedAssets({
   css: cssWasm,
   kotlin: kotlinWasm,
   swift: swiftWasm,
+  php: phpWasm,
 });
 process.exitCode = await main(process.argv.slice(2), processIO());

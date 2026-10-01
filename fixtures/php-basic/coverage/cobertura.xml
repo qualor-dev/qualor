@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">
+<coverage line-rate="0.23809523809524" branch-rate="0" lines-covered="5" lines-valid="21" branches-covered="0" branches-valid="0" complexity="17" version="0.4" timestamp="1790867029">
+  <sources>
+    <source>/fixture-root/src</source>
+  </sources>
+  <packages>
+    <package name="Cart.php" line-rate="0.23809523809524" branch-rate="0" complexity="17">
+      <classes>
+        <class name="Shop\Cart" filename="Cart.php" line-rate="0.23809523809524" branch-rate="0" complexity="17">
+          <methods>
+            <method name="add" signature="string $sku, int $quantity" line-rate="0.66666666666667" branch-rate="0" complexity="3">
+              <lines>
+                <line number="19" hits="1"/>
+                <line number="20" hits="0"/>
+                <line number="22" hits="1"/>
+              </lines>
+            </method>
+            <method name="count" signature="" line-rate="0" branch-rate="0" complexity="2">
+              <lines>
+                <line number="27" hits="0"/>
+                <line number="28" hits="0"/>
+                <line number="29" hits="0"/>
+                <line number="31" hits="0"/>
+              </lines>
+            </method>
+            <method name="label" signature="string $sku" line-rate="0" branch-rate="0" complexity="2">
+              <lines>
+                <line number="36" hits="0"/>
+                <line number="37" hits="0"/>
+              </lines>
+            </method>
+            <method name="clear" signature="" line-rate="0" branch-rate="0" complexity="1">
+              <lines>
+                <line number="42" hits="0"/>
+              </lines>
+            </method>
+            <method name="reset" signature="" line-rate="0" branch-rate="0" complexity="1">
+              <lines>
+                <line number="47" hits="0"/>
+              </lines>
+            </method>
+            <method name="tier" signature="int $total" line-rate="0.6" branch-rate="0" complexity="4">
+              <lines>
+                <line number="56" hits="1"/>
+                <line number="57" hits="0"/>
+                <line number="58" hits="1"/>
+                <line number="59" hits="0"/>
+                <line number="61" hits="1"/>
+              </lines>
+            </method>
+            <method name="describe" signature="int $code" line-rate="0" branch-rate="0" complexity="4">
+              <lines>
+                <line number="67" hits="0"/>
+                <line number="68" hits="0"/>
+                <line number="69" hits="0"/>
+                <line number="70" hits="0"/>
+                <line number="71" hits="0"/>
+              </lines>
+            </method>
+          </methods>
+          <lines>
+            <line number="19" hits="1"/>
+            <line number="20" hits="0"/>
+            <line number="22" hits="1"/>
+            <line number="27" hits="0"/>
+            <line number="28" hits="0"/>
+            <line number="29" hits="0"/>
+            <line number="31" hits="0"/>
+            <line number="36" hits="0"/>
+            <line number="37" hits="0"/>
+            <line number="42" hits="0"/>
+            <line number="47" hits="0"/>
+            <line number="56" hits="1"/>
+            <line number="57" hits="0"/>
+            <line number="58" hits="1"/>
+            <line number="59" hits="0"/>
+            <line number="61" hits="1"/>
+            <line number="67" hits="0"/>
+            <line number="68" hits="0"/>
+            <line number="69" hits="0"/>
+            <line number="70" hits="0"/>
+            <line number="71" hits="0"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

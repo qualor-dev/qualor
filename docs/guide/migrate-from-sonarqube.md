@@ -15,7 +15,7 @@ stored anywhere.
 | Issues marked **False positive**, **Won't fix** or **Accepted** on the main branch | the same status on the matching Qualor issue, with the latest comment |
 | Quality gates | Qualor gates, for conditions on metrics Qualor has |
 | Projects, and which gate each one uses | project assignments. With `--create-projects`, the projects themselves |
-| Quality profiles for JavaScript, TypeScript, C#, Java and Python | listed in the plan. Rule activation and severity overrides move as the SonarSource-to-analyzer rule mappings are reviewed. Until a profile has reviewed mappings it is reported as skipped, and your Qualor profiles stay as they are |
+| Quality profiles for JavaScript, TypeScript, C#, Java, Python and PHP | listed in the plan. Rule activation and severity overrides move as the SonarSource-to-analyzer rule mappings are reviewed. Until a profile has reviewed mappings it is reported as skipped, and your Qualor profiles stay as they are |
 
 The statuses of issues that SonarQube imported from ESLint, PMD, SpotBugs, Roslyn or Ruff
 (`external_*` rules) map one to one. SonarQube Server 9.9 does not let anyone resolve such external
@@ -60,6 +60,15 @@ those of detekt findings SonarQube imported (`external_detekt`), are not importe
 Swift quality profiles are read but have nothing to map, because SonarSource's own Swift rules are
 not SwiftLint's rules. The statuses of SwiftLint issues that SonarQube imported
 (`external_swiftlint`) carry over.
+
+PHP quality profiles are imported where a PHPStan rule at Qualor's default level (2) is the same
+rule as a SonarQube one. Six `php` rules are mapped, and only `php:S5708` (a `catch` clause naming
+a class that is not `Throwable`) is equivalent: it activates `phpstan:catch.notThrowable` in your
+Qualor `php` profile. The other five overlap (they flag some of the same code, but not all of
+it), so they only carry issue statuses onto the matching Qualor issue, by file and line. Issues
+SonarQube imported from PHPStan (`external_phpstan`) keep no PHPStan rule id in SonarQube, so
+their statuses are not imported. Psalm's issues and SonarQube's own PHP security rules are not
+mapped.
 
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says

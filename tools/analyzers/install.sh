@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs the pinned analyzer toolchain (plan 1D, Task 2) into $QUALOR_TOOLS (default
-# /opt/qualor): PMD, SpotBugs, detekt, OpenGrep, Gitleaks, Trivy, Ruff and SwiftLint, each checked
+# /opt/qualor): PMD, SpotBugs, detekt, OpenGrep, Gitleaks, Trivy, Ruff, SwiftLint and PHPStan, each checked
 # against its SHA-256 before it is unpacked, and Trivy's vulnerability database (plan 2B), a snapshot pinned by the
 # digest of its OCI layer, into $QUALOR_TOOLS/share/trivy/db. Java (>= 17) must already be on
 # PATH for PMD, SpotBugs and detekt. The same versions are what the qualor/scanner image ships; bump them
@@ -57,6 +57,17 @@ DETEKT_SHA256=3afe89a11120303c73c9bdda3d8fe558dd9070a6937d27819ddc04b275381245
 SWIFTLINT_VERSION=0.65.1
 SWIFTLINT_SHA256_X64=caeed6f4a679c35539ffaf124f6c4ab4a8416917f7d8796279dc52b74026059d
 SWIFTLINT_SHA256_ARM64=9ffa52f478e6d8eb485d37d14715ffac90abc81c58f3370d598bf75be05605f8
+# PHPStan (plan 9A), the PHP analyzer: the release phar, run by the image's php8.2-cli (Debian).
+# PHPSTAN_VERSION must equal PHPSTAN_VERSION in packages/shared/src/rules/phpstan.ts
+# (tools/ci.test.ts checks). A bump also sets PHPSTAN_IDENTIFIERS_SHA256 (the sha256 of that tag's
+# website/src/errorsIdentifiers.json; only tools/analyzers/phpstan-identifiers.mjs reads it) and
+# regenerates packages/shared/rules/phpstan-identifiers.json, tools/analyzers/phpstan-licence-pins.json
+# and deploy/scanner/licenses/PHPSTAN-DEPENDENCIES.txt (tools/analyzers/phpstan-licences.mjs).
+# Only the phar is installed, alone in its directory: PHPStan would load a native extension
+# placed next to it, and Qualor ships none.
+PHPSTAN_VERSION=2.2.16
+PHPSTAN_SHA256=1a2fb5460c142502d3cd06272529c18b19fda004ada974bd2581cb9fd6c0a53b
+PHPSTAN_IDENTIFIERS_SHA256=8d1877cd4a6ad738064032f2e61d628a7efa8198e307bd6cf96c54d1e734d824
 # Qualor's sonarjs pass (tools/analyzers/sonarjs, plan 8A/8B), which this script does not install:
 # the qualor/scanner and tools/analyzers Dockerfiles run `npm ci` from its package-lock.json and
 # read these pins. SONARJS_VERSION must equal that package.json's eslint-plugin-sonarjs (the last
@@ -114,6 +125,9 @@ ln -sf "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/bin/spotbugs" "$PREFIX/bin/spotbu
 fetch "https://repo1.maven.org/maven2/io/gitlab/arturbosch/detekt/detekt-cli/$DETEKT_VERSION/detekt-cli-$DETEKT_VERSION-all.jar" "$DETEKT_SHA256" detekt.jar
 mkdir -p "$PREFIX/lib/detekt"
 install -m 0644 "$TMP/detekt.jar" "$PREFIX/lib/detekt/detekt-cli.jar"
+fetch "$GH/phpstan/phpstan/releases/download/$PHPSTAN_VERSION/phpstan.phar" "$PHPSTAN_SHA256" phpstan.phar
+mkdir -p "$PREFIX/lib/phpstan"
+install -m 0644 "$TMP/phpstan.phar" "$PREFIX/lib/phpstan/phpstan.phar"
 
 fetch "$GH/opengrep/opengrep/releases/download/v$OPENGREP_VERSION/opengrep_manylinux_$OG_ARCH" "$OG_SHA" opengrep
 install -m 0755 "$TMP/opengrep" "$PREFIX/bin/opengrep"
@@ -156,4 +170,4 @@ chmod 0644 "$PREFIX/share/trivy/db/trivy.db" "$PREFIX/share/trivy/db/metadata.js
 # Only the current pins stay in the cache.
 [ -z "$CACHE" ] || find "$CACHE" -maxdepth 1 -type f ! -name "$TV_SHA" ! -name "${TRIVY_DB_DIGEST#sha256:}" -delete
 
-echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION, Ruff $RUFF_VERSION, SwiftLint $SWIFTLINT_VERSION into $PREFIX/bin, detekt $DETEKT_VERSION into $PREFIX/lib/detekt, and the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy"
+echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION, Ruff $RUFF_VERSION, SwiftLint $SWIFTLINT_VERSION into $PREFIX/bin, detekt $DETEKT_VERSION into $PREFIX/lib/detekt, PHPStan $PHPSTAN_VERSION into $PREFIX/lib/phpstan, and the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy"

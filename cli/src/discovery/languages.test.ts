@@ -82,6 +82,15 @@ describe('detectLanguage', () => {
     expect(detectLanguage('a.swift', ['java']).language).toBe('other');
   });
 
+  it('maps .php to php, any case; other PHP-ish extensions stay other (plan 9A)', () => {
+    expect(detectLanguage('src/Cart.php', 'auto')).toEqual({ language: 'php', grammar: 'php' });
+    expect(detectLanguage('LEGACY.PHP', 'auto').language).toBe('php');
+    for (const p of ['views/a.phtml', 'lib/b.inc', 'old/c.php5', 'tools/x.phar', 'composer.json']) {
+      expect(detectLanguage(p, 'auto'), p).toEqual({ language: 'other', grammar: null });
+    }
+    expect(detectLanguage('a.php', ['java']).language).toBe('other');
+  });
+
   it('honours an explicit languages list', () => {
     expect(detectLanguage('a.ts', ['java'])).toEqual({ language: 'other', grammar: null });
     expect(detectLanguage('A.java', ['java']).language).toBe('java');

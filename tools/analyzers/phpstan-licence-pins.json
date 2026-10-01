@@ -1,0 +1,17 @@
+{
+  "phpstan": "2.2.16",
+  "files": {
+    "https://raw.githubusercontent.com/phpstan/phpstan-src/08e3736efd29631ab8f32596c5dd2362dec8dc26/composer.lock": "593c3522d6db0d416bad75a82d697f6895b5ead485e295209016ec233657e756",
+    "https://raw.githubusercontent.com/theofidry/cpu-core-counter/db9508f7b1474469d9d3c53b86f817e344732678/LICENSE.md": "cdfb6ec3ac1800c006d6c91ec1da73f83e9decbd643aceb33396321a9e3bfc22",
+    "https://raw.githubusercontent.com/nette/bootstrap/1a7965b4ee401ad0e3f673b9c016d2481afdc280/license.md": "b3bc3d38b9ec29d98bc83bd5fa44e583e8303cd97b62d203a9e5e21935126de9",
+    "https://raw.githubusercontent.com/nette/di/2645ec3eaa17fa2ab87c5eb4eaacb1fe6dd28284/license.md": "b3bc3d38b9ec29d98bc83bd5fa44e583e8303cd97b62d203a9e5e21935126de9",
+    "https://raw.githubusercontent.com/nette/finder/991aefb42860abeab8e003970c3809a9d83cb932/license.md": "b3bc3d38b9ec29d98bc83bd5fa44e583e8303cd97b62d203a9e5e21935126de9",
+    "https://raw.githubusercontent.com/nette/neon/bb88bf3a54dd21bf4dbddb5cd525d7b0c61b7cda/license.md": "88d871b212dc205d27d5e9dd8e3f69fa1c4b3280509b127e0cf58382c88a6045",
+    "https://raw.githubusercontent.com/nette/php-generator/d31782f7bd2ae84ad06f863391ec3fb77ca4d0a6/license.md": "b3bc3d38b9ec29d98bc83bd5fa44e583e8303cd97b62d203a9e5e21935126de9",
+    "https://raw.githubusercontent.com/nette/robot-loader/970c8f82be98ec54180c88a468cd2b057855d993/license.md": "b3bc3d38b9ec29d98bc83bd5fa44e583e8303cd97b62d203a9e5e21935126de9",
+    "https://raw.githubusercontent.com/nette/schema/0462f0166e823aad657c9224d0f849ecac1ba10a/license.md": "b3bc3d38b9ec29d98bc83bd5fa44e583e8303cd97b62d203a9e5e21935126de9",
+    "https://raw.githubusercontent.com/nette/utils/a4175c62652f2300c8017fb7e640f9ccb11648d2/license.md": "b3bc3d38b9ec29d98bc83bd5fa44e583e8303cd97b62d203a9e5e21935126de9",
+    "https://raw.githubusercontent.com/OndraM/ci-detector/8b0223b5ed235fd377c75fdd1bfcad05c0f168b8/LICENCE.md": "6f4021bf55a690e577c1fc731b4d71617219696570a335257e5fdb276f550245",
+    "https://raw.githubusercontent.com/sebastianbergmann/diff/ba01945089c3a293b01ba9badc29ad55b106b0bc/composer.json": "6dbb6f34130e2c77591b7c5745a5a5257320ed1154b1d6de5477bcbe4fe6ef4b"
+  }
+}

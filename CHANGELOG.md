@@ -6,6 +6,29 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- PHP: `.php` files are a language of their own (`php`) with metrics, duplication and a `php`
+  quality profile, and a new `phpstan` engine runs PHPStan 2.2 (MIT) from `qualor/scanner` on
+  Debian's PHP 8.2, at level 2 (`analyzers.phpstan.level`, 0-10 or `max`), with Qualor's own
+  configuration. It never loads the project's `phpstan.neon`, its bootstrap files, PHPStan
+  extensions or Composer's autoloader, and runs on a copy of the sources; installed dependencies
+  in `vendor/` are read as symbols, never run. Unknown classes, methods and functions are not
+  reported. `qualor import sonarqube` imports PHP profiles where a PHPStan rule is the same rule.
+  `QUALOR_PHPSTAN_PHAR` names another phar.
+
+### Changed
+
+- A report that holds PHP files or `phpstan` findings is refused (422) by an older Qualor server:
+  upgrade the server before the scanner.
+- `.php` files were language `other`; they now count in lines of code, complexity and
+  duplication, and `*Test.php` files are test files by default.
+- PHPStan is skipped when `composer.json` requires packages but `vendor/` is not installed: run
+  `composer install` (scripts and plugins are not needed) before the scan.
+- `phpstan` is now a built-in engine id: a `sarif:` entry with `engine: phpstan` no longer
+  validates, and your own PHPStan SARIF import is reported as `ext-phpstan` and counted once.
+- The `qualor/scanner` image is about 25 MB larger (compressed): Debian's PHP 8.2 and PHPStan.
+
 ## [0.3.1] - 2026-10-01
 
 ### Added

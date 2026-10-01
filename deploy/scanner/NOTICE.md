@@ -14,6 +14,7 @@ vulnerability database pinned by digest), compiled into the
 | SpotBugs                                                                      | 4.10.4                                         | LGPL-2.1 (`SPOTBUGS-LICENSE.txt`; its libraries: `/opt/qualor/lib/spotbugs-4.10.4/LICENSE-*.txt`)                                                                                           | https://github.com/spotbugs/spotbugs/tree/4.10.4                                                      |
 | detekt (the detekt engine, Kotlin)                                            | 1.23.8                                         | Apache-2.0 (`DETEKT-LICENSE.txt`); the libraries its jar bundles: see below (`DETEKT-THIRD-PARTY.txt`), Trove4J LGPL-2.1 (`TROVE4J-LICENSE.txt`)                                            | https://github.com/detekt/detekt/tree/v1.23.8                                                         |
 | SwiftLint (the swiftlint engine, Swift)                                       | 0.65.1                                         | MIT (`SWIFTLINT-LICENSE.txt`, with mimalloc's MIT licence); what its static build links: see below (`SWIFTLINT-THIRD-PARTY-NOTICES.txt`)                                                    | https://github.com/realm/SwiftLint/tree/0.65.1                                                        |
+| PHPStan (the phpstan engine, PHP)                                             | 2.2.16                                         | MIT (`PHPSTAN-LICENSE.txt`); the Composer packages inside its phar (MIT, BSD-3-Clause, Apache-2.0; Nette's under its BSD-3-Clause option): see `PHPSTAN-DEPENDENCIES.txt`                   | https://github.com/phpstan/phpstan/tree/2.2.16                                                        |
 | PMD                                                                           | 7.27.0                                         | BSD-style, with Apache-2.0 parts (`PMD-LICENSE.txt`); its bundled libraries: see below                                                                                                      | https://github.com/pmd/pmd/tree/pmd_releases/7.27.0                                                   |
 | Gitleaks                                                                      | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`); its MPL-2.0 Go modules: see below                                                                                                                             | https://github.com/gitleaks/gitleaks/tree/v8.30.1                                                     |
 | Trivy                                                                         | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                                     | https://github.com/aquasecurity/trivy/tree/v0.74.0                                                    |
@@ -26,7 +27,7 @@ vulnerability database pinned by digest), compiled into the
 | npm, Corepack and Yarn (from the Node.js image)                               | 10.9.9, 0.36.0, 1.22.22                        | Artistic-2.0, MIT, BSD-2-Clause (the `LICENSE` in each package's directory)                                                                                                                 | https://github.com/nodejs/docker-node                                                                 |
 | Bun runtime (inside the `qualor` binary)                                      | 1.3.13                                         | MIT; it links JavaScriptCore/WebKit (LGPL-2), tinycc (LGPL-2.1) and others (`BUN-LICENSE.txt`)                                                                                              | https://github.com/oven-sh/bun/tree/bun-v1.3.13                                                       |
 | npm packages inside the `qualor` binary (below)                               | as locked                                      | MIT or ISC (`qualor/npm/<package>@<version>/`; saxes: `SAXES-LICENSE.txt`; tree-sitter-c-sharp: `TREE-SITTER-C-SHARP-LICENSE.txt`; tree-sitter-kotlin: its `LICENSE` in the same directory) | https://www.npmjs.com/                                                                                |
-| Debian packages (git, ca-certificates, base system)                           | bookworm                                       | per package, `/usr/share/doc/*/copyright`                                                                                                                                                   | `qualor/scanner-sources` (`debian/`)                                                                  |
+| Debian packages (git, ca-certificates, php8.2-cli, base system)               | bookworm                                       | per package, `/usr/share/doc/*/copyright`                                                                                                                                                   | `qualor/scanner-sources` (`debian/`)                                                                  |
 | .NET SDK (software only in `qualor/scanner-dotnet`)                           | 8.0.425 and 10.0.401                           | MIT (`DOTNET-LICENSE.txt`, identical for both versions); their own third-party notices, per version: `DOTNET-8.0.425-ThirdPartyNotices.txt`, `DOTNET-10.0.401-ThirdPartyNotices.txt`        | https://github.com/dotnet/sdk                                                                         |
 | Roslynator.Analyzers (software only in `qualor/scanner-dotnet`)               | 5.0.0                                          | Apache-2.0, Josef Pihrt and contributors (`ROSLYNATOR-LICENSE.txt`)                                                                                                                         | https://github.com/dotnet/roslynator/tree/v5.0.0                                                      |
 | SonarAnalyzer.CSharp (software only in `qualor/scanner-dotnet`)               | 9.32.0.97167                                   | LGPL-3.0 (`SONARANALYZER-CSHARP-LICENSE.txt`)                                                                                                                                               | https://github.com/SonarSource/sonar-dotnet/tree/9.32.0.97167                                         |
@@ -139,15 +140,26 @@ mpdecimal. The Python packages are MIT, BSD, Apache-2.0, PSF or 0BSD (chardet 7)
 
 The npm packages compiled into the `qualor` binary are ignore, picomatch, saxes, xmlchars, yaml,
 zod, web-tree-sitter and the tree-sitter grammars for Java, JavaScript, TypeScript, C#, Python,
-HTML, CSS and Kotlin (`tree-sitter-c-sharp` 0.23.5, MIT, `TREE-SITTER-C-SHARP-LICENSE.txt`;
-`tree-sitter-html` 0.23.2, `tree-sitter-css` 0.25.0 and `@tree-sitter-grammars/tree-sitter-kotlin` 1.1.0,
-all MIT), in the
-versions `pnpm-lock.yaml` locks. The Swift grammar, tree-sitter-swift 0.7.3 (MIT,
-`TREE-SITTER-SWIFT-LICENSE.txt`), is vendored in the CLI's source (`cli/grammars`), because no npm
-package ships it as WebAssembly. The `qualor` binary, and so this grammar, is the same in
-`qualor/scanner` and `qualor/scanner-dotnet`: the image only adds the .NET SDKs and
-Roslynator around it. The image keeps the licence files of every production dependency
+HTML, CSS, Kotlin and PHP (`tree-sitter-c-sharp` 0.23.5, MIT, `TREE-SITTER-C-SHARP-LICENSE.txt`;
+`tree-sitter-html` 0.23.2, `tree-sitter-css` 0.25.0, `@tree-sitter-grammars/tree-sitter-kotlin`
+1.1.0 and `tree-sitter-php` 0.24.2, all MIT), in the versions `pnpm-lock.yaml` locks. The Swift
+grammar, tree-sitter-swift 0.7.3 (MIT, `TREE-SITTER-SWIFT-LICENSE.txt`), is vendored in the CLI's
+source (`cli/grammars`), because no npm package ships it as WebAssembly. The `qualor` binary, and so
+this grammar, is the same in `qualor/scanner` and `qualor/scanner-dotnet`: the image only adds the
+.NET SDKs and Roslynator around it. The image keeps the licence files of every production dependency
 of the CLI, as installed, in `/opt/qualor/licenses/qualor/npm/`.
+
+PHPStan is PHPStan's own phar, unmodified, pinned by SHA-256 in `tools/analyzers/install.sh` and
+installed as `/opt/qualor/lib/phpstan/phpstan.phar`. `PHPSTAN-DEPENDENCIES.txt` lists the 67
+Composer packages inside it with their licence texts (MIT, BSD-3-Clause and Apache-2.0).
+
+PHP 8.2 (Debian's `php8.2-cli`, which runs PHPStan) is under the PHP License 3.01 and, for the Zend
+Engine, the Zend Engine License 2.00; its full copyright file is
+`/usr/share/doc/php8.2-common/copyright`, and its source is in `qualor/scanner-sources` with the
+other Debian packages. This product includes PHP software, freely available from
+<http://www.php.net/software/>. This product includes the Zend Engine, freely available at
+<http://www.zend.com>. This product includes software developed by the University of California,
+Berkeley and its contributors (PHP's `main/mergesort.c`).
 
 Qualor's own `sonarjs` pass (`/opt/qualor/sonarjs`) runs eslint-plugin-sonarjs 2.0.4 (LGPL-3.0, the
 last release before the SONAR Source-Available License) on its own ESLint 9, installed at image

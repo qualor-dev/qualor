@@ -49,4 +49,13 @@ describe('parseCobertura', () => {
     expect(record?.branches.get(14)).toEqual({ total: 4, covered: 2 });
     expect(record?.branches.size).toBe(1);
   });
+
+  it("reads PHPUnit's Cobertura (a <source> directory and filenames relative to it, plan 9A)", async () => {
+    const parsed = await parseCobertura(path.join(FIXTURES_DIR, 'php-basic', 'coverage', 'cobertura.xml'));
+    expect(parsed.sourceDirs).toEqual(['/fixture-root/src']);
+    const record = parsed.files.get('Cart.php');
+    expect(record?.lines.size).toBe(21);
+    expect([...(record?.lines ?? [])].filter(([, hits]) => hits > 0).map(([line]) => line)).toEqual([19, 22, 56, 58, 61]);
+    expect(record?.branches.size).toBe(0);
+  });
 });

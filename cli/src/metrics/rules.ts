@@ -2,7 +2,15 @@ import type { Node } from 'web-tree-sitter';
 import type { GrammarId } from '../parse/grammars';
 
 export type SyntaxFamily =
-  'ecmascript' | 'java' | 'csharp' | 'python' | 'markup' | 'stylesheet' | 'kotlin' | 'swift';
+  | 'ecmascript'
+  | 'java'
+  | 'csharp'
+  | 'python'
+  | 'markup'
+  | 'stylesheet'
+  | 'kotlin'
+  | 'swift'
+  | 'php';
 
 /**
  * Node tables of ruling C3 (node type names of the pinned grammars, C1). No rule looks at
@@ -528,6 +536,76 @@ const SWIFT: FamilyRules = {
   statementParents: new Set(['statements', 'source_file']),
 };
 
+/** A PHP `if`'s `else` clause (an `else if` puts an if_statement inside it; `elseif` has its own clause). */
+function phpElse(ifNode: Node): Node | null {
+  return ifNode.namedChildren.find((c) => c?.type === 'else_clause') ?? null;
+}
+
+/** PHP's word operators run with their symbol twins: `$a and $b && $c` is one run (plan 9A). */
+const PHP_LOGICAL: Readonly<Record<string, string>> = {
+  '&&': '&&',
+  and: '&&',
+  '||': '||',
+  or: '||',
+};
+
+/** tree-sitter-php 0.24.2, its `php` grammar (plan 9A, probe P6). */
+const PHP: FamilyRules = {
+  comments: new Set(['comment']),
+  functions: new Set(['function_definition', 'method_declaration']),
+  // An abstract or interface method has no body: it is not a function.
+  isFunction: (n) => n.type !== 'method_declaration' || n.childForFieldName('body') !== null,
+  lambdas: new Set(['anonymous_function', 'arrow_function']),
+  classes: new Set([
+    'class_declaration',
+    'interface_declaration',
+    'trait_declaration',
+    'enum_declaration',
+  ]),
+  // The grammar's `statement` supertype without declarations (class, enum, interface, trait,
+  // function, namespace, use, const, declare) and without blocks and empty statements.
+  statements: new Set([
+    'expression_statement',
+    'return_statement',
+    'echo_statement',
+    'if_statement',
+    'for_statement',
+    'foreach_statement',
+    'while_statement',
+    'do_statement',
+    'switch_statement',
+    'try_statement',
+    'break_statement',
+    'continue_statement',
+    'unset_statement',
+    'global_declaration',
+    'function_static_declaration',
+    'goto_statement',
+    'exit_statement',
+  ]),
+  loops: new Set(['for_statement', 'foreach_statement', 'while_statement', 'do_statement']),
+  // A match counts like a switch for cognitive complexity; its non-default arms are cases.
+  switches: new Set(['switch_statement', 'match_expression']),
+  catchClause: 'catch_clause',
+  ternary: 'conditional_expression',
+  transparent: new Set(['parenthesized_expression']),
+  isCase: (n) => n.type === 'case_statement' || n.type === 'match_conditional_expression',
+  elseIf: (n) => phpElse(n)?.namedChildren.find((c) => c?.type === 'if_statement') ?? null,
+  plainElse: (n) => {
+    const e = phpElse(n);
+    return e !== null && !e.namedChildren.some((c) => c?.type === 'if_statement') ? e : null;
+  },
+  // `elseif` is its own clause: +1 complexity and a hybrid cognitive increment.
+  elseIfClause: 'else_if_clause',
+  logicalOperator: (n) => {
+    if (n.type !== 'binary_expression') return null;
+    const op = n.childForFieldName('operator')?.type;
+    return op !== undefined && Object.hasOwn(PHP_LOGICAL, op) ? (PHP_LOGICAL[op] ?? null) : null;
+  },
+  // Inline HTML between `?>` and `<?php`: only its rows with text are code lines.
+  rowWiseLeaves: new Set(['text']),
+};
+
 export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   ecmascript: ECMASCRIPT,
   java: JAVA,
@@ -537,6 +615,7 @@ export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   stylesheet: STYLESHEET,
   kotlin: KOTLIN,
   swift: SWIFT,
+  php: PHP,
 };
 
 export function familyOf(grammar: GrammarId): SyntaxFamily {
@@ -547,5 +626,6 @@ export function familyOf(grammar: GrammarId): SyntaxFamily {
   if (grammar === 'css') return 'stylesheet';
   if (grammar === 'kotlin') return 'kotlin';
   if (grammar === 'swift') return 'swift';
+  if (grammar === 'php') return 'php';
   return 'ecmascript';
 }

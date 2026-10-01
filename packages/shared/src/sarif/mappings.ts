@@ -1,6 +1,7 @@
 import type { IssueKind, Quality, Severity } from '../report/taxonomy';
 import type { EngineMapping } from './normalize';
 import type { SarifResult, SarifRule } from './types';
+import { phpstanRule } from '../rules/phpstan';
 import { swiftlintQuality, swiftlintSeverity } from '../rules/swiftlint';
 import ruffCategories from '../../rules/ruff-categories.json' with { type: 'json' };
 
@@ -376,6 +377,12 @@ const swiftlint: EngineMapping = {
     swiftlintSeverity(result.ruleId ?? rule?.id ?? '', result.level ?? 'warning'),
 };
 
+/** PHPStan (plan 9A): every converted result is a `warning`; the identifier decides (§7.1). */
+const phpstan: EngineMapping = {
+  rule: (r) => phpstanRule(r.id),
+  severity: (result, rule) => phpstanRule(rule?.id ?? result.ruleId ?? '').defaultSeverity,
+};
+
 export const ENGINE_MAPPINGS = {
   eslint,
   pmd,
@@ -390,6 +397,7 @@ export const ENGINE_MAPPINGS = {
   htmlhint,
   detekt,
   swiftlint,
+  phpstan,
 } as const satisfies Record<string, EngineMapping>;
 
 export function engineMapping(engineId: string): EngineMapping | undefined {

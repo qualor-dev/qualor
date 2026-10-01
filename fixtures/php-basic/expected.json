@@ -1,0 +1,29 @@
+{
+  "description": "PHP repo: PHPStan at Qualor's default level 2 (an undefined variable, a wrong argument count, a void result used, a PHPDoc type that contradicts the native one; the test's unknown PHPUnit symbols are dropped), tree-sitter-php metrics and PHPUnit's Cobertura coverage",
+  "engines": ["phpstan"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "phpstan:variable.undefined", "path": "src/Cart.php", "startLine": 31, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "phpstan:arguments.count", "path": "src/Cart.php", "startLine": 36, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "phpstan:method.void", "path": "src/Cart.php", "startLine": 47, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "phpstan:parameter.phpDocType", "path": "src/Cart.php", "startLine": 53, "severity": "low", "quality": "maintainability" }
+  ],
+  "files": {
+    "src/Cart.php": { "language": "php", "kind": "main", "lines": 73, "ncloc": 55, "commentLines": 7, "functions": 7, "classes": 1, "statements": 16, "complexity": 15, "cognitiveComplexity": 6 },
+    "tests/CartTest.php": { "language": "php", "kind": "test", "lines": 18, "ncloc": 14, "commentLines": 0, "functions": 1, "classes": 1, "statements": 3, "complexity": 1, "cognitiveComplexity": 0 },
+    "templates/list.php": { "language": "php", "kind": "main", "lines": 6, "ncloc": 6, "commentLines": 1, "functions": 0, "classes": 0, "statements": 2, "complexity": 1, "cognitiveComplexity": 1 }
+  },
+  "duplications": [],
+  "coverage": { "lines_to_cover": 21, "uncovered_lines": 16, "conditions_to_cover": 0, "uncovered_conditions": 0, "coverage": 23.8 },
+  "notes": {
+    "src/Cart.php#ncloc": "73 lines - comment lines 7, 8, 9, 12, 50, 51, 52 - blank lines 2, 4, 6, 14, 16, 24, 33, 39, 44, 49, 64 = 55",
+    "src/Cart.php#statements": "add if, return, assignment = 3; count $total =, foreach, +=, return = 4; label 2; clear 1; reset 1; tier switch + 3 returns = 4; describe return = 1; total 16 (declare, namespace and the properties are not statements)",
+    "src/Cart.php#complexity": "7 methods; add if and || = 2; count foreach = 1; label ?: = 1; tier case, case = 2 (default adds nothing); describe the arms '1, 2' and '3' = 2 (default adds nothing); ?? adds nothing; total 15",
+    "src/Cart.php#cognitiveComplexity": "add if +1, || +1; count foreach +1; label ?: +1; tier switch +1; describe match +1; total 6",
+    "tests/CartTest.php#metrics": "a test by **/*Test.php; $cart =, ->add, self::assertSame = 3 statements",
+    "templates/list.php#metrics": "every row has code (tags or HTML); the @var docblock is the comment line; foreach (alternative syntax) and the <?= expression are the statements; foreach is the file's one decision",
+    "phpstan#config": "Qualor's phpstan.neon: level 2, phpVersion 80599, no dependencies (no composer.json); tests/CartTest.php's class.notFound (PHPUnit is not installed) and staticMethod.notFound are unknown symbols, dropped",
+    "phpstan#severity": "report-format.md §7.1: parameter.phpDocType (a .phpDocType identifier) is maintainability/low; the rest reliability/medium",
+    "coverage": "PHPUnit 11.5.56 + pcov: 21 executable lines of src/Cart.php, 5 covered (19, 22, 56, 58, 61); the report's <source> is /fixture-root/src, resolved to src/Cart.php by its unique basename"
+  }
+}

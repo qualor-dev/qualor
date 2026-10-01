@@ -7,7 +7,14 @@ import type { Logger } from '../log';
 import { findRepoBinary, resolveBinary } from './binary';
 import { confineAnalyzerEnv, mergeAnalyzerEnv, sanitizeAnalyzerEnv } from './env';
 import { killActiveProcesses, runProcess } from './process';
-import type { Analyzer, AnalyzerContext, DotnetRun, Preparation, SarifCapture } from './types';
+import type {
+  Analyzer,
+  AnalyzerContext,
+  DotnetRun,
+  ExecOptions,
+  Preparation,
+  SarifCapture,
+} from './types';
 
 /** Same bound as external SARIF (ruling C10): larger JSON risks V8's string limit. */
 const MAX_SARIF_BYTES = 256 * 1024 * 1024;
@@ -66,6 +73,26 @@ function readSarif(file: string, log: Logger): { value: unknown } | string {
     );
     return 'SARIF output is not valid JSON';
   }
+}
+
+/**
+ * The environment of an analyzer's process, a run's or a `ctx.exec` command's: `base` with the
+ * command's own `env` on top, without the names `dropEnv` names (ruling A9-18), then sanitized and
+ * confined (both idempotent, so an already sanitized `base` stays as it was). Exported for direct
+ * testing.
+ */
+export function execEnv(
+  base: Readonly<Record<string, string | undefined>>,
+  options: Pick<ExecOptions, 'env' | 'dropEnv'>,
+  root: string,
+): Record<string, string> {
+  const merged = mergeAnalyzerEnv(base, options.env);
+  const dropEnv = options.dropEnv;
+  const kept =
+    dropEnv === undefined
+      ? merged
+      : Object.fromEntries(Object.entries(merged).filter(([name]) => !dropEnv(name)));
+  return confineAnalyzerEnv(sanitizeAnalyzerEnv(kept), root);
 }
 
 /** Fix-round-2 finding 5: only a missing binary is "not installed"; anything else (e.g.
@@ -229,7 +256,7 @@ async function capture(
             command,
             args,
             cwd: options.cwd ?? o.root,
-            env: analyzerEnv,
+            env: execEnv(analyzerEnv, options, o.root),
             timeoutMs: options.timeoutMs,
           },
           o.log,
@@ -280,13 +307,14 @@ async function capture(
     // Semgrep rules), so the server token (and anything else that looks like a Qualor secret)
     // must never reach their process environment.
     // An adapter's own `env` is merged in and then sanitized again, so it cannot re-add one.
-    const merged = mergeAnalyzerEnv(parentEnv, run.env);
-    const dropEnv = run.dropEnv;
-    const kept =
-      dropEnv === undefined
-        ? merged
-        : Object.fromEntries(Object.entries(merged).filter(([name]) => !dropEnv(name)));
-    const childEnv = confineAnalyzerEnv(sanitizeAnalyzerEnv(kept), o.root);
+    const childEnv = execEnv(
+      parentEnv,
+      {
+        ...(run.env !== undefined && { env: run.env }),
+        ...(run.dropEnv !== undefined && { dropEnv: run.dropEnv }),
+      },
+      o.root,
+    );
     const result = await runProcess(
       {
         command: run.command,

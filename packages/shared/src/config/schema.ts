@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BUILTIN_ENGINES, ENGINE_ID_PATTERN } from '../report/taxonomy';
+import { PHPSTAN_DEFAULT_LEVEL } from '../rules/phpstan';
 import { RUFF_SELECTOR, RUFF_VERSION, ruffSelectorKnown } from '../rules/ruff';
 
 const SCANNABLE_LANGUAGES = [
@@ -12,6 +13,7 @@ const SCANNABLE_LANGUAGES = [
   'css',
   'kotlin',
   'swift',
+  'php',
 ] as const;
 
 export const BUILTIN_EXCLUDES: readonly string[] = [
@@ -236,6 +238,23 @@ const analyzers = z
         timeoutSeconds: timeout(600),
       })
       .prefault({}),
+    // PHP (plan 9A): PHPStan from the qualor/scanner image with Qualor's own configuration; never
+    // the project's phpstan.neon, bootstrap files or Composer autoloader (config.md §6).
+    phpstan: z
+      .strictObject({
+        enabled,
+        level: z
+          .union([z.number().int().min(0).max(10), z.literal('max')])
+          .default(PHPSTAN_DEFAULT_LEVEL),
+        memoryLimit: z
+          .string()
+          .regex(/^(-1|[1-9][0-9]{0,5}[MG])$/, {
+            message: 'a memory size such as 512M or 2G, or -1',
+          })
+          .default('2G'),
+        timeoutSeconds: timeout(900),
+      })
+      .prefault({}),
   })
   .prefault({});
 
@@ -285,6 +304,7 @@ export const configSchema = z
             '**/test_*.py',
             '**/*_test.py',
             '**/conftest.py',
+            '**/*Test.php',
           ]),
         exclude: globs,
       })

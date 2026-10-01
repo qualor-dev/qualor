@@ -43,11 +43,11 @@ sources:
   useGitignore: true
 tests:
   include: ['**/*.test.*', '**/*.spec.*', '**/__tests__/**', '**/src/test/**', '**/*Tests/**',
-            '**/test_*.py', '**/*_test.py', '**/conftest.py', '**/src/androidTest/**',
-            '**/src/*Test/**']
+            '**/test_*.py', '**/*_test.py', '**/conftest.py', '**/*Test.php',
+            '**/src/androidTest/**', '**/src/*Test/**']
   exclude: []
 
-languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin, swift]
+languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin, swift, php]
 
 analyzers:
   eslint:    { enabled: auto, configFile: null, args: [], timeoutSeconds: 900 }
@@ -63,6 +63,7 @@ analyzers:
   roslyn:    { enabled: auto, bundledAnalyzers: true, sonarAnalyzer: true }
   stylelint: { enabled: auto, configFile: null, timeoutSeconds: 600 }   # configFile: qualor-default forces Qualor's default
   htmlhint:  { enabled: auto, configFile: null, timeoutSeconds: 300 }
+  phpstan:   { enabled: auto, level: 2, memoryLimit: 2G, timeoutSeconds: 900 }   # level: 0-10 or max; never reads your phpstan.neon
 
 sarif:
   - path: reports/osv.sarif
@@ -128,6 +129,7 @@ The server's variables (such as `QUALOR_PUBLIC_URL`, `QUALOR_SCM_INTERNAL_HOSTS`
 | `QUALOR_SONARJS_DIR` | another location for Qualor's sonarjs pass (absolute, outside the checkout; default `/opt/qualor/sonarjs`, set in `qualor/scanner`) |
 | `QUALOR_WEBLINT_DIR` | directory of the HTML and CSS linters (default `/opt/qualor/weblint`, in the `qualor/scanner` image); absolute and outside the repository |
 | `QUALOR_DETEKT_JAR` | another location for detekt's jar (absolute, outside the checkout; default `/opt/qualor/lib/detekt/detekt-cli.jar`, set in `qualor/scanner`) |
+| `QUALOR_PHPSTAN_PHAR` | another PHPStan phar (absolute, outside the checkout, PHPStan 2.2; default `/opt/qualor/lib/phpstan/phpstan.phar`, set in `qualor/scanner`) |
 | `QUALOR_DOTNET_ANALYZERS` | directory of the bundled Roslyn analyzer DLLs (set in `qualor/scanner-dotnet`) |
 | `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | a proxy between the runner and the server (`http://` proxies) |
 

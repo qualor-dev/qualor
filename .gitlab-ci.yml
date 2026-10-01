@@ -19,7 +19,7 @@ default:
 stages: [check]
 
 # The pinned analyzer toolchain (tools/analyzers/install.sh) plus a JDK for PMD, SpotBugs and the
-# fixture's javac. QUALOR_REQUIRE_ANALYZERS=1 turns a missing tool into a failure (ruling T4).
+# fixture's javac, and PHP 8.2 for PHPStan (plan 9A). QUALOR_REQUIRE_ANALYZERS=1 turns a missing tool into a failure (ruling T4).
 # Trivy's release archive and database layer are cached by the database pin (plan 2B): the
 # key is TRIVY_DB_DIGEST of install.sh without its `sha256:` (`pnpm trivy-db:pin` moves both), and
 # install.sh checks every cached file's SHA-256 before it uses it. Upstream's retention of old
@@ -36,7 +36,7 @@ stages: [check]
     - key: trivy-db-$QUALOR_TRIVY_DB_SHA256
       paths: [.tmp/downloads]
   before_script:
-    - apt-get update -qq && apt-get install -y -qq --no-install-recommends openjdk-17-jdk-headless unzip
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends openjdk-17-jdk-headless unzip php8.2-cli
     - sh tools/analyzers/install.sh
     - sh tools/analyzers/install-sonarjs.sh
     - sh tools/analyzers/install-weblint.sh

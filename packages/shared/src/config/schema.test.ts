@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PHPSTAN_DEFAULT_LEVEL } from '../rules/phpstan';
 import { BUILTIN_EXCLUDES, ConfigError, interpolateEnv, parseConfig } from './schema';
 
 function errorPaths(raw: unknown): string[] {
@@ -394,6 +395,42 @@ describe('BUILTIN_EXCLUDES', () => {
     expect(() => parseConfig({ version: 1, analyzers: { swiftlint: { args: [] } } })).toThrow();
     expect(() =>
       parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'swiftlint' }] }),
+    ).toThrow(/reserved/);
+  });
+
+  it('has analyzers.phpstan with its defaults, knows PHP and PHPUnit test files (config.md §3, §6, plan 9A)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.phpstan).toEqual({
+      enabled: 'auto',
+      level: PHPSTAN_DEFAULT_LEVEL,
+      memoryLimit: '2G',
+      timeoutSeconds: 900,
+    });
+    expect(parseConfig({ version: 1, languages: ['php'] }).languages).toEqual(['php']);
+    expect(c.tests.include).toContain('**/*Test.php');
+    const phpstan = (p: object) =>
+      parseConfig({ version: 1, analyzers: { phpstan: p } }).analyzers.phpstan;
+    expect(phpstan({ level: 'max' }).level).toBe('max');
+    expect(phpstan({ level: 0 }).level).toBe(0);
+    expect(phpstan({ level: 10, memoryLimit: '512M' })).toMatchObject({
+      level: 10,
+      memoryLimit: '512M',
+    });
+    expect(phpstan({ memoryLimit: '-1' }).memoryLimit).toBe('-1');
+    for (const bad of [
+      { level: 11 },
+      { level: -1 },
+      { level: 2.5 },
+      { level: '5' },
+      { memoryLimit: '2GB' },
+      { memoryLimit: '0G' },
+      { memoryLimit: '' },
+      { configFile: 'phpstan.neon' },
+    ]) {
+      expect(() => phpstan(bad), JSON.stringify(bad)).toThrow();
+    }
+    expect(() =>
+      parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'phpstan' }] }),
     ).toThrow(/reserved/);
   });
 });

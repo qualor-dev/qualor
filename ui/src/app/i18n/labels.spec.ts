@@ -8,6 +8,7 @@ describe('label', () => {
     expect(label('language', '*')).toBe('Other engines');
     expect(label('language', 'kotlin')).toBe('Kotlin');
     expect(label('language', 'swift')).toBe('Swift');
+    expect(label('language', 'php')).toBe('PHP');
     expect(label('gateWarning', 'NEW_CODE_DEFINITION_FALLBACK')).toBe(
       'No earlier version was found for the new-code baseline; the last 30 days are new code instead.',
     );

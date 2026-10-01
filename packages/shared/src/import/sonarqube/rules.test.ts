@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
+import phpstanIdentifiers from '../../../rules/phpstan-identifiers.json' with { type: 'json' };
 import ruffKeys from '../../../rules/ruff-keys.json' with { type: 'json' };
 import sonaranalyzerDefaultKeys from '../../../rules/sonaranalyzer-csharp-default-keys.json' with { type: 'json' };
 import sonaranalyzerKeys from '../../../rules/sonaranalyzer-csharp-keys.json' with { type: 'json' };
 import sonarjsDefaultKeys from '../../../rules/sonarjs-default-keys.json' with { type: 'json' };
 import sonarjsKeys from '../../../rules/sonarjs-keys.json' with { type: 'json' };
 import raw from '../../../rules/sonarqube.json' with { type: 'json' };
+import {
+  PHPSTAN_NO_DEPENDENCY_IDS,
+  PHPSTAN_UNKNOWN_SYMBOL_IDS,
+  phpstanNotFinding,
+} from '../../rules/phpstan';
 import { engineOf, loadSonarMapping, SONAR_MAPPING } from './rules';
+
+/** Rulings A9-5 and A9-20: the six curated php rows (php:S4143 dropped in review). */
+const PHP_ROWS = ['php:S1172', 'php:S2014', 'php:S3699', 'php:S5708', 'php:S836', 'php:S930'];
 
 const table = (patch: Record<string, unknown>) =>
   loadSonarMapping({ ...structuredClone(raw), ...patch });
@@ -74,6 +83,62 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
         row.sonar.join(),
       ).toBe(true);
     }
+  });
+
+  it('maps php to the php profile, governed by phpstan (plan 9A)', () => {
+    expect(SONAR_MAPPING.language('php')).toEqual({ language: 'php', engines: ['phpstan'] });
+  });
+
+  it('maps php:S5708 through the curated table, and leaves unknown keys and PHPStan imports unmapped', () => {
+    expect(SONAR_MAPPING.targets('php:S5708')).toContainEqual(
+      expect.objectContaining({ key: 'phpstan:catch.notThrowable', source: 'table' }),
+    );
+    expect(SONAR_MAPPING.targets('php:S9999')).toEqual([]);
+    // SonarQube imports every PHPStan issue as this one generic rule (fact P10).
+    expect(SONAR_MAPPING.targets('external_phpstan:phpstan.finding')).toEqual([]);
+  });
+
+  it('names only identifiers of the pinned PHPStan in the six php rows, reviewed, with our own short reasons', () => {
+    const ids = new Set<string>(phpstanIdentifiers.identifiers);
+    const rows = raw.rules.filter((r) => r.sonar.some((s) => s.startsWith('php:')));
+    expect(rows.flatMap((r) => r.sonar).sort()).toEqual(PHP_ROWS);
+    for (const row of rows) {
+      const id = row.sonar.join();
+      expect(
+        row.sonar.every((s) => /^php:S\d+$/.test(s)),
+        id,
+      ).toBe(true);
+      expect(['equivalent', 'overlap'], id).toContain(row.relation);
+      for (const q of row.qualor) {
+        expect(q.startsWith('phpstan:'), q).toBe(true);
+        const identifier = q.slice('phpstan:'.length);
+        expect(ids.has(identifier), q).toBe(true);
+        // A target Qualor never reports would make the imported rule silently inert.
+        expect(PHPSTAN_UNKNOWN_SYMBOL_IDS.has(identifier), q).toBe(false);
+        expect(PHPSTAN_NO_DEPENDENCY_IDS.has(identifier), q).toBe(false);
+        expect(phpstanNotFinding(identifier), q).toBe(false);
+      }
+      // Ruling A9-5: compared row by row, so committed reviewed.
+      expect(row.reviewed, id).toBe(true);
+      expect(row.reason.trim().length, id).toBeGreaterThan(0);
+      expect(row.reason.length, id).toBeLessThanOrEqual(120);
+      expect(row.reason, id).not.toMatch(/[\r\n]/);
+    }
+    // Pinned by plan.test.ts: one equivalent row, one overlap row.
+    expect(rows.find((r) => r.sonar.includes('php:S5708'))).toMatchObject({
+      qualor: ['phpstan:catch.notThrowable'],
+      relation: 'equivalent',
+    });
+    // Ruling A9-20: SonarQube checks plain function calls only; arguments.count also covers
+    // methods and constructors.
+    expect(rows.find((r) => r.sonar.includes('php:S930'))).toMatchObject({
+      qualor: ['phpstan:arguments.count'],
+      relation: 'overlap',
+    });
+    expect(rows.find((r) => r.sonar.includes('php:S836'))).toMatchObject({
+      qualor: ['phpstan:variable.undefined'],
+      relation: 'overlap',
+    });
   });
 
   it('maps csharpsquid rules the bundled SonarAnalyzer has to roslyn, one to one', () => {
@@ -251,11 +316,14 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     },
   );
 
-  it('ships every curated non-python entry unreviewed and every python entry reviewed', () => {
-    // python: rows were reviewed on 2026-10-01 (see the file's $comment); the rest await a person.
+  it('ships every curated entry unreviewed except the python and php entries, which are reviewed', () => {
+    // python: rows were reviewed on 2026-10-01 (see the file's $comment), php: rows by plan 9A
+    // (ruling A9-5); the rest await a person.
     for (const entry of raw.rules) {
-      const python = entry.sonar.every((s) => s.startsWith('python:'));
-      expect(entry.reviewed, entry.sonar.join(',')).toBe(python);
+      const reviewedLanguage = entry.sonar.every(
+        (s) => s.startsWith('python:') || s.startsWith('php:'),
+      );
+      expect(entry.reviewed, entry.sonar.join(',')).toBe(reviewedLanguage);
     }
   });
 
@@ -277,6 +345,7 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     squid: 'java',
     csharpsquid: 'cs',
     python: 'py',
+    php: 'php',
   };
 
   it("keeps every curated target, and every repository row's engine, to an engine of its SonarQube rule's language", () => {

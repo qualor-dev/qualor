@@ -17,6 +17,7 @@ import {
   runFixtures,
   scanEnv,
   DETEKT_JAR,
+  PHPSTAN_PHAR,
   SONARJS_PASS,
   toolOnPath,
   TRIVY_DATABASE,
@@ -75,6 +76,10 @@ describe('analyzer capabilities (ruling T4)', () => {
     // Plan 8F: SwiftLint's static binary only.
     expect(unavailableEngines(['swiftlint'], () => false)).toEqual(['swiftlint']);
     expect(unavailableEngines(['swiftlint'], (t) => t === 'swiftlint')).toEqual([]);
+    // Plan 9A: phpstan needs php and the image's phar.
+    expect(unavailableEngines(['phpstan'], (t) => t === 'php')).toEqual(['phpstan']);
+    expect(unavailableEngines(['phpstan'], (t) => t === PHPSTAN_PHAR)).toEqual(['phpstan']);
+    expect(unavailableEngines(['phpstan'], (t) => ['php', PHPSTAN_PHAR].includes(t))).toEqual([]);
   });
   it('needs node and the weblint pass for stylelint and htmlhint (plan 8D)', () => {
     expect(unavailableEngines(['stylelint', 'htmlhint'], (t) => t === 'node', 'linux')).toEqual(['stylelint', 'htmlhint']);

@@ -1,0 +1,5 @@
+version: 1
+coverage:
+  reports:
+    - path: coverage/cobertura.xml
+      format: cobertura

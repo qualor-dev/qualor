@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { parse as parseYaml, type Tags } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { finalStage } from './deploy/debian-sources';
 import { DEPLOY_LABEL } from './deploy/workspace';
 
 /** GitLab's `!reference [job, key]` tag, kept as { reference: [...] } so it can be asserted on. */
@@ -201,7 +202,16 @@ describe('analyzer toolchain (plan 1D)', () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
 
   it('pins every tool to an exact version and a SHA-256', () => {
-    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS', 'TRIVY', 'RUFF', 'SWIFTLINT']) {
+    for (const tool of [
+      'PMD',
+      'SPOTBUGS',
+      'OPENGREP',
+      'GITLEAKS',
+      'TRIVY',
+      'RUFF',
+      'SWIFTLINT',
+      'PHPSTAN',
+    ]) {
       expect(script, tool).toMatch(new RegExp(`^${tool}_VERSION=\\d+\\.\\d+\\.\\d+$`, 'm'));
       expect(script, tool).toMatch(new RegExp(`^${tool}_SHA256(_X64)?=[0-9a-f]{64}$`, 'm'));
     }
@@ -273,6 +283,60 @@ describe('analyzer toolchain (plan 1D)', () => {
     const pinned = /^SWIFTLINT_VERSION=(.+)$/m.exec(script)?.[1];
     const shared = readFileSync('packages/shared/src/rules/swiftlint.ts', 'utf8');
     expect(shared).toContain(`export const SWIFTLINT_VERSION = '${pinned}';`);
+  });
+
+  it('pins PHPStan by version and SHA-256 and installs only the phar, nothing next to it (plan 9A)', () => {
+    expect(script).toMatch(/^PHPSTAN_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^PHPSTAN_SHA256=[0-9a-f]{64}$/m);
+    // The identifiers table of this version (tools/analyzers/phpstan-identifiers.mjs reads it; ruling A9-10).
+    expect(script).toMatch(
+      /^PHPSTAN_VERSION=.+\nPHPSTAN_SHA256=.+\nPHPSTAN_IDENTIFIERS_SHA256=[0-9a-f]{64}$/m,
+    );
+    expect(script).toContain(
+      'fetch "$GH/phpstan/phpstan/releases/download/$PHPSTAN_VERSION/phpstan.phar" "$PHPSTAN_SHA256" phpstan.phar',
+    );
+    expect(script).toContain(
+      'install -m 0644 "$TMP/phpstan.phar" "$PREFIX/lib/phpstan/phpstan.phar"',
+    );
+    // PHPStan loads a native extension found in <phar dir>/turbo-ext/ (fact P4): never install one.
+    expect(script).not.toMatch(/turbo-ext|phpstan_turbo/);
+    // The CLI's pin and the image's must agree (PHPSTAN_VERSION in packages/shared/src/rules/phpstan.ts).
+    const shared = readFileSync('packages/shared/src/rules/phpstan.ts', 'utf8');
+    const pinned = /^PHPSTAN_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(shared).toContain(`export const PHPSTAN_VERSION = '${pinned}';`);
+  });
+
+  it('gives PHPStan a php in every job that requires the analyzers, and in both images (plan 9A)', () => {
+    // The scanner image's final stage is the one pin of Debian's PHP (php<major.minor>-cli); every
+    // other place that installs PHP must name the same version (ruling A9-10: no '8.2' literal here).
+    const phpCli = finalStage(readFileSync('deploy/scanner/Dockerfile', 'utf8')).aptPackages.filter(
+      (p) => /^php\d+\.\d+-cli$/.test(p),
+    );
+    expect(phpCli).toHaveLength(1);
+    const phpMinor = /^php(\d+\.\d+)-cli$/.exec(phpCli[0]!)![1]!;
+    const aptLine = new RegExp(
+      `--no-install-recommends [^\\n]*\\bphp${phpMinor.replace('.', '\\.')}-cli\\b`,
+    );
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const job of ['test', 'fixtures', 'cli-binary']) {
+      const steps = github.jobs[job]?.steps ?? [];
+      const setup = steps.find((s) => s.uses?.startsWith('shivammathur/setup-php@') === true);
+      expect(setup?.uses, job).toMatch(PINNED);
+      const options = setup?.with as Record<string, unknown> | undefined;
+      expect(String(options?.['php-version']), job).toBe(phpMinor);
+      expect(options?.['tools'], job).toBe('none');
+      // php must be there before the tests that require it run.
+      const require = steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      expect(steps.indexOf(setup!), job).toBeLessThan(require);
+    }
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] } | undefined
+    >;
+    const analyzersApt = String(gitlab['.analyzers']?.before_script?.[0]);
+    expect(analyzersApt).toMatch(/apt-get install /);
+    expect(analyzersApt).toMatch(aptLine);
+    expect(readFileSync('tools/analyzers/Dockerfile', 'utf8')).toMatch(aptLine);
   });
 
   it('installs the toolchain (Ruff included) in every job that requires the analyzers (plan 8C)', () => {

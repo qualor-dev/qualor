@@ -55,6 +55,16 @@ export interface AnalyzerContext {
 export interface ExecOptions {
   timeoutMs: number;
   cwd?: string;
+  /**
+   * Set over the analyzer environment for this command only, then sanitized again like a run's
+   * `env` (the Go version probes: GOTOOLCHAIN=local, ruling G9-15).
+   */
+  env?: Readonly<Record<string, string>>;
+  /**
+   * Names removed from this command's environment, like a run's `dropEnv` (the PHPStan version
+   * probe drops what configures php behind its command line, ruling A9-18).
+   */
+  dropEnv?(name: string): boolean;
 }
 
 export interface AnalyzerCommand {

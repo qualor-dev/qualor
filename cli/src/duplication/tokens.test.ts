@@ -89,4 +89,19 @@ describe('lineUnits', () => {
       tree.delete();
     }
   });
+
+  it('drops PHP comments of every kind, so two copies with other comments hash the same (plan 9A)', async () => {
+    const tree = (await testParsers()).parse(
+      'php',
+      '<?php\nfunction f($a) {\n    // one\n    return $a + 1; # x\n}\nfunction g($a) {\n    /* two */\n    return $a + 1;\n}\n',
+    );
+    if (tree === null) throw new Error('timeout');
+    try {
+      const u = lineUnits(tree.rootNode, 'php');
+      expect(u.map((x) => x.startLine)).toEqual([1, 2, 4, 5, 6, 8, 9]);
+      expect(u[2]?.hash).toBe(u[5]?.hash);
+    } finally {
+      tree.delete();
+    }
+  });
 });

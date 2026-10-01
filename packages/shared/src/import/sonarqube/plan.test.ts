@@ -383,6 +383,25 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'python:S9999' })]);
   });
 
+  it('plans a php profile: a reviewed equivalent row activates its target, an overlap row is status only, unknown keys unmapped (plan 9A)', () => {
+    // php:S5708 → phpstan:catch.notThrowable (equivalent, reviewed); php:S836 → phpstan:variable.undefined
+    // (overlap: status only); php:S9999 is no curated key. phpstan runs every identifier at its level,
+    // so nothing lands in mappedNotRun.
+    const php = (key: string) => rule(key, { language: 'php' });
+    const plan = planProfile(
+      profile({ language: 'php', active: [php('php:S5708'), php('php:S836'), php('php:S9999')] }),
+    );
+    expect(plan.skip).toBeNull();
+    expect(plan.language).toBe('php');
+    expect(plan.rows).toEqual([
+      { ruleKey: 'phpstan:catch.notThrowable', active: true, severityOverride: null },
+    ]);
+    expect(plan.stats.statusOnly).toEqual(['php:S836']);
+    expect(plan.stats.pendingReview).toEqual([]);
+    expect(plan.stats.mappedNotRun).toEqual([]);
+    expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'php:S9999' })]);
+  });
+
   it('keeps an unreviewed python row out of the profile and lists it as pending review', () => {
     const mapping = loadSonarMapping({
       ...structuredClone(raw),
