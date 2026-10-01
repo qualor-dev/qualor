@@ -19,6 +19,8 @@ export interface SeedCredentials {
 }
 
 export const XSS_MESSAGE = 'Avoid <img src=x onerror="alert(1)"> in refund notes';
+/** The open issue with related locations (ui/e2e/seed-data.ts RELATED_ISSUE_MESSAGE). */
+const RELATED_ISSUE_MESSAGE = 'Detected eval() with a non-literal argument.';
 const XSS_DESCRIPTION = 'Compare with `===`.\n\n<script>alert("rule")</script> **never** `==`.';
 const REPORT_CONTENT_TYPE = 'application/vnd.qualor.report+json';
 
@@ -74,6 +76,13 @@ interface FindingSpec {
   line?: number;
   message: string;
   severity?: 'blocker' | 'high' | 'medium' | 'low' | 'info';
+  /** Secondary locations, in the analyzer's order (the issue page's "Related locations"). */
+  related?: { path: string; line: number; endLine?: number; message?: string }[];
+}
+
+/** A duplication group of the report: two or more blocks of the same code (report-format §8). */
+interface DuplicationSpec {
+  blocks: { path: string; startLine: number; endLine: number }[];
 }
 
 const ENGINES: Report['engines'] = [
@@ -164,6 +173,7 @@ function report(input: {
   firstAnalysis: boolean;
   files: FileSpec[];
   findings: FindingSpec[];
+  duplications?: DuplicationSpec[];
 }): Report {
   const ranges = (count: number): [number, number][] => (count > 0 ? [[1, count]] : []);
   return {
@@ -225,6 +235,16 @@ function report(input: {
         message: f.message,
         ...(f.severity ? { severity: f.severity } : {}),
         location: f.path === null ? null : { path: f.path, startLine: f.line ?? 1 },
+        ...(f.related
+          ? {
+              secondaryLocations: f.related.map((r) => ({
+                path: r.path,
+                startLine: r.line,
+                ...(r.endLine ? { endLine: r.endLine } : {}),
+                ...(r.message ? { message: r.message } : {}),
+              })),
+            }
+          : {}),
         lineHash: hex32(`line:${seed}`),
         contextHash: hex32(`context:${seed}`),
         ...(f.path === null
@@ -245,7 +265,7 @@ function report(input: {
             }),
       };
     }),
-    duplications: [],
+    duplications: input.duplications ?? [],
     warnings: [],
   };
 }
@@ -277,7 +297,17 @@ const PAYMENTS_BASE: FindingSpec[] = [
     rule: 'javascript.lang.security.detect-eval-with-expression',
     path: 'src/payments/gateway.ts',
     line: 88,
-    message: 'Detected eval() with a non-literal argument.',
+    message: RELATED_ISSUE_MESSAGE,
+    related: [
+      { path: 'src/refunds/limits.ts', line: 10, message: 'The policy comes from the order' },
+      {
+        path: 'src/payments/gateway.ts',
+        line: 88,
+        endLine: 92,
+        message: 'Orders are built from the request body here',
+      },
+      { path: 'src/payments/gateway.ts', line: 140 },
+    ],
   },
   {
     engine: 'eslint',
@@ -530,6 +560,15 @@ export async function seedDemo(base: string, credentials: SeedCredentials): Prom
       firstAnalysis: false,
       files: paymentsFiles(1, true),
       findings: [...PAYMENTS_BASE, ...PAYMENTS_SECOND, ...PAYMENTS_THIRD],
+      // Outside the new lines (40–58), so the gate's new-code duplication stays as it was.
+      duplications: [
+        {
+          blocks: [
+            { path: 'src/refunds/limits.ts', startLine: 60, endLine: 80 },
+            { path: 'src/refunds/service.ts', startLine: 30, endLine: 50 },
+          ],
+        },
+      ],
     }),
   );
   await upload(
@@ -661,6 +700,17 @@ export async function seedDemo(base: string, credentials: SeedCredentials): Prom
     organizationId: org.id,
     url: 'https://hooks.example.com/qualor',
     events: ['analysis.completed', 'gate.status_changed'],
+  });
+  // A webhook of Payments API only, and a second analysis token of it (project settings).
+  await admin.json('POST', '/api/v0/webhooks', {
+    organizationId: org.id,
+    projectId: payments.id,
+    url: 'https://hooks.example.com/payments',
+    events: ['gate.status_changed'],
+  });
+  await admin.json('POST', `/api/v0/projects/${payments.id}/tokens`, {
+    name: 'ci-main',
+    expiresInDays: 90,
   });
 }
 

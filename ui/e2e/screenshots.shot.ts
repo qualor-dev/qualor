@@ -2,7 +2,15 @@ import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { ENTERPRISE_STORAGE_STATE, ENTERPRISE_URL, SHOP, SIEM_URL } from './seed-data';
+import {
+  ENTERPRISE_STORAGE_STATE,
+  ENTERPRISE_URL,
+  PAYMENTS,
+  PROJECT_WEBHOOK_URL,
+  RELATED_ISSUE_MESSAGE,
+  SHOP,
+  SIEM_URL,
+} from './seed-data';
 
 /**
  * `pnpm ui:screenshots`: one PNG per screen, with the seeded demo data, into the git-ignored
@@ -180,6 +188,46 @@ test('20 licence, 21 licence in its grace period with the admin banner', async (
     page.getByRole('status').filter({ hasText: 'The Qualor licence expired on' }),
   ).toBeVisible();
   await shoot(page, '21-settings-license-grace');
+});
+
+// The project's Settings tab, its Code tab and a file, an issue's related locations, and the
+// webhooks of every project with their scope.
+test('31 project settings, 32 code tree, 33 code file, 34 issue related, 35 webhooks scope', async ({
+  page,
+}) => {
+  await page.goto('/projects');
+  await page.getByRole('link', { name: PAYMENTS.name }).click();
+  const tabs = page.getByRole('navigation', { name: 'Project' });
+  await tabs.getByRole('link', { name: 'Settings' }).click();
+  await expect(page.locator('#tokens').getByRole('row', { name: /ci-main/ })).toBeVisible();
+  await expect(page.locator('#webhooks').getByText(PROJECT_WEBHOOK_URL)).toBeVisible();
+  await shoot(page, '31-project-settings');
+
+  await tabs.getByRole('link', { name: 'Code' }).click();
+  const table = page.getByRole('table', { name: 'Files and directories with their measures' });
+  await table.getByRole('link', { name: 'src', exact: true }).click();
+  await expect(table.getByRole('link', { name: 'refunds', exact: true })).toBeVisible();
+  await shoot(page, '32-code-tree');
+  await table.getByRole('link', { name: 'refunds', exact: true }).click();
+  await table.getByRole('link', { name: 'limits.ts', exact: true }).click();
+  await expect(
+    page.getByRole('region', { name: 'Duplicated blocks' }).getByRole('link').first(),
+  ).toBeVisible();
+  await shoot(page, '33-code-file');
+
+  await tabs.getByRole('link', { name: 'Overview' }).click();
+  await page.getByRole('link', { name: 'All open issues' }).click();
+  await page.getByRole('link', { name: RELATED_ISSUE_MESSAGE, exact: true }).click();
+  await expect(
+    page.getByRole('region', { name: 'Related locations' }).getByRole('listitem'),
+  ).toHaveCount(3);
+  await shoot(page, '34-issue-related');
+
+  await page.goto('/settings/webhooks');
+  await expect(
+    page.getByRole('region', { name: PROJECT_WEBHOOK_URL }).locator('.webhook-scope'),
+  ).toHaveText(`Project: ${PAYMENTS.name}`);
+  await shoot(page, '35-webhooks-scope');
 });
 
 /**
