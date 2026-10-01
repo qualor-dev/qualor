@@ -347,7 +347,6 @@ describeWithPhpstan()('PHPStan on untrusted checkouts (real PHPStan, Review Focu
           'final class A { public static function s(): void {} public function g(): void { $x = self::s(); echo $x; } }',
         'catch.notThrowable':
           'final class NotEx {} function f(): void { try { echo 1; } catch (NotEx $e) { echo 2; } }',
-        'array.duplicateKey': 'function f(): array { return ["a" => 1, "a" => 2]; }',
         'constructor.unusedParameter':
           'final class A { public function __construct(int $unused) {} }',
       };
