@@ -35,13 +35,7 @@ function project(newCodeDefinition: ProjectDto['newCodeDefinition'] = null): Pro
   } as ProjectDto;
 }
 
-function analysis(
-  id: string,
-  status: string,
-  revision: string | null,
-  date: string,
-  version?: string,
-) {
+function analysis(id: string, status: string, revision: string | null, date: string) {
   return {
     id,
     projectId: PROJECT,
@@ -49,7 +43,6 @@ function analysis(
     branch: { id: BRANCH, kind: 'branch', name: 'main' },
     revision,
     analysisDate: date,
-    ...(version ? { version } : {}),
   };
 }
 
@@ -71,7 +64,7 @@ function setup(): FakeServer {
   server.on('GET', `/api/v0/branches/${BRANCH}/analyses`, {
     body: {
       items: [
-        analysis(A1, 'succeeded', 'abcdef1234567', '2026-09-12T10:00:00.000Z', '1.4.0'),
+        analysis(A1, 'succeeded', 'abcdef1234567', '2026-09-12T10:00:00.000Z'),
         analysis(A2, 'failed', 'bbbbbbb1234', '2026-09-11T10:00:00.000Z'),
         analysis(A3, 'succeeded', null, '2026-09-10T10:00:00.000Z'),
       ],
@@ -132,6 +125,13 @@ describe('NewCodePanel (spec §3.1)', () => {
     expect(root.querySelector('section#new-code.card.panel')).not.toBeNull();
   });
 
+  it('links the previous-version hint to the configuration guide', async () => {
+    setup();
+    const { root } = await render();
+    const link = root.querySelector<HTMLAnchorElement>('a[href="/docs/configuration"]');
+    expect(link).not.toBeNull();
+  });
+
   it('checks the default card for a project without a definition', async () => {
     setup();
     const { root } = await render();
@@ -150,7 +150,7 @@ describe('NewCodePanel (spec §3.1)', () => {
       [...root.querySelectorAll('select#new-code-analysis option')].map((o) =>
         o.textContent?.trim(),
       ),
-    ).toEqual(['Choose an analysis', 'Sep 12, 2026 · 1.4.0 · abcdef1', 'Sep 10, 2026 · — · —']);
+    ).toEqual(['Choose an analysis', 'Sep 12, 2026 · abcdef1', 'Sep 10, 2026 · —']);
   });
 
   it('keeps Save disabled until the form differs, then sends the definition exactly', async () => {

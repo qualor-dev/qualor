@@ -82,11 +82,16 @@
           <span class="choice-title" i18n="@@newCode.previousVersion"
             >Since the previous version</span
           >
-          <span class="choice-hint" i18n="@@newCode.previousVersionHint"
-            >Set project.version in qualor.yml so each release starts a new period.</span
-          >
         </span>
       </label>
+      <p class="hint choice-extra">
+        <ng-container i18n="@@newCode.previousVersionHint"
+          >Set project.version in qualor.yml so each release starts a new period.</ng-container
+        >{{ ' '
+        }}<a routerLink="/docs/configuration" i18n="@@newCode.previousVersionGuide"
+          >Read the configuration guide</a
+        >
+      </p>
 
       <label class="choice-card" [class.checked]="form().choice === 'analysis'">
         <input

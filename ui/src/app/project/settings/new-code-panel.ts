@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { Api, ok } from '../../api/api';
 import { fieldErrors, problemMessage } from '../../api/errors';
+import { RouterLink } from '@angular/router';
 import { inputValue } from '../../shared/forms';
 import { formatDate } from '../../shared/date-time.pipe';
 import type { ProjectDto } from '../current-project';
@@ -40,6 +41,7 @@ interface AnalysisOption {
  */
 @Component({
   selector: 'q-new-code-panel',
+  imports: [RouterLink],
   templateUrl: './new-code-panel.html',
   styleUrl: './new-code-panel.css',
 })
@@ -185,13 +187,7 @@ export class NewCodePanel {
   }
 }
 
-function analysisLabel(a: {
-  analysisDate: string | null;
-  revision: string | null;
-  version?: unknown;
-}): string {
-  // The list does not carry a version label yet; read one defensively if the server adds it.
-  const version = typeof a.version === 'string' && a.version !== '' ? a.version : '—';
+function analysisLabel(a: { analysisDate: string | null; revision: string | null }): string {
   const revision = a.revision ? a.revision.slice(0, 7) : '—';
-  return `${formatDate(a.analysisDate)} · ${version} · ${revision}`;
+  return `${formatDate(a.analysisDate)} · ${revision}`;
 }
