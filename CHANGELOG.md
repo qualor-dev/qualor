@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-01
+
 ### Added
 
 - The user guide is built into the server: **Docs** in the top bar opens `/docs`, the guide of the

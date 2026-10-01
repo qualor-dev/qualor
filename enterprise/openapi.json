@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Qualor Enterprise API",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "The routes of the Qualor Enterprise plugin (/api/v0/ee), mounted while a licence lists their feature; 403 FEATURE_NOT_LICENSED otherwise. Unstable, as the core API."
   },
   "components": {
