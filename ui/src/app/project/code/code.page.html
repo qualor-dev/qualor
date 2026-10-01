@@ -114,7 +114,8 @@
           </tr>
         </thead>
         <tbody>
-          @for (item of rows(); track item.path + item.type) {
+          @for (row of rowViews(); track row.item.path + row.item.type) {
+            @let item = row.item;
             <tr>
               <td>
                 <div class="entry">
@@ -143,10 +144,10 @@
                   }
                 </div>
               </td>
-              <td class="num">{{ count(item.measures['ncloc']) }}</td>
-              <td class="num">{{ count(item.measures['complexity']) }}</td>
+              <td class="num">{{ count(row.ncloc) }}</td>
+              <td class="num">{{ count(row.complexity) }}</td>
               <td class="num">
-                @let cov = item.measures['coverage'] ?? null;
+                @let cov = row.coverage;
                 @if (cov !== null) {
                   <span class="cov">
                     <span class="cov-value">{{ percent(cov) }}</span>
@@ -162,9 +163,9 @@
                   —
                 }
               </td>
-              <td class="num">{{ percent(item.measures['duplicated_lines_density']) }}</td>
+              <td class="num">{{ percent(row.duplication) }}</td>
               <td class="num">
-                @if (item.measures['issues']; as n) {
+                @if (row.issues; as n) {
                   <a
                     class="issues-link"
                     [routerLink]="['/projects', projectId(), 'issues']"
@@ -172,7 +173,7 @@
                     >{{ count(n) }}</a
                   >
                 } @else {
-                  {{ count(item.measures['issues']) }}
+                  {{ count(row.issues) }}
                 }
               </td>
             </tr>

@@ -87,6 +87,20 @@ export class CodePage {
       ),
   );
   protected readonly rows = computed(() => sortTree(this.list.items(), this.sort()));
+  /** Each row with its measures read out (the template keeps no metric keys, plan 1F Y3/Y5). */
+  protected readonly rowViews = computed(() =>
+    this.rows().map((item) => {
+      const m = item.measures;
+      return {
+        item,
+        ncloc: m['ncloc'] ?? null,
+        complexity: m['complexity'] ?? null,
+        coverage: m['coverage'] ?? null,
+        duplication: m['duplicated_lines_density'] ?? null,
+        issues: m['issues'] ?? null,
+      };
+    }),
+  );
   protected readonly empty = computed(
     () => this.noBranch() || (this.list.loaded() && this.list.items().length === 0),
   );

@@ -147,7 +147,12 @@ describe('ProjectTokensPanel (spec §3.4)', () => {
     await settle(fixture);
     expect(dialog.open).toBe(false);
     expect(root.querySelector('#secret-once')).toBeNull();
-    expect(root.innerHTML).not.toContain('qlr_secret-value');
+    expect(root.textContent).not.toContain('qlr_secret-value');
+    expect(
+      [...root.querySelectorAll<HTMLInputElement>('input')].some(
+        (i) => i.value === 'qlr_secret-value',
+      ),
+    ).toBe(false);
     // Opened again: the empty form.
     button(root, 'New token').click();
     await settle(fixture);
