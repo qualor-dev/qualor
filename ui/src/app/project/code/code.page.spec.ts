@@ -128,7 +128,7 @@ describe('CodePage (spec §4.2)', () => {
     ]);
     expect(d.querySelector<HTMLElement>('.cov-bar')?.style.width).toBe('75%');
     expect(d.querySelector('td a[href^="/projects/p1/issues"]')?.getAttribute('href')).toBe(
-      '/projects/p1/issues?branch=b-main&path=src',
+      '/projects/p1/issues?branch=b-main&path=src%2F',
     );
     const f = rows[1]!;
     expect(f.querySelector('a.entry-name')?.getAttribute('href')).toBe(
@@ -138,6 +138,18 @@ describe('CodePage (spec §4.2)', () => {
     expect([...f.querySelectorAll('td')].map(flat)[3]).toBe('—');
     expect(f.querySelector('.badge')).toBeNull();
     expect(rows[2]!.querySelector('.badge')?.textContent?.trim()).toBe('test');
+  });
+
+  it('links a directory count to its path with a trailing slash, a file count to its exact path', async () => {
+    setup([dir('util', 'util', { issues: 2 }), file('a.ts', 'a.ts', { issues: 3 })]);
+    const { root } = await render();
+    const links = [...root.querySelectorAll('td a[href^="/projects/p1/issues"]')].map((a) =>
+      a.getAttribute('href'),
+    );
+    expect(links).toEqual([
+      '/projects/p1/issues?branch=b-main&path=util%2F',
+      '/projects/p1/issues?branch=b-main&path=a.ts',
+    ]);
   });
 
   it('keeps odd characters in a directory name out of the path, and navigates with them as a query param', async () => {

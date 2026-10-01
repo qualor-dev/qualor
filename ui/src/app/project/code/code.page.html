@@ -168,7 +168,7 @@
                   <a
                     class="issues-link"
                     [routerLink]="['/projects', projectId(), 'issues']"
-                    [queryParams]="issuesParams(item.path)"
+                    [queryParams]="issuesParams(item)"
                     >{{ count(n) }}</a
                   >
                 } @else {

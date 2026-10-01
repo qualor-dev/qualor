@@ -150,8 +150,12 @@ export class CodePage {
     return codeFileLink(this.projectId(), this.branchId() ?? '', path);
   }
 
-  protected issuesParams(path: string) {
-    return { branch: this.branchId(), path };
+  /**
+   * The issues of an entry: the server matches `path` as a prefix, so a directory's ends in a
+   * slash (`util/` must not take in `utils/`); a file's is its exact path.
+   */
+  protected issuesParams(item: { type: string; path: string }) {
+    return { branch: this.branchId(), path: item.type === 'dir' ? `${item.path}/` : item.path };
   }
 
   protected pickBranch(id: string): void {
