@@ -28,7 +28,7 @@ tell us too if Qualor's use of them makes things worse.
 ## Supported versions
 
 The first release is 0.1.0. While Qualor is in 0.x, security fixes go into the latest minor
-release only (for example `0.3.z`); the minor tag (`qualor/server:0.3`) follows it. There is no
+release only (for example `0.4.z`); the minor tag (`qualor/server:0.4`) follows it. There is no
 floating `0` tag, because a 0.x minor release may change behaviour. From 1.0 on, fixes go into the
 latest minor release of the latest major version, and the major tag (`qualor/server:1`) follows
 it.
@@ -43,8 +43,8 @@ The signatures are not recorded in the public Rekor transparency log, so every c
 carries `--insecure-ignore-tlog=true`; without it, cosign looks for a log entry and fails.
 
 ```sh
-cosign verify --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true qualor/server:0.3.2
-cosign verify-attestation --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true --type spdxjson qualor/server:0.3.2
+cosign verify --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true qualor/server:0.4.0
+cosign verify-attestation --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true --type spdxjson qualor/server:0.4.0
 curl -fsSLO https://qualor.dev/cosign.pub
 cosign verify-blob --key cosign.pub --insecure-ignore-tlog=true --bundle SHA256SUMS.bundle SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS

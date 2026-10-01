@@ -6,8 +6,22 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-02
+
 ### Added
 
+- **Project → Settings** in the UI: the new-code definition (last N days, since the previous
+  version, or a fixed analysis, with the current baseline), the quality gate and the quality
+  profile of each language, the main branch, project analysis tokens, the project's webhooks, and
+  deleting the project (type its key). Each panel shows only to those who may change it.
+- Webhooks in the UI: a webhook applies to every project or to one project, a delivery can be
+  sent again, the deliveries list has **Refresh**, and **Rotate secret** issues a new secret shown
+  once.
+- An issue's **Related locations** (the secondary locations an analyzer reports) on its page,
+  numbered and marked in the code snippet, each linking to its file.
+- The **Code** tab: a branch's directories and files with lines of code, complexity, coverage,
+  duplication and open issues, and a page per file with a line map of coverage, new code,
+  duplicated blocks and issues. Source code is not stored or shown.
 - PHP: `.php` files are a language of their own (`php`) with metrics, duplication and a `php`
   quality profile, and a new `phpstan` engine runs PHPStan 2.2 (MIT) from `qualor/scanner` on
   Debian's PHP 8.2, at level 2 (`analyzers.phpstan.level`, 0-10 or `max`), with Qualor's own
