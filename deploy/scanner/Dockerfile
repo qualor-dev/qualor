@@ -78,6 +78,9 @@ ARG STATICCHECK_VERSION=2026.2.1
 ARG GOSEC_VERSION=2.29.0
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOFLAGS="-trimpath -mod=readonly"
 COPY tools/analyzers/go-tools/ /src/go-tools/
+# The gosec version check below is tautological: -X main.Version sets the very string it greps. The
+# real pin is the gosec build module's go.mod (github.com/securego/gosec/v2 v${GOSEC_VERSION}),
+# which tools/deploy/images.test.ts checks; the staticcheck check reads the version the module built.
 RUN mkdir -p /out \
   && cd /src/go-tools/staticcheck \
   && go build -ldflags "-s -w" -o /out/staticcheck honnef.co/go/tools/cmd/staticcheck \
