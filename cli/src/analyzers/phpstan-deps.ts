@@ -25,7 +25,13 @@ export const DEPENDENCIES_TOO_LARGE =
 const EXCLUDED_TOP_LEVEL: ReadonlySet<string> = new Set(['composer', 'bin', 'autoload.php']);
 
 export type PhpDependencies =
-  { kind: 'none' } | { kind: 'installed'; vendorDir: string } | { kind: 'skip'; reason: string };
+  | { kind: 'none' }
+  /**
+   * `requiresPackages`: composer.json's `require` names a package (not only php, ext-*, lib-*);
+   * the caller then needs dependency files to run (ruling A9-17).
+   */
+  | { kind: 'installed'; vendorDir: string; requiresPackages: boolean }
+  | { kind: 'skip'; reason: string };
 
 /** A regular file at `rel`, not a link, inside the repository after resolving links. */
 function plainFile(root: string, rel: string): boolean {
@@ -99,11 +105,10 @@ export function phpDependencies(root: string): PhpDependencies {
   const object = json as Record<string, unknown>;
   const vendorDir = vendorDirOf(object);
   if (vendorDir === null) return { kind: 'skip', reason: BAD_VENDOR_DIR };
+  const required = requiresPackages(object);
   if (plainFile(root, `${vendorDir}/composer/installed.json`))
-    return { kind: 'installed', vendorDir };
-  return requiresPackages(object)
-    ? { kind: 'skip', reason: DEPENDENCIES_NOT_INSTALLED }
-    : { kind: 'none' };
+    return { kind: 'installed', vendorDir, requiresPackages: required };
+  return required ? { kind: 'skip', reason: DEPENDENCIES_NOT_INSTALLED } : { kind: 'none' };
 }
 
 /**

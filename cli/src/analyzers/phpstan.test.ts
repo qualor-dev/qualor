@@ -149,6 +149,8 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
         'vendor/autoload.php': '<?php',
         'vendor/acme/lib/src/Thing.php': '<?php class Thing {}',
         'src/App.php': '<?php\n',
+        // Review fix round 1: the vendor directory is left out whatever the case of its name.
+        'Vendor/other/lib/Other.php': '<?php class Other {}',
       },
       { config: { analyzers: { phpstan: { level: 'max', memoryLimit: '512M' } } } },
     );
@@ -166,6 +168,7 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
     expect(existsSync(path.join(s.workDir, 'deps', 'vendor', 'autoload.php'))).toBe(false);
     expect(existsSync(path.join(s.workDir, 'vendor'))).toBe(false);
     expect(existsSync(path.join(s.workDir, 'src', 'vendor'))).toBe(false);
+    expect(existsSync(path.join(s.workDir, 'src', 'Vendor'))).toBe(false);
     expect(existsSync(path.join(s.workDir, 'src', 'src', 'App.php'))).toBe(true);
     // Ruling A9-15: PHPStan's working directory holds no vendor/ and no composer.json (fact P4).
     const cwd = readdirSync(p.run.cwd);
@@ -200,6 +203,22 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
       'src/App.php': '<?php\n',
     });
     expect(await s.analyzer.prepare(s.ctx)).toEqual({ skip: DEPENDENCIES_NOT_INSTALLED });
+  });
+
+  it('runs without dependencies when vendor/ gives no file and no package is required (ruling A9-17)', async () => {
+    for (const composer of [{}, { require: { php: '>=8.1', 'ext-json': '*' } }]) {
+      const s = setup({
+        'composer.json': JSON.stringify(composer),
+        'vendor/composer/installed.json': '{}',
+        'vendor/autoload.php': '<?php',
+        'src/App.php': '<?php\n',
+      });
+      const p = await s.analyzer.prepare(s.ctx);
+      if (!('run' in p)) throw new Error(JSON.stringify(p));
+      const neon = readFileSync(path.join(s.workDir, 'phpstan.neon'), 'utf8');
+      expect(neon).not.toContain('scanDirectories');
+      expect(existsSync(path.join(s.workDir, 'deps'))).toBe(false);
+    }
   });
 
   it('warns about dependency files it left out (ruling A9-15)', async () => {
@@ -291,10 +310,13 @@ describe('phpstan helpers', () => {
       'COMPOSER',
       'COMPOSER_VENDOR_DIR',
       'PHPSTAN_ARENA',
+      'XDEBUG_CONFIG',
+      'XDEBUG_MODE',
+      'xdebug_session',
     ]) {
       expect(isPhpVariable(n), n).toBe(true);
     }
-    for (const n of ['PATH', 'PHP_BINARY_X', 'MYCOMPOSER', 'HOME'])
+    for (const n of ['PATH', 'PHP_BINARY_X', 'MYCOMPOSER', 'HOME', 'XDEBUG_OTHER'])
       expect(isPhpVariable(n), n).toBe(false);
   });
 
@@ -324,6 +346,8 @@ describe('phpstan helpers', () => {
     );
     expect(PHPSTAN_WRAPPER).toContain('exit(3);');
     expect(PHPSTAN_WRAPPER).toContain('exit(4);');
+    // Review fix round 1: a report is trusted only after PHPStan's own exit code 0 or 1.
+    expect(PHPSTAN_WRAPPER).toContain('if ($code !== 0 && $code !== 1) {');
     expect(PHPSTAN_WRAPPER).not.toMatch(
       /shell_exec|passthru|system\(|exec\(|eval\(|include|require/,
     );

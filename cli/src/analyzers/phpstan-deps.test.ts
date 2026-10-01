@@ -44,13 +44,21 @@ describe('phpDependencies (config.md §6, plan 9A decision 2)', () => {
       'composer.json': composer({ require: { 'acme/lib': '^1' } }),
       'vendor/composer/installed.json': '{"packages":[]}',
     });
-    expect(phpDependencies(root)).toEqual({ kind: 'installed', vendorDir: 'vendor' });
+    expect(phpDependencies(root)).toEqual({
+      kind: 'installed',
+      vendorDir: 'vendor',
+      requiresPackages: true,
+    });
     const custom = tmp();
     writeTree(custom, {
       'composer.json': composer({ config: { 'vendor-dir': 'lib/vendor/' } }),
       'lib/vendor/composer/installed.json': '{}',
     });
-    expect(phpDependencies(custom)).toEqual({ kind: 'installed', vendorDir: 'lib/vendor' });
+    expect(phpDependencies(custom)).toEqual({
+      kind: 'installed',
+      vendorDir: 'lib/vendor',
+      requiresPackages: false,
+    });
   });
 
   it('skips with a reason for a composer.json it cannot use', () => {

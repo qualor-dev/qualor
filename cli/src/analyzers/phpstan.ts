@@ -32,7 +32,7 @@ export function parsePhpstanVersion(stdout: string): string | null {
  * renames the composer.json PHPStan's start-up reads.
  */
 export const isPhpVariable = (name: string): boolean =>
-  /^(PHPRC|PHP_INI_SCAN_DIR|COMPOSER(_.*)?|PHPSTAN_.*)$/i.test(name);
+  /^(PHPRC|PHP_INI_SCAN_DIR|COMPOSER(_.*)?|PHPSTAN_.*|XDEBUG_(CONFIG|MODE|SESSION))$/i.test(name);
 
 /** A NEON double-quoted string: JSON's escapes, and `%%` for `%` (Nette expands `%name%`). */
 export function neonString(value: string): string {
@@ -91,6 +91,12 @@ fclose($pipes[0]);
 $code = proc_close($proc);
 fclose($fh);
 $text = (string) file_get_contents($out);
+// PHPStan exits 0 (no finding) or 1 (findings or general errors); any other code is a crash whose
+// output, even if it looks like a report, is not trusted.
+if ($code !== 0 && $code !== 1) {
+    fwrite(STDERR, "qualor-phpstan: PHPStan wrote no report (exit code $code)\\n" . substr($text, 0, 4000) . "\\n");
+    exit(4);
+}
 $report = json_decode($text, true);
 if (!is_array($report) || !isset($report['totals'], $report['files']) || !is_array($report['errors'] ?? null)) {
     fwrite(STDERR, "qualor-phpstan: PHPStan wrote no report (exit code $code)\\n" . substr($text, 0, 4000) . "\\n");
@@ -162,8 +168,12 @@ async function prepare(
 
   const deps = phpDependencies(ctx.root);
   if (deps.kind === 'skip') return { skip: deps.reason };
-  const vendorPrefix = deps.kind === 'installed' ? `${deps.vendorDir}/` : null;
-  const own = php.filter((f) => vendorPrefix === null || !f.path.startsWith(vendorPrefix));
+  // Compared case-insensitively (review fix round 1): `Vendor/` is vendor/ on a case-insensitive
+  // file system.
+  const vendorPrefix = deps.kind === 'installed' ? `${deps.vendorDir.toLowerCase()}/` : null;
+  const own = php.filter(
+    (f) => vendorPrefix === null || !f.path.toLowerCase().startsWith(vendorPrefix),
+  );
   const otherCase = own.filter((f) => !phpName(f.path)).length;
   if (otherCase > 0) {
     ctx.log.warn(`phpstan: ${otherCase} PHP file(s) whose name does not end in .php were left out`);
@@ -217,15 +227,19 @@ async function prepare(
       rmSync(target, { recursive: true, force: true });
       return { skip: DEPENDENCIES_TOO_LARGE };
     }
-    // Ruling A9-15: installed.json is there but no dependency file could be read (vendor/ is a
-    // link, or holds only Composer's own files): the same as dependencies not installed.
-    if (c.files === 0) return { skip: DEPENDENCIES_NOT_INSTALLED };
     if (c.skipped > 0) {
       ctx.log.warn(
         `phpstan: ${c.skipped} dependency file(s) below ${shown(deps.vendorDir)}/ not read (a link, a file larger than 1 MiB or one that cannot be read)`,
       );
     }
-    depsDir = target;
+    if (c.files > 0) {
+      depsDir = target;
+    } else if (deps.requiresPackages) {
+      // Rulings A9-15, A9-17: installed.json is there but no dependency file could be read
+      // (vendor/ is a link, or holds only Composer's own files) while packages are required: the
+      // same as dependencies not installed. Without such a require PHPStan runs without them.
+      return { skip: DEPENDENCIES_NOT_INSTALLED };
+    }
   }
 
   const neon = path.join(ctx.workDir, 'phpstan.neon');
