@@ -1486,6 +1486,13 @@ details[open] > summary {
 .menu-panel .icon {
   color: var(--text-muted);
 }
+/* The server's version and edition, at the foot of the user menu. */
+.menu-version {
+  margin: 4px 0 0;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--hairline);
+  font-size: 12px;
+}
 .app-main {
   display: block;
 }

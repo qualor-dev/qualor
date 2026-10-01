@@ -6,6 +6,7 @@ import { builtinAnalyzers } from '../analyzers/registry';
 import { requiredFailures, runAnalyzers } from '../analyzers/runner';
 import type { Analyzer, DotnetRun } from '../analyzers/types';
 import type { ScanFlags } from '../args';
+import { platformId } from '../commands/version';
 import { loadSettings, requireServer, type Settings } from '../config/settings';
 import { importCoverage } from '../coverage/import';
 import { discoverFiles } from '../discovery/discover';
@@ -13,6 +14,7 @@ import { detectDuplications } from '../duplication/detect';
 import { CliError, EXIT, type ExitCode } from '../errors';
 import { createGit, type Git } from '../git/git';
 import { resolveScm } from '../git/scm';
+import { VERSION } from '../index';
 import type { CliIO } from '../io';
 import type { Logger } from '../log';
 import { loadParsers, type Parsers } from '../parse/grammars';
@@ -21,6 +23,7 @@ import { serverEndpoint } from '../server/endpoint';
 import { describeGate, gateExitCode, waitForAnalysis } from '../server/gate';
 import type { ServerEndpoint } from '../server/http';
 import { uploadReport } from '../server/upload';
+import { checkServerVersion } from '../server/version';
 import { Warnings } from '../warnings';
 import {
   analyzeFiles,
@@ -61,6 +64,8 @@ export interface ScanDeps {
   clock?: () => number;
   /** `qualor dotnet end`'s logs (config.md §6.1); absent or null in a plain `qualor scan`. */
   dotnet?: DotnetRun | null;
+  /** undefined: ask the server for its version when a scan starts; null: do not (tests). */
+  serverVersion?: ((endpoint: ServerEndpoint, log: Logger) => Promise<unknown>) | null;
   /** `qualor dotnet end`'s own warnings (config.md §6.1), added to the report's `warnings`. */
   extraWarnings?: readonly { code: string; message: string }[];
 }
@@ -322,6 +327,7 @@ export async function runScan(
   log: Logger,
   deps: ScanDeps = {},
 ): Promise<ExitCode> {
+  log.info(`qualor ${VERSION} (${platformId()})`);
   const settings = loadSettings({ cwd: io.cwd, env: io.env, flags, log });
   const analyzers = deps.analyzers ?? builtinAnalyzers();
   // A configuration error of an enabled analyzer stops the scan before any git, tool or network
@@ -354,6 +360,9 @@ export async function runScan(
       EXIT.USAGE,
       'no project key: set project.key, QUALOR_PROJECT_KEY or --project-key (in CI it defaults to the project path)',
     );
+  }
+  if (endpoint !== null && deps.serverVersion !== null) {
+    await (deps.serverVersion ?? checkServerVersion)(endpoint, log);
   }
   const { report, failed, gitlab } = await buildReport(
     settings,

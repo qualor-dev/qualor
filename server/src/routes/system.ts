@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
-import { requireUser } from '../auth/access';
+import { requirePrincipal, requireUser } from '../auth/access';
 import { ProblemError } from '../http/problem';
 import { VERSION } from '../index';
 
@@ -91,6 +91,23 @@ export const systemRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         features: deps.edition.activeFeatures(),
         extensions: deps.edition.uiExtensions(),
       };
+    },
+  );
+
+  // Any authenticated caller, a project analysis token too: the scanner logs the server's version
+  // when a scan starts and warns when its own release differs. Anonymous callers learn nothing.
+  app.get(
+    '/api/v0/system/version',
+    {
+      schema: {
+        tags: ['system'],
+        summary: "The server's version, for any token (the scanner checks it when a scan starts)",
+        response: { 200: z.object({ version: z.string() }) },
+      },
+    },
+    async (request) => {
+      requirePrincipal(request);
+      return { version: VERSION };
     },
   );
 

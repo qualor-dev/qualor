@@ -6,6 +6,19 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The user guide is built into the server: **Docs** in the top bar opens `/docs`, the guide of the
+  server's own release, for signed-in users, with the page list, the sections of each page and
+  Copy buttons on code blocks and AI prompts.
+- The user menu shows the server's version and edition.
+- `GET /api/v0/system/version` returns the server's version to any token, project analysis tokens
+  included.
+- `qualor scan` logs its own version when it starts and, with a server configured, the server's
+  version; it warns when the scanner and the server are different releases. The check never fails
+  a scan.
+- The server logs its version when it starts.
+
 ## [0.3.0] - 2026-10-01
 
 ### Added

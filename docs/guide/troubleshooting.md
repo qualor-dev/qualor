@@ -21,6 +21,7 @@ QUALOR_LOG_LEVEL=debug qualor scan     # every analyzer's command line, output a
 | exit 4, certificate error | the server's certificate comes from a private CA | set `QUALOR_CA_FILE` (outside the checkout) or `NODE_EXTRA_CA_CERTS` |
 | exit 4, `413` / upload rejected | the report is larger than the server or proxy allows | raise `client_max_body_size` in the proxy, or `QUALOR_UPLOAD_MAX_COMPRESSED_BYTES` |
 | exit 4, gate wait timed out | the server is busy, or its worker is stuck | check the server logs. Raise `gate.timeoutSeconds` if analyses are just slow |
+| `warn: this scanner is 0.3.0 and the server is 0.4.0` | the scanner image in CI is from another release than the server | pin the scanner to the tag the message names, the server's release |
 | exit 4, `PROJECT_NOT_FOUND` | no project with that key, or the token belongs to another project | create the project, or fix the key |
 | exit 5 | the token is invalid, revoked, lacks **Upload analyses**, or is another project's | create a new token |
 | `ESLint skipped: no ESLint configuration` | no config at the repository root | add `eslint.config.js`, or set `analyzers.eslint.configFile` |

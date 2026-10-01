@@ -1,0 +1,76 @@
+<q-page-header [compact]="true" [crumbs]="name() === 'README' ? [] : crumbs">
+  <h1 pageTitle>
+    @if (doc(); as d) {
+      {{ d.title }}
+    } @else {
+      <ng-container i18n="@@docs.title">Documentation</ng-container>
+    }
+  </h1>
+</q-page-header>
+
+<div class="page-body docs-layout">
+  <nav class="docs-nav" aria-label="Documentation" i18n-aria-label="@@docs.navigation">
+    <ol>
+      @for (entry of nav(); track entry.page) {
+        <li>
+          <a
+            [routerLink]="route(entry.page)"
+            [class.active]="entry.page === name()"
+            [attr.aria-current]="entry.page === name() ? 'page' : null"
+            >{{ entry.title }}</a
+          >
+        </li>
+      }
+    </ol>
+    @if (system.info(); as info) {
+      <p class="docs-version muted" i18n="@@docs.version">
+        The guide of Qualor {{ info.version }}, the version of this server.
+      </p>
+    }
+  </nav>
+
+  <div class="docs-main">
+    @if (failed()) {
+      <div class="card" role="alert">
+        <p i18n="@@docs.failed">The documentation could not be loaded.</p>
+        <button type="button" class="btn" (click)="reload()" i18n="@@docs.retry">Try again</button>
+      </div>
+    } @else if (missing()) {
+      <div class="card">
+        <p i18n="@@docs.missing">The guide has no such page.</p>
+        <a routerLink="/docs" i18n="@@docs.toOverview">Go to the overview</a>
+      </div>
+    } @else if (doc(); as d) {
+      <q-doc-content [blocks]="d.blocks" />
+      <nav class="pager" aria-label="Previous and next page" i18n-aria-label="@@docs.pager">
+        @if (prev(); as p) {
+          <a class="pager-prev" [routerLink]="route(p.page)" rel="prev">
+            <span class="muted" i18n="@@docs.previous">Previous</span>
+            {{ p.title }}
+          </a>
+        }
+        @if (next(); as n) {
+          <a class="pager-next" [routerLink]="route(n.page)" rel="next">
+            <span class="muted" i18n="@@docs.next">Next</span>
+            {{ n.title }}
+          </a>
+        }
+      </nav>
+    } @else {
+      <p class="muted" aria-live="polite" i18n="@@docs.loading">Loading…</p>
+    }
+  </div>
+
+  @if (toc().length > 1) {
+    <aside class="docs-toc" aria-labelledby="docs-toc-title">
+      <p id="docs-toc-title" class="docs-toc-title" i18n="@@docs.onThisPage">On this page</p>
+      <ol>
+        @for (h of toc(); track h.id) {
+          <li>
+            <a [routerLink]="route(name())" [fragment]="h.id">{{ h.text }}</a>
+          </li>
+        }
+      </ol>
+    </aside>
+  }
+</div>

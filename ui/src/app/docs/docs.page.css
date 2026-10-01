@@ -1,0 +1,108 @@
+/* The docs (as on qualor.dev/docs): pages at the left, the article, its sections at the right. */
+.docs-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 200px;
+  gap: var(--space-8);
+  align-items: start;
+}
+.docs-nav,
+.docs-toc {
+  position: sticky;
+  top: var(--sticky-top);
+  max-height: calc(100vh - var(--sticky-top) - var(--space-4));
+  overflow-y: auto;
+}
+ol {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.docs-nav a,
+.docs-toc a {
+  display: block;
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+.docs-nav a:hover,
+.docs-toc a:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.docs-nav a.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.docs-version {
+  margin: var(--space-4) var(--space-3) 0;
+  font-size: 12.5px;
+}
+.docs-toc-title {
+  margin: 0 0 var(--space-2);
+  padding: 0 var(--space-3);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.docs-toc a {
+  font-size: 13px;
+}
+.docs-main {
+  min-width: 0;
+}
+.pager {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-10);
+}
+.pager a {
+  display: grid;
+  flex: 1 1 0;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-weight: 600;
+  text-decoration: none;
+}
+.pager a:hover {
+  border-color: var(--accent);
+}
+.pager-next {
+  margin-left: auto;
+  text-align: right;
+}
+.pager span {
+  font-size: 12.5px;
+  font-weight: 400;
+}
+@media (max-width: 72rem) {
+  .docs-layout {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+  .docs-toc {
+    display: none;
+  }
+}
+@media (max-width: 56rem) {
+  .docs-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .docs-nav {
+    position: static;
+    max-height: none;
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .docs-nav ol {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}

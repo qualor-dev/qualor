@@ -73,6 +73,7 @@ async function main(): Promise<void> {
   if (process.argv[2] === 'restore') {
     process.exit(await restoreEmbedded(config, logger));
   }
+  logger.info({ version: VERSION }, `Qualor server ${VERSION} starting`);
   // embedded-postgres.md §2: without DATABASE_URL the server runs the PostgreSQL of its image.
   let embedded: EmbeddedPostgres | undefined;
   let stopping = false;

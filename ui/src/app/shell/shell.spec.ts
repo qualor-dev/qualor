@@ -27,6 +27,9 @@ describe('Shell', () => {
         { id: 'org-2', key: 'acme', name: 'Acme', createdAt: '', updatedAt: '' },
       ]),
     });
+    server.on('GET', '/api/v0/system/info', {
+      body: { version: '1.2.3', edition: 'community', features: [], extensions: [] },
+    });
     TestBed.configureTestingModule({
       imports: [Shell],
       providers: [
@@ -54,6 +57,7 @@ describe('Shell', () => {
       'Quality profiles',
       'Rules',
       'Settings',
+      'Docs',
     ]);
     expect(root.querySelector('.user-menu')?.textContent).toContain('Alice');
     // The account's links sit in a popover opened by the user button.
@@ -67,6 +71,10 @@ describe('Shell', () => {
     );
     expect([...(menu?.querySelectorAll('button') ?? [])].map((b) => b.textContent?.trim())).toEqual(
       ['Sign out'],
+    );
+    // The server's version and edition at the foot of the menu.
+    expect(menu?.querySelector('.menu-version')?.textContent?.trim()).toBe(
+      'Qualor 1.2.3 · Community',
     );
     // Two organisations: a labelled switcher.
     const select = root.querySelector<HTMLSelectElement>('#org-switch');
@@ -148,7 +156,7 @@ describe('Shell', () => {
       const root = fixture.nativeElement as HTMLElement;
       expect(root.querySelector('#org-switch')).toBeNull();
       expect(root.querySelector('.user-menu')?.textContent).toContain('Alice');
-      expect(root.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(5);
+      expect(root.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(6);
       const org = TestBed.inject(OrgContext);
       expect(org.orgs()).toEqual([]);
       expect(org.current()).toBeNull();

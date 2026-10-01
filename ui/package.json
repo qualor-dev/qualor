@@ -25,6 +25,7 @@
     "@angular/router": "22.2.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource-variable/schibsted-grotesk": "^5.3.0",
+    "marked": "18.0.14",
     "openapi-fetch": "0.17.0",
     "rxjs": "7.8.2",
     "tslib": "2.8.1"

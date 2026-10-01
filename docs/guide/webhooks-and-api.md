@@ -86,7 +86,7 @@ q "$QUALOR_URL/api/v0/issues?branchId=<id>&severity=blocker&severity=high&inNewC
 
 | Area | Endpoints |
 |---|---|
-| System | `GET /healthz`, `GET /readyz`, `GET /api/v0/system/info`; instance admins: `GET/PUT/DELETE /api/v0/license` ([Enterprise](./enterprise.md#the-licence-api)) |
+| System | `GET /healthz`, `GET /readyz`, `GET /api/v0/system/info` (version, edition, features), `GET /api/v0/system/version` (the version alone, for any token, project analysis tokens too); instance admins: `GET/PUT/DELETE /api/v0/license` ([Enterprise](./enterprise.md#the-licence-api)) |
 | Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{id}`, `GET /projects/by-key`, `POST/GET/DELETE /projects/{id}/tokens`, `GET /projects/{id}/members` and `PUT/DELETE /projects/{id}/members/{userId}` (a role on one project, [Roles and the audit log](./roles-and-audit.md#managing-members)) |
 | Branches and analyses | `GET /projects/{id}/branches`, `GET /branches/{id}/analyses`, `GET /analyses/{id}`, `DELETE /branches/{id}` |
 | Measures | `GET /branches/{id}/measures`, `GET /branches/{id}/measures/history`, `GET /branches/{id}/files`, `GET /branches/{id}/file?path=` |

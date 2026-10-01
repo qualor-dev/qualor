@@ -18,6 +18,7 @@
     >
     <a routerLink="/rules" routerLinkActive="active" i18n="@@shell.nav.rules">Rules</a>
     <a routerLink="/settings" routerLinkActive="active" i18n="@@shell.nav.settings">Settings</a>
+    <a routerLink="/docs" routerLinkActive="active" i18n="@@shell.nav.docs">Docs</a>
   </nav>
   @if (org.orgs().length > 1) {
     <div class="org-switch">
@@ -51,6 +52,19 @@
         <button type="button" (click)="closeMenu(menu); logout()">
           <q-icon name="log-out" /><ng-container i18n="@@shell.signOut">Sign out</ng-container>
         </button>
+        @if (system.info(); as info) {
+          <p class="menu-version muted">
+            @if (info.edition === 'enterprise') {
+              <ng-container i18n="@@shell.versionEnterprise"
+                >Qualor {{ info.version }} · Enterprise</ng-container
+              >
+            } @else {
+              <ng-container i18n="@@shell.versionCommunity"
+                >Qualor {{ info.version }} · Community</ng-container
+              >
+            }
+          </p>
+        }
       </div>
     </div>
   }

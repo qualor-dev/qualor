@@ -671,10 +671,10 @@ describe('qualor scan --dry-run', () => {
       expect([flag.code, flag.stderr]).toEqual([0, '']);
       const env = await scan(['--dry-run', '--output', 'r.json.gz'], { QUALOR_URL: server.url });
       expect([env.code, env.stderr]).toEqual([0, '']);
-      expect(server.requests.map((r) => r.headers.authorization)).toEqual([
-        `Bearer ${TOKEN}`,
-        `Bearer ${TOKEN}`,
-      ]);
+      // Each scan asks for the server version and the baseline.
+      expect(server.requests.map((r) => r.headers.authorization)).toEqual(
+        Array.from({ length: 4 }, () => `Bearer ${TOKEN}`),
+      );
       expect(readReport(path.join(repo, 'r.json.gz')).scm.baseline.status).toBe('first_analysis');
     },
   );
@@ -715,7 +715,8 @@ describe('qualor scan --dry-run', () => {
       const dry = await scan(['--dry-run', '--output', 'r.json.gz']);
       expect(dry.code).toBe(0);
       expect(dry.stderr).toContain('QUALOR_CA_FILE');
-      expect(server.requests).toHaveLength(1);
+      // The server version (its answer is no version: only a debug line), then the baseline.
+      expect(server.requests).toHaveLength(2);
       expect(readReport(path.join(repo, 'r.json.gz')).scm.baseline.status).toBe('first_analysis');
     },
   );

@@ -15,6 +15,7 @@ import { inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { LicenseBanner } from './license-banner';
 import { SsoBanner } from './sso-banner';
+import { SystemInfo } from './system-info';
 
 /** The path of a router URL, without its query and fragment. */
 const pathOf = (url: string) => url.split(/[?#]/, 1)[0] ?? url;
@@ -36,6 +37,8 @@ export class Shell {
   private readonly auth = inject(AuthService);
   protected readonly session = inject(SessionStore);
   protected readonly org = inject(OrgContext);
+  /** The server's version and edition, at the foot of the user menu. */
+  protected readonly system = inject(SystemInfo);
   protected readonly inputValue = inputValue;
   private readonly main = viewChild.required<ElementRef<HTMLElement>>('main');
   private readonly header = viewChild.required<ElementRef<HTMLElement>>('header');

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ADMIN_PASSWORD, createTestContext, login } from '../../test/app';
+import {
+  ADMIN_PASSWORD,
+  bearer,
+  createProject,
+  createProjectToken,
+  createTestContext,
+  login,
+  organizationId,
+} from '../../test/app';
 import { testConfig } from '../../test/config';
 import { createTestDatabase } from '../../test/db';
 import { T0, testPayload } from '../../test/license';
@@ -106,6 +114,28 @@ describe('GET /system/info with a licence (enterprise.md §7.3)', () => {
       for (const secret of [license.customer, license.id, 'test-a', 'boot-key-hash']) {
         expect(res.body).not.toContain(secret);
       }
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe('GET /system/version', () => {
+  it('answers any authenticated caller, a project analysis token too, and nobody else', async () => {
+    const ctx = await createTestContext();
+    try {
+      const session = await login(ctx, 'admin', ADMIN_PASSWORD);
+      const org = await organizationId(ctx, 'default');
+      const project = await createProject(ctx, session, { organizationId: org, key: 'version' });
+      const token = await createProjectToken(ctx, session, project.id);
+      for (const headers of [session.headers, bearer(token)]) {
+        const res = await ctx.app.inject({ method: 'GET', url: '/api/v0/system/version', headers });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ version: VERSION });
+      }
+      const anonymous = await ctx.app.inject({ method: 'GET', url: '/api/v0/system/version' });
+      expect(anonymous.statusCode).toBe(401);
+      expect(anonymous.body).not.toContain(VERSION);
     } finally {
       await ctx.close();
     }

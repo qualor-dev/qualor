@@ -475,7 +475,9 @@ With an [external PostgreSQL](#external-postgresql), use its own tools: `pg_dump
    ```
 
    Migrations run the same way; with the embedded database the pod is replaced, not doubled.
-4. Move the scanner in your CI to the same release.
+4. Move the scanner in your CI to the same release. Until you do, every scan warns that the scanner
+   and the server are different releases. The user menu (your name, top right) shows the version the
+   server runs.
 
 **Migration `0006` (single sign-on and SCIM)** adds a column, a foreign key and an index to the
 two membership tables (organisation and project members), and holds a lock on both until it

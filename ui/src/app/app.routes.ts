@@ -69,6 +69,16 @@ export const routes: Routes = [
         loadChildren: () => import('./settings/settings.routes').then((m) => m.settingsRoutes),
       },
       {
+        path: 'docs',
+        title: $localize`:@@title.docs:Documentation`,
+        loadComponent: () => import('./docs/docs.page').then((m) => m.DocsPage),
+      },
+      {
+        path: 'docs/:page',
+        title: $localize`:@@title.docs:Documentation`,
+        loadComponent: () => import('./docs/docs.page').then((m) => m.DocsPage),
+      },
+      {
         path: '**',
         title: $localize`:@@title.notFound:Page not found`,
         component: NotFoundPage,

@@ -11,7 +11,8 @@ GitLab merge requests and GitHub pull requests.
 
 These pages cover installation, setup and day-to-day use. They are the same Markdown files that live in
 [`docs/guide/`](https://github.com/qualor-dev/qualor/tree/main/docs/guide) of the repository and on
-[qualor.dev/docs](https://qualor.dev/docs).
+[qualor.dev/docs](https://qualor.dev/docs). Every Qualor server also carries the guide of its own
+release: **Docs** in the top bar, at `/docs` on your server, for signed-in users.
 
 ## Pages
 

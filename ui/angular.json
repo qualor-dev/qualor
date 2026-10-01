@@ -18,6 +18,7 @@
             "browser": "src/main.ts",
             "polyfills": ["@angular/localize/init"],
             "tsConfig": "tsconfig.app.json",
+            "loader": { ".md": "text" },
             "assets": [{ "glob": "**/*", "input": "public" }],
             "styles": ["src/styles.css"]
           },

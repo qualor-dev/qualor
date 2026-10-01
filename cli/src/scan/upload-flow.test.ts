@@ -9,6 +9,7 @@ import { useTempDirs, writeTree } from '../../test/tmp';
 import type { Analyzer } from '../analyzers/types';
 import { CliError } from '../errors';
 import { parseCommandLine, type ScanFlags } from '../args';
+import { VERSION } from '../index';
 import { createLogger } from '../log';
 import { runScan, type ScanDeps } from './run';
 
@@ -47,7 +48,9 @@ async function fakeServer(
   const { url } = await serve((req, res, recorded) => {
     const u = new URL(req.url ?? '/', 'http://x');
     paths.push(`${req.method} ${u.pathname}`);
-    if (u.pathname === '/api/v0/projects/new-code-baseline') {
+    if (u.pathname === '/api/v0/system/version') {
+      json(res, 200, { version: VERSION });
+    } else if (u.pathname === '/api/v0/projects/new-code-baseline') {
       json(res, 200, { revision: null, warnings: [] });
     } else if (u.pathname === '/api/v0/analyses' && req.method === 'POST') {
       if (upload !== undefined) {
@@ -110,6 +113,7 @@ describe('qualor scan: upload, gate polling and exit codes (config.md §7)', () 
       const { code, stderr } = await scan(repo(), server);
       expect(code, stderr).toBe(0);
       expect(server.paths).toEqual([
+        'GET /api/v0/system/version',
         'GET /api/v0/projects/new-code-baseline',
         'POST /api/v0/analyses',
         `GET /api/v0/analyses/${ID}`,
@@ -118,6 +122,8 @@ describe('qualor scan: upload, gate polling and exit codes (config.md §7)', () 
       expect(server.uploaded[0]?.project.key).toBe('acme/app');
       expect(server.uploaded[0]?.scm.baseline.status).toBe('first_analysis');
       expect(stderr).toContain('quality gate: passed');
+      expect(stderr).toContain(`qualor ${VERSION} (`);
+      expect(stderr).toContain(`runs Qualor ${VERSION}`);
       expect(stderr).not.toContain(TOKEN);
     },
   );

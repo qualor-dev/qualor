@@ -13,6 +13,7 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'GET /readyz': 'public',
   'GET /api/v0/openapi.json': 'public',
   'GET /api/v0/system/info': 'authenticated',
+  'GET /api/v0/system/version': 'authenticated',
   'POST /auth/login': 'public',
   'GET /auth/methods': 'public',
   'POST /auth/logout': 'authenticated',

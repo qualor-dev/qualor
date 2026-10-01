@@ -1,0 +1,144 @@
+<ng-container *ngTemplateOutlet="blockList; context: { $implicit: blocks() }" />
+
+<ng-template #blockList let-blocks>
+  @for (b of blocks; track $index) {
+    @switch (b.kind) {
+      @case ('heading') {
+        @switch (b.depth) {
+          @case (2) {
+            <h2 [id]="b.id">
+              <ng-container *ngTemplateOutlet="inlineList; context: { $implicit: b.children }" />
+            </h2>
+          }
+          @case (3) {
+            <h3 [id]="b.id">
+              <ng-container *ngTemplateOutlet="inlineList; context: { $implicit: b.children }" />
+            </h3>
+          }
+          @default {
+            <h4 [id]="b.id">
+              <ng-container *ngTemplateOutlet="inlineList; context: { $implicit: b.children }" />
+            </h4>
+          }
+        }
+      }
+      @case ('paragraph') {
+        <p><ng-container *ngTemplateOutlet="inlineList; context: { $implicit: b.children }" /></p>
+      }
+      @case ('plain') {
+        <ng-container *ngTemplateOutlet="inlineList; context: { $implicit: b.children }" />
+      }
+      @case ('code') {
+        <div class="code-box" [class.is-prompt]="b.lang === 'prompt'">
+          <pre><code>{{ b.text }}</code></pre>
+          <button type="button" class="btn copy" aria-live="polite" (click)="copy(b)">
+            @if (copied()?.block === b) {
+              @if (copied()?.ok) {
+                <ng-container i18n="@@docs.copied">Copied</ng-container>
+              } @else {
+                <ng-container i18n="@@docs.copyFailed">Select and copy</ng-container>
+              }
+            } @else if (b.lang === 'prompt') {
+              <ng-container i18n="@@docs.copyPrompt">Copy prompt</ng-container>
+            } @else {
+              <ng-container i18n="@@docs.copy">Copy</ng-container>
+            }
+          </button>
+        </div>
+      }
+      @case ('list') {
+        @if (b.ordered) {
+          <ol [attr.start]="b.start === 1 ? null : b.start">
+            @for (item of b.items; track $index) {
+              <li>
+                <ng-container *ngTemplateOutlet="blockList; context: { $implicit: item.blocks }" />
+              </li>
+            }
+          </ol>
+        } @else {
+          <ul>
+            @for (item of b.items; track $index) {
+              <li>
+                <ng-container *ngTemplateOutlet="blockList; context: { $implicit: item.blocks }" />
+              </li>
+            }
+          </ul>
+        }
+      }
+      @case ('blockquote') {
+        <blockquote>
+          <ng-container *ngTemplateOutlet="blockList; context: { $implicit: b.blocks }" />
+        </blockquote>
+      }
+      @case ('table') {
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                @for (cell of b.header; track $index) {
+                  <th [class]="b.align[$index] ? 'align-' + b.align[$index] : ''">
+                    <ng-container *ngTemplateOutlet="inlineList; context: { $implicit: cell }" />
+                  </th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of b.rows; track $index) {
+                <tr>
+                  @for (cell of row; track $index) {
+                    <td [class]="b.align[$index] ? 'align-' + b.align[$index] : ''">
+                      <ng-container *ngTemplateOutlet="inlineList; context: { $implicit: cell }" />
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+      @case ('hr') {
+        <hr />
+      }
+    }
+  }
+</ng-template>
+
+<ng-template #inlineList let-nodes>
+  @for (n of nodes; track $index) {
+    @switch (n.kind) {
+      @case ('text') {
+        <ng-container>{{ n.text }}</ng-container>
+      }
+      @case ('code') {
+        <code>{{ n.text }}</code>
+      }
+      @case ('br') {
+        <br />
+      }
+      @case ('strong') {
+        <strong
+          ><ng-container *ngTemplateOutlet="inlineList; context: { $implicit: n.children }"
+        /></strong>
+      }
+      @case ('em') {
+        <em><ng-container *ngTemplateOutlet="inlineList; context: { $implicit: n.children }" /></em>
+      }
+      @case ('del') {
+        <del
+          ><ng-container *ngTemplateOutlet="inlineList; context: { $implicit: n.children }"
+        /></del>
+      }
+      @case ('link') {
+        @if (n.link.kind === 'page') {
+          <a [routerLink]="n.link.route" [fragment]="n.link.fragment ?? undefined"
+            ><ng-container *ngTemplateOutlet="inlineList; context: { $implicit: n.children }"
+          /></a>
+        } @else {
+          <a [href]="n.link.href" target="_blank" rel="noopener noreferrer"
+            ><ng-container *ngTemplateOutlet="inlineList; context: { $implicit: n.children }"
+          /></a>
+        }
+      }
+    }
+  }
+</ng-template>
