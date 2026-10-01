@@ -44,12 +44,8 @@
             (saved)="store.reload()"
           />
           <q-gate-profiles-panel [project]="p" (saved)="store.reload()" />
+          <q-main-branch-panel [project]="p" (saved)="store.reload()" />
         }
-        <section class="card panel" id="main-branch">
-          <div class="panel-head">
-            <h2 tabindex="-1" i18n="@@project.settings.mainBranch">Main branch</h2>
-          </div>
-        </section>
       }
       @if (s.tokens) {
         <section class="card panel" id="tokens">

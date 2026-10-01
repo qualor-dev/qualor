@@ -134,3 +134,25 @@ describe('ProjectSettingsPage index', () => {
     fixture.destroy();
   });
 });
+
+describe('ProjectSettingsPage saves', () => {
+  it('reads the project again after the main branch panel saved', async () => {
+    const server = setup({
+      projectPermissions: ['project.read', 'project.settings'],
+      orgRole: 'member',
+    });
+    server.on('PATCH', `/api/v0/projects/${PROJECT}`, { body: {} });
+    const { root, fixture } = await render();
+    expect(server.requestsTo('GET', `/api/v0/projects/${PROJECT}`)).toHaveLength(1);
+    const input = root.querySelector<HTMLInputElement>('#main-branch-name')!;
+    input.value = 'trunk';
+    input.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    [...root.querySelectorAll('#main-branch button')]
+      .find((b) => b.textContent?.trim() === 'Save')!
+      .dispatchEvent(new Event('click'));
+    await settle(fixture);
+    expect(server.requestsTo('PATCH', `/api/v0/projects/${PROJECT}`)).toHaveLength(1);
+    expect(server.requestsTo('GET', `/api/v0/projects/${PROJECT}`)).toHaveLength(2);
+  });
+});
