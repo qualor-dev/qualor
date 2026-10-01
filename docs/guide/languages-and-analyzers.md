@@ -359,7 +359,7 @@ larger than 1 GiB or hold more than 200,000 files, because reading part of them 
 result with false findings. A custom `config.vendor-dir` in `composer.json` is followed.
 
 Qualor never reports "unknown class", "unknown method" or "unknown function" (and the matching
-property, constant, trait and interface checks). Whether a symbol is known depends on what your
+property, constant, trait and interface checks, and unknown named arguments). Whether a symbol is known depends on what your
 job installed and on framework magic that PHPStan understands only with extensions such as
 Larastan, which Qualor does not load. Run your own PHPStan for those checks.
 

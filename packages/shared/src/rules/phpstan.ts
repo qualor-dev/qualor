@@ -20,9 +20,11 @@ export const PHPSTAN_DEFAULT_LEVEL = 2;
 /**
  * Unknown symbols (config.md §6): whether a class, function, method or property is known depends
  * on what the job installed and on framework magic PHPStan only understands through extensions,
- * which Qualor never loads. They are dropped from every run.
+ * which Qualor never loads. They are dropped from every run. `argument.unknown` (an unknown named
+ * argument) is the same question about a function or method PHPStan cannot see.
  */
 export const PHPSTAN_UNKNOWN_SYMBOL_IDS: ReadonlySet<string> = new Set([
+  'argument.unknown',
   'attribute.notFound',
   'class.notFound',
   'classConstant.notFound',

@@ -187,11 +187,13 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
       'extension=phar',
       '-d',
       'extension=tokenizer',
+      '-d',
+      'pcre.jit=0',
     ]);
     expect(p.run.args.slice(0, PHP_OPTIONS.length)).toEqual(PHP_OPTIONS);
     // The wrapper starts PHPStan with the same options.
     expect(PHPSTAN_WRAPPER).toContain(
-      "$php = array_merge([PHP_BINARY], ['-n', '-d', 'display_errors=stderr', '-d', 'extension=phar', '-d', 'extension=tokenizer']);",
+      "$php = array_merge([PHP_BINARY], ['-n', '-d', 'display_errors=stderr', '-d', 'extension=phar', '-d', 'extension=tokenizer', '-d', 'pcre.jit=0']);",
     );
     // The version probe: the run's environment rules too.
     const probe = s.probeOptions[0]!;

@@ -41,6 +41,8 @@ export const isPhpVariable = (name: string): boolean =>
  * php.ini of the checkout can make php run a file first (`auto_prepend_file`). Only the extensions
  * the phar cannot run without are loaded, from php's own extension directory; a php that has them
  * built in warns on stderr and goes on. Warnings go to stderr, never into the report on stdout.
+ * `pcre.jit=0` (ruling A9-22): PHPStan compiles the regexes it finds in scanned code, and PCRE's JIT is
+ * the reachable path of libpcre2 CVE-2026-103111; without JIT that path is not taken.
  */
 export const PHP_OPTIONS: readonly string[] = [
   '-n',
@@ -50,6 +52,8 @@ export const PHP_OPTIONS: readonly string[] = [
   'extension=phar',
   '-d',
   'extension=tokenizer',
+  '-d',
+  'pcre.jit=0',
 ];
 const phpArray = (values: readonly string[]) => `[${values.map((v) => "'" + v + "'").join(', ')}]`;
 

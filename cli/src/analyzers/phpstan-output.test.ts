@@ -76,12 +76,13 @@ describe('phpstanSarif (config.md §6, report-format.md §5)', () => {
       'ignore.unmatchedLine',
       'class.notFound',
       'staticMethod.notFound',
+      'argument.unknown',
       'offsetAccess.notFound',
       'class.noParent',
     ].map((identifier, i) => ({ message: identifier, line: i + 1, ignorable: true, identifier }));
     const keep = (withDependencies: boolean) =>
       convert(
-        report({ [`${INPUT}/a.php`]: { errors: 6, messages } }),
+        report({ [`${INPUT}/a.php`]: { errors: 7, messages } }),
         withDependencies,
         createLogger('debug', (t) => lines.push(t)),
       ).runs[0]!.results?.map((r) => r.ruleId);
@@ -89,7 +90,7 @@ describe('phpstanSarif (config.md §6, report-format.md §5)', () => {
     // Without dependencies a parent class PHPStan cannot see is an artefact (config.md §6).
     expect(keep(false)).toEqual(['offsetAccess.notFound']);
     expect(lines.join('')).toContain(
-      'phpstan: 2 message(s) that are not findings and 2 unknown-symbol message(s) dropped',
+      'phpstan: 2 message(s) that are not findings and 3 unknown-symbol message(s) dropped',
     );
   });
 

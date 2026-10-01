@@ -31,8 +31,9 @@ describe('phpstanRule (report-format.md §7.1, plan 9A)', () => {
 });
 
 describe('what Qualor drops (config.md §6)', () => {
-  it('drops the eleven unknown-symbol identifiers, not the other notFound ones', () => {
+  it('drops the twelve unknown-symbol identifiers, not the other notFound ones', () => {
     expect([...PHPSTAN_UNKNOWN_SYMBOL_IDS].sort()).toEqual([
+      'argument.unknown',
       'attribute.notFound',
       'class.notFound',
       'classConstant.notFound',
