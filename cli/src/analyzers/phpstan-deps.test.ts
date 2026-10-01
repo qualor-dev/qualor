@@ -3,7 +3,14 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { canCreateFileSymlinks } from '../../test/symlinks';
 import { useTempDirs, writeTree } from '../../test/tmp';
-import { copyDependencies, DEPENDENCIES_NOT_INSTALLED, phpDependencies } from './phpstan-deps';
+import {
+  copyDependencies,
+  DEPENDENCIES_NOT_INSTALLED,
+  DEPENDENCIES_TOO_LARGE,
+  MAX_DEPENDENCY_BYTES,
+  MAX_DEPENDENCY_FILES,
+  phpDependencies,
+} from './phpstan-deps';
 
 const tmp = useTempDirs();
 const composer = (o: object) => JSON.stringify(o);
@@ -117,7 +124,7 @@ describe('copyDependencies', () => {
     });
     const target = tmp();
     const r = copyDependencies(root, 'vendor', target);
-    expect(r).toEqual({ files: 3, skipped: 0, truncated: false });
+    expect(r).toEqual({ files: 3, skipped: 0, truncated: false, tooLarge: false });
     expect(readFileSync(path.join(target, 'vendor/acme/lib/src/Thing.php'), 'utf8')).toBe(
       '<?php class Thing {}',
     );
@@ -143,8 +150,39 @@ describe('copyDependencies', () => {
       files: 3,
       skipped: 0,
       truncated: false,
+      tooLarge: false,
     });
     expect(copyDependencies(root, 'vendor', tmp(), 2)).toMatchObject({ files: 2, truncated: true });
+  });
+
+  it('gives up and removes the partial copy past the total size cap (ruling A9-14)', () => {
+    expect(MAX_DEPENDENCY_BYTES).toBe(1024 * 1024 * 1024);
+    expect(DEPENDENCIES_TOO_LARGE).toBe(
+      'PHP dependencies are larger than 1 GiB (the .php files below vendor/); PHPStan is skipped rather than run with part of them',
+    );
+    const root = tmp();
+    writeTree(root, {
+      'vendor/a/b/x.php': '<?php // 10 bytes',
+      'vendor/a/b/y.php': '<?php // 10 bytes',
+      'vendor/a/b/z.php': '<?php // 10 bytes',
+    });
+    const size = '<?php // 10 bytes'.length;
+    expect(copyDependencies(root, 'vendor', tmp(), MAX_DEPENDENCY_FILES, 3 * size)).toEqual({
+      files: 3,
+      skipped: 0,
+      truncated: false,
+      tooLarge: false,
+    });
+    const target = tmp();
+    writeTree(target, { 'phpstan.neon': 'kept' });
+    expect(copyDependencies(root, 'vendor', target, MAX_DEPENDENCY_FILES, 3 * size - 1)).toEqual({
+      files: 0,
+      skipped: 0,
+      truncated: false,
+      tooLarge: true,
+    });
+    expect(existsSync(path.join(target, 'vendor'))).toBe(false);
+    expect(existsSync(path.join(target, 'phpstan.neon'))).toBe(true);
   });
 
   it.skipIf(!CAN_SYMLINK_FILES)('follows no file or directory link', () => {
@@ -161,6 +199,7 @@ describe('copyDependencies', () => {
       files: 1,
       skipped: 0,
       truncated: false,
+      tooLarge: false,
     });
     expect(existsSync(path.join(target, 'vendor/a/b/link.php'))).toBe(false);
     expect(existsSync(path.join(target, 'vendor/a/linked'))).toBe(false);

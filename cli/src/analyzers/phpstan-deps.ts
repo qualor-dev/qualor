@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { staysInside } from './binary';
 import { readPlainFile } from './checked-copy';
@@ -12,6 +12,14 @@ const BAD_VENDOR_DIR =
 const MAX_COMPOSER_JSON_BYTES = 1024 * 1024;
 /** At most this many dependency files are copied (config.md §6). */
 export const MAX_DEPENDENCY_FILES = 200_000;
+/** At most this many bytes of dependency files are copied in all (ruling A9-14). */
+export const MAX_DEPENDENCY_BYTES = 1024 * 1024 * 1024;
+/**
+ * The skip reason when the dependencies exceed `MAX_DEPENDENCY_BYTES` (ruling A9-14): PHPStan with
+ * only part of the symbols would report false positives, so it does not run at all.
+ */
+export const DEPENDENCIES_TOO_LARGE =
+  'PHP dependencies are larger than 1 GiB (the .php files below vendor/); PHPStan is skipped rather than run with part of them';
 
 export type PhpDependencies =
   { kind: 'none' } | { kind: 'installed'; vendorDir: string } | { kind: 'skip'; reason: string };
@@ -100,24 +108,28 @@ export function phpDependencies(root: string): PhpDependencies {
  * `bin/` directories and its `autoload.php`, copied the checked way (`readPlainFile`: a regular
  * file, no link anywhere on its path, at most 1 MiB) to `<target>/<vendorDir>/`. No link is
  * followed while walking. PHPStan only scans this copy for symbols; it never lives at
- * `<cwd>/vendor`, where PHPStan would `require` an autoloader (fact P4).
+ * `<cwd>/vendor`, where PHPStan would `require` an autoloader (fact P4). Past `maxBytes` in all
+ * (ruling A9-14) the partial copy is removed and `tooLarge` is set: the caller skips PHPStan with
+ * `DEPENDENCIES_TOO_LARGE`.
  */
 export function copyDependencies(
   root: string,
   vendorDir: string,
   target: string,
   limit: number = MAX_DEPENDENCY_FILES,
-): { files: number; skipped: number; truncated: boolean } {
+  maxBytes: number = MAX_DEPENDENCY_BYTES,
+): { files: number; skipped: number; truncated: boolean; tooLarge: boolean } {
   let realRoot: string;
   try {
     realRoot = realpathSync(root);
   } catch {
-    return { files: 0, skipped: 0, truncated: false };
+    return { files: 0, skipped: 0, truncated: false, tooLarge: false };
   }
   const base = path.join(root, ...vendorDir.split('/'));
   let files = 0;
   let skipped = 0;
   let truncated = false;
+  let bytesCopied = 0;
   const stack: string[] = [''];
   while (stack.length > 0 && !truncated) {
     const rel = stack.pop() as string;
@@ -148,6 +160,12 @@ export function copyDependencies(
         skipped++;
         continue;
       }
+      bytesCopied += bytes.length;
+      if (bytesCopied > maxBytes) {
+        // Ruling A9-14: no partial copy is left for PHPStan to scan; the caller skips it.
+        rmSync(path.join(target, ...vendorDir.split('/')), { recursive: true, force: true });
+        return { files: 0, skipped, truncated: false, tooLarge: true };
+      }
       const out = path.join(target, ...vendorDir.split('/'), ...childRel.split('/'));
       try {
         mkdirSync(path.dirname(out), { recursive: true });
@@ -158,5 +176,5 @@ export function copyDependencies(
       }
     }
   }
-  return { files, skipped, truncated };
+  return { files, skipped, truncated, tooLarge: false };
 }
