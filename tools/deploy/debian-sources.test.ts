@@ -136,16 +136,21 @@ describe('the committed Debian source manifests', () => {
       expect(m.aptPackages, image).toEqual(stage.aptPackages);
       expect(m.base, image).toMatch(/@sha256:[0-9a-f]{64}$/);
     }
-    expect(finalStage(readFileSync('deploy/scanner/Dockerfile', 'utf8')).aptPackages).toEqual([
-      'ca-certificates',
-      'git',
-    ]);
+    const scannerApt = finalStage(readFileSync('deploy/scanner/Dockerfile', 'utf8')).aptPackages;
+    expect(scannerApt).toEqual(expect.arrayContaining(['ca-certificates', 'git']));
+    // Plan 9A: Debian's PHP CLI for PHPStan, one php<major.minor>-cli.
+    expect(scannerApt.filter((p) => /^php\d+\.\d+-cli$/.test(p))).toHaveLength(1);
   });
 
   it('cover the copyleft packages each image is known to contain', () => {
     const sources = (image: 'scanner' | 'server') =>
       loadDebianManifest(image).packages.map((p) => p.source);
     expect(sources('scanner')).toEqual(expect.arrayContaining(['glibc', 'git', 'bash', 'perl']));
+    // Plan 9A: php<major.minor>-cli comes from the php<major.minor> source package.
+    const phpCli = finalStage(readFileSync('deploy/scanner/Dockerfile', 'utf8')).aptPackages.find(
+      (p) => /^php\d+\.\d+-cli$/.test(p),
+    );
+    expect(sources('scanner')).toContain(phpCli?.replace(/-cli$/, ''));
     expect(sources('server')).toEqual(expect.arrayContaining(['glibc', 'gcc-12', 'openssl']));
     for (const image of IMAGES) {
       const m = loadDebianManifest(image);

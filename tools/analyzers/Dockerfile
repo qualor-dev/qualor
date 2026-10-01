@@ -1,6 +1,7 @@
 # A local Linux environment with the analyzer toolchain CI installs (plan 1D Task 2): Node 22,
 # JDK 17 (PMD, SpotBugs, javac), PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with its database,
-# Ruff, detekt and SwiftLint (its static build) from install.sh, and bun. Also the .NET 8 and
+# Ruff, detekt, SwiftLint (its static build) and PHPStan (run by Debian's PHP 8.2 CLI, plan 9A)
+# from install.sh, and bun. Also the .NET 8 and
 # 10 SDKs and Roslynator from install-dotnet.sh (plan 2D), Qualor's sonarjs pass in
 # /opt/qualor/sonarjs (plan 8A/8B) and Qualor's HTML and CSS linters in /opt/qualor/weblint
 # (stylelint and HTMLHint, plan 8D).
@@ -8,7 +9,7 @@
 # Pinned by version and digest (multi-arch index); bump both together.
 FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openjdk-17-jdk-headless unzip \
+  && apt-get install -y --no-install-recommends openjdk-17-jdk-headless unzip php8.2-cli \
   && rm -rf /var/lib/apt/lists/*
 COPY install.sh install-sonarjs.sh /tmp/
 RUN sh /tmp/install.sh

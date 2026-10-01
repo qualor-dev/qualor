@@ -2,11 +2,13 @@
 # The qualor/scanner image: the `qualor` CLI binary plus the pinned analyzer toolchain of
 # tools/analyzers/install.sh (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with a snapshot of its
 # vulnerability database in /opt/qualor/share/trivy, Ruff, SwiftLint's static build (a musl
-# binary that needs no Swift runtime), detekt's CLI jar in /opt/qualor/lib/detekt), Qualor's
+# binary that needs no Swift runtime), detekt's CLI jar in /opt/qualor/lib/detekt, PHPStan's phar in
+# /opt/qualor/lib/phpstan), Qualor's
 # sonarjs pass in /opt/qualor/sonarjs (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9,
 # tools/analyzers/sonarjs), Qualor's HTML and CSS linters in
 # /opt/qualor/weblint (stylelint and HTMLHint, tools/analyzers/weblint) and what they need to run:
-# Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs, detekt) and git.
+# Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs, detekt), git and
+# Debian's PHP 8.2 CLI (PHPStan).
 # Build from the repository root:
 #   docker build -f deploy/scanner/Dockerfile -t qualor/scanner:dev .
 # Every base image is pinned by version and digest (multi-arch index); bump both together.
@@ -86,7 +88,7 @@ FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3
 
 FROM node:22.23.3-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates \
+  && apt-get install -y --no-install-recommends git ca-certificates php8.2-cli \
   && rm -rf /var/lib/apt/lists/* \
   # CI runners check out as another user than the image's; the scanner only reads the checkout.
   && git config --system --add safe.directory '*'

@@ -60,6 +60,8 @@ const ALLOWED_ACTIONS = [
   'actions/cache',
   'actions/upload-artifact',
   'actions/download-artifact',
+  // Plan 9A: PHP for PHPStan in the test, fixtures and cli-binary jobs.
+  'shivammathur/setup-php',
 ];
 /** Actions release.yml's publish job may use besides those; none today (publish.ts does it all). */
 const PUBLISH_JOB_ACTIONS: string[] = [];
