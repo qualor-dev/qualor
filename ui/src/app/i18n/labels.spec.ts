@@ -10,6 +10,7 @@ describe('label', () => {
     expect(label('language', 'swift')).toBe('Swift');
     expect(label('language', 'php')).toBe('PHP');
     expect(label('language', 'ruby')).toBe('Ruby');
+    expect(label('language', 'go')).toBe('Go');
     expect(label('gateWarning', 'NEW_CODE_DEFINITION_FALLBACK')).toBe(
       'No earlier version was found for the new-code baseline; the last 30 days are new code instead.',
     );

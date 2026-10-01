@@ -1,0 +1,123 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "staticcheck",
+          "version": "2026.2.1",
+          "informationUri": "https://staticcheck.dev",
+          "rules": [
+            {
+              "id": "S1002",
+              "helpUri": "https://staticcheck.dev/docs/checks#S1002"
+            },
+            {
+              "id": "S1008",
+              "helpUri": "https://staticcheck.dev/docs/checks#S1008"
+            },
+            {
+              "id": "SA4000",
+              "helpUri": "https://staticcheck.dev/docs/checks#SA4000"
+            },
+            {
+              "id": "SA5009",
+              "helpUri": "https://staticcheck.dev/docs/checks#SA5009"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "SA5009",
+          "level": "warning",
+          "message": {
+            "text": "Printf format %d has arg #1 of wrong type string"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "store/store.go"
+                },
+                "region": {
+                  "startLine": 45,
+                  "startColumn": 21,
+                  "endLine": 45,
+                  "endColumn": 31
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "SA4000",
+          "level": "warning",
+          "message": {
+            "text": "identical expressions on the left and right side of the '&&' operator"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "store/store.go"
+                },
+                "region": {
+                  "startLine": 50,
+                  "startColumn": 5,
+                  "endLine": 50,
+                  "endColumn": 29
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "S1008",
+          "level": "warning",
+          "message": {
+            "text": "should use 'return b == true' instead of 'if b == true { return true }; return false'"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/next.go"
+                },
+                "region": {
+                  "startLine": 5,
+                  "startColumn": 2,
+                  "endLine": 7,
+                  "endColumn": 3
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "S1002",
+          "level": "warning",
+          "message": {
+            "text": "should omit comparison to bool constant, can be simplified to b"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools/next.go"
+                },
+                "region": {
+                  "startLine": 5,
+                  "startColumn": 5,
+                  "endLine": 5,
+                  "endColumn": 14
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

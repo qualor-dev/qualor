@@ -11,7 +11,8 @@ export type SyntaxFamily =
   | 'kotlin'
   | 'swift'
   | 'php'
-  | 'ruby';
+  | 'ruby'
+  | 'go';
 
 /**
  * Node tables of ruling C3 (node type names of the pinned grammars, C1). No rule looks at
@@ -106,6 +107,11 @@ export interface FamilyRules {
    * to look at `node.parent`.
    */
   statementChild?(node: Node): Node | null;
+  /**
+   * Extra check for node types in `classes` that are classes only in some shapes (Go's
+   * `type_spec`: only a struct or interface type, plan 9C). Absent: every such node is a class.
+   */
+  isClass?(node: Node): boolean;
 }
 
 const ECMASCRIPT: FamilyRules = {
@@ -699,6 +705,39 @@ const RUBY: FamilyRules = {
   logicalOperator: rubyLogicalOperator,
 };
 
+/** tree-sitter-go 0.25.0 (plan 9C, probe G10). */
+const GO: FamilyRules = {
+  comments: new Set(['comment']),
+  functions: new Set(['function_declaration', 'method_declaration']),
+  lambdas: new Set(['func_literal']),
+  // Only a named struct or interface type (`type T struct { … }`): see isClass.
+  classes: new Set(['type_spec']),
+  // Counted through statementParents: every item of a statement list is one statement.
+  statements: new Set(),
+  loops: new Set(['for_statement']),
+  switches: new Set(['expression_switch_statement', 'type_switch_statement', 'select_statement']),
+  // Go has neither try/catch nor ?:.
+  catchClause: '',
+  ternary: '',
+  transparent: new Set(['parenthesized_expression']),
+  // default_case is not a decision.
+  isCase: (n) =>
+    n.type === 'expression_case' || n.type === 'type_case' || n.type === 'communication_case',
+  elseIf: (n) => {
+    const alt = n.childForFieldName('alternative');
+    return alt !== null && alt.type === 'if_statement' ? alt : null;
+  },
+  plainElse: (n) => {
+    const alt = n.childForFieldName('alternative');
+    return alt !== null && alt.type !== 'if_statement' ? alt : null;
+  },
+  isClass: (n) => {
+    const t = n.childForFieldName('type')?.type;
+    return t === 'struct_type' || t === 'interface_type';
+  },
+  statementParents: new Set(['statement_list']),
+};
+
 export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   ecmascript: ECMASCRIPT,
   java: JAVA,
@@ -710,6 +749,7 @@ export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   swift: SWIFT,
   php: PHP,
   ruby: RUBY,
+  go: GO,
 };
 
 export function familyOf(grammar: GrammarId): SyntaxFamily {
@@ -722,5 +762,6 @@ export function familyOf(grammar: GrammarId): SyntaxFamily {
   if (grammar === 'swift') return 'swift';
   if (grammar === 'php') return 'php';
   if (grammar === 'ruby') return 'ruby';
+  if (grammar === 'go') return 'go';
   return 'ecmascript';
 }

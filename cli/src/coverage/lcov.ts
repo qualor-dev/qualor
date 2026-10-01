@@ -7,6 +7,8 @@ export interface ParsedCoverage {
   files: Map<string, CoverageRecord>;
   /** Base directories named by the report (Cobertura `<source>`); empty for LCOV and JaCoCo. */
   sourceDirs: string[];
+  /** Set when a parser stopped early on a limit; what was read so far is kept. */
+  truncated?: boolean;
 }
 
 interface Current {

@@ -82,6 +82,13 @@ and line. The statuses of RuboCop issues that SonarQube imported
 equivalent rules above map to `Metrics` and `Style` cops, which it leaves out) is reported as
 **mapped but not run by the bundled configuration**; turn it on with `analyzers.rubocop.select`.
 
+Go coverage profiles are read. The statuses of go vet issues that SonarQube imported
+(`external_govet`) carry over. 18 of SonarSource's `go:` rules have a curated counterpart in
+staticcheck or gosec: `go:S1656` is equivalent to staticcheck's `SA4018`, three more overlap
+(reviewed against the public descriptions), and the other 14, mostly security rules matched to
+gosec by name, are unreviewed. The other rows only overlap or are unreviewed, so they import issue
+statuses only. golangci-lint's imported issues (`external_golangci-lint`) are not mapped.
+
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says
 so. SonarQube's `css` and `Web` rules are not mapped yet.

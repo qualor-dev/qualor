@@ -472,4 +472,42 @@ describe('BUILTIN_EXCLUDES', () => {
       parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'rubocop' }] }),
     ).toThrow(/reserved/);
   });
+
+  it('has the Go analyzers with their defaults, knows Go, its tests and its excludes (config.md §3, §3.1, §6; plan 9C)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.staticcheck).toEqual({ enabled: 'auto', timeoutSeconds: 900 });
+    expect(c.analyzers.govet).toEqual({ enabled: 'auto', timeoutSeconds: 900 });
+    expect(c.analyzers.gosec).toEqual({
+      enabled: 'auto',
+      exclude: ['G104', 'G115', 'G304'],
+      timeoutSeconds: 900,
+    });
+    expect(parseConfig({ version: 1, languages: ['go'] }).languages).toEqual(['go']);
+    expect(c.tests.include).toContain('**/*_test.go');
+    for (const glob of ['**/testdata/**', '**/*.pb.go']) expect(BUILTIN_EXCLUDES).toContain(glob);
+    expect(
+      parseConfig({ version: 1, analyzers: { gosec: { exclude: [] } } }).analyzers.gosec.exclude,
+    ).toEqual([]);
+    expect(() =>
+      parseConfig({ version: 1, analyzers: { gosec: { exclude: ['g104'] } } }),
+    ).toThrow();
+    expect(() => parseConfig({ version: 1, analyzers: { gosec: { exclude: ['G999'] } } })).toThrow(
+      /not a rule of gosec/,
+    );
+    expect(() =>
+      parseConfig({ version: 1, analyzers: { staticcheck: { checks: ['all'] } } }),
+    ).toThrow();
+    for (const engine of ['staticcheck', 'govet', 'gosec']) {
+      expect(
+        () => parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine }] }),
+        engine,
+      ).toThrow(/reserved/);
+    }
+    expect(
+      parseConfig({
+        version: 1,
+        coverage: { reports: [{ path: 'coverage.out', format: 'gocover' }] },
+      }).coverage.reports[0]?.format,
+    ).toBe('gocover');
+  });
 });

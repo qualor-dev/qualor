@@ -414,7 +414,7 @@ describe('runAnalyzers', () => {
     expect(requiredFailures(required)).toEqual(['detekt']);
   });
 
-  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D, 8D, 8E, 8F, 9A)', () => {
+  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D, 8D, 8E, 8F, 9A, 9B, 9C)', () => {
     const ids = builtinAnalyzers().map((a) => a.id);
     const order = [
       'eslint',
@@ -432,6 +432,9 @@ describe('runAnalyzers', () => {
       'htmlhint',
       'phpstan',
       'rubocop',
+      'staticcheck',
+      'govet',
+      'gosec',
     ] as const;
     // Membership and relative order (config.md §3), never the whole list.
     expect(ids).toEqual(expect.arrayContaining([...order]));
@@ -482,6 +485,36 @@ describe('runAnalyzers', () => {
     expect(cwdOut).toBe(root);
     expect(hung?.timedOut).toBe(true);
     expect(hung?.durationMs).toBeLessThan(5_000);
+  });
+
+  it("sets ctx.exec's env overlay over the analyzer environment for that command only, and sanitizes it again (ruling G9-15)", async () => {
+    const { root, files } = setup();
+    const outs: string[] = [];
+    const show =
+      'process.stdout.write(JSON.stringify([process.env.GOTOOLCHAIN ?? null, process.env.QUALOR_TOKEN ?? null, process.env.SAFE_VAR ?? null]))';
+    const probe: Analyzer = {
+      id: 'eslint',
+      languages: [],
+      prepare: async (ctx) => {
+        const env = { GOTOOLCHAIN: 'local', QUALOR_TOKEN: 'sneaked' };
+        outs.push(
+          (await ctx.exec(process.execPath, ['-e', show], { timeoutMs: 10_000, env })).stdout,
+        );
+        outs.push((await ctx.exec(process.execPath, ['-e', show], { timeoutMs: 10_000 })).stdout);
+        return { unavailable: 'probe only' };
+      },
+    };
+    await runAnalyzers([probe], {
+      root,
+      files,
+      config: config(),
+      log: silentLogger,
+      env: { ...process.env, GOTOOLCHAIN: 'go1.99.1', SAFE_VAR: 'kept' },
+    });
+    expect(outs.map((o) => JSON.parse(o) as unknown)).toEqual([
+      ['local', null, 'kept'],
+      ['go1.99.1', null, 'kept'],
+    ]);
   });
 
   it('strips QUALOR_TOKEN and QUALOR_*-secret vars from the analyzer child process (fix-round finding 3)', async () => {

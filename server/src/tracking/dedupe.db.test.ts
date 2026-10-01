@@ -456,4 +456,28 @@ describe('cross-engine dedupe (data-model.md §5.3)', () => {
       duplicateOfIssueId: null,
     });
   });
+
+  it('dedupes go vet and staticcheck reporting one mistake on one line, staticcheck primary (plan 9C)', async () => {
+    const p = await h.project('dedupe/go-pairs');
+    const g = (path: string) => file(path, { language: 'go' });
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('staticcheck'), engine('govet')],
+        files: [g('store/store.go')],
+        findings: [
+          finding({ engineId: 'govet', ruleId: 'printf', path: 'store/store.go', line: 45 }),
+          finding({ engineId: 'staticcheck', ruleId: 'SA5009', path: 'store/store.go', line: 45 }),
+          finding({ engineId: 'govet', ruleId: 'copylocks', path: 'store/store.go', line: 45 }),
+        ],
+      }),
+    );
+    const primary = await byRule(p, 'staticcheck:SA5009');
+    expect(primary).toMatchObject({ duplicateOfIssueId: null });
+    expect(await byRule(p, 'govet:printf')).toMatchObject({
+      status: 'open',
+      duplicateOfIssueId: primary!.id,
+    });
+    expect(await byRule(p, 'govet:copylocks')).toMatchObject({ duplicateOfIssueId: null });
+  });
 });

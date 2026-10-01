@@ -83,6 +83,9 @@ For C#, copy [`integrations/github/qualor-dotnet.yml`](../../integrations/github
 instead and replace its build step with your own build. See
 [Languages and analyzers](./languages-and-analyzers.md#c).
 
+Go: run `go mod download` before `qualor scan` in the same job (see
+[Languages and analyzers](./languages-and-analyzers.md#go-staticcheck-go-vet-gosec)).
+
 ## 3. The GitHub App
 
 ### Create it

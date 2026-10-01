@@ -15,6 +15,7 @@ size, complexity, duplication and coverage.
 | Swift | **SwiftLint** 0.65.1 (MIT), your `.swiftlint.yml` or SwiftLint's default rules with a few adjustments | `.swift` files are in scope, run by the `qualor/scanner` image |
 | PHP | **PHPStan** 2.2 (MIT) at level 2, with Qualor's own configuration | .php files are in scope, run by the qualor/scanner image |
 | Ruby | **RuboCop** 1.91 (MIT), Qualor's selection: RuboCop's Lint and Security cops | Ruby files are in scope (.rb, .rake, .gemspec, .ru, Gemfile, Rakefile), run by the qualor/scanner image |
+| Go | **staticcheck** 2026.2.1 (MIT), **go vet** (Go 1.27.1) and **gosec** 2.29.0 (Apache-2.0, security), offline | `.go` files and a `go.mod` are in scope, run by the `qualor/scanner` image |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -23,9 +24,9 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, PHP, Ruby, HTML and CSS;
-SCSS gets findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and external
-SARIF.
+detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, PHP, Ruby, Go, HTML and
+CSS; SCSS gets findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and
+external SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
 
@@ -455,6 +456,71 @@ cyclomatic and cognitive complexity) and count in duplication detection. Functio
 counted as functions. `*_spec.rb`, `*_test.rb` and Ruby files below `spec/` and `test/` are test
 files by default.
 
+## Go (staticcheck, go vet, gosec)
+
+The `qualor/scanner` image runs three Go analyzers on every Go module in your repository (each
+`go.mod` and the `.go` files below it): **staticcheck** 2026.2.1, **go vet** of Go 1.27.1, and
+**gosec** 2.29.0 for security. Your `staticcheck.conf`, `//lint:ignore` and `#nosec` comments are
+honoured; `.golangci.yml` is not read. staticcheck reads `staticcheck.conf` as a settings file
+only; nothing in it is run.
+
+They type-check your code, so they need your dependencies. Qualor never downloads them: it runs
+offline. Give them to it in the scan job:
+
+```yaml
+# GitLab: the scan job, image qualor/scanner
+qualor:
+  image: qualor/scanner:<version>
+  script:
+    - go mod download     # in each module directory, or vendor your dependencies
+    - qualor scan
+```
+
+A module cache of your own works too: point `GOMODCACHE` at it (outside the repository). A
+package whose dependencies are missing is not analysed, and the scan log says which and why.
+Files that use cgo (`import "C"`) are left out (cgo is switched off, `CGO_ENABLED=0`), so a
+package that needs them is reported the same way.
+
+For safety, Qualor never runs anything the repository asks for: no `go generate`, no other Go
+toolchain (`toolchain` and `GOTOOLCHAIN` are ignored), no C compiler, no module download.
+`GOFLAGS` from the CI job and a `go.work` file in the repository are ignored too (`GOFLAGS` is
+emptied and `GOWORK=off` is set), so each module is analysed on its own. A module
+whose `go` line needs a newer Go than 1.27.1, whose `replace` points at a directory outside the
+repository, or that contains a symbolic link out of it, is skipped with a log line.
+
+One case is not covered. Qualor does not look for links inside the directories Go itself ignores
+(names starting with `.` or `_`, `testdata`) or inside `node_modules`. If your code explicitly imports a package from one of them, `go`
+could compile a file that is linked outside the repository. Findings on files outside the
+repository are dropped, so only a compiler message could repeat a line of such a file in the scan
+log or in the report. Don't scan repositories you do not trust in a job that can read secrets or
+host files (the same rule as for ESLint above).
+
+```yaml
+analyzers:
+  gosec:
+    exclude: [G104, G115, G304]   # the default: unchecked errors, integer-conversion overflow, file path from a variable; [] runs every rule
+```
+
+G304 (file path provided as taint input) is excluded by default because it flags idiomatic file
+reads on real projects almost every time. To turn it back on, set `exclude: []` or list only the
+rules you want to skip, without `G304` (for example `exclude: [G104, G115]`).
+
+Severity: staticcheck's correctness and concurrency checks (`SA5…`, `SA2…`) are high, its other
+bug checks medium, unused code medium, simplifications and style low; go vet findings are medium;
+gosec findings take gosec's own HIGH/MEDIUM/LOW. Where go vet and staticcheck report the same
+mistake on one line (`printf`/`SA5009`, `bools`/`SA4000`), the server keeps one issue.
+`testdata/` directories and generated `*.pb.go` files are never scanned, and `*_test.go` files are
+tests. The `testdata/` exclude applies to every language, so secret and dependency scanning skip
+`testdata/` directories too.
+
+Go files get the same metrics as the other languages (lines of code, functions, types,
+cyclomatic and cognitive complexity) and count in duplication detection. The three analyzers are
+skipped, with the reason in the scan log, when no Go module is in scope, when no `go`,
+`staticcheck` or `gosec` of the supported version is available (outside the image), or when every
+module is left out for the reasons above. Qualor runs these tools itself: a SARIF file of your own
+from staticcheck or gosec is counted once with the built-in finding of the same code on the same
+line, and `engine: staticcheck`, `govet` or `gosec` in a `sarif:` entry is a configuration error.
+
 ## Java (PMD and SpotBugs)
 
 - **PMD** reads the source. The default ruleset `qualor-default` is PMD's own
@@ -583,11 +649,13 @@ sarif:
 The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`,
 `detekt`, `swiftlint`, `phpstan` and the others) are reserved: `engine: ruff` is a configuration
 error, and a SARIF file from a tool Qualor runs itself is reported under `ext-<tool>`. Don't import
-Ruff, stylelint, HTMLHint, detekt, SwiftLint or PHPStan SARIF any more: Qualor runs Ruff (see
-[Python](#python-ruff)), stylelint and HTMLHint (see [CSS and SCSS](#css-and-scss-stylelint) and
-[HTML](#html-htmlhint)) and detekt (see [Kotlin](#kotlin-detekt)) and SwiftLint (see
-[Swift](#swift-swiftlint)) and PHPStan (see [PHP](#php-phpstan)) itself; a SARIF file you still
-import for one of them counts once with the built-in finding of the same code on the same line.
+Ruff, stylelint, HTMLHint, detekt, SwiftLint, PHPStan, staticcheck or gosec SARIF any more: Qualor
+runs Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
+[CSS and SCSS](#css-and-scss-stylelint) and [HTML](#html-htmlhint)), detekt (see
+[Kotlin](#kotlin-detekt)), SwiftLint (see [Swift](#swift-swiftlint)), PHPStan (see
+[PHP](#php-phpstan)) and staticcheck and gosec (see [Go](#go-staticcheck-go-vet-gosec)) itself; a
+SARIF file you still import for one of them counts once with the built-in finding of the same code
+on the same line.
 
 **Brakeman** (Rails security scanner) is not bundled, because its licence restricts commercial use.
 If your use is covered by that licence, run it yourself and import its SARIF:
@@ -606,8 +674,8 @@ SARIF.
 
 ## Coverage
 
-Qualor imports **LCOV**, **Cobertura XML** and **JaCoCo XML**. Run your tests with coverage before the
-scan, then list the reports:
+Qualor imports **LCOV**, **Cobertura XML**, **JaCoCo XML** and **Go coverage profiles**. Run your
+tests with coverage before the scan, then list the reports:
 
 ```yaml
 coverage:
@@ -621,11 +689,18 @@ coverage:
       format: cobertura
     - path: coverage/coverage.xml                     # Ruby: SimpleCov + simplecov-cobertura
       format: cobertura
+    - path: coverage.out                                # go test -coverprofile=coverage.out ./... (Go)
+      format: gocover
   pathPrefixes: []   # prefixes to strip or try when report paths do not match repository paths
 ```
 
 For Ruby, add `gem "simplecov-cobertura"` to the test group of your Gemfile and
 `SimpleCov.formatter = SimpleCov::Formatter::CoberturaFormatter` to the test helper.
+
+A Go profile names files by import path; Qualor finds them by their path suffix. Use
+`-coverpkg=./...` to count code that other packages' tests run. A profile that holds more than 20
+million lines is read as far as that limit, and the import warns that it was truncated. A profile
+larger than 128 MiB is refused: it is ignored with a warning.
 
 Or pass `--coverage <path>` on the command line. Test files are excluded from coverage. If a scan
 imports no coverage report at all, the coverage conditions have **no value**, and they do not fail the

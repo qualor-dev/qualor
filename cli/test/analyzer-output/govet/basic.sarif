@@ -1,0 +1,119 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "govet",
+          "version": "1.27.1",
+          "informationUri": "https://pkg.go.dev/cmd/vet",
+          "rules": [
+            {
+              "id": "bools",
+              "helpUri": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/bools"
+            },
+            {
+              "id": "copylocks",
+              "helpUri": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/copylocks"
+            },
+            {
+              "id": "printf",
+              "helpUri": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/printf"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "bools",
+          "level": "warning",
+          "message": {
+            "text": "redundant and: score > 90 && score > 90"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "store/store.go"
+                },
+                "region": {
+                  "startLine": 50,
+                  "startColumn": 5,
+                  "endLine": 50,
+                  "endColumn": 15
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "copylocks",
+          "level": "warning",
+          "message": {
+            "text": "Snapshot passes lock by value: example.com/gobasic/store.Store contains sync.Mutex"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "store/store.go"
+                },
+                "region": {
+                  "startLine": 39,
+                  "startColumn": 17,
+                  "endLine": 39,
+                  "endColumn": 22
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "copylocks",
+          "level": "warning",
+          "message": {
+            "text": "return copies lock value: example.com/gobasic/store.Store contains sync.Mutex"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "store/store.go"
+                },
+                "region": {
+                  "startLine": 40,
+                  "startColumn": 9,
+                  "endLine": 40,
+                  "endColumn": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "printf",
+          "level": "warning",
+          "message": {
+            "text": "fmt.Sprintf format %d has arg \"many\" of wrong type string"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "store/store.go"
+                },
+                "region": {
+                  "startLine": 45,
+                  "startColumn": 22,
+                  "endLine": 45,
+                  "endColumn": 24
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

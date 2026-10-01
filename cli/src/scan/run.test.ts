@@ -101,8 +101,9 @@ describe('qualor scan --dry-run', () => {
   it('main() scans with the default analyzer registry', { timeout: 60_000 }, async () => {
     // The other dry-run tests pass analyzers: [] so their results cannot depend on installed tools;
     // this one keeps main() wired to builtinAnalyzers(). The repository has no TypeScript,
-    // JavaScript, Java, Kotlin, Swift, C#, HTML, CSS, PHP or Ruby, so ESLint, sonarjs, PMD, SpotBugs,
-    // detekt, swiftlint, roslyn, stylelint, htmlhint, phpstan and rubocop are skipped wherever it runs; Gitleaks is auto so a
+    // JavaScript, Java, Kotlin, Swift, C#, HTML, CSS, PHP, Ruby or Go, so ESLint, sonarjs, PMD,
+    // SpotBugs, detekt, swiftlint, roslyn, stylelint, htmlhint, phpstan, rubocop, staticcheck, govet
+    // and gosec are skipped wherever it runs; Gitleaks is auto so a
     // missing binary is a skip, not exit 3; Trivy runs where its database is installed and finds no
     // lockfile (plan 2B).
     const repo = path.join(tmp(), 'repo');
@@ -135,6 +136,9 @@ describe('qualor scan --dry-run', () => {
       'htmlhint',
       'phpstan',
       'rubocop',
+      'staticcheck',
+      'govet',
+      'gosec',
     ];
     expect(report.engines.filter((e) => skipped.includes(e.id)).map((e) => e.status)).toEqual(
       skipped.map(() => 'skipped'),

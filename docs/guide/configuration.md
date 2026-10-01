@@ -45,10 +45,10 @@ tests:
   include: ['**/*.test.*', '**/*.spec.*', '**/__tests__/**', '**/src/test/**', '**/*Tests/**',
             '**/test_*.py', '**/*_test.py', '**/conftest.py', '**/*Test.php',
             '**/src/androidTest/**', '**/src/*Test/**', '**/*_spec.rb', '**/*_test.rb',
-            '**/spec/**/*.rb', '**/test/**/*.rb']
+            '**/spec/**/*.rb', '**/test/**/*.rb', '**/*_test.go']
   exclude: []
 
-languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin, swift, php, ruby]
+languages: auto                     # or [typescript, javascript, java, csharp, python, html, css, kotlin, swift, php, ruby, go]
 
 analyzers:
   eslint:    { enabled: auto, configFile: null, args: [], timeoutSeconds: 900 }
@@ -59,6 +59,9 @@ analyzers:
   detekt:    { enabled: auto, configFile: null, timeoutSeconds: 900 }
   swiftlint: { enabled: auto, configFile: null, timeoutSeconds: 600 }
   rubocop:   { enabled: auto, select: [qualor-default], ignore: [], targetRubyVersion: '4.0', timeoutSeconds: 600 }
+  staticcheck: { enabled: auto, timeoutSeconds: 900 }
+  govet:     { enabled: auto, timeoutSeconds: 900 }
+  gosec:     { enabled: auto, exclude: [G104, G115, G304], timeoutSeconds: 900 }   # [] runs every gosec rule
   semgrep:   { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
   gitleaks:  { enabled: true, configFile: null, timeoutSeconds: 300 }
   trivy:     { enabled: auto, timeoutSeconds: 600 }
@@ -74,7 +77,7 @@ sarif:
 coverage:
   reports:
     - path: coverage/lcov.info      # globs allowed
-      format: auto                  # auto | lcov | cobertura | jacoco
+      format: auto                  # auto | lcov | cobertura | jacoco | gocover
   pathPrefixes: []
 
 duplication:
@@ -109,9 +112,10 @@ These always apply, and you can only add to them: `node_modules`, `.git`, `dist`
 .NET `obj/`, `bin/Debug`, `bin/Release`, generated C# (`*.g.cs`, `*.g.i.cs`, `*.Designer.cs`),
 Python virtual environments and caches (`.venv`, `venv`, `.tox`, `.nox`, `__pycache__`,
 `__pypackages__`, `.eggs`, `site-packages`), Swift's `Pods/`, `Carthage/` and `.build/`, Bundler's
-`.bundle/`, Rails' `db/schema.rb`, binary files, and nested git repositories. Files over 1 MiB are
-skipped for metrics and duplication, but analyzers still see them (detekt and SwiftLint are the
-exception: they are not given Kotlin or Swift files over 1 MiB).
+`.bundle/`, Rails' `db/schema.rb`, Go's `testdata/` directories (in every language, so secret and
+dependency scanning skip them too) and generated `*.pb.go` files, binary files, and nested git
+repositories. Files over 1 MiB are skipped for metrics and duplication, but analyzers still see them
+(detekt and SwiftLint are the exception: they are not given Kotlin or Swift files over 1 MiB).
 
 ## Environment variables (scanner)
 

@@ -110,6 +110,8 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       'ext-detekt': 'detekt',
       'ext-swiftlint': 'swiftlint',
       'ext-rubocop': 'rubocop',
+      'ext-staticcheck': 'staticcheck',
+      'ext-gosec': 'gosec',
     });
     expect(EXTERNAL_BUILTIN_ALIASES).toHaveProperty('ext-phpstan', 'phpstan');
     expect(EXTERNAL_BUILTIN_ALIASES['ext-phpstan']).toBe('phpstan');
@@ -268,5 +270,23 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(rulesEquivalent(rule('ext-rubocop:Security/Eval'), rule('rubocop:Security/Open'))).toBe(
       false,
     );
+  });
+
+  it('ranks the Go engines after swiftlint, staticcheck above govet above gosec, all above external ones (plan 9C)', () => {
+    const at = (e: string) => ENGINE_PRIORITY.indexOf(e);
+    expect(at('staticcheck')).toBeGreaterThan(at('swiftlint'));
+    expect(at('govet')).toBeGreaterThan(at('staticcheck'));
+    expect(at('gosec')).toBeGreaterThan(at('govet'));
+    expect(enginePriority('gosec')).toBeGreaterThan(enginePriority('my-tool'));
+  });
+
+  it('pairs go vet with staticcheck where both report the same mistake, and imported staticcheck/gosec SARIF with the built-in rules (plan 9C)', () => {
+    expect(rulesEquivalent(rule('govet:printf'), rule('staticcheck:SA5009'))).toBe(true);
+    expect(rulesEquivalent(rule('govet:bools'), rule('staticcheck:SA4000'))).toBe(true);
+    expect(rulesEquivalent(rule('govet:printf'), rule('staticcheck:SA4000'))).toBe(false);
+    expect(equivalentPartners('ext-staticcheck:SA4006')).toEqual(['staticcheck:SA4006']);
+    expect(equivalentPartners('gosec:G401')).toEqual(['ext-gosec:G401']);
+    expect(enginePriority('staticcheck')).toBeGreaterThan(enginePriority('govet'));
+    expect(enginePriority('gosec')).toBeGreaterThan(enginePriority('ext-gosec'));
   });
 });

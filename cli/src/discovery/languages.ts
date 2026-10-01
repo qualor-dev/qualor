@@ -19,6 +19,7 @@ const KOTLIN: LanguageInfo = { language: 'kotlin', grammar: 'kotlin' };
 const SWIFT: LanguageInfo = { language: 'swift', grammar: 'swift' };
 const PHP: LanguageInfo = { language: 'php', grammar: 'php' };
 const RUBY: LanguageInfo = { language: 'ruby', grammar: 'ruby' };
+const GO: LanguageInfo = { language: 'go', grammar: 'go' };
 /** SCSS is linted as CSS (stylelint with postcss-scss) but has no grammar: no metrics, no duplication. */
 const SCSS: LanguageInfo = { language: 'css', grammar: null };
 
@@ -46,6 +47,7 @@ const BY_EXTENSION = new Map<string, LanguageInfo>([
   ['.rake', RUBY],
   ['.gemspec', RUBY],
   ['.ru', RUBY],
+  ['.go', GO],
 ]);
 
 /** Ruby files known by their whole name (plan 9B); case-sensitive, as Bundler and Rake are. */

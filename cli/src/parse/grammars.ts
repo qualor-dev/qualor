@@ -17,6 +17,7 @@ export const GRAMMARS = [
   'swift',
   'php',
   'ruby',
+  'go',
 ] as const;
 export type GrammarId = (typeof GRAMMARS)[number];
 export type WasmAsset = 'core' | GrammarId;
@@ -40,6 +41,7 @@ const PACKAGE_FILES: Readonly<Record<Exclude<WasmAsset, VendoredGrammar>, string
   kotlin: '@tree-sitter-grammars/tree-sitter-kotlin/tree-sitter-kotlin.wasm',
   php: 'tree-sitter-php/tree-sitter-php.wasm',
   ruby: 'tree-sitter-ruby/tree-sitter-ruby.wasm',
+  go: 'tree-sitter-go/tree-sitter-go.wasm',
 };
 
 export const DEFAULT_PARSE_TIMEOUT_MS = 10_000;

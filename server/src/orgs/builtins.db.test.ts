@@ -205,6 +205,26 @@ describe('built-in profiles and gate (data-model.md §4.4, gates.md §7)', () =>
     expect(php).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
   });
 
+  it('adds the go built-in to an organisation that has every other built-in (plan 9C, no migration)', async () => {
+    const [org] = await t.db
+      .insert(organizations)
+      .values({ key: 'pre-go', name: 'Before Go' })
+      .returning();
+    for (const language of PROFILE_LANGUAGES.filter((l) => l !== 'go')) {
+      await t.db.insert(qualityProfiles).values({
+        organizationId: org!.id,
+        name: BUILTIN_NAME,
+        language,
+        isBuiltin: true,
+        isDefault: true,
+        unknownRules: 'activate',
+      });
+    }
+    await bootstrap(t.db, admin);
+    const go = (await profilesOf(org!.id)).filter((p) => p.language === 'go');
+    expect(go).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
+  });
+
   it('adds the python built-in to an organisation that has every other built-in (plan 8C, no migration)', async () => {
     const [org] = await t.db
       .insert(organizations)

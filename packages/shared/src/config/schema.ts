@@ -9,6 +9,7 @@ import {
   RUBOCOP_VERSION,
   rubocopSelectorKnown,
 } from '../rules/rubocop';
+import { GOSEC_DEFAULT_EXCLUDE, GOSEC_RULE_ID, GOSEC_RULES, GOSEC_VERSION } from '../rules/golang';
 import { RUFF_SELECTOR, RUFF_VERSION, ruffSelectorKnown } from '../rules/ruff';
 
 const SCANNABLE_LANGUAGES = [
@@ -23,6 +24,7 @@ const SCANNABLE_LANGUAGES = [
   'swift',
   'php',
   'ruby',
+  'go',
 ] as const;
 
 export const BUILTIN_EXCLUDES: readonly string[] = [
@@ -59,6 +61,9 @@ export const BUILTIN_EXCLUDES: readonly string[] = [
   // Ruby: Bundler's local settings and install directory, and Rails' generated schema (plan 9B).
   '**/.bundle/**',
   '**/db/schema.rb',
+  // Go test data, which the go tool itself ignores, and generated protobuf code (plan 9C).
+  '**/testdata/**',
+  '**/*.pb.go',
 ];
 
 const enabled = z.union([z.literal('auto'), z.boolean()]).default('auto');
@@ -314,6 +319,26 @@ const analyzers = z
         timeoutSeconds: timeout(600),
       })
       .prefault({}),
+    // Go (plan 9C): staticcheck, go vet and gosec through Qualor's Go runner in the qualor/scanner
+    // image, offline, on the scan's Go modules (config.md §6).
+    staticcheck: z.strictObject({ enabled, timeoutSeconds: timeout(900) }).prefault({}),
+    govet: z.strictObject({ enabled, timeoutSeconds: timeout(900) }).prefault({}),
+    gosec: z
+      .strictObject({
+        enabled,
+        exclude: z
+          .array(
+            z
+              .string()
+              .regex(GOSEC_RULE_ID, 'a gosec rule id such as G104')
+              .refine((id) => GOSEC_RULES.has(id), {
+                message: `not a rule of gosec ${GOSEC_VERSION}`,
+              }),
+          )
+          .default([...GOSEC_DEFAULT_EXCLUDE]),
+        timeoutSeconds: timeout(900),
+      })
+      .prefault({}),
   })
   .prefault({});
 
@@ -362,6 +387,7 @@ export const configSchema = z
             '**/*Tests/**',
             '**/test_*.py',
             '**/*_test.py',
+            '**/*_test.go',
             '**/conftest.py',
             '**/*Test.php',
             '**/*_spec.rb',
@@ -394,7 +420,7 @@ export const configSchema = z
           .array(
             z.strictObject({
               path: z.string().min(1),
-              format: z.enum(['auto', 'lcov', 'cobertura', 'jacoco']).default('auto'),
+              format: z.enum(['auto', 'lcov', 'cobertura', 'jacoco', 'gocover']).default('auto'),
             }),
           )
           .default([]),

@@ -27,6 +27,7 @@ import {
   type Mismatch,
   type Report,
 } from '@qualor/shared';
+import { GO_RUNNER_FILE } from '../../cli/test/analyzers';
 import { codeQualityValidator, dependencyScanningValidator, sastValidator } from '../../cli/test/gitlab-schema';
 import { checkLlmFixture } from './llm-check';
 
@@ -71,6 +72,12 @@ const SONARJS_PASS_FILE = '/opt/qualor/sonarjs/run.mjs';
  */
 export const WEBLINT_PASS = 'weblint-pass';
 const WEBLINT_PASS_FILES = ['/opt/qualor/weblint/stylelint.mjs', '/opt/qualor/weblint/htmlhint.mjs'];
+
+/**
+ * A pseudo-tool: Qualor's Go runner in the scanner image's place (config.md §6, plan 9C); like the
+ * weblint pass, a skip when absent, and the fixture scan drops QUALOR_GO_DIR.
+ */
+export const GO_RUNNER = 'go-runner';
 
 /**
  * A pseudo-tool: detekt's jar in the scanner image's place (config.md §6, plan 8E). Like the
@@ -130,6 +137,10 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   phpstan: [['php'], [PHPSTAN_PHAR]],
   // Plan 9B: Qualor's RuboCop pass (install-rubocop.sh).
   rubocop: [[RUBOCOP_PASS]],
+  // Plan 9C: the go command, the tool, and Qualor's Go runner (install-go.sh).
+  staticcheck: [['node'], ['go'], ['staticcheck'], [GO_RUNNER]],
+  govet: [['node'], ['go'], [GO_RUNNER]],
+  gosec: [['node'], ['go'], ['gosec'], [GO_RUNNER]],
 };
 
 /**
@@ -154,6 +165,7 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === PHPSTAN_PHAR) return existsSync(PHPSTAN_PHAR_FILE);
   if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
   if (name === RUBOCOP_PASS) return RUBOCOP_PASS_FILES.every((f) => existsSync(f));
+  if (name === GO_RUNNER) return existsSync(GO_RUNNER_FILE);
   return findTool(name, env) !== null;
 }
 

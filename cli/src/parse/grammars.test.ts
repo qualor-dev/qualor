@@ -16,6 +16,7 @@ const SAMPLES = {
   swift: 'func f(x: Int) -> Int { return x > 0 ? 1 : 0 }\n',
   php: '<?php\nfunction f($x) { return $x ? 1 : 0; }\n',
   ruby: 'def f(x)\n  x > 0 ? 1 : 0\nend\n',
+  go: 'package p\n\nfunc f(x int) int { if x > 0 { return 1 }; return 0 }\n',
 } as const;
 
 afterEach(() => registerEmbeddedAssets(null));
@@ -60,6 +61,7 @@ describe('wasmPath', () => {
     expect(wasmPath('swift')).toMatch(/tree-sitter-swift\.wasm$/);
     expect(wasmPath('php')).toMatch(/tree-sitter-php\.wasm$/);
     expect(wasmPath('ruby')).toMatch(/tree-sitter-ruby\.wasm$/);
+    expect(wasmPath('go')).toMatch(/tree-sitter-go\.wasm$/);
     const require = createRequire(import.meta.url);
     const java = require.resolve('tree-sitter-java/tree-sitter-java.wasm');
     registerEmbeddedAssets({
@@ -76,6 +78,7 @@ describe('wasmPath', () => {
       swift: 'swift.wasm',
       php: 'php.wasm',
       ruby: 'ruby.wasm',
+      go: 'go.wasm',
     });
     expect(wasmPath('core')).toBe('core.wasm');
     expect(wasmPath('python')).toBe('py.wasm');

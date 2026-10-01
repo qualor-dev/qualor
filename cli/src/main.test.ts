@@ -23,7 +23,7 @@ describe('main', () => {
     );
     expect(GRAMMARS).toContain('python');
     expect(c.stdout()).toContain(
-      'html (ABI 14), css (ABI 15), kotlin (ABI 14), swift (ABI 15), php (ABI 15), ruby (ABI 14)',
+      'html (ABI 14), css (ABI 15), kotlin (ABI 14), swift (ABI 15), php (ABI 15), ruby (ABI 14), go (ABI 15)',
     );
   });
 

@@ -18,6 +18,7 @@ import {
   scanEnv,
   DETEKT_JAR,
   PHPSTAN_PHAR,
+  GO_RUNNER,
   SONARJS_PASS,
   toolOnPath,
   TRIVY_DATABASE,
@@ -80,6 +81,11 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(unavailableEngines(['phpstan'], (t) => t === 'php')).toEqual(['phpstan']);
     expect(unavailableEngines(['phpstan'], (t) => t === PHPSTAN_PHAR)).toEqual(['phpstan']);
     expect(unavailableEngines(['phpstan'], (t) => ['php', PHPSTAN_PHAR].includes(t))).toEqual([]);
+    // Plan 9C: node, go, the tool and Qualor's Go runner.
+    expect(unavailableEngines(['staticcheck', 'govet', 'gosec'], () => false)).toEqual(['staticcheck', 'govet', 'gosec']);
+    expect(unavailableEngines(['staticcheck', 'govet', 'gosec'], (t) => t !== GO_RUNNER)).toEqual(['staticcheck', 'govet', 'gosec']);
+    expect(unavailableEngines(['staticcheck', 'govet', 'gosec'], (t) => t !== 'gosec')).toEqual(['gosec']);
+    expect(unavailableEngines(['staticcheck', 'govet', 'gosec'], () => true)).toEqual([]);
   });
   it('needs node and the weblint pass for stylelint and htmlhint (plan 8D)', () => {
     expect(unavailableEngines(['stylelint', 'htmlhint'], (t) => t === 'node', 'linux')).toEqual(['stylelint', 'htmlhint']);

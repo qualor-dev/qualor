@@ -6,9 +6,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   engineMapping,
+  goVersionSupported,
+  gosecVersionSupported,
   parseConfig,
   PHPSTAN_VERSION,
   splitSourceLines,
+  staticcheckVersionSupported,
   swiftlintVersionSupported,
   type NormalizeWarning,
   type Quality,
@@ -22,6 +25,12 @@ import { describe, expect } from 'vitest';
 import { findRepoBinary, resolveBinary } from '../src/analyzers/binary';
 import { DEFAULT_DETEKT_JAR } from '../src/analyzers/detekt';
 import { DEFAULT_PHPSTAN_PHAR, parsePhpstanVersion } from '../src/analyzers/phpstan';
+import {
+  DEFAULT_GO_DIR,
+  parseGosecVersion,
+  parseGoVersion,
+  parseStaticcheckVersion,
+} from '../src/analyzers/golang';
 import { fileLines, normalizeCaptures, type NormalizedEngines } from '../src/analyzers/normalize';
 import type { ProcessResult } from '../src/analyzers/process';
 import { runAnalyzers } from '../src/analyzers/runner';
@@ -133,6 +142,45 @@ export function describeWithRubocop(): typeof describe {
   const ok =
     existsSync('/opt/qualor/rubocop/run.rb') && existsSync('/opt/qualor/rubocop/ruby/bin/ruby');
   return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+/**
+ * Plan 9C: Qualor's Go runner where the qualor/scanner image and install-go.sh put it; the one
+ * definition of this path for the tests (tools/fixtures/run.ts imports it).
+ */
+export const GO_RUNNER_FILE = path.posix.join(DEFAULT_GO_DIR, 'run.mjs');
+
+/**
+ * Plan 9C: the real Go tools (install-go.sh, which every CI job requiring the analyzers runs) run
+ * under `QUALOR_REQUIRE_ANALYZERS=1` (they then fail when missing), or when node and the runner are
+ * there and the resolved go, staticcheck and gosec are of supported versions (ruling F18's gate),
+ * so a laptop with another Go first on PATH skips these tests instead of failing them.
+ */
+export function describeWithGo(): typeof describe {
+  return describe.runIf(REQUIRE_ANALYZERS || goToolsSupported()) as typeof describe;
+}
+
+function goToolsSupported(): boolean {
+  if (!toolInstalled('node') || !existsSync(GO_RUNNER_FILE)) return false;
+  const version = (name: string, args: string[], parse: (stdout: string) => string | null) => {
+    const bin = resolveBinary(name, { root: process.cwd(), env: process.env });
+    if (bin === null) return null;
+    // GOTOOLCHAIN=local: probing must never download a toolchain a go.mod nearby asks for.
+    const env = { ...process.env, GOTOOLCHAIN: 'local', GOFLAGS: '' };
+    const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 30_000, env, cwd: os.tmpdir() });
+    return r.status === 0 ? parse(r.stdout ?? '') : null;
+  };
+  const go = version('go', ['version'], parseGoVersion);
+  const sc = version('staticcheck', ['-version'], parseStaticcheckVersion);
+  const gs = version('gosec', ['-version'], parseGosecVersion);
+  return (
+    go !== null &&
+    goVersionSupported(go) &&
+    sc !== null &&
+    staticcheckVersionSupported(sc) &&
+    gs !== null &&
+    gosecVersionSupported(gs)
+  );
 }
 
 /**

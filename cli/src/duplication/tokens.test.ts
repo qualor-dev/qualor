@@ -127,4 +127,27 @@ describe('lineUnits', () => {
     expect(unitsOf('x = 1\n__END__\nnot ruby (\n').map((u) => u.startLine)).toEqual([1]);
     expect(unitsOf('=begin\nzz\n=end\nx = 2\n').map((u) => u.startLine)).toEqual([4]);
   });
+
+  it('tokenises Go like the other C-like languages: comments out, brackets balanced (plan 9C)', async () => {
+    const tree = (await testParsers()).parse(
+      'go',
+      'package p\n\nvar s = `a\nb` // c\n\nfunc f() {\n\tg(1,\n\t\t2)\n}\n',
+    );
+    if (tree === null) throw new Error('timeout');
+    try {
+      const u = lineUnits(tree.rootNode, 'go');
+      // [startLine, endLine, tokens, delta]; the raw string's closing backtick is a token of line 4.
+      expect(u.map((x) => [x.startLine, x.endLine, x.tokens, x.delta])).toEqual([
+        [1, 1, 2, 0],
+        [3, 4, 5, 0],
+        [4, 4, 1, 0],
+        [6, 6, 5, 1],
+        [7, 7, 4, 1],
+        [8, 8, 2, -1],
+        [9, 9, 1, -1],
+      ]);
+    } finally {
+      tree.delete();
+    }
+  });
 });

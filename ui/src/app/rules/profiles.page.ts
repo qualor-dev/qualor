@@ -38,6 +38,7 @@ const LANGUAGES: Language[] = [
   'swift',
   'php',
   'ruby',
+  'go',
   '*',
 ];
 /** data-model.md §4.4: a profile is at most the third level of its chain. */

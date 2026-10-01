@@ -32,9 +32,10 @@ export const EQUIVALENCES: Equivalences = equivalencesSchema.parse(data);
  * data-model.md §5.3: which engine's issue is primary when two engines report the same problem.
  * Higher wins; external engines (any id not listed) rank lowest. `gitleaks` > `semgrep` >
  * `spotbugs` > `roslyn` > `pmd` > `eslint` > `sonarjs` > `ruff` > `stylelint` > `htmlhint` >
- * `detekt` > `swiftlint` > `phpstan` > `rubocop` > external (plan 8D ruling D5, plan 8E ruling E4;
- * swiftlint (plan 8F): the only Swift engine; phpstan (plan 9A): the only PHP engine; rubocop
- * (plan 9B): the only Ruby engine).
+ * `detekt` > `swiftlint` > `phpstan` > `rubocop` > `staticcheck` > `govet` > `gosec` > external
+ * (plan 8D ruling D5, plan 8E ruling E4; swiftlint (plan 8F): the only Swift engine; phpstan (plan
+ * 9A): the only PHP engine; rubocop (plan 9B): the only Ruby engine; staticcheck, govet, gosec
+ * (plan 9C): the Go engines).
  */
 export const ENGINE_PRIORITY: readonly string[] = [
   'gitleaks',
@@ -51,6 +52,9 @@ export const ENGINE_PRIORITY: readonly string[] = [
   'swiftlint',
   'phpstan',
   'rubocop',
+  'staticcheck',
+  'govet',
+  'gosec',
 ];
 
 export function enginePriority(engineId: string): number {
@@ -101,6 +105,9 @@ export const EXTERNAL_BUILTIN_ALIASES: Readonly<Record<string, string>> = Object
   'ext-phpstan': 'phpstan',
   // Plan 9B; RuboCop SARIF converters keep the cop name as the rule id.
   'ext-rubocop': 'rubocop',
+  // Plan 9C: staticcheck's and gosec's own SARIF use the check ids the built-in engines use.
+  'ext-staticcheck': 'staticcheck',
+  'ext-gosec': 'gosec',
 });
 
 /** detekt 1.23 SARIF rule ids: `detekt.<rule set>.<Rule>` (`detekt.style.MagicNumber`). */

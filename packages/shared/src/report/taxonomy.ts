@@ -19,6 +19,7 @@ export const LANGUAGES = [
   'swift',
   'php',
   'ruby',
+  'go',
   'other',
 ] as const;
 export type Language = (typeof LANGUAGES)[number];
@@ -39,6 +40,9 @@ export const BUILTIN_ENGINES = [
   'swiftlint',
   'phpstan',
   'rubocop',
+  'staticcheck',
+  'govet',
+  'gosec',
 ] as const;
 export type BuiltinEngine = (typeof BUILTIN_ENGINES)[number];
 

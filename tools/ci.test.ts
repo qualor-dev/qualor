@@ -612,6 +612,82 @@ describe('install-weblint.sh (plan 8D)', () => {
   });
 });
 
+describe('install-go.sh (plan 9C)', () => {
+  const script = readFileSync('tools/analyzers/install-go.sh', 'utf8');
+  const pin = (name: string) => new RegExp(`^${name}=(.+)$`, 'm').exec(script)?.[1];
+
+  it('pins Go, staticcheck and gosec per architecture and checks each before it is unpacked', () => {
+    for (const tool of ['GO', 'STATICCHECK', 'GOSEC']) {
+      expect(pin(`${tool}_VERSION`), tool).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(pin(`${tool}_SHA256_X64`), tool).toMatch(/^[0-9a-f]{64}$/);
+      expect(pin(`${tool}_SHA256_ARM64`), tool).toMatch(/^[0-9a-f]{64}$/);
+    }
+    for (const [fetchLine, unpack] of [
+      [
+        'fetch "https://go.dev/dl/go$GO_VERSION.linux-$GO_ARCH.tar.gz" "$GO_SHA" go.tgz',
+        'tar -xzf "$TMP/go.tgz"',
+      ],
+      [
+        'fetch "$GH/dominikh/go-tools/releases/download/$STATICCHECK_VERSION/staticcheck_linux_$GO_ARCH.tar.gz" "$SC_SHA" staticcheck.tgz',
+        'tar -xzf "$TMP/staticcheck.tgz"',
+      ],
+      [
+        'fetch "$GH/securego/gosec/releases/download/v$GOSEC_VERSION/gosec_${GOSEC_VERSION}_linux_$GO_ARCH.tar.gz" "$GS_SHA" gosec.tgz',
+        'tar -xzf "$TMP/gosec.tgz"',
+      ],
+    ] as const) {
+      expect(script).toContain(fetchLine);
+      expect(script.indexOf(fetchLine)).toBeLessThan(script.indexOf(unpack));
+    }
+    expect(script).toContain('sha256sum -c -');
+    expect(script).not.toMatch(/go (get|install|mod)|latest|npx|wget/);
+  });
+
+  it('agrees with the versions the CLI runs (packages/shared/src/rules/golang.ts)', () => {
+    const shared = readFileSync('packages/shared/src/rules/golang.ts', 'utf8');
+    expect(shared).toContain(`export const GO_VERSION = '${pin('GO_VERSION')}';`);
+    expect(shared).toContain(`export const STATICCHECK_VERSION = '${pin('STATICCHECK_VERSION')}';`);
+    expect(shared).toContain(`export const GOSEC_VERSION = '${pin('GOSEC_VERSION')}';`);
+  });
+
+  it('trims the Go distribution but keeps pkg/ and src/cmd, links go and gofmt, installs the runner', () => {
+    expect(script).toContain('rm -rf api doc misc test lib/wasm');
+    expect(script).not.toMatch(/rm -rf[^\n]*\b(pkg|src\/cmd)\b/);
+    expect(script).toContain('ln -sf ../lib/go/bin/go "$PREFIX/bin/go"');
+    expect(script).toContain('install -m 0644 "$SRC/run.mjs" "$PREFIX/go/run.mjs"');
+  });
+
+  it('runs in every GitHub job that requires the analyzers, with /opt/qualor/bin first on PATH', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (uses < 0) continue;
+      const install = job.steps.findIndex((s) => s.run === 'sudo sh tools/analyzers/install-go.sh');
+      const onPath = job.steps.findIndex((s) => s.run === 'echo /opt/qualor/bin >> "$GITHUB_PATH"');
+      expect(install, name).toBeGreaterThan(0);
+      expect(onPath, name).toBeGreaterThan(install);
+      expect(uses, name).toBeGreaterThan(onPath);
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template after install.sh", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    const before = gitlab['.analyzers']?.before_script ?? [];
+    expect(before).toContain('sh tools/analyzers/install-go.sh');
+    expect(before.indexOf('sh tools/analyzers/install.sh')).toBeLessThan(
+      before.indexOf('sh tools/analyzers/install-go.sh'),
+    );
+  });
+
+  it('is installed by both images', () => {
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile'])
+      expect(readFileSync(file, 'utf8'), file).toMatch(/sh \/tmp\/install-go\.sh/);
+  });
+});
+
 describe("the CI cache of Trivy's downloads (plan 2B)", () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
   const pin = (name: string) => new RegExp(`^${name}=(.*)$`, 'm').exec(script)?.[1];

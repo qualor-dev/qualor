@@ -101,7 +101,7 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
         '--list-all-pkgs',
         '--ignorefile',
         work('trivyignore'),
-        ...skipArgs,
+        ...skipDirs().flatMap((d) => ['--skip-dirs', d]),
         '--timeout',
         '600s',
         '--format',
@@ -120,6 +120,11 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     });
     expect(typeof transform).toBe('function');
     expect(dropEnv).toBe(isTrivyVariable);
+    // The built-in directory excludes, as Trivy globs: membership, never a count (other languages
+    // add their own).
+    for (const dir of ['**/node_modules', '**/.git', '**/.build', '**/testdata']) {
+      expect(skipDirs(), dir).toContain(dir);
+    }
   });
 
   it('passes a root .trivyignore, and warns about a database older than 14 days', async () => {

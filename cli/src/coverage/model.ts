@@ -7,7 +7,7 @@ export interface BranchCounts {
   covered: number;
 }
 
-const MAX_LINE = 10_000_000;
+export const MAX_LINE = 10_000_000;
 const validLine = (line: number) => Number.isInteger(line) && line >= 1 && line <= MAX_LINE;
 
 /** One file's coverage as read from one report (ruling C12: maxima within a report). */

@@ -247,11 +247,13 @@ describe('ProfilesPage', () => {
       ['swift', 'Swift'],
       ['php', 'PHP'],
       ['ruby', 'Ruby'],
+      ['go', 'Go'],
       ['*', 'Other engines'],
     ];
     for (const entry of expected) expect(shown).toContainEqual(entry);
     const order = expected.map((e) => shown.findIndex((s) => s[0] === e[0]));
     expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(shown.at(-1)).toEqual(['*', 'Other engines']);
   });
 
   it('refuses the reserved built-in name before asking, and shows a 422 next to its field', async () => {

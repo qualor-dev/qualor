@@ -12,6 +12,7 @@ import {
   phpstanNotFinding,
 } from '../../rules/phpstan';
 import rubocopKeys from '../../../rules/rubocop-keys.json' with { type: 'json' };
+import { GOSEC_RULES, GOVET_ANALYZERS, STATICCHECK_CHECKS } from '../../rules/golang';
 import { engineOf, loadSonarMapping, SONAR_MAPPING } from './rules';
 
 /** Rulings A9-5 and A9-20: the six curated php rows (php:S4143 dropped in review). */
@@ -30,7 +31,7 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
   });
 
   it('knows no language it does not list', () => {
-    expect(SONAR_MAPPING.language('go')).toBeNull();
+    expect(SONAR_MAPPING.language('abap')).toBeNull();
   });
 
   it('maps py to the python profile, governed by ruff (plan 8C)', () => {
@@ -43,6 +44,58 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
       { key: 'swiftlint:force_cast', relation: 'equivalent', reviewed: true, source: 'repository' },
     ]);
     expect(SONAR_MAPPING.targets('swift:S1481')).toEqual([]); // SonarSource's own Swift rules: unmapped
+  });
+
+  it('maps the go language, and the statuses of go vet issues SonarQube imported (plan 9C)', () => {
+    expect(SONAR_MAPPING.language('go')).toEqual({
+      language: 'go',
+      engines: ['staticcheck', 'govet', 'gosec'],
+    });
+    expect(SONAR_MAPPING.targets('external_govet:printf')).toEqual([
+      { key: 'govet:printf', relation: 'equivalent', reviewed: true, source: 'repository' },
+    ]);
+    // golangci-lint's SonarQube keys are linter names, not checks: never mapped.
+    expect(SONAR_MAPPING.targets('external_golangci-lint:govet')).toEqual([]);
+    expect(SONAR_MAPPING.targets('go:S1656')).toEqual([
+      { key: 'staticcheck:SA4018', relation: 'equivalent', reviewed: true, source: 'table' },
+    ]);
+    // Same idea, different scope (staticcheck leaves float operands and shifts alone): overlap.
+    expect(SONAR_MAPPING.targets('go:S1764')).toEqual([
+      { key: 'staticcheck:SA4000', relation: 'overlap', reviewed: true, source: 'table' },
+    ]);
+    expect(SONAR_MAPPING.targets('go:S9999')).toEqual([]);
+  });
+
+  /** go: rows compared against the SonarQube rule's public description (ruling G9-16). */
+  const GO_REVIEWED = new Set(['go:S1656', 'go:S1764', 'go:S1763', 'go:S108']);
+
+  it('names only rule ids the pinned Go tools have in every go row, reviewed only where compared, with our own short reasons (plan 9C)', () => {
+    const known = (key: string) => {
+      const [engine, id = ''] = key.split(':');
+      if (engine === 'staticcheck') return STATICCHECK_CHECKS.has(id);
+      if (engine === 'govet') return GOVET_ANALYZERS.has(id);
+      if (engine === 'gosec') return GOSEC_RULES.has(id);
+      return false;
+    };
+    const rows = raw.rules.filter((r) => r.sonar.some((s) => s.startsWith('go:')));
+    expect(rows.length).toBe(18);
+    // Ruling G9-16: S1125 (scope disjoint from S1002) is not mapped at all.
+    expect(SONAR_MAPPING.targets('go:S1125')).toEqual([]);
+    for (const row of rows) {
+      expect(
+        row.sonar.every((s) => s.startsWith('go:')),
+        row.sonar.join(),
+      ).toBe(true);
+      expect(row.reviewed, row.sonar.join()).toBe(GO_REVIEWED.has(row.sonar.join()));
+      for (const q of row.qualor) expect(known(q), q).toBe(true);
+      // The table schema caps every reason at 120 characters (the "holds no SonarSource text" test).
+      expect(row.reason.length, row.sonar.join()).toBeLessThanOrEqual(120);
+    }
+    // Only a row whose SonarQube rule's public description matches the target's scope is
+    // equivalent (ruling B9-11's rule, applied to Go).
+    expect(rows.filter((r) => r.relation === 'equivalent').map((r) => r.sonar.join())).toEqual([
+      'go:S1656',
+    ]);
   });
 
   it('maps external_ruff statuses one to one, for codes the pinned Ruff has only', () => {
@@ -389,14 +442,16 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     },
   );
 
-  it('ships every curated entry unreviewed except the python, php and ruby entries, which are reviewed', () => {
+  it('ships every python, php and ruby entry and the compared go entries reviewed, and every other curated entry unreviewed', () => {
     // python: rows were reviewed on 2026-10-01 (see the file's $comment), php: rows by plan 9A
-    // (ruling A9-5), ruby: rows by plan 9B (ruling B9-4); the rest await a person.
+    // (ruling A9-5), ruby: rows by plan 9B (ruling B9-4), and the go: rows with a public SonarQube
+    // description by plan 9C (ruling G9-16); the rest await a person.
     for (const entry of raw.rules) {
       const reviewedLanguage = entry.sonar.every(
         (s) => s.startsWith('python:') || s.startsWith('php:') || s.startsWith('ruby:'),
       );
-      expect(entry.reviewed, entry.sonar.join(',')).toBe(reviewedLanguage);
+      const go = GO_REVIEWED.has(entry.sonar.join());
+      expect(entry.reviewed, entry.sonar.join(',')).toBe(reviewedLanguage || go);
     }
   });
 
@@ -420,6 +475,7 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     python: 'py',
     php: 'php',
     ruby: 'ruby',
+    go: 'go',
   };
 
   it("keeps every curated target, and every repository row's engine, to an engine of its SonarQube rule's language", () => {

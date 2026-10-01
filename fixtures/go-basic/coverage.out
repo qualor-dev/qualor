@@ -1,0 +1,16 @@
+mode: set
+example.com/gobasic/store/store.go:17.2,18.1 1 1
+example.com/gobasic/store/store.go:22.2,25.1 3 1
+example.com/gobasic/store/store.go:29.2,30.28 2 1
+example.com/gobasic/store/store.go:31.3,31.12 1 1
+example.com/gobasic/store/store.go:32.4,33.1 1 1
+example.com/gobasic/store/store.go:35.2,35.12 1 1
+example.com/gobasic/store/store.go:40.2,41.1 1 0
+example.com/gobasic/store/store.go:45.2,46.1 1 0
+example.com/gobasic/store/store.go:50.2,50.30 1 0
+example.com/gobasic/store/store.go:51.3,52.1 1 0
+example.com/gobasic/store/store.go:52.9,52.23 1 0
+example.com/gobasic/store/store.go:53.3,54.1 1 0
+example.com/gobasic/store/store.go:55.2,55.12 1 0
+example.com/gobasic/store/store.go:60.2,61.1 1 0
+example.com/gobasic/cmd/gobasic/main.go:11.2,14.1 3 0

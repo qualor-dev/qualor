@@ -26,11 +26,22 @@ All notable changes to Qualor are listed here, newest first. The format follows
   `qualor import sonarqube` imports Ruby profiles where a RuboCop cop checks the same thing (two
   rules are equivalent and activate their cop; the others are overlaps that only import issue
   statuses), and keeps the statuses of issues SonarQube imported from RuboCop.
+- Go: `.go` files are language `go`, with metrics, duplication and a `go` quality profile, and three
+  engines run from `qualor/scanner`: `staticcheck` (staticcheck 2026.2.1), `govet` (go vet of Go
+  1.27.1) and `gosec` (gosec 2.29.0, security; G104, G115 and G304 left out by default). They analyse each
+  Go module offline: run `go mod download` (or vendor your dependencies) before `qualor scan`; a
+  package whose dependencies are missing is not analysed and the log says so. Nothing the repository
+  asks for is run (no `go generate`, no other toolchain, no cgo), and a module that replaces a
+  dependency with an outside directory or links out of the repository is skipped. Go coverage
+  profiles (`go test -coverprofile`) import as the new `gocover` format. `qualor import sonarqube`
+  maps the statuses of issues SonarQube imported from go vet, and 18 curated `go:` rules (statuses
+  only until reviewed).
 
 ### Changed
 
-- A report that holds PHP or Ruby files, or `phpstan` or `rubocop` findings, is refused (422) by
-  a Qualor server older than this release: upgrade the server before the scanner.
+- A report that holds PHP, Ruby or Go files, or findings of the `phpstan`, `rubocop`,
+  `staticcheck`, `govet` or `gosec` engine, is refused (422) by a Qualor server older than this
+  release: upgrade the server before the scanner.
 - `.php` files were language `other`; they now count in lines of code, complexity and
   duplication, and `*Test.php` files are test files by default.
 - PHPStan is skipped when `composer.json` requires packages but `vendor/` is not installed: run
@@ -46,6 +57,15 @@ All notable changes to Qualor are listed here, newest first. The format follows
   validates. Qualor runs RuboCop itself: remove your own RuboCop SARIF import; one you keep is
   reported as `ext-rubocop` and counts once with the built-in finding.
 - `qualor/scanner` grows by about 9 MB compressed (Ruby and RuboCop).
+- `**/testdata/**` and `**/*.pb.go` are built-in excludes (Trivy's `--skip-dirs` included); the
+  `testdata/` exclude applies to every language, so secret and dependency scanning skip it too, and
+  `**/*_test.go` files are tests by default. `.go` files were `other` and now count in lines of
+  code and duplication.
+- `staticcheck`, `govet` and `gosec` are reserved engine ids: a `qualor.yml` `sarif:` entry with one
+  of them fails validation. A SARIF of your own from staticcheck or gosec becomes `ext-staticcheck`
+  or `ext-gosec` and is counted once with the built-in finding; remove it, Qualor runs these tools
+  itself.
+- `qualor/scanner` is about 77 MB larger (compressed) with the Go toolchain.
 
 ## [0.3.1] - 2026-10-01
 

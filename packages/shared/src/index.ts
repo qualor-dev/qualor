@@ -16,6 +16,7 @@ export * from './rules/ruff';
 export * from './rules/swiftlint';
 export * from './rules/phpstan';
 export * from './rules/rubocop';
+export * from './rules/golang';
 export * from './markdown/code-span';
 export * from './fixtures';
 export * from './import/sonarqube/api';

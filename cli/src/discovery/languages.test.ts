@@ -32,6 +32,12 @@ describe('detectLanguage', () => {
       expect(detectLanguage(p, 'auto')).toEqual({ language: 'other', grammar: null });
     }
     expect(detectLanguage('a.py', ['java']).language).toBe('other');
+    expect(detectLanguage('store/store.go', 'auto')).toEqual({ language: 'go', grammar: 'go' });
+    expect(detectLanguage('cmd/MAIN.GO', 'auto').language).toBe('go');
+    for (const p of ['go.mod', 'go.sum', 'go.work', 'a.gox']) {
+      expect(detectLanguage(p, 'auto')).toEqual({ language: 'other', grammar: null });
+    }
+    expect(detectLanguage('a.go', ['java']).language).toBe('other');
   });
 
   it('treats unknown extensions, dotfiles and extension-less files as other', () => {

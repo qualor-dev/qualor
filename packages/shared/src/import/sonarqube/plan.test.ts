@@ -195,7 +195,7 @@ describe('planProfile (import-sonarqube.md §7)', () => {
   });
 
   it('skips unsupported languages, reserved or invalid names, and incompletely read profiles', () => {
-    expect(planProfile(profile({ language: 'go' })).skip).toBe('language_unsupported');
+    expect(planProfile(profile({ language: 'abap' })).skip).toBe('language_unsupported');
     expect(planProfile(profile({ name: 'qualor  WAY' })).skip).toBe('name_reserved');
     expect(planProfile(profile({ name: 'x'.repeat(101) })).skip).toBe('name_invalid');
     expect(planProfile(profile({ name: '   ' })).skip).toBe('name_invalid');
@@ -222,6 +222,30 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.skip).toBe('no_mapped_rules');
     expect(plan.rows).toEqual([]);
     expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['swift:S1481']);
+  });
+
+  it('plans a go profile: external_govet rows activate go vet analyzers; reviewed go equivalents activate, overlaps import statuses (plan 9C, G9-16)', () => {
+    const plan = planProfile(
+      profile({
+        language: 'go',
+        active: [
+          rule('external_govet:printf', { language: 'go' }),
+          rule('go:S1656', { language: 'go' }),
+          rule('go:S1764', { language: 'go' }),
+          rule('go:S2068', { language: 'go' }),
+          rule('go:S1135', { language: 'go' }),
+        ],
+      }),
+    );
+    expect(plan.language).toBe('go');
+    expect(plan.skip).toBeNull();
+    expect(plan.rows).toEqual([
+      { ruleKey: 'govet:printf', active: true, severityOverride: null },
+      { ruleKey: 'staticcheck:SA4018', active: true, severityOverride: null },
+    ]);
+    expect(plan.stats.pendingReview).toEqual([]);
+    expect(plan.stats.statusOnly).toEqual(['go:S1764', 'go:S2068']);
+    expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['go:S1135']);
   });
 
   it('never turns off a target whose left-off rule is an unreviewed equivalent', () => {
@@ -285,10 +309,10 @@ describe('planProfile (import-sonarqube.md §7)', () => {
       if (p.skip !== null) expect(p.rows).toEqual([]);
     }
     // A language Qualor does not analyse is not classified: nothing of it is counted.
-    const go = planProfile(profile({ language: 'go', active }));
-    expect(go.skip).toBe('language_unsupported');
-    expect(add(go)).toBe(0);
-    expect(go.stats.active).toBe(0);
+    const abap = planProfile(profile({ language: 'abap', active }));
+    expect(abap.skip).toBe('language_unsupported');
+    expect(add(abap)).toBe(0);
+    expect(abap.stats.active).toBe(0);
   });
 
   it('lists customised parameters as not imported', () => {

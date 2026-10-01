@@ -413,6 +413,7 @@
               "swift",
               "php",
               "ruby",
+              "go",
               "other"
             ]
           },
