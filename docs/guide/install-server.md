@@ -28,10 +28,10 @@ first release is `0.1.0`.
 | [`qualor/scanner`](https://hub.docker.com/r/qualor/scanner) | the `qualor` CLI (its entrypoint), Node.js, a JRE 17, git and the pinned analyzers, with Trivy's database | ~3.5 GB |
 | [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet) | `qualor/scanner` plus the .NET 8 and .NET 10 SDKs and Roslynator, for C# | ~5.3 GB |
 
-**Tags.** Every release is tagged with its full version (`0.2.0`) and its minor version (`0.2`), which
+**Tags.** Every release is tagged with its full version (`0.3.0`) and its minor version (`0.3`), which
 moves to the newest patch release of that minor. While Qualor is in 0.x there is no `0` tag: a new
 minor version may change behaviour, so you move to it on purpose. From 1.0 on, releases are also
-tagged with their major version (`1`). The examples use `0.2`. Pin the full version where you want
+tagged with their major version (`1`). The examples use `0.3`. Pin the full version where you want
 every pipeline to run exactly the same analyzers. Keep the server and the scanner on the same
 release. Never use `latest`.
 
@@ -41,7 +41,7 @@ what you verified by digest. The signatures are not recorded in the public Rekor
 so cosign needs `--insecure-ignore-tlog=true` (without it, it looks for a log entry and fails):
 
 ```sh
-cosign verify --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true qualor/server:0.2
+cosign verify --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true qualor/server:0.3
 ```
 
 The source of the copyleft components in each image is published next to it, as `qualor/server-sources`
@@ -52,9 +52,9 @@ everywhere below:
 
 ```sh
 for image in server scanner scanner-dotnet; do
-  docker pull qualor/$image:0.2
-  docker tag  qualor/$image:0.2 mirror.acme.internal/qualor/$image:0.2
-  docker push mirror.acme.internal/qualor/$image:0.2
+  docker pull qualor/$image:0.3
+  docker tag  qualor/$image:0.3 mirror.acme.internal/qualor/$image:0.3
+  docker push mirror.acme.internal/qualor/$image:0.3
 done
 ```
 
@@ -119,7 +119,7 @@ Create `.env` with generated secrets. It must be readable only by you:
 cd /opt/qualor
 umask 077
 cat > .env <<EOF
-QUALOR_VERSION=0.2
+QUALOR_VERSION=0.3
 QUALOR_SECRET_KEY=$(openssl rand -hex 32)
 QUALOR_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)
 # The address users and CI open Qualor at (links in MR/PR comments, the GitHub webhook URL):
@@ -199,7 +199,7 @@ ingress:
 Install, wait, and read the first admin password:
 
 ```sh
-helm install qualor oci://registry-1.docker.io/qualor/qualor --version 0.2.0 -n qualor -f values.yaml
+helm install qualor oci://registry-1.docker.io/qualor/qualor --version 0.3.0 -n qualor -f values.yaml
 kubectl -n qualor rollout status statefulset/qualor
 kubectl -n qualor get secret qualor-secrets -o jsonpath='{.data.QUALOR_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d
 ```
@@ -312,8 +312,8 @@ admits it:
 
 ```sh
 kubectl -n qualor scale statefulset/qualor --replicas=0
-kubectl -n qualor run qualor-restore --rm -i --restart=Never --image=qualor/server:0.2.0 \
-  --overrides='{"spec":{"automountServiceAccountToken":false,"enableServiceLinks":false,"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"runAsGroup":65532,"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch","seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"data-qualor-0"}},{"name":"tmp","emptyDir":{"sizeLimit":"64Mi"}}],"containers":[{"name":"qualor-restore","image":"qualor/server:0.2.0","imagePullPolicy":"IfNotPresent","args":["restore"],"stdin":true,"stdinOnce":true,"env":[{"name":"QUALOR_SECRET_KEY","valueFrom":{"secretKeyRef":{"name":"qualor-secrets","key":"QUALOR_SECRET_KEY"}}}],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"data","mountPath":"/var/lib/qualor"},{"name":"tmp","mountPath":"/tmp"}]}]}}' \
+kubectl -n qualor run qualor-restore --rm -i --restart=Never --image=qualor/server:0.3.0 \
+  --overrides='{"spec":{"automountServiceAccountToken":false,"enableServiceLinks":false,"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"runAsGroup":65532,"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch","seccompProfile":{"type":"RuntimeDefault"}},"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"data-qualor-0"}},{"name":"tmp","emptyDir":{"sizeLimit":"64Mi"}}],"containers":[{"name":"qualor-restore","image":"qualor/server:0.3.0","imagePullPolicy":"IfNotPresent","args":["restore"],"stdin":true,"stdinOnce":true,"env":[{"name":"QUALOR_SECRET_KEY","valueFrom":{"secretKeyRef":{"name":"qualor-secrets","key":"QUALOR_SECRET_KEY"}}}],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"data","mountPath":"/var/lib/qualor"},{"name":"tmp","mountPath":"/tmp"}]}]}}' \
   < qualor-YYYY-MM-DD.dump
 kubectl -n qualor scale statefulset/qualor --replicas=1
 ```
@@ -458,7 +458,7 @@ With an [external PostgreSQL](#external-postgresql), use its own tools: `pg_dump
 1. Read the release notes.
 2. Back up the database (above).
 3. Set the new version in `.env` (`QUALOR_VERSION=0.3.0`, or its minor tag `0.3`). With the minor tag
-   `0.2`, patch releases (`0.2.1`, `0.2.2`) need no change here; a new minor version needs a new tag.
+   `0.3`, patch releases (`0.3.1`, `0.3.2`) need no change here; a new minor version needs a new tag.
    Then:
 
    ```sh
@@ -471,7 +471,7 @@ With an [external PostgreSQL](#external-postgresql), use its own tools: `pg_dump
    On Kubernetes:
 
    ```sh
-   helm upgrade qualor oci://registry-1.docker.io/qualor/qualor --version 0.2.0 -n qualor -f values.yaml
+   helm upgrade qualor oci://registry-1.docker.io/qualor/qualor --version 0.3.0 -n qualor -f values.yaml
    ```
 
    Migrations run the same way; with the embedded database the pod is replaced, not doubled.
@@ -521,7 +521,7 @@ A daily housekeeping job deletes old data:
 Each scanner image carries a snapshot of Trivy's vulnerability database from the day it was built,
 and the scan never downloads one. Reports carry the database date, and a scan warns with
 `VULNERABILITY_DB_STALE` once it is more than 14 days old. Keep the scanner on a current release
-(the minor tag `0.2` does that for its patch releases), or fetch a fresh database in the job and
+(the minor tag `0.3` does that for its patch releases), or fetch a fresh database in the job and
 point `QUALOR_TRIVY_CACHE_DIR` at it; see [Languages and analyzers](./languages-and-analyzers.md#dependencies-trivy).
 
 Building the images from source is described in [`deploy/README.md`](../../deploy/README.md), for

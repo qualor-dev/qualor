@@ -18,8 +18,8 @@ code, and the smaller `qualor/scanner` for the rest.
 
 ### Tags
 
-The same tags as `qualor/scanner`: the full version, such as `0.2.0`, and the minor tag, such as
-`0.2`. There is no `latest` tag.
+The same tags as `qualor/scanner`: the full version, such as `0.3.0`, and the minor tag, such as
+`0.3`. There is no `latest` tag.
 
 ### What it adds to qualor/scanner
 
@@ -49,10 +49,10 @@ GitLab CI, with the component from the GitLab CI/CD catalog:
 
 ```yaml
 include:
-  - component: gitlab.com/qualor/qualor/qualor@0.2
+  - component: gitlab.com/qualor/qualor/qualor@0.3
     inputs:
       image: qualor/scanner-dotnet
-      image-tag: '0.2'
+      image-tag: '0.3'
       dotnet: true
       build-command: dotnet build MySolution.sln --no-incremental
 ```
@@ -61,7 +61,7 @@ Or in a job of your own:
 
 ```yaml
 qualor:
-  image: { name: qualor/scanner-dotnet:0.2, entrypoint: [''] }
+  image: { name: qualor/scanner-dotnet:0.3, entrypoint: [''] }
   variables: { GIT_DEPTH: 0 }
   script:
     - qualor dotnet begin
