@@ -331,7 +331,8 @@ are test files by default.
 The `qualor/scanner` image runs three Go analyzers on every Go module in your repository (each
 `go.mod` and the `.go` files below it): **staticcheck** 2026.2.1, **go vet** of Go 1.27.1, and
 **gosec** 2.29.0 for security. Your `staticcheck.conf`, `//lint:ignore` and `#nosec` comments are
-honoured; `.golangci.yml` is not read.
+honoured; `.golangci.yml` is not read. staticcheck reads `staticcheck.conf` as a settings file
+only; nothing in it is run.
 
 They type-check your code, so they need your dependencies. Qualor never downloads them: it runs
 offline. Give them to it in the scan job:
@@ -351,7 +352,9 @@ Files that use cgo (`import "C"`) are left out (cgo is switched off, `CGO_ENABLE
 package that needs them is reported the same way.
 
 For safety, Qualor never runs anything the repository asks for: no `go generate`, no other Go
-toolchain (`toolchain` and `GOTOOLCHAIN` are ignored), no C compiler, no module download. A module
+toolchain (`toolchain` and `GOTOOLCHAIN` are ignored), no C compiler, no module download.
+`GOFLAGS` from the CI job and a `go.work` file in the repository are ignored too (`GOFLAGS` is
+emptied and `GOWORK=off` is set), so each module is analysed on its own. A module
 whose `go` line needs a newer Go than 1.27.1, whose `replace` points at a directory outside the
 repository, or that contains a symbolic link out of it, is skipped with a log line.
 
@@ -539,7 +542,8 @@ coverage:
 
 A Go profile names files by import path; Qualor finds them by their path suffix. Use
 `-coverpkg=./...` to count code that other packages' tests run. A profile that holds more than 20
-million lines is read as far as that limit, and the import warns that it was truncated.
+million lines is read as far as that limit, and the import warns that it was truncated. A profile
+larger than 128 MiB is refused: it is ignored with a warning.
 
 Or pass `--coverage <path>` on the command line. Test files are excluded from coverage. If a scan
 imports no coverage report at all, the coverage conditions have **no value**, and they do not fail the
