@@ -35,6 +35,30 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     expect(SONAR_MAPPING.targets('swift:S1481')).toEqual([]); // SonarSource's own Swift rules: unmapped
   });
 
+  it('maps the c and cpp languages and their curated keys, unreviewed (plan 9D, ruling C1)', () => {
+    for (const l of ['c', 'cpp'] as const) {
+      expect(SONAR_MAPPING.language(l)).toEqual({
+        language: l,
+        engines: ['cppcheck', 'clang-tidy'],
+      });
+    }
+    for (const key of ['c:S2259', 'cpp:S2259']) {
+      expect(SONAR_MAPPING.targets(key).map((t) => t.key)).toEqual([
+        'cppcheck:nullPointer',
+        'cppcheck:nullPointerRedundantCheck',
+        'clang-tidy:clang-analyzer-core.NullDereference',
+      ]);
+      expect(
+        SONAR_MAPPING.targets(key).every((t) => t.reviewed === false && t.relation === 'overlap'),
+      ).toBe(true);
+    }
+    expect(SONAR_MAPPING.targets('cpp:S1232').map((t) => t.key)).toContain(
+      'cppcheck:mismatchAllocDealloc',
+    );
+    expect(SONAR_MAPPING.targets('c:S1232')).toEqual([]); // C has no new/delete rule
+    expect(SONAR_MAPPING.targets('c:M23_142')).toEqual([]); // MISRA keys: unmapped
+  });
+
   it('maps external_ruff statuses one to one, for codes the pinned Ruff has only', () => {
     expect(SONAR_MAPPING.targets('external_ruff:SIM113')).toEqual([
       { key: 'ruff:SIM113', relation: 'equivalent', reviewed: true, source: 'repository' },
@@ -277,6 +301,8 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     squid: 'java',
     csharpsquid: 'cs',
     python: 'py',
+    c: 'c',
+    cpp: 'cpp',
   };
 
   it("keeps every curated target, and every repository row's engine, to an engine of its SonarQube rule's language", () => {
