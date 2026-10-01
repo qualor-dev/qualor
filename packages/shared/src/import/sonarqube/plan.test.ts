@@ -383,14 +383,16 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'python:S9999' })]);
   });
 
-  it('plans a ruby profile: reviewed ruby rows and external_rubocop rows activate cops; one qualor-default does not run is counted (plan 9B)', () => {
-    // ruby:S8423 → Lint/CircularArgumentReference (run by qualor-default);
-    // ruby:S7916 → Style/AndOr (equivalent, but outside qualor-default: mapped, not run).
+  it('plans a ruby profile: reviewed equivalent ruby rows and external_rubocop rows activate cops; overlap rows are status only (plan 9B)', () => {
+    // Rulings B9-11/B9-12: external_rubocop:Lint/UselessAssignment activates a cop qualor-default
+    // runs; ruby:S1066 → Style/SoleNestedConditional is equivalent but outside qualor-default
+    // (mapped, not run); ruby:S8423 and ruby:S7916 are overlaps, so status only.
     const ruby = (key: string) => rule(key, { language: 'ruby' });
     const plan = planProfile(
       profile({
         language: 'ruby',
         active: [
+          ruby('ruby:S1066'),
           ruby('ruby:S8423'),
           ruby('ruby:S7916'),
           ruby('external_rubocop:Lint/UselessAssignment'),
@@ -401,13 +403,12 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.skip).toBeNull();
     expect(plan.language).toBe('ruby');
     expect(plan.rows).toEqual([
-      { ruleKey: 'rubocop:Lint/CircularArgumentReference', active: true, severityOverride: null },
       { ruleKey: 'rubocop:Lint/UselessAssignment', active: true, severityOverride: null },
-      { ruleKey: 'rubocop:Style/AndOr', active: true, severityOverride: null },
+      { ruleKey: 'rubocop:Style/SoleNestedConditional', active: true, severityOverride: null },
     ]);
-    expect(plan.stats.mappedNotRun).toEqual(['ruby:S7916']);
+    expect(plan.stats.mappedNotRun).toEqual(['ruby:S1066']);
     expect(plan.stats.pendingReview).toEqual([]);
-    expect(plan.stats.statusOnly).toEqual([]);
+    expect(plan.stats.statusOnly).toEqual(['ruby:S8423', 'ruby:S7916']);
     expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'ruby:S9999' })]);
   });
 

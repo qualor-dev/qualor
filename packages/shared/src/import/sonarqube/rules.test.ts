@@ -131,17 +131,18 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
       expect(row.reason.length, id).toBeLessThanOrEqual(120);
       expect(row.reason, id).not.toMatch(/[\r\n]/);
     }
-    // Pinned by plan.test.ts: one row qualor-default runs, one it does not, both equivalent.
-    // (ruby:S8423 replaces the brief's ruby:S1764, which the review found to be an overlap.)
-    for (const [sonar, cop] of [
-      ['ruby:S8423', 'rubocop:Lint/CircularArgumentReference'],
-      ['ruby:S7916', 'rubocop:Style/AndOr'],
-    ] as const) {
-      expect(rows.find((r) => r.sonar.includes(sonar))).toMatchObject({
-        qualor: [cop],
-        relation: 'equivalent',
-      });
+    // Pinned by plan.test.ts (ruling B9-12): ruby:S1066 is equivalent but outside
+    // qualor-default; ruby:S8423 and ruby:S7916 are overlaps (ruling B9-11: rubydre-only rules
+    // have a public name only), so they stay status only.
+    const pinned = [
+      ['ruby:S1066', 'rubocop:Style/SoleNestedConditional', 'equivalent'],
+      ['ruby:S8423', 'rubocop:Lint/CircularArgumentReference', 'overlap'],
+      ['ruby:S7916', 'rubocop:Style/AndOr', 'overlap'],
+    ] as const;
+    for (const [sonar, cop, relation] of pinned) {
+      expect(rows.find((r) => r.sonar.includes(sonar))).toMatchObject({ qualor: [cop], relation });
     }
+    expect(SONAR_MAPPING.runByBundledConfig('rubocop:Style/SoleNestedConditional')).toBe(false);
   });
 
   it('maps csharpsquid rules the bundled SonarAnalyzer has to roslyn, one to one', () => {
