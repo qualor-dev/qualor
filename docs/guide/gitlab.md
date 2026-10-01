@@ -138,6 +138,9 @@ qualor:
 A C# project uses `qualor/scanner-dotnet` and wraps its own build. See
 [Languages and analyzers](./languages-and-analyzers.md#c).
 
+Go: run `go mod download` before `qualor scan` in the same job (see
+[Languages and analyzers](./languages-and-analyzers.md#go-staticcheck-go-vet-gosec)).
+
 ## 3. Merge request comments and commit status
 
 In Qualor, an **org admin** opens **Settings → GitLab**:

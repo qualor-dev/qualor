@@ -61,6 +61,13 @@ Swift quality profiles are read but have nothing to map, because SonarSource's o
 not SwiftLint's rules. The statuses of SwiftLint issues that SonarQube imported
 (`external_swiftlint`) carry over.
 
+Go coverage profiles are read. The statuses of go vet issues that SonarQube imported
+(`external_govet`) carry over. 18 of SonarSource's `go:` rules have a curated counterpart in
+staticcheck or gosec: `go:S1656` is equivalent to staticcheck's `SA4018`, three more overlap
+(reviewed against the public descriptions), and the other 14, mostly security rules matched to
+gosec by name, are unreviewed. The other rows only overlap or are unreviewed, so they import issue
+statuses only. golangci-lint's imported issues (`external_golangci-lint`) are not mapped.
+
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says
 so. SonarQube's `css` and `Web` rules are not mapped yet.

@@ -23,6 +23,8 @@ The same tags as `qualor/scanner`: the full version, such as `0.3.1`, and the mi
 
 ### What it adds to qualor/scanner
 
+Everything in `qualor/scanner` stays, the Go analyzers (staticcheck, go vet and gosec) included.
+
 - The .NET SDKs 8.0.425 and 10.0.401, in `/opt/qualor/share/dotnet` (`DOTNET_ROOT`), with the
   .NET CLI telemetry turned off (`DOTNET_CLI_TELEMETRY_OPTOUT=1`).
 - The Roslynator analyzers 5.0.0, bundled in `/opt/qualor/dotnet/analyzers`

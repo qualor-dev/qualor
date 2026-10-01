@@ -6,6 +6,32 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Go: `.go` files are language `go`, with metrics, duplication and a `go` quality profile, and three
+  engines run from `qualor/scanner`: `staticcheck` (staticcheck 2026.2.1), `govet` (go vet of Go
+  1.27.1) and `gosec` (gosec 2.29.0, security; G104 and G115 left out by default). They analyse each
+  Go module offline: run `go mod download` (or vendor your dependencies) before `qualor scan`; a
+  package whose dependencies are missing is not analysed and the log says so. Nothing the repository
+  asks for is run (no `go generate`, no other toolchain, no cgo), and a module that replaces a
+  dependency with an outside directory or links out of the repository is skipped. Go coverage
+  profiles (`go test -coverprofile`) import as the new `gocover` format. `qualor import sonarqube`
+  maps the statuses of issues SonarQube imported from go vet, and 18 curated `go:` rules (statuses
+  only until reviewed).
+
+### Changed
+
+- `**/testdata/**` and `**/*.pb.go` are built-in excludes (Trivy's `--skip-dirs` included), and
+  `**/*_test.go` files are tests by default. `.go` files were `other` and now count in lines of
+  code and duplication.
+- `staticcheck`, `govet` and `gosec` are reserved engine ids: a `qualor.yml` `sarif:` entry with one
+  of them fails validation. A SARIF of your own from staticcheck or gosec becomes `ext-staticcheck`
+  or `ext-gosec` and is counted once with the built-in finding; remove it, Qualor runs these tools
+  itself.
+- `qualor/scanner` is about 77 MB larger (compressed) with the Go toolchain.
+- A report that holds Go files or the `staticcheck`, `govet` or `gosec` engine is refused (422) by
+  a Qualor server older than this release: upgrade the server before the scanner.
+
 ## [0.3.1] - 2026-10-01
 
 ### Added
