@@ -23,13 +23,18 @@ baseline depends on what is analysed:
 | another branch | `merge-base(revision, reference branch)`, by default the main branch |
 | the main branch | the project's **new-code definition**, below |
 
-New-code definitions for the main branch (`newCodeDefinition` of the project, set through the API):
+New-code definitions for the main branch. Set one in **Project → Settings → New code**, or through the
+API (`newCodeDefinition`, see [Projects](./users-projects-tokens.md#projects)):
 
 | Definition | Baseline |
 |---|---|
-| `{ "type": "days", "value": 30 }` (default) | the oldest analysis of the last 30 days |
-| `{ "type": "previous_version" }` | the latest analysis with another `project.version`, for example `${CI_COMMIT_TAG}` |
-| `{ "type": "analysis", "analysisId": "…" }` | a fixed analysis |
+| `{ "type": "days", "value": 30 }` (default); **Default (30 days)** or **Last days** in the UI | the oldest analysis of the last 30 days (**Last days** takes 1 to 3650) |
+| `{ "type": "previous_version" }`; **Since the previous version** | the latest analysis with another `project.version`, for example `${CI_COMMIT_TAG}` |
+| `{ "type": "analysis", "analysisId": "…" }`; **From a specific analysis** | a fixed analysis, chosen from the main branch's recent analyses |
+
+Under the choices the panel shows the analysis that new code is currently measured from. It warns
+when no analysis has a version label yet (the last 30 days are used instead) and when the chosen
+analysis is no longer available.
 
 An issue is **new** when its line lies in new code. So a newly enabled rule that flags old lines does
 not suddenly fail merge requests.
@@ -142,3 +147,27 @@ shown.
 
 Merge requests and branches inherit the statuses of the target branch. A false positive marked on
 `main` stays a false positive in every merge request.
+
+## Browsing the code
+
+A project's **Code** tab lists the analysed files by directory, with lines of code, complexity,
+coverage, duplication and open issues for each entry. Open a directory to go deeper, sort by
+pressing a column heading, and use the branch picker to look at another branch or a merge request.
+On a branch's overview, **Browse code** opens the tab for that branch.
+
+A file's page shows its measures, its duplicated blocks and its issues, and a **Line map**: a strip
+for the whole file with four lanes, **Coverage**, **New code**, **Duplicated blocks** and **Issues,
+by severity**. Hover over or focus a mark to read what it is. Links from the issue list or the
+duplicated blocks jump to a line (the address ends in `#L<line>`).
+
+**Source code stays in your repository.** Qualor keeps measures, line numbers and messages, never
+the text of your files. The map shows where things are, not the code itself; open the file in your
+repository's own viewer to read it.
+
+## Related locations
+
+Some analyzers report an issue together with the other places that explain it, for example the line
+that assigned a bad value. SARIF calls them related locations, and Qualor keeps the ones in the
+SARIF reports it receives. An issue that has some shows **Related locations** on its page: a
+numbered list in the analyzer's order, each with its message and a link to that file and line in the
+Code tab. An issue without any shows no such panel.

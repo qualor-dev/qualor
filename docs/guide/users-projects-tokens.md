@@ -92,11 +92,27 @@ each with its own key and its own `sources.include`.
   `/` and `:`.
 - **The main branch** is `main` by default. Every other branch and every merge request is compared
   with it.
-- **Deleting** a project needs its key as confirmation. The API call is
-  `DELETE /api/v0/projects/<id>?confirm=<key>`.
+- **Deleting** a project needs its key as confirmation; see **Danger zone** below.
 
-Some project settings have no screen in the UI yet. Set them with `PATCH /api/v0/projects/<id>` (the
-project id is in the project's URL), using a personal token with the **Admin** scope:
+### Project settings
+
+A project's **Settings** tab has these panels, and shows each person only the ones they may use:
+
+| Panel | What it does | Who sees it |
+|---|---|---|
+| **New code** | how new code is defined on the main branch ([Quality gates](./quality-gates.md#new-code)) | Project admin, Organization admin |
+| **Quality gate and profiles** | the project's **Quality gate** (without a choice the organisation's default applies) and the **Quality profile per language** | Project admin, Organization admin |
+| **Main branch** | the name of the main branch. Analyses of the previous main branch stay on that branch, and new code on the new one starts from its own analyses | Project admin, Organization admin |
+| **Analysis tokens** | create and revoke the project's analysis tokens ([below](#project-analysis-tokens)) | Project admin, Organization admin |
+| **Webhooks** | webhooks that fire for this project only ([Webhooks](./webhooks-and-api.md#webhooks)) | Organization admin |
+| **Danger zone** | **Delete project** | Organization admin |
+
+Deleting a project removes its branches and merge requests, analyses, issues and their history,
+analysis tokens and project webhooks, and cannot be undone. **Delete project** asks you to type the
+project key before it deletes anything. The API call is `DELETE /api/v0/projects/<id>?confirm=<key>`.
+
+The same settings are available through `PATCH /api/v0/projects/<id>` (the project id is in the
+project's URL), using a personal token with the **Admin** scope:
 
 ```sh
 curl -fsS -X PATCH -H "Authorization: Bearer $QUALOR_ADMIN_TOKEN" -H 'Content-Type: application/json' \
@@ -139,7 +155,10 @@ A token has the rights that both its scopes and its user's role allow.
 ### Project analysis tokens
 
 A project token can **only upload analyses to its one project**. It is the best token for CI. Create
-one with a personal token that has the Admin scope:
+one in **Project → Settings → Analysis tokens** with **New token**: give it a name and, if you like,
+an **Expires after** period. Qualor shows the token once; press **Done** when you have stored it.
+**Revoke** stops a token at once. You can also create one through the API with a personal token
+that has the Admin scope:
 
 ```sh
 curl -fsS -X POST -H "Authorization: Bearer $QUALOR_ADMIN_TOKEN" -H 'Content-Type: application/json' \
