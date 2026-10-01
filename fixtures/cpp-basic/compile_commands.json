@@ -1,0 +1,7 @@
+[
+  {
+    "directory": ".",
+    "file": "src/shape.cpp",
+    "arguments": ["c++", "-std=c++17", "-Iinclude", "-DSHAPES=1", "-fplugin=./not-a-plugin.so", "-c", "src/shape.cpp", "-o", "build/shape.o"]
+  }
+]

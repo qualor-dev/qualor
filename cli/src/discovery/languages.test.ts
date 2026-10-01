@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectLanguage } from './languages';
+import { detectLanguage, isCHeader } from './languages';
 
 describe('detectLanguage', () => {
   it('maps extensions to languages and grammars', () => {
@@ -80,6 +80,35 @@ describe('detectLanguage', () => {
       expect(detectLanguage(p, 'auto')).toEqual({ language: 'other', grammar: null });
     }
     expect(detectLanguage('a.swift', ['java']).language).toBe('other');
+  });
+
+  it('detects C and C++ by extension, .h as C on its own (plan 9D, config.md §6.2)', () => {
+    expect(detectLanguage('src/a.c', 'auto')).toEqual({ language: 'c', grammar: 'c' });
+    for (const p of [
+      'a.cc',
+      'a.cpp',
+      'a.cxx',
+      'a.c++',
+      'a.hpp',
+      'a.hh',
+      'a.hxx',
+      'a.h++',
+      'a.ipp',
+      'B.CPP',
+    ]) {
+      expect(detectLanguage(p, 'auto'), p).toEqual({ language: 'cpp', grammar: 'cpp' });
+    }
+    expect(detectLanguage('include/a.h', 'auto')).toEqual({ language: 'c', grammar: 'c' });
+    expect(detectLanguage('a.h', ['cpp'])).toEqual({ language: 'cpp', grammar: 'cpp' });
+    expect(detectLanguage('a.h', ['c', 'cpp'])).toEqual({ language: 'c', grammar: 'c' });
+    expect(detectLanguage('a.h', ['java'])).toEqual({ language: 'other', grammar: null });
+    expect(detectLanguage('a.c', ['cpp']).language).toBe('other');
+    for (const p of ['CMakeLists.txt', 'a.cmake', 'a.o', 'a.inl', 'Makefile']) {
+      expect(detectLanguage(p, 'auto'), p).toEqual({ language: 'other', grammar: null });
+    }
+    expect(isCHeader('x/y.h')).toBe(true);
+    expect(isCHeader('x/y.H')).toBe(true);
+    expect(isCHeader('x/y.hpp')).toBe(false);
   });
 
   it('honours an explicit languages list', () => {

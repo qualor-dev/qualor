@@ -1,0 +1,17 @@
+{
+  "description": "C++ repo with a compile database: tree-sitter-cpp metrics, include/shape.h is C++; findings are added in plan 9D Tasks 8 and 9",
+  "engines": [],
+  "findingsExhaustive": false,
+  "findings": [],
+  "files": {
+    "include/shape.h": { "language": "cpp", "kind": "main", "lines": 13, "ncloc": 11, "commentLines": 0, "functions": 2, "classes": 1, "statements": 1, "complexity": 2, "cognitiveComplexity": 0 },
+    "src/shape.cpp": { "language": "cpp", "kind": "main", "lines": 39, "ncloc": 34, "commentLines": 0, "functions": 5, "classes": 1, "statements": 15, "complexity": 7, "cognitiveComplexity": 2 }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "include/shape.h#language": ".h is C++ because the scope holds src/shape.cpp (config.md §6.2)",
+    "include/shape.h#metrics": "Shape(name) and name() have bodies; ~Shape = default and area = 0 do not; one statement, return name_",
+    "src/shape.cpp#metrics": "Square(side), area, total, describe, ratio; complexity 5 + range for + if = 7; statements: return; sum, for, sum +=, return; kept, counts, counts[0] =, result, delete, return; zero, if, return a / zero, return a = 15"
+  }
+}

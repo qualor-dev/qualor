@@ -22,7 +22,9 @@ describe('main', () => {
       ),
     );
     expect(GRAMMARS).toContain('python');
-    expect(c.stdout()).toContain('html (ABI 14), css (ABI 15), kotlin (ABI 14), swift (ABI 15)');
+    expect(c.stdout()).toContain(
+      'html (ABI 14), css (ABI 15), kotlin (ABI 14), swift (ABI 15), c (ABI 15), cpp (ABI 14)',
+    );
   });
 
   it('prints the usage for help', async () => {
