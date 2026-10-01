@@ -712,15 +712,19 @@ sarif:
 ```
 
 The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`,
-`detekt`, `swiftlint`, `phpstan`, `cppcheck`, `clang-tidy` and the others) are reserved: `engine:
-ruff` is a configuration error, and a SARIF file from a tool Qualor runs itself is reported under
-`ext-<tool>`. Don't import Ruff, stylelint, HTMLHint, detekt, SwiftLint, PHPStan, staticcheck or
-gosec SARIF any more: Qualor runs Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
+`detekt`, `swiftlint`, `phpstan`, `rubocop`, `staticcheck`, `govet`, `gosec`, `cppcheck`,
+`clang-tidy` and the others) are reserved: `engine: ruff` is a configuration error, and a SARIF
+file from a tool Qualor runs itself is reported under `ext-<tool>` (`ext-ruff`, `ext-stylelint`,
+`ext-htmlhint`, `ext-detekt`, `ext-swiftlint`, `ext-phpstan`, `ext-rubocop`, `ext-staticcheck`,
+`ext-gosec`, `ext-cppcheck`, `ext-clang-tidy`). Don't import Ruff, stylelint, HTMLHint, detekt,
+SwiftLint, PHPStan, RuboCop, staticcheck, gosec, cppcheck or clang-tidy SARIF any more: Qualor runs
+Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
 [CSS and SCSS](#css-and-scss-stylelint) and [HTML](#html-htmlhint)), detekt (see
 [Kotlin](#kotlin-detekt)), SwiftLint (see [Swift](#swift-swiftlint)), PHPStan (see
-[PHP](#php-phpstan)) and staticcheck and gosec (see [Go](#go-staticcheck-go-vet-gosec)) itself; a
-SARIF file you still import for one of them counts once with the built-in finding of the same code
-on the same line.
+[PHP](#php-phpstan)), RuboCop (see [Ruby](#ruby-rubocop)), staticcheck and gosec (see
+[Go](#go-staticcheck-go-vet-gosec)) and cppcheck and clang-tidy (see
+[C and C++](#c-and-c-cppcheck-clang-tidy)) itself; a SARIF file you still import for one of them
+counts once with the built-in finding of the same code on the same line.
 
 **Brakeman** (Rails security scanner) is not bundled, because its licence restricts commercial use.
 If your use is covered by that licence, run it yourself and import its SARIF:
