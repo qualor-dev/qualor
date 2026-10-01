@@ -1,6 +1,7 @@
 import { detektAnalyzer } from './detekt';
 import { eslintAnalyzer } from './eslint';
 import { gitleaksAnalyzer } from './gitleaks';
+import { gosecAnalyzer, govetAnalyzer, staticcheckAnalyzer } from './golang';
 import { htmlhintAnalyzer } from './htmlhint';
 import { pmdAnalyzer } from './pmd';
 import { roslynAnalyzer } from './roslyn';
@@ -29,5 +30,8 @@ export function builtinAnalyzers(): Analyzer[] {
     roslynAnalyzer,
     stylelintAnalyzer,
     htmlhintAnalyzer,
+    staticcheckAnalyzer,
+    govetAnalyzer,
+    gosecAnalyzer,
   ];
 }

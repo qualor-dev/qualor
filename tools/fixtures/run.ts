@@ -27,6 +27,7 @@ import {
   type Mismatch,
   type Report,
 } from '@qualor/shared';
+import { GO_RUNNER_FILE } from '../../cli/test/analyzers';
 import { codeQualityValidator, dependencyScanningValidator, sastValidator } from '../../cli/test/gitlab-schema';
 import { checkLlmFixture } from './llm-check';
 
@@ -73,6 +74,12 @@ export const WEBLINT_PASS = 'weblint-pass';
 const WEBLINT_PASS_FILES = ['/opt/qualor/weblint/stylelint.mjs', '/opt/qualor/weblint/htmlhint.mjs'];
 
 /**
+ * A pseudo-tool: Qualor's Go runner in the scanner image's place (config.md §6, plan 9C); like the
+ * weblint pass, a skip when absent, and the fixture scan drops QUALOR_GO_DIR.
+ */
+export const GO_RUNNER = 'go-runner';
+
+/**
  * A pseudo-tool: detekt's jar in the scanner image's place (config.md §6, plan 8E). Like the
  * sonarjs pass, its absence is a normal skip on a plain host, and a fixture's scan environment
  * drops QUALOR_DETEKT_JAR, so only the default path is ever checked here.
@@ -110,6 +117,10 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   detekt: [['java'], [DETEKT_JAR]],
   // Plan 8F: SwiftLint's static binary, from install.sh (/opt/qualor/bin).
   swiftlint: [['swiftlint']],
+  // Plan 9C: the go command, the tool, and Qualor's Go runner (install-go.sh).
+  staticcheck: [['node'], ['go'], ['staticcheck'], [GO_RUNNER]],
+  govet: [['node'], ['go'], [GO_RUNNER]],
+  gosec: [['node'], ['go'], ['gosec'], [GO_RUNNER]],
 };
 
 /**
@@ -132,6 +143,7 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === SONARJS_PASS) return existsSync(SONARJS_PASS_FILE);
   if (name === DETEKT_JAR) return existsSync(DETEKT_JAR_FILE);
   if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
+  if (name === GO_RUNNER) return existsSync(GO_RUNNER_FILE);
   return findTool(name, env) !== null;
 }
 
