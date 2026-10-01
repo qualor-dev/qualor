@@ -2,9 +2,10 @@
 
 Qualor is an open-source, self-hosted code quality platform. It is an alternative to SonarQube with
 no lines-of-code licence. It runs open-source analyzers you already know: ESLint, PMD, SpotBugs,
-Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swift, Ruff for Python, stylelint and
-HTMLHint for CSS and HTML, OpenGrep, Gitleaks and Trivy, plus SonarQube-compatible rules
-(SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0) for C#, JavaScript and
+Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swift, Ruff for Python, PHPStan for
+PHP, RuboCop for Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy for C and C++,
+stylelint and HTMLHint for CSS and HTML, OpenGrep, Gitleaks and Trivy, plus SonarQube-compatible
+rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0) for C#, JavaScript and
 TypeScript, or any tool that writes SARIF. It tracks their issues across commits and measures
 coverage, duplication and complexity. It applies a quality gate to **new code**, and it comments on
 GitLab merge requests and GitHub pull requests.
@@ -27,7 +28,8 @@ release: **Docs** in the top bar, at `/docs` on your server, for signed-in users
    comments.
 6. [Other CI systems and local scans](./other-ci.md): Jenkins, Bitbucket, TeamCity or a laptop.
 7. [Languages and analyzers](./languages-and-analyzers.md): JavaScript, TypeScript, Java, Kotlin,
-   Swift, C#, Python, HTML, CSS, secrets, dependencies, external SARIF files and coverage.
+   Swift, C, C++, C#, Python, PHP, Ruby, Go, HTML, CSS, secrets, dependencies, external SARIF files
+   and coverage.
 8. [Configuration reference](./configuration.md): `qualor.yml`, environment variables and
    precedence.
 9. [Quality gates, profiles and issues](./quality-gates.md): metrics, new code, gates, rule

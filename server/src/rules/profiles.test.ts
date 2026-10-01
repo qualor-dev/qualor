@@ -15,6 +15,31 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     }
   });
 
+  it('lets the php profile govern phpstan findings on PHP files (plan 9A)', () => {
+    expect(governingLanguage('phpstan', 'php')).toBe('php');
+    expect(governingLanguage('phpstan', null)).toBe('*');
+    for (const engine of ['semgrep', 'gitleaks', 'trivy', 'osv-scanner']) {
+      expect(governingLanguage(engine, 'php')).toBe('*');
+    }
+  });
+
+  it('lets the ruby profile govern rubocop findings on Ruby files (plan 9B)', () => {
+    expect(governingLanguage('rubocop', 'ruby')).toBe('ruby');
+    expect(governingLanguage('rubocop', null)).toBe('*');
+    for (const engine of ['semgrep', 'gitleaks', 'trivy'])
+      expect(governingLanguage(engine, 'ruby')).toBe('*');
+  });
+
+  it('lets the go profile govern the Go engines on Go files (plan 9C)', () => {
+    for (const engine of ['staticcheck', 'govet', 'gosec']) {
+      expect(governingLanguage(engine, 'go'), engine).toBe('go');
+      expect(governingLanguage(engine, null), engine).toBe('*');
+    }
+    for (const engine of ['semgrep', 'gitleaks', 'trivy']) {
+      expect(governingLanguage(engine, 'go'), engine).toBe('*');
+    }
+  });
+
   it('lets the kotlin profile govern detekt findings on Kotlin files (phase 8E)', () => {
     expect(governingLanguage('detekt', 'kotlin')).toBe('kotlin');
     expect(governingLanguage('detekt', null)).toBe('*');
@@ -54,5 +79,15 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     expect(governingLanguage('htmlhint', null)).toBe('*');
     expect(PROFILE_LANGUAGES).toEqual(expect.arrayContaining(['html', 'css']));
     expect(PROFILE_LANGUAGES.at(-1)).toBe('*');
+  });
+
+  it('lets the c and cpp profiles govern cppcheck and clang-tidy findings (plan 9D)', () => {
+    for (const engine of ['cppcheck', 'clang-tidy']) {
+      expect(governingLanguage(engine, 'c'), engine).toBe('c');
+      expect(governingLanguage(engine, 'cpp'), engine).toBe('cpp');
+      expect(governingLanguage(engine, null), engine).toBe('*');
+    }
+    for (const engine of ['semgrep', 'gitleaks', 'trivy'])
+      expect(governingLanguage(engine, 'cpp')).toBe('*');
   });
 });

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { parse as parseYaml, type Tags } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { finalStage } from './deploy/debian-sources';
 import { DEPLOY_LABEL } from './deploy/workspace';
 
 /** GitLab's `!reference [job, key]` tag, kept as { reference: [...] } so it can be asserted on. */
@@ -201,7 +202,16 @@ describe('analyzer toolchain (plan 1D)', () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
 
   it('pins every tool to an exact version and a SHA-256', () => {
-    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS', 'TRIVY', 'RUFF', 'SWIFTLINT']) {
+    for (const tool of [
+      'PMD',
+      'SPOTBUGS',
+      'OPENGREP',
+      'GITLEAKS',
+      'TRIVY',
+      'RUFF',
+      'SWIFTLINT',
+      'PHPSTAN',
+    ]) {
       expect(script, tool).toMatch(new RegExp(`^${tool}_VERSION=\\d+\\.\\d+\\.\\d+$`, 'm'));
       expect(script, tool).toMatch(new RegExp(`^${tool}_SHA256(_X64)?=[0-9a-f]{64}$`, 'm'));
     }
@@ -273,6 +283,60 @@ describe('analyzer toolchain (plan 1D)', () => {
     const pinned = /^SWIFTLINT_VERSION=(.+)$/m.exec(script)?.[1];
     const shared = readFileSync('packages/shared/src/rules/swiftlint.ts', 'utf8');
     expect(shared).toContain(`export const SWIFTLINT_VERSION = '${pinned}';`);
+  });
+
+  it('pins PHPStan by version and SHA-256 and installs only the phar, nothing next to it (plan 9A)', () => {
+    expect(script).toMatch(/^PHPSTAN_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^PHPSTAN_SHA256=[0-9a-f]{64}$/m);
+    // The identifiers table of this version (tools/analyzers/phpstan-identifiers.mjs reads it; ruling A9-10).
+    expect(script).toMatch(
+      /^PHPSTAN_VERSION=.+\nPHPSTAN_SHA256=.+\nPHPSTAN_IDENTIFIERS_SHA256=[0-9a-f]{64}$/m,
+    );
+    expect(script).toContain(
+      'fetch "$GH/phpstan/phpstan/releases/download/$PHPSTAN_VERSION/phpstan.phar" "$PHPSTAN_SHA256" phpstan.phar',
+    );
+    expect(script).toContain(
+      'install -m 0644 "$TMP/phpstan.phar" "$PREFIX/lib/phpstan/phpstan.phar"',
+    );
+    // PHPStan loads a native extension found in <phar dir>/turbo-ext/ (fact P4): never install one.
+    expect(script).not.toMatch(/turbo-ext|phpstan_turbo/);
+    // The CLI's pin and the image's must agree (PHPSTAN_VERSION in packages/shared/src/rules/phpstan.ts).
+    const shared = readFileSync('packages/shared/src/rules/phpstan.ts', 'utf8');
+    const pinned = /^PHPSTAN_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(shared).toContain(`export const PHPSTAN_VERSION = '${pinned}';`);
+  });
+
+  it('gives PHPStan a php in every job that requires the analyzers, and in both images (plan 9A)', () => {
+    // The scanner image's final stage is the one pin of Debian's PHP (php<major.minor>-cli); every
+    // other place that installs PHP must name the same version (ruling A9-10: no '8.2' literal here).
+    const phpCli = finalStage(readFileSync('deploy/scanner/Dockerfile', 'utf8')).aptPackages.filter(
+      (p) => /^php\d+\.\d+-cli$/.test(p),
+    );
+    expect(phpCli).toHaveLength(1);
+    const phpMinor = /^php(\d+\.\d+)-cli$/.exec(phpCli[0]!)![1]!;
+    const aptLine = new RegExp(
+      `--no-install-recommends [^\\n]*\\bphp${phpMinor.replace('.', '\\.')}-cli\\b`,
+    );
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const job of ['test', 'fixtures', 'cli-binary']) {
+      const steps = github.jobs[job]?.steps ?? [];
+      const setup = steps.find((s) => s.uses?.startsWith('shivammathur/setup-php@') === true);
+      expect(setup?.uses, job).toMatch(PINNED);
+      const options = setup?.with as Record<string, unknown> | undefined;
+      expect(String(options?.['php-version']), job).toBe(phpMinor);
+      expect(options?.['tools'], job).toBe('none');
+      // php must be there before the tests that require it run.
+      const require = steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      expect(steps.indexOf(setup!), job).toBeLessThan(require);
+    }
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] } | undefined
+    >;
+    const analyzersApt = String(gitlab['.analyzers']?.before_script?.[0]);
+    expect(analyzersApt).toMatch(/apt-get install /);
+    expect(analyzersApt).toMatch(aptLine);
+    expect(readFileSync('tools/analyzers/Dockerfile', 'utf8')).toMatch(aptLine);
   });
 
   it('installs the toolchain (Ruff included) in every job that requires the analyzers (plan 8C)', () => {
@@ -548,6 +612,195 @@ describe('install-weblint.sh (plan 8D)', () => {
   });
 });
 
+describe('install-go.sh (plan 9C)', () => {
+  const script = readFileSync('tools/analyzers/install-go.sh', 'utf8');
+  const pin = (name: string) => new RegExp(`^${name}=(.+)$`, 'm').exec(script)?.[1];
+
+  it('pins Go, staticcheck and gosec per architecture and checks each before it is unpacked', () => {
+    for (const tool of ['GO', 'STATICCHECK', 'GOSEC']) {
+      expect(pin(`${tool}_VERSION`), tool).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(pin(`${tool}_SHA256_X64`), tool).toMatch(/^[0-9a-f]{64}$/);
+      expect(pin(`${tool}_SHA256_ARM64`), tool).toMatch(/^[0-9a-f]{64}$/);
+    }
+    for (const [fetchLine, unpack] of [
+      [
+        'fetch "https://go.dev/dl/go$GO_VERSION.linux-$GO_ARCH.tar.gz" "$GO_SHA" go.tgz',
+        'tar -xzf "$TMP/go.tgz"',
+      ],
+      [
+        'fetch "$GH/dominikh/go-tools/releases/download/$STATICCHECK_VERSION/staticcheck_linux_$GO_ARCH.tar.gz" "$SC_SHA" staticcheck.tgz',
+        'tar -xzf "$TMP/staticcheck.tgz"',
+      ],
+      [
+        'fetch "$GH/securego/gosec/releases/download/v$GOSEC_VERSION/gosec_${GOSEC_VERSION}_linux_$GO_ARCH.tar.gz" "$GS_SHA" gosec.tgz',
+        'tar -xzf "$TMP/gosec.tgz"',
+      ],
+    ] as const) {
+      expect(script).toContain(fetchLine);
+      expect(script.indexOf(fetchLine)).toBeLessThan(script.indexOf(unpack));
+    }
+    expect(script).toContain('sha256sum -c -');
+    expect(script).not.toMatch(/go (get|install|mod)|latest|npx|wget/);
+  });
+
+  it('agrees with the versions the CLI runs (packages/shared/src/rules/golang.ts)', () => {
+    const shared = readFileSync('packages/shared/src/rules/golang.ts', 'utf8');
+    expect(shared).toContain(`export const GO_VERSION = '${pin('GO_VERSION')}';`);
+    expect(shared).toContain(`export const STATICCHECK_VERSION = '${pin('STATICCHECK_VERSION')}';`);
+    expect(shared).toContain(`export const GOSEC_VERSION = '${pin('GOSEC_VERSION')}';`);
+  });
+
+  it('trims the Go distribution but keeps pkg/ and src/cmd, links go and gofmt, installs the runner', () => {
+    expect(script).toContain('rm -rf api doc misc test lib/wasm');
+    expect(script).not.toMatch(/rm -rf[^\n]*\b(pkg|src\/cmd)\b/);
+    expect(script).toContain('ln -sf ../lib/go/bin/go "$PREFIX/bin/go"');
+    expect(script).toContain('install -m 0644 "$SRC/run.mjs" "$PREFIX/go/run.mjs"');
+  });
+
+  it('runs in every GitHub job that requires the analyzers, with /opt/qualor/bin first on PATH', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (uses < 0) continue;
+      const install = job.steps.findIndex((s) => s.run === 'sudo sh tools/analyzers/install-go.sh');
+      const onPath = job.steps.findIndex((s) => s.run === 'echo /opt/qualor/bin >> "$GITHUB_PATH"');
+      expect(install, name).toBeGreaterThan(0);
+      expect(onPath, name).toBeGreaterThan(install);
+      expect(uses, name).toBeGreaterThan(onPath);
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template after install.sh", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    const before = gitlab['.analyzers']?.before_script ?? [];
+    expect(before).toContain('sh tools/analyzers/install-go.sh');
+    expect(before.indexOf('sh tools/analyzers/install.sh')).toBeLessThan(
+      before.indexOf('sh tools/analyzers/install-go.sh'),
+    );
+  });
+
+  it('is installed by both images', () => {
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile'])
+      expect(readFileSync(file, 'utf8'), file).toMatch(/sh \/tmp\/install-go\.sh/);
+  });
+});
+
+describe('install-cppcheck.sh (plan 9D)', () => {
+  const script = readFileSync('tools/analyzers/install-cppcheck.sh', 'utf8');
+
+  it('pins cppcheck by version and the SHA-256 of its tag archive, checked before tar', () => {
+    expect(script).toMatch(/^CPPCHECK_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^CPPCHECK_SHA256=[0-9a-f]{64}$/m);
+    const check = 'echo "$CPPCHECK_SHA256  $TMP/cppcheck.tar.gz" | sha256sum -c -';
+    expect(script).toContain(check);
+    expect(script.indexOf(check)).toBeLessThan(script.indexOf('tar -xzf "$TMP/cppcheck.tar.gz"'));
+    expect(script).toContain(
+      '"https://github.com/cppcheck-opensource/cppcheck/archive/refs/tags/$CPPCHECK_VERSION.tar.gz"',
+    );
+    const pinned = /^CPPCHECK_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(readFileSync('packages/shared/src/rules/cfamily.ts', 'utf8')).toContain(
+      `export const CPPCHECK_VERSION = '${pinned}';`,
+    );
+  });
+
+  it('builds only the cppcheck target and installs no addon, rule or report script', () => {
+    // The comments name what the script leaves out ("no addons", "`make install` would …"):
+    // only its commands count here.
+    const code = script
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('#'))
+      .join('\n');
+    expect(code).toContain('MATCHCOMPILER=yes');
+    expect(code).toMatch(/^make -C "\$TMP\/src" [^\n]* cppcheck >\/dev\/null$/m);
+    expect(code).not.toMatch(/HAVE_RULES=yes|addons|htmlreport|make install|curl[^\n]*\| *sh/);
+    expect(code).toContain('cp -R "$TMP/src/cfg" "$TMP/src/platforms" "$FILESDIR/"');
+    // cppcheck prints `Cppcheck X.Y` for some .0 releases: the check compares major.minor, the
+    // rule of cppcheckVersionSupported.
+    expect(code).toContain(
+      '"Cppcheck ${CPPCHECK_VERSION%.*}" | "Cppcheck ${CPPCHECK_VERSION%.*}."*)',
+    );
+  });
+
+  it('runs in every GitHub job that requires the analyzers, before the tests', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (uses === -1) continue;
+      const install = job.steps.findIndex(
+        (s) => s.run === 'sudo sh tools/analyzers/install-cppcheck.sh',
+      );
+      expect(install, name).toBeGreaterThan(0);
+      expect(uses, name).toBeGreaterThan(install);
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template, and in both images", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    expect(gitlab['.analyzers']?.before_script ?? []).toContain(
+      'sh tools/analyzers/install-cppcheck.sh',
+    );
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile']) {
+      expect(readFileSync(file, 'utf8'), file).toMatch(/sh \/tmp\/install-cppcheck\.sh/);
+    }
+  });
+});
+
+describe('install-clang-tidy.sh (plan 9D, CI and the toolbox only)', () => {
+  const script = readFileSync('tools/analyzers/install-clang-tidy.sh', 'utf8');
+
+  it('pins the PyPI wheel per architecture, checked before unzip, and installs only the binary and its headers', () => {
+    expect(script).toMatch(/^CLANG_TIDY_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^CLANG_TIDY_SHA256_X64=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^CLANG_TIDY_SHA256_ARM64=[0-9a-f]{64}$/m);
+    // Each wheel's full PyPI URL is pinned beside its SHA-256 and must name the pinned version, so
+    // a bump of CLANG_TIDY_VERSION alone cannot leave a stale URL behind.
+    const version = /^CLANG_TIDY_VERSION=(.+)$/m.exec(script)?.[1] ?? '';
+    for (const arch of ['X64', 'ARM64']) {
+      const url = new RegExp(`^CLANG_TIDY_URL_${arch}=(\\S+)$`, 'm').exec(script)?.[1] ?? '';
+      expect(url, arch).toMatch(
+        /^https:\/\/files\.pythonhosted\.org\/packages\/[0-9a-f]+\/[0-9a-f]+\/[0-9a-f]+\/clang_tidy-/,
+      );
+      expect(url, arch).toContain(`/clang_tidy-${version}-py2.py3-none-manylinux_`);
+      expect(url, arch).not.toContain('$');
+    }
+    const check = 'echo "$CT_SHA  $TMP/clang-tidy.whl" | sha256sum -c -';
+    expect(script).toContain(check);
+    expect(script.indexOf(check)).toBeLessThan(script.indexOf('unzip -q "$TMP/clang-tidy.whl"'));
+    expect(script).toContain("'clang_tidy/data/bin/clang-tidy' 'clang_tidy/data/lib/*'");
+    expect(script).not.toMatch(/pip install|run-clang-tidy|clang-apply-replacements/);
+  });
+
+  it('is never installed by the scanner image (decision 2), but by the toolbox and every analyzers job', () => {
+    expect(readFileSync('deploy/scanner/Dockerfile', 'utf8')).not.toMatch(/clang-tidy/);
+    expect(readFileSync('tools/analyzers/Dockerfile', 'utf8')).toMatch(
+      /sh \/tmp\/install-clang-tidy\.sh/,
+    );
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      if (uses === -1) continue;
+      const install = job.steps.findIndex(
+        (s) => s.run === 'sudo sh tools/analyzers/install-clang-tidy.sh',
+      );
+      expect(install, name).toBeGreaterThan(0);
+      expect(uses, name).toBeGreaterThan(install);
+    }
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    expect(gitlab['.analyzers']?.before_script ?? []).toContain(
+      'sh tools/analyzers/install-clang-tidy.sh',
+    );
+  });
+});
+
 describe("the CI cache of Trivy's downloads (plan 2B)", () => {
   const script = readFileSync('tools/analyzers/install.sh', 'utf8');
   const pin = (name: string) => new RegExp(`^${name}=(.*)$`, 'm').exec(script)?.[1];
@@ -739,5 +992,86 @@ describe('release engineering jobs (plan 4A)', () => {
       expect(wf.jobs[job]?.['timeout-minutes'], job).toBeGreaterThan(0);
       expect(JSON.stringify(wf.jobs[job]), job).not.toMatch(/secrets\./);
     }
+  });
+});
+
+describe('install-rubocop.sh (plan 9B)', () => {
+  const script = readFileSync('tools/analyzers/install-rubocop.sh', 'utf8');
+  const lock = readFileSync('tools/analyzers/rubocop/gems.lock', 'utf8');
+  const entries = lock.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('#'));
+
+  it("pins Ruby's source and every gem by SHA-256, checked before use, and resolves nothing online", () => {
+    expect(script).toMatch(/^RUBY_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^RUBY_SHA256=[0-9a-f]{64}$/m);
+    expect(script).toMatch(/^RUBOCOP_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toContain(
+      'fetch "https://cache.ruby-lang.org/pub/ruby/${RUBY_VERSION%.*}/ruby-$RUBY_VERSION.tar.gz" "$RUBY_SHA256" ruby.tar.gz',
+    );
+    expect(script).toContain(
+      'fetch "https://rubygems.org/downloads/$name-$version.gem" "$sha" "$name-$version.gem"',
+    );
+    expect(script).toContain('install --local --ignore-dependencies --no-document');
+    expect(script).not.toMatch(/bundle install|--source|latest|wget/);
+    expect(entries.length).toBeGreaterThanOrEqual(13);
+    for (const e of entries) expect(e, e).toMatch(/^[a-z][a-z0-9_-]* \d+(\.\d+)+ [0-9a-f]{64}$/);
+    const pinned = /^RUBOCOP_VERSION=(.+)$/m.exec(script)?.[1] ?? '';
+    expect(entries.some((e) => e.startsWith(`rubocop ${pinned} `))).toBe(true);
+  });
+
+  it('pins the .gem files it takes the default gems’ licence files from (B9-15)', () => {
+    const licenceLock = readFileSync('tools/analyzers/rubocop/licence-gems.lock', 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '' && !l.startsWith('#'));
+    expect(licenceLock.map((e) => e.split(' ')[0])).toEqual(
+      expect.arrayContaining(['prism', 'syntax_suggest']),
+    );
+    for (const e of licenceLock)
+      expect(e, e).toMatch(/^[a-z][a-z0-9_-]* \d+(\.\d+)+ [0-9a-f]{64}$/);
+    expect(script).toContain(
+      'fetch "https://rubygems.org/downloads/$name-$version.gem" "$sha" "licence/$name-$version.gem"',
+    );
+    expect(script).toContain('done <"$SRC/licence-gems.lock"');
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile'])
+      expect(readFileSync(file, 'utf8'), file).toMatch(/rubocop\/licence-gems\.lock/);
+  });
+
+  it('pins the same RuboCop as the CLI (packages/shared/src/rules/rubocop.ts)', () => {
+    const pinned = /^RUBOCOP_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(readFileSync('packages/shared/src/rules/rubocop.ts', 'utf8')).toContain(
+      `export const RUBOCOP_VERSION = '${pinned}';`,
+    );
+  });
+
+  it('runs in every GitHub job that requires the analyzers, before the tests', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      if (!job.steps.some((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1')) continue;
+      const install = job.steps.findIndex(
+        (s) => s.run?.endsWith('sudo sh tools/analyzers/install-rubocop.sh') === true,
+      );
+      expect(install, name).toBeGreaterThan(0);
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      expect(uses, name).toBeGreaterThan(install);
+    }
+  });
+
+  it("runs in GitLab's shared .analyzers template after install.sh", () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    const before = gitlab['.analyzers']?.before_script ?? [];
+    expect(before).toContain('sh tools/analyzers/install-rubocop.sh');
+    expect(before.indexOf('sh tools/analyzers/install.sh')).toBeLessThan(
+      before.indexOf('sh tools/analyzers/install-rubocop.sh'),
+    );
+  });
+
+  it('is installed by both images, and the scanner image has the libyaml its Ruby links', () => {
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile'])
+      expect(readFileSync(file, 'utf8'), file).toMatch(/sh \/tmp\/install-rubocop\.sh/);
+    expect(readFileSync('deploy/scanner/Dockerfile', 'utf8')).toMatch(
+      /apt-get install -y --no-install-recommends [^\n]*\blibyaml-0-2\b/,
+    );
   });
 });

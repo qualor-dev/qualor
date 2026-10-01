@@ -1,9 +1,14 @@
+import { clangTidyAnalyzer } from './clang-tidy';
+import { cppcheckAnalyzer } from './cppcheck';
 import { detektAnalyzer } from './detekt';
 import { eslintAnalyzer } from './eslint';
 import { gitleaksAnalyzer } from './gitleaks';
+import { gosecAnalyzer, govetAnalyzer, staticcheckAnalyzer } from './golang';
 import { htmlhintAnalyzer } from './htmlhint';
+import { phpstanAnalyzer } from './phpstan';
 import { pmdAnalyzer } from './pmd';
 import { roslynAnalyzer } from './roslyn';
+import { rubocopAnalyzer } from './rubocop';
 import { ruffAnalyzer } from './ruff';
 import { semgrepAnalyzer } from './semgrep';
 import { sonarjsAnalyzer } from './sonarjs';
@@ -29,5 +34,12 @@ export function builtinAnalyzers(): Analyzer[] {
     roslynAnalyzer,
     stylelintAnalyzer,
     htmlhintAnalyzer,
+    phpstanAnalyzer,
+    rubocopAnalyzer,
+    staticcheckAnalyzer,
+    govetAnalyzer,
+    gosecAnalyzer,
+    cppcheckAnalyzer,
+    clangTidyAnalyzer,
   ];
 }

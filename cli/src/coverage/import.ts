@@ -5,12 +5,14 @@ import picomatch from 'picomatch';
 import type { Logger } from '../log';
 import type { Warnings } from '../warnings';
 import { parseCobertura } from './cobertura';
+import { GO_COVER_MODE, parseGoCover } from './gocover';
 import { parseJacoco } from './jacoco';
 import { parseLcov, type ParsedCoverage } from './lcov';
 import { CoverageAccumulator, type FileCoverage } from './model';
 import { ancestorDirs, PathResolver, repoRelativeDir } from './resolve';
 
-export type CoverageFormat = 'lcov' | 'cobertura' | 'jacoco';
+/** `gocover`: the Go coverage profile (plan 9C). */
+export type CoverageFormat = 'lcov' | 'cobertura' | 'jacoco' | 'gocover';
 
 const COVERAGE_PARSERS: Partial<
   Record<CoverageFormat, (absPath: string) => Promise<ParsedCoverage>>
@@ -18,6 +20,7 @@ const COVERAGE_PARSERS: Partial<
   lcov: parseLcov,
   cobertura: parseCobertura,
   jacoco: parseJacoco,
+  gocover: parseGoCover,
 };
 
 export interface CoverageTarget {
@@ -82,6 +85,7 @@ export function detectFormat(absPath: string): CoverageFormat | null {
   let raw = head(absPath, 4096);
   if (raw.charCodeAt(0) === BOM_CODE_POINT) raw = raw.slice(1);
   const text = raw.trimStart();
+  if (GO_COVER_MODE.test(text.split(/\r?\n/, 1)[0]?.trim() ?? '')) return 'gocover';
   if (/^(TN|SF):/m.test(text)) return 'lcov';
   if (text.startsWith('<')) {
     if (/<coverage[\s>]/.test(text)) return 'cobertura';
@@ -115,7 +119,7 @@ export async function importCoverage(o: ImportCoverageOptions): Promise<Map<stri
     for (const abs of matches) {
       const format = spec.format === 'auto' ? detectFormat(abs) : spec.format;
       if (format === null) {
-        o.warnings.add('COVERAGE_FORMAT_UNKNOWN', 'a coverage report was not LCOV, Cobertura or JaCoCo');
+        o.warnings.add('COVERAGE_FORMAT_UNKNOWN', 'a coverage report was not LCOV, Cobertura, JaCoCo or a Go coverage profile');
         continue;
       }
       const parse = COVERAGE_PARSERS[format];
@@ -130,6 +134,9 @@ export async function importCoverage(o: ImportCoverageOptions): Promise<Map<stri
         o.warnings.add('COVERAGE_REPORT_INVALID', 'a coverage report could not be parsed and was ignored');
         o.log.warn(`cannot parse coverage report ${abs}: ${err instanceof Error ? err.message : String(err)}`);
         continue;
+      }
+      if (parsed.truncated === true) {
+        o.warnings.add('COVERAGE_REPORT_TRUNCATED', 'a coverage report was too large; the part past the limit was ignored');
       }
       const baseDirs = [
         ...parsed.sourceDirs.map((d) => sourceDirToRepo(o.root, d)).filter((d): d is string => d !== null),

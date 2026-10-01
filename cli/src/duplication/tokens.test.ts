@@ -89,4 +89,65 @@ describe('lineUnits', () => {
       tree.delete();
     }
   });
+
+  it('drops PHP comments of every kind, so two copies with other comments hash the same (plan 9A)', async () => {
+    const tree = (await testParsers()).parse(
+      'php',
+      '<?php\nfunction f($a) {\n    // one\n    return $a + 1; # x\n}\nfunction g($a) {\n    /* two */\n    return $a + 1;\n}\n',
+    );
+    if (tree === null) throw new Error('timeout');
+    try {
+      const u = lineUnits(tree.rootNode, 'php');
+      expect(u.map((x) => x.startLine)).toEqual([1, 2, 4, 5, 6, 8, 9]);
+      expect(u[2]?.hash).toBe(u[5]?.hash);
+    } finally {
+      tree.delete();
+    }
+  });
+
+  it('drops Ruby comments and __END__ data, and counts #{ as a bracket (plan 9B)', async () => {
+    const parsers = await testParsers();
+    const unitsOf = (source: string) => {
+      const tree = parsers.parse('ruby', source);
+      if (tree === null) throw new Error('timeout');
+      try {
+        return lineUnits(tree.rootNode, 'ruby');
+      } finally {
+        tree.delete();
+      }
+    };
+    const copies = unitsOf('def f(a)\n  # One.\n  a + 1 # x\nend\n\ndef g(a)\n  a + 1\nend\n');
+    expect(copies.map((u) => u.startLine)).toEqual([1, 3, 4, 6, 7, 8]);
+    expect(copies[1]?.hash).toBe(copies[4]?.hash);
+    expect(unitsOf('s = "a #{b} c"\nf(a,\n  b)\n').map((u) => [u.startLine, u.delta])).toEqual([
+      [1, 0],
+      [2, 1],
+      [3, -1],
+    ]);
+    expect(unitsOf('x = 1\n__END__\nnot ruby (\n').map((u) => u.startLine)).toEqual([1]);
+    expect(unitsOf('=begin\nzz\n=end\nx = 2\n').map((u) => u.startLine)).toEqual([4]);
+  });
+
+  it('tokenises Go like the other C-like languages: comments out, brackets balanced (plan 9C)', async () => {
+    const tree = (await testParsers()).parse(
+      'go',
+      'package p\n\nvar s = `a\nb` // c\n\nfunc f() {\n\tg(1,\n\t\t2)\n}\n',
+    );
+    if (tree === null) throw new Error('timeout');
+    try {
+      const u = lineUnits(tree.rootNode, 'go');
+      // [startLine, endLine, tokens, delta]; the raw string's closing backtick is a token of line 4.
+      expect(u.map((x) => [x.startLine, x.endLine, x.tokens, x.delta])).toEqual([
+        [1, 1, 2, 0],
+        [3, 4, 5, 0],
+        [4, 4, 1, 0],
+        [6, 6, 5, 1],
+        [7, 7, 4, 1],
+        [8, 8, 2, -1],
+        [9, 9, 1, -1],
+      ]);
+    } finally {
+      tree.delete();
+    }
+  });
 });

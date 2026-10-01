@@ -2,7 +2,18 @@ import type { Node } from 'web-tree-sitter';
 import type { GrammarId } from '../parse/grammars';
 
 export type SyntaxFamily =
-  'ecmascript' | 'java' | 'csharp' | 'python' | 'markup' | 'stylesheet' | 'kotlin' | 'swift';
+  | 'ecmascript'
+  | 'java'
+  | 'csharp'
+  | 'python'
+  | 'markup'
+  | 'stylesheet'
+  | 'kotlin'
+  | 'swift'
+  | 'php'
+  | 'ruby'
+  | 'go'
+  | 'cfamily';
 
 /**
  * Node tables of ruling C3 (node type names of the pinned grammars, C1). No rule looks at
@@ -86,6 +97,23 @@ export interface FamilyRules {
    * list of expression types, which tree-sitter-swift has many of.
    */
   statementParents?: ReadonlySet<string>;
+  /**
+   * Node types left out of every metric and of duplication, with everything below them (Ruby's
+   * data after `__END__`, plan 9B): neither code nor comment.
+   */
+  skipped?: ReadonlySet<string>;
+  /**
+   * A child of this node that counts as one statement though this node is no statement parent
+   * (Ruby's endless `def x = expr`: the expression, plan 9B). Asked of the parent, so no rule has
+   * to look at `node.parent`.
+   */
+  statementChild?(node: Node): Node | null;
+  /**
+   * Extra check for node types in `classes` that are classes only in some shapes (Go's
+   * `type_spec`: only a struct or interface type, plan 9C; C/C++ `struct`, `union`, `class`: only
+   * a definition with a body, plan 9D). Absent: every such node is a class.
+   */
+  isClass?(node: Node): boolean;
 }
 
 const ECMASCRIPT: FamilyRules = {
@@ -533,6 +561,257 @@ const SWIFT: FamilyRules = {
   statementParents: new Set(['statements', 'source_file']),
 };
 
+/** A PHP `if`'s `else` clause (an `else if` puts an if_statement inside it; `elseif` has its own clause). */
+function phpElse(ifNode: Node): Node | null {
+  return ifNode.namedChildren.find((c) => c?.type === 'else_clause') ?? null;
+}
+
+/** PHP's word operators run with their symbol twins: `$a and $b && $c` is one run (plan 9A). */
+const PHP_LOGICAL: Readonly<Record<string, string>> = {
+  '&&': '&&',
+  and: '&&',
+  '||': '||',
+  or: '||',
+};
+
+/** tree-sitter-php 0.24.2, its `php` grammar (plan 9A, probe P6). */
+const PHP: FamilyRules = {
+  comments: new Set(['comment']),
+  functions: new Set(['function_definition', 'method_declaration']),
+  // An abstract or interface method has no body: it is not a function.
+  isFunction: (n) => n.type !== 'method_declaration' || n.childForFieldName('body') !== null,
+  lambdas: new Set(['anonymous_function', 'arrow_function']),
+  classes: new Set([
+    'class_declaration',
+    'interface_declaration',
+    'trait_declaration',
+    'enum_declaration',
+  ]),
+  // The grammar's `statement` supertype without declarations (class, enum, interface, trait,
+  // function, namespace, use, const, declare) and without blocks and empty statements.
+  statements: new Set([
+    'expression_statement',
+    'return_statement',
+    'echo_statement',
+    'if_statement',
+    'for_statement',
+    'foreach_statement',
+    'while_statement',
+    'do_statement',
+    'switch_statement',
+    'try_statement',
+    'break_statement',
+    'continue_statement',
+    'unset_statement',
+    'global_declaration',
+    'function_static_declaration',
+    'goto_statement',
+    'exit_statement',
+  ]),
+  loops: new Set(['for_statement', 'foreach_statement', 'while_statement', 'do_statement']),
+  // A match counts like a switch for cognitive complexity; its non-default arms are cases.
+  switches: new Set(['switch_statement', 'match_expression']),
+  catchClause: 'catch_clause',
+  ternary: 'conditional_expression',
+  transparent: new Set(['parenthesized_expression']),
+  isCase: (n) => n.type === 'case_statement' || n.type === 'match_conditional_expression',
+  elseIf: (n) => phpElse(n)?.namedChildren.find((c) => c?.type === 'if_statement') ?? null,
+  plainElse: (n) => {
+    const e = phpElse(n);
+    return e !== null && !e.namedChildren.some((c) => c?.type === 'if_statement') ? e : null;
+  },
+  // `elseif` is its own clause: +1 complexity and a hybrid cognitive increment.
+  elseIfClause: 'else_if_clause',
+  logicalOperator: (n) => {
+    if (n.type !== 'binary_expression') return null;
+    const op = n.childForFieldName('operator')?.type;
+    return op !== undefined && Object.hasOwn(PHP_LOGICAL, op) ? (PHP_LOGICAL[op] ?? null) : null;
+  },
+  // Inline HTML between `?>` and `<?php`: only its rows with text are code lines.
+  rowWiseLeaves: new Set(['text']),
+};
+
+/** Ruby nodes that are never statements: definitions, clauses of a body, heredoc bodies (plan 9B). */
+const RUBY_NOT_STATEMENTS = new Set([
+  'method',
+  'singleton_method',
+  'class',
+  'module',
+  'singleton_class',
+  'rescue',
+  'else',
+  'ensure',
+  'heredoc_body',
+  'empty_statement',
+]);
+
+/**
+ * The plain `else` of an `if` chain: tree-sitter-ruby nests each `elsif` in the previous one and
+ * puts the chain's `else` in the last. Named children only: the keywords are anonymous leaves of
+ * the same type names.
+ */
+function rubyElse(ifNode: Node): Node | null {
+  let current = ifNode;
+  for (;;) {
+    const elsif = current.namedChildren.find((c) => c?.type === 'elsif');
+    if (elsif === undefined || elsif === null) {
+      return current.namedChildren.find((c) => c?.type === 'else') ?? null;
+    }
+    current = elsif;
+  }
+}
+
+function rubyLogicalOperator(node: Node): string | null {
+  if (node.type !== 'binary') return null;
+  const op = node.childForFieldName('operator')?.type;
+  return op === '&&' || op === '||' || op === 'and' || op === 'or' ? op : null;
+}
+
+/** tree-sitter-ruby 0.23.1 (plan 9B, fact F9). */
+const RUBY: FamilyRules = {
+  comments: new Set(['comment']),
+  skipped: new Set(['uninterpreted']),
+  functions: new Set(['method', 'singleton_method']),
+  // Blocks and lambdas are closures: a function context, not a function.
+  lambdas: new Set(['lambda', 'block', 'do_block']),
+  classes: new Set(['class', 'module']),
+  statements: new Set(),
+  // Every expression of a body is a statement; an endless method's expression too (statementChild).
+  statementParents: new Set([
+    'program',
+    'body_statement',
+    'then',
+    'else',
+    'do',
+    'block_body',
+    'begin',
+    'ensure',
+  ]),
+  isStatement: (n) => !RUBY_NOT_STATEMENTS.has(n.type),
+  // `def x = expr`: the expression (field `body`) is the method's one statement. A normal def's
+  // body is a body_statement, whose expressions count through statementParents. Asked of the def
+  // itself (O(children)); no rule reads node.parent (O(depth) in web-tree-sitter).
+  statementChild: (n) => {
+    if (n.type !== 'method' && n.type !== 'singleton_method') return null;
+    const body = n.childForFieldName('body');
+    return body === null || body.type === 'body_statement' ? null : body;
+  },
+  loops: new Set(['while', 'until', 'for', 'while_modifier', 'until_modifier']),
+  // Branches without an else chain of their own (an `unless … else` adds nothing for its else).
+  branches: new Set(['unless', 'if_modifier', 'unless_modifier', 'rescue_modifier']),
+  switches: new Set(['case', 'case_match']),
+  catchClause: 'rescue',
+  ternary: 'conditional',
+  transparent: new Set(['parenthesized_statements']),
+  isCase: (n) => n.type === 'when' || n.type === 'in_clause',
+  // `elsif` is its own clause (elseIfClause), never a nested `if`.
+  elseIf: () => null,
+  plainElse: rubyElse,
+  ifType: 'if',
+  elseIfClause: 'elsif',
+  logicalOperator: rubyLogicalOperator,
+};
+
+/** tree-sitter-go 0.25.0 (plan 9C, probe G10). */
+const GO: FamilyRules = {
+  comments: new Set(['comment']),
+  functions: new Set(['function_declaration', 'method_declaration']),
+  lambdas: new Set(['func_literal']),
+  // Only a named struct or interface type (`type T struct { … }`): see isClass.
+  classes: new Set(['type_spec']),
+  // Counted through statementParents: every item of a statement list is one statement.
+  statements: new Set(),
+  loops: new Set(['for_statement']),
+  switches: new Set(['expression_switch_statement', 'type_switch_statement', 'select_statement']),
+  // Go has neither try/catch nor ?:.
+  catchClause: '',
+  ternary: '',
+  transparent: new Set(['parenthesized_expression']),
+  // default_case is not a decision.
+  isCase: (n) =>
+    n.type === 'expression_case' || n.type === 'type_case' || n.type === 'communication_case',
+  elseIf: (n) => {
+    const alt = n.childForFieldName('alternative');
+    return alt !== null && alt.type === 'if_statement' ? alt : null;
+  },
+  plainElse: (n) => {
+    const alt = n.childForFieldName('alternative');
+    return alt !== null && alt.type !== 'if_statement' ? alt : null;
+  },
+  isClass: (n) => {
+    const t = n.childForFieldName('type')?.type;
+    return t === 'struct_type' || t === 'interface_type';
+  },
+  statementParents: new Set(['statement_list']),
+};
+
+/** Where a C/C++ `declaration` is a statement: inside a block, a `case` or after a label (plan 9D). */
+const CFAMILY_DECLARATION_PARENTS = new Set([
+  'compound_statement',
+  'case_statement',
+  'labeled_statement',
+]);
+
+function cLogicalOperator(node: Node): string | null {
+  if (node.type !== 'binary_expression') return null;
+  const op = node.childForFieldName('operator')?.type;
+  if (op === '&&' || op === 'and') return '&&';
+  if (op === '||' || op === 'or') return '||';
+  return null;
+}
+
+/** tree-sitter-c 0.24.1 and tree-sitter-cpp 0.23.4 (plan 9D, fact F9): one set of rules. */
+const CFAMILY: FamilyRules = {
+  comments: new Set(['comment']),
+  // Only with a body: see isFunction (`= default`, `= 0` and declarations have none).
+  functions: new Set(['function_definition']),
+  lambdas: new Set(['lambda_expression']),
+  // Only definitions: see isClass. `enum` is not a class.
+  classes: new Set(['class_specifier', 'struct_specifier', 'union_specifier']),
+  statements: new Set([
+    'expression_statement',
+    'declaration',
+    'if_statement',
+    'for_statement',
+    'for_range_loop',
+    'while_statement',
+    'do_statement',
+    'return_statement',
+    'break_statement',
+    'continue_statement',
+    'goto_statement',
+    'switch_statement',
+    'labeled_statement',
+    'try_statement',
+    'throw_statement',
+    'co_return_statement',
+    'co_yield_statement',
+  ]),
+  loops: new Set(['for_statement', 'for_range_loop', 'while_statement', 'do_statement']),
+  switches: new Set(['switch_statement']),
+  catchClause: 'catch_clause',
+  ternary: 'conditional_expression',
+  transparent: new Set(['parenthesized_expression']),
+  isCase: (n) => n.type === 'case_statement' && n.child(0)?.type === 'case',
+  // `if … else if …` is if_statement > else_clause > if_statement, as in JavaScript.
+  elseIf: (n) =>
+    n.childForFieldName('alternative')?.namedChildren.find((c) => c?.type === 'if_statement') ??
+    null,
+  plainElse: (n) => {
+    const alt = n.childForFieldName('alternative');
+    if (alt === null) return null;
+    return alt.namedChildren.some((c) => c?.type === 'if_statement') ? null : alt;
+  },
+  // A file-level declaration and a `for` initialiser are not statements.
+  isStatement: (n, parentType) =>
+    n.type !== 'declaration' || CFAMILY_DECLARATION_PARENTS.has(parentType),
+  // A function-try-block (`int f() try { … } catch (…) { … }`) has its try_statement as the
+  // `body` field in tree-sitter-cpp 0.23.4, so it counts too (Review Focus 5).
+  isFunction: (n) => n.childForFieldName('body') !== null,
+  isClass: (n) => n.childForFieldName('body') !== null,
+  logicalOperator: cLogicalOperator,
+};
+
 export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   ecmascript: ECMASCRIPT,
   java: JAVA,
@@ -542,6 +821,10 @@ export const FAMILY_RULES: Readonly<Record<SyntaxFamily, FamilyRules>> = {
   stylesheet: STYLESHEET,
   kotlin: KOTLIN,
   swift: SWIFT,
+  php: PHP,
+  ruby: RUBY,
+  go: GO,
+  cfamily: CFAMILY,
 };
 
 export function familyOf(grammar: GrammarId): SyntaxFamily {
@@ -552,5 +835,9 @@ export function familyOf(grammar: GrammarId): SyntaxFamily {
   if (grammar === 'css') return 'stylesheet';
   if (grammar === 'kotlin') return 'kotlin';
   if (grammar === 'swift') return 'swift';
+  if (grammar === 'php') return 'php';
+  if (grammar === 'ruby') return 'ruby';
+  if (grammar === 'go') return 'go';
+  if (grammar === 'c' || grammar === 'cpp') return 'cfamily';
   return 'ecmascript';
 }

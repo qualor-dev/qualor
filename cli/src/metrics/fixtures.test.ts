@@ -6,6 +6,11 @@ import { silentLogger } from '../log';
 import { analyzeFiles } from '../scan/analyze-files';
 import { Warnings } from '../warnings';
 
+/** Warning codes a fixture raises on purpose (plan 9D: c-basic's src/broken.c is a syntax error). */
+const EXPECTED_WARNINGS: Readonly<Record<string, readonly string[]>> = {
+  'c-basic': ['PARSE_ERRORS'],
+};
+
 describe.each(FIXTURE_NAMES)('fixture %s', (name) => {
   it('matches the language, kind, lines and metrics in expected.json', async () => {
     const { dir, config, expected } = loadFixture(name);
@@ -28,6 +33,6 @@ describe.each(FIXTURE_NAMES)('fixture %s', (name) => {
         if (w !== undefined) expect(got?.metrics?.[field], `${path} ${field}`).toBe(w);
       }
     }
-    expect(warnings.list()).toEqual([]);
+    expect(warnings.list().map((w) => w.code)).toEqual(EXPECTED_WARNINGS[name] ?? []);
   });
 });

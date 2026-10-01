@@ -1,5 +1,20 @@
 import { z } from 'zod';
 import { BUILTIN_ENGINES, ENGINE_ID_PATTERN } from '../report/taxonomy';
+import { PHPSTAN_DEFAULT_LEVEL } from '../rules/phpstan';
+import {
+  normalizeTargetRuby,
+  RUBOCOP_DEFAULT_TARGET_RUBY,
+  RUBOCOP_SELECTOR,
+  RUBOCOP_TARGET_RUBIES,
+  RUBOCOP_VERSION,
+  rubocopSelectorKnown,
+} from '../rules/rubocop';
+import { GOSEC_DEFAULT_EXCLUDE, GOSEC_RULE_ID, GOSEC_RULES, GOSEC_VERSION } from '../rules/golang';
+import {
+  CPPCHECK_ENABLE_GROUPS,
+  DEFAULT_CPPCHECK_ENABLE,
+  DEFAULT_CPPCHECK_SUPPRESSED,
+} from '../rules/cfamily';
 import { RUFF_SELECTOR, RUFF_VERSION, ruffSelectorKnown } from '../rules/ruff';
 
 const SCANNABLE_LANGUAGES = [
@@ -12,6 +27,11 @@ const SCANNABLE_LANGUAGES = [
   'css',
   'kotlin',
   'swift',
+  'php',
+  'ruby',
+  'go',
+  'c',
+  'cpp',
 ] as const;
 
 export const BUILTIN_EXCLUDES: readonly string[] = [
@@ -45,6 +65,17 @@ export const BUILTIN_EXCLUDES: readonly string[] = [
   '**/Pods/**',
   '**/Carthage/**',
   '**/.build/**',
+  // Ruby: Bundler's local settings and install directory, and Rails' generated schema (plan 9B).
+  '**/.bundle/**',
+  '**/db/schema.rb',
+  // Go test data, which the go tool itself ignores, and generated protobuf code (plan 9C).
+  '**/testdata/**',
+  '**/*.pb.go',
+  // C and C++ build output: CMake's own directories, CLion's build directories and CMake
+  // FetchContent checkouts (plan 9D). `**/build/**` is excluded above already.
+  '**/CMakeFiles/**',
+  '**/cmake-build-*/**',
+  '**/_deps/**',
 ];
 
 const enabled = z.union([z.literal('auto'), z.boolean()]).default('auto');
@@ -61,6 +92,22 @@ const ruffSelector = (extra: (s: string) => boolean, shape: string) =>
       ctx.addIssue({
         code: 'custom',
         message: `unknown Ruff rule selector "${s}": no rule of Ruff ${RUFF_VERSION} starts with it`,
+      });
+    }
+  });
+
+/**
+ * A RuboCop selector (or a value `extra` allows): the shape first, then — so a typo is a config
+ * error naming it, not a RuboCop exit 2 — a department or a cop RuboCop RUBOCOP_VERSION has.
+ */
+const rubocopSelector = (extra: (s: string) => boolean, shape: string) =>
+  z.string().superRefine((s, ctx) => {
+    if (extra(s)) return;
+    if (!RUBOCOP_SELECTOR.test(s)) ctx.addIssue({ code: 'custom', message: shape });
+    else if (!rubocopSelectorKnown(s)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `unknown RuboCop department or cop "${s}": RuboCop ${RUBOCOP_VERSION} has none of that name`,
       });
     }
   });
@@ -87,6 +134,28 @@ const noToken = z.object({ token: z.never().optional() });
 const languages = z
   .union([z.literal('auto'), z.array(z.enum(SCANNABLE_LANGUAGES))])
   .default('auto');
+
+/** A repository-relative directory: no absolute path, `..` segment or backslash (plan 9D). */
+const repoDir = z
+  .string()
+  .min(1)
+  .refine(
+    (p) =>
+      !p.startsWith('/') &&
+      !/^[A-Za-z]:/.test(p) &&
+      !p.includes('\\') &&
+      !p.split('/').includes('..'),
+    { message: 'must be a directory inside the repository, written with /' },
+  );
+/** `-D` values: a macro name, optionally `=value`, without whitespace (plan 9D). */
+const define = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*(=\S*)?$/, {
+  message: 'must be NAME or NAME=value without spaces',
+});
+/** null: look for compile_commands.json; false: none; else a repository file (config.md §6.2). */
+const compileCommands = z
+  .union([z.literal(false), z.string().min(1)])
+  .nullable()
+  .default(null);
 
 const analyzers = z
   .strictObject({
@@ -236,6 +305,99 @@ const analyzers = z
         timeoutSeconds: timeout(600),
       })
       .prefault({}),
+    // PHP (plan 9A): PHPStan from the qualor/scanner image with Qualor's own configuration; never
+    // the project's phpstan.neon, bootstrap files or Composer autoloader (config.md §6).
+    phpstan: z
+      .strictObject({
+        enabled,
+        level: z
+          .union([z.number().int().min(0).max(10), z.literal('max')])
+          .default(PHPSTAN_DEFAULT_LEVEL),
+        memoryLimit: z
+          .string()
+          .regex(/^(-1|[1-9][0-9]{0,5}[MG])$/, {
+            message: 'a memory size such as 512M or 2G, or -1',
+          })
+          .default('2G'),
+        timeoutSeconds: timeout(900),
+      })
+      .prefault({}),
+    // Ruby (plan 9B): RuboCop on Qualor's own Ruby, with Qualor's own cop selection, never the
+    // project's RuboCop configuration (config.md §6).
+    rubocop: z
+      .strictObject({
+        enabled,
+        select: z
+          .array(
+            rubocopSelector(
+              (s) => s === 'qualor-default',
+              'a RuboCop department (Lint, Security, Style…), a cop (Style/StringLiterals) or qualor-default',
+            ),
+          )
+          .min(1, { message: 'list at least one department or cop, or set enabled: false' })
+          .default(['qualor-default']),
+        ignore: z
+          .array(
+            rubocopSelector(
+              () => false,
+              'a RuboCop department (Lint, Style…) or a cop (Style/StringLiterals)',
+            ),
+          )
+          .default([]),
+        targetRubyVersion: z
+          .union([z.string(), z.number()])
+          .refine((v) => RUBOCOP_TARGET_RUBIES.includes(normalizeTargetRuby(v)), {
+            message: `a Ruby version RuboCop ${RUBOCOP_VERSION} can parse (${RUBOCOP_TARGET_RUBIES.join(', ')})`,
+          })
+          .default(RUBOCOP_DEFAULT_TARGET_RUBY),
+        timeoutSeconds: timeout(600),
+      })
+      .prefault({}),
+    // Go (plan 9C): staticcheck, go vet and gosec through Qualor's Go runner in the qualor/scanner
+    // image, offline, on the scan's Go modules (config.md §6).
+    staticcheck: z.strictObject({ enabled, timeoutSeconds: timeout(900) }).prefault({}),
+    govet: z.strictObject({ enabled, timeoutSeconds: timeout(900) }).prefault({}),
+    gosec: z
+      .strictObject({
+        enabled,
+        exclude: z
+          .array(
+            z
+              .string()
+              .regex(GOSEC_RULE_ID, 'a gosec rule id such as G104')
+              .refine((id) => GOSEC_RULES.has(id), {
+                message: `not a rule of gosec ${GOSEC_VERSION}`,
+              }),
+          )
+          .default([...GOSEC_DEFAULT_EXCLUDE]),
+        timeoutSeconds: timeout(900),
+      })
+      .prefault({}),
+    // C and C++ (plan 9D, config.md §6.2): cppcheck built into qualor/scanner, run on a checked
+    // copy of the files, with Qualor's rewrite of a compile database when there is one.
+    cppcheck: z
+      .strictObject({
+        enabled,
+        enable: z.array(z.enum(CPPCHECK_ENABLE_GROUPS)).default([...DEFAULT_CPPCHECK_ENABLE]),
+        // Ids that are off by default (ruling D9-14) and that this project wants on: only those.
+        select: z.array(z.enum(DEFAULT_CPPCHECK_SUPPRESSED)).default([]),
+        includePaths: z.array(repoDir).default([]),
+        defines: z.array(define).default([]),
+        compileCommands,
+        timeoutSeconds: timeout(1800),
+      })
+      .prefault({}),
+    // The clang-tidy on PATH (never bundled), only with a compile database; the project's
+    // .clang-tidy is read and filtered by Qualor (config.md §6.2). `qualor-default` forces
+    // Qualor's checks.
+    'clang-tidy': z
+      .strictObject({
+        enabled,
+        configFile: z.string().min(1).nullable().default(null),
+        compileCommands,
+        timeoutSeconds: timeout(3600),
+      })
+      .prefault({}),
   })
   .prefault({});
 
@@ -284,7 +446,13 @@ export const configSchema = z
             '**/*Tests/**',
             '**/test_*.py',
             '**/*_test.py',
+            '**/*_test.go',
             '**/conftest.py',
+            '**/*Test.php',
+            '**/*_spec.rb',
+            '**/*_test.rb',
+            '**/spec/**/*.rb',
+            '**/test/**/*.rb',
           ]),
         exclude: globs,
       })
@@ -311,7 +479,7 @@ export const configSchema = z
           .array(
             z.strictObject({
               path: z.string().min(1),
-              format: z.enum(['auto', 'lcov', 'cobertura', 'jacoco']).default('auto'),
+              format: z.enum(['auto', 'lcov', 'cobertura', 'jacoco', 'gocover']).default('auto'),
             }),
           )
           .default([]),

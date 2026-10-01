@@ -99,7 +99,13 @@
             "**/*Tests/**",
             "**/test_*.py",
             "**/*_test.py",
-            "**/conftest.py"
+            "**/*_test.go",
+            "**/conftest.py",
+            "**/*Test.php",
+            "**/*_spec.rb",
+            "**/*_test.rb",
+            "**/spec/**/*.rb",
+            "**/test/**/*.rb"
           ],
           "type": "array",
           "items": {
@@ -138,7 +144,12 @@
               "html",
               "css",
               "kotlin",
-              "swift"
+              "swift",
+              "php",
+              "ruby",
+              "go",
+              "c",
+              "cpp"
             ]
           }
         }
@@ -624,6 +635,333 @@
             }
           },
           "additionalProperties": false
+        },
+        "phpstan": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "level": {
+              "default": 2,
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10
+                },
+                {
+                  "type": "string",
+                  "const": "max"
+                }
+              ]
+            },
+            "memoryLimit": {
+              "default": "2G",
+              "type": "string",
+              "pattern": "^(-1|[1-9][0-9]{0,5}[MG])$"
+            },
+            "timeoutSeconds": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "rubocop": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "select": {
+              "default": [
+                "qualor-default"
+              ],
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "ignore": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "targetRubyVersion": {
+              "default": "4.0",
+              "type": [
+                "string",
+                "number"
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 600,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "staticcheck": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "govet": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "gosec": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "exclude": {
+              "default": [
+                "G104",
+                "G115",
+                "G304"
+              ],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^G\\d{3}$"
+              }
+            },
+            "timeoutSeconds": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "cppcheck": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "enable": {
+              "default": [
+                "warning",
+                "performance",
+                "portability"
+              ],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "warning",
+                  "style",
+                  "performance",
+                  "portability"
+                ]
+              }
+            },
+            "select": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "uninitMemberVar",
+                  "uninitMemberVarPrivate",
+                  "uninitMemberVarNoCtor"
+                ]
+              }
+            },
+            "includePaths": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "defines": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*(=\\S*)?$"
+              }
+            },
+            "compileCommands": {
+              "default": null,
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 1800,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
+        "clang-tidy": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "configFile": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "compileCommands": {
+              "default": null,
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 3600,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -670,7 +1008,8 @@
                   "auto",
                   "lcov",
                   "cobertura",
-                  "jacoco"
+                  "jacoco",
+                  "gocover"
                 ]
               }
             },

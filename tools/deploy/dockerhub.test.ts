@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { RUBOCOP_DEFAULT_EXCLUDE } from '../../packages/shared/src/rules/rubocop-default';
 
 /** The Docker Hub repositories, one description file each in deploy/dockerhub/. */
 const REPOSITORIES = [
@@ -42,7 +43,15 @@ describe('the Docker Hub descriptions', () => {
   it('name the same analyzer versions, entrypoint and user as the scanner image', () => {
     const text = read('scanner');
     const installSh = readFileSync('tools/analyzers/install.sh', 'utf8');
-    for (const tool of ['PMD', 'SPOTBUGS', 'OPENGREP', 'GITLEAKS', 'DETEKT', 'SWIFTLINT']) {
+    for (const tool of [
+      'PMD',
+      'SPOTBUGS',
+      'OPENGREP',
+      'GITLEAKS',
+      'DETEKT',
+      'SWIFTLINT',
+      'PHPSTAN',
+    ]) {
       const version = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh)?.[1] ?? '';
       expect(version, tool).not.toBe('');
       expect(text, tool).toContain(version);
@@ -101,5 +110,41 @@ describe('placeholder image names', () => {
       if (PLACEHOLDER.test(text)) found.push(file);
     }
     expect(found).toEqual([]);
+  });
+});
+
+describe('the Ruby pass versions in the docs (plan 9B)', () => {
+  const script = readFileSync('tools/analyzers/install-rubocop.sh', 'utf8');
+  const pin = (name: string) => new RegExp(`^${name}=(\\S+)$`, 'm').exec(script)?.[1] ?? '';
+  const ruby = pin('RUBY_VERSION');
+  const rubocop = pin('RUBOCOP_VERSION');
+  const rubocopMinor = rubocop.split('.').slice(0, 2).join('.');
+  const json =
+    /^json (\S+) /m.exec(readFileSync('tools/analyzers/rubocop/gems.lock', 'utf8'))?.[1] ?? '';
+  const grammar = (
+    JSON.parse(readFileSync('cli/package.json', 'utf8')) as { dependencies: Record<string, string> }
+  ).dependencies['tree-sitter-ruby'];
+
+  it('reads the pins', () => {
+    for (const v of [ruby, rubocop, json, grammar ?? '']) expect(v).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('names them in the scanner description, NOTICE.md, the guide and the changelog', () => {
+    expect(read('scanner')).toContain(`RuboCop ${rubocop} on Ruby ${ruby}`);
+    const notice = readFileSync('deploy/scanner/NOTICE.md', 'utf8');
+    for (const v of [ruby, rubocop, `json ${json}`, `tree-sitter-ruby ${grammar}`])
+      expect(notice, v).toContain(v);
+    expect(notice).toContain(`https://github.com/rubocop/rubocop/tree/v${rubocop}`);
+    const guide = readFileSync('docs/guide/languages-and-analyzers.md', 'utf8');
+    expect(guide).toContain(`RuboCop ${rubocopMinor}`);
+    expect(readFileSync('CHANGELOG.md', 'utf8')).toContain(
+      `RuboCop ${rubocopMinor} (MIT) on Ruby ${ruby}`,
+    );
+  });
+
+  it("lists exactly qualor-default's left-out cops in the guide", () => {
+    const guide = readFileSync('docs/guide/languages-and-analyzers.md', 'utf8');
+    for (const cop of RUBOCOP_DEFAULT_EXCLUDE) expect(guide, cop).toContain(`\`${cop}\``);
+    expect(guide).toContain(`the ${RUBOCOP_DEFAULT_EXCLUDE.length} cops`);
   });
 });

@@ -98,6 +98,36 @@ vulnerabilities:
   - id: CVE-2026-84782
     statement: libssl3/openssl DTLS handshake retransmission information disclosure; no Debian fix. The scanner never speaks DTLS (git/curl use TLS over TCP only).
     expired_at: 2026-12-31
+  - id: CVE-2026-103111
+    statement: libpcre2-8-0 from the Debian base image (grep, git, PHP), an out-of-bounds write with an attacker-controlled regular expression and certain JIT API usage; no Debian fix. Qualor passes no Perl-compatible pattern to grep or git. PHPStan compiles the scanned code's preg_* pattern literals (regexp.pattern) with PHP's PCRE, so every php Qualor starts for PHPStan, its worker processes included, reads only Qualor's own qualor-php.ini (php -c, no scan directory), which sets pcre.jit=0, and the JIT path is not reached (rulings A9-22, A9-23, plan 9A). The Go tools (go vet, staticcheck, gosec) use Go's own regexp engine, not PCRE (plan 9C).
+    expired_at: 2026-12-31
+  - id: CVE-2026-6653
+    statement: libxml2 (PHP's xml/dom extensions in php8.2-common, pulled in by php8.2-cli, plan 9A); no Debian fix. PHPStan parses PHP with its own parser and reads only Qualor's NEON config; Qualor parses no XML through PHP.
+    expired_at: 2026-12-31
+  - id: CVE-2026-74860
+    statement: libxml2 (PHP's xml/dom extensions in php8.2-common, pulled in by php8.2-cli, plan 9A); no Debian fix. PHPStan parses PHP with its own parser and reads only Qualor's NEON config; Qualor parses no XML through PHP.
+    expired_at: 2026-12-31
+  - id: CVE-2026-86138
+    statement: libxml2 (PHP's xml/dom extensions in php8.2-common, pulled in by php8.2-cli, plan 9A); no Debian fix. PHPStan parses PHP with its own parser and reads only Qualor's NEON config; Qualor parses no XML through PHP.
+    expired_at: 2026-12-31
+  - id: CVE-2026-86139
+    statement: libxml2 (PHP's xml/dom extensions in php8.2-common, pulled in by php8.2-cli, plan 9A); no Debian fix. PHPStan parses PHP with its own parser and reads only Qualor's NEON config; Qualor parses no XML through PHP.
+    expired_at: 2026-12-31
+  - id: CVE-2026-86140
+    statement: libxml2 (PHP's xml/dom extensions in php8.2-common, pulled in by php8.2-cli, plan 9A); no Debian fix. PHPStan parses PHP with its own parser and reads only Qualor's NEON config; Qualor parses no XML through PHP.
+    expired_at: 2026-12-31
+  - id: CVE-2026-86142
+    statement: libxml2 (PHP's xml/dom extensions in php8.2-common, pulled in by php8.2-cli, plan 9A); no Debian fix. PHPStan parses PHP with its own parser and reads only Qualor's NEON config; Qualor parses no XML through PHP.
+    expired_at: 2026-12-31
+  - id: CVE-2026-86143
+    statement: libxml2 (PHP's xml/dom extensions in php8.2-common, pulled in by php8.2-cli, plan 9A); no Debian fix. PHPStan parses PHP with its own parser and reads only Qualor's NEON config; Qualor parses no XML through PHP.
+    expired_at: 2026-12-31
+  - id: CVE-2026-86144
+    statement: libxml2 (PHP's xml/dom extensions in php8.2-common, pulled in by php8.2-cli, plan 9A); no Debian fix. PHPStan parses PHP with its own parser and reads only Qualor's NEON config; Qualor parses no XML through PHP.
+    expired_at: 2026-12-31
+  - id: CVE-2026-91765
+    statement: PHP's SOAP extension (php8.2-cli and its php8.2-common, -opcache, -readline packages, plan 9A); no Debian fix. The image has no SOAP extension (php8.2-soap is not installed) and Qualor runs no SoapServer or SoapClient.
+    expired_at: 2026-12-31
 
   # npm, bundled with Node.js 22 (npm 10.9.9 in Node 22.23.3, the latest), is in the image only for
   # the project's own `npm ci` before the scan; Qualor never runs it. Fixed in npm 11.

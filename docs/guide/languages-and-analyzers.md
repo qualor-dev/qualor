@@ -13,6 +13,11 @@ size, complexity, duplication and coverage.
 | CSS, SCSS | **stylelint** 17.15, the project's JSON/YAML config or Qualor's default | `.css` or `.scss` files are in scope, run by the `qualor/scanner` image |
 | Kotlin | **detekt** 1.23.8 (Apache-2.0), your `detekt.yml` or detekt's default rule set with the settings detekt recommends for Jetpack Compose | `.kt` or `.kts` files are in scope, run by the `qualor/scanner` image |
 | Swift | **SwiftLint** 0.65.1 (MIT), your `.swiftlint.yml` or SwiftLint's default rules with a few adjustments | `.swift` files are in scope, run by the `qualor/scanner` image |
+| PHP | **PHPStan** 2.2 (MIT) at level 2, with Qualor's own configuration | .php files are in scope, run by the qualor/scanner image |
+| Ruby | **RuboCop** 1.91 (MIT), Qualor's selection: RuboCop's Lint and Security cops | Ruby files are in scope (.rb, .rake, .gemspec, .ru, Gemfile, Rakefile), run by the qualor/scanner image |
+| Go | **staticcheck** 2026.2.1 (MIT), **go vet** (Go 1.27.1) and **gosec** 2.29.0 (Apache-2.0, security), offline | `.go` files and a `go.mod` are in scope, run by the `qualor/scanner` image |
+| C | **cppcheck** (2.22.0, GPL-3.0-or-later); **clang-tidy** (yours, LLVM 14+, with a compile database) | `.c`/`.h` files exist |
+| C++ | the same | `.cpp`/`.cc`/`.cxx`/`.hpp`/`.h`... files exist |
 | Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
@@ -21,8 +26,9 @@ size, complexity, duplication and coverage.
 | Anything else | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 Metrics (lines of code, functions, classes, cyclomatic and cognitive complexity) and duplication
-detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C#, Python, HTML and CSS; SCSS gets
-findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and external SARIF.
+detection cover TypeScript, JavaScript, Java, Kotlin, Swift, C, C++, C#, Python, PHP, Ruby, Go, HTML
+and CSS; SCSS gets findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and
+external SARIF.
 
 Each analyzer has `enabled: auto | true | false` in `qualor.yml`:
 
@@ -329,6 +335,198 @@ Swift files get the same metrics as the other languages (lines of code, function
 cyclomatic and cognitive complexity) and count in duplication detection. `*Tests/**` folders
 are test files by default.
 
+## PHP (PHPStan)
+
+The `qualor/scanner` image runs PHPStan 2.2 (MIT) on your `.php` files, on Debian's PHP 8.2. It
+runs at **level 2**, which checks for undefined variables, calls with the wrong number of
+arguments, using the result of a call that returns nothing (`void`), calls on values that are not
+objects, and invalid PHPDoc. Raise the level to get stricter checks, from 0 to 10 or `max`:
+
+```yaml
+analyzers:
+  phpstan:
+    enabled: auto        # true, false, or auto: on when PHP files are in scope
+    level: 5             # 0-10 or max; default 2
+    memoryLimit: 2G      # PHPStan's --memory-limit; raise it for a big project
+    timeoutSeconds: 900  # optional
+```
+
+Qualor never reads your `phpstan.neon` (or `phpstan.neon.dist`) and never loads PHPStan
+extensions, bootstrap files or Composer's autoloader: they are PHP code that a merge request
+controls, and a scan must not run it. The level and the other settings come from `qualor.yml`.
+`@phpstan-ignore` comments in the code are honoured. PHPStan runs on a copy of your sources.
+
+**Install your dependencies before the scan.** PHPStan needs to know the classes your code
+extends and calls. Run `composer install --no-scripts --no-plugins` in the job first; that is
+enough. Qualor reads the PHP files in `vendor/` as data, to learn their symbols, and never runs
+them (not Composer's autoloader, scripts or plugins either). A project whose `composer.json`
+requires packages is skipped when `vendor/` is not installed, with the reason in the scan log;
+without that, every inherited class would give false findings. A project that requires no
+packages runs without `vendor/`. PHPStan is also skipped when the installed dependencies are
+larger than 1 GiB or hold more than 200,000 files, because reading part of them would flood the
+result with false findings. A custom `config.vendor-dir` in `composer.json` is followed.
+
+Qualor never reports "unknown class", "unknown method" or "unknown function" (and the matching
+property, constant, trait and interface checks, and unknown named arguments). Whether a symbol is known depends on what your
+job installed and on framework magic that PHPStan understands only with extensions such as
+Larastan, which Qualor does not load. Run your own PHPStan for those checks.
+
+A file PHPStan cannot parse is left out of the analysis with a warning in the scan log, and
+PHPStan runs again on the rest, so one broken file does not hide the other findings. `.phtml` and
+`.inc` files are not analysed, only files whose name ends in `.php`, and neither are files larger
+than 1 MiB or reached through a symbolic link. PHPStan, its worker processes included, runs with
+a `php.ini` of Qualor's own instead of yours or the system's, reads no additional `.ini` files, and
+gets none of your `PHPRC`, `PHP_INI_SCAN_DIR`, `COMPOSER*`, `PHPSTAN_*` and `XDEBUG_*` variables.
+`QUALOR_PHPSTAN_PHAR` names another PHPStan phar (see [Configuration](./configuration.md)); it
+must be PHPStan 2.2.
+
+An issue's rule key is `phpstan:` and PHPStan's identifier, for example
+`phpstan:variable.undefined`.
+
+Qualor runs PHPStan itself, so if you imported your own PHPStan SARIF before, remove that import
+(`--sarif` or the `qualor.yml` `sarif:` entry). `phpstan` is a reserved engine id: a `sarif:`
+entry with `engine: phpstan` is a configuration error. A PHPStan SARIF you still import is
+reported as `ext-phpstan`, and each of its findings counts once with the built-in `phpstan`
+finding of the same rule on the same line.
+
+PHP files get the same metrics as the other languages (lines of code, functions, classes,
+cyclomatic and cognitive complexity) and count in duplication detection. `*Test.php` files are
+test files by default.
+
+## Ruby (RuboCop)
+
+The `qualor/scanner` image runs RuboCop 1.91 on your Ruby files: `.rb`, `.rake`, `.gemspec`, `.ru`,
+`Gemfile` and `Rakefile`. It has its own Ruby, so no Ruby, gem or bundle is needed on the runner and
+nothing is installed or built. `.erb` templates are not analysed.
+
+Qualor chooses the cops itself. The project's `.rubocop.yml` (and `.rubocop_todo.yml`, a file in a
+subdirectory or your home directory) is **never read**: RuboCop runs Ruby code that a configuration
+file names (ERB, `require`, plugins), and a scan must not run code from the checkout. Choose cops in
+`qualor.yml` instead. Inline comments in your code are honoured: `# rubocop:disable Lint/Foo` (and
+`# rubocop:todo`) silences that cop on that line or block. A cop that is not selected is not turned
+on by a `# rubocop:enable` comment.
+
+`qualor-default` runs RuboCop's Lint and Security cops that RuboCop enables by default: the ones
+that find bugs and security problems, not style. It leaves out the 12 cops below, because they
+misfire in a Qualor scan:
+
+- `Lint/CopDirectiveSyntax`, `Lint/MissingCopEnableDirective`,
+  `Lint/RedundantCopDisableDirective` and `Lint/RedundantCopEnableDirective` judge your
+  `rubocop:` comments against a configuration Qualor does not use.
+- `Lint/AmbiguousBlockAssociation`, `Lint/AssignmentInCondition`, `Lint/ConstantDefinitionInBlock`,
+  `Lint/MissingSuper`, `Lint/UnderscorePrefixedVariableName`, `Lint/UnusedBlockArgument` and
+  `Lint/UnusedMethodArgument` flag idioms that are normal in Rails callbacks, RSpec and DSL blocks.
+- `Lint/ScriptPermission` checks file permissions, which Qualor does not keep when it reads your
+  files, so it would flag every Ruby script with a `#!` line.
+
+Select any of them by name if you want it.
+
+A file that RuboCop cannot parse gets no findings (a syntax error is not reported as an issue).
+
+```yaml
+analyzers:
+  rubocop:
+    enabled: auto              # true, false, or auto: on when Ruby files are in scope
+    select: [qualor-default, Style, Naming]   # departments, cop names, or qualor-default
+    ignore: [Style/Documentation]             # departments or cop names to leave out
+    targetRubyVersion: '3.3'   # the Ruby syntax RuboCop parses; default 4.0
+    timeoutSeconds: 600        # optional
+```
+
+`select` takes RuboCop departments (`Lint`, `Security`, `Style`, `Layout`, `Naming`, `Metrics` and
+the others), cop names (`Style/StringLiterals`) and `qualor-default`. A department means the cops
+RuboCop enables by default in it; a cop name turns that cop on even if RuboCop leaves it disabled
+or pending. `ignore` removes departments or cops from the result. An unknown department or cop, or
+a `targetRubyVersion` that RuboCop 1.91 does not parse (it accepts 2.0 to 4.1), is a configuration
+error: the scan stops with exit 2.
+
+RuboCop checks the Ruby files in scope. Files larger than 1 MiB, files reached through a symbolic
+link and names with a line break are not passed. `.bundle/` directories and `db/schema.rb` are never
+scanned. Qualor runs RuboCop offline, with its own configuration and a clean environment (no
+`RUBYOPT`, `GEM_*` or `BUNDLE_*`). RuboCop is skipped when the image's RuboCop is missing or is a
+different minor version than 1.91, with the reason in the scan log. Rule keys look like
+`rubocop:Lint/UselessAssignment`.
+
+Plugin cops (`rubocop-rails`, `rubocop-rspec`, `rubocop-performance`) do not run: the plugins are
+not installed, and a configuration cannot load them.
+
+Qualor runs RuboCop itself, so if you imported your own RuboCop SARIF before, remove that import
+(`--sarif` or the `qualor.yml` `sarif:` entry). `rubocop` is a reserved engine id: a `sarif:` entry
+with `engine: rubocop` is a configuration error. A RuboCop SARIF you still import is reported as
+`ext-rubocop`, and each of its findings counts once with the built-in `rubocop` finding of the same
+rule on the same line.
+
+Ruby files get the same metrics as the other languages (lines of code, functions, classes,
+cyclomatic and cognitive complexity) and count in duplication detection. Functions are `def` and
+`def self.` methods; classes are `class` and `module` definitions; blocks and lambdas are not
+counted as functions. `*_spec.rb`, `*_test.rb` and Ruby files below `spec/` and `test/` are test
+files by default.
+
+## Go (staticcheck, go vet, gosec)
+
+The `qualor/scanner` image runs three Go analyzers on every Go module in your repository (each
+`go.mod` and the `.go` files below it): **staticcheck** 2026.2.1, **go vet** of Go 1.27.1, and
+**gosec** 2.29.0 for security. Your `staticcheck.conf`, `//lint:ignore` and `#nosec` comments are
+honoured; `.golangci.yml` is not read. staticcheck reads `staticcheck.conf` as a settings file
+only; nothing in it is run.
+
+They type-check your code, so they need your dependencies. Qualor never downloads them: it runs
+offline. Give them to it in the scan job:
+
+```yaml
+# GitLab: the scan job, image qualor/scanner
+qualor:
+  image: qualor/scanner:<version>
+  script:
+    - go mod download     # in each module directory, or vendor your dependencies
+    - qualor scan
+```
+
+A module cache of your own works too: point `GOMODCACHE` at it (outside the repository). A
+package whose dependencies are missing is not analysed, and the scan log says which and why.
+Files that use cgo (`import "C"`) are left out (cgo is switched off, `CGO_ENABLED=0`), so a
+package that needs them is reported the same way.
+
+For safety, Qualor never runs anything the repository asks for: no `go generate`, no other Go
+toolchain (`toolchain` and `GOTOOLCHAIN` are ignored), no C compiler, no module download.
+`GOFLAGS` from the CI job and a `go.work` file in the repository are ignored too (`GOFLAGS` is
+emptied and `GOWORK=off` is set), so each module is analysed on its own. A module
+whose `go` line needs a newer Go than 1.27.1, whose `replace` points at a directory outside the
+repository, or that contains a symbolic link out of it, is skipped with a log line.
+
+One case is not covered. Qualor does not look for links inside the directories Go itself ignores
+(names starting with `.` or `_`, `testdata`) or inside `node_modules`. If your code explicitly imports a package from one of them, `go`
+could compile a file that is linked outside the repository. Findings on files outside the
+repository are dropped, so only a compiler message could repeat a line of such a file in the scan
+log or in the report. Don't scan repositories you do not trust in a job that can read secrets or
+host files (the same rule as for ESLint above).
+
+```yaml
+analyzers:
+  gosec:
+    exclude: [G104, G115, G304]   # the default: unchecked errors, integer-conversion overflow, file path from a variable; [] runs every rule
+```
+
+G304 (file path provided as taint input) is excluded by default because it flags idiomatic file
+reads on real projects almost every time. To turn it back on, set `exclude: []` or list only the
+rules you want to skip, without `G304` (for example `exclude: [G104, G115]`).
+
+Severity: staticcheck's correctness and concurrency checks (`SA5…`, `SA2…`) are high, its other
+bug checks medium, unused code medium, simplifications and style low; go vet findings are medium;
+gosec findings take gosec's own HIGH/MEDIUM/LOW. Where go vet and staticcheck report the same
+mistake on one line (`printf`/`SA5009`, `bools`/`SA4000`), the server keeps one issue.
+`testdata/` directories and generated `*.pb.go` files are never scanned, and `*_test.go` files are
+tests. The `testdata/` exclude applies to every language, so secret and dependency scanning skip
+`testdata/` directories too.
+
+Go files get the same metrics as the other languages (lines of code, functions, types,
+cyclomatic and cognitive complexity) and count in duplication detection. The three analyzers are
+skipped, with the reason in the scan log, when no Go module is in scope, when no `go`,
+`staticcheck` or `gosec` of the supported version is available (outside the image), or when every
+module is left out for the reasons above. Qualor runs these tools itself: a SARIF file of your own
+from staticcheck or gosec is counted once with the built-in finding of the same code on the same
+line, and `engine: staticcheck`, `govet` or `gosec` in a `sarif:` entry is a configuration error.
+
 ## Java (PMD and SpotBugs)
 
 - **PMD** reads the source. The default ruleset `qualor-default` is PMD's own
@@ -393,6 +591,69 @@ build-command: 'dotnet build MySolution.sln --no-incremental' }`. For GitHub, us
 - `qualor dotnet abort` cleans up when the build fails, so no hook is left behind.
 - A plain `qualor scan` does not analyse C#.
 
+## C and C++ (cppcheck, clang-tidy)
+
+The `qualor/scanner` image runs **cppcheck** 2.22.0 on your C and C++ files, with no build and no
+setup: errors plus the `warning`, `performance` and `portability` checks. Add `style` for more
+(it is much noisier):
+
+```yaml
+analyzers:
+  cppcheck:
+    enable: [warning, style, performance, portability]
+    includePaths: [include]          # used when there is no compile_commands.json
+    defines: [HAVE_CONFIG_H]
+```
+
+When your repository has a `compile_commands.json` (at the root or in `build/`, or named by
+`compileCommands`), Qualor gives cppcheck its include paths, defines and language standard.
+Inline suppressions (`// cppcheck-suppress nullPointer`) work.
+
+`uninitMemberVar`, `uninitMemberVarPrivate` and `uninitMemberVarNoCtor` are off by default (they
+mostly flag union members); turn them on with `select: [uninitMemberVar]` under `cppcheck`.
+
+**clang-tidy** runs when the job that scans also has `clang-tidy` (LLVM 14 or newer) on `PATH` and a
+compile database, typically the job that built your project:
+
+```sh
+cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build
+qualor scan          # finds build/compile_commands.json
+```
+
+No Qualor image bundles clang-tidy: it needs your build's headers and flags. Use a clang-tidy of
+the same LLVM major as your compiler where you can. Your `.clang-tidy` at the repository root is
+used for `Checks`, `CheckOptions` and the header and implementation file extensions; without one,
+Qualor runs the bug-finding groups (`bugprone-*`, `clang-analyzer-*`, `performance-*`,
+`portability-*`, `concurrency-*`, minus a few noisy checks). A `.clang-tidy` that sets its own
+`Checks` replaces Qualor's default checks. Settings that pass compiler arguments, load other
+configurations or turn warnings into errors (`ExtraArgs`, `InheritParentConfig`,
+`WarningsAsErrors`...) are ignored, and so are nested `.clang-tidy` files. Analyzer options that
+name a file (`clang-analyzer-...:Config`) are dropped too. The scan log says what was left out.
+
+Qualor never runs your build. It reads `compile_commands.json` itself and passes on only include
+paths, defines, the language standard and harmless flags (`-I`, `-D`, `-U`, `-std` and a short list
+of others); the compiler is never taken from the database, and plugins, `-Xclang` options and
+response files (`@file`) are dropped.
+Code the tools cannot compile (a missing generated header, an unknown macro) is reported as a
+warning, not as an issue. A `.h` file counts as C++ when your repository has C++ files, else as C.
+Any C++ file in scope, a fuzzer included, makes the `.h` files C++.
+`CMakeFiles/`, `cmake-build-*/` and `_deps/` are never scanned.
+
+Only code of your repository is reported. A finding that clang-tidy or cppcheck places in a system
+header or in a directory outside the checkout is dropped, and a path outside the repository that a
+message quotes is replaced by a placeholder. Headers you include from outside the repository (an
+absolute `-I`) are still read for the analysis.
+
+Both tools are skipped, with the reason in the scan log, when they are missing, when cppcheck is
+not version 2.22, when clang-tidy is older than LLVM 14, or when there is no compile database for
+clang-tidy; `enabled: true` fails the scan (exit 3) instead. `cppcheck` and `clang-tidy` are
+reserved engine ids: a SARIF file of your own from them is reported as `ext-cppcheck` or
+`ext-clang-tidy` and counted once with the built-in finding. Rule keys look like
+`cppcheck:nullPointer` and `clang-tidy:bugprone-use-after-move`.
+
+C and C++ files get the same metrics as the other languages (lines of code, functions, classes,
+complexity) and duplication detection.
+
 ## Secrets (Gitleaks)
 
 Gitleaks scans the working tree with its built-in rules, or with `.gitleaks.toml` at the repository
@@ -455,18 +716,39 @@ sarif:
 ```
 
 The engine ids of the built-in analyzers (`eslint`, `ruff`, `semgrep`, `stylelint`, `htmlhint`,
-`detekt`, `swiftlint` and the others) are reserved: `engine: ruff` is a configuration error, and a
-SARIF file from a tool Qualor runs itself is reported under `ext-<tool>`. Don't import Ruff,
-stylelint, HTMLHint, detekt or SwiftLint SARIF any more: Qualor runs Ruff (see
-[Python](#python-ruff)), stylelint and HTMLHint (see [CSS and SCSS](#css-and-scss-stylelint) and
-[HTML](#html-htmlhint)) and detekt (see [Kotlin](#kotlin-detekt)) and SwiftLint (see
-[Swift](#swift-swiftlint)) itself; a SARIF file you still import for one of them counts once with
-the built-in finding of the same code on the same line.
+`detekt`, `swiftlint`, `phpstan`, `rubocop`, `staticcheck`, `govet`, `gosec`, `cppcheck`,
+`clang-tidy` and the others) are reserved: `engine: ruff` is a configuration error, and a SARIF
+file from a tool Qualor runs itself is reported under `ext-<tool>` (`ext-ruff`, `ext-stylelint`,
+`ext-htmlhint`, `ext-detekt`, `ext-swiftlint`, `ext-phpstan`, `ext-rubocop`, `ext-staticcheck`,
+`ext-gosec`, `ext-cppcheck`, `ext-clang-tidy`). Don't import Ruff, stylelint, HTMLHint, detekt,
+SwiftLint, PHPStan, RuboCop, staticcheck, gosec, cppcheck or clang-tidy SARIF any more: Qualor runs
+Ruff (see [Python](#python-ruff)), stylelint and HTMLHint (see
+[CSS and SCSS](#css-and-scss-stylelint) and [HTML](#html-htmlhint)), detekt (see
+[Kotlin](#kotlin-detekt)), SwiftLint (see [Swift](#swift-swiftlint)), PHPStan (see
+[PHP](#php-phpstan)), RuboCop (see [Ruby](#ruby-rubocop)), staticcheck and gosec (see
+[Go](#go-staticcheck-go-vet-gosec)) and cppcheck and clang-tidy (see
+[C and C++](#c-and-c-cppcheck-clang-tidy)) itself; a SARIF file you still import for one of them
+counts once with the built-in finding of the same code on the same line.
+
+**Brakeman** (Rails security scanner) is not bundled, because its licence restricts commercial use.
+If your use is covered by that licence, run it yourself and import its SARIF:
+
+```sh
+brakeman -f sarif -o brakeman.sarif
+```
+
+```yaml
+sarif:
+  - path: brakeman.sarif
+```
+
+RuboCop is the other direction: it is built in (see [Ruby](#ruby-rubocop)), so don't import its
+SARIF.
 
 ## Coverage
 
-Qualor imports **LCOV**, **Cobertura XML** and **JaCoCo XML**. Run your tests with coverage before the
-scan, then list the reports:
+Qualor imports **LCOV**, **Cobertura XML**, **JaCoCo XML** and **Go coverage profiles**. Run your
+tests with coverage before the scan, then list the reports:
 
 ```yaml
 coverage:
@@ -476,22 +758,52 @@ coverage:
       format: jacoco
     - path: '**/coverage.cobertura.xml'                 # .NET: coverlet / dotnet-coverage
       format: cobertura
+    - path: coverage/cobertura.xml                      # PHPUnit: --coverage-cobertura coverage/cobertura.xml (needs pcov or Xdebug)
+      format: cobertura
+    - path: coverage/coverage.xml                     # Ruby: SimpleCov + simplecov-cobertura
+      format: cobertura
+    - path: coverage.out                                # go test -coverprofile=coverage.out ./... (Go)
+      format: gocover
   pathPrefixes: []   # prefixes to strip or try when report paths do not match repository paths
 ```
+
+For Ruby, add `gem "simplecov-cobertura"` to the test group of your Gemfile and
+`SimpleCov.formatter = SimpleCov::Formatter::CoberturaFormatter` to the test helper.
+
+A Go profile names files by import path; Qualor finds them by their path suffix. Use
+`-coverpkg=./...` to count code that other packages' tests run. A profile that holds more than 20
+million lines is read as far as that limit, and the import warns that it was truncated. A profile
+larger than 128 MiB is refused: it is ignored with a warning.
 
 Or pass `--coverage <path>` on the command line. Test files are excluded from coverage. If a scan
 imports no coverage report at all, the coverage conditions have **no value**, and they do not fail the
 gate. The UI shows a warning instead.
 
+### C and C++
+
+Use gcovr (GCC) or llvm-cov (Clang); Qualor reads both without options:
+
+```sh
+gcovr -r . --cobertura coverage.xml          # or: --lcov coverage.info
+llvm-cov export -format=lcov -instr-profile=default.profdata ./tests > coverage.info
+```
+
+The report names the files as the build saw them. When the build ran outside the checkout (another
+directory or another machine), those paths do not match the repository: set `pathPrefixes` to the
+directory the report names, for example `pathPrefixes: [/build/src]`.
+
 ## What is scanned
 
 Every file in the working tree (`sources.include`, default `**/*`), minus what `.gitignore` ignores,
-minus the built-in excludes (`node_modules`, `dist`,
-`build`, `target`, `vendor`, `*.min.js`, `*.min.css`, .NET `obj/` and generated `*.g.cs` / `*.Designer.cs`,
-Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`, `__pypackages__`, `.eggs` and
-`site-packages`, and binary files), minus your own `sources.exclude`. Test files are recognised by
-`tests.include` (by default `*.test.*`, `*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`,
-`test_*.py`, `*_test.py`, `conftest.py`, `src/androidTest/`, `src/*Test/`). `src/*Test/` is meant
+minus the built-in excludes (`node_modules`, `dist`, `build`, `target`, `vendor`, `*.min.js`,
+`*.min.css`, .NET `obj/` and generated `*.g.cs` / `*.Designer.cs`, CMake's `CMakeFiles/`,
+`cmake-build-*/` and `_deps/`, Python's `.venv`, `venv`, `.tox`, `.nox`, `__pycache__`,
+`__pypackages__`, `.eggs` and `site-packages`, Bundler's `.bundle` directories, Rails' generated
+`db/schema.rb`, Go's `testdata/` directories and generated `*.pb.go` files, and binary files), minus
+your own `sources.exclude`. Test files are recognised by `tests.include` (by default `*.test.*`,
+`*.spec.*`, `__tests__/`, `src/test/`, `*Tests/`, `test_*.py`, `*_test.py`, `conftest.py`,
+`*Test.php`, `src/androidTest/`, `src/*Test/`, `*_spec.rb`, `*_test.rb`, `spec/**/*.rb`,
+`test/**/*.rb` and `*_test.go`). `src/*Test/` is meant
 for Kotlin Multiplatform's `commonTest` and `jvmTest`, but applies to every language: a Gradle
 `src/integrationTest` or `src/functionalTest` is test code too, and leaves lines of code,
 complexity, duplication and coverage.

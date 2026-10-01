@@ -1,8 +1,12 @@
 import type { IssueKind, Quality, Severity } from '../report/taxonomy';
 import type { EngineMapping } from './normalize';
 import type { SarifLevel, SarifResult, SarifRule } from './types';
+import { phpstanRule } from '../rules/phpstan';
+import { rubocopQuality, rubocopSeverity } from '../rules/rubocop';
 import { swiftlintQuality, swiftlintSeverity } from '../rules/swiftlint';
+import { clangTidyMeta, cppcheckQuality, cppcheckSeverity } from '../rules/cfamily';
 import ruffCategories from '../../rules/ruff-categories.json' with { type: 'json' };
+import { gosecSeverity, govetRule, staticcheckRule } from '../rules/golang';
 
 function tags(rule: SarifRule | undefined): string[] {
   const t = rule?.properties?.['tags'];
@@ -374,6 +378,80 @@ const swiftlint: EngineMapping = {
     swiftlintSeverity(result.ruleId ?? rule?.id ?? '', result.level ?? 'warning'),
 };
 
+/** PHPStan (plan 9A): every converted result is a `warning`; the identifier decides (§7.1). */
+const phpstan: EngineMapping = {
+  rule: (r) => phpstanRule(r.id),
+  severity: (result, rule) => phpstanRule(rule?.id ?? result.ruleId ?? '').defaultSeverity,
+};
+
+/**
+ * RuboCop (Ruby, plan 9B, report-format.md §7.1): quality and severity from the cop's department
+ * (and the high set), never from RuboCop's own offense severity.
+ */
+const rubocop: EngineMapping = {
+  rule: (r) => ({
+    quality: rubocopQuality(r.id),
+    kind: 'issue',
+    defaultSeverity: rubocopSeverity(r.id),
+  }),
+  severity: (result, rule) => rubocopSeverity(result.ruleId ?? rule?.id ?? ''),
+};
+
+/** staticcheck (Go, plan 9C, report-format.md §7.1): quality and severity from the check id. */
+const staticcheck: EngineMapping = {
+  rule: (r) => staticcheckRule(r.id),
+  severity: (result, rule) => staticcheckRule(result.ruleId ?? rule?.id ?? '').defaultSeverity,
+};
+
+/** go vet (Go, plan 9C): reliability, except unkeyed composite literals. */
+const govet: EngineMapping = {
+  rule: (r) => govetRule(r.id),
+  severity: (result, rule) => govetRule(result.ruleId ?? rule?.id ?? '').defaultSeverity,
+};
+
+/** gosec (Go, plan 9C): security; severity from the HIGH/MEDIUM/LOW tag on gosec's own rule. */
+const gosec: EngineMapping = {
+  rule: (r) => ({ quality: 'security', kind: 'issue', defaultSeverity: gosecSeverity(tags(r)) }),
+  severity: (_result, r) => gosecSeverity(tags(r)),
+};
+
+/** A SARIF level as a cppcheck severity, for an external cppcheck SARIF (plan 9D, fact F5). */
+const LEVEL_AS_CPPCHECK: Readonly<Record<string, string>> = {
+  error: 'error',
+  warning: 'warning',
+  note: 'style',
+  none: 'style',
+};
+const cppcheckSeverityOf = (props: Record<string, unknown> | undefined): string | undefined =>
+  typeof props?.['cppcheckSeverity'] === 'string' ? props['cppcheckSeverity'] : undefined;
+
+/**
+ * cppcheck (C/C++, plan 9D, report-format.md §7.1): cppcheck's own severity, which Qualor's
+ * xmlv2 transform keeps in `properties.cppcheckSeverity` (cppcheck's SARIF levels lose it).
+ */
+const cppcheck: EngineMapping = {
+  rule: (r) => {
+    const s = cppcheckSeverityOf(r.properties) ?? 'warning';
+    return { quality: cppcheckQuality(s), kind: 'issue', defaultSeverity: cppcheckSeverity(s) };
+  },
+  severity: (result, r) =>
+    cppcheckSeverity(
+      cppcheckSeverityOf(result.properties) ??
+        cppcheckSeverityOf(r?.properties) ??
+        LEVEL_AS_CPPCHECK[result.level ?? 'warning'] ??
+        'warning',
+    ),
+};
+
+/** clang-tidy (C/C++, plan 9D, report-format.md §7.1): by the check's group. */
+const clangTidy: EngineMapping = {
+  rule: (r) => {
+    const meta = clangTidyMeta(r.id);
+    return { quality: meta.quality, kind: 'issue', defaultSeverity: meta.severity };
+  },
+  severity: (result, r) => clangTidyMeta(result.ruleId ?? r?.id ?? '').severity,
+};
+
 export const ENGINE_MAPPINGS = {
   eslint,
   pmd,
@@ -388,6 +466,13 @@ export const ENGINE_MAPPINGS = {
   htmlhint,
   detekt,
   swiftlint,
+  phpstan,
+  rubocop,
+  staticcheck,
+  govet,
+  gosec,
+  cppcheck,
+  'clang-tidy': clangTidy,
 } as const satisfies Record<string, EngineMapping>;
 
 export function engineMapping(engineId: string): EngineMapping | undefined {

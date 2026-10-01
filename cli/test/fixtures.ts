@@ -24,6 +24,11 @@ export const FIXTURE_NAMES = [
   'css-basic',
   'kotlin-basic',
   'swift-basic',
+  'php-basic',
+  'ruby-basic',
+  'go-basic',
+  'c-basic',
+  'cpp-basic',
 ] as const;
 export const METRIC_FIELDS = [
   'ncloc',

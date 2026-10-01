@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import {
   compareFixture,
+  cppcheckVersionSupported,
   DEPENDENCY_ENGINES,
   engineRuleDefaults,
   expectedSchema,
@@ -27,6 +28,7 @@ import {
   type Mismatch,
   type Report,
 } from '@qualor/shared';
+import { GO_RUNNER_FILE } from '../../cli/test/analyzers';
 import { codeQualityValidator, dependencyScanningValidator, sastValidator } from '../../cli/test/gitlab-schema';
 import { checkLlmFixture } from './llm-check';
 
@@ -73,12 +75,56 @@ export const WEBLINT_PASS = 'weblint-pass';
 const WEBLINT_PASS_FILES = ['/opt/qualor/weblint/stylelint.mjs', '/opt/qualor/weblint/htmlhint.mjs'];
 
 /**
+ * A pseudo-tool: Qualor's Go runner in the scanner image's place (config.md §6, plan 9C); like the
+ * weblint pass, a skip when absent, and the fixture scan drops QUALOR_GO_DIR.
+ */
+export const GO_RUNNER = 'go-runner';
+
+/**
  * A pseudo-tool: detekt's jar in the scanner image's place (config.md §6, plan 8E). Like the
  * sonarjs pass, its absence is a normal skip on a plain host, and a fixture's scan environment
  * drops QUALOR_DETEKT_JAR, so only the default path is ever checked here.
  */
 export const DETEKT_JAR = 'detekt-jar';
 const DETEKT_JAR_FILE = '/opt/qualor/lib/detekt/detekt-cli.jar';
+
+/**
+ * A pseudo-tool: PHPStan's phar in the scanner image's place (config.md §6, plan 9A). Like the
+ * detekt jar, its absence is a normal skip on a plain host; a fixture's scan environment drops
+ * QUALOR_PHPSTAN_PHAR, so only the default path is ever checked here.
+ */
+export const PHPSTAN_PHAR = 'phpstan-phar';
+const PHPSTAN_PHAR_FILE = '/opt/qualor/lib/phpstan/phpstan.phar';
+
+/**
+ * A pseudo-tool: Qualor's RuboCop pass in the scanner image's place (config.md §6, plan 9B). Like
+ * the sonarjs pass, its absence is a normal skip on a plain host, and a fixture's scan environment
+ * drops QUALOR_RUBOCOP_DIR, so only the default path is ever checked here.
+ */
+export const RUBOCOP_PASS = 'rubocop-pass';
+const RUBOCOP_PASS_FILES = ['/opt/qualor/rubocop/run.rb', '/opt/qualor/rubocop/ruby/bin/ruby'];
+
+/**
+ * Plan 9D: the fixtures' cppcheck findings are cppcheck 2.22's (fact F12), and the engine skips
+ * another minor: this pseudo-tool is present only for a cppcheck of the pinned minor.
+ */
+export const CPPCHECK_PINNED = 'cppcheck-pinned';
+
+/** Plan 9D: present only for a clang-tidy of the major install-clang-tidy.sh pins (22). */
+export const CLANG_TIDY_PINNED = 'clang-tidy-pinned';
+
+function pinnedClangTidyMajor(): string | null {
+  const script = readFileSync(path.join(root, 'tools/analyzers/install-clang-tidy.sh'), 'utf8');
+  return /^CLANG_TIDY_VERSION=(\d+)\./m.exec(script)?.[1] ?? null;
+}
+
+/** What `<tool> --version` prints, matched by `re`'s first group; null without the tool. */
+function toolVersion(tool: string, re: RegExp, env: Record<string, string | undefined>): string | null {
+  const bin = findTool(tool, env);
+  if (bin === null) return null;
+  const r = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 30_000 });
+  return r.status === 0 ? (re.exec(r.stdout ?? '')?.[1] ?? null) : null;
+}
 
 /**
  * The binaries each built-in engine needs (any one of an inner list). The harness checks the same
@@ -110,6 +156,18 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   detekt: [['java'], [DETEKT_JAR]],
   // Plan 8F: SwiftLint's static binary, from install.sh (/opt/qualor/bin).
   swiftlint: [['swiftlint']],
+  // Plan 9A: php and, like detekt above, the image-bundled phar.
+  phpstan: [['php'], [PHPSTAN_PHAR]],
+  // Plan 9B: Qualor's RuboCop pass (install-rubocop.sh).
+  rubocop: [[RUBOCOP_PASS]],
+  // Plan 9C: the go command, the tool, and Qualor's Go runner (install-go.sh).
+  staticcheck: [['node'], ['go'], ['staticcheck'], [GO_RUNNER]],
+  govet: [['node'], ['go'], [GO_RUNNER]],
+  gosec: [['node'], ['go'], ['gosec'], [GO_RUNNER]],
+  // Plan 9D: cppcheck of the pinned minor, built by install-cppcheck.sh (/opt/qualor/bin).
+  cppcheck: [[CPPCHECK_PINNED]],
+  // Plan 9D: clang-tidy of the pinned major, from install-clang-tidy.sh (tests only, decision 2).
+  'clang-tidy': [[CLANG_TIDY_PINNED]],
 };
 
 /**
@@ -131,7 +189,18 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === TRIVY_DATABASE) return existsSync(TRIVY_DATABASE_FILE);
   if (name === SONARJS_PASS) return existsSync(SONARJS_PASS_FILE);
   if (name === DETEKT_JAR) return existsSync(DETEKT_JAR_FILE);
+  if (name === PHPSTAN_PHAR) return existsSync(PHPSTAN_PHAR_FILE);
   if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
+  if (name === RUBOCOP_PASS) return RUBOCOP_PASS_FILES.every((f) => existsSync(f));
+  if (name === GO_RUNNER) return existsSync(GO_RUNNER_FILE);
+  if (name === CPPCHECK_PINNED) {
+    const v = toolVersion('cppcheck', /^Cppcheck (\S+)$/m, env);
+    return v !== null && cppcheckVersionSupported(v);
+  }
+  if (name === CLANG_TIDY_PINNED) {
+    const major = toolVersion('clang-tidy', /LLVM version (\d+)\./, env);
+    return major !== null && major === pinnedClangTidyMajor();
+  }
   return findTool(name, env) !== null;
 }
 

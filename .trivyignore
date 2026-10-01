@@ -1,0 +1,8 @@
+# Vulnerabilities accepted in Qualor's own Trivy scan of this repository (the dogfood self-scan and
+# the CI scan job), each with the reason and a review date: `exp:` makes Trivy report it again from
+# that day. The scanner images keep their own list in deploy/scanner/.trivyignore.yaml.
+
+# golang.org/x/crypto/openpgp is deprecated and unmaintained; there is no fixed version. Listed by
+# tools/analyzers/go-tools/gosec/go.mod (the gosec build module of qualor/scanner): gosec links
+# x/crypto's chacha20poly1305, cryptobyte and hkdf, never openpgp.
+GO-2026-5932 exp:2026-12-31

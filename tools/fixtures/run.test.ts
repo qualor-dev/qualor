@@ -7,6 +7,8 @@ import {
   checkGitLabReports,
   checkFixtureStatic,
   checkSonarFixture,
+  CLANG_TIDY_PINNED,
+  CPPCHECK_PINNED,
   exit3Acceptable,
   findTool,
   isDotnetFixture,
@@ -17,6 +19,8 @@ import {
   runFixtures,
   scanEnv,
   DETEKT_JAR,
+  PHPSTAN_PHAR,
+  GO_RUNNER,
   SONARJS_PASS,
   toolOnPath,
   TRIVY_DATABASE,
@@ -68,6 +72,14 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(unavailableEngines(['sonarjs'], (t) => t === 'node')).toEqual(['sonarjs']);
     expect(unavailableEngines(['sonarjs'], (t) => t === SONARJS_PASS)).toEqual(['sonarjs']);
     expect(unavailableEngines(['sonarjs'], (t) => ['node', SONARJS_PASS].includes(t))).toEqual([]);
+    // Plan 9D: cppcheck counts only at the pinned minor (the harness's has() runs --version).
+    expect(unavailableEngines(['cppcheck'], () => false)).toEqual(['cppcheck']);
+    expect(unavailableEngines(['cppcheck'], (t) => t === 'cppcheck')).toEqual(['cppcheck']);
+    expect(unavailableEngines(['cppcheck'], (t) => t === CPPCHECK_PINNED)).toEqual([]);
+    // Plan 9D: clang-tidy counts only at the major install-clang-tidy.sh pins.
+    expect(unavailableEngines(['clang-tidy'], () => false)).toEqual(['clang-tidy']);
+    expect(unavailableEngines(['clang-tidy'], (t) => t === 'clang-tidy')).toEqual(['clang-tidy']);
+    expect(unavailableEngines(['clang-tidy'], (t) => t === CLANG_TIDY_PINNED)).toEqual([]);
     // Plan 8E: detekt needs java and the image's jar.
     expect(unavailableEngines(['detekt'], (t) => t === 'java')).toEqual(['detekt']);
     expect(unavailableEngines(['detekt'], (t) => t === DETEKT_JAR)).toEqual(['detekt']);
@@ -75,6 +87,15 @@ describe('analyzer capabilities (ruling T4)', () => {
     // Plan 8F: SwiftLint's static binary only.
     expect(unavailableEngines(['swiftlint'], () => false)).toEqual(['swiftlint']);
     expect(unavailableEngines(['swiftlint'], (t) => t === 'swiftlint')).toEqual([]);
+    // Plan 9A: phpstan needs php and the image's phar.
+    expect(unavailableEngines(['phpstan'], (t) => t === 'php')).toEqual(['phpstan']);
+    expect(unavailableEngines(['phpstan'], (t) => t === PHPSTAN_PHAR)).toEqual(['phpstan']);
+    expect(unavailableEngines(['phpstan'], (t) => ['php', PHPSTAN_PHAR].includes(t))).toEqual([]);
+    // Plan 9C: node, go, the tool and Qualor's Go runner.
+    expect(unavailableEngines(['staticcheck', 'govet', 'gosec'], () => false)).toEqual(['staticcheck', 'govet', 'gosec']);
+    expect(unavailableEngines(['staticcheck', 'govet', 'gosec'], (t) => t !== GO_RUNNER)).toEqual(['staticcheck', 'govet', 'gosec']);
+    expect(unavailableEngines(['staticcheck', 'govet', 'gosec'], (t) => t !== 'gosec')).toEqual(['gosec']);
+    expect(unavailableEngines(['staticcheck', 'govet', 'gosec'], () => true)).toEqual([]);
   });
   it('needs node and the weblint pass for stylelint and htmlhint (plan 8D)', () => {
     expect(unavailableEngines(['stylelint', 'htmlhint'], (t) => t === 'node', 'linux')).toEqual(['stylelint', 'htmlhint']);

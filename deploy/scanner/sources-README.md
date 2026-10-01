@@ -19,6 +19,7 @@ This image holds files only: the complete corresponding source of the copyleft c
   **Rhino** 1.7.15.1 (MPL-2.0, PMD) and **jsr250-api** 1.0 (CDDL-1.0, PMD).
 - **Trove4J** 1.0.20200330 (LGPL-2.1), inside the shaded jar of detekt's CLI: its `-sources.jar`
   from Maven Central.
+- **cppcheck** (GPL-3.0-or-later): the tag archive `qualor/scanner` builds `/opt/qualor/bin/cppcheck` from, with the simplecpp, tinyxml2 and picojson sources it compiles in.
 - **Eclipse Temurin JRE** 17 (GPL-2.0 with the Classpath Exception): the source archive
   Adoptium publishes with that release.
 - Inside the `qualor` binary, which is the Bun runtime with the Qualor CLI's JavaScript bundle

@@ -102,14 +102,24 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(enginePriority('eslint')).toBeGreaterThan(enginePriority('sonarjs'));
   });
 
-  it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
+  it('aliases every built-in engine that has an imported-SARIF twin, and no other', () => {
+    // The whole alias table, strictly: plans 8C-8F and every Phase 9 engine (9A-9D; go vet has none).
     expect(EXTERNAL_BUILTIN_ALIASES).toEqual({
       'ext-ruff': 'ruff',
       'ext-stylelint': 'stylelint',
       'ext-htmlhint': 'htmlhint',
       'ext-detekt': 'detekt',
       'ext-swiftlint': 'swiftlint',
+      'ext-phpstan': 'phpstan',
+      'ext-rubocop': 'rubocop',
+      'ext-staticcheck': 'staticcheck',
+      'ext-gosec': 'gosec',
+      'ext-cppcheck': 'cppcheck',
+      'ext-clang-tidy': 'clang-tidy',
     });
+  });
+
+  it('pairs an externally imported Ruff rule with the built-in Ruff rule of the same code, ruff primary', () => {
     expect(equivalentPartners('ext-ruff:F401')).toEqual(['ruff:F401']);
     expect(equivalentPartners('ruff:F401')).toEqual(['ext-ruff:F401']);
     expect(rulesEquivalent(rule('ext-ruff:F401'), rule('ruff:F401'))).toBe(true);
@@ -159,12 +169,49 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(rulesEquivalent(rule('ext-bandit:tag-pair'), rule('htmlhint:tag-pair'))).toBe(false);
   });
 
-  it('ranks swiftlint below every other built-in engine, above any external one (data-model.md §5.3)', () => {
-    for (const engine of ENGINE_PRIORITY.filter((e) => e !== 'swiftlint')) {
+  it('ranks swiftlint below every built-in engine listed before it, above any external one (data-model.md §5.3)', () => {
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('swiftlint'))) {
       expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('swiftlint'));
     }
     expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('my-tool'));
     expect(enginePriority('swiftlint')).toBeGreaterThan(enginePriority('ext-swiftlint'));
+  });
+
+  it('ranks phpstan below every built-in engine listed before it and above any external engine (plan 9A)', () => {
+    expect(ENGINE_PRIORITY.indexOf('phpstan')).toBeGreaterThan(
+      ENGINE_PRIORITY.indexOf('swiftlint'),
+    );
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('phpstan'))) {
+      expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('phpstan'));
+    }
+    expect(enginePriority('phpstan')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(enginePriority('phpstan')).toBeGreaterThan(enginePriority('ext-phpstan'));
+  });
+
+  it('pairs an imported PHPStan SARIF (ext-phpstan, identical ids) with the built-in rule (plan 9A)', () => {
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-phpstan']).toBe('phpstan');
+    expect(equivalentPartners('ext-phpstan:variable.undefined')).toEqual([
+      'phpstan:variable.undefined',
+    ]);
+    expect(equivalentPartners('phpstan:variable.undefined')).toEqual([
+      'ext-phpstan:variable.undefined',
+    ]);
+    expect(
+      rulesEquivalent(rule('ext-phpstan:arguments.count'), rule('phpstan:arguments.count')),
+    ).toBe(true);
+    expect(rulesEquivalent(rule('ext-phpstan:arguments.count'), rule('phpstan:method.void'))).toBe(
+      false,
+    );
+  });
+
+  it('ranks cppcheck above clang-tidy, both below the earlier built-in engines and above any external one (plan 9D)', () => {
+    const at = (e: string) => ENGINE_PRIORITY.indexOf(e);
+    expect(at('cppcheck')).toBeGreaterThan(at('swiftlint'));
+    expect(at('clang-tidy')).toBe(at('cppcheck') + 1);
+    expect(enginePriority('cppcheck')).toBeGreaterThan(enginePriority('clang-tidy'));
+    expect(enginePriority('clang-tidy')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-cppcheck']).toBe('cppcheck');
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-clang-tidy']).toBe('clang-tidy');
   });
 
   it('pairs an imported SwiftLint SARIF (ext-swiftlint, identical ids) with the built-in rule (plan 8F ruling F4)', () => {
@@ -211,5 +258,69 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
     expect(
       rulesEquivalent(rule('ext-bandit:detekt.style.MagicNumber'), rule('detekt:MagicNumber')),
     ).toBe(false);
+  });
+
+  it('ranks rubocop below every built-in engine listed before it and above any external engine (plan 9B)', () => {
+    expect(ENGINE_PRIORITY.indexOf('rubocop')).toBeGreaterThan(
+      ENGINE_PRIORITY.indexOf('swiftlint'),
+    );
+    for (const engine of ENGINE_PRIORITY.slice(0, ENGINE_PRIORITY.indexOf('rubocop'))) {
+      expect(enginePriority(engine), engine).toBeGreaterThan(enginePriority('rubocop'));
+    }
+    expect(enginePriority('rubocop')).toBeGreaterThan(enginePriority('my-tool'));
+    expect(enginePriority('rubocop')).toBeGreaterThan(enginePriority('ext-rubocop'));
+  });
+
+  it('pairs an imported RuboCop SARIF (ext-rubocop, identical ids) with the built-in rule (plan 9B)', () => {
+    expect(EXTERNAL_BUILTIN_ALIASES['ext-rubocop']).toBe('rubocop');
+    expect(equivalentPartners('ext-rubocop:Lint/UselessAssignment')).toEqual([
+      'rubocop:Lint/UselessAssignment',
+    ]);
+    expect(equivalentPartners('rubocop:Lint/UselessAssignment')).toEqual([
+      'ext-rubocop:Lint/UselessAssignment',
+    ]);
+    expect(rulesEquivalent(rule('ext-rubocop:Security/Eval'), rule('rubocop:Security/Eval'))).toBe(
+      true,
+    );
+    expect(rulesEquivalent(rule('ext-rubocop:Security/Eval'), rule('rubocop:Security/Open'))).toBe(
+      false,
+    );
+  });
+
+  it('ranks the Go engines after swiftlint, staticcheck above govet above gosec, all above external ones (plan 9C)', () => {
+    const at = (e: string) => ENGINE_PRIORITY.indexOf(e);
+    expect(at('staticcheck')).toBeGreaterThan(at('swiftlint'));
+    expect(at('govet')).toBeGreaterThan(at('staticcheck'));
+    expect(at('gosec')).toBeGreaterThan(at('govet'));
+    expect(enginePriority('gosec')).toBeGreaterThan(enginePriority('my-tool'));
+  });
+
+  it('pairs go vet with staticcheck where both report the same mistake, and imported staticcheck/gosec SARIF with the built-in rules (plan 9C)', () => {
+    expect(rulesEquivalent(rule('govet:printf'), rule('staticcheck:SA5009'))).toBe(true);
+    expect(rulesEquivalent(rule('govet:bools'), rule('staticcheck:SA4000'))).toBe(true);
+    expect(rulesEquivalent(rule('govet:printf'), rule('staticcheck:SA4000'))).toBe(false);
+    expect(equivalentPartners('ext-staticcheck:SA4006')).toEqual(['staticcheck:SA4006']);
+    expect(equivalentPartners('gosec:G401')).toEqual(['ext-gosec:G401']);
+    expect(enginePriority('staticcheck')).toBeGreaterThan(enginePriority('govet'));
+    expect(enginePriority('gosec')).toBeGreaterThan(enginePriority('ext-gosec'));
+  });
+
+  it('pairs the cppcheck and clang-tidy rules that report the same defect (plan 9D)', () => {
+    for (const [a, b] of [
+      ['cppcheck:zerodiv', 'clang-tidy:clang-analyzer-core.DivideZero'],
+      ['cppcheck:nullPointer', 'clang-tidy:clang-analyzer-core.NullDereference'],
+      ['cppcheck:mismatchAllocDealloc', 'clang-tidy:clang-analyzer-unix.MismatchedDeallocator'],
+      ['cppcheck:memleak', 'clang-tidy:clang-analyzer-unix.Malloc'],
+      ['cppcheck:doubleFree', 'clang-tidy:clang-analyzer-unix.Malloc'],
+      ['cppcheck:deallocuse', 'clang-tidy:clang-analyzer-unix.Malloc'],
+      ['cppcheck:arrayIndexOutOfBounds', 'clang-tidy:clang-analyzer-security.ArrayBound'],
+      ['cppcheck:duplicateBranch', 'clang-tidy:bugprone-branch-clone'],
+      ['cppcheck:duplicateExpression', 'clang-tidy:misc-redundant-expression'],
+      ['cppcheck:accessMoved', 'clang-tidy:bugprone-use-after-move'],
+    ] as const) {
+      expect(rulesEquivalent(rule(a), rule(b)), `${a} ~ ${b}`).toBe(true);
+      expect(rulesEquivalent(rule(b), rule(a)), `${b} ~ ${a}`).toBe(true);
+      expect(equivalentPartners(a), a).toContain(b);
+    }
   });
 });

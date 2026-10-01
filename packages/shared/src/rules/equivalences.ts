@@ -32,8 +32,11 @@ export const EQUIVALENCES: Equivalences = equivalencesSchema.parse(data);
  * data-model.md §5.3: which engine's issue is primary when two engines report the same problem.
  * Higher wins; external engines (any id not listed) rank lowest. `gitleaks` > `semgrep` >
  * `spotbugs` > `roslyn` > `pmd` > `eslint` > `sonarjs` > `ruff` > `stylelint` > `htmlhint` >
- * `detekt` > `swiftlint` > external (plan 8D ruling D5, plan 8E ruling E4; swiftlint (plan 8F): the
- * only Swift engine).
+ * `detekt` > `swiftlint` > `phpstan` > `rubocop` > `staticcheck` > `govet` > `gosec` > `cppcheck` >
+ * `clang-tidy` > external (plan 8D ruling D5, plan 8E ruling E4; swiftlint (plan 8F): the only Swift
+ * engine; phpstan (plan 9A): the only PHP engine; rubocop (plan 9B): the only Ruby engine;
+ * staticcheck, govet, gosec (plan 9C): the Go engines; cppcheck and clang-tidy (plan 9D): the C and
+ * C++ engines, cppcheck first).
  */
 export const ENGINE_PRIORITY: readonly string[] = [
   'gitleaks',
@@ -48,6 +51,13 @@ export const ENGINE_PRIORITY: readonly string[] = [
   'htmlhint',
   'detekt',
   'swiftlint',
+  'phpstan',
+  'rubocop',
+  'staticcheck',
+  'govet',
+  'gosec',
+  'cppcheck',
+  'clang-tidy',
 ];
 
 export function enginePriority(engineId: string): number {
@@ -94,6 +104,17 @@ export const EXTERNAL_BUILTIN_ALIASES: Readonly<Record<string, string>> = Object
   'ext-detekt': 'detekt',
   // Plan 8F ruling F4; SwiftLint's own SARIF ids are the bare rule ids, identical to ours.
   'ext-swiftlint': 'swiftlint',
+  // Plan 9A; a PHPStan SARIF converter's rule ids are PHPStan's identifiers, identical to ours.
+  'ext-phpstan': 'phpstan',
+  // Plan 9B; RuboCop SARIF converters keep the cop name as the rule id.
+  'ext-rubocop': 'rubocop',
+  // Plan 9C: staticcheck's and gosec's own SARIF use the check ids the built-in engines use.
+  'ext-staticcheck': 'staticcheck',
+  'ext-gosec': 'gosec',
+  // Plan 9D: cppcheck's own SARIF ids are its error ids, clang-tidy's (through SARIF converters)
+  // its check names, identical to ours.
+  'ext-cppcheck': 'cppcheck',
+  'ext-clang-tidy': 'clang-tidy',
 });
 
 /** detekt 1.23 SARIF rule ids: `detekt.<rule set>.<Rule>` (`detekt.style.MagicNumber`). */

@@ -13,6 +13,7 @@ import { createDetektAnalyzer } from './detekt';
 import { builtinAnalyzers } from './registry';
 import {
   emergencyCleanup,
+  execEnv,
   mapLimit,
   removeActiveWorkDirs,
   requiredFailures,
@@ -231,6 +232,57 @@ describe('runAnalyzers', () => {
     expect(JSON.stringify(captures)).not.toContain(FAKE_SECRET);
   });
 
+  it("passes a text output's UTF-8 to transform when outputFormat is text (plan 9D)", async () => {
+    const root = tmp();
+    const work = tmp();
+    const out = path.join(work, 'out.xml');
+    const textRun = (transform?: (o: unknown) => unknown): Analyzer => ({
+      id: 'cppcheck',
+      languages: [],
+      prepare: () =>
+        Promise.resolve({
+          run: {
+            command: process.execPath,
+            args: [
+              '-e',
+              `require('fs').writeFileSync(${JSON.stringify(out)}, '<results>é</results>')`,
+            ],
+            cwd: root,
+            sarifPath: out,
+            okExitCodes: [0],
+            outputFormat: 'text',
+            ...(transform !== undefined && { transform }),
+          },
+        }),
+    });
+    const [capture] = await runAnalyzers(
+      [
+        textRun((output) => ({
+          version: '2.1.0',
+          runs: [{ tool: { driver: { name: String(output) } }, results: [] }],
+        })),
+      ],
+      { root, config: parseConfig({ version: 1 }), files: [], log: silentLogger, env: process.env },
+    );
+    expect(capture?.status).toBe('ok');
+    expect(
+      (capture?.sarif as { runs: { tool: { driver: { name: string } } }[] }).runs[0]?.tool.driver
+        .name,
+    ).toBe('<results>é</results>');
+    // Text without a transform is no SARIF: a fixed failure, the text never quoted.
+    const [bare] = await runAnalyzers([textRun()], {
+      root,
+      config: parseConfig({ version: 1 }),
+      files: [],
+      log: silentLogger,
+      env: process.env,
+    });
+    expect(bare).toMatchObject({
+      status: 'failed',
+      reason: 'output could not be converted to SARIF',
+    });
+  });
+
   it('never hands an adapter a binary the repository planted (ruling V3)', async () => {
     const { root, files } = setup();
     const exe = process.platform === 'win32' ? '.exe' : '';
@@ -409,7 +461,7 @@ describe('runAnalyzers', () => {
     expect(requiredFailures(required)).toEqual(['detekt']);
   });
 
-  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D, 8D, 8E, 8F)', () => {
+  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D, 8D, 8E, 8F, 9A, 9B, 9C, 9D)', () => {
     const ids = builtinAnalyzers().map((a) => a.id);
     const order = [
       'eslint',
@@ -425,6 +477,13 @@ describe('runAnalyzers', () => {
       'roslyn',
       'stylelint',
       'htmlhint',
+      'phpstan',
+      'rubocop',
+      'staticcheck',
+      'govet',
+      'gosec',
+      'cppcheck',
+      'clang-tidy',
     ] as const;
     // Membership and relative order (config.md §3), never the whole list.
     expect(ids).toEqual(expect.arrayContaining([...order]));
@@ -475,6 +534,36 @@ describe('runAnalyzers', () => {
     expect(cwdOut).toBe(root);
     expect(hung?.timedOut).toBe(true);
     expect(hung?.durationMs).toBeLessThan(5_000);
+  });
+
+  it("sets ctx.exec's env overlay over the analyzer environment for that command only, and sanitizes it again (ruling G9-15)", async () => {
+    const { root, files } = setup();
+    const outs: string[] = [];
+    const show =
+      'process.stdout.write(JSON.stringify([process.env.GOTOOLCHAIN ?? null, process.env.QUALOR_TOKEN ?? null, process.env.SAFE_VAR ?? null]))';
+    const probe: Analyzer = {
+      id: 'eslint',
+      languages: [],
+      prepare: async (ctx) => {
+        const env = { GOTOOLCHAIN: 'local', QUALOR_TOKEN: 'sneaked' };
+        outs.push(
+          (await ctx.exec(process.execPath, ['-e', show], { timeoutMs: 10_000, env })).stdout,
+        );
+        outs.push((await ctx.exec(process.execPath, ['-e', show], { timeoutMs: 10_000 })).stdout);
+        return { unavailable: 'probe only' };
+      },
+    };
+    await runAnalyzers([probe], {
+      root,
+      files,
+      config: config(),
+      log: silentLogger,
+      env: { ...process.env, GOTOOLCHAIN: 'go1.99.1', SAFE_VAR: 'kept' },
+    });
+    expect(outs.map((o) => JSON.parse(o) as unknown)).toEqual([
+      ['local', null, 'kept'],
+      ['go1.99.1', null, 'kept'],
+    ]);
   });
 
   it('strips QUALOR_TOKEN and QUALOR_*-secret vars from the analyzer child process (fix-round finding 3)', async () => {
@@ -858,5 +947,25 @@ describe('mapLimit', () => {
     });
     expect(out).toEqual([10, 20, 30, 40, 50, 60]);
     expect(peak).toBe(2);
+  });
+});
+
+describe('execEnv (ruling A9-18)', () => {
+  const root = path.resolve('/repo');
+  const base = { PATH: '/usr/bin', PHPRC: '/repo', KEEP: 'k' };
+  it('leaves an analyzer environment as it is without env or dropEnv', () => {
+    const analyzerEnv = execEnv({ ...base, QUALOR_SERVER_TOKEN: 'secret' }, {}, root);
+    expect(analyzerEnv).toEqual(base);
+    expect(execEnv(analyzerEnv, {}, root)).toEqual(analyzerEnv);
+  });
+  it('drops names, adds env, and sanitizes again', () => {
+    const env = execEnv(
+      base,
+      { env: { LC_ALL: 'C.UTF-8', QUALOR_SERVER_TOKEN: 'secret' }, dropEnv: (n) => n === 'PHPRC' },
+      root,
+    );
+    expect(env).toMatchObject({ PATH: '/usr/bin', KEEP: 'k', LC_ALL: 'C.UTF-8' });
+    expect(env).not.toHaveProperty('PHPRC');
+    expect(env).not.toHaveProperty('QUALOR_SERVER_TOKEN');
   });
 });

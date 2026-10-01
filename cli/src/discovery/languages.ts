@@ -17,6 +17,11 @@ const HTML: LanguageInfo = { language: 'html', grammar: 'html' };
 const CSS: LanguageInfo = { language: 'css', grammar: 'css' };
 const KOTLIN: LanguageInfo = { language: 'kotlin', grammar: 'kotlin' };
 const SWIFT: LanguageInfo = { language: 'swift', grammar: 'swift' };
+const PHP: LanguageInfo = { language: 'php', grammar: 'php' };
+const RUBY: LanguageInfo = { language: 'ruby', grammar: 'ruby' };
+const GO: LanguageInfo = { language: 'go', grammar: 'go' };
+const C: LanguageInfo = { language: 'c', grammar: 'c' };
+const CPP: LanguageInfo = { language: 'cpp', grammar: 'cpp' };
 /** SCSS is linted as CSS (stylelint with postcss-scss) but has no grammar: no metrics, no duplication. */
 const SCSS: LanguageInfo = { language: 'css', grammar: null };
 
@@ -39,7 +44,35 @@ const BY_EXTENSION = new Map<string, LanguageInfo>([
   ['.kt', KOTLIN],
   ['.kts', KOTLIN],
   ['.swift', SWIFT],
+  ['.php', PHP],
+  ['.rb', RUBY],
+  ['.rake', RUBY],
+  ['.gemspec', RUBY],
+  ['.ru', RUBY],
+  ['.go', GO],
+  // `.h` is handled apart: see detectLanguage and resolveCHeaders.
+  ['.c', C],
+  ['.cc', CPP],
+  ['.cpp', CPP],
+  ['.cxx', CPP],
+  ['.c++', CPP],
+  ['.hpp', CPP],
+  ['.hh', CPP],
+  ['.hxx', CPP],
+  ['.h++', CPP],
+  ['.ipp', CPP],
 ]);
+
+/** Ruby files known by their whole name (plan 9B); case-sensitive, as Bundler and Rake are. */
+const BY_NAME = new Map<string, LanguageInfo>([
+  ['Gemfile', RUBY],
+  ['Rakefile', RUBY],
+]);
+
+/** A `.h` file, whose language depends on the scope (config.md §6.2, plan 9D decision 3). */
+export function isCHeader(repoPath: string): boolean {
+  return repoPath.toLowerCase().endsWith('.h') && !repoPath.endsWith('/.h') && repoPath !== '.h';
+}
 
 export function detectLanguage(
   repoPath: string,
@@ -47,11 +80,38 @@ export function detectLanguage(
 ): LanguageInfo {
   const name = repoPath.slice(repoPath.lastIndexOf('/') + 1);
   const dot = name.lastIndexOf('.');
-  if (dot <= 0) return OTHER;
-  const info = BY_EXTENSION.get(name.slice(dot).toLowerCase());
+  // Plan 9B: Ruby files known by their whole name first; then the extension (plan 9D: `.h`).
+  let info = BY_NAME.get(name);
+  if (info === undefined) {
+    if (dot <= 0) return OTHER;
+    const ext = name.slice(dot).toLowerCase();
+    if (ext === '.h') {
+      // C by default, as cppcheck and clang read a lone .h; resolveCHeaders may make it C++.
+      if (languages === 'auto' || (languages as readonly string[]).includes('c')) return C;
+      return (languages as readonly string[]).includes('cpp') ? CPP : OTHER;
+    }
+    info = BY_EXTENSION.get(ext);
+  }
   if (info === undefined) return OTHER;
   if (languages !== 'auto' && !(languages as readonly string[]).includes(info.language)) {
     return OTHER;
   }
   return info;
+}
+
+/**
+ * Plan 9D decision 3: the `.h` files detected as C become C++ when the scope holds a C++ file and
+ * C++ is allowed (`languages: auto`, or a list with both `c` and `cpp`).
+ */
+export function resolveCHeaders<
+  T extends { path: string; language: Language; grammar: GrammarId | null },
+>(files: T[], languages: QualorConfig['languages']): T[] {
+  const both =
+    languages === 'auto' ||
+    ((languages as readonly string[]).includes('c') &&
+      (languages as readonly string[]).includes('cpp'));
+  if (!both || !files.some((f) => f.language === 'cpp')) return files;
+  return files.map((f) =>
+    f.language === 'c' && isCHeader(f.path) ? { ...f, language: 'cpp', grammar: 'cpp' } : f,
+  );
 }

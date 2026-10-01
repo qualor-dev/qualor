@@ -423,4 +423,117 @@ describe('swiftlint (report-format.md 7.1, phase 8F)', () => {
   it('gives the external ext-swiftlint engine no mapping', () => {
     expect(engineMapping('ext-swiftlint')).toBeUndefined();
   });
+
+  it('maps the Go engines by check id, analyzer and gosec severity tag (report-format.md §7.1, plan 9C)', () => {
+    const sc = engineMapping('staticcheck')!;
+    expect(sc.rule!({ id: 'SA5009' })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(sc.severity!({ ruleId: 'S1002', level: 'warning' } as never, undefined)).toBe('low');
+    const vet = engineMapping('govet')!;
+    expect(vet.rule!({ id: 'copylocks' })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    const gs = engineMapping('gosec')!;
+    const g401 = { id: 'G401', properties: { tags: ['security', 'MEDIUM'] } };
+    expect(gs.rule!(g401)).toEqual({
+      quality: 'security',
+      kind: 'issue',
+      defaultSeverity: 'medium',
+    });
+    expect(
+      gs.severity!({ ruleId: 'G402', level: 'error' } as never, {
+        id: 'G402',
+        properties: { tags: ['security', 'HIGH'] },
+      }),
+    ).toBe('high');
+    expect(gs.severity!({ ruleId: 'G999' } as never, undefined)).toBe('medium');
+  });
+});
+
+describe('phpstan (report-format.md §7.1, plan 9A)', () => {
+  it('takes quality and severity from the identifier, never from the level', () => {
+    const phpstan = engineMapping('phpstan')!;
+    expect(phpstan.rule!({ id: 'parameter.phpDocType' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(
+      phpstan.severity!({ ruleId: 'variable.undefined', level: 'warning' } as never, {
+        id: 'variable.undefined',
+      }),
+    ).toBe('medium');
+    expect(phpstan.severity!({ ruleId: 'method.unused', level: 'error' } as never, undefined)).toBe(
+      'low',
+    );
+  });
+});
+
+describe('rubocop (report-format.md §7.1, plan 9B)', () => {
+  it('maps quality and severity from the department, never from the SARIF level', () => {
+    const rubocop = engineMapping('rubocop')!;
+    expect(rubocop.rule!({ id: 'Security/Eval' })).toEqual({
+      quality: 'security',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(rubocop.rule!({ id: 'Style/StringLiterals' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(
+      rubocop.severity!({ ruleId: 'Lint/UselessAssignment', level: 'note' } as never, undefined),
+    ).toBe('medium');
+    expect(
+      rubocop.severity!({ ruleId: 'Security/YAMLLoad', level: 'warning' } as never, undefined),
+    ).toBe('high');
+  });
+
+  it('gives the external ext-rubocop engine no mapping', () => {
+    expect(engineMapping('ext-rubocop')).toBeUndefined();
+  });
+});
+
+describe('cppcheck and clang-tidy (plan 9D)', () => {
+  it('cppcheck takes quality and severity from cppcheck severity, carried in properties', () => {
+    const m = engineMapping('cppcheck')!;
+    expect(m.rule!({ id: 'nullPointer', properties: { cppcheckSeverity: 'error' } })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(
+      m.rule!({ id: 'passedByValue', properties: { cppcheckSeverity: 'performance' } }),
+    ).toEqual({ quality: 'maintainability', kind: 'issue', defaultSeverity: 'low' });
+    const r = (cppcheckSeverity: string, level = 'warning') =>
+      ({ ruleId: 'x', level, properties: { cppcheckSeverity } }) as never;
+    expect(m.severity!(r('warning', 'error'), undefined)).toBe('medium');
+    expect(m.severity!(r('style'), undefined)).toBe('low');
+    // An external cppcheck SARIF (ext-cppcheck) has only levels.
+    expect(m.severity!({ ruleId: 'x', level: 'error' } as never, { id: 'x' })).toBe('high');
+    expect(m.severity!({ ruleId: 'x', level: 'note' } as never, { id: 'x' })).toBe('low');
+  });
+
+  it('clang-tidy takes quality and severity from the check group', () => {
+    const m = engineMapping('clang-tidy')!;
+    expect(m.rule!({ id: 'clang-analyzer-core.DivideZero' })).toEqual({
+      quality: 'reliability',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+    expect(m.rule!({ id: 'readability-identifier-length' })).toEqual({
+      quality: 'maintainability',
+      kind: 'issue',
+      defaultSeverity: 'low',
+    });
+    expect(
+      m.severity!({ ruleId: 'bugprone-use-after-move', level: 'warning' } as never, undefined),
+    ).toBe('medium');
+  });
 });

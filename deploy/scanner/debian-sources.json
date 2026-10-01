@@ -3,7 +3,9 @@
   "base": "node:22.23.3-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c",
   "aptPackages": [
     "ca-certificates",
-    "git"
+    "git",
+    "libyaml-0-2",
+    "php8.2-cli"
   ],
   "sourcesIndexes": [
     "https://deb.debian.org/debian/dists/bookworm/main/source/Sources.xz",
@@ -90,6 +92,35 @@
           "size": 2328508,
           "sha256": "86b888c901fa2e78f1bf52a2aaa2f400ff82a472b94ff0ac6631939ee68fa6fd",
           "sha1": "113e0b53926dc2f520a1844bd4477b369cd2d7b0"
+        }
+      ]
+    },
+    {
+      "source": "argon2",
+      "version": "0~20171227-0.3+deb12u1",
+      "binaries": [
+        "libargon2-1"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/a/argon2",
+      "files": [
+        {
+          "name": "argon2_0~20171227-0.3+deb12u1.dsc",
+          "size": 2140,
+          "sha256": "64b82cae9e03543f045506391398472f5659a391d626b4ad701c845bd5cfb862",
+          "sha1": "e15a8182669f18a5f5dee7afebf99885e6fd44ee"
+        },
+        {
+          "name": "argon2_0~20171227.orig.tar.gz",
+          "size": 1503745,
+          "sha256": "eaea0172c1f4ee4550d1b6c9ce01aab8d1ab66b4207776aa67991eb5872fdcd8",
+          "sha1": "c398df55c8fffe70c9a952dd3f696115437234d8"
+        },
+        {
+          "name": "argon2_0~20171227-0.3+deb12u1.debian.tar.xz",
+          "size": 7268,
+          "sha256": "7283479e5a4f3dd6294b1b74cb69e1324a62022d8e7f4b59a7de1ddbc64ed1e7",
+          "sha1": "f79deca75557f7c7ae2d43614c0b89b64be1cad8"
         }
       ]
     },
@@ -691,6 +722,42 @@
       ]
     },
     {
+      "source": "file",
+      "version": "1:5.44-3",
+      "binaries": [
+        "libmagic-mgc",
+        "libmagic1"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/f/file",
+      "files": [
+        {
+          "name": "file_5.44-3.dsc",
+          "size": 2240,
+          "sha256": "842e0ef356949218966d1521a95652b00aed18c152174ffc7e000cc3d79501e4",
+          "sha1": "898b2b565a802d5a1626bfc72be67bf5ce09561a"
+        },
+        {
+          "name": "file_5.44.orig.tar.gz",
+          "size": 1186437,
+          "sha256": "3751c7fba8dbc831cb8d7cc8aff21035459b8ce5155ef8b0880a27d028475f3b",
+          "sha1": "c48facbf0db3be64166c35566d605e43bbe2bb82"
+        },
+        {
+          "name": "file_5.44.orig.tar.gz.asc",
+          "size": 201,
+          "sha256": "133e04cb49bc113d45c1bdcb1ffdfaa3528e018ee0276f25dce590ebc476c563",
+          "sha1": "80e0709e0e82eb232bf5465ce287ae5d16a46a00"
+        },
+        {
+          "name": "file_5.44-3.debian.tar.xz",
+          "size": 38944,
+          "sha256": "536a0fafaa6ee7db39d902cf821bb4359a6d7bab26ab5b3ceb49900c52b772f6",
+          "sha1": "cfce0c34ad9461fd0eea2f5585e63753d124b6b1"
+        }
+      ]
+    },
+    {
       "source": "findutils",
       "version": "4.9.0-4",
       "binaries": [
@@ -1045,6 +1112,41 @@
       ]
     },
     {
+      "source": "icu",
+      "version": "72.1-3+deb12u1",
+      "binaries": [
+        "libicu72"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/i/icu",
+      "files": [
+        {
+          "name": "icu_72.1-3+deb12u1.dsc",
+          "size": 2284,
+          "sha256": "8fd50a21664422b2dd5df4e20175dce3396c89a3a85363db26dd4529bba62a92",
+          "sha1": "f641dd534dc97239959c4a964cb99263229cc71f"
+        },
+        {
+          "name": "icu_72.1.orig.tar.gz",
+          "size": 26303933,
+          "sha256": "a2d2d38217092a7ed56635e34467f92f976b370e20182ad325edea6681a71d68",
+          "sha1": "a97546f0119c37a3526143bc29fb573a4417ff84"
+        },
+        {
+          "name": "icu_72.1.orig.tar.gz.asc",
+          "size": 659,
+          "sha256": "87b6ff610d587292cec0444fa8cbbfb12994cb89bade40578f5ba6470de245c7",
+          "sha1": "839c365644536d46364f5993ec3e5b825cd3957f"
+        },
+        {
+          "name": "icu_72.1-3+deb12u1.debian.tar.xz",
+          "size": 63620,
+          "sha256": "bd6b27fc0a18f6044a47cd96c7d687720b95e4f592718bf8e34c6391b7753a1d",
+          "sha1": "bef4f273249ae00e5c1e63117a0d4c8b1ee0d309"
+        }
+      ]
+    },
+    {
       "source": "init-system-helpers",
       "version": "1.65.2+deb12u1",
       "binaries": [
@@ -1135,6 +1237,41 @@
       ]
     },
     {
+      "source": "libbsd",
+      "version": "0.11.7-2",
+      "binaries": [
+        "libbsd0"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/libb/libbsd",
+      "files": [
+        {
+          "name": "libbsd_0.11.7-2.dsc",
+          "size": 2330,
+          "sha256": "21c62d65fa3b914d765b733fb0e03d331db830df45f1a5225f95902567f05146",
+          "sha1": "b8272889333ca62e77a614e8d328ab5a146280c5"
+        },
+        {
+          "name": "libbsd_0.11.7.orig.tar.xz",
+          "size": 418508,
+          "sha256": "9baa186059ebbf25c06308e9f991fda31f7183c0f24931826d83aa6abd8a0261",
+          "sha1": "e5f5fffcc2094661a105074c1538f1e434990490"
+        },
+        {
+          "name": "libbsd_0.11.7.orig.tar.xz.asc",
+          "size": 833,
+          "sha256": "b470d3fa5ad6948de7a85891e652970828f26eb7057028d57b94fa8644af934a",
+          "sha1": "311622ec83d75cdc814c9d985bb1647b029e4ae1"
+        },
+        {
+          "name": "libbsd_0.11.7-2.debian.tar.xz",
+          "size": 18116,
+          "sha256": "e588e52a99415226767362637071764ebfaf454450bda64d53652e7a451d3e67",
+          "sha1": "f7a236f1a82b413e470705c2fc4025ad4646df3e"
+        }
+      ]
+    },
+    {
       "source": "libcap-ng",
       "version": "0.8.3-1",
       "binaries": [
@@ -1189,6 +1326,35 @@
           "size": 23944,
           "sha256": "124ec52e286e8617a7fb8e576390abbf60f6674e065504459f32af20817eaa13",
           "sha1": "5bca547deb81bf8f2061a88153d96aec5f9255b6"
+        }
+      ]
+    },
+    {
+      "source": "libedit",
+      "version": "3.1-20221030-2",
+      "binaries": [
+        "libedit2"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/libe/libedit",
+      "files": [
+        {
+          "name": "libedit_3.1-20221030-2.dsc",
+          "size": 2281,
+          "sha256": "6e701f5e0bcd81f80fe3686d84861e9d9247e247ed08fb96ffc3746102aedd21",
+          "sha1": "78096b0efa63574feb1b3b7a80248d1b2b5e26f7"
+        },
+        {
+          "name": "libedit_3.1-20221030.orig.tar.gz",
+          "size": 533261,
+          "sha256": "f0925a5adf4b1bf116ee19766b7daa766917aec198747943b1c4edf67a4be2bb",
+          "sha1": "2a178c4a09b11651427a9e911c56bb9fed811597"
+        },
+        {
+          "name": "libedit_3.1-20221030-2.debian.tar.xz",
+          "size": 16488,
+          "sha256": "ab1ec0e03ae5122831a02d9a0be2afa4b91d739cd459ee1e168c917bae66b622",
+          "sha1": "16c1988df0a925e89044b3880104b296f0c9e414"
         }
       ]
     },
@@ -1561,6 +1727,35 @@
       ]
     },
     {
+      "source": "libsodium",
+      "version": "1.0.18-1+deb12u1",
+      "binaries": [
+        "libsodium23"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/libs/libsodium",
+      "files": [
+        {
+          "name": "libsodium_1.0.18-1+deb12u1.dsc",
+          "size": 1945,
+          "sha256": "2c23c57b5a9385dab5a1916014c9b5f2cdd7dadeb8a35b28c1bfb603ce7095c4",
+          "sha1": "d7f0186ef0aef9ce41c4173d65149614cb3438eb"
+        },
+        {
+          "name": "libsodium_1.0.18.orig.tar.gz",
+          "size": 1619527,
+          "sha256": "d59323c6b712a1519a5daf710b68f5e7fde57040845ffec53850911f10a5d4f4",
+          "sha1": "cd8a76b79aeb077e8d3eea478ea6241972593dfd"
+        },
+        {
+          "name": "libsodium_1.0.18-1+deb12u1.debian.tar.xz",
+          "size": 8256,
+          "sha256": "f410474e46346b06b162defa05b1be26906aeed6cf309e3d4ebe30b4d1350733",
+          "sha1": "8f6747a2f806fe6f534471283475750765ab2cb8"
+        }
+      ]
+    },
+    {
       "source": "libssh2",
       "version": "1.10.0-3+deb12u1",
       "binaries": [
@@ -1689,6 +1884,64 @@
       ]
     },
     {
+      "source": "libxml2",
+      "version": "2.9.14+dfsg-1.3~deb12u6",
+      "binaries": [
+        "libxml2"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/libx/libxml2",
+      "files": [
+        {
+          "name": "libxml2_2.9.14+dfsg-1.3~deb12u6.dsc",
+          "size": 2974,
+          "sha256": "d86ce3efb1b75d2781f72f5cdd187474c148a915d610295c85162681bb070a65",
+          "sha1": "5ee2d167c62ac3a43211867a234898ad41a3673c"
+        },
+        {
+          "name": "libxml2_2.9.14+dfsg.orig.tar.xz",
+          "size": 2351200,
+          "sha256": "4fe913dec8b1ab89d13b489b419a8203176ea39e931eaa0d25b17eafb9c279e9",
+          "sha1": "b41615e638174b4e36845c68d4b305dd6a6b541f"
+        },
+        {
+          "name": "libxml2_2.9.14+dfsg-1.3~deb12u6.debian.tar.xz",
+          "size": 56668,
+          "sha256": "f33a99a0018cbb94aadc3bf26661e401cb90dff856aa170faf7239151ee9b9ac",
+          "sha1": "a010768073027ad985584f25b472b826ff07e55a"
+        }
+      ]
+    },
+    {
+      "source": "libyaml",
+      "version": "0.2.5-1",
+      "binaries": [
+        "libyaml-0-2"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/liby/libyaml",
+      "files": [
+        {
+          "name": "libyaml_0.2.5-1.dsc",
+          "size": 2071,
+          "sha256": "1edbf86e5cd76937ff62892ba6c2537456d645d834d4cd4a82430b8be7051bf4",
+          "sha1": "dbf88ef7db7667d2e3f39e0c0d12b5d52be024dd"
+        },
+        {
+          "name": "libyaml_0.2.5.orig.tar.gz",
+          "size": 85055,
+          "sha256": "fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e",
+          "sha1": "db474288fde305468602e051d963c6936ef5a9ae"
+        },
+        {
+          "name": "libyaml_0.2.5-1.debian.tar.xz",
+          "size": 5324,
+          "sha256": "8730e0510129e516c3c7c1cda7428e02a0a122699e57ed203f835a338a686d1f",
+          "sha1": "de733ba5904f1da6e24f017a44f2128d2e8635b7"
+        }
+      ]
+    },
+    {
       "source": "libzstd",
       "version": "1.5.4+dfsg2-5",
       "binaries": [
@@ -1778,6 +2031,29 @@
           "size": 14080,
           "sha256": "7850d7c44aa826635c79a6666b0d457a03524bcb0307697b062dd717d6d9d491",
           "sha1": "3a8236a1e0351e7c11ef276e7cf0c6f04cee2b58"
+        }
+      ]
+    },
+    {
+      "source": "media-types",
+      "version": "10.0.0",
+      "binaries": [
+        "media-types"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/m/media-types",
+      "files": [
+        {
+          "name": "media-types_10.0.0.dsc",
+          "size": 1624,
+          "sha256": "d2e34e90508ac2c21c3cc6c01e2cf186093a8d2edcdc279e7d280a0a4ffe132d",
+          "sha1": "f55601ca3571e0bfdba994f69a5c651ce0818e2c"
+        },
+        {
+          "name": "media-types_10.0.0.tar.xz",
+          "size": 57912,
+          "sha256": "fe0f5adcb153e642c5e3295b811cddf6ba12bf3df5e7c6c012f3b98dfae1d245",
+          "sha1": "54b22ef1ab7117a7881b2e4cbdda0de27a3d2c0b"
         }
       ]
     },
@@ -2083,6 +2359,96 @@
       ]
     },
     {
+      "source": "php-defaults",
+      "version": "93",
+      "binaries": [
+        "php-common"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/p/php-defaults",
+      "files": [
+        {
+          "name": "php-defaults_93.dsc",
+          "size": 3333,
+          "sha256": "970b208ec9e295f838332fec2eca6657f69504c4c982c46aa4f5781a7faff3b1",
+          "sha1": "ade0aa28fb6927ad4f99ad4de3ecb8e71f0f4c11"
+        },
+        {
+          "name": "php-defaults_93.tar.xz",
+          "size": 17428,
+          "sha256": "5aae72302f970e464ee57c338c01c3086404a4753704c1a82cc03aadf767df20",
+          "sha1": "8cd6dc559fa18e93b1b3a53ea90304e09ba45fdb"
+        }
+      ]
+    },
+    {
+      "source": "php8.2",
+      "version": "8.2.33-1~deb12u1",
+      "binaries": [
+        "php8.2-cli",
+        "php8.2-common",
+        "php8.2-opcache",
+        "php8.2-readline"
+      ],
+      "archive": "debian-security",
+      "directory": "pool/updates/main/p/php8.2",
+      "files": [
+        {
+          "name": "php8.2_8.2.33-1~deb12u1.dsc",
+          "size": 5596,
+          "sha256": "4e801d467c7b7233a5bd5adb71a08f758e9369412b9e3d471a0cfa301c5918c1",
+          "sha1": "a2644659731f3f45f7bc18c07b639e0a51e1f514"
+        },
+        {
+          "name": "php8.2_8.2.33.orig.tar.xz",
+          "size": 12166568,
+          "sha256": "fbdeace9b38220436a4c8fd79b900df92878151db145e641750743a283b514c1",
+          "sha1": "0bdf9724a7926f51f6a5fa747a28f2936d909a23"
+        },
+        {
+          "name": "php8.2_8.2.33.orig.tar.xz.asc",
+          "size": 833,
+          "sha256": "dca4935bd3e3fd4aee1524a09c9cb68f59cfa4eedf8cae8756315961231a5e6d",
+          "sha1": "6c56144bf7ef8705ef14a20630c50c8bc7c531f1"
+        },
+        {
+          "name": "php8.2_8.2.33-1~deb12u1.debian.tar.xz",
+          "size": 71312,
+          "sha256": "0120e1feda20023e68a97f94320110ea20f6284e2a15cf9700992fb95a4cd948",
+          "sha1": "43c2b2444a2db0d2005234e5306516737f11c684"
+        }
+      ]
+    },
+    {
+      "source": "psmisc",
+      "version": "23.6-1",
+      "binaries": [
+        "psmisc"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/p/psmisc",
+      "files": [
+        {
+          "name": "psmisc_23.6-1.dsc",
+          "size": 1892,
+          "sha256": "3fb2a96188bdc6d22391963c6b900ca4c67a8987f4b1d136ef2c6d4a1bd4d17f",
+          "sha1": "d298bf55e0765a60cc79c11e85c82b56bea1ee6a"
+        },
+        {
+          "name": "psmisc_23.6.orig.tar.xz",
+          "size": 420240,
+          "sha256": "0750d545d1e043a119e62d5d6f6948a5bec1528e69c64f181420da2c556178cf",
+          "sha1": "fee0c0f39ca2ce00544af70dbe21fb771e307242"
+        },
+        {
+          "name": "psmisc_23.6-1.debian.tar.xz",
+          "size": 8488,
+          "sha256": "3950670993fe2032439ce20fab651fb554c263b11b1a435c5f254c5f244385bc",
+          "sha1": "9487ef0a63ba563cb60ecc47e944bf1419096fbe"
+        }
+      ]
+    },
+    {
       "source": "rtmpdump",
       "version": "2.4+20151223.gitfa8646d.1-2",
       "binaries": [
@@ -2137,6 +2503,29 @@
           "size": 63548,
           "sha256": "4346634a4c0b3977bf6a6b6d27f187fb203f547dda8267bb8a42d1323487f6f0",
           "sha1": "ca046c69b296ae8949945aacdef3d43ee11073ac"
+        }
+      ]
+    },
+    {
+      "source": "sensible-utils",
+      "version": "0.0.17+nmu1",
+      "binaries": [
+        "sensible-utils"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/s/sensible-utils",
+      "files": [
+        {
+          "name": "sensible-utils_0.0.17+nmu1.dsc",
+          "size": 1728,
+          "sha256": "764436dac8b6796ba49e9dd96e3c9ef8612cacad1953e6cd7525a17b99a9e4a1",
+          "sha1": "f163cbc1973fdd021c5a94a463ec14103019cc07"
+        },
+        {
+          "name": "sensible-utils_0.0.17+nmu1.tar.xz",
+          "size": 66476,
+          "sha256": "a4ead62e0dc8f965453221dcb09c964abc4f1bedad24f527d33c443a1570cb31",
+          "sha1": "2ba9325d7373c02d3e65a89b36190355dfbb4b28"
         }
       ]
     },
@@ -2290,6 +2679,29 @@
           "size": 122084,
           "sha256": "a5b70ea0b5ffe7905e0e8bb5ac45196131ce235d3a0cf5665b4b3ac96caa2c35",
           "sha1": "eef7ddd93cd589469dfc44a4632eb2113734e828"
+        }
+      ]
+    },
+    {
+      "source": "ucf",
+      "version": "3.0043+nmu1+deb12u1",
+      "binaries": [
+        "ucf"
+      ],
+      "archive": "debian",
+      "directory": "pool/main/u/ucf",
+      "files": [
+        {
+          "name": "ucf_3.0043+nmu1+deb12u1.dsc",
+          "size": 1574,
+          "sha256": "f098e6f07226ed6dbd4373b55a385c9899432ae6e08c83657eda33ff15a47ec6",
+          "sha1": "40a47e48ceeeea77e6af2bc417174f730db219ac"
+        },
+        {
+          "name": "ucf_3.0043+nmu1+deb12u1.tar.xz",
+          "size": 70976,
+          "sha256": "b577bc16a7ed5c8544a5652c4d5f0992fe9fde13203db8170d950abb3ee20dfa",
+          "sha1": "a8513843aa92eed0826e5fccb8b20405849d18bf"
         }
       ]
     },

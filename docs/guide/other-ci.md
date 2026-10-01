@@ -73,6 +73,13 @@ pipelines:
 Set `QUALOR_URL` and `QUALOR_TOKEN` (secured) as repository variables. Qualor does not comment on
 Bitbucket, Azure DevOps or Gerrit reviews. The job's exit code carries the verdict there.
 
+## C and C++
+
+clang-tidy needs your build's compile database and headers, so run `qualor scan` in the job that
+built the project (the `qualor` binary from the release page, with your clang-tidy on `PATH`) to get
+it. The `qualor/scanner` image runs cppcheck only. See
+[C and C++](./languages-and-analyzers.md#c-and-c-cppcheck-clang-tidy).
+
 ## A local scan
 
 ```sh

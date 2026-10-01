@@ -318,6 +318,109 @@ describe('discoverFiles', () => {
     ]);
   });
 
+  it('marks PHPUnit classes as tests and leaves vendor/ out (plan 9A)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'src/Cart.php': '<?php\n',
+      'tests/CartTest.php': '<?php\n',
+      'tests/Support/Helper.php': '<?php\n',
+      'vendor/acme/lib/src/Thing.php': '<?php\n',
+    });
+    const files = discoverFiles({
+      root,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.kind]).sort()).toEqual([
+      ['src/Cart.php', 'php', 'main'],
+      ['tests/CartTest.php', 'php', 'test'],
+      ['tests/Support/Helper.php', 'php', 'main'],
+    ]);
+  });
+
+  it('leaves Bundler directories and the Rails schema out, and marks RSpec and Minitest files as tests (plan 9B)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'app/models/order.rb': 'x = 1\n',
+      'spec/models/order_spec.rb': 'x = 1\n',
+      'spec/support/helpers.rb': 'x = 1\n',
+      'test/models/order_test.rb': 'x = 1\n',
+      Gemfile: 'source "https://rubygems.org"\n',
+      '.bundle/ruby/3.3.0/gems/x/lib/x.rb': 'x = 1\n',
+      'db/schema.rb': 'x = 1\n',
+      'vendor/bundle/ruby/gems/y.rb': 'x = 1\n',
+    });
+    const files = discoverFiles({
+      root,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.kind]).sort()).toEqual([
+      ['Gemfile', 'ruby', 'main'],
+      ['app/models/order.rb', 'ruby', 'main'],
+      ['spec/models/order_spec.rb', 'ruby', 'test'],
+      ['spec/support/helpers.rb', 'ruby', 'test'],
+      ['test/models/order_test.rb', 'ruby', 'test'],
+    ]);
+  });
+
+  it('leaves Go test data, generated protobuf code and vendored modules out; Go tests are tests (plan 9C)', () => {
+    const root = tmp();
+    writeTree(root, {
+      'store/store.go': 'package store\n',
+      'store/store_test.go': 'package store\n',
+      'store/testdata/broken.go': 'not go\n',
+      'api/v1/api.pb.go': 'package v1\n',
+      'vendor/github.com/acme/dep/dep.go': 'package dep\n',
+    });
+    const files = discoverFiles({
+      root,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.kind])).toEqual([
+      ['store/store.go', 'go', 'main'],
+      ['store/store_test.go', 'go', 'test'],
+    ]);
+  });
+
+  it('makes .h files C++ when the scope holds C++, and leaves CMake output out (plan 9D)', () => {
+    const cpp = tmp();
+    writeTree(cpp, {
+      'include/shape.h': 'class A {};\n',
+      'src/shape.cpp': 'int f() { return 1; }\n',
+      // Not under build/ (excluded already), so only the new glob can leave it out.
+      'x/CMakeFiles/y.c': 'int g;\n',
+      'cmake-build-debug/gen.h': 'int h;\n',
+      'out/_deps/fmt-src/fmt.h': 'int i;\n',
+    });
+    const files = discoverFiles({
+      root: cpp,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(files.map((f) => [f.path, f.language, f.grammar])).toEqual([
+      ['include/shape.h', 'cpp', 'cpp'],
+      ['src/shape.cpp', 'cpp', 'cpp'],
+    ]);
+    const c = tmp();
+    writeTree(c, { 'src/stack.h': 'int a;\n', 'src/stack.c': 'int b;\n' });
+    const cFiles = discoverFiles({
+      root: c,
+      config: config(),
+      warnings: new Warnings(),
+      log: silentLogger,
+    });
+    expect(cFiles.map((f) => [f.path, f.language])).toEqual([
+      ['src/stack.c', 'c'],
+      ['src/stack.h', 'c'],
+    ]);
+  });
+
   it('keeps an empty directory tree empty', () => {
     const root = tmp();
     mkdirSync(path.join(root, 'empty', 'deeper'), { recursive: true });

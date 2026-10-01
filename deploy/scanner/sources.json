@@ -1,5 +1,5 @@
 {
-  "$comment": "Pinned corresponding source of the copyleft components of the qualor/scanner image (rulings L1 and L2). pnpm deploy:sources downloads and verifies them into .tmp/scanner-sources; deploy/scanner/SOURCES.md is generated from this file and debian-sources.json (pnpm deploy:sources --index). OpenGrep's tests/semgrep-rules submodule is test data and is left out. On a version bump, re-derive every entry of that component: the tag archive, the commits Bun pins, the OpenGrep submodule gitlinks, and what the release binaries link or bundle (see deploy/README.md). For Trivy (Apache-2.0) and Gitleaks (MIT), only the copyleft (MPL-2.0) Go modules their binaries compile in are pinned.",
+  "$comment": "Pinned corresponding source of the copyleft components of the qualor/scanner image (rulings L1 and L2). pnpm deploy:sources downloads and verifies them into .tmp/scanner-sources; deploy/scanner/SOURCES.md is generated from this file and debian-sources.json (pnpm deploy:sources --index). OpenGrep's tests/semgrep-rules submodule is test data and is left out. On a version bump, re-derive every entry of that component: the tag archive, the commits Bun pins, the OpenGrep submodule gitlinks, and what the release binaries link or bundle (see deploy/README.md). For Trivy (Apache-2.0) and Gitleaks (MIT), only the copyleft (MPL-2.0) Go modules their binaries compile in are pinned. cppcheck (GPL-3.0-or-later) is built from its tag archive, which is pinned whole.",
   "sources": [
     {
       "file": "opengrep-1.30.0.tar.gz",
@@ -1138,6 +1138,21 @@
       "sha256": "2e0174e80b989eb5deafcfb77407c908a0abe1f67a80306f98aeca63246e5481",
       "pinnedAt": "tools/analyzers/install.sh DETEKT_VERSION: detekt-cli 1.23.8 depends on kotlin-compiler-embeddable 2.0.21, which depends on org.jetbrains.intellij.deps:trove4j 1.0.20200330",
       "why": "qualor/scanner ships detekt's CLI as one shaded jar (tools/analyzers/install.sh); its gnu/trove classes are Trove4J 1.0.20200330 (LGPL-2.1), unmodified. Everything else in the jar is Apache-2.0 or BSD/MIT-style (deploy/scanner/licenses/DETEKT-THIRD-PARTY.txt). This is Trove4J's source jar from Maven Central."
+    },
+    {
+      "file": "cppcheck-2.22.0.tar.gz",
+      "name": "cppcheck",
+      "component": "cppcheck",
+      "componentVersion": "2.22.0",
+      "ref": "2.22.0",
+      "licence": "GPL-3.0-or-later",
+      "fetch": {
+        "type": "https",
+        "url": "https://github.com/cppcheck-opensource/cppcheck/archive/refs/tags/2.22.0.tar.gz"
+      },
+      "sha256": "d74945deb2d50393430e07596b766f8a779512c7f60dac2a30ea64e059ece57b",
+      "pinnedAt": "tools/analyzers/install-cppcheck.sh CPPCHECK_VERSION and CPPCHECK_SHA256",
+      "why": "The scanner image builds /opt/qualor/bin/cppcheck and /opt/qualor/share/cppcheck from exactly this archive (tools/analyzers/install-cppcheck.sh: make with MATCHCOMPILER=yes, nothing else downloaded). It holds the simplecpp (0BSD), tinyxml2 (zlib) and picojson (BSD-2-Clause) sources compiled into the binary."
     }
   ]
 }

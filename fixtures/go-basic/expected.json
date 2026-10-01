@@ -1,0 +1,39 @@
+{
+  "description": "Go repo, two modules: staticcheck, go vet and gosec (go vet/staticcheck pairs on lines 45 and 50), tree-sitter-go metrics and a Go coverage profile",
+  "engines": ["staticcheck", "govet", "gosec"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "staticcheck:SA5009", "path": "store/store.go", "startLine": 45, "severity": "high", "quality": "reliability" },
+    { "ruleKey": "staticcheck:SA4000", "path": "store/store.go", "startLine": 50, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "staticcheck:S1008", "path": "tools/next.go", "startLine": 5, "severity": "low", "quality": "maintainability" },
+    { "ruleKey": "staticcheck:S1002", "path": "tools/next.go", "startLine": 5, "severity": "low", "quality": "maintainability" },
+    { "ruleKey": "govet:copylocks", "path": "store/store.go", "startLine": 39, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "govet:copylocks", "path": "store/store.go", "startLine": 40, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "govet:printf", "path": "store/store.go", "startLine": 45, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "govet:bools", "path": "store/store.go", "startLine": 50, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "gosec:G501", "path": "store/store.go", "startLine": 4, "severity": "medium", "quality": "security" },
+    { "ruleKey": "gosec:G401", "path": "store/store.go", "startLine": 60, "severity": "medium", "quality": "security" }
+  ],
+  "files": {
+    "store/store.go": { "language": "go", "kind": "main", "lines": 61, "ncloc": 44, "commentLines": 8, "functions": 7, "classes": 1, "statements": 16, "complexity": 12, "cognitiveComplexity": 6 },
+    "store/store_test.go": { "language": "go", "kind": "test", "lines": 11, "ncloc": 9, "commentLines": 0, "functions": 1, "classes": 0, "statements": 4, "complexity": 2, "cognitiveComplexity": 1 },
+    "cmd/gobasic/main.go": { "language": "go", "kind": "main", "lines": 14, "ncloc": 11, "commentLines": 0, "functions": 1, "classes": 0, "statements": 3, "complexity": 1, "cognitiveComplexity": 0 },
+    "tools/next.go": { "language": "go", "kind": "main", "lines": 9, "ncloc": 7, "commentLines": 1, "functions": 1, "classes": 0, "statements": 3, "complexity": 2, "cognitiveComplexity": 1 }
+  },
+  "duplications": [],
+  "coverage": { "lines_to_cover": 20, "uncovered_lines": 11, "conditions_to_cover": 0, "uncovered_conditions": 0, "coverage": 45.0 },
+  "notes": {
+    "engines#offline": "no dependency outside the standard library: every package loads with GOPROXY=off and an empty module cache",
+    "govet+staticcheck#pairs": "printf/SA5009 (45) and bools/SA4000 (50) are curated equivalence pairs: the report keeps both, the server dedupes them with staticcheck primary (data-model.md §5.3)",
+    "gosec#exclude": "qualor-default excludes G104, G115 and G304; none would fire here",
+    "coverage": "store.go covered 17, 22-24, 29-32, 35 (9 lines; 18, 25, 33 end at column 1), uncovered 40, 45, 50-53, 55, 60 (8); main.go 11-13 uncovered (3); tools/ is another module, not in the profile; 9 / 20 = 45.0",
+    "store/store.go#ncloc": "61 lines - 8 comment lines (9, 15, 20, 27, 38, 43, 48, 58) - 9 blank lines (2, 8, 14, 19, 26, 37, 42, 47, 57) = 44",
+    "store/store.go#functions": "New, Add, Total, Snapshot, Describe, Grade, Fingerprint = 7; Store is the one struct type",
+    "store/store.go#statements": "New 1; Add 3; Total: sum :=, for, return, the if, sum += = 5; Snapshot 1; Describe 1; Grade: if, return \"C\", return \"A\", return \"B\" = 4; Fingerprint 1; total 16",
+    "store/store.go#complexity": "7 functions + Total's for and if + Grade's if, && and else if = 12",
+    "store/store.go#cognitiveComplexity": "Total: for +1, nested if +2 = 3; Grade: if +1, && +1, else if +1 = 3; total 6",
+    "store/store_test.go#metrics": "11 lines - blank 2, 4 = 9; s :=, s.Add, if, t.Fatal = 4 statements; TestAdd + if = 2; if +1",
+    "cmd/gobasic/main.go#metrics": "14 lines - blank 2, 6, 9 = 11; three statements; main = 1",
+    "tools/next.go#metrics": "9 lines - blank 2 - comment 3 = 7; if, return false, return true = 3; IsSet + if = 2; if +1"
+  }
+}

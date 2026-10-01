@@ -1,0 +1,5 @@
+version: 1
+coverage:
+  reports:
+    # go test -covermode=set -coverprofile=coverage.out ./... (format auto-detected: gocover)
+    - path: coverage.out

@@ -411,6 +411,11 @@
               "css",
               "kotlin",
               "swift",
+              "php",
+              "ruby",
+              "go",
+              "c",
+              "cpp",
               "other"
             ]
           },

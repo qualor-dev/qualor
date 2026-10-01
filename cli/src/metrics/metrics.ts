@@ -39,6 +39,7 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
   const codeLines = new Set<number>();
   const commentLines = new Set<number>();
   const elseIfs = new Set<number>();
+  const statementChildren = new Set<number>(); // statementChild (plan 9B)
   let functions = 0;
   let classes = 0;
   let statements = 0;
@@ -51,6 +52,8 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
   for (let frame = stack.pop(); frame !== undefined; frame = stack.pop()) {
     const { node, nesting, inFunction } = frame;
     const type = node.type;
+    // Ruby's `__END__` data (plan 9B): neither code nor comment.
+    if (rules.skipped?.has(type) === true) continue;
 
     if (rules.comments.has(type) || rules.isComment?.(node) === true) {
       for (let r = node.startPosition.row; r <= node.endPosition.row; r++) commentLines.add(r + 1);
@@ -59,9 +62,10 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
     // Swift (plan 8F): every named child of a `statements` wrapper, or of the file itself, is one
     // statement, a bare expression or literal included, so this runs before leaves are skipped.
     if (
-      rules.statementParents?.has(frame.parentType) === true &&
-      node.isNamed &&
-      (rules.isStatement?.(node, frame.parentType) ?? true)
+      statementChildren.has(node.id) ||
+      (rules.statementParents?.has(frame.parentType) === true &&
+        node.isNamed &&
+        (rules.isStatement?.(node, frame.parentType) ?? true))
     ) {
       statements++;
     }
@@ -93,7 +97,9 @@ export function computeMetrics(root: Node, family: SyntaxFamily): FileMetrics {
       childNesting = inFunction ? nesting + 1 : 0;
       childInFunction = true;
     }
-    if (rules.classes.has(type)) classes++;
+    if (rules.classes.has(type) && (rules.isClass?.(node) ?? true)) classes++;
+    const own = rules.statementChild?.(node) ?? null;
+    if (own !== null) statementChildren.add(own.id);
     if (rules.statements.has(type) && (rules.isStatement?.(node, frame.parentType) ?? true)) {
       statements++;
     }

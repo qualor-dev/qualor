@@ -12354,6 +12354,11 @@
                 "css",
                 "kotlin",
                 "swift",
+                "php",
+                "ruby",
+                "go",
+                "c",
+                "cpp",
                 "*"
               ]
             },
@@ -12400,6 +12405,11 @@
                               "css",
                               "kotlin",
                               "swift",
+                              "php",
+                              "ruby",
+                              "go",
+                              "c",
+                              "cpp",
                               "*"
                             ]
                           },
@@ -12546,6 +12556,11 @@
                       "css",
                       "kotlin",
                       "swift",
+                      "php",
+                      "ruby",
+                      "go",
+                      "c",
+                      "cpp",
                       "*"
                     ]
                   },
@@ -12598,6 +12613,11 @@
                         "css",
                         "kotlin",
                         "swift",
+                        "php",
+                        "ruby",
+                        "go",
+                        "c",
+                        "cpp",
                         "*"
                       ]
                     },
@@ -12758,6 +12778,11 @@
                         "css",
                         "kotlin",
                         "swift",
+                        "php",
+                        "ruby",
+                        "go",
+                        "c",
+                        "cpp",
                         "*"
                       ]
                     },
@@ -12931,6 +12956,11 @@
                         "css",
                         "kotlin",
                         "swift",
+                        "php",
+                        "ruby",
+                        "go",
+                        "c",
+                        "cpp",
                         "*"
                       ]
                     },
@@ -13185,6 +13215,11 @@
                         "css",
                         "kotlin",
                         "swift",
+                        "php",
+                        "ruby",
+                        "go",
+                        "c",
+                        "cpp",
                         "*"
                       ]
                     },
@@ -13345,6 +13380,11 @@
                         "css",
                         "kotlin",
                         "swift",
+                        "php",
+                        "ruby",
+                        "go",
+                        "c",
+                        "cpp",
                         "*"
                       ]
                     },
@@ -14043,6 +14083,11 @@
                           "css",
                           "kotlin",
                           "swift",
+                          "php",
+                          "ruby",
+                          "go",
+                          "c",
+                          "cpp",
                           "*"
                         ]
                       },
@@ -14076,6 +14121,11 @@
                                   "css",
                                   "kotlin",
                                   "swift",
+                                  "php",
+                                  "ruby",
+                                  "go",
+                                  "c",
+                                  "cpp",
                                   "*"
                                 ]
                               },
@@ -14254,6 +14304,11 @@
                 "css",
                 "kotlin",
                 "swift",
+                "php",
+                "ruby",
+                "go",
+                "c",
+                "cpp",
                 "*"
               ]
             },
@@ -14282,6 +14337,11 @@
                         "css",
                         "kotlin",
                         "swift",
+                        "php",
+                        "ruby",
+                        "go",
+                        "c",
+                        "cpp",
                         "*"
                       ]
                     },
@@ -14315,6 +14375,11 @@
                                 "css",
                                 "kotlin",
                                 "swift",
+                                "php",
+                                "ruby",
+                                "go",
+                                "c",
+                                "cpp",
                                 "*"
                               ]
                             },

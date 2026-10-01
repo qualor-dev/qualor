@@ -15,7 +15,7 @@ stored anywhere.
 | Issues marked **False positive**, **Won't fix** or **Accepted** on the main branch | the same status on the matching Qualor issue, with the latest comment |
 | Quality gates | Qualor gates, for conditions on metrics Qualor has |
 | Projects, and which gate each one uses | project assignments. With `--create-projects`, the projects themselves |
-| Quality profiles for JavaScript, TypeScript, C#, Java and Python | listed in the plan. Rule activation and severity overrides move as the SonarSource-to-analyzer rule mappings are reviewed. Until a profile has reviewed mappings it is reported as skipped, and your Qualor profiles stay as they are |
+| Quality profiles for JavaScript, TypeScript, C#, Java, Python, PHP, Ruby, Go, C and C++ | listed in the plan. Rule activation and severity overrides move as the SonarSource-to-analyzer rule mappings are reviewed. Until a profile has reviewed mappings it is reported as skipped, and your Qualor profiles stay as they are |
 
 The statuses of issues that SonarQube imported from ESLint, PMD, SpotBugs, Roslyn or Ruff
 (`external_*` rules) map one to one. SonarQube Server 9.9 does not let anyone resolve such external
@@ -60,6 +60,38 @@ those of detekt findings SonarQube imported (`external_detekt`), are not importe
 Swift quality profiles are read but have nothing to map, because SonarSource's own Swift rules are
 not SwiftLint's rules. The statuses of SwiftLint issues that SonarQube imported
 (`external_swiftlint`) carry over.
+
+PHP quality profiles are imported where a PHPStan rule at Qualor's default level (2) is the same
+rule as a SonarQube one. Six `php` rules are mapped, and only `php:S5708` (a `catch` clause naming
+a class that is not `Throwable`) is equivalent: it activates `phpstan:catch.notThrowable` in your
+Qualor `php` profile. The other five overlap (they flag some of the same code, but not all of
+it), so they only carry issue statuses onto the matching Qualor issue, by file and line. Issues
+SonarQube imported from PHPStan (`external_phpstan`) keep no PHPStan rule id in SonarQube, so
+their statuses are not imported. Psalm's issues and SonarQube's own PHP security rules are not
+mapped.
+
+Ruby is like Python: Qualor runs RuboCop, the open-source tool SonarQube's own `external_rubocop`
+issues came from. A Ruby quality profile (`ruby:` and `rubydre:` rule keys alike) is mapped to a
+RuboCop cop where a cop checks the same kind of thing, and each of those mappings was compared with
+both rules' public descriptions and is marked reviewed. Only two of them (`ruby:S138` and
+`ruby:S1066`, method length and collapsible `if`) are **equivalent** and turn a cop on in your
+Qualor `ruby` profile. The other mapped Ruby rules are **overlaps**: the two rules flag some of
+the same code, so they only carry issue statuses onto the matching Qualor issue, matched by file
+and line. The statuses of RuboCop issues that SonarQube imported
+(`external_rubocop`) carry over. As with Ruff, a cop that `qualor-default` does not run (the two
+equivalent rules above map to `Metrics` and `Style` cops, which it leaves out) is reported as
+**mapped but not run by the bundled configuration**; turn it on with `analyzers.rubocop.select`.
+
+Go coverage profiles are read. The statuses of go vet issues that SonarQube imported
+(`external_govet`) carry over. 18 of SonarSource's `go:` rules have a curated counterpart in
+staticcheck or gosec: `go:S1656` is equivalent to staticcheck's `SA4018`, three more overlap
+(reviewed against the public descriptions), and the other 14, mostly security rules matched to
+gosec by name, are unreviewed. The other rows only overlap or are unreviewed, so they import issue
+statuses only. golangci-lint's imported issues (`external_golangci-lint`) are not mapped.
+
+C and C++ quality profiles are read. A short list of common SonarQube C/C++ rules maps to
+cppcheck and clang-tidy rules, pending review: the import carries issue statuses for them but does
+not activate rules in a profile. MISRA rules are not mapped.
 
 Qualor does not run SonarSource's own analyzers, only the bundled SonarQube-compatible rules above
 for C#, JavaScript and TypeScript. Every other SonarQube rule has no counterpart, and the import says

@@ -99,6 +99,59 @@ describe('image definitions (plan 1G)', () => {
     expect(copy).toBeLessThan(text.lastIndexOf('\nFROM '));
   });
 
+  it("builds staticcheck and gosec of install-go.sh's versions from hash-pinned build modules (plan 9C, ruling G9-6)", () => {
+    const text = readFileSync('deploy/scanner/Dockerfile', 'utf8');
+    const installGo = readFileSync('tools/analyzers/install-go.sh', 'utf8');
+    const version = (tool: string) =>
+      new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installGo)?.[1];
+    for (const tool of ['STATICCHECK', 'GOSEC']) {
+      expect(version(tool), tool).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(text).toContain(`ARG ${tool}_VERSION=${version(tool)}`);
+    }
+    const from = text.indexOf(' AS gotools');
+    expect(from).toBeGreaterThan(0);
+    const stage = text.slice(from, text.indexOf('\nFROM ', from));
+    expect(stage).toContain('COPY tools/analyzers/go-tools/ /src/go-tools/');
+    expect(stage).toContain('GOFLAGS="-trimpath -mod=readonly"');
+    // Nothing is resolved at build time: no go get, go install or go mod in the stage.
+    expect(stage).not.toMatch(/\bgo (get|install|mod)\b/);
+    // The stage checks that it built install-go.sh's versions.
+    expect(stage).toContain(
+      '/out/staticcheck -version | grep -F "staticcheck ${STATICCHECK_VERSION} "',
+    );
+    expect(stage).toContain('/out/gosec -version | grep -Fx "Version: ${GOSEC_VERSION}"');
+    const modules = {
+      staticcheck: { tool: 'honnef.co/go/tools/cmd/staticcheck', raised: 'golang.org/x/mod' },
+      gosec: { tool: 'github.com/securego/gosec/v2/cmd/gosec', raised: 'google.golang.org/grpc' },
+    };
+    for (const [name, m] of Object.entries(modules)) {
+      const goMod = readFileSync(`tools/analyzers/go-tools/${name}/go.mod`, 'utf8');
+      const goSum = readFileSync(`tools/analyzers/go-tools/${name}/go.sum`, 'utf8');
+      expect(
+        goMod.split('\n').map((l) => l.trim()),
+        name,
+      ).toContain(`tool ${m.tool}`);
+      // Every required module (direct or indirect) with both of its hashes in go.sum.
+      const required = [
+        ...goMod.matchAll(/^\s*(?:require\s+)?([^\s()]+) (v\d\S*)(?:\s+\/\/ indirect)?\s*$/gm),
+      ].map((r) => [r[1] as string, r[2] as string] as const);
+      expect(
+        required.map(([p]) => p),
+        name,
+      ).toContain(m.raised);
+      for (const [p, v] of required) {
+        expect(goSum, `${name}: ${p} ${v}`).toContain(`${p} ${v} h1:`);
+        expect(goSum, `${name}: ${p} ${v}/go.mod`).toContain(`${p} ${v}/go.mod h1:`);
+      }
+    }
+    const gosecMod = readFileSync('tools/analyzers/go-tools/gosec/go.mod', 'utf8');
+    expect(gosecMod).toContain(`github.com/securego/gosec/v2 v${version('GOSEC')}`);
+    // The stage's binaries replace install-go.sh's in the tools stage the final image copies.
+    const copy = text.indexOf('COPY --from=gotools /out/staticcheck /out/gosec /opt/qualor/bin/');
+    expect(copy).toBeGreaterThan(text.indexOf('sh /tmp/install-go.sh'));
+    expect(copy).toBeLessThan(text.lastIndexOf('\nFROM '));
+  });
+
   it('accepts image vulnerabilities only with a reason and a review date', () => {
     const file = parse(readFileSync('deploy/scanner/.trivyignore.yaml', 'utf8')) as {
       vulnerabilities: { id: string; statement?: string; expired_at?: string }[];
@@ -112,6 +165,12 @@ describe('image definitions (plan 1G)', () => {
       // Trivy reports an entry again from its expiry date: the review date, never open-ended.
       expect(v.expired_at, v.id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
+  });
+
+  it('keeps every go command in qualor/scanner on the bundled Go (plan 9C, ruling G9-11)', () => {
+    const text = readFileSync('deploy/scanner/Dockerfile', 'utf8');
+    const final = text.slice(text.lastIndexOf('\nFROM '));
+    expect(final).toMatch(/^ENV GOTOOLCHAIN=local$/m);
   });
 
   it('builds qualor/scanner-dotnet from a named qualor/scanner, failing fast without one (plan 2D)', () => {

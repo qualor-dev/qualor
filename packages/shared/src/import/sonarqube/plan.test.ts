@@ -195,7 +195,7 @@ describe('planProfile (import-sonarqube.md §7)', () => {
   });
 
   it('skips unsupported languages, reserved or invalid names, and incompletely read profiles', () => {
-    expect(planProfile(profile({ language: 'go' })).skip).toBe('language_unsupported');
+    expect(planProfile(profile({ language: 'abap' })).skip).toBe('language_unsupported');
     expect(planProfile(profile({ name: 'qualor  WAY' })).skip).toBe('name_reserved');
     expect(planProfile(profile({ name: 'x'.repeat(101) })).skip).toBe('name_invalid');
     expect(planProfile(profile({ name: '   ' })).skip).toBe('name_invalid');
@@ -222,6 +222,46 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.skip).toBe('no_mapped_rules');
     expect(plan.rows).toEqual([]);
     expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['swift:S1481']);
+  });
+
+  it('plans a go profile: external_govet rows activate go vet analyzers; reviewed go equivalents activate, overlaps import statuses (plan 9C, G9-16)', () => {
+    const plan = planProfile(
+      profile({
+        language: 'go',
+        active: [
+          rule('external_govet:printf', { language: 'go' }),
+          rule('go:S1656', { language: 'go' }),
+          rule('go:S1764', { language: 'go' }),
+          rule('go:S2068', { language: 'go' }),
+          rule('go:S1135', { language: 'go' }),
+        ],
+      }),
+    );
+    expect(plan.language).toBe('go');
+    expect(plan.skip).toBeNull();
+    expect(plan.rows).toEqual([
+      { ruleKey: 'govet:printf', active: true, severityOverride: null },
+      { ruleKey: 'staticcheck:SA4018', active: true, severityOverride: null },
+    ]);
+    expect(plan.stats.pendingReview).toEqual([]);
+    expect(plan.stats.statusOnly).toEqual(['go:S1764', 'go:S2068']);
+    expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['go:S1135']);
+  });
+
+  it('classifies a C++ profile: curated overlap rows carry statuses only, the rest unmapped (plan 9D)', () => {
+    const plan = planProfile(
+      profile({
+        language: 'cpp',
+        active: [rule('cpp:S2259', { language: 'cpp' }), rule('cpp:S3715', { language: 'cpp' })],
+      }),
+    );
+    expect(plan.language).toBe('cpp');
+    expect(plan.rows).toEqual([]);
+    // Every Task 11 row is `overlap`: an overlap target only carries issue statuses, reviewed or not,
+    // so it lands in statusOnly; pendingReview holds unreviewed `equivalent` targets only.
+    expect(plan.stats.statusOnly).toContain('cpp:S2259');
+    expect(plan.stats.pendingReview).toEqual([]);
+    expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['cpp:S3715']);
   });
 
   it('never turns off a target whose left-off rule is an unreviewed equivalent', () => {
@@ -285,10 +325,10 @@ describe('planProfile (import-sonarqube.md §7)', () => {
       if (p.skip !== null) expect(p.rows).toEqual([]);
     }
     // A language Qualor does not analyse is not classified: nothing of it is counted.
-    const go = planProfile(profile({ language: 'go', active }));
-    expect(go.skip).toBe('language_unsupported');
-    expect(add(go)).toBe(0);
-    expect(go.stats.active).toBe(0);
+    const abap = planProfile(profile({ language: 'abap', active }));
+    expect(abap.skip).toBe('language_unsupported');
+    expect(add(abap)).toBe(0);
+    expect(abap.stats.active).toBe(0);
   });
 
   it('lists customised parameters as not imported', () => {
@@ -381,6 +421,55 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.stats.statusOnly).toEqual(['python:S1128']);
     expect(plan.stats.pendingReview).toEqual([]);
     expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'python:S9999' })]);
+  });
+
+  it('plans a php profile: a reviewed equivalent row activates its target, an overlap row is status only, unknown keys unmapped (plan 9A)', () => {
+    // php:S5708 → phpstan:catch.notThrowable (equivalent, reviewed); php:S836 → phpstan:variable.undefined
+    // (overlap: status only); php:S9999 is no curated key. phpstan runs every identifier at its level,
+    // so nothing lands in mappedNotRun.
+    const php = (key: string) => rule(key, { language: 'php' });
+    const plan = planProfile(
+      profile({ language: 'php', active: [php('php:S5708'), php('php:S836'), php('php:S9999')] }),
+    );
+    expect(plan.skip).toBeNull();
+    expect(plan.language).toBe('php');
+    expect(plan.rows).toEqual([
+      { ruleKey: 'phpstan:catch.notThrowable', active: true, severityOverride: null },
+    ]);
+    expect(plan.stats.statusOnly).toEqual(['php:S836']);
+    expect(plan.stats.pendingReview).toEqual([]);
+    expect(plan.stats.mappedNotRun).toEqual([]);
+    expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'php:S9999' })]);
+  });
+
+  it('plans a ruby profile: reviewed equivalent ruby rows and external_rubocop rows activate cops; overlap rows are status only (plan 9B)', () => {
+    // Rulings B9-11/B9-12: external_rubocop:Lint/UselessAssignment activates a cop qualor-default
+    // runs; ruby:S1066 → Style/SoleNestedConditional is equivalent but outside qualor-default
+    // (mapped, not run); ruby:S8423, ruby:S7916 and ruby:S134 are overlaps, so status only.
+    const ruby = (key: string) => rule(key, { language: 'ruby' });
+    const plan = planProfile(
+      profile({
+        language: 'ruby',
+        active: [
+          ruby('ruby:S1066'),
+          ruby('ruby:S8423'),
+          ruby('ruby:S7916'),
+          ruby('ruby:S134'),
+          ruby('external_rubocop:Lint/UselessAssignment'),
+          ruby('ruby:S9999'),
+        ],
+      }),
+    );
+    expect(plan.skip).toBeNull();
+    expect(plan.language).toBe('ruby');
+    expect(plan.rows).toEqual([
+      { ruleKey: 'rubocop:Lint/UselessAssignment', active: true, severityOverride: null },
+      { ruleKey: 'rubocop:Style/SoleNestedConditional', active: true, severityOverride: null },
+    ]);
+    expect(plan.stats.mappedNotRun).toEqual(['ruby:S1066']);
+    expect(plan.stats.pendingReview).toEqual([]);
+    expect(plan.stats.statusOnly).toEqual(['ruby:S8423', 'ruby:S7916', 'ruby:S134']);
+    expect(plan.stats.unmapped).toEqual([expect.objectContaining({ key: 'ruby:S9999' })]);
   });
 
   it('keeps an unreviewed python row out of the profile and lists it as pending review', () => {

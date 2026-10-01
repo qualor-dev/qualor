@@ -6,6 +6,79 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- PHP: `.php` files are a language of their own (`php`) with metrics, duplication and a `php`
+  quality profile, and a new `phpstan` engine runs PHPStan 2.2 (MIT) from `qualor/scanner` on
+  Debian's PHP 8.2, at level 2 (`analyzers.phpstan.level`, 0-10 or `max`), with Qualor's own
+  configuration. It never loads the project's `phpstan.neon`, its bootstrap files, PHPStan
+  extensions or Composer's autoloader, and runs on a copy of the sources; installed dependencies
+  in `vendor/` are read as symbols, never run. Unknown classes, methods and functions are not
+  reported. `qualor import sonarqube` imports PHP profiles where a PHPStan rule is the same rule.
+  `QUALOR_PHPSTAN_PHAR` names another phar.
+- Ruby: `.rb`, `.rake`, `.gemspec`, `.ru`, `Gemfile` and `Rakefile` are a language of their own
+  (`ruby`) with metrics and duplication, and a new `rubocop` engine
+  runs RuboCop 1.91 (MIT) on Ruby 4.0.7 from `qualor/scanner` with Qualor's own selection
+  (`qualor-default`: RuboCop's Lint and Security cops, minus a few that misfire in a Qualor
+  scan; the guide lists them). It never reads the project's `.rubocop.yml`;
+  choose cops with `analyzers.rubocop.select` and `ignore`, and the parsed Ruby version with
+  `targetRubyVersion`. A `ruby` quality profile is created for every organisation.
+  `qualor import sonarqube` imports Ruby profiles where a RuboCop cop checks the same thing (two
+  rules are equivalent and activate their cop; the others are overlaps that only import issue
+  statuses), and keeps the statuses of issues SonarQube imported from RuboCop.
+- Go: `.go` files are language `go`, with metrics, duplication and a `go` quality profile, and three
+  engines run from `qualor/scanner`: `staticcheck` (staticcheck 2026.2.1), `govet` (go vet of Go
+  1.27.1) and `gosec` (gosec 2.29.0, security; G104, G115 and G304 left out by default). They
+  analyse each Go module offline: run `go mod download` (or vendor your dependencies) before
+  `qualor scan`; a package whose dependencies are missing is not analysed and the log says so.
+  Nothing the repository asks for is run (no `go generate`, no other toolchain, no cgo), and a
+  module that replaces a dependency with an outside directory or links out of the repository is
+  skipped. Go coverage profiles (`go test -coverprofile`) import as the new `gocover` format.
+  `qualor import sonarqube` maps the statuses of issues SonarQube imported from go vet, and 18
+  curated `go:` rules (statuses only until reviewed).
+- C and C++: `qualor/scanner` runs cppcheck 2.22.0 (GPL-3.0-or-later, built from source; its
+  source ships in `qualor/scanner-sources`) as the `cppcheck` engine, on by default, with no build
+  needed. A clang-tidy (LLVM 14+) on `PATH` runs as the `clang-tidy` engine when the job also has a
+  `compile_commands.json`; no image bundles it. Qualor reads compile databases and `.clang-tidy`
+  itself and never passes plugins, response files or compiler wrappers. C and C++ files get metrics
+  and duplication (tree-sitter-c 0.24.1, tree-sitter-cpp 0.23.4), built-in C and C++ quality
+  profiles, and `qualor import sonarqube` maps common C/C++ rules (pending review). gcovr and
+  llvm-cov coverage reports already work.
+
+### Changed
+
+- A report that holds PHP, Ruby, Go, C or C++ files, or findings of the `phpstan`, `rubocop`,
+  `staticcheck`, `govet`, `gosec`, `cppcheck` or `clang-tidy` engine, is refused (422) by a Qualor
+  server older than this release: upgrade the server before the scanner.
+- `.php` files were language `other`; they now count in lines of code, complexity and
+  duplication, and `*Test.php` files are test files by default.
+- PHPStan is skipped when `composer.json` requires packages but `vendor/` is not installed: run
+  `composer install` (scripts and plugins are not needed) before the scan.
+- `phpstan` is now a built-in engine id: a `sarif:` entry with `engine: phpstan` no longer
+  validates, and your own PHPStan SARIF import is reported as `ext-phpstan` and counted once.
+- `.rb`, `.rake`, `.gemspec`, `.ru`, `Gemfile` and `Rakefile` were language `other`; they now count
+  in lines of code, complexity and duplication, which can move the new-code duplication condition.
+  `*_spec.rb`, `*_test.rb` and Ruby files below `spec/` and `test/` are test files by default.
+- New built-in excludes: `.bundle` directories and `db/schema.rb`.
+- `rubocop` is now a built-in engine id: a `sarif:` entry with `engine: rubocop` no longer
+  validates. Qualor runs RuboCop itself: remove your own RuboCop SARIF import; one you keep is
+  reported as `ext-rubocop` and counts once with the built-in finding.
+- `**/testdata/**` and `**/*.pb.go` are built-in excludes (Trivy's `--skip-dirs` included); the
+  `testdata/` exclude applies to every language, so secret and dependency scanning skip it too, and
+  `**/*_test.go` files are tests by default. `.go` files were `other` and now count in lines of
+  code and duplication.
+- `staticcheck`, `govet` and `gosec` are reserved engine ids: a `qualor.yml` `sarif:` entry with one
+  of them fails validation. A SARIF of your own from staticcheck or gosec becomes `ext-staticcheck`
+  or `ext-gosec` and is counted once with the built-in finding; remove it, Qualor runs these tools
+  itself.
+- `.c`, `.cpp`, `.h` and the other C/C++ files were `other`; they now count as `c` or `cpp` in
+  lines of code and duplication. `CMakeFiles/`, `cmake-build-*/` and `_deps/` are built-in
+  excludes. `cppcheck` and `clang-tidy` are reserved engine ids (`ext-cppcheck` and
+  `ext-clang-tidy` are the names of your own imported SARIF of these tools, and count once).
+- `qualor/scanner` is about 115 MB larger compressed (about 4.1 GB unpacked, was 3.5 GB) with
+  PHP 8.2 and PHPStan, Ruby and RuboCop, the Go toolchain and cppcheck; `qualor/scanner-dotnet`
+  is about 100 MB larger compressed (about 5.8 GB unpacked, was 5.3 GB).
+
 ## [0.3.2] - 2026-10-01
 
 ### Changed

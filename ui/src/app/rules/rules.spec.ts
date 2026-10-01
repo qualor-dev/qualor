@@ -244,6 +244,11 @@ describe('ProfilesPage', () => {
       ['css', 'CSS'],
       ['kotlin', 'Kotlin'],
       ['swift', 'Swift'],
+      ['php', 'PHP'],
+      ['ruby', 'Ruby'],
+      ['go', 'Go'],
+      ['c', 'C'],
+      ['cpp', 'C++'],
       ['*', 'Other engines'],
     ]);
   });

@@ -185,6 +185,46 @@ describe('built-in profiles and gate (data-model.md §4.4, gates.md §7)', () =>
     expect(swift).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
   });
 
+  it('adds the php built-in to an organisation that has every other built-in (plan 9A, no migration)', async () => {
+    const [org] = await t.db
+      .insert(organizations)
+      .values({ key: 'pre-php', name: 'Before PHP' })
+      .returning();
+    for (const language of PROFILE_LANGUAGES.filter((l) => l !== 'php')) {
+      await t.db.insert(qualityProfiles).values({
+        organizationId: org!.id,
+        name: BUILTIN_NAME,
+        language,
+        isBuiltin: true,
+        isDefault: true,
+        unknownRules: 'activate',
+      });
+    }
+    await bootstrap(t.db, admin);
+    const php = (await profilesOf(org!.id)).filter((p) => p.language === 'php');
+    expect(php).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
+  });
+
+  it('adds the go built-in to an organisation that has every other built-in (plan 9C, no migration)', async () => {
+    const [org] = await t.db
+      .insert(organizations)
+      .values({ key: 'pre-go', name: 'Before Go' })
+      .returning();
+    for (const language of PROFILE_LANGUAGES.filter((l) => l !== 'go')) {
+      await t.db.insert(qualityProfiles).values({
+        organizationId: org!.id,
+        name: BUILTIN_NAME,
+        language,
+        isBuiltin: true,
+        isDefault: true,
+        unknownRules: 'activate',
+      });
+    }
+    await bootstrap(t.db, admin);
+    const go = (await profilesOf(org!.id)).filter((p) => p.language === 'go');
+    expect(go).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
+  });
+
   it('adds the python built-in to an organisation that has every other built-in (plan 8C, no migration)', async () => {
     const [org] = await t.db
       .insert(organizations)
@@ -203,5 +243,48 @@ describe('built-in profiles and gate (data-model.md §4.4, gates.md §7)', () =>
     await bootstrap(t.db, admin);
     const python = (await profilesOf(org!.id)).filter((p) => p.language === 'python');
     expect(python).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
+  });
+
+  it('adds the ruby built-in to an organisation that has every other built-in (plan 9B, no migration)', async () => {
+    const [org] = await t.db
+      .insert(organizations)
+      .values({ key: 'pre-ruby', name: 'Before Ruby' })
+      .returning();
+    for (const language of PROFILE_LANGUAGES.filter((l) => l !== 'ruby')) {
+      await t.db.insert(qualityProfiles).values({
+        organizationId: org!.id,
+        name: BUILTIN_NAME,
+        language,
+        isBuiltin: true,
+        isDefault: true,
+        unknownRules: 'activate',
+      });
+    }
+    await bootstrap(t.db, admin);
+    const ruby = (await profilesOf(org!.id)).filter((p) => p.language === 'ruby');
+    expect(ruby).toMatchObject([{ name: BUILTIN_NAME, isBuiltin: true, isDefault: true }]);
+  });
+
+  it('adds the c and cpp built-ins to an organisation that has every other built-in (plan 9D, no migration)', async () => {
+    const [org] = await t.db
+      .insert(organizations)
+      .values({ key: 'pre-cfamily', name: 'Before C' })
+      .returning();
+    for (const language of PROFILE_LANGUAGES.filter((l) => l !== 'c' && l !== 'cpp')) {
+      await t.db.insert(qualityProfiles).values({
+        organizationId: org!.id,
+        name: BUILTIN_NAME,
+        language,
+        isBuiltin: true,
+        isDefault: true,
+        unknownRules: 'activate',
+      });
+    }
+    await bootstrap(t.db, admin);
+    const added = (await profilesOf(org!.id)).filter(
+      (p) => p.language === 'c' || p.language === 'cpp',
+    );
+    expect(added.map((p) => p.language).sort()).toEqual(['c', 'cpp']);
+    expect(added.every((p) => p.isBuiltin && p.isDefault && p.name === BUILTIN_NAME)).toBe(true);
   });
 });

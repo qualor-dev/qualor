@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PHPSTAN_DEFAULT_LEVEL } from '../rules/phpstan';
+import { RUBOCOP_DEFAULT_TARGET_RUBY } from '../rules/rubocop';
 import { BUILTIN_EXCLUDES, ConfigError, interpolateEnv, parseConfig } from './schema';
 
 function errorPaths(raw: unknown): string[] {
@@ -395,5 +397,185 @@ describe('BUILTIN_EXCLUDES', () => {
     expect(() =>
       parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'swiftlint' }] }),
     ).toThrow(/reserved/);
+  });
+
+  it('has analyzers.phpstan with its defaults, knows PHP and PHPUnit test files (config.md §3, §6, plan 9A)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.phpstan).toEqual({
+      enabled: 'auto',
+      level: PHPSTAN_DEFAULT_LEVEL,
+      memoryLimit: '2G',
+      timeoutSeconds: 900,
+    });
+    expect(parseConfig({ version: 1, languages: ['php'] }).languages).toEqual(['php']);
+    expect(c.tests.include).toContain('**/*Test.php');
+    const phpstan = (p: object) =>
+      parseConfig({ version: 1, analyzers: { phpstan: p } }).analyzers.phpstan;
+    expect(phpstan({ level: 'max' }).level).toBe('max');
+    expect(phpstan({ level: 0 }).level).toBe(0);
+    expect(phpstan({ level: 10, memoryLimit: '512M' })).toMatchObject({
+      level: 10,
+      memoryLimit: '512M',
+    });
+    expect(phpstan({ memoryLimit: '-1' }).memoryLimit).toBe('-1');
+    for (const bad of [
+      { level: 11 },
+      { level: -1 },
+      { level: 2.5 },
+      { level: '5' },
+      { memoryLimit: '2GB' },
+      { memoryLimit: '0G' },
+      { memoryLimit: '' },
+      { configFile: 'phpstan.neon' },
+    ]) {
+      expect(() => phpstan(bad), JSON.stringify(bad)).toThrow();
+    }
+    expect(() =>
+      parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'phpstan' }] }),
+    ).toThrow(/reserved/);
+  });
+
+  it('has analyzers.rubocop with its defaults, knows Ruby, its test files and its excludes (plan 9B)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.rubocop).toEqual({
+      enabled: 'auto',
+      select: ['qualor-default'],
+      ignore: [],
+      targetRubyVersion: RUBOCOP_DEFAULT_TARGET_RUBY,
+      timeoutSeconds: 600,
+    });
+    expect(parseConfig({ version: 1, languages: ['ruby'] }).languages).toEqual(['ruby']);
+    for (const glob of ['**/*_spec.rb', '**/*_test.rb', '**/spec/**/*.rb', '**/test/**/*.rb'])
+      expect(c.tests.include).toContain(glob);
+    for (const glob of ['**/.bundle/**', '**/db/schema.rb'])
+      expect(BUILTIN_EXCLUDES).toContain(glob);
+  });
+
+  it('validates RuboCop selectors and target Rubies, and reserves the rubocop engine id', () => {
+    const rubocop = (r: object) =>
+      parseConfig({ version: 1, analyzers: { rubocop: r } }).analyzers.rubocop;
+    expect(
+      rubocop({ select: ['qualor-default', 'Style', 'Style/StringLiterals'], ignore: ['Security'] })
+        .select,
+    ).toEqual(['qualor-default', 'Style', 'Style/StringLiterals']);
+    expect(rubocop({ targetRubyVersion: 3.3 }).targetRubyVersion).toBe(3.3);
+    expect(rubocop({ targetRubyVersion: '2.7' }).targetRubyVersion).toBe('2.7');
+    expect(() => rubocop({ select: [] })).toThrow(/at least one/);
+    expect(() => rubocop({ select: ['Lint/NotACop'] })).toThrow(
+      /unknown RuboCop department or cop "Lint\/NotACop"/,
+    );
+    expect(() => rubocop({ select: ['rails'] })).toThrow(/RuboCop department/);
+    expect(() => rubocop({ ignore: ['qualor-default'] })).toThrow(/RuboCop department/);
+    expect(() => rubocop({ targetRubyVersion: '9.9' })).toThrow(/Ruby version RuboCop/);
+    expect(() => rubocop({ configFile: '.rubocop.yml' })).toThrow();
+    expect(() =>
+      parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'rubocop' }] }),
+    ).toThrow(/reserved/);
+  });
+
+  it('has the Go analyzers with their defaults, knows Go, its tests and its excludes (config.md §3, §3.1, §6; plan 9C)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.staticcheck).toEqual({ enabled: 'auto', timeoutSeconds: 900 });
+    expect(c.analyzers.govet).toEqual({ enabled: 'auto', timeoutSeconds: 900 });
+    expect(c.analyzers.gosec).toEqual({
+      enabled: 'auto',
+      exclude: ['G104', 'G115', 'G304'],
+      timeoutSeconds: 900,
+    });
+    expect(parseConfig({ version: 1, languages: ['go'] }).languages).toEqual(['go']);
+    expect(c.tests.include).toContain('**/*_test.go');
+    for (const glob of ['**/testdata/**', '**/*.pb.go']) expect(BUILTIN_EXCLUDES).toContain(glob);
+    expect(
+      parseConfig({ version: 1, analyzers: { gosec: { exclude: [] } } }).analyzers.gosec.exclude,
+    ).toEqual([]);
+    expect(() =>
+      parseConfig({ version: 1, analyzers: { gosec: { exclude: ['g104'] } } }),
+    ).toThrow();
+    expect(() => parseConfig({ version: 1, analyzers: { gosec: { exclude: ['G999'] } } })).toThrow(
+      /not a rule of gosec/,
+    );
+    expect(() =>
+      parseConfig({ version: 1, analyzers: { staticcheck: { checks: ['all'] } } }),
+    ).toThrow();
+    for (const engine of ['staticcheck', 'govet', 'gosec']) {
+      expect(
+        () => parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine }] }),
+        engine,
+      ).toThrow(/reserved/);
+    }
+    expect(
+      parseConfig({
+        version: 1,
+        coverage: { reports: [{ path: 'coverage.out', format: 'gocover' }] },
+      }).coverage.reports[0]?.format,
+    ).toBe('gocover');
+  });
+
+  it('has analyzers.cppcheck and analyzers.clang-tidy, knows C and C++, excludes CMake output (plan 9D)', () => {
+    const c = parseConfig({ version: 1 });
+    expect(c.analyzers.cppcheck).toEqual({
+      enabled: 'auto',
+      enable: ['warning', 'performance', 'portability'],
+      select: [],
+      includePaths: [],
+      defines: [],
+      compileCommands: null,
+      timeoutSeconds: 1800,
+    });
+    expect(c.analyzers['clang-tidy']).toEqual({
+      enabled: 'auto',
+      configFile: null,
+      compileCommands: null,
+      timeoutSeconds: 3600,
+    });
+    expect(parseConfig({ version: 1, languages: ['c', 'cpp'] }).languages).toEqual(['c', 'cpp']);
+    for (const glob of ['**/CMakeFiles/**', '**/cmake-build-*/**', '**/_deps/**']) {
+      expect(BUILTIN_EXCLUDES).toContain(glob);
+    }
+    const ok = parseConfig({
+      version: 1,
+      analyzers: {
+        cppcheck: {
+          enable: ['style'],
+          includePaths: ['include', 'lib/inc'],
+          defines: ['DEBUG', 'LEVEL=2'],
+          compileCommands: false,
+        },
+        'clang-tidy': {
+          configFile: 'qualor-default',
+          compileCommands: 'out/compile_commands.json',
+        },
+      },
+    });
+    expect(ok.analyzers.cppcheck.compileCommands).toBe(false);
+    expect(ok.analyzers['clang-tidy'].compileCommands).toBe('out/compile_commands.json');
+    const bad = (cppcheck: unknown) => () =>
+      parseConfig({ version: 1, analyzers: { cppcheck } } as never);
+    expect(bad({ enable: ['all'] })).toThrow();
+    expect(bad({ enable: ['information'] })).toThrow();
+    expect(bad({ includePaths: ['/usr/include'] })).toThrow();
+    expect(bad({ includePaths: ['../outside'] })).toThrow();
+    expect(bad({ includePaths: ['a\\b'] })).toThrow();
+    expect(bad({ defines: ['-fplugin=x.so'] })).toThrow();
+    expect(bad({ defines: ['A B'] })).toThrow();
+    expect(bad({ compileCommands: '' })).toThrow();
+    expect(bad({ compileCommands: true })).toThrow();
+    expect(bad({ args: ['--addon=misra'] })).toThrow();
+    // select names only the default-off ids (D9-14): any other id would have no effect.
+    expect(bad({ select: ['nullPointer'] })).toThrow();
+    expect(bad({ select: ['uninitmembervar'] })).toThrow();
+    expect(
+      parseConfig({ version: 1, analyzers: { cppcheck: { select: ['uninitMemberVarNoCtor'] } } })
+        .analyzers.cppcheck.select,
+    ).toEqual(['uninitMemberVarNoCtor']);
+    expect(() =>
+      parseConfig({ version: 1, analyzers: { 'clang-tidy': { load: 'x.so' } } } as never),
+    ).toThrow();
+    for (const engine of ['cppcheck', 'clang-tidy']) {
+      expect(
+        () => parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine }] }),
+        engine,
+      ).toThrow(/reserved/);
+    }
   });
 });

@@ -45,6 +45,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with: { distribution: temurin, java-version: '17.0.20+8' }
+      # PHP for PHPStan's phar (plan 9A); the phar itself comes from install.sh.
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with: { php-version: '8.2', tools: none, coverage: none }
       # Trivy's release archive and database layer, cached by their pins (plan 2B).
       - id: trivy-pins
         run: echo "key=trivy-$(sed -n 's/^TRIVY_VERSION=//p' tools/analyzers/install.sh)-$(sed -n 's/^TRIVY_DB_DIGEST=sha256://p' tools/analyzers/install.sh)" >> "$GITHUB_OUTPUT"
@@ -63,6 +66,15 @@ jobs:
       - run: sh tools/analyzers/install-sonarjs.sh
       - run: sudo mkdir -p /opt/qualor/weblint && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/weblint
       - run: sh tools/analyzers/install-weblint.sh
+      # Plan 9B: Qualor's RuboCop pass builds its own Ruby (about 2 minutes on a 4-CPU runner).
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libyaml-dev && sudo sh tools/analyzers/install-rubocop.sh
+      # Plan 9C: Go, staticcheck, gosec and Qualor's Go runner; /opt/qualor/bin goes first on PATH
+      # so the runner image's own Go (if any) does not shadow the pinned one.
+      - run: sudo sh tools/analyzers/install-go.sh
+      # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
+      - run: sudo sh tools/analyzers/install-cppcheck.sh
+      - run: sudo sh tools/analyzers/install-clang-tidy.sh
+      - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm test:coverage
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
       # The dogfood job imports it with the scan (qualor.yml).
@@ -89,6 +101,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with: { distribution: temurin, java-version: '17.0.20+8' }
+      # PHP for PHPStan's phar (plan 9A); the phar itself comes from install.sh.
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with: { php-version: '8.2', tools: none, coverage: none }
       # Trivy's release archive and database layer, cached by their pins (plan 2B).
       - id: trivy-pins
         run: echo "key=trivy-$(sed -n 's/^TRIVY_VERSION=//p' tools/analyzers/install.sh)-$(sed -n 's/^TRIVY_DB_DIGEST=sha256://p' tools/analyzers/install.sh)" >> "$GITHUB_OUTPUT"
@@ -104,6 +119,15 @@ jobs:
       - run: sh tools/analyzers/install-sonarjs.sh
       - run: sudo mkdir -p /opt/qualor/weblint && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/weblint
       - run: sh tools/analyzers/install-weblint.sh
+      # Plan 9B: Qualor's RuboCop pass builds its own Ruby (about 2 minutes on a 4-CPU runner).
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libyaml-dev && sudo sh tools/analyzers/install-rubocop.sh
+      # Plan 9C: Go, staticcheck, gosec and Qualor's Go runner; /opt/qualor/bin goes first on PATH
+      # so the runner image's own Go (if any) does not shadow the pinned one.
+      - run: sudo sh tools/analyzers/install-go.sh
+      # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
+      - run: sudo sh tools/analyzers/install-cppcheck.sh
+      - run: sudo sh tools/analyzers/install-clang-tidy.sh
+      - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm fixtures
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
   cli-binary:
@@ -119,6 +143,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with: { distribution: temurin, java-version: '17.0.20+8' }
+      # PHP for PHPStan's phar (plan 9A); the phar itself comes from install.sh.
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with: { php-version: '8.2', tools: none, coverage: none }
       # Trivy's release archive and database layer, cached by their pins (plan 2B).
       - id: trivy-pins
         run: echo "key=trivy-$(sed -n 's/^TRIVY_VERSION=//p' tools/analyzers/install.sh)-$(sed -n 's/^TRIVY_DB_DIGEST=sha256://p' tools/analyzers/install.sh)" >> "$GITHUB_OUTPUT"
@@ -134,6 +161,15 @@ jobs:
       - run: sh tools/analyzers/install-sonarjs.sh
       - run: sudo mkdir -p /opt/qualor/weblint && sudo chown -R "$(id -u):$(id -g)" /opt/qualor/weblint
       - run: sh tools/analyzers/install-weblint.sh
+      # Plan 9B: Qualor's RuboCop pass builds its own Ruby (about 2 minutes on a 4-CPU runner).
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libyaml-dev && sudo sh tools/analyzers/install-rubocop.sh
+      # Plan 9C: Go, staticcheck, gosec and Qualor's Go runner; /opt/qualor/bin goes first on PATH
+      # so the runner image's own Go (if any) does not shadow the pinned one.
+      - run: sudo sh tools/analyzers/install-go.sh
+      # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
+      - run: sudo sh tools/analyzers/install-cppcheck.sh
+      - run: sudo sh tools/analyzers/install-clang-tidy.sh
+      - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm --filter @qualor/cli build
       - run: pnpm --filter @qualor/cli smoke
       - run: pnpm --filter @qualor/cli smoke:process

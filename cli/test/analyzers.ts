@@ -6,8 +6,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   engineMapping,
+  goVersionSupported,
+  gosecVersionSupported,
+  cppcheckVersionSupported,
   parseConfig,
+  PHPSTAN_VERSION,
   splitSourceLines,
+  staticcheckVersionSupported,
   swiftlintVersionSupported,
   type NormalizeWarning,
   type Quality,
@@ -20,14 +25,22 @@ import { parse } from 'yaml';
 import { describe, expect } from 'vitest';
 import { findRepoBinary, resolveBinary } from '../src/analyzers/binary';
 import { DEFAULT_DETEKT_JAR } from '../src/analyzers/detekt';
+import { DEFAULT_PHPSTAN_PHAR, parsePhpstanVersion } from '../src/analyzers/phpstan';
+import {
+  DEFAULT_GO_DIR,
+  parseGosecVersion,
+  parseGoVersion,
+  parseStaticcheckVersion,
+} from '../src/analyzers/golang';
 import { fileLines, normalizeCaptures, type NormalizedEngines } from '../src/analyzers/normalize';
 import type { ProcessResult } from '../src/analyzers/process';
 import { runAnalyzers } from '../src/analyzers/runner';
 import type { Analyzer, AnalyzerContext, ExecOptions, SarifCapture } from '../src/analyzers/types';
-import { discoverFiles } from '../src/discovery/discover';
-import { silentLogger } from '../src/log';
+import { discoverFiles, type ScopeFile } from '../src/discovery/discover';
+import { createLogger, silentLogger, type Logger } from '../src/log';
 import { Warnings } from '../src/warnings';
 import { FIXTURES_DIR, loadFixture } from './fixtures';
+import { writeTree } from './tmp';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /** Recorded real tool output that is not SARIF, or SARIF only the CLI tests use. */
@@ -85,6 +98,28 @@ export function describeWithDetekt(): typeof describe {
 }
 
 /**
+ * Plan 9A: real PHPStan needs its phar (tools/analyzers/install.sh, which both CIs' test jobs run)
+ * and php; `QUALOR_REQUIRE_ANALYZERS=1` makes it run, and fail, when either is missing. Elsewhere
+ * it runs only when the phar is the pinned `PHPSTAN_VERSION` (Task 9: the expected findings are
+ * those of that version), so a phar of another version skips these tests instead of failing them.
+ */
+export function describeWithPhpstan(): typeof describe {
+  return describe.runIf(REQUIRE_ANALYZERS || phpstanPinnedInstalled()) as typeof describe;
+}
+
+function phpstanPinnedInstalled(): boolean {
+  if (!existsSync(DEFAULT_PHPSTAN_PHAR)) return false;
+  const php = resolveBinary('php', { root: process.cwd(), env: process.env });
+  if (php === null) return false;
+  const r = spawnSync(php, [DEFAULT_PHPSTAN_PHAR, '--version'], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    cwd: os.tmpdir(),
+  });
+  return r.status === 0 && parsePhpstanVersion(r.stdout ?? '') === PHPSTAN_VERSION;
+}
+
+/**
  * Plan 8F: real SwiftLint runs under `QUALOR_REQUIRE_ANALYZERS=1` (it then fails when missing), or
  * when the resolved `swiftlint version` is of the supported minor (ruling F18), so a Homebrew
  * SwiftLint of another version on a developer machine skips these tests instead of failing them.
@@ -99,6 +134,55 @@ function swiftlintInstalledSupported(): boolean {
   if (bin === null) return false;
   const r = spawnSync(bin, ['version'], { encoding: 'utf8', timeout: 30_000 });
   return r.status === 0 && swiftlintVersionSupported((r.stdout ?? '').trim());
+}
+
+/**
+ * Plan 9B: real RuboCop needs Qualor's pass in /opt/qualor/rubocop (tools/analyzers/install-rubocop.sh,
+ * which both CIs' analyzer jobs run); `QUALOR_REQUIRE_ANALYZERS=1` makes it run, and fail, when missing.
+ */
+export function describeWithRubocop(): typeof describe {
+  const ok =
+    existsSync('/opt/qualor/rubocop/run.rb') && existsSync('/opt/qualor/rubocop/ruby/bin/ruby');
+  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+/**
+ * Plan 9C: Qualor's Go runner where the qualor/scanner image and install-go.sh put it; the one
+ * definition of this path for the tests (tools/fixtures/run.ts imports it).
+ */
+export const GO_RUNNER_FILE = path.posix.join(DEFAULT_GO_DIR, 'run.mjs');
+
+/**
+ * Plan 9C: the real Go tools (install-go.sh, which every CI job requiring the analyzers runs) run
+ * under `QUALOR_REQUIRE_ANALYZERS=1` (they then fail when missing), or when node and the runner are
+ * there and the resolved go, staticcheck and gosec are of supported versions (ruling F18's gate),
+ * so a laptop with another Go first on PATH skips these tests instead of failing them.
+ */
+export function describeWithGo(): typeof describe {
+  return describe.runIf(REQUIRE_ANALYZERS || goToolsSupported()) as typeof describe;
+}
+
+function goToolsSupported(): boolean {
+  if (!toolInstalled('node') || !existsSync(GO_RUNNER_FILE)) return false;
+  const version = (name: string, args: string[], parse: (stdout: string) => string | null) => {
+    const bin = resolveBinary(name, { root: process.cwd(), env: process.env });
+    if (bin === null) return null;
+    // GOTOOLCHAIN=local: probing must never download a toolchain a go.mod nearby asks for.
+    const env = { ...process.env, GOTOOLCHAIN: 'local', GOFLAGS: '' };
+    const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 30_000, env, cwd: os.tmpdir() });
+    return r.status === 0 ? parse(r.stdout ?? '') : null;
+  };
+  const go = version('go', ['version'], parseGoVersion);
+  const sc = version('staticcheck', ['-version'], parseStaticcheckVersion);
+  const gs = version('gosec', ['-version'], parseGosecVersion);
+  return (
+    go !== null &&
+    goVersionSupported(go) &&
+    sc !== null &&
+    staticcheckVersionSupported(sc) &&
+    gs !== null &&
+    gosecVersionSupported(gs)
+  );
 }
 
 /**
@@ -383,4 +467,153 @@ export function scanWithRecordedSarif(
     return { ...f, ruleKey, quality: quality.get(ruleKey) };
   });
   return { issues, warnings: out.warnings, engines: out.engines };
+}
+
+/** Plan 9D: a C/C++ `ScopeFile`; `.c` and `.h` are C unless `language` says otherwise. */
+export function cFamilyScopeFile(
+  root: string,
+  rel: string,
+  language: 'c' | 'cpp' = /\.[ch]$/.test(rel) ? 'c' : 'cpp',
+): ScopeFile {
+  return {
+    path: rel,
+    absPath: path.join(root, rel),
+    language,
+    grammar: language,
+    kind: 'main',
+    size: 10,
+  };
+}
+
+export interface CFamilyContextOptions {
+  /** What `resolveBinary` finds, by tool name (`{ cppcheck: '/opt/qualor/bin/cppcheck' }`). */
+  binaries: Readonly<Record<string, string>>;
+  /** What `<tool> --version` prints. */
+  versionStdout: string;
+  config?: Omit<QualorConfigInput, 'version'>;
+  /** Receives every log line (`createLogger('debug')`: info without a prefix, `warn: …`). */
+  lines?: string[];
+  /** Per-file language overrides of `cFamilyScopeFile`'s default. */
+  languages?: Readonly<Record<string, 'c' | 'cpp'>>;
+}
+
+/**
+ * Plan 9D: a temporary repository holding `files`, a work directory, and a `prepare()` context
+ * whose scope is the repository's C/C++ sources. No process is ever started.
+ */
+export function cFamilyContext(
+  tmp: () => string,
+  files: Record<string, string>,
+  o: CFamilyContextOptions,
+): { ctx: AnalyzerContext; root: string; work: string } {
+  const root = tmp();
+  const work = tmp();
+  writeTree(root, files);
+  const base = fakeContext(root, {
+    binaries: o.binaries,
+    workDir: work,
+    config: o.config ?? {},
+    exec: () => ({
+      exitCode: 0,
+      timedOut: false,
+      durationMs: 1,
+      stdout: o.versionStdout,
+      stderr: '',
+    }),
+  });
+  const lines = o.lines ?? [];
+  const sources = Object.keys(files).filter((f) => /\.(c|h|cc|cpp|hpp)$/.test(f));
+  return {
+    ctx: {
+      ...base,
+      files: sources.map((f) => cFamilyScopeFile(root, f, o.languages?.[f])),
+      log: createLogger('debug', (t) => lines.push(t)),
+    },
+    root,
+    work,
+  };
+}
+
+/**
+ * Plan 9D: real cppcheck runs under `QUALOR_REQUIRE_ANALYZERS=1`, or when the resolved
+ * `cppcheck --version` is of the pinned minor (the tests' expectations are 2.22's), so a
+ * distribution's other cppcheck on a developer machine skips these tests instead of failing them.
+ */
+export function describeWithCppcheck(): typeof describe {
+  const bin = resolveBinary('cppcheck', { root: process.cwd(), env: process.env });
+  let ok = false;
+  if (bin !== null) {
+    const r = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 30_000 });
+    const v = /^Cppcheck (\S+)$/.exec((r.stdout ?? '').trim())?.[1];
+    ok = v !== undefined && cppcheckVersionSupported(v);
+  }
+  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+/** Plan 9D: the clang-tidy major the CI and the toolbox install (tools/analyzers/install-clang-tidy.sh). */
+export function pinnedClangTidyMajor(): string {
+  const script = readFileSync(
+    path.resolve(here, '../../tools/analyzers/install-clang-tidy.sh'),
+    'utf8',
+  );
+  const major = /^CLANG_TIDY_VERSION=(\d+)\./m.exec(script)?.[1];
+  if (major === undefined) throw new Error('install-clang-tidy.sh pins no CLANG_TIDY_VERSION');
+  return major;
+}
+
+/**
+ * Plan 9D: real clang-tidy runs under `QUALOR_REQUIRE_ANALYZERS=1`, or with a clang-tidy of the
+ * pinned major (the tests' expectations are that LLVM's), so a distribution's clang-tidy 14–21 on a
+ * developer machine skips these tests instead of failing them.
+ */
+export function describeWithClangTidy(): typeof describe {
+  const bin = resolveBinary('clang-tidy', { root: process.cwd(), env: process.env });
+  let ok = false;
+  if (bin !== null) {
+    const r = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 30_000 });
+    ok = /LLVM version (\d+)\./.exec(r.stdout ?? '')?.[1] === pinnedClangTidyMajor();
+  }
+  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+/** Plan 9D: a SARIF result of a C/C++ engine, as far as the real-binary tests read it. */
+export interface KeyedResult {
+  ruleId: string;
+  locations: {
+    physicalLocation: { artifactLocation: { uri: string }; region: { startLine: number } };
+  }[];
+}
+
+export function sarifResults(sarif: unknown): KeyedResult[] {
+  return (sarif as { runs: { results?: KeyedResult[] }[] }).runs[0]?.results ?? [];
+}
+
+/** `path:line ruleId`, the URI decoded (C/C++ results outside the repository are dropped). */
+export function resultKey(r: KeyedResult): string {
+  const loc = r.locations[0]!.physicalLocation;
+  return `${decodeURIComponent(loc.artifactLocation.uri)}:${loc.region.startLine} ${r.ruleId}`;
+}
+
+/**
+ * Plan 9D: runs one real analyzer over `root` with the default configuration, and normalises its
+ * capture as a scan does (out-of-repository results dropped, with their warning). `log` receives
+ * the analyzer's log lines (silent by default).
+ */
+export async function scanRepoWith(
+  analyzer: Analyzer,
+  root: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  log: Logger = silentLogger,
+): Promise<{ capture: SarifCapture; out: NormalizedEngines }> {
+  const config = parseConfig({ version: 1 });
+  const files = discoverFiles({ root, config, warnings: new Warnings(), log: silentLogger });
+  const [capture] = await runAnalyzers([analyzer], { root, config, files, log, env });
+  if (capture === undefined) throw new Error('no capture');
+  const out = normalizeCaptures([capture], {
+    repoRoot: root,
+    readLines: fileLines(root),
+    knownPaths: new Set(files.map((f) => f.path)),
+    log: silentLogger,
+  });
+  return { capture, out };
 }

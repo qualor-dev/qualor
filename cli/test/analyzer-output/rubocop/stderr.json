@@ -1,0 +1,7 @@
+{
+  "crash": "An error occurred while Lint/Void cop was inspecting /tmp/qualor-rubocop-AbC123/src/app/a b.rb:1:0.\nTo see the complete backtrace run rubocop -d.\n\n1 error occurred:\nAn error occurred while Lint/Void cop was inspecting /tmp/qualor-rubocop-AbC123/src/app/a b.rb:1:0.\nErrors are usually caused by RuboCop bugs.\nPlease, update to the latest RuboCop version if not already in use, and report a bug if the issue still occurs on this version.\nhttps://github.com/rubocop/rubocop/issues\n",
+  "unknownCop": "Error: unrecognized cop or department Foo/Bar found in /tmp/qualor-rubocop-AbC123/rubocop.yml\n",
+  "missingFile": "Error: No such file or directory: /tmp/qualor-rubocop-AbC123/src/b.rb\n",
+  "target": "RuboCop supports target Ruby versions 3.3 and above with Prism. Specified target Ruby version: 9.9\n/tmp/qualor-rubocop-AbC123/x.rb:1:in 'x'\n",
+  "runner": "rubocop: fatal: Gem::MissingSpecError: Could not find 'racc' (>= 0) among 58 total gem(s)\n"
+}

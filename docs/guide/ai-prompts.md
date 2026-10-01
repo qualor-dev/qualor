@@ -48,7 +48,7 @@ Company context (ask me for anything that is missing, before phase
   our registry mirror.acme.internal/qualor>
 - Pilot repositories (2–3, different languages): <group/app-a,
   group/app-b>
-- Languages in use: <TypeScript, Java, C#, ...>
+- Languages in use: <TypeScript, Java, C#, C/C++, ...>
 - Do we use SonarQube today? <no | yes, at https://sonar.example.com
   (Server x.y) or SonarQube Cloud org <key>>
 
@@ -201,7 +201,8 @@ Do this:
 2. Add a `qualor` job, with the component if there is one, otherwise
    the plain job from gitlab.md. It must have GIT_DEPTH 0, run in
    merge request pipelines and on the default branch, install the
-   dependencies (JS/TS) or build (Java) before the scan, produce
+   dependencies (JS/TS, `go mod download` for Go) or build (Java, and C/C++ for clang-tidy)
+   before the scan, produce
    coverage before the scan (reuse the existing test job's artifact
    through `needs` if one exists, instead of running the tests
    twice), and keep the Code Quality, SAST and Dependency Scanning

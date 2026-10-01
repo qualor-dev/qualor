@@ -55,6 +55,16 @@ export interface AnalyzerContext {
 export interface ExecOptions {
   timeoutMs: number;
   cwd?: string;
+  /**
+   * Set over the analyzer environment for this command only, then sanitized again like a run's
+   * `env` (the Go version probes: GOTOOLCHAIN=local, ruling G9-15).
+   */
+  env?: Readonly<Record<string, string>>;
+  /**
+   * Names removed from this command's environment, like a run's `dropEnv` (the PHPStan version
+   * probe drops what configures php behind its command line, ruling A9-18).
+   */
+  dropEnv?(name: string): boolean;
 }
 
 export interface AnalyzerCommand {
@@ -70,6 +80,11 @@ export interface AnalyzerCommand {
   dropEnv?(name: string): boolean;
   /** Where the tool writes SARIF 2.1.0 (config.md §6). */
   sarifPath: string;
+  /**
+   * `text` (plan 9D): the output is not JSON (cppcheck's XML, clang-tidy's YAML); the runner reads
+   * it as UTF-8, with the same size bound, and hands the string to `transform`, which must exist.
+   */
+  outputFormat?: 'json' | 'text';
   /** Exit codes that mean "ran fine" (many linters exit 1 when they found issues). */
   okExitCodes: readonly number[];
   version?: string | null;

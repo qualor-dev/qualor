@@ -11,7 +11,7 @@ import type { Logger } from '../log';
 import type { GrammarId } from '../parse/grammars';
 import type { Warnings } from '../warnings';
 import { isIgnored, readIgnoreLayer, rootIgnoreLayers, type IgnoreLayer } from './gitignore';
-import { detectLanguage } from './languages';
+import { detectLanguage, resolveCHeaders } from './languages';
 
 export interface ScopeFile {
   /** Repo-relative, `/`-separated, NFC (report-format §2). */
@@ -152,11 +152,12 @@ export function discoverFiles(o: DiscoverOptions): ScopeFile[] {
     }
   }
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return files.filter((f, i) => {
+  const unique = files.filter((f, i) => {
     const duplicate = i > 0 && files[i - 1]?.path === f.path;
     if (duplicate) {
       warnings.add('PATH_DUPLICATE', 'two files map to the same NFC path; the first was kept');
     }
     return !duplicate;
   });
+  return resolveCHeaders(unique, config.languages);
 }

@@ -248,4 +248,28 @@ describe('scm.github (github.md §3)', () => {
   it('accepts a Swift file (plan 8F)', () => {
     expect(issues({ ...base, files: [{ ...file, language: 'swift' }] })).toEqual([]);
   });
+
+  it('accepts a PHP file (plan 9A)', () => {
+    expect(issues({ ...base, files: [{ ...file, language: 'php' }] })).toEqual([]);
+  });
+
+  it('accepts a Ruby file (plan 9B)', () => {
+    expect(issues({ ...base, files: [{ ...file, language: 'ruby' }] })).toEqual([]);
+  });
+
+  it('accepts a Go file (plan 9C)', () => {
+    expect(issues({ ...base, files: [{ ...file, language: 'go' }] })).toEqual([]);
+  });
+
+  it('accepts C and C++ files (plan 9D)', () => {
+    expect(
+      issues({
+        ...base,
+        files: [
+          { ...file, language: 'c' },
+          { ...file, path: 'b.cpp', language: 'cpp' },
+        ],
+      }),
+    ).toEqual([]);
+  });
 });
