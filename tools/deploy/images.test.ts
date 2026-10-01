@@ -167,6 +167,12 @@ describe('image definitions (plan 1G)', () => {
     }
   });
 
+  it('keeps every go command in qualor/scanner on the bundled Go (plan 9C, ruling G9-11)', () => {
+    const text = readFileSync('deploy/scanner/Dockerfile', 'utf8');
+    const final = text.slice(text.lastIndexOf('\nFROM '));
+    expect(final).toMatch(/^ENV GOTOOLCHAIN=local$/m);
+  });
+
   it('builds qualor/scanner-dotnet from a named qualor/scanner, failing fast without one (plan 2D)', () => {
     const text = readFileSync('deploy/scanner-dotnet/Dockerfile', 'utf8');
     expect(text).toMatch(/^ARG SCANNER_IMAGE$/m);

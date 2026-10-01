@@ -1,6 +1,6 @@
 // Qualor's Go runner (plan 9C, config.md §6). The CLI runs it with node, in the environment it
 // built (GOTOOLCHAIN=local, GOPROXY=off, GOFLAGS=, GOWORK=off, CGO_ENABLED=0, …), on the Go
-// modules it planned. Per module it asks `go list` which packages load offline, runs one tool
+// modules it planned; it sets those Go settings again for every command it starts (GO_SETTINGS). Per module it asks `go list` which packages load offline, runs one tool
 // (staticcheck, go vet or gosec) on the loadable packages that hold in-scope files, and writes one
 // SARIF 2.1.0 log with repository-relative locations. No dependencies; MIT.
 //   node run.mjs --spec <spec.json>
@@ -26,6 +26,23 @@ export const MAX_WARNINGS = 20;
 /** A gosec rule id: the same pattern as GOSEC_RULE_ID of @qualor/shared (run.test.ts checks). */
 export const GOSEC_ID = /^G\d{3}$/;
 const MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
+/** A tool's stderr kept in memory; more stops it (ENOBUFS) and leaves its module out. */
+const MAX_STDERR_BYTES = 16 * 1024 * 1024;
+/**
+ * Ruling G9-10, defence in depth: the CLI already builds this environment (goEnv, config.md §6),
+ * and the runner sets it again over whatever it inherited before it starts go, staticcheck or
+ * gosec, so no inherited setting can switch toolchains, fetch modules, load a go.work, a package
+ * driver or an env file, add -toolexec, or run a C compiler.
+ */
+export const GO_SETTINGS = Object.freeze({
+  GOTOOLCHAIN: 'local',
+  GOPROXY: 'off',
+  GOFLAGS: '',
+  CGO_ENABLED: '0',
+  GOPACKAGESDRIVER: 'off',
+  GOWORK: 'off',
+  GOENV: 'off',
+});
 const MAX_DETAIL = 300;
 const INFO = {
   staticcheck: 'https://staticcheck.dev',
@@ -308,22 +325,38 @@ export function readSpec(file) {
   return spec;
 }
 
-/** Runs a command with its stdout in `file` (never in memory) and its stderr captured. */
+/**
+ * Runs a command with its stdout in `file` (never in memory), its stderr captured, and
+ * GO_SETTINGS over the inherited environment.
+ */
 function capture(file, command, args, cwd) {
   const fd = openSync(file, 'w');
   try {
     const r = spawnSync(command, args, {
       cwd,
-      env: process.env,
+      env: { ...process.env, ...GO_SETTINGS },
       stdio: ['ignore', fd, 'pipe'],
       encoding: 'utf8',
-      maxBuffer: 16 * 1024 * 1024,
+      maxBuffer: MAX_STDERR_BYTES,
       windowsHide: true,
     });
     return { status: r.status, error: r.error, stderr: r.stderr ?? '' };
   } finally {
     closeSync(fd);
   }
+}
+
+/**
+ * A command that could not run is fatal (`go: fatal: …`); one that flooded its stderr was stopped
+ * (ENOBUFS) and only its module is left out (ruling G9-10).
+ */
+function runError(name, error) {
+  if (error?.code === 'ENOBUFS') {
+    return new Error(
+      `${name} wrote more than ${MAX_STDERR_BYTES / (1024 * 1024)} MiB to stderr and was stopped; the module was not analysed`,
+    );
+  }
+  return fatal(`cannot run ${name}: ${error.message}`);
 }
 
 function readBounded(file) {
@@ -341,7 +374,7 @@ function toolRun(spec, m, packages, toRepo, say, label) {
       ['-f', 'json', '-fail', 'none', ...importPaths],
       m.dir,
     );
-    if (r.error) throw fatal(`cannot run staticcheck: ${r.error.message}`);
+    if (r.error) throw runError('staticcheck', r.error);
     const text = readBounded(outFile);
     if (r.status !== 0 && text.trim() === '') {
       say(`${label}: staticcheck stopped (exit ${r.status}): ${detail(r.stderr)}`);
@@ -351,7 +384,7 @@ function toolRun(spec, m, packages, toRepo, say, label) {
   }
   if (spec.tool === 'govet') {
     const r = capture(outFile, spec.go, ['vet', '-json', ...importPaths], m.dir);
-    if (r.error) throw fatal(`cannot run go: ${r.error.message}`);
+    if (r.error) throw runError('go', r.error);
     if (r.status !== 0) say(`${label}: go vet exited ${r.status}: ${detail(r.stderr)}`);
     return vetResults(splitJsonObjects(readBounded(outFile)), toRepo);
   }
@@ -373,7 +406,7 @@ function toolRun(spec, m, packages, toRepo, say, label) {
       p.dir,
     ];
     const r = capture(outFile, spec.toolPath, args, m.dir);
-    if (r.error) throw fatal(`cannot run gosec: ${r.error.message}`);
+    if (r.error) throw runError('gosec', r.error);
     if (r.status !== 0)
       say(`${label}: gosec exited ${r.status} on ${p.importPath}: ${detail(r.stderr)}`);
     // gosec writes no file at all when it has nothing to report (probe G3).
@@ -432,7 +465,7 @@ export function run(spec, warn) {
         ['list', '-e', '-json=ImportPath,Dir,Error,DepsErrors', './...'],
         m.dir,
       );
-      if (listed.error) throw fatal(`cannot run go: ${listed.error.message}`);
+      if (listed.error) throw runError('go', listed.error);
       if (listed.status !== 0) {
         say(`${label}: go list failed: ${detail(listed.stderr)}`);
         continue;

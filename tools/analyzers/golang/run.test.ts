@@ -10,6 +10,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { GOSEC_RULE_ID } from '@qualor/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { GO_RUNNER_MAX_WARNINGS } from '../../../cli/src/analyzers/golang';
 import { useTempDirs } from '../../../cli/test/tmp';
 // @ts-expect-error: a plain ES module of the repository's tooling, without type declarations
 import * as runner from './run.mjs';
@@ -251,6 +252,10 @@ describe('run.mjs helpers (plan 9C)', () => {
       ['svc/store/abs.go', 'G401', 'error'],
       ['svc/store/abs.go', 'G401', 'error'],
     ]);
+  });
+
+  it("prints as many warnings as the CLI logs (golang.ts's GO_RUNNER_MAX_WARNINGS)", () => {
+    expect(runner.MAX_WARNINGS).toBe(GO_RUNNER_MAX_WARNINGS);
   });
 
   it("checks gosec rule ids with the CLI's own pattern", () => {
@@ -518,6 +523,212 @@ describe.runIf(posix)('run.mjs with stand-in tools (plan 9C)', () => {
       'go: warning: the root module: 1 package(s) not analysed, e.g. ex/cmd: module lookup disabled by GOPROXY=off; their dependencies are not on disk: run `go mod download` before `qualor scan`, vendor them, or set GOMODCACHE (config.md §6)\n',
       'go: warning: the root module: 1 package(s) could not be type-checked and were not analysed, e.g. ./x.go:1:1: undefined: y\n',
     ]);
+  });
+
+  function specFile(
+    work: string,
+    o: {
+      tool: string;
+      toolPath: string;
+      go: string;
+      root: string;
+      files: string[];
+      modules?: { dir: string; rel: string }[];
+    },
+  ) {
+    const spec = path.join(work, 'spec.json');
+    writeFileSync(
+      spec,
+      JSON.stringify({
+        version: o.tool === 'govet' ? '1.27.1' : '2026.2.1',
+        workDir: work,
+        out: path.join(work, 'out.sarif'),
+        modules: [{ dir: o.root, rel: '' }],
+        gosecExclude: [],
+        ...o,
+      }),
+    );
+    return spec;
+  }
+
+  it("runs go and the tools with Qualor's Go settings over whatever it inherits (ruling G9-10)", () => {
+    const root = tmp();
+    const work = tmp();
+    const fake = tmp();
+    mkdirSync(path.join(root, 'store'));
+    const { go, sc } = fakeTools(fake);
+    writeFileSync(go, '#!/bin/sh\nenv > "$FAKE_DIR/go.env"\ncat "$FAKE_DIR/list.json"\n');
+    writeFileSync(sc, '#!/bin/sh\nenv > "$FAKE_DIR/staticcheck.env"\n');
+    writeFileSync(
+      path.join(fake, 'list.json'),
+      JSON.stringify({ ImportPath: 'ex/store', Dir: path.join(root, 'store') }),
+    );
+    vi.stubEnv('FAKE_DIR', fake);
+    const hostile = {
+      GOTOOLCHAIN: 'auto',
+      GOPROXY: 'http://127.0.0.1:9',
+      GOFLAGS: `-toolexec=${fake}/x`,
+      CGO_ENABLED: '1',
+      GOPACKAGESDRIVER: `${fake}/driver`,
+      GOWORK: `${fake}/go.work`,
+      GOENV: `${fake}/env`,
+    };
+    for (const [k, v] of Object.entries(hostile)) vi.stubEnv(k, v);
+    const spec = specFile(work, {
+      tool: 'staticcheck',
+      toolPath: sc,
+      go,
+      root,
+      files: ['store/a.go'],
+    });
+    expect(runner.main(['--spec', spec], { out: () => {}, err: () => {} })).toBe(0);
+    for (const file of ['go.env', 'staticcheck.env']) {
+      const env = Object.fromEntries(
+        readFileSync(path.join(fake, file), 'utf8')
+          .split('\n')
+          .filter((l) => l.includes('='))
+          .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),
+      );
+      expect(env, file).toMatchObject({
+        GOTOOLCHAIN: 'local',
+        GOPROXY: 'off',
+        GOFLAGS: '',
+        CGO_ENABLED: '0',
+        GOPACKAGESDRIVER: 'off',
+        GOWORK: 'off',
+        GOENV: 'off',
+        FAKE_DIR: fake,
+      });
+    }
+  });
+
+  it('turns a tool that floods its stderr into a warning for that module, not a fatal error', () => {
+    const root = tmp();
+    const work = tmp();
+    const fake = tmp();
+    const { go, sc } = fakeTools(fake);
+    // More stderr than the runner buffers: spawnSync stops the child with ENOBUFS.
+    writeFileSync(go, '#!/bin/sh\nhead -c 20000000 /dev/zero | tr "\0" x >&2\n');
+    const modules = ['a', 'b'].map((rel) => {
+      mkdirSync(path.join(root, rel));
+      return { dir: path.join(root, rel), rel };
+    });
+    const spec = specFile(work, {
+      tool: 'staticcheck',
+      toolPath: sc,
+      go,
+      root,
+      files: [],
+      modules,
+    });
+    const err: string[] = [];
+    expect(runner.main(['--spec', spec], { out: () => {}, err: (s: string) => err.push(s) })).toBe(
+      0,
+    );
+    expect(err).toEqual([
+      'go: warning: a: go wrote more than 16 MiB to stderr and was stopped; the module was not analysed\n',
+      'go: warning: b: go wrote more than 16 MiB to stderr and was stopped; the module was not analysed\n',
+    ]);
+    expect(JSON.parse(readFileSync(path.join(work, 'out.sarif'), 'utf8')).runs[0].results).toEqual(
+      [],
+    );
+  });
+
+  it('keeps the JSON findings of a go vet that exits non-zero, and names why (end to end through main)', () => {
+    const root = tmp();
+    const work = tmp();
+    const fake = tmp();
+    for (const d of ['good', 'bad']) mkdirSync(path.join(root, d));
+    const { go } = fakeTools(fake);
+    writeFileSync(
+      path.join(fake, 'list.json'),
+      [
+        { ImportPath: 'ex/m/bad', Dir: path.join(root, 'bad') },
+        { ImportPath: 'ex/m/good', Dir: path.join(root, 'good') },
+      ]
+        .map((o) => JSON.stringify(o, null, '\t'))
+        .join('\n'),
+    );
+    // What go 1.27.1 prints for a package that does not type-check next to one with a finding
+    // (toolbox probe, task 10 report): the JSON on stdout, the compile error on stderr, exit 1.
+    writeFileSync(
+      go,
+      [
+        '#!/bin/sh',
+        'case "$1" in',
+        '  list) cat "$FAKE_DIR/list.json" ;;',
+        '  vet) echo "$@" > "$FAKE_DIR/vet.args"; cat "$FAKE_DIR/vet.json"; printf "# ex/m/bad\nvet: bad/b.go:3:23: undefined: undefinedThing\n" >&2; exit 1 ;;',
+        'esac',
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      path.join(fake, 'vet.json'),
+      JSON.stringify(
+        {
+          'ex/m/good': {
+            printf: [
+              {
+                posn: `${path.join(root, 'good', 'a.go')}:5:39`,
+                end: `${path.join(root, 'good', 'a.go')}:5:41`,
+                message: 'fmt.Sprintf format %d has arg "s" of wrong type string',
+              },
+            ],
+          },
+        },
+        null,
+        '\t',
+      ),
+    );
+    vi.stubEnv('FAKE_DIR', fake);
+    const spec = specFile(work, {
+      tool: 'govet',
+      toolPath: go,
+      go,
+      root,
+      files: ['good/a.go', 'bad/b.go'],
+    });
+    const out: string[] = [];
+    const err: string[] = [];
+    expect(
+      runner.main(['--spec', spec], {
+        out: (s: string) => out.push(s),
+        err: (s: string) => err.push(s),
+      }),
+    ).toBe(0);
+    expect(readFileSync(path.join(fake, 'vet.args'), 'utf8').trim()).toBe(
+      'vet -json ex/m/bad ex/m/good',
+    );
+    expect(err).toEqual([
+      'go: warning: the root module: go vet exited 1: vet: bad/b.go:3:23: undefined: undefinedThing\n',
+    ]);
+    const sarif = JSON.parse(readFileSync(path.join(work, 'out.sarif'), 'utf8'));
+    expect(sarif.runs[0].tool.driver).toMatchObject({
+      name: 'govet',
+      version: '1.27.1',
+      rules: [
+        {
+          id: 'printf',
+          helpUri: 'https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/printf',
+        },
+      ],
+    });
+    expect(sarif.runs[0].results).toEqual([
+      {
+        ruleId: 'printf',
+        level: 'warning',
+        message: { text: 'fmt.Sprintf format %d has arg "s" of wrong type string' },
+        locations: [
+          {
+            physicalLocation: {
+              artifactLocation: { uri: 'good/a.go' },
+              region: { startLine: 5, startColumn: 39, endLine: 5, endColumn: 41 },
+            },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.parse(out.join(''))).toMatchObject({ tool: 'govet', packages: 2, results: 1 });
   });
 
   it('keeps at most MAX_WARNINGS warnings and says how many more there were', () => {

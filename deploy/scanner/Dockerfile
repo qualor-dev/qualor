@@ -138,6 +138,9 @@ RUN install -d /opt/qualor/rules/semgrep \
   && find /opt/qualor/licenses /opt/qualor/NOTICE.md /opt/qualor/SOURCES.md -type f -exec chmod 0644 {} +
 ENV JAVA_HOME=/opt/java/openjdk \
     PATH=/opt/qualor/bin:/opt/java/openjdk/bin:$PATH
+# Plan 9C (ruling G9-11), defence in depth: any go command in the image runs the bundled Go and
+# never downloads the toolchain a go.mod asks for (Qualor's Go runner sets this itself too).
+ENV GOTOOLCHAIN=local
 USER node
 WORKDIR /src
 ENTRYPOINT ["qualor"]
