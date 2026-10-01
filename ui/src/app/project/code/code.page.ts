@@ -93,12 +93,13 @@ export class CodePage {
 
   /** The branch's own measures: the summary of the root. */
   private readonly branchMeasures = resource({
-    params: () => (this.dir() === '' ? this.branchId() : null),
+    // Undefined, not null, keeps the resource idle: a null id would be sent as `{id}` (a 422).
+    params: () => (this.dir() === '' ? (this.branchId() ?? undefined) : undefined),
     loader: async ({ params }) =>
       ok(
         this.api.client.GET('/api/v0/branches/{id}/measures', {
           params: {
-            path: { id: params as string },
+            path: { id: params },
             query: { metrics: 'files,ncloc,coverage,issues' },
           },
         }),

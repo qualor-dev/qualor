@@ -4,6 +4,8 @@
 
 .settings-panels {
   display: grid;
+  /* minmax(0, …): a wide table or form scrolls in its panel, never widens the page. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   min-width: 0;
 }
@@ -15,7 +17,7 @@
 @media (min-width: 1000px) {
   .settings {
     display: grid;
-    grid-template-columns: 12rem 1fr;
+    grid-template-columns: 12rem minmax(0, 1fr);
     gap: var(--space-6);
     align-items: start;
   }

@@ -81,11 +81,14 @@
 }
 .file-lists {
   display: grid;
+  /* minmax(0, …): the issues table scrolls in its panel, never widens the page. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   min-width: 0;
 }
 .dups {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin: 0;
   padding: 0;

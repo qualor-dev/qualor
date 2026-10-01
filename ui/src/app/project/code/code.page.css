@@ -1,4 +1,5 @@
-.code-head {
+/* Not .code-head: that global class is the ink code window of styles.css. */
+.tree-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
