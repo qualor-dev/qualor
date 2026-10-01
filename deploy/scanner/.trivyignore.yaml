@@ -125,6 +125,9 @@ vulnerabilities:
   - id: CVE-2026-86144
     statement: libxml2 (PHP's xml/dom extensions in php8.2-common, pulled in by php8.2-cli, plan 9A); no Debian fix. PHPStan parses PHP with its own parser and reads only Qualor's NEON config; Qualor parses no XML through PHP.
     expired_at: 2026-12-31
+  - id: CVE-2026-91765
+    statement: PHP's SOAP extension (php8.2-cli and its php8.2-common, -opcache, -readline packages, plan 9A); no Debian fix. The image has no SOAP extension (php8.2-soap is not installed) and Qualor runs no SoapServer or SoapClient.
+    expired_at: 2026-12-31
 
   # npm, bundled with Node.js 22 (npm 10.9.9 in Node 22.23.3, the latest), is in the image only for
   # the project's own `npm ci` before the scan; Qualor never runs it. Fixed in npm 11.
