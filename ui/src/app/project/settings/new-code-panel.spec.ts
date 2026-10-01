@@ -174,6 +174,28 @@ describe('NewCodePanel (spec §3.1)', () => {
     );
   });
 
+  it('keeps an unsaved edit when the project is read again with an equal definition', async () => {
+    const server = setup();
+    const { root, fixture } = await render({ definition: { type: 'days', value: 14 } });
+    await pick(root, fixture, 2);
+    const baselines = server.requestsTo('GET', '/api/v0/projects/new-code-baseline').length;
+    fixture.componentRef.setInput('project', project({ type: 'days', value: 14 }));
+    await settle(fixture);
+    expect(radios(root).map((r) => r.checked)).toEqual([false, false, true, false]);
+    expect(save(root).disabled).toBe(false);
+    expect(server.requestsTo('GET', '/api/v0/projects/new-code-baseline')).toHaveLength(baselines);
+  });
+
+  it('starts the form again when the definition changed on the server', async () => {
+    setup();
+    const { root, fixture } = await render({ definition: { type: 'days', value: 14 } });
+    await pick(root, fixture, 2);
+    fixture.componentRef.setInput('project', project({ type: 'days', value: 30 }));
+    await settle(fixture);
+    expect(radios(root).map((r) => r.checked)).toEqual([false, true, false, false]);
+    expect(root.querySelector<HTMLInputElement>('#new-code-days')?.value).toBe('30');
+  });
+
   it('resets to the default with null', async () => {
     const server = setup();
     server.on('PATCH', `/api/v0/projects/${PROJECT}`, { body: project() });

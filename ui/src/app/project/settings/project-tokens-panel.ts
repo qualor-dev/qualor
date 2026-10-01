@@ -2,6 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import {
   afterNextRender,
   Component,
+  computed,
   DestroyRef,
   type ElementRef,
   effect,
@@ -79,9 +80,12 @@ export class ProjectTokensPanel {
   private readonly createDialog = viewChild<ElementRef<HTMLDialogElement>>('createDialog');
   private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
 
+  /** The project's id: reading the project again does not read the list again. */
+  private readonly projectId = computed(() => this.project().id);
+
   constructor() {
     effect(() => {
-      const id = this.project().id;
+      const id = this.projectId();
       untracked(() => void this.list.reset(id));
     });
     inject(DestroyRef).onDestroy(() => {

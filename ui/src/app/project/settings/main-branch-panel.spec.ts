@@ -95,6 +95,27 @@ describe('MainBranchPanel (spec §3.3)', () => {
     expect(root.querySelector('[role=status]')?.textContent).toContain('Main branch is now trunk.');
   });
 
+  it('keeps an unsaved edit when the project is read again with the same main branch', async () => {
+    setup();
+    const { root, fixture } = await render();
+    type(field(root), 'trunk');
+    await settle(fixture);
+    fixture.componentRef.setInput('project', project());
+    await settle(fixture);
+    expect(field(root).value).toBe('trunk');
+    expect(save(root).disabled).toBe(false);
+  });
+
+  it('starts the field again when the main branch changed on the server', async () => {
+    setup();
+    const { root, fixture } = await render();
+    type(field(root), 'trunk');
+    await settle(fixture);
+    fixture.componentRef.setInput('project', project('develop'));
+    await settle(fixture);
+    expect(field(root).value).toBe('develop');
+  });
+
   for (const status of [409, 422]) {
     it(`shows a ${status} on body.mainBranchName on the field`, async () => {
       const server = setup();

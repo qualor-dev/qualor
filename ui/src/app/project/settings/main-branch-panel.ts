@@ -21,8 +21,10 @@ export class MainBranchPanel {
   readonly project = input.required<ProjectDto>();
   readonly saved = output();
 
-  /** The field, started again from the project whenever the project is read again. */
-  protected readonly name = linkedSignal(() => this.project().mainBranchName);
+  /** The saved name: a primitive, so reading the project again with the same name changes nothing. */
+  private readonly mainBranchName = computed(() => this.project().mainBranchName);
+  /** The field, started again only when the saved main branch name changes. */
+  protected readonly name = linkedSignal(() => this.mainBranchName());
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly nameError = signal<string | null>(null);
@@ -30,7 +32,7 @@ export class MainBranchPanel {
 
   protected readonly dirty = computed(() => {
     const trimmed = this.name().trim();
-    return trimmed !== '' && trimmed !== this.project().mainBranchName;
+    return trimmed !== '' && trimmed !== this.mainBranchName();
   });
 
   protected setName(event: Event): void {

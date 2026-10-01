@@ -103,6 +103,16 @@ describe('ProjectTokensPanel (spec §3.4)', () => {
     expect(second.textContent).toContain('Never used');
   });
 
+  it('keeps the loaded list when the project is read again', async () => {
+    const server = setup();
+    const { fixture, root } = await render();
+    expect(server.requestsTo('GET', LIST)).toHaveLength(1);
+    fixture.componentRef.setInput('project', project());
+    await settle(fixture);
+    expect(server.requestsTo('GET', LIST)).toHaveLength(1);
+    expect(root.querySelectorAll('tbody tr[data-key]')).toHaveLength(2);
+  });
+
   it('asks for at most 50 tokens', async () => {
     const server = setup();
     await render();

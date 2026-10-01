@@ -177,6 +177,17 @@ describe('GateProfilesPanel gate (spec §3.2)', () => {
     expect(root.querySelector('[role=status]')?.textContent).toContain('Quality gate saved.');
   });
 
+  it('keeps an unsaved gate choice when the project is read again', async () => {
+    setup();
+    const { root, fixture } = await render();
+    choose(gateSelect(root), G2);
+    await settle(fixture);
+    fixture.componentRef.setInput('project', project());
+    await settle(fixture);
+    expect(gateSelect(root).value).toBe(G2);
+    expect(save(root).disabled).toBe(false);
+  });
+
   it('shows a refused save as an alert and does not emit saved', async () => {
     const server = setup();
     server.on('PATCH', `/api/v0/projects/${PROJECT}`, {

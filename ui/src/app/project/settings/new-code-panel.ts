@@ -52,10 +52,15 @@ export class NewCodePanel {
   readonly canSeeBaseline = input.required<boolean>();
   readonly saved = output();
 
-  /** The form, started again from the project whenever the project is read again. */
-  protected readonly form = linkedSignal<NewCodeForm>(() =>
-    formFromDefinition(this.project().newCodeDefinition),
-  );
+  /** The saved definition, equal across reads of the project that did not change it. */
+  private readonly definition = computed(() => this.project().newCodeDefinition, {
+    equal: sameDefinition,
+  });
+  private readonly projectKey = computed(() => this.project().key);
+  private readonly mainBranchName = computed(() => this.project().mainBranchName);
+  private readonly mainBranchId = computed(() => this.project().mainBranch?.id ?? null);
+  /** The form, started again only when the saved definition changes. */
+  protected readonly form = linkedSignal<NewCodeForm>(() => formFromDefinition(this.definition()));
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly daysError = signal<string | null>(null);
@@ -67,13 +72,17 @@ export class NewCodePanel {
 
   protected readonly dirty = computed(() => {
     const result = definitionFromForm(this.form());
-    return 'error' in result || !sameDefinition(result.value, this.project().newCodeDefinition);
+    return 'error' in result || !sameDefinition(result.value, this.definition());
   });
 
+  /** The branch whose analyses the select lists: only while that card is chosen. */
+  private readonly analysesBranchId = computed(() =>
+    this.form().choice === 'analysis' ? this.mainBranchId() : null,
+  );
   private readonly analyses = resource({
     params: () => {
-      const branchId = this.project().mainBranch?.id;
-      return this.form().choice === 'analysis' && branchId ? { branchId } : undefined;
+      const branchId = this.analysesBranchId();
+      return branchId ? { branchId } : undefined;
     },
     loader: async ({ params }): Promise<AnalysisOption[]> => {
       const page = await ok(
@@ -104,12 +113,10 @@ export class NewCodePanel {
   protected readonly analysesFailed = computed(() => this.analyses.status() === 'error');
 
   protected readonly baseline = resource({
-    params: () => {
-      const p = this.project();
-      return this.canSeeBaseline()
-        ? { key: p.key, branch: p.mainBranchName, rev: this.savedCount() }
-        : undefined;
-    },
+    params: () =>
+      this.canSeeBaseline()
+        ? { key: this.projectKey(), branch: this.mainBranchName(), rev: this.savedCount() }
+        : undefined,
     loader: ({ params }) =>
       ok(
         this.api.client.GET('/api/v0/projects/new-code-baseline', {
