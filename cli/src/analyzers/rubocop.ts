@@ -126,6 +126,7 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   writeFileSync(list, files.map((f) => `${f.path}\n`).join(''));
   const own: Record<string, string> = { ...deadProxyEnv(), HOME: ctx.workDir, LC_ALL: 'C.UTF-8' };
   const selected = new Set(cops);
+  const listed = new Set(files.map((f) => f.path));
   return {
     run: {
       command: found.ruby,
@@ -140,7 +141,12 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       okExitCodes: [0, 1],
       version: found.version,
       transform: (output) =>
-        rubocopJsonToSarif(output, { version: found.version, cops: selected, log: ctx.log }),
+        rubocopJsonToSarif(output, {
+          version: found.version,
+          cops: selected,
+          files: listed,
+          log: ctx.log,
+        }),
       failureDetail: (_code, stderr) => rubocopFailureDetail(stderr, ctx.workDir),
       configWarnings: (stderr) => rubocopCrashWarnings(stderr, input),
     },

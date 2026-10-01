@@ -6,7 +6,8 @@
 #   ruby run.rb --version                           -> "rubocop <version> ruby <version>"
 #   ruby run.rb --cops                              -> the cop table as JSON (tools/analyzers/rubocop-cops.ts)
 #   ruby run.rb <config> <file list> <out> <cache>  -> RuboCop's exit code, its JSON report in <out>
-# The file list holds one path per line, relative to the working directory (the checked copy).
+# The file list holds one path per line, relative to the working directory (the checked copy);
+# each is a file RuboCop lints as named, never a pattern.
 
 # The CLI already gives RuboCop an allowlisted environment; these would add arguments or move
 # the configuration and cache lookups, so they never count, whoever runs this script.
@@ -41,7 +42,12 @@ begin
       warn 'rubocop: fatal: a .rubocop options file in the working directory'
       exit 2
     end
-    files = File.binread(list).force_encoding(Encoding::UTF_8).split("\n")
+    # RuboCop globs an explicit path that holds a `*` (TargetFinder#process_explicit_path:
+    # `Dir[path]`), so a file named `{,/}tmp/x*.rb` would reach /tmp. Escaped, the pattern matches
+    # that one file only; other paths RuboCop takes literally, so they stay as they are.
+    files = File.binread(list).force_encoding(Encoding::UTF_8).split("\n").map do |file|
+      file.include?('*') ? file.gsub(/[\\*?\[\]{}]/) { |c| "\\#{c}" } : file
+    end
     exit RuboCop::CLI.new.run(
       ['--config', config, '--format', 'json', '--out', out, '--cache', 'true',
        '--cache-root', cache, '--parallel', '--'] + files

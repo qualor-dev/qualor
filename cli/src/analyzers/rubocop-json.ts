@@ -33,12 +33,14 @@ const LEVEL: Readonly<Record<string, string>> = {
  * RuboCop's `--format json` report → SARIF 2.1.0 (config.md §6). Paths are relative to the
  * checked copy, i.e. the repository's own, and percent-encoded by segment so the normaliser
  * decodes the same name. `Lint/Syntax` (a file RuboCop cannot parse) and the offenses of cops
- * outside `cops` (an inline `rubocop:enable` can turn one on) are dropped and counted. A report of
- * another RuboCop version throws: the install changed under the scan.
+ * outside `cops` (an inline `rubocop:enable` can turn one on) are dropped and counted. A file
+ * outside `files` (the list the CLI gave RuboCop) is dropped with a warning: run.rb escapes glob
+ * characters, and this keeps anything RuboCop reached past them out of the report (B9-14). A report
+ * of another RuboCop version throws: the install changed under the scan.
  */
 export function rubocopJsonToSarif(
   output: unknown,
-  o: { version: string; cops: ReadonlySet<string>; log?: Logger },
+  o: { version: string; cops: ReadonlySet<string>; files?: ReadonlySet<string>; log?: Logger },
 ): unknown {
   const parsed = outputSchema.parse(output);
   if (parsed.metadata.rubocop_version !== o.version) {
@@ -50,7 +52,12 @@ export function rubocopJsonToSarif(
   const results: unknown[] = [];
   let unparsable = 0;
   let outside = 0;
+  let unlisted = 0;
   for (const file of parsed.files) {
+    if (o.files !== undefined && !o.files.has(file.path)) {
+      unlisted++;
+      continue;
+    }
     const uri = file.path.split('/').map(encodeURIComponent).join('/');
     for (const offense of file.offenses) {
       if (offense.cop_name === RUBOCOP_SYNTAX_COP) {
@@ -78,6 +85,11 @@ export function rubocopJsonToSarif(
         locations: [{ physicalLocation: { artifactLocation: { uri }, region } }],
       });
     }
+  }
+  if (unlisted > 0) {
+    o.log?.warn(
+      `rubocop: RuboCop reported ${unlisted} file(s) Qualor did not give it; their findings were dropped`,
+    );
   }
   if (unparsable > 0)
     o.log?.debug(`rubocop: ${unparsable} file(s) RuboCop could not parse (Lint/Syntax dropped)`);

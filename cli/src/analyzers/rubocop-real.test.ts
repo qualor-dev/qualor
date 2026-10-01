@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
@@ -119,9 +120,10 @@ describeWithRubocop()('RuboCop on untrusted checkouts (real RuboCop, plan 9B)', 
   });
 
   it('reads no configuration above the checkout or the work directory, nor of the user', async () => {
-    // RuboCop looks upwards from its --config file for the topmost .rubocop.yml (its
-    // AllCops/Exclude) unless --ignore-parent-exclusion: the work directory sits below `outer`
-    // here, as it would below a TMPDIR inside the checkout, and the checkout below it too.
+    // With --config, RuboCop 1.91 reads that file only: ConfigLoader#options_config= never calls
+    // add_excludes_from_files, so no .rubocop.yml above it counts. The work directory sits below
+    // `outer` here, as it would below a TMPDIR inside the checkout, and the checkout below it too,
+    // so a RuboCop that did read one would show.
     const outer = tmp();
     const marker = (who: string) => rubyWrites(outer, who);
     const hostile = (who: string) =>
@@ -202,21 +204,45 @@ describeWithRubocop()('RuboCop on untrusted checkouts (real RuboCop, plan 9B)', 
     );
   });
 
-  it('never passes a symlinked .rb, even one pointing outside the repository', async () => {
-    const root = tmp();
-    const outside = path.join(tmp(), 'secret.rb');
-    writeFileSync(outside, 'def f\n  y = 2\nend\n');
-    // No local assignment: RuboCop reports nothing on ok.rb, so any finding would be the link's.
-    writeTree(root, { 'ok.rb': 'puts 1\n' });
-    try {
+  // File symlinks need a privilege on Windows; the toolbox and CI run on Linux.
+  it.skipIf(process.platform === 'win32')(
+    'never passes a symlinked .rb, even one pointing outside the repository',
+    async () => {
+      const root = tmp();
+      const outside = path.join(tmp(), 'secret.rb');
+      writeFileSync(outside, 'def f\n  y = 2\nend\n');
+      // No local assignment: RuboCop reports nothing on ok.rb, so any finding would be the link's.
+      writeTree(root, { 'ok.rb': 'puts 1\n' });
       symlinkSync(outside, path.join(root, 'link.rb'), 'file');
-    } catch {
-      return; // no file symlinks on this host
-    }
-    const { capture, keys } = await scan(root);
-    expect(capture.status, capture.reason ?? '').toBe('ok');
-    expect(keys).toEqual([]);
-  });
+      const { capture, keys } = await scan(root);
+      expect(capture.status, capture.reason ?? '').toBe('ok');
+      expect(keys).toEqual([]);
+    },
+  );
+
+  // B9-14: RuboCop globs an explicit path with a `*`; run.rb escapes it, so a repository file
+  // named after a pattern that reaches outside (a FIFO there would block) is linted as itself.
+  it.skipIf(process.platform === 'win32')(
+    'lints a file named like a glob as that file, never what the pattern matches outside',
+    async () => {
+      const outside = tmp();
+      const secret = 'def f\n  secret_value = 2\nend\n';
+      writeTree(outside, { 'xsecret.rb': secret, 'sub/deep.rb': secret });
+      expect(spawnSync('mkfifo', [path.join(outside, 'xfifo.rb')]).status).toBe(0);
+      const root = tmp();
+      const mirror = `{,/}${outside.slice(1)}`;
+      writeTree(root, {
+        [`${mirror}/x*.rb`]: 'def g\n  a = 1\nend\n',
+        [`${mirror}/**/*.rb`]: 'def g\n  b = 1\nend\n',
+      });
+      const { capture, keys } = await scan(root);
+      expect(capture.status, capture.reason ?? '').toBe('ok');
+      expect(keys).toEqual([
+        `Lint/UselessAssignment ${mirror}/**/*.rb:2`,
+        `Lint/UselessAssignment ${mirror}/x*.rb:2`,
+      ]);
+    },
+  );
 
   // Targets before 3.3 parse with the parser gem, 3.3 and later with Prism (fact F6): one run of each.
   it.each([[3.3], ['2.7']])('runs with targetRubyVersion %s', async (targetRubyVersion) => {

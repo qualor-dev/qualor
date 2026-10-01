@@ -115,6 +115,33 @@ describe('rubocopJsonToSarif (config.md §6, plan 9B)', () => {
     expect(lines.join('')).toContain('rubocop: 1 offense(s) of cops outside the selection dropped');
   });
 
+  it('drops every file the CLI did not list, with a warning (B9-14 defence in depth)', () => {
+    const lines: string[] = [];
+    const sarif = rubocopJsonToSarif(
+      report([
+        { path: '{,/}tmp/x*.rb', offenses: [offense('Security/Eval', 1, 1, 4)] },
+        { path: '/tmp/xsecret.rb', offenses: [offense('Security/Eval', 2, 1, 4)] },
+        { path: 'tmp/xother.rb', offenses: [] },
+      ]),
+      {
+        version: RUBOCOP_VERSION,
+        cops,
+        files: new Set(['{,/}tmp/x*.rb']),
+        log: createLogger('info', (t) => lines.push(t)),
+      },
+    ) as {
+      runs: [
+        { results: { locations: [{ physicalLocation: { artifactLocation: { uri: string } } }] }[] },
+      ];
+    };
+    expect(
+      sarif.runs[0].results.map((r) => r.locations[0].physicalLocation.artifactLocation.uri),
+    ).toEqual(['%7B%2C/%7Dtmp/x*.rb']);
+    expect(lines.join('')).toContain(
+      'rubocop: RuboCop reported 2 file(s) Qualor did not give it; their findings were dropped',
+    );
+  });
+
   it('refuses a report of another RuboCop version and anything that is not its JSON', () => {
     expect(() =>
       rubocopJsonToSarif(report([], '1.80.0'), { version: RUBOCOP_VERSION, cops }),
