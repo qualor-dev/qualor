@@ -36,6 +36,8 @@ const LANGUAGES: Language[] = [
   'css',
   'kotlin',
   'swift',
+  'c',
+  'cpp',
   '*',
 ];
 /** data-model.md §4.4: a profile is at most the third level of its chain. */
