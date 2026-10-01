@@ -252,12 +252,45 @@ describe('clangTidyAnalyzer.prepare (config.md §6.2, plan 9D)', () => {
       'warn: clang-tidy: 1 compile error(s): clang-tidy could not compile every translation unit (a missing header or flag); those diagnostics are not issues',
     );
     expect(text).toContain(
-      'warn: clang-tidy: 1 diagnostic(s) or note(s) located outside the repository were dropped',
+      'warn: clang-tidy: 1 diagnostic(s) could not be placed on a file of the scan',
     );
     expect(text).not.toContain('host-secret');
     expect(
       cmd.configWarnings!('Error while processing /x/a.cpp.\nError: no checks enabled.\n'),
     ).toEqual(['Error: no checks enabled.']);
+  });
+
+  it('runs without the static analyzer options that name files, keeping the others, with one warn line of key names (ruling D9-11)', async () => {
+    const lines: string[] = [];
+    const { ctx, work } = context(
+      {
+        'a.cpp': 'int a;\n',
+        '.clang-tidy': [
+          "Checks: '-*,clang-analyzer-*'",
+          'CheckOptions:',
+          '  clang-analyzer-ctu-invocation-list: /etc/secret.yml',
+          '  clang-analyzer-alpha.security.taint.TaintPropagation:Config: /etc/taint.yml',
+          '  clang-analyzer-unix.DynamicMemoryModeling:Optimistic: true',
+          '  bugprone-argument-comment.StrictMode: 1',
+          '',
+        ].join('\n'),
+        'compile_commands.json': DB([{ directory: '.', file: 'a.cpp', command: 'c++ -c a.cpp' }]),
+      },
+      { lines },
+    );
+    await run(ctx);
+    expect(JSON.parse(readFileSync(path.join(work, 'clang-tidy.json'), 'utf8'))).toEqual({
+      Checks: '-*,clang-analyzer-*',
+      CheckOptions: {
+        'clang-analyzer-unix.DynamicMemoryModeling:Optimistic': 'true',
+        'bugprone-argument-comment.StrictMode': '1',
+      },
+    });
+    const text = lines.join('\n');
+    expect(text).toContain(
+      'warn: clang-tidy: .clang-tidy: left out CheckOptions clang-analyzer-ctu-invocation-list (a global static analyzer setting), clang-analyzer-alpha.security.taint.TaintPropagation:Config (a static analyzer option that names a file) (config.md §6.2)',
+    );
+    expect(text).not.toContain('/etc/');
   });
 
   it('keeps only an allowlist of variables', async () => {

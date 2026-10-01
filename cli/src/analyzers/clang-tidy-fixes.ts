@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { SarifLog, SarifResult, SarifRule } from '@qualor/shared';
 import { parseAllDocuments } from 'yaml';
 import { within } from './binary';
-import { realRootOf } from './cfamily-common';
+import { realRootOf, redactForeignPaths } from './cfamily-common';
 import { readPlainFile } from './checked-copy';
 
 interface Place {
@@ -83,6 +83,8 @@ export function clangTidyFixesToSarif(
   }
   const root = path.resolve(o.root);
   const realRoot = realRootOf(root);
+  // Ruling D9-11: no host path in a kept message or note text.
+  const redact = (t: string) => redactForeignPaths(t, [root, realRoot]);
   const files = new Map<string, Source | null>();
   const place = (p: Place | undefined, build: string): SarifLocation | null => {
     if (typeof p?.FilePath !== 'string' || typeof p.FileOffset !== 'number') return null;
@@ -149,7 +151,7 @@ export function clangTidyFixesToSarif(
       }
       notes.push({
         ...loc,
-        ...(typeof n?.Message === 'string' && { message: { text: n.Message } }),
+        ...(typeof n?.Message === 'string' && { message: { text: redact(n.Message) } }),
       });
     }
     if (!rules.has(name)) rules.set(name, { id: name });
@@ -157,7 +159,10 @@ export function clangTidyFixesToSarif(
       ruleId: name,
       level: 'warning',
       message: {
-        text: typeof d.DiagnosticMessage?.Message === 'string' ? d.DiagnosticMessage.Message : name,
+        text:
+          typeof d.DiagnosticMessage?.Message === 'string'
+            ? redact(d.DiagnosticMessage.Message)
+            : name,
       },
       locations: [primary],
       ...(notes.length > 0 && { relatedLocations: notes }),

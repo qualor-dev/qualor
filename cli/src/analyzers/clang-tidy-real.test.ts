@@ -151,7 +151,7 @@ describeWithClangTidy()('clang-tidy with the real binary (plan 9D)', () => {
       // --header-filter) and a note of the NullDereference path there: both are dropped, so the
       // drop is really exercised ...
       expect(lines.join('\n')).toContain(
-        'clang-tidy: 2 diagnostic(s) or note(s) located outside the repository were dropped',
+        'clang-tidy: 2 diagnostic(s) could not be placed on a file of the scan',
       );
       // ... the in-repository findings are kept, with their in-repository notes only ...
       const found = results(capture.sarif);

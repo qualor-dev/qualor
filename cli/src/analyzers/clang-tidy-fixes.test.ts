@@ -220,6 +220,35 @@ describe('clangTidyFixesToSarif (config.md §6.2, plan 9D)', () => {
     expect(JSON.stringify(log)).not.toContain('vendor');
   });
 
+  it('redacts absolute paths outside the repository from kept message and note text (ruling D9-11)', () => {
+    const root = tmp();
+    const outside = tmp();
+    const host = path.join(outside, 'host-secret.h');
+    const inRepo = path.join(root, 'include', 'x.h');
+    writeTree(root, { 'a.cpp': 'int a = 1 / 0;\n', 'include/x.h': '' });
+    const { log, unplaced } = clangTidyFixesToSarif(
+      doc([
+        diag({
+          name: 'bugprone-x',
+          message: `header '${host}' shadows ${inRepo}:2`,
+          file: 'a.cpp',
+          offset: 8,
+          build: root,
+          notes: [{ message: `declared in ${host}`, offset: 4 }],
+        }),
+      ]),
+      { root, version: '22.1.8' },
+    );
+    expect(unplaced).toBe(0);
+    const result = log.runs[0]!.results![0]!;
+    expect(result.message?.text).toBe("header '<outside the repository>' shadows include/x.h:2");
+    expect(result.relatedLocations!.map((l) => l.message?.text)).toEqual([
+      'declared in <outside the repository>',
+    ]);
+    expect(JSON.stringify(log)).not.toContain('host-secret');
+    expect(JSON.stringify(log)).not.toContain(outside);
+  });
+
   it('reads no output as no diagnostic, and refuses what is not an export', () => {
     expect(
       clangTidyFixesToSarif('', { root: tmp(), version: '22.1.8' }).log.runs[0]!.results,

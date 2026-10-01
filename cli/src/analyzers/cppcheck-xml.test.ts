@@ -96,6 +96,26 @@ describe('cppcheckXmlToSarif (config.md §6.2, plan 9D)', () => {
     expect(JSON.stringify(log)).not.toMatch(/secret|stdio|\/w\/src/);
   });
 
+  it('redacts absolute paths outside the copy from kept message and note text (ruling D9-11)', () => {
+    const base = path.resolve('/w/src');
+    const inCopy = path.join(base, 'inc', 'a.h');
+    const { log } = cppcheckXmlToSarif(
+      xml(`<error id="nullPointer" severity="error" msg="Null pointer from /usr/include/host-secret.h, see ${inCopy}:3." verbose="v" file0="src/a.c">
+  <location file="src/a.c" line="5" column="2" info="Dereferenced here"/>
+  <location file="src/a.c" line="4" column="2" info="Assigned in /opt/ci/host-secret.h"/>
+  <location file="src/a.c" line="2" column="1" info="Declared here"/>
+</error>`),
+      { version: '2.22.0', base },
+    );
+    const result = log.runs[0]!.results![0]!;
+    expect(result.message?.text).toBe('Null pointer from <outside the repository>, see inc/a.h:3.');
+    expect(result.relatedLocations!.map((l) => l.message?.text)).toEqual([
+      'Assigned in <outside the repository>',
+      'Declared here',
+    ]);
+    expect(JSON.stringify(log)).not.toContain('host-secret');
+  });
+
   it('refuses what is not cppcheck XML', () => {
     expect(() =>
       cppcheckXmlToSarif('<results version="1">', { version: 'x', base: '/w' }),

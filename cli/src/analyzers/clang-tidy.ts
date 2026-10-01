@@ -84,6 +84,12 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
       `clang-tidy: ${shown(plan.source)}: left out ${plan.dropped.join(', ')} (config.md §6.2)`,
     );
   }
+  // Ruling D9-11: static analyzer settings that read or write files; key names only.
+  if (plan.droppedOptions.length > 0) {
+    ctx.log.warn(
+      `clang-tidy: ${shown(plan.source)}: left out CheckOptions ${plan.droppedOptions.join(', ')} (config.md §6.2)`,
+    );
+  }
   const work = ctx.workDir;
   // Qualor's own database (Task 7's sanitised arguments). The compiler is named by the file's
   // language, never taken from the checkout's database: clang reads a driver mode and a target
@@ -149,10 +155,11 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
             `clang-tidy: ${r.compileErrors} compile error(s): clang-tidy could not compile every translation unit (a missing header or flag); those diagnostics are not issues`,
           );
         }
-        // Ruling D9-9: a count only, never the foreign path.
+        // Rulings D9-9/D9-11: a count only, never the path (outside the repository, a repository
+        // file outside the scan, an offset past the end, a malformed entry; notes included).
         if (r.unplaced > 0) {
           ctx.log.warn(
-            `clang-tidy: ${r.unplaced} diagnostic(s) or note(s) located outside the repository were dropped`,
+            `clang-tidy: ${r.unplaced} diagnostic(s) could not be placed on a file of the scan`,
           );
         }
         return r.log;

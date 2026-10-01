@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { cppcheckIsFinding, type SarifLog, type SarifResult, type SarifRule } from '@qualor/shared';
 import { SaxesParser, type SaxesTagPlain } from 'saxes';
+import { redactForeignPaths } from './cfamily-common';
 
 interface XmlLocation {
   file: string;
@@ -98,7 +99,9 @@ function location(l: XmlLocation, base: string, withMessage: boolean): SarifLoca
         ...(Number.isInteger(l.column) && l.column > 0 && { startColumn: l.column }),
       },
     },
-    ...(withMessage && l.info !== undefined && l.info !== '' && { message: { text: l.info } }),
+    ...(withMessage &&
+      l.info !== undefined &&
+      l.info !== '' && { message: { text: redactForeignPaths(l.info, [base]) } }),
   };
 }
 
@@ -165,7 +168,8 @@ export function cppcheckXmlToSarif(
     results.push({
       ruleId: e.id,
       level: LEVEL.get(e.severity) ?? 'note',
-      message: { text: e.msg },
+      // Ruling D9-11: no host path in a kept message (paths in the copy become relative to it).
+      message: { text: redactForeignPaths(e.msg, [base]) },
       properties: { cppcheckSeverity: e.severity },
       locations: [primary],
       ...(related.length > 0 && { relatedLocations: related }),

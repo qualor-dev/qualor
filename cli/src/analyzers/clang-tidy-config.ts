@@ -20,6 +20,11 @@ export interface ClangTidyPlan {
   json: string;
   /** Keys left out, for one log line. */
   dropped: string[];
+  /**
+   * Ruling D9-11: CheckOptions left out, as `<key> (<reason>)` with the key only, never its value,
+   * for one warn line.
+   */
+  droppedOptions: string[];
   /** `qualor-default`, or the repository-relative path of the file read. */
   source: string;
 }
@@ -37,7 +42,28 @@ const KEPT = new Set([
   'ImplementationFileExtensions',
 ]);
 const CHECK_GLOBS = /^[A-Za-z0-9*.,_-]*$/;
-const OPTION_KEY = /^[A-Za-z0-9._-]+$/;
+/** A check option (`check.Option`) or a clang-analyzer checker option (`clang-analyzer-<Checker>:<Option>`). */
+const OPTION_KEY = /^[A-Za-z0-9._:-]+$/;
+const ANALYZER_PREFIX = 'clang-analyzer-';
+/** A value or option name that points at a file (`TaintPropagation:Config`, a model path). */
+const PATH_VALUE = /[/\\]|^[.~]/;
+const PATH_OPTION = /(config|file|path|dir)/i;
+
+/**
+ * Ruling D9-11: why a CheckOptions entry is left out, or null to keep it. clang-tidy hands every
+ * `clang-analyzer-*` key to the static analyzer: one without `:` is a global analyzer setting
+ * (`ctu-invocation-list`, `dump-entry-point-stats-to-csv`, `model-path`: files read or written);
+ * a checker option (`clang-analyzer-<Checker>:<Option>`) is kept unless it names a file.
+ */
+function optionDropReason(key: string, value: string): string | null {
+  if (!key.startsWith(ANALYZER_PREFIX)) return null;
+  const colon = key.indexOf(':');
+  if (colon === -1) return 'a global static analyzer setting';
+  if (PATH_OPTION.test(key.slice(colon + 1)) || PATH_VALUE.test(value)) {
+    return 'a static analyzer option that names a file';
+  }
+  return null;
+}
 const EXTENSION = /^[A-Za-z0-9+_-]*$/;
 
 function scalar(v: unknown): string | null {
@@ -66,12 +92,14 @@ export function planClangTidyConfig(
     return {
       json: JSON.stringify({ Checks: CLANG_TIDY_DEFAULT_CHECKS }),
       dropped: [],
+      droppedOptions: [],
       source: CLANG_TIDY_QUALOR_DEFAULT,
     };
   }
   const name = shown(source);
   const out: Record<string, unknown> = {};
   const dropped: string[] = [];
+  const droppedOptions: string[] = [];
   for (const [key, value] of Object.entries(parsed)) {
     if (!KEPT.has(key)) {
       dropped.push(shown(key));
@@ -95,7 +123,9 @@ export function planClangTidyConfig(
         if (typeof k !== 'string' || !OPTION_KEY.test(k) || s === null) {
           return { skip: `${name}: CheckOptions must be a mapping or a list of key/value pairs` };
         }
-        options[k] = s;
+        const reason = optionDropReason(k, s);
+        if (reason === null) options[k] = s;
+        else droppedOptions.push(`${shown(k)} (${reason})`);
       }
       out['CheckOptions'] = options;
     } else {
@@ -111,7 +141,7 @@ export function planClangTidyConfig(
   if (!('Checks' in out)) out['Checks'] = CLANG_TIDY_BUILTIN_CHECKS;
   // `Checks` first, as clang-tidy's own --dump-config writes it.
   const { Checks, ...rest } = out;
-  return { json: JSON.stringify({ Checks, ...rest }), dropped, source };
+  return { json: JSON.stringify({ Checks, ...rest }), dropped, droppedOptions, source };
 }
 
 /**

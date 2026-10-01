@@ -103,6 +103,44 @@ describe('loadClangTidyConfig (config.md §6.2, plan 9D)', () => {
     });
   });
 
+  it('drops global static analyzer settings and checker options that name a file, keeping the rest (ruling D9-11)', () => {
+    const root = tmp();
+    writeTree(root, {
+      '.clang-tidy': [
+        "Checks: '-*,clang-analyzer-*'",
+        'CheckOptions:',
+        '  clang-analyzer-ctu-invocation-list: /etc/secret-invocations.yml',
+        '  clang-analyzer-dump-entry-point-stats-to-csv: /tmp/out.csv',
+        '  clang-analyzer-model-path: models',
+        '  clang-analyzer-alpha.security.taint.TaintPropagation:Config: taint.yml',
+        '  clang-analyzer-optin.cplusplus.UninitializedObject:Pedantic: x/../y',
+        '  clang-analyzer-core.NullDereference:SuppressAddressSpaces: false',
+        '  clang-analyzer-unix.DynamicMemoryModeling:Optimistic: true',
+        '  readability-identifier-length.MinimumVariableNameLength: 2',
+        '',
+      ].join('\n'),
+    });
+    const p = plan(root);
+    expect(written(p)).toEqual({
+      Checks: '-*,clang-analyzer-*',
+      CheckOptions: {
+        'clang-analyzer-core.NullDereference:SuppressAddressSpaces': 'false',
+        'clang-analyzer-unix.DynamicMemoryModeling:Optimistic': 'true',
+        'readability-identifier-length.MinimumVariableNameLength': '2',
+      },
+    });
+    expect(p.droppedOptions).toEqual([
+      'clang-analyzer-ctu-invocation-list (a global static analyzer setting)',
+      'clang-analyzer-dump-entry-point-stats-to-csv (a global static analyzer setting)',
+      'clang-analyzer-model-path (a global static analyzer setting)',
+      'clang-analyzer-alpha.security.taint.TaintPropagation:Config (a static analyzer option that names a file)',
+      'clang-analyzer-optin.cplusplus.UninitializedObject:Pedantic (a static analyzer option that names a file)',
+    ]);
+    // Keys only: no value reaches the log line.
+    expect(p.droppedOptions.join(' ')).not.toMatch(/secret|out\.csv|taint\.yml/);
+    expect(p.dropped).toEqual([]);
+  });
+
   it('skips what it cannot read safely', () => {
     const root = tmp();
     const cases: [string, string][] = [

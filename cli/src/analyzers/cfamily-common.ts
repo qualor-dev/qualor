@@ -54,6 +54,41 @@ export function checkRepoFileSetting(key: string, name: string, value: string): 
   return null;
 }
 
+/** What an absolute path outside the repository becomes in a kept message (ruling D9-11). */
+export const OUTSIDE_PLACEHOLDER = '<outside the repository>';
+
+/**
+ * An absolute path in a tool's message: POSIX (`/usr/include/x.h`) or Windows (`C:\x`, `C:/x`),
+ * not inside a word, a number or a URL (`a/b`, `1/0`, `https://…`), and not a lone `/`.
+ */
+const ABSOLUTE_PATH = /(?<![A-Za-z0-9_.~:/\\-])(?:[A-Za-z]:[\\/]|[\\/])[^\s'"`<>|]+/g;
+/** Punctuation that ends a sentence or a quote rather than the path. */
+const TRAILING = /[.,;:)\]}]+$/;
+
+/**
+ * Ruling D9-11 (completing D9-9): a kept message or note text with every absolute path outside
+ * `bases` (the repository root and its resolved spelling, or the checked copy) replaced by
+ * `OUTSIDE_PLACEHOLDER`, and every path inside one made relative to it (`src/a.h:3`), so no host
+ * path (a system or CI header, the runner's directories) reaches the report.
+ */
+export function redactForeignPaths(text: string, bases: readonly string[]): string {
+  const roots = bases.map((b) => path.resolve(b));
+  return text.replace(ABSOLUTE_PATH, (match) => {
+    const tail = TRAILING.exec(match)?.[0] ?? '';
+    const p = match.slice(0, match.length - tail.length);
+    if (p.length <= 1) return match;
+    const abs = path.resolve(p);
+    for (const root of roots) {
+      const rel = path.relative(root, abs);
+      if (rel === '') return `.${tail}`;
+      if (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) {
+        return `${rel.split(path.sep).join('/')}${tail}`;
+      }
+    }
+    return `${OUTSIDE_PLACEHOLDER}${tail}`;
+  });
+}
+
 /** The repository root with its links resolved, or as written when it cannot be resolved. */
 export function realRootOf(root: string): string {
   try {
