@@ -254,6 +254,39 @@ describe('cppcheckAnalyzer.prepare (config.md §6.2, plan 9D)', () => {
     );
   });
 
+  it('leaves out a file whose path has a space, which cppcheck would split into options (ruling D9-17)', async () => {
+    const lines: string[] = [];
+    const { ctx, work, root } = context(
+      {
+        'a -I/etc x/b.c': 'int b;\n',
+        'ok.c': 'int a;\n',
+        'compile_commands.json': '[]',
+      },
+      { lines },
+    );
+    const entry = (file: string) => ({ directory: '.', file, arguments: ['cc', '-c', file] });
+    writeTree(root, {
+      'compile_commands.json': JSON.stringify([entry('a -I/etc x/b.c'), entry('ok.c')]),
+    });
+    await run(ctx);
+    const input = path.join(work, 'src');
+    const written = JSON.parse(
+      readFileSync(path.join(work, 'cppcheck-compile-commands.json'), 'utf8'),
+    ) as { file: string }[];
+    expect(written.map((e) => e.file)).toEqual([path.join(input, 'ok.c')]);
+    const text = lines.join('\n');
+    expect(text).toContain(
+      'warn: cppcheck: 1 file(s) whose path has a quote, backslash or space left out',
+    );
+    expect(text).not.toContain('-I/etc');
+
+    // With no file left, cppcheck is skipped rather than given an empty database.
+    const only = context({ 'sp ace.c': 'int s;\n', 'compile_commands.json': '[]' });
+    writeTree(only.root, { 'compile_commands.json': JSON.stringify([entry('sp ace.c')]) });
+    const p = await cppcheckAnalyzer.prepare(only.ctx);
+    expect(p).toEqual({ skip: expect.stringContaining('names no C or C++ file of the scan') });
+  });
+
   it('keeps only an allowlist of variables', async () => {
     const { ctx } = context({ 'a.c': 'int a;\n' });
     const cmd = await run(ctx);

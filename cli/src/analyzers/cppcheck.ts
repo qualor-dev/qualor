@@ -145,12 +145,13 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   };
 }
 
-/** Options of the sanitised arguments whose separate value cppcheck's rewrite leaves out. */
 /**
  * cppcheck joins a database entry's `arguments` into one command line and splits it again, so a
  * kept argument with a quote, a backslash or white space could become other arguments: dropped.
+ * Ruling D9-17: so is a file whose repository path has one (its `-c <file>` argument).
  */
 const UNSAFE_ARGUMENT = /["\\\s]/;
+/** Options of the sanitised arguments whose separate value cppcheck's rewrite leaves out. */
 const DROPPED_VALUE_OPTIONS = new Set(['-include', '-idirafter', '-isysroot', '-x', '-target']);
 const INCLUDE_OPTION = /^(-I|-isystem|-iquote)(.*)$/;
 
@@ -190,6 +191,7 @@ function writeProject(
   };
   let droppedIncludes = 0;
   let droppedUnsafe = 0;
+  let unsafeFiles = 0;
   const keep = (args: string[], a: string) => {
     if (UNSAFE_ARGUMENT.test(a)) droppedUnsafe++;
     else args.push(a);
@@ -198,6 +200,10 @@ function writeProject(
     // readCompileCommands keeps entries of scope files only.
     const f = scope.get(e.repoPath);
     if (f === undefined) return [];
+    if (UNSAFE_ARGUMENT.test(f.path)) {
+      unsafeFiles++;
+      return [];
+    }
     const args: string[] = [];
     for (let i = 0; i < e.args.length; i++) {
       const a = e.args[i] ?? '';
@@ -228,6 +234,13 @@ function writeProject(
       },
     ];
   });
+  if (unsafeFiles > 0) {
+    ctx.log.warn(
+      `cppcheck: ${unsafeFiles} file(s) whose path has a quote, backslash or space left out (cppcheck splits the database's arguments again)`,
+    );
+  }
+  if (entries.length === 0)
+    return { skip: `${shown(rel)} names no C or C++ file of the scan that cppcheck can take` };
   if (droppedUnsafe > 0) {
     ctx.log.info(
       `cppcheck: ${droppedUnsafe} argument(s) with a quote, backslash or space left out (cppcheck splits the database's arguments again)`,

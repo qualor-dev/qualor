@@ -427,8 +427,8 @@ Qualor runs the bug-finding groups (`bugprone-*`, `clang-analyzer-*`, `performan
 `portability-*`, `concurrency-*`, minus a few noisy checks). A `.clang-tidy` that sets its own
 `Checks` replaces Qualor's default checks. Settings that pass compiler arguments, load other
 configurations or turn warnings into errors (`ExtraArgs`, `InheritParentConfig`,
-`WarningsAsErrors`...) are ignored, and so are nested `.clang-tidy` files. Analyzer options that name a file (`clang-analyzer-...:Config`) are dropped
-too. The scan log says what was left out.
+`WarningsAsErrors`...) are ignored, and so are nested `.clang-tidy` files. Analyzer options that
+name a file (`clang-analyzer-...:Config`) are dropped too. The scan log says what was left out.
 
 Qualor never runs your build. It reads `compile_commands.json` itself and passes on only include
 paths, defines, the language standard and harmless flags (`-I`, `-D`, `-U`, `-std` and a short list
