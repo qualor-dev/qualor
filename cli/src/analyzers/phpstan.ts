@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { PHPSTAN_PHP_VERSION, PHPSTAN_VERSION, phpstanVersionSupported } from '@qualor/shared';
 import { isInside } from './binary';
@@ -13,6 +13,7 @@ import {
   MAX_DEPENDENCY_FILES,
   phpDependencies,
 } from './phpstan-deps';
+import type { Logger } from '../log';
 import { phpstanSarif } from './phpstan-output';
 import { detailLine, shown, stderrLines } from './reason';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
@@ -89,8 +90,8 @@ export const PHPSTAN_WRAPPER = `<?php
 // exit 3: the report lists general errors (printed on stderr);
 // exit 4: there is no report (PHPStan's output printed on stderr).
 // A file below <input> that PHPStan cannot parse makes it report nothing else (its "severe
-// errors"): those copies are deleted, listed in <out>.left-out.json, and PHPStan runs once more
-// (ruling A9-19).
+// errors"): those copies are deleted, listed in <out>.left-out.json (with the count of such files
+// that could not be deleted), and PHPStan runs once more (ruling A9-19).
 declare(strict_types=1);
 if ($argc < 4) {
     fwrite(STDERR, "qualor-phpstan: usage: qualor-phpstan.php <phar> <out> <input> <args...>\\n");
@@ -140,6 +141,7 @@ function qualor_phpstan_run(array $command, string $out): array
 
 $report = qualor_phpstan_run($command, $out);
 $leftOut = [];
+$notLeftOut = 0;
 foreach (is_array($report['files']) ? $report['files'] : [] as $file => $result) {
     foreach (is_array($result['messages'] ?? null) ? $result['messages'] : [] as $message) {
         if (!is_array($message) || ($message['identifier'] ?? null) !== 'phpstan.parse') {
@@ -148,12 +150,17 @@ foreach (is_array($report['files']) ? $report['files'] : [] as $file => $result)
         $real = realpath((string) $file);
         if ($real !== false && strpos($real, $input . DIRECTORY_SEPARATOR) === 0 && is_file($real) && unlink($real)) {
             $leftOut[] = $real;
+        } else {
+            $notLeftOut++;
         }
         break;
     }
 }
+if ($leftOut !== [] || $notLeftOut > 0) {
+    $leftOutJson = json_encode(['leftOut' => $leftOut, 'notLeftOut' => $notLeftOut], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    file_put_contents($out . '.left-out.json', $leftOutJson);
+}
 if ($leftOut !== []) {
-    file_put_contents($out . '.left-out.json', json_encode($leftOut, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
     unlink($out);
     $left = 0;
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($input, FilesystemIterator::SKIP_DOTS)) as $entry) {
@@ -199,30 +206,51 @@ export function phpstanFailureDetail(stderr: string, workDir: string): string | 
 const phpEnv = () => ({ ...deadProxyEnv(), LC_ALL: 'C.UTF-8' });
 
 /**
- * Ruling A9-19: the files the wrapper left out because PHPStan cannot parse them (`<out>.left-out.json`,
- * absolute paths of the copy), named by their repository paths in a warning.
+ * Ruling A9-19: the files the wrapper left out because PHPStan cannot parse them, named by their
+ * repository paths in a warning, and a warning when some could not be left out (the result may then
+ * be incomplete). `<out>.left-out.json` holds the copies' real paths (`realpath()`), so they are
+ * compared with the input directory as given and as resolved (a work directory reached through a
+ * link, macOS's /var, a Windows short name). Logged once, whether PHPStan's second run succeeds or
+ * fails.
  */
-function warnLeftOut(file: string, input: string, ctx: AnalyzerContext): void {
-  let paths: unknown;
+export function warnLeftOut(file: string, input: string, log: Logger): void {
+  let data: unknown;
   try {
-    paths = JSON.parse(readFileSync(file, 'utf8'));
+    data = JSON.parse(readFileSync(file, 'utf8'));
+    rmSync(file, { force: true });
   } catch {
     return;
   }
-  if (!Array.isArray(paths)) return;
-  const prefix = `${input.replaceAll('\\', '/').replace(/\/+$/, '')}/`;
-  const repo = paths
-    .filter((p): p is string => typeof p === 'string')
-    .map((p) => p.replaceAll('\\', '/'))
-    .filter((p) => p.startsWith(prefix))
-    .map((p) => shown(p.slice(prefix.length)));
-  if (repo.length === 0) return;
-  const listed = repo.slice(0, MAX_LEFT_OUT_LISTED).join(', ');
-  const more =
-    repo.length > MAX_LEFT_OUT_LISTED ? `, and ${repo.length - MAX_LEFT_OUT_LISTED} more` : '';
-  ctx.log.warn(
-    `phpstan: ${repo.length} PHP file(s) PHPStan cannot parse were left out: ${listed}${more}`,
-  );
+  if (typeof data !== 'object' || data === null) return;
+  const { leftOut, notLeftOut } = data as { leftOut?: unknown; notLeftOut?: unknown };
+  const slashes = (p: string) => p.replaceAll('\\', '/');
+  const prefixes = new Set([input]);
+  try {
+    prefixes.add(realpathSync.native(input));
+  } catch {
+    // The input directory is gone: only the path as given is compared.
+  }
+  const bases = [...prefixes].map((p) => `${slashes(p).replace(/\/+$/, '')}/`);
+  const repo: string[] = [];
+  for (const entry of Array.isArray(leftOut) ? leftOut : []) {
+    if (typeof entry !== 'string') continue;
+    const p = slashes(entry);
+    const base = bases.find((b) => p.startsWith(b));
+    if (base !== undefined) repo.push(shown(p.slice(base.length)));
+  }
+  if (repo.length > 0) {
+    const listed = repo.slice(0, MAX_LEFT_OUT_LISTED).join(', ');
+    const more =
+      repo.length > MAX_LEFT_OUT_LISTED ? `, and ${repo.length - MAX_LEFT_OUT_LISTED} more` : '';
+    log.warn(
+      `phpstan: ${repo.length} PHP file(s) PHPStan cannot parse were left out: ${listed}${more}`,
+    );
+  }
+  if (typeof notLeftOut === 'number' && notLeftOut > 0) {
+    log.warn(
+      `phpstan: ${notLeftOut} file(s) PHPStan cannot parse could not be left out; its result may be incomplete`,
+    );
+  }
 }
 const MAX_LEFT_OUT_LISTED = 20;
 
@@ -384,7 +412,7 @@ async function prepare(
       okExitCodes: [0],
       version,
       transform: (output) => {
-        warnLeftOut(`${out}.left-out.json`, input, ctx);
+        warnLeftOut(`${out}.left-out.json`, input, ctx.log);
         return phpstanSarif(output, {
           input,
           workDir: ctx.workDir,
@@ -393,7 +421,10 @@ async function prepare(
           log: ctx.log,
         });
       },
-      failureDetail: (_code, stderr) => phpstanFailureDetail(stderr, ctx.workDir),
+      failureDetail: (_code, stderr) => {
+        warnLeftOut(`${out}.left-out.json`, input, ctx.log);
+        return phpstanFailureDetail(stderr, ctx.workDir);
+      },
     },
   };
 }

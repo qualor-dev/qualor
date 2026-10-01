@@ -1,4 +1,14 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { PHPSTAN_DEFAULT_LEVEL, PHPSTAN_PHP_VERSION, PHPSTAN_VERSION } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
@@ -15,11 +25,24 @@ import {
   phpstanFailureDetail,
   phpstanNeon,
   PHP_OPTIONS,
+  warnLeftOut,
 } from './phpstan';
 import type { ExecOptions } from './types';
 import { DEPENDENCIES_NOT_INSTALLED, DEPENDENCIES_TOO_LARGE } from './phpstan-deps';
 
 const tmp = useTempDirs();
+/** A directory link: a junction on Windows (no privilege needed), a symlink elsewhere. */
+const CAN_LINK_DIRS = (() => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'qualor-link-check-'));
+  try {
+    symlinkSync(dir, path.join(dir, 'link'), 'junction');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
 const PHP = '/usr/bin/php';
 const [MAJOR, MINOR] = PHPSTAN_VERSION.split('.').map(Number) as [number, number];
 
@@ -384,18 +407,66 @@ describe('phpstan helpers', () => {
     const input = path.join(s.workDir, 'src');
     writeFileSync(
       path.join(s.workDir, 'phpstan.json.left-out.json'),
-      JSON.stringify([
-        path.join(input, 'src', 'Broken.php'),
-        path.join(input, 'x\u0007.php'),
-        // Never a path outside the copy.
-        path.join(s.workDir, 'phpstan.neon'),
-      ]),
+      JSON.stringify({
+        leftOut: [
+          path.join(input, 'src', 'Broken.php'),
+          path.join(input, 'x\u0007.php'),
+          // Never a path outside the copy.
+          path.join(s.workDir, 'phpstan.neon'),
+        ],
+        notLeftOut: 0,
+      }),
     );
     p.run.transform?.({ totals: {}, files: [], errors: [] }, '');
+    // Once only, though the failure hook would read it too.
+    p.run.failureDetail?.(4, '');
+    expect(s.lines.filter((l) => l.includes('cannot parse'))).toEqual([
+      'warn: phpstan: 2 PHP file(s) PHPStan cannot parse were left out: src/Broken.php, x?.php\n',
+    ]);
+  });
+
+  it('names them when PHPStan’s second run fails too, and says when some could not be left out (ruling A9-19)', async () => {
+    const s = setup({ 'src/Cart.php': '<?php\n' });
+    const p = await s.analyzer.prepare(s.ctx);
+    if (!('run' in p)) throw new Error(JSON.stringify(p));
+    writeFileSync(
+      path.join(s.workDir, 'phpstan.json.left-out.json'),
+      JSON.stringify({ leftOut: [path.join(s.workDir, 'src', 'a.php')], notLeftOut: 2 }),
+    );
+    p.run.failureDetail?.(4, 'qualor-phpstan: PHPStan wrote no report (exit code 255)\n');
     expect(s.lines.join('')).toContain(
-      'warn: phpstan: 2 PHP file(s) PHPStan cannot parse were left out: src/Broken.php, x?.php',
+      'warn: phpstan: 1 PHP file(s) PHPStan cannot parse were left out: a.php\n',
+    );
+    expect(s.lines.join('')).toContain(
+      'warn: phpstan: 2 file(s) PHPStan cannot parse could not be left out; its result may be incomplete\n',
     );
   });
+
+  // Review fix round 1: the wrapper writes realpath()s; a work directory reached through a link
+  // (macOS /var -> /private/var, a Windows short name) must still give repository paths.
+  it.skipIf(!CAN_LINK_DIRS)(
+    'names them by repository path when the work directory is reached through a link',
+    () => {
+      const real = tmp();
+      const linked = path.join(tmp(), 'linked-work');
+      symlinkSync(real, linked, 'junction');
+      mkdirSync(path.join(real, 'src', 'src'), { recursive: true });
+      const sidecar = path.join(linked, 'phpstan.json.left-out.json');
+      writeFileSync(
+        sidecar,
+        JSON.stringify({ leftOut: [path.join(real, 'src', 'src', 'Broken.php')], notLeftOut: 0 }),
+      );
+      const lines: string[] = [];
+      warnLeftOut(
+        sidecar,
+        path.join(linked, 'src'),
+        createLogger('debug', (t) => lines.push(t)),
+      );
+      expect(lines).toEqual([
+        'warn: phpstan: 1 PHP file(s) PHPStan cannot parse were left out: src/Broken.php\n',
+      ]);
+    },
+  );
 
   it('pins how the wrapper leaves out files PHPStan cannot parse (ruling A9-19)', () => {
     expect(PHPSTAN_WRAPPER).toContain("($message['identifier'] ?? null) !== 'phpstan.parse'");
@@ -403,6 +474,7 @@ describe('phpstan helpers', () => {
     expect(PHPSTAN_WRAPPER).toContain('$input = realpath($argv[3]);');
     expect(PHPSTAN_WRAPPER).toContain('strpos($real, $input . DIRECTORY_SEPARATOR) === 0');
     expect(PHPSTAN_WRAPPER).toContain("$out . '.left-out.json'");
+    expect(PHPSTAN_WRAPPER).toContain("['leftOut' => $leftOut, 'notLeftOut' => $notLeftOut]");
   });
 
   it('pins what the wrapper does (fact P5)', () => {

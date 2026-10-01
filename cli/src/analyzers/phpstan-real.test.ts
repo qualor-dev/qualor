@@ -20,6 +20,8 @@ const tmp = useTempDirs();
 const CAN_SYMLINK_FILES = canCreateFileSymlinks();
 /** Real PHPStan runs take seconds each, minutes on a loaded CI runner. */
 const TIMEOUT = { timeout: 600_000 };
+/** Files beyond the hostile layout's own in the A9-16 checkout: 6 of PHPStan's 20-file jobs. */
+const GENERATED_FILES = 120;
 
 /** A PHP single-quoted string literal. */
 const phpString = (s: string) => `'${s.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`;
@@ -145,6 +147,14 @@ return null;
     // With a custom vendor-dir, a vendor/autoload.php is Composer's no longer, but still PHP.
     ...(v !== 'vendor' && { 'vendor/autoload.php': `<?php\n${m('default-vendor-autoload')}` }),
     'app/helpers.php': `<?php\n${m('root-autoload-files')}`,
+    // Review fix round 1: enough files for several of PHPStan's jobs (20 files each), so it
+    // analyses them in worker processes, which inherit the hostile environment of the run.
+    ...Object.fromEntries(
+      Array.from({ length: GENERATED_FILES }, (_, i) => [
+        `src/gen/G${i}.php`,
+        `<?php\nnamespace App\\Gen;\n\nfunction g${i}(): int\n{\n    return ${i};\n}\n`,
+      ]),
+    ),
     ...neons,
     'extra.neon': 'parameters:\n  bootstrapFiles: [boot-included.php]\n',
     'boot-included.php': `<?php\n${m('neon-includes')}`,

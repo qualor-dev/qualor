@@ -870,8 +870,10 @@ describe('mapLimit', () => {
 describe('execEnv (ruling A9-18)', () => {
   const root = path.resolve('/repo');
   const base = { PATH: '/usr/bin', PHPRC: '/repo', KEEP: 'k' };
-  it('is the analyzer environment itself without env or dropEnv', () => {
-    expect(execEnv(base, {}, root)).toBe(base);
+  it('leaves an analyzer environment as it is without env or dropEnv', () => {
+    const analyzerEnv = execEnv({ ...base, QUALOR_SERVER_TOKEN: 'secret' }, {}, root);
+    expect(analyzerEnv).toEqual(base);
+    expect(execEnv(analyzerEnv, {}, root)).toEqual(analyzerEnv);
   });
   it('drops names, adds env, and sanitizes again', () => {
     const env = execEnv(

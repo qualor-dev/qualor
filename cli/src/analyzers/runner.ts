@@ -76,17 +76,17 @@ function readSarif(file: string, log: Logger): { value: unknown } | string {
 }
 
 /**
- * The environment of an adapter's `ctx.exec` command: the analyzer environment as it is, or, with
- * the command's own `env` and `dropEnv` (ruling A9-18), merged and filtered like a run's, then
- * sanitized and confined again. Exported for direct testing.
+ * The environment of an analyzer's process, a run's or a `ctx.exec` command's: `base` with the
+ * command's own `env` on top, without the names `dropEnv` names (ruling A9-18), then sanitized and
+ * confined (both idempotent, so an already sanitized `base` stays as it was). Exported for direct
+ * testing.
  */
 export function execEnv(
-  analyzerEnv: Record<string, string>,
+  base: Readonly<Record<string, string | undefined>>,
   options: Pick<ExecOptions, 'env' | 'dropEnv'>,
   root: string,
 ): Record<string, string> {
-  if (options.env === undefined && options.dropEnv === undefined) return analyzerEnv;
-  const merged = mergeAnalyzerEnv(analyzerEnv, options.env);
+  const merged = mergeAnalyzerEnv(base, options.env);
   const dropEnv = options.dropEnv;
   const kept =
     dropEnv === undefined
@@ -307,13 +307,14 @@ async function capture(
     // Semgrep rules), so the server token (and anything else that looks like a Qualor secret)
     // must never reach their process environment.
     // An adapter's own `env` is merged in and then sanitized again, so it cannot re-add one.
-    const merged = mergeAnalyzerEnv(parentEnv, run.env);
-    const dropEnv = run.dropEnv;
-    const kept =
-      dropEnv === undefined
-        ? merged
-        : Object.fromEntries(Object.entries(merged).filter(([name]) => !dropEnv(name)));
-    const childEnv = confineAnalyzerEnv(sanitizeAnalyzerEnv(kept), o.root);
+    const childEnv = execEnv(
+      parentEnv,
+      {
+        ...(run.env !== undefined && { env: run.env }),
+        ...(run.dropEnv !== undefined && { dropEnv: run.dropEnv }),
+      },
+      o.root,
+    );
     const result = await runProcess(
       {
         command: run.command,
