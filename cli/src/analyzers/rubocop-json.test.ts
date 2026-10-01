@@ -1,7 +1,8 @@
-import { RUBOCOP_VERSION } from '@qualor/shared';
+import { RUBOCOP_VERSION, rubocopSelection } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
-import { recorded } from '../../test/analyzers';
+import { expectedKeys, findingKeys, normalizeRecorded, recorded } from '../../test/analyzers';
 import { createLogger } from '../log';
+import { rubocopAnalyzer } from './rubocop';
 import { rubocopCrashWarnings, rubocopFailureDetail, rubocopJsonToSarif } from './rubocop-json';
 
 const stderr = recorded('rubocop/stderr.json') as Record<string, string>;
@@ -185,4 +186,14 @@ describe('RuboCop stderr', () => {
     ).toEqual([]);
     expect(rubocopCrashWarnings('', `${WORK}/src`)).toEqual([]);
   });
+});
+
+it('turns the recorded report of fixtures/ruby-basic into its expected findings', () => {
+  const sarif = rubocopJsonToSarif(recorded('rubocop/basic.json'), {
+    version: RUBOCOP_VERSION,
+    cops: new Set(rubocopSelection(['qualor-default'], [])),
+  });
+  const out = normalizeRecorded(sarif, rubocopAnalyzer, 'ruby-basic');
+  expect(out.warnings).toEqual([]);
+  expect(findingKeys(out.findings)).toEqual(expectedKeys('ruby-basic', 'rubocop'));
 });

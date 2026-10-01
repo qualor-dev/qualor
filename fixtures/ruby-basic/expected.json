@@ -1,8 +1,16 @@
 {
-  "description": "Ruby repo: tree-sitter-ruby metrics; RuboCop findings are added in plan 9B Task 7",
-  "engines": [],
-  "findingsExhaustive": false,
-  "findings": [],
+  "description": "Ruby repo: RuboCop with qualor-default (the project's .rubocop.yml is never read: it would disable Lint/UselessAssignment and enable Style/StringLiterals) and tree-sitter-ruby metrics",
+  "engines": ["rubocop"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "rubocop:Lint/UselessAssignment", "path": "app/models/order.rb", "startLine": 14, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "rubocop:Security/MarshalLoad", "path": "app/models/order.rb", "startLine": 34, "severity": "high", "quality": "security" },
+    { "ruleKey": "rubocop:Security/Eval", "path": "app/models/order.rb", "startLine": 38, "severity": "high", "quality": "security" },
+    { "ruleKey": "rubocop:Lint/BinaryOperatorWithIdenticalOperands", "path": "app/models/order.rb", "startLine": 42, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "rubocop:Lint/RescueException", "path": "app/models/order.rb", "startLine": 47, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "rubocop:Lint/UselessAccessModifier", "path": "app/models/order.rb", "startLine": 59, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "rubocop:Lint/IneffectiveAccessModifier", "path": "app/models/order.rb", "startLine": 61, "severity": "medium", "quality": "reliability" }
+  ],
   "files": {
     "app/models/order.rb": { "language": "ruby", "kind": "main", "lines": 64, "ncloc": 50, "commentLines": 2, "functions": 9, "classes": 1, "statements": 24, "complexity": 17, "cognitiveComplexity": 9 },
     "spec/order_spec.rb": { "language": "ruby", "kind": "test", "lines": 7, "ncloc": 6, "commentLines": 0, "functions": 0, "classes": 0, "statements": 4, "complexity": 0, "cognitiveComplexity": 0 },
@@ -11,6 +19,8 @@
   "duplications": [],
   "coverage": null,
   "notes": {
+    "rubocop#rules": "qualor-default: Lint and Security cops RuboCop enables by default, minus 11; spec/order_spec.rb's unused |example| is Lint/UnusedBlockArgument, left out",
+    "rubocop#severity": "report-format.md §7.1: Security/MarshalLoad and Security/Eval are in the high set; Lint is reliability medium",
     "app/models/order.rb#ncloc": "64 lines - comment lines 1, 5 - blank lines 2, 4, 8, 12, 24, 32, 36, 40, 44, 50, 58, 60 = 50",
     "app/models/order.rb#functions": "initialize, total, kind, load, run, same?, safe_parse, count_free, self.helper = 9",
     "app/models/order.rb#statements": "require 1, attr_reader 1, private 1; initialize 1; total 3 + then, then, else = 6; kind case + 3 = 4; load 1; run 1; same? 1; safe_parse JSON.parse + nil = 2; count_free n = 0, items.each, the unless modifier, n = 4; helper 1; total 24",
