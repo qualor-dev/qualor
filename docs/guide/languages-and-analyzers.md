@@ -369,8 +369,12 @@ host files (the same rule as for ESLint above).
 ```yaml
 analyzers:
   gosec:
-    exclude: [G104, G115]   # the default: unchecked errors and integer-conversion overflow; [] runs every rule
+    exclude: [G104, G115, G304]   # the default: unchecked errors, integer-conversion overflow, file path from a variable; [] runs every rule
 ```
+
+G304 (file path provided as taint input) is excluded by default because it flags idiomatic file
+reads on real projects almost every time. To turn it back on, set `exclude: []` or list only the
+rules you want to skip, without `G304` (for example `exclude: [G104, G115]`).
 
 Severity: staticcheck's correctness and concurrency checks (`SA5…`, `SA2…`) are high, its other
 bug checks medium, unused code medium, simplifications and style low; go vet findings are medium;

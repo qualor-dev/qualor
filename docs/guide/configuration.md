@@ -59,7 +59,7 @@ analyzers:
   swiftlint: { enabled: auto, configFile: null, timeoutSeconds: 600 }
   staticcheck: { enabled: auto, timeoutSeconds: 900 }
   govet:     { enabled: auto, timeoutSeconds: 900 }
-  gosec:     { enabled: auto, exclude: [G104, G115], timeoutSeconds: 900 }   # [] runs every gosec rule
+  gosec:     { enabled: auto, exclude: [G104, G115, G304], timeoutSeconds: 900 }   # [] runs every gosec rule
   semgrep:   { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
   gitleaks:  { enabled: true, configFile: null, timeoutSeconds: 300 }
   trivy:     { enabled: auto, timeoutSeconds: 600 }

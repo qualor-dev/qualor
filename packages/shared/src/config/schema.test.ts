@@ -403,7 +403,7 @@ describe('BUILTIN_EXCLUDES', () => {
     expect(c.analyzers.govet).toEqual({ enabled: 'auto', timeoutSeconds: 900 });
     expect(c.analyzers.gosec).toEqual({
       enabled: 'auto',
-      exclude: ['G104', 'G115'],
+      exclude: ['G104', 'G115', 'G304'],
       timeoutSeconds: 900,
     });
     expect(parseConfig({ version: 1, languages: ['go'] }).languages).toEqual(['go']);

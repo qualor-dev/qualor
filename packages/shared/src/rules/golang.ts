@@ -12,8 +12,8 @@ export const GO_VERSION = '1.27.1';
 export const GO_MIN_VERSION = '1.26';
 export const STATICCHECK_VERSION = '2026.2.1';
 export const GOSEC_VERSION = '2.29.0';
-/** gosec's noisiest rules, left out by default: G104 (unchecked errors) and G115 (integer conversions). */
-export const GOSEC_DEFAULT_EXCLUDE: readonly string[] = ['G104', 'G115'];
+/** gosec's noisiest rules, left out by default: G104 (unchecked errors), G115 (integer conversions) and G304 (file path from a variable, a false positive on idiomatic file reads). */
+export const GOSEC_DEFAULT_EXCLUDE: readonly string[] = ['G104', 'G115', 'G304'];
 export const GOSEC_RULE_ID = /^G\d{3}$/;
 
 function majorMinor(version: string): [number, number] | null {

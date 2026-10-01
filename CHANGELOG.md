@@ -10,7 +10,7 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 - Go: `.go` files are language `go`, with metrics, duplication and a `go` quality profile, and three
   engines run from `qualor/scanner`: `staticcheck` (staticcheck 2026.2.1), `govet` (go vet of Go
-  1.27.1) and `gosec` (gosec 2.29.0, security; G104 and G115 left out by default). They analyse each
+  1.27.1) and `gosec` (gosec 2.29.0, security; G104, G115 and G304 left out by default). They analyse each
   Go module offline: run `go mod download` (or vendor your dependencies) before `qualor scan`; a
   package whose dependencies are missing is not analysed and the log says so. Nothing the repository
   asks for is run (no `go generate`, no other toolchain, no cgo), and a module that replaces a

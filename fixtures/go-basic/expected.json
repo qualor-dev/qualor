@@ -25,7 +25,7 @@
   "notes": {
     "engines#offline": "no dependency outside the standard library: every package loads with GOPROXY=off and an empty module cache",
     "govet+staticcheck#pairs": "printf/SA5009 (45) and bools/SA4000 (50) are curated equivalence pairs: the report keeps both, the server dedupes them with staticcheck primary (data-model.md §5.3)",
-    "gosec#exclude": "qualor-default excludes G104 and G115; neither would fire here",
+    "gosec#exclude": "qualor-default excludes G104, G115 and G304; none would fire here",
     "coverage": "store.go covered 17, 22-24, 29-32, 35 (9 lines; 18, 25, 33 end at column 1), uncovered 40, 45, 50-53, 55, 60 (8); main.go 11-13 uncovered (3); tools/ is another module, not in the profile; 9 / 20 = 45.0",
     "store/store.go#ncloc": "61 lines - 8 comment lines (9, 15, 20, 27, 38, 43, 48, 58) - 9 blank lines (2, 8, 14, 19, 26, 37, 42, 47, 57) = 44",
     "store/store.go#functions": "New, Add, Total, Snapshot, Describe, Grade, Fingerprint = 7; Store is the one struct type",

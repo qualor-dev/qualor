@@ -696,7 +696,8 @@
             "exclude": {
               "default": [
                 "G104",
-                "G115"
+                "G115",
+                "G304"
               ],
               "type": "array",
               "items": {
