@@ -107,7 +107,7 @@ test("the project's webhook is listed here, and in Settings → Webhooks with it
 });
 
 /**
- * Ruling R14: the deleted project is one this test creates through the API, never a seeded one
+ * The deleted project is one this test creates through the API, never a seeded one
  * (projects.spec.ts and roles.spec.ts read Legacy Billing).
  */
 test('deleting a project needs its exact key, then Projects says so', async ({ page }) => {
