@@ -15,10 +15,6 @@ sources:
     # Recorded analyzer output and SARIF samples: test data.
     - cli/test/analyzer-output/**
     - packages/shared/test/sarif-samples/**
-    # Build modules of the Go tools bundled in qualor/scanner (plan 9C): they list every module of
-    # the tools' dependency graphs, packages the binaries never link included. The built binaries
-    # are what ships; the image's Trivy scan checks them (deploy/README.md).
-    - tools/analyzers/go-tools/**
 
 tests:
   include:
