@@ -1,0 +1,41 @@
+:host {
+  display: block;
+}
+
+.settings-panels {
+  display: grid;
+  gap: var(--space-4, 1rem);
+  min-width: 0;
+}
+
+.settings-index {
+  display: none;
+}
+
+@media (min-width: 1000px) {
+  .settings {
+    display: grid;
+    grid-template-columns: 12rem 1fr;
+    gap: var(--space-6, 1.5rem);
+    align-items: start;
+  }
+
+  .settings-index {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    position: sticky;
+    top: 1rem;
+  }
+
+  .settings-index a {
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm, 4px);
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  .settings-index a:hover {
+    color: var(--text);
+  }
+}

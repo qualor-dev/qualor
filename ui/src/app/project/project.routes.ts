@@ -30,6 +30,12 @@ export const projectRoutes: Routes = [
     loadComponent: () => import('./access.page').then((m) => m.AccessPage),
   },
   {
+    path: 'settings',
+    title: $localize`:@@title.projectSettings:Project settings`,
+    loadComponent: () =>
+      import('./settings/project-settings.page').then((m) => m.ProjectSettingsPage),
+  },
+  {
     path: 'branches/:branchId',
     title: $localize`:@@title.branch:Branch`,
     loadComponent: () => import('./branch-overview.page').then((m) => m.BranchOverviewPage),

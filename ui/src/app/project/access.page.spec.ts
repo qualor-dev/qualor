@@ -599,7 +599,13 @@ describe('ProjectPage Access tab (rbac-audit.md §17)', () => {
 
   it('shows Access to an organization admin in the community edition', async () => {
     setup({ features: [] });
-    expect(await tabs()).toEqual(['Overview', 'Branches and merge requests', 'Issues', 'Access']);
+    expect(await tabs()).toEqual([
+      'Overview',
+      'Branches and merge requests',
+      'Issues',
+      'Access',
+      'Settings',
+    ]);
   });
 
   it('hides Access from a maintainer', async () => {

@@ -1,0 +1,64 @@
+@if (show(); as s) {
+  <div class="settings">
+    <nav class="settings-index" aria-label="Settings" i18n-aria-label="@@project.settings.index">
+      @if (s.settings) {
+        <a [routerLink]="[]" fragment="new-code" i18n="@@project.settings.newCode">New code</a>
+        <a [routerLink]="[]" fragment="gate" i18n="@@project.settings.gate"
+          >Quality gate and profiles</a
+        >
+        <a [routerLink]="[]" fragment="main-branch" i18n="@@project.settings.mainBranch"
+          >Main branch</a
+        >
+      }
+      @if (s.tokens) {
+        <a [routerLink]="[]" fragment="tokens" i18n="@@project.settings.tokens">Analysis tokens</a>
+      }
+      @if (s.webhooks) {
+        <a [routerLink]="[]" fragment="webhooks" i18n="@@project.settings.webhooks">Webhooks</a>
+      }
+      @if (s.delete) {
+        <a [routerLink]="[]" fragment="danger" i18n="@@project.settings.danger">Danger zone</a>
+      }
+    </nav>
+    <div class="settings-panels">
+      @if (s.settings) {
+        <section class="card panel" id="new-code">
+          <div class="panel-head">
+            <h2 i18n="@@project.settings.newCode">New code</h2>
+          </div>
+        </section>
+        <section class="card panel" id="gate">
+          <div class="panel-head">
+            <h2 i18n="@@project.settings.gate">Quality gate and profiles</h2>
+          </div>
+        </section>
+        <section class="card panel" id="main-branch">
+          <div class="panel-head">
+            <h2 i18n="@@project.settings.mainBranch">Main branch</h2>
+          </div>
+        </section>
+      }
+      @if (s.tokens) {
+        <section class="card panel" id="tokens">
+          <div class="panel-head">
+            <h2 i18n="@@project.settings.tokens">Analysis tokens</h2>
+          </div>
+        </section>
+      }
+      @if (s.webhooks) {
+        <section class="card panel" id="webhooks">
+          <div class="panel-head">
+            <h2 i18n="@@project.settings.webhooks">Webhooks</h2>
+          </div>
+        </section>
+      }
+      @if (s.delete) {
+        <section class="card panel" id="danger">
+          <div class="panel-head">
+            <h2 i18n="@@project.settings.danger">Danger zone</h2>
+          </div>
+        </section>
+      }
+    </div>
+  </div>
+}

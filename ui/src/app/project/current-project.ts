@@ -50,6 +50,11 @@ export class CurrentProject {
     this.shownBranch.set(branch);
   }
 
+  /** Reads the project again, after a panel changed it. */
+  reload(): void {
+    this.project.reload();
+  }
+
   /** The caller's permissions on project `id`, or undefined until it has loaded. */
   permissions(id: string): readonly string[] | undefined {
     const project = this.current();

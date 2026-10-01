@@ -73,6 +73,15 @@
           >Access</a
         >
       }
+      @if (showSettings()) {
+        <a
+          routerLink="settings"
+          routerLinkActive="active"
+          ariaCurrentWhenActive="page"
+          i18n="@@project.tab.settings"
+          >Settings</a
+        >
+      }
     </nav>
   </q-page-header>
   <div class="page-body">
