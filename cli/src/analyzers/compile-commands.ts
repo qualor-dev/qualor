@@ -144,7 +144,16 @@ const F_FLAGS = new Set([
   'blocks',
 ]);
 const LAUNCHERS = new Set(['ccache', 'sccache', 'distcc']);
-const PLAIN_NAME = /^[A-Za-z0-9._+-]+$/;
+/**
+ * A gcc or clang driver name, with an optional target prefix and version suffix. Clang takes its
+ * driver mode from argv[0]: `cl`, `clang-cl`, `clang-dxc` or `flang` would switch it to a mode
+ * that reads `/`-options (`/clang:<any option>`), so any other name becomes `c++` or `cc`.
+ */
+const COMPILER_NAME = /^([A-Za-z0-9_.]+-)*(cc|c\+\+|gcc|g\+\+|clang|clang\+\+)(-[0-9.]+)?$/;
+/** A cl-style option (`/clang:-fplugin=…`, `/Fo:x`) as a separate value: dropped with its option. */
+const CL_OPTION = /^\/[A-Za-z][A-Za-z0-9_-]*:/;
+/** `-march=native` and the like: clang may run a helper found on PATH to detect the host. */
+const NATIVE = /^-m(arch|cpu|tune)=native$/;
 const SOURCE = /\.(c|cc|cpp|cxx|c\+\+|C|m|mm)$/;
 
 /**
@@ -160,23 +169,34 @@ const UNSAFE_TEXT = /[\r\n\u0000\x85\u2028\u2029]/;
  * be read as one by a tool that parses differently, so both are dropped with their option.
  */
 function safeValue(v: string): boolean {
-  return v !== '' && !v.startsWith('@') && !v.startsWith('-') && !UNSAFE_TEXT.test(v);
+  return (
+    v !== '' &&
+    !v.startsWith('@') &&
+    !v.startsWith('-') &&
+    !CL_OPTION.test(v) &&
+    !UNSAFE_TEXT.test(v)
+  );
 }
 
 function keptFlag(a: string): boolean {
+  if (NATIVE.test(a)) return false;
   if (KEPT_EXACT.has(a) || KEPT_PREFIX.test(a) || KEPT_ATTACHED.test(a) || DRIVER_MODE.test(a))
     return true;
-  if (WARNING.test(a)) return a !== '-Werror' && !a.startsWith('-Werror=');
+  if (WARNING.test(a)) return !a.startsWith('-Werror') && a !== '-Wfatal-errors';
   const f = /^-f(no-)?([A-Za-z0-9_+-]+)$/.exec(a);
   return f !== null && F_FLAGS.has(f[2] ?? '');
 }
 
 /**
- * config.md §6.2: the compiler's plain name, and the arguments of the allowlist. A dropped option
+ * config.md §6.2: the compiler's gcc or clang driver name (else `c++`, or `cc` for C), and the
+ * arguments of the allowlist. A dropped option
  * that takes a value drops its value; the input files (sources) are left out without being
  * counted, as the writer adds the entry's file itself.
  */
-export function sanitizeArguments(args: readonly string[]): {
+export function sanitizeArguments(
+  args: readonly string[],
+  language: 'c' | 'cpp' = 'cpp',
+): {
   compiler: string;
   kept: string[];
   dropped: number;
@@ -189,7 +209,7 @@ export function sanitizeArguments(args: readonly string[]): {
     i++;
   const first = args[i] ?? '';
   const base = path.posix.basename(first.replaceAll('\\', '/'));
-  const compiler = PLAIN_NAME.test(base) ? base : 'c++';
+  const compiler = COMPILER_NAME.test(base) ? base : language === 'c' ? 'cc' : 'c++';
   const kept: string[] = [];
   let dropped = 0;
   for (i += 1; i < args.length; i++) {
@@ -281,7 +301,10 @@ export function readCompileCommands(
     const argv = Array.isArray(raw.arguments)
       ? (raw.arguments as string[])
       : splitCommand(raw.command as string);
-    const { compiler, kept, dropped } = sanitizeArguments(argv);
+    const { compiler, kept, dropped } = sanitizeArguments(
+      argv,
+      scoped.language === 'c' ? 'c' : 'cpp',
+    );
     droppedArgs += dropped;
     entries.push({ repoPath, directory, file, compiler, args: kept });
   }

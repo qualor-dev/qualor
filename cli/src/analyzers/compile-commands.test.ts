@@ -155,6 +155,69 @@ describe('sanitizeArguments (config.md §6.2)', () => {
       'x86_64-linux-gnu-g++-12',
     );
   });
+
+  it('keeps only a gcc or clang driver name, so no name switches clang to another driver mode', () => {
+    for (const ok of [
+      'cc',
+      'c++',
+      'gcc',
+      'g++',
+      'clang',
+      'clang++',
+      'clang-18',
+      'gcc-12.2',
+      'arm-none-eabi-gcc',
+      'x86_64-w64-mingw32-g++',
+    ]) {
+      expect(sanitizeArguments([ok, 'a.cpp']).compiler).toBe(ok);
+    }
+    for (const bad of [
+      'cl',
+      'cl.exe',
+      'CL.EXE',
+      'clang-cl',
+      'clang-cl.exe',
+      'x86_64-pc-windows-msvc-clang-cl',
+      'clang-dxc',
+      'flang',
+      'flang-new',
+      'sh',
+      'python3',
+      'clang-cpp',
+      'gcc.exe',
+      'Clang',
+      '-cc',
+      'clang++-cl',
+    ]) {
+      expect(sanitizeArguments([bad, 'a.cpp']).compiler).toBe('c++');
+      expect(sanitizeArguments([bad, 'a.c'], 'c').compiler).toBe('cc');
+    }
+  });
+
+  it('drops a cl-style value, -m…=native and every error-promoting warning flag', () => {
+    const r = sanitizeArguments([
+      'clang++',
+      '-include',
+      '/clang:-fplugin=./evil.so',
+      '-I',
+      '/Fo:x',
+      '-isystem',
+      '/opt/x/include',
+      '-march=native',
+      '-mcpu=native',
+      '-mtune=native',
+      '-march=armv8-a',
+      '-Wfatal-errors',
+      '-Werror',
+      '-Werror=format',
+      '-Werror-implicit-function-declaration',
+      '-Wno-error',
+      '-Wall',
+      'a.cpp',
+    ]);
+    expect(r.kept).toEqual(['-isystem', '/opt/x/include', '-march=armv8-a', '-Wno-error', '-Wall']);
+    expect(r.dropped).toBe(9);
+  });
 });
 
 describe('findCompileCommands and checkCompileCommandsSetting', () => {
@@ -320,7 +383,7 @@ describe('nothing from the database is ever run (Review Focus 1)', () => {
     if ('skip' in r) throw new Error(r.skip);
     expect(existsSync(marker)).toBe(false);
     expect(readdirSync(root).sort()).toEqual(before);
-    expect(r.entries.map((e) => e.compiler)).toEqual(['sh', 'c++']);
+    expect(r.entries.map((e) => e.compiler)).toEqual(['c++', 'c++']);
     expect(r.entries[0]!.args).toEqual([]);
     // the define's value is text for the preprocessor, never expanded by a shell
     expect(r.entries[1]!.args).toEqual([`-DX=$(touch ${m})`]);
