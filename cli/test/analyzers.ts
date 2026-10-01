@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   engineMapping,
   parseConfig,
+  PHPSTAN_VERSION,
   splitSourceLines,
   swiftlintVersionSupported,
   type NormalizeWarning,
@@ -20,7 +21,7 @@ import { parse } from 'yaml';
 import { describe, expect } from 'vitest';
 import { findRepoBinary, resolveBinary } from '../src/analyzers/binary';
 import { DEFAULT_DETEKT_JAR } from '../src/analyzers/detekt';
-import { DEFAULT_PHPSTAN_PHAR } from '../src/analyzers/phpstan';
+import { DEFAULT_PHPSTAN_PHAR, parsePhpstanVersion } from '../src/analyzers/phpstan';
 import { fileLines, normalizeCaptures, type NormalizedEngines } from '../src/analyzers/normalize';
 import type { ProcessResult } from '../src/analyzers/process';
 import { runAnalyzers } from '../src/analyzers/runner';
@@ -87,11 +88,24 @@ export function describeWithDetekt(): typeof describe {
 
 /**
  * Plan 9A: real PHPStan needs its phar (tools/analyzers/install.sh, which both CIs' test jobs run)
- * and php; `QUALOR_REQUIRE_ANALYZERS=1` makes it run, and fail, when either is missing.
+ * and php; `QUALOR_REQUIRE_ANALYZERS=1` makes it run, and fail, when either is missing. Elsewhere
+ * it runs only when the phar is the pinned `PHPSTAN_VERSION` (Task 9: the expected findings are
+ * those of that version), so a phar of another version skips these tests instead of failing them.
  */
 export function describeWithPhpstan(): typeof describe {
-  const ok = existsSync(DEFAULT_PHPSTAN_PHAR) && toolInstalled('php');
-  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+  return describe.runIf(REQUIRE_ANALYZERS || phpstanPinnedInstalled()) as typeof describe;
+}
+
+function phpstanPinnedInstalled(): boolean {
+  if (!existsSync(DEFAULT_PHPSTAN_PHAR)) return false;
+  const php = resolveBinary('php', { root: process.cwd(), env: process.env });
+  if (php === null) return false;
+  const r = spawnSync(php, [DEFAULT_PHPSTAN_PHAR, '--version'], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    cwd: os.tmpdir(),
+  });
+  return r.status === 0 && parsePhpstanVersion(r.stdout ?? '') === PHPSTAN_VERSION;
 }
 
 /**

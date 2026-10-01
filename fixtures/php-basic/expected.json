@@ -1,8 +1,13 @@
 {
-  "description": "PHP repo: tree-sitter-php metrics and PHPUnit's Cobertura coverage; PHPStan findings are added in plan 9A Task 9",
-  "engines": [],
-  "findingsExhaustive": false,
-  "findings": [],
+  "description": "PHP repo: PHPStan at Qualor's default level 2 (an undefined variable, a wrong argument count, a void result used, a PHPDoc type that contradicts the native one; the test's unknown PHPUnit symbols are dropped), tree-sitter-php metrics and PHPUnit's Cobertura coverage",
+  "engines": ["phpstan"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "phpstan:variable.undefined", "path": "src/Cart.php", "startLine": 31, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "phpstan:arguments.count", "path": "src/Cart.php", "startLine": 36, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "phpstan:method.void", "path": "src/Cart.php", "startLine": 47, "severity": "medium", "quality": "reliability" },
+    { "ruleKey": "phpstan:parameter.phpDocType", "path": "src/Cart.php", "startLine": 53, "severity": "low", "quality": "maintainability" }
+  ],
   "files": {
     "src/Cart.php": { "language": "php", "kind": "main", "lines": 73, "ncloc": 55, "commentLines": 7, "functions": 7, "classes": 1, "statements": 16, "complexity": 15, "cognitiveComplexity": 6 },
     "tests/CartTest.php": { "language": "php", "kind": "test", "lines": 18, "ncloc": 14, "commentLines": 0, "functions": 1, "classes": 1, "statements": 3, "complexity": 1, "cognitiveComplexity": 0 },
@@ -17,6 +22,8 @@
     "src/Cart.php#cognitiveComplexity": "add if +1, || +1; count foreach +1; label ?: +1; tier switch +1; describe match +1; total 6",
     "tests/CartTest.php#metrics": "a test by **/*Test.php; $cart =, ->add, self::assertSame = 3 statements",
     "templates/list.php#metrics": "every row has code (tags or HTML); the @var docblock is the comment line; foreach (alternative syntax) and the <?= expression are the statements; foreach is the file's one decision",
+    "phpstan#config": "Qualor's phpstan.neon: level 2, phpVersion 80599, no dependencies (no composer.json); tests/CartTest.php's class.notFound (PHPUnit is not installed) and staticMethod.notFound are unknown symbols, dropped",
+    "phpstan#severity": "report-format.md §7.1: parameter.phpDocType (a .phpDocType identifier) is maintainability/low; the rest reliability/medium",
     "coverage": "PHPUnit 11.5.56 + pcov: 21 executable lines of src/Cart.php, 5 covered (19, 22, 56, 58, 61); the report's <source> is /fixture-root/src, resolved to src/Cart.php by its unique basename"
   }
 }

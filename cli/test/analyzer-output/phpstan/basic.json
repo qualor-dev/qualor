@@ -1,0 +1,53 @@
+{
+  "totals": { "errors": 0, "file_errors": 6 },
+  "files": {
+    "/qualor-work/src/src/Cart.php": {
+      "errors": 4,
+      "messages": [
+        {
+          "message": "Undefined variable: $totl",
+          "line": 31,
+          "ignorable": true,
+          "identifier": "variable.undefined"
+        },
+        {
+          "message": "Function strlen invoked with 2 parameters, 1 required.",
+          "line": 36,
+          "ignorable": true,
+          "identifier": "arguments.count"
+        },
+        {
+          "message": "Result of method Shop\\Cart::clear() (void) is used.",
+          "line": 47,
+          "ignorable": true,
+          "identifier": "method.void"
+        },
+        {
+          "message": "PHPDoc tag @param for parameter $total with type string is incompatible with native type int.",
+          "line": 53,
+          "ignorable": true,
+          "identifier": "parameter.phpDocType"
+        }
+      ]
+    },
+    "/qualor-work/src/tests/CartTest.php": {
+      "errors": 2,
+      "messages": [
+        {
+          "message": "Class Shop\\Tests\\CartTest extends unknown class PHPUnit\\Framework\\TestCase.",
+          "line": 10,
+          "ignorable": false,
+          "tip": "Learn more at https://phpstan.org/user-guide/discovering-symbols",
+          "identifier": "class.notFound"
+        },
+        {
+          "message": "Call to an undefined static method Shop\\Tests\\CartTest::assertSame().",
+          "line": 16,
+          "ignorable": true,
+          "identifier": "staticMethod.notFound"
+        }
+      ]
+    }
+  },
+  "errors": []
+}

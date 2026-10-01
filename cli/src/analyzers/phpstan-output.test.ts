@@ -1,5 +1,8 @@
+import { PHPSTAN_VERSION } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
+import { expectedKeys, findingKeys, normalizeRecorded, recorded } from '../../test/analyzers';
 import { createLogger, silentLogger } from '../log';
+import { phpstanAnalyzer } from './phpstan';
 import { phpstanSarif } from './phpstan-output';
 
 const WORK = '/w/qualor-x';
@@ -191,5 +194,18 @@ describe('phpstanSarif (config.md §6, report-format.md §5)', () => {
   it('refuses anything that is not a PHPStan report', () => {
     expect(() => convert({ runs: [] })).toThrow();
     expect(() => convert(null)).toThrow();
+  });
+
+  it("normalises the recorded fixture run into the fixture's phpstan findings", () => {
+    const sarif = phpstanSarif(recorded('phpstan/basic.json'), {
+      input: '/qualor-work/src',
+      workDir: '/qualor-work',
+      version: PHPSTAN_VERSION,
+      withDependencies: false,
+      log: silentLogger,
+    });
+    expect(findingKeys(normalizeRecorded(sarif, phpstanAnalyzer, 'php-basic').findings)).toEqual(
+      expectedKeys('php-basic', 'phpstan'),
+    );
   });
 });
