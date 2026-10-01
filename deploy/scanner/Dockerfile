@@ -88,7 +88,7 @@ RUN sh /tmp/install-weblint.sh && rm -rf /tmp/weblint /tmp/install-weblint.sh
 # tools/analyzers/rubocop/gems.lock (each checked against its SHA-256) and Qualor's runner. The
 # same script installs it in CI (tools/ci.test.ts checks that).
 COPY tools/analyzers/install-rubocop.sh /tmp/
-COPY --chmod=0644 tools/analyzers/rubocop/gems.lock tools/analyzers/rubocop/run.rb /tmp/rubocop/
+COPY --chmod=0644 tools/analyzers/rubocop/gems.lock tools/analyzers/rubocop/licence-gems.lock tools/analyzers/rubocop/run.rb /tmp/rubocop/
 RUN QUALOR_RUBOCOP_SRC=/tmp/rubocop sh /tmp/install-rubocop.sh && rm -rf /tmp/rubocop /tmp/install-rubocop.sh
 
 FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3db8ea4ae263ab4d0c3805933e5355f45 AS jre

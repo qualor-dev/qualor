@@ -765,6 +765,23 @@ describe('install-rubocop.sh (plan 9B)', () => {
     expect(entries.some((e) => e.startsWith(`rubocop ${pinned} `))).toBe(true);
   });
 
+  it('pins the .gem files it takes the default gems’ licence files from (B9-15)', () => {
+    const licenceLock = readFileSync('tools/analyzers/rubocop/licence-gems.lock', 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '' && !l.startsWith('#'));
+    expect(licenceLock.map((e) => e.split(' ')[0])).toEqual(
+      expect.arrayContaining(['prism', 'syntax_suggest']),
+    );
+    for (const e of licenceLock)
+      expect(e, e).toMatch(/^[a-z][a-z0-9_-]* \d+(\.\d+)+ [0-9a-f]{64}$/);
+    expect(script).toContain(
+      'fetch "https://rubygems.org/downloads/$name-$version.gem" "$sha" "licence/$name-$version.gem"',
+    );
+    expect(script).toContain('done <"$SRC/licence-gems.lock"');
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile'])
+      expect(readFileSync(file, 'utf8'), file).toMatch(/rubocop\/licence-gems\.lock/);
+  });
+
   it('pins the same RuboCop as the CLI (packages/shared/src/rules/rubocop.ts)', () => {
     const pinned = /^RUBOCOP_VERSION=(.+)$/m.exec(script)?.[1];
     expect(readFileSync('packages/shared/src/rules/rubocop.ts', 'utf8')).toContain(

@@ -25,7 +25,7 @@ RUN sh /tmp/install-weblint.sh && rm -rf /tmp/weblint /tmp/install-weblint.sh
 # Qualor's Ruby pass into /opt/qualor/rubocop, as deploy/scanner/Dockerfile and CI install it
 # (plan 9B; tools/analyzers/install-rubocop.sh, tools/ci.test.ts).
 COPY install-rubocop.sh /tmp/
-COPY --chmod=0644 rubocop/gems.lock rubocop/run.rb /tmp/rubocop/
+COPY --chmod=0644 rubocop/gems.lock rubocop/licence-gems.lock rubocop/run.rb /tmp/rubocop/
 RUN QUALOR_RUBOCOP_SRC=/tmp/rubocop sh /tmp/install-rubocop.sh && rm -rf /tmp/rubocop /tmp/install-rubocop.sh
 COPY install-dotnet.sh /tmp/install-dotnet.sh
 RUN sh /tmp/install-dotnet.sh && rm /tmp/install-dotnet.sh

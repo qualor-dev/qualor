@@ -7,12 +7,13 @@
 #   gems/      RuboCop and the gems it runs on, each .gem checked against its SHA-256 in
 #              rubocop/gems.lock and installed with `gem install --local --ignore-dependencies`;
 #   run.rb     Qualor's runner, and VERSION, its `--version` line;
-#   licenses/  Ruby's COPYING, BSDL and LEGAL from the same source.
+#   licenses/  Ruby's COPYING, BSDL and LEGAL from the same source, and in gems/ the licence
+#              files of its MIT default gems (rubocop/licence-gems.lock).
 # The same script runs in deploy/scanner/Dockerfile, tools/analyzers/Dockerfile and every CI job
 # that sets QUALOR_REQUIRE_ANALYZERS=1 (tools/ci.test.ts checks). It needs a C compiler, make,
 # curl and the libyaml and zlib headers (Debian: build-essential curl libyaml-dev zlib1g-dev; all
 # present in node:22-bookworm). QUALOR_RUBOCOP_SRC (default: the rubocop/ directory next to this
-# script) holds gems.lock and run.rb.
+# script) holds gems.lock, licence-gems.lock and run.rb.
 #   sh tools/analyzers/install-rubocop.sh
 set -eu
 
@@ -50,7 +51,7 @@ printf '#include <yaml.h>\n#include <zlib.h>\n' | cc -E -x c - >/dev/null 2>&1 |
   die 'the libyaml and zlib headers are required (Debian: libyaml-dev zlib1g-dev)'
 
 rm -rf "$DEST"
-mkdir -p "$DEST/licenses"
+mkdir -p "$DEST/licenses/gems"
 
 # Ruby, from its release source.
 fetch "https://cache.ruby-lang.org/pub/ruby/${RUBY_VERSION%.*}/ruby-$RUBY_VERSION.tar.gz" "$RUBY_SHA256" ruby.tar.gz
@@ -100,6 +101,28 @@ rm -f "$DEFAULT_DIR"/specifications/default/json-*.gemspec
 LIB_DIR="$("$RUBY" -e 'print RbConfig::CONFIG["rubylibdir"]')"
 ARCH_DIR="$("$RUBY" -e 'print RbConfig::CONFIG["archdir"]')"
 rm -rf "$LIB_DIR/json" "$LIB_DIR/json.rb" "$ARCH_DIR/json"
+
+# The licence files of Ruby's MIT default gems, which the built Ruby does not keep: from each
+# release .gem of rubocop/licence-gems.lock (checked against its SHA-256, at the version this Ruby
+# ships), into licenses/gems/<name>-<version>/. Nothing else of those .gem files is installed.
+mkdir -p "$TMP/licence"
+while read -r name version sha; do
+  case "$name" in '' | '#'*) continue ;; esac
+  [ -e "$DEFAULT_DIR/specifications/default/$name-$version.gemspec" ] ||
+    die "licence-gems.lock names $name $version, not a default gem of Ruby $RUBY_VERSION"
+  fetch "https://rubygems.org/downloads/$name-$version.gem" "$sha" "licence/$name-$version.gem"
+  mkdir "$TMP/licence/$name-$version" "$DEST/licenses/gems/$name-$version"
+  tar -xOf "$TMP/licence/$name-$version.gem" data.tar.gz | tar -xzf - -C "$TMP/licence/$name-$version"
+  found=0
+  for file in "$TMP/licence/$name-$version"/*; do
+    base="$(basename "$file")"
+    if [ -f "$file" ] && printf '%s\n' "$base" | grep -Eiq '^(licen[cs]e|copying|bsdl|legal|mit-licen[cs]e)'; then
+      cp "$file" "$DEST/licenses/gems/$name-$version/$base"
+      found=1
+    fi
+  done
+  [ "$found" = 1 ] || die "$name-$version.gem has no licence file"
+done <"$SRC/licence-gems.lock"
 
 # Nothing a scan needs: headers, the static libruby, pkg-config files, gem caches, extension
 # sources, debug symbols.
