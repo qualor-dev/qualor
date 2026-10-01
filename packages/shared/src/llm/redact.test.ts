@@ -289,13 +289,18 @@ describe('redactText: bounded work (no ReDoS)', () => {
     ['app settings', `<add key="password" value="${'v'.repeat(60_000)}`],
     ['app setting keys', `<add key="${'k'.repeat(60_000)}`],
     ['short names', `key=${'A1b!'.repeat(15_000)}(`],
-  ])('stays fast on adversarial %s', (_name, text) => {
-    expect(text.length).toBeLessThanOrEqual(REDACT_MAX_CHARS);
-    const started = performance.now();
-    redactText(text);
-    // Catastrophic backtracking takes far longer; the margin covers a slow CI runner with coverage.
-    expect(performance.now() - started).toBeLessThan(2_500);
-  });
+  ])(
+    'stays fast on adversarial %s',
+    (_name, text) => {
+      expect(text.length).toBeLessThanOrEqual(REDACT_MAX_CHARS);
+      const started = performance.now();
+      redactText(text);
+      // Catastrophic backtracking on these inputs takes minutes; the margin covers a slow, shared CI
+      // runner with coverage (2.5 s was exceeded there), and the test's own timeout stays above it.
+      expect(performance.now() - started).toBeLessThan(5_000);
+    },
+    15_000,
+  );
 
   it('redacts a text over the size cap as a whole', () => {
     expect(redactText(`${GH} ${'x'.repeat(REDACT_MAX_CHARS)}`)).toEqual({
