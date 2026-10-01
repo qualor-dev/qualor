@@ -6,6 +6,11 @@ import sonaranalyzerKeys from '../../../rules/sonaranalyzer-csharp-keys.json' wi
 import sonarjsDefaultKeys from '../../../rules/sonarjs-default-keys.json' with { type: 'json' };
 import sonarjsKeys from '../../../rules/sonarjs-keys.json' with { type: 'json' };
 import raw from '../../../rules/sonarqube.json' with { type: 'json' };
+import {
+  PHPSTAN_NO_DEPENDENCY_IDS,
+  PHPSTAN_UNKNOWN_SYMBOL_IDS,
+  phpstanNotFinding,
+} from '../../rules/phpstan';
 import { engineOf, loadSonarMapping, SONAR_MAPPING } from './rules';
 
 /** Rulings A9-5 and A9-20: the six curated php rows (php:S4143 dropped in review). */
@@ -106,7 +111,12 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
       expect(['equivalent', 'overlap'], id).toContain(row.relation);
       for (const q of row.qualor) {
         expect(q.startsWith('phpstan:'), q).toBe(true);
-        expect(ids.has(q.slice('phpstan:'.length)), q).toBe(true);
+        const identifier = q.slice('phpstan:'.length);
+        expect(ids.has(identifier), q).toBe(true);
+        // A target Qualor never reports would make the imported rule silently inert.
+        expect(PHPSTAN_UNKNOWN_SYMBOL_IDS.has(identifier), q).toBe(false);
+        expect(PHPSTAN_NO_DEPENDENCY_IDS.has(identifier), q).toBe(false);
+        expect(phpstanNotFinding(identifier), q).toBe(false);
       }
       // Ruling A9-5: compared row by row, so committed reviewed.
       expect(row.reviewed, id).toBe(true);
