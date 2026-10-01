@@ -47,16 +47,19 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     // golangci-lint's SonarQube keys are linter names, not checks: never mapped.
     expect(SONAR_MAPPING.targets('external_golangci-lint:govet')).toEqual([]);
     expect(SONAR_MAPPING.targets('go:S1656')).toEqual([
-      { key: 'staticcheck:SA4018', relation: 'equivalent', reviewed: false, source: 'table' },
+      { key: 'staticcheck:SA4018', relation: 'equivalent', reviewed: true, source: 'table' },
     ]);
     // Same idea, different scope (staticcheck leaves float operands and shifts alone): overlap.
     expect(SONAR_MAPPING.targets('go:S1764')).toEqual([
-      { key: 'staticcheck:SA4000', relation: 'overlap', reviewed: false, source: 'table' },
+      { key: 'staticcheck:SA4000', relation: 'overlap', reviewed: true, source: 'table' },
     ]);
     expect(SONAR_MAPPING.targets('go:S9999')).toEqual([]);
   });
 
-  it('names only rule ids the pinned Go tools have in every go row, unreviewed, with our own short reasons (plan 9C)', () => {
+  /** go: rows compared against the SonarQube rule's public description (ruling G9-16). */
+  const GO_REVIEWED = new Set(['go:S1656', 'go:S1764', 'go:S1763', 'go:S108']);
+
+  it('names only rule ids the pinned Go tools have in every go row, reviewed only where compared, with our own short reasons (plan 9C)', () => {
     const known = (key: string) => {
       const [engine, id = ''] = key.split(':');
       if (engine === 'staticcheck') return STATICCHECK_CHECKS.has(id);
@@ -65,13 +68,15 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
       return false;
     };
     const rows = raw.rules.filter((r) => r.sonar.some((s) => s.startsWith('go:')));
-    expect(rows.length).toBe(19);
+    expect(rows.length).toBe(18);
+    // Ruling G9-16: S1125 (scope disjoint from S1002) is not mapped at all.
+    expect(SONAR_MAPPING.targets('go:S1125')).toEqual([]);
     for (const row of rows) {
       expect(
         row.sonar.every((s) => s.startsWith('go:')),
         row.sonar.join(),
       ).toBe(true);
-      expect(row.reviewed, row.sonar.join()).toBe(false);
+      expect(row.reviewed, row.sonar.join()).toBe(GO_REVIEWED.has(row.sonar.join()));
       for (const q of row.qualor) expect(known(q), q).toBe(true);
       // The table schema caps every reason at 120 characters (the "holds no SonarSource text" test).
       expect(row.reason.length, row.sonar.join()).toBeLessThanOrEqual(120);
@@ -299,11 +304,13 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     },
   );
 
-  it('ships every curated non-python entry unreviewed and every python entry reviewed', () => {
-    // python: rows were reviewed on 2026-10-01 (see the file's $comment); the rest await a person.
+  it('ships every python entry and the compared go entries reviewed, and every other curated entry unreviewed', () => {
+    // python: rows and the go: rows with a public SonarQube description were reviewed on
+    // 2026-10-01 (see the file's $comment and ruling G9-16); the rest await a person.
     for (const entry of raw.rules) {
       const python = entry.sonar.every((s) => s.startsWith('python:'));
-      expect(entry.reviewed, entry.sonar.join(',')).toBe(python);
+      const go = GO_REVIEWED.has(entry.sonar.join());
+      expect(entry.reviewed, entry.sonar.join(',')).toBe(python || go);
     }
   });
 

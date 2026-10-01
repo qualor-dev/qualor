@@ -224,7 +224,7 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['swift:S1481']);
   });
 
-  it('plans a go profile: external_govet rows activate go vet analyzers; unreviewed go rows wait (plan 9C)', () => {
+  it('plans a go profile: external_govet rows activate go vet analyzers; reviewed go equivalents activate, overlaps import statuses (plan 9C, G9-16)', () => {
     const plan = planProfile(
       profile({
         language: 'go',
@@ -239,8 +239,11 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     );
     expect(plan.language).toBe('go');
     expect(plan.skip).toBeNull();
-    expect(plan.rows).toEqual([{ ruleKey: 'govet:printf', active: true, severityOverride: null }]);
-    expect(plan.stats.pendingReview).toEqual(['go:S1656']);
+    expect(plan.rows).toEqual([
+      { ruleKey: 'govet:printf', active: true, severityOverride: null },
+      { ruleKey: 'staticcheck:SA4018', active: true, severityOverride: null },
+    ]);
+    expect(plan.stats.pendingReview).toEqual([]);
     expect(plan.stats.statusOnly).toEqual(['go:S1764', 'go:S2068']);
     expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['go:S1135']);
   });
