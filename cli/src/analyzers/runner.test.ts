@@ -429,6 +429,7 @@ describe('runAnalyzers', () => {
       'roslyn',
       'stylelint',
       'htmlhint',
+      'rubocop',
     ] as const;
     // Membership and relative order (config.md §3), never the whole list.
     expect(ids).toEqual(expect.arrayContaining([...order]));

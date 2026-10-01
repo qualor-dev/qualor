@@ -81,6 +81,14 @@ export const DETEKT_JAR = 'detekt-jar';
 const DETEKT_JAR_FILE = '/opt/qualor/lib/detekt/detekt-cli.jar';
 
 /**
+ * A pseudo-tool: Qualor's RuboCop pass in the scanner image's place (config.md §6, plan 9B). Like
+ * the sonarjs pass, its absence is a normal skip on a plain host, and a fixture's scan environment
+ * drops QUALOR_RUBOCOP_DIR, so only the default path is ever checked here.
+ */
+export const RUBOCOP_PASS = 'rubocop-pass';
+const RUBOCOP_PASS_FILES = ['/opt/qualor/rubocop/run.rb', '/opt/qualor/rubocop/ruby/bin/ruby'];
+
+/**
  * The binaries each built-in engine needs (any one of an inner list). The harness checks the same
  * places the CLI does: PATH and the scanner image's /opt/qualor/bin.
  */
@@ -110,6 +118,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   detekt: [['java'], [DETEKT_JAR]],
   // Plan 8F: SwiftLint's static binary, from install.sh (/opt/qualor/bin).
   swiftlint: [['swiftlint']],
+  // Plan 9B: Qualor's RuboCop pass (install-rubocop.sh).
+  rubocop: [[RUBOCOP_PASS]],
 };
 
 /**
@@ -132,6 +142,7 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === SONARJS_PASS) return existsSync(SONARJS_PASS_FILE);
   if (name === DETEKT_JAR) return existsSync(DETEKT_JAR_FILE);
   if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
+  if (name === RUBOCOP_PASS) return RUBOCOP_PASS_FILES.every((f) => existsSync(f));
   return findTool(name, env) !== null;
 }
 
