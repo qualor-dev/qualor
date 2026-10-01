@@ -56,7 +56,6 @@ All notable changes to Qualor are listed here, newest first. The format follows
   `composer install` (scripts and plugins are not needed) before the scan.
 - `phpstan` is now a built-in engine id: a `sarif:` entry with `engine: phpstan` no longer
   validates, and your own PHPStan SARIF import is reported as `ext-phpstan` and counted once.
-- The `qualor/scanner` image is about 25 MB larger (compressed): Debian's PHP 8.2 and PHPStan.
 - `.rb`, `.rake`, `.gemspec`, `.ru`, `Gemfile` and `Rakefile` were language `other`; they now count
   in lines of code, complexity and duplication, which can move the new-code duplication condition.
   `*_spec.rb`, `*_test.rb` and Ruby files below `spec/` and `test/` are test files by default.
@@ -64,7 +63,6 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - `rubocop` is now a built-in engine id: a `sarif:` entry with `engine: rubocop` no longer
   validates. Qualor runs RuboCop itself: remove your own RuboCop SARIF import; one you keep is
   reported as `ext-rubocop` and counts once with the built-in finding.
-- `qualor/scanner` grows by about 9 MB compressed (Ruby and RuboCop).
 - `**/testdata/**` and `**/*.pb.go` are built-in excludes (Trivy's `--skip-dirs` included); the
   `testdata/` exclude applies to every language, so secret and dependency scanning skip it too, and
   `**/*_test.go` files are tests by default. `.go` files were `other` and now count in lines of
@@ -73,11 +71,13 @@ All notable changes to Qualor are listed here, newest first. The format follows
   of them fails validation. A SARIF of your own from staticcheck or gosec becomes `ext-staticcheck`
   or `ext-gosec` and is counted once with the built-in finding; remove it, Qualor runs these tools
   itself.
-- `qualor/scanner` is about 77 MB larger (compressed) with the Go toolchain.
 - `.c`, `.cpp`, `.h` and the other C/C++ files were `other`; they now count as `c` or `cpp` in
   lines of code and duplication. `CMakeFiles/`, `cmake-build-*/` and `_deps/` are built-in
   excludes. `cppcheck` and `clang-tidy` are reserved engine ids (`ext-cppcheck` and
   `ext-clang-tidy` are the names of your own imported SARIF of these tools, and count once).
+- `qualor/scanner` is about 115 MB larger compressed (about 4.1 GB unpacked, was 3.5 GB) with
+  PHP 8.2 and PHPStan, Ruby and RuboCop, the Go toolchain and cppcheck; `qualor/scanner-dotnet`
+  is about 100 MB larger compressed (about 5.8 GB unpacked, was 5.3 GB).
 
 ## [0.3.1] - 2026-10-01
 

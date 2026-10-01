@@ -33,7 +33,7 @@ Everything in `qualor/scanner` stays, the Go analyzers (staticcheck, go vet and 
 - SonarAnalyzer.CSharp 9.32 (SonarQube-compatible rules, `roslyn:S####`), bundled next to
   Roslynator. A project's own reference to SonarAnalyzer.CSharp replaces the bundled one, so there
   is never a duplicate-analyzer error.
-- Runs as the user `node` (uid 1000), like the scanner; about 5.7 GB (about 1.8 GB more than
+- Runs as the user `node` (uid 1000), like the scanner; about 5.8 GB (about 1.7 GB more than
   `qualor/scanner`). It is built from the `qualor/scanner` image of the same tag, and released
   with that tag right after it.
 

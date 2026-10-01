@@ -92,7 +92,7 @@ clang-tidy, scan in the job that built the project, with your own clang-tidy and
   Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
-- Runs as the user `node` (uid 1000) in `/src`; about 3.9 GB. Every base image is pinned by
+- Runs as the user `node` (uid 1000) in `/src`; about 4.1 GB. Every base image is pinned by
   digest.
 
 ### Environment

@@ -35,7 +35,7 @@ machines, put TLS in front of it ([Install the server](./install-server.md#rever
 docker pull qualor/scanner:0.3
 ```
 
-It is about 3.9 GB, and 1.4 GB of that is Trivy's vulnerability database. CI runners pull it the same
+It is about 4.1 GB, and 1.4 GB of that is Trivy's vulnerability database. CI runners pull it the same
 way.
 
 ## 3. Create a project and a token
