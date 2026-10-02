@@ -15,6 +15,9 @@ import { rubocopAnalyzer } from './rubocop';
 import { runAnalyzers } from './runner';
 
 const tmp = useTempDirs();
+// Each test starts the real RuboCop, and Ruby takes seconds to boot: Vitest's 5 s default is too
+// short on a CI runner.
+const TIMEOUT = { timeout: 120_000 };
 
 async function scan(
   root: string,
@@ -65,7 +68,7 @@ function snapshot(dir: string): Map<string, string> {
   );
 }
 
-describeWithRubocop()('RuboCop on untrusted checkouts (real RuboCop, plan 9B)', () => {
+describeWithRubocop()('RuboCop on untrusted checkouts (real RuboCop, plan 9B)', TIMEOUT, () => {
   it('reads no configuration of the checkout, runs nothing of it, fetches nothing and writes nothing', async () => {
     const root = tmp();
     let requests = 0;

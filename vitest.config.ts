@@ -66,6 +66,9 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
+          // The analyzers' *-real tests run here too and load a CI runner's CPU: with Vitest's
+          // 5 s default, light tests in other files timed out at random (PR #13). 30 s, as db.
+          testTimeout: 30_000,
           include: ['**/*.test.ts'],
           exclude: [
             ...ignored,

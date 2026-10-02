@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -189,16 +190,24 @@ describe('startEmbeddedPostgres', () => {
   it.skipIf(process.platform === 'win32')(
     'kills PostgreSQL when a fast shutdown does not finish in time',
     async () => {
+      // The fake writes `ready` once it ignores SIGINT, and the probe waits for that file: on a
+      // busy CI runner Node can take longer to boot than a fixed delay, and a SIGINT sent before
+      // the handler exists stops the fake at once (`signal SIGINT`).
+      const ready = path.join(dataDir, 'fake-postgres-ready');
       const embedded = await startEmbeddedPostgres({
         dataDir,
         postgresDir,
         logger,
         lease: { settleMs: 0 },
         spawnPostgres: fakePostgres(
-          "process.on('SIGINT', () => {}); console.log('up'); setInterval(() => {}, 1000)",
+          `process.on('SIGINT', () => {}); require('node:fs').writeFileSync(${JSON.stringify(ready)}, ''); setInterval(() => {}, 1000)`,
         ),
         probe: async () => {
-          await new Promise((resolve) => setTimeout(resolve, 200));
+          const deadline = Date.now() + 30_000;
+          while (!existsSync(ready)) {
+            if (Date.now() > deadline) throw new Error('the fake PostgreSQL never got ready');
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
         },
         stopTimeoutMs: 300,
       });
