@@ -515,20 +515,39 @@ async function main(): Promise<void> {
     );
     if (fromServer !== 'open')
       throw new Error(`bundled: a server reaching PostgreSQL got ${fromServer || 'no answer'}`);
-    const fromOther = parseReach(
+    // Read from the pod's log once it has finished: `kubectl run --attach` loses the output of a
+    // pod that ends before the attach, which failed this check at random with "no result".
+    let fromOther: string;
+    try {
       kubectl([
         '-n',
         'bundled',
         'run',
         'qualor-netcheck',
-        '--rm',
-        '--attach',
-        '--quiet',
         '--restart=Never',
         `--image=${SERVER_IMAGE}`,
         `--overrides=${netCheckOverrides(SERVER_IMAGE, 'qualor-postgres')}`,
-      ]).stdout,
-    );
+      ]);
+      kubectl([
+        '-n',
+        'bundled',
+        'wait',
+        '--for=jsonpath={.status.phase}=Succeeded',
+        'pod/qualor-netcheck',
+        '--timeout=120s',
+      ]);
+      fromOther = parseReach(kubectl(['-n', 'bundled', 'logs', 'qualor-netcheck']).stdout);
+    } finally {
+      kubectl([
+        '-n',
+        'bundled',
+        'delete',
+        'pod',
+        'qualor-netcheck',
+        '--ignore-not-found',
+        '--wait=false',
+      ]);
+    }
     if (fromOther === 'open' || fromOther === '') {
       throw new Error(
         `bundled: the NetworkPolicy let a pod without the server's labels reach PostgreSQL (${fromOther || 'no result'})`,
