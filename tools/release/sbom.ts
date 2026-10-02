@@ -6,6 +6,14 @@
 export const SBOM_IMAGES = ['server', 'scanner', 'scanner-dotnet'] as const;
 /** For a `registry:` source on the dry-run registry only, which speaks plain HTTP. */
 export const REGISTRY_SOURCE_ENV = { SYFT_REGISTRY_INSECURE_USE_HTTP: 'true' };
+/**
+ * Where Syft unpacks an image's layers, relative to the repository (/work in the toolbox). The
+ * toolbox's /tmp is a 4 GiB tmpfs, smaller than qualor/scanner-dotnet, so image scans use a
+ * directory on the runner's disk instead.
+ */
+export const SYFT_IMAGE_TMP = '.tmp/syft';
+/** The toolbox environment of an image scan: its temporary files go to {@link SYFT_IMAGE_TMP}. */
+export const SYFT_IMAGE_ENV = { TMPDIR: `/work/${SYFT_IMAGE_TMP}` };
 
 export const syftArgs = (source: string, out: string): string[] => [
   'scan',
