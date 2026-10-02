@@ -43,6 +43,17 @@ async function demoSession(ctx: TestContext): Promise<Record<string, string>> {
   return { cookie: `${SESSION_COOKIE}=${cookie}`, 'x-qualor-csrf': csrf };
 }
 
+/** Account states that take the demo off the sign-in page, and how to undo each. */
+const UNUSABLE = [
+  { name: 'an instance admin', set: { isInstanceAdmin: true }, reset: { isInstanceAdmin: false } },
+  { name: 'an inactive account', set: { active: false }, reset: { active: true } },
+  {
+    name: 'a forced password change',
+    set: { passwordChangeRequired: true },
+    reset: { passwordChangeRequired: false },
+  },
+] as const;
+
 describe('the demo sign-in (QUALOR_DEMO_USER)', () => {
   describe('without QUALOR_DEMO_USER', () => {
     let ctx: TestContext;
@@ -153,40 +164,24 @@ describe('the demo sign-in (QUALOR_DEMO_USER)', () => {
     it('offers no demo while the account is more than a viewer anywhere, or not usable', async () => {
       const admin = await login(ctx, 'admin', ADMIN_PASSWORD);
       const project = await createProject(ctx, admin, { organizationId: org, key: 'demo-grant' });
-      const cases: { name: string; apply: () => Promise<unknown>; undo: () => Promise<unknown> }[] =
-        [
-          {
-            name: 'a member project grant',
-            apply: () =>
-              ctx.db
-                .insert(projectMemberships)
-                .values({ projectId: project.id, userId: guest.id, role: 'member' }),
-            undo: () =>
-              ctx.db.delete(projectMemberships).where(eq(projectMemberships.userId, guest.id)),
-          },
-          ...(
-            [
-              ['an instance admin', { isInstanceAdmin: true }, { isInstanceAdmin: false }],
-              ['an inactive account', { active: false }, { active: true }],
-              [
-                'a forced password change',
-                { passwordChangeRequired: true },
-                { passwordChangeRequired: false },
-              ],
-            ] as const
-          ).map(([name, set, reset]) => ({
-            name,
-            apply: () => ctx.db.update(users).set(set).where(eq(users.id, guest.id)),
-            undo: () => ctx.db.update(users).set(reset).where(eq(users.id, guest.id)),
-          })),
-        ];
-      for (const c of cases) {
-        await c.apply();
+      const expectNoDemo = async (why: string) => {
+        expect((await methods(ctx)).demo, why).toBe(false);
+        expect((await demoRequest(ctx)).statusCode, why).toBe(404);
+      };
+      await ctx.db
+        .insert(projectMemberships)
+        .values({ projectId: project.id, userId: guest.id, role: 'member' });
+      try {
+        await expectNoDemo('a member project grant');
+      } finally {
+        await ctx.db.delete(projectMemberships).where(eq(projectMemberships.userId, guest.id));
+      }
+      for (const { name, set, reset } of UNUSABLE) {
+        await ctx.db.update(users).set(set).where(eq(users.id, guest.id));
         try {
-          expect((await methods(ctx)).demo, c.name).toBe(false);
-          expect((await demoRequest(ctx)).statusCode, c.name).toBe(404);
+          await expectNoDemo(name);
         } finally {
-          await c.undo();
+          await ctx.db.update(users).set(reset).where(eq(users.id, guest.id));
         }
       }
       // A viewer grant is fine.
