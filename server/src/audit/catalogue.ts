@@ -152,7 +152,7 @@ export const AUDIT_CATALOGUE = {
   'auth.sign_in': {
     target: 'user',
     details: z.strictObject({
-      method: z.enum(['password', 'oidc', 'saml']),
+      method: z.enum(['password', 'oidc', 'saml', 'demo']),
       connectionId: id.optional(),
       forced: z.literal(true).optional(),
     }),

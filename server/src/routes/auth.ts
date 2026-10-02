@@ -7,6 +7,12 @@ import { actorOf, anonymousActor, userActor } from '../audit/recorder';
 import { accessOf, requirePrincipal, requireSession, requireUser } from '../auth/access';
 import { passwordChangeRequired } from '../auth/authenticate';
 import {
+  DEMO_SESSION_MAX_HOURS,
+  deleteExpiredSessions,
+  demoAccount,
+  isDemoUser,
+} from '../auth/demo';
+import {
   grantInOrganization,
   memberOf,
   organizationFacts,
@@ -81,6 +87,8 @@ const meResponse = z.object({
     }),
   ),
   csrfToken: z.string().nullable(),
+  /** The caller is the read-only demo account (QUALOR_DEMO_USER): it may change nothing. */
+  demo: z.boolean(),
 });
 
 const methodsResponse = z.object({
@@ -95,6 +103,8 @@ const methodsResponse = z.object({
       startUrl: z.string(),
     }),
   ),
+  /** Whether guests may sign in to the read-only demo (`POST /auth/demo`). */
+  demo: z.boolean(),
 });
 
 function setSessionCookie(
@@ -242,7 +252,53 @@ export const authRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
           protocol: p.protocol,
           startUrl: `/api/v0/ee/sso/${p.id}/start`,
         })),
+        demo: (await demoAccount(deps.db, deps.config.demoUser)) !== null,
       };
+    },
+  );
+
+  app.post(
+    '/auth/demo',
+    {
+      config: {
+        public: true,
+        rateLimit: { max: LOGIN_ATTEMPTS_PER_MINUTE, timeWindow: 60_000 },
+        openapi: { problems: [404, 429] },
+      },
+      schema: {
+        tags: ['auth'],
+        summary:
+          'Sign in to the read-only demo as QUALOR_DEMO_USER; sets the qualor_session cookie',
+        security: [],
+        response: { 204: noContent },
+      },
+    },
+    async (request, reply) => {
+      const user = await demoAccount(deps.db, deps.config.demoUser);
+      if (!user) throw new ProblemError(404, 'DEMO_UNAVAILABLE', 'This server has no demo');
+      // As a password sign-in: a session id the client brought is never kept.
+      const presented = request.cookies[SESSION_COOKIE];
+      const session = await deps.db.transaction(async (tx) => {
+        if (presented) await deleteSession(tx, presented);
+        await deleteExpiredSessions(tx, user.id);
+        const created = await createSession(tx, {
+          userId: user.id,
+          ttlHours: Math.min(deps.config.sessionTtlHours, DEMO_SESSION_MAX_HOURS),
+          ip: request.ip,
+          userAgent: request.headers['user-agent'] ?? null,
+        });
+        await tx.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
+        await deps.audit.record(tx, userActor(request, user), [
+          {
+            action: 'auth.sign_in',
+            target: { type: 'user', id: user.id, label: user.username },
+            details: { method: 'demo' },
+          },
+        ]);
+        return created;
+      });
+      setSessionCookie(request, reply, session.secret, session.expiresAt);
+      return reply.code(204).send();
     },
   );
 
@@ -330,6 +386,7 @@ export const authRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
           principal.kind === 'session'
             ? csrfTokenFor(deps.config.secretKey, principal.sessionSecret)
             : null,
+        demo: isDemoUser(deps.config.demoUser, user),
       };
     },
   );

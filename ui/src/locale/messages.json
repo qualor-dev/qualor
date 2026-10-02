@@ -59,6 +59,8 @@
     "password.currentWrong": "The current password is not correct.",
     "password.newRejected": "Choose a new password that differs from the current one.",
     "login.title": "Sign in to Qualor",
+    "login.demo": " Explore the demo ",
+    "login.demoHint": "No account needed. The demo is read-only.",
     "login.sso": "Sign in with {$INTERPOLATION}",
     "login.emergency": " Emergency administrator sign-in ",
     "login.or": "or sign in with a password",
@@ -1801,6 +1803,7 @@
     "shell.signOut": "Sign out",
     "shell.versionEnterprise": "Qualor {$INTERPOLATION} · Enterprise",
     "shell.versionCommunity": "Qualor {$INTERPOLATION} · Community",
+    "shell.demoBanner": " You are exploring a read-only demo of Qualor. Look around: nothing you do here changes it. ",
     "ssoBanner.forced": " Password sign-in is forced on by QUALOR_FORCE_PASSWORD_SIGN_IN. Remove it once single sign-on works again. "
   }
 }

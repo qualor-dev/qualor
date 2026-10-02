@@ -61,6 +61,12 @@ export class AuthService {
     return this.refresh();
   }
 
+  /** `POST /auth/demo` (public): signs in to the read-only demo, without a password. */
+  async demo(): Promise<Me | null> {
+    await done(this.api.client.POST('/api/v0/auth/demo'));
+    return this.refresh();
+  }
+
   async logout(): Promise<void> {
     try {
       await done(this.api.client.POST('/api/v0/auth/logout'));

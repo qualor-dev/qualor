@@ -44,11 +44,13 @@
           <strong>{{ user.displayName || user.username }}</strong>
           <span class="muted">{{ user.username }}</span>
         </p>
-        <a routerLink="/change-password" (click)="closeMenu(menu)"
-          ><q-icon name="key" /><ng-container i18n="@@shell.changePassword"
-            >Change password</ng-container
-          ></a
-        >
+        @if (!session.demo()) {
+          <a routerLink="/change-password" (click)="closeMenu(menu)"
+            ><q-icon name="key" /><ng-container i18n="@@shell.changePassword"
+              >Change password</ng-container
+            ></a
+          >
+        }
         <button type="button" (click)="closeMenu(menu); logout()">
           <q-icon name="log-out" /><ng-container i18n="@@shell.signOut">Sign out</ng-container>
         </button>
@@ -71,6 +73,13 @@
 </header>
 <q-license-banner />
 <q-sso-banner />
+@if (session.demo()) {
+  <div class="license-banner" role="status" data-test="demo-banner">
+    <p i18n="@@shell.demoBanner">
+      You are exploring a read-only demo of Qualor. Look around: nothing you do here changes it.
+    </p>
+  </div>
+}
 <main #main id="main" class="app-main" tabindex="-1">
   <router-outlet />
 </main>

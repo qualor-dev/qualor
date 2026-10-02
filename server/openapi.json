@@ -418,13 +418,61 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "demo": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "password",
-                    "providers"
+                    "providers",
+                    "demo"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (RATE_LIMITED); see Retry-After",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/auth/demo": {
+      "post": {
+        "summary": "Sign in to the read-only demo as QUALOR_DEMO_USER; sets the qualor_session cookie",
+        "tags": [
+          "auth"
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -676,13 +724,17 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "demo": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "user",
                     "memberships",
                     "projectGrants",
-                    "csrfToken"
+                    "csrfToken",
+                    "demo"
                   ],
                   "additionalProperties": false
                 }

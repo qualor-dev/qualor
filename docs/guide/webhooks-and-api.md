@@ -97,7 +97,7 @@ q "$QUALOR_URL/api/v0/issues?branchId=<id>&severity=blocker&severity=high&inNewC
 | Issues | `GET /issues`, `GET /issues/{id}`, `POST /issues/{id}/transition`, `POST /issues/bulk-transition`, `PATCH /issues/{id}` (severity), `GET /issues/{id}/changelog` |
 | Rules, profiles, gates | `GET /rules`, `/quality-profiles…`, `/quality-gates…` (conditions, copy, set-default), `GET /metrics` |
 | Users and organisations | `GET/POST/PATCH /users` (each user with `hasPassword` and `sso`; `GET /users?signIn=no-password`), `GET /users/lookup?username=`, `GET /organizations`, `…/members` (each with `managedBy`) |
-| Sign-in | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `GET /auth/methods` (public: the password policy and the single sign-on buttons) |
+| Sign-in | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `GET /auth/methods` (public: the password policy, the single sign-on buttons and whether there is a demo), `POST /auth/demo` (public: signs in to the [read-only demo](./users-projects-tokens.md#a-public-read-only-demo)) |
 | SCM | `GET/POST/PATCH/DELETE /scm-connections`, `POST /scm-connections/{id}/test` |
 | Webhooks | `/webhooks…`, `/webhooks/{id}/deliveries`, `…/redeliver`, `…/regenerate-secret` |
 | AI assistant | `POST /issues/{id}/ai/{explain,triage,fix}`, `GET /issues/{id}/ai`, `GET /ai-requests/{id}`, `POST /ai-requests/{id}/post`, `GET /organizations/{id}/ai`; instance admins: `GET/PUT /system/llm`, `POST /system/llm/test` ([AI assistant](./ai-assistant.md)) |
@@ -131,7 +131,7 @@ whether one is set (`clientSecretSet`, `spKeySet`).
 
 | Endpoint | What it does |
 |---|---|
-| `GET /auth/methods` | public: `password` (`everyone` or `break_glass_only`, as it applies now) and `providers`, the connections in effect with their `startUrl` (every enabled one with `sso.multi`, else the oldest enabled one), empty while `sso` is not licensed |
+| `GET /auth/methods` | public: `password` (`everyone` or `break_glass_only`, as it applies now) and `providers`, the connections in effect with their `startUrl` (every enabled one with `sso.multi`, else the oldest enabled one), empty while `sso` is not licensed; and `demo`, whether the sign-in page offers the [read-only demo](./users-projects-tokens.md#a-public-read-only-demo) |
 | `GET/POST /ee/sso/connections`, `GET/PATCH/DELETE /ee/sso/connections/{id}` | the connections (at most 10). An answer's `urls` holds the values to copy into the IdP, or `null` while `QUALOR_PUBLIC_URL` is unset; `inEffect` says whether the connection signs people in ([One connection or several](./sso-and-scim.md#one-connection-or-several)) |
 | `POST /ee/sso/connections/{id}/test` | OIDC: reads discovery and the JWKS now, and lists the endpoints (the authorization endpoint the browser opens, and those Qualor will call); SAML: the certificates' fingerprints and expiry, and whether the SSO URL is allowed |
 | `POST /ee/sso/connections/{id}/saml/metadata` | reads the IdP's metadata URL and answers what it holds, for review; saving is a `PATCH` |

@@ -41,6 +41,7 @@ describe('loadConfig', () => {
       forcePasswordSignIn: false,
       license: { text: null, file: null },
       pluginPaths: [],
+      demoUser: null,
     });
   });
 
@@ -287,4 +288,27 @@ describe('SSO variables (sso-scim.md §10.4, §14)', () => {
       );
     },
   );
+});
+
+describe('QUALOR_DEMO_USER', () => {
+  it('is off when unset or blank', () => {
+    expect(loadConfig(base).demoUser).toBeNull();
+    expect(loadConfig({ ...base, QUALOR_DEMO_USER: '  ' }).demoUser).toBeNull();
+  });
+
+  it('reads a username, trimmed', () => {
+    expect(loadConfig({ ...base, QUALOR_DEMO_USER: ' guest ' }).demoUser).toBe('guest');
+  });
+
+  it('refuses what is not a username', () => {
+    expect(() => loadConfig({ ...base, QUALOR_DEMO_USER: 'no spaces' })).toThrow(
+      /QUALOR_DEMO_USER/,
+    );
+  });
+
+  it('refuses the bootstrap administrator', () => {
+    expect(() => loadConfig({ ...base, QUALOR_DEMO_USER: 'admin' })).toThrow(
+      /QUALOR_DEMO_USER: must not be the bootstrap administrator/,
+    );
+  });
 });

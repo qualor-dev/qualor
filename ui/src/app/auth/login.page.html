@@ -4,6 +4,25 @@
     @if (ssoErrorMessage(); as message) {
       <p class="alert alert-error" role="alert" data-test="sso-error">{{ message }}</p>
     }
+    @if (demo()) {
+      <div class="auth-providers" data-test="demo">
+        <button
+          type="button"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          (click)="enterDemo()"
+          i18n="@@login.demo"
+        >
+          Explore the demo
+        </button>
+        <p class="muted" i18n="@@login.demoHint">No account needed. The demo is read-only.</p>
+      </div>
+      @if (error(); as message) {
+        @if (!showForm()) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+      }
+    }
     @if (providers().length > 0) {
       <div class="auth-providers">
         @for (p of providers(); track p.id) {
@@ -31,7 +50,7 @@
       </p>
     }
     @if (showForm()) {
-      @if (providers().length > 0) {
+      @if (providers().length > 0 || demo()) {
         <p class="auth-or" i18n="@@login.or">or sign in with a password</p>
       }
       <form

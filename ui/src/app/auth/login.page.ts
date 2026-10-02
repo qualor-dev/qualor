@@ -21,7 +21,7 @@ import { safeReturnUrl } from './guards';
 import { ssoErrorText } from './sso-text';
 
 /** What a server that cannot say (an older one, or a failed request) allows: passwords only. */
-const PASSWORD_ONLY: AuthMethods = { password: 'everyone', providers: [] };
+const PASSWORD_ONLY: AuthMethods = { password: 'everyone', providers: [], demo: false };
 
 @Component({
   selector: 'q-login-page',
@@ -57,6 +57,8 @@ export class LoginPage {
   protected readonly showForm = computed(
     () => this.methods() !== undefined && (!this.folded() || this.unfolded()),
   );
+  /** The server lets guests look around a read-only demo (`QUALOR_DEMO_USER`). */
+  protected readonly demo = computed(() => this.methods()?.demo === true);
   protected readonly ssoErrorMessage = computed(() => {
     const code = this.ssoError();
     return code ? ssoErrorText(code) : null;
@@ -97,6 +99,21 @@ export class LoginPage {
     afterNextRender(() => this.usernameField()?.nativeElement.focus(), {
       injector: this.injector,
     });
+  }
+
+  /** Signs in to the read-only demo and goes where the visitor was heading. */
+  protected async enterDemo(): Promise<void> {
+    if (this.busy()) return;
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      await this.auth.demo();
+      await this.router.navigateByUrl(safeReturnUrl(this.returnUrl()));
+    } catch (err) {
+      this.error.set(problemMessage(err));
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   protected async submit(event: Event): Promise<void> {

@@ -88,8 +88,9 @@ Grouped in plain words (the raw name behind each group, such as `member.role_cha
 **Settings → Audit log**'s Actions filter and the API's `action` parameter match, exactly or as a
 prefix ending in `.*`, for example `issue.*`):
 
-- **Signing in and out:** a sign-in (with a password, or through single sign-on with the
-  connection it used; one that only `QUALOR_FORCE_PASSWORD_SIGN_IN` allowed is marked `forced`), a
+- **Signing in and out:** a sign-in (with a password, to the
+  [read-only demo](./users-projects-tokens.md#a-public-read-only-demo) as `demo`, or through single
+  sign-on with the connection it used; one that only `QUALOR_FORCE_PASSWORD_SIGN_IN` allowed is marked `forced`), a
   failed attempt (see below; a correct password refused because only break-glass admins may use
   one has the reason `password_disabled`), a sign-out, a password change, and each start of the
   server with `QUALOR_FORCE_PASSWORD_SIGN_IN=true` (`auth.password_sign_in_forced`).

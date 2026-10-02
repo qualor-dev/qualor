@@ -44,6 +44,7 @@ export async function openApiDocument(plugins?: OpenApiPlugins): Promise<unknown
     // The committed document is generated without a licence or plugins (enterprise.md §10.2).
     license: { text: null, file: null },
     pluginPaths: [],
+    demoUser: null,
   };
   const loaded = plugins ? await plugins(database.db, config) : {};
   const app = await buildApp({

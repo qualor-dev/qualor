@@ -12,6 +12,7 @@ import {
 import { Api, done, ok } from '../api/api';
 import { fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
+import { SessionStore } from '../auth/session';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus, rowAt } from '../shared/focus';
@@ -59,6 +60,8 @@ export class TokensPage {
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  /** The read-only demo account may not create tokens (the server refuses it). */
+  protected readonly demo = inject(SessionStore).demo;
   protected readonly list = new KeysetList<Token, null>((_p, cursor) =>
     ok(
       this.api.client.GET('/api/v0/tokens', {

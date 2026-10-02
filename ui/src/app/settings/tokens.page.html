@@ -6,9 +6,11 @@
       you.
     </p>
   </div>
-  <button type="button" class="btn btn-primary" (click)="openCreate()">
-    <q-icon name="plus" /><ng-container i18n="@@tokens.newOpen">New token</ng-container>
-  </button>
+  @if (!demo()) {
+    <button type="button" class="btn btn-primary" (click)="openCreate()">
+      <q-icon name="plus" /><ng-container i18n="@@tokens.newOpen">New token</ng-container>
+    </button>
+  }
 </div>
 <div role="status">
   @if (announcement(); as message) {

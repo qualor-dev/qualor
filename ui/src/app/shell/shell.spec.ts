@@ -82,6 +82,19 @@ describe('Shell', () => {
     expect([...(select?.options ?? [])].map((o) => o.textContent)).toEqual(['Default', 'Acme']);
   });
 
+  it('shows the demo banner and no password change to the demo account only', async () => {
+    const fixture = TestBed.createComponent(Shell);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[data-test=demo-banner]')).toBeNull();
+    expect(root.querySelector('a[href="/change-password"]')).not.toBeNull();
+    TestBed.inject(SessionStore).set(me({ demo: true }));
+    await settle(fixture);
+    expect(root.querySelector('[data-test=demo-banner]')?.textContent).toContain('read-only demo');
+    expect(root.querySelector('[data-test=demo-banner]')?.getAttribute('role')).toBe('status');
+    expect(root.querySelector('a[href="/change-password"]')).toBeNull();
+  });
+
   it('signs out through the API with the CSRF token and opens the login page', async () => {
     server.on('POST', '/api/v0/auth/logout', { status: 204 });
     const fixture = TestBed.createComponent(Shell);
