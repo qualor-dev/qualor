@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../app';
 import { ProblemError, unauthenticated } from '../http/problem';
+import { isDemoUser } from './demo';
 import { resolveRequestPrincipal, type UserPrincipal } from './principal';
 import { csrfTokenFor, isSsoSession, safeEqual, SESSION_COOKIE } from './sessions';
 
@@ -10,6 +11,8 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * made or with a personal token. An SSO session was not made with that password: it is not held
  * up, and the flag stays for their next password sign-in.
  */
+/** The one change the demo account may make: signing out. */
+const ALLOWED_TO_DEMO = new Set(['/api/v0/auth/logout']);
 const ALLOWED_BEFORE_PASSWORD_CHANGE = new Set([
   '/api/v0/auth/me',
   '/api/v0/auth/me/password',
@@ -21,7 +24,8 @@ const ALLOWED_BEFORE_PASSWORD_CHANGE = new Set([
  * { public: true }` routes skip authentication entirely, everything else needs a valid principal
  * (401 before the body is parsed), then cookie-authenticated mutations need a matching
  * X-Qualor-CSRF header (403), then users flagged `passwordChangeRequired` may only reach the
- * handful of routes that let them change it (403), unless an SSO sign-in made the session.
+ * handful of routes that let them change it (403), unless an SSO sign-in made the session. The
+ * demo account (QUALOR_DEMO_USER) may change nothing but sign out (403), whatever its role.
  */
 export function installAuthentication(app: FastifyInstance, deps: RouteDeps): void {
   app.decorateRequest('principal', null);
@@ -40,6 +44,14 @@ export function installAuthentication(app: FastifyInstance, deps: RouteDeps): vo
       if (typeof header !== 'string' || !safeEqual(header, expected)) {
         throw new ProblemError(403, 'CSRF_FAILED', 'Missing or invalid X-Qualor-CSRF header');
       }
+    }
+    if (
+      principal.kind !== 'project' &&
+      MUTATING.has(request.method) &&
+      isDemoUser(deps.config.demoUser, principal.user) &&
+      !ALLOWED_TO_DEMO.has(request.routeOptions.url ?? '')
+    ) {
+      throw new ProblemError(403, 'DEMO_READ_ONLY', 'The demo is read-only');
     }
     if (
       principal.kind !== 'project' &&

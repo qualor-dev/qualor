@@ -64,8 +64,8 @@ describe('password sign-in with SSO (sso-scim.md §10–§11, §16)', () => {
         },
       ],
     });
-    // §16.1: it names no user and no setting beyond these.
-    expect(Object.keys(res.json()).sort()).toEqual(['password', 'providers']);
+    // §16.1: it names no user and no setting beyond these (`demo` is a yes or no, never the name).
+    expect(Object.keys(res.json()).sort()).toEqual(['demo', 'password', 'providers']);
     expect(Object.keys(res.json().providers[0]).sort()).toEqual([
       'id',
       'name',
@@ -225,6 +225,7 @@ describe('password sign-in with SSO (sso-scim.md §10–§11, §16)', () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/api/v0/auth/methods' })).json()).toEqual({
       password: 'everyone',
       providers: [],
+      demo: false,
     });
     now = new Date('2027-01-01T00:00:00Z');
   });
@@ -321,7 +322,7 @@ describe('without sso (community)', () => {
       await createUser(ctx, { username: 'frank' });
       expect((await login(ctx, 'frank', DEFAULT_TEST_PASSWORD)).statusCode).toBe(204);
       expect((await ctx.app.inject({ method: 'GET', url: '/api/v0/auth/methods' })).json()).toEqual(
-        { password: 'everyone', providers: [] },
+        { password: 'everyone', providers: [], demo: false },
       );
     } finally {
       await ctx.close();

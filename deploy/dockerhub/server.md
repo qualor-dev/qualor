@@ -96,6 +96,7 @@ process, plus its own PostgreSQL 18, which it starts itself and keeps on the vol
 | `QUALOR_TRUST_PROXY`                                                 | off               | the reverse proxies in front of the server: a hop count or a comma-separated list of IPs and CIDRs                |
 | `QUALOR_LOG_LEVEL`                                                   | `info`            | log level                                                                                                         |
 | `QUALOR_SESSION_TTL_HOURS`                                           | `168`             | browser session lifetime                                                                                          |
+| `QUALOR_DEMO_USER`                                                   | none              | a user anyone may sign in as, read-only and without a password, with **Explore the demo** on the sign-in page     |
 | `QUALOR_UPLOAD_MAX_COMPRESSED_BYTES`                                 | 50 MiB            | report upload limit as sent                                                                                       |
 | `QUALOR_UPLOAD_MAX_DECOMPRESSED_BYTES`                               | 500 MiB           | report upload limit decompressed (also the maximum)                                                               |
 | `QUALOR_MAX_CONCURRENT_UPLOADS`                                      | `4`               | uploads read at once                                                                                              |

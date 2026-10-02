@@ -123,6 +123,7 @@ describe('LoginPage single sign-on (sso-scim.md §18)', () => {
   type Methods = {
     password: 'everyone' | 'break_glass_only';
     providers: { id: string; name: string; protocol: 'oidc' | 'saml'; startUrl: string }[];
+    demo?: boolean;
   };
 
   /** Answers `GET /auth/methods` with `answer` (a status alone is a failure) and renders. */
@@ -140,6 +141,38 @@ describe('LoginPage single sign-on (sso-scim.md §18)', () => {
     await settle(fixture);
     return { fixture, el: fixture.nativeElement as HTMLElement };
   }
+
+  it('offers no demo unless the server has one', async () => {
+    const { el } = await render({ password: 'everyone', providers: [] });
+    expect(el.querySelector('[data-test=demo]')).toBeNull();
+  });
+
+  it('signs in to the demo without a password, above the form, then goes to the return URL', async () => {
+    server.on('POST', '/api/v0/auth/demo', { status: 204 });
+    server.on('GET', '/api/v0/auth/me', { body: me({ demo: true }) });
+    const { fixture, el } = await render({ password: 'everyone', providers: [], demo: true });
+    const button = el.querySelector<HTMLButtonElement>('[data-test=demo] button')!;
+    expect(button.textContent).toContain('Explore the demo');
+    const form = el.querySelector('form[data-test=password-form]')!;
+    expect(button.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(el.textContent).toContain('or sign in with a password');
+    button.click();
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/auth/demo')).toHaveLength(1);
+    expect(TestBed.inject(Router).url).toBe('/projects');
+  });
+
+  it('says why when the demo cannot be entered', async () => {
+    server.on('POST', '/api/v0/auth/demo', {
+      status: 404,
+      body: problem(404, 'DEMO_UNAVAILABLE'),
+    });
+    const { fixture, el } = await render({ password: 'everyone', providers: [], demo: true });
+    el.querySelector<HTMLButtonElement>('[data-test=demo] button')!.click();
+    await settle(fixture);
+    expect(el.querySelector('[role=alert]')).not.toBeNull();
+    expect(TestBed.inject(Router).url).toBe('/');
+  });
 
   it('shows a button per provider above the password form', async () => {
     const { el } = await render({

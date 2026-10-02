@@ -12,6 +12,8 @@ export class SessionStore {
   readonly me = signal<Me | null | undefined>(undefined);
   readonly user = computed(() => this.me()?.user ?? null);
   readonly csrfToken = computed(() => this.me()?.csrfToken ?? null);
+  /** Signed in to the read-only demo (QUALOR_DEMO_USER): the server refuses every change. */
+  readonly demo = computed(() => this.me()?.demo === true);
 
   set(me: Me | null): void {
     this.me.set(me);

@@ -49,6 +49,29 @@ curl -fsS -X PUT -H "Authorization: Bearer $QUALOR_ADMIN_TOKEN" -H 'Content-Type
 Roles on a single project use `/api/v0/projects/<project id>/members/<user id>` the same way (see
 [Roles and the audit log](./roles-and-audit.md#managing-members)).
 
+### A public, read-only demo
+
+To let anyone look around a server without an account, create a user (for example `guest`, with
+any long password nobody needs to know), give it the **Viewer** role in the organisations it may
+see, and set `QUALOR_DEMO_USER=guest` ([Server settings](./install-server.md#server-settings)).
+The sign-in page then shows **Explore the demo**, which signs the visitor in as that user without
+a password.
+
+- **Read-only, whatever happens.** The server refuses every change made as the demo user with 403
+  `DEMO_READ_ONLY`, even if someone later gives it a higher role or signs in with its password: no
+  triage, no AI requests, no tokens, no password change. Signing out still works.
+- **Shown only while it is safe.** The button appears, and `POST /api/v0/auth/demo` works, only
+  while the user exists, is active, is no instance admin, needs no password change, and holds no
+  role above Viewer anywhere, on single projects included. Otherwise the button is gone and the
+  call answers 404 `DEMO_UNAVAILABLE`.
+- **Short sessions.** A demo session lasts at most 24 hours (less if `QUALOR_SESSION_TTL_HOURS` is
+  shorter), and the demo user's expired sessions are removed at each new demo sign-in. Demo
+  sign-ins are rate-limited per address like password sign-ins, and recorded in the audit log with
+  the method `demo`.
+
+The visitor sees everything a Viewer of those organisations sees: the projects' code, issues and
+AI answers already given. Give the demo user only organisations whose code may be public.
+
 ### Single sign-on users
 
 With an enterprise licence listing `sso`, people can also sign in through your identity provider,

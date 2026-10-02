@@ -112,7 +112,9 @@ export const MEMBER_PROJECT_PERMISSIONS = [
 /** A viewer's permissions on a project: reading only. */
 export const VIEWER_PROJECT_PERMISSIONS = ['project.read'] as const;
 
-export function me(overrides: { passwordChangeRequired?: boolean; admin?: boolean } = {}): Me {
+export function me(
+  overrides: { passwordChangeRequired?: boolean; admin?: boolean; demo?: boolean } = {},
+): Me {
   return {
     user: {
       id: '0190a6c2-0000-7000-8000-00000000000a',
@@ -138,6 +140,7 @@ export function me(overrides: { passwordChangeRequired?: boolean; admin?: boolea
     ],
     projectGrants: [],
     csrfToken: 'csrf-token',
+    demo: overrides.demo ?? false,
   };
 }
 

@@ -25,6 +25,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     forcePasswordSignIn: false,
     license: { text: null, file: null },
     pluginPaths: [],
+    demoUser: null,
     ...overrides,
   };
 }

@@ -15,6 +15,9 @@ Repository: <https://github.com/qualor-dev/qualor>. Homepage: <https://qualor.de
 [`qualor/*` on Docker Hub](https://hub.docker.com/u/qualor). GitLab CI/CD component:
 [`gitlab.com/qualor/qualor`](https://gitlab.com/qualor/qualor).
 
+**Live demo:** <https://review.qualor.dev>, Qualor analysing its own code. Click **Explore the
+demo** on the sign-in page: no account needed, read-only.
+
 **Documentation:** [docs/guide/](docs/guide/README.md), also published at
 <https://qualor.dev/docs>. It covers installation, GitLab, GitHub and other CI systems, languages,
 configuration, quality gates, migration from SonarQube, the API and troubleshooting, and it has

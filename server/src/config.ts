@@ -201,6 +201,10 @@ const envSchema = z
     QUALOR_LICENSE: optionalText,
     QUALOR_LICENSE_FILE: optionalText,
     QUALOR_PLUGIN_PATHS: pluginPathsSchema,
+    // The read-only guest account behind the sign-in page's "Explore the demo" (auth/demo.ts).
+    QUALOR_DEMO_USER: optionalText.refine((v) => v === null || USERNAME_PATTERN.test(v), {
+      message: 'must be a username',
+    }),
   })
   .superRefine((e, ctx) => {
     // Names both variables, never the key text (enterprise.md §6).
@@ -209,6 +213,13 @@ const envSchema = z
         code: 'custom',
         path: ['QUALOR_LICENSE'],
         message: 'set QUALOR_LICENSE or QUALOR_LICENSE_FILE, not both',
+      });
+    }
+    if (e.QUALOR_DEMO_USER !== null && e.QUALOR_DEMO_USER === e.QUALOR_BOOTSTRAP_ADMIN_USERNAME) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['QUALOR_DEMO_USER'],
+        message: 'must not be the bootstrap administrator',
       });
     }
   });
@@ -258,6 +269,8 @@ export interface Config {
   license: { text: string | null; file: string | null };
   /** QUALOR_PLUGIN_PATHS: read only when the boot licence is active or in grace (enterprise.md §12). */
   pluginPaths: string[];
+  /** QUALOR_DEMO_USER: the username anyone may sign in as, read-only, without a password; or null. */
+  demoUser: string | null;
 }
 
 export class ConfigError extends Error {
@@ -310,5 +323,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       file: e.QUALOR_LICENSE_FILE === null ? null : resolve(e.QUALOR_LICENSE_FILE),
     },
     pluginPaths: e.QUALOR_PLUGIN_PATHS,
+    demoUser: e.QUALOR_DEMO_USER,
   };
 }
