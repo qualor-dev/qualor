@@ -6,6 +6,16 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-02
+
+### Added
+
+- A public, read-only demo: `QUALOR_DEMO_USER` names a user anyone may sign in as from the
+  sign-in page's **Explore the demo**, without a password (`POST /api/v0/auth/demo`). Every change
+  made as that user is refused with 403 `DEMO_READ_ONLY`, whatever its role; the button shows only
+  while the user is active, no instance admin, needs no password change and holds no role above
+  Viewer. Demo sessions last at most 24 hours. `GET /auth/methods` and `GET /auth/me` say `demo`.
+
 ## [0.4.0] - 2026-10-02
 
 ### Added

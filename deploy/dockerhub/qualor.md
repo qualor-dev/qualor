@@ -45,7 +45,7 @@ ingress:
 Install, wait, and read the first admin password:
 
 ```sh
-helm install qualor oci://registry-1.docker.io/qualor/qualor --version 0.4.0 -n qualor -f values.yaml
+helm install qualor oci://registry-1.docker.io/qualor/qualor --version 0.4.1 -n qualor -f values.yaml
 kubectl -n qualor rollout status statefulset/qualor
 kubectl -n qualor get secret qualor-secrets -o jsonpath='{.data.QUALOR_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d
 ```
