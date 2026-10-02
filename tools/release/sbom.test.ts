@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { cliDepsArgs, cliSbomArgs, SBOM_IMAGES, spdxProblems, syftArgs } from './sbom';
+import {
+  cliDepsArgs,
+  cliSbomArgs,
+  SBOM_IMAGES,
+  spdxProblems,
+  SYFT_IMAGE_ENV,
+  SYFT_IMAGE_TMP,
+  syftArgs,
+} from './sbom';
 
 describe('SBOMs (release.md §8)', () => {
   it('asks Syft for SPDX JSON into the named file, quietly', () => {
@@ -10,6 +18,12 @@ describe('SBOMs (release.md §8)', () => {
       'spdx-json=/work/out.spdx.json',
       '--quiet',
     ]);
+  });
+
+  it("unpacks images on the runner's disk, not in the toolbox's 4 GiB /tmp", () => {
+    // qualor/scanner-dotnet outgrew the tmpfs (the 0.4.0 publish failed in syft).
+    expect(SYFT_IMAGE_TMP.startsWith('.tmp/')).toBe(true);
+    expect(SYFT_IMAGE_ENV).toEqual({ TMPDIR: `/work/${SYFT_IMAGE_TMP}` });
   });
 
   it('describes the three images that ship software, not the sources images', () => {

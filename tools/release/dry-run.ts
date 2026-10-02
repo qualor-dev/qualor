@@ -38,6 +38,8 @@ import {
   REGISTRY_SOURCE_ENV,
   SBOM_IMAGES,
   spdxProblems,
+  SYFT_IMAGE_ENV,
+  SYFT_IMAGE_TMP,
   syftArgs,
 } from './sbom';
 import { buildToolbox, runTool, toWork } from './toolbox';
@@ -294,13 +296,20 @@ export async function dryRun(o: DryRunOptions, root = DEFAULT_OUTPUT_ROOT): Prom
         let sbom: string | null = null;
         if ((SBOM_IMAGES as readonly string[]).includes(image)) {
           sbom = `sbom/${image}.spdx.json`;
-          must(
-            runTool('syft', syftArgs(`registry:${inRegistry}`, toWork(path.join(dir, sbom))), {
-              ...net,
-              env: REGISTRY_SOURCE_ENV,
-            }),
-            `syft ${image}`,
-          );
+          const syftTmp = path.join(REPO_ROOT, SYFT_IMAGE_TMP);
+          mkdirSync(syftTmp, { recursive: true });
+          try {
+            must(
+              runTool('syft', syftArgs(`registry:${inRegistry}`, toWork(path.join(dir, sbom))), {
+                ...net,
+                env: REGISTRY_SOURCE_ENV,
+                plainEnv: SYFT_IMAGE_ENV,
+              }),
+              `syft ${image}`,
+            );
+          } finally {
+            rmSync(syftTmp, { recursive: true, force: true });
+          }
           const problems = spdxProblems(readFileSync(path.join(dir, sbom), 'utf8'));
           if (problems.length > 0) throw new Error(`${sbom}: ${problems.join(', ')}`);
         }
