@@ -15,7 +15,9 @@ import {
   isDotnetFixture,
   parsePending,
   prepareCopy,
+  QUALOR_RULES_PACK,
   REQUIRE_ANALYZERS,
+  requiredUnavailable,
   requireAnalyzers,
   runFixtures,
   scanEnv,
@@ -157,6 +159,29 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(lax).toEqual({ name: 'f', problems: [], unavailable: ['pmd'] });
     const [strict] = runFixtures(root, () => [], { has: () => false, requireAnalyzers: true });
     expect(strict?.problems).toEqual([{ kind: 'scan', detail: 'not installed: pmd (QUALOR_REQUIRE_ANALYZERS=1)' }]);
+  });
+
+  it('does not require the qualor rules pack before it is published, and does after (plan 6B-1)', () => {
+    const root = makeTempDir();
+    mkdirSync(path.join(root, 'f'));
+    writeFileSync(path.join(root, 'f', 'qualor.yml'), 'version: 1\n');
+    const write = (engines: string[]) =>
+      writeFileSync(path.join(root, 'f', 'expected.json'), JSON.stringify({ ...minimalExpected, engines }));
+    const has = (t: string) => t === 'opengrep';
+    write(['qualor']);
+    expect(runFixtures(root, () => [], { has, requireAnalyzers: true, qualorRulesPublished: false })).toEqual([
+      { name: 'f', problems: [], unavailable: ['qualor'] },
+    ]);
+    write(['qualor', 'pmd']);
+    expect(runFixtures(root, () => [], { has, requireAnalyzers: true, qualorRulesPublished: false })[0]?.problems).toEqual([
+      { kind: 'scan', detail: 'not installed: pmd (QUALOR_REQUIRE_ANALYZERS=1)' },
+    ]);
+    expect(runFixtures(root, () => [], { has, requireAnalyzers: true, qualorRulesPublished: true })[0]?.problems).toEqual([
+      { kind: 'scan', detail: 'not installed: qualor, pmd (QUALOR_REQUIRE_ANALYZERS=1)' },
+    ]);
+    expect(requiredUnavailable(['qualor', 'pmd'], false)).toEqual(['pmd']);
+    expect(unavailableEngines(['qualor'], has)).toEqual(['qualor']);
+    expect(unavailableEngines(['qualor'], (t) => ['opengrep', QUALOR_RULES_PACK].includes(t))).toEqual([]);
   });
 });
 

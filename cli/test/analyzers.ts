@@ -25,6 +25,7 @@ import { parse } from 'yaml';
 import { describe, expect } from 'vitest';
 import { findRepoBinary, resolveBinary } from '../src/analyzers/binary';
 import { DEFAULT_DETEKT_JAR } from '../src/analyzers/detekt';
+import { DEFAULT_QUALOR_RULES_DIR, loadQualorPack, type QualorPack } from '../src/analyzers/qualor';
 import { findsecbugsPlugin, spotbugsHome } from '../src/analyzers/spotbugs';
 import { DEFAULT_PHPSTAN_PHAR, parsePhpstanVersion } from '../src/analyzers/phpstan';
 import {
@@ -41,6 +42,7 @@ import { discoverFiles, type ScopeFile } from '../src/discovery/discover';
 import { createLogger, silentLogger, type Logger } from '../src/log';
 import { Warnings } from '../src/warnings';
 import { FIXTURES_DIR, loadFixture } from './fixtures';
+import { qualorRulesPins } from './install-pins';
 import { writeTree } from './tmp';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -637,4 +639,24 @@ export async function scanRepoWith(
     log: silentLogger,
   });
   return { capture, out };
+}
+
+export { qualorRulesPins };
+
+/**
+ * Plan 6B-1: the pack is published once install.sh names its URL. Only then can CI install it, so
+ * only then does QUALOR_REQUIRE_ANALYZERS=1 require it.
+ */
+export const QUALOR_RULES_PUBLISHED = qualorRulesPins().url !== '';
+
+/** The pack the qualor engine would load from the image's directory, or null. */
+export function installedQualorRules(): QualorPack | null {
+  const pack = loadQualorPack(DEFAULT_QUALOR_RULES_DIR);
+  return 'problem' in pack ? null : pack;
+}
+
+/** Plan 6B-1: real runs need OpenGrep and the pack; required in CI once the pack is published. */
+export function describeWithQualorRules(): typeof describe {
+  const ok = installedQualorRules() !== null && toolInstalled('opengrep');
+  return describe.runIf((REQUIRE_ANALYZERS && QUALOR_RULES_PUBLISHED) || ok) as typeof describe;
 }

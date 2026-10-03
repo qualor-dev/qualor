@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { qualorRulesPins } from '../../cli/test/install-pins';
 
 /**
  * Qualor's security rules pack in a release build (plan 6B-1). A release requires the pack only
@@ -10,7 +11,7 @@ import path from 'node:path';
 
 /** Whether install.sh's text pins a URL for the pack (`QUALOR_RULES_URL=` is empty until then). */
 export function qualorRulesPublished(installSh: string): boolean {
-  return /^QUALOR_RULES_URL=\S/m.test(installSh);
+  return qualorRulesPins(installSh).url !== '';
 }
 
 /** The `docker build` arguments of qualor/scanner: the pack becomes a build requirement once published. */

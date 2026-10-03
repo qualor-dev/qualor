@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { qualorRulesPins } from '../../cli/test/install-pins';
 import { qualorRulesPublished, scannerBuildArgs } from './rules-pack';
 
 const INSTALL_SH = readFileSync('tools/analyzers/install.sh', 'utf8');
@@ -31,8 +32,11 @@ describe('the rules pack in a release build (plan 6B-1)', () => {
   });
 
   it('reads the pins of the committed install.sh, and release-images.ts uses it', () => {
-    // Today the pack is not published: a release builds without it.
-    expect(qualorRulesPublished(INSTALL_SH)).toBe(/^QUALOR_RULES_URL=\S/m.test(INSTALL_SH));
+    const pins = qualorRulesPins(INSTALL_SH);
+    expect(pins.version).toMatch(/^\d{4}\.([1-9]|1[0-2])\.(0|[1-9]\d*)$/);
+    expect(pins.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(pins.opengrep).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(qualorRulesPublished(INSTALL_SH)).toBe(pins.url !== '');
     expect(readFileSync('tools/deploy/release-images.ts', 'utf8')).toContain('scannerBuildArgs(');
   });
 });

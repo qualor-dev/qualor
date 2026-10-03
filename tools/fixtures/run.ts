@@ -29,7 +29,7 @@ import {
   type Report,
 } from '@qualor/shared';
 import { findsecbugsPlugin, spotbugsHome } from '../../cli/src/analyzers/spotbugs';
-import { GO_RUNNER_FILE } from '../../cli/test/analyzers';
+import { GO_RUNNER_FILE, QUALOR_RULES_PUBLISHED } from '../../cli/test/analyzers';
 import { codeQualityValidator, dependencyScanningValidator, sastValidator } from '../../cli/test/gitlab-schema';
 import { checkLlmFixture } from './llm-check';
 
@@ -118,6 +118,25 @@ export const CPPCHECK_PINNED = 'cppcheck-pinned';
  */
 export const FINDSECBUGS_PLUGIN = 'findsecbugs-plugin';
 
+/**
+ * A pseudo-tool: Qualor's security rules pack where the scanner image installs it (plan 6B-1,
+ * config.md §6). The scan environment of a fixture drops QUALOR_RULES_DIR, so only the default
+ * path counts.
+ */
+export const QUALOR_RULES_PACK = 'qualor-rules-pack';
+const QUALOR_RULES_MANIFEST = '/opt/qualor/rules/qualor/manifest.json';
+
+/**
+ * Plan 6B-1: until the qualor-rules pack is published (QUALOR_RULES_URL in install.sh), CI
+ * cannot install it, so its absence is "not checked here" even under QUALOR_REQUIRE_ANALYZERS=1.
+ */
+export function requiredUnavailable(
+  unavailable: readonly string[],
+  qualorRulesPublished: boolean,
+): string[] {
+  return unavailable.filter((e) => e !== 'qualor' || qualorRulesPublished);
+}
+
 /** The same lookup the CLI makes: the SpotBugs home of the launcher, and its plugin/ directory. */
 function findsecbugsInstalled(env: Record<string, string | undefined>): boolean {
   const launcher = findTool('spotbugs', env);
@@ -151,6 +170,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   // Plan 6A: the image's SpotBugs carries FindSecBugs; the fixtures expect its findings.
   spotbugs: [['spotbugs'], ['javac'], [FINDSECBUGS_PLUGIN]],
   semgrep: [['opengrep', 'semgrep']],
+  // Plan 6B-1: OpenGrep and the image's rules pack (install-qualor-rules.sh).
+  qualor: [['opengrep'], [QUALOR_RULES_PACK]],
   gitleaks: [['gitleaks']],
   // Plan 2B: the binary and its database, where the scanner image keeps it (the scan environment
   // of a fixture drops every QUALOR_ variable, QUALOR_TRIVY_CACHE_DIR included).
@@ -210,6 +231,7 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === RUBOCOP_PASS) return RUBOCOP_PASS_FILES.every((f) => existsSync(f));
   if (name === GO_RUNNER) return existsSync(GO_RUNNER_FILE);
   if (name === FINDSECBUGS_PLUGIN) return findsecbugsInstalled(env);
+  if (name === QUALOR_RULES_PACK) return existsSync(QUALOR_RULES_MANIFEST);
   if (name === CPPCHECK_PINNED) {
     const v = toolVersion('cppcheck', /^Cppcheck (\S+)$/m, env);
     return v !== null && cppcheckVersionSupported(v);
@@ -697,7 +719,7 @@ function scanFixture(fixtureDir: string, name: string, expected: Expected): Prob
 export function runFixtures(
   dir: string = fixturesDir,
   scan: ScanFn = scanFixture,
-  o: { has?: (tool: string) => boolean; requireAnalyzers?: boolean } = {},
+  o: { has?: (tool: string) => boolean; requireAnalyzers?: boolean; qualorRulesPublished?: boolean } = {},
 ): FixtureOutcome[] {
   return readdirSync(dir, { withFileTypes: true })
     .filter((d) => d.isDirectory())
@@ -724,8 +746,12 @@ export function runFixtures(
       problems.push(...scan(fixtureDir, d.name, parsed.data));
       const unavailable = unavailableEngines(parsed.data.engines, o.has);
       if (unavailable.length === 0) return { name: d.name, problems };
-      if (o.requireAnalyzers ?? REQUIRE_ANALYZERS) {
-        problems.push({ kind: 'scan', detail: `not installed: ${unavailable.join(', ')} (QUALOR_REQUIRE_ANALYZERS=1)` });
+      const required =
+        (o.requireAnalyzers ?? REQUIRE_ANALYZERS)
+          ? requiredUnavailable(unavailable, o.qualorRulesPublished ?? QUALOR_RULES_PUBLISHED)
+          : [];
+      if (required.length > 0) {
+        problems.push({ kind: 'scan', detail: `not installed: ${required.join(', ')} (QUALOR_REQUIRE_ANALYZERS=1)` });
         return { name: d.name, problems };
       }
       return { name: d.name, problems, unavailable };

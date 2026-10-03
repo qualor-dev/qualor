@@ -1,0 +1,27 @@
+{
+  "description": "Qualor's security rules (the qualor engine): one SQL injection per language with a bound-parameter negative next to it; a .semgrepignore and a file under tests/ must change nothing",
+  "engines": ["qualor"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "qualor:go/sql-injection", "path": "go/orders.go", "startLine": 15, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "qualor:java/sql-injection", "path": "java/OrderServlet.java", "startLine": 20, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "qualor:js/sql-injection", "path": "js/orders.js", "startLine": 9, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "qualor:python/sql-injection", "path": "python/orders.py", "startLine": 12, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "qualor:python/sql-injection", "path": "python/tests/helpers.py", "startLine": 5, "severity": "high", "quality": "security", "kind": "issue" }
+  ],
+  "files": {
+    "go/orders.go": { "language": "go", "kind": "main" },
+    "java/OrderServlet.java": { "language": "java", "kind": "main" },
+    "js/orders.js": { "language": "javascript", "kind": "main" },
+    "python/orders.py": { "language": "python", "kind": "main" },
+    "python/tests/helpers.py": { "language": "python", "kind": "main" }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "negatives": "silent by design: the bound-parameter query next to each finding",
+    "scope": "js/ and python/tests/ are listed in .semgrepignore and tests/ is one of OpenGrep's default ignores; the qualor engine names every in-scope file on the command line, so both are scanned",
+    "kinds": "python/tests/helpers.py is main: the default test globs for python match file names (test_*.py, *_test.py, conftest.py), not a tests/ directory",
+    "severity": "high and issue from the pack manifest (metadata.severity, metadata.kind of each rule)"
+  }
+}

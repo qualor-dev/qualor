@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { QualorManifest } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
-import { fakeContext } from '../../test/analyzers';
+import { expectedKeys, fakeContext, findingKeys, normalizeRecorded } from '../../test/analyzers';
+import { FIXTURES_DIR } from '../../test/fixtures';
 import { useTempDirs } from '../../test/tmp';
 import type { ScopeFile } from '../discovery/discover';
 import { deadProxyEnv } from './offline';
@@ -410,5 +411,83 @@ describe('withQualorRules (config.md §6, plan 6B-1)', () => {
       expect(withQualorRules(odd, manifest)).toBe(odd);
       expect(odd).toEqual(before);
     }
+  });
+});
+
+describe('qualor SARIF through normalisation (synthetic, in the shape OpenGrep 1.30.0 writes)', () => {
+  const expected = JSON.parse(
+    readFileSync(path.join(FIXTURES_DIR, 'qualor-security', 'expected.json'), 'utf8'),
+  ) as { findings: { ruleKey: string; path: string; startLine: number }[] };
+  const ids = [...new Set(expected.findings.map((f) => f.ruleKey.slice('qualor:'.length)))];
+  const manifest = {
+    version: '2026.10.0',
+    opengrep: '1.30.0',
+    rules: ids.map((id) => ({
+      id,
+      path: `rules/${id.split('/')[0]}/sql/${id.split('/')[1]}.yml`,
+      sha256: 'a'.repeat(64),
+      languages: ['x'],
+      kind: 'issue',
+      severity: 'high',
+      cwe: ['CWE-89'],
+      title: 'A synthetic rule',
+    })),
+  } as unknown as QualorManifest;
+  const sarif = () => ({
+    version: '2.1.0',
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: 'Opengrep OSS',
+            semanticVersion: '1.30.0',
+            rules: ids.map((id) => ({
+              id: id.replace('/', '.'),
+              name: id.replace('/', '.'),
+              shortDescription: { text: `Opengrep Finding: ${id.replace('/', '.')}` },
+              defaultConfiguration: { level: 'error' },
+              properties: { precision: 'very-high', tags: ['CWE-89', 'security'] },
+            })),
+          },
+        },
+        results: expected.findings.map((f) => ({
+          ruleId: f.ruleKey.slice('qualor:'.length).replace('/', '.'),
+          message: { text: 'A synthetic message.' },
+          locations: [
+            {
+              physicalLocation: {
+                artifactLocation: { uri: f.path, uriBaseId: '%SRCROOT%' },
+                region: { startLine: f.startLine },
+              },
+            },
+          ],
+          properties: {},
+        })),
+      },
+    ],
+  });
+
+  it('gives the fixture keys, with kind and severity from the manifest and the CWE from the tags', () => {
+    const out = normalizeRecorded(
+      withQualorRules(sarif(), manifest),
+      qualorAnalyzer,
+      'qualor-security',
+    );
+    expect(out.warnings).toEqual([]);
+    expect(findingKeys(out.findings)).toEqual(expectedKeys('qualor-security', 'qualor'));
+    expect(out.engines[0]?.version).toBe('1.30.0 + qualor-rules 2026.10.0');
+    for (const r of out.engines[0]?.rules ?? []) {
+      expect(r, r.id).toMatchObject({
+        quality: 'security',
+        kind: 'issue',
+        defaultSeverity: 'high',
+        cwe: [89],
+      });
+    }
+  });
+
+  it('without the transform, nothing would be right: the guard against a missing transform', () => {
+    const out = normalizeRecorded(sarif(), qualorAnalyzer, 'qualor-security');
+    expect(findingKeys(out.findings)).not.toEqual(expectedKeys('qualor-security', 'qualor'));
   });
 });
