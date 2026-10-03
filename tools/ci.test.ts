@@ -881,17 +881,17 @@ describe('the qualor rules pack (plan 6B-1)', () => {
     while (end >= 512 && archive.subarray(end - 512, end).every((b) => b === 0)) end -= 512;
     const header = Buffer.alloc(512);
     header.write('rules/js/odd.yml', 0, 'latin1');
-    header.write('0000644 ', 100, 'latin1');
-    header.write('0000000 ', 108, 'latin1');
-    header.write('0000000 ', 116, 'latin1');
-    header.write('00000000000 ', 124, 'latin1');
-    header.write('00000000000 ', 136, 'latin1');
+    header.write('0000644\0', 100, 'latin1');
+    header.write('0000000\0', 108, 'latin1');
+    header.write('0000000\0', 116, 'latin1');
+    header.write('00000000000\0', 124, 'latin1');
+    header.write('00000000000\0', 136, 'latin1');
     header.write('        ', 148, 'latin1');
     header.write(kind === 'symlink' ? '2' : '6', 156, 'latin1');
     if (kind === 'symlink') header.write('../../LICENSE', 157, 'latin1');
-    header.write('ustar ' + '00', 257, 'latin1');
+    header.write('ustar\0' + '00', 257, 'latin1');
     const sum = header.reduce((n, b) => n + b, 0);
-    header.write(sum.toString(8).padStart(6, '0') + '  ', 148, 'latin1');
+    header.write(sum.toString(8).padStart(6, '0') + '\0 ', 148, 'latin1');
     return gzipSync(Buffer.concat([archive.subarray(0, end), header, Buffer.alloc(1024)]));
   }
 

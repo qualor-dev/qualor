@@ -140,10 +140,10 @@ BSD-2-Clause), cppcheck 2.22.0 (GPL-3.0-or-later, built from source; the source 
 `qualor/scanner-sources`), eslint-plugin-sonarjs 2.0.4 (LGPL-3.0, the last release before the SONAR
 Source-Available License; its own npm dependency tree includes axe-core, MPL-2.0), the Temurin JRE
 (GPL-2.0 with the Classpath Exception), Node.js (MIT), and the Bun runtime inside the `qualor`
-binary (MIT; it links JavaScriptCore/WebKit and TinyCC, LGPL). In images that include them, once
-published, Qualor's security rules are bundled too (PolyForm Shield 1.0.0: not MIT, source-available).
-The notices are in
-`/opt/qualor/NOTICE.md` and the licence texts in `/opt/qualor/licenses/`. The complete corresponding
+binary (MIT; it links JavaScriptCore/WebKit and TinyCC, LGPL). Images that include Qualor's
+security rules (once they are published) carry them under PolyForm Shield 1.0.0 (not MIT,
+source-available). The notices are in `/opt/qualor/NOTICE.md` and the licence texts in
+`/opt/qualor/licenses/`. The complete corresponding
 source of every copyleft component is published as
 [`qualor/scanner-sources`](https://hub.docker.com/r/qualor/scanner-sources) with the same tag;
 `/opt/qualor/SOURCES.md` is its index.

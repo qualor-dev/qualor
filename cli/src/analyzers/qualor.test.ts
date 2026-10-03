@@ -163,7 +163,7 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
     const root = tmp();
     const analyzer = createQualorAnalyzer({ defaultDir: path.join(tmp(), 'none') });
     expect(await analyzer.prepare(context(root))).toEqual({ skip: QUALOR_RULES_NOT_INSTALLED });
-    // True whether or not a released image includes the rules (R8): it names the way out.
+    // True whether or not a released image includes the rules: it names the way out.
     expect(QUALOR_RULES_NOT_INSTALLED).toBe(
       "Qualor's security rules are not installed (set QUALOR_RULES_DIR to a rules release, or use a qualor/scanner image that includes them)",
     );
