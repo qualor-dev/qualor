@@ -9,7 +9,10 @@ import {
   EXTERNAL_BUILTIN_ALIASES,
   normalizedRuleKey,
   rulesEquivalent,
+  sameEnginePrimaries,
+  sameEngineRank,
 } from './equivalences';
+import { FINDSECBUGS_PATTERNS } from './findsecbugs';
 
 const rule = (key: string, cwe: number[] = []) => ({ key, engineId: key.split(':')[0]!, cwe });
 
@@ -322,5 +325,50 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
       expect(rulesEquivalent(rule(b), rule(a)), `${b} ~ ${a}`).toBe(true);
       expect(equivalentPartners(a), a).toContain(b);
     }
+  });
+});
+
+describe('curated same-engine pairs (data-model.md §5.3, plan 6A)', () => {
+  const CORE_SPOTBUGS_SECURITY = new Set([
+    'SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE',
+    'SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING',
+    'DMI_CONSTANT_DB_PASSWORD',
+    'DMI_EMPTY_DB_PASSWORD',
+    'HRS_REQUEST_PARAMETER_TO_HTTP_HEADER',
+    'HRS_REQUEST_PARAMETER_TO_COOKIE',
+    'PT_RELATIVE_PATH_TRAVERSAL',
+  ]);
+
+  it('pairs core SpotBugs rules (primary) with FindSecBugs rules, within one engine, never chained', () => {
+    const pairs = EQUIVALENCES.sameEngine;
+    expect(pairs.length).toBeGreaterThan(0);
+    const primaries = new Set(pairs.map((p) => p.primary));
+    const duplicates = new Set(pairs.map((p) => p.duplicate));
+    for (const p of pairs) {
+      expect(p.primary.split(':')[0], p.primary).toBe(p.duplicate.split(':')[0]);
+      expect(duplicates.has(p.primary), p.primary).toBe(false);
+      expect(primaries.has(p.duplicate), p.duplicate).toBe(false);
+      expect(CORE_SPOTBUGS_SECURITY.has(p.primary.slice('spotbugs:'.length)), p.primary).toBe(true);
+      expect(FINDSECBUGS_PATTERNS.has(p.duplicate.slice('spotbugs:'.length)), p.duplicate).toBe(
+        true,
+      );
+    }
+  });
+
+  it('makes a listed pair equivalent in either order, and nothing else of one engine', () => {
+    const core = rule('spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE', [89]);
+    const fsb = rule('spotbugs:SQL_INJECTION_JDBC', [89]);
+    expect(rulesEquivalent(core, fsb)).toBe(true);
+    expect(rulesEquivalent(fsb, core)).toBe(true);
+    expect(rulesEquivalent(rule('spotbugs:SQL_INJECTION_JPA', [89]), core)).toBe(false);
+    expect(rulesEquivalent(rule('spotbugs:SQL_INJECTION_JPA', [89]), fsb)).toBe(false);
+    expect(sameEnginePrimaries('spotbugs:SQL_INJECTION_JDBC')).toEqual([
+      'spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE',
+      'spotbugs:SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING',
+    ]);
+    expect(sameEnginePrimaries('spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE')).toEqual([]);
+    expect(sameEnginePrimaries('__proto__')).toEqual([]);
+    expect(sameEngineRank('spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE')).toBe(1);
+    expect(sameEngineRank('spotbugs:SQL_INJECTION_JDBC')).toBe(0);
   });
 });

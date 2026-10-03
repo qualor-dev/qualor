@@ -1,4 +1,4 @@
-import { enginePriority, rulesEquivalent } from '@qualor/shared';
+import { enginePriority, rulesEquivalent, sameEngineRank } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import { rng } from '../../test/match-harness';
 import { budgetMs } from '../../test/perf';
@@ -9,8 +9,9 @@ const codeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
 
 /**
  * The O(N²)-per-line implementation planDedupe had before the final fix wave (every issue scanned
- * every earlier root with rulesEquivalent), kept verbatim as the reference its indexed
- * replacement must agree with.
+ * every earlier root with rulesEquivalent), the reference its indexed replacement must agree with.
+ * Its sort follows planDedupe's since plan 6A: a curated same-engine primary is walked before the
+ * rest of its engine; the scan itself is unchanged and rulesEquivalent knows the pairs.
  */
 function referencePlanDedupe(live: readonly LiveIssue[]): DuplicateChange[] {
   const groups = new Map<string, LiveIssue[]>();
@@ -29,6 +30,7 @@ function referencePlanDedupe(live: readonly LiveIssue[]): DuplicateChange[] {
       (a, b) =>
         enginePriority(b.engineId) - enginePriority(a.engineId) ||
         codeUnits(a.engineId, b.engineId) ||
+        sameEngineRank(b.ruleKey) - sameEngineRank(a.ruleKey) ||
         codeUnits(a.id, b.id),
     );
     const roots: LiveIssue[] = [];
@@ -101,6 +103,26 @@ describe('planDedupe (data-model.md §5.3)', () => {
     ).toEqual([]);
   });
 
+  it('points a FindSecBugs issue at the core SpotBugs issue of a curated pair on its line (plan 6A)', () => {
+    const core = issue('z', 'spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE', [89]);
+    const fsb = issue('a', 'spotbugs:SQL_INJECTION_JDBC', [89]);
+    // 'a' < 'z': without the pair rank, the FindSecBugs issue would be walked first and stay a root.
+    expect(planDedupe([core, fsb])).toEqual([{ id: 'a', duplicateOf: 'z' }]);
+    expect(planDedupe([fsb, core])).toEqual([{ id: 'a', duplicateOf: 'z' }]);
+    // Another rule of the engine with the same CWE stays its own issue.
+    expect(planDedupe([fsb, issue('b', 'spotbugs:SQL_INJECTION_SPRING_JDBC', [89])])).toEqual([]);
+    // The core rule turned off in the profile: the FindSecBugs issue is a root (and is promoted).
+    expect(planDedupe([{ ...fsb, duplicateOfIssueId: 'z' }])).toEqual([
+      { id: 'a', duplicateOf: null },
+    ]);
+    // A higher-priority engine with the CWE wins over both.
+    const semgrep = issue('s', 'semgrep:java-sqli', [89]);
+    expect(planDedupe([core, fsb, semgrep])).toEqual([
+      { id: 'z', duplicateOf: 's' },
+      { id: 'a', duplicateOf: 's' },
+    ]);
+  });
+
   it('promotes a duplicate whose primary is gone, and reports only real changes', () => {
     const orphan = issue('s', 'semgrep:hardcoded-api-key', [798], { duplicateOfIssueId: 'g' });
     expect(planDedupe([orphan])).toEqual([{ id: 's', duplicateOf: null }]);
@@ -111,11 +133,16 @@ describe('planDedupe (data-model.md §5.3)', () => {
   it('agrees with the reference implementation on random issues (differential, 2 000 seeded cases)', () => {
     // Few engines, lines and CWEs, so groups are dense and every tie-break is exercised: equal
     // priorities (two external engines), the curated pair, the gitleaks engine CWE, rules without
-    // a CWE, same-engine equivalents (never duplicates), and stale or dangling pointers.
-    const ENGINES = ['gitleaks', 'semgrep', 'eslint', 'pmd', 'tool-a', 'tool-b'];
+    // a CWE, the curated same-engine pair, other same-engine rules (never duplicates), and stale
+    // or dangling pointers.
+    const ENGINES = ['gitleaks', 'semgrep', 'spotbugs', 'eslint', 'pmd', 'tool-a', 'tool-b'];
     const PAIR = [
       'eslint:no-eval',
       'semgrep:javascript.browser.security.eval-detected.eval-detected',
+    ];
+    const SAME = [
+      'spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE',
+      'spotbugs:SQL_INJECTION_JDBC',
     ];
     const random = rng(20260924);
     for (let n = 0; n < 2_000; n++) {
@@ -123,13 +150,16 @@ describe('planDedupe (data-model.md §5.3)', () => {
       const live: LiveIssue[] = [];
       for (let i = 0; i < count; i++) {
         const pairRule = random.int(6) === 0 ? PAIR[random.int(2)] : undefined;
-        const engineId = pairRule ? pairRule.split(':')[0]! : ENGINES[random.int(ENGINES.length)]!;
+        const sameRule =
+          pairRule === undefined && random.int(6) === 0 ? SAME[random.int(2)] : undefined;
+        const chosen = pairRule ?? sameRule;
+        const engineId = chosen ? chosen.split(':')[0]! : ENGINES[random.int(ENGINES.length)]!;
         const cwe = Array.from({ length: random.int(3) }, () => [78, 95, 798, 89][random.int(4)]!);
         const fileless = random.int(10) === 0;
         live.push({
           id: `id-${random.int(1_000)}-${i}`,
           engineId,
-          ruleKey: pairRule ?? `${engineId}:r${random.int(4)}`,
+          ruleKey: chosen ?? `${engineId}:r${random.int(4)}`,
           cwe,
           path: fileless ? null : ['a.ts', 'b.ts'][random.int(2)]!,
           startLine: fileless ? null : 1 + random.int(3),

@@ -15,6 +15,15 @@ const equivalencesSchema = z.object({
       reason: z.string().min(1),
     }),
   ),
+  sameEngine: z
+    .array(
+      z.strictObject({
+        primary: z.string().regex(RULE_KEY),
+        duplicate: z.string().regex(RULE_KEY),
+        reason: z.string().min(1),
+      }),
+    )
+    .default([]),
 });
 
 export type Equivalences = z.infer<typeof equivalencesSchema>;
@@ -84,6 +93,38 @@ for (const { rules } of EQUIVALENCES.pairs) {
     if (list) list.push(partner);
     else PARTNERS.set(key, [partner]);
   }
+}
+
+/**
+ * data-model.md §5.3 (plan 6A): curated pairs of rules of one engine. Duplicate key → the primary
+ * keys it defers to, in file order; and the set of primaries, which are walked first within their
+ * engine. Checked at load: both keys of one engine, and no key both a primary and a duplicate.
+ */
+const SAME_ENGINE_PRIMARIES = new Map<string, string[]>();
+const SAME_ENGINE_PRIMARY_KEYS = new Set<string>();
+for (const { primary, duplicate } of EQUIVALENCES.sameEngine) {
+  if (primary.split(':')[0] !== duplicate.split(':')[0]) {
+    throw new Error(
+      `equivalences.json sameEngine: ${primary} and ${duplicate} are of different engines`,
+    );
+  }
+  SAME_ENGINE_PRIMARY_KEYS.add(primary);
+  SAME_ENGINE_PRIMARIES.set(duplicate, [...(SAME_ENGINE_PRIMARIES.get(duplicate) ?? []), primary]);
+}
+for (const key of SAME_ENGINE_PRIMARY_KEYS) {
+  if (SAME_ENGINE_PRIMARIES.has(key)) {
+    throw new Error(`equivalences.json sameEngine: ${key} is both a primary and a duplicate`);
+  }
+}
+
+/** The rule keys of the same engine a duplicate rule key defers to (data-model.md §5.3). */
+export function sameEnginePrimaries(key: string): readonly string[] {
+  return SAME_ENGINE_PRIMARIES.get(key) ?? [];
+}
+
+/** 1 for the primary of a curated same-engine pair, else 0: such issues are walked first. */
+export function sameEngineRank(key: string): number {
+  return SAME_ENGINE_PRIMARY_KEYS.has(key) ? 1 : 0;
 }
 
 /**
@@ -191,10 +232,12 @@ export function effectiveCwe(rule: EquivalenceRule): number[] {
  * data-model.md §5.3: rules of two different engines are equivalent when they share at
  * least one CWE, the pair is listed in equivalences.json, or one is a rule of an aliased external
  * engine and the other the built-in rule of the same id (`EXTERNAL_BUILTIN_ALIASES`). Rules of one
- * engine never are.
+ * engine are equivalent only as a curated same-engine pair (plan 6A).
  */
 export function rulesEquivalent(a: EquivalenceRule, b: EquivalenceRule): boolean {
-  if (a.engineId === b.engineId) return false;
+  if (a.engineId === b.engineId) {
+    return sameEnginePrimaries(a.key).includes(b.key) || sameEnginePrimaries(b.key).includes(a.key);
+  }
   if (PAIRS.has(pairKey(a.key, b.key)) || aliasPartner(a.key) === normalizedRuleKey(b.key))
     return true;
   const cwe = new Set(effectiveCwe(a));

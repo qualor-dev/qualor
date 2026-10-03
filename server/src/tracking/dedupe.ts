@@ -1,4 +1,10 @@
-import { effectiveCwe, enginePriority, equivalentPartners } from '@qualor/shared';
+import {
+  effectiveCwe,
+  enginePriority,
+  equivalentPartners,
+  sameEnginePrimaries,
+  sameEngineRank,
+} from '@qualor/shared';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { jsonChunks, uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
@@ -54,9 +60,9 @@ const earlier = (a: Root | null, b: Root | null): Root | null =>
 
 /**
  * data-model.md §5.3: among the branch's issues that are not closed, two on the same path and
- * start line are duplicates when they come from different engines and their rules are
- * equivalent (shared CWE, or a curated pair). The issue of the higher-priority engine is primary;
- * the other points at it. Recomputed from scratch on every analysis, so a duplicate whose primary
+ * start line are duplicates when they come from different engines (or a curated same-engine pair)
+ * and their rules are equivalent (shared CWE, or a curated pair). The issue of the higher-priority
+ * engine is primary; the other points at it. Recomputed from scratch on every analysis, so a duplicate whose primary
  * was closed is promoted automatically (its pointer becomes null, its status is untouched).
  * Returns only the issues whose `duplicate_of_issue_id` must change.
  *
@@ -93,6 +99,7 @@ export function planDedupe(live: readonly LiveIssue[]): DuplicateChange[] {
       (a, b) =>
         enginePriority(b.engineId) - enginePriority(a.engineId) ||
         compareCodeUnits(a.engineId, b.engineId) ||
+        sameEngineRank(b.ruleKey) - sameEngineRank(a.ruleKey) ||
         compareCodeUnits(a.id, b.id),
     );
     const byCwe = new Map<number, EarliestRoots>();
@@ -104,6 +111,10 @@ export function planDedupe(live: readonly LiveIssue[]): DuplicateChange[] {
         primary = earlier(primary, earliestOtherEngine(byCwe, c, issue.engineId));
       for (const partner of equivalentPartners(issue.ruleKey)) {
         primary = earlier(primary, earliestOtherEngine(byRuleKey, partner, issue.engineId));
+      }
+      // Plan 6A: a curated same-engine pair; its primary was walked first (the sort above).
+      for (const key of sameEnginePrimaries(issue.ruleKey)) {
+        primary = earlier(primary, byRuleKey.get(key)?.first ?? null);
       }
       if (primary) {
         primaryOf.set(issue.id, primary.id);
