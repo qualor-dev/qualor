@@ -56,7 +56,7 @@ DETEKT_SHA256=3afe89a11120303c73c9bdda3d8fe558dd9070a6937d27819ddc04b275381245
 # against the new jar (tools/analyzers/findsecbugs-patterns.test.ts fails until it matches).
 FINDSECBUGS_VERSION=1.14.0
 FINDSECBUGS_SHA256=6fa340344fa433ff46c2985dab1010e8bc739f9395c983594a5240095e92abc8
-# Qualor's own security rules (plan 6B-1, config.md ง6): the qualor-rules pack, a separate,
+# Qualor's own security rules (plan 6B-1, config.md ยง6): the qualor-rules pack, a separate,
 # source-available repository (PolyForm Shield 1.0.0, not MIT), installed into
 # $QUALOR_TOOLS/rules/qualor by install-qualor-rules.sh, which reads these pins (tools/ci.test.ts
 # checks them here). Until the pack is published, QUALOR_RULES_URL stays empty and the installer

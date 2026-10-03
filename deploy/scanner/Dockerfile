@@ -132,7 +132,7 @@ COPY --from=gotools /out/staticcheck /out/gosec /opt/qualor/bin/
 # with this stage's g++ and make; only the binary and its library files reach /opt/qualor.
 COPY tools/analyzers/install-cppcheck.sh /tmp/
 RUN sh /tmp/install-cppcheck.sh && rm /tmp/install-cppcheck.sh
-# Qualor's own security rules (plan 6B-1, config.md ง6) into /opt/qualor/rules/qualor:
+# Qualor's own security rules (plan 6B-1, config.md ยง6) into /opt/qualor/rules/qualor:
 # install-qualor-rules.sh checks the pack against install.sh's QUALOR_RULES_SHA256 before it
 # unpacks it. Until the pack is published it comes from tools/analyzers/qualor-rules/
 # (git-ignored) and is skipped when that holds none, unless QUALOR_RULES_REQUIRED=1, which
