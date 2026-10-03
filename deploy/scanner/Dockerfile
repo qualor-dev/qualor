@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # The qualor/scanner image: the `qualor` CLI binary plus the pinned analyzer toolchain of
-# tools/analyzers/install.sh (PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with a snapshot of its
+# tools/analyzers/install.sh (PMD, SpotBugs (with the FindSecBugs plugin), OpenGrep, Gitleaks, Trivy with a snapshot of its
 # vulnerability database in /opt/qualor/share/trivy, Ruff, SwiftLint's static build (a musl
 # binary that needs no Swift runtime), detekt's CLI jar in /opt/qualor/lib/detekt, PHPStan's phar in
 # /opt/qualor/lib/phpstan), cppcheck (built from source, `install-cppcheck.sh`), Qualor's

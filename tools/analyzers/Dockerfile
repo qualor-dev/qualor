@@ -1,5 +1,5 @@
 # A local Linux environment with the analyzer toolchain CI installs (plan 1D Task 2): Node 22,
-# JDK 17 (PMD, SpotBugs, javac), PMD, SpotBugs, OpenGrep, Gitleaks, Trivy with its database,
+# JDK 17 (PMD, SpotBugs, javac), PMD, SpotBugs with FindSecBugs, OpenGrep, Gitleaks, Trivy with its database,
 # Ruff, detekt, SwiftLint (its static build) and PHPStan (run by Debian's PHP 8.2 CLI, plan 9A)
 # from install.sh, and bun. Also the .NET 8 and
 # 10 SDKs and Roslynator from install-dotnet.sh (plan 2D), Qualor's sonarjs pass in

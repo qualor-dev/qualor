@@ -25,6 +25,7 @@ import { parse } from 'yaml';
 import { describe, expect } from 'vitest';
 import { findRepoBinary, resolveBinary } from '../src/analyzers/binary';
 import { DEFAULT_DETEKT_JAR } from '../src/analyzers/detekt';
+import { findsecbugsPlugin, spotbugsHome } from '../src/analyzers/spotbugs';
 import { DEFAULT_PHPSTAN_PHAR, parsePhpstanVersion } from '../src/analyzers/phpstan';
 import {
   DEFAULT_GO_DIR,
@@ -94,6 +95,19 @@ export function describeWithTools(
  */
 export function describeWithDetekt(): typeof describe {
   const ok = existsSync(DEFAULT_DETEKT_JAR) && toolInstalled('java');
+  return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
+}
+
+/** Plan 6A: the FindSecBugs jar in the SpotBugs home the CLI would run, or null. */
+export function installedFindsecbugs(): { jar: string; version: string } | null {
+  const launcher = resolveBinary('spotbugs', { root: process.cwd(), env: process.env });
+  const install = launcher === null ? null : spotbugsHome(launcher);
+  return install === null ? null : findsecbugsPlugin(install.home);
+}
+
+/** Plan 6A: real FindSecBugs needs SpotBugs with the plugin, java and javac; CI requires them. */
+export function describeWithFindsecbugs(): typeof describe {
+  const ok = installedFindsecbugs() !== null && toolInstalled('java') && toolInstalled('javac');
   return describe.runIf(REQUIRE_ANALYZERS || ok) as typeof describe;
 }
 

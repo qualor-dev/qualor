@@ -1,4 +1,4 @@
-import { lstatSync, opendirSync, realpathSync, statSync } from 'node:fs';
+import { lstatSync, opendirSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { ScopeFile } from '../discovery/discover';
 import { staysInside } from './binary';
@@ -128,6 +128,27 @@ export function spotbugsHome(launcher: string): { home: string; jar: string } | 
   } catch {
     return null;
   }
+}
+
+const FINDSECBUGS_JAR = /^findsecbugs-plugin-(\d+\.\d+\.\d+)\.jar$/;
+
+/**
+ * The FindSecBugs jar in a SpotBugs home's plugin/ directory, where SpotBugs loads every jar from
+ * (the qualor/scanner image installs it there, tools/analyzers/install.sh), with the version its
+ * file name carries; the first in name order when there are several. Null without one.
+ */
+export function findsecbugsPlugin(home: string): { jar: string; version: string } | null {
+  let names: string[];
+  try {
+    names = readdirSync(path.join(home, 'plugin')).sort();
+  } catch {
+    return null;
+  }
+  for (const name of names) {
+    const m = FINDSECBUGS_JAR.exec(name);
+    if (m?.[1] !== undefined) return { jar: path.join(home, 'plugin', name), version: m[1] };
+  }
+  return null;
 }
 
 function prepare(ctx: AnalyzerContext): Promise<Preparation> {

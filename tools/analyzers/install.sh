@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs the pinned analyzer toolchain (plan 1D, Task 2) into $QUALOR_TOOLS (default
-# /opt/qualor): PMD, SpotBugs, detekt, OpenGrep, Gitleaks, Trivy, Ruff, SwiftLint and PHPStan, each checked
+# /opt/qualor): PMD, SpotBugs (with the FindSecBugs plugin), detekt, OpenGrep, Gitleaks, Trivy, Ruff, SwiftLint and PHPStan, each checked
 # against its SHA-256 before it is unpacked, and Trivy's vulnerability database (plan 2B), a snapshot pinned by the
 # digest of its OCI layer, into $QUALOR_TOOLS/share/trivy/db. Java (>= 17) must already be on
 # PATH for PMD, SpotBugs and detekt. The same versions are what the qualor/scanner image ships; bump them
@@ -47,6 +47,15 @@ RUFF_SOURCE_SHA256=87df064eb5582c59e2575959b8b43ab6550c727d6a9875cc515d0299b826c
 # release asset of the same name, which is a different build with another checksum.
 DETEKT_VERSION=1.23.8
 DETEKT_SHA256=3afe89a11120303c73c9bdda3d8fe558dd9070a6937d27819ddc04b275381245
+# FindSecBugs (plan 6A), the SpotBugs plugin of security (taint) rules: its jar from Maven Central,
+# installed into the SpotBugs home's plugin/ directory, where SpotBugs loads every jar on start (the
+# CLI passes -Dspotbugs.home, never -pluginList). LGPL-3.0; its source jar is in
+# qualor/scanner-sources (deploy/scanner/sources.json). FINDSECBUGS_VERSION must equal
+# FINDSECBUGS_VERSION in packages/shared/src/rules/findsecbugs.ts and the version of
+# packages/shared/rules/findsecbugs.json (tools/ci.test.ts checks); a bump re-reviews that table
+# against the new jar (tools/analyzers/findsecbugs-patterns.test.ts fails until it matches).
+FINDSECBUGS_VERSION=1.14.0
+FINDSECBUGS_SHA256=6fa340344fa433ff46c2985dab1010e8bc739f9395c983594a5240095e92abc8
 # SwiftLint (plan 8F), the Swift linter of the `swiftlint` engine. The release zip holds a
 # dynamically linked `swiftlint` (it needs the Swift runtime and glibc 2.38, neither in bookworm)
 # and `swiftlint-static`, a fully static build (Swift 6.3.2 static Linux SDK, musl) that cannot
@@ -121,6 +130,8 @@ rm -rf "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION"
 tar -xzf "$TMP/spotbugs.tgz" -C "$PREFIX/lib"
 chmod +x "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/bin/spotbugs"
 ln -sf "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/bin/spotbugs" "$PREFIX/bin/spotbugs"
+fetch "https://repo1.maven.org/maven2/com/h3xstream/findsecbugs/findsecbugs-plugin/$FINDSECBUGS_VERSION/findsecbugs-plugin-$FINDSECBUGS_VERSION.jar" "$FINDSECBUGS_SHA256" findsecbugs.jar
+install -m 0644 "$TMP/findsecbugs.jar" "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/plugin/findsecbugs-plugin-$FINDSECBUGS_VERSION.jar"
 
 fetch "https://repo1.maven.org/maven2/io/gitlab/arturbosch/detekt/detekt-cli/$DETEKT_VERSION/detekt-cli-$DETEKT_VERSION-all.jar" "$DETEKT_SHA256" detekt.jar
 mkdir -p "$PREFIX/lib/detekt"
@@ -170,4 +181,4 @@ chmod 0644 "$PREFIX/share/trivy/db/trivy.db" "$PREFIX/share/trivy/db/metadata.js
 # Only the current pins stay in the cache.
 [ -z "$CACHE" ] || find "$CACHE" -maxdepth 1 -type f ! -name "$TV_SHA" ! -name "${TRIVY_DB_DIGEST#sha256:}" -delete
 
-echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION, Ruff $RUFF_VERSION, SwiftLint $SWIFTLINT_VERSION into $PREFIX/bin, detekt $DETEKT_VERSION into $PREFIX/lib/detekt, PHPStan $PHPSTAN_VERSION into $PREFIX/lib/phpstan, and the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy"
+echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION with FindSecBugs $FINDSECBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION, Ruff $RUFF_VERSION, SwiftLint $SWIFTLINT_VERSION into $PREFIX/bin, detekt $DETEKT_VERSION into $PREFIX/lib/detekt, PHPStan $PHPSTAN_VERSION into $PREFIX/lib/phpstan, and the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy"

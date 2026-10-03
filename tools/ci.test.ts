@@ -205,6 +205,7 @@ describe('analyzer toolchain (plan 1D)', () => {
     for (const tool of [
       'PMD',
       'SPOTBUGS',
+      'FINDSECBUGS',
       'OPENGREP',
       'GITLEAKS',
       'TRIVY',
@@ -229,6 +230,34 @@ describe('analyzer toolchain (plan 1D)', () => {
     const fetched = script.indexOf('"$DETEKT_SHA256" detekt.jar');
     expect(fetched).toBeGreaterThan(-1);
     expect(fetched).toBeLessThan(script.indexOf('"$PREFIX/lib/detekt/detekt-cli.jar"'));
+  });
+
+  it('pins FindSecBugs and installs it into the SpotBugs home only after the check (plan 6A)', () => {
+    expect(script).toMatch(/^FINDSECBUGS_VERSION=\d+\.\d+\.\d+$/m);
+    expect(script).toMatch(/^FINDSECBUGS_SHA256=[0-9a-f]{64}$/m);
+    const fetchLine =
+      'fetch "https://repo1.maven.org/maven2/com/h3xstream/findsecbugs/findsecbugs-plugin/$FINDSECBUGS_VERSION/findsecbugs-plugin-$FINDSECBUGS_VERSION.jar" "$FINDSECBUGS_SHA256" findsecbugs.jar';
+    const installLine =
+      'install -m 0644 "$TMP/findsecbugs.jar" "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/plugin/findsecbugs-plugin-$FINDSECBUGS_VERSION.jar"';
+    expect(script).toContain(fetchLine);
+    expect(script).toContain(installLine);
+    // Checked before it is installed, and installed after SpotBugs is unpacked: the rm -rf of the
+    // SpotBugs home would delete it otherwise.
+    const rm = script.indexOf('rm -rf "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION"');
+    const unpack = script.indexOf('tar -xzf "$TMP/spotbugs.tgz"');
+    expect(rm).toBeGreaterThan(-1);
+    expect(script.indexOf(fetchLine)).toBeLessThan(script.indexOf(installLine));
+    expect(rm).toBeLessThan(unpack);
+    expect(unpack).toBeLessThan(script.indexOf(installLine));
+    // The CLI's table and the image's jar must agree (packages/shared/src/rules/findsecbugs.ts).
+    const pinned = /^FINDSECBUGS_VERSION=(.+)$/m.exec(script)?.[1];
+    expect(readFileSync('packages/shared/src/rules/findsecbugs.ts', 'utf8')).toContain(
+      `export const FINDSECBUGS_VERSION = '${pinned}';`,
+    );
+    const table = JSON.parse(readFileSync('packages/shared/rules/findsecbugs.json', 'utf8')) as {
+      version: string;
+    };
+    expect(table.version).toBe(pinned);
   });
 
   it("pins Trivy's vulnerability database by the digest of its layer, checked before it is unpacked (plan 2B)", () => {
