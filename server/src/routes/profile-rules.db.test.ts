@@ -566,6 +566,11 @@ describe('profile rule activation and per-project profiles (api.md Â§3, server
     expect((await setRule(java, 'qualor:java/sql-injection', { active: false })).statusCode).toBe(
       200,
     );
+    // Language-bound: the `*` profile's default view leaves them out (ruling P4). It may still
+    // decide them (ruling X4: `*` decides any engine's rule, for file-less findings).
+    expect((await entries(await builtinOf('*'))).map((e) => e.rule.key)).not.toContain(
+      'qualor:java/sql-injection',
+    );
     const ts = await createProfile('Qualor rules ts');
     expect((await setRule(ts, 'qualor:js/sql-injection', { active: false })).statusCode).toBe(200);
     expect(

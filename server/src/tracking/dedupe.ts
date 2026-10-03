@@ -12,7 +12,7 @@ import { issues, rules } from '../db/schema';
 import type { IssueStatus, LiveIssue } from './plan';
 
 /** Code-unit order, the same as `sortedBy` in writes.ts (not locale-dependent). */
-function compareCodeUnits(a: string, b: string): number {
+export function compareCodeUnits(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 

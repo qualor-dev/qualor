@@ -2,10 +2,10 @@ import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { Report } from '@qualor/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
-import { engine, file, finding, reportWith } from '../../test/reports';
+import { engine, file, finding, reportWith, type ReportParts } from '../../test/reports';
 import { uuidv7 } from '../db/ids';
-import { issueChanges, issues, rules, users } from '../db/schema';
-import { CARRY_OVER_COMMENT_CHARS } from './carry-over';
+import { branches, issueChanges, issues, rules, users } from '../db/schema';
+import { CARRY_OVER_COMMENT_CHARS, writeCarryOver } from './carry-over';
 
 type RuleMeta = Report['engines'][number]['rules'][number];
 const JAVA = 'src/main/java/com/acme/OrderRepository.java';
@@ -22,8 +22,14 @@ const RULES: Record<string, RuleMeta> = {
   },
 };
 
-function report(key: string, analysisDate: string, engineIds: string[]): Report {
+function report(
+  key: string,
+  analysisDate: string,
+  engineIds: string[],
+  extra: ReportParts = {},
+): Report {
   return reportWith({
+    ...extra,
     projectKey: key,
     analysisDate,
     engines: engineIds.map((id) => engine(id, [RULES[id]!])),
@@ -72,6 +78,17 @@ describe('status carry-over to a new qualor issue (data-model.md §5.3, plan 6B-
       comment,
     });
   };
+  const byRuleOn = async (p: IngestProject, branch: string, key: string) =>
+    (
+      await h.ctx.db
+        .select({ issue: issues })
+        .from(issues)
+        .innerJoin(rules, eq(rules.id, issues.ruleId))
+        .innerJoin(branches, eq(branches.id, issues.branchId))
+        .where(and(eq(issues.projectId, p.id), eq(branches.name, branch), eq(rules.key, key)))
+    )[0]!.issue;
+  const entriesOf = async (issueId: string) =>
+    (await changelog(issueId)).map((c) => [c.userId, c.oldValue, c.newValue, c.comment]);
   const visibleOpen = (p: IngestProject) =>
     h.ctx.db
       .select({ id: issues.id })
@@ -181,5 +198,85 @@ describe('status carry-over to a new qualor issue (data-model.md §5.3, plan 6B-
     expect(q.status).toBe('false_positive');
     const [entry] = await changelog(q.id);
     expect(entry?.comment).toBe(`${note}${head}😀…`);
+  });
+
+  it("never undoes a reopen on main in a new branch's inherited copy (data-model.md §5.4)", async () => {
+    const p = await h.project('carry/inherited-reopen');
+    await p.ingestOk(report(p.key, '2026-10-01T10:00:00Z', ['spotbugs']));
+    await triage(p, 'spotbugs:SQL_INJECTION_JDBC', 'false_positive', 'a constant');
+    await p.ingestOk(report(p.key, '2026-10-02T10:00:00Z', ['spotbugs', 'qualor']));
+    const q = await byRuleOn(p, 'main', 'qualor:java/sql-injection');
+    expect(q.status).toBe('false_positive');
+    // A user reopens the qualor issue on main; the SpotBugs one stays a false positive.
+    await h.ctx.db
+      .update(issues)
+      .set({ status: 'open', resolvedAt: null, resolvedBy: null })
+      .where(eq(issues.id, q.id));
+    await h.ctx.db.insert(issueChanges).values({
+      id: uuidv7(),
+      issueId: q.id,
+      userId: adminId,
+      field: 'status',
+      oldValue: 'false_positive',
+      newValue: 'open',
+      comment: 'the id comes from the request after all',
+    });
+    // The first analysis of a feature branch inherits both: S′ false_positive, Q′ open.
+    await p.ingestOk(
+      report(p.key, '2026-10-03T10:00:00Z', ['spotbugs', 'qualor'], { branch: 'feature/x' }),
+    );
+    const q2 = await byRuleOn(p, 'feature/x', 'qualor:java/sql-injection');
+    const s2 = await byRuleOn(p, 'feature/x', 'spotbugs:SQL_INJECTION_JDBC');
+    expect(q2).toMatchObject({ status: 'open', resolvedBy: null, duplicateOfIssueId: null });
+    expect(s2).toMatchObject({ status: 'false_positive', duplicateOfIssueId: q2.id });
+    // Only the changelog copied from main: the carry-over there and the reopen, nothing new.
+    expect(await entriesOf(q2.id)).toEqual(await entriesOf(q.id));
+    expect(await entriesOf(q2.id)).toHaveLength(2);
+  });
+
+  it('carries to a qualor issue new on a branch whose SpotBugs issue was inherited', async () => {
+    const p = await h.project('carry/new-on-branch');
+    await p.ingestOk(report(p.key, '2026-10-01T10:00:00Z', ['spotbugs']));
+    await triage(p, 'spotbugs:SQL_INJECTION_JDBC', 'false_positive', 'a constant');
+    // Main has no qualor issue: on the branch's first analysis it is genuinely new.
+    await p.ingestOk(
+      report(p.key, '2026-10-02T10:00:00Z', ['spotbugs', 'qualor'], { branch: 'feature/y' }),
+    );
+    const q = await byRuleOn(p, 'feature/y', 'qualor:java/sql-injection');
+    expect(q).toMatchObject({ status: 'false_positive', resolvedBy: adminId });
+    expect(await entriesOf(q.id)).toEqual([
+      [
+        null,
+        'open',
+        'false_positive',
+        'Status carried over from spotbugs:SQL_INJECTION_JDBC. a constant',
+      ],
+    ]);
+  });
+
+  it('writes nothing when the source no longer has the planned status (a concurrent reopen)', async () => {
+    const p = await h.project('carry/source-moved');
+    await p.ingestOk(report(p.key, '2026-10-01T10:00:00Z', ['spotbugs']));
+    const analysisId = await p.ingestOk(
+      report(p.key, '2026-10-02T10:00:00Z', ['spotbugs', 'qualor']),
+    );
+    const q = await byRule(p, 'qualor:java/sql-injection');
+    const sb = await byRule(p, 'spotbugs:SQL_INJECTION_JDBC');
+    expect(sb.status).toBe('open');
+    const planned = [
+      {
+        issueId: q.id,
+        status: 'false_positive' as const,
+        sourceIssueId: sb.id,
+        sourceRuleKey: 'spotbugs:SQL_INJECTION_JDBC',
+      },
+    ];
+    expect(await writeCarryOver(h.ctx.db, planned, analysisId)).toBe(0);
+    expect(await byRule(p, 'qualor:java/sql-injection')).toMatchObject({
+      status: 'open',
+      resolvedAt: null,
+      resolvedBy: null,
+    });
+    expect(await changelog(q.id)).toEqual([]);
   });
 });

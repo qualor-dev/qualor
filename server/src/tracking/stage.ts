@@ -58,10 +58,13 @@ export async function applyTrackingPlan(
   const live = await liveAfterWrites(ctx.tx, plan.live, written.blockedIds);
   const duplicates = planDedupe(live);
   await writeDedupe(ctx.tx, duplicates);
-  // data-model.md §5.3 (plan 6B-1): a new qualor root takes a triaged duplicate's status, once.
+  // data-model.md §5.3 (plan 6B-1): a new qualor root takes a triaged duplicate's status, once,
+  // at creation: only issues not inherited from a reference branch (data-model.md §5.4), whose
+  // status is the reference issue's, so a reopen there is never undone on a new branch or MR.
+  const created = new Set(plan.inserts.filter((i) => i.inherited_from === null).map((i) => i.id));
   const carried = await writeCarryOver(
     ctx.tx,
-    planCarryOver(live, duplicates, new Set(plan.inserts.map((i) => i.id))),
+    planCarryOver(live, duplicates, created),
     ctx.analysisId,
   );
   ctx.logger.debug(

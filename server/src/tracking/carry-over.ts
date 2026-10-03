@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { jsonChunks, uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
 import { uuidv7 } from '../db/ids';
-import type { DuplicateChange } from './dedupe';
+import { compareCodeUnits as compare, type DuplicateChange } from './dedupe';
 import type { IssueStatus, LiveIssue } from './plan';
 
 /** data-model.md §5.3 (plan 6B-1): engines whose new root issues take a triaged duplicate's status. */
@@ -26,11 +26,12 @@ export interface CarryOver {
   sourceRuleKey: string;
 }
 
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const carried = (s: IssueStatus): s is CarriedStatus => (CARRIED as readonly string[]).includes(s);
 
 /**
- * data-model.md §5.3 (plan 6B-1), without I/O. For each issue this analysis created (`createdIds`)
+ * data-model.md §5.3 (plan 6B-1), without I/O. For each issue this analysis created (`createdIds`:
+ * the inserts not inherited from a reference branch, data-model.md §5.4 — an inherited copy keeps
+ * the reference issue's status, so a reopen there is never undone on a new branch or MR)
  * of a status-carrying engine that is open and stays a root once `changes` (planDedupe's) are
  * applied over the pointers in `live`: the triaged duplicate of another engine whose status it
  * takes. `false_positive` before `wont_fix`, then the higher-priority engine, the lower rule key,
@@ -91,9 +92,9 @@ export function carryOverComment(sourceRuleKey: string, sourceComment: string | 
 
 /**
  * Writes {@link planCarryOver}'s statuses. Each new issue takes its source's status, `resolved_at`
- * and `resolved_by`, guarded on still being `open`, and gets one system changelog entry (no user,
- * this analysis, `open` → the status) quoting the comment of the source's latest change to that
- * status. The new issues were inserted by this same transaction, so no one else can hold them. No
+ * and `resolved_by`, guarded on the source still having the planned status and the new issue still
+ * being `open`, and gets one system changelog entry (no user, this analysis, `open` → the status)
+ * quoting the comment of the source's latest change to that status. The new issues were inserted by this same transaction, so no one else can hold them. No
  * audit event: the tracking stage records none for system changes. Returns how many applied.
  */
 export async function writeCarryOver(
@@ -105,11 +106,12 @@ export async function writeCarryOver(
   const sourceIds = [...new Set(carry.map((c) => c.sourceIssueId))].sort(compare);
   const sources = await tx.execute<{
     id: string;
+    status: string;
     resolved_at: string | null;
     resolved_by: string | null;
     comment: string | null;
   }>(sql`
-    SELECT i.id, to_json(i.resolved_at) #>> '{}' AS resolved_at, i.resolved_by,
+    SELECT i.id, i.status, to_json(i.resolved_at) #>> '{}' AS resolved_at, i.resolved_by,
       (SELECT ic.comment FROM issue_changes ic
         WHERE ic.issue_id = i.id AND ic.field = 'status' AND ic.new_value = i.status
         ORDER BY ic.id DESC LIMIT 1) AS comment
@@ -118,7 +120,9 @@ export async function writeCarryOver(
   const byId = new Map(sources.rows.map((r) => [r.id, r]));
   const rows = carry.flatMap((c) => {
     const s = byId.get(c.sourceIssueId);
-    return s === undefined
+    // A source whose status changed since planning (a concurrent reopen: sources are not locked)
+    // carries nothing, rather than another status's resolution fields or comment.
+    return s === undefined || s.status !== c.status
       ? []
       : [
           {

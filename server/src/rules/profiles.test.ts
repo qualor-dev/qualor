@@ -45,6 +45,7 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     expect(governingLanguage('qualor', 'typescript')).toBe('typescript');
     expect(governingLanguage('qualor', 'javascript')).toBe('javascript');
     expect(governingLanguage('qualor', null)).toBe('*');
+    expect(governingLanguage('qualor', 'other')).toBe('*');
   });
 
   it('lets the kotlin profile govern detekt findings on Kotlin files (phase 8E)', () => {
