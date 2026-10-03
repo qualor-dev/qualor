@@ -12,6 +12,7 @@ import {
   phpstanNotFinding,
 } from '../../rules/phpstan';
 import rubocopKeys from '../../../rules/rubocop-keys.json' with { type: 'json' };
+import { FINDSECBUGS_PATTERNS } from '../../rules/findsecbugs';
 import { GOSEC_RULES, GOVET_ANALYZERS, STATICCHECK_CHECKS } from '../../rules/golang';
 import { engineOf, loadSonarMapping, SONAR_MAPPING } from './rules';
 
@@ -466,16 +467,58 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     },
   );
 
-  it('ships every python, php and ruby entry and the compared go entries reviewed, and every other curated entry unreviewed', () => {
+  it('maps reviewed java rows to the FindSecBugs patterns and core SpotBugs rules the image has (plan 6A)', () => {
+    const CORE = new Set([
+      'SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE',
+      'SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING',
+      'DMI_EMPTY_DB_PASSWORD',
+    ]);
+    const rows = raw.rules.filter((r) =>
+      r.qualor.some((q) => FINDSECBUGS_PATTERNS.has(q.slice('spotbugs:'.length))),
+    );
+    expect(rows.length).toBe(24);
+    for (const row of rows) {
+      expect(
+        row.sonar.every((s) => s.startsWith('java:')),
+        row.sonar.join(),
+      ).toBe(true);
+      expect(row.reviewed, row.sonar.join()).toBe(true);
+      expect(row.reason.length, row.sonar.join()).toBeLessThanOrEqual(120);
+      for (const q of row.qualor) {
+        expect(q.startsWith('spotbugs:'), q).toBe(true);
+        const id = q.slice('spotbugs:'.length);
+        expect(FINDSECBUGS_PATTERNS.has(id) || CORE.has(id), q).toBe(true);
+      }
+    }
+    expect(SONAR_MAPPING.targets('java:S2254')).toEqual([
+      {
+        key: 'spotbugs:SERVLET_SESSION_ID',
+        relation: 'equivalent',
+        reviewed: true,
+        source: 'table',
+      },
+    ]);
+    expect(SONAR_MAPPING.targets('java:S2245')).toEqual([
+      { key: 'spotbugs:PREDICTABLE_RANDOM', relation: 'overlap', reviewed: true, source: 'table' },
+    ]);
+    // SonarQube's commercial taint rules are not mapped (Decisions needed 5).
+    expect(SONAR_MAPPING.targets('javasecurity:S3649')).toEqual([]);
+  });
+
+  it('ships every python, php and ruby entry, the compared go entries and the FindSecBugs java rows reviewed, and every other curated entry unreviewed', () => {
     // python: rows were reviewed on 2026-10-01 (see the file's $comment), php: rows by plan 9A
     // (ruling A9-5), ruby: rows by plan 9B (ruling B9-4), and the go: rows with a public SonarQube
-    // description by plan 9C (ruling G9-16); the rest await a person.
+    // description by plan 9C (ruling G9-16), and the java: rows that map to SpotBugs' FindSecBugs
+    // patterns by plan 6A (ruling C2); the rest await a person.
     for (const entry of raw.rules) {
       const reviewedLanguage = entry.sonar.every(
         (s) => s.startsWith('python:') || s.startsWith('php:') || s.startsWith('ruby:'),
       );
       const go = GO_REVIEWED.has(entry.sonar.join());
-      expect(entry.reviewed, entry.sonar.join(',')).toBe(reviewedLanguage || go);
+      const findsecbugs = entry.qualor.some((q) =>
+        FINDSECBUGS_PATTERNS.has(q.slice('spotbugs:'.length)),
+      );
+      expect(entry.reviewed, entry.sonar.join(',')).toBe(reviewedLanguage || go || findsecbugs);
     }
   });
 

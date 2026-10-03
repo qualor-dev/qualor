@@ -1,5 +1,5 @@
 {
-  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules. PHP (Phase 9A): php:S#### rows are curated, keys only, each compared against both rules' public documentation and sources (SonarSource's public sonar-php repository, PHPStan's docs and source; committed reviewed, as the python rows), each target a PHPStan identifier that fires at Qualor's default level; SonarQube imports PHPStan reports as the single rule external_phpstan:phpstan.finding, which cannot be mapped; external_psalm and phpsecurity are not mapped. Ruby (Phase 9B): external_rubocop maps to rubocop one to one for the cops of the pinned RuboCop (rubocop-keys.json); ruby:S#### rows are curated, keys only, each compared against both rules' public documentation; rubydre is SonarQube's newer repository for the same RSPEC ids (rubydre-only rules: public name and parameters only; kept as overlap). Go (Phase 9C): external_govet maps to govet one to one; go:S#### rows are curated (keys and our own reasons only); the rows whose SonarQube rule has a public description (SonarSource's public sonar-go repository) were compared against it and the pinned tool's sources by an automated review on 2026-10-01 and are reviewed, and a row is equivalent only where both scopes match at default settings, otherwise overlap; the rest (the gosec rows, known by rule name only) stay reviewed:false overlap and import issue statuses only until a person compares both rules' documentation; external_golangci-lint keys are linter names and are not mapped. C and C++ (Phase 9D): c:S#### and cpp:S#### rows are curated, keys only, `reviewed: false` until compared against both rules' public documentation; SonarQube has no repository of imported cppcheck or clang-tidy issues, and MISRA keys (`c:M23_…`) are not mapped.",
+  "$comment": "SonarQube rule keys to Qualor rule keys. MIT. Keys, relations, review flags and our own one-line reasons only: never SonarSource rule titles, descriptions or examples, and nothing generated from SonarSource sources. python:S#### rows were compared against both rules' public documentation (SonarSource's public sonar-python repository rule descriptions and Ruff's docs) by an automated review on the maintainer's instruction on 2026-10-01; keys only, no SonarSource text. A curated entry stays reviewed:false until it has been compared that way; unreviewed entries are used for issue statuses only, never for profiles. C#: external_roslyn maps to roslyn for issue statuses, and (Phase 8) csharpsquid maps to roslyn one to one, restricted to the keys the bundled SonarAnalyzer.CSharp 9.32.0.97167 actually has. javascript and typescript (Phase 8) map to sonarjs one to one, restricted to the keys the bundled eslint-plugin-sonarjs 2.0.4 actually has; a key either bundled package lacks (e.g. javascript:S1440, csharpsquid:S9999) gets no repository target and stays unmapped unless the curated table below still covers it. Python (Phase 8C): external_ruff maps to ruff one to one for the codes of the pinned Ruff (ruff-keys.json); python:S#### rows are curated, keys only, each compared against both rules' public documentation; external_bandit is not mapped yet. Swift (Phase 8F): external_swiftlint maps to swiftlint one to one, since SwiftLint issues imported into SonarQube keep SwiftLint's rule identifiers; SonarSource's own swift:S#### rules are not mapped, so a Swift profile is classified and skipped as having no mapped rules. PHP (Phase 9A): php:S#### rows are curated, keys only, each compared against both rules' public documentation and sources (SonarSource's public sonar-php repository, PHPStan's docs and source; committed reviewed, as the python rows), each target a PHPStan identifier that fires at Qualor's default level; SonarQube imports PHPStan reports as the single rule external_phpstan:phpstan.finding, which cannot be mapped; external_psalm and phpsecurity are not mapped. Ruby (Phase 9B): external_rubocop maps to rubocop one to one for the cops of the pinned RuboCop (rubocop-keys.json); ruby:S#### rows are curated, keys only, each compared against both rules' public documentation; rubydre is SonarQube's newer repository for the same RSPEC ids (rubydre-only rules: public name and parameters only; kept as overlap). Go (Phase 9C): external_govet maps to govet one to one; go:S#### rows are curated (keys and our own reasons only); the rows whose SonarQube rule has a public description (SonarSource's public sonar-go repository) were compared against it and the pinned tool's sources by an automated review on 2026-10-01 and are reviewed, and a row is equivalent only where both scopes match at default settings, otherwise overlap; the rest (the gosec rows, known by rule name only) stay reviewed:false overlap and import issue statuses only until a person compares both rules' documentation; external_golangci-lint keys are linter names and are not mapped. C and C++ (Phase 9D): c:S#### and cpp:S#### rows are curated, keys only, `reviewed: false` until compared against both rules' public documentation; SonarQube has no repository of imported cppcheck or clang-tidy issues, and MISRA keys (`c:M23_…`) are not mapped. Java security (Phase 6A): java:S#### rows to SpotBugs' bundled FindSecBugs patterns (and core SpotBugs rules) were compared against both rules' public descriptions (SonarSource's public sonar-java repository; FindSecBugs' bugs.htm, messages.xml and detector sources) on 2026-10-03 and are reviewed; equivalent only where both detect the same API use, otherwise overlap. javasecurity:S#### (SonarQube's commercial taint rules) are not mapped: their descriptions are not public.",
   "languages": {
     "js": {
       "language": "javascript",
@@ -33,7 +33,10 @@
       "language": "ruby",
       "engines": ["rubocop"]
     },
-    "go": { "language": "go", "engines": ["staticcheck", "govet", "gosec"] },
+    "go": {
+      "language": "go",
+      "engines": ["staticcheck", "govet", "gosec"]
+    },
     "c": {
       "language": "c",
       "engines": ["cppcheck", "clang-tidy"]
@@ -1594,6 +1597,191 @@
       "relation": "overlap",
       "reviewed": false,
       "reason": "Both report gets() and similar unbounded input functions."
+    },
+    {
+      "sonar": ["java:S2077"],
+      "qualor": [
+        "spotbugs:SQL_INJECTION_JDBC",
+        "spotbugs:SQL_INJECTION_SPRING_JDBC",
+        "spotbugs:SQL_INJECTION_JPA",
+        "spotbugs:SQL_INJECTION_HIBERNATE",
+        "spotbugs:SQL_INJECTION_JDO",
+        "spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+        "spotbugs:SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING"
+      ],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag SQL built from non-constant strings; FindSecBugs follows the data, the Sonar rule flags every such query."
+    },
+    {
+      "sonar": ["java:S2245"],
+      "qualor": ["spotbugs:PREDICTABLE_RANDOM"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag java.util.Random and Math.random; FindSecBugs also flags other non-cryptographic generators."
+    },
+    {
+      "sonar": ["java:S4790"],
+      "qualor": ["spotbugs:WEAK_MESSAGE_DIGEST_MD5", "spotbugs:WEAK_MESSAGE_DIGEST_SHA1"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag MD2, MD4, MD5 and SHA-1 digests; the Sonar rule also covers other weak hashes and MACs."
+    },
+    {
+      "sonar": ["java:S5547"],
+      "qualor": ["spotbugs:DES_USAGE", "spotbugs:TDES_USAGE"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag DES and 3DES ciphers; the Sonar rule also covers RC2, RC4 and Blowfish."
+    },
+    {
+      "sonar": ["java:S5542"],
+      "qualor": ["spotbugs:ECB_MODE", "spotbugs:PADDING_ORACLE", "spotbugs:RSA_NO_PADDING"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag ECB mode, CBC with PKCS#5 padding and RSA without OAEP; FindSecBugs has one rule per case."
+    },
+    {
+      "sonar": ["java:S4426"],
+      "qualor": ["spotbugs:RSA_KEY_SIZE", "spotbugs:BLOWFISH_KEY_SIZE"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag short RSA and Blowfish keys; the Sonar rule also covers other algorithms."
+    },
+    {
+      "sonar": ["java:S4830"],
+      "qualor": ["spotbugs:WEAK_TRUST_MANAGER"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag a TrustManager that accepts every certificate; the two rules know different APIs."
+    },
+    {
+      "sonar": ["java:S5527"],
+      "qualor": ["spotbugs:WEAK_HOSTNAME_VERIFIER", "spotbugs:INSECURE_SMTP_SSL"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag TLS without hostname checks; FindSecBugs splits HostnameVerifier and JavaMail."
+    },
+    {
+      "sonar": ["java:S4423"],
+      "qualor": ["spotbugs:SSL_CONTEXT", "spotbugs:DEFAULT_HTTP_CLIENT"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag weak SSL/TLS protocol choices; each rule covers different APIs."
+    },
+    {
+      "sonar": ["java:S2755"],
+      "qualor": [
+        "spotbugs:XXE_SAXPARSER",
+        "spotbugs:XXE_XMLREADER",
+        "spotbugs:XXE_DOCUMENT",
+        "spotbugs:XXE_DTD_TRANSFORM_FACTORY",
+        "spotbugs:XXE_SCHEMA_FACTORY",
+        "spotbugs:XXE_XSLT_TRANSFORM_FACTORY",
+        "spotbugs:XXE_XMLSTREAMREADER",
+        "spotbugs:XXE_VALIDATOR"
+      ],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag XML parsers that resolve external entities; FindSecBugs has one rule per parser API."
+    },
+    {
+      "sonar": ["java:S2068"],
+      "qualor": ["spotbugs:HARD_CODE_PASSWORD"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag hard-coded passwords; they recognise credentials by different names and APIs."
+    },
+    {
+      "sonar": ["java:S6437"],
+      "qualor": ["spotbugs:HARD_CODE_PASSWORD", "spotbugs:HARD_CODE_KEY"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag secrets written into the code; FindSecBugs checks known password and key parameters."
+    },
+    {
+      "sonar": ["java:S2115"],
+      "qualor": ["spotbugs:DMI_EMPTY_DB_PASSWORD", "spotbugs:HARD_CODE_PASSWORD"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag an empty database password; FindSecBugs's rule flags any constant password."
+    },
+    {
+      "sonar": ["java:S2092"],
+      "qualor": ["spotbugs:INSECURE_COOKIE"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag cookies without the secure flag; FindSecBugs only servlet cookies."
+    },
+    {
+      "sonar": ["java:S3330"],
+      "qualor": ["spotbugs:HTTPONLY_COOKIE"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag cookies without the HttpOnly flag; FindSecBugs only servlet cookies."
+    },
+    {
+      "sonar": ["java:S5122"],
+      "qualor": ["spotbugs:PERMISSIVE_CORS"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag CORS policies that allow any origin; they know different frameworks."
+    },
+    {
+      "sonar": ["java:S4502"],
+      "qualor": ["spotbugs:SPRING_CSRF_PROTECTION_DISABLED"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag disabled CSRF protection; FindSecBugs only in Spring Security."
+    },
+    {
+      "sonar": ["java:S3752"],
+      "qualor": ["spotbugs:SPRING_CSRF_UNRESTRICTED_REQUEST_MAPPING"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag Spring request mappings that accept every HTTP method."
+    },
+    {
+      "sonar": ["java:S5332"],
+      "qualor": ["spotbugs:UNENCRYPTED_SOCKET", "spotbugs:UNENCRYPTED_SERVER_SOCKET"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag unencrypted connections; the Sonar rule also checks URL schemes and other clients."
+    },
+    {
+      "sonar": ["java:S5852"],
+      "qualor": ["spotbugs:REDOS"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag regular expressions open to catastrophic backtracking; they detect it differently."
+    },
+    {
+      "sonar": ["java:S4433"],
+      "qualor": ["spotbugs:LDAP_ANONYMOUS"],
+      "relation": "equivalent",
+      "reviewed": true,
+      "reason": "Both flag an LDAP context that binds without authentication."
+    },
+    {
+      "sonar": ["java:S2257"],
+      "qualor": ["spotbugs:CUSTOM_MESSAGE_DIGEST"],
+      "relation": "overlap",
+      "reviewed": true,
+      "reason": "Both flag home-made cryptography; FindSecBugs only custom MessageDigest subclasses."
+    },
+    {
+      "sonar": ["java:S2254"],
+      "qualor": ["spotbugs:SERVLET_SESSION_ID"],
+      "relation": "equivalent",
+      "reviewed": true,
+      "reason": "Both flag reading the session id the client sent (getRequestedSessionId)."
+    },
+    {
+      "sonar": ["java:S4544"],
+      "qualor": ["spotbugs:JACKSON_UNSAFE_DESERIALIZATION"],
+      "relation": "equivalent",
+      "reviewed": true,
+      "reason": "Both flag Jackson default typing and class-name type ids, which open deserialization attacks."
     }
   ]
 }

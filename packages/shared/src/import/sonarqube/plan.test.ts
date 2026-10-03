@@ -248,6 +248,25 @@ describe('planProfile (import-sonarqube.md §7)', () => {
     expect(plan.stats.unmapped.map((u) => u.key)).toEqual(['go:S1135']);
   });
 
+  it('plans a java profile: equivalent FindSecBugs rows activate, overlap rows import statuses only (plan 6A)', () => {
+    const plan = planProfile(
+      profile({
+        language: 'java',
+        active: [
+          rule('java:S2254', { language: 'java' }),
+          rule('java:S4544', { language: 'java' }),
+          rule('java:S2077', { language: 'java' }),
+        ],
+      }),
+    );
+    expect(plan.skip).toBeNull();
+    expect(plan.rows).toEqual([
+      { ruleKey: 'spotbugs:JACKSON_UNSAFE_DESERIALIZATION', active: true, severityOverride: null },
+      { ruleKey: 'spotbugs:SERVLET_SESSION_ID', active: true, severityOverride: null },
+    ]);
+    expect(plan.stats.statusOnly).toEqual(['java:S2077']);
+  });
+
   it('classifies a C++ profile: curated overlap rows carry statuses only, the rest unmapped (plan 9D)', () => {
     const plan = planProfile(
       profile({
