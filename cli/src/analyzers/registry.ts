@@ -7,6 +7,7 @@ import { gosecAnalyzer, govetAnalyzer, staticcheckAnalyzer } from './golang';
 import { htmlhintAnalyzer } from './htmlhint';
 import { phpstanAnalyzer } from './phpstan';
 import { pmdAnalyzer } from './pmd';
+import { qualorAnalyzer } from './qualor';
 import { roslynAnalyzer } from './roslyn';
 import { rubocopAnalyzer } from './rubocop';
 import { ruffAnalyzer } from './ruff';
@@ -29,6 +30,7 @@ export function builtinAnalyzers(): Analyzer[] {
     detektAnalyzer,
     swiftlintAnalyzer,
     semgrepAnalyzer,
+    qualorAnalyzer,
     gitleaksAnalyzer,
     trivyAnalyzer,
     roslynAnalyzer,

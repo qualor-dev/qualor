@@ -461,7 +461,7 @@ describe('runAnalyzers', () => {
     expect(requiredFailures(required)).toEqual(['detekt']);
   });
 
-  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D, 8D, 8E, 8F, 9A, 9B, 9C, 9D)', () => {
+  it('lists the built-in adapters in config order (ruling C8 ended with CLI step 12; plan 2D, 6B-1, 8D, 8E, 8F, 9A, 9B, 9C, 9D)', () => {
     const ids = builtinAnalyzers().map((a) => a.id);
     const order = [
       'eslint',
@@ -472,6 +472,7 @@ describe('runAnalyzers', () => {
       'detekt',
       'swiftlint',
       'semgrep',
+      'qualor',
       'gitleaks',
       'trivy',
       'roslyn',

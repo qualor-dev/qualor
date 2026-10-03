@@ -30,6 +30,7 @@ import { runAnalyzers } from './runner';
 import {
   checkSemgrepConfig,
   createSemgrepAnalyzer,
+  isOpengrepVariable,
   MAX_RULE_FILE_BYTES,
   MAX_SEMGREP_CONFIGS,
   offlineFlags,
@@ -275,10 +276,21 @@ describe('semgrepAnalyzer.prepare', () => {
       cwd: root,
       // Defence in depth: every HTTP(S) request of the tool goes to a dead proxy.
       env: deadProxyEnv(),
+      dropEnv: isOpengrepVariable,
       sarifPath: out,
       okExitCodes: [0],
       version: null,
     });
+  });
+
+  it('never passes SEMGREP_* or OPENGREP_* variables to the tool (plan 6B-1)', async () => {
+    const root = setup();
+    const installed: Record<string, string>[] = [{ opengrep: '/o' }, { semgrep: '/s' }];
+    for (const binaries of installed) {
+      const prep = await semgrepAnalyzer.prepare(fakeContext(root, { config, binaries }));
+      if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+      expect(prep.run.dropEnv).toBe(isOpengrepVariable);
+    }
   });
 
   it('runs Semgrep with --metrics=off when it is the one installed or the one asked for', async () => {

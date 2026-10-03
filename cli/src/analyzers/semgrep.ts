@@ -48,6 +48,17 @@ export function offlineFlags(flavour: Flavour): string[] {
   ];
 }
 
+/**
+ * Plan 6B-1 (config.md §6): OpenGrep and Semgrep read `SEMGREP_*` and `OPENGREP_*` variables behind
+ * the command line's back. Verified with OpenGrep 1.30.0: `SEMGREP_BASELINE_COMMIT` and
+ * `SEMGREP_BASELINE_REF` report only findings new since that commit, `SEMGREP_TIMEOUT` changes the
+ * per-file timeout, `SEMGREP_LOG_FILE` writes a log wherever it names. None reaches the tool.
+ */
+export function isOpengrepVariable(name: string): boolean {
+  const upper = name.toUpperCase();
+  return upper.startsWith('SEMGREP_') || upper.startsWith('OPENGREP_');
+}
+
 /** A config path, `null` for a `qualor-default` that holds no rules, or why none can be used. */
 type Resolved = string | null | { skip: string } | { error: string };
 
@@ -215,7 +226,8 @@ function ruleFiles(root: string, top: string): { files: string[] } | { error: st
   return { files: files.sort() };
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
+/** A JSON object (not null, not an array); the qualor engine reads SARIF with it too. */
+export const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
@@ -329,6 +341,7 @@ export function createSemgrepAnalyzer(defaultRulesDir = DEFAULT_SEMGREP_RULES_DI
         ],
         cwd: ctx.root,
         env: deadProxyEnv(),
+        dropEnv: isOpengrepVariable,
         sarifPath: out,
         // Without --error both exit 0 with findings; anything else is a failure.
         okExitCodes: [0],
