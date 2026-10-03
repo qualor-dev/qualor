@@ -79,9 +79,9 @@ clang-tidy, scan in the job that built the project, with your own clang-tidy and
   `/opt/qualor/weblint`.
 - Eclipse Temurin JRE 17.0.20+8, for PMD, SpotBugs and detekt.
 - git, with `safe.directory '*'`, since CI runners check out as another user.
-- The pinned analyzers in `/opt/qualor/bin`: PMD 7.27.0, SpotBugs 4.10.4, OpenGrep 1.30.0,
-  Gitleaks 8.30.1, Trivy 0.74.0 and Ruff 0.16.9 (Python), with a snapshot of Trivy's
-  vulnerability database (the scan never downloads one); detekt 1.23.8 (Kotlin, Apache-2.0)
+- The pinned analyzers in `/opt/qualor/bin`: PMD 7.27.0, SpotBugs 4.10.4 with FindSecBugs 1.14.0
+  (security rules), OpenGrep 1.30.0, Gitleaks 8.30.1, Trivy 0.74.0 and Ruff 0.16.9 (Python), with a
+  snapshot of Trivy's vulnerability database (the scan never downloads one); detekt 1.23.8 (Kotlin, Apache-2.0)
   in `/opt/qualor/lib/detekt`; SwiftLint 0.65.1 (Swift, MIT), its static Linux build, in
   `/opt/qualor/bin/swiftlint`; PHPStan 2.2.16 (PHP, MIT) in `/opt/qualor/lib/phpstan`, on Debian's
   PHP 8.2; RuboCop 1.91.0 on Ruby 4.0.7 (Ruby, MIT), in `/opt/qualor/rubocop`; for Go, Go 1.27.1
@@ -126,8 +126,8 @@ An interrupted scan exits 128 plus the signal number (130 for SIGINT, 143 for SI
 ### Licences
 
 The Qualor CLI is MIT-licensed. The image bundles third-party software under its own licences:
-OpenGrep and SpotBugs (LGPL-2.1), PMD (BSD-style, with Apache-2.0 parts), Gitleaks and Trivy (MIT
-and Apache-2.0, with MPL-2.0 Go modules), Ruff (MIT, with three MPL-2.0 crates compiled in), detekt
+OpenGrep and SpotBugs (LGPL-2.1), FindSecBugs (LGPL-3.0), PMD (BSD-style, with Apache-2.0 parts),
+Gitleaks and Trivy (MIT and Apache-2.0, with MPL-2.0 Go modules), Ruff (MIT, with three MPL-2.0 crates compiled in), detekt
 (Apache-2.0; Trove4J, LGPL-2.1, inside its jar), PHPStan (MIT; its Composer packages MIT,
 BSD-3-Clause and Apache-2.0), PHP 8.2 from Debian (PHP License 3.01), Go (BSD-3-Clause with
 Google's patent grant), staticcheck (MIT), gosec (Apache-2.0), SwiftLint (MIT; its static build

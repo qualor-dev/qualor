@@ -46,6 +46,7 @@ describe('the Docker Hub descriptions', () => {
     for (const tool of [
       'PMD',
       'SPOTBUGS',
+      'FINDSECBUGS',
       'OPENGREP',
       'GITLEAKS',
       'DETEKT',

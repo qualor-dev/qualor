@@ -6,6 +6,26 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Java security analysis: `qualor/scanner` bundles FindSecBugs 1.14.0 (LGPL-3.0) in SpotBugs. Its
+  144 patterns report injections (SQL, command, path, LDAP, XPath, XSS, SSRF, expression languages),
+  XXE, unsafe deserialisation configuration, weak cryptography and hard-coded passwords as
+  `spotbugs:` rules. Taint findings and definite misuse are issues; review findings (weak random
+  numbers, cookie flags, CORS, weak hashes, request parameters, endpoints) are security hotspots,
+  which the gate never counts. The engine's version names the plugin
+  (`4.10.4 + FindSecBugs 1.14.0`). `qualor import sonarqube` maps 24 SonarQube Java security rules
+  to them (three activate profile rules, the rest import statuses).
+
+### Changed
+
+- Where a SpotBugs security rule and FindSecBugs report the same problem on one line (SQL from a
+  non-constant string, a constant or empty database password, a request parameter in a header,
+  cookie or file path), the FindSecBugs issue is a duplicate of SpotBugs' own, so issues you
+  already triaged stay as they are.
+- `findsecbugs*` environment variables are dropped from SpotBugs' environment, so a custom
+  FindSecBugs configuration named there is not read.
+
 ## [0.4.1] - 2026-10-02
 
 ### Added

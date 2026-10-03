@@ -12,6 +12,7 @@ vulnerability database pinned by digest), compiled into the
 | ----------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | OpenGrep                                                                      | 1.30.0                                         | LGPL-2.1 (`OPENGREP-LICENSE.txt`)                                                                                                                                                              | https://github.com/opengrep/opengrep/tree/v1.30.0                                                     |
 | SpotBugs                                                                      | 4.10.4                                         | LGPL-2.1 (`SPOTBUGS-LICENSE.txt`; its libraries: `/opt/qualor/lib/spotbugs-4.10.4/LICENSE-*.txt`)                                                                                              | https://github.com/spotbugs/spotbugs/tree/4.10.4                                                      |
+| FindSecBugs (SpotBugs plugin: security rules of the spotbugs engine)          | 1.14.0                                         | LGPL-3.0 (`FINDSECBUGS-LICENSE.txt`; the GPL-3.0 text it incorporates: `CPPCHECK-LICENSE.txt`)                                                                                                 | https://github.com/find-sec-bugs/find-sec-bugs/tree/version-1.14.0                                    |
 | detekt (the detekt engine, Kotlin)                                            | 1.23.8                                         | Apache-2.0 (`DETEKT-LICENSE.txt`); the libraries its jar bundles: see below (`DETEKT-THIRD-PARTY.txt`), Trove4J LGPL-2.1 (`TROVE4J-LICENSE.txt`)                                               | https://github.com/detekt/detekt/tree/v1.23.8                                                         |
 | SwiftLint (the swiftlint engine, Swift)                                       | 0.65.1                                         | MIT (`SWIFTLINT-LICENSE.txt`, with mimalloc's MIT licence); what its static build links: see below (`SWIFTLINT-THIRD-PARTY-NOTICES.txt`)                                                       | https://github.com/realm/SwiftLint/tree/0.65.1                                                        |
 | PHPStan (the phpstan engine, PHP)                                             | 2.2.16                                         | MIT (`PHPSTAN-LICENSE.txt`); the Composer packages inside its phar (MIT, BSD-3-Clause, Apache-2.0; Nette's under its BSD-3-Clause option): see `PHPSTAN-DEPENDENCIES.txt`                      | https://github.com/phpstan/phpstan/tree/2.2.16                                                        |
@@ -56,6 +57,9 @@ https://repo1.maven.org/maven2/net/sf/saxon/Saxon-HE/12.10/,
 https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.15.1/ and
 https://repo1.maven.org/maven2/javax/annotation/jsr250-api/1.0/ (also
 https://github.com/Saxonica/Saxon-HE and https://github.com/mozilla/rhino).
+
+FindSecBugs is one unmodified jar, `findsecbugs-plugin-1.14.0.jar`, in SpotBugs'
+`plugin/` directory, pinned by SHA-256. It bundles no third-party code.
 
 detekt's CLI is one shaded jar, `/opt/qualor/lib/detekt/detekt-cli.jar` (detekt-cli 1.23.8), unmodified
 and pinned by SHA-256 in `tools/analyzers/install.sh`. It bundles the Kotlin compiler 2.0.21 and
@@ -264,6 +268,7 @@ files attached to the Qualor release page of the same tag:
   and Alpine's build recipe), GNU Readline (the AlmaLinux source RPM `readline-7.0-10.el8`) and
   certifi 2026.7.22 (its PyPI sdist);
 - SpotBugs 4.10.4 (LGPL-2.1): the source archive of its release;
+- FindSecBugs 1.14.0 (LGPL-3.0): its source jar from Maven Central;
 - eslint-plugin-sonarjs 2.0.4 (LGPL-3.0), Qualor's own sonarjs pass: the source tree of the commit
   its release was published from, without its integration-test project sources; and axe-core 4.13.0
   (MPL-2.0), the one copyleft package its installed npm tree carries (a dependency of

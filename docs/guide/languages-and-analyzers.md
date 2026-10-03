@@ -18,7 +18,7 @@ size, complexity, duplication and coverage.
 | Go | **staticcheck** 2026.2.1 (MIT), **go vet** (Go 1.27.1) and **gosec** 2.29.0 (Apache-2.0, security), offline | `.go` files and a `go.mod` are in scope, run by the `qualor/scanner` image |
 | C | **cppcheck** (2.22.0, GPL-3.0-or-later); **clang-tidy** (yours, LLVM 14+, with a compile database) | `.c`/`.h` files exist |
 | C++ | the same | `.cpp`/`.cc`/`.cxx`/`.hpp`/`.h`... files exist |
-| Java | **PMD 7** (source) and **SpotBugs** (bytecode) | `.java` files exist. SpotBugs also needs compiled classes |
+| Java | **PMD 7** (source), **SpotBugs** (bytecode) with **FindSecBugs** 1.14.0 (LGPL-3.0, security) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
 | Secrets | **Gitleaks** | always (`enabled: true` by default) |
@@ -527,7 +527,7 @@ module is left out for the reasons above. Qualor runs these tools itself: a SARI
 from staticcheck or gosec is counted once with the built-in finding of the same code on the same
 line, and `engine: staticcheck`, `govet` or `gosec` in a `sarif:` entry is a configuration error.
 
-## Java (PMD and SpotBugs)
+## Java (PMD, SpotBugs and FindSecBugs)
 
 - **PMD** reads the source. The default ruleset `qualor-default` is PMD's own
   `rulesets/java/quickstart.xml`. Use your own with `analyzers.pmd.rulesets: [config/pmd.xml]`, or
@@ -536,6 +536,23 @@ line, and `engine: staticcheck`, `govet` or `gosec` in a `sarif:` entry is a con
   `./gradlew classes`). It looks in `target/classes` and `build/classes/java/main` by default. When
   those are empty it is skipped, with the reason `no compiled classes … (build the project before
   qualor scan)`.
+- **FindSecBugs** 1.14.0, SpotBugs' security plugin, runs inside SpotBugs in the `qualor/scanner`
+  image. It follows untrusted data (request parameters, headers, files, the command line) into SQL,
+  shell commands, file paths, LDAP, XPath, XML parsers and outgoing URLs, and it flags weak
+  cryptography, hard-coded passwords and unsafe configuration. Its rules are SpotBugs rules
+  (`spotbugs:SQL_INJECTION_JDBC`), so the Java quality profile turns each one on or off.
+  - Injections and definite misuse (an XML parser open to XXE, a trust-all TLS manager, DES or ECB,
+    a hard-coded password) are **issues** and count in the quality gate.
+  - Findings that ask you to review a usage (a non-cryptographic random number, a cookie without
+    its flags, a permissive CORS policy, a weak hash, object deserialisation, request parameters
+    and endpoints) are **security hotspots**: listed, never counted.
+  - Where SpotBugs' own rule and FindSecBugs report the same problem on one line (SQL built from a
+    variable, a constant database password), Qualor shows one issue, SpotBugs' own.
+  - Qualor drops `findsecbugs*` environment variables before it runs SpotBugs, so a custom
+    FindSecBugs configuration named there is not read.
+  - A SpotBugs installed outside the image runs without the plugin, unless you put its jar into
+    SpotBugs' `plugin/` directory. The scan's SpotBugs version says whether it ran (for example
+    `4.10.4 + FindSecBugs 1.14.0`).
 
 ```yaml
 analyzers:

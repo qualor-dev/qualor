@@ -229,6 +229,10 @@ describe('consistency with the shipped versions', () => {
     expect(cppcheckVersion).toBe('2.22.0');
     expect(installedVersion(installCppcheckSh, 'CPPCHECK')).toBe(cppcheckVersion);
     expect(pinnedVersions().cppcheck).toBe(cppcheckVersion);
+    const fsbVersion = /^FINDSECBUGS_VERSION=(\S+)$/m.exec(installSh)?.[1];
+    expect(fsbVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(installedVersion(installSh, 'FINDSECBUGS')).toBe(fsbVersion);
+    expect(pinnedVersions().findsecbugs).toBe(fsbVersion);
     expect(pinnedVersions()).toEqual({
       opengrep: '1.30.0',
       spotbugs: '4.10.4',
@@ -242,6 +246,7 @@ describe('consistency with the shipped versions', () => {
       ruff: '0.16.9',
       detekt: detektVersion,
       cppcheck: cppcheckVersion,
+      findsecbugs: fsbVersion,
     });
   });
 
@@ -257,6 +262,12 @@ describe('consistency with the shipped versions', () => {
     const trove = manifest.find((s) => s.component === 'detekt');
     expect(trove).toMatchObject({ licence: 'LGPL-2.1', fetch: { type: 'https' } });
     expect(trove?.pinnedAt).toContain('DETEKT_VERSION');
+  });
+
+  it('offers the source of the LGPL-3.0 FindSecBugs plugin (plan 6A)', () => {
+    const fsb = manifest.find((s) => s.component === 'findsecbugs');
+    expect(fsb).toMatchObject({ licence: 'LGPL-3.0', fetch: { type: 'https' } });
+    expect(fsb?.pinnedAt).toContain('FINDSECBUGS_VERSION');
   });
 
   it('matches every entry to those versions', () => {
@@ -283,6 +294,7 @@ describe('consistency with the shipped versions', () => {
       { sonarjs: '2.0.5' },
       { ruff: '0.17.0' },
       { cppcheck: '2.23.0' },
+      { findsecbugs: '1.15.0' },
     ];
     for (const bump of bumps) {
       expect(versionProblems(manifest, { ...pinnedVersions(), ...bump })).not.toEqual([]);
@@ -468,7 +480,7 @@ describe('the notices (rulings L1 and L2)', () => {
   it('names every bundled Java library in the README of the scanner sources image', () => {
     const readme = readFileSync('deploy/scanner/sources-README.md', 'utf8');
     const jars = manifest.filter((e) => e.file.endsWith('-sources.jar'));
-    expect(jars.map((e) => e.ref)).toEqual(['12.10', '1.7.15.1', '1.0', '1.0.20200330']);
+    expect(jars.map((e) => e.ref)).toEqual(['12.10', '1.7.15.1', '1.0', '1.0.20200330', '1.14.0']);
     for (const entry of jars) {
       const library = entry.file.replace(/-[\d.]+-sources\.jar$/, '');
       expect(readme.toLowerCase(), entry.file).toContain(library.toLowerCase());

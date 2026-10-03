@@ -19,6 +19,8 @@ are attached to the release of that tag at <https://github.com/qualor-dev/qualor
   (GPL-3.0-or-later: the AlmaLinux source RPM `readline-7.0-10.el8`) and **certifi** 2026.7.22
   (MPL-2.0: its PyPI sdist).
 - **SpotBugs** 4.10.4 (LGPL-2.1): the source archive of its release.
+- **FindSecBugs** 1.14.0 (LGPL-3.0), the SpotBugs security plugin: its source jar from Maven
+  Central.
 - The Java libraries SpotBugs and PMD bundle unmodified, as `-sources.jar` from Maven Central:
   **Saxon-HE** 12.10 (MPL-2.0), **Rhino** 1.7.15.1 (MPL-2.0) and **jsr250-api** 1.0 (CDDL-1.0).
 - **Trove4J** 1.0.20200330 (LGPL-2.1), inside detekt's jar: its source jar from Maven Central.

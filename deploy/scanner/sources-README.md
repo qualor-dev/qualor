@@ -14,6 +14,8 @@ This image holds files only: the complete corresponding source of the copyleft c
     Python launcher bundles: the source RPM `readline-7.0-10.el8.src.rpm`;
   - **certifi** 2026.7.22 (MPL-2.0), a Python package of the launcher: its PyPI sdist.
 - **SpotBugs** (LGPL-2.1): the source archive SpotBugs attaches to its release.
+- **FindSecBugs** 1.14.0 (LGPL-3.0), the SpotBugs security plugin installed in SpotBugs'
+  `plugin/` directory: its `findsecbugs-plugin-1.14.0-sources.jar` from Maven Central.
 - The MPL-2.0 and CDDL-1.0 Java libraries that SpotBugs and PMD bundle unmodified in their
   `lib/`, each as its `-sources.jar` from Maven Central: **Saxon-HE** 12.10 (MPL-2.0, in both),
   **Rhino** 1.7.15.1 (MPL-2.0, PMD) and **jsr250-api** 1.0 (CDDL-1.0, PMD).

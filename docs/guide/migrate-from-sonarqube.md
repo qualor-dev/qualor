@@ -41,6 +41,12 @@ SonarQube imported from Ruff itself (`external_ruff`) already map one to one, wi
 needed, because there `external_ruff:` and `ruff:` agree by construction: the rule key is Ruff's own.
 Issues SonarQube imported from Bandit (`external_bandit`) are not mapped yet.
 
+24 of SonarQube's Java security rules have a SpotBugs or FindSecBugs counterpart. Three of them map
+one to one and are activated in the imported Java profile: the client's session id (S2254),
+unauthenticated LDAP (S4433) and Jackson default typing (S4544). The others cover more or less than
+their counterpart, so they import issue statuses only. SonarQube's taint rules of its commercial
+editions are not mapped.
+
 Qualor runs these bundled rules with their default configuration: eslint-plugin-sonarjs's
 `recommended` set, the SonarAnalyzer.CSharp rules enabled by default, and Ruff's own
 `qualor-default` selection. A profile can activate a rule outside it: S1192 is one example, and for

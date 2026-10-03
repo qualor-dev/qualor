@@ -9,9 +9,10 @@ import { REPO_ROOT } from './stack';
  * L1 and L2). For qualor/scanner: OpenGrep (with its submodules and what its release binary
  * links: GMP, GNU Readline, certifi), SpotBugs, the JavaScriptCore/WebKit and TinyCC that Bun
  * links into the `qualor` binary, the Temurin JRE, the MPL-2.0 Go modules compiled into Trivy
- * (plan 2B) and into Gitleaks, and the MPL-2.0 crates compiled into Ruff (plan 8C); for both
- * images, every Debian source package (debian-sources.ts). `pnpm deploy:sources` downloads them
- * into sourcesDir(image), and the companion images qualor/<image>-sources carry them.
+ * (plan 2B) and into Gitleaks, the MPL-2.0 crates compiled into Ruff (plan 8C) and the
+ * FindSecBugs plugin of SpotBugs (plan 6A); for both images, every Debian source package
+ * (debian-sources.ts). `pnpm deploy:sources` downloads them into sourcesDir(image), and the
+ * companion images qualor/<image>-sources carry them.
  */
 export const MANIFEST_PATH = 'deploy/scanner/sources.json';
 export const indexPath = (image: ImageName): string => `deploy/${image}/SOURCES.md`;
@@ -37,7 +38,8 @@ export type Component =
   | 'sonarjs'
   | 'ruff'
   | 'detekt'
-  | 'cppcheck';
+  | 'cppcheck'
+  | 'findsecbugs';
 const COMPONENTS: readonly Component[] = [
   'opengrep',
   'spotbugs',
@@ -51,6 +53,7 @@ const COMPONENTS: readonly Component[] = [
   'ruff',
   'detekt',
   'cppcheck',
+  'findsecbugs',
 ];
 
 /** Where the manifest may download from: the SCM and each component's own upstream. */
@@ -186,7 +189,8 @@ export function installedVersion(
     | 'SONARJS'
     | 'RUFF'
     | 'DETEKT'
-    | 'CPPCHECK',
+    | 'CPPCHECK'
+    | 'FINDSECBUGS',
 ): string {
   const m = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh);
   if (!m?.[1]) throw new Error(`an install script has no ${tool}_VERSION`);
@@ -246,6 +250,7 @@ export function pinnedVersions(root = REPO_ROOT): Pins {
     ruff: installedVersion(installSh, 'RUFF'),
     detekt: installedVersion(installSh, 'DETEKT'),
     cppcheck: installedVersion(installCppcheckSh, 'CPPCHECK'),
+    findsecbugs: installedVersion(installSh, 'FINDSECBUGS'),
   };
 }
 
@@ -259,6 +264,7 @@ const TAG: Partial<Record<Component, (version: string) => string>> = {
   bun: (v) => `bun-v${v}`,
   temurin: (v) => `jdk-${v}`,
   cppcheck: (v) => v,
+  findsecbugs: (v) => v,
 };
 
 /** Why the manifest does not match the shipped versions (a bump without its sources). */

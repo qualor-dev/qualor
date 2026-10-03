@@ -1,9 +1,9 @@
 # Qualor documentation
 
 Qualor is an open-source, self-hosted code quality platform. It is an alternative to SonarQube with
-no lines-of-code licence. It runs open-source analyzers you already know: ESLint, PMD, SpotBugs,
-Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swift, Ruff for Python, PHPStan for
-PHP, RuboCop for Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy for C and C++,
+no lines-of-code licence. It runs open-source analyzers you already know: ESLint, PMD, SpotBugs with
+FindSecBugs, Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swift, Ruff for Python,
+PHPStan for PHP, RuboCop for Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy for C and C++,
 stylelint and HTMLHint for CSS and HTML, OpenGrep, Gitleaks and Trivy, plus SonarQube-compatible
 rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0) for C#, JavaScript and
 TypeScript, or any tool that writes SARIF. It tracks their issues across commits and measures

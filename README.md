@@ -2,7 +2,8 @@
 
 Open-source, self-hosted code quality platform: a SonarQube alternative without lines-of-code
 licensing, for GitLab, GitHub and any other CI. Qualor runs existing open-source analyzers (ESLint,
-PMD, SpotBugs, Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swift, RuboCop for
+PMD, SpotBugs with FindSecBugs, Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for
+Swift, RuboCop for
 Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy for C and C++, Ruff for Python,
 PHPStan for PHP, stylelint and HTMLHint for CSS and HTML, OpenGrep, Gitleaks, Trivy,
 SonarQube-compatible rules for C#, JavaScript and TypeScript, or any SARIF), tracks their issues
@@ -257,8 +258,9 @@ repository's code, never sees the token.
 at the repository root (this repository's own is an example); a repository without one still
 gets a useful scan. ESLint runs from the project's own `node_modules`, so install a JavaScript or
 TypeScript project's dependencies before `qualor scan` (the image has Node.js, npm and corepack);
-SpotBugs needs compiled classes, so build a Java project first; a C# project is built between
-`qualor dotnet begin` and `qualor dotnet end` (above), never by the CLI itself. Qualor skips what `.gitignore`
+SpotBugs, with its FindSecBugs security rules, needs compiled classes, so build a Java project
+first; a C# project is built between `qualor dotnet begin` and `qualor dotnet end` (above), never
+by the CLI itself. Qualor skips what `.gitignore`
 ignores, but has no built-in `coverage` exclude (a `coverage` source directory is code): if your
 repository commits generated coverage output, add it to `sources.exclude` in `qualor.yml`.
 
