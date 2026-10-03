@@ -6,6 +6,7 @@ PMD, SpotBugs with FindSecBugs, Roslyn and Roslynator for C#, detekt for Kotlin,
 Swift, RuboCop for
 Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy for C and C++, Ruff for Python,
 PHPStan for PHP, stylelint and HTMLHint for CSS and HTML, OpenGrep, Gitleaks, Trivy,
+Qualor's own security rules (JS/TS, Python, Java, Go; source-available),
 SonarQube-compatible rules for C#, JavaScript and TypeScript, or any SARIF), tracks their issues
 across commits, measures coverage, duplication and complexity, and applies a quality gate to new
 code. MIT, except `enterprise/`: source-available under the Qualor Enterprise Licence, and inert

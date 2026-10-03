@@ -52,6 +52,7 @@ describe('the Docker Hub descriptions', () => {
       'DETEKT',
       'SWIFTLINT',
       'PHPSTAN',
+      'QUALOR_RULES',
     ]) {
       const version = new RegExp(`^${tool}_VERSION=(\\S+)$`, 'm').exec(installSh)?.[1] ?? '';
       expect(version, tool).not.toBe('');

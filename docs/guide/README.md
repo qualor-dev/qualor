@@ -6,9 +6,10 @@ FindSecBugs, Roslyn and Roslynator for C#, detekt for Kotlin, SwiftLint for Swif
 PHPStan for PHP, RuboCop for Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy for C and C++,
 stylelint and HTMLHint for CSS and HTML, OpenGrep, Gitleaks and Trivy, plus SonarQube-compatible
 rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0) for C#, JavaScript and
-TypeScript, or any tool that writes SARIF. It tracks their issues across commits and measures
-coverage, duplication and complexity. It applies a quality gate to **new code**, and it comments on
-GitLab merge requests and GitHub pull requests.
+TypeScript, or any tool that writes SARIF. It also has Qualor's own security rules for JavaScript,
+TypeScript, Python, Java and Go (source-available; not in released images yet). It tracks their issues
+across commits and measures coverage, duplication and complexity. It applies a quality gate to
+**new code**, and it comments on GitLab merge requests and GitHub pull requests.
 
 These pages cover installation, setup and day-to-day use. They are the same Markdown files that live in
 [`docs/guide/`](https://github.com/qualor-dev/qualor/tree/main/docs/guide) of the repository and on

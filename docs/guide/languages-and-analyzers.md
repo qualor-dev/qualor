@@ -1,8 +1,8 @@
 # Languages and analyzers
 
-Qualor has no rule engine of its own. It runs well-known open-source analyzers, reads their SARIF
-output, and turns their findings into tracked issues. For the supported languages it also computes
-size, complexity, duplication and coverage.
+Qualor mostly runs well-known open-source analyzers, reads their SARIF output, and turns their
+findings into tracked issues. It also has security rules of its own (see Security rules). For the
+supported languages it also computes size, complexity, duplication and coverage.
 
 | Area | Analyzer | Runs when |
 |---|---|---|
@@ -20,6 +20,7 @@ size, complexity, duplication and coverage.
 | C++ | the same | `.cpp`/`.cc`/`.cxx`/`.hpp`/`.h`... files exist |
 | Java | **PMD 7** (source), **SpotBugs** (bytecode) with **FindSecBugs** 1.14.0 (LGPL-3.0, security) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
+| Security rules | **Qualor's own rules** on OpenGrep, for JavaScript, TypeScript, Python, Java and Go (PolyForm Shield 1.0.0, source-available) | the rules are installed (released images do not include them yet) and files of those languages are in scope |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
 | Secrets | **Gitleaks** | always (`enabled: true` by default) |
 | Vulnerable dependencies | **Trivy** | lockfiles or manifests exist |
@@ -702,6 +703,49 @@ script:
 
 `QUALOR_TRIVY_CACHE_DIR` must be absolute and outside the checkout. Jobs that run repository code must
 not be able to write it.
+
+## Security rules (Qualor)
+
+Qualor has its own security rules for JavaScript, TypeScript, Python, Java and Go. They run in
+every edition, as the `qualor` engine on OpenGrep. They follow data from an HTTP request (a query
+parameter, a form field, a header) to a dangerous call, and report it when nothing made it safe on
+the way. The first rules find SQL built from request data:
+
+| Rule | Finds |
+|---|---|
+| `qualor:js/sql-injection` | Express handlers that build `pg` or `mysql2` queries from `req.query`, `req.params`, `req.body`, headers or cookies |
+| `qualor:python/sql-injection` | Flask views that build DB-API `execute()` SQL from `request.args`, `form`, `values`, headers, cookies or JSON |
+| `qualor:java/sql-injection` | Servlets and Spring MVC handlers that build JDBC statements from request parameters, headers or the query string |
+| `qualor:go/sql-injection` | `net/http` handlers that build `database/sql` queries from the URL, form values, headers or cookies |
+
+- **Availability.** The rules are a separate pack that is not published yet, so the released
+  `qualor/scanner` images do not include it. Until it is, the engine is skipped with the message
+  "Qualor's security rules are not installed" (see Troubleshooting), the scan reports nothing from
+  it, and nothing else changes. The rest of this section describes the engine once the pack is
+  installed.
+- The engine's version in a scan names the rules release, for example
+  `1.30.0 + qualor-rules 2026.10.0`.
+- They follow data **within one function of a file**. A value that passes through another function
+  or another file is not followed yet.
+- Findings are Security issues and count in the quality gate. Where another analyzer reports the
+  same problem on the same line, Qualor's issue is the one shown and the other is its duplicate. If
+  you had marked that other issue as a false positive or won't fix, Qualor's new issue starts with
+  the same status, and its history quotes your comment.
+- Turn a rule off in the language's quality profile. The `js` rules apply to JavaScript and
+  TypeScript files: turn them off in both profiles.
+- A `nosemgrep` comment does not hide these findings, and a `.semgrepignore` file does not apply to
+  them: they scan exactly the files Qualor scans (`sources` in `qualor.yml`). Mark a finding as a
+  false positive in Qualor instead.
+- Configure the engine with `analyzers.qualor` (`enabled`, `timeoutSeconds`). `QUALOR_RULES_DIR`
+  names another directory with the unpacked rules (see Configuration). `SEMGREP_*` and
+  `OPENGREP_*` environment variables never reach OpenGrep.
+- **Licence.** The rules are source-available, not open source: the PolyForm Shield License 1.0.0,
+  not the MIT licence of the Qualor CLI. You may run them on your own code, free of charge, in any
+  Qualor edition. You may not embed them in other products or services, resell them, or use them to
+  build a competing product or service. The licence text is in the image at
+  `/opt/qualor/licenses/qualor-rules/LICENSE`.
+- Outside an image that includes the rules, the engine is skipped. Downloadable rules releases for
+  other machines are not published yet.
 
 ## SAST patterns (OpenGrep / Semgrep)
 

@@ -45,7 +45,8 @@ Issues SonarQube imported from Bandit (`external_bandit`) are not mapped yet.
 one to one and are activated in the imported Java profile: the client's session id (S2254),
 unauthenticated LDAP (S4433) and Jackson default typing (S4544). The others cover more or less than
 their counterpart, so they import issue statuses only. SonarQube's taint rules of its commercial
-editions are not mapped.
+editions are not mapped. Qualor's own security rules (see Languages and analyzers) cover some of
+the same ground; the import does not map SonarQube's security rules to them yet.
 
 Qualor runs these bundled rules with their default configuration: eslint-plugin-sonarjs's
 `recommended` set, the SonarAnalyzer.CSharp rules enabled by default, and Ruff's own

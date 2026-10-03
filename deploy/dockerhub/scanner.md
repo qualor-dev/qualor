@@ -92,6 +92,9 @@ clang-tidy, scan in the job that built the project, with your own clang-tidy and
   Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
+- Qualor's own security rules (qualor-rules 2026.10.0, PolyForm Shield 1.0.0, source-available) in
+  `/opt/qualor/rules/qualor`, run by OpenGrep as the `qualor` engine. Images built before the rules
+  are published do not include them, and the engine is skipped.
 - Runs as the user `node` (uid 1000) in `/src`; about 4.1 GB. Every base image is pinned by
   digest.
 
@@ -130,7 +133,8 @@ OpenGrep and SpotBugs (LGPL-2.1), FindSecBugs (LGPL-3.0), PMD (BSD-style, with A
 Gitleaks and Trivy (MIT and Apache-2.0, with MPL-2.0 Go modules), Ruff (MIT, with three MPL-2.0 crates compiled in), detekt
 (Apache-2.0; Trove4J, LGPL-2.1, inside its jar), PHPStan (MIT; its Composer packages MIT,
 BSD-3-Clause and Apache-2.0), PHP 8.2 from Debian (PHP License 3.01), Go (BSD-3-Clause with
-Google's patent grant), staticcheck (MIT), gosec (Apache-2.0), SwiftLint (MIT; its static build
+Google's patent grant), staticcheck (MIT), gosec (Apache-2.0), Qualor's security rules
+(PolyForm Shield 1.0.0: not MIT, source-available), SwiftLint (MIT; its static build
 links the Swift runtime, libc++, musl, curl, BoringSSL, libxml2, zlib and mimalloc, none of them
 copyleft), Ruby 4.0.7 (under its BSD-2-Clause option) with RuboCop and its gems (MIT, Ruby or
 BSD-2-Clause), cppcheck 2.22.0 (GPL-3.0-or-later, built from source; the source is in

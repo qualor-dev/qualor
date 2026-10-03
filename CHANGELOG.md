@@ -8,6 +8,18 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
+- Qualor's own security rules: a new built-in engine, `qualor`, runs a pack of OpenGrep taint
+  rules (source-available under PolyForm Shield 1.0.0, not MIT). The first rules find SQL built
+  from HTTP request data in JavaScript/TypeScript (Express with `pg`/`mysql2`), Python (Flask,
+  DB-API), Java (Servlets, Spring MVC, JDBC) and Go (`net/http`, `database/sql`). Rule keys look
+  like `qualor:java/sql-injection`; the UI shows the engine as "Qualor". Configure it with
+  `analyzers.qualor`; `QUALOR_RULES_DIR` points at another copy of the rules. `nosemgrep`
+  comments do not hide its findings; mark them as false positives instead. The pack is not
+  published yet, so `qualor/scanner` images do not include it: until then the engine is skipped
+  with the message "Qualor's security rules are not installed".
+- Where Qualor's rules and another analyzer report the same problem on a line, Qualor's issue is
+  primary; if you had marked the other issue as a false positive or won't fix, the new issue
+  starts with that status, once.
 - Java security analysis: `qualor/scanner` bundles FindSecBugs 1.14.0 (LGPL-3.0) in SpotBugs. Its
   144 patterns report injections (SQL, command, path, LDAP, XPath, XSS, SSRF, expression languages),
   XXE, unsafe deserialisation configuration, weak cryptography and hard-coded passwords as
@@ -19,6 +31,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Changed
 
+- `SEMGREP_*` and `OPENGREP_*` environment variables no longer reach OpenGrep or Semgrep:
+  `SEMGREP_BASELINE_REF` and `SEMGREP_BASELINE_COMMIT` silently hid every finding older than
+  that commit.
 - Where a SpotBugs security rule and FindSecBugs report the same problem on one line (SQL from a
   non-constant string, a constant or empty database password, a request parameter in a header,
   cookie, file path or servlet response), the FindSecBugs issue is a duplicate of SpotBugs' own, so issues you

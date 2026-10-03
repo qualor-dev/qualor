@@ -29,6 +29,8 @@ QUALOR_LOG_LEVEL=debug qualor scan     # every analyzer's command line, output a
 | `… is a legacy eslintrc configuration, which ESLint 9 does not read` | ESLint 9+ reads only flat configs | migrate to `eslint.config.js` |
 | `SpotBugs skipped: no compiled classes` | the project was not built | build before the scan, or set `classDirs` |
 | `the qualor/scanner image ships no Semgrep rules yet` | no rules are bundled | name your rule files in `analyzers.semgrep.configs`, or ignore the message |
+| `Qualor's security rules are not installed` | the scan does not run in an image that includes the rules (released images do not yet) | ignore the message, or set `QUALOR_RULES_DIR` to an unpacked rules release |
+| `the rules pack … does not match its manifest checksum` (or another `rules pack` reason) | `QUALOR_RULES_DIR` points at a changed or incomplete copy of the rules | unpack the rules again, or unset `QUALOR_RULES_DIR` |
 | `VULNERABILITY_DB_STALE` | Trivy's database is more than 14 days old | move to a newer scanner release, or fetch a database in the job with `QUALOR_TRIVY_CACHE_DIR` |
 | `ROSLYN_PROJECT_NOT_ANALYZED` | a C# project was not recompiled | build with `--no-incremental` |
 | `no C# project was built between qualor dotnet begin and end` | the build ran elsewhere or not at all | run the build in the same job, between the two commands |

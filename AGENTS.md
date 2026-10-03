@@ -22,6 +22,7 @@
 7. Ask before: changing the data model after migrations exist, adding a runtime dependency > 1 MB, changing the licence boundary, or anything irreversible.
 8. Everything outside `enterprise/` is MIT.
 9. Docs and site stay current, in the same PR as the change (see below). A change is not done until they are.
+10. Qualor's own security rules live in a separate repository, qualor-rules (source-available, not MIT); none of its rules, rule texts or release files is committed here. Clean room: never open semgrep-rules, opengrep-rules, the semgrep.dev registry, CodeQL queries, SonarSource rule descriptions or any other vendor's rule set; its `CLEAN-ROOM.md` describes the process.
 
 ## User documentation
 
