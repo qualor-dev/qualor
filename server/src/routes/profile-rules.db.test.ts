@@ -561,6 +561,20 @@ describe('profile rule activation and per-project profiles (api.md Â§3, server
     );
   });
 
+  it("decides Qualor's security rules in the language profiles, keys with a slash included (plan 6B-1)", async () => {
+    const java = await createProfile('Qualor rules java', { language: 'java' });
+    expect((await setRule(java, 'qualor:java/sql-injection', { active: false })).statusCode).toBe(
+      200,
+    );
+    const ts = await createProfile('Qualor rules ts');
+    expect((await setRule(ts, 'qualor:js/sql-injection', { active: false })).statusCode).toBe(200);
+    expect(
+      (await entries(java)).find((e) => e.rule.key === 'qualor:java/sql-injection'),
+    ).toMatchObject({
+      active: false,
+    });
+  });
+
   it('hides other organisationsâ€™ rules; a PUT by key answers alike for them and for new keys (rulings X2, X5)', async () => {
     const custom = await createProfile('X2 check');
     const star = await createProfile('X2 star', { language: '*' });

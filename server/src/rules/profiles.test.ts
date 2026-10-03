@@ -40,6 +40,13 @@ describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
     }
   });
 
+  it("lets the language's profile govern Qualor's security rules (plan 6B-1)", () => {
+    expect(governingLanguage('qualor', 'java')).toBe('java');
+    expect(governingLanguage('qualor', 'typescript')).toBe('typescript');
+    expect(governingLanguage('qualor', 'javascript')).toBe('javascript');
+    expect(governingLanguage('qualor', null)).toBe('*');
+  });
+
   it('lets the kotlin profile govern detekt findings on Kotlin files (phase 8E)', () => {
     expect(governingLanguage('detekt', 'kotlin')).toBe('kotlin');
     expect(governingLanguage('detekt', null)).toBe('*');

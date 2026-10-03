@@ -1,6 +1,7 @@
 import type { IngestionContext, IngestionStage } from '../ingest/process';
 import { requireState } from '../ingest/state';
 import { newCodeClassifier } from '../newcode/lines';
+import { planCarryOver, writeCarryOver } from './carry-over';
 import { liveAfterWrites, planDedupe, writeDedupe } from './dedupe';
 import {
   branchHasIssues,
@@ -57,6 +58,12 @@ export async function applyTrackingPlan(
   const live = await liveAfterWrites(ctx.tx, plan.live, written.blockedIds);
   const duplicates = planDedupe(live);
   await writeDedupe(ctx.tx, duplicates);
+  // data-model.md §5.3 (plan 6B-1): a new qualor root takes a triaged duplicate's status, once.
+  const carried = await writeCarryOver(
+    ctx.tx,
+    planCarryOver(live, duplicates, new Set(plan.inserts.map((i) => i.id))),
+    ctx.analysisId,
+  );
   ctx.logger.debug(
     {
       analysisId: ctx.analysisId,
@@ -65,6 +72,7 @@ export async function applyTrackingPlan(
       closed: plan.closes.length,
       inherited: inherited?.size ?? 0,
       duplicatesChanged: duplicates.length,
+      carried,
     },
     'tracked issues',
   );
