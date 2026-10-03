@@ -10,6 +10,7 @@ import {
 } from './debian-sources';
 import { releasedVersions } from '../release/version';
 import { alsoProblems, release, releaseArgs } from './release';
+import { scannerBuildArgs } from './rules-pack';
 import { must, REPO_ROOT, run } from './stack';
 import {
   loadManifest,
@@ -100,7 +101,11 @@ async function main(): Promise<void> {
     args,
     {
       imageArgs: {
-        scanner: ['-f', path.join('deploy', 'scanner', 'Dockerfile'), '.'],
+        // Plan 6B-1: once the rules pack is published a release never ships without it
+        // (install-qualor-rules.sh); until then it is built without, and the analyzer skips.
+        scanner: scannerBuildArgs(
+          readFileSync(path.join(REPO_ROOT, 'tools', 'analyzers', 'install.sh'), 'utf8'),
+        ),
         server: ['-f', path.join('deploy', 'server', 'Dockerfile'), '.'],
       },
       sourcesArgs: { scanner: sourcesArgs('scanner'), server: sourcesArgs('server') },

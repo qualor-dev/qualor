@@ -13,6 +13,7 @@
 # Debian's PHP 8.2 CLI (PHPStan).
 # Also Go 1.27.1 (trimmed, `/opt/qualor/lib/go`, `go` on PATH), staticcheck and gosec, and Qualor's
 # Go runner in /opt/qualor/go (tools/analyzers/install-go.sh, plan 9C).
+# Also Qualor's own security rules (the qualor-rules pack, source-available, in /opt/qualor/rules/qualor).
 # Build from the repository root:
 #   docker build -f deploy/scanner/Dockerfile -t qualor/scanner:dev .
 # Every base image is pinned by version and digest (multi-arch index); bump both together.
@@ -131,6 +132,16 @@ COPY --from=gotools /out/staticcheck /out/gosec /opt/qualor/bin/
 # with this stage's g++ and make; only the binary and its library files reach /opt/qualor.
 COPY tools/analyzers/install-cppcheck.sh /tmp/
 RUN sh /tmp/install-cppcheck.sh && rm /tmp/install-cppcheck.sh
+# Qualor's own security rules (plan 6B-1, config.md §6) into /opt/qualor/rules/qualor:
+# install-qualor-rules.sh checks the pack against install.sh's QUALOR_RULES_SHA256 before it
+# unpacks it. Until the pack is published it comes from tools/analyzers/qualor-rules/
+# (git-ignored) and is skipped when that holds none, unless QUALOR_RULES_REQUIRED=1, which
+# `pnpm deploy:release-images` passes once the pack is published. Its own layer, so a new pack
+# does not rebuild the tools.
+ARG QUALOR_RULES_REQUIRED=0
+COPY tools/analyzers/install-qualor-rules.sh /tmp/
+COPY tools/analyzers/qualor-rules/ /tmp/qualor-rules/
+RUN QUALOR_RULES_REQUIRED="$QUALOR_RULES_REQUIRED" sh /tmp/install-qualor-rules.sh && rm -rf /tmp/qualor-rules /tmp/install-qualor-rules.sh
 
 FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3db8ea4ae263ab4d0c3805933e5355f45 AS jre
 

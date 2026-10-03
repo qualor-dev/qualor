@@ -1,4 +1,16 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { parse as parseYaml, type Tags } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { finalStage } from './deploy/debian-sources';
@@ -826,6 +838,208 @@ describe('install-clang-tidy.sh (plan 9D, CI and the toolbox only)', () => {
     >;
     expect(gitlab['.analyzers']?.before_script ?? []).toContain(
       'sh tools/analyzers/install-clang-tidy.sh',
+    );
+  });
+});
+
+describe('the qualor rules pack (plan 6B-1)', () => {
+  const script = readFileSync('tools/analyzers/install.sh', 'utf8');
+  const installer = readFileSync('tools/analyzers/install-qualor-rules.sh', 'utf8');
+  const RULES_URL =
+    'https://github.com/qualor-dev/qualor-rules/releases/download/v$QUALOR_RULES_VERSION/qualor-rules-$QUALOR_RULES_VERSION.tar.gz';
+
+  it('pins the pack by version and SHA-256 in install.sh, and its URL only once it is published', () => {
+    expect(script).toMatch(/^QUALOR_RULES_VERSION=\d{4}\.([1-9]|1[0-2])\.(0|[1-9]\d*)$/m);
+    expect(script).toMatch(/^QUALOR_RULES_SHA256=[0-9a-f]{64}$/m);
+    const url = /^QUALOR_RULES_URL=(.*)$/m.exec(script)?.[1];
+    expect(['', RULES_URL]).toContain(url);
+    // The installer reads the pins from install.sh and never carries its own.
+    expect(installer).toContain(
+      'eval "$(grep -E \'^QUALOR_RULES_(VERSION|SHA256|URL)=\' "$INSTALL_SH")"',
+    );
+    expect(installer).not.toMatch(/^QUALOR_RULES_(VERSION|SHA256|URL)=/m);
+  });
+
+  it('checks the archive against the pin before it unpacks it, over https only', () => {
+    const check = installer.indexOf('sha256sum -c -');
+    expect(check).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(installer.indexOf('tar -xzf'));
+    expect(installer).toContain("--proto '=https' --proto-redir '=https' --tlsv1.2");
+    expect(installer).toContain('--no-same-owner');
+    // Without a pack it skips, unless a build requires one: the failure comes before the skip.
+    const required = installer.indexOf('if [ "$REQUIRED" = 1 ]');
+    expect(required).toBeGreaterThan(-1);
+    expect(installer.indexOf('exit 1', required)).toBeLessThan(
+      installer.indexOf('exit 0', required),
+    );
+  });
+
+  /** A synthetic pack (no real rule text) with the layout of a release, and install.sh pins for it. */
+  function fixture(opts: { sha?: string; url?: string } = {}) {
+    const dir = mkdtempSync(path.join(tmpdir(), 'qualor-rules-'));
+    const posix = (p: string) => p.replace(/\\/g, '/');
+    const pack = path.join(dir, 'pack');
+    mkdirSync(path.join(pack, 'rules', 'js'), { recursive: true });
+    writeFileSync(
+      path.join(pack, 'manifest.json'),
+      '{\n  "version": "2026.10.0",\n  "rules": []\n}\n',
+    );
+    writeFileSync(path.join(pack, 'LICENSE'), 'synthetic licence\n');
+    writeFileSync(path.join(pack, 'NOTICE'), 'synthetic notice\n');
+    writeFileSync(path.join(pack, 'rules', 'js', 'synthetic.yml'), 'rules: []\n');
+    const src = path.join(dir, 'src');
+    mkdirSync(src);
+    // Relative paths: GNU tar reads "C:" in an absolute Windows path as a remote host.
+    const tar = spawnSync('sh', ['-c', 'tar -czf ../src/qualor-rules-2026.10.0.tar.gz .'], {
+      cwd: pack,
+      encoding: 'utf8',
+    });
+    expect(tar.status, tar.stderr).toBe(0);
+    const sha =
+      opts.sha ??
+      createHash('sha256')
+        .update(readFileSync(path.join(src, 'qualor-rules-2026.10.0.tar.gz')))
+        .digest('hex');
+    writeFileSync(
+      path.join(dir, 'install.sh'),
+      `QUALOR_RULES_VERSION=2026.10.0\nQUALOR_RULES_SHA256=${sha}\nQUALOR_RULES_URL=${opts.url ?? ''}\n`,
+    );
+    const empty = path.join(dir, 'empty');
+    mkdirSync(empty);
+    const run = (env: Record<string, string>) =>
+      spawnSync('sh', [path.resolve('tools/analyzers/install-qualor-rules.sh')], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          QUALOR_INSTALL_SH: posix(path.join(dir, 'install.sh')),
+          QUALOR_TOOLS: posix(path.join(dir, 'prefix')),
+          QUALOR_RULES_SRC: posix(src),
+          ...env,
+        },
+      });
+    return {
+      run,
+      empty: posix(empty),
+      prefix: path.join(dir, 'prefix'),
+      clean: () => rmSync(dir, { recursive: true, force: true }),
+    };
+  }
+  const hasSh = spawnSync('sh', ['-c', 'true']).status === 0;
+
+  it.skipIf(!hasSh)(
+    'skips with a message when there is no pack, and fails when one is required',
+    () => {
+      const f = fixture();
+      try {
+        const skipped = f.run({ QUALOR_RULES_SRC: f.empty, QUALOR_RULES_REQUIRED: '0' });
+        expect(skipped.status, skipped.stderr).toBe(0);
+        expect(skipped.stdout).toContain('is not published yet');
+        expect(skipped.stdout).toContain('skipped');
+        expect(existsSync(path.join(f.prefix, 'rules', 'qualor'))).toBe(false);
+        const required = f.run({ QUALOR_RULES_SRC: f.empty, QUALOR_RULES_REQUIRED: '1' });
+        expect(required.status).toBe(1);
+        expect(required.stderr).toContain('(QUALOR_RULES_REQUIRED=1)');
+        expect(existsSync(path.join(f.prefix, 'rules', 'qualor'))).toBe(false);
+      } finally {
+        f.clean();
+      }
+    },
+  );
+
+  it.skipIf(!hasSh)('installs a pack that matches the pin, with its licence files', () => {
+    const f = fixture();
+    try {
+      const done = f.run({});
+      expect(done.status, done.stderr).toBe(0);
+      const dest = path.join(f.prefix, 'rules', 'qualor');
+      for (const file of [
+        'manifest.json',
+        'LICENSE',
+        'NOTICE',
+        path.join('rules', 'js', 'synthetic.yml'),
+      ])
+        expect(existsSync(path.join(dest, file)), file).toBe(true);
+      for (const file of ['LICENSE', 'NOTICE'])
+        expect(existsSync(path.join(f.prefix, 'licenses', 'qualor-rules', file)), file).toBe(true);
+    } finally {
+      f.clean();
+    }
+  });
+
+  it.skipIf(!hasSh)(
+    'refuses a pack that does not match the pin, whether or not one is required',
+    () => {
+      const f = fixture({ sha: 'f'.repeat(64) });
+      try {
+        for (const required of ['0', '1']) {
+          const done = f.run({ QUALOR_RULES_REQUIRED: required });
+          expect(done.status, required).toBe(1);
+          expect(done.stderr).toContain('checksum mismatch');
+          expect(existsSync(path.join(f.prefix, 'rules', 'qualor'))).toBe(false);
+        }
+      } finally {
+        f.clean();
+      }
+    },
+  );
+
+  it('runs in every job that requires the analyzers, in both CIs', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    for (const [name, job] of Object.entries(github.jobs)) {
+      if (!job.steps.some((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1')) continue;
+      const steps = job.steps;
+      const install = steps.findIndex(
+        (s) => s.run === 'sudo sh tools/analyzers/install-qualor-rules.sh',
+      );
+      expect(install, name).toBeGreaterThan(
+        steps.findIndex((s) => s.run?.endsWith('sh tools/analyzers/install.sh') === true),
+      );
+      expect(install, name).toBeLessThan(
+        steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1'),
+      );
+      // CI never requires the pack; the tests require it once QUALOR_RULES_URL is set.
+      expect(JSON.stringify(steps[install]), name).not.toContain('QUALOR_RULES_REQUIRED');
+    }
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] } | undefined
+    >;
+    const before = gitlab['.analyzers']?.before_script ?? [];
+    expect(before.indexOf('sh tools/analyzers/install-qualor-rules.sh')).toBeGreaterThan(
+      before.indexOf('sh tools/analyzers/install.sh'),
+    );
+  });
+
+  it('installs it in both images', () => {
+    const scanner = readFileSync('deploy/scanner/Dockerfile', 'utf8');
+    expect(scanner).toContain('ARG QUALOR_RULES_REQUIRED=0');
+    expect(scanner).toContain('COPY tools/analyzers/qualor-rules/ /tmp/qualor-rules/');
+    expect(scanner).toContain(
+      'QUALOR_RULES_REQUIRED="$QUALOR_RULES_REQUIRED" sh /tmp/install-qualor-rules.sh',
+    );
+    // In the tools stage, after install.sh (whose pins it reads from /tmp/install.sh).
+    expect(scanner.indexOf('sh /tmp/install-qualor-rules.sh')).toBeGreaterThan(
+      scanner.indexOf('RUN sh /tmp/install.sh'),
+    );
+    expect(scanner.indexOf('sh /tmp/install-qualor-rules.sh')).toBeLessThan(
+      scanner.lastIndexOf('\nFROM '),
+    );
+    const toolbox = readFileSync('tools/analyzers/Dockerfile', 'utf8');
+    expect(toolbox).toContain('COPY qualor-rules/ /tmp/qualor-rules/');
+    expect(toolbox).toContain('sh /tmp/install-qualor-rules.sh');
+  });
+
+  it('never commits a pack into this repository (the rules are not MIT)', () => {
+    // Tracked and untracked-but-not-ignored files: the README alone, whether or not it is staged
+    // yet, and never a tarball (the drop directory is git-ignored).
+    const files = spawnSync(
+      'git',
+      ['ls-files', '-co', '--exclude-standard', 'tools/analyzers/qualor-rules'],
+      { encoding: 'utf8' },
+    );
+    expect(files.stdout.trim().split('\n')).toEqual(['tools/analyzers/qualor-rules/README.md']);
+    expect(readFileSync('.gitignore', 'utf8')).toMatch(
+      /^\/tools\/analyzers\/qualor-rules\/\*\.tar\.gz$/m,
     );
   });
 });

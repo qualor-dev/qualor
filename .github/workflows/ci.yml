@@ -74,6 +74,9 @@ jobs:
       # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
       - run: sudo sh tools/analyzers/install-cppcheck.sh
       - run: sudo sh tools/analyzers/install-clang-tidy.sh
+      # Plan 6B-1: Qualor's security rules pack; skipped with a message until it is published
+      # (QUALOR_RULES_URL in install.sh), and then required by the tests.
+      - run: sudo sh tools/analyzers/install-qualor-rules.sh
       - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm test:coverage
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
@@ -127,6 +130,9 @@ jobs:
       # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
       - run: sudo sh tools/analyzers/install-cppcheck.sh
       - run: sudo sh tools/analyzers/install-clang-tidy.sh
+      # Plan 6B-1: Qualor's security rules pack; skipped with a message until it is published
+      # (QUALOR_RULES_URL in install.sh), and then required by the tests.
+      - run: sudo sh tools/analyzers/install-qualor-rules.sh
       - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm fixtures
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
@@ -169,6 +175,9 @@ jobs:
       # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
       - run: sudo sh tools/analyzers/install-cppcheck.sh
       - run: sudo sh tools/analyzers/install-clang-tidy.sh
+      # Plan 6B-1: Qualor's security rules pack; skipped with a message until it is published
+      # (QUALOR_RULES_URL in install.sh), and then required by the tests.
+      - run: sudo sh tools/analyzers/install-qualor-rules.sh
       - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm --filter @qualor/cli build
       - run: pnpm --filter @qualor/cli smoke

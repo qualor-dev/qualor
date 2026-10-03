@@ -80,6 +80,7 @@ describe('image definitions (plan 1G)', () => {
     expect([...text.matchAll(/^USER (\S+)$/gm)].at(-1)?.[1]).toBe('node');
     expect(text).toMatch(/^ENTRYPOINT \["qualor"\]$/m);
     expect(text).toContain('sh /tmp/install.sh');
+    expect(text).toContain('sh /tmp/install-qualor-rules.sh');
     expect(text).toContain('install -d /opt/qualor/rules/semgrep');
   });
 

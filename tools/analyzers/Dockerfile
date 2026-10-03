@@ -7,7 +7,8 @@
 # (stylelint and HTMLHint, plan 8D), and Qualor's Ruby pass in /opt/qualor/rubocop (plan 9B).
 # Also Go 1.27.1, staticcheck and gosec, and Qualor's Go runner from install-go.sh (plan 9C).
 # And cppcheck built from source by install-cppcheck.sh (plan 9D), and clang-tidy 22.1.8 (tests
-# only; never in qualor/scanner) from install-clang-tidy.sh (plan 9D).
+# only; never in qualor/scanner) from install-clang-tidy.sh (plan 9D), and Qualor's security rules
+# pack (plan 6B-1).
 #   docker build -t qualor-analyzers tools/analyzers
 # Pinned by version and digest (multi-arch index); bump both together.
 FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7
@@ -42,6 +43,12 @@ RUN sh /tmp/install-cppcheck.sh && rm /tmp/install-cppcheck.sh
 # (plan 9D, decision 2; tools/analyzers/install-clang-tidy.sh, tools/ci.test.ts).
 COPY install-clang-tidy.sh /tmp/
 RUN sh /tmp/install-clang-tidy.sh && rm /tmp/install-clang-tidy.sh
+# Qualor's own security rules into /opt/qualor/rules/qualor, as deploy/scanner/Dockerfile and CI
+# install them (plan 6B-1; tools/analyzers/install-qualor-rules.sh, tools/ci.test.ts); skipped
+# when tools/analyzers/qualor-rules/ holds no tarball and the pack is not published yet.
+COPY install.sh install-qualor-rules.sh /tmp/
+COPY qualor-rules/ /tmp/qualor-rules/
+RUN sh /tmp/install-qualor-rules.sh && rm -rf /tmp/qualor-rules /tmp/install-qualor-rules.sh /tmp/install.sh
 COPY install-dotnet.sh /tmp/install-dotnet.sh
 RUN sh /tmp/install-dotnet.sh && rm /tmp/install-dotnet.sh
 ENV DOTNET_ROOT=/opt/qualor/share/dotnet \
