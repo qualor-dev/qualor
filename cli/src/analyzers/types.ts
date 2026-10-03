@@ -81,6 +81,12 @@ export interface AnalyzerCommand {
   /** Where the tool writes SARIF 2.1.0 (config.md §6). */
   sarifPath: string;
   /**
+   * Runs naming the same group never overlap within one scan: each waits for the other's process
+   * to end. OpenGrep (`OPENGREP_GROUP`) unpacks itself into `$HOME/.cache/opengrep` on its first
+   * run, and launchers unpacking at the same time crash each other (SIGBUS).
+   */
+  exclusive?: string;
+  /**
    * `text` (plan 9D): the output is not JSON (cppcheck's XML, clang-tidy's YAML); the runner reads
    * it as UTF-8, with the same size bound, and hands the string to `transform`, which must exist.
    */

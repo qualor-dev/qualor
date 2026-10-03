@@ -13,7 +13,13 @@ import { MAX_ANALYZED_BYTES } from '../discovery/discover';
 import { isInside } from './binary';
 import { deadProxyEnv } from './offline';
 import { shown } from './reason';
-import { isObject, isOpengrepVariable, MAX_RULE_FILE_BYTES, offlineFlags } from './semgrep';
+import {
+  isObject,
+  isOpengrepVariable,
+  MAX_RULE_FILE_BYTES,
+  offlineFlags,
+  OPENGREP_GROUP,
+} from './semgrep';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
 
 /** Where the qualor/scanner image installs Qualor's security rules (install-qualor-rules.sh). */
@@ -264,6 +270,7 @@ export function createQualorAnalyzer(
         env: deadProxyEnv(),
         dropEnv: isOpengrepVariable,
         sarifPath: out,
+        exclusive: OPENGREP_GROUP,
         // Like the semgrep engine: exit 0 with or without findings; anything else is a failure.
         okExitCodes: [0],
         version: null,

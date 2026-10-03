@@ -35,6 +35,7 @@ import {
   MAX_RULE_FILE_BYTES,
   MAX_SEMGREP_CONFIGS,
   offlineFlags,
+  OPENGREP_GROUP,
   resolveConfigs,
   semgrepAnalyzer,
 } from './semgrep';
@@ -281,9 +282,14 @@ describe('semgrepAnalyzer.prepare', () => {
       env: deadProxyEnv(),
       dropEnv: isOpengrepVariable,
       sarifPath: out,
+      // Never at the same time as the qualor engine's OpenGrep (its self-unpacking cache).
+      exclusive: OPENGREP_GROUP,
       okExitCodes: [0],
       version: null,
     });
+    // toEqual accepts a missing property for an undefined one: pin the group itself.
+    expect(OPENGREP_GROUP).toBe('opengrep');
+    expect(prep.run.exclusive).toBe(OPENGREP_GROUP);
   });
 
   it('never passes SEMGREP_* or OPENGREP_* variables to the tool (plan 6B-1)', async () => {
@@ -311,6 +317,8 @@ describe('semgrepAnalyzer.prepare', () => {
       if (!('run' in prep)) throw new Error(JSON.stringify(prep));
       expect(prep.run.command).toBe('/usr/bin/semgrep');
       expect(prep.run.args).toContain('--metrics=off');
+      // Semgrep does not unpack itself, so it runs alongside the qualor engine.
+      expect(prep.run.exclusive).toBeUndefined();
     }
   });
 

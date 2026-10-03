@@ -13,6 +13,7 @@ import { createDetektAnalyzer } from './detekt';
 import { builtinAnalyzers } from './registry';
 import {
   emergencyCleanup,
+  exclusiveGroups,
   execEnv,
   mapLimit,
   removeActiveWorkDirs,
@@ -47,9 +48,17 @@ const SARIF = {
 const FAKE_SECRET = 'ghp_SUPERSECRETTOKENVALUE1234567890';
 
 const TOOL = `
-import { truncateSync, writeFileSync } from 'node:fs';
+import { appendFileSync, truncateSync, writeFileSync } from 'node:fs';
 const [mode, out] = process.argv.slice(2);
-if (mode === 'ok') writeFileSync(out, JSON.stringify(${JSON.stringify(SARIF)}));
+if (mode === 'span') {
+  const [log, name] = process.argv.slice(4);
+  appendFileSync(log, 'start ' + name + '\\n');
+  setTimeout(() => {
+    appendFileSync(log, 'end ' + name + '\\n');
+    writeFileSync(out, JSON.stringify(${JSON.stringify(SARIF)}));
+  }, 1000);
+}
+else if (mode === 'ok') writeFileSync(out, JSON.stringify(${JSON.stringify(SARIF)}));
 else if (mode === 'crash') { process.stderr.write('boom\\n'); process.exit(2); }
 else if (mode === 'okwarn') { process.stderr.write('warning: setting ignored\\n'); writeFileSync(out, JSON.stringify(${JSON.stringify(SARIF)})); }
 else if (mode === 'garbage') writeFileSync(out, '{"runs": ${FAKE_SECRET}');
@@ -726,6 +735,55 @@ describe('runAnalyzers', () => {
     expect(requiredFailures(captures)).toEqual(['pmd']);
   });
 
+  it('never overlaps two runs that name the same exclusive group, and overlaps the rest (OpenGrep cache)', async () => {
+    const { root, files, toolPath } = setup();
+    const spans = (exclusive: string | undefined, ids: AnalyzerId[]) => {
+      const log = path.join(tmp(), 'spans.log');
+      writeFileSync(log, '');
+      const analyzers = ids.map((id): Analyzer => ({
+        id,
+        languages: [],
+        prepare: (ctx) => {
+          const sarifPath = path.join(ctx.workDir, 'out.sarif');
+          return Promise.resolve({
+            run: {
+              command: process.execPath,
+              args: [toolPath, 'span', sarifPath, log, id],
+              cwd: ctx.root,
+              sarifPath,
+              okExitCodes: [0],
+              ...(exclusive !== undefined && { exclusive }),
+            },
+          });
+        },
+      }));
+      return { log, analyzers };
+    };
+    const run = async (exclusive: string | undefined) => {
+      const { log, analyzers } = spans(exclusive, ['semgrep', 'qualor']);
+      const captures = await runAnalyzers(analyzers, {
+        root,
+        files,
+        config: config(),
+        log: silentLogger,
+        concurrency: 4,
+      });
+      expect(captures.map((c) => c.status)).toEqual(['ok', 'ok']);
+      return readFileSync(log, 'utf8').trim().split('\n');
+    };
+    // The control: without a group the two runs overlap, so the check below can see an overlap.
+    expect((await run(undefined)).map((l) => l.split(' ')[0])).toEqual([
+      'start',
+      'start',
+      'end',
+      'end',
+    ]);
+    const serial = await run('opengrep');
+    expect(serial.map((l) => l.split(' ')[0])).toEqual(['start', 'end', 'start', 'end']);
+    // One run ends before the other starts, whichever went first.
+    expect(serial[0]?.split(' ')[1]).toBe(serial[1]?.split(' ')[1]);
+  });
+
   it('removes each analyzer work directory afterwards', async () => {
     const { root, files, toolPath } = setup();
     let workDir = '';
@@ -948,6 +1006,38 @@ describe('mapLimit', () => {
     });
     expect(out).toEqual([10, 20, 30, 40, 50, 60]);
     expect(peak).toBe(2);
+  });
+});
+
+describe('exclusiveGroups', () => {
+  it('runs one group in call order, carries on after a rejection, and leaves other groups free', async () => {
+    const serialise = exclusiveGroups();
+    const order: string[] = [];
+    const step =
+      (name: string, ms: number, fail = false) =>
+      async () => {
+        order.push(`start ${name}`);
+        await sleep(ms);
+        order.push(`end ${name}`);
+        if (fail) throw new Error(name);
+        return name;
+      };
+    const results = await Promise.allSettled([
+      serialise('opengrep', step('a', 30, true)),
+      serialise('opengrep', step('b', 10)),
+      serialise('other', step('c', 5)),
+      serialise(undefined, step('d', 5)),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([
+      'rejected',
+      'fulfilled',
+      'fulfilled',
+      'fulfilled',
+    ]);
+    // c and d do not wait for a; b starts only after a ended.
+    expect(order.indexOf('start c')).toBeLessThan(order.indexOf('end a'));
+    expect(order.indexOf('start d')).toBeLessThan(order.indexOf('end a'));
+    expect(order.indexOf('start b')).toBeGreaterThan(order.indexOf('end a'));
   });
 });
 

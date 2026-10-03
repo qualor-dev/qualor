@@ -7,6 +7,7 @@ import { expectedKeys, fakeContext, findingKeys, normalizeRecorded } from '../..
 import { FIXTURES_DIR } from '../../test/fixtures';
 import { useTempDirs } from '../../test/tmp';
 import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
+import { silentLogger } from '../log';
 import { deadProxyEnv } from './offline';
 import {
   createQualorAnalyzer,
@@ -16,7 +17,7 @@ import {
   qualorAnalyzer,
   withQualorRules,
 } from './qualor';
-import { isOpengrepVariable } from './semgrep';
+import { isOpengrepVariable, OPENGREP_GROUP } from './semgrep';
 import type { AnalyzerContext } from './types';
 
 const tmp = useTempDirs();
@@ -254,10 +255,14 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
       env: deadProxyEnv(),
       dropEnv: isOpengrepVariable,
       sarifPath: out,
+      // Never at the same time as the semgrep engine's OpenGrep (its self-unpacking cache).
+      exclusive: OPENGREP_GROUP,
       okExitCodes: [0],
       version: null,
       transform: expect.any(Function),
     });
+    expect(OPENGREP_GROUP).toBe('opengrep');
+    expect(prep.run.exclusive).toBe(OPENGREP_GROUP);
     // The pack from QUALOR_RULES_DIR replaces the default one.
     const other = writePack(tmp());
     const fromEnv = await createQualorAnalyzer({ defaultDir: pack }).prepare(
@@ -297,6 +302,48 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
       '.',
     ]);
     expect(prep.run.args).not.toContain('--');
+  });
+
+  it('warns when the files do not fit one command line, and only then', async () => {
+    const root = tmp();
+    const warnings: string[] = [];
+    const ctx = (): AnalyzerContext => ({
+      ...context(root, {
+        files: [scopeFile(root, 'src/a.py', 'python'), scopeFile(root, 'web/b.ts', 'typescript')],
+      }),
+      log: { ...silentLogger, warn: (m: string) => warnings.push(m) },
+    });
+    await createQualorAnalyzer({ defaultDir: writePack(tmp()) }).prepare(ctx());
+    expect(warnings).toEqual([]);
+    await createQualorAnalyzer({ defaultDir: writePack(tmp()), maxTargetArgBytes: 10 }).prepare(
+      ctx(),
+    );
+    expect(warnings).toEqual([
+      "qualor: 2 files do not fit one command line; OpenGrep selects the files itself and findings outside the scan's scope are dropped",
+    ]);
+  });
+
+  it('warns when OpenGrep is not the version the pack is tested with, and only then', async () => {
+    const root = tmp();
+    const warnings: string[] = [];
+    const prep = await createQualorAnalyzer({ defaultDir: writePack(tmp()) }).prepare({
+      ...context(root),
+      log: { ...silentLogger, warn: (m: string) => warnings.push(m) },
+    });
+    if (!('run' in prep) || prep.run.transform === undefined) throw new Error(JSON.stringify(prep));
+    const sarif = (semanticVersion: string) => ({
+      runs: [
+        { tool: { driver: { name: 'Opengrep OSS', semanticVersion, rules: [] } }, results: [] },
+      ],
+    });
+    prep.run.transform(sarif('1.30.0'), '');
+    expect(warnings).toEqual([]);
+    const out = prep.run.transform(sarif('1.31.0'), '') as ReturnType<typeof sarif>;
+    expect(warnings).toEqual([
+      'qualor: the rules pack 2026.10.0 is tested with OpenGrep 1.30.0, not 1.31.0',
+    ]);
+    // A warning only: the results are still used, with the pack named in the version.
+    expect(out.runs[0]?.tool.driver).toMatchObject({ version: '1.31.0 + qualor-rules 2026.10.0' });
   });
 });
 

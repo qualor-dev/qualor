@@ -60,6 +60,15 @@ export function isOpengrepVariable(name: string): boolean {
   return upper.startsWith('SEMGREP_') || upper.startsWith('OPENGREP_');
 }
 
+/**
+ * The exclusive group (`AnalyzerCommand.exclusive`) of every OpenGrep run: the semgrep and qualor
+ * engines. OpenGrep 1.30.0 is a self-extracting launcher that unpacks about 250 MB into
+ * `$HOME/.cache/opengrep/<version>/` on its first run; launchers unpacking there at the same time
+ * crash with SIGBUS (probed in a fresh qualor/scanner container: 3 or 4 at once fail in most
+ * containers). One at a time, the first unpacks and the next finds the cache complete.
+ */
+export const OPENGREP_GROUP = 'opengrep';
+
 /** A config path, `null` for a `qualor-default` that holds no rules, or why none can be used. */
 type Resolved = string | null | { skip: string } | { error: string };
 
@@ -347,6 +356,7 @@ export function createSemgrepAnalyzer(defaultRulesDir = DEFAULT_SEMGREP_RULES_DI
         env: deadProxyEnv(),
         dropEnv: isOpengrepVariable,
         sarifPath: out,
+        ...(binary.flavour === 'opengrep' && { exclusive: OPENGREP_GROUP }),
         // Without --error both exit 0 with findings; anything else is a failure.
         okExitCodes: [0],
         version: null,

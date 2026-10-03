@@ -40,6 +40,24 @@ export async function mapLimit<T, R>(
   return results;
 }
 
+/** Runs `fn` once every earlier call naming the same group has settled; without one, at once. */
+export type Serialiser = <T>(group: string | undefined, fn: () => Promise<T>) => Promise<T>;
+
+/** One scan's exclusive groups (`AnalyzerCommand.exclusive`). Exported for direct testing. */
+export function exclusiveGroups(): Serialiser {
+  const tails = new Map<string, Promise<unknown>>();
+  return <T>(group: string | undefined, fn: () => Promise<T>): Promise<T> => {
+    if (group === undefined) return fn();
+    const result = (tails.get(group) ?? Promise.resolve()).then(fn);
+    // A failed run releases the group too.
+    tails.set(
+      group,
+      result.catch(() => undefined),
+    );
+    return result;
+  };
+}
+
 export interface RunAnalyzersOptions {
   root: string;
   config: QualorConfig;
@@ -208,6 +226,7 @@ async function capture(
   analyzer: Analyzer,
   o: RunAnalyzersOptions,
   languages: ReadonlySet<Language>,
+  serialise: Serialiser,
 ): Promise<SarifCapture> {
   const settings = o.config.analyzers[analyzer.id];
   const timeoutSeconds = 'timeoutSeconds' in settings ? settings.timeoutSeconds : 0;
@@ -326,15 +345,17 @@ async function capture(
       },
       o.root,
     );
-    const result = await runProcess(
-      {
-        command: run.command,
-        args: run.args,
-        cwd: run.cwd,
-        env: childEnv,
-        timeoutMs: timeoutSeconds * 1000,
-      },
-      o.log,
+    const result = await serialise(run.exclusive, () =>
+      runProcess(
+        {
+          command: run.command,
+          args: run.args,
+          cwd: run.cwd,
+          env: childEnv,
+          timeoutMs: timeoutSeconds * 1000,
+        },
+        o.log,
+      ),
     );
     const done = (status: SarifCapture['status'], reason: string | null): SarifCapture => {
       if (reason !== null) o.log.warn(`${analyzer.id}: ${status} (${reason})`);
@@ -395,8 +416,9 @@ export async function runAnalyzers(
   const uninstall = installEmergencyCleanup(o.log);
   try {
     const languages = new Set(o.files.map((f) => f.language).filter((l) => l !== 'other'));
+    const serialise = exclusiveGroups();
     return await mapLimit(analyzers, o.concurrency ?? defaultConcurrency(), (a) =>
-      capture(a, o, languages),
+      capture(a, o, languages, serialise),
     );
   } finally {
     uninstall();
