@@ -21,7 +21,7 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 - Where a SpotBugs security rule and FindSecBugs report the same problem on one line (SQL from a
   non-constant string, a constant or empty database password, a request parameter in a header,
-  cookie or file path), the FindSecBugs issue is a duplicate of SpotBugs' own, so issues you
+  cookie, file path or servlet response), the FindSecBugs issue is a duplicate of SpotBugs' own, so issues you
   already triaged stay as they are.
 - `findsecbugs*` environment variables are dropped from SpotBugs' environment, so a custom
   FindSecBugs configuration named there is not read.

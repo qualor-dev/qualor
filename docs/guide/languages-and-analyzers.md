@@ -547,7 +547,8 @@ line, and `engine: staticcheck`, `govet` or `gosec` in a `sarif:` entry is a con
     its flags, a permissive CORS policy, a weak hash, object deserialisation, request parameters
     and endpoints) are **security hotspots**: listed, never counted.
   - Where SpotBugs' own rule and FindSecBugs report the same problem on one line (SQL built from a
-    variable, a constant database password), Qualor shows one issue, SpotBugs' own.
+    variable, a constant database password, a request parameter in a file path or a servlet
+    response), Qualor shows one issue, SpotBugs' own.
   - Qualor drops `findsecbugs*` environment variables before it runs SpotBugs, so a custom
     FindSecBugs configuration named there is not read.
   - A SpotBugs installed outside the image runs without the plugin, unless you put its jar into

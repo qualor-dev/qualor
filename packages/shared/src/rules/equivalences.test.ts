@@ -337,6 +337,8 @@ describe('curated same-engine pairs (data-model.md §5.3, plan 6A)', () => {
     'HRS_REQUEST_PARAMETER_TO_HTTP_HEADER',
     'HRS_REQUEST_PARAMETER_TO_COOKIE',
     'PT_RELATIVE_PATH_TRAVERSAL',
+    'PT_ABSOLUTE_PATH_TRAVERSAL',
+    'XSS_REQUEST_PARAMETER_TO_SERVLET_WRITER',
   ]);
 
   it('pairs core SpotBugs rules (primary) with FindSecBugs rules, within one engine, never chained', () => {

@@ -1669,6 +1669,16 @@
       "primary": "spotbugs:PT_RELATIVE_PATH_TRAVERSAL",
       "duplicate": "spotbugs:PATH_TRAVERSAL_IN",
       "reason": "A request parameter in a file path; both on the File constructor. CWE-23 and CWE-22 differ, so no shared CWE pairs them (plan 6A probe)."
+    },
+    {
+      "primary": "spotbugs:PT_ABSOLUTE_PATH_TRAVERSAL",
+      "duplicate": "spotbugs:PATH_TRAVERSAL_IN",
+      "reason": "A request parameter used as an absolute file path; both on the same call (OWASP Benchmark, BenchmarkTest00359.java:53). CWE-36 and CWE-22 differ, so no shared CWE pairs them."
+    },
+    {
+      "primary": "spotbugs:XSS_REQUEST_PARAMETER_TO_SERVLET_WRITER",
+      "duplicate": "spotbugs:XSS_SERVLET",
+      "reason": "A request parameter written to the servlet response; both on the write call (OWASP Benchmark, BenchmarkTest00380.java:68)."
     }
   ]
 }
