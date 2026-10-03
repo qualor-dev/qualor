@@ -242,6 +242,9 @@ const analyzers = z
         timeoutSeconds: timeout(900),
       })
       .prefault({}),
+    // Qualor's own security rules (plan 6B-1, config.md §6): the qualor-rules pack of the
+    // qualor/scanner image on OpenGrep. No key names rules: the pack never comes from the checkout.
+    qualor: z.strictObject({ enabled, timeoutSeconds: timeout(900) }).prefault({}),
     gitleaks: z
       .strictObject({
         enabled: z.union([z.literal('auto'), z.boolean()]).default(true),

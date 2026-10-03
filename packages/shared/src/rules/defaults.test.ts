@@ -17,6 +17,15 @@ describe('engineRuleDefaults (report-format.md §7.1)', () => {
   });
 });
 
+describe('engineRuleDefaults for qualor (plan 6B-1)', () => {
+  it('gives a qualor rule without metadata security/medium', () => {
+    expect(engineRuleDefaults('qualor')).toEqual({
+      quality: 'security',
+      defaultSeverity: 'medium',
+    });
+  });
+});
+
 describe('DEPENDENCY_ENGINES (scm.md §9)', () => {
   it('names Trivy only', () => {
     expect([...DEPENDENCY_ENGINES]).toEqual(['trivy']);

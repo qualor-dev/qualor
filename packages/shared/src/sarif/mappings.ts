@@ -8,6 +8,7 @@ import { clangTidyMeta, cppcheckQuality, cppcheckSeverity } from '../rules/cfami
 import ruffCategories from '../../rules/ruff-categories.json' with { type: 'json' };
 import { gosecSeverity, govetRule, staticcheckRule } from '../rules/golang';
 import { findsecbugsPattern, findsecbugsSeverity } from '../rules/findsecbugs';
+import { qualorRuleMeta } from '../rules/qualor';
 
 function tags(rule: SarifRule | undefined): string[] {
   const t = rule?.properties?.['tags'];
@@ -98,6 +99,10 @@ const spotbugs: EngineMapping = {
 
 const isCwe = (t: string) => /^cwe-\d+/i.test(t);
 
+/** A hard-coded-credential (CWE-798) or secret rule: its snippet and hash must not carry the secret. */
+const redactsSecret = (r: SarifRule | undefined) =>
+  tags(r).some((t) => /^cwe-798\b/i.test(t) || /secret/i.test(t));
+
 const semgrep: EngineMapping = {
   rule: (r) => {
     const t = tags(r);
@@ -110,7 +115,21 @@ const semgrep: EngineMapping = {
           : 'maintainability';
     return { quality };
   },
-  redactRegion: (r) => tags(r).some((t) => /^cwe-798\b/i.test(t) || /secret/i.test(t)),
+  redactRegion: redactsSecret,
+};
+
+/**
+ * Qualor's own security rules (plan 6B-1, report-format.md §7.1): always security; kind and
+ * severity from the pack manifest, which the CLI's transform copied into the rule's properties.
+ * OpenGrep's level is never used: every result takes its rule's severity.
+ */
+const qualor: EngineMapping = {
+  rule: (r) => {
+    const meta = qualorRuleMeta(r.properties);
+    return { quality: 'security', kind: meta.kind, defaultSeverity: meta.severity };
+  },
+  severity: (_result, r) => qualorRuleMeta(r?.properties).severity,
+  redactRegion: redactsSecret,
 };
 
 const gitleaks: EngineMapping = {
@@ -465,6 +484,7 @@ export const ENGINE_MAPPINGS = {
   pmd,
   spotbugs,
   semgrep,
+  qualor,
   gitleaks,
   trivy,
   roslyn,

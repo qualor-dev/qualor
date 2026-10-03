@@ -373,4 +373,19 @@ describe('curated same-engine pairs (data-model.md §5.3, plan 6A)', () => {
     expect(sameEngineRank('spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE')).toBe(1);
     expect(sameEngineRank('spotbugs:SQL_INJECTION_JDBC')).toBe(0);
   });
+
+  it('ranks qualor right after gitleaks, above every other engine (plan 6B-1)', () => {
+    expect(ENGINE_PRIORITY.slice(0, 2)).toEqual(['gitleaks', 'qualor']);
+    for (const engine of ENGINE_PRIORITY.slice(2)) {
+      expect(enginePriority('qualor'), engine).toBeGreaterThan(enginePriority(engine));
+    }
+    expect(enginePriority('gitleaks')).toBeGreaterThan(enginePriority('qualor'));
+    // A user's own Semgrep rule on the same line and CWE becomes the qualor issue's duplicate.
+    expect(
+      rulesEquivalent(
+        { key: 'qualor:java/sql-injection', engineId: 'qualor', cwe: [89] },
+        { key: 'semgrep:my-sqli', engineId: 'semgrep', cwe: [89] },
+      ),
+    ).toBe(true);
+  });
 });

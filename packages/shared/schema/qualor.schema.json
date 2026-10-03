@@ -404,6 +404,31 @@
           },
           "additionalProperties": false
         },
+        "qualor": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
         "gitleaks": {
           "default": {},
           "type": "object",

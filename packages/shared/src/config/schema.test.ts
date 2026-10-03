@@ -473,6 +473,27 @@ describe('BUILTIN_EXCLUDES', () => {
     ).toThrow(/reserved/);
   });
 
+  it("has Qualor's security rules with enabled and a timeout only, and reserves the id (plan 6B-1)", () => {
+    expect(parseConfig({ version: 1 }).analyzers.qualor).toEqual({
+      enabled: 'auto',
+      timeoutSeconds: 900,
+    });
+    expect(
+      parseConfig({ version: 1, analyzers: { qualor: { enabled: false } } }).analyzers.qualor
+        .enabled,
+    ).toBe(false);
+    // No key may point the engine at rules: the pack never comes from the checkout.
+    for (const key of ['configs', 'rules', 'path', 'rulesDir']) {
+      expect(
+        () => parseConfig({ version: 1, analyzers: { qualor: { [key]: 'x' } } }),
+        key,
+      ).toThrow();
+    }
+    expect(() =>
+      parseConfig({ version: 1, sarif: [{ path: 'r.sarif', engine: 'qualor' }] }),
+    ).toThrow(/reserved/);
+  });
+
   it('has the Go analyzers with their defaults, knows Go, its tests and its excludes (config.md §3, §3.1, §6; plan 9C)', () => {
     const c = parseConfig({ version: 1 });
     expect(c.analyzers.staticcheck).toEqual({ enabled: 'auto', timeoutSeconds: 900 });

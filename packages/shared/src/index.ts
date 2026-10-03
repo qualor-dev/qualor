@@ -19,6 +19,7 @@ export * from './rules/rubocop';
 export * from './rules/golang';
 export * from './rules/cfamily';
 export * from './rules/findsecbugs';
+export * from './rules/qualor';
 export * from './markdown/code-span';
 export * from './fixtures';
 export * from './import/sonarqube/api';

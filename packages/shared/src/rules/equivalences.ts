@@ -39,16 +39,18 @@ export const EQUIVALENCES: Equivalences = equivalencesSchema.parse(data);
 
 /**
  * data-model.md §5.3: which engine's issue is primary when two engines report the same problem.
- * Higher wins; external engines (any id not listed) rank lowest. `gitleaks` > `semgrep` >
+ * Higher wins; external engines (any id not listed) rank lowest. `gitleaks` > `qualor` > `semgrep` >
  * `spotbugs` > `roslyn` > `pmd` > `eslint` > `sonarjs` > `ruff` > `stylelint` > `htmlhint` >
  * `detekt` > `swiftlint` > `phpstan` > `rubocop` > `staticcheck` > `govet` > `gosec` > `cppcheck` >
  * `clang-tidy` > external (plan 8D ruling D5, plan 8E ruling E4; swiftlint (plan 8F): the only Swift
  * engine; phpstan (plan 9A): the only PHP engine; rubocop (plan 9B): the only Ruby engine;
  * staticcheck, govet, gosec (plan 9C): the Go engines; cppcheck and clang-tidy (plan 9D): the C and
- * C++ engines, cppcheck first).
+ * C++ engines, cppcheck first; qualor (plan 6B-1): Qualor's own security rules, primary over every
+ * engine but Gitleaks).
  */
 export const ENGINE_PRIORITY: readonly string[] = [
   'gitleaks',
+  'qualor',
   'semgrep',
   'spotbugs',
   'roslyn',

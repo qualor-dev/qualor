@@ -580,3 +580,42 @@ describe('cppcheck and clang-tidy (plan 9D)', () => {
     ).toBe('medium');
   });
 });
+
+describe('qualor (report-format.md §7.1, plan 6B-1)', () => {
+  const m = ENGINE_MAPPINGS.qualor;
+
+  it('is security, with the kind and severity the CLI copied from the pack manifest', () => {
+    const r = rule('java/sql-injection', {
+      qualorKind: 'hotspot',
+      qualorSeverity: 'high',
+      tags: ['CWE-89'],
+    });
+    expect(m.rule!(r)).toEqual({ quality: 'security', kind: 'hotspot', defaultSeverity: 'high' });
+    expect(m.severity!({ ruleId: 'java/sql-injection', level: 'note' } as never, r)).toBe('high');
+    expect(m.severity!({ ruleId: 'java/sql-injection', level: 'error' } as never, r)).toBe('high');
+  });
+
+  it('falls back to issue/medium without valid metadata, and never throws', () => {
+    for (const r of [
+      rule('java/x'),
+      rule('java/x', { qualorKind: 'bug', qualorSeverity: 'critical' }),
+    ]) {
+      expect(m.rule!(r)).toEqual({ quality: 'security', kind: 'issue', defaultSeverity: 'medium' });
+      expect(m.severity!({ ruleId: 'java/x' } as never, r)).toBe('medium');
+    }
+    expect(m.severity!({ ruleId: 'x' } as never, undefined)).toBe('medium');
+  });
+
+  it('redacts the region of a hard-coded-credential or secret rule, like semgrep', () => {
+    const redact = m.redactRegion as (r: SarifRule | undefined) => boolean;
+    expect(redact(rule('go/x', { tags: ['CWE-798'] }))).toBe(true);
+    expect(redact(rule('go/x', { tags: ['secret'] }))).toBe(true);
+    expect(redact(rule('java/sql-injection', { tags: ['CWE-89'] }))).toBe(false);
+    expect(redact(rule('java/x'))).toBe(false);
+    expect(redact(undefined)).toBe(false);
+  });
+
+  it('is a reserved built-in engine', () => {
+    expect(BUILTIN_ENGINES).toContain('qualor');
+  });
+});

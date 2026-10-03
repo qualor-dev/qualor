@@ -47,6 +47,7 @@ export const BUILTIN_ENGINES = [
   'gosec',
   'cppcheck',
   'clang-tidy',
+  'qualor',
 ] as const;
 export type BuiltinEngine = (typeof BUILTIN_ENGINES)[number];
 
