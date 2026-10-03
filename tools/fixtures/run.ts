@@ -28,6 +28,7 @@ import {
   type Mismatch,
   type Report,
 } from '@qualor/shared';
+import { findsecbugsPlugin, spotbugsHome } from '../../cli/src/analyzers/spotbugs';
 import { GO_RUNNER_FILE } from '../../cli/test/analyzers';
 import { codeQualityValidator, dependencyScanningValidator, sastValidator } from '../../cli/test/gitlab-schema';
 import { checkLlmFixture } from './llm-check';
@@ -110,6 +111,20 @@ const RUBOCOP_PASS_FILES = ['/opt/qualor/rubocop/run.rb', '/opt/qualor/rubocop/r
  */
 export const CPPCHECK_PINNED = 'cppcheck-pinned';
 
+/**
+ * A pseudo-tool: the FindSecBugs plugin inside the SpotBugs that `spotbugs` resolves to (plan 6A,
+ * config.md §6). The image's SpotBugs carries it; a SpotBugs on a plain host does not, and then the
+ * fixtures' spotbugs findings are "not checked here" instead of failing.
+ */
+export const FINDSECBUGS_PLUGIN = 'findsecbugs-plugin';
+
+/** The same lookup the CLI makes: the SpotBugs home of the launcher, and its plugin/ directory. */
+function findsecbugsInstalled(env: Record<string, string | undefined>): boolean {
+  const launcher = findTool('spotbugs', env);
+  const install = launcher === null ? null : spotbugsHome(launcher);
+  return install !== null && findsecbugsPlugin(install.home) !== null;
+}
+
 /** Plan 9D: present only for a clang-tidy of the major install-clang-tidy.sh pins (22). */
 export const CLANG_TIDY_PINNED = 'clang-tidy-pinned';
 
@@ -133,7 +148,8 @@ function toolVersion(tool: string, re: RegExp, env: Record<string, string | unde
 const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   eslint: [['node']],
   pmd: [['pmd']],
-  spotbugs: [['spotbugs'], ['javac']],
+  // Plan 6A: the image's SpotBugs carries FindSecBugs; the fixtures expect its findings.
+  spotbugs: [['spotbugs'], ['javac'], [FINDSECBUGS_PLUGIN]],
   semgrep: [['opengrep', 'semgrep']],
   gitleaks: [['gitleaks']],
   // Plan 2B: the binary and its database, where the scanner image keeps it (the scan environment
@@ -193,6 +209,7 @@ export function toolOnPath(name: string, env: Record<string, string | undefined>
   if (name === WEBLINT_PASS) return WEBLINT_PASS_FILES.every((f) => existsSync(f));
   if (name === RUBOCOP_PASS) return RUBOCOP_PASS_FILES.every((f) => existsSync(f));
   if (name === GO_RUNNER) return existsSync(GO_RUNNER_FILE);
+  if (name === FINDSECBUGS_PLUGIN) return findsecbugsInstalled(env);
   if (name === CPPCHECK_PINNED) {
     const v = toolVersion('cppcheck', /^Cppcheck (\S+)$/m, env);
     return v !== null && cppcheckVersionSupported(v);

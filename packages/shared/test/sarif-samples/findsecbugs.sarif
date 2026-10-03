@@ -1,0 +1,1133 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "extensions": [
+          {
+            "version": "4.10.4",
+            "name": "edu.umd.cs.findbugs.plugins.core",
+            "shortDescription": {
+              "text": "Core SpotBugs plugin"
+            },
+            "informationUri": "https://github.com/spotbugs",
+            "organization": "SpotBugs project"
+          },
+          {
+            "version": "",
+            "name": "com.h3xstream.findsecbugs",
+            "shortDescription": {
+              "text": "Find Security Bugs"
+            },
+            "informationUri": "https://find-sec-bugs.github.io",
+            "organization": "Find Security Bugs"
+          }
+        ],
+        "driver": {
+          "name": "SpotBugs",
+          "version": "4.10.4",
+          "language": "en",
+          "informationUri": "https://spotbugs.github.io/",
+          "rules": [
+            {
+              "id": "DMI_HARDCODED_ABSOLUTE_FILENAME",
+              "shortDescription": {
+                "text": "Code contains a hard coded reference to an absolute pathname."
+              },
+              "fullDescription": {
+                "text": "This code constructs a File object using a hard coded to an absolute pathname \n(e.g., new \nFile(\"/home/dannyc/workspace/j2ee/src/share/com/sun/enterprise/deployment\");"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "Hard coded reference to an absolute pathname in {0}."
+                }
+              },
+              "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#DMI_HARDCODED_ABSOLUTE_FILENAME",
+              "properties": {
+                "tags": ["STYLE"]
+              }
+            },
+            {
+              "id": "PATH_TRAVERSAL_IN",
+              "shortDescription": {
+                "text": "Potential Path Traversal (file read)."
+              },
+              "fullDescription": {
+                "text": "A file is opened to read its content. The filename comes from an input \nparameter. If an unfiltered parameter is passed to this file API, files from \nan arbitrary filesystem location could be read. \nThis rule identifies potential path traversal vulnerabilities. In many cases, \nthe constructed file path cannot be controlled by the user. If that is the \ncase, the reported instance is a false positive. \nVulnerable Code: \n@GET\n@Path(\"/images/{image}\")\n@Produces(\"images/*\")\npublic Response getImage(@javax.ws.rs.PathParam(\"image\") String image) {\n    File file = new File(\"resources/images/\", image); //Weak point\n\n    if (!file.exists()) {\n        return Response.status(Status.NOT_FOUND).build();\n    }\n\n    return Response.ok().entity(new FileInputStream(file)).build();\n}\nSolution: \nimport org.apache.commons.io.FilenameUtils;\n\n@GET\n@Path(\"/images/{image}\")\n@Produces(\"images/*\")\npublic Response getImage(@javax.ws.rs.PathParam(\"image\") String image) {\n    File file = new File(\"resources/images/\", FilenameUtils.getName(image)); //Fix\n\n    if (!file.exists()) {\n        return Response.status(Status.NOT_FOUND).build();\n    }\n\n    return Response.ok().entity(new FileInputStream(file)).build();\n}\nReferencesWASC: Path TraversalOWASP: Path TraversalCAPEC-126: Path TraversalCWE-22: \nImproper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "This API ({0}) reads a file whose location might be specified by user input."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#PATH_TRAVERSAL_IN",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "22",
+                    "guid": "19cf96fc-1234-5a3d-8e5d-21b225b7d3e8",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "DMI_CONSTANT_DB_PASSWORD",
+              "shortDescription": {
+                "text": "Hardcoded constant database password."
+              },
+              "fullDescription": {
+                "text": "This code creates a database connect using a hardcoded, constant password. \nAnyone with access to either the source code or the compiled code can easily \nlearn the password. \nSee CWE-259: Use of Hard-coded Password."
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "Hardcoded constant database password in {0}."
+                }
+              },
+              "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#DMI_CONSTANT_DB_PASSWORD",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "259",
+                    "guid": "50b06d54-751a-5af0-9a8c-5ba16677987d",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "HARD_CODE_PASSWORD",
+              "shortDescription": {
+                "text": "Hard coded password."
+              },
+              "fullDescription": {
+                "text": "Passwords should not be kept in the source code. The source code can be widely \nshared in an enterprise environment, and is certainly shared in open source. \nTo be managed safely, passwords and secret keys should be stored in separate \nconfiguration files or keystores. (Hard coded keys are reported separately by Hard \nCoded Key pattern) \n\nVulnerable Code: \nprivate String SECRET_PASSWORD = \"letMeIn!\";\n\nProperties props = new Properties();\nprops.put(Context.SECURITY_CREDENTIALS, \"p@ssw0rd\");\nReferencesCWE-259: Use of Hard-coded Password"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "Hard coded password found."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#HARD_CODE_PASSWORD",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "259",
+                    "guid": "50b06d54-751a-5af0-9a8c-5ba16677987d",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "OBJECT_DESERIALIZATION",
+              "shortDescription": {
+                "text": "Object deserialization is used in {1}."
+              },
+              "fullDescription": {
+                "text": "Object deserialization of untrusted data can lead to remote code execution, if \nthere is a class in classpath that allows the trigger of malicious operation. \nLibraries developers tend to fix class that provided potential malicious \ntrigger. There are still classes that are known to trigger Denial of Service[1]. \n\nDeserialization is a sensible operation that has a great history of \nvulnerabilities. The web application might become vulnerable as soon as a new \nvulnerability is found in the Java Virtual Machine[2] [3]. \nCode at risk: \npublic UserData deserializeObject(InputStream receivedFile) throws IOException, ClassNotFoundException {\n\n    try (ObjectInputStream in = new ObjectInputStream(receivedFile)) {\n        return (UserData) in.readObject();\n    }\n}\nSolutions: \nAvoid deserializing object provided by remote users. \nReferencesCWE-502: Deserialization of Untrusted DataDeserialization of \nuntrusted dataSerialization and Deserialization A tool for generating payloads \nthat exploit unsafe Java object deserialization[1] Example of Denial of \nService using the class java.util.HashSet[2] OpenJDK: Deserialization issue in \nObjectInputStream.readSerialData() (CVE-2015-2590)[3] Rapid7: Sun Java \nCalendar Deserialization Privilege Escalation (CVE-2008-5353)"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "Object deserialization is used in {0}."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#OBJECT_DESERIALIZATION",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "502",
+                    "guid": "ff25cc2c-fffa-57bc-8f05-4b360dd88816",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "URLCONNECTION_SSRF_FD",
+              "shortDescription": {
+                "text": "URLConnection Server-Side Request Forgery (SSRF) and File Disclosure."
+              },
+              "fullDescription": {
+                "text": "Server-Side Request Forgery occur when a web server executes a request to a \nuser supplied destination parameter that is not validated. Such \nvulnerabilities could allow an attacker to access internal services or to \nlaunch attacks from your web server. \nURLConnection can be used with file:// protocol or other protocols to access \nlocal filesystem and potentially other services. \nVulnerable Code: \nnew URL(String url).openConnection()\nnew URL(String url).openStream()\nnew URL(String url).getContent()\nSolution/Countermeasures: \n  * Don't accept URL destinations from users \n  * Accept a destination key, and use it to look up the target destination \n    associate with the key \n  * White list URLs (if possible) \n  * Validate that the beginning of the URL is part of a white list \n  \nReferencesCWE-918: Server-Side Request Forgery (SSRF)Understanding Server-Side \nRequest ForgeryCWE-73: External Control of File Name or PathAbusing jar:// \ndownloads"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "This web server request could be used by an attacker to expose internal services and filesystem."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#URLCONNECTION_SSRF_FD",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "918",
+                    "guid": "5bb88194-5222-563c-b8e6-b0b769ed3c9a",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "CIPHER_INTEGRITY",
+              "shortDescription": {
+                "text": "Cipher with no integrity."
+              },
+              "fullDescription": {
+                "text": "The ciphertext produced is susceptible to alteration by an adversary. This \nmean that the cipher provides no way to detect that the data has been tampered \nwith. If the ciphertext can be controlled by an attacker, it could be altered \nwithout detection. \nThe solution is to use a cipher that includes a Hash based Message \nAuthentication Code (HMAC) to sign the data. Combining a HMAC function to the \nexisting cipher is prone to error [1]. Specifically, it is always recommended \nthat you be able to verify the HMAC first, and only if the data is unmodified, \ndo you then perform any cryptographic functions on the data. \nThe following modes are vulnerable because they don't provide a HMAC:- CBC- OFB- \nCTR- ECBThe following snippets code are some examples of vulnerable code.Code \nat risk:AES in CBC mode \nCipher c = Cipher.getInstance(\"AES/CBC/PKCS5Padding\");\nc.init(Cipher.ENCRYPT_MODE, k, iv);\nbyte[] cipherText = c.doFinal(plainText);\nTriple DES with ECB mode Cipher c = Cipher.getInstance(\"DESede/ECB/PKCS5Padding\");\nc.init(Cipher.ENCRYPT_MODE, k, iv);\nbyte[] cipherText = c.doFinal(plainText);\nSolution: \nCipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\nc.init(Cipher.ENCRYPT_MODE, k, iv);\nbyte[] cipherText = c.doFinal(plainText);\nIn the example solution above, the GCM mode introduces an HMAC into the \nresulting encrypted data, providing integrity of the result. \nReferencesWikipedia: Authenticated encryptionNIST: Authenticated Encryption \nModesMoxie Marlinspike's blog: The Cryptographic Doom PrincipleCWE-353: \nMissing Support for Integrity Check"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "The cipher does not provide data integrity."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#CIPHER_INTEGRITY",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "353",
+                    "guid": "d5eee5a3-428a-56c9-8338-c0bd8aa08841",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "ECB_MODE",
+              "shortDescription": {
+                "text": "ECB mode is insecure."
+              },
+              "fullDescription": {
+                "text": "An authentication cipher mode which provides better confidentiality of the \nencrypted data should be used instead of Electronic Code Book (ECB) mode, \nwhich does not provide good confidentiality. Specifically, ECB mode produces \nthe same output for the same input each time. So, for example, if a user is \nsending a password, the encrypted value is the same each time. This allows an \nattacker to intercept and replay the data. \nTo fix this, something like Galois/Counter Mode (GCM) should be used instead. \nCode at risk: \nCipher c = Cipher.getInstance(\"AES/ECB/NoPadding\");\nc.init(Cipher.ENCRYPT_MODE, k, iv);\nbyte[] cipherText = c.doFinal(plainText);\nSolution: \nCipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\nc.init(Cipher.ENCRYPT_MODE, k, iv);\nbyte[] cipherText = c.doFinal(plainText);\nReferencesWikipedia: Authenticated encryptionNIST: Authenticated Encryption \nModesWikipedia: Block cipher modes of operationNIST: Recommendation for Block \nCipher Modes of Operation CWE-327: Use of a Broken or Risky Cryptographic \nAlgorithm"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "The cipher uses ECB mode, which provides poor confidentiality for encrypted data."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#ECB_MODE",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "327",
+                    "guid": "09eca73c-fb11-5ac5-9ef3-eba96de7209c",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "WEAK_MESSAGE_DIGEST_MD5",
+              "shortDescription": {
+                "text": "MD2, MD4 and MD5 are weak hash functions."
+              },
+              "fullDescription": {
+                "text": "The algorithms MD2, MD4 and MD5 are not a recommended MessageDigest. PBKDF2 \nshould be used to hash password for example. \n\"The security of the MD5 hash function is severely compromised. A collision \nattack exists that can find collisions within seconds on a computer with a 2.6 \nGHz Pentium 4 processor (complexity of 224.1).[1] Further, there is also a \nchosen-prefix collision attack that can produce a collision for two inputs \nwith specified prefixes within hours, using off-the-shelf computing hardware \n(complexity 239).[2]\"- Wikipedia: MD5 - Security \"SHA-224, SHA-256, SHA-384, \nSHA-512, SHA-512/224, and SHA-512/256:The use of these hash functions is \nacceptable for all hash function applications.\"- NIST: Transitioning the Use \nof Cryptographic Algorithms and Key Lengths p.15 \"The main idea of a PBKDF is \nto slow dictionary or brute force attacks on the passwords by increasing the \ntime needed to test each password. An attacker with a list of likely passwords \ncan evaluate the PBKDF using the known iteration counter and the salt. Since \nan attacker has to spend a significant amount of computing time for each try, \nit becomes harder to apply the dictionary or brute force attacks.\"- NIST: \nRecommendation for Password-Based Key Derivation p.12 Vulnerable Code: \nMessageDigest md5Digest = MessageDigest.getInstance(\"MD5\");\n    md5Digest.update(password.getBytes());\n    byte[] hashValue = md5Digest.digest();\nbyte[] hashValue = DigestUtils.getMd5Digest().digest(password.getBytes());\nSolution (Using bouncy castle): \npublic static byte[] getEncryptedPassword(String password, byte[] salt) throws NoSuchAlgorithmException, InvalidKeySpecException {\n    PKCS5S2ParametersGenerator gen = new PKCS5S2ParametersGenerator(new SHA256Digest());\n    gen.init(password.getBytes(\"UTF-8\"), salt.getBytes(), 4096);\n    return ((KeyParameter) gen.generateDerivedParameters(256)).getKey();\n}\nSolution (Java 8 and later): public static byte[] getEncryptedPassword(String password, byte[] salt) throws NoSuchAlgorithmException, InvalidKeySpecException {\n    KeySpec spec = new PBEKeySpec(password.toCharArray(), salt, 4096, 256 * 8);\n    SecretKeyFactory f = SecretKeyFactory.getInstance(\"PBKDF2WithHmacSHA256\");\n    return f.generateSecret(spec).getEncoded();\n}\nReferences[1] On Collisions for MD5: Master Thesis by M.M.J. Stevens[2] Chosen-prefix \ncollisions for MD5 and applications: Paper written by Marc StevensWikipedia: \nMD5NIST: Transitioning the Use of Cryptographic Algorithms and Key LengthsNIST: \nRecommendation for Password-Based Key DerivationStackoverflow: Reliable \nimplementation of PBKDF2-HMAC-SHA256 for JavaCWE-327: Use of a Broken or Risky \nCryptographic Algorithm CWE-328: Use of Weak Hash"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "This API {0} (MDX) is not a recommended cryptographic hash function."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#WEAK_MESSAGE_DIGEST_MD5",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "328",
+                    "guid": "dc1e99c1-c57b-5af0-85a4-9ad3bfac9c82",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "XPATH_INJECTION",
+              "shortDescription": {
+                "text": "Potential XPath Injection."
+              },
+              "fullDescription": {
+                "text": "XPath injection risks are similar to SQL injection. If the XPath query \ncontains untrusted user input, the complete data source could be exposed. This \ncould allow an attacker to access unauthorized data or maliciously modify the \ntarget XML. \nReferencesWASC-39: XPath InjectionOWASP: Top 10 2013-A1-InjectionCWE-643: \nImproper Neutralization of Data within XPath Expressions ('XPath Injection')CERT: \nIDS09-J. Prevent XPath Injection (archive)Black Hat Europe 2012: Hacking XPath \n2.0Balisage.net: XQuery Injection"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "This use of {0} can be vulnerable to XPath Injection."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#XPATH_INJECTION",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "643",
+                    "guid": "23fc655b-68b0-5f0d-beac-3da3e4a45ce5",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "XXE_DOCUMENT",
+              "shortDescription": {
+                "text": "XML parsing vulnerable to XXE (DocumentBuilder)."
+              },
+              "fullDescription": {
+                "text": "Attack XML External Entity (XXE) attacks can occur when an XML parser supports \nXML entities while processing XML received from an untrusted source. \nRisk 1: Expose local file content (XXE: XML External Entity) \n\n<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n<!DOCTYPE foo [\n   <!ENTITY xxe SYSTEM \"file:///etc/passwd\" > ]>\n<foo>&xxe;</foo>\nRisk 2: Denial of service (XEE: XML Entity Expansion) \n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n <!ENTITY lol \"lol\">\n <!ELEMENT lolz (#PCDATA)>\n <!ENTITY lol1 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n <!ENTITY lol2 \"&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;\">\n <!ENTITY lol3 \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n[...]\n <!ENTITY lol9 \"&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;\">\n]>\n<lolz>&lol9;</lolz>\nSolution In order to avoid exposing dangerous feature of the XML parser, you \ncan do the following change to the code. \nVulnerable Code: \n\nDocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();\n\nDocument doc = db.parse(input);\nThe following snippets show two available solutions. You can set one feature \nor both. \nSolution using \"Secure processing\" mode: \nThis setting will protect you against Denial of Service attack and remote file \naccess. \nDocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();\ndbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);\nDocumentBuilder db = dbf.newDocumentBuilder();\n\nDocument doc = db.parse(input);\nSolution disabling DTD: \nBy disabling DTD, almost all XXE attacks will be prevented. \nDocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();\ndbf.setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true);\nDocumentBuilder db = dbf.newDocumentBuilder();\n\nDocument doc = db.parse(input);\nReferencesCWE-611: Improper Restriction of XML External Entity Reference \n('XXE')CERT: IDS10-J. Prevent XML external entity attacksOWASP.org: XML \nExternal Entity (XXE) ProcessingWS-Attacks.org: XML Entity ExpansionWS-Attacks.org: \nXML External Entity DOSWS-Attacks.org: XML Entity Reference AttackIdentifying \nXML External Entity vulnerability (XXE)Xerces2 complete features list"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "The use of {0} (DocumentBuilder) is vulnerable to XML External Entity attacks."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#XXE_DOCUMENT",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "611",
+                    "guid": "b7383f8c-a52b-52c9-b7d1-95a3c511d9da",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "SQL_INJECTION_JDBC",
+              "shortDescription": {
+                "text": "Potential JDBC Injection."
+              },
+              "fullDescription": {
+                "text": "The input values included in SQL queries need to be passed in safely. Bind \nvariables in prepared statements can be used to easily mitigate the risk of \nSQL injection. \nVulnerable Code: \nConnection conn = [...];\nStatement stmt = con.createStatement();\nResultSet rs = stmt.executeQuery(\"update COFFEES set SALES = \"+nbSales+\" where COF_NAME = '\"+coffeeName+\"'\");\nSolution: \nConnection conn = [...];\nconn.prepareStatement(\"update COFFEES set SALES = ? where COF_NAME = ?\");\nupdateSales.setInt(1, nbSales);\nupdateSales.setString(2, coffeeName);\nReferences (JDBC)Oracle Documentation: The Java Tutorials > Prepared StatementsReferences \n(SQL injection)WASC-19: SQL InjectionCAPEC-66: SQL InjectionCWE-89: Improper \nNeutralization of Special Elements used in an SQL Command ('SQL Injection')OWASP: \nTop 10 2013-A1-InjectionOWASP: SQL Injection Prevention Cheat SheetOWASP: \nQuery Parameterization Cheat Sheet"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "This use of {0} can be vulnerable to SQL injection (with JDBC)."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#SQL_INJECTION_JDBC",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "89",
+                    "guid": "ef952f10-a202-504c-8649-9ffcb2291d69",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+              "shortDescription": {
+                "text": "Nonconstant string passed to execute or addBatch method on an SQL statement."
+              },
+              "fullDescription": {
+                "text": "The method invokes the execute or addBatch method on an SQL statement with a \nString that seems to be dynamically generated. Consider using a prepared \nstatement instead. It is more efficient and less vulnerable to SQL injection \nattacks. \nSee CWE-89: Improper Neutralization of Special Elements used in an SQL Command \n('SQL Injection')."
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "{0} passes a nonconstant String to an execute or addBatch method on an SQL statement."
+                }
+              },
+              "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "89",
+                    "guid": "ef952f10-a202-504c-8649-9ffcb2291d69",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "COMMAND_INJECTION",
+              "shortDescription": {
+                "text": "Potential Command Injection."
+              },
+              "fullDescription": {
+                "text": "The highlighted API is used to execute a system command. If unfiltered input \nis passed to this API, it can lead to arbitrary command execution. \nVulnerable Code: \nimport java.lang.Runtime;\n\nRuntime r = Runtime.getRuntime();\nr.exec(\"/bin/sh -c some_tool\" + input);\nReferencesOWASP: Command InjectionOWASP: Top 10 2013-A1-InjectionCWE-78: \nImproper Neutralization of Special Elements used in an OS Command ('OS Command \nInjection')"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "This usage of {0} can be vulnerable to Command Injection."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#COMMAND_INJECTION",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "78",
+                    "guid": "de860c32-bc93-5e70-89d7-0877e5abaefb",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            },
+            {
+              "id": "PREDICTABLE_RANDOM",
+              "shortDescription": {
+                "text": "Predictable pseudorandom number generator."
+              },
+              "fullDescription": {
+                "text": "The use of a predictable random value can lead to vulnerabilities when used in \ncertain security critical contexts. For example, when the value is used as: \n  * a CSRF token: a predictable token can lead to a CSRF attack as an attacker \n    will know the value of the token \n  * a password reset token (sent by email): a predictable password token can \n    lead to an account takeover, since an attacker will guess the URL of the \n    \"change password\" form \n  * any other secret value \n  \nA quick fix could be to replace the use of java.util.Random with something \nstronger, such as java.security.SecureRandom. \nVulnerable Code: \nString generateSecretToken() {\n    Random r = new Random();\n    return Long.toHexString(r.nextLong());\n}\nSolution: \nimport org.apache.commons.codec.binary.Hex;\n\nString generateSecretToken() {\n    SecureRandom secRandom = new SecureRandom();\n\n    byte[] result = new byte[32];\n    secRandom.nextBytes(result);\n    return Hex.encodeHexString(result);\n}\nReferencesCracking Random Number Generators - Part 1 (https://jazzy.id.au)CERT: \nMSC02-J. Generate strong random numbersCWE-330: Use of Insufficiently Random \nValuesPredicting Struts CSRF Token (Example of real-life vulnerability and \nexploitation)"
+              },
+              "messageStrings": {
+                "default": {
+                  "text": "This random generator ({0}) is predictable."
+                }
+              },
+              "helpUri": "https://find-sec-bugs.github.io/bugs.htm#PREDICTABLE_RANDOM",
+              "properties": {
+                "tags": ["SECURITY"]
+              },
+              "relationships": [
+                {
+                  "target": {
+                    "id": "330",
+                    "guid": "80cf7ee1-5a29-5fb4-a2f1-701272abf9b7",
+                    "toolComponent": {
+                      "name": "CWE",
+                      "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+                    }
+                  },
+                  "kinds": ["superset"]
+                }
+              ]
+            }
+          ],
+          "supportedTaxonomies": [
+            {
+              "name": "CWE",
+              "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "exitCode": 1,
+          "exitCodeDescription": "BUGS FOUND",
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "DMI_HARDCODED_ABSOLUTE_FILENAME",
+          "ruleIndex": 0,
+          "message": {
+            "id": "default",
+            "text": "Code contains a hard coded reference to an absolute pathname",
+            "arguments": ["com.acme.shop.Attachments.<static initializer for Attachments>()"]
+          },
+          "level": "note",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Attachments.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 9
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "<static initializer for Attachments>()",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.Attachments.<static initializer for Attachments>()"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "PATH_TRAVERSAL_IN",
+          "ruleIndex": 1,
+          "message": {
+            "id": "default",
+            "text": "Potential Path Traversal (file read)",
+            "arguments": ["java/io/File.<init>(Ljava/io/File;Ljava/lang/String;)V"]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Attachments.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 15
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "read(String)",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.Attachments.read(String)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "DMI_CONSTANT_DB_PASSWORD",
+          "ruleIndex": 2,
+          "message": {
+            "id": "default",
+            "text": "Hardcoded constant database password",
+            "arguments": ["com.acme.shop.Database.open(String)"]
+          },
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Database.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 13
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "open(String)",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.Database.open(String)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "HARD_CODE_PASSWORD",
+          "ruleIndex": 3,
+          "message": {
+            "id": "default",
+            "text": "Hard coded password"
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Database.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 13
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "java.sql.DriverManager.getConnection(String, String, String)",
+                  "kind": "function",
+                  "fullyQualifiedName": "java.sql.DriverManager.getConnection(String, String, String)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "OBJECT_DESERIALIZATION",
+          "ruleIndex": 4,
+          "message": {
+            "id": "default",
+            "text": "Object deserialization is used in {1}",
+            "arguments": ["com.acme.shop.Downloads.restoreCart(InputStream)"]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Downloads.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 20
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "restoreCart(InputStream)",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.Downloads.restoreCart(InputStream)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "URLCONNECTION_SSRF_FD",
+          "ruleIndex": 5,
+          "message": {
+            "id": "default",
+            "text": "URLConnection Server-Side Request Forgery (SSRF) and File Disclosure"
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Downloads.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 15
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "open(String)",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.Downloads.open(String)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "CIPHER_INTEGRITY",
+          "ruleIndex": 6,
+          "message": {
+            "id": "default",
+            "text": "Cipher with no integrity"
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Hashing.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 21
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "ecbCipher()",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.Hashing.ecbCipher()"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "ECB_MODE",
+          "ruleIndex": 7,
+          "message": {
+            "id": "default",
+            "text": "ECB mode is insecure"
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Hashing.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 21
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "ecbCipher()",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.Hashing.ecbCipher()"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "WEAK_MESSAGE_DIGEST_MD5",
+          "ruleIndex": 8,
+          "message": {
+            "id": "default",
+            "text": "MD2, MD4 and MD5 are weak hash functions",
+            "arguments": ["MD5"]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Hashing.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 13
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "md5(byte[])",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.Hashing.md5(byte[])"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "XPATH_INJECTION",
+          "ruleIndex": 9,
+          "message": {
+            "id": "default",
+            "text": "Potential XPath Injection",
+            "arguments": [
+              "javax/xml/xpath/XPath.evaluate(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;"
+            ]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/InvoiceParser.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 29
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "supplierName(Document, String)",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.InvoiceParser.supplierName(Document, String)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "XXE_DOCUMENT",
+          "ruleIndex": 10,
+          "message": {
+            "id": "default",
+            "text": "XML parsing vulnerable to XXE (DocumentBuilder)",
+            "arguments": ["DocumentBuilder.parse(...)"]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/InvoiceParser.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "parse(InputStream)",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.InvoiceParser.parse(InputStream)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "SQL_INJECTION_JDBC",
+          "ruleIndex": 11,
+          "message": {
+            "id": "default",
+            "text": "Potential JDBC Injection",
+            "arguments": ["java/sql/Statement.executeUpdate(Ljava/lang/String;)I"]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/OrderRepository.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 15
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "deleteByCustomer(Connection, String)",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.OrderRepository.deleteByCustomer(Connection, String)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+          "ruleIndex": 12,
+          "message": {
+            "id": "default",
+            "text": "Nonconstant string passed to execute or addBatch method on an SQL statement",
+            "arguments": ["com.acme.shop.OrderRepository.deleteByCustomer(Connection, String)"]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/OrderRepository.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 15
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "deleteByCustomer(Connection, String)",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.OrderRepository.deleteByCustomer(Connection, String)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "COMMAND_INJECTION",
+          "ruleIndex": 13,
+          "message": {
+            "id": "default",
+            "text": "Potential Command Injection",
+            "arguments": ["java/lang/Runtime.exec(Ljava/lang/String;)Ljava/lang/Process;"]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/ReportRunner.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 11
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "export(String)",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.ReportRunner.export(String)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "ruleId": "PREDICTABLE_RANDOM",
+          "ruleIndex": 14,
+          "message": {
+            "id": "default",
+            "text": "Predictable pseudorandom number generator",
+            "arguments": ["java.util.Random"]
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "com/acme/shop/Tokens.java",
+                  "uriBaseId": "-1282044558"
+                },
+                "region": {
+                  "startLine": 8
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "<static initializer for Tokens>()",
+                  "kind": "function",
+                  "fullyQualifiedName": "com.acme.shop.Tokens.<static initializer for Tokens>()"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "originalUriBaseIds": {
+        "-1282044558": {
+          "uri": "file:///fixture-root/src/main/java/"
+        }
+      },
+      "taxonomies": [
+        {
+          "name": "CWE",
+          "version": "4.10",
+          "minimumRequiredLocalizedDataSemanticVersion": "4.10",
+          "releaseDateUtc": "2023-01-31",
+          "guid": "b8c54a32-de19-51d2-9a08-f0abfbaa7310",
+          "informationUri": "https://cwe.mitre.org/data/published/cwe_v4.10.pdf/",
+          "downloadUri": "https://cwe.mitre.org/data/xml/cwec_v4.10.xml.zip",
+          "isComprehensive": true,
+          "organization": "MITRE",
+          "language": "en",
+          "shortDescription": {
+            "text": "The MITRE Common Weakness Enumeration"
+          },
+          "taxa": [
+            {
+              "id": "22",
+              "guid": "19cf96fc-1234-5a3d-8e5d-21b225b7d3e8",
+              "shortDescription": {
+                "text": "Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+              },
+              "fullDescription": {
+                "text": "The product uses external input to construct a pathname that is intended to identify a file or directory that is located underneath a restricted parent directory, but the product does not properly neutralize special elements within the pathname that can cause the pathname to resolve to a location that is outside of the restricted directory."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "259",
+              "guid": "50b06d54-751a-5af0-9a8c-5ba16677987d",
+              "shortDescription": {
+                "text": "Use of Hard-coded Password"
+              },
+              "fullDescription": {
+                "text": "The product contains a hard-coded password, which it uses for its own inbound authentication or for outbound communication to external components."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "327",
+              "guid": "09eca73c-fb11-5ac5-9ef3-eba96de7209c",
+              "shortDescription": {
+                "text": "Use of a Broken or Risky Cryptographic Algorithm"
+              },
+              "fullDescription": {
+                "text": "The product uses a broken or risky cryptographic algorithm or protocol."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "328",
+              "guid": "dc1e99c1-c57b-5af0-85a4-9ad3bfac9c82",
+              "shortDescription": {
+                "text": "Use of Weak Hash"
+              },
+              "fullDescription": {
+                "text": "The product uses an algorithm that produces a digest (output value) that does not meet security expectations for a hash function that allows an adversary to reasonably determine the original input (preimage attack), find another input that can produce the same hash (2nd preimage attack), or find multiple inputs that evaluate to the same hash (birthday attack)."
+              },
+              "defaultConfiguration": {
+                "level": "none"
+              }
+            },
+            {
+              "id": "330",
+              "guid": "80cf7ee1-5a29-5fb4-a2f1-701272abf9b7",
+              "shortDescription": {
+                "text": "Use of Insufficiently Random Values"
+              },
+              "fullDescription": {
+                "text": "The product uses insufficiently random numbers or values in a security context that depends on unpredictable numbers."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "353",
+              "guid": "d5eee5a3-428a-56c9-8338-c0bd8aa08841",
+              "shortDescription": {
+                "text": "Missing Support for Integrity Check"
+              },
+              "fullDescription": {
+                "text": "The product uses a transmission protocol that does not include a mechanism for verifying the integrity of the data during transmission, such as a checksum."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "502",
+              "guid": "ff25cc2c-fffa-57bc-8f05-4b360dd88816",
+              "shortDescription": {
+                "text": "Deserialization of Untrusted Data"
+              },
+              "fullDescription": {
+                "text": "The product deserializes untrusted data without sufficiently verifying that the resulting data will be valid."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "611",
+              "guid": "b7383f8c-a52b-52c9-b7d1-95a3c511d9da",
+              "shortDescription": {
+                "text": "Improper Restriction of XML External Entity Reference"
+              },
+              "fullDescription": {
+                "text": "The product processes an XML document that can contain XML entities with URIs that resolve to documents outside of the intended sphere of control, causing the product to embed incorrect documents into its output."
+              },
+              "defaultConfiguration": {
+                "level": "none"
+              }
+            },
+            {
+              "id": "643",
+              "guid": "23fc655b-68b0-5f0d-beac-3da3e4a45ce5",
+              "shortDescription": {
+                "text": "Improper Neutralization of Data within XPath Expressions ('XPath Injection')"
+              },
+              "fullDescription": {
+                "text": "The product uses external input to dynamically construct an XPath expression used to retrieve data from an XML database, but it does not neutralize or incorrectly neutralizes that input. This allows an attacker to control the structure of the query."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "78",
+              "guid": "de860c32-bc93-5e70-89d7-0877e5abaefb",
+              "shortDescription": {
+                "text": "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+              },
+              "fullDescription": {
+                "text": "The product constructs all or part of an OS command using externally-influenced input from an upstream component, but it does not neutralize or incorrectly neutralizes special elements that could modify the intended OS command when it is sent to a downstream component."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "89",
+              "guid": "ef952f10-a202-504c-8649-9ffcb2291d69",
+              "shortDescription": {
+                "text": "Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"
+              },
+              "fullDescription": {
+                "text": "The product constructs all or part of an SQL command using externally-influenced input from an upstream component, but it does not neutralize or incorrectly neutralizes special elements that could modify the intended SQL command when it is sent to a downstream component."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "918",
+              "guid": "5bb88194-5222-563c-b8e6-b0b769ed3c9a",
+              "shortDescription": {
+                "text": "Server-Side Request Forgery (SSRF)"
+              },
+              "fullDescription": {
+                "text": "The web server receives a URL or similar request from an upstream component and retrieves the contents of this URL, but it does not sufficiently ensure that the request is being sent to the expected destination."
+              },
+              "defaultConfiguration": {
+                "level": "none"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -415,6 +415,24 @@ describe('SpotBugs SARIF (recorded SpotBugs 4.10.4 output on java-basic)', () =>
   });
 });
 
+describe('SpotBugs with FindSecBugs SARIF (recorded run over java-security, plan 6A)', () => {
+  it('normalises to the fixture findings, with kinds from the table and the plugin in the version', () => {
+    const out = normalizeRecorded(
+      withFindsecbugsVersion(sarifSample('findsecbugs'), '1.14.0'),
+      spotbugsAnalyzer,
+      'java-security',
+      ['src/main/java'],
+    );
+    expect(out.warnings).toEqual([]);
+    expect(findingKeys(out.findings)).toEqual(expectedKeys('java-security', 'spotbugs'));
+    expect(out.engines[0]?.version).toBe('4.10.4 + FindSecBugs 1.14.0');
+    const kind = (id: string) => out.engines[0]?.rules.find((r) => r.id === id)?.kind;
+    expect(kind('SQL_INJECTION_JDBC')).toBe('issue');
+    expect(kind('PREDICTABLE_RANDOM')).toBe('hotspot');
+    expect(kind('DMI_HARDCODED_ABSOLUTE_FILENAME')).toBe('issue');
+  });
+});
+
 describeWithTools(['spotbugs', 'javac'])(
   'SpotBugs on the java-basic fixture (real SpotBugs)',
   () => {

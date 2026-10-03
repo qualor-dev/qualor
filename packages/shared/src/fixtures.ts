@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { coverageMeasures } from './metrics';
 import type { Report } from './report/schema';
-import { LANGUAGES, QUALITIES, SEVERITIES } from './report/taxonomy';
+import { ISSUE_KINDS, LANGUAGES, QUALITIES, SEVERITIES } from './report/taxonomy';
 
 const count = z.number().int().min(0);
 const block = z.strictObject({
@@ -21,6 +21,7 @@ export const expectedSchema = z.strictObject({
       startLine: z.number().int().min(1),
       severity: z.enum(SEVERITIES).optional(),
       quality: z.enum(QUALITIES).optional(),
+      kind: z.enum(ISSUE_KINDS).optional(),
     }),
   ),
   files: z.record(
@@ -91,6 +92,10 @@ export function compareFixture(expected: Expected, report: Report): Mismatch[] {
   const quality = new Map<string, string>();
   for (const e of report.engines)
     for (const r of e.rules) if (r.quality) quality.set(`${e.id}:${r.id}`, r.quality);
+  // A rule without a kind is an issue (report-format.md).
+  const kinds = new Map<string, string>();
+  for (const e of report.engines)
+    for (const r of e.rules) kinds.set(`${e.id}:${r.id}`, r.kind ?? 'issue');
 
   const actual = report.findings.map((f) => ({
     ruleKey: `${f.engineId}:${f.ruleId}`,
@@ -108,7 +113,8 @@ export function compareFixture(expected: Expected, report: Report): Mismatch[] {
         a.path === e.path &&
         a.line === e.startLine &&
         (e.severity === undefined || a.severity === e.severity) &&
-        (e.quality === undefined || quality.get(a.ruleKey) === e.quality),
+        (e.quality === undefined || quality.get(a.ruleKey) === e.quality) &&
+        (e.kind === undefined || (kinds.get(a.ruleKey) ?? 'issue') === e.kind),
     );
     if (i === -1)
       out.push({

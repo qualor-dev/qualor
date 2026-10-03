@@ -1,0 +1,587 @@
+{
+  "version": "4.10.4",
+  "rules": [
+    {
+      "id": "DMI_HARDCODED_ABSOLUTE_FILENAME",
+      "shortDescription": "Code contains a hard coded reference to an absolute pathname.",
+      "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#DMI_HARDCODED_ABSOLUTE_FILENAME",
+      "quality": "maintainability",
+      "kind": "issue",
+      "tags": [
+        "STYLE"
+      ]
+    },
+    {
+      "id": "PATH_TRAVERSAL_IN",
+      "shortDescription": "Potential Path Traversal (file read).",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#PATH_TRAVERSAL_IN",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        22
+      ]
+    },
+    {
+      "id": "DMI_CONSTANT_DB_PASSWORD",
+      "shortDescription": "Hardcoded constant database password.",
+      "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#DMI_CONSTANT_DB_PASSWORD",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        259
+      ]
+    },
+    {
+      "id": "HARD_CODE_PASSWORD",
+      "shortDescription": "Hard coded password.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#HARD_CODE_PASSWORD",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        259
+      ]
+    },
+    {
+      "id": "OBJECT_DESERIALIZATION",
+      "shortDescription": "Object deserialization is used in {1}.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#OBJECT_DESERIALIZATION",
+      "defaultSeverity": "medium",
+      "quality": "security",
+      "kind": "hotspot",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        502
+      ]
+    },
+    {
+      "id": "URLCONNECTION_SSRF_FD",
+      "shortDescription": "URLConnection Server-Side Request Forgery (SSRF) and File Disclosure.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#URLCONNECTION_SSRF_FD",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        918
+      ]
+    },
+    {
+      "id": "CIPHER_INTEGRITY",
+      "shortDescription": "Cipher with no integrity.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#CIPHER_INTEGRITY",
+      "defaultSeverity": "medium",
+      "quality": "security",
+      "kind": "hotspot",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        353
+      ]
+    },
+    {
+      "id": "ECB_MODE",
+      "shortDescription": "ECB mode is insecure.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#ECB_MODE",
+      "defaultSeverity": "medium",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        327
+      ]
+    },
+    {
+      "id": "WEAK_MESSAGE_DIGEST_MD5",
+      "shortDescription": "MD2, MD4 and MD5 are weak hash functions.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#WEAK_MESSAGE_DIGEST_MD5",
+      "defaultSeverity": "medium",
+      "quality": "security",
+      "kind": "hotspot",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        328
+      ]
+    },
+    {
+      "id": "XPATH_INJECTION",
+      "shortDescription": "Potential XPath Injection.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#XPATH_INJECTION",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        643
+      ]
+    },
+    {
+      "id": "XXE_DOCUMENT",
+      "shortDescription": "XML parsing vulnerable to XXE (DocumentBuilder).",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#XXE_DOCUMENT",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        611
+      ]
+    },
+    {
+      "id": "SQL_INJECTION_JDBC",
+      "shortDescription": "Potential JDBC Injection.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#SQL_INJECTION_JDBC",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        89
+      ]
+    },
+    {
+      "id": "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+      "shortDescription": "Nonconstant string passed to execute or addBatch method on an SQL statement.",
+      "helpUri": "https://spotbugs.readthedocs.io/en/latest/bugDescriptions.html#SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        89
+      ]
+    },
+    {
+      "id": "COMMAND_INJECTION",
+      "shortDescription": "Potential Command Injection.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#COMMAND_INJECTION",
+      "defaultSeverity": "high",
+      "quality": "security",
+      "kind": "issue",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        78
+      ]
+    },
+    {
+      "id": "PREDICTABLE_RANDOM",
+      "shortDescription": "Predictable pseudorandom number generator.",
+      "helpUri": "https://find-sec-bugs.github.io/bugs.htm#PREDICTABLE_RANDOM",
+      "defaultSeverity": "medium",
+      "quality": "security",
+      "kind": "hotspot",
+      "tags": [
+        "SECURITY"
+      ],
+      "cwe": [
+        330
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "engineId": "spotbugs",
+      "ruleId": "DMI_HARDCODED_ABSOLUTE_FILENAME",
+      "message": "Code contains a hard coded reference to an absolute pathname",
+      "severity": "low",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Attachments.java",
+        "startLine": 9,
+        "endLine": 9
+      },
+      "lineHash": "9c1e6ef05cf5b6b0c1c57fc757dad355",
+      "contextHash": "a036110fce642cdbfc687875e3bb5269",
+      "snippet": {
+        "startLine": 6,
+        "lines": [
+          "",
+          "/** Reads files stored next to orders. */",
+          "public final class Attachments {",
+          "    private static final File ROOT = new File(\"/var/shop/attachments\");",
+          "",
+          "    private Attachments() {",
+          "    }"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "PATH_TRAVERSAL_IN",
+      "message": "Potential Path Traversal (file read)",
+      "severity": "high",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Attachments.java",
+        "startLine": 15,
+        "endLine": 15
+      },
+      "lineHash": "07b7774d75635ee9ddb9d3ca76a8fe00",
+      "contextHash": "633723b74420e23ae515a8c714abe123",
+      "snippet": {
+        "startLine": 12,
+        "lines": [
+          "    }",
+          "",
+          "    public static byte[] read(String name) throws IOException {",
+          "        return Files.readAllBytes(new File(ROOT, name).toPath());",
+          "    }",
+          "",
+          "    public static byte[] readLogo() throws IOException {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "DMI_CONSTANT_DB_PASSWORD",
+      "message": "Hardcoded constant database password",
+      "severity": "high",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Database.java",
+        "startLine": 13,
+        "endLine": 13
+      },
+      "lineHash": "b1bf924efaccb049a8e3a28690d9ff53",
+      "contextHash": "3ecc38aa8d77f84598c1676b1628dd96",
+      "snippet": {
+        "startLine": 10,
+        "lines": [
+          "    }",
+          "",
+          "    public static Connection open(String url) throws SQLException {",
+          "        return DriverManager.getConnection(url, \"shop\", \"changeit\");",
+          "    }",
+          "",
+          "    public static Connection open(String url, String user, char[] password) throws SQLException {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "HARD_CODE_PASSWORD",
+      "message": "Hard coded password",
+      "severity": "high",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Database.java",
+        "startLine": 13,
+        "endLine": 13
+      },
+      "lineHash": "b1bf924efaccb049a8e3a28690d9ff53",
+      "contextHash": "3ecc38aa8d77f84598c1676b1628dd96",
+      "snippet": {
+        "startLine": 10,
+        "lines": [
+          "    }",
+          "",
+          "    public static Connection open(String url) throws SQLException {",
+          "        return DriverManager.getConnection(url, \"shop\", \"changeit\");",
+          "    }",
+          "",
+          "    public static Connection open(String url, String user, char[] password) throws SQLException {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "OBJECT_DESERIALIZATION",
+      "message": "Object deserialization is used in {1}",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Downloads.java",
+        "startLine": 20,
+        "endLine": 20
+      },
+      "lineHash": "6b29294ccec0b2a4e35d1f03af82d520",
+      "contextHash": "570494a20e56427b3d979bd121ea746b",
+      "snippet": {
+        "startLine": 17,
+        "lines": [
+          "",
+          "    public static Object restoreCart(InputStream saved) throws IOException, ClassNotFoundException {",
+          "        try (ObjectInputStream in = new ObjectInputStream(saved)) {",
+          "            return in.readObject();",
+          "        }",
+          "    }",
+          "}"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "URLCONNECTION_SSRF_FD",
+      "message": "URLConnection Server-Side Request Forgery (SSRF) and File Disclosure",
+      "severity": "high",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Downloads.java",
+        "startLine": 15,
+        "endLine": 15
+      },
+      "lineHash": "6794c108f99def9a9418d06bd0a70d94",
+      "contextHash": "34ab7a10996c7466d18070d304979997",
+      "snippet": {
+        "startLine": 12,
+        "lines": [
+          "    }",
+          "",
+          "    public static URLConnection open(String address) throws IOException {",
+          "        return new URL(address).openConnection();",
+          "    }",
+          "",
+          "    public static Object restoreCart(InputStream saved) throws IOException, ClassNotFoundException {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "CIPHER_INTEGRITY",
+      "message": "Cipher with no integrity",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Hashing.java",
+        "startLine": 21,
+        "endLine": 21
+      },
+      "lineHash": "b2e7b6aa93d0e5c130aa6a7e0ef4600c",
+      "contextHash": "e683fea25da1bcbb616c21214a4fb2a4",
+      "snippet": {
+        "startLine": 18,
+        "lines": [
+          "    }",
+          "",
+          "    public static Cipher ecbCipher() throws GeneralSecurityException {",
+          "        return Cipher.getInstance(\"AES/ECB/PKCS5Padding\");",
+          "    }",
+          "",
+          "    public static Cipher gcmCipher() throws GeneralSecurityException {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "ECB_MODE",
+      "message": "ECB mode is insecure",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Hashing.java",
+        "startLine": 21,
+        "endLine": 21
+      },
+      "lineHash": "b2e7b6aa93d0e5c130aa6a7e0ef4600c",
+      "contextHash": "e683fea25da1bcbb616c21214a4fb2a4",
+      "snippet": {
+        "startLine": 18,
+        "lines": [
+          "    }",
+          "",
+          "    public static Cipher ecbCipher() throws GeneralSecurityException {",
+          "        return Cipher.getInstance(\"AES/ECB/PKCS5Padding\");",
+          "    }",
+          "",
+          "    public static Cipher gcmCipher() throws GeneralSecurityException {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "WEAK_MESSAGE_DIGEST_MD5",
+      "message": "MD2, MD4 and MD5 are weak hash functions",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Hashing.java",
+        "startLine": 13,
+        "endLine": 13
+      },
+      "lineHash": "8e39214a6ae647af235a2a4ffdf7c7a4",
+      "contextHash": "4973e92f43bcacdcf37212037597dd32",
+      "snippet": {
+        "startLine": 10,
+        "lines": [
+          "    }",
+          "",
+          "    public static byte[] md5(byte[] data) throws GeneralSecurityException {",
+          "        return MessageDigest.getInstance(\"MD5\").digest(data);",
+          "    }",
+          "",
+          "    public static byte[] sha256(byte[] data) throws GeneralSecurityException {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "XPATH_INJECTION",
+      "message": "Potential XPath Injection",
+      "severity": "high",
+      "location": {
+        "path": "src/main/java/com/acme/shop/InvoiceParser.java",
+        "startLine": 29,
+        "endLine": 29
+      },
+      "lineHash": "b79752bf04a125162d5cc3cd0b8fd007",
+      "contextHash": "5ce835e648efa0ca1d7a35b8c69523a5",
+      "snippet": {
+        "startLine": 26,
+        "lines": [
+          "    }",
+          "",
+          "    public static String supplierName(Document invoice, String supplierId) throws XPathExpressionException {",
+          "        return XPathFactory.newInstance().newXPath().evaluate(\"//supplier[@id='\" + supplierId + \"']/name\", invoice);",
+          "    }",
+          "}"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "XXE_DOCUMENT",
+      "message": "XML parsing vulnerable to XXE (DocumentBuilder)",
+      "severity": "high",
+      "location": {
+        "path": "src/main/java/com/acme/shop/InvoiceParser.java",
+        "startLine": 19,
+        "endLine": 19
+      },
+      "lineHash": "63a6311877ecc8f08e08941715295e43",
+      "contextHash": "590ccd07d03f286a6658e83441ac668d",
+      "snippet": {
+        "startLine": 16,
+        "lines": [
+          "",
+          "    public static Document parse(InputStream in) throws ParserConfigurationException, SAXException, IOException {",
+          "        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();",
+          "        return factory.newDocumentBuilder().parse(in);",
+          "    }",
+          "",
+          "    public static Document parseSafely(InputStream in) throws ParserConfigurationException, SAXException, IOException {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "SQL_INJECTION_JDBC",
+      "message": "Potential JDBC Injection",
+      "severity": "high",
+      "location": {
+        "path": "src/main/java/com/acme/shop/OrderRepository.java",
+        "startLine": 15,
+        "endLine": 15
+      },
+      "lineHash": "7045d481e2e1e18eadea6620ba153345",
+      "contextHash": "def3d227ff4c5c939ff639bbf7abfff9",
+      "snippet": {
+        "startLine": 12,
+        "lines": [
+          "",
+          "    public static int deleteByCustomer(Connection connection, String customer) throws SQLException {",
+          "        try (Statement statement = connection.createStatement()) {",
+          "            return statement.executeUpdate(\"DELETE FROM orders WHERE customer = '\" + customer + \"'\");",
+          "        }",
+          "    }",
+          ""
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+      "message": "Nonconstant string passed to execute or addBatch method on an SQL statement",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/shop/OrderRepository.java",
+        "startLine": 15,
+        "endLine": 15
+      },
+      "lineHash": "7045d481e2e1e18eadea6620ba153345",
+      "contextHash": "def3d227ff4c5c939ff639bbf7abfff9",
+      "snippet": {
+        "startLine": 12,
+        "lines": [
+          "",
+          "    public static int deleteByCustomer(Connection connection, String customer) throws SQLException {",
+          "        try (Statement statement = connection.createStatement()) {",
+          "            return statement.executeUpdate(\"DELETE FROM orders WHERE customer = '\" + customer + \"'\");",
+          "        }",
+          "    }",
+          ""
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "COMMAND_INJECTION",
+      "message": "Potential Command Injection",
+      "severity": "high",
+      "location": {
+        "path": "src/main/java/com/acme/shop/ReportRunner.java",
+        "startLine": 11,
+        "endLine": 11
+      },
+      "lineHash": "50bae1473f2a0670aa1723510ce208e6",
+      "contextHash": "57b5bd5274b8404cf14a632d30e34c65",
+      "snippet": {
+        "startLine": 8,
+        "lines": [
+          "    }",
+          "",
+          "    public static Process export(String format) throws IOException {",
+          "        return Runtime.getRuntime().exec(\"report-tool --format \" + format);",
+          "    }",
+          "",
+          "    public static Process exportPdf() throws IOException {"
+        ]
+      }
+    },
+    {
+      "engineId": "spotbugs",
+      "ruleId": "PREDICTABLE_RANDOM",
+      "message": "Predictable pseudorandom number generator",
+      "severity": "medium",
+      "location": {
+        "path": "src/main/java/com/acme/shop/Tokens.java",
+        "startLine": 8,
+        "endLine": 8
+      },
+      "lineHash": "e4017a21055fb35096d8777e6b2f4d69",
+      "contextHash": "e62e60a66c49093f56a48eae68e1f7b4",
+      "snippet": {
+        "startLine": 5,
+        "lines": [
+          "",
+          "/** Tokens for password-reset links. */",
+          "public final class Tokens {",
+          "    private static final Random WEAK = new Random();",
+          "    private static final SecureRandom STRONG = new SecureRandom();",
+          "",
+          "    private Tokens() {"
+        ]
+      }
+    }
+  ],
+  "warnings": [],
+  "secretRegions": []
+}

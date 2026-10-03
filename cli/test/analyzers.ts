@@ -348,19 +348,26 @@ export function compileJava(root: string): void {
 /**
  * Copies a fixture to `dir`, lets `prepareCopy` add what the tool needs (compiled classes, a
  * node_modules link, another qualor.yml), then runs the real adapter through the runner and the
- * normaliser with the copy's own qualor.yml.
+ * normaliser with the copy's own qualor.yml. `env` replaces the parent environment of the run.
  */
 export async function scanFixtureWith(
   analyzer: Analyzer,
   fixture: string,
   dir: string,
   prepareCopy: (root: string) => void = () => undefined,
+  env?: Readonly<Record<string, string | undefined>>,
 ): Promise<{ capture: SarifCapture; out: NormalizedEngines; keys: string[] }> {
   cpSync(path.join(FIXTURES_DIR, fixture), dir, { recursive: true });
   prepareCopy(dir);
   const config = parseConfig(parse(readFileSync(path.join(dir, 'qualor.yml'), 'utf8')));
   const files = discoverFiles({ root: dir, config, warnings: new Warnings(), log: silentLogger });
-  const [capture] = await runAnalyzers([analyzer], { root: dir, config, files, log: silentLogger });
+  const [capture] = await runAnalyzers([analyzer], {
+    root: dir,
+    config,
+    files,
+    log: silentLogger,
+    ...(env !== undefined && { env }),
+  });
   if (capture === undefined) throw new Error('no capture');
   const out = normalizeCaptures([capture], {
     repoRoot: dir,

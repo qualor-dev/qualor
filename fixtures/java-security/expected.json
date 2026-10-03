@@ -1,0 +1,41 @@
+{
+  "description": "Java security fixture (plan 6A): SpotBugs with FindSecBugs. Taint and misuse findings are issues, review findings hotspots; two lines carry a core SpotBugs rule and its FindSecBugs pair; every negative stays silent",
+  "engines": ["spotbugs"],
+  "findingsExhaustive": true,
+  "findings": [
+    { "ruleKey": "spotbugs:SQL_INJECTION_JDBC", "path": "src/main/java/com/acme/shop/OrderRepository.java", "startLine": 15, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE", "path": "src/main/java/com/acme/shop/OrderRepository.java", "startLine": 15, "severity": "medium", "quality": "security", "kind": "issue" },
+    { "ruleKey": "spotbugs:COMMAND_INJECTION", "path": "src/main/java/com/acme/shop/ReportRunner.java", "startLine": 11, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "spotbugs:PATH_TRAVERSAL_IN", "path": "src/main/java/com/acme/shop/Attachments.java", "startLine": 15, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "spotbugs:DMI_HARDCODED_ABSOLUTE_FILENAME", "path": "src/main/java/com/acme/shop/Attachments.java", "startLine": 9, "severity": "low", "quality": "maintainability", "kind": "issue" },
+    { "ruleKey": "spotbugs:XXE_DOCUMENT", "path": "src/main/java/com/acme/shop/InvoiceParser.java", "startLine": 19, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "spotbugs:XPATH_INJECTION", "path": "src/main/java/com/acme/shop/InvoiceParser.java", "startLine": 29, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "spotbugs:PREDICTABLE_RANDOM", "path": "src/main/java/com/acme/shop/Tokens.java", "startLine": 8, "severity": "medium", "quality": "security", "kind": "hotspot" },
+    { "ruleKey": "spotbugs:WEAK_MESSAGE_DIGEST_MD5", "path": "src/main/java/com/acme/shop/Hashing.java", "startLine": 13, "severity": "medium", "quality": "security", "kind": "hotspot" },
+    { "ruleKey": "spotbugs:ECB_MODE", "path": "src/main/java/com/acme/shop/Hashing.java", "startLine": 21, "severity": "medium", "quality": "security", "kind": "issue" },
+    { "ruleKey": "spotbugs:CIPHER_INTEGRITY", "path": "src/main/java/com/acme/shop/Hashing.java", "startLine": 21, "severity": "medium", "quality": "security", "kind": "hotspot" },
+    { "ruleKey": "spotbugs:URLCONNECTION_SSRF_FD", "path": "src/main/java/com/acme/shop/Downloads.java", "startLine": 15, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "spotbugs:OBJECT_DESERIALIZATION", "path": "src/main/java/com/acme/shop/Downloads.java", "startLine": 20, "severity": "medium", "quality": "security", "kind": "hotspot" },
+    { "ruleKey": "spotbugs:HARD_CODE_PASSWORD", "path": "src/main/java/com/acme/shop/Database.java", "startLine": 13, "severity": "high", "quality": "security", "kind": "issue" },
+    { "ruleKey": "spotbugs:DMI_CONSTANT_DB_PASSWORD", "path": "src/main/java/com/acme/shop/Database.java", "startLine": 13, "severity": "high", "quality": "security", "kind": "issue" }
+  ],
+  "files": {
+    "src/main/java/com/acme/shop/OrderRepository.java": { "language": "java", "kind": "main" },
+    "src/main/java/com/acme/shop/ReportRunner.java": { "language": "java", "kind": "main" },
+    "src/main/java/com/acme/shop/Attachments.java": { "language": "java", "kind": "main" },
+    "src/main/java/com/acme/shop/InvoiceParser.java": { "language": "java", "kind": "main" },
+    "src/main/java/com/acme/shop/Tokens.java": { "language": "java", "kind": "main" },
+    "src/main/java/com/acme/shop/Hashing.java": { "language": "java", "kind": "main" },
+    "src/main/java/com/acme/shop/Downloads.java": { "language": "java", "kind": "main" },
+    "src/main/java/com/acme/shop/Database.java": { "language": "java", "kind": "main" }
+  },
+  "duplications": [],
+  "coverage": null,
+  "notes": {
+    "severity": "FindSecBugs patterns take the severity of packages/shared/rules/findsecbugs.json (every result here is SARIF warning, so no step down); core patterns keep SpotBugs' level: DMI_CONSTANT_DB_PASSWORD error → high, SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE warning → medium, DMI_HARDCODED_ABSOLUTE_FILENAME note → low",
+    "pairs": "OrderRepository.java:15 and Database.java:13 each carry a core rule and its FindSecBugs pair (equivalences.json sameEngine); the report keeps both, the server shows the core one and hides the FindSecBugs one as its duplicate",
+    "negatives": "silent by design: deleteById (bound parameter), exportPdf (constant command), readLogo (constant file), parseSafely (disallow-doctype-decl), sha256, gcmCipher (AES/GCM), STRONG (SecureRandom), open(url, user, password) (the password is a parameter)",
+    "Attachments.java#9": "a core STYLE finding on the constant root directory, kept so the fixture also pins a non-security SpotBugs rule next to FindSecBugs",
+    "Hashing.java#21": "AES/ECB/PKCS5Padding: ECB_MODE (an issue, definite misuse) and CIPHER_INTEGRITY (a hotspot: a mode without integrity is a review finding) on one line"
+  }
+}

@@ -59,6 +59,21 @@ describe('compareFixture', () => {
     ]);
   });
 
+  it('checks the rule kind when given; a rule without one is an issue (plan 6A)', () => {
+    const withKind = (kind: 'issue' | 'hotspot'): Expected => ({
+      ...expected,
+      findings: [{ ...expected.findings[0]!, kind }],
+    });
+    expect(compareFixture(withKind('issue'), makeReport())).toEqual([]);
+    expect(compareFixture(withKind('hotspot'), makeReport()).map((m) => m.kind)).toEqual([
+      'missing-finding',
+      'unexpected-finding',
+    ]);
+    const r = makeReport();
+    r.engines[0]!.rules[0]!.kind = 'hotspot';
+    expect(compareFixture(withKind('hotspot'), r)).toEqual([]);
+  });
+
   it('compares only the file metrics that are specified', () => {
     const r = makeReport();
     r.files[0]!.metrics!.statements = 999;

@@ -27,6 +27,7 @@ const SAMPLE_FIXTURE: Record<string, SampleFixture> = {
   eslint: { fixture: 'ts-basic', sourceRoots: [] },
   pmd: { fixture: 'java-basic', sourceRoots: ['src/main/java'] },
   spotbugs: { fixture: 'java-basic', sourceRoots: ['src/main/java'] },
+  findsecbugs: { fixture: 'java-security', sourceRoots: ['src/main/java'], engineId: 'spotbugs' },
   gitleaks: { fixture: 'mixed-secrets', sourceRoots: [] },
   semgrep: { fixture: 'mixed-secrets', sourceRoots: [] },
   roslyn: { fixture: 'csharp-basic', sourceRoots: [] },

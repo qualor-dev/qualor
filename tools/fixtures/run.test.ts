@@ -11,6 +11,7 @@ import {
   CPPCHECK_PINNED,
   exit3Acceptable,
   findTool,
+  FINDSECBUGS_PLUGIN,
   isDotnetFixture,
   parsePending,
   prepareCopy,
@@ -84,6 +85,9 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(unavailableEngines(['detekt'], (t) => t === 'java')).toEqual(['detekt']);
     expect(unavailableEngines(['detekt'], (t) => t === DETEKT_JAR)).toEqual(['detekt']);
     expect(unavailableEngines(['detekt'], (t) => ['java', DETEKT_JAR].includes(t))).toEqual([]);
+    // Plan 6A: SpotBugs counts only with the FindSecBugs plugin in its home.
+    expect(unavailableEngines(['spotbugs'], (t) => ['spotbugs', 'javac'].includes(t))).toEqual(['spotbugs']);
+    expect(unavailableEngines(['spotbugs'], (t) => ['spotbugs', 'javac', FINDSECBUGS_PLUGIN].includes(t))).toEqual([]);
     // Plan 8F: SwiftLint's static binary only.
     expect(unavailableEngines(['swiftlint'], () => false)).toEqual(['swiftlint']);
     expect(unavailableEngines(['swiftlint'], (t) => t === 'swiftlint')).toEqual([]);

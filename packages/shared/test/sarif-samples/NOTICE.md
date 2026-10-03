@@ -9,6 +9,7 @@ that tool's own output (rule ids, messages, categories, tags, `helpUri`) except 
 | `eslint.sarif`       | ESLint, run over `fixtures/ts-basic`                                                                                                                                                     | MIT                                                                               |
 | `pmd.sarif`          | PMD, run over `fixtures/java-basic`                                                                                                                                                      | BSD-style, with Apache-2.0 parts                                                  |
 | `spotbugs.sarif`     | SpotBugs, run over `fixtures/java-basic`                                                                                                                                                 | LGPL-2.1                                                                          |
+| `findsecbugs.sarif`  | SpotBugs 4.10.4 with FindSecBugs 1.14.0, run over `fixtures/java-security`                                                                                                               | LGPL-2.1 (SpotBugs) and LGPL-3.0 (FindSecBugs's rule descriptions)                |
 | `gitleaks.sarif`     | Gitleaks, run over `fixtures/mixed-secrets`                                                                                                                                              | MIT                                                                               |
 | `semgrep.sarif`      | Semgrep/OpenGrep, run over `fixtures/mixed-secrets`                                                                                                                                      | LGPL-2.1                                                                          |
 | `roslyn.sarif`       | the .NET compiler (Roslyn) and Roslynator.Analyzers, run over `fixtures/csharp-basic`                                                                                                    | MIT (.NET SDK); Apache-2.0 (Roslynator)                                           |
@@ -31,3 +32,5 @@ their real text as `roslyn.sarif` already does for the same rule ids.
 `roslyn-sonar.sarif`, nothing is SonarSource text.
 
 **`detekt.sarif`.** The rule descriptions in it are detekt's own documentation, Apache-2.0; nothing is SonarSource text.
+
+**`findsecbugs.sarif`.** The rule descriptions in it are FindSecBugs' and SpotBugs' own documentation; nothing is SonarSource text.
