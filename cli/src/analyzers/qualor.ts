@@ -29,7 +29,7 @@ export const QUALOR_LANGUAGES: readonly Language[] = [
 ];
 
 export const QUALOR_RULES_NOT_INSTALLED =
-  "Qualor's security rules are not installed (they ship in the qualor/scanner image)";
+  "Qualor's security rules are not installed (set QUALOR_RULES_DIR to a rules release, or use a qualor/scanner image that includes them)";
 
 /**
  * The longest file list passed on OpenGrep's command line: Linux allows about 2 MiB for the
@@ -230,7 +230,8 @@ export function createQualorAnalyzer(
     const opengrep = ctx.resolveBinary('opengrep');
     if (opengrep === null) return { unavailable: 'OpenGrep is not installed' };
     // Named files are scanned whatever .gitignore, .semgrepignore or OpenGrep's own ignores say.
-    const explicit = files.reduce((n, f) => n + Buffer.byteLength(f) + 1, 0) <= budget;
+    // Each argument costs its bytes, the terminating NUL and a pointer in argv (8 bytes).
+    const explicit = files.reduce((n, f) => n + Buffer.byteLength(f) + 1 + 8, 0) <= budget;
     if (!explicit) {
       ctx.log.warn(
         `qualor: ${files.length} files do not fit one command line; OpenGrep selects the files itself and findings outside the scan's scope are dropped`,

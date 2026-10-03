@@ -133,15 +133,16 @@ OpenGrep and SpotBugs (LGPL-2.1), FindSecBugs (LGPL-3.0), PMD (BSD-style, with A
 Gitleaks and Trivy (MIT and Apache-2.0, with MPL-2.0 Go modules), Ruff (MIT, with three MPL-2.0 crates compiled in), detekt
 (Apache-2.0; Trove4J, LGPL-2.1, inside its jar), PHPStan (MIT; its Composer packages MIT,
 BSD-3-Clause and Apache-2.0), PHP 8.2 from Debian (PHP License 3.01), Go (BSD-3-Clause with
-Google's patent grant), staticcheck (MIT), gosec (Apache-2.0), Qualor's security rules
-(PolyForm Shield 1.0.0: not MIT, source-available), SwiftLint (MIT; its static build
+Google's patent grant), staticcheck (MIT), gosec (Apache-2.0), SwiftLint (MIT; its static build
 links the Swift runtime, libc++, musl, curl, BoringSSL, libxml2, zlib and mimalloc, none of them
 copyleft), Ruby 4.0.7 (under its BSD-2-Clause option) with RuboCop and its gems (MIT, Ruby or
 BSD-2-Clause), cppcheck 2.22.0 (GPL-3.0-or-later, built from source; the source is in
 `qualor/scanner-sources`), eslint-plugin-sonarjs 2.0.4 (LGPL-3.0, the last release before the SONAR
 Source-Available License; its own npm dependency tree includes axe-core, MPL-2.0), the Temurin JRE
 (GPL-2.0 with the Classpath Exception), Node.js (MIT), and the Bun runtime inside the `qualor`
-binary (MIT; it links JavaScriptCore/WebKit and TinyCC, LGPL). The notices are in
+binary (MIT; it links JavaScriptCore/WebKit and TinyCC, LGPL). In images that include them, once
+published, Qualor's security rules are bundled too (PolyForm Shield 1.0.0: not MIT, source-available).
+The notices are in
 `/opt/qualor/NOTICE.md` and the licence texts in `/opt/qualor/licenses/`. The complete corresponding
 source of every copyleft component is published as
 [`qualor/scanner-sources`](https://hub.docker.com/r/qualor/scanner-sources) with the same tag;

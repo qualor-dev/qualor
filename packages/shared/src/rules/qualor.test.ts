@@ -64,6 +64,9 @@ describe('qualorManifestSchema (plan 6B-1)', () => {
     const bad = [
       manifest({ version: '2026.01.0' }),
       manifest({ version: '2026.13.0' }),
+      // Over-long parts: a patch has at most 6 digits, the year exactly 4.
+      manifest({ version: '2026.10.1234567' }),
+      manifest({ version: '20260.10.0' }),
       manifest({ opengrep: 'latest' }),
       manifest({ rules: [] }),
       manifest({ rules: [entry({ id: 'java.sql-injection' })] }),

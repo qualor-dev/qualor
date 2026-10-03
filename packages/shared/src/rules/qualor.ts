@@ -18,8 +18,8 @@ const OPENGREP_RULE_ID = new RegExp(`^${LANG}\\.(${NAME})$`);
 
 const RULE_PATH = new RegExp(`^rules/${LANG}/${NAME}/(${NAME})\\.yml$`);
 
-/** Pack versions: YYYY.M.patch, the month without a leading zero (`2026.10.0`). */
-export const QUALOR_PACK_VERSION = /^\d{4}\.([1-9]|1[0-2])\.(0|[1-9]\d*)$/;
+/** Pack versions: YYYY.M.patch, the month without a leading zero, the patch up to 6 digits (`2026.10.0`). */
+export const QUALOR_PACK_VERSION = /^\d{4}\.([1-9]|1[0-2])\.(0|[1-9]\d{0,5})$/;
 
 /** The Qualor rule id of a pack rule's OpenGrep id (`java.sql-injection` → `java/sql-injection`), else null. */
 export function qualorRuleId(opengrepId: string): string | null {

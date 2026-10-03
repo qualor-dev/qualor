@@ -163,6 +163,10 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
     const root = tmp();
     const analyzer = createQualorAnalyzer({ defaultDir: path.join(tmp(), 'none') });
     expect(await analyzer.prepare(context(root))).toEqual({ skip: QUALOR_RULES_NOT_INSTALLED });
+    // True whether or not a released image includes the rules (R8): it names the way out.
+    expect(QUALOR_RULES_NOT_INSTALLED).toBe(
+      "Qualor's security rules are not installed (set QUALOR_RULES_DIR to a rules release, or use a qualor/scanner image that includes them)",
+    );
   });
 
   it('is unavailable for a QUALOR_RULES_DIR that is relative, inside the repository or missing', async () => {
@@ -261,6 +265,21 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
     );
     if (!('run' in fromEnv)) throw new Error(JSON.stringify(fromEnv));
     expect(fromEnv.run.args.slice(1, 3)).toEqual(['--config', path.join(other, 'rules')]);
+  });
+
+  it('counts the pointer of each argument (8 bytes) as well as its length and terminator', async () => {
+    const root = tmp();
+    const analyze = async (maxTargetArgBytes: number) => {
+      const prep = await createQualorAnalyzer({
+        defaultDir: writePack(tmp()),
+        maxTargetArgBytes,
+      }).prepare(context(root, { files: [scopeFile(root, 'a.py', 'python')] }));
+      if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+      return prep.run.args;
+    };
+    // 'a.py' is 4 bytes + 1 terminator + 8 pointer = 13.
+    expect(await analyze(13)).toContain('--');
+    expect(await analyze(12)).not.toContain('--');
   });
 
   it("falls back to OpenGrep's own selection when the files do not fit one command line", async () => {
@@ -482,6 +501,9 @@ describe('qualor SARIF through normalisation (synthetic, in the shape OpenGrep 1
     expect(out.warnings).toEqual([]);
     expect(findingKeys(out.findings)).toEqual(expectedKeys('qualor-security', 'qualor'));
     expect(out.engines[0]?.version).toBe('1.30.0 + qualor-rules 2026.10.0');
+    // The loop below proves nothing over an empty list.
+    expect(out.engines[0]?.rules).toHaveLength(ids.length);
+    expect(ids.length).toBeGreaterThan(0);
     for (const r of out.engines[0]?.rules ?? []) {
       expect(r, r.id).toMatchObject({
         quality: 'security',
