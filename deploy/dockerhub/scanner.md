@@ -92,9 +92,9 @@ clang-tidy, scan in the job that built the project, with your own clang-tidy and
   Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
-- Qualor's own security rules (qualor-rules 2026.10.0, PolyForm Shield 1.0.0, source-available) in
-  `/opt/qualor/rules/qualor`, run by OpenGrep as the `qualor` engine. Images built before the rules
-  are published do not include them, and the engine is skipped.
+- Qualor's own security rules (PolyForm Shield 1.0.0, source-available; the first release is
+  qualor-rules 2026.10.0), installed in `/opt/qualor/rules/qualor` once the pack is published.
+  Images released before then do not include them, and the engine is skipped.
 - Runs as the user `node` (uid 1000) in `/src`; about 4.1 GB. Every base image is pinned by
   digest.
 

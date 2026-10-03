@@ -19,7 +19,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
   with the message "Qualor's security rules are not installed".
 - Where Qualor's rules and another analyzer report the same problem on a line, Qualor's issue is
   primary; if you had marked the other issue as a false positive or won't fix, the new issue
-  starts with that status, once.
+  starts with that status when it is first created (a later reopen is kept), and its history
+  names the other rule and repeats the comment on that status, if there was one.
 - Java security analysis: `qualor/scanner` bundles FindSecBugs 1.14.0 (LGPL-3.0) in SpotBugs. Its
   144 patterns report injections (SQL, command, path, LDAP, XPath, XSS, SSRF, expression languages),
   XXE, unsafe deserialisation configuration, weak cryptography and hard-coded passwords as

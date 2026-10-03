@@ -6,12 +6,12 @@ PMD, SpotBugs with FindSecBugs, Roslyn and Roslynator for C#, detekt for Kotlin,
 Swift, RuboCop for
 Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy for C and C++, Ruff for Python,
 PHPStan for PHP, stylelint and HTMLHint for CSS and HTML, OpenGrep, Gitleaks, Trivy,
-Qualor's own security rules (JS/TS, Python, Java, Go; source-available),
 SonarQube-compatible rules for C#, JavaScript and TypeScript, or any SARIF), tracks their issues
 across commits, measures coverage, duplication and complexity, and applies a quality gate to new
 code. MIT, except `enterprise/`: source-available under the Qualor Enterprise Licence, and inert
 without a licence key
-([licence keys](https://qualor.dev/enterprise)).
+([licence keys](https://qualor.dev/enterprise)). Qualor's own source-available security rules for
+JS/TS, Python, Java and Go are coming: they are not in released images yet.
 
 Repository: <https://github.com/qualor-dev/qualor>. Homepage: <https://qualor.dev>. Images:
 [`qualor/*` on Docker Hub](https://hub.docker.com/u/qualor). GitLab CI/CD component:

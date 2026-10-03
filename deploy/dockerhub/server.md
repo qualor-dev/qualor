@@ -17,9 +17,9 @@ makes the code worse. MIT licensed, with no limit on lines, users or projects.
   caused them.
 - **Your analyzers, one list.** ESLint, PMD, SpotBugs with FindSecBugs, detekt for Kotlin, SwiftLint for
   Swift, PHPStan for PHP, RuboCop for Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy
-  for C and C++, Roslyn and Roslynator for C#, OpenGrep, Gitleaks, Trivy, Qualor's own security
-  rules, SonarQube-compatible rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4,
-  LGPL-3.0) or any SARIF. The same finding from two tools shows once.
+  for C and C++, Roslyn and Roslynator for C#, OpenGrep, Gitleaks, Trivy, SonarQube-compatible
+  rules (SonarAnalyzer.CSharp 9.32, eslint-plugin-sonarjs 2.0.4, LGPL-3.0) or any SARIF. The same finding
+  from two tools shows once.
 - **Issues that survive a refactor.** Qualor recognises an issue by its code, not its line number,
   so the issue keeps its history and its status when the code moves.
 - **Coverage, duplication, complexity.** Coverage from LCOV, Cobertura and JaCoCo, cognitive

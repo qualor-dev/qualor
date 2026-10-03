@@ -730,7 +730,8 @@ the way. The first rules find SQL built from request data:
 - Findings are Security issues and count in the quality gate. Where another analyzer reports the
   same problem on the same line, Qualor's issue is the one shown and the other is its duplicate. If
   you had marked that other issue as a false positive or won't fix, Qualor's new issue starts with
-  the same status, and its history quotes your comment.
+  that status when it is first created (a later reopen is kept), and its history names the other
+  rule and repeats the comment on that status, if there was one.
 - Turn a rule off in the language's quality profile. The `js` rules apply to JavaScript and
   TypeScript files: turn them off in both profiles.
 - A `nosemgrep` comment does not hide these findings, and a `.semgrepignore` file does not apply to
@@ -740,10 +741,10 @@ the way. The first rules find SQL built from request data:
   names another directory with the unpacked rules (see Configuration). `SEMGREP_*` and
   `OPENGREP_*` environment variables never reach OpenGrep.
 - **Licence.** The rules are source-available, not open source: the PolyForm Shield License 1.0.0,
-  not the MIT licence of the Qualor CLI. You may run them on your own code, free of charge, in any
-  Qualor edition. You may not embed them in other products or services, resell them, or use them to
-  build a competing product or service. The licence text is in the image at
-  `/opt/qualor/licenses/qualor-rules/LICENSE`.
+  not the MIT licence of the Qualor CLI. You may use, change and share them for any purpose, free of
+  charge and in any Qualor edition, except providing a product that competes with Qualor or with the
+  rules themselves. If you pass them on, pass on the licence terms too. In an image that includes
+  the rules, the licence text is at `/opt/qualor/licenses/qualor-rules/LICENSE`.
 - Outside an image that includes the rules, the engine is skipped. Downloadable rules releases for
   other machines are not published yet.
 
