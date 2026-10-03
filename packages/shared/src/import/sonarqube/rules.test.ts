@@ -501,7 +501,7 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     expect(SONAR_MAPPING.targets('java:S2245')).toEqual([
       { key: 'spotbugs:PREDICTABLE_RANDOM', relation: 'overlap', reviewed: true, source: 'table' },
     ]);
-    // SonarQube's commercial taint rules are not mapped (Decisions needed 5).
+    // SonarQube's commercial taint rules are not mapped.
     expect(SONAR_MAPPING.targets('javasecurity:S3649')).toEqual([]);
   });
 
@@ -509,7 +509,7 @@ describe('the SonarQube mapping table (import-sonarqube.md §6)', () => {
     // python: rows were reviewed on 2026-10-01 (see the file's $comment), php: rows by plan 9A
     // (ruling A9-5), ruby: rows by plan 9B (ruling B9-4), and the go: rows with a public SonarQube
     // description by plan 9C (ruling G9-16), and the java: rows that map to SpotBugs' FindSecBugs
-    // patterns by plan 6A (ruling C2); the rest await a person.
+    // patterns by plan 6A; the rest await a person.
     for (const entry of raw.rules) {
       const reviewedLanguage = entry.sonar.every(
         (s) => s.startsWith('python:') || s.startsWith('php:') || s.startsWith('ruby:'),

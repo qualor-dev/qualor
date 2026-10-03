@@ -172,7 +172,9 @@ describe('FindSecBugs in the SpotBugs run (plan 6A)', () => {
     ).toBe('4.10.4');
     expect(version(withFindsecbugsVersion(log([]), '1.14.0'))).toBe('4.10.4');
     for (const odd of [null, 'text', 42, { runs: 'x' }, { runs: [null, { tool: null }] }]) {
-      expect(withFindsecbugsVersion(odd, '1.14.0')).toEqual(odd);
+      const before = structuredClone(odd);
+      expect(withFindsecbugsVersion(odd, '1.14.0')).toEqual(before);
+      expect(odd).toEqual(before);
     }
   });
 

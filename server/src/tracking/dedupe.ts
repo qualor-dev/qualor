@@ -60,16 +60,19 @@ const earlier = (a: Root | null, b: Root | null): Root | null =>
 
 /**
  * data-model.md §5.3: among the branch's issues that are not closed, two on the same path and
- * start line are duplicates when they come from different engines (or a curated same-engine pair)
- * and their rules are equivalent (shared CWE, or a curated pair). The issue of the higher-priority
- * engine is primary; the other points at it. Recomputed from scratch on every analysis, so a duplicate whose primary
- * was closed is promoted automatically (its pointer becomes null, its status is untouched).
- * Returns only the issues whose `duplicate_of_issue_id` must change.
+ * start line are duplicates when their rules are equivalent: from different engines with a shared
+ * CWE or a curated cross-engine pair, or from one engine with a curated same-engine pair (plan 6A;
+ * within one engine the CWE never matches). Across engines the issue of the higher-priority
+ * engine is primary; in a same-engine pair the core rule is primary. The other points at it.
+ * Recomputed from scratch on every analysis, so a duplicate whose primary was closed is promoted
+ * automatically (its pointer becomes null, its status is untouched). Returns only the issues
+ * whose `duplicate_of_issue_id` must change.
  *
- * Each group is walked in priority order; an issue points at the highest-priority earlier root
- * it is equivalent to, or becomes a root itself. Roots are indexed by CWE and by rule key, so the
- * matching roots are looked up (one per CWE of the issue and per curated partner of its rule),
- * never scanned: O(N log N) for N issues, even when a minified file puts them all on one line.
+ * Each group is walked in priority order (engine, then the same-engine rank of the rule); an
+ * issue points at the highest-priority earlier root it is equivalent to, or becomes a root
+ * itself. Roots are indexed by CWE and by rule key, so the matching roots are looked up (one per
+ * CWE of the issue and per curated partner of its rule), never scanned: O(N log N) for N issues,
+ * even when a minified file puts them all on one line.
  */
 export function planDedupe(live: readonly LiveIssue[]): DuplicateChange[] {
   const groups = new Map<string, LiveIssue[]>();

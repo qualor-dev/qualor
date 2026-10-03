@@ -30,7 +30,9 @@ describe('findsecbugs-patterns.mjs', () => {
 
 describeWithFindsecbugs()('the committed table and the installed FindSecBugs', () => {
   it('describe the same version and exactly the same patterns', () => {
-    const plugin = installedFindsecbugs()!;
+    const plugin = installedFindsecbugs();
+    expect(plugin, 'FindSecBugs is not installed (tools/analyzers/install.sh)').not.toBeNull();
+    if (plugin === null) return;
     expect(plugin.version).toBe(FINDSECBUGS_VERSION);
     expect(existsSync(TABLE)).toBe(true);
     const table = JSON.parse(readFileSync(TABLE, 'utf8')) as { patterns: Record<string, unknown> };

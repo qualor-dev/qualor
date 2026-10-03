@@ -38,7 +38,7 @@ describeWithFindsecbugs()('FindSecBugs inside SpotBugs on java-security (real Sp
   );
 
   it.runIf(process.platform !== 'win32')(
-    'ignores findsecbugs* variables: nothing written into the checkout, no custom config read (Review Focus 1)',
+    'ignores findsecbugs* variables: nothing written into the checkout, no custom config read',
     { timeout: 300_000 },
     async () => {
       const root = tmp();
