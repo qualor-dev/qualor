@@ -268,7 +268,7 @@ export class IssuesPage {
       faceted('severity', SEVERITIES, 'severity'),
       faceted('status', STATUSES, 'status'),
       faceted('quality', QUALITIES, 'quality'),
-      faceted('engine', [], null),
+      faceted('engine', [], 'engine'),
       faceted('rule', [], null),
       // Paths have no facet here; a shared URL's path filters are listed so they can be removed.
       ...(f.path.length > 0 ? [faceted('path', [], null)] : []),

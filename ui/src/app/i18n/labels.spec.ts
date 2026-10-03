@@ -29,6 +29,18 @@ describe('label', () => {
     expect(label('metric', 'new_coverage')).toBe('Coverage on new code');
   });
 
+  it('names the qualor engine "Qualor" and leaves every other engine id as it is (plan 6B-1)', () => {
+    expect(label('engine', 'qualor')).toBe('Qualor');
+    expect(label('engine', 'spotbugs')).toBe('spotbugs');
+    expect(label('engine', 'ext-osv')).toBe('ext-osv');
+  });
+
+  it('never returns an inherited member for an engine id such as "constructor"', () => {
+    expect(label('engine', 'constructor')).toBe('constructor');
+    expect(label('engine', '__proto__')).toBe('__proto__');
+    expect(label('engine', 'toString')).toBe('toString');
+  });
+
   it('falls back to the raw value for an unknown value, and to empty for none', () => {
     expect(label('severity', 'catastrophic')).toBe('catastrophic');
     expect(label('metric', 'new_mystery')).toBe('mystery on new code');

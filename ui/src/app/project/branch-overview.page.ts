@@ -378,7 +378,7 @@ export class BranchOverviewPage {
     () =>
       this.facets()?.engine?.map((f) => ({
         key: f.value,
-        label: f.value,
+        label: label('engine', f.value),
         value: f.count,
         tone: 'accent',
       })) ?? (this.facets() ? [] : null),

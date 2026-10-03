@@ -18,7 +18,8 @@ export type LabelKind =
   | 'auditOutcome'
   | 'auditActor'
   | 'auditBreak'
-  | 'ssoProtocol';
+  | 'ssoProtocol'
+  | 'engine';
 
 const LABELS: Record<LabelKind, Record<string, string>> = {
   severity: {
@@ -110,6 +111,10 @@ const LABELS: Record<LabelKind, Record<string, string>> = {
     oidc: $localize`:@@label.ssoProtocol.oidc:OpenID Connect`,
     saml: $localize`:@@label.ssoProtocol.saml:SAML`,
   },
+  /** Engine ids are shown as they are, except Qualor's own (plan 6B-1). */
+  engine: {
+    qualor: $localize`:@@label.engine.qualor:Qualor`,
+  },
   metric: {
     files: $localize`:@@metric.files:Files`,
     lines: $localize`:@@metric.lines:Lines`,
@@ -153,5 +158,7 @@ export function label(kind: LabelKind, value: string | null | undefined): string
     const base = LABELS.metric[value.slice(4)] ?? value.slice(4);
     return $localize`:@@metric.onNewCode:${base}:metric: on new code`;
   }
-  return LABELS[kind][value] ?? value;
+  // Own keys only: an engine id is external text, and "constructor" must not find a function.
+  const labels = LABELS[kind];
+  return Object.hasOwn(labels, value) ? (labels[value] ?? value) : value;
 }

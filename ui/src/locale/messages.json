@@ -254,6 +254,7 @@
     "label.auditBreak.anchorMismatch": "the oldest event does not continue from the retention anchor",
     "label.ssoProtocol.oidc": "OpenID Connect",
     "label.ssoProtocol.saml": "SAML",
+    "label.engine.qualor": "Qualor",
     "metric.files": "Files",
     "metric.lines": "Lines",
     "metric.ncloc": "Lines of code",
