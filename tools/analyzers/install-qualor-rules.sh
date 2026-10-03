@@ -47,11 +47,16 @@ echo "$QUALOR_RULES_SHA256  $TMP/pack.tar.gz" | sha256sum -c - >/dev/null \
 
 mkdir "$TMP/pack"
 tar -xzf "$TMP/pack.tar.gz" -C "$TMP/pack" --no-same-owner --no-same-permissions
+# Only regular files and directories: a link, device or FIFO in the archive is refused.
+if find "$TMP/pack" ! -type f ! -type d | grep -q .; then
+  echo "install-qualor-rules.sh: $NAME holds an entry that is not a regular file or a directory" >&2
+  exit 1
+fi
 for f in manifest.json LICENSE NOTICE; do
   [ -f "$TMP/pack/$f" ] || { echo "install-qualor-rules.sh: $NAME has no $f" >&2; exit 1; }
 done
 [ -d "$TMP/pack/rules" ] || { echo "install-qualor-rules.sh: $NAME has no rules/" >&2; exit 1; }
-grep -q "^  \"version\": \"$QUALOR_RULES_VERSION\",\$" "$TMP/pack/manifest.json" \
+grep -qxF "  \"version\": \"$QUALOR_RULES_VERSION\"," "$TMP/pack/manifest.json" \
   || { echo "install-qualor-rules.sh: $NAME is not version $QUALOR_RULES_VERSION" >&2; exit 1; }
 
 rm -rf "$DEST"

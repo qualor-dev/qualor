@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { parse as parseYaml, type Tags } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { finalStage } from './deploy/debian-sources';
@@ -874,15 +875,37 @@ describe('the qualor rules pack (plan 6B-1)', () => {
     );
   });
 
+  /** The tar archive with one more entry: `rules/js/odd.yml`, a symbolic link to `../../LICENSE` or a FIFO. */
+  function withOddEntry(archive: Buffer, kind: 'symlink' | 'fifo'): Buffer {
+    let end = archive.length;
+    while (end >= 512 && archive.subarray(end - 512, end).every((b) => b === 0)) end -= 512;
+    const header = Buffer.alloc(512);
+    header.write('rules/js/odd.yml', 0, 'latin1');
+    header.write('0000644 ', 100, 'latin1');
+    header.write('0000000 ', 108, 'latin1');
+    header.write('0000000 ', 116, 'latin1');
+    header.write('00000000000 ', 124, 'latin1');
+    header.write('00000000000 ', 136, 'latin1');
+    header.write('        ', 148, 'latin1');
+    header.write(kind === 'symlink' ? '2' : '6', 156, 'latin1');
+    if (kind === 'symlink') header.write('../../LICENSE', 157, 'latin1');
+    header.write('ustar ' + '00', 257, 'latin1');
+    const sum = header.reduce((n, b) => n + b, 0);
+    header.write(sum.toString(8).padStart(6, '0') + '  ', 148, 'latin1');
+    return gzipSync(Buffer.concat([archive.subarray(0, end), header, Buffer.alloc(1024)]));
+  }
+
   /** A synthetic pack (no real rule text) with the layout of a release, and install.sh pins for it. */
-  function fixture(opts: { sha?: string; url?: string } = {}) {
+  function fixture(
+    opts: { sha?: string; url?: string; manifestVersion?: string; entry?: 'symlink' | 'fifo' } = {},
+  ) {
     const dir = mkdtempSync(path.join(tmpdir(), 'qualor-rules-'));
     const posix = (p: string) => p.replace(/\\/g, '/');
     const pack = path.join(dir, 'pack');
     mkdirSync(path.join(pack, 'rules', 'js'), { recursive: true });
     writeFileSync(
       path.join(pack, 'manifest.json'),
-      '{\n  "version": "2026.10.0",\n  "rules": []\n}\n',
+      `{\n  "version": "${opts.manifestVersion ?? '2026.10.0'}",\n  "rules": []\n}\n`,
     );
     writeFileSync(path.join(pack, 'LICENSE'), 'synthetic licence\n');
     writeFileSync(path.join(pack, 'NOTICE'), 'synthetic notice\n');
@@ -890,16 +913,17 @@ describe('the qualor rules pack (plan 6B-1)', () => {
     const src = path.join(dir, 'src');
     mkdirSync(src);
     // Relative paths: GNU tar reads "C:" in an absolute Windows path as a remote host.
+    const archive = path.join(src, 'qualor-rules-2026.10.0.tar.gz');
     const tar = spawnSync('sh', ['-c', 'tar -czf ../src/qualor-rules-2026.10.0.tar.gz .'], {
       cwd: pack,
       encoding: 'utf8',
     });
     expect(tar.status, tar.stderr).toBe(0);
-    const sha =
-      opts.sha ??
-      createHash('sha256')
-        .update(readFileSync(path.join(src, 'qualor-rules-2026.10.0.tar.gz')))
-        .digest('hex');
+    if (opts.entry) {
+      // Written by hand: on Windows `ln -s` and tar's extraction of a link make a copy.
+      writeFileSync(archive, withOddEntry(gunzipSync(readFileSync(archive)), opts.entry));
+    }
+    const sha = opts.sha ?? createHash('sha256').update(readFileSync(archive)).digest('hex');
     writeFileSync(
       path.join(dir, 'install.sh'),
       `QUALOR_RULES_VERSION=2026.10.0\nQUALOR_RULES_SHA256=${sha}\nQUALOR_RULES_URL=${opts.url ?? ''}\n`,
@@ -983,6 +1007,38 @@ describe('the qualor rules pack (plan 6B-1)', () => {
     },
   );
 
+  // Tar extraction on Windows turns a symbolic link into a copy, so the link is tested elsewhere.
+  it.skipIf(!hasSh)(
+    'refuses a pack with an entry that is not a regular file or a directory',
+    () => {
+      for (const entry of ['fifo', 'symlink'] as const) {
+        if (entry === 'symlink' && process.platform === 'win32') continue;
+        const f = fixture({ entry });
+        try {
+          const done = f.run({});
+          expect(done.status, `${entry}: ${done.stdout}`).toBe(1);
+          expect(done.stderr, entry).toContain('not a regular file or a directory');
+          expect(existsSync(path.join(f.prefix, 'rules', 'qualor')), entry).toBe(false);
+        } finally {
+          f.clean();
+        }
+      }
+    },
+  );
+
+  it.skipIf(!hasSh)('compares the manifest version literally, not as a pattern', () => {
+    // The pinned 2026.10.0 would match 2026x10y0 as a regular expression.
+    const f = fixture({ manifestVersion: '2026x10y0' });
+    try {
+      const done = f.run({});
+      expect(done.status, done.stdout).toBe(1);
+      expect(done.stderr).toContain('is not version 2026.10.0');
+      expect(existsSync(path.join(f.prefix, 'rules', 'qualor'))).toBe(false);
+    } finally {
+      f.clean();
+    }
+  });
+
   it('runs in every job that requires the analyzers, in both CIs', () => {
     const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
     for (const [name, job] of Object.entries(github.jobs)) {
@@ -1038,9 +1094,10 @@ describe('the qualor rules pack (plan 6B-1)', () => {
       { encoding: 'utf8' },
     );
     expect(files.stdout.trim().split('\n')).toEqual(['tools/analyzers/qualor-rules/README.md']);
-    expect(readFileSync('.gitignore', 'utf8')).toMatch(
-      /^\/tools\/analyzers\/qualor-rules\/\*\.tar\.gz$/m,
-    );
+    // Everything in the drop directory is ignored but its README.
+    const ignore = readFileSync('.gitignore', 'utf8');
+    expect(ignore).toMatch(/^\/tools\/analyzers\/qualor-rules\/\*$/m);
+    expect(ignore).toMatch(/^!\/tools\/analyzers\/qualor-rules\/README\.md$/m);
   });
 });
 

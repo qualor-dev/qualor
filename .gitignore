@@ -13,5 +13,7 @@ dist/
 # no SonarSource text is committed.
 tools/analyzers/sonarjs/categories.json
 # Plan 6B-1: a local qualor-rules release for image builds before the pack is published
-# (tools/analyzers/install-qualor-rules.sh). The pack is not MIT; it is never committed here.
-/tools/analyzers/qualor-rules/*.tar.gz
+# (tools/analyzers/install-qualor-rules.sh). The pack is not MIT; it is never committed here, so
+# the whole drop directory is ignored except its README.
+/tools/analyzers/qualor-rules/*
+!/tools/analyzers/qualor-rules/README.md
