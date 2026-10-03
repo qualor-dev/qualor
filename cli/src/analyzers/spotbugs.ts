@@ -130,6 +130,9 @@ export function spotbugsHome(launcher: string): { home: string; jar: string } | 
   }
 }
 
+/** The SARIF tool extension SpotBugs writes for the FindSecBugs plugin (plan 6A). */
+export const FINDSECBUGS_EXTENSION = 'com.h3xstream.findsecbugs';
+
 const FINDSECBUGS_JAR = /^findsecbugs-plugin-(\d+\.\d+\.\d+)\.jar$/;
 
 /**
@@ -149,6 +152,46 @@ export function findsecbugsPlugin(home: string): { jar: string; version: string 
     if (m?.[1] !== undefined) return { jar: path.join(home, 'plugin', name), version: m[1] };
   }
   return null;
+}
+
+/**
+ * config.md §6 (plan 6A): FindSecBugs reads its settings from `findsecbugs.*` environment
+ * variables (and the same names with `_`), some naming files it opens relative to the working
+ * directory (the checkout) or writes there. None reaches SpotBugs: the plugin always runs with its
+ * built-in sinks and taint models.
+ */
+export function isFindsecbugsVariable(name: string): boolean {
+  return name.toLowerCase().startsWith('findsecbugs');
+}
+
+/**
+ * config.md §6 (plan 6A): when the log lists the FindSecBugs extension (whose own version field
+ * SpotBugs leaves empty), the driver version becomes `<SpotBugs> + FindSecBugs <version>`, so the
+ * report says the plugin ran. Anything that is not a SARIF log is returned as it is.
+ */
+export function withFindsecbugsVersion(output: unknown, pluginVersion: string | null): unknown {
+  if (typeof output !== 'object' || output === null) return output;
+  const runs = (output as { runs?: unknown }).runs;
+  if (!Array.isArray(runs)) return output;
+  for (const run of runs) {
+    if (typeof run !== 'object' || run === null) continue;
+    const tool = (run as { tool?: unknown }).tool;
+    if (typeof tool !== 'object' || tool === null) continue;
+    const { driver, extensions } = tool as { driver?: unknown; extensions?: unknown };
+    const loaded =
+      Array.isArray(extensions) &&
+      extensions.some(
+        (e) =>
+          typeof e === 'object' &&
+          e !== null &&
+          (e as { name?: unknown }).name === FINDSECBUGS_EXTENSION,
+      );
+    if (!loaded || typeof driver !== 'object' || driver === null) continue;
+    const d = driver as { version?: unknown };
+    if (typeof d.version !== 'string') continue;
+    d.version = `${d.version} + FindSecBugs${pluginVersion === null ? '' : ` ${pluginVersion}`}`;
+  }
+  return output;
 }
 
 function prepare(ctx: AnalyzerContext): Promise<Preparation> {
@@ -209,6 +252,7 @@ function prepareSync(ctx: AnalyzerContext): Preparation {
       unavailable: 'SpotBugs is not installed (no lib/spotbugs.jar next to the spotbugs launcher)',
     };
   }
+  const plugin = findsecbugsPlugin(install.home);
   // The jar runs directly on a system java (ruling V3): the launcher script re-splits its
   // arguments on whitespace, so a path with a space would break, and a line break in a directory
   // name would become options of their own (such as `-pluginList <jar>`, which loads code).
@@ -258,6 +302,9 @@ function prepareSync(ctx: AnalyzerContext): Preparation {
       sarifPath: out,
       // Without -exitcode, SpotBugs exits 0 whether or not it found bugs; anything else failed.
       okExitCodes: [0],
+      // Plan 6A: FindSecBugs' settings never come from the environment (config.md §6).
+      dropEnv: isFindsecbugsVariable,
+      transform: (output: unknown) => withFindsecbugsVersion(output, plugin?.version ?? null),
       version: null,
     },
   };

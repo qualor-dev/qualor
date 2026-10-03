@@ -30,14 +30,28 @@ import type { ScopeFile } from '../discovery/discover';
 import { silentLogger } from '../log';
 import { runAnalyzers } from './runner';
 import { DEAD_PROXY_PROPERTIES } from './jvm';
-import { hasClassFiles, javaSourceRoots, spotbugsAnalyzer, spotbugsHome } from './spotbugs';
+import {
+  FINDSECBUGS_EXTENSION,
+  findsecbugsPlugin,
+  hasClassFiles,
+  isFindsecbugsVariable,
+  javaSourceRoots,
+  spotbugsAnalyzer,
+  spotbugsHome,
+  withFindsecbugsVersion,
+} from './spotbugs';
 
 const tmp = useTempDirs();
 
 /** A SpotBugs installation as the tarball lays it out: bin/spotbugs and lib/spotbugs.jar. */
-function fakeInstall(): { launcher: string; home: string; jar: string } {
+function fakeInstall(o: { plugin?: string } = {}): {
+  launcher: string;
+  home: string;
+  jar: string;
+} {
   const home = tmp();
   writeTree(home, { 'bin/spotbugs': '#!/bin/sh\n', 'lib/spotbugs.jar': 'jar' });
+  if (o.plugin !== undefined) writeTree(home, { [`plugin/${o.plugin}`]: 'jar' });
   return {
     launcher: path.join(home, 'bin', 'spotbugs'),
     home,
@@ -103,6 +117,89 @@ describe('SpotBugs inputs', () => {
   });
 });
 
+describe('FindSecBugs in the SpotBugs run (plan 6A)', () => {
+  it('drops every findsecbugs* variable, which FindSecBugs would read as configuration', async () => {
+    const root = tmp();
+    writeTree(root, { 'target/classes/A.class': 'x' });
+    const install = fakeInstall();
+    const prep = await spotbugsAnalyzer.prepare(
+      fakeContext(root, { binaries: { spotbugs: install.launcher, java: JAVA } }),
+    );
+    if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+    const drop = prep.run.dropEnv!;
+    for (const name of [
+      'findsecbugs.taint.customconfigfile',
+      'findsecbugs_taint_outputconfigs',
+      'findsecbugs.injection.customconfigfile.SqlInjectionDetector',
+      'FINDSECBUGS_TAINT_CUSTOMCONFIGFILE',
+    ]) {
+      expect(drop(name), name).toBe(true);
+    }
+    for (const name of ['PATH', 'JAVA_HOME', 'JAVA_TOOL_OPTIONS', 'HOME', 'myfindsecbugs']) {
+      expect(drop(name), name).toBe(false);
+    }
+    expect(isFindsecbugsVariable('findsecbugsX')).toBe(true);
+  });
+
+  it("reads the plugin's version from its jar name in the SpotBugs home", () => {
+    const withPlugin = fakeInstall({ plugin: 'findsecbugs-plugin-1.14.0.jar' });
+    expect(findsecbugsPlugin(withPlugin.home)).toEqual({
+      jar: path.join(withPlugin.home, 'plugin', 'findsecbugs-plugin-1.14.0.jar'),
+      version: '1.14.0',
+    });
+    expect(findsecbugsPlugin(fakeInstall({ plugin: 'fb-contrib-7.6.4.jar' }).home)).toBeNull();
+    expect(findsecbugsPlugin(fakeInstall().home)).toBeNull();
+    expect(findsecbugsPlugin(path.join(tmp(), 'nowhere'))).toBeNull();
+  });
+
+  it('names FindSecBugs next to SpotBugs only when the log lists its extension', () => {
+    const log = (extensions: unknown[]) => ({
+      runs: [
+        { tool: { driver: { name: 'SpotBugs', version: '4.10.4' }, extensions }, results: [] },
+      ],
+    });
+    const version = (out: unknown) =>
+      (out as { runs: { tool: { driver: { version: string } } }[] }).runs[0]!.tool.driver.version;
+    const fsb = { name: FINDSECBUGS_EXTENSION, version: '' };
+    expect(version(withFindsecbugsVersion(log([fsb]), '1.14.0'))).toBe(
+      '4.10.4 + FindSecBugs 1.14.0',
+    );
+    expect(version(withFindsecbugsVersion(log([fsb]), null))).toBe('4.10.4 + FindSecBugs');
+    expect(
+      version(
+        withFindsecbugsVersion(log([{ name: 'edu.umd.cs.findbugs.plugins.core' }]), '1.14.0'),
+      ),
+    ).toBe('4.10.4');
+    expect(version(withFindsecbugsVersion(log([]), '1.14.0'))).toBe('4.10.4');
+    for (const odd of [null, 'text', 42, { runs: 'x' }, { runs: [null, { tool: null }] }]) {
+      expect(withFindsecbugsVersion(odd, '1.14.0')).toEqual(odd);
+    }
+  });
+
+  it('sets the transform, and keeps the command line exactly as before', async () => {
+    const root = tmp();
+    writeTree(root, { 'target/classes/A.class': 'x' });
+    const install = fakeInstall({ plugin: 'findsecbugs-plugin-1.14.0.jar' });
+    const prep = await spotbugsAnalyzer.prepare(
+      fakeContext(root, { binaries: { spotbugs: install.launcher, java: JAVA } }),
+    );
+    if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+    expect(prep.run.args).not.toContain('-pluginList');
+    expect(prep.run.args.some((a) => a.includes('findsecbugs'))).toBe(false);
+    const out = prep.run.transform!(
+      {
+        runs: [
+          {
+            tool: { driver: { version: '4.10.4' }, extensions: [{ name: FINDSECBUGS_EXTENSION }] },
+          },
+        ],
+      },
+      '',
+    ) as { runs: { tool: { driver: { version: string } } }[] };
+    expect(out.runs[0]!.tool.driver.version).toBe('4.10.4 + FindSecBugs 1.14.0');
+  });
+});
+
 describe('spotbugsAnalyzer.prepare', () => {
   it('runs the SpotBugs jar on a system java for the class directories that hold classes', async () => {
     const root = tmp();
@@ -144,6 +241,8 @@ describe('spotbugsAnalyzer.prepare', () => {
       cwd: root,
       sarifPath: out,
       okExitCodes: [0],
+      dropEnv: isFindsecbugsVariable,
+      transform: expect.any(Function),
       version: null,
     });
     expect(spotbugsAnalyzer.sourceRoots?.(ctx)).toEqual(['src/main/java']);
