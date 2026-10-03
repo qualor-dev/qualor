@@ -21,7 +21,7 @@ PREFIX="${QUALOR_TOOLS:-/opt/qualor}"
 DEST="$PREFIX/rules/qualor"
 REQUIRED="${QUALOR_RULES_REQUIRED:-0}"
 
-eval "$(grep -E '^QUALOR_RULES_(VERSION|SHA256|URL)=' "$INSTALL_SH")"
+eval "$(grep -E '^(QUALOR_RULES_(VERSION|SHA256|URL)|OPENGREP_VERSION)=' "$INSTALL_SH")"
 NAME="qualor-rules-$QUALOR_RULES_VERSION.tar.gz"
 
 TMP="$(mktemp -d)"
@@ -58,6 +58,9 @@ done
 [ -d "$TMP/pack/rules" ] || { echo "install-qualor-rules.sh: $NAME has no rules/" >&2; exit 1; }
 grep -qxF "  \"version\": \"$QUALOR_RULES_VERSION\"," "$TMP/pack/manifest.json" \
   || { echo "install-qualor-rules.sh: $NAME is not version $QUALOR_RULES_VERSION" >&2; exit 1; }
+# The pack names the OpenGrep its rules are tested with: install.sh must install that one.
+grep -qxF "  \"opengrep\": \"$OPENGREP_VERSION\"," "$TMP/pack/manifest.json" \
+  || { echo "install-qualor-rules.sh: $NAME is made for another OpenGrep than $OPENGREP_VERSION (install.sh's OPENGREP_VERSION)" >&2; exit 1; }
 
 rm -rf "$DEST"
 mkdir -p "$DEST" "$PREFIX/licenses/qualor-rules"

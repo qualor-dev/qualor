@@ -14,6 +14,7 @@ import path from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { parse as parseYaml, type Tags } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { qualorRulesPins } from '../cli/test/install-pins';
 import { finalStage } from './deploy/debian-sources';
 import { DEPLOY_LABEL } from './deploy/workspace';
 
@@ -856,10 +857,52 @@ describe('the qualor rules pack (plan 6B-1)', () => {
     expect(['', RULES_URL]).toContain(url);
     // The installer reads the pins from install.sh and never carries its own.
     expect(installer).toContain(
-      'eval "$(grep -E \'^QUALOR_RULES_(VERSION|SHA256|URL)=\' "$INSTALL_SH")"',
+      'eval "$(grep -E \'^(QUALOR_RULES_(VERSION|SHA256|URL)|OPENGREP_VERSION)=\' "$INSTALL_SH")"',
     );
-    expect(installer).not.toMatch(/^QUALOR_RULES_(VERSION|SHA256|URL)=/m);
+    expect(installer).not.toMatch(/^(QUALOR_RULES_(VERSION|SHA256|URL)|OPENGREP_VERSION)=/m);
   });
+
+  /**
+   * The `opengrep` field of each qualor-rules release's manifest.json: the OpenGrep its rules are
+   * tested with. Recorded here so that CI, which has no pack before it is published, checks it.
+   */
+  const PACK_OPENGREP: Record<string, string> = { '2026.10.0': '1.30.0' };
+
+  it('installs the OpenGrep the pinned pack is made for (bump OpenGrep only with a pack that names it)', () => {
+    const pins = qualorRulesPins(script);
+    expect(
+      PACK_OPENGREP[pins.version],
+      `qualor-rules ${pins.version} must name OpenGrep ${pins.opengrep}: bump the pack's opengrep and re-run its opengrep --test first, then record it here`,
+    ).toBe(pins.opengrep);
+  });
+
+  /** The text of one entry of a gzipped ustar archive, or null. */
+  function tarEntry(archive: Buffer, name: string): string | null {
+    const tar = gunzipSync(archive);
+    const field = (h: Buffer, from: number, to: number) =>
+      h.toString('latin1', from, to).replace(/\0[\s\S]*$/, '');
+    for (let at = 0; at + 512 <= tar.length;) {
+      const header = tar.subarray(at, at + 512);
+      if (header.every((b) => b === 0)) return null;
+      const size = parseInt(field(header, 124, 136).trim() || '0', 8);
+      if ([name, `./${name}`].includes(field(header, 0, 100))) {
+        return tar.toString('utf8', at + 512, at + 512 + size);
+      }
+      at += 512 + Math.ceil(size / 512) * 512;
+    }
+    return null;
+  }
+
+  const dropped = `tools/analyzers/qualor-rules/qualor-rules-${qualorRulesPins(script).version}.tar.gz`;
+  it.runIf(existsSync(dropped))(
+    'records the OpenGrep that the pinned pack in the drop directory names',
+    () => {
+      const manifest = tarEntry(readFileSync(dropped), 'manifest.json');
+      expect(manifest).not.toBeNull();
+      const { version, opengrep } = JSON.parse(manifest!) as { version: string; opengrep: string };
+      expect(PACK_OPENGREP[version]).toBe(opengrep);
+    },
+  );
 
   it('checks the archive against the pin before it unpacks it, over https only', () => {
     const check = installer.indexOf('sha256sum -c -');
@@ -897,7 +940,13 @@ describe('the qualor rules pack (plan 6B-1)', () => {
 
   /** A synthetic pack (no real rule text) with the layout of a release, and install.sh pins for it. */
   function fixture(
-    opts: { sha?: string; url?: string; manifestVersion?: string; entry?: 'symlink' | 'fifo' } = {},
+    opts: {
+      sha?: string;
+      url?: string;
+      manifestVersion?: string;
+      manifestOpengrep?: string;
+      entry?: 'symlink' | 'fifo';
+    } = {},
   ) {
     const dir = mkdtempSync(path.join(tmpdir(), 'qualor-rules-'));
     const posix = (p: string) => p.replace(/\\/g, '/');
@@ -905,7 +954,7 @@ describe('the qualor rules pack (plan 6B-1)', () => {
     mkdirSync(path.join(pack, 'rules', 'js'), { recursive: true });
     writeFileSync(
       path.join(pack, 'manifest.json'),
-      `{\n  "version": "${opts.manifestVersion ?? '2026.10.0'}",\n  "rules": []\n}\n`,
+      `{\n  "version": "${opts.manifestVersion ?? '2026.10.0'}",\n  "opengrep": "${opts.manifestOpengrep ?? '1.30.0'}",\n  "rules": []\n}\n`,
     );
     writeFileSync(path.join(pack, 'LICENSE'), 'synthetic licence\n');
     writeFileSync(path.join(pack, 'NOTICE'), 'synthetic notice\n');
@@ -926,7 +975,7 @@ describe('the qualor rules pack (plan 6B-1)', () => {
     const sha = opts.sha ?? createHash('sha256').update(readFileSync(archive)).digest('hex');
     writeFileSync(
       path.join(dir, 'install.sh'),
-      `QUALOR_RULES_VERSION=2026.10.0\nQUALOR_RULES_SHA256=${sha}\nQUALOR_RULES_URL=${opts.url ?? ''}\n`,
+      `OPENGREP_VERSION=1.30.0\nQUALOR_RULES_VERSION=2026.10.0\nQUALOR_RULES_SHA256=${sha}\nQUALOR_RULES_URL=${opts.url ?? ''}\n`,
     );
     const empty = path.join(dir, 'empty');
     mkdirSync(empty);
@@ -1036,6 +1085,21 @@ describe('the qualor rules pack (plan 6B-1)', () => {
       expect(existsSync(path.join(f.prefix, 'rules', 'qualor'))).toBe(false);
     } finally {
       f.clean();
+    }
+  });
+
+  it.skipIf(!hasSh)('refuses a pack made for another OpenGrep than install.sh installs', () => {
+    // As a pattern or a prefix, the pinned 1.30.0 would match 1x30y0 and 1.30.01.
+    for (const other of ['1.31.0', '1.30.01', '1x30y0']) {
+      const f = fixture({ manifestOpengrep: other });
+      try {
+        const done = f.run({});
+        expect(done.status, `${other}: ${done.stdout}`).toBe(1);
+        expect(done.stderr, other).toContain('is made for another OpenGrep than 1.30.0');
+        expect(existsSync(path.join(f.prefix, 'rules', 'qualor')), other).toBe(false);
+      } finally {
+        f.clean();
+      }
     }
   });
 
