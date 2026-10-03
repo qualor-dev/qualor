@@ -94,8 +94,9 @@ export function carryOverComment(sourceRuleKey: string, sourceComment: string | 
  * Writes {@link planCarryOver}'s statuses. Each new issue takes its source's status, `resolved_at`
  * and `resolved_by`, guarded on the source still having the planned status and the new issue still
  * being `open`, and gets one system changelog entry (no user, this analysis, `open` → the status)
- * quoting the comment of the source's latest change to that status. The new issues were inserted by this same transaction, so no one else can hold them. No
- * audit event: the tracking stage records none for system changes. Returns how many applied.
+ * quoting the comment of the source's latest change to that status. The new issues were inserted
+ * by this same transaction, so no one else can hold them. No audit event: the tracking stage
+ * records none for system changes. Returns how many applied.
  */
 export async function writeCarryOver(
   tx: Executor,
