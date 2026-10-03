@@ -11,7 +11,9 @@ import {
 } from '../../test/analyzers';
 import { commitAll, initRepo } from '../../test/git';
 import { useTempDirs } from '../../test/tmp';
+import { MAX_ANALYZED_BYTES } from '../discovery/discover';
 import { createQualorAnalyzer, qualorAnalyzer, withQualorRules } from './qualor';
+import type { Analyzer } from './types';
 
 const tmp = useTempDirs();
 const gitRepo = (dir: string) => {
@@ -114,13 +116,36 @@ describeWithQualorRules()(
       "covers the fixture with OpenGrep's own file selection when the list does not fit",
       { timeout: 300_000 },
       async () => {
-        const { keys } = await scanFixtureWith(
-          createQualorAnalyzer({ maxTargetArgBytes: 1 }),
-          'qualor-security',
-          tmp(),
-          gitRepo,
-        );
+        const fallback = createQualorAnalyzer({ maxTargetArgBytes: 1 });
+        const warnings: string[] = [];
+        let args: readonly string[] = [];
+        // The same analyzer, recording the command it hands the runner and the warnings it logs.
+        const recording: Analyzer = {
+          ...fallback,
+          prepare: async (ctx) => {
+            const prep = await fallback.prepare({
+              ...ctx,
+              log: { ...ctx.log, warn: (m: string) => warnings.push(m) },
+            });
+            if ('run' in prep) args = prep.run.args;
+            return prep;
+          },
+        };
+        const { keys } = await scanFixtureWith(recording, 'qualor-security', tmp(), gitRepo);
         expect(keys).toEqual(expectedKeys('qualor-security', 'qualor'));
+        // The fallback ran: no file list, OpenGrep scanned `.` itself.
+        expect(args).not.toContain('--');
+        expect(args.slice(-4)).toEqual([
+          '--max-target-bytes',
+          String(MAX_ANALYZED_BYTES),
+          '--x-ignore-semgrepignore-files',
+          '.',
+        ]);
+        expect(warnings).toEqual([
+          expect.stringMatching(
+            /^qualor: \d+ files do not fit one command line; OpenGrep selects the files itself/,
+          ),
+        ]);
       },
     );
   },
