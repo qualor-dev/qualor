@@ -157,8 +157,10 @@ export function findsecbugsPlugin(home: string): { jar: string; version: string 
 /**
  * config.md §6 (plan 6A): FindSecBugs reads its settings from `findsecbugs.*` environment
  * variables (and the same names with `_`), some naming files it opens relative to the working
- * directory (the checkout) or writes there. None reaches SpotBugs: the plugin always runs with its
- * built-in sinks and taint models.
+ * directory (the checkout) or writes there. The CLI drops them, so nothing from the checkout or a
+ * stray CI variable configures the plugin. A `-Dfindsecbugs.*` option in `JAVA_TOOL_OPTIONS`,
+ * `_JAVA_OPTIONS` or `JDK_JAVA_OPTIONS` still reaches it: like `-javaagent`, those variables
+ * belong to the CI and are passed through.
  */
 export function isFindsecbugsVariable(name: string): boolean {
   return name.toLowerCase().startsWith('findsecbugs');
@@ -302,7 +304,8 @@ function prepareSync(ctx: AnalyzerContext): Preparation {
       sarifPath: out,
       // Without -exitcode, SpotBugs exits 0 whether or not it found bugs; anything else failed.
       okExitCodes: [0],
-      // Plan 6A: FindSecBugs' settings never come from the environment (config.md §6).
+      // Plan 6A: `findsecbugs*` variables are dropped (config.md §6); the CI's own JVM option
+      // variables (JAVA_TOOL_OPTIONS, …) are kept.
       dropEnv: isFindsecbugsVariable,
       transform: (output: unknown) => withFindsecbugsVersion(output, plugin?.version ?? null),
       version: null,
