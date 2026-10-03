@@ -81,6 +81,49 @@ describe('spotbugs', () => {
   });
 });
 
+describe('spotbugs: FindSecBugs patterns (report-format.md §7.1, plan 6A)', () => {
+  const m = ENGINE_MAPPINGS.spotbugs;
+
+  it.each([
+    ['SQL_INJECTION_JDBC', 'issue', 'high'],
+    ['ECB_MODE', 'issue', 'medium'],
+    ['PREDICTABLE_RANDOM', 'hotspot', 'medium'],
+    ['SERVLET_PARAMETER', 'hotspot', 'low'],
+    ['SPRING_ENDPOINT', 'hotspot', 'info'],
+  ])('%s → %s, default %s', (id, kind, defaultSeverity) => {
+    expect(m.rule!(rule(id, { tags: ['SECURITY'] }))).toEqual({
+      quality: 'security',
+      kind,
+      defaultSeverity,
+    });
+  });
+
+  it('takes the severity from the table, one step lower at note, whatever SpotBugs ranked', () => {
+    const sev = (id: string, level?: 'error' | 'warning' | 'note') =>
+      m.severity!(
+        { ruleId: id, ...(level && { level }), properties: { rank: 1 } } as never,
+        rule(id),
+      );
+    expect(sev('SQL_INJECTION_JDBC', 'warning')).toBe('high');
+    expect(sev('CRLF_INJECTION_LOGS', 'warning')).toBe('medium');
+    expect(sev('CRLF_INJECTION_LOGS', 'note')).toBe('low');
+    expect(sev('SERVLET_PARAMETER', 'note')).toBe('info');
+  });
+
+  it('leaves core SpotBugs patterns and unknown ids as they were', () => {
+    expect(
+      m.rule!(rule('SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE', { tags: ['SECURITY'] })),
+    ).toEqual({ quality: 'security' });
+    expect(m.rule!(rule('A_PATTERN_OF_ANOTHER_VERSION', { tags: ['SECURITY'] }))).toEqual({
+      quality: 'security',
+    });
+    expect(m.severity!(result({ rank: 3 }), rule('SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE'))).toBe(
+      'high',
+    );
+    expect(m.severity!(result(), rule('A_PATTERN_OF_ANOTHER_VERSION'))).toBeUndefined();
+  });
+});
+
 describe('semgrep', () => {
   const m = ENGINE_MAPPINGS.semgrep;
   it('maps security, correctness and other tags', () => {

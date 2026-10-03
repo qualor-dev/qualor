@@ -7,6 +7,7 @@ import { swiftlintQuality, swiftlintSeverity } from '../rules/swiftlint';
 import { clangTidyMeta, cppcheckQuality, cppcheckSeverity } from '../rules/cfamily';
 import ruffCategories from '../../rules/ruff-categories.json' with { type: 'json' };
 import { gosecSeverity, govetRule, staticcheckRule } from '../rules/golang';
+import { findsecbugsPattern, findsecbugsSeverity } from '../rules/findsecbugs';
 
 function tags(rule: SarifRule | undefined): string[] {
   const t = rule?.properties?.['tags'];
@@ -70,6 +71,11 @@ const pmd: EngineMapping = {
 
 const spotbugs: EngineMapping = {
   rule: (r) => {
+    // FindSecBugs (plan 6A): kind and default severity from the curated table.
+    const fsb = findsecbugsPattern(r.id);
+    if (fsb !== undefined) {
+      return { quality: 'security', kind: fsb.kind, defaultSeverity: fsb.severity };
+    }
     const t = tags(r).map((x) => x.toUpperCase());
     const quality: Quality = t.includes('SECURITY')
       ? 'security'
@@ -78,7 +84,9 @@ const spotbugs: EngineMapping = {
         : 'maintainability';
     return { quality };
   },
-  severity: (result) => {
+  severity: (result, r) => {
+    const fsb = findsecbugsPattern(result.ruleId ?? r?.id ?? '');
+    if (fsb !== undefined) return findsecbugsSeverity(fsb, result.level);
     const rank = Number(result.properties?.['rank']);
     if (!Number.isInteger(rank) || rank < 1) return undefined;
     if (rank <= 4) return 'high';
