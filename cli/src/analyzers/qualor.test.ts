@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { expectedKeys, fakeContext, findingKeys, normalizeRecorded } from '../../test/analyzers';
 import { FIXTURES_DIR } from '../../test/fixtures';
 import { useTempDirs } from '../../test/tmp';
-import type { ScopeFile } from '../discovery/discover';
+import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { deadProxyEnv } from './offline';
 import {
   createQualorAnalyzer,
@@ -270,7 +270,13 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
       maxTargetArgBytes: 10,
     }).prepare(context(root, { files: [scopeFile(root, 'src/a-long-enough-name.py', 'python')] }));
     if (!('run' in prep)) throw new Error(JSON.stringify(prep));
-    expect(prep.run.args.slice(-2)).toEqual(['--x-ignore-semgrepignore-files', '.']);
+    // OpenGrep skips files over 1,000,000 bytes below `.` unless told otherwise.
+    expect(prep.run.args.slice(-4)).toEqual([
+      '--max-target-bytes',
+      String(MAX_ANALYZED_BYTES),
+      '--x-ignore-semgrepignore-files',
+      '.',
+    ]);
     expect(prep.run.args).not.toContain('--');
   });
 });

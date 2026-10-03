@@ -9,6 +9,7 @@ import {
   type Language,
   type QualorManifest,
 } from '@qualor/shared';
+import { MAX_ANALYZED_BYTES } from '../discovery/discover';
 import { isInside } from './binary';
 import { deadProxyEnv } from './offline';
 import { shown } from './reason';
@@ -247,7 +248,16 @@ export function createQualorAnalyzer(
           '--output',
           out,
           ...offlineFlags('opengrep'),
-          ...(explicit ? ['--', ...files] : ['--x-ignore-semgrepignore-files', '.']),
+          ...(explicit
+            ? ['--', ...files]
+            : [
+                // Below `.` the tool skips files over 1,000,000 bytes silently; named files are
+                // always scanned.
+                '--max-target-bytes',
+                String(MAX_ANALYZED_BYTES),
+                '--x-ignore-semgrepignore-files',
+                '.',
+              ]),
         ],
         cwd: ctx.root,
         env: deadProxyEnv(),

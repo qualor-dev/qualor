@@ -22,6 +22,7 @@ import { captureIO } from '../../test/io';
 import { parseCommandLine } from '../args';
 import { runScan } from '../scan/run';
 import { useTempDirs, writeTree } from '../../test/tmp';
+import { MAX_ANALYZED_BYTES } from '../discovery/discover';
 import { silentLogger } from '../log';
 import { resolveBinary } from './binary';
 import { deadProxyEnv } from './offline';
@@ -271,6 +272,8 @@ describe('semgrepAnalyzer.prepare', () => {
         '--disable-version-check',
         '--no-rewrite-rule-ids',
         '--quiet',
+        '--max-target-bytes',
+        String(MAX_ANALYZED_BYTES),
         '.',
       ],
       cwd: root,
@@ -477,6 +480,34 @@ describeWithTools([['opengrep', 'semgrep']])(
         // The rule's static text, never the interpolated one.
         expect(f?.message).toBe('key $K in $N');
         expect(f?.snippet?.lines.join('\n')).toContain('«redacted»');
+      },
+    );
+
+    // OpenGrep and Semgrep skip files over 1,000,000 bytes below `.` and say nothing
+    // (--max-target-bytes); the CLI's own per-file limit is 1 MiB.
+    it(
+      'reports a finding in a file between 1,000,000 bytes and the CLI limit',
+      { timeout: 300_000 },
+      async () => {
+        const root = tmp();
+        // One long comment line: many short lines make the tool time out on the rule.
+        const body = `/* ${'x'.repeat(1_020_000)} */\neval(x);\n`;
+        expect(Buffer.byteLength(body)).toBeGreaterThan(1_000_000);
+        expect(Buffer.byteLength(body)).toBeLessThanOrEqual(MAX_ANALYZED_BYTES);
+        writeTree(root, { 'rules.yml': RULE('r'), 'big.js': body });
+        const [capture] = await runAnalyzers([semgrepAnalyzer], {
+          root,
+          config: parseConfig({
+            version: 1,
+            analyzers: { semgrep: { enabled: true, configs: ['rules.yml'] } },
+          }),
+          files: [],
+          log: silentLogger,
+          env: process.env,
+        });
+        expect(capture?.status).toBe('ok');
+        const sarif = capture?.sarif as { runs: { results: { ruleId: string }[] }[] };
+        expect(sarif.runs[0]?.results.map((r) => r.ruleId)).toEqual(['r']);
       },
     );
 

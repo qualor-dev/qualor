@@ -10,6 +10,7 @@ import {
 import path from 'node:path';
 import { isUrl, type QualorConfig } from '@qualor/shared';
 import { parseAllDocuments } from 'yaml';
+import { MAX_ANALYZED_BYTES } from '../discovery/discover';
 import { real, staysInside, within } from './binary';
 import { deadProxyEnv } from './offline';
 import { shown } from './reason';
@@ -337,6 +338,9 @@ export function createSemgrepAnalyzer(defaultRulesDir = DEFAULT_SEMGREP_RULES_DI
           '--output',
           out,
           ...offlineFlags(binary.flavour),
+          // Below `.` the tool skips files over 1,000,000 bytes silently; scan up to the CLI's limit.
+          '--max-target-bytes',
+          String(MAX_ANALYZED_BYTES),
           '.',
         ],
         cwd: ctx.root,

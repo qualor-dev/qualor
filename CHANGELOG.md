@@ -139,6 +139,11 @@ All notable changes to Qualor are listed here, newest first. The format follows
   PHP 8.2 and PHPStan, Ruby and RuboCop, the Go toolchain and cppcheck; `qualor/scanner-dotnet`
   is about 100 MB larger compressed (about 5.8 GB unpacked, was 5.3 GB).
 
+### Fixed
+
+- The `semgrep` engine skipped files larger than 1,000,000 bytes without a word (OpenGrep and
+  Semgrep do so when they scan a directory); it now scans every file up to Qualor's own 1 MiB limit.
+
 ## [0.3.2] - 2026-10-01
 
 ### Changed
