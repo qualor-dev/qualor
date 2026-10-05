@@ -29,7 +29,7 @@ QUALOR_LOG_LEVEL=debug qualor scan     # every analyzer's command line, output a
 | `… is a legacy eslintrc configuration, which ESLint 9 does not read` | ESLint 9+ reads only flat configs | migrate to `eslint.config.js` |
 | `SpotBugs skipped: no compiled classes` | the project was not built | build before the scan, or set `classDirs` |
 | `the qualor/scanner image ships no Semgrep rules yet` | no rules are bundled | name your rule files in `analyzers.semgrep.configs`, or ignore the message |
-| `Qualor's security rules are not installed` | the scan does not run in an image that includes the rules (released images do not yet) | ignore the message, or, if you have a rules release (for example one built from the rules repository once it is published), unpack it and set `QUALOR_RULES_DIR` to it |
+| `Qualor's security rules are not installed` | the scan does not run in a `qualor/scanner` image that includes the rules (images of earlier Qualor releases do not) | use a current `qualor/scanner` image, or download a rules release from <https://github.com/qualor-dev/qualor-rules/releases>, unpack it and set `QUALOR_RULES_DIR` to it (see Languages and analyzers); or ignore the message |
 | `QUALOR_RULES_DIR must be an absolute path outside the repository` | `QUALOR_RULES_DIR` is a relative path, or points into the checkout | set it to an absolute path outside the checkout, or unset it |
 | `QUALOR_RULES_DIR does not exist` | the directory named by `QUALOR_RULES_DIR` is missing | create or unpack the rules there, or unset `QUALOR_RULES_DIR` |
 | `the rules pack … does not match its manifest checksum` (or another `rules pack` reason) | `QUALOR_RULES_DIR` points at a changed or incomplete copy of the rules | unpack the rules again, or unset `QUALOR_RULES_DIR` |

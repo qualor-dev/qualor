@@ -10,8 +10,10 @@ SonarQube-compatible rules for C#, JavaScript and TypeScript, or any SARIF), tra
 across commits, measures coverage, duplication and complexity, and applies a quality gate to new
 code. MIT, except `enterprise/`: source-available under the Qualor Enterprise Licence, and inert
 without a licence key
-([licence keys](https://qualor.dev/enterprise)). Qualor's own source-available security rules for
-JS/TS, Python, Java and Go are coming: they are not in released images yet.
+([licence keys](https://qualor.dev/enterprise)). Qualor also brings its own source-available
+security rules for JS/TS, Python, Java and Go: they follow HTTP request data into SQL, shell
+commands, file paths, templates, redirects and outgoing requests, and report unsafe settings such
+as disabled TLS verification.
 
 Repository: <https://github.com/qualor-dev/qualor>. Homepage: <https://qualor.dev>. Images:
 [`qualor/*` on Docker Hub](https://hub.docker.com/u/qualor). GitLab CI/CD component:

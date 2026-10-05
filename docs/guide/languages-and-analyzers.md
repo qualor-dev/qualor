@@ -20,7 +20,7 @@ supported languages it also computes size, complexity, duplication and coverage.
 | C++ | the same | `.cpp`/`.cc`/`.cxx`/`.hpp`/`.h`... files exist |
 | Java | **PMD 7** (source), **SpotBugs** (bytecode) with **FindSecBugs** 1.14.0 (LGPL-3.0, security) | `.java` files exist. SpotBugs also needs compiled classes |
 | C# | **Roslyn** analyzers of the .NET SDK, plus **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | through `qualor dotnet begin` / `end` around your build, with `qualor/scanner-dotnet` |
-| Security rules | **Qualor's own rules** on OpenGrep, for JavaScript, TypeScript, Python, Java and Go (PolyForm Shield 1.0.0, source-available) | the rules are installed (released images do not include them yet) and files of those languages are in scope |
+| Security rules | **Qualor's own rules** on OpenGrep, for JavaScript, TypeScript, Python, Java and Go (PolyForm Shield 1.0.0, source-available) | files of those languages are in scope, run by the `qualor/scanner` image |
 | Security patterns (SAST) | **OpenGrep** (or Semgrep) | you name rule files in `qualor.yml`. No rules are bundled yet |
 | Secrets | **Gitleaks** | always (`enabled: true` by default) |
 | Vulnerable dependencies | **Trivy** | lockfiles or manifests exist |
@@ -706,32 +706,101 @@ not be able to write it.
 
 ## Security rules (Qualor)
 
-Qualor has its own security rules for JavaScript, TypeScript, Python, Java and Go. They run in
-every edition, as the `qualor` engine on OpenGrep. They follow data from an HTTP request (a query
-parameter, a form field, a header) to a dangerous call, and report it when nothing made it safe on
-the way. The first rules find SQL built from request data:
+Qualor has its own security rules for JavaScript, TypeScript, Python, Java and Go: 49 rules that
+run in every edition, as the `qualor` engine on OpenGrep. The `qualor/scanner` image (and
+`qualor/scanner-dotnet`, which builds on it) includes them. There are three kinds:
 
-| Rule | Finds |
-|---|---|
-| `qualor:js/sql-injection` | Express handlers that build `pg` or `mysql2` queries from `req.query`, `req.params`, `req.body`, headers or cookies |
-| `qualor:python/sql-injection` | Flask views that build DB-API `execute()` SQL from `request.args`, `form`, `values`, headers, cookies or JSON |
-| `qualor:java/sql-injection` | Servlets and Spring MVC handlers that build JDBC statements from request parameters, headers or the query string |
-| `qualor:go/sql-injection` | `net/http` handlers that build `database/sql` queries from the URL, form values, headers or cookies |
+- **Taint rules** follow data from an HTTP request (a query parameter, a form field, a header, a
+  cookie, a JSON body) or the name of an archive entry to a dangerous call (an SQL query, a shell
+  command, a file path, a template, an outgoing request, a redirect) and report it when nothing
+  made it safe on the way.
+- **Misuse rules** report unsafe settings and APIs whatever the data, such as disabled TLS
+  certificate verification, an XML parser that resolves external entities or a broken cipher.
+- **Hotspots** point at code to review, where only you can tell whether it is safe: a weak hash, a
+  cookie without its flags, raw HTML in React.
 
-- **Availability.** The rules are a separate pack that is not published yet, so the released
-  `qualor/scanner` images do not include it. Until it is, the engine is skipped with the message
-  "Qualor's security rules are not installed" (see Troubleshooting), the scan reports nothing from
-  it, and nothing else changes. The rest of this section describes the engine once the pack is
-  installed.
+Each rule knows the frameworks and libraries in its row. **JavaScript and TypeScript** (the `js`
+rules apply to both):
+
+| Rule | Finds | Frameworks and libraries |
+|---|---|---|
+| `qualor:js/sql-injection` | SQL built from request data | Express, Next.js, Fastify; `pg`, `mysql2`, Knex, Sequelize, Prisma, TypeORM |
+| `qualor:js/nosql-injection` | MongoDB filters, query operators or server-side JavaScript (`$where`) from request data | Express, Next.js, Fastify; MongoDB driver, Mongoose |
+| `qualor:js/command-injection` | an OS command or shell script built from request data | Express, Next.js, Fastify; `child_process` |
+| `qualor:js/code-injection` | request data run as JavaScript (`eval`, `Function`, `node:vm`) | Express, Next.js, Fastify, Node.js `http` |
+| `qualor:js/template-injection` | request data used as a template, or as the whole data object of an EJS render | Express, Next.js, Fastify; EJS, Pug, Handlebars, Nunjucks, lodash `template` |
+| `qualor:js/path-traversal` | a file path built from request data | Express, Next.js, Fastify; `fs` |
+| `qualor:js/ssrf` | a server-side request whose URL, scheme or host comes from the request | Express, Next.js, Fastify, Node.js `http`; `fetch`, axios, got, undici |
+| `qualor:js/open-redirect` | a redirect whose target, scheme or host comes from the request | Express, Next.js, Fastify, Node.js `http` |
+| `qualor:js/xss` | request data written into an HTML response without escaping | Express, Next.js, Fastify, Node.js `http` |
+| `qualor:js/regex-injection` | a regular expression built from request data (ReDoS) | Express, Next.js, Fastify, Node.js `http` |
+| `qualor:js/prototype-pollution` | nested property writes with keys from the request (`obj[a][b] = v`) | Express, Next.js, Fastify |
+| `qualor:js/tls-verification-disabled` | `rejectUnauthorized: false` or `NODE_TLS_REJECT_UNAUTHORIZED` set to `0` | `https`, `tls`, `http2`, axios, undici |
+| `qualor:js/react-dangerous-html` (hotspot) | raw HTML given to `dangerouslySetInnerHTML` | React, Next.js |
+
+**Python:**
+
+| Rule | Finds | Frameworks and libraries |
+|---|---|---|
+| `qualor:python/sql-injection` | SQL built from request data | Flask, Django (also `raw`, `extra`, `RawSQL`); DB-API, SQLAlchemy, psycopg |
+| `qualor:python/code-injection` | request data run as Python (`eval`, `exec`, `compile`) | Flask, Django, FastAPI |
+| `qualor:python/unsafe-deserialization` | request data loaded with pickle, marshal, shelve, dill, jsonpickle or an unsafe YAML loader | Flask, Django, FastAPI |
+| `qualor:python/template-injection` | request data used as the source of a Jinja or Django template | Flask, Django, FastAPI; Jinja2 |
+| `qualor:python/path-traversal` | a file path built from request data | Flask, Django, FastAPI, Starlette; Werkzeug, `pathlib` |
+| `qualor:python/ssrf` | a server-side request whose URL, scheme or host comes from the request | Flask, Django, FastAPI; requests, httpx, aiohttp, `urllib` |
+| `qualor:python/open-redirect` | a redirect whose target, scheme or host comes from the request | Flask, Django, FastAPI, Starlette |
+| `qualor:python/xss` | request data written into an HTML response without escaping, or marked safe | Flask, Django, FastAPI, Starlette; MarkupSafe, bleach, nh3 |
+| `qualor:python/xpath-injection` | an XPath expression built from request data | Flask, Django, FastAPI; lxml, ElementTree |
+| `qualor:python/regex-injection` | a regular expression built from request data (ReDoS) | Flask, Django, FastAPI |
+| `qualor:python/xxe` | an XML parser set to resolve external entities or to use the network | lxml, `xml.sax`, `xml.dom` |
+| `qualor:python/tls-verification-disabled` | `verify=False`, an unverified `ssl` context or `CERT_NONE` | requests, httpx, `ssl`, urllib3 |
+
+**Java:**
+
+| Rule | Finds | Frameworks and libraries |
+|---|---|---|
+| `qualor:java/sql-injection` | SQL built from request data | Servlets, Spring MVC, JAX-RS; JDBC, Spring JDBC, JPA |
+| `qualor:java/command-injection` | an OS command, its program or its environment built from request data | Servlets, Spring MVC, JAX-RS |
+| `qualor:java/expression-injection` | request data evaluated as an expression | Servlets, Spring MVC, JAX-RS; Spring SpEL, Jakarta EL, OGNL, MVEL |
+| `qualor:java/template-injection` | request data used as template source (or as a Thymeleaf template name) | Servlets, Spring MVC, JAX-RS; FreeMarker, Velocity, Thymeleaf |
+| `qualor:java/unsafe-deserialization` | request data read with Java serialization or `XMLDecoder` | Servlets, Spring MVC, JAX-RS |
+| `qualor:java/ldap-injection` | an LDAP search filter built from request data | Servlets, Spring MVC, JAX-RS; JNDI, Spring LDAP |
+| `qualor:java/path-traversal` | a file path built from request data | Servlets, Spring MVC, JAX-RS |
+| `qualor:java/ssrf` | a server-side request whose URL, scheme or host comes from the request | Servlets, Spring MVC, JAX-RS; `java.net.URL`, `java.net.http`, Spring `RestTemplate`, `RestClient`, `WebClient` |
+| `qualor:java/open-redirect` | a redirect whose target comes from the request | Servlets, Spring MVC, JAX-RS |
+| `qualor:java/xss` | request data written into an HTML response without encoding | Servlets, Spring MVC, JAX-RS |
+| `qualor:java/xxe` | an XML parser used without disabling DTDs or external entities | JAXP (DOM, SAX, StAX, `TransformerFactory`, `SchemaFactory`), dom4j, JDOM |
+| `qualor:java/zip-slip` | an archive entry name used as an extraction path | `java.util.zip`, `java.util.jar`, Commons Compress |
+
+**Go:**
+
+| Rule | Finds | Frameworks and libraries |
+|---|---|---|
+| `qualor:go/sql-injection` | SQL built from request data | `net/http`, Gin, Echo, chi, gorilla/mux; `database/sql`, GORM |
+| `qualor:go/command-injection` | a shell script or program name built from request data | `net/http`, Gin, Echo, chi, gorilla/mux; `os/exec` |
+| `qualor:go/template-injection` | request data parsed as Go template text | `net/http`, Gin, Echo, chi, gorilla/mux; `html/template`, `text/template` |
+| `qualor:go/path-traversal` | a file path built from request data | `net/http`, Gin, Echo, chi, gorilla/mux; `os` |
+| `qualor:go/ssrf` | a server-side request whose URL, scheme or host comes from the request | `net/http`, Gin, Echo, chi, gorilla/mux |
+| `qualor:go/open-redirect` | a redirect whose target, scheme or host comes from the request | `net/http`, Gin, Echo, chi, gorilla/mux |
+| `qualor:go/xss` | request data written into an HTML response without escaping (also through `text/template` or `template.HTML`) | `net/http`, Gin, Echo, chi, gorilla/mux; `html/template`, `text/template`, bluemonday |
+| `qualor:go/zip-slip` | an archive entry name used as an extraction path | `archive/zip`, `archive/tar`, `os` |
+| `qualor:go/tls-verification-disabled` | `InsecureSkipVerify: true` | `crypto/tls`, `net/http` |
+| `qualor:go/weak-cipher` | DES, Triple DES or RC4 | `crypto/des`, `crypto/rc4` |
+| `qualor:go/weak-hash` (hotspot) | MD5 or SHA-1 | `crypto/md5`, `crypto/sha1`, `crypto` |
+| `qualor:go/insecure-cookie` (hotspot) | a cookie set without `Secure` or `HttpOnly` | `net/http`, Gin, Echo |
+
+Each finding's message says why the code is unsafe and how to fix it.
+
 - The engine's version in a scan names the rules release, for example
-  `1.30.0 + qualor-rules 2026.10.0`.
-- They follow data **within one function of a file**. A value that passes through another function
-  or another file is not followed yet.
-- Findings are Security issues and count in the quality gate. Where another analyzer reports the
-  same problem on the same line, Qualor's issue is the one shown and the other is its duplicate. If
-  you had marked that other issue as a false positive or won't fix, Qualor's new issue starts with
-  that status when it is first created (a later reopen is kept), and its history names the other
-  rule and repeats the comment on that status, if there was one.
+  `1.30.0 + qualor-rules 2026.10.1`.
+- Taint rules follow data **within one function of a file**. A value that passes through another
+  function or another file is not followed yet.
+- Issues (from taint and misuse rules) are Security issues and count in the quality gate.
+  Hotspots are **security hotspots**: listed, never counted. Where another analyzer reports the
+  same problem on the same line, Qualor's issue is the one shown and the other is its duplicate.
+  If you had marked that other issue as a false positive or won't fix, Qualor's new issue starts
+  with that status when it is first created (a later reopen is kept), and its history names the
+  other rule and repeats the comment on that status, if there was one.
 - Turn a rule off in the language's quality profile. The `js` rules apply to JavaScript and
   TypeScript files: turn them off in both profiles.
 - A `nosemgrep` comment does not hide these findings, and a `.semgrepignore` file does not apply to
@@ -745,8 +814,12 @@ the way. The first rules find SQL built from request data:
   charge and in any Qualor edition, except providing a product that competes with Qualor or with the
   rules themselves. If you pass them on, pass on the licence terms too. In an image that includes
   the rules, the licence text is at `/opt/qualor/licenses/qualor-rules/LICENSE`.
-- Outside an image that includes the rules, the engine is skipped. Downloadable rules releases for
-  other machines are not published yet.
+- **Outside the image.** Rules releases are published at
+  <https://github.com/qualor-dev/qualor-rules/releases>, each with its SHA-256. Unpack one, set
+  `QUALOR_RULES_DIR` to it and put the OpenGrep version that its `manifest.json` names
+  (`opengrep`) on the `PATH`; with another version the scan logs a warning. Without the rules the
+  engine is skipped with the message "Qualor's security rules are not installed" (see
+  Troubleshooting), and nothing else changes.
 
 ## SAST patterns (OpenGrep / Semgrep)
 

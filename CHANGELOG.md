@@ -8,15 +8,25 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
-- Qualor's own security rules: a new built-in engine, `qualor`, runs a pack of OpenGrep taint
-  rules (source-available under PolyForm Shield 1.0.0, not MIT). The first rules find SQL built
-  from HTTP request data in JavaScript/TypeScript (Express with `pg`/`mysql2`), Python (Flask,
-  DB-API), Java (Servlets, Spring MVC, JDBC) and Go (`net/http`, `database/sql`). Rule keys look
-  like `qualor:java/sql-injection`; the UI shows the engine as "Qualor". Configure it with
-  `analyzers.qualor`; `QUALOR_RULES_DIR` points at another copy of the rules. `nosemgrep`
-  comments do not hide its findings; mark them as false positives instead. The pack is not
-  published yet, so `qualor/scanner` images do not include it: until then the engine is skipped
-  with the message "Qualor's security rules are not installed".
+- Qualor's own security rules: a new built-in engine, `qualor`, runs qualor-rules 2026.10.1, a
+  pack of 49 OpenGrep rules (source-available under PolyForm Shield 1.0.0, not MIT) that
+  `qualor/scanner` includes. Taint rules follow HTTP request data to a dangerous call, misuse rules
+  report unsafe settings, and hotspots point at code to review. JavaScript/TypeScript (Express,
+  Next.js, Fastify, Node.js `http`): SQL injection (`pg`, `mysql2`, Knex, Sequelize, Prisma,
+  TypeORM), NoSQL injection (MongoDB, Mongoose), command, code and template injection, path
+  traversal, SSRF, open redirect, XSS, regex injection, prototype pollution and disabled TLS
+  verification; raw HTML in React's `dangerouslySetInnerHTML` is a hotspot. Python (Flask, Django,
+  FastAPI): SQL, code, template, XPath and regex injection, unsafe deserialization, path traversal,
+  SSRF, open redirect, XSS, XXE and disabled TLS verification. Java (Servlets, Spring MVC, JAX-RS):
+  SQL, command, expression-language, template and LDAP injection, unsafe deserialization, path
+  traversal, SSRF, open redirect, XSS, XXE and zip slip. Go (`net/http`, Gin, Echo, chi,
+  gorilla/mux): SQL, command and template injection, path traversal, SSRF, open redirect, XSS, zip
+  slip, disabled TLS verification and broken ciphers (DES, 3DES, RC4); weak hashes (MD5, SHA-1)
+  and cookies without `Secure` or `HttpOnly` are hotspots. Issues count in the quality gate,
+  hotspots never do. Rule keys look like `qualor:java/sql-injection`; the UI shows the engine as
+  "Qualor". Configure it with `analyzers.qualor`; `QUALOR_RULES_DIR` points at another copy of the
+  rules (releases at <https://github.com/qualor-dev/qualor-rules/releases>). `nosemgrep` comments
+  do not hide its findings; mark them as false positives instead.
 - Where Qualor's rules and another analyzer report the same problem on a line, Qualor's issue is
   primary; if you had marked the other issue as a false positive or won't fix, the new issue
   starts with that status when it is first created (a later reopen is kept), and its history

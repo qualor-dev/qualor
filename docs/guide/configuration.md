@@ -76,7 +76,7 @@ analyzers:
     compileCommands: null            # as for cppcheck
     timeoutSeconds: 3600
   semgrep:   { enabled: auto, binary: auto, configs: [qualor-default], timeoutSeconds: 900 }
-  qualor:    { enabled: auto, timeoutSeconds: 900 }   # Qualor's security rules (once published)
+  qualor:    { enabled: auto, timeoutSeconds: 900 }   # Qualor's security rules
   gitleaks:  { enabled: true, configFile: null, timeoutSeconds: 300 }
   trivy:     { enabled: auto, timeoutSeconds: 600 }
   roslyn:    { enabled: auto, bundledAnalyzers: true, sonarAnalyzer: true }
@@ -150,7 +150,7 @@ The server's variables (such as `QUALOR_PUBLIC_URL`, `QUALOR_SCM_INTERNAL_HOSTS`
 | `QUALOR_WEBLINT_DIR` | directory of the HTML and CSS linters (default `/opt/qualor/weblint`, in the `qualor/scanner` image); absolute and outside the repository |
 | `QUALOR_DETEKT_JAR` | another location for detekt's jar (absolute, outside the checkout; default `/opt/qualor/lib/detekt/detekt-cli.jar`, set in `qualor/scanner`) |
 | `QUALOR_PHPSTAN_PHAR` | another PHPStan phar (absolute, outside the checkout, PHPStan 2.2; default `/opt/qualor/lib/phpstan/phpstan.phar`, set in `qualor/scanner`) |
-| `QUALOR_RULES_DIR` | directory of Qualor's security rules (default `/opt/qualor/rules/qualor`, where the `qualor/scanner` image installs the rules once they are published); absolute and outside the checkout |
+| `QUALOR_RULES_DIR` | directory of Qualor's security rules (default `/opt/qualor/rules/qualor`, where the `qualor/scanner` image installs the rules); absolute and outside the checkout |
 | `QUALOR_RUBOCOP_DIR` | directory of the RuboCop pass (default `/opt/qualor/rubocop`, in the `qualor/scanner` image); absolute and outside the checkout |
 | `QUALOR_DOTNET_ANALYZERS` | directory of the bundled Roslyn analyzer DLLs (set in `qualor/scanner-dotnet`) |
 | `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | a proxy between the runner and the server (`http://` proxies) |
