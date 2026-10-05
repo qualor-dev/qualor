@@ -74,8 +74,8 @@ jobs:
       # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
       - run: sudo sh tools/analyzers/install-cppcheck.sh
       - run: sudo sh tools/analyzers/install-clang-tidy.sh
-      # Plan 6B-1: Qualor's security rules pack; skipped with a message until it is published
-      # (QUALOR_RULES_URL in install.sh), and then required by the tests.
+      # Plan 6B-1: Qualor's security rules pack, downloaded from its release (QUALOR_RULES_URL in
+      # install.sh) and checked against its SHA-256; the tests require it.
       - run: sudo sh tools/analyzers/install-qualor-rules.sh
       - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm test:coverage
@@ -130,8 +130,8 @@ jobs:
       # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
       - run: sudo sh tools/analyzers/install-cppcheck.sh
       - run: sudo sh tools/analyzers/install-clang-tidy.sh
-      # Plan 6B-1: Qualor's security rules pack; skipped with a message until it is published
-      # (QUALOR_RULES_URL in install.sh), and then required by the tests.
+      # Plan 6B-1: Qualor's security rules pack, downloaded from its release (QUALOR_RULES_URL in
+      # install.sh) and checked against its SHA-256; the tests require it.
       - run: sudo sh tools/analyzers/install-qualor-rules.sh
       - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm fixtures
@@ -175,8 +175,8 @@ jobs:
       # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
       - run: sudo sh tools/analyzers/install-cppcheck.sh
       - run: sudo sh tools/analyzers/install-clang-tidy.sh
-      # Plan 6B-1: Qualor's security rules pack; skipped with a message until it is published
-      # (QUALOR_RULES_URL in install.sh), and then required by the tests.
+      # Plan 6B-1: Qualor's security rules pack, downloaded from its release (QUALOR_RULES_URL in
+      # install.sh) and checked against its SHA-256; the tests require it.
       - run: sudo sh tools/analyzers/install-qualor-rules.sh
       - run: echo /opt/qualor/bin >> "$GITHUB_PATH"
       - run: pnpm --filter @qualor/cli build

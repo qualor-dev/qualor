@@ -850,11 +850,12 @@ describe('the qualor rules pack (plan 6B-1)', () => {
   const RULES_URL =
     'https://github.com/qualor-dev/qualor-rules/releases/download/v$QUALOR_RULES_VERSION/qualor-rules-$QUALOR_RULES_VERSION.tar.gz';
 
-  it('pins the pack by version and SHA-256 in install.sh, and its URL only once it is published', () => {
+  it('pins the published pack by version, SHA-256 and release URL in install.sh', () => {
     expect(script).toMatch(/^QUALOR_RULES_VERSION=\d{4}\.([1-9]|1[0-2])\.(0|[1-9]\d*)$/m);
     expect(script).toMatch(/^QUALOR_RULES_SHA256=[0-9a-f]{64}$/m);
+    // Unquoted: the installer's eval expands $QUALOR_RULES_VERSION in it.
     const url = /^QUALOR_RULES_URL=(.*)$/m.exec(script)?.[1];
-    expect(['', RULES_URL]).toContain(url);
+    expect(url).toBe(RULES_URL);
     // The installer reads the pins from install.sh and never carries its own.
     expect(installer).toContain(
       'eval "$(grep -E \'^(QUALOR_RULES_(VERSION|SHA256|URL)|OPENGREP_VERSION)=\' "$INSTALL_SH")"',
@@ -864,9 +865,9 @@ describe('the qualor rules pack (plan 6B-1)', () => {
 
   /**
    * The `opengrep` field of each qualor-rules release's manifest.json: the OpenGrep its rules are
-   * tested with. Recorded here so that CI, which has no pack before it is published, checks it.
+   * tested with. Recorded here so that the check runs without downloading the pack.
    */
-  const PACK_OPENGREP: Record<string, string> = { '2026.10.0': '1.30.0' };
+  const PACK_OPENGREP: Record<string, string> = { '2026.10.0': '1.30.0', '2026.10.1': '1.30.0' };
 
   it('installs the OpenGrep the pinned pack is made for (bump OpenGrep only with a pack that names it)', () => {
     const pins = qualorRulesPins(script);
@@ -990,8 +991,52 @@ describe('the qualor rules pack (plan 6B-1)', () => {
           ...env,
         },
       });
+    /** As run, with a fake `curl` first on PATH: it logs its arguments, then serves or fails. */
+    const runWithCurl = (env: Record<string, string>, serve: boolean) => {
+      const bin = path.join(dir, 'bin');
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(
+        path.join(bin, 'curl'),
+        [
+          '#!/bin/sh',
+          `printf '%s\\n' "$@" > "$FAKE_CURL_LOG"`,
+          'while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done',
+          '[ -n "$FAKE_CURL_SERVE" ] || exit 22',
+          'cp "$FAKE_CURL_SERVE" "$out"',
+          '',
+        ].join('\n'),
+        { mode: 0o755 },
+      );
+      // `cd` and `pwd` give the shell's own form of the directory (/c/... in Git Bash).
+      const result = spawnSync(
+        'sh',
+        [
+          '-c',
+          'PATH="$(cd "$0" && pwd):$PATH" exec sh "$1"',
+          posix(bin),
+          path.resolve('tools/analyzers/install-qualor-rules.sh'),
+        ],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            QUALOR_INSTALL_SH: posix(path.join(dir, 'install.sh')),
+            QUALOR_TOOLS: posix(path.join(dir, 'prefix')),
+            QUALOR_RULES_SRC: posix(empty),
+            FAKE_CURL_LOG: posix(path.join(dir, 'curl.log')),
+            FAKE_CURL_SERVE: serve ? posix(archive) : '',
+            ...env,
+          },
+        },
+      );
+      const log = existsSync(path.join(dir, 'curl.log'))
+        ? readFileSync(path.join(dir, 'curl.log'), 'utf8').split('\n')
+        : [];
+      return { result, curlArgs: log.filter((a) => a !== '') };
+    };
     return {
       run,
+      runWithCurl,
       empty: posix(empty),
       prefix: path.join(dir, 'prefix'),
       clean: () => rmSync(dir, { recursive: true, force: true }),
@@ -1015,6 +1060,54 @@ describe('the qualor rules pack (plan 6B-1)', () => {
         expect(existsSync(path.join(f.prefix, 'rules', 'qualor'))).toBe(false);
       } finally {
         f.clean();
+      }
+    },
+  );
+
+  it.skipIf(!hasSh)(
+    'downloads the pack from the pinned URL, over https, when the drop directory has none',
+    () => {
+      const f = fixture({
+        url: 'https://example.invalid/v$QUALOR_RULES_VERSION/qualor-rules-$QUALOR_RULES_VERSION.tar.gz',
+      });
+      try {
+        const { result, curlArgs } = f.runWithCurl({ QUALOR_RULES_REQUIRED: '1' }, true);
+        expect(result.status, result.stderr).toBe(0);
+        // The version is expanded from install.sh's pin.
+        expect(curlArgs.at(-1)).toBe(
+          'https://example.invalid/v2026.10.0/qualor-rules-2026.10.0.tar.gz',
+        );
+        expect(curlArgs).toEqual(
+          expect.arrayContaining(['--proto', '=https', '--proto-redir', '=https']),
+        );
+        expect(result.stdout).toContain(
+          'installed the Qualor rules pack 2026.10.0 (from https://example.invalid/v2026.10.0/',
+        );
+        expect(existsSync(path.join(f.prefix, 'rules', 'qualor', 'manifest.json'))).toBe(true);
+      } finally {
+        f.clean();
+      }
+    },
+  );
+
+  it.skipIf(!hasSh)(
+    'fails when the download fails or does not match the pin, whether or not the pack is required',
+    () => {
+      for (const sha of [undefined, 'f'.repeat(64)]) {
+        const f = fixture({ sha, url: 'https://example.invalid/pack.tar.gz' });
+        try {
+          const { result, curlArgs } = f.runWithCurl(
+            { QUALOR_RULES_REQUIRED: '0' },
+            sha !== undefined,
+          );
+          expect(curlArgs.at(-1)).toBe('https://example.invalid/pack.tar.gz');
+          expect(result.status, result.stdout).not.toBe(0);
+          if (sha !== undefined) expect(result.stderr).toContain('checksum mismatch');
+          expect(result.stdout).not.toContain('skipped');
+          expect(existsSync(path.join(f.prefix, 'rules', 'qualor'))).toBe(false);
+        } finally {
+          f.clean();
+        }
       }
     },
   );

@@ -644,8 +644,8 @@ export async function scanRepoWith(
 export { qualorRulesPins };
 
 /**
- * Plan 6B-1: the pack is published once install.sh names its URL. Only then can CI install it, so
- * only then does QUALOR_REQUIRE_ANALYZERS=1 require it.
+ * Plan 6B-1: the pack is published once install.sh names its URL (it does since qualor-rules
+ * 2026.10.1). Only then can CI install it, so only then does QUALOR_REQUIRE_ANALYZERS=1 require it.
  */
 export const QUALOR_RULES_PUBLISHED = qualorRulesPins().url !== '';
 

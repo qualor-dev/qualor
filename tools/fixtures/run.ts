@@ -127,8 +127,9 @@ export const QUALOR_RULES_PACK = 'qualor-rules-pack';
 const QUALOR_RULES_MANIFEST = '/opt/qualor/rules/qualor/manifest.json';
 
 /**
- * Plan 6B-1: until the qualor-rules pack is published (QUALOR_RULES_URL in install.sh), CI
- * cannot install it, so its absence is "not checked here" even under QUALOR_REQUIRE_ANALYZERS=1.
+ * Plan 6B-1: without a published qualor-rules pack (QUALOR_RULES_URL in install.sh, set since
+ * 2026.10.1) CI cannot install it, so its absence would be "not checked here" even under
+ * QUALOR_REQUIRE_ANALYZERS=1; with one, as now, it is required like any other analyzer.
  */
 export function requiredUnavailable(
   unavailable: readonly string[],

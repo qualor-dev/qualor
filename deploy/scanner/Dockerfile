@@ -134,10 +134,10 @@ COPY tools/analyzers/install-cppcheck.sh /tmp/
 RUN sh /tmp/install-cppcheck.sh && rm /tmp/install-cppcheck.sh
 # Qualor's own security rules (plan 6B-1, config.md §6) into /opt/qualor/rules/qualor:
 # install-qualor-rules.sh checks the pack against install.sh's QUALOR_RULES_SHA256 before it
-# unpacks it. Until the pack is published it comes from tools/analyzers/qualor-rules/
-# (git-ignored) and is skipped when that holds none, unless QUALOR_RULES_REQUIRED=1, which
-# `pnpm deploy:release-images` passes once the pack is published. Its own layer, so a new pack
-# does not rebuild the tools.
+# unpacks it. It comes from tools/analyzers/qualor-rules/ (git-ignored) when that holds the
+# pinned tarball, otherwise from the pack's release (QUALOR_RULES_URL). A failed download fails
+# the build; QUALOR_RULES_REQUIRED=1, which `pnpm deploy:release-images` passes, also fails it
+# when there is no URL. Its own layer, so a new pack does not rebuild the tools.
 ARG QUALOR_RULES_REQUIRED=0
 COPY tools/analyzers/install-qualor-rules.sh /tmp/
 COPY tools/analyzers/qualor-rules/ /tmp/qualor-rules/

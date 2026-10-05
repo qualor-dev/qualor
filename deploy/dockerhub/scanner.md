@@ -92,9 +92,13 @@ clang-tidy, scan in the job that built the project, with your own clang-tidy and
   Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
-- Qualor's own security rules (PolyForm Shield 1.0.0, source-available; the first release is
-  qualor-rules 2026.10.0), installed in `/opt/qualor/rules/qualor` once the pack is published.
-  Images released before then do not include them, and the engine is skipped.
+- Qualor's own security rules, qualor-rules 2026.10.1 (PolyForm Shield 1.0.0, source-available),
+  in `/opt/qualor/rules/qualor`, run on the bundled OpenGrep: for JavaScript and TypeScript,
+  Python, Java and Go, they follow HTTP request data into SQL, NoSQL, shell commands, code and
+  template evaluation, file paths, LDAP and XPath queries, outgoing requests, redirects and HTML
+  responses, and report disabled TLS verification, XXE, zip slip, unsafe deserialization and
+  broken ciphers. Weak hashes, cookies without their flags and raw HTML in React are security
+  hotspots to review.
 - Runs as the user `node` (uid 1000) in `/src`; about 4.1 GB. Every base image is pinned by
   digest.
 
@@ -140,11 +144,10 @@ BSD-2-Clause), cppcheck 2.22.0 (GPL-3.0-or-later, built from source; the source 
 `qualor/scanner-sources`), eslint-plugin-sonarjs 2.0.4 (LGPL-3.0, the last release before the SONAR
 Source-Available License; its own npm dependency tree includes axe-core, MPL-2.0), the Temurin JRE
 (GPL-2.0 with the Classpath Exception), Node.js (MIT), and the Bun runtime inside the `qualor`
-binary (MIT; it links JavaScriptCore/WebKit and TinyCC, LGPL). Images that include Qualor's
-security rules (once they are published) carry them under PolyForm Shield 1.0.0 (not MIT,
-source-available). The notices are in `/opt/qualor/NOTICE.md` and the licence texts in
-`/opt/qualor/licenses/`. The complete corresponding
-source of every copyleft component is published as
+binary (MIT; it links JavaScriptCore/WebKit and TinyCC, LGPL). Qualor's security rules are under
+PolyForm Shield 1.0.0 (not MIT, source-available). The notices are in `/opt/qualor/NOTICE.md` and
+the licence texts in `/opt/qualor/licenses/`. The complete corresponding source of every copyleft
+component is published as
 [`qualor/scanner-sources`](https://hub.docker.com/r/qualor/scanner-sources) with the same tag;
 `/opt/qualor/SOURCES.md` is its index.
 

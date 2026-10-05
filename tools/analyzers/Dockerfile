@@ -44,8 +44,8 @@ RUN sh /tmp/install-cppcheck.sh && rm /tmp/install-cppcheck.sh
 COPY install-clang-tidy.sh /tmp/
 RUN sh /tmp/install-clang-tidy.sh && rm /tmp/install-clang-tidy.sh
 # Qualor's own security rules into /opt/qualor/rules/qualor, as deploy/scanner/Dockerfile and CI
-# install them (plan 6B-1; tools/analyzers/install-qualor-rules.sh, tools/ci.test.ts); skipped
-# when tools/analyzers/qualor-rules/ holds no tarball and the pack is not published yet.
+# install them (plan 6B-1; tools/analyzers/install-qualor-rules.sh, tools/ci.test.ts): from
+# tools/analyzers/qualor-rules/ when it holds the pinned tarball, otherwise downloaded.
 COPY install.sh install-qualor-rules.sh /tmp/
 COPY qualor-rules/ /tmp/qualor-rules/
 RUN sh /tmp/install-qualor-rules.sh && rm -rf /tmp/qualor-rules /tmp/install-qualor-rules.sh /tmp/install.sh

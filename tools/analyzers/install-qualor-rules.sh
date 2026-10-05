@@ -6,11 +6,12 @@
 # repository. The pins live in install.sh (QUALOR_INSTALL_SH, default: next to this script).
 # Where the archive comes from, in order:
 #   1. QUALOR_RULES_SRC/qualor-rules-<version>.tar.gz (default: the qualor-rules/ directory next to
-#      this script; git-ignored, for builds before the pack is published);
-#   2. QUALOR_RULES_URL, once install.sh sets it (a failed download fails the install).
+#      this script; git-ignored, for a pack built locally or a build without network);
+#   2. QUALOR_RULES_URL, the pack's release, when install.sh sets it (a failed download fails the
+#      install).
 # Neither: the pack is skipped with a message (the qualor engine then reports that its rules are
 # not installed), unless QUALOR_RULES_REQUIRED=1, which fails instead. `pnpm deploy:release-images`
-# sets it only once the pack is published, so a release is never blocked before then.
+# sets it whenever install.sh names a URL, so a release never ships without a published pack.
 #   sh tools/analyzers/install-qualor-rules.sh
 set -eu
 

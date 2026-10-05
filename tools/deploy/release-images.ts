@@ -101,8 +101,8 @@ async function main(): Promise<void> {
     args,
     {
       imageArgs: {
-        // Plan 6B-1: once the rules pack is published a release never ships without it
-        // (install-qualor-rules.sh); until then it is built without, and the analyzer skips.
+        // Plan 6B-1: the rules pack is published, so a release never ships without it
+        // (install-qualor-rules.sh fails the build when it cannot get the pinned pack).
         scanner: scannerBuildArgs(
           readFileSync(path.join(REPO_ROOT, 'tools', 'analyzers', 'install.sh'), 'utf8'),
         ),

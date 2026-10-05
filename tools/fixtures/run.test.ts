@@ -179,6 +179,10 @@ describe('analyzer capabilities (ruling T4)', () => {
     expect(runFixtures(root, () => [], { has, requireAnalyzers: true, qualorRulesPublished: true })[0]?.problems).toEqual([
       { kind: 'scan', detail: 'not installed: qualor, pmd (QUALOR_REQUIRE_ANALYZERS=1)' },
     ]);
+    // The committed install.sh names the pack's URL: by default the pack is required.
+    expect(runFixtures(root, () => [], { has, requireAnalyzers: true })[0]?.problems).toEqual([
+      { kind: 'scan', detail: 'not installed: qualor, pmd (QUALOR_REQUIRE_ANALYZERS=1)' },
+    ]);
     expect(requiredUnavailable(['qualor', 'pmd'], false)).toEqual(['pmd']);
     expect(unavailableEngines(['qualor'], has)).toEqual(['qualor']);
     expect(unavailableEngines(['qualor'], (t) => ['opengrep', QUALOR_RULES_PACK].includes(t))).toEqual([]);

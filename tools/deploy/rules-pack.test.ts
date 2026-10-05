@@ -37,8 +37,9 @@ describe('the rules pack in a release build (plan 6B-1)', () => {
     expect(pins.version).toMatch(QUALOR_PACK_VERSION);
     expect(pins.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(pins.opengrep).toMatch(/^\d+\.\d+\.\d+$/);
-    // The pack is not published yet; publishing it sets QUALOR_RULES_URL and changes this line.
-    expect(qualorRulesPublished(INSTALL_SH)).toBe(false);
+    // The pack is published (QUALOR_RULES_URL is set), so a release build requires it.
+    expect(qualorRulesPublished(INSTALL_SH)).toBe(true);
+    expect(scannerBuildArgs(INSTALL_SH)).toContain('QUALOR_RULES_REQUIRED=1');
     expect(readFileSync('tools/deploy/release-images.ts', 'utf8')).toContain('scannerBuildArgs(');
   });
 });
