@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-06
+
 ### Added
 
 - Qualor's own security rules: a new built-in engine, `qualor`, runs qualor-rules 2026.10.1, a

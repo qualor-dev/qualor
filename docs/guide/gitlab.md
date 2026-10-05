@@ -43,9 +43,9 @@ On GitLab.com:
 ```yaml
 # .gitlab-ci.yml
 include:
-  - component: gitlab.com/qualor/qualor/qualor@0.4
+  - component: gitlab.com/qualor/qualor/qualor@0.5
     inputs:
-      image-tag: '0.4'
+      image-tag: '0.5'
 ```
 
 **Self-managed GitLab** can include components only from its own instance, never from
@@ -59,9 +59,9 @@ include:
 
 ```yaml
 include:
-  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.4.1
+  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.5.0
     inputs:
-      image-tag: '0.4.1'
+      image-tag: '0.5.0'
       # image: mirror.acme.internal/qualor/scanner   # your own copy of the image, without the tag
 ```
 
@@ -69,13 +69,13 @@ On GitLab Free and Community Edition, the import is a one-time copy: to get a ne
 again or push its tag to the copy. Pull mirroring (**Settings → Repository → Mirroring
 repositories**) keeps the copy up to date on its own, but needs GitLab Premium.
 
-A short version such as `@0.4` resolves only in a CI/CD catalog project with releases. To use it on
+A short version such as `@0.5` resolves only in a CI/CD catalog project with releases. To use it on
 your instance, turn on **Settings → General → Visibility → CI/CD Catalog project** in the copy, then
 run a pipeline for the release tag (**Build → Pipelines → Run pipeline**). That pipeline creates the
 release the catalog needs; an import alone runs none.
 
-Pin the component and the image to the same release. Use a full version (`@0.4.1`,
-`image-tag: '0.4.1'`) where every pipeline must run exactly the same analyzers.
+Pin the component and the image to the same release. Use a full version (`@0.5.0`,
+`image-tag: '0.5.0'`) where every pipeline must run exactly the same analyzers.
 
 The job runs in merge request pipelines and on the default branch. It uploads the analysis, fails
 with the quality gate, and keeps GitLab's **Code Quality**, **SAST** and **Dependency Scanning**
@@ -84,7 +84,7 @@ and Dependency Scanning widgets need GitLab Ultimate. The Code Quality report wo
 
 | Input | Default | Meaning |
 |---|---|---|
-| `image-tag` | required | the scanner image tag, such as `0.4` or `0.4.1` |
+| `image-tag` | required | the scanner image tag, such as `0.5` or `0.5.0` |
 | `image` | `qualor/scanner` | the scanner image, without the tag |
 | `stage` | `test` | the stage of the job |
 | `job-name` | `qualor` | the job's name |
@@ -108,7 +108,7 @@ qualor:            # the component's job-name
 ```yaml
 qualor:
   stage: test
-  image: { name: qualor/scanner:0.4, entrypoint: [''] }
+  image: { name: qualor/scanner:0.5, entrypoint: [''] }
   variables: { GIT_DEPTH: 0 }        # full history: new code is computed from git
   script:
     - npm ci                          # JS/TS: ESLint runs from node_modules. Java: build first.
@@ -206,7 +206,7 @@ Either:
 | The analysis appears as a branch, not a merge request | the job ran in a branch pipeline. Use `merge_request_event` rules |
 | No comments | no connection or mapping, `QUALOR_SCM_INTERNAL_HOSTS` missing, or the token lacks the `api` scope. **Check** on **Settings → Repositories** says which |
 | Comments on merge requests, but no commit status on the default branch | the token's role is below Maintainer, and the branch is protected. Give the token the Maintainer role |
-| `@0.4` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.4.1`, or see the steps above |
+| `@0.5` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.5.0`, or see the steps above |
 | Comments but no links | `QUALOR_PUBLIC_URL` is not set on the server |
 
 More in [Troubleshooting](./troubleshooting.md).
