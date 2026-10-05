@@ -147,8 +147,20 @@ async function main(): Promise<void> {
     return;
   }
   const { entries, urls } = loadIndexes();
+  // A source version the manifest already pins keeps its entry: once Debian supersedes it, it is in
+  // no current Sources index, but its files stay on snapshot.debian.org under the pinned digests.
+  const pinned = new Map(
+    loadDebianManifest(image).packages.map((p) => [`${p.source} ${p.version}`, p]),
+  );
   const packages: DebSource[] = [];
-  for (const [key, binaries] of installed) packages.push(await resolve(key, binaries, entries));
+  for (const [key, binaries] of installed) {
+    const known = pinned.get(key);
+    packages.push(
+      known === undefined || entries.has(key)
+        ? await resolve(key, binaries, entries)
+        : { ...known, binaries },
+    );
+  }
   const manifest: DebManifest = {
     image: `qualor/${image}`,
     base: stage.base,

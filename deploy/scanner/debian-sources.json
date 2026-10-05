@@ -2322,21 +2322,21 @@
     },
     {
       "source": "perl",
-      "version": "5.36.0-7+deb12u3",
+      "version": "5.36.0-7+deb12u4",
       "binaries": [
         "libperl5.36",
         "perl",
         "perl-base",
         "perl-modules-5.36"
       ],
-      "archive": "debian",
-      "directory": "pool/main/p/perl",
+      "archive": "debian-security",
+      "directory": "pool/updates/main/p/perl",
       "files": [
         {
-          "name": "perl_5.36.0-7+deb12u3.dsc",
-          "size": 2357,
-          "sha256": "ac13a1eb3d4bb63ca8c91a3695ad563b10792a3e0f2f8b74d9600625a98a68fb",
-          "sha1": "b9f6dd6ec873f106643ee6d0599fa9beea3f733a"
+          "name": "perl_5.36.0-7+deb12u4.dsc",
+          "size": 2922,
+          "sha256": "6f71e571ae69894ad2115013bbc3207e77dc796581e30a62be0297e7d90ee7b9",
+          "sha1": "deee455a754c1dff25218c26f68898317f4842e3"
         },
         {
           "name": "perl_5.36.0.orig-regen-configure.tar.xz",
@@ -2351,10 +2351,10 @@
           "sha1": "938c56a77ae094eb7f5019318a5e4efb2d9c74fa"
         },
         {
-          "name": "perl_5.36.0-7+deb12u3.debian.tar.xz",
-          "size": 177092,
-          "sha256": "5dfbe06b76fd23a4cc4aef586220845de535b245a9066ec0658eb60fbe21be1b",
-          "sha1": "c7401b98577dbb216dcd9f30c44d777328c1d7fb"
+          "name": "perl_5.36.0-7+deb12u4.debian.tar.xz",
+          "size": 190620,
+          "sha256": "f49d224fa9a6a356e1140f95fb5c864864b5423c9aece94cc68b4d348a3694b6",
+          "sha1": "6fac7e37c9a661d5b3c2ca8f9bfbe64bd7d70398"
         }
       ]
     },
@@ -2383,7 +2383,7 @@
     },
     {
       "source": "php8.2",
-      "version": "8.2.33-1~deb12u1",
+      "version": "8.2.34-1~deb12u1",
       "binaries": [
         "php8.2-cli",
         "php8.2-common",
@@ -2394,28 +2394,28 @@
       "directory": "pool/updates/main/p/php8.2",
       "files": [
         {
-          "name": "php8.2_8.2.33-1~deb12u1.dsc",
+          "name": "php8.2_8.2.34-1~deb12u1.dsc",
           "size": 5596,
-          "sha256": "4e801d467c7b7233a5bd5adb71a08f758e9369412b9e3d471a0cfa301c5918c1",
-          "sha1": "a2644659731f3f45f7bc18c07b639e0a51e1f514"
+          "sha256": "814d54630f49b84cbf951d2cff79e0d6ad48b5be367f20cde97a79166210c102",
+          "sha1": "6a026ea79b819622120c5f07a43a4a324fa67dcf"
         },
         {
-          "name": "php8.2_8.2.33.orig.tar.xz",
-          "size": 12166568,
-          "sha256": "fbdeace9b38220436a4c8fd79b900df92878151db145e641750743a283b514c1",
-          "sha1": "0bdf9724a7926f51f6a5fa747a28f2936d909a23"
+          "name": "php8.2_8.2.34.orig.tar.xz",
+          "size": 12174884,
+          "sha256": "5351330c54de240f54f7527c26ef292e239749e6fe11db0330acb5317e02bb39",
+          "sha1": "a86d2588ebc15a8538726f7dfd246c0facd66fae"
         },
         {
-          "name": "php8.2_8.2.33.orig.tar.xz.asc",
-          "size": 833,
-          "sha256": "dca4935bd3e3fd4aee1524a09c9cb68f59cfa4eedf8cae8756315961231a5e6d",
-          "sha1": "6c56144bf7ef8705ef14a20630c50c8bc7c531f1"
+          "name": "php8.2_8.2.34.orig.tar.xz.asc",
+          "size": 858,
+          "sha256": "3d21b026166a703a797b83301d833b9ba16ee315faecc81c40327eb5a81bde5b",
+          "sha1": "c089209ccc6e10b74c3c3bc572c10995a677a468"
         },
         {
-          "name": "php8.2_8.2.33-1~deb12u1.debian.tar.xz",
-          "size": 71312,
-          "sha256": "0120e1feda20023e68a97f94320110ea20f6284e2a15cf9700992fb95a4cd948",
-          "sha1": "43c2b2444a2db0d2005234e5306516737f11c684"
+          "name": "php8.2_8.2.34-1~deb12u1.debian.tar.xz",
+          "size": 71692,
+          "sha256": "6c72c693b4e99f060542f268d3e564b84316b6d88ec9caf4964fdd47d78b0dca",
+          "sha1": "a48e5c61fb2a75b6bda82a0c7fcc553c481e3554"
         }
       ]
     },
