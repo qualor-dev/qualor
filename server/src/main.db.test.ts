@@ -65,6 +65,7 @@ describe('server bundle boot (main.ts)', () => {
         PATH: process.env.PATH,
         SYSTEMROOT: process.env.SYSTEMROOT, // Windows needs it for sockets
         DATABASE_URL: database.url,
+        QUALOR_TELEMETRY: 'false',
         QUALOR_SECRET_KEY: 'smoke-test-secret-key-that-is-at-least-32-characters',
         QUALOR_BOOTSTRAP_ADMIN_PASSWORD: ADMIN_PASSWORD,
         HOST: '127.0.0.1',
@@ -104,6 +105,7 @@ function bootEnv(databaseUrl: string, extra: Record<string, string>): NodeJS.Pro
     PATH: process.env.PATH,
     SYSTEMROOT: process.env.SYSTEMROOT,
     DATABASE_URL: databaseUrl,
+    QUALOR_TELEMETRY: 'false',
     QUALOR_SECRET_KEY: 'smoke-test-secret-key-that-is-at-least-32-characters',
     QUALOR_BOOTSTRAP_ADMIN_PASSWORD: ADMIN_PASSWORD,
     HOST: '127.0.0.1',

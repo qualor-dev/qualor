@@ -26,6 +26,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     license: { text: null, file: null },
     pluginPaths: [],
     demoUser: null,
+    // Tests never report; the URL is a closed port.
+    telemetry: { enabled: false, url: 'http://127.0.0.1:9/telemetry' },
     ...overrides,
   };
 }

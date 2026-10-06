@@ -236,6 +236,7 @@ async function main(): Promise<void> {
     PATH: process.env.PATH,
     SYSTEMROOT: process.env.SYSTEMROOT, // Windows needs it for sockets
     DATABASE_URL: databaseUrl(adminUrl, name),
+    QUALOR_TELEMETRY: 'false',
     QUALOR_SECRET_KEY: 'e2e-secret-key-that-is-at-least-32-characters-long',
     QUALOR_BOOTSTRAP_ADMIN_USERNAME: credentials.adminUsername,
     QUALOR_BOOTSTRAP_ADMIN_PASSWORD: credentials.adminPassword,

@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { buildApp, type AppDeps } from '../app';
-import type { Config } from '../config';
+import { DEFAULT_TELEMETRY_URL, type Config } from '../config';
 import { createDatabase, type Db } from '../db/client';
 import { createLogger } from './logger';
 
@@ -45,6 +45,7 @@ export async function openApiDocument(plugins?: OpenApiPlugins): Promise<unknown
     license: { text: null, file: null },
     pluginPaths: [],
     demoUser: null,
+    telemetry: { enabled: false, url: DEFAULT_TELEMETRY_URL },
   };
   const loaded = plugins ? await plugins(database.db, config) : {};
   const app = await buildApp({

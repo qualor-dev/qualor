@@ -193,6 +193,7 @@ export async function startStack(
   const env = {
     POSTGRES_PASSWORD: secret(),
     QUALOR_SECRET_KEY: secret(),
+    QUALOR_TELEMETRY: 'false',
     QUALOR_BOOTSTRAP_ADMIN_USERNAME: admin.username,
     QUALOR_BOOTSTRAP_ADMIN_PASSWORD: admin.password,
     QUALOR_BIND_ADDRESS: process.env['QUALOR_BIND_ADDRESS'] || '127.0.0.1',

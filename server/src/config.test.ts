@@ -42,7 +42,31 @@ describe('loadConfig', () => {
       license: { text: null, file: null },
       pluginPaths: [],
       demoUser: null,
+      telemetry: { enabled: true, url: 'https://qualor.dev/api/telemetry' },
     });
+  });
+
+  it('QUALOR_TELEMETRY: on by default, off with false/0/off/no, anything else stops the boot', () => {
+    expect(loadConfig(base).telemetry.enabled).toBe(true);
+    for (const on of ['true', 'TRUE', '1', 'on', 'yes', '', ' ']) {
+      expect(loadConfig({ ...base, QUALOR_TELEMETRY: on }).telemetry.enabled).toBe(true);
+    }
+    for (const off of ['false', 'False', ' 0 ', 'off', 'NO']) {
+      expect(loadConfig({ ...base, QUALOR_TELEMETRY: off }).telemetry.enabled).toBe(false);
+    }
+    expect(problems({ ...base, QUALOR_TELEMETRY: 'disabled' })).toEqual([
+      'QUALOR_TELEMETRY: QUALOR_TELEMETRY must be true or false',
+    ]);
+  });
+
+  it('QUALOR_TELEMETRY_URL: an http(s) URL, default qualor.dev', () => {
+    expect(loadConfig(base).telemetry.url).toBe('https://qualor.dev/api/telemetry');
+    expect(
+      loadConfig({ ...base, QUALOR_TELEMETRY_URL: 'http://127.0.0.1:4000/t' }).telemetry.url,
+    ).toBe('http://127.0.0.1:4000/t');
+    expect(problems({ ...base, QUALOR_TELEMETRY_URL: 'ftp://x' })).toEqual([
+      'QUALOR_TELEMETRY_URL: must be an http or https URL',
+    ]);
   });
 
   it('reads QUALOR_PUBLIC_URL and QUALOR_SCM_INTERNAL_HOSTS (scm.md §2)', () => {

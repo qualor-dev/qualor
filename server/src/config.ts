@@ -138,6 +138,28 @@ const pluginPathsSchema = z
     return paths.map((p) => resolve(p));
   });
 
+/** telemetry.md: where the daily report goes. Not in the guide: for tests and staging. */
+export const DEFAULT_TELEMETRY_URL = 'https://qualor.dev/api/telemetry';
+
+const telemetryUrlSchema = z
+  .string()
+  .optional()
+  .transform((raw, ctx): string => {
+    const value = raw?.trim() ?? '';
+    if (value === '') return DEFAULT_TELEMETRY_URL;
+    let url: URL | undefined;
+    try {
+      url = new URL(value);
+    } catch {
+      url = undefined;
+    }
+    if (url === undefined || (url.protocol !== 'https:' && url.protocol !== 'http:')) {
+      ctx.addIssue({ code: 'custom', message: 'must be an http or https URL' });
+      return z.NEVER;
+    }
+    return url.href;
+  });
+
 const envSchema = z
   .object({
     // embedded-postgres.md §2: unset or empty starts the PostgreSQL the image carries.
@@ -205,6 +227,18 @@ const envSchema = z
     QUALOR_DEMO_USER: optionalText.refine((v) => v === null || USERNAME_PATTERN.test(v), {
       message: 'must be a username',
     }),
+    // telemetry.md: anonymous usage statistics, on unless switched off; a typo stops the boot.
+    QUALOR_TELEMETRY: z
+      .preprocess(
+        (v) => (typeof v === 'string' ? v.trim().toLowerCase() : v),
+        z
+          .enum(['true', 'false', '1', '0', 'on', 'off', 'yes', 'no', ''], {
+            message: 'QUALOR_TELEMETRY must be true or false',
+          })
+          .optional(),
+      )
+      .transform((v) => !(v === 'false' || v === '0' || v === 'off' || v === 'no')),
+    QUALOR_TELEMETRY_URL: telemetryUrlSchema,
   })
   .superRefine((e, ctx) => {
     // Names both variables, never the key text (enterprise.md §6).
@@ -271,6 +305,8 @@ export interface Config {
   pluginPaths: string[];
   /** QUALOR_DEMO_USER: the username anyone may sign in as, read-only, without a password; or null. */
   demoUser: string | null;
+  /** telemetry.md: QUALOR_TELEMETRY (default on) and QUALOR_TELEMETRY_URL. */
+  telemetry: { enabled: boolean; url: string };
 }
 
 export class ConfigError extends Error {
@@ -324,5 +360,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     },
     pluginPaths: e.QUALOR_PLUGIN_PATHS,
     demoUser: e.QUALOR_DEMO_USER,
+    telemetry: { enabled: e.QUALOR_TELEMETRY, url: e.QUALOR_TELEMETRY_URL },
   };
 }
