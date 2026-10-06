@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { BUILTIN_ENGINES } from '@qualor/shared';
 import { sql, type SQL } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { VERSION } from '../index';
@@ -64,6 +65,21 @@ export function detectRuntime(
   return 'node';
 }
 
+const BUILTIN: readonly string[] = BUILTIN_ENGINES;
+
+/**
+ * External SARIF engine ids are user-chosen (qualor.yml `sarif[].engine`), and a hand-made report
+ * can claim any id as builtin, so only the built-in ids go out; everything else is `external`.
+ */
+export function engineTokens(ids: Iterable<string | null>): string[] {
+  const out: string[] = [];
+  for (const id of ids) {
+    if (typeof id !== 'string') continue;
+    out.push(BUILTIN.includes(id) ? id : 'external');
+  }
+  return cleanList(out);
+}
+
 const oneOf = (value: string, known: readonly string[]): string =>
   known.includes(value) ? value : 'other';
 
@@ -76,8 +92,20 @@ export async function collectTelemetry(deps: CollectDeps): Promise<TelemetryPayl
   const recent = sql`queued_at > now() - interval '30 days'`;
 
   const [
-    organizations, users, projects, branches, analyses30d, qualityGates, qualityProfiles, webhooks,
-    ssoConnections, scimTokens, languages, engines, scm, llm,
+    organizations,
+    users,
+    projects,
+    branches,
+    analyses30d,
+    qualityGates,
+    qualityProfiles,
+    webhooks,
+    ssoConnections,
+    scimTokens,
+    languages,
+    engines,
+    scm,
+    llm,
   ] = await Promise.all([
     count(sql`SELECT count(*) AS n FROM organizations`),
     count(sql`SELECT count(*) AS n FROM users`),
@@ -87,8 +115,10 @@ export async function collectTelemetry(deps: CollectDeps): Promise<TelemetryPayl
     count(sql`SELECT count(*) AS n FROM quality_gates`),
     count(sql`SELECT count(*) AS n FROM quality_profiles`),
     count(sql`SELECT count(*) AS n FROM webhook_subscriptions`),
-    count(sql`SELECT count(*) AS n FROM sso_connections`),
-    count(sql`SELECT count(*) AS n FROM scim_tokens`),
+    count(sql`SELECT count(*) AS n FROM sso_connections WHERE enabled`),
+    count(sql`
+      SELECT count(*) AS n FROM scim_tokens
+       WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`),
     values(sql`SELECT DISTINCT language AS v FROM branch_files`),
     values(sql`
       SELECT DISTINCT e ->> 'id' AS v
@@ -107,20 +137,29 @@ export async function collectTelemetry(deps: CollectDeps): Promise<TelemetryPayl
       os: oneOf(process.platform, OS),
       arch: oneOf(process.arch, ARCH),
       node: process.versions.node,
-      runtime: detectRuntime(deps.env ?? process.env, deps.dockerEnvExists ?? existsSync('/.dockerenv')),
+      runtime: detectRuntime(
+        deps.env ?? process.env,
+        deps.dockerEnvExists ?? existsSync('/.dockerenv'),
+      ),
     },
     database: deps.database,
     counts: {
-      organizations, users, projects, branches, analyses30d, qualityGates, qualityProfiles, webhooks,
+      organizations,
+      users,
+      projects,
+      branches,
+      analyses30d,
+      qualityGates,
+      qualityProfiles,
+      webhooks,
     },
     languages: cleanList(languages),
-    engines: cleanList(engines),
+    engines: engineTokens(engines),
     scm: cleanList(scm),
     features: {
       sso: ssoConnections > 0,
       scim: scimTokens > 0,
-      aiAssistant:
-        llm.provider !== null && Object.values(llm.organizations).some((o) => o.enabled),
+      aiAssistant: llm.provider !== null && Object.values(llm.organizations).some((o) => o.enabled),
     },
   };
 }
