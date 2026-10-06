@@ -50,9 +50,12 @@ const INFO = {
   govet: 'https://pkg.go.dev/cmd/vet',
   gosec: 'https://github.com/securego/gosec',
 };
-const HELP = {
+// go vet analyzers whose package has another name: pkg.go.dev answers 404 for the analyzer's.
+const VET_PACKAGE = { composites: 'composite', copylocks: 'copylock' };
+export const HELP = {
   staticcheck: (id) => `https://staticcheck.dev/docs/checks#${id}`,
-  govet: (id) => `https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/${id}`,
+  govet: (id) =>
+    `https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/${Object.hasOwn(VET_PACKAGE, id) ? VET_PACKAGE[id] : id}`,
 };
 // go list's and the type checker's ways of saying a dependency is not on disk (probe G3).
 const MISSING_DEPENDENCY =

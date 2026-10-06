@@ -4,7 +4,7 @@
     {
       "id": "S2325",
       "shortDescription": "S2325",
-      "helpUri": "https://rules.sonarsource.com/csharp/RSPEC-2325",
+      "helpUri": "https://sonarcloud.io/organizations/sonarsource/rules?open=csharpsquid%3AS2325&rule_key=csharpsquid%3AS2325",
       "defaultSeverity": "low",
       "quality": "maintainability",
       "kind": "issue",
@@ -18,7 +18,7 @@
     {
       "id": "S2930",
       "shortDescription": "S2930",
-      "helpUri": "https://rules.sonarsource.com/csharp/RSPEC-2930",
+      "helpUri": "https://sonarcloud.io/organizations/sonarsource/rules?open=csharpsquid%3AS2930&rule_key=csharpsquid%3AS2930",
       "defaultSeverity": "blocker",
       "quality": "reliability",
       "kind": "issue",
@@ -32,7 +32,7 @@
     {
       "id": "S3400",
       "shortDescription": "S3400",
-      "helpUri": "https://rules.sonarsource.com/csharp/RSPEC-3400",
+      "helpUri": "https://sonarcloud.io/organizations/sonarsource/rules?open=csharpsquid%3AS3400&rule_key=csharpsquid%3AS3400",
       "defaultSeverity": "low",
       "quality": "maintainability",
       "kind": "issue",

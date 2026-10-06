@@ -13,21 +13,21 @@
               "id": "S3923",
               "name": "no-all-duplicated-branches",
               "shortDescription": { "text": "S3923" },
-              "helpUri": "https://rules.sonarsource.com/javascript/RSPEC-3923",
+              "helpUri": "https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS3923&rule_key=javascript%3AS3923",
               "properties": { "category": "Major Bug" }
             },
             {
               "id": "S1871",
               "name": "no-duplicated-branches",
               "shortDescription": { "text": "S1871" },
-              "helpUri": "https://rules.sonarsource.com/javascript/RSPEC-1871",
+              "helpUri": "https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1871&rule_key=javascript%3AS1871",
               "properties": { "category": "Major Code Smell" }
             },
             {
               "id": "S1186",
               "name": "no-empty-function",
               "shortDescription": { "text": "S1186" },
-              "helpUri": "https://rules.sonarsource.com/javascript/RSPEC-1186",
+              "helpUri": "https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1186&rule_key=javascript%3AS1186",
               "properties": { "category": "Critical Code Smell" }
             }
           ]

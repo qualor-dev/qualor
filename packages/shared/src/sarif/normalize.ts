@@ -3,6 +3,7 @@ import { normalizeRepoPath, PathError } from '../paths';
 import type { ReportFinding, RuleMeta } from '../report/schema';
 import { REPORT_BOUNDS } from '../report/schema';
 import { QUALITIES, type Quality, type Severity } from '../report/taxonomy';
+import { currentHelpUri } from '../rules/help-uri';
 import {
   sarifLogSchema,
   type SarifLevel,
@@ -567,9 +568,11 @@ function ruleMeta(
   const tags = allTags
     .filter((t) => t.length <= REPORT_BOUNDS.ruleTagChars)
     .slice(0, REPORT_BOUNDS.ruleTags);
+  // A link Qualor knows is dead (rules.sonarsource.com, which SonarAnalyzer.CSharp still writes)
+  // becomes the rule's live page.
   const helpUri =
     rule.helpUri !== undefined && rule.helpUri.length <= REPORT_BOUNDS.helpUriChars
-      ? rule.helpUri
+      ? currentHelpUri(rule.helpUri)
       : undefined;
   return {
     id: rule.id,

@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { sonarjsHelpUri } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -114,7 +115,9 @@ describe.skipIf(!have && !required)('sonarjs run.mjs', { timeout: 120_000 }, () 
     );
     const rule = log.runs[0].tool.driver.rules.find((r: { id: string }) => r.id === 'S1871');
     expect(rule.name).toBe('no-duplicated-branches');
-    expect(rule.helpUri).toBe('https://rules.sonarsource.com/javascript/RSPEC-1871');
+    expect(rule.helpUri).toBe(
+      'https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1871&rule_key=javascript%3AS1871',
+    );
     expect(rule.properties.category).toMatch(/^(Blocker|Critical|Major|Minor|Info) Code Smell$/);
   });
 
@@ -542,8 +545,18 @@ describe.skipIf(!installed && !required)('sonarjs run.mjs helpers', () => {
         keyOf: Map<string, string>,
       ) => unknown;
       rspecKeys: () => Map<string, string>;
+      helpUriOf: (key: string) => string;
     };
   };
+
+  it("helpUriOf links every bundled key as packages/shared's sonarjsHelpUri does", async () => {
+    const { helpUriOf } = await load();
+    const keys = JSON.parse(
+      readFileSync('packages/shared/rules/sonarjs-keys.json', 'utf8'),
+    ) as string[];
+    for (const key of keys) expect(helpUriOf(key)).toBe(sonarjsHelpUri(key));
+    expect(helpUriOf('S4323')).toContain('typescript%3AS4323');
+  });
 
   it('usableExcludes keeps plain globs and drops negated ones with a note', async () => {
     const { usableExcludes } = await load();

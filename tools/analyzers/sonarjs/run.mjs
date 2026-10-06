@@ -70,6 +70,41 @@ export function safePlugin() {
   return { ...sonarjs, rules: { ...sonarjs.rules, 'no-self-import': safeNoSelfImport() } };
 }
 
+// A rule's documentation: SonarCloud's public rule browser (the `sonarsource` organisation, no
+// account needed), since rules.sonarsource.com no longer resolves. SonarCloud has the rules below
+// under `typescript:` only. The same links as sonarjsHelpUri() of packages/shared (this file is
+// installed alone and cannot import it; run.test.ts checks the two agree for every bundled key).
+const TYPESCRIPT_ONLY = new Set([
+  'S1444',
+  'S4023',
+  'S4156',
+  'S4322',
+  'S4323',
+  'S4324',
+  'S4327',
+  'S4328',
+  'S4335',
+  'S4621',
+  'S4622',
+  'S4623',
+  'S4782',
+  'S4798',
+  'S6564',
+  'S6571',
+  'S6572',
+  'S6598',
+  'S6606',
+  'S6759',
+]);
+
+/** The documentation link of an RSPEC key (`S3776`). */
+export function helpUriOf(key) {
+  const rule = encodeURIComponent(
+    `${TYPESCRIPT_ONLY.has(key) ? 'typescript' : 'javascript'}:${key}`,
+  );
+  return `https://sonarcloud.io/organizations/sonarsource/rules?open=${rule}&rule_key=${rule}`;
+}
+
 /** Paths never linted and directories never entered, whatever the excludes say. */
 const NEVER = ['**/node_modules/**', '**/.git/**'];
 const NEVER_DIRS = new Set(['node_modules', '.git']);
@@ -391,7 +426,7 @@ async function main(args) {
       id: key,
       name,
       shortDescription: { text: sonarjs.rules[name].meta?.docs?.description ?? name },
-      helpUri: `https://rules.sonarsource.com/javascript/RSPEC-${key.slice(1)}`,
+      helpUri: helpUriOf(key),
       ...(categories[key] && { properties: { category: categories[key] } }),
     };
   });

@@ -262,6 +262,14 @@ describe('run.mjs helpers (plan 9C)', () => {
     expect(runner.GOSEC_ID.source).toBe(GOSEC_RULE_ID.source);
   });
 
+  it("links go vet analyzers to their package's page, under its own name when that differs", () => {
+    const passes = 'https://pkg.go.dev/golang.org/x/tools/go/analysis/passes';
+    expect(runner.HELP.govet('printf')).toBe(`${passes}/printf`);
+    expect(runner.HELP.govet('copylocks')).toBe(`${passes}/copylock`);
+    expect(runner.HELP.govet('composites')).toBe(`${passes}/composite`);
+    expect(runner.HELP.staticcheck('SA4000')).toBe('https://staticcheck.dev/docs/checks#SA4000');
+  });
+
   it('encodes each path segment, so the normaliser decodes it back exactly', () => {
     expect(runner.encodeUri('a b/c#d/100%/x:y.go')).toBe('a%20b/c%23d/100%25/x%3Ay.go');
   });
