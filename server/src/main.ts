@@ -275,7 +275,10 @@ async function main(): Promise<void> {
   } catch (err) {
     // Never fatal: the worker's afterReap re-creates the run within 30 s.
     logger.warn(
-      { component: 'telemetry', errorClass: err instanceof Error ? err.constructor.name : typeof err },
+      {
+        component: 'telemetry',
+        errorClass: err instanceof Error ? err.constructor.name : typeof err,
+      },
       'telemetry could not be scheduled',
     );
   }

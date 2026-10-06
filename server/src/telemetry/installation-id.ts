@@ -20,7 +20,10 @@ export async function installationId(db: Executor): Promise<string> {
   if (stored) return stored.installationId;
   const value = { installationId: randomUUID() };
   // A replica that created it first wins.
-  await db.insert(instanceSettings).values({ key: TELEMETRY_SETTING_KEY, value }).onConflictDoNothing();
+  await db
+    .insert(instanceSettings)
+    .values({ key: TELEMETRY_SETTING_KEY, value })
+    .onConflictDoNothing();
   const again = await read();
   if (again) return again.installationId;
   // The row exists but is malformed: replace it.

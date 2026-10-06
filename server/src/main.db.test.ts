@@ -333,7 +333,11 @@ describe('test licence keys and the bundles (enterprise.md §14.2)', () => {
   }, 120_000);
 
   describe.each([
-    { enabled: true, line: 'Telemetry: enabled — anonymous usage statistics are sent daily to qualor.dev', jobs: 1 },
+    {
+      enabled: true,
+      line: 'Telemetry: enabled — anonymous usage statistics are sent daily to qualor.dev',
+      jobs: 1,
+    },
     { enabled: false, line: 'Telemetry: disabled', jobs: 0 },
   ])('QUALOR_TELEMETRY=$enabled (telemetry.md)', ({ enabled, line, jobs: expectedJobs }) => {
     it('logs one boot line and schedules (or not) the telemetry job', async () => {

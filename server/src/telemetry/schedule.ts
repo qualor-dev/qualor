@@ -28,11 +28,18 @@ export function telemetryBootMessage(enabled: boolean): string {
 }
 
 /** Inserts one run `delaySeconds` from now unless one is queued (`alsoRunning`: or running). */
-async function schedule(db: Db, delaySeconds: number, alsoRunning: boolean, replaceQueued: boolean): Promise<boolean> {
+async function schedule(
+  db: Db,
+  delaySeconds: number,
+  alsoRunning: boolean,
+  replaceQueued: boolean,
+): Promise<boolean> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.telemetry})`);
     if (replaceQueued) {
-      await tx.execute(sql`DELETE FROM jobs WHERE queue = ${TELEMETRY_QUEUE} AND status = 'queued'`);
+      await tx.execute(
+        sql`DELETE FROM jobs WHERE queue = ${TELEMETRY_QUEUE} AND status = 'queued'`,
+      );
     }
     const statuses = alsoRunning ? sql`('queued', 'running')` : sql`('queued')`;
     const existing = await tx.execute(sql`
@@ -61,7 +68,9 @@ export function ensureTelemetryScheduled(db: Db): Promise<boolean> {
 
 /** QUALOR_TELEMETRY=false: a run queued by an earlier, enabled start never happens. */
 export async function cancelTelemetry(db: Db): Promise<number> {
-  const result = await db.execute(sql`DELETE FROM jobs WHERE queue = ${TELEMETRY_QUEUE} AND status = 'queued'`);
+  const result = await db.execute(
+    sql`DELETE FROM jobs WHERE queue = ${TELEMETRY_QUEUE} AND status = 'queued'`,
+  );
   return result.rowCount ?? 0;
 }
 
@@ -75,12 +84,21 @@ export function telemetryHandlers(deps: TelemetryDeps): JobHandlers {
           installationId: await installationId(deps.db),
           database: deps.database,
         });
-        const outcome = await sendTelemetry(deps.url, payload, { userAgent: `qualor-server/${VERSION}` });
-        if (!outcome.ok) deps.logger?.debug({ component: 'telemetry', reason: outcome.reason }, 'telemetry not sent');
+        const outcome = await sendTelemetry(deps.url, payload, {
+          userAgent: `qualor-server/${VERSION}`,
+        });
+        if (!outcome.ok)
+          deps.logger?.debug(
+            { component: 'telemetry', reason: outcome.reason },
+            'telemetry not sent',
+          );
       } catch (err) {
         // Never retried and never loud: a failure here must not touch the rest of the server.
         deps.logger?.debug(
-          { component: 'telemetry', errorClass: err instanceof Error ? err.constructor.name : typeof err },
+          {
+            component: 'telemetry',
+            errorClass: err instanceof Error ? err.constructor.name : typeof err,
+          },
           'telemetry not sent',
         );
       }
@@ -89,7 +107,10 @@ export function telemetryHandlers(deps: TelemetryDeps): JobHandlers {
       } catch (err) {
         // Not retried: afterReap's ensureTelemetryScheduled re-creates the run.
         deps.logger?.debug(
-          { component: 'telemetry', errorClass: err instanceof Error ? err.constructor.name : typeof err },
+          {
+            component: 'telemetry',
+            errorClass: err instanceof Error ? err.constructor.name : typeof err,
+          },
           'telemetry next run not scheduled',
         );
       }

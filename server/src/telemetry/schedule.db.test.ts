@@ -42,7 +42,9 @@ describe('telemetry schedule (telemetry.md)', () => {
   });
   beforeEach(async () => {
     await database.db.delete(jobs).where(eq(jobs.queue, TELEMETRY_QUEUE));
-    await database.db.delete(instanceSettings).where(eq(instanceSettings.key, TELEMETRY_SETTING_KEY));
+    await database.db
+      .delete(instanceSettings)
+      .where(eq(instanceSettings.key, TELEMETRY_SETTING_KEY));
     received.length = 0;
   });
   afterAll(async () => {
@@ -79,7 +81,9 @@ describe('telemetry schedule (telemetry.md)', () => {
     expect(next).toHaveLength(1);
     expect(next[0]!.secs).toBeGreaterThan(86_000);
 
-    await database.db.execute(sql`UPDATE jobs SET run_at = now() WHERE queue = ${TELEMETRY_QUEUE} AND status = 'queued'`);
+    await database.db.execute(
+      sql`UPDATE jobs SET run_at = now() WHERE queue = ${TELEMETRY_QUEUE} AND status = 'queued'`,
+    );
     const failing = telemetryHandlers({
       db: database.db,
       edition: { edition: () => 'community' },
