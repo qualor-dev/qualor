@@ -132,11 +132,13 @@ server, and a private CA needs `NODE_EXTRA_CA_CERTS`.
 
 - A **check run** `qualor/<project key>` on every analysed commit: *success* or *failure*, with the
   failed conditions in its title and the summary in its body.
-- **Annotations** on up to 50 new issues on added lines. They are *failure* for blocker and high
-  issues, *warning* for medium, and *notice* for low and info.
+- **Annotations** on up to 50 new issues on added lines, each with a link to its rule's
+  documentation. They are *failure* for blocker and high issues, *warning* for medium, and *notice*
+  for low and info.
 - **One summary comment** per pull request, edited in place. It holds the verdict, a table of every
   gate condition with its value and the value it requires, the new issues by severity, the ten most
-  severe ones with their rule and a link to each in Qualor, and a link to the branch in Qualor.
+  severe ones with their rule (linked to the rule's documentation) and a link to each in Qualor, and
+  a link to the branch in Qualor.
 - Marking an issue **false positive** or **won't fix** in Qualor re-evaluates the gate at once. A new
   check run without that annotation replaces the old one.
 

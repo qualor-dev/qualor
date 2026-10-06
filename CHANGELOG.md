@@ -6,6 +6,21 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Rule links in merge request threads, pull request check-run annotations and the summary
+  comments: a rule's key links to its documentation (an `https://` link only).
+- Qualor's own rules link to their pages in the qualor-rules repository
+  (`docs/rules/<lang>/<name>.md`), on the issue page, in the rules list and in comments, also for
+  issues found before this version.
+
+### Fixed
+
+- SonarJS rule links: rules.sonarsource.com no longer exists, so they open the rule in
+  SonarCloud's public rule browser (TypeScript-only rules under `typescript:`). Links stored by
+  earlier scans show the new page at once, and C# SonarAnalyzer links are fixed the same way.
+- The links of the go vet analyzers `copylocks` and `composites` open their package pages.
+
 ## [0.5.0] - 2026-10-06
 
 ### Added

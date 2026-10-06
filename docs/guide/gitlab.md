@@ -175,18 +175,20 @@ If GitLab's certificate comes from a private CA, give the server that CA with `N
 - **One summary comment** per merge request, edited in place on every analysis. It holds the
   verdict, a table of every gate condition with its value and the value it requires (conditions the
   gate skipped are listed with the reason), the count of new issues by severity, the ten most severe
-  ones with their rule and a link to each in Qualor, and a link to the branch in Qualor. GitLab lets
-  only a comment's author edit it, so after the token is replaced by one of another user, Qualor
-  posts a new summary and deletes the old one. With a token below Maintainer the old summary stays;
-  delete it by hand.
-- **A discussion on each new issue** that sits on an added line, up to 50 per merge request. Qualor
-  resolves the discussion when the issue is fixed. It never reopens a thread a person resolved, and
-  it leaves alone a thread a person replied in.
+  ones with their rule (linked to the rule's documentation) and a link to each in Qualor, and a link
+  to the branch in Qualor. GitLab lets only a comment's author edit it, so after the token is
+  replaced by one of another user, Qualor posts a new summary and deletes the old one. With a token
+  below Maintainer the old summary stays; delete it by hand.
+- **A discussion on each new issue** that sits on an added line, up to 50 per merge request, with
+  the rule's key linked to its documentation. Qualor resolves the discussion when the issue is
+  fixed. It never reopens a thread a person resolved, and it leaves alone a thread a person replied
+  in.
 - Marking an issue **false positive** or **won't fix** in Qualor re-evaluates the gate right away, with
   no new scan. If that was the only new issue, the status turns green and the thread is resolved.
 
 Everything a comment quotes from the code is put in code spans. No snippet, no rule text and no link
-that the report controls reaches GitLab.
+that the report controls reaches GitLab, except a rule's documentation link on its key, and only
+when it is a plain `https://` address.
 
 ## 4. Block merges on the gate
 

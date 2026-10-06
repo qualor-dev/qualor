@@ -789,7 +789,12 @@ rules apply to both):
 | `qualor:go/weak-hash` (hotspot) | MD5 or SHA-1 | `crypto/md5`, `crypto/sha1`, `crypto` |
 | `qualor:go/insecure-cookie` (hotspot) | a cookie set without `Secure` or `HttpOnly` | `net/http`, Gin, Echo |
 
-Each finding's message says why the code is unsafe and how to fix it.
+Each finding's message says why the code is unsafe and how to fix it. Each rule also has its own
+page in the qualor-rules repository, under `docs/rules/<lang>/<name>.md` (for
+`qualor:go/sql-injection`,
+<https://github.com/qualor-dev/qualor-rules/blob/main/docs/rules/go/sql-injection.md>). The rule's
+documentation link opens it: on the issue page, in the rules list, and on the rule's key in merge
+request and pull request comments.
 
 - The engine's version in a scan names the rules release, for example
   `1.30.0 + qualor-rules 2026.10.1`.
