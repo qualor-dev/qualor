@@ -72,7 +72,8 @@ function write(root: string, files: Record<string, string>): void {
 }
 
 /** Only the analyzers every machine has are enabled; external SARIF supplies the findings. */
-const QUALOR_YML = 'version: 1\nanalyzers:\n  gitleaks:\n    enabled: false\n';
+const QUALOR_YML =
+  'version: 1\nanalyzers:\n  gitleaks:\n    enabled: false\n  qualor:\n    enabled: false\n';
 
 function newRepo(name: string, qualorYml = QUALOR_YML): string {
   const root = path.join(work, name);

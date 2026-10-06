@@ -10,7 +10,8 @@
   "pnpm": {
     "overrides": {
       "@tree-sitter-grammars/tree-sitter-kotlin>npm-check-updates": "-",
-      "@xmldom/xmldom": "0.8.15"
+      "@xmldom/xmldom": "0.8.15",
+      "source-map-js": "1.2.2"
     },
     "onlyBuiltDependencies": [
       "esbuild"
