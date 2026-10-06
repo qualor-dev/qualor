@@ -5,6 +5,7 @@ import {
   QUALOR_KIND_PROPERTY,
   QUALOR_SEVERITY_PROPERTY,
   qualorManifestSchema,
+  qualorRuleHelpUri,
   qualorRuleId,
   type Language,
   type QualorManifest,
@@ -144,8 +145,9 @@ export function loadQualorPack(dir: string): QualorPack | { problem: string } {
 
 /**
  * config.md §6: OpenGrep's SARIF made Qualor's. Rule ids `<lang>.<name>` become `<lang>/<name>`;
- * a rule the manifest lists gets its title as the short description and its kind and severity as
- * properties (report-format.md §7.1); in-source suppressions (`nosem` comments in the checkout) are
+ * each gets its page in the qualor-rules repository as its help link; a rule the manifest lists gets
+ * its title as the short description and its kind and severity as properties (report-format.md
+ * §7.1); in-source suppressions (`nosem` comments in the checkout) are
  * removed; the driver version names the pack. Mutates and returns `output`; anything that is not a
  * SARIF log is returned as it is.
  */
@@ -170,6 +172,10 @@ export function withQualorRules(output: unknown, manifest: QualorManifest): unkn
         if (id === null) continue;
         rule['id'] = id;
         rule['name'] = id;
+        // Each rule's page in the qualor-rules repository, in place of whatever OpenGrep wrote.
+        const helpUri = qualorRuleHelpUri(id);
+        if (helpUri !== null) rule['helpUri'] = helpUri;
+        else delete rule['helpUri'];
         const entry = byId.get(id);
         if (entry === undefined) continue;
         rule['shortDescription'] = { text: entry.title };

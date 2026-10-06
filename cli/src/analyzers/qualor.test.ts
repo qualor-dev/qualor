@@ -413,6 +413,8 @@ describe('withQualorRules (config.md §6, plan 6B-1)', () => {
                 shortDescription: { text: 'Opengrep Finding: python.sql-injection' },
                 defaultConfiguration: { level: 'error' },
                 properties: { precision: 'very-high', tags: ['CWE-89', 'security'] },
+                // A rule's own reference is replaced by its page in qualor-rules.
+                helpUri: 'https://owasp.org/Top10/A03_2021-Injection/',
               },
               {
                 id: 'python.not-in-manifest',
@@ -442,6 +444,8 @@ describe('withQualorRules (config.md §6, plan 6B-1)', () => {
     expect(driver.rules[0]).toEqual({
       id: 'python/sql-injection',
       name: 'python/sql-injection',
+      helpUri:
+        'https://github.com/qualor-dev/qualor-rules/blob/main/docs/rules/python/sql-injection.md',
       shortDescription: { text: 'A synthetic rule' },
       defaultConfiguration: { level: 'error' },
       properties: {
@@ -455,9 +459,11 @@ describe('withQualorRules (config.md §6, plan 6B-1)', () => {
     expect(driver.rules[1]).toEqual({
       id: 'python/not-in-manifest',
       name: 'python/not-in-manifest',
+      helpUri:
+        'https://github.com/qualor-dev/qualor-rules/blob/main/docs/rules/python/not-in-manifest.md',
       properties: { tags: [] },
     });
-    expect(driver.rules[2]?.id).toBe('someone.else');
+    expect(driver.rules[2]).toEqual({ id: 'someone.else', name: 'someone.else' });
     expect(out.runs[0]!.results.map((r) => r.ruleId)).toEqual(
       Array(3).fill('python/sql-injection'),
     );
@@ -553,6 +559,7 @@ describe('qualor SARIF through normalisation (synthetic, in the shape OpenGrep 1
     expect(ids.length).toBeGreaterThan(0);
     for (const r of out.engines[0]?.rules ?? []) {
       expect(r, r.id).toMatchObject({
+        helpUri: `https://github.com/qualor-dev/qualor-rules/blob/main/docs/rules/${r.id}.md`,
         quality: 'security',
         kind: 'issue',
         defaultSeverity: 'high',

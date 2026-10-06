@@ -1,4 +1,4 @@
-import { ISSUE_KINDS, QUALITIES, SEVERITIES } from '@qualor/shared';
+import { ISSUE_KINDS, QUALITIES, ruleHelpUri, SEVERITIES } from '@qualor/shared';
 import { and, asc, eq, gt, ilike, or, sql, type SQL } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -47,7 +47,9 @@ export function ruleDto(row: RuleRow): z.infer<typeof ruleSchema> {
     engineRuleId: row.engineRuleId,
     name: row.name,
     descriptionMd: row.descriptionMd,
-    helpUri: row.helpUri,
+    // A link stored before it died (rules.sonarsource.com) shows as the live page; a Qualor rule
+    // without one links to its page in qualor-rules.
+    helpUri: ruleHelpUri(row.key, row.helpUri),
     languages: row.languages,
     defaultSeverity: row.defaultSeverity as z.infer<typeof ruleSchema>['defaultSeverity'],
     quality: row.quality as z.infer<typeof ruleSchema>['quality'],

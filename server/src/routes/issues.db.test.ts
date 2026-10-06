@@ -450,4 +450,51 @@ describe('issues API: list, filters, facets, keyset pages (api.md §3, server st
     expect((await get('/issues/not-a-uuid')).statusCode).toBe(422);
     expect((await get(`/issues/${ids.blocker}`, {})).statusCode).toBe(401);
   });
+
+  it('shows working rule links for rules stored with a dead one or none (SonarJS, Qualor rules)', async () => {
+    const db = h.ctx.db;
+    const project = await h.project('acme/rule-links');
+    const branch = await mainBranchId(db, project.id);
+    const sonar = await seedRule(db, {
+      key: 'sonarjs:S3776',
+      helpUri: 'https://rules.sonarsource.com/javascript/RSPEC-3776/',
+    });
+    const typescriptOnly = await seedRule(db, {
+      key: 'sonarjs:S4323',
+      helpUri: 'https://rules.sonarsource.com/javascript/RSPEC-4323',
+    });
+    const qualor = await seedRule(db, { key: 'qualor:go/sql-injection', quality: 'security' });
+    const linkOf = async (ruleId: string) => {
+      const id = await seedIssue(db, { projectId: project.id, branchId: branch, ruleId });
+      const res = await get(`/issues/${id}`);
+      expect(res.statusCode, res.body).toBe(200);
+      return (res.json() as { rule: { helpUri: string | null } }).rule.helpUri;
+    };
+    expect(await linkOf(sonar)).toBe(
+      'https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS3776&rule_key=javascript%3AS3776',
+    );
+    expect(await linkOf(typescriptOnly)).toBe(
+      'https://sonarcloud.io/organizations/sonarsource/rules?open=typescript%3AS4323&rule_key=typescript%3AS4323',
+    );
+    const qualorPage =
+      'https://github.com/qualor-dev/qualor-rules/blob/main/docs/rules/go/sql-injection.md';
+    expect(await linkOf(qualor)).toBe(qualorPage);
+    // The rule catalog shows the same links.
+    const rule = await get(
+      `/rules/${encodeURIComponent('qualor:go/sql-injection')}?organizationId=${h.organizationId}`,
+    );
+    expect([rule.statusCode, rule.json().helpUri]).toEqual([200, qualorPage]);
+    const listed = await get(`/rules?organizationId=${h.organizationId}&engine=sonarjs`);
+    const items = (listed.json() as { items: { key: string; helpUri: string | null }[] }).items;
+    expect(items.map((r) => [r.key, r.helpUri])).toEqual([
+      [
+        'sonarjs:S3776',
+        'https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS3776&rule_key=javascript%3AS3776',
+      ],
+      [
+        'sonarjs:S4323',
+        'https://sonarcloud.io/organizations/sonarsource/rules?open=typescript%3AS4323&rule_key=typescript%3AS4323',
+      ],
+    ]);
+  });
 });

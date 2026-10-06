@@ -1,4 +1,4 @@
-import { ISSUE_KINDS, QUALITIES, SEVERITIES, secondaryLocation } from '@qualor/shared';
+import { ISSUE_KINDS, QUALITIES, ruleHelpUri, SEVERITIES, secondaryLocation } from '@qualor/shared';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -234,7 +234,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
         name: rule.name,
         engine: rule.engineId,
         descriptionMd: rule.descriptionMd,
-        helpUri: rule.helpUri,
+        helpUri: ruleHelpUri(rule.key, rule.helpUri),
         defaultSeverity: rule.defaultSeverity as IssueDto['severity'],
         quality: rule.quality as IssueDto['quality'],
         kind: rule.kind,

@@ -22,6 +22,7 @@ export interface RuleSeed {
   quality?: 'security' | 'reliability' | 'maintainability';
   defaultSeverity?: 'blocker' | 'high' | 'medium' | 'low' | 'info';
   cwe?: number[];
+  helpUri?: string | null;
 }
 
 /** Inserts (or returns) a reported rule; `engineId` defaults to the key's prefix. */
@@ -40,6 +41,7 @@ export async function seedRule(db: Executor, seed: RuleSeed): Promise<string> {
         quality: seed.quality ?? 'maintainability',
         kind: 'issue',
         cwe: seed.cwe ?? [],
+        helpUri: seed.helpUri ?? null,
         origin: 'reported',
       })
       .onConflictDoUpdate({ target: rules.key, set: { name: sql`excluded.name` } })
