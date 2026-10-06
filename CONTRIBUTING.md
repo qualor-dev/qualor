@@ -17,6 +17,9 @@ pnpm install
 pnpm lint && pnpm typecheck && pnpm test && pnpm format:check
 ```
 
+When you run the server locally (`pnpm --filter @qualor/server dev`), set `QUALOR_TELEMETRY=false`
+so development servers do not report.
+
 ## Commands
 
 - `pnpm install`: install dependencies

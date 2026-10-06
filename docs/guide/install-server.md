@@ -15,7 +15,7 @@ an [external PostgreSQL](#external-postgresql) instead. On Kubernetes, install t
 | Memory | 1.5 GiB for the server with its database | reports near the 500 MiB decompressed ceiling need about 4 GiB |
 | Disk | a few GiB for the data volume | reports are kept 7 days; analyses and measures are small |
 | Software | Docker with Compose v2 | or Kubernetes 1.29+ with Helm, or any container platform that runs the image with a volume |
-| Network | inbound HTTPS from CI runners and users | outbound only to your GitLab/GitHub, webhook receivers and, if configured, the [AI assistant](./ai-assistant.md)'s model provider |
+| Network | inbound HTTPS from CI runners and users | outbound only to your GitLab/GitHub, webhook receivers and, if configured, the [AI assistant](./ai-assistant.md)'s model provider and, unless turned off, `qualor.dev` ([Telemetry](./telemetry.md)) |
 
 ## Images
 

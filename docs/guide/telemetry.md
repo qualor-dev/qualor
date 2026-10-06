@@ -41,7 +41,7 @@ The whole report, as an example:
     "analyses30d": 310, "qualityGates": 2, "qualityProfiles": 5, "webhooks": 1
   },
   "languages": ["java", "typescript"],
-  "engines": ["qualor-rules", "semgrep"],
+  "engines": ["qualor", "semgrep"],
   "scm": ["gitlab"],
   "features": { "sso": false, "scim": false, "aiAssistant": true }
 }
@@ -55,7 +55,7 @@ The whole report, as an example:
 | `database` | `embedded` (the image's own PostgreSQL) or `external` (`DATABASE_URL`) |
 | `counts` | how many organisations, users, projects, branches, quality gates, quality profiles and webhooks exist, and how many analyses ran in the last 30 days |
 | `languages` | the languages of the analysed files |
-| `engines` | the analyzers that ran successfully in the last 30 days |
+| `engines` | the built-in analyzers that ran successfully in the last 30 days, and `external` when a SARIF report from another tool was imported |
 | `scm` | `gitlab` and/or `github`, when a connection exists |
 | `features` | whether single sign-on, SCIM and the AI assistant are set up |
 
@@ -67,5 +67,6 @@ host names, source code, file paths, issues, tokens, secrets and the licence key
 ## What happens on our side
 
 qualor.dev stores the report under the installation id, one per day, and keeps it for 24 months.
-It does not store the IP address the report came from. Only the Qualor project sees the data.
-See also the [privacy policy](https://qualor.dev/privacy).
+It keeps the report without the IP address it came from; like every request to qualor.dev, the
+address appears in the load balancer's logs, which are deleted after 30 days. Only the Qualor
+project sees the data. See also the [privacy policy](https://qualor.dev/privacy).
