@@ -119,6 +119,32 @@ function fake(
   };
 }
 
+/** A fake whose run appends its start and end to `log` (the tool's `span` mode), in `exclusive`. */
+function spanning(
+  id: AnalyzerId,
+  toolPath: string,
+  log: string,
+  exclusive: string | undefined,
+): Analyzer {
+  return {
+    id,
+    languages: [],
+    prepare: (ctx) => {
+      const sarifPath = path.join(ctx.workDir, 'out.sarif');
+      return Promise.resolve({
+        run: {
+          command: process.execPath,
+          args: [toolPath, 'span', sarifPath, log, id],
+          cwd: ctx.root,
+          sarifPath,
+          okExitCodes: [0],
+          ...(exclusive !== undefined && { exclusive }),
+        },
+      });
+    },
+  };
+}
+
 const config = (analyzers: QualorConfigInput['analyzers'] = {}) =>
   parseConfig({ version: 1, analyzers });
 
@@ -740,23 +766,7 @@ describe('runAnalyzers', () => {
     const spans = (exclusive: string | undefined, ids: AnalyzerId[]) => {
       const log = path.join(tmp(), 'spans.log');
       writeFileSync(log, '');
-      const analyzers = ids.map((id): Analyzer => ({
-        id,
-        languages: [],
-        prepare: (ctx) => {
-          const sarifPath = path.join(ctx.workDir, 'out.sarif');
-          return Promise.resolve({
-            run: {
-              command: process.execPath,
-              args: [toolPath, 'span', sarifPath, log, id],
-              cwd: ctx.root,
-              sarifPath,
-              okExitCodes: [0],
-              ...(exclusive !== undefined && { exclusive }),
-            },
-          });
-        },
-      }));
+      const analyzers = ids.map((id) => spanning(id, toolPath, log, exclusive));
       return { log, analyzers };
     };
     const run = async (exclusive: string | undefined) => {
