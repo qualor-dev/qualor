@@ -84,7 +84,15 @@ export function telemetryHandlers(deps: TelemetryDeps): JobHandlers {
           'telemetry not sent',
         );
       }
-      await schedule(deps.db, TELEMETRY_INTERVAL_SECONDS, false, false);
+      try {
+        await schedule(deps.db, TELEMETRY_INTERVAL_SECONDS, false, false);
+      } catch (err) {
+        // Not retried: afterReap's ensureTelemetryScheduled re-creates the run.
+        deps.logger?.debug(
+          { component: 'telemetry', errorClass: err instanceof Error ? err.constructor.name : typeof err },
+          'telemetry next run not scheduled',
+        );
+      }
     },
   };
 }

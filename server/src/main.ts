@@ -25,6 +25,10 @@ import {
 import { bootEnterprise, type EnterpriseBoot } from './plugins/boot';
 import { ensurePluginSchedules, startPluginWorker } from './plugins/mount';
 import { startWorker } from './queue/worker';
+import { scmHandlers } from './scm/decorate';
+import { createScmRuntime } from './scm/runtime';
+import { readSignInSettings } from './sso/sign-in-policy';
+import { databaseStartupError, formatStartupError } from './startup-error';
 import {
   cancelTelemetry,
   ensureTelemetryScheduled,
@@ -32,10 +36,6 @@ import {
   telemetryBootMessage,
   telemetryHandlers,
 } from './telemetry/schedule';
-import { scmHandlers } from './scm/decorate';
-import { createScmRuntime } from './scm/runtime';
-import { readSignInSettings } from './sso/sign-in-policy';
-import { databaseStartupError, formatStartupError } from './startup-error';
 import { webhookHandlers } from './webhooks/deliver';
 
 /** Webhook deliveries in flight at once (each waits at most 10 s for its receiver). */
@@ -269,8 +269,16 @@ async function main(): Promise<void> {
   // rbac-audit.md §15: each scheduled plugin queue has its next run waiting (one across replicas).
   await ensurePluginSchedules(database.db, plugins, 'now');
   await app.listen({ host: config.host, port: config.port });
-  if (config.telemetry.enabled) await scheduleTelemetryAtBoot(database.db);
-  else await cancelTelemetry(database.db);
+  try {
+    if (config.telemetry.enabled) await scheduleTelemetryAtBoot(database.db);
+    else await cancelTelemetry(database.db);
+  } catch (err) {
+    // Never fatal: the worker's afterReap re-creates the run within 30 s.
+    logger.warn(
+      { component: 'telemetry', errorClass: err instanceof Error ? err.constructor.name : typeof err },
+      'telemetry could not be scheduled',
+    );
+  }
 
   const shutdown = async (signal: string): Promise<void> => {
     if (stopping) return;

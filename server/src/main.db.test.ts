@@ -4,7 +4,7 @@ import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildServer } from '../scripts/bundle';
 import { createTestDatabase, type TestDatabase } from '../test/db';
@@ -369,10 +369,19 @@ describe('test licence keys and the bundles (enterprise.md §14.2)', () => {
               .from(jobs)
               .where(and(eq(jobs.queue, 'telemetry'), eq(jobs.status, 'queued')))
           ).length;
-        for (let i = 0; i < 50 && (await count()) !== expectedJobs; i++) {
+        // The boot run is due within 60 s; a 24 h run an earlier reap added would not be.
+        const ready = async () => {
+          if ((await count()) !== expectedJobs) return false;
+          if (!enabled) return true;
+          const due = await database.db.execute<{ secs: number }>(sql`
+            SELECT extract(epoch FROM run_at - now())::int AS secs FROM jobs
+             WHERE queue = 'telemetry' AND status = 'queued'`);
+          return due.rows.every((row) => row.secs <= 60);
+        };
+        for (let i = 0; i < 50 && !(await ready()); i++) {
           await new Promise((r) => setTimeout(r, 100));
         }
-        expect(await count()).toBe(expectedJobs);
+        expect(await ready()).toBe(true);
         child.send('shutdown');
         expect(await exited(child)).toBe(0);
       } finally {
