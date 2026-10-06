@@ -48,6 +48,8 @@ services:
       QUALOR_BOOTSTRAP_ADMIN_PASSWORD: ${QUALOR_BOOTSTRAP_ADMIN_PASSWORD:?set QUALOR_BOOTSTRAP_ADMIN_PASSWORD in deploy/.env (see .env.example)}
       QUALOR_TRUST_PROXY: ${QUALOR_TRUST_PROXY:-}
       QUALOR_LOG_LEVEL: ${QUALOR_LOG_LEVEL:-info}
+      # Anonymous usage statistics; unset or empty = on, false = off.
+      QUALOR_TELEMETRY: ${QUALOR_TELEMETRY:-}
       # The AI assistant with a local model (off by default; deploy/README.md, "A local model with
       # Ollama"): list the model host so its plain-http URL is allowed.
       # QUALOR_LLM_INTERNAL_HOSTS: ollama:11434

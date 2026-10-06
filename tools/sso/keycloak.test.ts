@@ -270,6 +270,7 @@ describe('Keycloak 26.7.4 in Docker: OIDC and SAML end to end (sso-scim.md §19.
       QUALOR_BOOTSTRAP_ADMIN_USERNAME: 'admin',
       QUALOR_BOOTSTRAP_ADMIN_PASSWORD: ADMIN_PASSWORD,
       QUALOR_LOG_LEVEL: 'info',
+      QUALOR_TELEMETRY: 'false',
       HOST: '127.0.0.1',
       PORT: String(port),
       QUALOR_PUBLIC_URL: `http://127.0.0.1:${port}`,

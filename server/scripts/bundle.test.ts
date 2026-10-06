@@ -32,6 +32,7 @@ describe('server bundle', () => {
         DATABASE_URL: 'postgres://qualor:hunter2-password@127.0.0.1:1/qualor',
         QUALOR_SECRET_KEY: 'bundle-test-secret-key-of-at-least-32-characters',
         QUALOR_UI_DIR: '',
+        QUALOR_TELEMETRY: 'false',
       },
       encoding: 'utf8',
       timeout: 20_000,
