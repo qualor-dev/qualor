@@ -59,7 +59,7 @@ const COMPONENTS: readonly Component[] = [
 /** Where the manifest may download from: the SCM and each component's own upstream. */
 export const ALLOWED_HOSTS = [
   'github.com', // archives and release assets (OpenGrep, SpotBugs, Bun, TinyCC, Temurin), Alpine aports' mirror
-  'ftp.gnu.org', // GMP releases (the GNU distribution server; gmplib.org refuses cloud runners)
+  'mirrors.kernel.org', // GMP releases (an official GNU mirror; ftp.gnu.org is often unreachable and gmplib.org refuses cloud runners)
   'vault.almalinux.org', // AlmaLinux source RPMs
   'files.pythonhosted.org', // PyPI source distributions
   'repo1.maven.org', // Maven Central source jars
