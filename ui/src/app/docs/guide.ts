@@ -22,6 +22,7 @@ const PAGES: Readonly<Record<string, () => Promise<{ default: string }>>> = {
   'quick-start': () => import('../../../../docs/guide/quick-start.md'),
   'roles-and-audit': () => import('../../../../docs/guide/roles-and-audit.md'),
   'sso-and-scim': () => import('../../../../docs/guide/sso-and-scim.md'),
+  telemetry: () => import('../../../../docs/guide/telemetry.md'),
   troubleshooting: () => import('../../../../docs/guide/troubleshooting.md'),
   'users-projects-tokens': () => import('../../../../docs/guide/users-projects-tokens.md'),
   'webhooks-and-api': () => import('../../../../docs/guide/webhooks-and-api.md'),

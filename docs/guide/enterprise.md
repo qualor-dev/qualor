@@ -4,7 +4,7 @@ Qualor Enterprise is the same `qualor/server` image with a licence key. Without 
 is the community edition: MIT, with no limit on users, projects, organisations or lines of code.
 A licence key switches on enterprise features only; it never limits how many organisations,
 users or projects you have. With a valid key the server becomes the enterprise edition. Nothing
-is installed or downloaded, and the key is checked on your server: Qualor never calls home, so it
+is installed or downloaded, and the key is checked on your server, offline, so it
 works in air-gapped networks.
 
 ## What a licence adds

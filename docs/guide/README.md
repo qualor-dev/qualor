@@ -52,6 +52,8 @@ release: **Docs** in the top bar, at `/docs` on your server, for signed-in users
 17. [Troubleshooting](./troubleshooting.md): what common errors mean and how to fix them.
 18. [AI prompts](./ai-prompts.md): ready-made prompts that let an AI agent roll Qualor out in your
     company.
+19. [Telemetry](./telemetry.md): the anonymous usage statistics the server sends, and how to turn
+    them off.
 
 ## How Qualor works
 
@@ -73,11 +75,6 @@ release: **Docs** in the top bar, at `/docs` on your server, for signed-in users
   stores the history. It
   applies your quality profiles and gates, serves the web UI and the REST API, sends webhooks, and
   decorates merge requests and pull requests.
-- Nothing calls home. Neither part sends telemetry. The server calls only the GitLab or GitHub you
-  connect, the webhook URLs you configure and, if an instance admin configures them, the model
-  provider of the [AI assistant](./ai-assistant.md) and the identity provider of
-  [single sign-on](./sso-and-scim.md). The scanner calls only your server. The analyzers run
-  offline.
 
 ## Where to get it
 

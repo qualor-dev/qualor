@@ -262,7 +262,7 @@ kubectl -n qualor rollout restart deployment/qualor
 
 Every server setting of the table below has a value in `config` (`publicUrl`, `trustProxy`,
 `scmInternalHosts`, `llmInternalHosts`, `ssoInternalHosts`, `forcePasswordSignIn`,
-`workerConcurrency`, `logLevel`) or goes into `extraEnv`, for example:
+`telemetry`, `workerConcurrency`, `logLevel`) or goes into `extraEnv`, for example:
 
 ```yaml
 extraEnv:
@@ -384,6 +384,7 @@ into a `postgres://` URL.
 | `QUALOR_LOG_LEVEL` | `info` | `error`, `warn`, `info` or `debug` |
 | `QUALOR_SESSION_TTL_HOURS` | `168` | browser session lifetime |
 | `QUALOR_DEMO_USER` | none | a user name anyone may sign in as from the sign-in page, read-only and without a password: a [public demo](./users-projects-tokens.md#a-public-read-only-demo). Not the bootstrap admin |
+| `QUALOR_TELEMETRY` | `true` | `false`, `0`, `off` or `no` turns off the daily anonymous usage statistics ([Telemetry](./telemetry.md)). Any other value but `true`, `1`, `on`, `yes` or empty stops the start |
 | `QUALOR_UPLOAD_MAX_COMPRESSED_BYTES` | 50 MiB | largest report upload, as sent |
 | `QUALOR_UPLOAD_MAX_DECOMPRESSED_BYTES` | 500 MiB | largest report once inflated (500 MiB is also the maximum) |
 | `QUALOR_MAX_CONCURRENT_UPLOADS` | `4` | uploads read at once. More get 503 with `Retry-After` |

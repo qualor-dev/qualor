@@ -29,7 +29,7 @@ makes the code worse. MIT licensed, with no limit on lines, users or projects.
 - **An assistant on your terms.** Explanations, false-positive triage and fix suggestions from the
   model you choose: any OpenAI-compatible endpoint, Anthropic, or a local model through Ollama or
   vLLM.
-- **Private and simple.** No telemetry. One container, database included.
+- **Simple.** One container, database included.
 
 Website: <https://qualor.dev> · Documentation: <https://qualor.dev/docs> · Source and issues:
 <https://github.com/qualor-dev/qualor>

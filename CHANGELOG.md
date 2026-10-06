@@ -8,6 +8,10 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
+- Telemetry: the server sends anonymous usage statistics (version, edition, platform, counts,
+  languages, analyzers and features in use) to qualor.dev about a minute after it starts and then
+  daily. `QUALOR_TELEMETRY=false` (Helm `config.telemetry: false`) turns it off. See
+  [Telemetry](docs/guide/telemetry.md).
 - Rule links in merge request threads, pull request check-run annotations and the summary
   comments: a rule's key links to its documentation (an `https://` link only).
 - Qualor's own rules link to their pages in the qualor-rules repository
