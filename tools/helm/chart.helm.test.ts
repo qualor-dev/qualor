@@ -105,6 +105,12 @@ describe('database modes (release.md §6.2)', () => {
     expect(env(sts, 'QUALOR_TELEMETRY')?.value).toBe('false');
   });
 
+  it('config.telemetry absent (a --reuse-values upgrade from 0.5) leaves telemetry on', () => {
+    // null deletes the key from the merged values, as an old release's stored values lack it.
+    const sts = find(render(EMBEDDED, { config: { telemetry: null } }), 'StatefulSet', 'qualor');
+    expect(env(sts, 'QUALOR_TELEMETRY')).toBeUndefined();
+  });
+
   it('bundled: PostgreSQL pinned by digest, and DATABASE_URL built from its password after it', () => {
     const objects = render(['ci/bundled-values.yaml']);
     const pg = find(objects, 'StatefulSet', 'qualor-postgres');
