@@ -46,7 +46,7 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm format:check
    import `server/`; `packages/shared` imports no other workspace package.
 5. **Security:** validate every input, limit upload sizes, hash tokens, never log secrets. Report
    vulnerabilities as `SECURITY.md` says, never in a public issue.
-6. **No telemetry**, and no network calls except those `AGENTS.md` rule 4 lists.
+6. **No telemetry** beyond the usage report in `docs/guide/telemetry.md`, and no network calls except those `AGENTS.md` rule 4 lists.
 7. **Docs in the same pull request.** A change a user can notice updates `docs/guide/` in the same
    pull request. The website renders those pages at qualor.dev/docs; the maintainers sync it after
    a merge.
