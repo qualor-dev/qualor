@@ -4,12 +4,12 @@ import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildServer } from '../scripts/bundle';
 import { createTestDatabase, type TestDatabase } from '../test/db';
 import { E2E_SIGNER, signCurrent } from '../test/license-e2e-key';
-import { auditEvents } from './db/schema';
+import { auditEvents, jobs } from './db/schema';
 
 const MAIN = fileURLToPath(new URL('../dist/main.js', import.meta.url));
 const ADMIN_PASSWORD = 'smoke-test admin passphrase';
@@ -331,6 +331,56 @@ describe('test licence keys and the bundles (enterprise.md §14.2)', () => {
       await database.close();
     }
   }, 120_000);
+
+  describe.each([
+    { enabled: true, line: 'Telemetry: enabled — anonymous usage statistics are sent daily to qualor.dev', jobs: 1 },
+    { enabled: false, line: 'Telemetry: disabled', jobs: 0 },
+  ])('QUALOR_TELEMETRY=$enabled (telemetry.md)', ({ enabled, line, jobs: expectedJobs }) => {
+    it('logs one boot line and schedules (or not) the telemetry job', async () => {
+      const database = await createTestDatabase({ migrated: false });
+      let stdout = '';
+      const child = spawn(process.execPath, [TEST_MAIN], {
+        env: bootEnv(
+          database.url,
+          enabled ? { QUALOR_TELEMETRY: 'true', QUALOR_TELEMETRY_URL: 'http://127.0.0.1:9/t' } : {},
+        ),
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          child.stdout!.on('data', (chunk: Buffer) => {
+            stdout += chunk.toString('utf8');
+            if (/Server listening/.test(stdout)) resolve();
+          });
+          child.once('exit', (code) => reject(new Error(`exited ${code}: ${stdout}`)));
+        });
+        const lines = stdout
+          .split(/\r?\n/)
+          .filter((l) => l.includes('Telemetry:'))
+          .map((l) => JSON.parse(l) as { level: number; msg: string });
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toMatchObject({ level: 30 });
+        expect(lines[0]!.msg).toContain(line);
+        // Scheduling follows `listen`: give it a moment to land.
+        const count = async () =>
+          (
+            await database.db
+              .select()
+              .from(jobs)
+              .where(and(eq(jobs.queue, 'telemetry'), eq(jobs.status, 'queued')))
+          ).length;
+        for (let i = 0; i < 50 && (await count()) !== expectedJobs; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        expect(await count()).toBe(expectedJobs);
+        child.send('shutdown');
+        expect(await exited(child)).toBe(0);
+      } finally {
+        if (child.exitCode === null) child.kill('SIGKILL');
+        await database.close();
+      }
+    }, 120_000);
+  });
 
   it('a test bundle accepts its test key, and only then imports the plugin', async () => {
     const { stdout, imported } = await boot(TEST_MAIN, []);

@@ -64,4 +64,6 @@ export const LOCKS = {
    * locks; a request that syncs several people takes theirs sorted, all before the first sync.
    */
   scimSync: 7_310_019,
+  /** `pg_advisory_xact_lock(key)`: one writer of the telemetry schedule at a time (telemetry.md). */
+  telemetry: 7_310_020,
 } as const;

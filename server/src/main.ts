@@ -25,6 +25,13 @@ import {
 import { bootEnterprise, type EnterpriseBoot } from './plugins/boot';
 import { ensurePluginSchedules, startPluginWorker } from './plugins/mount';
 import { startWorker } from './queue/worker';
+import {
+  cancelTelemetry,
+  ensureTelemetryScheduled,
+  scheduleTelemetryAtBoot,
+  telemetryBootMessage,
+  telemetryHandlers,
+} from './telemetry/schedule';
 import { scmHandlers } from './scm/decorate';
 import { createScmRuntime } from './scm/runtime';
 import { readSignInSettings } from './sso/sign-in-policy';
@@ -144,6 +151,7 @@ async function main(): Promise<void> {
     throw err;
   }
   const { edition, plugins, audit } = enterprise;
+  logger.info({ component: 'telemetry' }, telemetryBootMessage(config.telemetry.enabled));
   // sso-scim.md §10.4: the emergency switch is loud. One warn line per boot, and the event while
   // audit-log is active; a failure to record (a malformed anchor) is logged and never stops the boot.
   if (config.forcePasswordSignIn) {
@@ -189,6 +197,16 @@ async function main(): Promise<void> {
       ...housekeepingHandlers({ db: database.db, logger }),
       // scm.md §7: re-evaluations share the analysis worker and its per-project key.
       ...gateHandlers({ db: database.db, logger }),
+      // telemetry.md: only when enabled; the queue has no handler (and no job) otherwise.
+      ...(config.telemetry.enabled
+        ? telemetryHandlers({
+            db: database.db,
+            edition,
+            url: config.telemetry.url,
+            database: config.databaseUrl === null ? 'embedded' : 'external',
+            logger,
+          })
+        : {}),
     },
     concurrency: config.workerConcurrency,
     logger,
@@ -197,6 +215,7 @@ async function main(): Promise<void> {
     afterReap: async (db) => {
       await reconcileDeadAnalyses(db);
       await ensureHousekeepingScheduled(db);
+      if (config.telemetry.enabled) await ensureTelemetryScheduled(db);
     },
   });
   // Ruling W4: deliveries have their own worker, so a slow receiver (10 s per attempt) never holds
@@ -250,6 +269,8 @@ async function main(): Promise<void> {
   // rbac-audit.md §15: each scheduled plugin queue has its next run waiting (one across replicas).
   await ensurePluginSchedules(database.db, plugins, 'now');
   await app.listen({ host: config.host, port: config.port });
+  if (config.telemetry.enabled) await scheduleTelemetryAtBoot(database.db);
+  else await cancelTelemetry(database.db);
 
   const shutdown = async (signal: string): Promise<void> => {
     if (stopping) return;
