@@ -65,6 +65,8 @@ config:
   # switch QUALOR_FORCE_PASSWORD_SIGN_IN (https://qualor.dev/docs/sso-and-scim). Remove it once SSO works.
   ssoInternalHosts: ''
   forcePasswordSignIn: false
+  # Anonymous usage statistics sent daily to qualor.dev (https://qualor.dev/docs/telemetry).
+  telemetry: true
   workerConcurrency: 1
   logLevel: info
 extraEnv: []

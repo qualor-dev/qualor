@@ -80,6 +80,7 @@ describe('values.schema.json (release.md §6.3)', () => {
     ['a CA key with a slash', { database: { external: { caKey: '../ca.crt' } } }],
     ['a non-boolean networkPolicy.enabled', { networkPolicy: { enabled: 'yes' } }],
     ['a forcePasswordSignIn that is not a boolean', { config: { forcePasswordSignIn: 'true' } }],
+    ['a telemetry that is not a boolean', { config: { telemetry: 'false' } }],
     ['an unknown networkPolicy key', { networkPolicy: { enabled: true, deny: true } }],
     ['networkPolicy.ingressFrom that is not a list', { networkPolicy: { ingressFrom: {} } }],
   ])('rejects %s', (_what, over) => {

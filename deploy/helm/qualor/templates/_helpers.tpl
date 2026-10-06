@@ -220,6 +220,10 @@ seccompProfile:
 - name: QUALOR_FORCE_PASSWORD_SIGN_IN
   value: "true"
 {{- end }}
+{{- if not $v.config.telemetry }}
+- name: QUALOR_TELEMETRY
+  value: "false"
+{{- end }}
 {{- with $v.extraEnv }}
 {{ toYaml . }}
 {{- end }}

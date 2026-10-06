@@ -84,6 +84,7 @@ describe('database modes (release.md §6.2)', () => {
     expect(env(dep, 'QUALOR_SCM_INTERNAL_HOSTS')).toBeUndefined();
     expect(env(dep, 'QUALOR_SSO_INTERNAL_HOSTS')).toBeUndefined();
     expect(env(dep, 'QUALOR_FORCE_PASSWORD_SIGN_IN')).toBeUndefined();
+    expect(env(dep, 'QUALOR_TELEMETRY')).toBeUndefined();
     expect(server(dep)?.volumeMounts?.some((m) => m.mountPath === '/var/lib/qualor')).toBe(false);
   });
 
@@ -97,6 +98,11 @@ describe('database modes (release.md §6.2)', () => {
     );
     expect(env(sts, 'QUALOR_SSO_INTERNAL_HOSTS')?.value).toBe('keycloak.corp:8443');
     expect(env(sts, 'QUALOR_FORCE_PASSWORD_SIGN_IN')?.value).toBe('true');
+  });
+
+  it('config.telemetry: false becomes QUALOR_TELEMETRY=false', () => {
+    const sts = find(render(EMBEDDED, { config: { telemetry: false } }), 'StatefulSet', 'qualor');
+    expect(env(sts, 'QUALOR_TELEMETRY')?.value).toBe('false');
   });
 
   it('bundled: PostgreSQL pinned by digest, and DATABASE_URL built from its password after it', () => {

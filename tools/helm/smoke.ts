@@ -65,6 +65,7 @@ export function smokeValues(
     image: { ...image, pullPolicy: 'Never' },
     service: { type: 'NodePort', nodePort: NODE_PORT },
     secrets: { secretKey: s.secretKey, bootstrapAdminPassword: s.password },
+    config: { telemetry: false },
     resources: { requests: { cpu: '100m', memory: '512Mi' }, limits: { memory: '2Gi' } },
   };
   if (mode === 'embedded') {

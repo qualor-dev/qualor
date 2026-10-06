@@ -117,6 +117,7 @@
         "llmInternalHosts": { "type": "string" },
         "ssoInternalHosts": { "type": "string" },
         "forcePasswordSignIn": { "type": "boolean" },
+        "telemetry": { "type": "boolean" },
         "workerConcurrency": { "type": "integer", "minimum": 1, "maximum": 32 },
         "logLevel": { "enum": ["error", "warn", "info", "debug"] }
       }
