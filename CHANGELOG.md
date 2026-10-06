@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-06
+
 ### Added
 
 - Telemetry: the server sends anonymous usage statistics (version, edition, platform, counts,
