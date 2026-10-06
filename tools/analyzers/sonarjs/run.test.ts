@@ -461,6 +461,27 @@ describe('sonarjs categories.mjs', () => {
   });
 });
 
+describe('sonarjs own-pairs.mjs', () => {
+  it('replaces the pairs that start with an own eslint-plugin-sonarjs rule, keeping the qualor ones that name one second', async () => {
+    // @ts-expect-error: a plain ES module of the image, without type declarations
+    const { withOwnPairs } = await import('./own-pairs.mjs');
+    const pair = (a: string, b: string) => ({ rules: [a, b], reason: 'r' });
+    const data = {
+      $comment: 'c',
+      pairs: [
+        pair('eslint:sonarjs/sql-queries', 'sonarjs:S2077'),
+        pair('qualor:js/sql-injection', 'eslint:sonarjs/sql-queries'),
+        pair('eslint:no-eval', 'semgrep:eval'),
+      ],
+    };
+    const fresh = [pair('eslint:sonarjs/os-command', 'sonarjs:S4721')];
+    expect(withOwnPairs(data, fresh)).toEqual({
+      $comment: 'c',
+      pairs: [data.pairs[1], data.pairs[2], fresh[0]],
+    });
+  });
+});
+
 describe('sonarjs licences.mjs', () => {
   it('accepts MPL-2.0 and CC-BY-4.0 only for the packages that carry them', async () => {
     // @ts-expect-error: a plain ES module of the image, without type declarations

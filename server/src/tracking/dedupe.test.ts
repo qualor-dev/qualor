@@ -123,6 +123,51 @@ describe('planDedupe (data-model.md §5.3)', () => {
     ]);
   });
 
+  it("makes Qualor's own rule the one issue of its line, also for engines that share no CWE with it (plan 6B)", () => {
+    // Python, the 2026-10-06 merge request: Ruff's S608 carries no CWE.
+    expect(
+      planDedupe([
+        issue('a', 'ruff:S608', []),
+        issue('q', 'qualor:python/sql-injection', [89]),
+        issue('b', 'ruff:S113', []),
+      ]),
+    ).toEqual([{ id: 'a', duplicateOf: 'q' }]);
+    // JavaScript: the SonarJS hotspot and the project's own eslint-plugin-sonarjs finding.
+    expect(
+      planDedupe([
+        issue('a', 'sonarjs:S2077', []),
+        issue('b', 'eslint:sonarjs/sql-queries', []),
+        issue('q', 'qualor:js/sql-injection', [89]),
+      ]),
+    ).toEqual([
+      { id: 'a', duplicateOf: 'q' },
+      { id: 'b', duplicateOf: 'q' },
+    ]);
+    // Go: gosec's G107 has CWE-88, its taint rule G704 CWE-918.
+    expect(
+      planDedupe([
+        issue('a', 'gosec:G107', [88]),
+        issue('b', 'gosec:G704', [918]),
+        issue('q', 'qualor:go/ssrf', [918]),
+      ]),
+    ).toEqual([
+      { id: 'a', duplicateOf: 'q' },
+      { id: 'b', duplicateOf: 'q' },
+    ]);
+    // Java: the core SpotBugs rule (CWE-23) is walked before its FindSecBugs duplicate (CWE-22)
+    // and would otherwise stay a second root.
+    expect(
+      planDedupe([
+        issue('a', 'spotbugs:PATH_TRAVERSAL_IN', [22]),
+        issue('b', 'spotbugs:PT_RELATIVE_PATH_TRAVERSAL', [23]),
+        issue('q', 'qualor:java/path-traversal', [22]),
+      ]),
+    ).toEqual([
+      { id: 'a', duplicateOf: 'q' },
+      { id: 'b', duplicateOf: 'q' },
+    ]);
+  });
+
   it('promotes a duplicate whose primary is gone, and reports only real changes', () => {
     const orphan = issue('s', 'semgrep:hardcoded-api-key', [798], { duplicateOfIssueId: 'g' });
     expect(planDedupe([orphan])).toEqual([{ id: 's', duplicateOf: null }]);

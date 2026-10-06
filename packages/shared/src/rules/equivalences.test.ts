@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import ruffKeys from '../../rules/ruff-keys.json' with { type: 'json' };
 import sonarjsKeys from '../../rules/sonarjs-keys.json' with { type: 'json' };
 import {
   effectiveCwe,
@@ -13,6 +14,8 @@ import {
   sameEngineRank,
 } from './equivalences';
 import { FINDSECBUGS_PATTERNS } from './findsecbugs';
+import { GOSEC_RULES } from './golang';
+import { QUALOR_RULE_ID } from './qualor';
 
 const rule = (key: string, cwe: number[] = []) => ({ key, engineId: key.split(':')[0]!, cwe });
 
@@ -53,7 +56,7 @@ describe('cross-engine equivalences (data-model.md §5.3)', () => {
 
   it('lists the curated partners of a rule key in both directions', () => {
     const semgrepEval = 'semgrep:javascript.browser.security.eval-detected.eval-detected';
-    expect(equivalentPartners('eslint:no-eval')).toEqual([semgrepEval]);
+    expect(equivalentPartners('eslint:no-eval')).toEqual([semgrepEval, 'qualor:js/code-injection']);
     expect(equivalentPartners(semgrepEval)).toEqual(['eslint:no-eval']);
     expect(equivalentPartners('eslint:no-console')).toEqual([]);
     expect(equivalentPartners('__proto__')).toEqual([]);
@@ -387,5 +390,96 @@ describe('curated same-engine pairs (data-model.md §5.3, plan 6A)', () => {
         { key: 'semgrep:my-sqli', engineId: 'semgrep', cwe: [89] },
       ),
     ).toBe(true);
+  });
+});
+
+describe("Qualor's own rules paired with the other engines' (plan 6B)", () => {
+  const QUALOR_PAIRS = EQUIVALENCES.pairs.filter((p) => p.rules[0].startsWith('qualor:'));
+  const OWN_ESLINT_SONARJS = new Set(
+    EQUIVALENCES.pairs.map((p) => p.rules[0]).filter((r) => r.startsWith('eslint:sonarjs/')),
+  );
+  const CORE_SPOTBUGS = new Set(EQUIVALENCES.sameEngine.map((p) => p.primary));
+
+  /** Whether the bundled analyzer behind `key` has that rule (its committed catalog). */
+  const known = (key: string): boolean => {
+    const colon = key.indexOf(':');
+    const engine = key.slice(0, colon);
+    const id = key.slice(colon + 1);
+    if (engine === 'ruff') return (ruffKeys as string[]).includes(id);
+    if (engine === 'sonarjs') return (sonarjsKeys as string[]).includes(id);
+    if (engine === 'gosec') return GOSEC_RULES.has(id);
+    if (engine === 'spotbugs') return FINDSECBUGS_PATTERNS.has(id) || CORE_SPOTBUGS.has(key);
+    if (engine === 'eslint') return OWN_ESLINT_SONARJS.has(key) || key === 'eslint:no-eval';
+    return false;
+  };
+
+  it('names a qualor rule first and a rule of a bundled analyzer second, each pair once', () => {
+    expect(QUALOR_PAIRS.length).toBeGreaterThanOrEqual(30);
+    for (const { rules } of QUALOR_PAIRS) {
+      expect(QUALOR_RULE_ID.test(rules[0].slice('qualor:'.length)), rules[0]).toBe(true);
+      expect(rules[1].startsWith('qualor:'), rules[1]).toBe(false);
+      expect(known(rules[1]), rules[1]).toBe(true);
+      expect(enginePriority('qualor'), rules[1]).toBeGreaterThan(
+        enginePriority(rules[1].split(':')[0]!),
+      );
+    }
+    const keys = QUALOR_PAIRS.map((p) => p.rules.join(' '));
+    expect(new Set(keys).size).toBe(keys.length);
+    // No other pair names a qualor rule second.
+    expect(EQUIVALENCES.pairs.filter((p) => p.rules[1].startsWith('qualor:'))).toEqual([]);
+  });
+
+  it.each([
+    // Python: Ruff's rules carry no CWE (the 2026-10-06 merge request: S608, S307).
+    ['qualor:python/sql-injection', [89], 'ruff:S608', []],
+    ['qualor:python/code-injection', [94, 95], 'ruff:S307', []],
+    ['qualor:python/unsafe-deserialization', [502], 'ruff:S301', []],
+    ['qualor:python/tls-verification-disabled', [295], 'ruff:S501', []],
+    // JavaScript: the SonarJS hotspots on the same sink (S2077, S4721).
+    ['qualor:js/sql-injection', [89], 'sonarjs:S2077', []],
+    ['qualor:js/command-injection', [78], 'sonarjs:S4721', []],
+    ['qualor:js/sql-injection', [89], 'eslint:sonarjs/sql-queries', []],
+    // Go: gosec's CWE differs or is missing.
+    ['qualor:go/ssrf', [918], 'gosec:G107', [88]],
+    ['qualor:go/open-redirect', [601], 'gosec:G710', []],
+    // Java: a core SpotBugs rule without CWE-79, FindSecBugs' SpEL rule with CWE-94.
+    ['qualor:java/xss', [79], 'spotbugs:XSS_REQUEST_PARAMETER_TO_SERVLET_WRITER', []],
+    ['qualor:java/expression-injection', [917], 'spotbugs:SPEL_INJECTION', [94]],
+  ] as const)('%s ~ %s, which shares no CWE with it', (q, qCwe, other, otherCwe) => {
+    const a = rule(q, [...qCwe]);
+    const b = rule(other, [...otherCwe]);
+    expect(effectiveCwe(b).some((c) => (qCwe as readonly number[]).includes(c))).toBe(false);
+    expect(rulesEquivalent(a, b)).toBe(true);
+    expect(rulesEquivalent(b, a)).toBe(true);
+    expect(equivalentPartners(other)).toContain(q);
+    expect(enginePriority('qualor')).toBeGreaterThan(enginePriority(b.engineId));
+  });
+
+  it('leaves the rules that report another problem on the line apart', () => {
+    for (const [q, qCwe, other] of [
+      ['qualor:python/ssrf', [918], 'ruff:S113'], // a request without a timeout
+      ['qualor:python/ssrf', [918], 'ruff:S310'], // urlopen of a file: or custom scheme
+      ['qualor:python/template-injection', [94, 1336], 'ruff:S701'], // Jinja2 autoescape off
+      ['qualor:js/command-injection', [78], 'sonarjs:S4036'], // a command looked up in PATH
+      ['qualor:js/tls-verification-disabled', [295], 'sonarjs:S5332'], // a clear-text protocol
+      ['qualor:js/sql-injection', [89], 'sonarjs:S5689'], // Express discloses its version
+      ['qualor:java/open-redirect', [601], 'spotbugs:HRS_REQUEST_PARAMETER_TO_HTTP_HEADER'],
+      ['qualor:python/sql-injection', [89], 'ruff:S307'], // a pair is per qualor rule
+    ] as const) {
+      expect(rulesEquivalent(rule(q, [...qCwe]), rule(other)), `${q} ~ ${other}`).toBe(false);
+    }
+  });
+
+  it('keeps the CWE match for the engines that carry one (gosec, FindSecBugs): no pair needed', () => {
+    expect(rulesEquivalent(rule('qualor:go/sql-injection', [89]), rule('gosec:G201', [89]))).toBe(
+      true,
+    );
+    expect(
+      rulesEquivalent(
+        rule('qualor:java/sql-injection', [89]),
+        rule('spotbugs:SQL_INJECTION_JDBC', [89]),
+      ),
+    ).toBe(true);
+    expect(QUALOR_PAIRS.some((p) => p.rules[1] === 'gosec:G201')).toBe(false);
   });
 });

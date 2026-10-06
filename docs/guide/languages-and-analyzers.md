@@ -803,7 +803,10 @@ request and pull request comments.
 - Issues (from taint and misuse rules) are Security issues and count in the quality gate.
   Hotspots are **security hotspots**: listed, never counted. Where another analyzer reports the
   same problem on the same line, Qualor's issue is the one shown and the other is its duplicate.
-  If you had marked that other issue as a false positive or won't fix, Qualor's new issue starts
+  That holds for rules with the same CWE and for the matching rules that carry none or another
+  one: Ruff's flake8-bandit rules (`S608` with the SQL injection rule, `S307` with code injection,
+  and so on), the SonarJS hotspots `S2077`, `S4721` and `S1523`, gosec's `G107`, `G708` and
+  `G710`, and SpotBugs' path traversal, XSS and expression language rules. If you had marked that other issue as a false positive or won't fix, Qualor's new issue starts
   with that status when it is first created (a later reopen is kept), and its history names the
   other rule and repeats the comment on that status, if there was one.
 - Turn a rule off in the language's quality profile. The `js` rules apply to JavaScript and

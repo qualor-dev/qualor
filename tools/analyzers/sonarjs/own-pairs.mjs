@@ -6,7 +6,8 @@
 // rspecKeys() (rule name -> key, read from each rule's meta.docs.url); the ESLint rule comes first,
 // as it stays primary (ENGINE_PRIORITY). Rule names and keys are facts; no SonarSource text.
 //   node tools/analyzers/sonarjs/own-pairs.mjs            prints the pairs as JSON
-//   node tools/analyzers/sonarjs/own-pairs.mjs --write    replaces every `eslint:sonarjs/` pair of
+//   node tools/analyzers/sonarjs/own-pairs.mjs --write    replaces every pair whose first rule is an
+//                                                         `eslint:sonarjs/` one in
 //                                                         packages/shared/rules/equivalences.json
 //                                                         (then `prettier --write` that file)
 // Needs tools/analyzers/sonarjs/node_modules (npm ci --omit=dev --ignore-scripts).
@@ -29,11 +30,15 @@ export function ownPairs(keyOf) {
     }));
 }
 
-/** `data` (equivalences.json) with its `eslint:sonarjs/` pairs replaced by `pairs`, appended last. */
+/**
+ * `data` (equivalences.json) with its `eslint:sonarjs/` pairs (those whose first rule is one)
+ * replaced by `pairs`, appended last. A curated pair that names an `eslint:sonarjs/` rule second,
+ * such as a `qualor:` rule's (plan 6B), is kept.
+ */
 export function withOwnPairs(data, pairs) {
   return {
     ...data,
-    pairs: [...data.pairs.filter((p) => !p.rules.some((r) => r.startsWith(OWN))), ...pairs],
+    pairs: [...data.pairs.filter((p) => !p.rules[0].startsWith(OWN)), ...pairs],
   };
 }
 

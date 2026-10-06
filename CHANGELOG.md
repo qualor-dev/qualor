@@ -20,6 +20,14 @@ All notable changes to Qualor are listed here, newest first. The format follows
   SonarCloud's public rule browser (TypeScript-only rules under `typescript:`). Links stored by
   earlier scans show the new page at once, and C# SonarAnalyzer links are fixed the same way.
 - The links of the go vet analyzers `copylocks` and `composites` open their package pages.
+- Qualor's own security rules and another analyzer's rule for the same problem on the same line
+  now show as one issue (Qualor's, the other its duplicate) also where the other rule carries no
+  CWE or another one: Ruff's flake8-bandit rules (`S608`, `S610`, `S611`, `S307`, `S102`, `S301`,
+  `S302`, `S506`, `S501`, `S323`, `S308`, `S704`), the SonarJS rules `S2077`, `S4721`, `S1523`,
+  `S4830` and `S5527` (also as a project's own `sonarjs/*` ESLint rules) and ESLint's `no-eval`,
+  gosec's `G107`, `G708` and `G710`, and SpotBugs' `PT_RELATIVE_PATH_TRAVERSAL`,
+  `PT_ABSOLUTE_PATH_TRAVERSAL`, `XSS_REQUEST_PARAMETER_TO_SERVLET_WRITER`, `SPEL_INJECTION` and
+  `EL_INJECTION`. A merge request no longer gets two threads for one line.
 
 ## [0.5.0] - 2026-10-06
 
