@@ -53,6 +53,38 @@ export interface QualorPack {
   manifest: QualorManifest;
 }
 
+interface PackWalk {
+  stack: string[];
+  files: string[];
+  entries: number;
+}
+
+/**
+ * Reads the pack directory `rel` into `walk`: subdirectories onto its stack, anything else into its
+ * files. Returns why the pack is refused, or null.
+ */
+function walkPackDir(dir: string, rel: string, walk: PackWalk): string | null {
+  let handle: Dir;
+  try {
+    handle = opendirSync(path.join(dir, ...rel.split('/')));
+  } catch {
+    return 'the rules pack cannot be read';
+  }
+  try {
+    for (let e = handle.readSync(); e !== null; e = handle.readSync()) {
+      walk.entries += 1;
+      if (walk.entries > MAX_PACK_ENTRIES) return 'the rules pack has too many files';
+      const child = `${rel}/${e.name}`;
+      if (e.isSymbolicLink()) return `the rules pack holds a symbolic link (${shown(child)})`;
+      if (e.isDirectory()) walk.stack.push(child);
+      else walk.files.push(child);
+    }
+  } finally {
+    handle.closeSync();
+  }
+  return null;
+}
+
 /**
  * Every entry below `<dir>/rules` that is not a directory, as `rules/…` paths, whatever its name:
  * OpenGrep reads any config it is given (a `.jsonnet` file too), so the manifest must list each one.
@@ -66,33 +98,12 @@ function packFiles(dir: string): { files: string[] } | { problem: string } {
     return { problem: 'the rules pack has no rules/ directory' };
   }
   if (!top.isDirectory()) return { problem: 'the rules pack has no rules/ directory' };
-  const files: string[] = [];
-  const stack = ['rules'];
-  let entries = 0;
-  while (stack.length > 0) {
-    const rel = stack.pop() as string;
-    let handle: Dir;
-    try {
-      handle = opendirSync(path.join(dir, ...rel.split('/')));
-    } catch {
-      return { problem: 'the rules pack cannot be read' };
-    }
-    try {
-      for (let e = handle.readSync(); e !== null; e = handle.readSync()) {
-        entries += 1;
-        if (entries > MAX_PACK_ENTRIES) return { problem: 'the rules pack has too many files' };
-        const child = `${rel}/${e.name}`;
-        if (e.isSymbolicLink()) {
-          return { problem: `the rules pack holds a symbolic link (${shown(child)})` };
-        }
-        if (e.isDirectory()) stack.push(child);
-        else files.push(child);
-      }
-    } finally {
-      handle.closeSync();
-    }
+  const walk: PackWalk = { stack: ['rules'], files: [], entries: 0 };
+  while (walk.stack.length > 0) {
+    const problem = walkPackDir(dir, walk.stack.pop() as string, walk);
+    if (problem !== null) return { problem };
   }
-  return { files: files.sort() };
+  return { files: walk.files.sort() };
 }
 
 /**
@@ -143,62 +154,75 @@ export function loadQualorPack(dir: string): QualorPack | { problem: string } {
   return { dir, manifest };
 }
 
+/** The engine version a SARIF driver names: its semantic version, else its version, else OpenGrep. */
+function engineVersion(driver: Record<string, unknown>): string {
+  if (typeof driver['semanticVersion'] === 'string') return driver['semanticVersion'];
+  if (typeof driver['version'] === 'string') return driver['version'];
+  return 'OpenGrep';
+}
+
+/** One OpenGrep rule descriptor made Qualor's (see withQualorRules). */
+function qualorRule(rule: unknown, byId: Map<string, QualorManifest['rules'][number]>): void {
+  if (!isObject(rule) || typeof rule['id'] !== 'string') return;
+  const id = qualorRuleId(rule['id']);
+  if (id === null) return;
+  rule['id'] = id;
+  rule['name'] = id;
+  // Each rule's page in the qualor-rules repository, in place of whatever OpenGrep wrote.
+  const helpUri = qualorRuleHelpUri(id);
+  if (helpUri !== null) rule['helpUri'] = helpUri;
+  else delete rule['helpUri'];
+  const entry = byId.get(id);
+  if (entry === undefined) return;
+  rule['shortDescription'] = { text: entry.title };
+  rule['properties'] = {
+    ...(isObject(rule['properties']) ? rule['properties'] : {}),
+    [QUALOR_KIND_PROPERTY]: entry.kind,
+    [QUALOR_SEVERITY_PROPERTY]: entry.severity,
+  };
+}
+
+/** One OpenGrep result made Qualor's: its rule id mapped, its in-source suppressions removed. */
+function qualorResult(result: unknown): void {
+  if (!isObject(result)) return;
+  if (typeof result['ruleId'] === 'string') {
+    result['ruleId'] = qualorRuleId(result['ruleId']) ?? result['ruleId'];
+  }
+  const suppressions = result['suppressions'];
+  if (!Array.isArray(suppressions)) return;
+  const kept = suppressions.filter((s) => !(isObject(s) && s['kind'] === 'inSource'));
+  if (kept.length > 0) result['suppressions'] = kept;
+  else delete result['suppressions'];
+}
+
+/** One OpenGrep driver made Qualor's: its version names the pack, its rules are mapped. */
+function qualorDriver(
+  driver: Record<string, unknown>,
+  manifest: QualorManifest,
+  byId: Map<string, QualorManifest['rules'][number]>,
+): void {
+  driver['version'] = `${engineVersion(driver)} + qualor-rules ${manifest.version}`;
+  for (const rule of Array.isArray(driver['rules']) ? driver['rules'] : []) qualorRule(rule, byId);
+}
+
 /**
  * config.md §6: OpenGrep's SARIF made Qualor's. Rule ids `<lang>.<name>` become `<lang>/<name>`;
  * each gets its page in the qualor-rules repository as its help link; a rule the manifest lists gets
  * its title as the short description and its kind and severity as properties (report-format.md
  * §7.1); in-source suppressions (`nosem` comments in the checkout) are
- * removed; the driver version names the pack. Mutates and returns `output`; anything that is not a
- * SARIF log is returned as it is.
+ * removed; the driver version names the pack. Mutates `output` in place; anything that is not a
+ * SARIF log is left as it is.
  */
-export function withQualorRules(output: unknown, manifest: QualorManifest): unknown {
-  if (!isObject(output) || !Array.isArray(output['runs'])) return output;
+export function withQualorRules(output: unknown, manifest: QualorManifest): void {
+  if (!isObject(output) || !Array.isArray(output['runs'])) return;
   const byId = new Map(manifest.rules.map((r) => [r.id, r]));
   for (const run of output['runs']) {
     if (!isObject(run)) continue;
     const tool = run['tool'];
     const driver = isObject(tool) ? tool['driver'] : undefined;
-    if (isObject(driver)) {
-      const engine =
-        typeof driver['semanticVersion'] === 'string'
-          ? driver['semanticVersion']
-          : typeof driver['version'] === 'string'
-            ? driver['version']
-            : 'OpenGrep';
-      driver['version'] = `${engine} + qualor-rules ${manifest.version}`;
-      for (const rule of Array.isArray(driver['rules']) ? driver['rules'] : []) {
-        if (!isObject(rule) || typeof rule['id'] !== 'string') continue;
-        const id = qualorRuleId(rule['id']);
-        if (id === null) continue;
-        rule['id'] = id;
-        rule['name'] = id;
-        // Each rule's page in the qualor-rules repository, in place of whatever OpenGrep wrote.
-        const helpUri = qualorRuleHelpUri(id);
-        if (helpUri !== null) rule['helpUri'] = helpUri;
-        else delete rule['helpUri'];
-        const entry = byId.get(id);
-        if (entry === undefined) continue;
-        rule['shortDescription'] = { text: entry.title };
-        rule['properties'] = {
-          ...(isObject(rule['properties']) ? rule['properties'] : {}),
-          [QUALOR_KIND_PROPERTY]: entry.kind,
-          [QUALOR_SEVERITY_PROPERTY]: entry.severity,
-        };
-      }
-    }
-    for (const result of Array.isArray(run['results']) ? run['results'] : []) {
-      if (!isObject(result)) continue;
-      if (typeof result['ruleId'] === 'string') {
-        result['ruleId'] = qualorRuleId(result['ruleId']) ?? result['ruleId'];
-      }
-      const suppressions = result['suppressions'];
-      if (!Array.isArray(suppressions)) continue;
-      const kept = suppressions.filter((s) => !(isObject(s) && s['kind'] === 'inSource'));
-      if (kept.length > 0) result['suppressions'] = kept;
-      else delete result['suppressions'];
-    }
+    if (isObject(driver)) qualorDriver(driver, manifest, byId);
+    for (const result of Array.isArray(run['results']) ? run['results'] : []) qualorResult(result);
   }
-  return output;
 }
 
 /** The OpenGrep version a SARIF log names, or null. */
@@ -287,7 +311,8 @@ export function createQualorAnalyzer(
               `qualor: the rules pack ${pack.manifest.version} is tested with OpenGrep ${pack.manifest.opengrep}, not ${engine}`,
             );
           }
-          return withQualorRules(output, pack.manifest);
+          withQualorRules(output, pack.manifest);
+          return output;
         },
       },
     };

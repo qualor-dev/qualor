@@ -436,9 +436,10 @@ describe('withQualorRules (config.md §6, plan 6B-1)', () => {
   type Log = ReturnType<typeof log>;
 
   it('maps ids, copies title, kind and severity from the manifest, and names the pack in the version', () => {
-    const out = withQualorRules(log(), manifest) as Log & {
+    const out = log() as Log & {
       runs: { tool: { driver: { version: string } } }[];
     };
+    withQualorRules(out, manifest);
     const driver = out.runs[0]!.tool.driver;
     expect(driver.version).toBe('1.30.0 + qualor-rules 2026.10.0');
     expect(driver.rules[0]).toEqual({
@@ -470,14 +471,15 @@ describe('withQualorRules (config.md §6, plan 6B-1)', () => {
   });
 
   it('removes in-source suppressions (nosem comments in the checkout), and keeps any other', () => {
-    const out = withQualorRules(log(), manifest) as Log;
+    const out = log();
+    withQualorRules(out, manifest);
     const [plain, inSource, external] = out.runs[0]!.results as Record<string, unknown>[];
     expect(plain).not.toHaveProperty('suppressions');
     expect(inSource).not.toHaveProperty('suppressions');
     expect(external?.['suppressions']).toEqual([{ kind: 'external', status: 'accepted' }]);
   });
 
-  it('returns anything that is not a SARIF log as it is', () => {
+  it('leaves anything that is not a SARIF log as it is', () => {
     for (const odd of [
       null,
       'text',
@@ -486,7 +488,7 @@ describe('withQualorRules (config.md §6, plan 6B-1)', () => {
       { runs: [null, { tool: null }, { tool: { driver: 'x' } }] },
     ]) {
       const before = structuredClone(odd);
-      expect(withQualorRules(odd, manifest)).toBe(odd);
+      withQualorRules(odd, manifest);
       expect(odd).toEqual(before);
     }
   });
@@ -546,11 +548,9 @@ describe('qualor SARIF through normalisation (synthetic, in the shape OpenGrep 1
   });
 
   it('gives the fixture keys, with kind and severity from the manifest and the CWE from the tags', () => {
-    const out = normalizeRecorded(
-      withQualorRules(sarif(), manifest),
-      qualorAnalyzer,
-      'qualor-security',
-    );
+    const log = sarif();
+    withQualorRules(log, manifest);
+    const out = normalizeRecorded(log, qualorAnalyzer, 'qualor-security');
     expect(out.warnings).toEqual([]);
     expect(findingKeys(out.findings)).toEqual(expectedKeys('qualor-security', 'qualor'));
     expect(out.engines[0]?.version).toBe('1.30.0 + qualor-rules 2026.10.0');

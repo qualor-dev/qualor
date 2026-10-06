@@ -169,12 +169,14 @@ export function isFindsecbugsVariable(name: string): boolean {
 /**
  * config.md §6 (plan 6A): when the log lists the FindSecBugs extension (whose own version field
  * SpotBugs leaves empty), the driver version becomes `<SpotBugs> + FindSecBugs <version>`, so the
- * report says the plugin ran. Anything that is not a SARIF log is returned as it is.
+ * report says the plugin ran. Mutates `output` in place; anything that is not a SARIF log is left
+ * as it is.
  */
-export function withFindsecbugsVersion(output: unknown, pluginVersion: string | null): unknown {
-  if (typeof output !== 'object' || output === null) return output;
+export function withFindsecbugsVersion(output: unknown, pluginVersion: string | null): void {
+  if (typeof output !== 'object' || output === null) return;
   const runs = (output as { runs?: unknown }).runs;
-  if (!Array.isArray(runs)) return output;
+  if (!Array.isArray(runs)) return;
+  const suffix = pluginVersion === null ? '' : ` ${pluginVersion}`;
   for (const run of runs) {
     if (typeof run !== 'object' || run === null) continue;
     const tool = (run as { tool?: unknown }).tool;
@@ -191,9 +193,8 @@ export function withFindsecbugsVersion(output: unknown, pluginVersion: string | 
     if (!loaded || typeof driver !== 'object' || driver === null) continue;
     const d = driver as { version?: unknown };
     if (typeof d.version !== 'string') continue;
-    d.version = `${d.version} + FindSecBugs${pluginVersion === null ? '' : ` ${pluginVersion}`}`;
+    d.version = `${d.version} + FindSecBugs${suffix}`;
   }
-  return output;
 }
 
 function prepare(ctx: AnalyzerContext): Promise<Preparation> {
@@ -307,7 +308,10 @@ function prepareSync(ctx: AnalyzerContext): Preparation {
       // Plan 6A: `findsecbugs*` variables are dropped (config.md §6); the CI's own JVM option
       // variables (JAVA_TOOL_OPTIONS, …) are kept.
       dropEnv: isFindsecbugsVariable,
-      transform: (output: unknown) => withFindsecbugsVersion(output, plugin?.version ?? null),
+      transform: (output: unknown) => {
+        withFindsecbugsVersion(output, plugin?.version ?? null);
+        return output;
+      },
       version: null,
     },
   };

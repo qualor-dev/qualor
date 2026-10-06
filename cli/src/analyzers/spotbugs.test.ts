@@ -158,22 +158,20 @@ describe('FindSecBugs in the SpotBugs run (plan 6A)', () => {
         { tool: { driver: { name: 'SpotBugs', version: '4.10.4' }, extensions }, results: [] },
       ],
     });
-    const version = (out: unknown) =>
-      (out as { runs: { tool: { driver: { version: string } } }[] }).runs[0]!.tool.driver.version;
+    // The driver version after withFindsecbugsVersion, which mutates the log in place.
+    const version = (out: unknown, pluginVersion: string | null) => {
+      withFindsecbugsVersion(out, pluginVersion);
+      return (out as { runs: { tool: { driver: { version: string } } }[] }).runs[0]!.tool.driver
+        .version;
+    };
     const fsb = { name: FINDSECBUGS_EXTENSION, version: '' };
-    expect(version(withFindsecbugsVersion(log([fsb]), '1.14.0'))).toBe(
-      '4.10.4 + FindSecBugs 1.14.0',
-    );
-    expect(version(withFindsecbugsVersion(log([fsb]), null))).toBe('4.10.4 + FindSecBugs');
-    expect(
-      version(
-        withFindsecbugsVersion(log([{ name: 'edu.umd.cs.findbugs.plugins.core' }]), '1.14.0'),
-      ),
-    ).toBe('4.10.4');
-    expect(version(withFindsecbugsVersion(log([]), '1.14.0'))).toBe('4.10.4');
+    expect(version(log([fsb]), '1.14.0')).toBe('4.10.4 + FindSecBugs 1.14.0');
+    expect(version(log([fsb]), null)).toBe('4.10.4 + FindSecBugs');
+    expect(version(log([{ name: 'edu.umd.cs.findbugs.plugins.core' }]), '1.14.0')).toBe('4.10.4');
+    expect(version(log([]), '1.14.0')).toBe('4.10.4');
     for (const odd of [null, 'text', 42, { runs: 'x' }, { runs: [null, { tool: null }] }]) {
       const before = structuredClone(odd);
-      expect(withFindsecbugsVersion(odd, '1.14.0')).toEqual(before);
+      withFindsecbugsVersion(odd, '1.14.0');
       expect(odd).toEqual(before);
     }
   });
@@ -419,12 +417,9 @@ describe('SpotBugs SARIF (recorded SpotBugs 4.10.4 output on java-basic)', () =>
 
 describe('SpotBugs with FindSecBugs SARIF (recorded run over java-security, plan 6A)', () => {
   it('normalises to the fixture findings, with kinds from the table and the plugin in the version', () => {
-    const out = normalizeRecorded(
-      withFindsecbugsVersion(sarifSample('findsecbugs'), '1.14.0'),
-      spotbugsAnalyzer,
-      'java-security',
-      ['src/main/java'],
-    );
+    const log = sarifSample('findsecbugs');
+    withFindsecbugsVersion(log, '1.14.0');
+    const out = normalizeRecorded(log, spotbugsAnalyzer, 'java-security', ['src/main/java']);
     expect(out.warnings).toEqual([]);
     expect(findingKeys(out.findings)).toEqual(expectedKeys('java-security', 'spotbugs'));
     expect(out.engines[0]?.version).toBe('4.10.4 + FindSecBugs 1.14.0');

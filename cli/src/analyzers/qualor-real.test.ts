@@ -32,25 +32,28 @@ describeWithQualorRules()(
       ).not.toBeNull();
       expect(pack!.manifest.version).toBe(qualorRulesPins().version);
       expect(pack!.manifest.opengrep).toBe(qualorRulesPins().opengrep);
-      const log = withQualorRules(
-        {
-          runs: [
-            {
-              tool: {
-                driver: {
-                  semanticVersion: pack!.manifest.opengrep,
-                  rules: pack!.manifest.rules.map((r) => ({ id: r.id.replace('/', '.') })),
-                },
+      const log = {
+        runs: [
+          {
+            tool: {
+              driver: {
+                semanticVersion: pack!.manifest.opengrep,
+                rules: pack!.manifest.rules.map((r) => ({ id: r.id.replace('/', '.') })),
               },
             },
-          ],
-        },
-        pack!.manifest,
-      ) as {
+          },
+        ],
+      } as {
         runs: {
-          tool: { driver: { rules: { id: string; properties?: Record<string, unknown> }[] } };
+          tool: {
+            driver: {
+              semanticVersion: string;
+              rules: { id: string; properties?: Record<string, unknown> }[];
+            };
+          };
         }[];
       };
+      withQualorRules(log, pack!.manifest);
       pack!.manifest.rules.forEach((r, i) => {
         const rule = log.runs[0]!.tool.driver.rules[i]!;
         expect(rule.id).toBe(r.id);
