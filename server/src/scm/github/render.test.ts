@@ -238,6 +238,29 @@ describe('GitHub bounds and hostile values (github.md §6.1, §6.4, §7)', () =>
     expect(annotationFor({ ...ISSUE, message: '', url: null }).message).toBe('Qualor issue');
   });
 
+  it("adds the rule's documentation link when it is a safe https URL", () => {
+    const docs = 'https://github.com/qualor-dev/qualor-rules/blob/main/docs/rules/js/xss.md';
+    expect(annotationFor({ ...ISSUE, helpUri: docs }).message).toBe(
+      `Avoid eval\n\nRule: ${docs}\n\nView in Qualor: https://q.example/projects/p/issues/i`,
+    );
+    expect(annotationFor({ ...ISSUE, helpUri: docs, url: null }).message).toBe(
+      `Avoid eval\n\nRule: ${docs}`,
+    );
+    for (const helpUri of [
+      'http://eslint.org/x',
+      'javascript:alert(1)',
+      'https://u:p@eslint.org/x',
+      'https://eslint.org/a\nb',
+      `https://eslint.org/${'x'.repeat(600)}`,
+      null,
+    ])
+      expect(annotationFor({ ...ISSUE, helpUri, url: null }).message).toBe('Avoid eval');
+    // The link is part of what is digested: a new one updates the annotations once.
+    expect(annotationsDigest([annotationFor({ ...ISSUE, helpUri: docs })])).not.toBe(
+      annotationsDigest([annotationFor(ISSUE)]),
+    );
+  });
+
   it('fails closed on a severity or quality it does not know', () => {
     const a = annotationFor({ ...ISSUE, severity: 'bogus' as never, quality: '<b>' as never });
     expect(a.annotation_level).toBe('warning');

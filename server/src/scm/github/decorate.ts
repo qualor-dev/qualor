@@ -94,6 +94,7 @@ export function annotationsOnDiff(
         severity: issue.severity as Severity,
         quality: issue.quality as Quality,
         ruleKey: issue.ruleKey,
+        helpUri: issue.helpUri,
         message: issue.message,
         url: url(issue.id),
       }),

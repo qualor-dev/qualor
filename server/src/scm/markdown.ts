@@ -17,8 +17,9 @@
  * - the fence is one backtick longer than the longest run inside and padded with a space, so
  *   the value cannot close the span;
  * - bodies are shortened only at whole lines ({@link linesWithinBytes}), so no span is cut open;
- * - links are Qualor's own http(s) URLs only ({@link qualorLink}), with the characters that
- *   could end or break a link destination percent-encoded.
+ * - links are Qualor's own http(s) URLs and rules' https documentation links only
+ *   ({@link qualorLink}, {@link ruleKeyMarkdown}), with the characters that could end or break a
+ *   link destination percent-encoded.
  */
 import { safeCodeSpan, safePlainValue } from '@qualor/shared';
 
@@ -65,9 +66,9 @@ export function linesWithinBytes(lines: readonly string[], maxBytes: number): st
 const LINK_UNSAFE = /[()[\]<>`\\ "']/g;
 
 /**
- * `[label](url)` for one of Qualor's own links (`QUALOR_PUBLIC_URL` with ids it generated), or
- * null when `url` is null or not a plain http(s) URL. `label` is fixed text or a {@link codeSpan}
- * (never a raw value).
+ * `[label](url)` for one of Qualor's own links (`QUALOR_PUBLIC_URL` with ids it generated) or a
+ * rule's documentation link ({@link ruleKeyMarkdown}), or null when `url` is null or not a plain
+ * http(s) URL. `label` is fixed text or a {@link codeSpan} (never a raw value).
  */
 export function qualorLink(label: string, url: string | null): string | null {
   if (url === null || !URL.canParse(url)) return null;
@@ -85,6 +86,42 @@ export function qualorLink(label: string, url: string | null): string | null {
     .slice(parsed.origin.length)
     .replace(LINK_UNSAFE, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
   return `[${label}](${parsed.origin}${rest})`;
+}
+
+/** A rule documentation link longer than this (once encoded) is left out: bodies have byte bounds. */
+export const MAX_RULE_LINK_CHARS = 512;
+/** A key that holds none of these is safe as link text in its code span (no bracket to balance). */
+const LINK_TEXT_UNSAFE = /[[\]`\\]/;
+
+/**
+ * A rule's documentation link when it is safe to show (the server-side twin of the UI's
+ * `safeHelpUri`, https only): an https URL without credentials, at most
+ * {@link MAX_RULE_LINK_CHARS}, with no space, control or invisible character; else null.
+ */
+export function ruleDocUrl(helpUri: string | null | undefined): string | null {
+  if (helpUri === null || helpUri === undefined || helpUri.length > MAX_RULE_LINK_CHARS)
+    return null;
+  if (/\s/.test(helpUri) || plainValue(helpUri, MAX_RULE_LINK_CHARS) !== helpUri) return null;
+  if (!URL.canParse(helpUri)) return null;
+  const parsed = new URL(helpUri);
+  if (parsed.protocol !== 'https:' || parsed.username !== '' || parsed.password !== '') return null;
+  return helpUri;
+}
+
+/**
+ * A rule's key as a {@link codeSpan}, made a link to the rule's documentation when
+ * {@link ruleDocUrl} accepts `helpUri`, it stays within {@link MAX_RULE_LINK_CHARS} once encoded
+ * by {@link qualorLink}, and the key holds no bracket, backtick or backslash; else the plain code
+ * span. The same inputs always give the same text, so a body compared with the one posted before
+ * does not change needlessly.
+ */
+export function ruleKeyMarkdown(ruleKey: string, helpUri: string | null | undefined): string {
+  const label = codeSpan(ruleKey);
+  const url = ruleDocUrl(helpUri);
+  if (url === null || LINK_TEXT_UNSAFE.test(ruleKey)) return label;
+  const link = qualorLink(label, url);
+  // `[label](destination)`: the destination is what is left after the label and four brackets.
+  return link !== null && link.length - label.length - 4 <= MAX_RULE_LINK_CHARS ? link : label;
 }
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';

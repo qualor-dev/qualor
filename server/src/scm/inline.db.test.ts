@@ -161,6 +161,41 @@ describe('GitLab inline discussions (scm.md §5.4)', () => {
     );
   });
 
+  it("links each rule key to the rule's live documentation, in the threads and the summary", async () => {
+    const { gitlabId, ingest } = await setup('inline/rule-links');
+    const dead = 'https://rules.sonarsource.com/javascript/RSPEC-1871/';
+    const live =
+      'https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1871&rule_key=javascript%3AS1871';
+    await ingest([], {
+      engines: [engine('eslint', [{ id: 'no-alert', helpUri: dead }])],
+      findings: [
+        finding({ path: 'src/a.ts', line: 3, ruleId: 'no-alert' }),
+        finding({ path: 'src/a.ts', line: 4, ruleId: 'eqeqeq' }),
+      ],
+    });
+    await runDecorations(h, decorationDeps(h));
+    expect(threadAt(gitlabId, 3).notes[0]?.body.split('\n')[1]).toBe(
+      `**Medium** · maintainability · [\` eslint:no-alert \`](${live})`,
+    );
+    expect(threadAt(gitlabId, 4).notes[0]?.body.split('\n')[1]).toBe(
+      '**Medium** · maintainability · ` eslint:eqeqeq `',
+    );
+    const body = summary(gitlabId);
+    expect(body).toContain(`[\` eslint:no-alert \`](${live})`);
+    // Decorating again with nothing changed edits no note.
+    fake.clearRequests();
+    await ingest([], {
+      engines: [engine('eslint', [{ id: 'no-alert', helpUri: dead }])],
+      findings: [
+        finding({ path: 'src/a.ts', line: 3, ruleId: 'no-alert' }),
+        finding({ path: 'src/a.ts', line: 4, ruleId: 'eqeqeq' }),
+      ],
+    });
+    await runDecorations(h, decorationDeps(h));
+    expect(fake.requests.filter((r) => r.method === 'PUT' || r.method === 'POST')).toEqual([]);
+    expect(summary(gitlabId)).toBe(body);
+  });
+
   it('resolves the thread of a fixed issue and reopens it when the issue comes back', async () => {
     const { gitlabId, ingest } = await setup('inline/fix');
     await ingest([3, 4]);

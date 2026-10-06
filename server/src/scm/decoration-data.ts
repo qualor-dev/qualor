@@ -1,5 +1,6 @@
 import {
   DEFAULT_SMALL_CHANGESET_LINES,
+  ruleHelpUri,
   type GateResult,
   type Quality,
   type Severity,
@@ -127,6 +128,7 @@ async function summaryIssues(
       severity: issues.severity,
       quality: issues.quality,
       ruleKey: rules.key,
+      helpUri: rules.helpUri,
       path: issues.path,
       line: issues.startLine,
       message: issues.message,
@@ -148,6 +150,7 @@ async function summaryIssues(
       severity: r.severity as Severity,
       quality: r.quality as Quality,
       ruleKey: r.ruleKey,
+      helpUri: ruleHelpUri(r.ruleKey, r.helpUri),
       path: r.path,
       line: r.line,
       message: r.message,
@@ -206,15 +209,16 @@ export async function summaryData(
 
 /**
  * The branch's open new issues with a place, most severe first (scm.md §5.4, github.md §6.4): the
- * ones a decoration comments or annotates inline.
+ * ones a decoration comments or annotates inline, each with its rule's documentation link.
  */
 export async function desiredInlineIssues(db: Db, branchId: string, limit: number) {
-  return db
+  const rows = await db
     .select({
       id: issues.id,
       severity: issues.severity,
       quality: issues.quality,
       ruleKey: rules.key,
+      helpUri: rules.helpUri,
       path: issues.path,
       line: issues.startLine,
       message: issues.message,
@@ -234,6 +238,8 @@ export async function desiredInlineIssues(db: Db, branchId: string, limit: numbe
     )
     .orderBy(asc(issues.severityRank), asc(issues.path), asc(issues.startLine), asc(issues.id))
     .limit(limit);
+  // The link to show: a stored dead one becomes the live page, a Qualor rule gets its own page.
+  return rows.map((r) => ({ ...r, helpUri: ruleHelpUri(r.ruleKey, r.helpUri) }));
 }
 export type DesiredInlineIssue = Awaited<ReturnType<typeof desiredInlineIssues>>[number];
 

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { GateResult, Quality, Severity } from '@qualor/shared';
-import { linesWithinBytes, MAX_MESSAGE_CHARS, plainValue } from '../markdown';
+import { linesWithinBytes, MAX_MESSAGE_CHARS, plainValue, ruleDocUrl } from '../markdown';
 import { commitStatusFor, qualityLabel, severityLabel, SUMMARY_MAX_BYTES } from '../render';
 import type { AnnotationLevel, GitHubAnnotation } from './client';
 
@@ -48,8 +48,9 @@ function plainLink(url: string | null): string | null {
 
 /**
  * github.md §6.4: one annotation, plain text through `plainValue` (scm.md §6, github.md §7):
- * GitHub renders no Markdown in annotations. The message is at most 300 characters and a link,
- * far below GitHub's 64 KiB; the title at most 255.
+ * GitHub renders no Markdown in annotations. The message is at most 300 characters, the rule's
+ * documentation link (a safe https URL of at most 512) and Qualor's link, far below GitHub's
+ * 64 KiB; the title at most 255.
  */
 export function annotationFor(issue: {
   path: string;
@@ -57,11 +58,20 @@ export function annotationFor(issue: {
   severity: Severity;
   quality: Quality;
   ruleKey: string;
+  /** The rule's documentation link, shown when it is a safe https URL. */
+  helpUri?: string | null;
   message: string;
   url: string | null;
 }): GitHubAnnotation {
   const text = plainValue(issue.message, MAX_MESSAGE_CHARS);
-  const message = text.trim() === '' ? 'Qualor issue' : text;
+  const docs = ruleDocUrl(issue.helpUri);
+  const message = `${text.trim() === '' ? 'Qualor issue' : text}${
+    docs === null
+      ? ''
+      : `
+
+Rule: ${docs}`
+  }`;
   const link = plainLink(issue.url);
   return {
     path: issue.path,

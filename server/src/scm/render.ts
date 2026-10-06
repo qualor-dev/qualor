@@ -16,6 +16,7 @@ import {
   MAX_VALUE_CHARS,
   plainValue,
   qualorLink,
+  ruleKeyMarkdown,
   summaryMarker,
 } from './markdown';
 
@@ -133,6 +134,8 @@ export interface IssueLine {
   quality: Quality;
   /** The rule's key (`sonarjs:S3776`), shown in a code span. */
   ruleKey: string;
+  /** The rule's documentation link: the key links to it when it is a safe https URL. */
+  helpUri?: string | null;
   path: string | null;
   line: number | null;
   message: string;
@@ -339,7 +342,7 @@ function issueItem(issue: IssueLine, index: number): string[] {
   const parts = [
     `${index + 1}. ${icon} **${severityLabel(issue.severity)}**`,
     qualityLabel(issue.quality),
-    codeSpan(issue.ruleKey),
+    ruleKeyMarkdown(issue.ruleKey, issue.helpUri),
   ];
   const where =
     issue.path === null ? null : codeSpan(location(issue.path, issue.line), MAX_PATH_CHARS);
@@ -417,8 +420,8 @@ function footer(
 }
 
 /**
- * scm.md §5.2: the summary note. Only fixed text, catalog keys, numbers, Qualor's own links and
- * code spans; at most {@link SUMMARY_MAX_BYTES} (the issue list is shortened first, then whole
+ * scm.md §5.2: the summary note. Only fixed text, catalog keys, numbers, Qualor's own links, rules'
+ * documentation links and code spans; at most {@link SUMMARY_MAX_BYTES} (the issue list is shortened first, then whole
  * lines are dropped from the end).
  */
 export function summaryBody(input: SummaryInput): string {
@@ -458,6 +461,8 @@ export interface InlineInput {
   severity: Severity;
   quality: Quality;
   ruleKey: string;
+  /** The rule's documentation link: the key links to it when it is a safe https URL. */
+  helpUri?: string | null;
   message: string;
   url: string | null;
 }
@@ -468,7 +473,7 @@ export function inlineBody(input: InlineInput): string {
   return linesWithinBytes(
     [
       issueMarker(input.issueId),
-      `**${severityLabel(input.severity)}** · ${qualityLabel(input.quality)} · ${codeSpan(input.ruleKey)}`,
+      `**${severityLabel(input.severity)}** · ${qualityLabel(input.quality)} · ${ruleKeyMarkdown(input.ruleKey, input.helpUri)}`,
       '',
       codeSpan(input.message, MAX_MESSAGE_CHARS),
       ...(link === null ? [] : ['', link]),

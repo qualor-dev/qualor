@@ -8,7 +8,16 @@ import {
   outsideCodeSpans,
   SUMMARY_FIXED_TEXT,
 } from '../../test/markdown-check';
-import { codeSpan, markerOf, plainValue, qualorLink, summaryMarker } from './markdown';
+import {
+  codeSpan,
+  markerOf,
+  MAX_RULE_LINK_CHARS,
+  plainValue,
+  qualorLink,
+  ruleDocUrl,
+  ruleKeyMarkdown,
+  summaryMarker,
+} from './markdown';
 import {
   commitStatusFor,
   INLINE_MAX_BYTES,
@@ -736,5 +745,153 @@ describe('adversarial corpus (scm.md §6)', () => {
       kind: 'summary',
       projectId: PROJECT,
     });
+  });
+});
+
+describe('rule documentation links in comments', () => {
+  const DOCS = 'https://eslint.org/docs/latest/rules/no-console';
+  const QUALOR_DOCS =
+    'https://github.com/qualor-dev/qualor-rules/blob/main/docs/rules/go/sql-injection.md';
+  const inline = (ruleKey: string, helpUri: string | null) =>
+    inlineBody({
+      issueId: ISSUE,
+      severity: 'high',
+      quality: 'security',
+      ruleKey,
+      helpUri,
+      message: 'm',
+      url: null,
+    });
+
+  it('links the rule key of the inline note, keeping its code span', () => {
+    expect(inline('qualor:go/sql-injection', QUALOR_DOCS).split('\n')[1]).toBe(
+      `**High** · security · [\` qualor:go/sql-injection \`](${QUALOR_DOCS})`,
+    );
+    const html = marked.parse(inline('eslint:no-console', DOCS), { async: false });
+    expect(html).toContain(`<a href="${DOCS}"><code>eslint:no-console</code></a>`);
+    // Without a link the note is what it always was.
+    expect(inline('eslint:no-console', null).split('\n')[1]).toBe(
+      '**High** · security · ` eslint:no-console `',
+    );
+  });
+
+  it('links the rule key of each issue of the summary', () => {
+    const body = summary({
+      topIssues: [
+        {
+          id: ISSUE,
+          severity: 'medium',
+          quality: 'maintainability',
+          ruleKey: 'eslint:no-console',
+          helpUri: DOCS,
+          path: null,
+          line: null,
+          message: 'plain',
+          url: null,
+        },
+      ],
+      topIssuesTotal: 1,
+    });
+    expect(body).toContain(
+      `1. 🟠 **Medium** · maintainability · [\` eslint:no-console \`](${DOCS})\\\n   \` plain \``,
+    );
+    const html = marked.parse(body, { async: false, gfm: true, breaks: false });
+    expect(html).toContain(`<a href="${DOCS}"><code>eslint:no-console</code></a><br>`);
+  });
+
+  it('shows only an https link without credentials, spaces or controls, of bounded length', () => {
+    for (const helpUri of [
+      'http://eslint.org/x',
+      'javascript:alert(1)',
+      'data:text/html,x',
+      '//eslint.org/x',
+      '/rules/x',
+      'not a url',
+      'https://u:p@eslint.org/x',
+      'https://eslint.org/a\nb',
+      'https://eslint.org/a b',
+      'https://eslint.org/‮x',
+      'https://eslint.org/​x',
+      `https://eslint.org/${'x'.repeat(MAX_RULE_LINK_CHARS)}`,
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(ruleDocUrl(helpUri), String(helpUri)).toBeNull();
+      expect(ruleKeyMarkdown('eslint:no-console', helpUri)).toBe('` eslint:no-console `');
+    }
+    expect(ruleDocUrl(DOCS)).toBe(DOCS);
+    // Within the bound as given, beyond it once encoded: the plain key.
+    const parens = `https://eslint.org/${'('.repeat(200)}`;
+    expect(ruleDocUrl(parens)).toBe(parens);
+    expect(ruleKeyMarkdown('k', parens)).toBe('` k `');
+  });
+
+  it('never links a key that could unbalance the link text', () => {
+    for (const key of ['a]b', 'a[b', 'a`b', 'a\\b']) {
+      expect(ruleKeyMarkdown(key, DOCS)).toBe(codeSpan(key));
+    }
+  });
+
+  it('encodes what could end the destination, so the link goes nowhere else', () => {
+    const md = ruleKeyMarkdown('k', 'https://docs.example/x)[evil](http://evil.example');
+    expect(md).toBe('[` k `](https://docs.example/x%29%5Bevil%5D%28http://evil.example)');
+    const html = marked.parse(md, { async: false });
+    expect(html.match(/<a /g)).toHaveLength(1);
+    expect(html).toContain('href="https://docs.example/x%29%5Bevil%5D%28http://evil.example"');
+  });
+
+  it.each(CORPUS)('keeps a hostile %s inert as a key and in a link', (_name, value) => {
+    // Without spaces too, so more of the corpus gets as far as a link.
+    const helpUri = `https://docs.example/${value.replace(/\s/g, '')}`;
+    const bodies = [
+      inline(value, helpUri),
+      inline('eslint:no-console', helpUri),
+      summary({
+        topIssues: Array.from({ length: 10 }, () => ({
+          id: ISSUE,
+          severity: 'high' as const,
+          quality: 'security' as const,
+          ruleKey: value,
+          helpUri,
+          path: value,
+          line: 7,
+          message: value,
+          url: `https://q.example/projects/${PROJECT}/issues/${ISSUE}`,
+        })),
+        topIssuesTotal: 10,
+      }),
+    ];
+    for (const [index, body] of bodies.entries()) {
+      const max = index < 2 ? INLINE_MAX_BYTES : SUMMARY_MAX_BYTES;
+      expect(Buffer.byteLength(body, 'utf8')).toBeLessThanOrEqual(max);
+      expect(body).not.toMatch(FORBIDDEN_ANYWHERE);
+      for (const line of body.split('\n')) expect(line, line).not.toMatch(/^\s*\//);
+      const html = marked.parse(body, { async: false, gfm: true, breaks: false });
+      for (const [, href] of html.matchAll(/<a [^>]*href="([^"]*)"/g)) {
+        expect(href, href).toMatch(/^https:\/\/(docs|q)\.example\//);
+      }
+      expect(html).not.toMatch(/<(img|script|style|details)\b/);
+    }
+  });
+
+  it('writes the same body for the same issues, so an unchanged summary is never edited', () => {
+    const input = {
+      topIssues: [
+        {
+          id: ISSUE,
+          severity: 'high' as const,
+          quality: 'security' as const,
+          ruleKey: 'qualor:go/sql-injection',
+          helpUri: QUALOR_DOCS,
+          path: 'a.go',
+          line: 3,
+          message: 'm',
+          url: null,
+        },
+      ],
+      topIssuesTotal: 1,
+    };
+    expect(summary(input)).toBe(summary(structuredClone(input)));
   });
 });

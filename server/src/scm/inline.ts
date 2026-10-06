@@ -215,6 +215,7 @@ export async function reconcileInline(ctx: InlineContext): Promise<InlineResult>
         severity: issue.severity as Severity,
         quality: issue.quality as Quality,
         ruleKey: issue.ruleKey,
+        helpUri: issue.helpUri,
         message: issue.message,
         url: ctx.issueUrl(issue.id),
       }),

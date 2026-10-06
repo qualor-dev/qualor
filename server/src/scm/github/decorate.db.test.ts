@@ -185,6 +185,35 @@ describe('GitHub decoration (github.md §5–§6)', () => {
     expect(runsOf(repo.id)).toHaveLength(1);
   });
 
+  it('links each rule to its live documentation in annotations, the check run and the summary', async () => {
+    const { project, repo } = await setup('gh/rule-links');
+    const dead = 'https://rules.sonarsource.com/javascript/RSPEC-1871';
+    const live =
+      'https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1871&rule_key=javascript%3AS1871';
+    const ingest = () =>
+      project.ingestOk(
+        pullRequestReport(7, HEAD, {
+          projectKey: project.key,
+          analysisDate: new Date(Date.UTC(2026, 8, 1, 10) + 86_400_000 * day++).toISOString(),
+          engines: [engine('eslint', [{ id: 'no-alert', helpUri: dead }])],
+          files: [file('src/a.ts', { newLines: [[1, 60]] })],
+          findings: [finding({ path: 'src/a.ts', line: 3, ruleId: 'no-alert' })],
+          github: { repositoryId: String(repo.id), checkout: 'head' },
+        }),
+      );
+    const analysisId = await ingest();
+    await runDecorations(h, githubDeps(h));
+    const run = newestRun(repo.id)!;
+    expect(run.annotations[0]?.['message']).toContain(`\n\nRule: ${live}`);
+    expect(run.summary).toContain(`[\` eslint:no-alert \`](${live})`);
+    expect(summaries(repo.id)[0]?.body).toContain(`[\` eslint:no-alert \`](${live})`);
+    // The same job again changes nothing: the bodies and the digest are the same.
+    fake.clearRequests();
+    await enqueueAgain(analysisId, repo.id);
+    await runDecorations(h, githubDeps(h));
+    expect(writes()).toEqual([]);
+  });
+
   it('replaces the check run when an issue is fixed, and edits the summary in place', async () => {
     const { repo, ingest } = await setup('gh/fix');
     await ingest([3, 4]);

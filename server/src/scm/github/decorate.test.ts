@@ -8,6 +8,7 @@ const issue = (overrides: Partial<DesiredInlineIssue>): DesiredInlineIssue => ({
   severity: 'medium',
   quality: 'maintainability',
   ruleKey: 'eslint:no-console',
+  helpUri: null,
   path: 'src/a.ts',
   line: 3,
   message: 'Problem',
