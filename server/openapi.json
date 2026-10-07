@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Qualor API",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "description": "Qualor REST API v0. Unstable: breaking changes are listed in CHANGELOG.md."
   },
   "components": {

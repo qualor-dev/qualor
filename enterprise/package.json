@@ -1,6 +1,6 @@
 {
   "name": "@qualor/enterprise",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "license": "LicenseRef-Qualor-Enterprise",
   "type": "module",

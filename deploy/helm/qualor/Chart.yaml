@@ -3,8 +3,8 @@ name: qualor
 description: Qualor server (API, web UI, worker), with its own PostgreSQL or yours
 type: application
 # The chart version equals the app version (pnpm release:version sets both).
-version: 0.6.0
-appVersion: '0.6.0'
+version: 0.7.0
+appVersion: '0.7.0'
 kubeVersion: '>=1.29.0-0'
 home: https://qualor.dev
 sources:

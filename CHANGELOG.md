@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-07
+
 ### Added
 
 - Qualor's own security rules: `qualor/scanner` runs qualor-rules 2026.10.3, 57 rules

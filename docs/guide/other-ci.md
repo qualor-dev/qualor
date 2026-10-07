@@ -25,7 +25,7 @@ qualor scan --project-key acme/payments-api \
 
 ```groovy
 pipeline {
-  agent { docker { image 'qualor/scanner:0.6'; args '--entrypoint=' } }
+  agent { docker { image 'qualor/scanner:0.7'; args '--entrypoint=' } }
   environment {
     QUALOR_URL   = 'https://qualor.example.com'
     QUALOR_TOKEN = credentials('qualor-token')           // a "Secret text" credential
@@ -51,7 +51,7 @@ pipeline {
 ## Bitbucket Pipelines
 
 ```yaml
-image: qualor/scanner:0.6
+image: qualor/scanner:0.7
 clone:
   depth: full
 pipelines:
@@ -85,14 +85,14 @@ it. The `qualor/scanner` image runs cppcheck only. See
 ```sh
 docker run --rm -v "$PWD":/src -w /src \
   -e QUALOR_URL -e QUALOR_TOKEN -e QUALOR_PROJECT_KEY \
-  qualor/scanner:0.6 scan
+  qualor/scanner:0.7 scan
 ```
 
 Or without a server: `--dry-run --output report.json.gz` builds the report and writes it to a file,
 and uploads nothing:
 
 ```sh
-docker run --rm -v "$PWD":/src -w /src qualor/scanner:0.6 scan --dry-run --output report.json.gz --project-key local/test
+docker run --rm -v "$PWD":/src -w /src qualor/scanner:0.7 scan --dry-run --output report.json.gz --project-key local/test
 ```
 
 `qualor validate` prints the resolved configuration, with every default filled in and the token
