@@ -706,7 +706,7 @@ not be able to write it.
 
 ## Security rules (Qualor)
 
-Qualor has its own security rules for JavaScript, TypeScript, Python, Java and Go: 49 rules that
+Qualor has its own security rules for JavaScript, TypeScript, Python, Java and Go: 57 rules that
 run in every edition, as the `qualor` engine on OpenGrep. The `qualor/scanner` image (and
 `qualor/scanner-dotnet`, which builds on it) includes them. There are three kinds:
 
@@ -717,7 +717,7 @@ run in every edition, as the `qualor` engine on OpenGrep. The `qualor/scanner` i
 - **Misuse rules** report unsafe settings and APIs whatever the data, such as disabled TLS
   certificate verification, an XML parser that resolves external entities or a broken cipher.
 - **Hotspots** point at code to review, where only you can tell whether it is safe: a weak hash, a
-  cookie without its flags, raw HTML in React.
+  cookie without its flags, raw HTML in React, a tar archive extracted without a safe filter.
 
 Each rule knows the frameworks and libraries in its row. **JavaScript and TypeScript** (the `js`
 rules apply to both):
@@ -726,7 +726,7 @@ rules apply to both):
 |---|---|---|
 | `qualor:js/sql-injection` | SQL built from request data | Express, Next.js, Fastify; `pg`, `mysql2`, Knex, Sequelize, Prisma, TypeORM |
 | `qualor:js/nosql-injection` | MongoDB filters, query operators or server-side JavaScript (`$where`) from request data | Express, Next.js, Fastify; MongoDB driver, Mongoose |
-| `qualor:js/command-injection` | an OS command or shell script built from request data | Express, Next.js, Fastify; `child_process` |
+| `qualor:js/command-injection` | an OS command or shell script built from request data (also after `cmd /c` and PowerShell's `-Command`, `-EncodedCommand` or `-File`) | Express, Next.js, Fastify; `child_process` |
 | `qualor:js/code-injection` | request data run as JavaScript (`eval`, `Function`, `node:vm`) | Express, Next.js, Fastify, Node.js `http` |
 | `qualor:js/template-injection` | request data used as a template, or as the whole data object of an EJS render | Express, Next.js, Fastify; EJS, Pug, Handlebars, Nunjucks, lodash `template` |
 | `qualor:js/path-traversal` | a file path built from request data | Express, Next.js, Fastify; `fs` |
@@ -735,25 +735,29 @@ rules apply to both):
 | `qualor:js/xss` | request data written into an HTML response without escaping | Express, Next.js, Fastify, Node.js `http` |
 | `qualor:js/regex-injection` | a regular expression built from request data (ReDoS) | Express, Next.js, Fastify, Node.js `http` |
 | `qualor:js/prototype-pollution` | nested property writes with keys from the request (`obj[a][b] = v`) | Express, Next.js, Fastify |
-| `qualor:js/tls-verification-disabled` | `rejectUnauthorized: false` or `NODE_TLS_REJECT_UNAUTHORIZED` set to `0` | `https`, `tls`, `http2`, axios, undici |
+| `qualor:js/tls-verification-disabled` | `rejectUnauthorized: false` (also in the TLS options of other client libraries), MongoDB's `tlsAllowInvalidCertificates` or `tlsInsecure`, or `NODE_TLS_REJECT_UNAUTHORIZED` set to `0` | `https`, `tls`, `http2`, axios, undici, node-postgres, knex, nodemailer, got, `ws`, MongoDB driver, Mongoose |
 | `qualor:js/react-dangerous-html` (hotspot) | raw HTML given to `dangerouslySetInnerHTML` | React, Next.js |
+| `qualor:js/insecure-cookie` (hotspot) | a cookie set without `Secure` or `HttpOnly` | Express, express-session, cookie-session, Fastify (`@fastify/cookie`), Next.js |
 
 **Python:**
 
 | Rule | Finds | Frameworks and libraries |
 |---|---|---|
 | `qualor:python/sql-injection` | SQL built from request data | Flask, Django (also `raw`, `extra`, `RawSQL`); DB-API, SQLAlchemy, psycopg |
+| `qualor:python/command-injection` | a shell command, or the program to run, built from request data | Flask, Django, FastAPI; `os`, `subprocess`, `asyncio` |
 | `qualor:python/code-injection` | request data run as Python (`eval`, `exec`, `compile`) | Flask, Django, FastAPI |
 | `qualor:python/unsafe-deserialization` | request data loaded with pickle, marshal, shelve, dill, jsonpickle or an unsafe YAML loader | Flask, Django, FastAPI |
 | `qualor:python/template-injection` | request data used as the source of a Jinja or Django template | Flask, Django, FastAPI; Jinja2 |
-| `qualor:python/path-traversal` | a file path built from request data | Flask, Django, FastAPI, Starlette; Werkzeug, `pathlib` |
+| `qualor:python/path-traversal` | a file path built from request data | Flask, Django, FastAPI, Starlette; Werkzeug, `pathlib`, `shelve`, `dbm` |
 | `qualor:python/ssrf` | a server-side request whose URL, scheme or host comes from the request | Flask, Django, FastAPI; requests, httpx, aiohttp, `urllib` |
-| `qualor:python/open-redirect` | a redirect whose target, scheme or host comes from the request | Flask, Django, FastAPI, Starlette |
+| `qualor:python/open-redirect` | a redirect or `Location` header whose target, scheme or host comes from the request (in middleware, also from the request's path) | Flask, Django (also `RedirectView`), FastAPI, Starlette |
 | `qualor:python/xss` | request data written into an HTML response without escaping, or marked safe | Flask, Django, FastAPI, Starlette; MarkupSafe, bleach, nh3 |
 | `qualor:python/xpath-injection` | an XPath expression built from request data | Flask, Django, FastAPI; lxml, ElementTree |
 | `qualor:python/regex-injection` | a regular expression built from request data (ReDoS) | Flask, Django, FastAPI |
 | `qualor:python/xxe` | an XML parser set to resolve external entities or to use the network | lxml, `xml.sax`, `xml.dom` |
-| `qualor:python/tls-verification-disabled` | `verify=False`, an unverified `ssl` context or `CERT_NONE` | requests, httpx, `ssl`, urllib3 |
+| `qualor:python/tls-verification-disabled` | `verify=False`, `ssl=False`, an unverified `ssl` context, `CERT_NONE`, a host name check turned off, or an SDK switch that skips certificate checks | requests, httpx, aiohttp, `ssl`, urllib3, boto3, Elasticsearch, OpenSearch, PyMongo, hvac |
+| `qualor:python/xxe-dtd-options` (hotspot) | an lxml parser that loads the document's DTD (`load_dtd`, `dtd_validation`, `attribute_defaults`) or lifts its size limits (`huge_tree`) | lxml |
+| `qualor:python/tar-extraction` (hotspot) | a tar archive extracted without a safe extraction filter or a check of each member | `tarfile`, `shutil.unpack_archive` |
 
 **Java:**
 
@@ -765,12 +769,16 @@ rules apply to both):
 | `qualor:java/template-injection` | request data used as template source (or as a Thymeleaf template name) | Servlets, Spring MVC, JAX-RS; FreeMarker, Velocity, Thymeleaf |
 | `qualor:java/unsafe-deserialization` | request data read with Java serialization or `XMLDecoder` | Servlets, Spring MVC, JAX-RS |
 | `qualor:java/ldap-injection` | an LDAP search filter built from request data | Servlets, Spring MVC, JAX-RS; JNDI, Spring LDAP |
+| `qualor:java/xpath-injection` | an XPath expression built from request data | Servlets, Spring MVC, JAX-RS; `javax.xml.xpath` |
+| `qualor:java/regex-injection` | a regular expression built from request data (ReDoS) | Servlets, Spring MVC, JAX-RS; `java.util.regex`, `String` regex methods |
 | `qualor:java/path-traversal` | a file path built from request data | Servlets, Spring MVC, JAX-RS |
 | `qualor:java/ssrf` | a server-side request whose URL, scheme or host comes from the request | Servlets, Spring MVC, JAX-RS; `java.net.URL`, `java.net.http`, Spring `RestTemplate`, `RestClient`, `WebClient` |
 | `qualor:java/open-redirect` | a redirect whose target comes from the request | Servlets, Spring MVC, JAX-RS |
 | `qualor:java/xss` | request data written into an HTML response without encoding | Servlets, Spring MVC, JAX-RS |
 | `qualor:java/xxe` | an XML parser used without disabling DTDs or external entities | JAXP (DOM, SAX, StAX, `TransformerFactory`, `SchemaFactory`), dom4j, JDOM |
 | `qualor:java/zip-slip` | an archive entry name used as an extraction path | `java.util.zip`, `java.util.jar`, Commons Compress |
+| `qualor:java/tls-verification-disabled` | a trust manager that accepts any certificate, or a host name verifier that accepts any host | `javax.net.ssl` |
+| `qualor:java/weak-cipher` | DES, Triple DES, RC2, RC4, Blowfish or RC5 (also in PBE names), ECB mode, RSA without padding, or `NullCipher` | `javax.crypto` |
 
 **Go:**
 
@@ -780,12 +788,12 @@ rules apply to both):
 | `qualor:go/command-injection` | a shell script or program name built from request data | `net/http`, Gin, Echo, chi, gorilla/mux; `os/exec` |
 | `qualor:go/template-injection` | request data parsed as Go template text | `net/http`, Gin, Echo, chi, gorilla/mux; `html/template`, `text/template` |
 | `qualor:go/path-traversal` | a file path built from request data | `net/http`, Gin, Echo, chi, gorilla/mux; `os` |
-| `qualor:go/ssrf` | a server-side request whose URL, scheme or host comes from the request | `net/http`, Gin, Echo, chi, gorilla/mux |
+| `qualor:go/ssrf` | a server-side request or reverse proxy whose URL, scheme or host comes from the request | `net/http`, Gin, Echo, chi, gorilla/mux; `net/http/httputil` |
 | `qualor:go/open-redirect` | a redirect whose target, scheme or host comes from the request | `net/http`, Gin, Echo, chi, gorilla/mux |
 | `qualor:go/xss` | request data written into an HTML response without escaping (also through `text/template` or `template.HTML`) | `net/http`, Gin, Echo, chi, gorilla/mux; `html/template`, `text/template`, bluemonday |
 | `qualor:go/zip-slip` | an archive entry name used as an extraction path | `archive/zip`, `archive/tar`, `os` |
 | `qualor:go/tls-verification-disabled` | `InsecureSkipVerify: true` | `crypto/tls`, `net/http` |
-| `qualor:go/weak-cipher` | DES, Triple DES or RC4 | `crypto/des`, `crypto/rc4` |
+| `qualor:go/weak-cipher` | DES, Triple DES or RC4, or an insecure TLS cipher suite in a `tls.Config` | `crypto/des`, `crypto/rc4`, `crypto/tls` |
 | `qualor:go/weak-hash` (hotspot) | MD5 or SHA-1 | `crypto/md5`, `crypto/sha1`, `crypto` |
 | `qualor:go/insecure-cookie` (hotspot) | a cookie set without `Secure` or `HttpOnly` | `net/http`, Gin, Echo |
 
@@ -797,7 +805,7 @@ documentation link opens it: on the issue page, in the rules list, and on the ru
 request and pull request comments.
 
 - The engine's version in a scan names the rules release, for example
-  `1.30.0 + qualor-rules 2026.10.1`.
+  `1.30.0 + qualor-rules 2026.10.2`.
 - Taint rules follow data **within one function of a file**. A value that passes through another
   function or another file is not followed yet.
 - Issues (from taint and misuse rules) are Security issues and count in the quality gate.

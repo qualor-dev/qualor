@@ -6,6 +6,44 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Qualor's own security rules: `qualor/scanner` runs qualor-rules 2026.10.2, 57 rules
+  (source-available under PolyForm Shield 1.0.0, not MIT), with eight new ones. Python: command
+  injection (`os`, `subprocess`, `asyncio` in Flask, Django and FastAPI). Java (Servlets, Spring
+  MVC, JAX-RS): XPath injection (`javax.xml.xpath`) and regex injection (`java.util.regex` and the
+  `String` regex methods), plus misuse rules for disabled TLS verification (trust managers that
+  accept any certificate, host name verifiers that accept any host) and broken ciphers (DES, Triple
+  DES, RC2, RC4, Blowfish, RC5, ECB mode, RSA without padding, `NullCipher`). New security hotspots:
+  cookies without `Secure` or `HttpOnly` in Node.js (Express, express-session, cookie-session,
+  Fastify, Next.js), tar archives extracted in Python without a safe extraction filter (`tarfile`,
+  `shutil.unpack_archive`), and lxml parsers that load the document's DTD or lift its size limits.
+
+### Changed
+
+- Qualor's security rules cover more code. Disabled TLS verification: in Node.js also the TLS
+  options of node-postgres, knex, nodemailer, got and `ws` clients and MongoDB's
+  `tlsAllowInvalidCertificates` and `tlsInsecure`; in Python also aiohttp's `ssl=False`, host name
+  checks turned off, the legacy `ssl.wrap_socket()` and the certificate switches of boto3,
+  Elasticsearch, OpenSearch, PyMongo and hvac. Go: the broken-cipher rule also reports insecure TLS
+  cipher suites in a `tls.Config`, and SSRF covers `net/http/httputil` reverse proxies. Python: open
+  redirects through `Location` headers, Django's `RedirectView` and the request path in middleware,
+  path traversal into `shelve` and `dbm` files. Node.js command injection follows `cmd /c` and
+  PowerShell's `-Command`, `-EncodedCommand` and `-File`. Java request rules also take Spring
+  `HttpEntity`, `RequestEntity` and `@RequestPart` parameters as request data, and Java's weak
+  ciphers include the PBE names written with mode and padding.
+- Qualor's JavaScript open redirect rule scans large bundled or minified files in seconds instead of
+  minutes.
+
+### Fixed
+
+- Qualor's Python security rules reported nothing in large Django modules: a module with many views
+  and Django imports lost every finding of the file. They now report them, and scan large files much
+  faster.
+- Fewer false positives from Qualor's security rules: XSS no longer reports the results of other
+  rules' sinks (Node.js, Java, Go), Django's `url_has_allowed_host_and_scheme()` and URL validators
+  before a Go redirect count as guards, and Go's path traversal skips test support code.
+
 ## [0.6.0] - 2026-10-06
 
 ### Added

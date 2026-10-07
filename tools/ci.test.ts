@@ -867,7 +867,11 @@ describe('the qualor rules pack (plan 6B-1)', () => {
    * The `opengrep` field of each qualor-rules release's manifest.json: the OpenGrep its rules are
    * tested with. Recorded here so that the check runs without downloading the pack.
    */
-  const PACK_OPENGREP: Record<string, string> = { '2026.10.0': '1.30.0', '2026.10.1': '1.30.0' };
+  const PACK_OPENGREP: Record<string, string> = {
+    '2026.10.0': '1.30.0',
+    '2026.10.1': '1.30.0',
+    '2026.10.2': '1.30.0',
+  };
 
   it('installs the OpenGrep the pinned pack is made for (bump OpenGrep only with a pack that names it)', () => {
     const pins = qualorRulesPins(script);
