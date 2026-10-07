@@ -8,7 +8,7 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
-- Qualor's own security rules: `qualor/scanner` runs qualor-rules 2026.10.2, 57 rules
+- Qualor's own security rules: `qualor/scanner` runs qualor-rules 2026.10.3, 57 rules
   (source-available under PolyForm Shield 1.0.0, not MIT), with eight new ones. Python: command
   injection (`os`, `subprocess`, `asyncio` in Flask, Django and FastAPI). Java (Servlets, Spring
   MVC, JAX-RS): XPath injection (`javax.xml.xpath`) and regex injection (`java.util.regex` and the
@@ -32,8 +32,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
   PowerShell's `-Command`, `-EncodedCommand` and `-File`. Java request rules also take Spring
   `HttpEntity`, `RequestEntity` and `@RequestPart` parameters as request data, and Java's weak
   ciphers include the PBE names written with mode and padding.
-- Qualor's JavaScript open redirect rule scans large bundled or minified files in seconds instead of
-  minutes.
+- Qualor's JavaScript TLS verification rule takes much less time on each file, and the JavaScript
+  open redirect rule scans large bundled or minified files in seconds instead of minutes.
 
 ### Fixed
 

@@ -805,7 +805,7 @@ documentation link opens it: on the issue page, in the rules list, and on the ru
 request and pull request comments.
 
 - The engine's version in a scan names the rules release, for example
-  `1.30.0 + qualor-rules 2026.10.2`.
+  `1.30.0 + qualor-rules 2026.10.3`.
 - Taint rules follow data **within one function of a file**. A value that passes through another
   function or another file is not followed yet.
 - Issues (from taint and misuse rules) are Security issues and count in the quality gate.

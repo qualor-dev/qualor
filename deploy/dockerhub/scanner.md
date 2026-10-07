@@ -92,7 +92,7 @@ clang-tidy, scan in the job that built the project, with your own clang-tidy and
   Semgrep or OpenGrep rules are bundled yet
   (`/opt/qualor/rules/semgrep` is empty): name your own rule files in `qualor.yml`, or that
   analyzer is skipped.
-- Qualor's own security rules, qualor-rules 2026.10.2 (PolyForm Shield 1.0.0, source-available),
+- Qualor's own security rules, qualor-rules 2026.10.3 (PolyForm Shield 1.0.0, source-available),
   in `/opt/qualor/rules/qualor`, run on the bundled OpenGrep: for JavaScript and TypeScript,
   Python, Java and Go, they follow HTTP request data into SQL, NoSQL, shell commands, code and
   template evaluation, file paths, LDAP and XPath queries, regular expressions, outgoing requests,

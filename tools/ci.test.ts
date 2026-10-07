@@ -871,6 +871,7 @@ describe('the qualor rules pack (plan 6B-1)', () => {
     '2026.10.0': '1.30.0',
     '2026.10.1': '1.30.0',
     '2026.10.2': '1.30.0',
+    '2026.10.3': '1.30.0',
   };
 
   it('installs the OpenGrep the pinned pack is made for (bump OpenGrep only with a pack that names it)', () => {
