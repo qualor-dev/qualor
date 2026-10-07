@@ -342,6 +342,14 @@
       "reason": "Request data run with exec(); both on the exec call (qualor/scanner 0.5.0 probe, 2026-10-06)."
     },
     {
+      "rules": ["qualor:python/command-injection", "ruff:S602"],
+      "reason": "Request data in a subprocess call with shell=True; both on the call when it fits on one line (qualor/scanner with qualor-rules 2026.10.2 probe, 2026-10-07)."
+    },
+    {
+      "rules": ["qualor:python/command-injection", "ruff:S605"],
+      "reason": "Request data in a command that a shell runs (os.system, os.popen, subprocess.getoutput); both on the call (qualor/scanner with qualor-rules 2026.10.2 probe, 2026-10-07)."
+    },
+    {
       "rules": ["qualor:python/unsafe-deserialization", "ruff:S301"],
       "reason": "Request data read with pickle; both on the loads/load call (qualor/scanner 0.5.0 probe, 2026-10-06)."
     },

@@ -43,6 +43,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - Fewer false positives from Qualor's security rules: XSS no longer reports the results of other
   rules' sinks (Node.js, Java, Go), Django's `url_has_allowed_host_and_scheme()` and URL validators
   before a Go redirect count as guards, and Go's path traversal skips test support code.
+- Qualor's Python command injection rule and Ruff's `S602` and `S605` for the same problem on the
+  same line now show as one issue (Qualor's, the other its duplicate).
 
 ## [0.6.0] - 2026-10-06
 

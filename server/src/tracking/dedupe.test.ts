@@ -132,6 +132,19 @@ describe('planDedupe (data-model.md §5.3)', () => {
         issue('b', 'ruff:S113', []),
       ]),
     ).toEqual([{ id: 'a', duplicateOf: 'q' }]);
+    // Ruff's shell rules S602 and S605 carry no CWE either.
+    expect(
+      planDedupe([
+        issue('a', 'ruff:S602', []),
+        issue('q', 'qualor:python/command-injection', [78]),
+      ]),
+    ).toEqual([{ id: 'a', duplicateOf: 'q' }]);
+    expect(
+      planDedupe([
+        issue('a', 'ruff:S605', []),
+        issue('q', 'qualor:python/command-injection', [78]),
+      ]),
+    ).toEqual([{ id: 'a', duplicateOf: 'q' }]);
     // JavaScript: the SonarJS hotspot and the project's own eslint-plugin-sonarjs finding.
     expect(
       planDedupe([

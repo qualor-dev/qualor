@@ -433,6 +433,8 @@ describe("Qualor's own rules paired with the other engines' (plan 6B)", () => {
     // Python: Ruff's rules carry no CWE (the 2026-10-06 merge request: S608, S307).
     ['qualor:python/sql-injection', [89], 'ruff:S608', []],
     ['qualor:python/code-injection', [94, 95], 'ruff:S307', []],
+    ['qualor:python/command-injection', [78], 'ruff:S602', []],
+    ['qualor:python/command-injection', [78], 'ruff:S605', []],
     ['qualor:python/unsafe-deserialization', [502], 'ruff:S301', []],
     ['qualor:python/tls-verification-disabled', [295], 'ruff:S501', []],
     // JavaScript: the SonarJS hotspots on the same sink (S2077, S4721).
@@ -465,6 +467,7 @@ describe("Qualor's own rules paired with the other engines' (plan 6B)", () => {
       ['qualor:js/sql-injection', [89], 'sonarjs:S5689'], // Express discloses its version
       ['qualor:java/open-redirect', [601], 'spotbugs:HRS_REQUEST_PARAMETER_TO_HTTP_HEADER'],
       ['qualor:python/sql-injection', [89], 'ruff:S307'], // a pair is per qualor rule
+      ['qualor:python/command-injection', [78], 'ruff:S604'], // shell=True outside subprocess
     ] as const) {
       expect(rulesEquivalent(rule(q, [...qCwe]), rule(other)), `${q} ~ ${other}`).toBe(false);
     }
