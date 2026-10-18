@@ -40,7 +40,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/client": "2.2.0",
     "@readme/openapi-parser": "^9.0.0",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/pg": "^8.23.1",
