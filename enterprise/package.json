@@ -20,7 +20,7 @@
     "@types/pdfkit": "^0.17.6",
     "drizzle-orm": "^0.45.3",
     "esbuild": "^0.28.2",
-    "fastify": "^5.12.5",
+    "fastify": "^5.12.6",
     "fastify-type-provider-zod": "^7.0.0",
     "pdfjs-dist": "^6.4.299"
   }
