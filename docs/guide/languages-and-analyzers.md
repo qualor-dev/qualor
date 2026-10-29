@@ -1148,6 +1148,8 @@ Test files are recognised by `tests.include`. By default these are `*.test.*`, `
 `__tests__/`, `src/test/`, `*Tests/`, `test_*.py`, `*_test.py`, `conftest.py`, `*Test.php`,
 `src/androidTest/`, `src/*Test/`, `*_spec.rb`, `*_test.rb`, `spec/**/*.rb`, `test/**/*.rb` and
 `*_test.go`. Test code does not count in lines of code, complexity, duplication or coverage.
+Some rules apply to main code only, such as the limit on nested functions: they report nothing in
+test files. A quality profile can change a rule's scope.
 
 `src/*Test/` is meant for Kotlin Multiplatform's `commonTest` and `jvmTest`, but it applies to every
 language: a Gradle `src/integrationTest` or `src/functionalTest` is test code too.

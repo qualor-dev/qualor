@@ -11,6 +11,19 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - A rule in a report can carry a scope, `main`, `test` or `all`. The sonarjs rules get theirs from
   SonarSource's rule metadata, for example the limit on nested functions (S2004) is `main`. A report
   without a scope means `all`, and the report schema version stays 1.
+- Rule scope: a rule applies to main code, test code or all code, and reports nothing in the other
+  files. The sonarjs rules take theirs from SonarSource's rule metadata. A quality profile can
+  change a rule's scope, and **Rules** and the profile page show it. A child profile inherits it.
+- API: a rule has a `scope`. A profile rule has the effective `scope` and `scopeOverride`, this
+  profile's own setting (null when it has none). `PUT /quality-profiles/{id}/rules/{ruleKey}` takes
+  `scope` (`main`, `test`, `all`, or null to clear it), and `active` is optional when `scope` is
+  given. The analysis warning `FINDINGS_FILTERED_BY_SCOPE` counts the findings dropped for their
+  scope.
+
+### Changed
+
+- After the upgrade, the next analysis closes the issues that main-code rules raised in test files,
+  so open issue counts can fall.
 
 ### Changed
 

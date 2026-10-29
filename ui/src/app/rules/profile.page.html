@@ -108,6 +108,7 @@
               <th scope="col" i18n="@@profile.col.rule">Rule</th>
               <th scope="col" i18n="@@profile.col.active">Active</th>
               <th scope="col" i18n="@@profile.col.severity">Severity</th>
+              <th scope="col" i18n="@@profile.col.scope">Scope</th>
               <th scope="col" i18n="@@profile.col.source">Setting</th>
             </tr>
           </thead>
@@ -152,6 +153,29 @@
                     {{ r.severityOverride ?? r.rule.defaultSeverity | label: 'severity' }}
                   }
                 </td>
+                <td class="scope-cell">
+                  @if (editable()) {
+                    <select
+                      [attr.aria-label]="scopeLabel(r)"
+                      [attr.aria-disabled]="busy() ? true : null"
+                      (change)="setRuleScope(r, $event)"
+                    >
+                      <option value="" [selected]="!r.scopeOverride" i18n="@@profile.scopeDefault">
+                        Rule's default
+                      </option>
+                      @for (s of ruleScopes; track s) {
+                        <option [value]="s" [selected]="s === r.scopeOverride">
+                          {{ s | label: 'scope' }}
+                        </option>
+                      }
+                    </select>
+                    @if (!r.scopeOverride) {
+                      <span class="muted scope-now">{{ r.scope | label: 'scope' }}</span>
+                    }
+                  } @else {
+                    {{ r.scope | label: 'scope' }}
+                  }
+                </td>
                 <td>
                   <div class="rule-setting">
                     <span>{{ sourceLabel(r.source) }}</span>
@@ -172,7 +196,7 @@
             } @empty {
               @if (list.loaded()) {
                 <tr>
-                  <td colspan="4" class="muted" i18n="@@profile.empty">No rule matches.</td>
+                  <td colspan="5" class="muted" i18n="@@profile.empty">No rule matches.</td>
                 </tr>
               }
             }

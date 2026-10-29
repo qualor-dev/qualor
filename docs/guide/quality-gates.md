@@ -120,6 +120,25 @@ or `.gitleaks.toml`. The profile filters and re-grades what the analyzers report
 **Rules** lists every rule the organisation has met, with its engine, language, quality and default
 severity.
 
+### Rule scope: main code, test code or all code
+
+Every rule has a **scope**. A rule with the scope **Main code** reports nothing in test files, a
+rule with **Test code** reports nothing in main files, and **All code** reports everywhere. **Rules**
+shows each rule's scope. A rule is **All code** unless its analyzer says otherwise. The ESLint
+rules from SonarJS bring their own.
+
+- To change a rule's scope, open the profile (an organization admin can), then pick **Main code**,
+  **Test code** or **All code** in the rule's **Scope** column. **Rule's default** removes the
+  profile's own scope again.
+- A child profile inherits the scope its parent sets, and can set its own.
+- Setting a scope on a parent can also switch the rule on in a child whose setting for rules it
+  does not set is `activate`, when the child has no row for that rule.
+- Test files are the ones `tests.include` matches ([Languages and
+  analyzers](./languages-and-analyzers.md)). A finding without a file, or in a file the report does
+  not list, is never dropped for its scope.
+- When an analysis drops findings for their scope, it warns, for example "3 finding(s) were dropped
+  because their rule does not apply to test code" (or "… to main code").
+
 ## Severities and qualities
 
 | Severity | Meaning |

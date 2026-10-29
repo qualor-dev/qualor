@@ -505,6 +505,70 @@ describe('ProfilePage', () => {
     expect(root.textContent).toContain('A built-in profile cannot change.');
   });
 
+  it("shows a rule's scope in the rules list", async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/rules', {
+      body: page([
+        { ...rule('eslint:a', null), scope: 'main' },
+        { ...rule('eslint:b', null), scope: 'test' },
+        rule('eslint:c', null),
+      ]),
+    });
+    const fixture = TestBed.createComponent(RulesPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const headers = [...root.querySelectorAll('thead th')].map((h) => h.textContent?.trim());
+    expect(headers).toContain('Scope');
+    expect(
+      [...root.querySelectorAll('tbody td.scope-cell')].map((c) => c.textContent?.trim()),
+    ).toEqual(['Main code', 'Test code', 'All code']);
+  });
+
+  it("sets and resets a profile's scope for a rule, for an admin", async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/quality-profiles/p2', { body: profile('p2', 'Payments') });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', {
+      body: page([profileRule('eslint:eqeqeq')]),
+    });
+    const url = '/api/v0/quality-profiles/p2/rules/eslint%3Aeqeqeq';
+    server.on('PUT', url, {
+      body: profileRule('eslint:eqeqeq', {
+        scope: 'main',
+        scopeOverride: 'main',
+        source: 'profile',
+      }),
+    });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const select = 'select[aria-label="Scope: eslint:eqeqeq"]';
+    expect(
+      [...root.querySelectorAll(select + ' option')].map((o) => o.textContent?.trim()),
+    ).toEqual(["Rule's default", 'Main code', 'Test code', 'All code']);
+    type(root, select, 'main', 'change');
+    await settle(fixture);
+    expect(server.requestsTo('PUT', url)[0]?.body).toEqual({ scope: 'main' });
+    expect(root.querySelector<HTMLSelectElement>(select)?.value).toBe('main');
+    type(root, select, '', 'change');
+    await settle(fixture);
+    expect(server.requestsTo('PUT', url)[1]?.body).toEqual({ scope: null });
+  });
+
+  it("shows a profile rule's effective scope and no control to a member", async () => {
+    const server = setup(false);
+    server.on('GET', '/api/v0/quality-profiles/p2', { body: profile('p2', 'Payments') });
+    server.on('GET', '/api/v0/quality-profiles/p2/rules', {
+      body: page([profileRule('eslint:a', { scope: 'test', scopeOverride: 'test' })]),
+    });
+    const fixture = TestBed.createComponent(ProfilePage);
+    fixture.componentRef.setInput('profileId', 'p2');
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('tbody select')).toBeNull();
+    expect(root.querySelector('tbody td.scope-cell')?.textContent?.trim()).toBe('Test code');
+  });
+
   it('keeps a custom profile read-only for a member', async () => {
     const server = setup(false);
     server.on('GET', '/api/v0/quality-profiles/p2', { body: profile('p2', 'Payments') });

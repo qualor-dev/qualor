@@ -68,6 +68,7 @@
             <th scope="col" i18n="@@rules.col.quality">Software quality</th>
             <th scope="col" i18n="@@rules.col.severity">Default severity</th>
             <th scope="col" i18n="@@rules.col.languages">Languages</th>
+            <th scope="col" i18n="@@rules.col.scope">Scope</th>
           </tr>
         </thead>
         <tbody>
@@ -109,11 +110,12 @@
                   }
                 </div>
               </td>
+              <td class="nowrap scope-cell">{{ rule.scope | label: 'scope' }}</td>
             </tr>
           } @empty {
             @if (list.loaded()) {
               <tr>
-                <td colspan="4" class="muted" i18n="@@rules.empty">
+                <td colspan="5" class="muted" i18n="@@rules.empty">
                   No rule matches. Rules appear once an analysis reports them.
                 </td>
               </tr>

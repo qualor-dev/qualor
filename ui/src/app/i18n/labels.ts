@@ -21,7 +21,8 @@ export type LabelKind =
   | 'ssoProtocol'
   | 'engine'
   | 'licenseGroup'
-  | 'verdict';
+  | 'verdict'
+  | 'scope';
 
 const LABELS: Record<LabelKind, Record<string, string>> = {
   severity: {
@@ -125,6 +126,12 @@ const LABELS: Record<LabelKind, Record<string, string>> = {
     'strong-copyleft': $localize`:@@label.licenseGroup.strongCopyleft:Strong copyleft`,
     'weak-copyleft': $localize`:@@label.licenseGroup.weakCopyleft:Weak copyleft`,
     'non-commercial-or-source-available': $localize`:@@label.licenseGroup.nonCommercial:Non-commercial or source-available`,
+  },
+  /** The code a rule reports on (rule scope, 0.13). */
+  scope: {
+    main: $localize`:@@label.scope.main:Main code`,
+    test: $localize`:@@label.scope.test:Test code`,
+    all: $localize`:@@label.scope.all:All code`,
   },
   /** The organisation licence policy's verdict on a dependency (6M §8). */
   verdict: {

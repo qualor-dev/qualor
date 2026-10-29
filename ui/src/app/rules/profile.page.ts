@@ -29,7 +29,9 @@ import { type Crumb, PageHeader } from '../shared/page-header';
 
 export type ProfileRule = ItemOf<'/api/v0/quality-profiles/{id}/rules'>;
 type Severity = NonNullable<ProfileRule['severityOverride']>;
+type RuleScope = NonNullable<ProfileRule['scopeOverride']>;
 type Scope = 'default' | 'all';
+const RULE_SCOPES: readonly RuleScope[] = ['main', 'test', 'all'];
 
 interface RuleQuery {
   profileId: string;
@@ -145,6 +147,7 @@ export class ProfilePage {
   /** The last change's result, for the live region. */
   protected readonly announcement = signal<string | null>(null);
   protected readonly busy = signal(false);
+  protected readonly ruleScopes = RULE_SCOPES;
   protected readonly severities = SEVERITIES;
   protected readonly qMax = RULE_Q_MAX_LENGTH;
   protected readonly keyMax = RULE_KEY_MAX_LENGTH;
@@ -189,6 +192,10 @@ export class ProfilePage {
     return $localize`:@@profile.severityLabel:Severity: ${rule.rule.key}:key:`;
   }
 
+  protected scopeLabel(rule: ProfileRule): string {
+    return $localize`:@@profile.scopeLabel:Scope: ${rule.rule.key}:key:`;
+  }
+
   protected search(event: Event): void {
     event.preventDefault();
     this.submitted.set(ruleSearch(this.q()));
@@ -226,6 +233,19 @@ export class ProfilePage {
     );
     if (!saved && event.target instanceof HTMLSelectElement) {
       event.target.value = rule.severityOverride ?? '';
+    }
+  }
+
+  protected async setRuleScope(rule: ProfileRule, event: Event): Promise<void> {
+    const value = inputValue(event);
+    const scope = RULE_SCOPES.find((s) => s === value) ?? null;
+    const saved = await this.put(rule.rule.key, { scope }, () =>
+      scope
+        ? $localize`:@@profile.changed.scope:Scope of ${rule.rule.key}:key: set to ${label('scope', scope)}:scope:.`
+        : $localize`:@@profile.changed.scopeDefault:${rule.rule.key}:key: has its rule's default scope again.`,
+    );
+    if (!saved && event.target instanceof HTMLSelectElement) {
+      event.target.value = rule.scopeOverride ?? '';
     }
   }
 
@@ -365,7 +385,7 @@ export class ProfilePage {
 
   private async put(
     key: string,
-    body: { active: boolean; severityOverride: Severity | null },
+    body: { active: boolean; severityOverride: Severity | null } | { scope: RuleScope | null },
     announce: () => string,
   ): Promise<boolean> {
     return this.run(async (current) => {
