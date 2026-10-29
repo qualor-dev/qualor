@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { BUSINESS_FEATURES, ENTERPRISE_FEATURES, testPayload } from '../../../test/license';
+import { testPayload } from '../../../test/license';
 import { DAY_MS, licenseState } from '../../license/state';
-import { licenseAlertBucket, licensePlan } from './license-alerts';
+import { licenseAlertBucket } from './license-alerts';
 
 const NOW = new Date('2026-10-13T12:00:00.000Z');
 /** A valid licence that expires `ms` after NOW. */
@@ -37,11 +37,5 @@ describe('licence alert buckets (E1 spec, Alerts)', () => {
     expect(
       licenseAlertBucket(licenseState({ ok: false, reason: 'bad-signature' }, NOW), NOW),
     ).toBeNull();
-  });
-
-  it('names the plan from the features: Enterprise when it lists sso.multi, audit-log.stream or scim', () => {
-    expect(licensePlan(BUSINESS_FEATURES)).toBe('Business');
-    expect(licensePlan(ENTERPRISE_FEATURES)).toBe('Enterprise');
-    expect(licensePlan(['scim'])).toBe('Enterprise');
   });
 });

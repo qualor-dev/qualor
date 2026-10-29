@@ -7,6 +7,7 @@ import { actorOf } from '../audit/recorder';
 import { requireInstanceAdmin } from '../auth/access';
 import { instanceSettings } from '../db/schema';
 import { conflict, ProblemError } from '../http/problem';
+import { licensePlan } from '../license/plan';
 import { INVALID_REASON_TEXT } from '../license/reasons';
 import {
   LICENSE_SETTING_KEY,
@@ -54,6 +55,10 @@ const statusSchema = z.object({
       features: z.array(z.string()),
       /** Signed with a `test-` key id: never accepted by a release build. */
       test: z.boolean(),
+      /** A trial key: it has no grace period, so `graceEndsAt` equals `expires`. */
+      trial: z.boolean(),
+      /** The plan the features make. */
+      plan: z.enum(['Business', 'Enterprise']),
     })
     .nullable(),
   expiresSoon: z.boolean(),
@@ -87,6 +92,8 @@ function licenseDto(state: LicenseState): Status['license'] {
     graceEndsAt: state.graceEndsAt.toISOString(),
     features: [...state.license.features],
     test: state.kid.startsWith('test-'),
+    trial: state.license.trial === true,
+    plan: licensePlan(state.license.features),
   };
 }
 
@@ -199,9 +206,16 @@ export const licenseRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
           { userId: principal.user.id, reason: 'expired' },
           'licence key upload refused',
         );
-        throw new ProblemError(422, 'LICENSE_EXPIRED', 'This licence is past its grace period', {
-          errors: [{ path: 'body.key', message: 'This licence has expired' }],
-        });
+        throw new ProblemError(
+          422,
+          'LICENSE_EXPIRED',
+          verification.license.trial === true
+            ? 'This trial key has expired.'
+            : 'This licence is past its grace period',
+          {
+            errors: [{ path: 'body.key', message: 'This licence has expired' }],
+          },
+        );
       }
       const value: StoredLicense = {
         key,

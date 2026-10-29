@@ -35,6 +35,8 @@ const ACME = {
   graceEndsAt: '2027-10-15T00:00:00.000Z',
   features: ['llm.fix-quota'],
   test: false,
+  trial: false,
+  plan: 'Business' as const,
 };
 
 const ACTIVE_UPLOADED: LicenseStatus = {

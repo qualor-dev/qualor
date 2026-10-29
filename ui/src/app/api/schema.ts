@@ -11396,6 +11396,9 @@ export interface paths {
                                 graceEndsAt: string;
                                 features: string[];
                                 test: boolean;
+                                trial: boolean;
+                                /** @enum {string} */
+                                plan: "Business" | "Enterprise";
                             } | null;
                             expiresSoon: boolean;
                             restartRequired: boolean;
@@ -11469,6 +11472,9 @@ export interface paths {
                                 graceEndsAt: string;
                                 features: string[];
                                 test: boolean;
+                                trial: boolean;
+                                /** @enum {string} */
+                                plan: "Business" | "Enterprise";
                             } | null;
                             expiresSoon: boolean;
                             restartRequired: boolean;
@@ -11563,6 +11569,9 @@ export interface paths {
                                 graceEndsAt: string;
                                 features: string[];
                                 test: boolean;
+                                trial: boolean;
+                                /** @enum {string} */
+                                plan: "Business" | "Enterprise";
                             } | null;
                             expiresSoon: boolean;
                             restartRequired: boolean;

@@ -23890,6 +23890,16 @@
                             },
                             "test": {
                               "type": "boolean"
+                            },
+                            "trial": {
+                              "type": "boolean"
+                            },
+                            "plan": {
+                              "type": "string",
+                              "enum": [
+                                "Business",
+                                "Enterprise"
+                              ]
                             }
                           },
                           "required": [
@@ -23900,7 +23910,9 @@
                             "expires",
                             "graceEndsAt",
                             "features",
-                            "test"
+                            "test",
+                            "trial",
+                            "plan"
                           ],
                           "additionalProperties": false
                         },
@@ -24113,6 +24125,16 @@
                             },
                             "test": {
                               "type": "boolean"
+                            },
+                            "trial": {
+                              "type": "boolean"
+                            },
+                            "plan": {
+                              "type": "string",
+                              "enum": [
+                                "Business",
+                                "Enterprise"
+                              ]
                             }
                           },
                           "required": [
@@ -24123,7 +24145,9 @@
                             "expires",
                             "graceEndsAt",
                             "features",
-                            "test"
+                            "test",
+                            "trial",
+                            "plan"
                           ],
                           "additionalProperties": false
                         },
@@ -24344,6 +24368,16 @@
                             },
                             "test": {
                               "type": "boolean"
+                            },
+                            "trial": {
+                              "type": "boolean"
+                            },
+                            "plan": {
+                              "type": "string",
+                              "enum": [
+                                "Business",
+                                "Enterprise"
+                              ]
                             }
                           },
                           "required": [
@@ -24354,7 +24388,9 @@
                             "expires",
                             "graceEndsAt",
                             "features",
-                            "test"
+                            "test",
+                            "trial",
+                            "plan"
                           ],
                           "additionalProperties": false
                         },

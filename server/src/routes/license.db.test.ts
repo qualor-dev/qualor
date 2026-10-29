@@ -11,6 +11,8 @@ import {
   type TestContext,
 } from '../../test/app';
 import {
+  BUSINESS_FEATURES,
+  ENTERPRISE_FEATURES,
   signTest,
   T0,
   testPayload,
@@ -264,8 +266,63 @@ describe('the licence API (enterprise.md §9)', () => {
     );
     const res = await put(ctx, admin, key);
     expect(res.statusCode).toBe(422);
-    expect(res.json()).toMatchObject({ code: 'LICENSE_EXPIRED', errors: [{ path: 'body.key' }] });
+    expect(res.json()).toMatchObject({
+      code: 'LICENSE_EXPIRED',
+      title: 'This licence is past its grace period',
+      errors: [{ path: 'body.key' }],
+    });
     expect(await storedRows(ctx)).toHaveLength(0);
+  });
+
+  it('says trial and plan: a trial Enterprise key has no grace, a paid Business key has', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const get = async (payload: ReturnType<typeof testPayload>) => {
+      const key = signTest(signer, payload);
+      const local = await context({
+        source: 'environment',
+        keyHash: keyHash(key),
+        verification: { ok: true, kid: signer.kid, license: payload },
+      });
+      try {
+        const admin = await login(local, 'admin', ADMIN_PASSWORD);
+        const res = await local.app.inject({
+          method: 'GET',
+          url: '/api/v0/license',
+          headers: admin.headers,
+        });
+        expect(res.statusCode, res.body).toBe(200);
+        return res.json<{ license: Record<string, unknown> }>().license;
+      } finally {
+        await local.close();
+      }
+    };
+    ctx = await context();
+    const trial = await get(
+      testPayload({
+        trial: true,
+        features: [...ENTERPRISE_FEATURES],
+        expires: new Date(T0.getTime() + 30 * day).toISOString(),
+      }),
+    );
+    expect(trial).toMatchObject({ trial: true, plan: 'Enterprise' });
+    expect(trial.graceEndsAt).toBe(trial.expires);
+    const paid = await get(testPayload({ features: [...BUSINESS_FEATURES] }));
+    expect(paid).toMatchObject({ trial: false, plan: 'Business' });
+  });
+
+  it('titles an expired trial key as a trial key, with no grace period', async () => {
+    ctx = await context();
+    const admin = await login(ctx, 'admin', ADMIN_PASSWORD);
+    const key = signTest(
+      signer,
+      testPayload({ trial: true, issued: '2024-01-01T00:00:00Z', expires: '2025-01-01T00:00:00Z' }),
+    );
+    const res = await put(ctx, admin, key);
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      code: 'LICENSE_EXPIRED',
+      title: 'This trial key has expired.',
+    });
   });
 
   it('refuses a body over 16 KiB, and a much larger one with 413', async () => {

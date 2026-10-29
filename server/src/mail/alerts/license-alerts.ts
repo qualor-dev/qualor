@@ -6,6 +6,7 @@ import { uuidv7 } from '../../db/ids';
 import { LOCKS } from '../../db/locks';
 import { instanceSettings } from '../../db/schema';
 import type { Edition } from '../../license/edition';
+import { licensePlan } from '../../license/plan';
 import { DAY_MS, graceEndsAt, type LicenseState } from '../../license/state';
 import type { JobHandlers } from '../../queue/worker';
 import { instanceSetting } from '../../settings';
@@ -44,13 +45,6 @@ export function licenseAlertBucket(state: LicenseState, now: Date): LicenseAlert
   if (days > 7) return '30d';
   if (days > 1) return '7d';
   return '1d';
-}
-
-const ENTERPRISE_ONLY = ['sso.multi', 'audit-log.stream', 'scim'];
-
-/** The plan a key's features make (docs/guide/enterprise.md "What a licence adds"). */
-export function licensePlan(features: readonly string[]): 'Business' | 'Enterprise' {
-  return ENTERPRISE_ONLY.some((f) => features.includes(f)) ? 'Enterprise' : 'Business';
 }
 
 export interface LicenseAlertDeps extends MailDeps {
