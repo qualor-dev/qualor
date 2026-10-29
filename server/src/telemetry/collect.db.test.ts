@@ -8,10 +8,11 @@ import { DEFAULT_LLM_SETTINGS, DISABLED_ORGANIZATION, writeLlmSettings } from '.
 import { VERSION } from '../index';
 import {
   AI_USE_NOT_COUNTED,
+  USAGE_NOT_COUNTED,
   collectTelemetry,
   type CollectDeps,
   type TelemetryPayload,
-  type TelemetryPayloadV2,
+  type TelemetryPayloadV3,
 } from './collect';
 import { installationId, TELEMETRY_SETTING_KEY } from './installation-id';
 
@@ -34,9 +35,9 @@ function fieldsOf(value: unknown, prefix = ''): string[] {
     .sort();
 }
 
-/** The report as schema 2, which it is whenever the server could count its AI use. */
-function schemaTwo(payload: TelemetryPayload): TelemetryPayloadV2 {
-  if (payload.schema !== 2) throw new Error(`a report of schema ${payload.schema}`);
+/** The report as schema 3, which it is whenever the server could count everything. */
+function schemaThree(payload: TelemetryPayload): TelemetryPayloadV3 {
+  if (payload.schema !== 3) throw new Error(`a report of schema ${payload.schema}`);
   return payload;
 }
 
@@ -96,7 +97,7 @@ describe('telemetry payload (telemetry.md)', () => {
       dockerEnvExists: false,
     });
     expect(payload).toMatchObject({
-      schema: 2,
+      schema: 3,
       installationId: id,
       version: VERSION,
       edition: 'community',
@@ -105,7 +106,17 @@ describe('telemetry payload (telemetry.md)', () => {
       languages: ['java', 'typescript'],
       engines: ['semgrep'],
       scm: [],
-      features: { sso: false, scim: false, aiAssistant: false, aiReview: false },
+      features: {
+        sso: false,
+        scim: false,
+        aiAssistant: false,
+        aiReview: false,
+        autoFix: false,
+        mcp: false,
+        chat: false,
+        email: false,
+        licensePolicy: false,
+      },
       aiReview: { provider: 'none', organizations: 0, projects: 0 },
       assistant30d: { explain: 0, triage: 0, fix: 0 },
     });
@@ -160,7 +171,7 @@ describe('telemetry payload (telemetry.md)', () => {
       provider,
       organizations: { [org!.id]: { ...DISABLED_ORGANIZATION, enabled: true } },
     });
-    const payload = schemaTwo(await collect());
+    const payload = schemaThree(await collect());
     expect(payload.features.aiAssistant).toBe(true);
     // The provider is named by its kind and API alone; AI review is not switched on.
     expect(payload.features.aiReview).toBe(false);
@@ -174,7 +185,7 @@ describe('telemetry payload (telemetry.md)', () => {
   });
 
   it('sends schema 1, every schema-1 field intact, on a day it cannot count its AI use', async () => {
-    const whole = schemaTwo(await collect());
+    const whole = schemaThree(await collect());
     const debug = vi.fn();
     // A query of each collector fails: AI review's (review_replies), then the assistant's.
     for (const table of ['review_replies', 'llm_requests']) {
@@ -204,12 +215,51 @@ describe('telemetry payload (telemetry.md)', () => {
         },
       });
     }
-    // Once for each report, at debug, with the error's class and nothing of its text.
-    expect(debug.mock.calls).toEqual([
+    // Once for each report, at debug, with the error's class and nothing of its text. The
+    // assistant's table is also the auto-fix count's, so that report's usage fails as well.
+    const logged = (message: string) => debug.mock.calls.filter((c) => c[1] === message);
+    expect(logged(AI_USE_NOT_COUNTED)).toEqual([
       [{ component: 'telemetry', errorClass: expect.any(String) }, AI_USE_NOT_COUNTED],
       [{ component: 'telemetry', errorClass: expect.any(String) }, AI_USE_NOT_COUNTED],
     ]);
-    expect(schemaTwo(await collect()).aiReview).toEqual(whole.aiReview);
+    expect(logged(USAGE_NOT_COUNTED)).toHaveLength(1);
+    expect(schemaThree(await collect()).aiReview).toEqual(whole.aiReview);
+  });
+
+  it('sends schema 2, every schema-2 field intact, on a day it cannot count its feature use', async () => {
+    const whole = schemaThree(await collect());
+    const debug = vi.fn();
+    await h.ctx.db.execute(sql`ALTER TABLE mail_messages RENAME TO mail_messages_away`);
+    let payload: TelemetryPayload;
+    try {
+      payload = await collect({ logger: { debug } });
+    } finally {
+      await h.ctx.db.execute(sql`ALTER TABLE mail_messages_away RENAME TO mail_messages`);
+    }
+    // The blocks are left out, never zeroed; what schema 2 has is the same.
+    expect(payload).toEqual({
+      schema: 2,
+      installationId: whole.installationId,
+      version: whole.version,
+      edition: whole.edition,
+      platform: whole.platform,
+      database: whole.database,
+      counts: whole.counts,
+      languages: whole.languages,
+      engines: whole.engines,
+      scm: whole.scm,
+      aiReview: whole.aiReview,
+      assistant30d: whole.assistant30d,
+      features: {
+        sso: whole.features.sso,
+        scim: whole.features.scim,
+        aiAssistant: whole.features.aiAssistant,
+        aiReview: whole.features.aiReview,
+      },
+    });
+    expect(debug.mock.calls).toEqual([
+      [{ component: 'telemetry', errorClass: expect.any(String) }, USAGE_NOT_COUNTED],
+    ]);
   });
 
   it("the guide's example names every field the report has, and no other", async () => {

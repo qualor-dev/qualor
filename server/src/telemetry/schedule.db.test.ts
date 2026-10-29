@@ -76,7 +76,7 @@ describe('telemetry schedule (telemetry.md)', () => {
     });
     await runUntilIdle(database.db, handlers, silent);
     expect(received).toHaveLength(1);
-    expect(received[0]).toMatchObject({ schema: 2, edition: 'community', database: 'external' });
+    expect(received[0]).toMatchObject({ schema: 3, edition: 'community', database: 'external' });
     const next = (await queued()).rows;
     expect(next).toHaveLength(1);
     expect(next[0]!.secs).toBeGreaterThan(86_000);

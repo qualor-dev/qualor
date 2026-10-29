@@ -28,7 +28,7 @@ import {
 } from '../llm/settings';
 import { SCM_TOKEN_AAD } from '../scm/connections';
 import { collectAiReviewUsage, collectAssistantUsage } from './ai-review';
-import { collectTelemetry, type TelemetryPayloadV2 } from './collect';
+import { collectTelemetry, type TelemetryPayloadV3 } from './collect';
 import { installationId } from './installation-id';
 
 /** Every name, host and model of this test: none of them may reach the report (Review Focus 2). */
@@ -51,8 +51,8 @@ describe('telemetry schema 2: AI review and the assistant (telemetry.md, R39)', 
     return note;
   };
 
-  /** The report, which is schema 2 whenever the server could count its AI use. */
-  const collect = async (): Promise<TelemetryPayloadV2> => {
+  /** The report, which is schema 3 whenever the server could count its use. */
+  const collect = async (): Promise<TelemetryPayloadV3> => {
     const payload = await collectTelemetry({
       db: h.ctx.db,
       edition: { edition: () => 'community' },
@@ -61,7 +61,7 @@ describe('telemetry schema 2: AI review and the assistant (telemetry.md, R39)', 
       env: {},
       dockerEnvExists: false,
     });
-    if (payload.schema !== 2) throw new Error(`a report of schema ${payload.schema}`);
+    if (payload.schema !== 3) throw new Error(`a report of schema ${payload.schema}`);
     return payload;
   };
   /** An OpenAI provider on the Responses API, with a strong model of its own and no fast one. */

@@ -12,6 +12,11 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - Qualor's security rules analyse main code only, so scans are faster. They report nothing in test
   files, the files `tests.include` names. Open Qualor findings in test files close on the next
   analysis.
+- Telemetry is schema 3: besides the schema-2 report, the server counts which features are in use,
+  in counts, flags and fixed lists only: automatic fix suggestions, MCP clients, Slack and Teams
+  notifications and digests, e-mail by kind, compliance exports, SonarQube imports, licence
+  policies, and merge request analyses and CI systems. No names, addresses, hosts or time zones.
+  `QUALOR_TELEMETRY=false` still turns it off; see the telemetry guide.
 
 ### Fixed
 

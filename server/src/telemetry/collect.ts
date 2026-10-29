@@ -11,6 +11,7 @@ import {
   type AiReviewUsage,
   type AssistantUsage,
 } from './ai-review';
+import { collectUsage, type UsageBlocks } from './usage';
 
 /** telemetry.md: one list item, a short lowercase token; anything else is dropped. */
 export const LIST_ITEM = /^[a-z0-9][a-z0-9+#._-]{0,39}$/;
@@ -56,7 +57,22 @@ export interface TelemetryPayloadV2 extends Omit<TelemetryPayloadV1, 'schema' | 
   assistant30d: AssistantUsage;
 }
 
-export type TelemetryPayload = TelemetryPayloadV1 | TelemetryPayloadV2;
+/**
+ * telemetry.md: the daily report of schema 3 (0.13). It adds the feature flags and the blocks of
+ * {@link UsageBlocks} to schema 2 and changes nothing else; the receiver takes 1, 2 and 3.
+ */
+export interface TelemetryPayloadV3 extends Omit<TelemetryPayloadV2, 'schema' | 'features'> {
+  schema: 3;
+  features: TelemetryPayloadV2['features'] & UsageBlocks['flags'];
+  autoFix30d: UsageBlocks['autoFix30d'];
+  integrations: UsageBlocks['integrations'];
+  reports30d: UsageBlocks['reports30d'];
+  licensePolicyOrgs: number;
+  mergeRequests30d: UsageBlocks['mergeRequests30d'];
+  ci: UsageBlocks['ci'];
+}
+
+export type TelemetryPayload = TelemetryPayloadV1 | TelemetryPayloadV2 | TelemetryPayloadV3;
 
 export interface CollectDeps {
   db: Db;
@@ -70,6 +86,9 @@ export interface CollectDeps {
 
 /** What the server logs, at debug, when it sends schema 1 because it could not count its AI use. */
 export const AI_USE_NOT_COUNTED = 'telemetry sends schema 1: AI use not counted';
+
+/** What the server logs, at debug, when it sends schema 2 because it could not count its usage. */
+export const USAGE_NOT_COUNTED = 'telemetry sends schema 2: feature use not counted';
 
 /** Lowercased, deduplicated, sorted, at most 50; a value that is not a short token is dropped. */
 export function cleanList(values: Iterable<string | null | undefined>): string[] {
@@ -138,6 +157,26 @@ async function countAiUse(
   }
 }
 
+/** Schema 3's blocks, or null when a query fails: the report is then of schema 2, never zeros. */
+async function countUsage(
+  deps: CollectDeps,
+  settings: Promise<StoredLlmSettings>,
+): Promise<UsageBlocks | null> {
+  const read = await settings;
+  try {
+    return await collectUsage(deps.db, read);
+  } catch (err) {
+    deps.logger?.debug(
+      {
+        component: 'telemetry',
+        errorClass: err instanceof Error ? err.constructor.name : typeof err,
+      },
+      USAGE_NOT_COUNTED,
+    );
+    return null;
+  }
+}
+
 export async function collectTelemetry(deps: CollectDeps): Promise<TelemetryPayload> {
   const { db } = deps;
   const count = async (query: SQL): Promise<number> =>
@@ -164,6 +203,7 @@ export async function collectTelemetry(deps: CollectDeps): Promise<TelemetryPayl
     scm,
     llm,
     aiUse,
+    usage,
   ] = await Promise.all([
     count(sql`SELECT count(*) AS n FROM organizations`),
     count(sql`SELECT count(*) AS n FROM users`),
@@ -185,6 +225,7 @@ export async function collectTelemetry(deps: CollectDeps): Promise<TelemetryPayl
     values(sql`SELECT DISTINCT provider AS v FROM scm_connections`),
     settings,
     countAiUse(deps, settings),
+    countUsage(deps, settings),
   ]);
 
   const report: TelemetryPayloadV1 = {
@@ -222,11 +263,14 @@ export async function collectTelemetry(deps: CollectDeps): Promise<TelemetryPayl
     },
   };
   if (aiUse === null) return report;
-  return {
+  const v2: TelemetryPayloadV2 = {
     ...report,
     schema: 2,
     features: { ...report.features, aiReview: aiUse.aiReview.organizations > 0 },
     aiReview: aiUse.aiReview,
     assistant30d: aiUse.assistant30d,
   };
+  if (usage === null) return v2;
+  const { flags, ...blocks } = usage;
+  return { ...v2, schema: 3, features: { ...v2.features, ...flags }, ...blocks };
 }
