@@ -325,17 +325,26 @@ function dataRoom(shape: ContextShape, budget: number, window: number, caps: Lis
  * a label for each file, is cut evenly between them, a short file keeping all of itself and leaving
  * the rest to the long ones, and no file more than INSTRUCTIONS_MIN_CHARS. This is both what they
  * are shown and the most, so the slices keep the other half. A cut under INSTRUCTIONS_LEAST_CHARS
- * is no use when some file is longer than it: the files are dropped (0). An infinite window cuts
- * nothing but INSTRUCTIONS_MIN_CHARS.
+ * is no use: the files longer than it are left out (`dropsLonger`) and the others are whole. An
+ * infinite window cuts nothing but INSTRUCTIONS_MIN_CHARS.
  */
 export function instructionFloor(shape: ContextShape, window: number, caps: ListCaps): number {
   const { instructionChars: lengths } = shape;
   const room =
     Math.floor(INSTRUCTIONS_WINDOW_SHARE * windowRoom(shape, window, caps)) -
     lengths.length * CUT_LABEL_CHARS;
-  const cut = evenCut(lengths, room, INSTRUCTIONS_MIN_CHARS);
-  return cut < INSTRUCTIONS_LEAST_CHARS && lengths.some((chars) => chars > cut) ? 0 : cut;
+  return evenCut(lengths, room, INSTRUCTIONS_MIN_CHARS);
 }
+
+/** Whether the files longer than `cut` (`instructionFloor`) are left out, their cut being no use. */
+const dropsLonger = (shape: ContextShape, cut: number): boolean =>
+  cut < INSTRUCTIONS_LEAST_CHARS && shape.instructionChars.some((chars) => chars > cut);
+
+/** The characters a file of `chars` takes at `cut`: whole, cut with its label, or left out. */
+const takenAt = (chars: number, cut: number): number => {
+  if (chars <= cut) return chars;
+  return cut < INSTRUCTIONS_LEAST_CHARS ? 0 : cut + CUT_LABEL_CHARS;
+};
 
 /**
  * The characters the instructions files take whatever the room, as `reviewLimits` gives them when
@@ -353,15 +362,11 @@ const instructionFloors = (shape: ContextShape): number =>
 
 /**
  * The characters the files take on a window too small for their floors: `instructionFloor` each,
- * and the label of one that is cut there. Dropped files take none.
+ * and the label of one that is cut there. A file that is left out takes none.
  */
 const windowFloors = (shape: ContextShape, window: number, caps: ListCaps): number => {
   const cut = instructionFloor(shape, window, caps);
-  if (cut === 0) return 0;
-  return shape.instructionChars.reduce(
-    (sum, chars) => sum + Math.min(chars, cut) + (chars > cut ? CUT_LABEL_CHARS : 0),
-    0,
-  );
+  return shape.instructionChars.reduce((sum, chars) => sum + takenAt(chars, cut), 0);
 };
 
 /** Whether the lists of `caps` leave room, as `listCapsFor` asks; with the files' floors, or with their window share. */
@@ -380,18 +385,20 @@ const fitsWith = (
 /**
  * The first rung of LIST_CAP_STEPS, longest first, that fits, and how: with the instructions files'
  * floors (as every review has been sized), or, when no rung does, with what the window's room
- * leaves them (`instructionFloor`), which only a review the window would have skipped is given.
+ * leaves them (`instructionFloor`), which only a review the window would have skipped is given: the
+ * longest rung that leaves every long file 1 000 characters or more, else the longest that fits.
  */
 function ladder(
   shape: ContextShape,
   budget: number,
   window: number,
 ): { caps: ListCaps; byWindow: boolean } | null {
-  for (const byWindow of [false, true]) {
-    const caps = LIST_CAP_STEPS.find((c) => fitsWith(shape, budget, window, c, byWindow));
-    if (caps !== undefined) return { caps, byWindow };
-  }
-  return null;
+  const whole = LIST_CAP_STEPS.find((c) => fitsWith(shape, budget, window, c, false));
+  if (whole !== undefined) return { caps: whole, byWindow: false };
+  const fits = LIST_CAP_STEPS.filter((c) => fitsWith(shape, budget, window, c, true));
+  const kept = fits.find((c) => !dropsLonger(shape, instructionFloor(shape, window, c)));
+  const caps = kept ?? fits[0];
+  return caps === undefined ? null : { caps, byWindow: true };
 }
 
 /**
@@ -459,27 +466,27 @@ export function reviewLimits(
         INSTRUCTIONS_MIN_CHARS,
         evenCut(shape.instructionChars, room - labels, CONTEXT_MAXIMA.instructionsChars),
       );
+  const dropLonger = byWindow && dropsLonger(shape, instructionsChars);
   const shortened =
     byWindow &&
     shape.instructionChars.some(
       (chars) => Math.min(chars, INSTRUCTIONS_MIN_CHARS) > instructionsChars,
     );
-  // A file that is dropped has no label either.
-  const instructions =
-    shortened && instructionsChars === 0
-      ? 0
-      : shape.instructionChars.reduce(
-          (sum, chars) =>
-            sum +
-            Math.min(chars, instructionsChars) +
-            (chars > instructionsChars ? CUT_LABEL_CHARS : 0),
-          0,
-        );
+  // A file that is left out has no label either.
+  const instructions = shape.instructionChars.reduce(
+    (sum, chars) =>
+      sum +
+      (byWindow
+        ? takenAt(chars, instructionsChars)
+        : Math.min(chars, instructionsChars) + (chars > instructionsChars ? CUT_LABEL_CHARS : 0)),
+    0,
+  );
   return {
     sliceChars: Math.min(CONTEXT_MAXIMA.sliceChars, Math.max(0, room - instructions)),
     instructionsChars,
     lists,
     ...(shortened ? { instructionsShortened: true } : {}),
+    ...(dropLonger ? { instructionsDropLonger: true } : {}),
   };
 }
 

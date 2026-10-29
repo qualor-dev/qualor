@@ -2352,14 +2352,31 @@ describe('how much of the merge request a review shows, and where its findings b
     });
     expect(cut.context.instructionsShortened).toBe(true);
     expect(cut.context.meta.instructions[0]?.text).toMatch(/^a{2000}\n\[cut: .*5000.*2000.*\]$/);
-    const dropped = await build({
-      sliceChars: 100,
-      instructionsChars: 0,
-      lists: LIST_CAP_STEPS[0],
-      instructionsShortened: true,
-    });
-    expect(dropped.context.instructionsShortened).toBe(true);
-    expect(dropped.context.meta.instructions).toEqual([]);
+    // A long file is left out, with no label, and a short one stays whole.
+    const mixed = await contextOf(
+      memorySnapshot({
+        ...snapshot,
+        meta: {
+          instructions: [
+            { name: 'AGENTS.md', text: 'a'.repeat(5_000) },
+            { name: 'CLAUDE.md', text: 'c'.repeat(12) },
+          ],
+        },
+      }),
+      masker,
+      NO_FINDINGS,
+      {
+        limits: () => ({
+          sliceChars: 100,
+          instructionsChars: 84,
+          lists: LIST_CAP_STEPS[0],
+          instructionsShortened: true,
+          instructionsDropLonger: true,
+        }),
+      },
+    );
+    expect(mixed.context.instructionsShortened).toBe(true);
+    expect(mixed.context.meta.instructions).toEqual([{ name: 'CLAUDE.md', text: 'c'.repeat(12) }]);
   });
 
   it('knows, of every change, the lines after its removed runs, whether its slices are shown or not', async () => {

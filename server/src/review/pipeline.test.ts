@@ -2156,9 +2156,37 @@ describe('reviewLimits', () => {
       let window = 26_600;
       while (!reviewFits(shape, 300_000, window)) window += 100;
       const limits = reviewLimits(shape, 300_000, window);
-      expect(instructionFloor(shape, window, limits.lists)).toBe(0);
-      expect(limits.instructionsChars).toBe(0);
+      expect(limits.instructionsChars).toBeLessThan(1_000);
       expect(limits.instructionsShortened).toBe(true);
+      expect(limits.instructionsDropLonger).toBe(true);
+    });
+
+    it('leaves out only the long files, and keeps the short ones whole', () => {
+      for (const [chars, window] of [
+        [[20_000, 20_000, 12], 32_768],
+        [[8_000, 12], 28_000],
+      ] as const) {
+        const shape = withFiles(...chars);
+        expect(reviewFits(shape, 300_000, window), String(chars)).toBe(true);
+        const limits = reviewLimits(shape, 300_000, window);
+        expect(limits.instructionsChars, String(chars)).toBeGreaterThanOrEqual(12);
+        expect(limits.instructionsChars, String(chars)).toBeLessThan(1_000);
+        expect(limits.instructionsDropLonger, String(chars)).toBe(true);
+        expect(limits.instructionsShortened, String(chars)).toBe(true);
+        expect(limits.sliceChars, String(chars)).toBeGreaterThan(0);
+      }
+    });
+
+    it('takes the longest rung that keeps the long files at 1 000 characters or more', () => {
+      for (const count of [40, 150]) {
+        const shape = shapeOf(changes(count, 2), 0, named(30_000, 30_000, 30_000));
+        const limits = reviewLimits(shape, 300_000, 64_000);
+        const longest = listCapsFor(shape, 300_000, 64_000);
+        expect(limits.instructionsShortened, String(count)).toBe(true);
+        expect(limits.instructionsDropLonger, String(count)).toBeUndefined();
+        expect(limits.instructionsChars, String(count)).toBeGreaterThanOrEqual(1_000);
+        expect(limits.lists, String(count)).toBe(longest);
+      }
     });
 
     it('still skips a change that does not fit the window, whatever the files', () => {
@@ -2176,7 +2204,12 @@ describe('reviewLimits', () => {
           if (!reviewFits(shape, 300_000, window)) continue;
           const limits = reviewLimits(shape, 300_000, window);
           const name = `${chars} ${window}`;
-          if (limits.instructionsShortened === true) {
+          // (The context here is built with the ordinary lists, so only a rung that has them.)
+          if (
+            limits.instructionsShortened === true &&
+            limits.instructionsDropLonger === undefined &&
+            limits.lists === LIST_CAP_STEPS[0]
+          ) {
             expect(limits.instructionsChars, name).toBeLessThan(16_000);
             // The window pass: the shared data stays within the judge's half.
             expect(sharedChars(shape, limits, files), name).toBeLessThanOrEqual(judgeHalf(window));

@@ -231,16 +231,16 @@ To keep the server and its database on a network with no route out, as the repos
   `anthropic-workspace-id` on every request. Without it the provider refuses the call, and the
   Test says so (`PROVIDER_WORKSPACE_REQUIRED`).
 - **Room to think.** Thinking counts in the output limit, so review and reply calls ask for up to
-  16 000 output tokens more than the answer needs (less when the window has less left), and the assistant's actions and the Test 4 000 more.
-  The room costs nothing unless the model uses it. When a model or server refuses that much (a 400,
-  or a 422 from Hugging Face TGI), Qualor asks once more without the room, whatever the refusal
-  says, unless it is about the workspace, tools, the Responses API or streaming. This holds for
-  Responses API servers too. If the second ask works, it leaves the room out for that server and
-  model until the server restarts. It does not remember a refusal that names the context window the
-  prompt shares with the answer, as vLLM and Anthropic word it. Then it asks for the room again on
-  every call, and without it when the prompt leaves none, so a vLLM with a small window pays one
-  quick refusal per call. How the room counts in a review's budget:
-  [Budgets and today's usage](./ai-review.md#budgets-and-todays-usage).
+  16 000 output tokens more than the answer needs (less when the window has less left), and the
+  assistant's actions and the Test 4 000 more. The room costs nothing unless the model uses it. When
+  a model or server refuses that much (a 400, or a 422 from Hugging Face TGI), Qualor asks once more
+  without the room, whatever the refusal says, unless it is about the workspace, tools, the
+  Responses API or streaming. This holds for Responses API servers too. If the second ask works, it
+  leaves the room out for that server and model until the server restarts. It does not remember a
+  refusal that names the context window the prompt shares with the answer, as vLLM and Anthropic
+  word it. Then it asks for the room again on every call, and without it when the prompt leaves
+  none, so a vLLM with a small window pays one quick refusal per call. How the room counts in a
+  review's budget: [Budgets and today's usage](./ai-review.md#budgets-and-todays-usage).
 - **A refusal fails the step.** Qualor reads a model's refusal as an answer it could not read, so
   the step fails ([Models that work](./ai-review.md#models-that-work)). Qualor never falls back to a
   model you did not choose.
