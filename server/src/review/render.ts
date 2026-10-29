@@ -217,6 +217,8 @@ const NOTES: Record<ReviewNote, string | ((words: Words) => string)> = {
   lists_shortened: (words) =>
     `This ${words.request} is large, so the reviewers were shown a shorter list of its changes and read the rest with their tools.`,
   time_limit_reached: 'The review reached its time limit, so it may have missed problems.',
+  instructions_shortened:
+    'The repository’s instructions files were shortened to fit the model’s context window, so the review may not follow all of them.',
 };
 /** The text of a note, for the words of the provider. */
 const noteText = (note: ReviewNote, words: Words): string => {
@@ -330,6 +332,9 @@ function noteSentences(state: Done, words: Words): string[] {
   if (notes.has('context_window_reached'))
     sentences.push(noteText('context_window_reached', words));
   if (notes.has('lists_shortened')) sentences.push(noteText('lists_shortened', words));
+  if (notes.has('instructions_shortened')) {
+    sentences.push(noteText('instructions_shortened', words));
+  }
   if (state.snapshotPartial) sentences.push(SNAPSHOT_PARTIAL);
   if (notes.has('reviewer_unreadable')) sentences.push(noteText('reviewer_unreadable', words));
   if (notes.has('verification_capped')) sentences.push(noteText('verification_capped', words));

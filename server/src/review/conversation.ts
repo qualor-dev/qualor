@@ -734,6 +734,22 @@ class Talk {
       : {}),
   });
 
+  /**
+   * What a call is sent: the history, with the room to think cut to what the window has left of it
+   * after the call's input and its answer (`limits.maxCallInputTokens` is the window less the
+   * answer, so that is the cap less the window's guess for the input), and none when there is none.
+   */
+  private readonly callConversation = (): LlmConversation => {
+    const base = this.conversation();
+    const { reasoningAllowance: allowance } = this.input.limits;
+    if (!allowance || this.cap === undefined) return base;
+    const room = Math.min(allowance, Math.max(0, this.cap - windowGuessedInput(base)));
+    if (room > 0) return { ...base, reasoningAllowance: room };
+    const { reasoningAllowance: _none, ...rest } = base;
+    void _none;
+    return rest;
+  };
+
   private counts(): ConversationCounts {
     return {
       inputTokens: this.inputTokens,
@@ -822,7 +838,7 @@ class Talk {
     for (;;) {
       const next = await nextTurn(
         this.input,
-        this.conversation,
+        this.callConversation,
         this.turns === 0,
         (guessed) => {
           this.inputTokens += guessed;

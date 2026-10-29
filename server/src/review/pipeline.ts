@@ -139,6 +139,10 @@ const JSON_ALLOWANCE = 1.1;
 const CUT_LABEL_CHARS = 80;
 /** Characters of each instructions file shown whatever the budget (or all of it, if it is shorter). */
 const INSTRUCTIONS_MIN_CHARS = 16_000;
+/** The part of the window's room for the data that the instructions files' floors take, in all. */
+const INSTRUCTIONS_WINDOW_SHARE = 0.5;
+/** The fewest characters worth showing of an instructions file: a file with a share below is dropped. */
+const INSTRUCTIONS_LEAST_CHARS = 1_000;
 
 export interface JudgedFinding extends ReviewFinding {
   /** The ids of the specialist findings it comes from (`s1`, `s2`, …). */
@@ -316,22 +320,37 @@ function dataRoom(shape: ContextShape, budget: number, window: number, caps: Lis
 }
 
 /**
- * The characters the instructions files take whatever the room (`reviewLimits`): each file up to
- * INSTRUCTIONS_MIN_CHARS, and the label of one that is cut there.
+ * The characters of each instructions file that are shown whatever the room (`reviewLimits`): up to
+ * INSTRUCTIONS_MIN_CHARS, or all of it if it is shorter. On a small window the files share
+ * INSTRUCTIONS_WINDOW_SHARE of its room for the data evenly, and each is cut to its share when that
+ * is less; a share under INSTRUCTIONS_LEAST_CHARS is no use, and the files are dropped (0). An
+ * infinite window has no share to cut to.
  */
-const instructionFloors = (shape: ContextShape): number =>
-  shape.instructionChars.reduce(
-    (sum, chars) =>
-      sum +
-      Math.min(chars, INSTRUCTIONS_MIN_CHARS) +
-      (chars > INSTRUCTIONS_MIN_CHARS ? CUT_LABEL_CHARS : 0),
+export function instructionFloor(shape: ContextShape, window: number, caps: ListCaps): number {
+  const files = shape.instructionChars.length;
+  if (files === 0) return INSTRUCTIONS_MIN_CHARS;
+  const share = Math.floor((INSTRUCTIONS_WINDOW_SHARE * windowRoom(shape, window, caps)) / files);
+  if (share >= INSTRUCTIONS_MIN_CHARS) return INSTRUCTIONS_MIN_CHARS;
+  return share < INSTRUCTIONS_LEAST_CHARS ? 0 : share;
+}
+
+/**
+ * The characters the instructions files take whatever the room (`reviewLimits`): each file up to
+ * its floor (`instructionFloor`), and the label of one that is cut there. A dropped file takes none.
+ */
+const instructionFloors = (shape: ContextShape, window: number, caps: ListCaps): number => {
+  const floor = instructionFloor(shape, window, caps);
+  if (floor === 0) return 0;
+  return shape.instructionChars.reduce(
+    (sum, chars) => sum + Math.min(chars, floor) + (chars > floor ? CUT_LABEL_CHARS : 0),
     0,
   );
+};
 
 /** Whether the lists of `caps` leave room, as `listCapsFor` asks. */
 const fitsWith = (shape: ContextShape, budget: number, window: number, caps: ListCaps): boolean =>
   dataRoom(shape, budget, window, caps) > 0 &&
-  windowRoom(shape, window, caps) - instructionFloors(shape) > 0;
+  windowRoom(shape, window, caps) - instructionFloors(shape, window, caps) > 0;
 
 /**
  * The lists a review of `budget` tokens shows of a change of this shape, on a model of `window`
@@ -391,19 +410,35 @@ export function reviewLimits(
     LIST_CAP_STEPS[0];
   const room = dataRoom(shape, budget, window, lists);
   const labels = shape.instructionChars.length * CUT_LABEL_CHARS;
-  const instructionsChars = Math.max(
-    INSTRUCTIONS_MIN_CHARS,
-    evenCut(shape.instructionChars, room - labels, CONTEXT_MAXIMA.instructionsChars),
+  const floor = instructionFloor(shape, window, lists);
+  // Files dropped for the window are not shown, whatever the budget would have had room for.
+  const instructionsChars =
+    floor === 0 && shape.instructionChars.length > 0
+      ? 0
+      : Math.max(
+          floor,
+          evenCut(shape.instructionChars, room - labels, CONTEXT_MAXIMA.instructionsChars),
+        );
+  // Shown below what a window of any size shows (the floor is less only for the window).
+  const shortened = shape.instructionChars.some(
+    (chars) => Math.min(chars, INSTRUCTIONS_MIN_CHARS) > instructionsChars,
   );
-  const instructions = shape.instructionChars.reduce(
-    (sum, chars) =>
-      sum + Math.min(chars, instructionsChars) + (chars > instructionsChars ? CUT_LABEL_CHARS : 0),
-    0,
-  );
+  // A file that is dropped has no label either.
+  const instructions =
+    shortened && instructionsChars === 0
+      ? 0
+      : shape.instructionChars.reduce(
+          (sum, chars) =>
+            sum +
+            Math.min(chars, instructionsChars) +
+            (chars > instructionsChars ? CUT_LABEL_CHARS : 0),
+          0,
+        );
   return {
     sliceChars: Math.min(CONTEXT_MAXIMA.sliceChars, Math.max(0, room - instructions)),
     instructionsChars,
     lists,
+    ...(shortened ? { instructionsShortened: true } : {}),
   };
 }
 
@@ -754,6 +789,7 @@ export async function runReviewPipeline(
   if (JSON.stringify(context.listCaps) !== JSON.stringify(LIST_CAP_STEPS[0])) {
     review.note('lists_shortened');
   }
+  if (context.instructionsShortened === true) review.note('instructions_shortened');
 
   // The specialists, one after the other, each with an even part of their share and what the ones
   // before it left of theirs: one that overshoots what it was given takes nothing from the next.

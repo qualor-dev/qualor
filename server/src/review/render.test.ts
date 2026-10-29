@@ -389,6 +389,26 @@ describe('the AI review section', () => {
     expect(checkProse(WINDOW)).toBe(true);
   });
 
+  it('says that the instructions files were shortened to fit the context window, after the lists', () => {
+    const FILES =
+      'The repository’s instructions files were shortened to fit the model’s context window, so the review may not follow all of them.';
+    for (const provider of ['gitlab', 'github'] as const) {
+      const notesLine = (over: Partial<Done>) => section(done(over), provider).at(-3);
+      expect(notesLine({ notes: ['instructions_shortened'] }), provider).toBe(FILES);
+      expect(
+        notesLine({
+          notes: ['instructions_shortened', 'lists_shortened', 'instructions_shortened'],
+        })?.endsWith(FILES),
+        provider,
+      ).toBe(true);
+      expect(
+        badSectionLine(section(done({ notes: ['instructions_shortened'] }), provider)),
+      ).toBeNull();
+    }
+    expect(checkProse(FILES)).toBe(true);
+    expect(section(done()).join('\n')).not.toContain('instructions files');
+  });
+
   it('says that a large merge request was reviewed with shorter lists, in a sentence of its own, on GitLab and GitHub', () => {
     const TOKENS = 'The review reached its token limit, so it may have missed problems.';
     const WINDOW = 'A reviewer reached the model’s context window, so it may have missed problems.';

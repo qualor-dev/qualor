@@ -19,6 +19,7 @@ import {
   CHARS_PER_TOKEN,
   planReview,
   REVIEW_OUTPUT_TOKENS,
+  instructionFloor,
   listCapsFor,
   reviewFits,
   reviewLimits,
@@ -1757,6 +1758,23 @@ describe('runReviewPipeline', () => {
   });
 });
 
+describe('the note of shortened instructions files', () => {
+  it('a context whose instructions files were shortened for the window is noted, once, and others are not', async () => {
+    const run = async (over: Partial<ReviewContext>) => {
+      const { deps } = scripted({
+        quality: [answer({ findings: [] })],
+        judge: [answer(judgeSays())],
+      });
+      const { outcome } = await review(contextOf([change('src/cart.ts', 2)], over), 100_000, deps);
+      if (outcome.kind !== 'reviewed') throw new Error(outcome.kind);
+      return outcome.notes;
+    };
+    expect(await run({ instructionsShortened: true })).toEqual(['instructions_shortened']);
+    expect(await run({ instructionsShortened: false })).toEqual([]);
+    expect(await run({})).toEqual([]);
+  });
+});
+
 describe('reviewLimits', () => {
   const RULE = 'typescript:S1854';
   const MESSAGE =
@@ -2024,18 +2042,103 @@ describe('reviewLimits', () => {
   it("counts the instructions files' floors against the window, not against the budget", () => {
     const bare = shapeOf(changes(1, 6), 0, []);
     const instructed = shapeOf(changes(1, 6), 0, [['AGENTS.md', 40_000]]);
-    // A window with room for the change, and not for the 16 000 characters of AGENTS.md that every
-    // first message holds: the review would pass a third of the judge's cap.
-    expect(reviewFits(bare, 300_000, 64_000)).toBe(true);
-    expect(reviewFits(instructed, 300_000, 64_000)).toBe(false);
-    // A window with room for both.
-    expect(reviewFits(instructed, 300_000, 200_000)).toBe(true);
+    // A window with room for the change fits it with any instructions file: the file is cut to the
+    // window's share instead of skipping the review.
+    for (const window of [48_000, 64_000, 200_000]) {
+      expect(reviewFits(bare, 300_000, window), String(window)).toBe(true);
+      expect(reviewFits(instructed, 300_000, window), String(window)).toBe(true);
+    }
     // The budget alone counts no floor, as before.
     for (const budget of [10_000, 60_000, 120_000]) {
       expect(reviewFits(instructed, budget, Number.POSITIVE_INFINITY), String(budget)).toBe(
         reviewFits(bare, budget, Number.POSITIVE_INFINITY),
       );
     }
+  });
+
+  describe('the instructions files on a small window', () => {
+    const withFiles = (...chars: number[]): ContextShape => ({
+      ...oneLine,
+      instructionChars: chars,
+    });
+
+    it('an AGENTS.md of 8 000 characters on a 32 768-token window fits, is cut, and the review says so', () => {
+      const shape = withFiles(8_000);
+      expect(reviewFits(shape, 300_000, 32_768)).toBe(true);
+      const limits = reviewLimits(shape, 300_000, 32_768);
+      expect(limits.instructionsChars).toBeGreaterThanOrEqual(1_000);
+      expect(limits.instructionsChars).toBeLessThan(8_000);
+      expect(limits.instructionsShortened).toBe(true);
+      // Never less than its share of the room, which is half the window's.
+      const share = instructionFloor(shape, 32_768, limits.lists);
+      expect(share).toBeGreaterThanOrEqual(1_000);
+      expect(limits.instructionsChars).toBeGreaterThanOrEqual(share);
+    });
+
+    it('a file of 40 000 characters on a 64 000-token window fits and is cut to its share or more', () => {
+      const shape = withFiles(40_000);
+      expect(reviewFits(shape, 300_000, 64_000)).toBe(true);
+      const limits = reviewLimits(shape, 300_000, 64_000);
+      const share = instructionFloor(shape, 64_000, limits.lists);
+      expect(share).toBeGreaterThan(1_000);
+      expect(share).toBeLessThan(16_000);
+      expect(limits.instructionsChars).toBeGreaterThanOrEqual(share);
+      expect(limits.instructionsChars).toBeLessThan(32_000);
+    });
+
+    it('a 1 000 000-token window and no window keep 16 000 characters each at least, and say nothing', () => {
+      for (const window of [1_000_000, Number.POSITIVE_INFINITY]) {
+        const shape = withFiles(200_000, 20_000);
+        const limits = reviewLimits(shape, 300_000, window);
+        expect(instructionFloor(shape, window, limits.lists), String(window)).toBe(16_000);
+        expect(limits.instructionsChars, String(window)).toBeGreaterThanOrEqual(16_000);
+        expect(limits.instructionsShortened, String(window)).toBeUndefined();
+        // A short file is its own floor.
+        expect(instructionFloor(withFiles(5_000), window, limits.lists)).toBe(16_000);
+      }
+    });
+
+    it('shares the room evenly between the files', () => {
+      const one = withFiles(30_000);
+      const three = withFiles(30_000, 30_000, 30_000);
+      const window = 50_000;
+      const caps = reviewLimits(one, 300_000, window).lists;
+      const single = instructionFloor(one, window, caps);
+      const each = instructionFloor(three, window, caps);
+      expect(single).toBeLessThan(16_000);
+      expect(each).toBeGreaterThan(1_000);
+      expect(each).toBe(Math.floor(single / 3));
+    });
+
+    it('drops the files when their share is under 1 000 characters, and says so', () => {
+      const shape = withFiles(30_000, 30_000, 30_000);
+      let window = 26_600;
+      while (!reviewFits(shape, 300_000, window)) window += 100;
+      const limits = reviewLimits(shape, 300_000, window);
+      expect(instructionFloor(shape, window, limits.lists)).toBe(0);
+      expect(limits.instructionsChars).toBe(0);
+      expect(limits.instructionsShortened).toBe(true);
+    });
+
+    it('still skips a change that does not fit the window, whatever the files', () => {
+      for (const shape of [withFiles(), withFiles(8_000), withFiles(40_000)]) {
+        expect(reviewFits(shape, 300_000, 24_000)).toBe(false);
+      }
+      expect(reviewFits(withFiles(40_000), 300_000, 26_600)).toBe(true);
+    });
+
+    it('reviewFits and reviewLimits agree on the floors for every window', () => {
+      for (const chars of [3_000, 8_000, 40_000]) {
+        const shape = withFiles(chars, chars);
+        for (let window = 26_000; window <= 80_000; window += 1_000) {
+          if (!reviewFits(shape, 300_000, window)) continue;
+          const limits = reviewLimits(shape, 300_000, window);
+          const floor = instructionFloor(shape, window, limits.lists);
+          expect(limits.instructionsChars, `${chars} ${window}`).toBeGreaterThanOrEqual(floor);
+          if (floor === 0) expect(limits.instructionsChars).toBe(0);
+        }
+      }
+    });
   });
 
   describe('the ladder of list caps (R47)', () => {

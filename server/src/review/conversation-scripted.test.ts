@@ -12,6 +12,7 @@ import {
   CircuitOpenError,
   CONVERSATION_LIMITS,
   runConversation,
+  windowGuessedInput,
   type ConversationInput,
 } from './conversation';
 import { newNonce } from './envelope';
@@ -520,6 +521,39 @@ describe('runConversation with a scripted provider', () => {
           reasoningAllowance: 16_000,
         });
         expect(result.outputTokens).toBe(LIMITS.maxOutputTokens);
+      });
+
+      it('asks for the room to think only as far as the window has it: the window less the input and the answer', async () => {
+        const window = 28_000;
+        const limits = {
+          ...LIMITS,
+          maxOutputTokens: 12_288,
+          reasoningAllowance: 16_000,
+          maxCallInputTokens: window - 12_288,
+        };
+        const s = scripted(turn('done', { usage: unknown }));
+        s.input.limits = limits;
+        await runConversation(s.input);
+        const sent = s.seen[0]!;
+        const room = sent.reasoningAllowance ?? 0;
+        // Input, answer and room fit the window, and the room is what is left of it.
+        expect(room).toBeGreaterThan(0);
+        expect(room).toBeLessThan(16_000);
+        expect(windowGuessedInput(sent) + 12_288 + room).toBeLessThanOrEqual(window);
+        expect(windowGuessedInput(sent) + 12_288 + room).toBeGreaterThan(window - 200);
+        // Little room left: little is asked for. A window that holds it all: the whole allowance.
+        const tight = scripted(turn('done', { usage: unknown }));
+        tight.input.limits = { ...limits, maxCallInputTokens: windowGuessedInput(sent) + 10 };
+        await runConversation(tight.input);
+        expect(tight.seen[0]!.reasoningAllowance ?? 0).toBeLessThanOrEqual(10);
+        const wide = scripted(turn('done', { usage: unknown }));
+        wide.input.limits = { ...limits, maxCallInputTokens: 1_000_000 };
+        await runConversation(wide.input);
+        expect(wide.seen[0]!.reasoningAllowance).toBe(16_000);
+        const open = scripted(turn('done', { usage: unknown }));
+        open.input.limits = { ...limits, maxCallInputTokens: Number.POSITIVE_INFINITY };
+        await runConversation(open.input);
+        expect(open.seen[0]!.reasoningAllowance).toBe(16_000);
       });
 
       it('is charged only for the count it did not give', async () => {

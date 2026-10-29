@@ -17,6 +17,7 @@ import {
   CONVERSATION_LIMITS,
   CONVERSATION_TEXTS,
   guessedInput,
+  windowGuessedInput,
 } from './conversation';
 import { newNonce } from './envelope';
 import { MaskedFiles } from './masked-files';
@@ -179,6 +180,36 @@ describe('the room a call leaves for the model to think', () => {
     // The call asks for the verification's 2 048 and 16 000 more, apart, and is charged the 2 048.
     expect(sent[0]).toMatchObject({ maxOutputTokens: 2_048, reasoningAllowance: 16_000 });
     expect(result).toMatchObject({ kind: 'answer', outputTokens: REVIEW_OUTPUT_TOKENS.verify });
+  });
+});
+
+describe('the room to think on a small window', () => {
+  it('is what the window has left beside the input and the answer, so no call is refused for it', async () => {
+    const reader = memorySnapshot();
+    const policy = newToolPolicy({
+      excludePaths: [],
+      masked: new MaskedFiles(reader, { masker }),
+      masker,
+    });
+    const window = 28_000;
+    const sent: LlmConversation[] = [];
+    await converseOverTools(callOf('quality'), {
+      reader,
+      policy,
+      contextWindowTokens: window,
+      send: (conversation) => {
+        sent.push(conversation);
+        return Promise.resolve(turn({ text: '{"findings":[]}' }));
+      },
+      shouldStop: () => Promise.resolve(false),
+    });
+    const [call] = sent;
+    expect(call?.reasoningAllowance).toBeGreaterThan(0);
+    expect(call?.reasoningAllowance).toBeLessThan(REASONING_ALLOWANCE_TOKENS.conversation);
+    // Input, answer and room fit the window.
+    expect(
+      windowGuessedInput(call!) + REVIEW_OUTPUT_TOKENS.quality + (call?.reasoningAllowance ?? 0),
+    ).toBeLessThanOrEqual(window);
   });
 });
 

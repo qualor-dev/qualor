@@ -11,6 +11,7 @@ import {
   SENSITIVE_PATH,
   slicesOf,
   type AnalyzerFinding,
+  type ContextLimits,
   type ContextOptions,
   type ContextShape,
   type PriorFinding,
@@ -2326,6 +2327,39 @@ describe('how much of the merge request a review shows, and where its findings b
       ]);
       expect(under.context.meta.instructions[0]?.text).toMatch(/^\n\[cut: .*40000.* 0 .*\]$/);
     }
+  });
+
+  it('passes on that the window shortened the instructions files, and shows none when it dropped them', async () => {
+    const edit = addedFile(['x']);
+    const snapshot = {
+      meta: { instructions: [{ name: 'AGENTS.md', text: 'a'.repeat(5_000) }] },
+      changes: [{ path: 'src/x.ts', status: 'added' as const, patch: edit.patch }],
+      files: { 'src/x.ts': edit.text },
+    };
+    const build = (limits: ContextLimits) =>
+      contextOf(memorySnapshot(snapshot), masker, NO_FINDINGS, { limits: () => limits });
+    const plain = await build({
+      sliceChars: 100,
+      instructionsChars: 2_000,
+      lists: LIST_CAP_STEPS[0],
+    });
+    expect(plain.context.instructionsShortened).toBeUndefined();
+    const cut = await build({
+      sliceChars: 100,
+      instructionsChars: 2_000,
+      lists: LIST_CAP_STEPS[0],
+      instructionsShortened: true,
+    });
+    expect(cut.context.instructionsShortened).toBe(true);
+    expect(cut.context.meta.instructions[0]?.text).toMatch(/^a{2000}\n\[cut: .*5000.*2000.*\]$/);
+    const dropped = await build({
+      sliceChars: 100,
+      instructionsChars: 0,
+      lists: LIST_CAP_STEPS[0],
+      instructionsShortened: true,
+    });
+    expect(dropped.context.instructionsShortened).toBe(true);
+    expect(dropped.context.meta.instructions).toEqual([]);
   });
 
   it('knows, of every change, the lines after its removed runs, whether its slices are shown or not', async () => {

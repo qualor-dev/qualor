@@ -380,6 +380,7 @@ describe('the summary a run keeps', () => {
     const summary = { verdict: 'v', walkthrough: ['w'], notes: ['time_limit_reached'] };
     expect(reviewSummarySchema.safeParse(summary).success).toBe(true);
     expect(REVIEW_NOTES).toContain('time_limit_reached');
+    expect(REVIEW_NOTES).toContain('instructions_shortened');
     const all = { ...summary, notes: [...REVIEW_NOTES] };
     expect(reviewSummarySchema.safeParse(all).success).toBe(true);
     expect(reviewSummarySchema.safeParse({ ...summary, notes: ['time_up'] }).success).toBe(false);

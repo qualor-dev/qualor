@@ -232,6 +232,7 @@ export const REVIEW_NOTES = [
   'context_window_reached',
   'lists_shortened',
   'time_limit_reached',
+  'instructions_shortened',
 ] as const;
 export type ReviewNote = (typeof REVIEW_NOTES)[number];
 

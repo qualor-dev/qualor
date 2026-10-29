@@ -228,8 +228,13 @@ export interface ContextOptions {
 export interface ContextLimits {
   /** Characters of slices in all. */
   sliceChars: number;
-  /** Characters of each instructions file; a longer one is cut, with a label. */
+  /** Characters of each instructions file; a longer one is cut, with a label. 0: no file is shown. */
   instructionsChars: number;
+  /**
+   * The files are shown shorter than they otherwise are, because the window has no room. With
+   * `instructionsChars` 0, none is shown.
+   */
+  instructionsShortened?: boolean;
   /** How much of each list the first message holds (R47); the context lists the changes with no slices up to `lists.notInSlices`. */
   lists: ListCaps;
 }
@@ -278,6 +283,8 @@ export interface ReviewContext {
   unlistedFromSlices: number;
   /** The caps of the lists the review's data holds (the limits' `lists`). */
   listCaps: ListCaps;
+  /** The instructions files were cut or left out to fit the model's context window. */
+  instructionsShortened?: boolean;
   analyzer: AnalyzerFinding[];
   prior: PriorFinding[];
   /**
@@ -878,9 +885,10 @@ async function shownMeta(
   tally: Tally,
   options: ContextOptions,
   instructionsChars: number,
+  dropped: boolean,
 ): Promise<SnapshotMeta> {
   const instructions: { name: string; text: string }[] = [];
-  for (const file of shownInstructions(meta, options)) {
+  for (const file of dropped ? [] : shownInstructions(meta, options)) {
     instructions.push({
       name: file.name,
       text: cutWithLabel(await shownText(mask, file.text, tally), instructionsChars),
@@ -977,7 +985,9 @@ export async function buildReviewContext(
     instructionChars: shownInstructions(stored, options).map((file) => file.text.length),
   });
   const instructionsChars = heldTo(limits.instructionsChars, CONTEXT_MAXIMA.instructionsChars);
-  const meta = await shownMeta(reader.meta, mask, tally, options, instructionsChars);
+  // The window has no room for any file (the limits are 0 for it): none is shown, not even a label.
+  const dropped = limits.instructionsShortened === true && instructionsChars === 0;
+  const meta = await shownMeta(reader.meta, mask, tally, options, instructionsChars, dropped);
   const { analyzer, prior } = await shownFindings(found, findings.prior, mask, tally, options);
   const { slices, omitted, unlisted } = await cutSlices({
     candidates,
@@ -997,6 +1007,7 @@ export async function buildReviewContext(
     omittedFromSlices: omitted,
     unlistedFromSlices: unlisted,
     listCaps: limits.lists,
+    ...(limits.instructionsShortened === true ? { instructionsShortened: true } : {}),
     analyzer,
     prior,
     redactions: tally.redactions,
