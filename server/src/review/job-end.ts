@@ -43,12 +43,15 @@ export class RunEnder {
    * takes time), which only writes; the store refuses a run no longer storing, under its lock, and
    * one whose snapshot was deleted since the last stop check, which then ends with nothing stored:
    * `superseded` when a newer push replaced the snapshot, `skipped: closed` when the merge request
-   * was merged or closed (`snapshotGone`).
+   * was merged or closed (`snapshotGone`). A review that ran out of time asks the stop check first:
+   * a judge whose time was up before it started made no call, so nothing asked it, and a stop that
+   * came meanwhile (a merge, review switched off, the server stopping) is how the run ends.
    */
   async finish(running: Running, outcome: PipelineOutcome, o: FinishInputs): Promise<void> {
     const { db } = this.deps;
     const { run } = running;
     if (outcome.kind === 'failed') {
+      if (outcome.detail === 'time_limit' && (await o.shouldStop())) return this.stopped(run);
       return this.endRunning(run, {
         status: 'failed',
         reason: outcome.reason,

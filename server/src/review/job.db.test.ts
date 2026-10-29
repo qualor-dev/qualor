@@ -1285,6 +1285,39 @@ describe('the ai-review job (6I-3, R15)', () => {
       expect(summary).not.toContain('returned an error');
     });
 
+    it("a specialist still reading at 60 % of the time answers through the wrap-up for the time: the conversation runs on the job's clock", async () => {
+      let at = Date.now();
+      const mr = mergeRequest();
+      const analysisId = await analysisOf(mr);
+      await snapshotOf(analysisId, mr);
+      const calls = reviewCalls().length;
+      // The quality reviewer reads a file, and its call comes back 28 minutes later: past 27.
+      const readsLate: LlmResponder = () => {
+        at += 28 * MINUTE;
+        return {
+          status: 200,
+          body: openAiToolCalls(
+            [{ id: 'read-1', name: 'read_file', arguments: { path: 'src/cart.ts' } }],
+            {
+              usage: {
+                prompt_tokens: REVIEW_CALL_USAGE.input,
+                completion_tokens: REVIEW_CALL_USAGE.output,
+              },
+            },
+          ),
+        };
+      };
+      llm.enqueue(readsLate, reviewResponder(FOUND), reviewResponder(FOUND));
+      expect(await runReviews({ now: () => new Date(at) })).toBe(1);
+      const sent = reviewCalls().slice(calls);
+      expect(sent.map(reviewRoleOf)).toEqual(['quality', 'quality', 'judge']);
+      // Its next call is the wrap-up: the file it read, then the words to answer now.
+      expect(sent[1]!.body).toContain('Token budget reached: answer now');
+      const run = await runOf(analysisId);
+      expect(run).toMatchObject({ status: 'done', findingsNew: 1, toolCalls: 1, modelCalls: 3 });
+      expect(run.summary).toMatchObject({ notes: ['time_limit_reached'] });
+    });
+
     it('QUALOR_AI_REVIEW_MAX_MINUTES sets the time instead: 90 minutes leave the same review in time', async () => {
       let at = Date.now();
       const mr = mergeRequest();
@@ -1558,6 +1591,51 @@ describe('the ai-review job (6I-3, R15)', () => {
     // It stopped before the judge was asked, and stored nothing of what the reviewer said.
     expect(reviewCalls().slice(calls).map(reviewRoleOf)).toEqual(['quality']);
     await expectStoppedForSnapshot(analysisId, 1);
+  });
+
+  it("a stop wins over the review's time: a merge request merged, or review switched off, while the time runs out ends the run skipped", async () => {
+    let at = Date.now();
+    const late = () => new Date(at);
+    // The quality reviewer's answer comes 45 minutes on, after the merge: the judge's time is up.
+    const mr = mergeRequest();
+    const analysisId = await analysisOf(mr);
+    await snapshotOf(analysisId, mr);
+    const { branchId } = await runOf(analysisId);
+    await forgetDecorations();
+    const calls = reviewCalls().length;
+    llm.enqueue(
+      reviewResponder({
+        quality: async () => {
+          at += 45 * 60_000;
+          await mergeAndCheck(mr, branchId);
+          return JSON.stringify({ findings: [FINDING] });
+        },
+      }),
+    );
+    expect(await runReviews({ now: late })).toBe(1);
+    expect(reviewCalls().slice(calls).map(reviewRoleOf)).toEqual(['quality']);
+    await expectStoppedForSnapshot(analysisId, 1);
+
+    // The same with review switched off as the answer comes.
+    const off = mergeRequest();
+    const offAnalysis = await analysisOf(off);
+    await snapshotOf(offAnalysis, off);
+    llm.enqueue(
+      reviewResponder({
+        quality: async () => {
+          at += 45 * 60_000;
+          await reviewOff();
+          return JSON.stringify({ findings: [FINDING] });
+        },
+      }),
+    );
+    expect(await runReviews({ now: late })).toBe(1);
+    expect(await runOf(offAnalysis)).toMatchObject({
+      status: 'skipped',
+      reason: 'inactive',
+      detail: 'review_disabled',
+      modelCalls: 1,
+    });
   });
 
   it('a merge request merged while the judge answers is found before anything is stored', async () => {

@@ -32,7 +32,10 @@ export type RunEnd =
   | {
       status: 'failed';
       reason: ReviewFailureReason;
-      /** `window_full`: the model's context window had no room for the judge's call. */
+      /**
+       * `window_full`: the model's context window had no room for the judge's call; `time_limit`:
+       * the judge had no answer when the review's time was up.
+       */
       detail?: string | null;
     };
 
@@ -124,7 +127,7 @@ export const errorClass = (err: unknown): string =>
 /**
  * The log line of a run's end, once it is committed: its id, status and reason, and its detail
  * when it has one. The detail is a fixed token (`too_large`, `window_too_small`, `window_full`,
- * `snapshot_deleted`, or the reason review is inactive), never free text.
+ * `time_limit`, `snapshot_deleted`, or the reason review is inactive), never free text.
  */
 export function logRunEnd(logger: Logger, runId: string, end: RunEnd): void {
   const detail = end.status === 'superseded' ? null : (end.detail ?? null);
