@@ -109,4 +109,18 @@ describe('bootLicenseLog (enterprise.md §6)', () => {
     });
     expect(JSON.stringify(line)).not.toContain(license.customer);
   });
+
+  it('marks a trial key with trial: true, and a paid key without the field', () => {
+    const line = (trial: boolean) => {
+      const license = testPayload(trial ? { trial: true } : {});
+      const verification = { ok: true as const, kid: 'test-a', license };
+      return bootLicenseLog(
+        { source: 'environment', keyHash: KEY_HASH, verification },
+        licenseState(verification, T0),
+        [],
+      );
+    };
+    expect(line(true).fields).toMatchObject({ licence: 'active', trial: true });
+    expect(line(false).fields).not.toHaveProperty('trial');
+  });
 });

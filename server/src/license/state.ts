@@ -5,6 +5,8 @@ import type { InvalidReason, Verification } from './verify';
 export const DAY_MS = 24 * 60 * 60 * 1000;
 /** Instance admins are warned this many days before `expires` (enterprise.md §5). */
 export const EXPIRES_SOON_DAYS = 30;
+/** A trial key warns this many days before `expires` instead. */
+export const TRIAL_EXPIRES_SOON_DAYS = 7;
 
 export type LicenseStateName = 'none' | 'invalid' | 'active' | 'grace' | 'expired';
 
@@ -19,7 +21,9 @@ export interface LicenseState {
   licensed: boolean;
 }
 
+/** A paid key has `LICENSE_GRACE_DAYS` of grace after `expires`; a trial key has none. */
 export function graceEndsAt(license: LicensePayload): Date {
+  if (license.trial) return new Date(Date.parse(license.expires));
   return new Date(Date.parse(license.expires) + LICENSE_GRACE_DAYS * DAY_MS);
 }
 
@@ -27,6 +31,7 @@ export function graceEndsAt(license: LicensePayload): Date {
  * enterprise.md §5: computed on every read, so a key lapses on a running server. Both
  * boundaries are half-open: at exactly `expires` the state is `grace`, at exactly the grace end
  * it is `expired`.
+ * A trial key has no grace: at exactly `expires` it is `expired`.
  */
 export function licenseState(verification: Verification | null, now: Date): LicenseState {
   if (!verification) {
@@ -64,7 +69,9 @@ export function licenseState(verification: Verification | null, now: Date): Lice
     kid,
     license,
     graceEndsAt: graceEnd,
-    expiresSoon: state === 'active' && expires - t < EXPIRES_SOON_DAYS * DAY_MS,
+    expiresSoon:
+      state === 'active' &&
+      expires - t < (license.trial ? TRIAL_EXPIRES_SOON_DAYS : EXPIRES_SOON_DAYS) * DAY_MS,
     licensed: state === 'active' || state === 'grace',
   };
 }

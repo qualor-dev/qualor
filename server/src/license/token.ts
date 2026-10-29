@@ -47,6 +47,8 @@ export const licensePayloadSchema = z
       .array(z.string().max(64).regex(FEATURE_PATTERN))
       .max(64)
       .refine((list) => new Set(list).size === list.length, 'features must be distinct'),
+    /** A trial key: no grace period after `expires`, and a shorter expiry warning. Only `true` is valid; a paid key omits it. */
+    trial: z.literal(true).optional(),
   })
   .refine((p) => Date.parse(p.issued) < Date.parse(p.expires), {
     message: 'issued must be before expires',

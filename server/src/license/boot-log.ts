@@ -21,6 +21,7 @@ export function bootLicenseLog(
   const edition = state.licensed ? 'enterprise' : 'community';
   const fields: Record<string, unknown> = { licence: state.state, edition, source: boot.source };
   if (state.license) fields['expires'] = state.license.expires;
+  if (state.license?.trial) fields['trial'] = true;
   if (state.state === 'invalid') fields['reason'] = state.reason;
   fields['plugins'] = plugins.filter((p) => p.state === 'loaded').map((p) => p.name);
   const failed = plugins.filter((p) => p.state === 'failed').map((p) => p.name);

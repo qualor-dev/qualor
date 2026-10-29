@@ -35,7 +35,7 @@ export function communityLimits(): Limits {
   return { llm: { ...COMMUNITY_LLM_LIMITS }, licenses: { ...COMMUNITY_LICENSE_LIMITS } };
 }
 
-/** enterprise.md §5: enterprise features stay on this many days after `expires`. */
+/** enterprise.md §5: enterprise features stay on this many days after `expires` (not for a trial key). */
 export const LICENSE_GRACE_DAYS = 14;
 
 /** What a plugin may override (enterprise.md §10.5): the LLM limits and the licence policy. */

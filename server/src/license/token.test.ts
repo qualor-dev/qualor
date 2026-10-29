@@ -1,6 +1,6 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { signTest, testPayload, testSigner } from '../../test/license';
+import { signTest, testPayload, testSigner, verifyWith } from '../../test/license';
 import {
   keyHash,
   MAX_KEY_LENGTH,
@@ -9,6 +9,7 @@ import {
   signLicenseKey,
   type LicensePayload,
 } from './token';
+import { verifyLicenseKey } from './verify';
 
 describe('licence key text (enterprise.md §3)', () => {
   const signer = testSigner();
@@ -107,5 +108,44 @@ describe('licence key text (enterprise.md §3)', () => {
     expect(() => signTest(signer, testPayload({ issued: '2026-10-01T24:00:00Z' }))).toThrow();
     const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
     expect(() => signLicenseKey(testPayload(), 'test-a', privateKey)).toThrow(/Ed25519/);
+  });
+});
+
+describe('the trial mark', () => {
+  const signer = testSigner();
+  const signRaw = (body: object): string => {
+    const input = `QLK1.${signer.kid}.${Buffer.from(JSON.stringify(body)).toString('base64url')}`;
+    return `${input}.${sign(null, Buffer.from(input), signer.privateKey).toString('base64url')}`;
+  };
+
+  it('verifies and keeps trial: true', () => {
+    const key = signTest(signer, testPayload({ trial: true }));
+    const result = verifyLicenseKey(key, verifyWith(signer));
+    expect(result.ok && result.license.trial).toBe(true);
+  });
+
+  it('puts trial after features, and leaves it out of a paid key', () => {
+    const body = (key: string) => Buffer.from(key.split('.')[2]!, 'base64url').toString('utf8');
+    expect(Object.keys(JSON.parse(body(signTest(signer, testPayload({ trial: true })))))).toEqual([
+      'v',
+      'id',
+      'customer',
+      'issued',
+      'expires',
+      'features',
+      'trial',
+    ]);
+    expect(body(signTest(signer))).not.toContain('trial');
+    const paid = verifyLicenseKey(signTest(signer), verifyWith(signer));
+    expect(paid.ok && 'trial' in paid.license).toBe(false);
+  });
+
+  it.each([false, 'yes', 1])('rejects trial: %j as bad-payload', (value) => {
+    expect(
+      verifyLicenseKey(signRaw({ ...testPayload(), trial: value }), verifyWith(signer)),
+    ).toEqual({
+      ok: false,
+      reason: 'bad-payload',
+    });
   });
 });

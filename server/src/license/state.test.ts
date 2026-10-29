@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { testPayload } from '../../test/license';
-import { DAY_MS, licenseState } from './state';
+import { DAY_MS, graceEndsAt, licenseState, TRIAL_EXPIRES_SOON_DAYS } from './state';
 import type { Verification } from './verify';
 
 const license = testPayload({ expires: '2027-10-01T00:00:00Z' });
@@ -58,5 +58,30 @@ describe('licenseState (enterprise.md §5)', () => {
       licensed: false,
       expiresSoon: false,
     });
+  });
+});
+
+describe('licenseState for a trial key', () => {
+  const trial = testPayload({ expires: '2027-10-01T00:00:00Z', trial: true });
+  const tv: Verification = { ok: true, kid: 'test-a', license: trial };
+
+  it('has no grace: active until expires, then expired', () => {
+    expect(licenseState(tv, at(expires - 1))).toMatchObject({ state: 'active', licensed: true });
+    const lapsed = licenseState(tv, at(expires));
+    expect(lapsed).toMatchObject({ state: 'expired', licensed: false });
+    expect(lapsed.graceEndsAt?.getTime()).toBe(expires);
+    expect(graceEndsAt(trial).getTime()).toBe(expires);
+  });
+
+  it('warns 7 days before expiry, not earlier', () => {
+    expect(TRIAL_EXPIRES_SOON_DAYS).toBe(7);
+    expect(licenseState(tv, at(expires - 8 * DAY_MS)).expiresSoon).toBe(false);
+    expect(licenseState(tv, at(expires - 7 * DAY_MS)).expiresSoon).toBe(false);
+    expect(licenseState(tv, at(expires - 7 * DAY_MS + 1)).expiresSoon).toBe(true);
+  });
+
+  it('leaves a paid key with its grace and 30-day warning', () => {
+    expect(licenseState(ok, at(expires))).toMatchObject({ state: 'grace', licensed: true });
+    expect(licenseState(ok, at(expires - 8 * DAY_MS)).expiresSoon).toBe(true);
   });
 });
