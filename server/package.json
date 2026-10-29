@@ -31,7 +31,7 @@
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.6",
     "fastify-type-provider-zod": "^7.0.0",
-    "nodemailer": "10.1.4",
+    "nodemailer": "10.1.5",
     "openid-client": "6.8.8",
     "pdfkit": "0.20.2",
     "pg": "^8.23.0",
