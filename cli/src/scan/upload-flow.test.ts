@@ -827,24 +827,14 @@ describe('qualor scan: the AI review snapshot of a merge request (6I-2)', () => 
     },
   );
 
-  // Semgrep's own preparation skips for a config that does not exist, and returns the FIRST skip
-  // of the list, dropping the configs it already resolved: the rules the configuration names
-  // never ran, which is not "nothing to run".
+  // Semgrep skips when none of the rule files the configuration names exists: those rules never
+  // ran, which is not "nothing to run". It skips before it looks for OpenGrep, so the machine
+  // running the tests does not decide.
   it.each([
     ['a named rule file that does not exist', '[rules/missing.yml]', {}],
     [
       'a typo in the name of a rule file',
       '[rules/secret.yml]',
-      { 'rules/secrets.yml': SECRET_RULE },
-    ],
-    [
-      'two named rule files, the second gone (the first resolved, then was dropped)',
-      '[rules/secrets.yml, rules/old.yml]',
-      { 'rules/secrets.yml': SECRET_RULE },
-    ],
-    [
-      'qualor-default next to a named rule file, on a runner without the image',
-      '[qualor-default, rules/secrets.yml]',
       { 'rules/secrets.yml': SECRET_RULE },
     ],
   ])(
@@ -873,6 +863,55 @@ describe('qualor scan: the AI review snapshot of a merge request (6I-2)', () => 
       ]);
     },
   );
+
+  // With a rule file to run, Semgrep runs the files that exist: what then holds the snapshot up is
+  // a named file that does not exist, not an unusable qualor-default.
+  describeWithTools([['opengrep', 'semgrep']])('Semgrep with OpenGrep or Semgrep installed', () => {
+    const semgrepRun = async (configs: string) => {
+      const mr = mrRepo({
+        yml: withAnalyzers(`  semgrep:\n    configs: ${configs}\n`),
+        base: { 'rules/secrets.yml': SECRET_RULE },
+      });
+      const server = await fakeServer([done('passed')], undefined, { context: REVIEW_ON });
+      const { code, stderr } = await scan(
+        mr.root,
+        server,
+        [],
+        { analyzers: [fakeSecretEngine(tmp()).analyzer, semgrepWithoutImage()] },
+        gitlabMr(mr.head),
+      );
+      expect(code, stderr).toBe(0);
+      expect(server.uploaded[0]?.engines).toContainEqual(
+        expect.objectContaining({ id: 'semgrep', status: 'ok' }),
+      );
+      return { server, stderr };
+    };
+
+    it(
+      'two named rule files, the second gone: the first runs and the snapshot is held up',
+      { timeout: 120_000 },
+      async () => {
+        const { server, stderr } = await semgrepRun('[rules/secrets.yml, rules/old.yml]');
+        expect(server.uploaded[0]?.warnings).toContainEqual(
+          expect.objectContaining({ code: 'SEMGREP_CONFIG_MISSING' }),
+        );
+        expect(server.paths).toEqual([...UNTIL_REPORT, CONTEXT, GATE]);
+        expect(reviewWarnings(stderr)).toEqual([
+          'warn: AI review: no snapshot sent, the secret scan (semgrep) did not complete',
+        ]);
+      },
+    );
+
+    it(
+      'qualor-default next to a named rule file, on a runner without the image: the file runs and the snapshot goes',
+      { timeout: 120_000 },
+      async () => {
+        const { server, stderr } = await semgrepRun('[qualor-default, rules/secrets.yml]');
+        expect(server.paths).toEqual([...UNTIL_REPORT, CONTEXT, SNAPSHOT, GATE]);
+        expect(reviewWarnings(stderr)).toEqual([]);
+      },
+    );
+  });
 
   it.each([
     ['does not exist', 'missing.toml', {}],
