@@ -1,6 +1,55 @@
 import { describe, expect, it } from 'vitest';
 import { PROFILE_LANGUAGES } from '../orgs/builtins';
-import { governingLanguage } from './profiles';
+import { governingLanguage, ruleSetting, type ProfileSet, type RuleSetting } from './profiles';
+
+describe('ruleSetting (data-model.md §4.4)', () => {
+  const row = (setting: Partial<RuleSetting>): RuleSetting => ({
+    active: true,
+    severityOverride: null,
+    scopeOverride: null,
+    ...setting,
+  });
+  const set = (
+    rows: Record<string, RuleSetting>,
+    unknownRules: 'activate' | 'ignore' = 'activate',
+  ): ProfileSet => ({
+    chains: new Map([['typescript', { profileIds: ['child', 'parent'], unknownRules }]]),
+    settings: new Map(Object.entries(rows).map(([profile, r]) => [profile, new Map([['r', r]])])),
+  });
+
+  it('takes activation and severity from the nearest row, the scope from the nearest override (0.13)', () => {
+    expect(
+      ruleSetting(
+        set({
+          child: row({ active: false }),
+          parent: row({ severityOverride: 'high', scopeOverride: 'all' }),
+        }),
+        'typescript',
+        'r',
+      ),
+    ).toEqual({ active: false, severityOverride: null, scopeOverride: 'all' });
+    expect(
+      ruleSetting(
+        set({ child: row({ scopeOverride: 'test' }), parent: row({ scopeOverride: 'all' }) }),
+        'typescript',
+        'r',
+      ).scopeOverride,
+    ).toBe('test');
+  });
+
+  it('has no scope override for a rule no profile of the chain sets, nor without a profile', () => {
+    expect(ruleSetting(set({}, 'ignore'), 'typescript', 'r')).toEqual({
+      active: false,
+      severityOverride: null,
+      scopeOverride: null,
+    });
+    expect(ruleSetting(set({}), 'java', 'r')).toEqual({
+      active: true,
+      severityOverride: null,
+      scopeOverride: null,
+    });
+  });
+});
 
 describe('governingLanguage (ruling P2, data-model.md §4.4)', () => {
   it('lets the csharp profile govern roslyn findings on C# files', () => {

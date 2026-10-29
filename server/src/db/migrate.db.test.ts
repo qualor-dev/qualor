@@ -55,8 +55,9 @@ describe('runMigrations / pendingMigrations', () => {
     // 2026-10-15), 0013_oauth (phase 6N, OAuth clients, requests, grants and tokens),
     // 0014_chat_webhooks (phase 6G, Slack and Teams webhooks), 0015_review_snapshots (phase 6I-2,
     // the repository snapshots of the AI review), 0016_review_runs (phase 6I-3, the review runs
-    // and the AI findings), 0017_review_replies (phase 6I-4, the replies ledger).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(18);
+    // and the AI findings), 0017_review_replies (phase 6I-4, the replies ledger), 0018_rule_scope
+    // (0.13, a rule's scope and its profile override).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(19);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -478,5 +479,56 @@ describe('runMigrations / pendingMigrations', () => {
       code: '23514',
       constraint: 'llm_requests_feature_check',
     });
+  });
+
+  it('gives every existing rule the scope all and every profile row no override (0018, 0.13)', async () => {
+    const db = await createTestDatabase({ migrated: false });
+    t = db;
+    const upTo17 = migrationsUpTo(18); // 0000_extensions … 0017_review_replies
+    try {
+      await runMigrations(db.pool, upTo17.dir);
+    } finally {
+      upTo17.remove();
+    }
+    // 0018 and every later migration.
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(journalLength() - 18);
+    const org = randomUUID();
+    const profile = randomUUID();
+    const rule = randomUUID();
+    await db.pool.query(`INSERT INTO organizations (id, key, name) VALUES ($1, 'mig-013', 'Mig')`, [
+      org,
+    ]);
+    await db.pool.query(
+      `INSERT INTO rules (id, key, engine_id, engine_rule_id, name, default_severity, quality, kind, origin)
+       VALUES ($1, 'sonarjs:S2004', 'sonarjs', 'S2004', 'S2004', 'medium', 'maintainability', 'issue', 'reported')`,
+      [rule],
+    );
+    await db.pool.query(
+      `INSERT INTO quality_profiles (id, organization_id, name, language) VALUES ($1, $2, 'P', 'typescript')`,
+      [profile, org],
+    );
+    await db.pool.query(
+      `INSERT INTO profile_rules (profile_id, rule_id, active, severity_override) VALUES ($1, $2, false, 'high')`,
+      [profile, rule],
+    );
+
+    await runMigrations(db.pool, MIGRATIONS_DIR);
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
+    const { rows: scoped } = await db.pool.query(
+      `SELECT r.scope, pr.active, pr.severity_override, pr.scope_override
+         FROM profile_rules pr JOIN rules r ON r.id = pr.rule_id`,
+    );
+    expect(scoped).toEqual([
+      { scope: 'all', active: false, severity_override: 'high', scope_override: null },
+    ]);
+    // The checks take the three scopes and nothing else.
+    await db.pool.query(`UPDATE rules SET scope = 'main' WHERE id = $1`, [rule]);
+    await db.pool.query(`UPDATE profile_rules SET scope_override = 'test'`);
+    await expect(
+      db.pool.query(`UPDATE rules SET scope = 'Main' WHERE id = $1`, [rule]),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'rules_scope_check' });
+    await expect(
+      db.pool.query(`UPDATE profile_rules SET scope_override = 'tests'`),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'profile_rules_scope_check' });
   });
 });

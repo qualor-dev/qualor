@@ -1,4 +1,4 @@
-import { ENGINE_ID_PATTERN, SEVERITIES } from '@qualor/shared';
+import { ENGINE_ID_PATTERN, RULE_SCOPES, type RuleScope, SEVERITIES } from '@qualor/shared';
 import { and, asc, count, eq, gt, inArray, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -112,7 +112,7 @@ export async function removeBareRules(tx: Executor, ruleIds: readonly string[]):
      WHERE id IN ${uuidList(ruleIds)}
        AND origin = 'reported' AND name = engine_rule_id
        AND description_md IS NULL AND help_uri IS NULL
-       AND languages = '{}' AND tags = '{}' AND cwe = '{}'
+       AND languages = '{}' AND tags = '{}' AND cwe = '{}' AND scope = 'all'
      ORDER BY id
      FOR UPDATE SKIP LOCKED`);
   const ids = locked.rows.map((r) => r.id);
@@ -348,9 +348,17 @@ export const profileRuleSchema = z.object({
     defaultSeverity: z.enum(SEVERITIES),
     quality: z.string(),
     kind: z.string(),
+    scope: z.enum(RULE_SCOPES).meta({ description: "The rule's own scope, before any profile" }),
   }),
   active: z.boolean(),
   severityOverride: z.enum(SEVERITIES).nullable(),
+  scope: z.enum(RULE_SCOPES).meta({
+    description:
+      "The code the rule reports on in this profile: scopeOverride, else the nearest ancestor's override, else the rule's own scope",
+  }),
+  scopeOverride: z.enum(RULE_SCOPES).nullable().meta({
+    description: "The scope this profile sets itself; null: it inherits one or takes the rule's",
+  }),
   /** `profile`: this profile's own row; `inherited`: an ancestor's row; `default`: no row. */
   source: z.enum(['profile', 'inherited', 'default']),
   sourceProfileId: z.uuid().nullable(),
@@ -360,7 +368,7 @@ type ProfileRuleDto = z.infer<typeof profileRuleSchema>;
 /** What a profile rule entry shows of its rule. */
 type RuleView = Pick<
   RuleRow,
-  'key' | 'name' | 'engineId' | 'languages' | 'defaultSeverity' | 'quality' | 'kind'
+  'key' | 'name' | 'engineId' | 'languages' | 'defaultSeverity' | 'quality' | 'kind' | 'scope'
 >;
 
 interface EffectiveRow {
@@ -368,6 +376,10 @@ interface EffectiveRow {
   rowActive: boolean | null;
   severityOverride: string | null;
   sourceProfileId: string | null;
+  /** This profile's own scope override. */
+  scopeOverride: RuleScope | null;
+  /** The nearest scope override of the chain, this profile's own included. */
+  chainScope: RuleScope | null;
 }
 
 function profileRuleDto(profile: ProfileRow, row: EffectiveRow): ProfileRuleDto {
@@ -381,9 +393,12 @@ function profileRuleDto(profile: ProfileRow, row: EffectiveRow): ProfileRuleDto 
       defaultSeverity: rule.defaultSeverity as ProfileRuleDto['rule']['defaultSeverity'],
       quality: rule.quality,
       kind: rule.kind,
+      scope: rule.scope,
     },
     active: row.rowActive ?? profile.unknownRules === 'activate',
     severityOverride: (row.severityOverride as ProfileRuleDto['severityOverride']) ?? null,
+    scope: row.chainScope ?? rule.scope,
+    scopeOverride: row.scopeOverride,
     source:
       row.sourceProfileId === null
         ? 'default'
@@ -402,13 +417,15 @@ function profileRuleDto(profile: ProfileRow, row: EffectiveRow): ProfileRuleDto 
 interface NearestRow {
   active: boolean;
   severity: string | null;
+  scope: RuleScope | null;
   profile: string;
 }
 
 /**
  * data-model.md §4.4 with inheritance resolved the way ingestion resolves it (rules/profiles.ts
  * `ruleSetting`): the nearest row in the chain wins; a rule with no row anywhere follows this
- * profile's `unknown_rules`. Only the rules the profile's organisation has met (ruling X2).
+ * profile's `unknown_rules`; the scope is the nearest override. Only the rules the profile's
+ * organisation has met (ruling X2).
  */
 async function effectiveRules(
   db: Executor,
@@ -417,13 +434,20 @@ async function effectiveRules(
   options: { active: boolean | undefined; scope: 'default' | 'all'; limit: number },
 ): Promise<EffectiveRow[]> {
   const chain = await profileChain(db, profile);
+  const chainRows = sql`profile_rules pr
+      JOIN jsonb_array_elements_text(${JSON.stringify(chain)}::jsonb) WITH ORDINALITY
+           AS c(id, ord) ON c.id::uuid = pr.profile_id`;
   const nearest = sql`(
     SELECT json_build_object('active', pr.active, 'severity', pr.severity_override,
-                             'profile', pr.profile_id)
-      FROM profile_rules pr
-      JOIN jsonb_array_elements_text(${JSON.stringify(chain)}::jsonb) WITH ORDINALITY
-           AS c(id, ord) ON c.id::uuid = pr.profile_id
+                             'scope', pr.scope_override, 'profile', pr.profile_id)
+      FROM ${chainRows}
      WHERE pr.rule_id = ${rules.id}
+     ORDER BY c.ord
+     LIMIT 1)`;
+  const nearestScope = sql`(
+    SELECT pr.scope_override
+      FROM ${chainRows}
+     WHERE pr.rule_id = ${rules.id} AND pr.scope_override IS NOT NULL
      ORDER BY c.ord
      LIMIT 1)`;
   const activeFilter =
@@ -444,6 +468,7 @@ async function effectiveRules(
     .select({
       rule: rules,
       nearest: sql<NearestRow | null>`${nearest}`,
+      chainScope: sql<RuleScope | null>`${nearestScope}`,
     })
     .from(rules)
     .where(and(scope, ...where, activeFilter, ruleVisibleTo(profile.organizationId)))
@@ -454,6 +479,8 @@ async function effectiveRules(
     rowActive: r.nearest?.active ?? null,
     severityOverride: r.nearest?.severity ?? null,
     sourceProfileId: r.nearest?.profile ?? null,
+    scopeOverride: r.nearest?.profile === profile.id ? r.nearest.scope : null,
+    chainScope: r.chainScope,
   }));
 }
 
@@ -516,6 +543,7 @@ function bareRule(parsed: { engineId: string; engineRuleId: string }, key: strin
     defaultSeverity: defaults.defaultSeverity,
     quality: defaults.quality,
     kind: 'issue',
+    scope: 'all',
   };
 }
 
@@ -847,6 +875,7 @@ export const profileRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
                 ruleId: r.ruleId,
                 active: r.active,
                 severityOverride: r.severityOverride,
+                scopeOverride: r.scopeOverride,
               })),
             );
           }
@@ -962,12 +991,26 @@ export const profileRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
       config: { openapi: { problems: [409] } },
       schema: {
         tags: ['profiles'],
-        summary: 'Activate or deactivate a rule in this profile, optionally with a severity',
+        summary:
+          'Activate or deactivate a rule in this profile, optionally with a severity, or set the code it reports on',
         params: ruleParams,
-        body: z.strictObject({
-          active: z.boolean(),
-          severityOverride: z.enum(SEVERITIES).nullable().optional(),
-        }),
+        body: z
+          .strictObject({
+            active: z.boolean().optional().meta({
+              description:
+                'Absent (with a scope) keeps the activation and severity the profile has now',
+            }),
+            severityOverride: z.enum(SEVERITIES).nullable().optional().meta({
+              description: 'Absent with `active` clears the severity override',
+            }),
+            scope: z.enum(RULE_SCOPES).nullable().optional().meta({
+              description:
+                "The code the rule reports on in this profile and its children; null removes this profile's override, absent keeps it",
+            }),
+          })
+          .refine((b) => b.active !== undefined || b.scope !== undefined, {
+            message: 'Set active, scope or both',
+          }),
         response: { 200: profileRuleSchema },
       },
     },
@@ -982,13 +1025,12 @@ export const profileRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
       const key = request.params.ruleKey;
       const parsed = requireGovernable(profile, key);
       const bare = bareRule(parsed, key);
-      const active = request.body.active;
-      const severityOverride = request.body.severityOverride ?? null;
+      const { body } = request;
       const rule = await deps.db.transaction(async (tx) => {
         // Serialises the rule settings of this profile, so the bound below holds; waits for a
         // delete of the profile, and finds it gone after.
         const [locked] = await tx
-          .select({ id: qualityProfiles.id })
+          .select({ id: qualityProfiles.id, unknownRules: qualityProfiles.unknownRules })
           .from(qualityProfiles)
           .where(eq(qualityProfiles.id, profile.id))
           .for('no key update');
@@ -1048,26 +1090,66 @@ export const profileRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
             .for('key share', { of: rules });
         }
         if (!found) throw notFound('Rule');
+        // The rule's rows in the chain, nearest first: a field the body leaves out keeps what the
+        // profile has now, so a row made only for a scope copies the inherited activation and
+        // severity (the nearest row decides both, rules/profiles.ts `ruleSetting`). Only a
+        // severity left out beside `active` is cleared, as before 0.13.
+        const chain = await profileChain(tx, profile);
+        const rows = await tx
+          .select({
+            profileId: profileRules.profileId,
+            active: profileRules.active,
+            severityOverride: profileRules.severityOverride,
+            scopeOverride: profileRules.scopeOverride,
+          })
+          .from(profileRules)
+          .where(
+            and(eq(profileRules.ruleId, found.row.id), inArray(profileRules.profileId, chain)),
+          );
+        const ordered = chain.flatMap((id) => rows.filter((r) => r.profileId === id));
+        const [nearest] = ordered;
+        const ownRow = nearest?.profileId === profile.id ? nearest : undefined;
+        const active = body.active ?? nearest?.active ?? locked.unknownRules === 'activate';
+        const severityOverride =
+          body.severityOverride !== undefined
+            ? body.severityOverride
+            : body.active === undefined
+              ? (nearest?.severityOverride ?? null)
+              : null;
+        const scopeOverride =
+          body.scope !== undefined ? body.scope : (ownRow?.scopeOverride ?? null);
+        const inheritedScope =
+          ordered.find((r) => r.profileId !== profile.id && r.scopeOverride !== null)
+            ?.scopeOverride ?? null;
         // One upsert: concurrent PUTs of one rule never collide on the primary key.
         await tx
           .insert(profileRules)
-          .values({ profileId: profile.id, ruleId: found.row.id, active, severityOverride })
+          .values({
+            profileId: profile.id,
+            ruleId: found.row.id,
+            active,
+            severityOverride,
+            scopeOverride,
+          })
           .onConflictDoUpdate({
             target: [profileRules.profileId, profileRules.ruleId],
-            set: { active, severityOverride },
+            set: { active, severityOverride, scopeOverride },
           });
         await audit(tx, request, profile, 'quality_profile.rule_set', {
           ruleKey: key,
           active,
           severityOverride,
+          scopeOverride,
         });
-        return found;
+        return { found, active, severityOverride, scopeOverride, inheritedScope };
       });
       return profileRuleDto(profile, {
-        rule: rule.visible ? rule.row : bare,
-        rowActive: active,
-        severityOverride,
+        rule: rule.found.visible ? rule.found.row : bare,
+        rowActive: rule.active,
+        severityOverride: rule.severityOverride,
         sourceProfileId: profile.id,
+        scopeOverride: rule.scopeOverride,
+        chainScope: rule.scopeOverride ?? rule.inheritedScope,
       });
     },
   );

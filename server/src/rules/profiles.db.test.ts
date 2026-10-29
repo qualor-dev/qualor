@@ -46,7 +46,13 @@ describe('loadProfileSet reads one snapshot (E1 wave)', () => {
     childId = child!.id;
     await db.insert(profileRules).values([
       { profileId: childId, ruleId, active: false },
-      { profileId: builtin!.id, ruleId: otherRuleId, active: true, severityOverride: 'high' },
+      {
+        profileId: builtin!.id,
+        ruleId: otherRuleId,
+        active: true,
+        severityOverride: 'high',
+        scopeOverride: 'main',
+      },
     ]);
     await db
       .insert(projectProfiles)
@@ -67,8 +73,16 @@ describe('loadProfileSet reads one snapshot (E1 wave)', () => {
     expect(statements).toHaveLength(1);
     expect(set.chains.get('*')!.profileIds[0]).toBe(childId);
     expect(set.chains.get('*')!.profileIds).toHaveLength(2);
-    expect(ruleSetting(set, '*', ruleId)).toEqual({ active: false, severityOverride: null });
-    expect(ruleSetting(set, '*', otherRuleId)).toEqual({ active: true, severityOverride: 'high' });
+    expect(ruleSetting(set, '*', ruleId)).toEqual({
+      active: false,
+      severityOverride: null,
+      scopeOverride: null,
+    });
+    expect(ruleSetting(set, '*', otherRuleId)).toEqual({
+      active: true,
+      severityOverride: 'high',
+      scopeOverride: 'main',
+    });
     // Without rules to ask about, still one statement and no settings.
     statements.length = 0;
     const bare = await loadProfileSet(logged, project, []);

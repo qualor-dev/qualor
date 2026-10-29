@@ -217,6 +217,18 @@ describe('audit recording B (rbac-audit.md §8, §9): gates, profiles, issues, S
       ruleKey: 'eslint:no-eval',
       active: false,
       severityOverride: 'high',
+      scopeOverride: null,
+    });
+    // (0.13) A change of the scope alone records the row as it is after the change.
+    const scoped = await call('PUT', `/quality-profiles/${profile}/rules/eslint:no-eval`, {
+      scope: 'main',
+    });
+    expect(scoped.statusCode, scoped.body).toBe(200);
+    expect((await latest('quality_profile.rule_set')).details).toEqual({
+      ruleKey: 'eslint:no-eval',
+      active: false,
+      severityOverride: 'high',
+      scopeOverride: 'main',
     });
     expect(
       (await call('DELETE', `/quality-profiles/${profile}/rules/eslint:no-eval`)).statusCode,

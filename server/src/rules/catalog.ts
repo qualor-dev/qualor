@@ -4,6 +4,7 @@ import {
   type IssueKind,
   type Quality,
   type Report,
+  type RuleScope,
   type Severity,
 } from '@qualor/shared';
 import { jsonChunks, textList } from '../db/bulk';
@@ -35,6 +36,7 @@ export interface ReportedRuleRow {
   kind: IssueKind;
   tags: string[];
   cwe: number[];
+  scope: RuleScope;
 }
 
 /**
@@ -69,6 +71,8 @@ export function ruleRowsFromReport(report: Report): {
         kind: meta.kind ?? 'issue',
         tags: meta.tags ?? [],
         cwe: meta.cwe ?? [],
+        // Absent: all code, as every report before 0.13 (so an older scanner keeps 0.12's issues).
+        scope: meta.scope ?? 'all',
       });
     }
   }
@@ -92,6 +96,7 @@ export function ruleRowsFromReport(report: Report): {
       kind: 'issue',
       tags: [],
       cwe: [],
+      scope: 'all',
     });
   }
   // Sorted by key: two concurrent ingestions upserting an overlapping set of rules then lock
@@ -131,6 +136,7 @@ const RULE_COLUMNS: readonly RuleColumn[] = [
   { name: 'kind', type: 'text' },
   { name: 'tags', type: 'jsonb', arrayOf: 'text' },
   { name: 'cwe', type: 'jsonb', arrayOf: 'integer' },
+  { name: 'scope', type: 'text' },
 ];
 
 /** Every inserted row also gets these two literal, non-record columns (in this order). */
@@ -177,6 +183,7 @@ const METADATA = [
   'kind',
   'tags',
   'cwe',
+  'scope',
 ] as const;
 const METADATA_OF = (table: string) =>
   sql.raw(`(${METADATA.map((c) => `${table}.${c}`).join(', ')})`);
@@ -255,6 +262,7 @@ export async function upsertReportedRules(
         quality: rules.quality,
         kind: rules.kind,
         cwe: rules.cwe,
+        scope: rules.scope,
       })
       .from(rules)
       .where(sql`${rules.key} IN ${textList(keys)}`)
@@ -269,6 +277,7 @@ export async function upsertReportedRules(
         quality: row.quality as Quality,
         kind: row.kind,
         cwe: row.cwe,
+        scope: row.scope,
       });
     }
   };

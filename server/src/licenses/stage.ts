@@ -129,6 +129,7 @@ export async function ensureLicenseRules(tx: Executor): Promise<Map<string, Reso
       quality: rules.quality,
       kind: rules.kind,
       cwe: rules.cwe,
+      scope: rules.scope,
     })
     .from(rules)
     .where(

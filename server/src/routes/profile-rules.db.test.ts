@@ -119,6 +119,7 @@ describe('profile rule activation and per-project profiles (api.md Â§3, server
           languages: ['typescript'],
           quality: 'security',
           defaultSeverity: 'high',
+          scope: 'main',
         }),
       });
     }
@@ -607,10 +608,13 @@ describe('profile rule activation and per-project profiles (api.md Â§3, server
       defaultSeverity: 'medium',
       quality: 'maintainability',
       kind: 'issue',
+      scope: 'all',
     });
     const rest = {
       active: false,
       severityOverride: null,
+      scope: 'all',
+      scopeOverride: null,
       source: 'profile',
       sourceProfileId: custom,
     };
@@ -644,6 +648,96 @@ describe('profile rule activation and per-project profiles (api.md Â§3, server
     // Once one of its profiles has a row, the organisation has met the rule; its metadata is the
     // shared global row.
     const seen = await call('GET', `/rules/eslint%3Aother-org-only?${org}`, member);
-    expect(seen.json()).toMatchObject({ name: 'Secret rule of another organisation' });
+    expect(seen.json()).toMatchObject({
+      name: 'Secret rule of another organisation',
+      scope: 'main',
+    });
+  });
+
+  it("sets a rule's scope in a profile: a child inherits the nearest override, null clears it (0.13)", async () => {
+    const key = 'sonarjs:S2004';
+    const project = await h.project('acme/scope');
+    await seedIssue(h.ctx.db, {
+      projectId: project.id,
+      branchId: await mainBranchId(h.ctx.db, project.id),
+      ruleId: await seedRule(h.ctx.db, { key, scope: 'main' }),
+    });
+    const org = `organizationId=${h.organizationId}`;
+    expect(
+      (await call('GET', `/rules/${encodeURIComponent(key)}?${org}`, member)).json(),
+    ).toMatchObject({ key, scope: 'main' });
+    const parent = await createProfile('Scope parent');
+    const child = await createProfile('Scope child', { parentId: parent });
+    const entryOf = async (profileId: string) =>
+      (await entries(profileId, `&q=${encodeURIComponent(key)}`)).find((e) => e.rule.key === key);
+
+    const inParent = await setRule(parent, key, { active: false, scope: 'test' });
+    expect(inParent.statusCode, inParent.body).toBe(200);
+    expect(inParent.json()).toEqual({
+      rule: expect.objectContaining({ key, scope: 'main' }),
+      active: false,
+      severityOverride: null,
+      scope: 'test',
+      scopeOverride: 'test',
+      source: 'profile',
+      sourceProfileId: parent,
+    });
+    expect(await entryOf(child)).toMatchObject({
+      active: false,
+      scope: 'test',
+      scopeOverride: null,
+      source: 'inherited',
+    });
+
+    // A row made only for a scope keeps what the profile had: here the parent's activation.
+    const onlyScope = await setRule(child, key, { scope: 'all' });
+    expect(onlyScope.statusCode, onlyScope.body).toBe(200);
+    expect(onlyScope.json()).toMatchObject({
+      active: false,
+      severityOverride: null,
+      scope: 'all',
+      scopeOverride: 'all',
+      source: 'profile',
+      sourceProfileId: child,
+    });
+    // A change without `scope` keeps the override; one without `active` keeps the activation.
+    await setRule(child, key, { active: true, severityOverride: 'high' });
+    expect(await entryOf(child)).toMatchObject({
+      active: true,
+      severityOverride: 'high',
+      scope: 'all',
+      scopeOverride: 'all',
+    });
+    await setRule(child, key, { scope: 'main' });
+    expect(await entryOf(child)).toMatchObject({
+      active: true,
+      severityOverride: 'high',
+      scope: 'main',
+      scopeOverride: 'main',
+    });
+    // `null` clears this profile's override: the parent's applies again.
+    const cleared = await setRule(child, key, { scope: null });
+    expect(cleared.json()).toMatchObject({
+      active: true,
+      severityOverride: 'high',
+      scope: 'test',
+      scopeOverride: null,
+      source: 'profile',
+    });
+    expect(await entryOf(child)).toMatchObject({ scope: 'test', scopeOverride: null });
+
+    // A copy takes the overrides along.
+    const copy = await call('POST', `/quality-profiles/${parent}/copy`, h.orgAdmin, {
+      name: 'Scope parent copy',
+    });
+    expect(await entryOf((copy.json() as { id: string }).id)).toMatchObject({
+      scope: 'test',
+      scopeOverride: 'test',
+    });
+
+    const bad = await setRule(child, key, { active: true, scope: 'Main' });
+    expect([bad.statusCode, bad.json().errors[0].path]).toEqual([422, 'body.scope']);
+    // Neither an activation nor a scope: nothing to set.
+    expect((await setRule(child, key, { severityOverride: 'low' })).statusCode).toBe(422);
   });
 });

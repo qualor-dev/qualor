@@ -1,4 +1,10 @@
-import { ENGINE_ID_PATTERN, LICENSE_GROUPS, SEVERITIES, type LicenseGroupId } from '@qualor/shared';
+import {
+  ENGINE_ID_PATTERN,
+  LICENSE_GROUPS,
+  RULE_SCOPES,
+  SEVERITIES,
+  type LicenseGroupId,
+} from '@qualor/shared';
 import { z } from 'zod';
 import { ORGANIZATION_KEY_PATTERN, PROJECT_KEY_PATTERN } from '../patterns';
 import { REVIEW_SCOPES } from '../review/schema';
@@ -463,6 +469,8 @@ export const AUDIT_CATALOGUE = {
       ruleKey,
       active: z.boolean(),
       severityOverride: z.string().max(16).nullable(),
+      /** The profile's own scope override after the change (0.13; older events lack it). */
+      scopeOverride: z.enum(RULE_SCOPES).nullable(),
     }),
   },
   'quality_profile.rule_reset': {

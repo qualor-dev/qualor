@@ -7120,6 +7120,11 @@ export interface paths {
                                 kind: "issue" | "hotspot";
                                 tags: string[];
                                 cwe: number[];
+                                /**
+                                 * @description The code the rule reports on: main, test or all; a quality profile may change it
+                                 * @enum {string}
+                                 */
+                                scope: "main" | "test" | "all";
                                 /** @enum {string} */
                                 status: "ready" | "deprecated" | "removed";
                                 /** @enum {string} */
@@ -7222,6 +7227,11 @@ export interface paths {
                             kind: "issue" | "hotspot";
                             tags: string[];
                             cwe: number[];
+                            /**
+                             * @description The code the rule reports on: main, test or all; a quality profile may change it
+                             * @enum {string}
+                             */
+                            scope: "main" | "test" | "all";
                             /** @enum {string} */
                             status: "ready" | "deprecated" | "removed";
                             /** @enum {string} */
@@ -7966,9 +7976,21 @@ export interface paths {
                                     defaultSeverity: "blocker" | "high" | "medium" | "low" | "info";
                                     quality: string;
                                     kind: string;
+                                    /**
+                                     * @description The rule's own scope, before any profile
+                                     * @enum {string}
+                                     */
+                                    scope: "main" | "test" | "all";
                                 };
                                 active: boolean;
                                 severityOverride: ("blocker" | "high" | "medium" | "low" | "info") | null;
+                                /**
+                                 * @description The code the rule reports on in this profile: scopeOverride, else the nearest ancestor's override, else the rule's own scope
+                                 * @enum {string}
+                                 */
+                                scope: "main" | "test" | "all";
+                                /** @description The scope this profile sets itself; null: it inherits one or takes the rule's */
+                                scopeOverride: ("main" | "test" | "all") | null;
                                 /** @enum {string} */
                                 source: "profile" | "inherited" | "default";
                                 sourceProfileId: string | null;
@@ -8031,7 +8053,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Activate or deactivate a rule in this profile, optionally with a severity */
+        /** Activate or deactivate a rule in this profile, optionally with a severity, or set the code it reports on */
         put: {
             parameters: {
                 query?: never;
@@ -8045,8 +8067,12 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        active: boolean;
+                        /** @description Absent (with a scope) keeps the activation and severity the profile has now */
+                        active?: boolean;
+                        /** @description Absent with `active` clears the severity override */
                         severityOverride?: ("blocker" | "high" | "medium" | "low" | "info") | null;
+                        /** @description The code the rule reports on in this profile and its children; null removes this profile's override, absent keeps it */
+                        scope?: ("main" | "test" | "all") | null;
                     };
                 };
             };
@@ -8067,9 +8093,21 @@ export interface paths {
                                 defaultSeverity: "blocker" | "high" | "medium" | "low" | "info";
                                 quality: string;
                                 kind: string;
+                                /**
+                                 * @description The rule's own scope, before any profile
+                                 * @enum {string}
+                                 */
+                                scope: "main" | "test" | "all";
                             };
                             active: boolean;
                             severityOverride: ("blocker" | "high" | "medium" | "low" | "info") | null;
+                            /**
+                             * @description The code the rule reports on in this profile: scopeOverride, else the nearest ancestor's override, else the rule's own scope
+                             * @enum {string}
+                             */
+                            scope: "main" | "test" | "all";
+                            /** @description The scope this profile sets itself; null: it inherits one or takes the rule's */
+                            scopeOverride: ("main" | "test" | "all") | null;
                             /** @enum {string} */
                             source: "profile" | "inherited" | "default";
                             sourceProfileId: string | null;

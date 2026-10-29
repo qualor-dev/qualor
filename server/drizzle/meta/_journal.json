@@ -127,6 +127,13 @@
       "when": 1792993306797,
       "tag": "0017_review_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793285667772,
+      "tag": "0018_rule_scope",
+      "breakpoints": true
     }
   ]
 }

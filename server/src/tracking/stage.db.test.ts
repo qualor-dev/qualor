@@ -172,6 +172,42 @@ describe('issue tracking (server step 8, data-model.md §5.2 and §6)', () => {
     expect(await issuesOf(p)).toMatchObject([{ id: issue!.id, status: 'open' }]);
   });
 
+  it("closes a test-file issue once its rule's scope is main code, and reopens it when a profile lets the rule report on tests (0.13)", async () => {
+    const p = await h.project('track/scope');
+    const parts = (scope?: 'main') => ({
+      engines: [engine('sonarjs', [{ id: 'S2004', ...(scope ? { scope } : {}) }])],
+      files: [file('src/a.test.ts', { kind: 'test' })],
+      findings: [finding({ engineId: 'sonarjs', ruleId: 'S2004', path: 'src/a.test.ts', line: 4 })],
+    });
+    // A report without a scope (an older scanner) keeps the issue, as before 0.13.
+    await p.ingestOk(report(p, parts()));
+    const [issue] = await issuesOf(p);
+    expect(issue).toMatchObject({ status: 'open', path: 'src/a.test.ts' });
+    const scoped = await p.ingestOk(report(p, parts('main')));
+    expect(await issuesOf(p)).toMatchObject([{ id: issue!.id, status: 'closed' }]);
+    const [profile] = await h.ctx.db
+      .insert(qualityProfiles)
+      .values({ organizationId: h.organizationId, name: 'Tests too TS', language: 'typescript' })
+      .returning();
+    await h.ctx.db
+      .insert(projectProfiles)
+      .values({ projectId: p.id, language: 'typescript', profileId: profile!.id });
+    await h.ctx.db.insert(profileRules).values({
+      profileId: profile!.id,
+      ruleId: issue!.ruleId,
+      active: true,
+      scopeOverride: 'all',
+    });
+    const back = await p.ingestOk(report(p, parts('main')));
+    expect(await issuesOf(p)).toMatchObject([{ id: issue!.id, status: 'open', closedAt: null }]);
+    expect((await changesOf(issue!.id)).map((c) => [c.oldValue, c.newValue, c.analysisId])).toEqual(
+      [
+        ['open', 'closed', scoped],
+        ['closed', 'open', back],
+      ],
+    );
+  });
+
   it('reopens a resolved issue that is detected again and leaves wont_fix and false_positive as they are', async () => {
     const p = await h.project('track/statuses');
     const base = [1, 2, 3].map((n) => finding({ line: n, ruleId: `rule-${n}` }));

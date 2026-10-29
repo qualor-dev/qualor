@@ -1,4 +1,4 @@
-import type { LlmFeature } from '@qualor/shared';
+import type { LlmFeature, RuleScope } from '@qualor/shared';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -526,6 +526,8 @@ export const rules = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::integer[]`),
+    /** The code the rule reports on (0.13): main code, test code or all of it. */
+    scope: text('scope').notNull().default('all').$type<RuleScope>(),
     status: text('status').notNull().default('ready').$type<'ready' | 'deprecated' | 'removed'>(),
     origin: text('origin').notNull().$type<'builtin' | 'reported'>(),
     createdAt: createdAt(),
@@ -541,6 +543,7 @@ export const rules = pgTable(
       sql`quality IN ('security','reliability','maintainability','licensing')`,
     ),
     check('rules_kind_check', sql`kind IN ('issue','hotspot')`),
+    check('rules_scope_check', sql`scope IN ('main','test','all')`),
     check('rules_status_check', sql`status IN ('ready','deprecated','removed')`),
     check('rules_origin_check', sql`origin IN ('builtin','reported')`),
   ],
@@ -590,6 +593,8 @@ export const profileRules = pgTable(
       .references(() => rules.id, { onDelete: 'cascade' }),
     active: boolean('active').notNull(),
     severityOverride: text('severity_override'),
+    /** The rule's scope in this profile and its children (0.13); null: none set here. */
+    scopeOverride: text('scope_override').$type<RuleScope>(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -599,6 +604,7 @@ export const profileRules = pgTable(
       'profile_rules_severity_check',
       sql`severity_override IN ('blocker','high','medium','low','info')`,
     ),
+    check('profile_rules_scope_check', sql`scope_override IN ('main','test','all')`),
   ],
 );
 

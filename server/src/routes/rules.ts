@@ -1,4 +1,4 @@
-import { ISSUE_KINDS, QUALITIES, ruleHelpUri, SEVERITIES } from '@qualor/shared';
+import { ISSUE_KINDS, QUALITIES, RULE_SCOPES, ruleHelpUri, SEVERITIES } from '@qualor/shared';
 import { and, asc, eq, gt, ilike, or, sql, type SQL } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -34,6 +34,9 @@ export const ruleSchema = z.object({
   kind: z.enum(ISSUE_KINDS),
   tags: z.array(z.string()),
   cwe: z.array(z.number().int()),
+  scope: z.enum(RULE_SCOPES).meta({
+    description: 'The code the rule reports on: main, test or all; a quality profile may change it',
+  }),
   status: z.enum(['ready', 'deprecated', 'removed']),
   origin: z.enum(['builtin', 'reported']),
   createdAt: timestamp,
@@ -56,6 +59,7 @@ export function ruleDto(row: RuleRow): z.infer<typeof ruleSchema> {
     kind: row.kind,
     tags: row.tags,
     cwe: row.cwe,
+    scope: row.scope,
     status: row.status,
     origin: row.origin,
     createdAt: iso(row.createdAt),

@@ -1,4 +1,11 @@
-import type { GateResult, IssueKind, Quality, ReportFinding, Severity } from '@qualor/shared';
+import type {
+  GateResult,
+  IssueKind,
+  Quality,
+  ReportFinding,
+  RuleScope,
+  Severity,
+} from '@qualor/shared';
 
 /** A rule as the ingestion stages need it (rules.* after the catalog upsert). */
 export interface ResolvedRule {
@@ -9,6 +16,8 @@ export interface ResolvedRule {
   quality: Quality;
   kind: IssueKind;
   cwe: readonly number[];
+  /** The code the rule reports on unless a profile overrides it (0.13). */
+  scope: RuleScope;
 }
 
 type ReportLocation = NonNullable<ReportFinding['location']>;

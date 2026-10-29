@@ -12,6 +12,10 @@ import { SERVER_ENGINES } from './server-engines';
  * never stored (data-model.md §4.4). A finding of a server engine (rules/server-engines.ts) is
  * dropped: only the server makes those (the licence policy stage, the AI review), so a report can
  * neither open nor keep such an issue.
+ *
+ * 0.13: a rule's scope (the profile's override, else the rule's own) keeps a `main` rule off the
+ * report's `test` files and a `test` rule off its `main` files. Those findings are counted in a
+ * warning per kind of code and never stored either, so tracking closes their issues.
  */
 export const rulesStage: IngestionStage = {
   name: 'rules',
@@ -26,8 +30,11 @@ export const rulesStage: IngestionStage = {
     // Shared with the CLI's GitLab report files (scm.md §9), so both name a finding alike.
     const fingerprints = reportFingerprints(report.findings);
     const languageOf = new Map(report.files.map((f) => [f.path, f.language]));
+    const kindOf = new Map(report.files.map((f) => [f.path, f.kind]));
     const accepted: AcceptedFinding[] = [];
     let filtered = 0;
+    /** Findings a rule's scope dropped, by the kind of code they were on. */
+    const outOfScope = { test: 0, main: 0 };
     let serverOnly = 0;
     report.findings.forEach((finding, index) => {
       if (SERVER_ENGINES.has(finding.engineId)) {
@@ -49,6 +56,14 @@ export const rulesStage: IngestionStage = {
         filtered += 1;
         return;
       }
+      // A file-less finding, or one on a file the report does not list, has no kind of code: its
+      // rule's scope never drops it.
+      const kind = finding.location ? kindOf.get(finding.location.path) : undefined;
+      const scope = setting.scopeOverride ?? rule.scope;
+      if (kind !== undefined && scope !== 'all' && scope !== kind) {
+        outOfScope[kind] += 1;
+        return;
+      }
       accepted.push({
         index,
         finding,
@@ -62,6 +77,15 @@ export const rulesStage: IngestionStage = {
         code: 'FINDINGS_FILTERED_BY_PROFILE',
         message: `${filtered} finding(s) were dropped because their rule is not active in the quality profile`,
         count: filtered,
+      });
+    }
+    for (const kind of ['test', 'main'] as const) {
+      const count = outOfScope[kind];
+      if (count === 0) continue;
+      ctx.warnings.push({
+        code: 'FINDINGS_FILTERED_BY_SCOPE',
+        message: `${count} finding(s) were dropped because their rule does not apply to ${kind} code`,
+        count,
       });
     }
     if (serverOnly > 0) {

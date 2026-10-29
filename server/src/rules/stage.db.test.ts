@@ -99,6 +99,9 @@ describe('rules stage (server step 7)', () => {
       quality: 'maintainability',
     });
     expect(await ruleRow('my-tool:R2')).toMatchObject({ defaultSeverity: 'medium' });
+    // Metadata without a scope and a bare rule both apply to all code (0.13).
+    expect((await ruleRow('eslint:eqeqeq'))!.scope).toBe('all');
+    expect((await ruleRow('my-tool:R2'))!.scope).toBe('all');
     expect(seen.findings?.map((f) => [f.rule.key, f.severity])).toEqual([
       ['eslint:eqeqeq', 'high'],
       ['gitleaks:generic-api-key', 'blocker'],
@@ -279,6 +282,180 @@ describe('rules stage (server step 7)', () => {
     });
     // The organisation default is still the built-in: other projects are unaffected.
     expect((await tsDefault()).isBuiltin).toBe(true);
+  });
+
+  it("drops a finding its rule's scope leaves out: a main rule on test code, a test rule on main code (0.13)", async () => {
+    const p = await h.project('rules/scope');
+    const report = reportWith({
+      projectKey: p.key,
+      engines: [
+        engine('sonarjs', [
+          { id: 'S2004', scope: 'main' },
+          { id: 'S2699', scope: 'test' },
+          // No scope: `all`, as every report before 0.13.
+          { id: 'S1481' },
+        ]),
+      ],
+      files: [file('src/a.ts'), file('src/a.test.ts', { kind: 'test' })],
+      findings: [
+        finding({ engineId: 'sonarjs', ruleId: 'S2004', line: 1 }),
+        finding({ engineId: 'sonarjs', ruleId: 'S2004', path: 'src/a.test.ts', line: 2 }),
+        finding({ engineId: 'sonarjs', ruleId: 'S2004', path: 'src/a.test.ts', line: 3 }),
+        finding({ engineId: 'sonarjs', ruleId: 'S2699', line: 4 }),
+        finding({ engineId: 'sonarjs', ruleId: 'S2699', path: 'src/a.test.ts', line: 5 }),
+        finding({ engineId: 'sonarjs', ruleId: 'S1481', path: 'src/a.test.ts', line: 6 }),
+        // A file-less finding has no kind: its scope never drops it.
+        finding({ engineId: 'sonarjs', ruleId: 'S2004', path: null }),
+      ],
+    });
+    const analysisId = await p.ingestOk(report, stages);
+    expect(
+      seen.findings?.map((f) => [f.rule.key, f.finding.location?.path ?? null, f.rule.scope]),
+    ).toEqual([
+      ['sonarjs:S2004', 'src/a.ts', 'main'],
+      ['sonarjs:S2699', 'src/a.test.ts', 'test'],
+      ['sonarjs:S1481', 'src/a.test.ts', 'all'],
+      ['sonarjs:S2004', null, 'main'],
+    ]);
+    expect((await ruleRow('sonarjs:S2004'))!.scope).toBe('main');
+    expect((await ruleRow('sonarjs:S2699'))!.scope).toBe('test');
+    expect((await ruleRow('sonarjs:S1481'))!.scope).toBe('all');
+    const [row] = await h.ctx.db.select().from(analyses).where(eq(analyses.id, analysisId));
+    expect(row!.warnings).toEqual([
+      {
+        code: 'FINDINGS_FILTERED_BY_SCOPE',
+        message: '2 finding(s) were dropped because their rule does not apply to test code',
+        count: 2,
+      },
+      {
+        code: 'FINDINGS_FILTERED_BY_SCOPE',
+        message: '1 finding(s) were dropped because their rule does not apply to main code',
+        count: 1,
+      },
+    ]);
+  });
+
+  it('never drops a finding on a file the report does not list, whatever its scope (0.13)', async () => {
+    const p = await h.project('rules/scope-unlisted');
+    // The report schema refuses such a finding; the stage still never guesses the file's kind.
+    const unlisted: IngestionStage = {
+      name: 'rules',
+      run: (ctx) =>
+        rulesStage.run({
+          ...ctx,
+          report: { ...ctx.report, files: ctx.report.files.filter((f) => f.kind !== 'test') },
+        }),
+    };
+    const analysisId = await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('sonarjs', [{ id: 'S2004', scope: 'main' }])],
+        files: [file('src/a.ts'), file('src/a.test.ts', { kind: 'test' })],
+        findings: [finding({ engineId: 'sonarjs', ruleId: 'S2004', path: 'src/a.test.ts' })],
+      }),
+      [unlisted, probe],
+    );
+    expect(seen.findings?.map((f) => f.finding.location?.path)).toEqual(['src/a.test.ts']);
+    const [row] = await h.ctx.db.select().from(analyses).where(eq(analyses.id, analysisId));
+    expect(row!.warnings).toEqual([]);
+  });
+
+  it("refreshes a rule's scope with its metadata, back to `all` from a report without one (0.13)", async () => {
+    const p = await h.project('rules/scope-refresh');
+    let minute = 0;
+    const withScope = (scope?: 'main' | 'test') =>
+      reportWith({
+        projectKey: p.key,
+        analysisDate: new Date(Date.UTC(2026, 8, 22, 10, minute++)).toISOString(),
+        engines: [engine('sonarjs', [{ id: 'S3776', ...(scope ? { scope } : {}) }])],
+        files: [file('src/a.ts')],
+        findings: [finding({ engineId: 'sonarjs', ruleId: 'S3776' })],
+      });
+    await p.ingestOk(withScope('main'), stages);
+    const created = await ruleRow('sonarjs:S3776');
+    expect(created!.scope).toBe('main');
+    await p.ingestOk(withScope('test'), stages);
+    expect(await ruleRow('sonarjs:S3776')).toMatchObject({ id: created!.id, scope: 'test' });
+    // An older scanner sends no scope: the rule applies to all code again, as in 0.12.
+    await p.ingestOk(withScope(), stages);
+    expect((await ruleRow('sonarjs:S3776'))!.scope).toBe('all');
+  });
+
+  it("applies a profile's scope override: the nearest override of the chain beats the rule's scope (0.13)", async () => {
+    const p = await h.project('rules/scope-profiles');
+    const report = reportWith({
+      projectKey: p.key,
+      engines: [
+        engine('sonarjs', [
+          { id: 'S107', scope: 'main' },
+          { id: 'S2187', scope: 'test' },
+          { id: 'S1186' },
+        ]),
+      ],
+      files: [file('src/a.ts'), file('src/a.spec.ts', { kind: 'test' })],
+      findings: [
+        finding({ engineId: 'sonarjs', ruleId: 'S107', path: 'src/a.spec.ts', line: 1 }),
+        finding({ engineId: 'sonarjs', ruleId: 'S2187', line: 2 }),
+        finding({ engineId: 'sonarjs', ruleId: 'S2187', path: 'src/a.spec.ts', line: 3 }),
+        finding({ engineId: 'sonarjs', ruleId: 'S1186', path: 'src/a.spec.ts', line: 4 }),
+        finding({ engineId: 'sonarjs', ruleId: 'S1186', line: 5 }),
+      ],
+    });
+    await p.ingestOk(report, stages);
+    const id = async (key: string) => (await ruleRow(key))!.id;
+    const [parent] = await h.ctx.db
+      .insert(qualityProfiles)
+      .values({ organizationId: h.organizationId, name: 'Scope parent', language: 'typescript' })
+      .returning();
+    const [child] = await h.ctx.db
+      .insert(qualityProfiles)
+      .values({
+        organizationId: h.organizationId,
+        name: 'Scope child',
+        language: 'typescript',
+        parentId: parent!.id,
+      })
+      .returning();
+    await h.ctx.db.insert(profileRules).values([
+      // The parent lets the main rule report on tests too, and the test rule on main code.
+      {
+        profileId: parent!.id,
+        ruleId: await id('sonarjs:S107'),
+        active: true,
+        scopeOverride: 'all',
+      },
+      {
+        profileId: parent!.id,
+        ruleId: await id('sonarjs:S2187'),
+        active: true,
+        scopeOverride: 'all',
+      },
+      // The child's own row without an override keeps the parent's override...
+      { profileId: child!.id, ruleId: await id('sonarjs:S107'), active: true },
+      // ...and its own override beats the parent's.
+      {
+        profileId: child!.id,
+        ruleId: await id('sonarjs:S2187'),
+        active: true,
+        scopeOverride: 'test',
+      },
+      {
+        profileId: child!.id,
+        ruleId: await id('sonarjs:S1186'),
+        active: true,
+        scopeOverride: 'main',
+      },
+    ]);
+    await h.ctx.db
+      .insert(projectProfiles)
+      .values({ projectId: p.id, language: 'typescript', profileId: child!.id });
+
+    await p.ingestOk({ ...report, analysisDate: '2026-09-22T11:00:00Z' }, stages);
+    expect(seen.findings?.map((f) => [f.rule.key, f.finding.location?.path])).toEqual([
+      ['sonarjs:S107', 'src/a.spec.ts'],
+      ['sonarjs:S2187', 'src/a.spec.ts'],
+      ['sonarjs:S1186', 'src/a.ts'],
+    ]);
   });
 
   it('fingerprints with the occurrence index over all findings, identical ones included', async () => {

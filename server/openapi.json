@@ -14837,6 +14837,15 @@
                               "maximum": 9007199254740991
                             }
                           },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "main",
+                              "test",
+                              "all"
+                            ],
+                            "description": "The code the rule reports on: main, test or all; a quality profile may change it"
+                          },
                           "status": {
                             "type": "string",
                             "enum": [
@@ -14876,6 +14885,7 @@
                           "kind",
                           "tags",
                           "cwe",
+                          "scope",
                           "status",
                           "origin",
                           "createdAt",
@@ -15049,6 +15059,15 @@
                         "maximum": 9007199254740991
                       }
                     },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "main",
+                        "test",
+                        "all"
+                      ],
+                      "description": "The code the rule reports on: main, test or all; a quality profile may change it"
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
@@ -15088,6 +15107,7 @@
                     "kind",
                     "tags",
                     "cwe",
+                    "scope",
                     "status",
                     "origin",
                     "createdAt",
@@ -16450,6 +16470,15 @@
                               },
                               "kind": {
                                 "type": "string"
+                              },
+                              "scope": {
+                                "type": "string",
+                                "enum": [
+                                  "main",
+                                  "test",
+                                  "all"
+                                ],
+                                "description": "The rule's own scope, before any profile"
                               }
                             },
                             "required": [
@@ -16459,7 +16488,8 @@
                               "languages",
                               "defaultSeverity",
                               "quality",
-                              "kind"
+                              "kind",
+                              "scope"
                             ],
                             "additionalProperties": false
                           },
@@ -16482,6 +16512,31 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "main",
+                              "test",
+                              "all"
+                            ],
+                            "description": "The code the rule reports on in this profile: scopeOverride, else the nearest ancestor's override, else the rule's own scope"
+                          },
+                          "scopeOverride": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "main",
+                                  "test",
+                                  "all"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The scope this profile sets itself; null: it inherits one or takes the rule's"
                           },
                           "source": {
                             "type": "string",
@@ -16508,6 +16563,8 @@
                           "rule",
                           "active",
                           "severityOverride",
+                          "scope",
+                          "scopeOverride",
                           "source",
                           "sourceProfileId"
                         ],
@@ -16575,7 +16632,7 @@
     },
     "/api/v0/quality-profiles/{id}/rules/{ruleKey}": {
       "put": {
-        "summary": "Activate or deactivate a rule in this profile, optionally with a severity",
+        "summary": "Activate or deactivate a rule in this profile, optionally with a severity, or set the code it reports on",
         "tags": [
           "profiles"
         ],
@@ -16587,9 +16644,11 @@
                 "type": "object",
                 "properties": {
                   "active": {
+                    "description": "Absent (with a scope) keeps the activation and severity the profile has now",
                     "type": "boolean"
                   },
                   "severityOverride": {
+                    "description": "Absent with `active` clears the severity override",
                     "anyOf": [
                       {
                         "type": "string",
@@ -16605,11 +16664,24 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "scope": {
+                    "description": "The code the rule reports on in this profile and its children; null removes this profile's override, absent keeps it",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "main",
+                          "test",
+                          "all"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
-                "required": [
-                  "active"
-                ],
                 "additionalProperties": false
               }
             }
@@ -16678,6 +16750,15 @@
                         },
                         "kind": {
                           "type": "string"
+                        },
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "main",
+                            "test",
+                            "all"
+                          ],
+                          "description": "The rule's own scope, before any profile"
                         }
                       },
                       "required": [
@@ -16687,7 +16768,8 @@
                         "languages",
                         "defaultSeverity",
                         "quality",
-                        "kind"
+                        "kind",
+                        "scope"
                       ],
                       "additionalProperties": false
                     },
@@ -16710,6 +16792,31 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "main",
+                        "test",
+                        "all"
+                      ],
+                      "description": "The code the rule reports on in this profile: scopeOverride, else the nearest ancestor's override, else the rule's own scope"
+                    },
+                    "scopeOverride": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "main",
+                            "test",
+                            "all"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The scope this profile sets itself; null: it inherits one or takes the rule's"
                     },
                     "source": {
                       "type": "string",
@@ -16736,6 +16843,8 @@
                     "rule",
                     "active",
                     "severityOverride",
+                    "scope",
+                    "scopeOverride",
                     "source",
                     "sourceProfileId"
                   ],

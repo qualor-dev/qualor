@@ -1,4 +1,4 @@
-import { hex32 } from '@qualor/shared';
+import { hex32, type RuleScope } from '@qualor/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Executor } from '../src/db/client';
 import { first } from '../src/db/rows';
@@ -24,6 +24,7 @@ export interface RuleSeed {
   kind?: 'issue' | 'hotspot';
   cwe?: number[];
   helpUri?: string | null;
+  scope?: RuleScope;
 }
 
 /** Inserts (or returns) a reported rule; `engineId` defaults to the key's prefix. */
@@ -43,6 +44,7 @@ export async function seedRule(db: Executor, seed: RuleSeed): Promise<string> {
         kind: seed.kind ?? 'issue',
         cwe: seed.cwe ?? [],
         helpUri: seed.helpUri ?? null,
+        scope: seed.scope ?? 'all',
         origin: 'reported',
       })
       .onConflictDoUpdate({ target: rules.key, set: { name: sql`excluded.name` } })

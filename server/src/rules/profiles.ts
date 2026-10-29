@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { Severity } from '@qualor/shared';
+import type { RuleScope, Severity } from '@qualor/shared';
 import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
 import { PROFILE_LANGUAGES, type ProfileLanguage } from '../orgs/builtins';
@@ -41,6 +41,8 @@ export const LANGUAGE_BOUND_ENGINES: ReadonlySet<string> = new Set([
 export interface RuleSetting {
   active: boolean;
   severityOverride: Severity | null;
+  /** The code the rule reports on in the profile (0.13); null: the rule's own scope. */
+  scopeOverride: RuleScope | null;
 }
 
 /** The effective profile for one language: the chosen profile first, then its ancestors. */
@@ -66,7 +68,8 @@ export function governingLanguage(engineId: string, fileLanguage: string | null)
  * data-model.md §4.4: a rule's row in the nearest profile of the chain wins (a child overrides
  * its parent); a rule with no row anywhere is active iff the chosen profile says
  * `unknown_rules = 'activate'`. No profile at all for the language (not reachable once the
- * built-ins exist) means no filtering.
+ * built-ins exist) means no filtering. The scope (0.13) is the nearest override of the chain, so
+ * a child's row that only switches the rule keeps its parent's scope.
  */
 export function ruleSetting(
   set: ProfileSet,
@@ -74,12 +77,12 @@ export function ruleSetting(
   ruleId: string,
 ): RuleSetting {
   const chain = set.chains.get(language);
-  if (!chain) return { active: true, severityOverride: null };
-  for (const profileId of chain.profileIds) {
-    const row = set.settings.get(profileId)?.get(ruleId);
-    if (row) return row;
-  }
-  return { active: chain.unknownRules === 'activate', severityOverride: null };
+  if (!chain) return { active: true, severityOverride: null, scopeOverride: null };
+  const rows = chain.profileIds.flatMap((id) => set.settings.get(id)?.get(ruleId) ?? []);
+  const scopeOverride = rows.find((r) => r.scopeOverride !== null)?.scopeOverride ?? null;
+  const [nearest] = rows;
+  if (nearest) return { ...nearest, scopeOverride };
+  return { active: chain.unknownRules === 'activate', severityOverride: null, scopeOverride: null };
 }
 
 interface ProfileRow {
@@ -94,6 +97,7 @@ interface SettingRow {
   ruleId: string;
   active: boolean;
   severityOverride: string | null;
+  scopeOverride: string | null;
 }
 
 /**
@@ -114,7 +118,8 @@ export async function loadProfileSet(
       ? sql`'[]'::json`
       : sql`(SELECT coalesce(json_agg(json_build_object(
                 'profileId', pr.profile_id, 'ruleId', pr.rule_id, 'active', pr.active,
-                'severityOverride', pr.severity_override)), '[]'::json)
+                'severityOverride', pr.severity_override,
+                'scopeOverride', pr.scope_override)), '[]'::json)
                FROM profile_rules pr
               WHERE pr.profile_id IN (SELECT id FROM org_profiles)
                 AND pr.rule_id IN ${uuidList(ruleIds)})`;
@@ -172,6 +177,7 @@ export async function loadProfileSet(
     forProfile.set(row.ruleId, {
       active: row.active,
       severityOverride: (row.severityOverride as Severity | null) ?? null,
+      scopeOverride: (row.scopeOverride as RuleScope | null) ?? null,
     });
   }
   return { chains, settings };
