@@ -56,8 +56,9 @@ describe('runMigrations / pendingMigrations', () => {
     // 0014_chat_webhooks (phase 6G, Slack and Teams webhooks), 0015_review_snapshots (phase 6I-2,
     // the repository snapshots of the AI review), 0016_review_runs (phase 6I-3, the review runs
     // and the AI findings), 0017_review_replies (phase 6I-4, the replies ledger), 0018_rule_scope
-    // (0.13, a rule's scope and its profile override).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(19);
+    // (0.13, a rule's scope and its profile override), 0019_onboarding (the onboarding runs and the
+    // GitLab CI-setup setting).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(20);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -321,11 +322,14 @@ describe('runMigrations / pendingMigrations', () => {
       'oauth_requests', // 0013_oauth
       'oauth_tokens', // 0013_oauth
       'project_watches',
+      'repository_setup_items', // 0019_onboarding
+      'repository_setup_runs', // 0019_onboarding
       'review_findings', // 0016_review_runs
       'review_replies', // 0017_review_replies
       'review_runs', // 0016_review_runs
       'review_snapshot_files', // 0015_review_snapshots
       'review_snapshots', // 0015_review_snapshots
+      'setup_checklist_closures', // 0019_onboarding
     ].sort();
     expect(Object.keys(after).filter((name) => !(name in before))).toEqual(added);
     for (const name of added) expect(after[name], name).toEqual([]);
@@ -447,7 +451,9 @@ describe('runMigrations / pendingMigrations', () => {
     await runMigrations(db.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
     // Dropping and adding two checks changed no row, and the runs only gained their empty column.
-    expect(await rowsOf('scm_connections')).toEqual(before.connections);
+    expect(await rowsOf('scm_connections')).toEqual(
+      before.connections.map((c) => ({ ...c, ci_setup_allowed: false })),
+    );
     expect(await rowsOf('llm_requests')).toEqual(before.requests);
     expect(await rowsOf('review_runs')).toEqual(
       before.runs.map((run) => ({ ...run, requested_by: null })),

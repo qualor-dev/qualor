@@ -21,7 +21,12 @@ const CONNECTION: Connection = {
   baseUrl: 'https://gitlab.example.com',
   createdAt: '2026-09-20T10:00:00.000Z',
   github: null,
-  gitlab: { webhookSecretSet: false, webhookSecretReadable: false, webhookUrl: null },
+  gitlab: {
+    webhookSecretSet: false,
+    webhookSecretReadable: false,
+    webhookUrl: null,
+    ciSetupAllowed: false,
+  },
 };
 
 // Assembled at run time, so the repository's own Gitleaks check finds no fake secret here (.gitleaks.toml).
@@ -30,7 +35,12 @@ const WEBHOOK_URL = 'https://q.example/api/v0/gitlab/webhooks/c1';
 /** The connection as the server shows it once its webhook secret is set. */
 const WITH_SECRET: Connection = {
   ...CONNECTION,
-  gitlab: { webhookSecretSet: true, webhookSecretReadable: true, webhookUrl: WEBHOOK_URL },
+  gitlab: {
+    webhookSecretSet: true,
+    webhookSecretReadable: true,
+    webhookUrl: WEBHOOK_URL,
+    ciSetupAllowed: false,
+  },
 };
 
 const GITHUB: Connection = {
@@ -316,7 +326,12 @@ describe('GitLabPage (scm.md §2)', () => {
             ...WITH_SECRET,
             baseUrl: body.baseUrl ?? WITH_SECRET.baseUrl,
             gitlab: unset
-              ? { webhookSecretSet: false, webhookSecretReadable: false, webhookUrl: null }
+              ? {
+                  webhookSecretSet: false,
+                  webhookSecretReadable: false,
+                  webhookUrl: null,
+                  ciSetupAllowed: false,
+                }
               : {
                   ...WITH_SECRET.gitlab!,
                   webhookSecretSet: set || WITH_SECRET.gitlab!.webhookSecretSet,
@@ -372,7 +387,12 @@ describe('GitLabPage (scm.md §2)', () => {
             ...WITH_SECRET,
             id: 'c3',
             baseUrl: 'https://gitlab.three.test',
-            gitlab: { webhookSecretSet: true, webhookSecretReadable: true, webhookUrl: null },
+            gitlab: {
+              webhookSecretSet: true,
+              webhookSecretReadable: true,
+              webhookUrl: null,
+              ciSetupAllowed: false,
+            },
           },
         ]),
       });

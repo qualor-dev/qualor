@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_PASSWORD, addMember, createUser, login, type Session } from '../../test/app';
 import { waitForLockWaiters } from '../../test/db';
@@ -6,9 +6,10 @@ import { createFakeGitHub, type FakeGitHub, type FakeRepository } from '../../te
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { githubTestConfig, WEBHOOK_SECRET } from '../../test/github';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
+import { rbacPlugins } from '../../test/rbac';
 import { GITLAB_WEBHOOK_SECRET, PUBLIC_URL, scmTestConfig } from '../../test/scm';
 import { decryptSecret, encryptionKey, encryptSecret } from '../crypto/secrets';
-import { branches, jobs, organizations, projects, scmConnections } from '../db/schema';
+import { auditEvents, branches, jobs, organizations, projects, scmConnections } from '../db/schema';
 import {
   MAX_SCM_CONNECTIONS_PER_ORGANIZATION,
   SCM_TOKEN_AAD,
@@ -119,7 +120,12 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
       createdAt: expect.any(String),
       github: null,
       // No webhook secret was given, and this server has no QUALOR_PUBLIC_URL to build its URL from.
-      gitlab: { webhookSecretSet: false, webhookSecretReadable: false, webhookUrl: null },
+      gitlab: {
+        webhookSecretSet: false,
+        webhookSecretReadable: false,
+        webhookUrl: null,
+        ciSetupAllowed: false,
+      },
     });
     const [row] = await h.ctx.db
       .select()
@@ -1123,6 +1129,7 @@ describe('GitLab connections: the webhook secret (6I-4)', () => {
       webhookSecretSet: true,
       webhookSecretReadable: true,
       webhookUrl: urlOf(id),
+      ciSetupAllowed: false,
     });
     const row = await rowOf(id);
     expect(decryptWebhookSecret(serverKey(), row.webhookSecretEnc)).toBe(GITLAB_WEBHOOK_SECRET);
@@ -1155,6 +1162,7 @@ describe('GitLab connections: the webhook secret (6I-4)', () => {
       webhookSecretSet: true,
       webhookSecretReadable: true,
       webhookUrl: urlOf(id),
+      ciSetupAllowed: false,
     });
     expect(decryptWebhookSecret(serverKey(), (await rowOf(id)).webhookSecretEnc)).toBe(NEW_SECRET);
     expect((await rowOf(id)).tokenEnc).toEqual(before.tokenEnc);
@@ -1169,6 +1177,7 @@ describe('GitLab connections: the webhook secret (6I-4)', () => {
       webhookSecretSet: false,
       webhookSecretReadable: false,
       webhookUrl: null,
+      ciSetupAllowed: false,
     });
     expect((await rowOf(id)).webhookSecretEnc).toBeNull();
     // Removing what is not there is not an error.
@@ -1224,6 +1233,7 @@ describe('GitLab connections: the webhook secret (6I-4)', () => {
       webhookSecretSet: true,
       webhookSecretReadable: false,
       webhookUrl: urlOf(id),
+      ciSetupAllowed: false,
     });
     expect((await patch(id, { webhookSecret: NEW_SECRET })).json().gitlab).toMatchObject({
       webhookSecretSet: true,
@@ -1312,5 +1322,96 @@ describe('GitLab connections: the webhook secret (6I-4)', () => {
     expect(setSecret.body).not.toContain('token');
     const row = await rowOf(id);
     expect([row.baseUrl, row.webhookSecretEnc]).toEqual([ELSEWHERE, null]);
+  });
+});
+
+describe('GitLab connections: the CI-setup setting (onboarding)', () => {
+  const NOW = new Date('2027-01-01T00:00:00Z');
+  let h: IngestHarness;
+  let fake: FakeGitLab;
+  const post = (payload: Record<string, unknown> = {}) =>
+    h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: {
+        organizationId: h.organizationId,
+        provider: 'gitlab',
+        baseUrl: fake.url,
+        token: fake.token,
+        ...payload,
+      },
+    });
+  const errorPaths = (body: string) =>
+    (JSON.parse(body) as { errors?: { path: string }[] }).errors?.map((e) => e.path);
+
+  beforeAll(async () => {
+    fake = await createFakeGitLab();
+    h = await createIngestHarness({
+      config: scmTestConfig(fake),
+      pluginsFor: rbacPlugins({ now: () => NOW }),
+    });
+  });
+  afterAll(async () => {
+    await h.close();
+    await fake.close();
+  });
+  afterEach(async () => {
+    await h.ctx.db.delete(scmConnections);
+  });
+
+  it('is off by default, can be given at creation, and is changed on its own with an audit entry', async () => {
+    const plain = await post();
+    expect(plain.json().gitlab.ciSetupAllowed).toBe(false);
+    const on = await post({ ciSetupAllowed: true });
+    expect(on.statusCode, on.body).toBe(201);
+    expect(on.json().gitlab.ciSetupAllowed).toBe(true);
+    const id = plain.json().id as string;
+    const patched = await patchConnection(h, id, { ciSetupAllowed: true });
+    expect(patched.statusCode, patched.body).toBe(200);
+    expect(patched.json().gitlab.ciSetupAllowed).toBe(true);
+    const [row] = await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, id));
+    expect(row!.ciSetupAllowed).toBe(true);
+    const events = await h.ctx.db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.action, 'scm_connection.updated'), eq(auditEvents.targetId, id)));
+    expect(events.map((e) => e.details)).toEqual([{ changed: ['ciSetupAllowed'] }]);
+    expect((await patchConnection(h, id, { ciSetupAllowed: false })).json().gitlab).toMatchObject({
+      ciSetupAllowed: false,
+    });
+    expect((await patchConnection(h, id, { ciSetupAllowed: 'yes' })).statusCode).toBe(422);
+  });
+
+  it('is not a field of a GitHub connection', async () => {
+    const body = {
+      organizationId: h.organizationId,
+      provider: 'github',
+      baseUrl: 'https://github.com',
+      appId: '123',
+      privateKey: 'x',
+      ciSetupAllowed: true,
+    };
+    const created = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: body,
+    });
+    expect(created.statusCode).toBe(422);
+    expect(errorPaths(created.body)).toContain('body.ciSetupAllowed');
+    const [github] = await h.ctx.db
+      .insert(scmConnections)
+      .values({
+        organizationId: h.organizationId,
+        provider: 'github',
+        baseUrl: 'https://github.com',
+        appId: '123',
+        tokenEnc: { v: 1, iv: 'a', ct: 'b', tag: 'c' },
+      })
+      .returning();
+    const patched = await patchConnection(h, github!.id, { ciSetupAllowed: true });
+    expect(patched.statusCode, patched.body).toBe(422);
+    expect(errorPaths(patched.body)).toEqual(['body.ciSetupAllowed']);
   });
 });

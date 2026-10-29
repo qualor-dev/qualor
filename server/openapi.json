@@ -19152,12 +19152,16 @@
                                       "string",
                                       "null"
                                     ]
+                                  },
+                                  "ciSetupAllowed": {
+                                    "type": "boolean"
                                   }
                                 },
                                 "required": [
                                   "webhookSecretSet",
                                   "webhookSecretReadable",
-                                  "webhookUrl"
+                                  "webhookUrl",
+                                  "ciSetupAllowed"
                                 ],
                                 "additionalProperties": false
                               },
@@ -19282,6 +19286,9 @@
                       "webhookSecret": {
                         "type": "string",
                         "pattern": "^[\\x21-\\x7e]{16,256}$"
+                      },
+                      "ciSetupAllowed": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -19325,6 +19332,10 @@
                         "pattern": "^[\\x21-\\x7e]{16,256}$"
                       },
                       "token": {
+                        "not": {},
+                        "description": "Not a field of a GitHub connection: sending it is a 422"
+                      },
+                      "ciSetupAllowed": {
                         "not": {},
                         "description": "Not a field of a GitHub connection: sending it is a 422"
                       }
@@ -19430,12 +19441,16 @@
                                 "string",
                                 "null"
                               ]
+                            },
+                            "ciSetupAllowed": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "webhookSecretSet",
                             "webhookSecretReadable",
-                            "webhookUrl"
+                            "webhookUrl",
+                            "ciSetupAllowed"
                           ],
                           "additionalProperties": false
                         },
@@ -19553,6 +19568,9 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "ciSetupAllowed": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -19659,12 +19677,16 @@
                                 "string",
                                 "null"
                               ]
+                            },
+                            "ciSetupAllowed": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "webhookSecretSet",
                             "webhookSecretReadable",
-                            "webhookUrl"
+                            "webhookUrl",
+                            "ciSetupAllowed"
                           ],
                           "additionalProperties": false
                         },

@@ -9353,6 +9353,7 @@ export interface paths {
                                     webhookSecretSet: boolean;
                                     webhookSecretReadable: boolean;
                                     webhookUrl: string | null;
+                                    ciSetupAllowed: boolean;
                                 } | null;
                             }[];
                             nextCursor: string | null;
@@ -9420,6 +9421,7 @@ export interface paths {
                         /** @description Not a field of a GitLab connection: sending it is a 422 */
                         privateKey?: unknown;
                         webhookSecret?: string;
+                        ciSetupAllowed?: boolean;
                     } | {
                         /** Format: uuid */
                         organizationId: string;
@@ -9431,6 +9433,8 @@ export interface paths {
                         webhookSecret?: string;
                         /** @description Not a field of a GitHub connection: sending it is a 422 */
                         token?: unknown;
+                        /** @description Not a field of a GitHub connection: sending it is a 422 */
+                        ciSetupAllowed?: unknown;
                     };
                 };
             };
@@ -9462,6 +9466,7 @@ export interface paths {
                                 webhookSecretSet: boolean;
                                 webhookSecretReadable: boolean;
                                 webhookUrl: string | null;
+                                ciSetupAllowed: boolean;
                             } | null;
                         };
                     };
@@ -9615,6 +9620,7 @@ export interface paths {
                         appId?: string;
                         privateKey?: string;
                         webhookSecret?: string | null;
+                        ciSetupAllowed?: boolean;
                     };
                 };
             };
@@ -9646,6 +9652,7 @@ export interface paths {
                                 webhookSecretSet: boolean;
                                 webhookSecretReadable: boolean;
                                 webhookUrl: string | null;
+                                ciSetupAllowed: boolean;
                             } | null;
                         };
                     };

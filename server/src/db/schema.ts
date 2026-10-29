@@ -161,6 +161,8 @@ export const scmConnections = pgTable(
      * for its App's webhook, and since migration 0017 GitLab's for the note webhook.
      */
     webhookSecretEnc: jsonb('webhook_secret_enc').$type<EncryptedValue>(),
+    /** Onboarding (migration 0019): whether Qualor may open CI-setup merge requests; GitLab only. */
+    ciSetupAllowed: boolean('ci_setup_allowed').notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
@@ -171,6 +173,110 @@ export const scmConnections = pgTable(
       'scm_connections_github_app_check',
       sql`(provider = 'gitlab' AND app_id IS NULL) OR (provider = 'github' AND app_id IS NOT NULL AND app_id ~ '^[0-9]{1,20}$')`,
     ),
+  ],
+);
+
+// ─── Onboarding (migration 0019) ────────────────────────────────────────────
+
+export const SETUP_RUN_STATUSES = ['queued', 'running', 'done'] as const;
+export type SetupRunStatus = (typeof SETUP_RUN_STATUSES)[number];
+export const SETUP_PROJECT_OUTCOMES = ['pending', 'created', 'adopted', 'failed'] as const;
+export type SetupProjectOutcome = (typeof SETUP_PROJECT_OUTCOMES)[number];
+export const SETUP_CI_OUTCOMES = [
+  'pending',
+  'merge_request',
+  'snippet',
+  'already',
+  'skipped',
+  'failed',
+] as const;
+export type SetupCiOutcome = (typeof SETUP_CI_OUTCOMES)[number];
+
+/** One bulk "create projects from a connection's repositories" run, worked in the background. */
+export const repositorySetupRuns = pgTable(
+  'repository_setup_runs',
+  {
+    id: id(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id').references(() => scmConnections.id, {
+      onDelete: 'set null',
+    }),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    /** Whether the run also opens a CI-setup merge request per repository. */
+    ciSetup: boolean('ci_setup').notNull().default(false),
+    status: text('status').notNull().default('queued').$type<SetupRunStatus>(),
+    createdAt: createdAt(),
+    finishedAt: at('finished_at'),
+  },
+  (t) => [
+    index('repository_setup_runs_organization_idx').on(t.organizationId),
+    index('repository_setup_runs_connection_idx')
+      .on(t.connectionId)
+      .where(sql`connection_id IS NOT NULL`),
+    index('repository_setup_runs_created_by_idx')
+      .on(t.createdBy)
+      .where(sql`created_by IS NOT NULL`),
+    check('repository_setup_runs_status_check', sql`status IN ('queued','running','done')`),
+  ],
+);
+
+/** One repository of a run, with what became of its project and its CI setup. */
+export const repositorySetupItems = pgTable(
+  'repository_setup_items',
+  {
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => repositorySetupRuns.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    repositoryRef: text('repository_ref').notNull(),
+    repositoryName: text('repository_name').notNull(),
+    projectOutcome: text('project_outcome')
+      .notNull()
+      .default('pending')
+      .$type<SetupProjectOutcome>(),
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    ciOutcome: text('ci_outcome').notNull().default('pending').$type<SetupCiOutcome>(),
+    ciUrl: text('ci_url'),
+    ciReason: text('ci_reason'),
+    snippet: text('snippet'),
+    /** The new project's analysis token, until it is revealed once; cleared afterwards. */
+    tokenEnc: jsonb('token_enc').$type<EncryptedValue>(),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.runId, t.position] }),
+    index('repository_setup_items_project_idx')
+      .on(t.projectId)
+      .where(sql`project_id IS NOT NULL`),
+    check(
+      'repository_setup_items_project_outcome_check',
+      sql`project_outcome IN ('pending','created','adopted','failed')`,
+    ),
+    check(
+      'repository_setup_items_ci_outcome_check',
+      sql`ci_outcome IN ('pending','merge_request','snippet','already','skipped','failed')`,
+    ),
+  ],
+);
+
+/** A user closed the setup checklist of an organisation. */
+export const setupChecklistClosures = pgTable(
+  'setup_checklist_closures',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    closedAt: timestamp('closed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.organizationId] }),
+    index('setup_checklist_closures_organization_idx').on(t.organizationId),
   ],
 );
 

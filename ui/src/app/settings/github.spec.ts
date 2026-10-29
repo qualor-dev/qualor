@@ -41,7 +41,12 @@ const GITLAB: Connection = {
   provider: 'gitlab',
   baseUrl: 'https://gitlab.example.com',
   github: null,
-  gitlab: { webhookSecretSet: false, webhookSecretReadable: false, webhookUrl: null },
+  gitlab: {
+    webhookSecretSet: false,
+    webhookSecretReadable: false,
+    webhookUrl: null,
+    ciSetupAllowed: false,
+  },
 };
 
 function setup(admin = true): FakeServer {
@@ -568,7 +573,12 @@ describe('GitHubPage (github.md §2)', () => {
             github: {
               ...GITHUB.github!,
               ...(body.webhookSecret === null
-                ? { webhookSecretSet: false, webhookSecretReadable: false, webhookUrl: null }
+                ? {
+                    webhookSecretSet: false,
+                    webhookSecretReadable: false,
+                    webhookUrl: null,
+                    ciSetupAllowed: false,
+                  }
                 : {}),
             },
           },

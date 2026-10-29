@@ -134,6 +134,13 @@
       "when": 1793285667772,
       "tag": "0018_rule_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793315438063,
+      "tag": "0019_onboarding",
+      "breakpoints": true
     }
   ]
 }

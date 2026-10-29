@@ -92,6 +92,7 @@ export const SCM_CONNECTION_CHANGED_FIELDS = [
   'appId',
   'privateKey',
   'webhookSecret',
+  'ciSetupAllowed',
 ] as const;
 /** E1 spec: the names `mail.settings_updated` may list (names only, never a value). */
 export const MAIL_SETTINGS_CHANGED_FIELDS = [
