@@ -88,8 +88,9 @@ export default defineConfig({
       dependencies: ['setup', 'enterprise-setup'],
       use: { ...chrome, storageState: STORAGE_STATE, viewport: { width: 1440, height: 900 } },
     },
-    // The qualor.dev site's product screens (pnpm site:screens): opt-in, asks the real model for the
-    // issue-ai screen, so no trace and no video (the key is in the requests). Not part of the `e2e` project.
+    // The qualor.dev site's product screens (pnpm site:screens): opt-in, asks the real model for
+    // the issue-ai screen, so no trace and no video (the key is in the requests). Not part of the
+    // `e2e` project.
     {
       name: 'site-screens',
       testMatch: /site-screens\.shot\.ts/,

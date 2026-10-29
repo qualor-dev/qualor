@@ -110,8 +110,9 @@ test('site screens', async ({ browser, baseURL }) => {
 
   const admin = await request.newContext({ baseURL, storageState: STORAGE_STATE });
   const stored = (await (await admin.get('/api/v0/system/llm')).json()) as {
-    provider: { baseUrl: string; model: string };
+    provider: { baseUrl: string; model: string; api: 'chat_completions' | 'responses' };
   };
+  let failure: unknown;
   try {
     if (!FAKE) {
       await setProvider(admin, {
@@ -161,17 +162,25 @@ test('site screens', async ({ browser, baseURL }) => {
       900,
       28,
     );
-  } finally {
-    try {
-      await setProvider(admin, {
-        baseUrl: stored.provider.baseUrl,
-        model: stored.provider.model,
-        apiKey: FAKE_KEY,
-      });
-    } finally {
-      await admin.dispose();
-    }
+  } catch (error) {
+    failure = error;
   }
+  // The fake provider goes back as it was stored, also when the capture failed. A failed restore
+  // never hides the capture's own error; after a good capture it fails the run.
+  try {
+    await setProvider(admin, {
+      baseUrl: stored.provider.baseUrl,
+      model: stored.provider.model,
+      api: stored.provider.api,
+      apiKey: FAKE_KEY,
+    });
+  } catch (error) {
+    if (failure === undefined) throw error;
+    console.error(`site:screens could not restore the fake provider: ${String(error)}`);
+  } finally {
+    await admin.dispose();
+  }
+  if (failure !== undefined) throw failure;
 
   await inEachView(browser, baseURL, 'gate', async (page) => {
     await page.goto('/gates');
