@@ -150,17 +150,19 @@ const LITERAL_COLUMNS = [
 ];
 
 const RECORD = sql.raw(`r(${RULE_COLUMNS.map((c) => `${c.name} ${c.type}`).join(', ')})`);
+
+/** One record column as the INSERT reads it: a JSON array unpacked, a null given its default. */
+function insertValue(c: RuleColumn): string {
+  if (c.arrayOf === 'integer') {
+    return `ARRAY(SELECT jsonb_array_elements_text(r.${c.name})::integer)`;
+  }
+  if (c.arrayOf === 'text') return `ARRAY(SELECT jsonb_array_elements_text(r.${c.name}))`;
+  if (c.insertDefault !== undefined) return `COALESCE(r.${c.name}, ${c.insertDefault})`;
+  return `r.${c.name}`;
+}
+
 const VALUES = sql.raw(
-  [
-    ...RULE_COLUMNS.map((c) =>
-      c.arrayOf
-        ? `ARRAY(SELECT jsonb_array_elements_text(r.${c.name})${c.arrayOf === 'integer' ? '::integer' : ''})`
-        : c.insertDefault
-          ? `COALESCE(r.${c.name}, ${c.insertDefault})`
-          : `r.${c.name}`,
-    ),
-    ...LITERAL_COLUMNS.map((c) => c.value),
-  ].join(', '),
+  [...RULE_COLUMNS.map(insertValue), ...LITERAL_COLUMNS.map((c) => c.value)].join(', '),
 );
 const COLUMNS = sql.raw(
   `(${[...RULE_COLUMNS.map((c) => c.name), ...LITERAL_COLUMNS.map((c) => c.name)].join(', ')})`,

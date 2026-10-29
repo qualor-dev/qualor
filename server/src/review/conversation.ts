@@ -463,12 +463,25 @@ async function nextTurn(
     } catch (err) {
       const next = afterFailure(err, input, sent, first, charge, retried);
       if (typeof next !== 'number') return next;
-      if (time === 'last') return TIME_LIMIT;
-      // A wait the time would be up before is not made: the next call is the last, or none.
-      if (!timing.mayWait(next * 1_000)) continue;
-      await (input.sleep ?? sleepFor)(next * 1_000, input.signal);
+      if (!(await waitToRetry(next, time, timing, input))) return TIME_LIMIT;
     }
   }
+}
+
+/**
+ * Waits `seconds` before a failed call is tried again; false when that call was the last the time
+ * allowed. A wait the time would be up before is not made: the next call is the last, or none.
+ */
+async function waitToRetry(
+  seconds: number,
+  time: 'in_time' | 'last',
+  timing: Timing,
+  input: ConversationInput,
+): Promise<boolean> {
+  if (time === 'last') return false;
+  if (timing.mayWait(seconds * 1_000))
+    await (input.sleep ?? sleepFor)(seconds * 1_000, input.signal);
+  return true;
 }
 
 // ─── The calls of a turn ─────────────────────────────────────────────────────

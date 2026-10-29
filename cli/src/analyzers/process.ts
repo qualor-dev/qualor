@@ -62,13 +62,14 @@ export function descendantsOf(roots: readonly number[], table: readonly ProcessR
   const seen = new Set<number>(roots);
   const found: number[] = [];
   const queue = [...roots];
-  for (let i = 0; i < queue.length; i++) {
-    const parent = queue[i] as number;
+  // The iterator also visits the children pushed while it runs: a breadth-first walk.
+  for (const parent of queue) {
     const parentCreated = created.get(parent) ?? Number.NaN;
     for (const child of children.get(parent) ?? []) {
       if (seen.has(child)) continue;
       const childCreated = created.get(child) ?? Number.NaN;
-      if (!(childCreated >= parentCreated)) continue; // false for NaN too
+      const afterParent = childCreated >= parentCreated; // false for NaN too
+      if (!afterParent) continue;
       seen.add(child);
       found.push(child);
       queue.push(child);

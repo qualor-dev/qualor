@@ -1109,16 +1109,16 @@ export const profileRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
           .where(
             and(eq(profileRules.ruleId, found.row.id), inArray(profileRules.profileId, chain)),
           );
-        const ordered = chain.flatMap((id) => rows.filter((r) => r.profileId === id));
+        // One row per profile at most (the primary key), so the chain's order sorts them.
+        const ordered = rows.toSorted(
+          (a, b) => chain.indexOf(a.profileId) - chain.indexOf(b.profileId),
+        );
         const [nearest] = ordered;
         const ownRow = nearest?.profileId === profile.id ? nearest : undefined;
         const active = body.active ?? nearest?.active ?? locked.unknownRules === 'activate';
+        const keptSeverity = body.active === undefined ? (nearest?.severityOverride ?? null) : null;
         const severityOverride =
-          body.severityOverride !== undefined
-            ? body.severityOverride
-            : body.active === undefined
-              ? (nearest?.severityOverride ?? null)
-              : null;
+          body.severityOverride !== undefined ? body.severityOverride : keptSeverity;
         const scopeOverride =
           body.scope !== undefined ? body.scope : (ownRow?.scopeOverride ?? null);
         const inheritedScope =

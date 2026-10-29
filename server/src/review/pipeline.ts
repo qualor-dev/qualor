@@ -346,6 +346,9 @@ const takenAt = (chars: number, cut: number): number => {
   return cut < INSTRUCTIONS_LEAST_CHARS ? 0 : cut + CUT_LABEL_CHARS;
 };
 
+/** The characters one instructions file takes cut at `cut`: the whole file, or the cut and its label. */
+const cutAt = (chars: number, cut: number): number => (chars > cut ? cut + CUT_LABEL_CHARS : chars);
+
 /**
  * The characters the instructions files take whatever the room, as `reviewLimits` gives them when
  * the window has room for their floors: each file up to INSTRUCTIONS_MIN_CHARS, and the label of one
@@ -475,10 +478,7 @@ export function reviewLimits(
   // A file that is left out has no label either.
   const instructions = shape.instructionChars.reduce(
     (sum, chars) =>
-      sum +
-      (byWindow
-        ? takenAt(chars, instructionsChars)
-        : Math.min(chars, instructionsChars) + (chars > instructionsChars ? CUT_LABEL_CHARS : 0)),
+      sum + (byWindow ? takenAt(chars, instructionsChars) : cutAt(chars, instructionsChars)),
     0,
   );
   return {
