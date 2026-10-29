@@ -826,8 +826,8 @@ A model that thinks counts its thinking in the output limit. So each review or r
 up to 16 000 output tokens beyond the answer's own limit, fewer when the window has less left beside
 the input and the answer. They cost nothing unless used. Qualor plans a review with the answer's own
 limit, so a call that thinks can spend that room beyond the plan, and the review can end further
-over its limit. A model or server that refuses so large a limit is asked
-again without the room, as [The current models](./ai-assistant.md#the-current-models) describes.
+over its limit. A model or server that refuses so large a limit is asked again without the room,
+as [The current models](./ai-assistant.md#the-current-models) describes.
 
 ### Big merge requests
 
@@ -857,9 +857,10 @@ even with the shortest lists, is not reviewed.
 The rules files keep up to 16 000 characters each, as long as the window has room for them. On a
 window without that room, they share half of the room the window leaves for the first message, and
 the code gets the other half. A short file stays whole, and the long ones are cut evenly. The model
-is told how much of each was cut. Under 1 000 characters of a long file is no use, so a long file is
-left out, and a short one stays whole. In both cases the summary says "The repository’s instructions
-files were shortened to fit the model’s context window, so the review may not follow all of them."
+is told how much of each was cut. Under 1 000 characters of a long file is no use, so a long file
+is left out, and a short one stays whole. In both cases the summary says "The repository’s
+instructions files were shortened to fit the model’s context window, so the review may not follow
+all of them."
 Raising **Tokens per review** does not change this. A window of 1 000 000 tokens is not affected. A
 change that fits the window is reviewed whatever the size of its rules files.
 

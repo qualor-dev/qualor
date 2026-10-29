@@ -228,14 +228,11 @@ export interface ContextOptions {
 export interface ContextLimits {
   /** Characters of slices in all. */
   sliceChars: number;
-  /** Characters of each instructions file; a longer one is cut, with a label. 0: no file is shown. */
+  /** Characters of each instructions file; a longer one is cut, with a label. */
   instructionsChars: number;
   /** The files longer than `instructionsChars` are left out, with no label; the others are whole. */
   instructionsDropLonger?: boolean;
-  /**
-   * The files are shown shorter than they otherwise are, because the window has no room. With
-   * `instructionsChars` 0, none is shown.
-   */
+  /** The files are shown shorter than they otherwise are, because the window has no room. */
   instructionsShortened?: boolean;
   /** How much of each list the first message holds (R47); the context lists the changes with no slices up to `lists.notInSlices`. */
   lists: ListCaps;
