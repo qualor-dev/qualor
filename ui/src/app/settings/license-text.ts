@@ -57,7 +57,19 @@ export function knownReasonText(reason: unknown): string | null {
   return known === undefined ? null : reasonText(known);
 }
 
+/** Where a trial is requested (a plain link: the server sends nothing) and whom to write to. */
+export const TRIAL_URL = 'https://qualor.dev/trial';
+export const LICENSE_EMAIL = 'license@qualor.dev';
+
 export const licenseTexts = {
+  trialUrl: TRIAL_URL,
+  email: LICENSE_EMAIL,
+  mailto: `mailto:${LICENSE_EMAIL}`,
+  requestTrialLabel: () =>
+    $localize`:@@license.trial.requestLabel:Request a trial (opens qualor.dev in a new tab)`,
+  trialContactBefore: () =>
+    $localize`:@@license.trial.contactBefore:To buy a licence or extend the trial, email `,
+  trialContactAfter: () => $localize`:@@license.trial.contactAfter:.`,
   required: () => $localize`:@@license.keyRequired:Paste the licence key you received.`,
   rejected: () =>
     $localize`:@@license.rejectedUnknown:The key was not accepted. Check that it was copied completely, or ask for a new one.`,

@@ -83,6 +83,11 @@ export class LicensePage {
     if (source === 'file') return 'QUALOR_LICENSE_FILE';
     return null;
   });
+  /** Community with no usable key (none, rejected, expired): a trial can be requested. */
+  protected readonly offerTrial = computed(() => {
+    const state = this.status()?.state;
+    return state === 'none' || state === 'invalid' || state === 'expired';
+  });
   /** A key is saved in Qualor: the server booted with one, or one waits for the next start. */
   protected readonly canRemove = computed(() => {
     const s = this.status();

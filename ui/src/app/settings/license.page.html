@@ -43,11 +43,19 @@
           @switch (s.state) {
             @case ('active') {
               <span class="badge badge-passed"
-                ><q-icon name="check" /><ng-container i18n="@@license.state.active"
-                  >Enterprise edition, active until
-                  {{ s.license?.expires | dateTime: 'date' }}</ng-container
-                ></span
-              >
+                ><q-icon name="check" />
+                @if (s.license?.trial === true) {
+                  <ng-container i18n="@@license.trial.active"
+                    >{{ s.license.plan }} trial, active until
+                    {{ s.license.expires | dateTime: 'date' }}</ng-container
+                  >
+                } @else {
+                  <ng-container i18n="@@license.state.active"
+                    >Enterprise edition, active until
+                    {{ s.license?.expires | dateTime: 'date' }}</ng-container
+                  >
+                }
+              </span>
             }
             @case ('grace') {
               <span class="badge badge-warn"
@@ -58,10 +66,18 @@
             }
             @case ('expired') {
               <span class="badge badge-failed"
-                ><q-icon name="cross" /><ng-container i18n="@@license.state.expired"
-                  >Expired: running as the community edition</ng-container
-                ></span
-              >
+                ><q-icon name="cross" />
+                @if (s.license?.trial === true) {
+                  <ng-container i18n="@@license.trial.ended"
+                    >Your {{ s.license.plan }} trial ended on
+                    {{ s.license.expires | dateTime: 'date' }}.</ng-container
+                  >
+                } @else {
+                  <ng-container i18n="@@license.state.expired"
+                    >Expired: running as the community edition</ng-container
+                  >
+                }
+              </span>
             }
             @case ('invalid') {
               @if (rejectedReason(); as reason) {
@@ -104,6 +120,12 @@
             [note]="t.note"
             [alert]="t.alert"
           />
+        }
+        @if (s.license?.trial) {
+          <p class="license-trial-contact">
+            {{ texts.trialContactBefore() }}<a [href]="texts.mailto">{{ texts.email }}</a
+            >{{ texts.trialContactAfter() }}
+          </p>
         }
         <dl class="facts">
           @if (s.license; as l) {
@@ -199,6 +221,35 @@
         }
       </div>
     </section>
+
+    @if (offerTrial()) {
+      <section id="license-trial" class="card panel" aria-labelledby="license-trial-heading">
+        <div class="panel-head">
+          <h3 id="license-trial-heading" i18n="@@license.trial.title">
+            Try Business or Enterprise
+          </h3>
+        </div>
+        <div class="panel-body license-trial">
+          <p i18n="@@license.trial.lede">
+            Free for 30 days, with every feature of the plan you choose.
+          </p>
+          <p>
+            <a
+              class="btn btn-primary"
+              [href]="texts.trialUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              [attr.aria-label]="texts.requestTrialLabel()"
+              ><ng-container i18n="@@license.trial.request">Request a trial</ng-container
+              ><q-icon name="external"
+            /></a>
+          </p>
+          <p class="muted" i18n="@@license.trial.note">
+            Opens qualor.dev in a new tab. We email you a key; paste it below.
+          </p>
+        </div>
+      </section>
+    }
 
     @if (managedBy(); as variable) {
       <p class="alert alert-info" id="license-managed" i18n="@@license.fromEnvironment">

@@ -91,3 +91,12 @@
     margin-top: 10px;
   }
 }
+.license-trial {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.license-trial p,
+.license-trial-contact {
+  margin: 0;
+}

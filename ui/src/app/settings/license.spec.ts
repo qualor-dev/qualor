@@ -551,3 +551,110 @@ describe('LicensePage: step 11', () => {
     );
   });
 });
+
+describe('LicensePage: trial', () => {
+  afterEach(() => localStorage.clear());
+
+  const TRIAL = {
+    ...ACME,
+    issued: '2026-10-01T00:00:00.000Z',
+    expires: '2026-10-31T00:00:00.000Z',
+    graceEndsAt: '2026-10-31T00:00:00.000Z',
+    trial: true,
+    plan: 'Enterprise' as const,
+  };
+
+  function card(root: HTMLElement): HTMLElement | null {
+    return root.querySelector<HTMLElement>('#license-trial');
+  }
+
+  for (const [name, status] of [
+    ['no key', COMMUNITY],
+    ['a rejected key', { ...COMMUNITY, state: 'invalid', reason: 'revoked', source: 'uploaded' }],
+    ['an expired paid key', { ...COMMUNITY, state: 'expired', source: 'uploaded', license: ACME }],
+  ] as [string, LicenseStatus][]) {
+    it(`offers a trial above the key form for ${name}`, async () => {
+      setup(status);
+      const { root } = await render();
+      const c = card(root)!;
+      expect(c.querySelector('h3')?.textContent).toContain('Try Business or Enterprise');
+      expect(c.textContent).toContain(
+        'Free for 30 days, with every feature of the plan you choose.',
+      );
+      expect(c.textContent).toContain(
+        'Opens qualor.dev in a new tab. We email you a key; paste it below.',
+      );
+      const link = c.querySelector<HTMLAnchorElement>('a.btn-primary')!;
+      expect(link.textContent).toContain('Request a trial');
+      expect(link.getAttribute('href')).toBe('https://qualor.dev/trial');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toContain('noopener');
+      expect(link.getAttribute('aria-label')).toContain('new tab');
+      const form = root.querySelector('form#license-form')!;
+      expect(c.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  }
+
+  it('offers the trial above the variable note when the key comes from the environment', async () => {
+    setup({ ...COMMUNITY, state: 'expired', source: 'environment', license: ACME });
+    const { root } = await render();
+    const note = root.querySelector('#license-managed')!;
+    expect(
+      card(root)!.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('offers no trial while a licence is active or in grace, paid or trial', async () => {
+    for (const state of ['active', 'grace'] as const) {
+      for (const license of [ACME, TRIAL]) {
+        TestBed.resetTestingModule();
+        setup({ ...ACTIVE_UPLOADED, state, license });
+        const { root } = await render();
+        expect(card(root)).toBeNull();
+      }
+    }
+  });
+
+  it('names an active trial, with the date and the address to write to', async () => {
+    setup({ ...ACTIVE_UPLOADED, license: TRIAL });
+    const { root } = await render();
+    expect(root.querySelector('.license-state')?.textContent).toContain(
+      'Enterprise trial, active until Oct 31, 2026',
+    );
+    expect(root.textContent).toContain(
+      'To buy a licence or extend the trial, email license@qualor.dev.',
+    );
+    expect(root.querySelector('a[href="mailto:license@qualor.dev"]')?.textContent).toContain(
+      'license@qualor.dev',
+    );
+  });
+
+  it('says an expired trial ended, offers the address and the trial again', async () => {
+    setup({
+      ...COMMUNITY,
+      state: 'expired',
+      source: 'uploaded',
+      license: { ...TRIAL, plan: 'Business' },
+    });
+    const { root } = await render();
+    const state = root.querySelector('.license-state')!.textContent!;
+    expect(state).toContain('Your Business trial ended on Oct 31, 2026.');
+    expect(state).not.toContain('running as the community edition');
+    expect(root.querySelector('a[href="mailto:license@qualor.dev"]')).not.toBeNull();
+    expect(card(root)).not.toBeNull();
+  });
+
+  it('keeps a paid licence free of trial words', async () => {
+    setup(ACTIVE_UPLOADED);
+    const { root } = await render();
+    expect(root.textContent).not.toContain('trial');
+    expect(root.querySelector('a[href^="mailto:"]')).toBeNull();
+  });
+
+  it('shows a person who is not an instance admin none of it', async () => {
+    setup({ ...COMMUNITY }, false);
+    const { root } = await render();
+    expect(card(root)).toBeNull();
+    expect(root.textContent).not.toContain('Request a trial');
+  });
+});
