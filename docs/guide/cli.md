@@ -44,6 +44,10 @@ matches the server. If the server knows of a newer release (its
 the tag to move to. This check never fails a scan. A server that does not answer it is noted only in
 the debug log.
 
+**Analyzer times.** Each analyzer that ran logs one line when it finishes, such as
+`sonarjs: 83.2 s, 12 findings`. The time is the one in the report. A skipped or failed analyzer logs
+its reason instead.
+
 **AI review.** On a merge request, when [AI review](./ai-review.md) is on for the project, the scan
 also uploads a snapshot of the repository right after the report. Its log lines start with
 `AI review`. A failure there is only a warning: the exit code stays the quality gate's. A scan that

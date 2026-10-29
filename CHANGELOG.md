@@ -6,6 +6,10 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The scan log names each analyzer that ran with its duration and finding count.
+
 ## [0.12.1] - 2026-10-29
 
 ### Fixed

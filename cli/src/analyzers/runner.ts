@@ -559,6 +559,26 @@ function outputCapture(
   return { ...done('ok', null), sarif: converted };
 }
 
+/** The number of results in a SARIF document, 0 when it has none. */
+function sarifResultCount(sarif: unknown): number {
+  const runs = (sarif as { runs?: unknown } | null | undefined)?.runs;
+  if (!Array.isArray(runs)) return 0;
+  return runs.reduce<number>((sum, r) => {
+    const results = (r as { results?: unknown } | null)?.results;
+    return sum + (Array.isArray(results) ? results.length : 0);
+  }, 0);
+}
+
+/**
+ * One info line for an analyzer that ran to the end, with the duration the report records.
+ * Skipped, failed and timed-out analyzers already have their own line.
+ */
+function logDuration(c: SarifCapture, log: Logger): void {
+  if (c.status !== 'ok') return;
+  const seconds = (Math.max(0, Math.round(c.durationMs)) / 1000).toFixed(1);
+  log.info(`${c.engineId}: ${seconds} s, ${sarifResultCount(c.sarif)} findings`);
+}
+
 export async function runAnalyzers(
   analyzers: readonly Analyzer[],
   o: RunAnalyzersOptions,
@@ -568,9 +588,11 @@ export async function runAnalyzers(
   return withEmergencyCleanup(o.log, () => {
     const languages = new Set(o.files.map((f) => f.language).filter((l) => l !== 'other'));
     const serialise = exclusiveGroups();
-    return mapLimit(analyzers, o.concurrency ?? defaultConcurrency(), (a) =>
-      capture(a, o, languages, serialise),
-    );
+    return mapLimit(analyzers, o.concurrency ?? defaultConcurrency(), async (a) => {
+      const result = await capture(a, o, languages, serialise);
+      logDuration(result, o.log);
+      return result;
+    });
   });
 }
 

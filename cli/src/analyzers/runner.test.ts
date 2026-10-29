@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseConfig, type Language, type QualorConfigInput } from '@qualor/shared';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useTempDirs, writeTree } from '../../test/tmp';
 import type { ScopeFile } from '../discovery/discover';
 import type { Logger } from '../log';
@@ -1156,5 +1156,72 @@ describe('execEnv (ruling A9-18)', () => {
     expect(env).toMatchObject({ PATH: '/usr/bin', KEEP: 'k', LC_ALL: 'C.UTF-8' });
     expect(env).not.toHaveProperty('PHPRC');
     expect(env).not.toHaveProperty('QUALOR_SERVER_TOKEN');
+  });
+});
+
+describe('analyzer duration lines', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const collecting = (id: AnalyzerId, results: number): Analyzer => ({
+    id,
+    languages: [],
+    prepare: () =>
+      Promise.resolve({
+        collected: {
+          version: null,
+          sarif: {
+            version: '2.1.0',
+            runs: [
+              {
+                tool: { driver: { name: id } },
+                results: Array.from({ length: results }, () => ({})),
+              },
+            ],
+          },
+        },
+      }),
+  });
+
+  it('logs one line per analyzer that ran, with its duration', async () => {
+    const { root, files, toolPath } = setup();
+    // Each analyzer reads the clock at its start and at its end: 1.2 s, then 0.4 s.
+    const ticks = [0, 1200, 5000, 5400];
+    vi.spyOn(performance, 'now').mockImplementation(() => ticks.shift() ?? 9999);
+    const lines: string[] = [];
+    const log = { ...silentLogger, info: (m: string) => lines.push(m) };
+    await runAnalyzers(
+      [collecting('sonarjs', 12), collecting('eslint', 0), fake('pmd', toolPath, 'crash')],
+      {
+        root,
+        files,
+        config: config({ pmd: { enabled: false } }),
+        log,
+        concurrency: 1,
+      },
+    );
+    expect(lines).toEqual([
+      'sonarjs: 1.2 s, 12 findings',
+      'eslint: 0.4 s, 0 findings',
+      'pmd: skipped (disabled in qualor.yml)',
+    ]);
+  });
+
+  it('keeps the failure line of a failed analyzer and adds no duration line', async () => {
+    const { root, files, toolPath } = setup();
+    const infos: string[] = [];
+    const warns: string[] = [];
+    const log = {
+      ...silentLogger,
+      info: (m: string) => infos.push(m),
+      warn: (m: string) => warns.push(m),
+    };
+    await runAnalyzers([fake('eslint', toolPath, 'crash')], {
+      root,
+      files,
+      config: config(),
+      log,
+    });
+    expect(infos).toEqual([]);
+    expect(warns).toEqual(['eslint: failed (exited with code 2)']);
   });
 });
