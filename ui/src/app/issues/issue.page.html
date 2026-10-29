@@ -265,6 +265,7 @@
               @let file = codeFileLink(projectId(), i.branchId, i.path, i.startLine);
               <a
                 class="details-file"
+                [attr.aria-label]="i.path + (i.startLine ? ':' + i.startLine : '')"
                 [routerLink]="file.commands"
                 [queryParams]="file.queryParams"
                 [fragment]="file.fragment"

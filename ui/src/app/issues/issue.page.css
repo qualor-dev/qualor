@@ -98,6 +98,13 @@
 .details-tail {
   display: inline-block;
   max-width: 100%;
+  /* An inline-block takes no underline from the link, so it draws the global link's own. */
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+a:hover .details-tail {
+  text-decoration-thickness: 2px;
 }
 .details-line {
   white-space: nowrap;

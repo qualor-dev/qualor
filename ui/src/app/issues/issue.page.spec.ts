@@ -247,9 +247,13 @@ describe('IssuePage', () => {
     expect(code.firstChild?.textContent).toBe('src/refunds/');
     expect(tail?.textContent).toBe('limits.ts:44');
     expect(getComputedStyle(tail!).display).toBe('inline-block');
-    expect(root.querySelector('a.details-file')?.textContent?.trim()).toBe(
-      'src/refunds/limits.ts:44',
-    );
+    // An inline-block does not inherit the link's underline, so the tail draws its own.
+    expect(getComputedStyle(tail!).textDecoration).toBe('underline');
+    expect(getComputedStyle(tail!).textDecorationThickness).toBe('1px');
+    const link = root.querySelector('a.details-file');
+    expect(link?.textContent?.trim()).toBe('src/refunds/limits.ts:44');
+    // The inline-block tail would put a space into the computed name, so the link names itself.
+    expect(link?.getAttribute('aria-label')).toBe('src/refunds/limits.ts:44');
   });
 
   it('puts a path without a slash wholly in the tail', async () => {
