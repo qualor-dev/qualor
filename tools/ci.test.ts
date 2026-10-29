@@ -1371,9 +1371,7 @@ describe('dogfood job (plan 1G, brief rule 4)', () => {
       ['server', 'deploy/server/Dockerfile'],
       ['scanner', 'deploy/scanner/Dockerfile'],
     ] as const) {
-      const at = steps.findIndex(
-        (s) => (s.with as Record<string, unknown> | undefined)?.['tags'] === `qualor/${image}:dev`,
-      );
+      const at = steps.findIndex((s) => s.with?.['tags'] === `qualor/${image}:dev`);
       expect(at, image).toBeGreaterThan(setup);
       expect(steps[at]?.uses, image).toMatch(/^docker\/build-push-action@[0-9a-f]{40}$/);
       expect(steps[at]?.with).toMatchObject({
