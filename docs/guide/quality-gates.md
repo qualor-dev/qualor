@@ -131,8 +131,8 @@ rules from SonarJS bring their own.
   **Test code** or **All code** in the rule's **Scope** column. **Rule's default** removes the
   profile's own scope again.
 - A child profile inherits the scope its parent sets, and can set its own.
-- Setting a scope on a parent can also switch the rule on in a child whose setting for rules it
-  does not set is `activate`, when the child has no row for that rule.
+- Setting a scope on a parent can also switch the rule on in a child that has no row for it, when
+  the child's setting for rules it does not set is `activate`.
 - Test files are the ones `tests.include` matches ([Languages and
   analyzers](./languages-and-analyzers.md)). A finding without a file, or in a file the report does
   not list, is never dropped for its scope.
