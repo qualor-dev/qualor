@@ -1366,24 +1366,22 @@ describe('dogfood job (plan 1G, brief rule 4)', () => {
     const setup = steps.findIndex((s) => s.uses?.startsWith('docker/setup-buildx-action@'));
     expect(setup).toBeGreaterThanOrEqual(0);
     expect(steps[setup]?.uses).toMatch(/@[0-9a-f]{40}$/);
-    expect(
-      steps.some((s) => s.uses?.startsWith('crazy-max/ghaction-github-runtime@')),
-      'buildx needs the Actions cache credentials',
-    ).toBe(true);
+    expect(steps.some((s) => s.uses?.includes('crazy-max'))).toBe(false);
     for (const [image, file] of [
       ['server', 'deploy/server/Dockerfile'],
       ['scanner', 'deploy/scanner/Dockerfile'],
     ] as const) {
-      const at = steps.findIndex(
-        (s) =>
-          s.run?.startsWith('docker buildx build ') && s.run.includes(`-t qualor/${image}:dev`),
-      );
+      const at = steps.findIndex((s) => s.with?.['tags'] === `qualor/${image}:dev`);
       expect(at, image).toBeGreaterThan(setup);
-      const run = steps[at]?.run ?? '';
-      expect(run).toContain(`-f ${file}`);
-      expect(run).toContain('--load');
-      expect(run).toContain(`--cache-from type=gha,scope=${image}`);
-      expect(run).toContain(`--cache-to type=gha,mode=min,scope=${image}`);
+      expect(steps[at]?.uses, image).toMatch(/^docker\/build-push-action@[0-9a-f]{40}$/);
+      expect(steps[at]?.with).toMatchObject({
+        file,
+        context: '.',
+        load: true,
+        push: false,
+        'cache-from': `type=gha,scope=${image}`,
+        'cache-to': `type=gha,mode=min,scope=${image}`,
+      });
     }
   });
 
