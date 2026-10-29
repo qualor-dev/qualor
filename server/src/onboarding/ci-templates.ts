@@ -1,0 +1,182 @@
+// The CI files Qualor proposes for a repository. Pure strings: no file reads at run time.
+// Keep in step with templates/qualor.yml, integrations/github/*.yml and docs/guide/{github,gitlab}.md.
+
+/** Pinned like the repository's own templates (integrations/github/qualor.yml). */
+const CHECKOUT = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0';
+const FORK_GUARD =
+  "github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository";
+const REF = '${{ github.event.pull_request.head.sha || github.sha }}';
+const TOKEN = '${{ secrets.QUALOR_TOKEN }}';
+
+const GITLAB_REPORT_FLAGS =
+  '--gitlab-code-quality gl-code-quality-report.json --gitlab-sast gl-sast-report.json --gitlab-dependency-scanning gl-dependency-scanning-report.json';
+
+export const COMPONENT_PATH = 'gitlab.com/qualor/qualor/qualor';
+
+/** A YAML scalar: plain when that is safe, else single-quoted. */
+export function yamlScalar(value: string): string {
+  return /^[A-Za-z0-9][A-Za-z0-9_./@:+-]*$/.test(value) && !/:$/.test(value)
+    ? value
+    : `'${value.replace(/'/g, "''")}'`;
+}
+
+export interface ComponentOptions {
+  minor: string;
+  stage: string | null;
+  csharp: boolean;
+}
+
+/** The `include` list entry for the GitLab CI/CD component, with its first line at `indent` spaces. */
+export function gitlabIncludeEntry(o: ComponentOptions, indent: number): string {
+  const pad = ' '.repeat(indent);
+  const lines = [
+    `${pad}- component: ${COMPONENT_PATH}@${o.minor}`,
+    `${pad}  inputs:`,
+    `${pad}    image-tag: '${o.minor}'`,
+  ];
+  if (o.stage !== null) lines.push(`${pad}    stage: ${yamlScalar(o.stage)}`);
+  if (o.csharp) {
+    lines.push(`${pad}    image: qualor/scanner-dotnet`);
+    lines.push(`${pad}    dotnet: true`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+export function gitlabIncludeSnippet(o: ComponentOptions): string {
+  return `include:\n${gitlabIncludeEntry(o, 2)}`;
+}
+
+export interface JobOptions {
+  version: string;
+  stage: string | null;
+  csharp: boolean;
+}
+
+/** The plain `qualor:` job for self-managed GitLab (the guide's "Without the component"). */
+export function gitlabPlainJob(o: JobOptions): string {
+  const image = o.csharp ? 'qualor/scanner-dotnet' : 'qualor/scanner';
+  const script = o.csharp
+    ? [
+        '    - qualor dotnet begin',
+        '    - dotnet build --no-incremental',
+        '    - >-',
+        '      qualor dotnet end',
+        ...GITLAB_REPORT_FLAGS.split(' --').map((f, i) => `      ${i === 0 ? f : `--${f}`}`),
+      ]
+    : [
+        '    - >-',
+        '      qualor scan',
+        ...GITLAB_REPORT_FLAGS.split(' --').map((f, i) => `      ${i === 0 ? f : `--${f}`}`),
+      ];
+  const lines = [
+    'qualor:',
+    `  stage: ${yamlScalar(o.stage ?? 'test')}`,
+    `  image: { name: ${image}:${o.version}, entrypoint: [''] }`,
+    "  variables: { GIT_DEPTH: '0' }",
+    '  script:',
+    ...script,
+  ];
+  if (o.csharp) lines.push('  after_script:', '    - qualor dotnet abort');
+  lines.push(
+    '  interruptible: true',
+    '  artifacts:',
+    '    when: always',
+    '    reports:',
+    '      codequality: gl-code-quality-report.json',
+    '      sast: gl-sast-report.json',
+    '      dependency_scanning: gl-dependency-scanning-report.json',
+    '  rules:',
+    '    - if: $CI_PIPELINE_SOURCE == "merge_request_event"',
+    '    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH',
+  );
+  return lines.join('\n') + '\n';
+}
+
+export interface WorkflowOptions {
+  /** `github.com` / GHE.com: the Action; `self-hosted` (GHES): a container job. */
+  host: 'cloud' | 'self-hosted';
+  csharp: boolean;
+  serverUrl: string;
+  version: string;
+  minor: string;
+  defaultBranch: string;
+}
+
+function header(o: WorkflowOptions): string[] {
+  return [
+    'name: qualor',
+    'on:',
+    '  pull_request:',
+    '  push:',
+    `    branches: [${yamlScalar(o.defaultBranch)}]`,
+    'permissions:',
+    '  contents: read',
+    'jobs:',
+    '  qualor:',
+    '    # Pull requests from forks get no secrets, so they are skipped.',
+    `    if: ${FORK_GUARD}`,
+    '    runs-on: ubuntu-latest',
+  ];
+}
+
+const CHECKOUT_STEP = [
+  `      - uses: ${CHECKOUT}`,
+  '        with:',
+  '          fetch-depth: 0',
+  '          persist-credentials: false',
+  `          ref: ${REF}`,
+];
+
+/** The workflow file `.github/workflows/qualor.yml`. The server address is written literally. */
+export function githubWorkflow(o: WorkflowOptions): string {
+  const url = yamlScalar(o.serverUrl);
+  const container = (image: string) => [
+    '    container:',
+    `      image: ${image}:${o.version}`,
+    '      options: --user 1001',
+  ];
+  let lines: string[];
+  if (o.csharp) {
+    lines = [
+      ...header(o),
+      ...container('qualor/scanner-dotnet'),
+      '    steps:',
+      ...CHECKOUT_STEP,
+      '      - run: qualor dotnet begin',
+      "      # Check this build command: use the repository's own build (restore, feeds, configuration)",
+      '      # and keep --no-incremental, so every project is compiled and writes its analysis log.',
+      '      - run: dotnet build --no-incremental',
+      "      # The token is in this step only: the build runs the repository's code and must not see it.",
+      '      - run: qualor dotnet end',
+      '        env:',
+      `          QUALOR_URL: ${url}`,
+      `          QUALOR_TOKEN: ${TOKEN}`,
+      '      - if: failure() || cancelled()',
+      '        run: qualor dotnet abort',
+    ];
+  } else if (o.host === 'cloud') {
+    lines = [
+      ...header(o),
+      '    steps:',
+      ...CHECKOUT_STEP,
+      '      # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.',
+      `      - uses: qualor-dev/scan-action@v${o.minor}`,
+      '        with:',
+      `          server-url: ${url}`,
+      `          token: ${TOKEN}`,
+    ];
+  } else {
+    lines = [
+      ...header(o),
+      ...container('qualor/scanner'),
+      '    steps:',
+      ...CHECKOUT_STEP,
+      '      # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.',
+      '      - run: qualor scan',
+      '        env:',
+      `          QUALOR_URL: ${url}`,
+      `          QUALOR_TOKEN: ${TOKEN}`,
+    ];
+  }
+  return lines.join('\n') + '\n';
+}
