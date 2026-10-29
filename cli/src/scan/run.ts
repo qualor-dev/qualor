@@ -412,9 +412,9 @@ const semgrepOnDefaults = (config: QualorConfig): boolean =>
  *   - Semgrep whose configs name anything but `qualor-default`: the rule files the configuration
  *     names never ran (a path that does not exist). Semgrep on its defaults ran nothing because
  *     the scanner image ships no rule file: nothing to run.
+ *   - Qualor's rules without their pack or without a file of their languages: nothing to run.
  * - ok, but with a `SEMGREP_CONFIG_MISSING` report warning (`warnings`): it ran the rule files that
  *   exist, and a file the configuration names did not, so its secret rules may be missing.
- *   - Qualor's rules without their pack or without a file of their languages: nothing to run.
  */
 export function incompleteSecretScans(
   analyzers: readonly Pick<Analyzer, 'id'>[],
