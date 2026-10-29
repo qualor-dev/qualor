@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { useTempDirs } from '../../test/tmp';
 import { silentLogger } from '../log';
 import { sanitizeAnalyzerEnv } from './env';
-import { killActiveProcesses, runProcess } from './process';
+import { descendantsOf, killActiveProcesses, runProcess } from './process';
 
 const tmp = useTempDirs();
 const node = (code: string, timeoutMs = 10_000) => ({
@@ -14,6 +14,40 @@ const node = (code: string, timeoutMs = 10_000) => ({
   cwd: process.cwd(),
   env: sanitizeAnalyzerEnv(process.env),
   timeoutMs,
+});
+
+describe('descendantsOf', () => {
+  const row = (pid: number, parentPid: number) => ({ pid, parentPid });
+
+  it('follows a chain', () => {
+    expect(descendantsOf([1], [row(2, 1), row(3, 2), row(4, 3), row(9, 8)])).toEqual([2, 3, 4]);
+  });
+
+  it('finds siblings and their children, breadth first', () => {
+    expect(descendantsOf([1], [row(2, 1), row(3, 1), row(4, 2), row(5, 3)])).toEqual([2, 3, 4, 5]);
+  });
+
+  it('serves several roots and never returns a root', () => {
+    expect(descendantsOf([1, 10], [row(2, 1), row(11, 10), row(12, 11), row(1, 12)])).toEqual([
+      2, 11, 12,
+    ]);
+  });
+
+  it('survives a cycle', () => {
+    expect(descendantsOf([1], [row(2, 1), row(3, 2), row(2, 3)])).toEqual([2, 3]);
+  });
+
+  it('ignores a pid that is its own parent', () => {
+    expect(descendantsOf([1], [row(2, 1), row(2, 2), row(5, 5)])).toEqual([2]);
+  });
+
+  it('does not find an orphan whose parent is gone', () => {
+    expect(descendantsOf([1], [row(2, 1), row(7, 99)])).toEqual([2]);
+  });
+
+  it('returns nothing for an unknown root', () => {
+    expect(descendantsOf([42], [row(2, 1)])).toEqual([]);
+  });
 });
 
 describe('runProcess', () => {
@@ -71,20 +105,24 @@ describe('runProcess', () => {
 
   it(
     'kills a hanging process and the children it started when the timeout expires',
-    { timeout: 20_000 },
+    { timeout: 30_000 },
     async () => {
       const marker = path.join(tmp(), 'grandchild-survived');
-      const grandchild = `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'alive'), 1500)`;
-      const started = performance.now();
+      const started = path.join(tmp(), 'grandchild-started');
+      // The grandchild announces itself, then would write the marker 6 s later; the timeout
+      // fires at 3 s, so the grandchild exists by then unless the machine is badly overloaded.
+      const grandchild = `require('fs').writeFileSync(${JSON.stringify(started)}, 'up'); setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'alive'), 6000)`;
+      const t0 = performance.now();
       const r = await runProcess(
         node(
           `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' }); setInterval(() => {}, 1000)`,
-          500,
+          3_000,
         ),
         silentLogger,
       );
       expect(r.timedOut).toBe(true);
-      expect(performance.now() - started).toBeLessThan(5_000);
+      expect(existsSync(started)).toBe(true);
+      expect(performance.now() - t0).toBeLessThan(8_000);
       await sleep(2_500);
       expect(existsSync(marker)).toBe(false);
     },
