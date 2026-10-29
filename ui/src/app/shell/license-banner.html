@@ -9,6 +9,23 @@
               to keep the enterprise features.</ng-container
             >
           }
+          @case ('trialEndsSoon') {
+            @if (daysLeft() === 1) {
+              <span i18n="@@licenseBanner.trial.oneDay"
+                >Your Enterprise trial ends in 1 day, on
+                {{ s.license?.expires | dateTime: 'date' }}. To buy a licence or extend the trial,
+                email <a class="license-banner-mail" [attr.href]="mailto">{{ email }}</a
+                >.</span
+              >
+            } @else {
+              <span i18n="@@licenseBanner.trial.days"
+                >Your Enterprise trial ends in {{ daysLeft() }} days, on
+                {{ s.license?.expires | dateTime: 'date' }}. To buy a licence or extend the trial,
+                email <a class="license-banner-mail" [attr.href]="mailto">{{ email }}</a
+                >.</span
+              >
+            }
+          }
           @case ('grace') {
             <ng-container i18n="@@licenseBanner.grace"
               >The Qualor licence expired on {{ s.license?.expires | dateTime: 'date' }}. Enterprise
@@ -24,6 +41,16 @@
           }
         }
         <a routerLink="/settings/license" i18n="@@licenseBanner.link">Open the licence page</a>
+        @if (n === 'trialEndsSoon') {
+          <button
+            type="button"
+            class="license-banner-dismiss"
+            (click)="dismissTrial()"
+            i18n="@@licenseBanner.trial.dismiss"
+          >
+            Dismiss until tomorrow
+          </button>
+        }
       </p>
     </div>
   }

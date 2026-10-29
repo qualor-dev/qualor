@@ -1,15 +1,37 @@
-import { Component, computed, inject, resource } from '@angular/core';
+import { Component, computed, inject, resource, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { SessionStore } from '../auth/session';
-import type { LicenseStatus } from '../settings/license-text';
+import { LICENSE_EMAIL, type LicenseStatus } from '../settings/license-text';
 import { DateTimePipe } from '../shared/date-time.pipe';
 
-type Notice = 'expiresSoon' | 'grace' | 'expired';
+type Notice = 'expiresSoon' | 'grace' | 'expired' | 'trialEndsSoon';
+
+/** The local date (YYYY-MM-DD) on which an admin dismissed the trial banner, per browser. */
+export const TRIAL_DISMISS_KEY = 'qualor.trial-banner-dismissed';
+
+const DAY = 86_400_000;
+
+function localToday(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function readDismissed(): string | null {
+  try {
+    return localStorage.getItem(TRIAL_DISMISS_KEY);
+  } catch {
+    return null;
+  }
+}
 
 /** What the banner has to say about a status, or null when there is nothing to say. */
 export function licenseNotice(status: LicenseStatus | null): Notice | null {
   if (status === null) return null;
+  if (status.license?.trial) {
+    return status.state === 'active' && status.expiresSoon ? 'trialEndsSoon' : null;
+  }
   if (status.state === 'grace') return 'grace';
   if (status.state === 'active' && status.expiresSoon) return 'expiresSoon';
   if (status.state === 'expired') return 'expired';
@@ -43,5 +65,28 @@ export class LicenseBanner {
   protected readonly status = computed(() =>
     this.licence.hasValue() ? this.licence.value() : null,
   );
-  protected readonly notice = computed(() => licenseNotice(this.status()));
+  /** Kept here too, so Dismiss works for this page load even when storage is blocked. */
+  private readonly dismissedOn = signal<string | null>(readDismissed());
+
+  protected readonly notice = computed(() => {
+    const n = licenseNotice(this.status());
+    return n === 'trialEndsSoon' && this.dismissedOn() === localToday() ? null : n;
+  });
+  protected readonly daysLeft = computed(() => {
+    const expires = this.status()?.license?.expires;
+    if (!expires) return 1;
+    return Math.max(1, Math.ceil((new Date(expires).getTime() - Date.now()) / DAY));
+  });
+  protected readonly mailto = `mailto:${LICENSE_EMAIL}`;
+  protected readonly email = LICENSE_EMAIL;
+
+  protected dismissTrial(): void {
+    const today = localToday();
+    this.dismissedOn.set(today);
+    try {
+      localStorage.setItem(TRIAL_DISMISS_KEY, today);
+    } catch {
+      // Blocked storage: hidden until the next load only.
+    }
+  }
 }

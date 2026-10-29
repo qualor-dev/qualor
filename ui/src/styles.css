@@ -785,6 +785,19 @@ h3.subhead {
   margin-left: var(--space-2);
   font-weight: 600;
 }
+.license-banner a.license-banner-mail {
+  margin-left: 0;
+}
+.license-banner-dismiss {
+  margin-left: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
 
 /* Label and value pairs (the licence page). */
 dl.facts {
