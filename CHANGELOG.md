@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-29
+
 ### Added
 
 - Rule scope: a rule applies to main code, test code or all code, and reports nothing in the other

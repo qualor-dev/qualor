@@ -44,9 +44,9 @@ Qualor is in the GitLab CI/CD catalog as
 
 ```yaml
 include:
-  - component: gitlab.com/qualor/qualor/qualor@0.12
+  - component: gitlab.com/qualor/qualor/qualor@0.13
     inputs:
-      image-tag: '0.12'
+      image-tag: '0.13'
 ```
 
 The job runs in merge request pipelines and on the default branch. It uploads the analysis, fails
@@ -57,7 +57,7 @@ security tab, on GitLab Ultimate only.
 
 | Input | Default | Meaning |
 |---|---|---|
-| `image-tag` | required | the scanner image tag, such as `0.12` or `0.12.1` |
+| `image-tag` | required | the scanner image tag, such as `0.13` or `0.13.0` |
 | `image` | `qualor/scanner` | the scanner image, without the tag |
 | `stage` | `test` | the stage of the job |
 | `job-name` | `qualor` | the job's name |
@@ -67,7 +67,7 @@ security tab, on GitLab Ultimate only.
 | `build-command` | `dotnet build --no-incremental` | the build that runs between `begin` and `end` when `dotnet` is true |
 
 Pin the component and the image to the same release. Where every pipeline must run exactly the same
-analyzers, use a full version (`@0.12.1`, `image-tag: '0.12.1'`).
+analyzers, use a full version (`@0.13.0`, `image-tag: '0.13.0'`).
 
 The component runs `qualor scan` from the repository root. If your project needs its dependencies
 installed (JavaScript, TypeScript) or a build (Java) first, extend the component's job with a
@@ -92,9 +92,9 @@ the component into a project of your instance once, for example `tools/qualor`:
 
 ```yaml
 include:
-  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.12.1
+  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.13.0
     inputs:
-      image-tag: '0.12.1'
+      image-tag: '0.13.0'
       # image: mirror.acme.internal/qualor/scanner   # your own copy of the image, without the tag
 ```
 
@@ -102,7 +102,7 @@ On GitLab Free and Community Edition, the import is a one-time copy. To get a ne
 again or push its tag to the copy. Pull mirroring (**Settings → Repository → Mirroring
 repositories**) keeps the copy up to date, but needs GitLab Premium.
 
-A short version such as `@0.12` resolves only in a CI/CD catalog project with releases. To use one,
+A short version such as `@0.13` resolves only in a CI/CD catalog project with releases. To use one,
 turn on **Settings → General → Visibility → CI/CD Catalog project** in the copy. Then run a pipeline
 for the release tag (**Build → Pipelines → Run pipeline**): it creates the release that the catalog
 needs. An import runs no pipeline.
@@ -112,7 +112,7 @@ needs. An import runs no pipeline.
 ```yaml
 qualor:
   stage: test
-  image: { name: qualor/scanner:0.12, entrypoint: [''] }
+  image: { name: qualor/scanner:0.13, entrypoint: [''] }
   variables: { GIT_DEPTH: 0 }        # full history: new code is computed from git
   script:
     - npm ci                          # JS/TS: ESLint runs from node_modules. Java: build first.
@@ -303,7 +303,7 @@ That includes discussions on issues that pass the gate, and the open discussions
 | Replies and `qualor review` notes are answered only at the next analysis | the connection has no webhook secret (**Settings → GitLab** says so), the GitLab project has no webhook with **Comments** ticked, its secret token differs from Qualor's (**Recent events** shows 401), GitLab cannot reach the URL (**Recent events** shows a failed delivery), or GitLab disabled the webhook after repeated failures ([the webhook](#answers-to-replies-and-commands-webhook)) |
 | A reply or a `qualor review` note gets no answer at all | see [Why a reply or a command was not answered](./ai-review.md#why-a-reply-or-a-command-was-not-answered) |
 | Comments on merge requests, but no commit status on the default branch | the token's role is below Maintainer, and the branch is protected. Give the token the Maintainer role |
-| `@0.12` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.12.1`, or see [On self-managed GitLab](#on-self-managed-gitlab) |
+| `@0.13` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.13.0`, or see [On self-managed GitLab](#on-self-managed-gitlab) |
 | Comments but no links | `QUALOR_PUBLIC_URL` is not set on the server |
 
 More in [Troubleshooting](./troubleshooting.md).
