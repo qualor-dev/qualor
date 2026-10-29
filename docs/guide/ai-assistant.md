@@ -230,8 +230,8 @@ To keep the server and its database on a network with no route out, as the repos
   organisation that is not scoped to a workspace needs its **Workspace ID**, which Qualor sends as
   `anthropic-workspace-id` on every request. Without it the provider refuses the call, and the
   Test says so (`PROVIDER_WORKSPACE_REQUIRED`).
-- **Room to think.** Thinking counts in the output limit, so review and reply calls ask for 16 000
-  output tokens more than the answer needs, and the assistant's actions and the Test 4 000 more.
+- **Room to think.** Thinking counts in the output limit, so review and reply calls ask for up to
+  16 000 output tokens more than the answer needs (less when the window has less left), and the assistant's actions and the Test 4 000 more.
   The room costs nothing unless the model uses it. When a model or server refuses that much (a 400,
   or a 422 from Hugging Face TGI), Qualor asks once more without the room, whatever the refusal
   says, unless it is about the workspace, tools, the Responses API or streaming. This holds for

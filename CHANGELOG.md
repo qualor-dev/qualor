@@ -34,10 +34,11 @@ All notable changes to Qualor are listed here, newest first. The format follows
   policies, and merge request analyses and CI systems. No names, addresses, hosts or time zones.
   `QUALOR_TELEMETRY=false` still turns it off; see the telemetry guide.
 - On a small context window, the rules files (`AGENTS.md`, `CLAUDE.md`, `REVIEW.md`) are cut to
-  fit instead of skipping the AI review as too large for the window. They share half of the room
-  the window leaves, and the summary says they were shortened. Only a change that does not fit the
-  window is skipped. The room a model has to think before it answers shrinks with the window too,
-  so a window of 28 000 tokens no longer has each call refused first for it.
+  fit instead of skipping the AI review as too large for the window. A review that fitted before
+  runs as before. Only when the window has no room for them do the rules files share half of its
+  room, short files whole, and the summary says they were shortened. Only a change that does not
+  fit the window is skipped. The room a model has to think before it answers shrinks with the
+  window too, so on a window of 28 000 tokens no call is refused for it first.
 - An AI review has 45 minutes in all. The reviewers stop at 60 % of it, so the judge has time to
   answer, and a retry never waits past the end. A review that reaches the limit says so in its
   summary. One whose judge cannot answer in time fails with "AI review failed because it ran out

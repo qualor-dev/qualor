@@ -2061,56 +2061,97 @@ describe('reviewLimits', () => {
       ...oneLine,
       instructionChars: chars,
     });
+    const named = (...chars: number[]): Instructions => chars.map((c, i) => [`F${i}.md`, c]);
+    /** The characters of the judge's half of its third that the data the reviewers share may take. */
+    const judgeHalf = (window: number): number =>
+      Math.floor(
+        (Math.floor(callInputCap(window, 'judge') / 3) * CHARS_PER_TOKEN -
+          SYSTEM_PROMPTS.judge.length) /
+          2,
+      );
+    /** What the shared data takes with the limits' instructions and slices. */
+    const sharedChars = (
+      shape: ContextShape,
+      limits: ReturnType<typeof reviewLimits>,
+      files: Instructions,
+    ): number =>
+      JSON.stringify(specialistData(sizedContext([...shape.reviewed], limits, 0, files))).length;
 
-    it('an AGENTS.md of 8 000 characters on a 32 768-token window fits, is cut, and the review says so', () => {
+    it('an AGENTS.md of 8 000 characters on a 32 768-token window fits, is cut, keeps room for code, and the review says so', () => {
       const shape = withFiles(8_000);
       expect(reviewFits(shape, 300_000, 32_768)).toBe(true);
       const limits = reviewLimits(shape, 300_000, 32_768);
       expect(limits.instructionsChars).toBeGreaterThanOrEqual(1_000);
       expect(limits.instructionsChars).toBeLessThan(8_000);
       expect(limits.instructionsShortened).toBe(true);
-      // Never less than its share of the room, which is half the window's.
-      const share = instructionFloor(shape, 32_768, limits.lists);
-      expect(share).toBeGreaterThanOrEqual(1_000);
-      expect(limits.instructionsChars).toBeGreaterThanOrEqual(share);
+      // Half of the window's room is for the file, the other half for the slices.
+      expect(limits.sliceChars).toBeGreaterThan(0);
+      expect(limits.sliceChars).toBeGreaterThanOrEqual(limits.instructionsChars);
+      expect(limits.instructionsChars).toBe(instructionFloor(shape, 32_768, limits.lists));
     });
 
-    it('a file of 40 000 characters on a 64 000-token window fits and is cut to its share or more', () => {
-      const shape = withFiles(40_000);
+    it('a file of 40 000 characters on a 64 000-token window fits and gets about half the room, the slices the rest', () => {
+      // A change with a long path and description, which the floors of 16 000 do not fit in 64 000.
+      const shape = shapeOf(changes(1, 6), 0, named(40_000));
       expect(reviewFits(shape, 300_000, 64_000)).toBe(true);
       const limits = reviewLimits(shape, 300_000, 64_000);
-      const share = instructionFloor(shape, 64_000, limits.lists);
-      expect(share).toBeGreaterThan(1_000);
-      expect(share).toBeLessThan(16_000);
-      expect(limits.instructionsChars).toBeGreaterThanOrEqual(share);
-      expect(limits.instructionsChars).toBeLessThan(32_000);
+      expect(limits.instructionsShortened).toBe(true);
+      expect(limits.instructionsChars).toBeGreaterThan(1_000);
+      expect(limits.instructionsChars).toBeLessThan(16_000);
+      expect(limits.sliceChars).toBeGreaterThan(0);
+      // Never more than half of the data's room, label included.
+      expect(limits.instructionsChars + 80).toBeLessThanOrEqual(judgeHalf(64_000) / 2);
+      expect(sharedChars(shape, limits, named(40_000))).toBeLessThanOrEqual(judgeHalf(64_000));
+    });
+
+    it('keeps the files whole where the window held them before, and says nothing', () => {
+      // 150 changed files on a 100 000-token window: the shorter lists, not the files, give way.
+      const lean = shapeOf(changes(150, 2), 0, named(8_000, 8_000));
+      const before = reviewLimits(lean, 300_000, 100_000);
+      expect(before.instructionsChars).toBeGreaterThanOrEqual(8_000);
+      expect(before.instructionsShortened).toBeUndefined();
+      // Three files of 30 000 on a 200 000-token window: 16 000 each, and no note.
+      const three = withFiles(30_000, 30_000, 30_000);
+      for (const budget of [110_000, 300_000, 600_000]) {
+        const limits = reviewLimits(three, budget, 200_000);
+        expect(limits.instructionsChars, String(budget)).toBeGreaterThanOrEqual(16_000);
+        expect(limits.instructionsShortened, String(budget)).toBeUndefined();
+      }
+      expect(reviewLimits(three, 300_000, 200_000).instructionsChars).toBe(16_000);
+      // A file of 40 000 on a window that holds 16 000 of it: the budget never blames the window.
+      const one = withFiles(40_000);
+      expect(reviewLimits(one, 110_000, 200_000).instructionsShortened).toBeUndefined();
+      expect(reviewLimits(one, 110_000, 200_000).instructionsChars).toBeGreaterThanOrEqual(16_000);
     });
 
     it('a 1 000 000-token window and no window keep 16 000 characters each at least, and say nothing', () => {
       for (const window of [1_000_000, Number.POSITIVE_INFINITY]) {
         const shape = withFiles(200_000, 20_000);
         const limits = reviewLimits(shape, 300_000, window);
-        expect(instructionFloor(shape, window, limits.lists), String(window)).toBe(16_000);
         expect(limits.instructionsChars, String(window)).toBeGreaterThanOrEqual(16_000);
         expect(limits.instructionsShortened, String(window)).toBeUndefined();
-        // A short file is its own floor.
-        expect(instructionFloor(withFiles(5_000), window, limits.lists)).toBe(16_000);
+        expect(instructionFloor(shape, window, limits.lists), String(window)).toBe(16_000);
       }
     });
 
-    it('shares the room evenly between the files', () => {
-      const one = withFiles(30_000);
-      const three = withFiles(30_000, 30_000, 30_000);
-      const window = 50_000;
-      const caps = reviewLimits(one, 300_000, window).lists;
-      const single = instructionFloor(one, window, caps);
-      const each = instructionFloor(three, window, caps);
-      expect(single).toBeLessThan(16_000);
-      expect(each).toBeGreaterThan(1_000);
-      expect(each).toBe(Math.floor(single / 3));
+    it('cuts evenly, a short file keeping all of itself and leaving the rest to the long ones', () => {
+      const caps = reviewLimits(withFiles(8_000), 300_000, 32_768).lists;
+      const long = instructionFloor(withFiles(8_000), 32_768, caps);
+      const pair = instructionFloor(withFiles(8_000, 8_000), 32_768, caps);
+      const short = instructionFloor(withFiles(8_000, 12), 32_768, caps);
+      expect(pair).toBeLessThan(long);
+      expect(short).toBeGreaterThan(pair);
+      // Both files kept: the 12 characters whole, the long one cut.
+      const mixed = reviewLimits(withFiles(8_000, 12), 300_000, 32_768);
+      expect(mixed.instructionsChars).toBeGreaterThanOrEqual(1_000);
+      expect(mixed.instructionsShortened).toBe(true);
+      // Two files of 500 fit whole: nothing is cut or dropped, and the review says nothing.
+      const small = reviewLimits(withFiles(500, 500), 300_000, 32_768);
+      expect(small.instructionsChars).toBeGreaterThanOrEqual(500);
+      expect(small.instructionsShortened).toBeUndefined();
     });
 
-    it('drops the files when their share is under 1 000 characters, and says so', () => {
+    it('drops the files when their cut is under 1 000 characters and one is longer, and says so', () => {
       const shape = withFiles(30_000, 30_000, 30_000);
       let window = 26_600;
       while (!reviewFits(shape, 300_000, window)) window += 100;
@@ -2127,15 +2168,19 @@ describe('reviewLimits', () => {
       expect(reviewFits(withFiles(40_000), 300_000, 26_600)).toBe(true);
     });
 
-    it('reviewFits and reviewLimits agree on the floors for every window', () => {
-      for (const chars of [3_000, 8_000, 40_000]) {
-        const shape = withFiles(chars, chars);
-        for (let window = 26_000; window <= 80_000; window += 1_000) {
+    it('never takes more of the window than its room: the instructions, their labels and the slices', () => {
+      for (const chars of [[3_000], [8_000], [40_000], [8_000, 12], [30_000, 30_000, 30_000]]) {
+        const shape = shapeOf(changes(1, 6), 0, named(...chars));
+        const files = named(...chars);
+        for (let window = 26_000; window <= 130_000; window += 2_000) {
           if (!reviewFits(shape, 300_000, window)) continue;
           const limits = reviewLimits(shape, 300_000, window);
-          const floor = instructionFloor(shape, window, limits.lists);
-          expect(limits.instructionsChars, `${chars} ${window}`).toBeGreaterThanOrEqual(floor);
-          if (floor === 0) expect(limits.instructionsChars).toBe(0);
+          const name = `${chars} ${window}`;
+          if (limits.instructionsShortened === true) {
+            expect(limits.instructionsChars, name).toBeLessThan(16_000);
+            // The window pass: the shared data stays within the judge's half.
+            expect(sharedChars(shape, limits, files), name).toBeLessThanOrEqual(judgeHalf(window));
+          }
         }
       }
     });

@@ -320,37 +320,79 @@ function dataRoom(shape: ContextShape, budget: number, window: number, caps: Lis
 }
 
 /**
- * The characters of each instructions file that are shown whatever the room (`reviewLimits`): up to
- * INSTRUCTIONS_MIN_CHARS, or all of it if it is shorter. On a small window the files share
- * INSTRUCTIONS_WINDOW_SHARE of its room for the data evenly, and each is cut to its share when that
- * is less; a share under INSTRUCTIONS_LEAST_CHARS is no use, and the files are dropped (0). An
- * infinite window has no share to cut to.
+ * The characters each instructions file is shown on a window too small for their floors
+ * (INSTRUCTIONS_MIN_CHARS each): INSTRUCTIONS_WINDOW_SHARE of the window's room for the data, less
+ * a label for each file, is cut evenly between them, a short file keeping all of itself and leaving
+ * the rest to the long ones, and no file more than INSTRUCTIONS_MIN_CHARS. This is both what they
+ * are shown and the most, so the slices keep the other half. A cut under INSTRUCTIONS_LEAST_CHARS
+ * is no use when some file is longer than it: the files are dropped (0). An infinite window cuts
+ * nothing but INSTRUCTIONS_MIN_CHARS.
  */
 export function instructionFloor(shape: ContextShape, window: number, caps: ListCaps): number {
-  const files = shape.instructionChars.length;
-  if (files === 0) return INSTRUCTIONS_MIN_CHARS;
-  const share = Math.floor((INSTRUCTIONS_WINDOW_SHARE * windowRoom(shape, window, caps)) / files);
-  if (share >= INSTRUCTIONS_MIN_CHARS) return INSTRUCTIONS_MIN_CHARS;
-  return share < INSTRUCTIONS_LEAST_CHARS ? 0 : share;
+  const { instructionChars: lengths } = shape;
+  const room =
+    Math.floor(INSTRUCTIONS_WINDOW_SHARE * windowRoom(shape, window, caps)) -
+    lengths.length * CUT_LABEL_CHARS;
+  const cut = evenCut(lengths, room, INSTRUCTIONS_MIN_CHARS);
+  return cut < INSTRUCTIONS_LEAST_CHARS && lengths.some((chars) => chars > cut) ? 0 : cut;
 }
 
 /**
- * The characters the instructions files take whatever the room (`reviewLimits`): each file up to
- * its floor (`instructionFloor`), and the label of one that is cut there. A dropped file takes none.
+ * The characters the instructions files take whatever the room, as `reviewLimits` gives them when
+ * the window has room for their floors: each file up to INSTRUCTIONS_MIN_CHARS, and the label of one
+ * that is cut there.
  */
-const instructionFloors = (shape: ContextShape, window: number, caps: ListCaps): number => {
-  const floor = instructionFloor(shape, window, caps);
-  if (floor === 0) return 0;
+const instructionFloors = (shape: ContextShape): number =>
+  shape.instructionChars.reduce(
+    (sum, chars) =>
+      sum +
+      Math.min(chars, INSTRUCTIONS_MIN_CHARS) +
+      (chars > INSTRUCTIONS_MIN_CHARS ? CUT_LABEL_CHARS : 0),
+    0,
+  );
+
+/**
+ * The characters the files take on a window too small for their floors: `instructionFloor` each,
+ * and the label of one that is cut there. Dropped files take none.
+ */
+const windowFloors = (shape: ContextShape, window: number, caps: ListCaps): number => {
+  const cut = instructionFloor(shape, window, caps);
+  if (cut === 0) return 0;
   return shape.instructionChars.reduce(
-    (sum, chars) => sum + Math.min(chars, floor) + (chars > floor ? CUT_LABEL_CHARS : 0),
+    (sum, chars) => sum + Math.min(chars, cut) + (chars > cut ? CUT_LABEL_CHARS : 0),
     0,
   );
 };
 
-/** Whether the lists of `caps` leave room, as `listCapsFor` asks. */
-const fitsWith = (shape: ContextShape, budget: number, window: number, caps: ListCaps): boolean =>
+/** Whether the lists of `caps` leave room, as `listCapsFor` asks; with the files' floors, or with their window share. */
+const fitsWith = (
+  shape: ContextShape,
+  budget: number,
+  window: number,
+  caps: ListCaps,
+  byWindow: boolean,
+): boolean =>
   dataRoom(shape, budget, window, caps) > 0 &&
-  windowRoom(shape, window, caps) - instructionFloors(shape, window, caps) > 0;
+  windowRoom(shape, window, caps) -
+    (byWindow ? windowFloors(shape, window, caps) : instructionFloors(shape)) >
+    0;
+
+/**
+ * The first rung of LIST_CAP_STEPS, longest first, that fits, and how: with the instructions files'
+ * floors (as every review has been sized), or, when no rung does, with what the window's room
+ * leaves them (`instructionFloor`), which only a review the window would have skipped is given.
+ */
+function ladder(
+  shape: ContextShape,
+  budget: number,
+  window: number,
+): { caps: ListCaps; byWindow: boolean } | null {
+  for (const byWindow of [false, true]) {
+    const caps = LIST_CAP_STEPS.find((c) => fitsWith(shape, budget, window, c, byWindow));
+    if (caps !== undefined) return { caps, byWindow };
+  }
+  return null;
+}
 
 /**
  * The lists a review of `budget` tokens shows of a change of this shape, on a model of `window`
@@ -358,15 +400,16 @@ const fitsWith = (shape: ContextShape, budget: number, window: number, caps: Lis
  * budget alone holds it), or null when none does (R47): the first of LIST_CAP_STEPS, longest
  * first, with which the smallest share of the review, and the judge's cap in the window, have room
  * for the first message, as `reviewLimits` counts it; and the window has room for the instructions
- * files' floors too, which the budget's room does not count. A change that fits the lists of today
- * is given them, whatever else.
+ * files' floors too, which the budget's room does not count, or else for the share of the window's
+ * room they are cut to (`instructionFloor`). A change that fits the lists of today is given them,
+ * whatever else.
  */
 export function listCapsFor(
   shape: ContextShape,
   budget: number,
   window: number = DEFAULT_CONTEXT_WINDOW_TOKENS,
 ): ListCaps | null {
-  return LIST_CAP_STEPS.find((caps) => fitsWith(shape, budget, window, caps)) ?? null;
+  return ladder(shape, budget, window)?.caps ?? null;
 }
 
 /**
@@ -392,11 +435,12 @@ export function reviewFits(
  * `limits` answers (the job passes it this, bound to the budget and the window). The data the
  * specialists share is sized so that a specialist's first message takes at most a third of its
  * part and half of the judge's third, and the judge's, within a third of its cap in the window,
- * half of what its prompt leaves (`dataRoom`). That
- * room goes first to the
- * instructions files, which no tool can stand in for: each at least INSTRUCTIONS_MIN_CHARS (or all
- * of it, if shorter) even past that room, the long ones cut evenly when they do not all fit. The
- * slices have the rest. Each part is at most CONTEXT_MAXIMA.
+ * half of what its prompt leaves (`dataRoom`). That room goes first to the instructions files,
+ * which no tool can stand in for: each at least INSTRUCTIONS_MIN_CHARS (or all of it, if shorter)
+ * even past that room, the long ones cut evenly when they do not all fit. The slices have the rest.
+ * Only on a window with no room for those floors (the review would have been skipped) are the files
+ * held to half of the window's room (`instructionFloor`), and the slices keep the other half;
+ * `instructionsShortened` says so, and is not set otherwise. Each part is at most CONTEXT_MAXIMA.
  */
 export function reviewLimits(
   shape: ContextShape,
@@ -404,25 +448,22 @@ export function reviewLimits(
   window: number = DEFAULT_CONTEXT_WINDOW_TOKENS,
 ): ContextLimits {
   // The shortest lists when none has room: the job has skipped such a review already.
-  const lists =
-    listCapsFor(shape, budget, window) ??
-    LIST_CAP_STEPS[LIST_CAP_STEPS.length - 1] ??
-    LIST_CAP_STEPS[0];
+  const found = ladder(shape, budget, window);
+  const lists = found?.caps ?? LIST_CAP_STEPS[LIST_CAP_STEPS.length - 1] ?? LIST_CAP_STEPS[0];
   const room = dataRoom(shape, budget, window, lists);
+  const byWindow = found?.byWindow === true;
   const labels = shape.instructionChars.length * CUT_LABEL_CHARS;
-  const floor = instructionFloor(shape, window, lists);
-  // Files dropped for the window are not shown, whatever the budget would have had room for.
-  const instructionsChars =
-    floor === 0 && shape.instructionChars.length > 0
-      ? 0
-      : Math.max(
-          floor,
-          evenCut(shape.instructionChars, room - labels, CONTEXT_MAXIMA.instructionsChars),
-        );
-  // Shown below what a window of any size shows (the floor is less only for the window).
-  const shortened = shape.instructionChars.some(
-    (chars) => Math.min(chars, INSTRUCTIONS_MIN_CHARS) > instructionsChars,
-  );
+  const instructionsChars = byWindow
+    ? instructionFloor(shape, window, lists)
+    : Math.max(
+        INSTRUCTIONS_MIN_CHARS,
+        evenCut(shape.instructionChars, room - labels, CONTEXT_MAXIMA.instructionsChars),
+      );
+  const shortened =
+    byWindow &&
+    shape.instructionChars.some(
+      (chars) => Math.min(chars, INSTRUCTIONS_MIN_CHARS) > instructionsChars,
+    );
   // A file that is dropped has no label either.
   const instructions =
     shortened && instructionsChars === 0

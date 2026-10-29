@@ -823,7 +823,8 @@ is at most 30 days old.
 ### Room to think
 
 A model that thinks counts its thinking in the output limit. So each review or reply call asks for
-16 000 output tokens beyond the answer's own limit, which cost nothing unless used. Qualor plans a
+up to 16 000 output tokens beyond the answer's own limit, fewer when the window has less left beside
+the input and the answer. They cost nothing unless used. Qualor plans a
 review with the answer's own limit, so a call that thinks can spend that room beyond the plan, and
 the review can end further over its limit. A model or server that refuses so large a limit is asked
 again without the room, as [The current models](./ai-assistant.md#the-current-models) describes.
@@ -853,13 +854,14 @@ window** in **Settings → AI provider** when the model takes less than 1 000 00
 that fills the window answers with what it has. A merge request whose first message does not fit,
 even with the shortest lists, is not reviewed.
 
-A small window also shortens the rules files. Half of the room the window leaves for the first
-message is shared evenly between the rules files, up to 16 000 characters each. A file is cut to its
-share, and the model is told how much of it was cut. A share under 1 000 characters is no use, so
-the rules files are left out. Either way the summary says "The repository’s instructions files were
-shortened to fit the model’s context window, so the review may not follow all of them." A model
-with 1 000 000 tokens of window, or the default, is not affected. A change that fits the window is
-reviewed whatever the size of its rules files.
+The rules files keep up to 16 000 characters each, as long as the window has room for them. On a
+window without that room, they share half of the room the window leaves for the first message, and
+the code gets the other half. A short file stays whole, and the long ones are cut evenly. The model
+is told how much of each was cut. Under 1 000 characters of a long file is no use, so the rules
+files are left out. In both cases the summary says "The repository’s instructions files were
+shortened to fit the model’s context window, so the review may not follow all of them." Raising
+**Tokens per review** does not change this. A window of 1 000 000 tokens is not affected. A change
+that fits the window is reviewed whatever the size of its rules files.
 
 ### How tokens are counted
 
@@ -895,7 +897,7 @@ token budget allows.
 | AI review failed because of an error in Qualor. The next push reviews again. | An unexpected error, or a server stop during the review. If it repeats while the server runs, report it with the server log's `AI review run failed` line. |
 | The review reached its token limit, so it may have missed problems. | A reviewer, the judge or the second check used its share ([How a review spends its tokens](#how-a-review-spends-its-tokens)). Raise **Tokens per review**, mainly for big merge requests. |
 | A reviewer reached its limit of 16 turns, so it may have missed problems. | A reviewer, the judge or the second check read code for 16 turns, the fixed maximum, and answered with what it had. More tokens do not help. It is likelier in a big merge request. |
-| The repository’s instructions files were shortened to fit the model’s context window, so the review may not follow all of them. | The model’s context window is small, and the rules files (`AGENTS.md`, `CLAUDE.md`, `REVIEW.md`) share half of the room it leaves for the first message. Each is cut to its share, or left out when the share is under 1 000 characters. Raise **Context window** in **Settings → AI provider** if the model takes more, or use a model with a larger window. |
+| The repository’s instructions files were shortened to fit the model’s context window, so the review may not follow all of them. | The model’s context window is small, and the rules files (`AGENTS.md`, `CLAUDE.md`, `REVIEW.md`) share half of the room it leaves for the first message. A long file is cut to fit, or left out when under 1 000 characters of it would remain. Raise **Context window** in **Settings → AI provider** if the model takes more, or use a model with a larger window. |
 | The review reached its time limit, so it may have missed problems. | A reviewer, the judge or the second check ran out of the review's time. It answered with what it had, or did not run. The reviewers stop at 60 % of the time, so the judge can answer. More tokens do not help. For a slower model, the operator raises `QUALOR_AI_REVIEW_MAX_MINUTES` ([Snapshot limits and workers](#snapshot-limits-and-workers)). |
 | A reviewer reached the model’s context window, so it may have missed problems. | A reviewer, the judge or the second check read as much code as one call holds, and answered with what it had. More tokens do not help. Raise **Context window** if the model takes more; a model with a larger window reads more. |
 | A reviewer’s answer could not be read, so part of the review is missing. | One reviewer did not answer in the required form; the rest of the review is intact. Try a stronger model. |
