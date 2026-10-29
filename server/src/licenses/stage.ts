@@ -129,7 +129,6 @@ export async function ensureLicenseRules(tx: Executor): Promise<Map<string, Reso
       quality: rules.quality,
       kind: rules.kind,
       cwe: rules.cwe,
-      scope: rules.scope,
     })
     .from(rules)
     .where(
@@ -149,6 +148,8 @@ export async function ensureLicenseRules(tx: Executor): Promise<Map<string, Reso
       ...r,
       defaultSeverity: r.defaultSeverity as Severity,
       quality: QUALITY,
+      // No report gives a server rule metadata; its findings never pass the scope check.
+      reportScope: null,
     });
   }
   return resolved;

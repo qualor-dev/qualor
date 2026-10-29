@@ -22,13 +22,15 @@ describe('ruleRowsFromReport', () => {
     ]);
   });
 
-  it("takes a rule's scope from its metadata; no scope and a bare rule mean all code (0.13)", () => {
+  it("takes a rule's scope from its metadata, the first entry's; none from a rule without one or a bare rule (0.13)", () => {
     const report = reportWith({
       engines: [
         engine('sonarjs', [
           { id: 'S2004', scope: 'main' },
           { id: 'S2699', scope: 'test' },
           { id: 'S1' },
+          // The first entry wins, its missing scope included.
+          { id: 'S1', scope: 'main' },
         ]),
       ],
       files: [file('src/a.ts')],
@@ -36,11 +38,11 @@ describe('ruleRowsFromReport', () => {
     });
     const { withMetadata, bare } = ruleRowsFromReport(report);
     expect(withMetadata.map((r) => [r.key, r.scope])).toEqual([
-      ['sonarjs:S1', 'all'],
+      ['sonarjs:S1', null],
       ['sonarjs:S2004', 'main'],
       ['sonarjs:S2699', 'test'],
     ]);
-    expect(bare.map((r) => [r.key, r.scope])).toEqual([['sonarjs:S9999', 'all']]);
+    expect(bare.map((r) => [r.key, r.scope])).toEqual([['sonarjs:S9999', null]]);
   });
 
   it("never takes a server engine's rules from a report, defined or only referenced (6M §6)", () => {

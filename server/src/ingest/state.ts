@@ -16,8 +16,11 @@ export interface ResolvedRule {
   quality: Quality;
   kind: IssueKind;
   cwe: readonly number[];
-  /** The code the rule reports on unless a profile overrides it (0.13). */
-  scope: RuleScope;
+  /**
+   * The code the rule reports on as this report's own metadata says (0.13), null when it says
+   * nothing (all code). Never the stored `rules.scope`, which another report may have set.
+   */
+  reportScope: RuleScope | null;
 }
 
 type ReportLocation = NonNullable<ReportFinding['location']>;

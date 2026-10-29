@@ -36,7 +36,8 @@ export interface ReportedRuleRow {
   kind: IssueKind;
   tags: string[];
   cwe: number[];
-  scope: RuleScope;
+  /** Null when the report gives none: stored as `all` on insert, never refreshed from it. */
+  scope: RuleScope | null;
 }
 
 /**
@@ -71,8 +72,9 @@ export function ruleRowsFromReport(report: Report): {
         kind: meta.kind ?? 'issue',
         tags: meta.tags ?? [],
         cwe: meta.cwe ?? [],
-        // Absent: all code, as every report before 0.13 (so an older scanner keeps 0.12's issues).
-        scope: meta.scope ?? 'all',
+        // Absent (every report before 0.13, an external SARIF): the stored scope is left as it is,
+        // and the rules stage judges this report's findings as all code, as 0.12 did.
+        scope: meta.scope ?? null,
       });
     }
   }
@@ -96,7 +98,7 @@ export function ruleRowsFromReport(report: Report): {
       kind: 'issue',
       tags: [],
       cwe: [],
-      scope: 'all',
+      scope: null,
     });
   }
   // Sorted by key: two concurrent ingestions upserting an overlapping set of rules then lock
@@ -115,6 +117,8 @@ interface RuleColumn {
   type: 'uuid' | 'text' | 'jsonb';
   /** A `jsonb` column holding a JSON array: expand it into a Postgres array of this element type. */
   arrayOf?: 'text' | 'integer';
+  /** What an insert writes when the record holds null (an SQL literal). */
+  insertDefault?: string;
 }
 
 /**
@@ -136,7 +140,7 @@ const RULE_COLUMNS: readonly RuleColumn[] = [
   { name: 'kind', type: 'text' },
   { name: 'tags', type: 'jsonb', arrayOf: 'text' },
   { name: 'cwe', type: 'jsonb', arrayOf: 'integer' },
-  { name: 'scope', type: 'text' },
+  { name: 'scope', type: 'text', insertDefault: `'all'` },
 ];
 
 /** Every inserted row also gets these two literal, non-record columns (in this order). */
@@ -151,7 +155,9 @@ const VALUES = sql.raw(
     ...RULE_COLUMNS.map((c) =>
       c.arrayOf
         ? `ARRAY(SELECT jsonb_array_elements_text(r.${c.name})${c.arrayOf === 'integer' ? '::integer' : ''})`
-        : `r.${c.name}`,
+        : c.insertDefault
+          ? `COALESCE(r.${c.name}, ${c.insertDefault})`
+          : `r.${c.name}`,
     ),
     ...LITERAL_COLUMNS.map((c) => c.value),
   ].join(', '),
@@ -172,7 +178,10 @@ const NAMED_VALUES = sql.raw(
 /** Re-inserts of rules a concurrent cleanup deleted between insert and lookup, at most. */
 const RULE_LOOKUP_RETRIES = 3;
 
-/** The metadata a report may refresh on a reported rule (data-model.md §4.4). */
+/**
+ * The metadata a report may refresh on a reported rule (data-model.md §4.4). The scope (0.13) is
+ * refreshed apart: only by a report that carries one ({@link upsertReportedRules}).
+ */
 const METADATA = [
   'name',
   'description_md',
@@ -183,7 +192,6 @@ const METADATA = [
   'kind',
   'tags',
   'cwe',
-  'scope',
 ] as const;
 const METADATA_OF = (table: string) =>
   sql.raw(`(${METADATA.map((c) => `${table}.${c}`).join(', ')})`);
@@ -191,8 +199,12 @@ const METADATA_SET = sql.raw(METADATA.map((c) => `${c} = n.${c}`).join(', '));
 
 /**
  * data-model.md §4.4: a rule never seen before is created with `origin = 'reported'`; a reported
- * rule's metadata is refreshed when a report carries different metadata; a `builtin` rule is
- * never overwritten. Returns every rule the report's findings reference, by key. A server engine's
+ * rule's metadata is refreshed when a report carries different metadata, its scope (0.13) only
+ * when the report carries one, so a report without (an older scanner, an external SARIF) neither
+ * writes nor locks a row for it; a `builtin` rule is never overwritten. Each resolved rule also
+ * carries the scope the report itself gives it (`reportScope`), which the rules stage judges the
+ * report's findings by: never the stored one, which another report may have set.
+ * Returns every rule the report's findings reference, by key. A server engine's
  * rules and findings (rules/server-engines.ts) are left out: the rules stage drops those findings.
  *
  * Rules are global (shared by every organisation), so an ingestion must not hold locks on
@@ -230,10 +242,11 @@ export async function upsertReportedRules(
       changed AS (
         SELECT rules.id FROM rules JOIN n ON n.key = rules.key
          WHERE rules.origin = 'reported'
-           AND ${METADATA_OF('rules')} IS DISTINCT FROM ${METADATA_OF('n')}
+           AND (${METADATA_OF('rules')} IS DISTINCT FROM ${METADATA_OF('n')}
+                OR (n.scope IS NOT NULL AND n.scope IS DISTINCT FROM rules.scope))
          ORDER BY rules.key
          FOR UPDATE OF rules)
-      UPDATE rules SET ${METADATA_SET}, updated_at = now()
+      UPDATE rules SET ${METADATA_SET}, scope = COALESCE(n.scope, rules.scope), updated_at = now()
         FROM n, changed
        WHERE rules.id = changed.id AND n.key = rules.key`);
   }
@@ -252,6 +265,7 @@ export async function upsertReportedRules(
   ];
   const resolved = new Map<string, ResolvedRule>();
   if (referenced.length === 0) return resolved;
+  const sources = new Map([...withMetadata, ...bare].map((r) => [r.key, r] as const));
   const lookup = async (keys: readonly string[]) => {
     const rows = await tx
       .select({
@@ -262,7 +276,6 @@ export async function upsertReportedRules(
         quality: rules.quality,
         kind: rules.kind,
         cwe: rules.cwe,
-        scope: rules.scope,
       })
       .from(rules)
       .where(sql`${rules.key} IN ${textList(keys)}`)
@@ -277,12 +290,11 @@ export async function upsertReportedRules(
         quality: row.quality as Quality,
         kind: row.kind,
         cwe: row.cwe,
-        scope: row.scope,
+        reportScope: sources.get(row.key)?.scope ?? null,
       });
     }
   };
   await lookup(referenced);
-  const sources = new Map([...withMetadata, ...bare].map((r) => [r.key, r] as const));
   for (let retry = 0; retry < RULE_LOOKUP_RETRIES; retry++) {
     const missing = referenced.filter((key) => !resolved.has(key));
     if (missing.length === 0) break;

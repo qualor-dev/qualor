@@ -13,9 +13,11 @@ import { SERVER_ENGINES } from './server-engines';
  * dropped: only the server makes those (the licence policy stage, the AI review), so a report can
  * neither open nor keep such an issue.
  *
- * 0.13: a rule's scope (the profile's override, else the rule's own) keeps a `main` rule off the
- * report's `test` files and a `test` rule off its `main` files. Those findings are counted in a
- * warning per kind of code and never stored either, so tracking closes their issues.
+ * 0.13: a rule's scope keeps a `main` rule off the report's `test` files and a `test` rule off its
+ * `main` files. The scope is the profile's nearest override, else the one this report's own rule
+ * metadata gives, else `all`: a report without scopes (an older scanner, an external SARIF) loses
+ * nothing to another report's. Those findings are counted in a warning per kind of code and never
+ * stored either, so tracking closes their issues.
  */
 export const rulesStage: IngestionStage = {
   name: 'rules',
@@ -59,7 +61,7 @@ export const rulesStage: IngestionStage = {
       // A file-less finding, or one on a file the report does not list, has no kind of code: its
       // rule's scope never drops it.
       const kind = finding.location ? kindOf.get(finding.location.path) : undefined;
-      const scope = setting.scopeOverride ?? rule.scope;
+      const scope = setting.scopeOverride ?? rule.reportScope ?? 'all';
       if (kind !== undefined && scope !== 'all' && scope !== kind) {
         outOfScope[kind] += 1;
         return;

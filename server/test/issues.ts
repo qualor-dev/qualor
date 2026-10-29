@@ -47,7 +47,10 @@ export async function seedRule(db: Executor, seed: RuleSeed): Promise<string> {
         scope: seed.scope ?? 'all',
         origin: 'reported',
       })
-      .onConflictDoUpdate({ target: rules.key, set: { name: sql`excluded.name` } })
+      .onConflictDoUpdate({
+        target: rules.key,
+        set: { name: sql`excluded.name`, scope: sql`excluded.scope` },
+      })
       .returning({ id: rules.id }),
   );
   return row.id;

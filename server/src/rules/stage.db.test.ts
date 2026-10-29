@@ -166,16 +166,17 @@ describe('rules stage (server step 7)', () => {
     // lock on them until it commits, or every other organisation's ingestion of those rules
     // would queue behind it.
     const p = await h.project('rules/no-lock');
-    const meta = (name: string) => ({
+    const meta = (name: string, scope?: 'main') => ({
       id: 'no-lock-rule',
       name,
       defaultSeverity: 'high' as const,
       quality: 'maintainability' as const,
+      ...(scope ? { scope } : {}),
     });
-    const reportOf = (name: string) =>
+    const reportOf = (name: string, scope?: 'main') =>
       reportWith({
         projectKey: p.key,
-        engines: [engine('eslint', [meta(name)])],
+        engines: [engine('eslint', [meta(name, scope)])],
         files: [file('src/a.ts')],
         findings: [finding({ ruleId: 'no-lock-rule' })],
       });
@@ -203,9 +204,14 @@ describe('rules stage (server step 7)', () => {
     // ...though the rules the findings reference are held FOR KEY SHARE, so a cleanup deleting a
     // bare rule (FOR UPDATE) cannot remove one this ingestion is about to use.
     expect(await whileUpserting('Same name', 'UPDATE')).toBe(true);
-    // A real change takes the stronger lock (and writes).
+    // (0.13) Once a report has given the rule a scope, a report without one (an older scanner)
+    // leaves it: no write and no lock, however the two scanner versions alternate.
+    await h.ctx.db.transaction((tx) => upsertReportedRules(tx, reportOf('Same name', 'main')));
+    expect(await whileUpserting('Same name', 'NO KEY UPDATE')).toBe(false);
+    expect((await ruleRow('eslint:no-lock-rule'))!.scope).toBe('main');
+    // A real change takes the stronger lock (and writes), and still keeps the stored scope.
     expect(await whileUpserting('New name', 'NO KEY UPDATE')).toBe(true);
-    expect(await ruleRow('eslint:no-lock-rule')).toMatchObject({ name: 'New name' });
+    expect(await ruleRow('eslint:no-lock-rule')).toMatchObject({ name: 'New name', scope: 'main' });
   });
 
   it('filters and re-grades findings by the effective profile, with inheritance and a project override', async () => {
@@ -309,13 +315,11 @@ describe('rules stage (server step 7)', () => {
       ],
     });
     const analysisId = await p.ingestOk(report, stages);
-    expect(
-      seen.findings?.map((f) => [f.rule.key, f.finding.location?.path ?? null, f.rule.scope]),
-    ).toEqual([
-      ['sonarjs:S2004', 'src/a.ts', 'main'],
-      ['sonarjs:S2699', 'src/a.test.ts', 'test'],
-      ['sonarjs:S1481', 'src/a.test.ts', 'all'],
-      ['sonarjs:S2004', null, 'main'],
+    expect(seen.findings?.map((f) => [f.rule.key, f.finding.location?.path ?? null])).toEqual([
+      ['sonarjs:S2004', 'src/a.ts'],
+      ['sonarjs:S2699', 'src/a.test.ts'],
+      ['sonarjs:S1481', 'src/a.test.ts'],
+      ['sonarjs:S2004', null],
     ]);
     expect((await ruleRow('sonarjs:S2004'))!.scope).toBe('main');
     expect((await ruleRow('sonarjs:S2699'))!.scope).toBe('test');
@@ -360,7 +364,7 @@ describe('rules stage (server step 7)', () => {
     expect(row!.warnings).toEqual([]);
   });
 
-  it("refreshes a rule's scope with its metadata, back to `all` from a report without one (0.13)", async () => {
+  it('stores the scope a report carries; a report without one keeps the stored scope and is judged as all code (0.13)', async () => {
     const p = await h.project('rules/scope-refresh');
     let minute = 0;
     const withScope = (scope?: 'main' | 'test') =>
@@ -368,17 +372,77 @@ describe('rules stage (server step 7)', () => {
         projectKey: p.key,
         analysisDate: new Date(Date.UTC(2026, 8, 22, 10, minute++)).toISOString(),
         engines: [engine('sonarjs', [{ id: 'S3776', ...(scope ? { scope } : {}) }])],
-        files: [file('src/a.ts')],
-        findings: [finding({ engineId: 'sonarjs', ruleId: 'S3776' })],
+        files: [file('src/a.ts'), file('src/a.test.ts', { kind: 'test' })],
+        findings: [
+          finding({ engineId: 'sonarjs', ruleId: 'S3776', line: 1 }),
+          finding({ engineId: 'sonarjs', ruleId: 'S3776', path: 'src/a.test.ts', line: 2 }),
+        ],
       });
+    const kept = () => seen.findings?.map((f) => f.finding.location?.path);
     await p.ingestOk(withScope('main'), stages);
     const created = await ruleRow('sonarjs:S3776');
     expect(created!.scope).toBe('main');
+    expect(kept()).toEqual(['src/a.ts']);
     await p.ingestOk(withScope('test'), stages);
-    expect(await ruleRow('sonarjs:S3776')).toMatchObject({ id: created!.id, scope: 'test' });
-    // An older scanner sends no scope: the rule applies to all code again, as in 0.12.
+    const refreshed = await ruleRow('sonarjs:S3776');
+    expect(refreshed).toMatchObject({ id: created!.id, scope: 'test' });
+    expect(kept()).toEqual(['src/a.test.ts']);
+    // An older scanner sends no scope: its report is judged as in 0.12, and the stored scope stays.
     await p.ingestOk(withScope(), stages);
-    expect((await ruleRow('sonarjs:S3776'))!.scope).toBe('all');
+    expect(await ruleRow('sonarjs:S3776')).toMatchObject({
+      scope: 'test',
+      updatedAt: refreshed!.updatedAt,
+    });
+    expect(kept()).toEqual(['src/a.ts', 'src/a.test.ts']);
+  });
+
+  it('judges a finding by its own report: a stored main scope never drops a rule the report gives no scope (0.13)', async () => {
+    const p = await h.project('rules/scope-own-report');
+    let minute = 0;
+    const reportOf = (rules: Parameters<typeof engine>[1]) =>
+      reportWith({
+        projectKey: p.key,
+        analysisDate: new Date(Date.UTC(2026, 8, 22, 10, minute++)).toISOString(),
+        engines: [engine('sonarjs', rules)],
+        files: [file('src/a.test.ts', { kind: 'test' })],
+        findings: [finding({ engineId: 'sonarjs', ruleId: 'S138', path: 'src/a.test.ts' })],
+      });
+    // A 0.13 scanner stores `main`...
+    await p.ingestOk(reportOf([{ id: 'S138', scope: 'main' }]), stages);
+    expect((await ruleRow('sonarjs:S138'))!.scope).toBe('main');
+    expect(seen.findings).toEqual([]);
+    // ...and an external SARIF names the rule only in its finding: kept, as in 0.12.
+    await p.ingestOk(reportOf([]), stages);
+    expect(seen.findings?.map((f) => f.finding.location?.path)).toEqual(['src/a.test.ts']);
+  });
+
+  it('drops a test-file finding of a rule its report says is main, whatever the stored scope (0.13)', async () => {
+    const p = await h.project('rules/scope-builtin');
+    // A built-in rule is never refreshed by a report, so its stored scope stays `all`.
+    await h.ctx.db.insert(rules).values({
+      key: 'sonarjs:S1541',
+      engineId: 'sonarjs',
+      engineRuleId: 'S1541',
+      name: 'Built-in S1541',
+      defaultSeverity: 'medium',
+      quality: 'maintainability',
+      kind: 'issue',
+      origin: 'builtin',
+    });
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        engines: [engine('sonarjs', [{ id: 'S1541', scope: 'main' }])],
+        files: [file('src/a.ts'), file('src/a.test.ts', { kind: 'test' })],
+        findings: [
+          finding({ engineId: 'sonarjs', ruleId: 'S1541', line: 1 }),
+          finding({ engineId: 'sonarjs', ruleId: 'S1541', path: 'src/a.test.ts', line: 2 }),
+        ],
+      }),
+      stages,
+    );
+    expect((await ruleRow('sonarjs:S1541'))!.scope).toBe('all');
+    expect(seen.findings?.map((f) => f.finding.location?.path)).toEqual(['src/a.ts']);
   });
 
   it("applies a profile's scope override: the nearest override of the chain beats the rule's scope (0.13)", async () => {
