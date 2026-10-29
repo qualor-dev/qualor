@@ -154,11 +154,18 @@ describe('LicenseBanner (enterprise.md §11)', () => {
       setup(trial(5));
       const root = await render();
       expect(text(root)).toMatch(
-        /Your Enterprise trial ends in 5 days, on [A-Z][a-z]{2} \d{1,2}, \d{4}\. To buy a licence or extend the trial, email license@qualor\.dev\./,
+        /Your Business trial ends in 5 days, on [A-Z][a-z]{2} \d{1,2}, \d{4}\. To buy a licence or extend the trial, email license@qualor\.dev\./,
       );
       expect(root.querySelector('a[href="mailto:license@qualor.dev"]')).not.toBeNull();
       expect(root.querySelector('a[href="/settings/license"]')).not.toBeNull();
       expect(dismissButton(root)).not.toBeNull();
+    });
+
+    it('names an Enterprise trial as Enterprise', async () => {
+      const t = trial(5);
+      setup({ ...t, license: { ...t.license!, plan: 'Enterprise' } });
+      const root = await render();
+      expect(text(root)).toContain('Your Enterprise trial ends in 5 days');
     });
 
     it('says 1 day on the last day', async () => {
@@ -183,7 +190,7 @@ describe('LicenseBanner (enterprise.md §11)', () => {
       localStorage.setItem(TRIAL_DISMISS_KEY, '2020-01-01');
       setup(trial(5));
       const root = await render();
-      expect(text(root)).toContain('Your Enterprise trial ends in 5 days');
+      expect(text(root)).toContain('Your Business trial ends in 5 days');
     });
 
     it('stays hidden for today when it was dismissed today', async () => {

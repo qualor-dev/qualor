@@ -24,6 +24,7 @@ import {
   licenseTexts,
   MAX_KEY_TEXT,
   reasonText,
+  TRIAL_EXPIRED_TITLE,
   type LicenseStatus,
 } from './license-text';
 
@@ -142,7 +143,9 @@ export class LicensePage {
           ? $localize`:@@license.dayLeft:1 day left`
           : $localize`:@@license.daysLeft:${left}:days: days left`,
       note: s.expiresSoon
-        ? $localize`:@@license.renewSoon:Renew soon: the licence expires on ${formatDate(l.expires)}:date:`
+        ? l.trial
+          ? licenseTexts.trialEndsOn(formatDate(l.expires))
+          : $localize`:@@license.renewSoon:Renew soon: the licence expires on ${formatDate(l.expires)}:date:`
         : null,
       alert: s.expiresSoon ? ('attention' as const) : null,
     };
@@ -272,7 +275,12 @@ export class LicensePage {
   private fieldMessage(err: unknown): string | null {
     if (!(err instanceof ApiError) || err.status !== 422) return null;
     const message = fieldErrors(err)['body.key'];
-    if (err.code === 'LICENSE_EXPIRED') return licenseTexts.expired();
+    if (err.code === 'LICENSE_EXPIRED') {
+      // The problem carries no trial field; the server titles an expired trial key as a trial key.
+      return err.problem?.title === TRIAL_EXPIRED_TITLE
+        ? licenseTexts.trialExpired()
+        : licenseTexts.expired();
+    }
     // The machine code in `reason` (enterprise.md §9), never the English `errors[].message`.
     if (err.code === 'LICENSE_INVALID') {
       return knownReasonText(err.problem?.reason) ?? licenseTexts.rejected();

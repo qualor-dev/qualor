@@ -60,6 +60,8 @@ export function knownReasonText(reason: unknown): string | null {
 /** Where a trial is requested (a plain link: the server sends nothing) and whom to write to. */
 export const TRIAL_URL = 'https://qualor.dev/trial';
 export const LICENSE_EMAIL = 'license@qualor.dev';
+/** The title the server gives a refused, expired trial key (the problem carries nothing else that says trial). */
+export const TRIAL_EXPIRED_TITLE = 'This trial key has expired.';
 
 export const licenseTexts = {
   trialUrl: TRIAL_URL,
@@ -77,6 +79,10 @@ export const licenseTexts = {
     $localize`:@@license.state.invalidUnknown:The key was rejected. Check that it was copied completely, or ask for a new one.`,
   expired: () =>
     $localize`:@@license.expiredKey:This licence is past its grace period. Ask for a renewed key.`,
+  trialExpired: () =>
+    $localize`:@@license.trialExpiredKey:This trial key has expired. To buy a licence or extend the trial, email ${LICENSE_EMAIL}.`,
+  trialEndsOn: (date: string) =>
+    $localize`:@@license.trial.endsOn:The trial ends on ${date}:date:.`,
   managedByEnvironment: () =>
     $localize`:@@license.managedByEnvironment:The key is set by QUALOR_LICENSE or QUALOR_LICENSE_FILE, so it cannot be changed here.`,
   saved: () => $localize`:@@license.saved:Saved. Restart the server to apply the new key.`,

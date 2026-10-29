@@ -226,6 +226,26 @@ describe('LicensePage (enterprise.md §11)', () => {
     expect(texts[2]).toContain('past its grace period');
   });
 
+  it('says a trial key has expired when the server titles it so', async () => {
+    const server = setup(COMMUNITY);
+    server.on('PUT', '/api/v0/license', () => ({
+      status: 422,
+      body: {
+        ...problem(422, 'LICENSE_EXPIRED', [
+          { path: 'body.key', message: 'This licence has expired' },
+        ]),
+        title: 'This trial key has expired.',
+      },
+    }));
+    const { fixture, root } = await render();
+    paste(root, KEY);
+    submit(root);
+    await settle(fixture);
+    const text = root.querySelector('#license-key-error')?.textContent ?? '';
+    expect(text).toContain('This trial key has expired.');
+    expect(text).not.toContain('grace period');
+  });
+
   /** The key form's Remove (the confirmation dialog has a Remove of its own). */
   const formRemove = (root: HTMLElement) =>
     button(root.querySelector<HTMLElement>('form#license-form')!, 'Remove');
@@ -642,6 +662,30 @@ describe('LicensePage: trial', () => {
     expect(state).not.toContain('running as the community edition');
     expect(root.querySelector('a[href="mailto:license@qualor.dev"]')).not.toBeNull();
     expect(card(root)).not.toBeNull();
+  });
+
+  it('tells an environment-managed trial where the key goes', async () => {
+    setup({ ...COMMUNITY, state: 'expired', source: 'file', license: TRIAL });
+    const { root } = await render();
+    const note = card(root)!.textContent!;
+    expect(note).toContain(
+      'Opens qualor.dev in a new tab. We email you a key; set it in QUALOR_LICENSE_FILE and restart.',
+    );
+    expect(note).not.toContain('paste it below');
+  });
+
+  it('ends the trial meter note with the end date, not a renewal', async () => {
+    const DAY = 86_400_000;
+    const trialSoon = {
+      ...TRIAL,
+      issued: new Date(Date.now() - 25 * DAY).toISOString(),
+      expires: new Date(Date.now() + 5 * DAY).toISOString(),
+    };
+    setup({ ...ACTIVE_UPLOADED, license: trialSoon, expiresSoon: true });
+    const { root } = await render();
+    const text = root.textContent!;
+    expect(text).toMatch(/The trial ends on [A-Z][a-z]{2} \d{1,2}, \d{4}\./);
+    expect(text).not.toContain('Renew soon');
   });
 
   it('keeps a paid licence free of trial words', async () => {

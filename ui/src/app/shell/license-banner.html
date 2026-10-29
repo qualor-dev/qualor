@@ -12,14 +12,14 @@
           @case ('trialEndsSoon') {
             @if (daysLeft() === 1) {
               <span i18n="@@licenseBanner.trial.oneDay"
-                >Your Enterprise trial ends in 1 day, on
+                >Your {{ s.license?.plan }} trial ends in 1 day, on
                 {{ s.license?.expires | dateTime: 'date' }}. To buy a licence or extend the trial,
                 email <a class="license-banner-mail" [attr.href]="mailto">{{ email }}</a
                 >.</span
               >
             } @else {
               <span i18n="@@licenseBanner.trial.days"
-                >Your Enterprise trial ends in {{ daysLeft() }} days, on
+                >Your {{ s.license?.plan }} trial ends in {{ daysLeft() }} days, on
                 {{ s.license?.expires | dateTime: 'date' }}. To buy a licence or extend the trial,
                 email <a class="license-banner-mail" [attr.href]="mailto">{{ email }}</a
                 >.</span

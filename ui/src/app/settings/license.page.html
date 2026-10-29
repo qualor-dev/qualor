@@ -244,9 +244,16 @@
               ><q-icon name="external"
             /></a>
           </p>
-          <p class="muted" i18n="@@license.trial.note">
-            Opens qualor.dev in a new tab. We email you a key; paste it below.
-          </p>
+          @if (managedBy(); as variable) {
+            <p class="muted" i18n="@@license.trial.noteEnv">
+              Opens qualor.dev in a new tab. We email you a key; set it in {{ variable }} and
+              restart.
+            </p>
+          } @else {
+            <p class="muted" i18n="@@license.trial.note">
+              Opens qualor.dev in a new tab. We email you a key; paste it below.
+            </p>
+          }
         </div>
       </section>
     }
