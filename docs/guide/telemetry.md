@@ -95,7 +95,7 @@ The whole report, as an example:
 | `features` | whether single sign-on, SCIM, the AI assistant, AI review, automatic fix suggestions, MCP, chat notifications, e-mail and a dependency licence policy are set up or in use |
 | `aiReview` | how AI review is used, in counts and flags only: see the next table |
 | `autoFix30d` | the automatic fix suggestions made in the last 30 days, and those posted to the merge request |
-| `integrations` | MCP, chat and e-mail use: see the next table |
+| `integrations` | MCP, chat and e-mail use: see the `integrations` table |
 | `reports30d` | the compliance exports that finished (`complianceReady`) or failed in the last 30 days, and the SonarQube status imports (counted from audit events, so it reads low once old events are purged) |
 | `licensePolicyOrgs` | how many organisations have a dependency licence policy. Never the licences in it |
 | `mergeRequests30d` | the analyses of merge requests (GitLab) and pull requests (GitHub) in the last 30 days |
@@ -118,7 +118,9 @@ The whole report, as an example:
 | `chat` | the active Slack and Teams notifications, and how many of them got a weekly digest in the last 4 weeks. Never a webhook address or time zone |
 | `email` | the mails sent in the last 30 days, in total and by kind (`other` for any kind not listed). Never an address, subject or text |
 
-Servers before 0.13.0 send `schema` 1 or 2, without the fields of the last two tables. Servers
+Servers before 0.13.0 send `schema` 1 or 2, without `autoFix30d`, `integrations`, `reports30d`,
+`licensePolicyOrgs`, `mergeRequests30d`, `ci` and the flags `autoFix`, `mcp`, `chat`, `email` and
+`licensePolicy` of `features`. Servers
 before 0.12.0 send `schema` 1, without `aiReview`, `assistant30d` and the `aiReview` flag of
 `features`. A newer server also sends `schema` 2 on a day it cannot count its feature use, and
 `schema` 1 on a day it cannot count its AI use. It leaves the fields out and never sends a zero in

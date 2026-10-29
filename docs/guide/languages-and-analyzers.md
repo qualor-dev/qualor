@@ -22,7 +22,7 @@ C#.
 | [C#](#c) | **Roslyn** analyzers of the .NET SDK, **Roslynator** and **SonarAnalyzer.CSharp** (SonarQube-compatible rules) | your build runs between `qualor dotnet begin` and `end`, with `qualor/scanner-dotnet` |
 | [C](#c-and-c-cppcheck-clang-tidy) | **cppcheck** 2.22.0 (GPL-3.0-or-later); **clang-tidy** (yours, LLVM 14+, with a compile database) | `.c` or `.h` files exist |
 | [C++](#c-and-c-cppcheck-clang-tidy) | the same | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.h` … files exist |
-| [Security rules](#security-rules-qualor) | **Qualor's own rules** on OpenGrep, for JavaScript, TypeScript, Python, Java, Go and C# (PolyForm Shield 1.0.0, source-available) | files of those languages are in scope |
+| [Security rules](#security-rules-qualor) | **Qualor's own rules** on OpenGrep, for JavaScript, TypeScript, Python, Java, Go and C# (PolyForm Shield 1.0.0, source-available) | main files of those languages are in scope |
 | [Security patterns (SAST)](#sast-patterns-opengrep-semgrep) | **OpenGrep** (or Semgrep), with rule files you keep in the repository; none are bundled | you name rule files in `qualor.yml` |
 | [Secrets](#secrets-gitleaks) | **Gitleaks** | always (`enabled: true` by default) |
 | [Vulnerable dependencies](#dependencies-trivy) | **Trivy** | lockfiles or manifests exist |
@@ -849,8 +849,9 @@ and `qualor/scanner-dotnet`, which builds on it, include them. There are three k
 - **Hotspots** point at code to review, where only you can tell whether it is safe: a weak hash, a
   cookie without its flags, raw HTML in React, a tar archive extracted without a safe filter.
 
-Qualor's security rules analyse application code. Test files, the files `tests.include` names, are
-not scanned by them.
+Qualor's security rules analyse application code and report nothing in test files, the files
+`tests.include` names. The C# taint engine does analyse test projects, and drops what it finds
+there.
 
 Each rule knows the frameworks and libraries in its row. **JavaScript and TypeScript** (the `js`
 rules apply to both):
@@ -1148,8 +1149,9 @@ Test files are recognised by `tests.include`. By default these are `*.test.*`, `
 `__tests__/`, `src/test/`, `*Tests/`, `test_*.py`, `*_test.py`, `conftest.py`, `*Test.php`,
 `src/androidTest/`, `src/*Test/`, `*_spec.rb`, `*_test.rb`, `spec/**/*.rb`, `test/**/*.rb` and
 `*_test.go`. Test code does not count in lines of code, complexity, duplication or coverage.
-Some rules apply to main code only, such as the limit on nested functions: they report nothing in
-test files. A quality profile can change a rule's scope.
+Most of the bundled `sonarjs` rules apply to main code only, such as the limit on nested functions:
+they report nothing in test files. A quality profile can change a rule's scope. A scanner before
+0.13 sends no scope: its findings count in all code unless a quality profile sets the scope.
 
 `src/*Test/` is meant for Kotlin Multiplatform's `commonTest` and `jvmTest`, but it applies to every
 language: a Gradle `src/integrationTest` or `src/functionalTest` is test code too.

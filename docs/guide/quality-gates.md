@@ -124,15 +124,22 @@ severity.
 
 Every rule has a **scope**. A rule with the scope **Main code** reports nothing in test files, a
 rule with **Test code** reports nothing in main files, and **All code** reports everywhere. **Rules**
-shows each rule's scope. A rule is **All code** unless its analyzer says otherwise. The ESLint
-rules from SonarJS bring their own.
+shows each rule's scope. A rule is **All code** unless its analyzer says otherwise. Most of the
+bundled `sonarjs` rules are **Main code** (262 of 328). The rules of your own ESLint, including
+`eslint:sonarjs/*`, have no scope. Qualor's own security rules (`qualor:*`) see main files only, so
+a scope of **Test code** or **All code** changes nothing for them. A scanner before 0.13 sends no
+scope: its findings count in all code unless a quality profile sets the scope.
 
 - To change a rule's scope, open the profile (an organization admin can), then pick **Main code**,
-  **Test code** or **All code** in the rule's **Scope** column. **Rule's default** removes the
-  profile's own scope again.
+  **Test code** or **All code** in the rule's **Scope** column. **Rule's default** shows when this
+  profile sets no scope of its own, with the scope in force beside it, and removes the profile's own
+  scope again.
 - A child profile inherits the scope its parent sets, and can set its own.
-- Setting a scope on a parent can also switch the rule on in a child that has no row for it, when
-  the child's setting for rules it does not set is `activate`.
+- Setting a scope on a profile copies its activation into a row of its own. A child with no row for
+  the rule follows that row: when the two profiles differ in their setting for rules they do not
+  set, the rule turns on or off in the child.
+- A change of scope alone also pins the activation and severity the profile inherits. **Inherit
+  again** undoes it.
 - Test files are the ones `tests.include` matches ([Languages and
   analyzers](./languages-and-analyzers.md)). A finding without a file, or in a file the report does
   not list, is never dropped for its scope.

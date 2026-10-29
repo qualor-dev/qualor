@@ -8,12 +8,12 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
-- A rule in a report can carry a scope, `main`, `test` or `all`. The sonarjs rules get theirs from
-  SonarSource's rule metadata, for example the limit on nested functions (S2004) is `main`. A report
-  without a scope means `all`, and the report schema version stays 1.
 - Rule scope: a rule applies to main code, test code or all code, and reports nothing in the other
-  files. The sonarjs rules take theirs from SonarSource's rule metadata. A quality profile can
-  change a rule's scope, and **Rules** and the profile page show it. A child profile inherits it.
+  files. The sonarjs rules take theirs from SonarSource's rule metadata, for example the limit on
+  nested functions (S2004) is main code only. A quality profile can change a rule's scope, and
+  **Rules** and the profile page show it. A child profile inherits it. In a report, a rule's scope
+  is `main`, `test` or `all`. A report without one means `all`, and the report schema version
+  stays 1.
 - API: a rule has a `scope`. A profile rule has the effective `scope` and `scopeOverride`, this
   profile's own setting (null when it has none). `PUT /quality-profiles/{id}/rules/{ruleKey}` takes
   `scope` (`main`, `test`, `all`, or null to clear it), and `active` is optional when `scope` is
@@ -22,22 +22,23 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Changed
 
-- After the upgrade, the next analysis closes the issues that main-code rules raised in test files,
-  so open issue counts can fall.
+- After the upgrade, the next analysis with the 0.13 scanner closes the issues that main-code rules
+  raised in test files, and the issues that test-code rules raised in main files. Open issue counts
+  can fall. A scanner before 0.13 sends no scope.
 - The scan log names each analyzer that ran with its duration and finding count.
 - Qualor's security rules analyse main code only, so scans are faster. They report nothing in test
   files, the files `tests.include` names. Open Qualor findings in test files close on the next
   analysis.
-- Telemetry is schema 3: besides the schema-2 report, the server counts which features are in use,
-  in counts, flags and fixed lists only: automatic fix suggestions, MCP clients, Slack and Teams
-  notifications and digests, e-mail by kind, compliance exports, SonarQube imports, licence
+- Telemetry is schema 3. Besides the schema-2 report, the server counts which features are in use,
+  in counts, flags and fixed lists only. These are automatic fix suggestions, MCP clients, Slack and
+  Teams notifications and digests, e-mail by kind, compliance exports, SonarQube imports, licence
   policies, and merge request analyses and CI systems. No names, addresses, hosts or time zones.
-  `QUALOR_TELEMETRY=false` still turns it off; see the telemetry guide.
+  `QUALOR_TELEMETRY=false` still turns it off. See the telemetry guide.
 - On a small context window, the rules files (`AGENTS.md`, `CLAUDE.md`, `REVIEW.md`) are cut to
   fit instead of skipping the AI review as too large for the window. A review that fitted before
   runs as before. Only when the window has no room for them do the rules files share half of its
-  room, short files whole, and the summary says they were shortened. Only a change that does not
-  fit the window is skipped. The room a model has to think before it answers shrinks with the
+  room: a short file stays whole, the long ones are cut evenly, and the summary says they were
+  shortened. Only a change that does not fit the window is skipped. The room a model has to think before it answers shrinks with the
   window too, so on a window of 28 000 tokens no call is refused for it first.
 - An AI review has 45 minutes in all. The reviewers stop at 60 % of it, so the judge has time to
   answer, and a retry never waits past the end. A review that reaches the limit says so in its
@@ -48,12 +49,13 @@ All notable changes to Qualor are listed here, newest first. The format follows
 ### Fixed
 
 - Semgrep and OpenGrep run the rule files they found when another entry in
-  `analyzers.semgrep.configs` cannot be used. Before, `qualor-default` beside your file on a
-  runner without the scanner image, or a file that does not exist, skipped the engine and your
-  other files never ran. A missing file is logged and reported as a `SEMGREP_CONFIG_MISSING`
+  `analyzers.semgrep.configs` is skipped: `qualor-default` on a runner without the scanner image,
+  or a named file that does not exist. Before, either skipped the engine and your other files never
+  ran. A URL or a path outside the repository still stops the engine. A missing file is logged and reported as a `SEMGREP_CONFIG_MISSING`
   warning, and an AI review snapshot is not sent while a named file is missing.
-- On Windows, a scan that times out or is interrupted also stops the processes that its analyzers'
-  own child processes started, as long as their parent is still running.
+- On Windows, a scan that times out or is interrupted reads the process table and stops the
+  processes below its analyzers before it stops the analyzers, as long as their parent is still
+  running.
 - On an issue's page, the File link keeps the line number with the file name: a long path wraps
   at its slashes, and `limits.ts:12` stays on one line.
 

@@ -854,7 +854,8 @@ window** in **Settings → AI provider** when the model takes less than 1 000 00
 that fills the window answers with what it has. A merge request whose first message does not fit,
 even with the shortest lists, is not reviewed.
 
-The rules files keep up to 16 000 characters each, as long as the window has room for them. On a
+The rules files keep at least 16 000 characters each, and up to 32 000 when the review has room,
+as long as the window has room for them. On a
 window without that room, they share half of the room the window leaves for the first message, and
 the code gets the other half. A short file stays whole, and the long ones are cut evenly. The model
 is told how much of each was cut. Under 1 000 characters of a long file is no use, so a long file
