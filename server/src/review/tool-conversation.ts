@@ -47,6 +47,8 @@ export interface RoleCall {
    * text, asks once more, with the loop's own words or with that text.
    */
   accept: (text: string) => boolean | string;
+  /** When the review's time is up, on the io's clock (`limits.deadline`); absent: no limit. */
+  deadline?: number;
 }
 
 /** The reader a conversation's tools read, with the policy they run under. */
@@ -73,6 +75,8 @@ export type ConversationIo = {
   shouldStop: ConversationInput['shouldStop'];
   /** Wakes the wait of a retry when it aborts: the server is stopping (`ConversationInput.signal`). */
   signal?: ConversationInput['signal'];
+  /** The clock of the call's `deadline` (`ConversationInput.now`); Date.now when left out. */
+  now?: ConversationInput['now'];
   /**
    * The model's context window, in tokens: the provider's `contextWindowTokens`, one for every
    * tier. Null or absent: DEFAULT_CONTEXT_WINDOW_TOKENS. No call sends more than it less the role's
@@ -169,10 +173,12 @@ export function converseOverTools(call: RoleCall, io: ConversationIo): Promise<C
       maxOutputTokens: REVIEW_OUTPUT_TOKENS[call.role],
       reasoningAllowance: REASONING_ALLOWANCE_TOKENS.conversation,
       maxCallInputTokens: callInputCap(io.contextWindowTokens ?? null, call.role),
+      deadline: call.deadline,
     },
     send: io.send,
     shouldStop: io.shouldStop,
     signal: io.signal,
+    now: io.now,
     accept: call.accept,
   });
 }

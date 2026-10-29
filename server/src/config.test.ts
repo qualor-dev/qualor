@@ -33,6 +33,7 @@ describe('loadConfig', () => {
       reviewSnapshot: { maxCompressedBytes: 52_428_800, maxDecompressedBytes: 524_288_000 },
       workerConcurrency: 1,
       reviewWorkerConcurrency: 2,
+      aiReviewMaxMinutes: null,
       requestTimeoutMs: 300_000,
       maxConcurrentUploads: 4,
       uiDir: null,
@@ -175,6 +176,20 @@ describe('loadConfig', () => {
     for (const bad of ['0', '9', '-1', '1.5', 'two']) {
       expect(problems({ ...base, QUALOR_REVIEW_WORKER_CONCURRENCY: bad }), bad).toEqual([
         expect.stringContaining('QUALOR_REVIEW_WORKER_CONCURRENCY'),
+      ]);
+    }
+  });
+
+  it('QUALOR_AI_REVIEW_MAX_MINUTES: a review’s time in all, 5 to 240 minutes; unset, the default', () => {
+    expect(loadConfig(base).aiReviewMaxMinutes).toBeNull();
+    for (const value of ['5', '240', ' 90 ']) {
+      expect(loadConfig({ ...base, QUALOR_AI_REVIEW_MAX_MINUTES: value }).aiReviewMaxMinutes).toBe(
+        Number(value),
+      );
+    }
+    for (const bad of ['4', '241', '0', '-5', '1.5', 'soon', '']) {
+      expect(problems({ ...base, QUALOR_AI_REVIEW_MAX_MINUTES: bad }), bad).toEqual([
+        expect.stringContaining('QUALOR_AI_REVIEW_MAX_MINUTES'),
       ]);
     }
   });

@@ -33,6 +33,11 @@ All notable changes to Qualor are listed here, newest first. The format follows
   notifications and digests, e-mail by kind, compliance exports, SonarQube imports, licence
   policies, and merge request analyses and CI systems. No names, addresses, hosts or time zones.
   `QUALOR_TELEMETRY=false` still turns it off; see the telemetry guide.
+- An AI review has 45 minutes in all. The reviewers stop at 60 % of it, so the judge has time to
+  answer, and a retry never waits past the end. A review that reaches the limit says so in its
+  summary. One whose judge cannot answer in time fails with "AI review failed because it ran out
+  of time.", and the next push reviews again. Set another time, 5 to 240 minutes, with
+  `QUALOR_AI_REVIEW_MAX_MINUTES`.
 
 ### Fixed
 

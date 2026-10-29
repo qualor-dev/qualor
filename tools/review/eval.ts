@@ -500,14 +500,17 @@ const stageOf = (role: ReviewRole): Stage => {
   return role === 'verify' ? 'verification' : 'specialists';
 };
 
+/** The wrap-ups counted: the evaluation gives a review no time limit, so none wraps up for it. */
+type Counted = Exclude<WrapUpReason, 'time'>;
+
 /** What the reviews measure besides their findings, summed over every review of the evaluation. */
 interface Measures {
   /** Milliseconds of each call the reviewer recorded. */
   callMs: number[];
   maxCallInputTokens: number;
   verification: { run: number; starved: number; confirmed: number; needsValidation: number };
-  wrapUps: Record<WrapUpReason, number> & {
-    byRole: Partial<Record<ReviewRole, Record<WrapUpReason, number>>>;
+  wrapUps: Record<Counted, number> & {
+    byRole: Partial<Record<ReviewRole, Record<Counted, number>>>;
   };
   stageTokens: Record<Stage, number>;
   cache: { read: number; write: number; byStage: Record<Stage, { read: number; write: number }> };
@@ -644,13 +647,21 @@ async function reviewCase(
       REVIEW_TOKENS,
       {
         providerKey: pipeline.providerKey,
-        converse: async (role, user, nonce, tokenBudget, accept, modelTier) => {
+        converse: async (role, user, nonce, tokenBudget, accept, modelTier, deadline) => {
           const stage = stageOf(role);
           if (role === 'verify') {
             verified.run += 1;
             if (policy.budget.calls === 0) verified.starved += 1;
           }
-          const result = await pipeline.converse(role, user, nonce, tokenBudget, accept, modelTier);
+          const result = await pipeline.converse(
+            role,
+            user,
+            nonce,
+            tokenBudget,
+            accept,
+            modelTier,
+            deadline,
+          );
           spent.input += result.inputTokens;
           spent.output += result.outputTokens;
           spent.costUsd = withCall(spent.costUsd, priceOf?.(modelTier) ?? null, result);
@@ -659,7 +670,11 @@ async function reviewCase(
           measures.cache.write += result.cacheWriteTokens;
           measures.cache.byStage[stage].read += result.cacheReadTokens;
           measures.cache.byStage[stage].write += result.cacheWriteTokens;
-          if (result.kind === 'answer' && result.wrappedUp !== null) {
+          if (
+            result.kind === 'answer' &&
+            result.wrappedUp !== null &&
+            result.wrappedUp !== 'time'
+          ) {
             const { wrapUps } = measures;
             wrapUps[result.wrappedUp] += 1;
             const own = (wrapUps.byRole[role] ??= { budget: 0, turns: 0, window: 0 });

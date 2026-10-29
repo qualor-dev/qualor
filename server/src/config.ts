@@ -309,6 +309,9 @@ const envSchema = z
     // 6I-3 R21: AI reviews run on a worker of their own, this many at once. Each holds a masking
     // worker thread (up to 512 MiB) and waits on the provider, so the bound is small.
     QUALOR_REVIEW_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+    // 0.13: an AI review's time in all, in minutes, for a model slower than the default allows
+    // (REVIEW_TIME_BUDGET_MS, review/job.ts); unset, that default.
+    QUALOR_AI_REVIEW_MAX_MINUTES: z.coerce.number().int().min(5).max(240).optional(),
     // S11: bounds how long Fastify lets a request run (protects against a client that never
     // finishes sending) and how many report uploads are read/decompressed concurrently (each holds
     // up to maxCompressedBytes in memory). Minimum 1000: 0 would disable the timeout entirely,
@@ -435,6 +438,8 @@ export interface Config {
   workerConcurrency: number;
   /** 6I-3 R21: QUALOR_REVIEW_WORKER_CONCURRENCY, the AI reviews the review worker runs at once. */
   reviewWorkerConcurrency: number;
+  /** QUALOR_AI_REVIEW_MAX_MINUTES: an AI review's time in all, 5 to 240; null: the default (45). */
+  aiReviewMaxMinutes: number | null;
   requestTimeoutMs: number;
   maxConcurrentUploads: number;
   /** Absolute path of the built web UI (QUALOR_UI_DIR), or null when the server is API-only. */
@@ -507,6 +512,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     },
     workerConcurrency: e.QUALOR_WORKER_CONCURRENCY,
     reviewWorkerConcurrency: e.QUALOR_REVIEW_WORKER_CONCURRENCY,
+    aiReviewMaxMinutes: e.QUALOR_AI_REVIEW_MAX_MINUTES ?? null,
     requestTimeoutMs: e.QUALOR_REQUEST_TIMEOUT_MS,
     maxConcurrentUploads: e.QUALOR_MAX_CONCURRENT_UPLOADS,
     uiDir: e.QUALOR_UI_DIR?.trim() ? resolve(e.QUALOR_UI_DIR.trim()) : null,

@@ -17,9 +17,9 @@ import { toolResultMessage } from './envelope';
  * runs the calls the model made, sends the results and goes on, until the model answers in text.
  * It owns what bounds a model: the caps on turns, on calls per turn, on the arguments it sends and
  * on what one call sends (the model's context window, R46), the wrap-up turn when the tokens, the
- * window or the turns are used up, the retries, and the stop check before every call to the
- * provider. It does not make a call itself (`send` does, and records it), run a tool (`runTool`) or
- * read an answer's JSON (the pipeline does).
+ * window, the turns or the review's time are used up, the retries, and the stop check before every
+ * call to the provider. It does not make a call itself (`send` does, and records it), run a tool
+ * (`runTool`) or read an answer's JSON (the pipeline does).
  *
  * The history only grows. A turn joins it as the provider made it: the `replay` its adapter kept
  * goes on the assistant message unchanged (the current Anthropic models sign their thinking, and a
@@ -129,6 +129,15 @@ export interface ConversationInput {
      * message a third of it). Absent: no cap.
      */
     maxCallInputTokens?: number;
+    /**
+     * When the review's time is up, in milliseconds of `now`'s clock. It is asked before every call,
+     * after the stop check. Once it has passed, a conversation that has had a turn makes one call
+     * more, its last: the wrap-up (`wrappedUp: 'time'`) when the model was to have a turn of tools,
+     * tried once. One that has had no turn, or has made its last call, ends `provider_error` with
+     * `timeLimit`. A retry whose wait would not end before it is not waited for: the time is up
+     * then. A call in flight when it passes is not cut. Absent or Infinity: no limit.
+     */
+    deadline?: number;
   };
   /**
    * One call to the provider, recorded, through its circuit. It throws an `LlmError` for a call
@@ -159,6 +168,8 @@ export interface ConversationInput {
    * @internal Tests only: nothing else sets it.
    */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** The clock `limits.deadline` is on, in milliseconds; Date.now when left out. */
+  now?: () => number;
 }
 
 /**
@@ -196,9 +207,10 @@ export type ToolAnswer = string | { text: string; sent: () => void; withheld?: (
  * after another turn of tools: `wrapUpDue`), the model's context window (no room in it for the
  * wrap-up after another turn, or for the answers of the last one: `limits.maxCallInputTokens`), or
  * its turns (`maxTurns` taken). When more than one comes at once it is the first of these, in this
- * order, except for answers the window had no room for, which are always the window.
+ * order, except for answers the window had no room for, which are always the window. The review's
+ * time (`limits.deadline`) comes after them: it makes the wrap-up of a call none of them did.
  */
-export type WrapUpReason = 'budget' | 'turns' | 'window';
+export type WrapUpReason = 'budget' | 'turns' | 'window' | 'time';
 
 /**
  * How a conversation ended. `text` of an answer is the model's: it goes to the parser, never to a
@@ -207,7 +219,9 @@ export type WrapUpReason = 'budget' | 'turns' | 'window';
  * provider's circuit was open: the provider is failing for every caller, and the conversation was
  * not asked to wait for it. `window_full` is a call that was not made because it would have reached
  * the model's context window (`limits.maxCallInputTokens`), even as the wrap-up on the history the
- * last call sent: the first message alone, or what the conversation has grown to.
+ * last call sent: the first message alone, or what the conversation has grown to. A
+ * `provider_error` with `timeLimit` is a conversation whose time was up (`limits.deadline`) before
+ * it had an answer: it had no turn, its last call failed, or that call's answer was not one.
  */
 export type ConversationResult =
   | ({ kind: 'answer'; text: string; wrappedUp: WrapUpReason | null } & ConversationCounts)
@@ -216,12 +230,17 @@ export type ConversationResult =
       kind: 'failed';
       reason: 'provider_error' | 'provider_no_tools' | 'bad_answer' | 'window_full';
       circuitOpen?: true;
+      timeLimit?: true;
     } & ConversationCounts);
 
 /** How a conversation ends without an answer, before the counts are put to it. */
 type FailureReason = Extract<ConversationResult, { kind: 'failed' }>['reason'];
-type Ended = { kind: 'stopped' } | { kind: 'failed'; reason: FailureReason; circuitOpen?: true };
+type Ended =
+  | { kind: 'stopped' }
+  | { kind: 'failed'; reason: FailureReason; circuitOpen?: true; timeLimit?: true };
 const failed = (reason: FailureReason): Ended => ({ kind: 'failed', reason });
+/** The review's time is up, and the conversation makes no call (`limits.deadline`). */
+const TIME_LIMIT: Ended = { kind: 'failed', reason: 'provider_error', timeLimit: true };
 
 /** What `send` throws when it made no call because the provider's circuit is open. */
 export class CircuitOpenError extends Error {
@@ -406,29 +425,47 @@ function afterFailure(
   return wait === null ? failed('provider_error') : wait;
 }
 
+/** How the review's time stands for a conversation (`limits.deadline`): what `Talk` answers. */
+interface Timing {
+  /**
+   * Asked before a call: `in_time`; `last` when the time is up and this call is the last, made
+   * once; or the end of a conversation that makes no call.
+   */
+  beforeCall(): 'in_time' | 'last' | Ended;
+  /** Whether a retry may wait `ms`: not when the time is up first, and then it is up. */
+  mayWait(ms: number): boolean;
+}
+
 /**
- * The model's next turn, or why there is none: the stop check is asked before every call, a
- * failed call is tried again as `retryWait` says, and the first call refused for its tools ends
- * the conversation as such. A call the provider most likely billed although it gave no turn, one
- * that timed out or whose answer could not be read, is charged its guessed input through `charge`.
- * A call its caller gave up stops the conversation: it is no failure of the provider's, so it is
- * neither tried again nor charged.
+ * The model's next turn, or why there is none: the stop check is asked before every call, then
+ * the review's time (`timing`); a failed call is tried again as `retryWait` says, unless it was the
+ * last call or the time would be up before the wait ends; and the first call refused for its tools
+ * ends the conversation as such. A call the provider most likely billed although it gave no turn,
+ * one that timed out or whose answer could not be read, is charged its guessed input through
+ * `charge`. A call its caller gave up stops the conversation: it is no failure of the provider's,
+ * so it is neither tried again nor charged.
  */
 async function nextTurn(
   input: ConversationInput,
   conversation: () => LlmConversation,
   first: boolean,
   charge: (inputTokens: number) => void,
+  timing: Timing,
 ): Promise<Taken | Ended> {
   const retried = { rateLimited: 0, transient: 0 };
   for (;;) {
     if (await input.shouldStop()) return { kind: 'stopped' };
+    const time = timing.beforeCall();
+    if (typeof time !== 'string') return time;
     const sent = conversation();
     try {
       return { turn: await input.send(sent), sent };
     } catch (err) {
       const next = afterFailure(err, input, sent, first, charge, retried);
       if (typeof next !== 'number') return next;
+      if (time === 'last') return TIME_LIMIT;
+      // A wait the time would be up before is not made: the next call is the last, or none.
+      if (!timing.mayWait(next * 1_000)) continue;
       await (input.sleep ?? sleepFor)(next * 1_000, input.signal);
     }
   }
@@ -667,10 +704,23 @@ class Talk {
   /** An answer was not accepted: the model is asked for it again, and runs no more tools. */
   private askedAgain = false;
   private readonly cap: number | undefined;
+  /** The review's time (`limits.deadline`): when it is up, on the clock of `now`. */
+  private readonly deadline: number;
+  private readonly now: () => number;
+  /** The time is up: the deadline passed, or a retry would have waited past it. */
+  private timeUp = false;
+  /** The last call, made once the time was up: no other is made. */
+  private lastCallMade = false;
+  private readonly timing: Timing = {
+    beforeCall: () => this.beforeCall(),
+    mayWait: (ms) => this.mayWait(ms),
+  };
 
   constructor(private readonly input: ConversationInput) {
     this.messages = [{ role: 'user', text: input.user }];
     this.cap = input.limits.maxCallInputTokens;
+    this.deadline = input.limits.deadline ?? Number.POSITIVE_INFINITY;
+    this.now = input.now ?? Date.now;
   }
 
   // A copy of the history for each call: what `send` is given is not changed after it.
@@ -732,15 +782,53 @@ class Talk {
     );
   }
 
+  /**
+   * Before a call, as the review's time stands (`limits.deadline`). Once it is up, a conversation
+   * that has had a turn makes one call more, its last: when the model was to have a turn of tools,
+   * it becomes the wrap-up (`'time'`), with the wrap-up's words after the answers of the last turn;
+   * an answer asked for again is asked as it is, and its calls are not run. A wrap-up that was due
+   * already keeps its reason, and an answer asked for again after one the caller did not accept
+   * runs no tools anyway.
+   */
+  private beforeCall(): 'in_time' | 'last' | Ended {
+    if (!this.timeUp && this.now() < this.deadline) return 'in_time';
+    this.timeUp = true;
+    if (this.turns === 0 || this.lastCallMade) return TIME_LIMIT;
+    this.lastCallMade = true;
+    if (this.wrapUp === null && !this.askedAgain) {
+      this.wrapUp = 'time';
+      if (this.messages.at(-1)?.role === 'tool') {
+        this.messages.push({ role: 'user', text: CONVERSATION_TEXTS.wrapUp });
+      }
+    }
+    return 'last';
+  }
+
+  /**
+   * Whether a retry may wait `ms`: only when the wait ends before the deadline. A wait that does
+   * not is not made, and the time is up.
+   */
+  private mayWait(ms: number): boolean {
+    if (ms < this.deadline - this.now()) return true;
+    this.timeUp = true;
+    return false;
+  }
+
   async run(): Promise<ConversationResult> {
     // The first call is the caller's to size: one that would reach the window is not made.
     if (this.cap !== undefined && windowGuessedInput(this.conversation()) >= this.cap) {
       return this.ended(failed('window_full'));
     }
     for (;;) {
-      const next = await nextTurn(this.input, this.conversation, this.turns === 0, (guessed) => {
-        this.inputTokens += guessed;
-      });
+      const next = await nextTurn(
+        this.input,
+        this.conversation,
+        this.turns === 0,
+        (guessed) => {
+          this.inputTokens += guessed;
+        },
+        this.timing,
+      );
       if (!('turn' in next)) return this.ended(next);
       const { turn, sent } = next;
       this.turns += 1;

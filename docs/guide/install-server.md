@@ -423,6 +423,7 @@ goes into a `postgres://` URL.
 | `QUALOR_REQUEST_TIMEOUT_MS` | `300000` | longest a request may run |
 | `QUALOR_WORKER_CONCURRENCY` | `1` | analysis jobs processed at once. Each slot can use several times one report's size in memory |
 | `QUALOR_REVIEW_WORKER_CONCURRENCY` | `2` | [AI reviews](./ai-review.md) and answers to replies that run at once, 1 to 8. They have a worker of their own, so a review never delays analyses or the AI assistant's answers. The masking worker of each running review or answer can use up to 512 MiB of heap: plan for that times this number |
+| `QUALOR_AI_REVIEW_MAX_MINUTES` | `45` | an [AI review](./ai-review.md)'s time in all, 5 to 240 minutes. Raise it for a slow model. Any other value stops the start |
 | `NODE_EXTRA_CA_CERTS` | none | a PEM bundle, when your GitLab, GitHub Enterprise, webhook receivers or SMTP server use a private CA. Mount the file into the container |
 | `QUALOR_LICENSE` | none | an [enterprise licence](./enterprise.md) key. Not together with `QUALOR_LICENSE_FILE` |
 | `QUALOR_LICENSE_FILE` | none | the path of a file holding the licence key, such as a Docker or Kubernetes secret, read at start: UTF-8, or UTF-16 with a byte-order mark. A file that cannot be read stops the start |

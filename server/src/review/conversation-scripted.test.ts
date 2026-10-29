@@ -20,6 +20,8 @@ const NONCE = newNonce();
 const USER_TEXT = 'Review this change';
 // The fixed texts of the loop, as the brief spells them: a change here is a change of contract.
 const WRAP_UP = 'Token budget reached: answer now, with what you have, in the required JSON.';
+const SHORTER =
+  'Your answer was cut off because it was too long: answer again, shorter, in the required JSON.';
 const TOO_MANY = 'too many calls in one turn; this one was not run';
 const BAD_ARGUMENTS = 'the arguments were not valid JSON; call again';
 
@@ -1044,6 +1046,136 @@ describe('runConversation with a scripted provider', () => {
       s.input.shouldStop = () => Promise.reject(down);
       await expect(runConversation(s.input)).rejects.toBe(down);
       expect(s.seen).toHaveLength(0);
+    });
+  });
+
+  describe("a script that overruns the review's time (limits.deadline)", () => {
+    const DEADLINE = 60_000;
+    /**
+     * `steps` played with a deadline, on a clock that moves only by what the script says: each tool
+     * that runs takes `toolMs`, and a `{ ms }` step is the time the call after it takes.
+     */
+    function overrunning(toolMs: number, ...steps: (LlmTurn | Error | { ms: number })[]) {
+      let at = 0;
+      const plays: (LlmTurn | Error)[] = [];
+      const callMs: number[] = [];
+      let taking = 0;
+      for (const step of steps) {
+        if ('ms' in step) {
+          taking += step.ms;
+          continue;
+        }
+        plays.push(step);
+        callMs.push(taking);
+        taking = 0;
+      }
+      const s = scripted(...plays);
+      const { send, runTool } = s.input;
+      s.input.send = (conversation) => {
+        at += callMs[s.seen.length] ?? 0;
+        return send(conversation);
+      };
+      s.input.runTool = (c) => {
+        at += toolMs;
+        return runTool(c);
+      };
+      s.input.limits = { ...LIMITS, deadline: DEADLINE };
+      s.input.now = () => at;
+      return s;
+    }
+
+    it('makes the call after a turn of tools that went past the deadline the wrap-up, for the time: its calls are not run', async () => {
+      const s = overrunning(
+        DEADLINE,
+        callTurn([call('c1')]),
+        turn('done', { finishReason: 'tool', toolCalls: [call('c2')] }),
+      );
+      expect(await runConversation(s.input)).toMatchObject({
+        kind: 'answer',
+        text: 'done',
+        wrappedUp: 'time',
+        turns: 2,
+        toolCalls: 1,
+      });
+      expect(s.ran.map((c) => c.id)).toEqual(['c1']);
+      expect(s.seen[1]!.messages.at(-1)).toEqual({ role: 'user', text: WRAP_UP });
+    });
+
+    it('lets a call that is in flight when the deadline passes answer: it is not cut', async () => {
+      const s = overrunning(0, { ms: DEADLINE * 2 }, turn('done'));
+      expect(await runConversation(s.input)).toMatchObject({
+        kind: 'answer',
+        text: 'done',
+        wrappedUp: null,
+        turns: 1,
+      });
+    });
+
+    it('makes no call after the last one: an answer cut off then is not asked for again', async () => {
+      const s = overrunning(
+        DEADLINE,
+        callTurn([call('c1')]),
+        turn('{"findings":', { finishReason: 'length' }),
+        turn('never asked'),
+      );
+      expect(await runConversation(s.input)).toMatchObject({
+        kind: 'failed',
+        reason: 'provider_error',
+        timeLimit: true,
+        turns: 2,
+        toolCalls: 1,
+      });
+      expect(s.seen).toHaveLength(2);
+    });
+
+    it('tries the last call once: a timeout is charged and not tried again', async () => {
+      const s = overrunning(
+        DEADLINE,
+        callTurn([call('c1')]),
+        new LlmError('timeout', 'The model did not answer within 60 s'),
+        turn('never asked'),
+      );
+      const result = await runConversation(s.input);
+      expect(result).toMatchObject({
+        kind: 'failed',
+        reason: 'provider_error',
+        timeLimit: true,
+        turns: 1,
+      });
+      // The first call's 10, and the guess for the input of the one that timed out.
+      expect(result.inputTokens).toBe(10 + quarterOfBytes(s.seen[1]!));
+      expect(s.sleeps).toEqual([]);
+      expect(s.seen).toHaveLength(2);
+    });
+
+    it('asks an answer cut off before the deadline for again past it once, with no tools and no words of the wrap-up', async () => {
+      // The clock passes the deadline while the cut answer is written; it is asked for again.
+      const s = overrunning(
+        0,
+        callTurn([call('c1')]),
+        { ms: DEADLINE },
+        turn('{"findings":', { finishReason: 'length' }),
+        turn('done', { finishReason: 'tool', toolCalls: [call('c2')] }),
+      );
+      expect(await runConversation(s.input)).toMatchObject({
+        kind: 'answer',
+        text: 'done',
+        wrappedUp: 'time',
+        turns: 3,
+      });
+      expect(s.ran.map((c) => c.id)).toEqual(['c1']);
+      expect(s.seen[2]!.messages.at(-1)).toEqual({ role: 'user', text: SHORTER });
+    });
+
+    it('keeps the reason of a wrap-up that was due already', async () => {
+      const s = overrunning(DEADLINE, callTurn([call('c1')]), turn('done'));
+      s.input.limits = { ...LIMITS, maxTurns: 1, deadline: DEADLINE };
+      expect(await runConversation(s.input)).toMatchObject({
+        kind: 'answer',
+        wrappedUp: 'turns',
+        turns: 2,
+      });
+      expect(s.seen[1]!.messages.filter((m) => m.role === 'user')).toHaveLength(2);
     });
   });
 });

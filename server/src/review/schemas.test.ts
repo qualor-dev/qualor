@@ -5,7 +5,9 @@ import {
   judgeAnswerSchema,
   REPLY_INTENTS,
   replyAnswerSchema,
+  REVIEW_NOTES,
   reviewFindingOf,
+  reviewSummarySchema,
   specialistAnswerSchema,
   verifyAnswerSchema,
 } from './schemas';
@@ -370,5 +372,16 @@ describe('ANSWER_LIMITS', () => {
       idChars: 64,
       replyChars: 1_200,
     });
+  });
+});
+
+describe('the summary a run keeps', () => {
+  it('takes every note the review makes of itself, the time limit too, and no other', () => {
+    const summary = { verdict: 'v', walkthrough: ['w'], notes: ['time_limit_reached'] };
+    expect(reviewSummarySchema.safeParse(summary).success).toBe(true);
+    expect(REVIEW_NOTES).toContain('time_limit_reached');
+    const all = { ...summary, notes: [...REVIEW_NOTES] };
+    expect(reviewSummarySchema.safeParse(all).success).toBe(true);
+    expect(reviewSummarySchema.safeParse({ ...summary, notes: ['time_up'] }).success).toBe(false);
   });
 });

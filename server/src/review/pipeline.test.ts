@@ -12,7 +12,7 @@ import {
   type ReviewContext,
 } from './context';
 import type { LlmConversation } from '../llm/providers';
-import { CONVERSATION_TEXTS, type ConversationResult } from './conversation';
+import { CONVERSATION_TEXTS, type ConversationResult, type WrapUpReason } from './conversation';
 import { envelope, newNonce } from './envelope';
 import type { ModelTier } from './model-tiers';
 import {
@@ -101,6 +101,8 @@ interface Call {
   accepted: (boolean | string)[];
   /** The tier of the model the pipeline asked the conversation to run on. */
   modelTier: ModelTier;
+  /** When the conversation's time is up (`limits.deadline`). */
+  deadline: number;
 }
 /**
  * A model that answers these texts in turn, each for `tokens`: the conversation asks again once
@@ -160,7 +162,7 @@ function scripted(
   );
   const deps: PipelineDeps = {
     providerKey,
-    converse: (role, user, nonce, tokenBudget, accept, modelTier) => {
+    converse: (role, user, nonce, tokenBudget, accept, modelTier, deadline) => {
       const call: Call = {
         role,
         user,
@@ -170,6 +172,7 @@ function scripted(
         accept,
         accepted: [],
         modelTier,
+        deadline,
       };
       calls.push(call);
       const reply = left.get(role)?.shift();
@@ -184,7 +187,7 @@ function scripted(
 const answer = (
   value: unknown,
   [input, output]: [number, number] = [100, 10],
-  wrappedUp: 'budget' | 'turns' | 'window' | null = null,
+  wrappedUp: WrapUpReason | null = null,
 ): ConversationResult => ({
   kind: 'answer',
   text: JSON.stringify(value),
@@ -1241,6 +1244,194 @@ describe('runReviewPipeline', () => {
     expect(
       (await review(contextOf([change('src/cart.ts', 2)]), 100_000, judgeFull.deps)).outcome,
     ).toEqual({ kind: 'failed', reason: 'provider_error', detail: 'window_full' });
+  });
+
+  describe("the review's time (deps.deadline)", () => {
+    /** A conversation whose time ran out (`limits.deadline`) after `turns` turns. */
+    const timeUp = (turns: number): ConversationResult => ({
+      kind: 'failed',
+      reason: 'provider_error',
+      timeLimit: true,
+      ...spent(turns * 100, 0),
+      turns,
+    });
+    /** `deps` on a clock that reads `clock.at`, with the review's time up at `deadline`. */
+    const timed = (deps: PipelineDeps, clock: { at: number }, deadline: number): PipelineDeps => {
+      deps.deadline = deadline;
+      deps.now = () => clock.at;
+      return deps;
+    };
+    const JUDGE_TIME_LIMIT = { kind: 'failed', reason: 'provider_error', detail: 'time_limit' };
+
+    it('starts no specialist past 60 % of it; the judge still runs, with the tokens they left, and the review notes the time limit', async () => {
+      const clock = { at: 0 };
+      const { deps, calls } = scripted({
+        security: [
+          () => {
+            clock.at = 60_000;
+            return answer({ findings: [] });
+          },
+        ],
+        judge: [answer(judgeSays())],
+      });
+      const { outcome, phases } = await review(
+        contextOf([change('src/auth.ts', 50)]),
+        100_000,
+        timed(deps, clock, 100_000),
+      );
+      // The specialists have until 60 % of the time, the judge until its end.
+      expect(calls.map((c) => [c.role, c.deadline])).toEqual([
+        ['security', 60_000],
+        ['judge', 100_000],
+      ]);
+      // The judge has its share and all the specialists did not spend.
+      expect(calls[1]!.tokenBudget).toBe(35_000 + 55_000 - 110);
+      expect(phases).toEqual(['specialists', 'judge']);
+      expect(outcome).toMatchObject({
+        kind: 'reviewed',
+        specialists: ['security'],
+        tokenLimitReached: false,
+        notes: ['time_limit_reached'],
+      });
+    });
+
+    it('a specialist whose time ran out adds nothing and is noted; one that answered through the wrap-up for the time adds its findings', async () => {
+      const { deps } = scripted({
+        security: [timeUp(0)],
+        quality: [timeUp(1)],
+        tests: [answer({ findings: [found()] }, [900, 100], 'time')],
+        judge: [answer(judgeSays({ findings: [judgedAs({ sources: ['s1'] })] }))],
+      });
+      const { outcome } = await review(
+        contextOf([change('src/auth.ts', 50)]),
+        100_000,
+        timed(deps, { at: 0 }, 100_000),
+      );
+      expect(outcome).toMatchObject({
+        kind: 'reviewed',
+        specialists: ['quality', 'tests'],
+        findings: [outcomeFinding({ sources: ['s1'] })],
+        tokenLimitReached: false,
+        notes: ['time_limit_reached'],
+      });
+    });
+
+    it('a judge that cannot answer in time fails the review: provider_error, time_limit; one whose time is up before it starts is not asked', async () => {
+      const late = scripted({ quality: [answer({ findings: [] })], judge: [timeUp(1)] });
+      expect(
+        (
+          await review(
+            contextOf([change('src/cart.ts', 2)]),
+            100_000,
+            timed(late.deps, { at: 0 }, 100_000),
+          )
+        ).outcome,
+      ).toEqual(JUDGE_TIME_LIMIT);
+
+      const clock = { at: 0 };
+      const over = scripted({
+        quality: [
+          () => {
+            clock.at = 100_000;
+            return answer({ findings: [found()] });
+          },
+        ],
+      });
+      const { outcome } = await review(
+        contextOf([change('src/cart.ts', 2)]),
+        100_000,
+        timed(over.deps, clock, 100_000),
+      );
+      expect(outcome).toEqual(JUDGE_TIME_LIMIT);
+      expect(over.calls.map((c) => c.role)).toEqual(['quality']);
+    });
+
+    it('verifies no finding once the time is up: it stays unverified, and the review is done with the note', async () => {
+      const serious = judgedAs({ category: 'security', title: 'A' });
+      const clock = { at: 0 };
+      const late = scripted({
+        quality: [answer({ findings: [] })],
+        judge: [
+          () => {
+            // An answer that comes after the deadline is not cut: it is used.
+            clock.at = 100_000;
+            return answer(judgeSays({ findings: [serious] }));
+          },
+        ],
+      });
+      const { outcome } = await review(
+        contextOf([change('src/cart.ts', 2)]),
+        100_000,
+        timed(late.deps, clock, 100_000),
+      );
+      expect(late.calls.map((c) => c.role)).toEqual(['quality', 'judge']);
+      expect(outcome).toMatchObject({
+        kind: 'reviewed',
+        findings: [{ title: 'A', verification: null }],
+        notes: ['time_limit_reached'],
+      });
+
+      // A check whose own time ran out leaves its finding as the judge kept it.
+      const ran = scripted({
+        quality: [answer({ findings: [] })],
+        judge: [answer(judgeSays({ findings: [serious] }))],
+        verify: [timeUp(1)],
+      });
+      const checked = await review(
+        contextOf([change('src/cart.ts', 2)]),
+        100_000,
+        timed(ran.deps, { at: 0 }, 100_000),
+      );
+      expect(ran.calls.map((c) => [c.role, c.deadline])).toEqual([
+        ['quality', 60_000],
+        ['judge', 100_000],
+        ['verify', 100_000],
+      ]);
+      expect(checked.outcome).toMatchObject({
+        kind: 'reviewed',
+        findings: [{ title: 'A', verification: null }],
+        notes: ['time_limit_reached'],
+      });
+    });
+
+    it('a review that ends inside its time is as it was, without a note; without a deadline no conversation has one', async () => {
+      const serious = judgedAs({ category: 'security', title: 'A' });
+      const replies = (clock: { at: number }) => ({
+        security: [
+          () => {
+            clock.at += 10_000;
+            return answer({ findings: [] });
+          },
+        ],
+        quality: [answer({ findings: [] })],
+        tests: [answer({ findings: [] })],
+        judge: [answer(judgeSays({ findings: [serious] }))],
+        verify: [answer({ verdict: 'confirmed', reason: 'r' })],
+      });
+      const clock = { at: 1_000 };
+      const inTime = scripted(replies(clock));
+      const { outcome } = await review(
+        contextOf([change('src/auth.ts', 50)]),
+        100_000,
+        timed(inTime.deps, clock, 101_000),
+      );
+      expect(inTime.calls.map((c) => [c.role, c.deadline])).toEqual([
+        ['security', 61_000],
+        ['quality', 61_000],
+        ['tests', 61_000],
+        ['judge', 101_000],
+        ['verify', 101_000],
+      ]);
+      const untimed = scripted(replies({ at: 0 }));
+      const before = await review(contextOf([change('src/auth.ts', 50)]), 100_000, untimed.deps);
+      expect(untimed.calls.map((c) => c.deadline)).toEqual(Array(5).fill(Infinity));
+      expect(outcome).toEqual(before.outcome);
+      expect(outcome).toMatchObject({
+        kind: 'reviewed',
+        findings: [{ title: 'A', verification: 'confirmed' }],
+        notes: [],
+      });
+    });
   });
 
   it('verification has a share of its own and what the judge left, shared between the findings it checks', async () => {

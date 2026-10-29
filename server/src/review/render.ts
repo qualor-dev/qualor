@@ -55,7 +55,10 @@ export type ReviewSummaryState =
   | {
       kind: 'failed';
       reason: ReviewFailureReason;
-      /** `window_full`: the model's context window had no room for the judge's call. */
+      /**
+       * `window_full`: the model's context window had no room for the judge's call; `time_limit`:
+       * the judge had no answer when the review's time was up.
+       */
       detail?: string | null;
     }
   | {
@@ -194,6 +197,12 @@ const FAILED_OTHER = 'AI review failed.';
  */
 const WINDOW_FULL = (words: Words): string =>
   `AI review failed because the model’s context window is too small for this ${words.request}; raise Context window in the AI provider settings, or use a model with a larger window.`;
+/**
+ * A failure that is the review's time (`provider_error`, detail `time_limit`): the judge had no
+ * answer when it was up. The detail picks the sentence; the operator may set another time, so it
+ * names none.
+ */
+const TIME_LIMIT = 'AI review failed because it ran out of time.';
 const NEXT_PUSH = 'The next push reviews again.';
 
 /** What a finished review says of itself. */
@@ -207,6 +216,7 @@ const NOTES: Record<ReviewNote, string | ((words: Words) => string)> = {
     'A reviewer reached the model’s context window, so it may have missed problems.',
   lists_shortened: (words) =>
     `This ${words.request} is large, so the reviewers were shown a shorter list of its changes and read the rest with their tools.`,
+  time_limit_reached: 'The review reached its time limit, so it may have missed problems.',
 };
 /** The text of a note, for the words of the provider. */
 const noteText = (note: ReviewNote, words: Words): string => {
@@ -283,6 +293,7 @@ function skippedText(
 
 function failedText(state: Extract<ReviewSummaryState, { kind: 'failed' }>, words: Words): string {
   if (state.detail === 'window_full') return WINDOW_FULL(words);
+  if (state.detail === 'time_limit') return `${TIME_LIMIT} ${NEXT_PUSH}`;
   const sentence = Object.hasOwn(FAILED, state.reason) ? FAILED[state.reason] : FAILED_OTHER;
   return `${sentence} ${NEXT_PUSH}`;
 }
@@ -315,6 +326,7 @@ function noteSentences(state: Done, words: Words): string[] {
     sentences.push(noteText('token_limit_reached', words));
   }
   if (notes.has('turn_limit_reached')) sentences.push(noteText('turn_limit_reached', words));
+  if (notes.has('time_limit_reached')) sentences.push(noteText('time_limit_reached', words));
   if (notes.has('context_window_reached'))
     sentences.push(noteText('context_window_reached', words));
   if (notes.has('lists_shortened')) sentences.push(noteText('lists_shortened', words));

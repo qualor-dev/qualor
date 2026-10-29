@@ -1810,4 +1810,132 @@ describe('runConversation: the tool loop of a review (llm.md §2.5, review.md §
       },
     );
   });
+
+  describe("the review's time (limits.deadline)", () => {
+    /** A clock that stands at `at` ms and moves only when the loop waits, by the wait. */
+    function timed(kind: Wire, deadline: number, over: Partial<ConversationInput> = {}) {
+      let at = 0;
+      const sleeps: number[] = [];
+      return run(kind, {
+        limits: { ...LIMITS, deadline },
+        now: () => at,
+        sleep: (ms) => {
+          sleeps.push(ms);
+          at += ms;
+          return Promise.resolve();
+        },
+        ...over,
+      }).then((done) => ({ ...done, sleeps }));
+    }
+
+    it.each(KINDS)(
+      'a retry that would wait until the deadline or past it is not waited for: a conversation that had a turn wraps up for the time at once (%s)',
+      async (kind) => {
+        fake.enqueue(
+          toolTurn(kind, [{ id: 'c1', args: { path: 'a.ts' } }]),
+          failure(kind, 429, { headers: { 'retry-after': '20' } }),
+          textTurn(kind, '{"findings":[]}'),
+        );
+        const { result, sleeps, ran } = await timed(kind, 20_000);
+        expect(result).toMatchObject({ kind: 'answer', wrappedUp: 'time', turns: 2, toolCalls: 1 });
+        expect(sleeps).toEqual([]);
+        expect(ran).toHaveLength(1);
+        expect(fake.requests).toHaveLength(3);
+        // The call that failed is made again as the wrap-up: the answers, then the words to answer.
+        expect(WIRES[kind].lastUser(fake.requests[2]!)).toBe(WRAP_UP);
+        expect(WIRES[kind].results(fake.requests[2]!).map((r) => r.id)).toEqual(['c1']);
+      },
+    );
+
+    it.each(KINDS)(
+      'the wrap-up for the time is tried once: when it fails too, the conversation ends with the time limit (%s)',
+      async (kind) => {
+        fake.enqueue(
+          toolTurn(kind, [{ id: 'c1', args: { path: 'a.ts' } }]),
+          failure(kind, 429, { headers: { 'retry-after': '30' } }),
+          failure(kind, 503),
+        );
+        const { result, sleeps } = await timed(kind, 20_000);
+        expect(result).toMatchObject({
+          kind: 'failed',
+          reason: 'provider_error',
+          timeLimit: true,
+          turns: 1,
+        });
+        expect(sleeps).toEqual([]);
+        expect(fake.requests).toHaveLength(3);
+      },
+    );
+
+    it.each(KINDS)(
+      'a conversation that had no turn ends with the time limit, and waits for nothing (%s)',
+      async (kind) => {
+        fake.enqueue(
+          failure(kind, 429, { headers: { 'retry-after': '30' } }),
+          textTurn(kind, '{"findings":[]}'),
+        );
+        const { result, sleeps } = await timed(kind, 20_000);
+        expect(result).toMatchObject({
+          kind: 'failed',
+          reason: 'provider_error',
+          timeLimit: true,
+          turns: 0,
+        });
+        expect(sleeps).toEqual([]);
+        expect(fake.requests).toHaveLength(1);
+      },
+    );
+
+    it.each(KINDS)(
+      'a wait that ends before the deadline is waited in full; none goes past it (%s)',
+      async (kind) => {
+        fake.enqueue(
+          // 7 s of the 20: waited; then the backoff's 5 s of the 13 left: waited; then 10 s of the
+          // 8 left: not waited, and the time is up.
+          failure(kind, 429, { headers: { 'retry-after': '7' } }),
+          failure(kind, 503),
+          failure(kind, 429, { headers: { 'retry-after': '10' } }),
+        );
+        const { result, sleeps } = await timed(kind, 20_000);
+        expect(sleeps).toEqual([7_000, 5_000]);
+        expect(result).toMatchObject({ kind: 'failed', timeLimit: true, turns: 0 });
+        expect(fake.requests).toHaveLength(3);
+
+        // Time enough for both waits: the call is retried as before.
+        fake.requests.length = 0;
+        fake.enqueue(
+          failure(kind, 429, { headers: { 'retry-after': '7' } }),
+          failure(kind, 503),
+          textTurn(kind, '{"findings":[]}'),
+        );
+        const inTime = await timed(kind, 60_000);
+        expect(inTime.sleeps).toEqual([7_000, 5_000]);
+        expect(inTime.result).toMatchObject({ kind: 'answer', wrappedUp: null, turns: 1 });
+      },
+    );
+
+    it.each(KINDS)(
+      'a deadline passed before the first call sends nothing; the stop check is asked first (%s)',
+      async (kind) => {
+        fake.enqueue(textTurn(kind, '{"findings":[]}'));
+        const late = await timed(kind, 0);
+        expect(late.result).toEqual({
+          kind: 'failed',
+          reason: 'provider_error',
+          timeLimit: true,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          turns: 0,
+          toolCalls: 0,
+        });
+        expect(fake.requests).toHaveLength(0);
+
+        const stopped = await timed(kind, 0, { shouldStop: () => Promise.resolve(true) });
+        expect(stopped.result).toMatchObject({ kind: 'stopped' });
+        expect(fake.requests).toHaveLength(0);
+      },
+    );
+  });
 });

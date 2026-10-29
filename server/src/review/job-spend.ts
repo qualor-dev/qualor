@@ -29,6 +29,8 @@ export interface ConverseContext {
   policy: ToolPolicy;
   context: ReviewContext;
   shouldStop: () => Promise<boolean>;
+  /** The clock of the review's time (`RoleCall.deadline`). */
+  now: () => number;
 }
 
 /** What the run spends, counted over the calls of its conversations, and where it writes it. */
@@ -61,7 +63,7 @@ export class RunLedger {
     call: RoleCall,
     modelTier: ModelTier,
   ): Promise<ConversationResult> {
-    const { running, storedProvider, reader, policy, context, shouldStop } = ctx;
+    const { running, storedProvider, reader, policy, context, shouldStop, now } = ctx;
     const pricing = pricingFor(running.settings.pricing, storedProvider, modelTier);
     const tally = new RedactionTally();
     if (call.role !== 'verify') tally.add(context.redactions);
@@ -85,6 +87,7 @@ export class RunLedger {
       send: (conversation) => this.counted(sender, pricing, conversation),
       shouldStop,
       signal: this.deps.shutdown,
+      now,
       onToolRedactions: (count) => tally.add(count),
       // One window for every tier (R46): no call sends more than it less the role's answer.
       contextWindowTokens: storedProvider.contextWindowTokens,

@@ -32,6 +32,7 @@ export const SUPPORT_CONFIG_ALLOWLIST: Readonly<Record<string, SupportRule>> = O
   'reviewSnapshot.maxDecompressedBytes': 'value',
   workerConcurrency: 'value',
   reviewWorkerConcurrency: 'value',
+  aiReviewMaxMinutes: 'value',
   requestTimeoutMs: 'value',
   maxConcurrentUploads: 'value',
   uiDir: 'value',

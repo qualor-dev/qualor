@@ -174,6 +174,18 @@ describe('the AI review section', () => {
     );
   });
 
+  it('says that a review failed because it ran out of time, and that the next push reviews again', () => {
+    const late = { kind: 'failed', reason: 'provider_error', detail: 'time_limit' } as const;
+    const TIME = 'AI review failed because it ran out of time. The next push reviews again.';
+    for (const provider of ['gitlab', 'github'] as const) {
+      expect(section(late, provider)).toEqual(['#### AI review', '', TIME]);
+      // Not the provider's error.
+      expect(section(late, provider).join('\n')).not.toContain('returned an error');
+      expect(badSectionLine(section(late, provider))).toBeNull();
+    }
+    expect(checkProse(TIME)).toBe(true);
+  });
+
   it('says that a merge request is too large for the model’s context window, and never to raise Tokens per review', () => {
     const tooSmall = {
       kind: 'skipped',
@@ -324,6 +336,33 @@ describe('the AI review section', () => {
       }),
     ).toBe(`${TOKENS} ${TURNS}`);
     expect(checkProse(TURNS)).toBe(true);
+  });
+
+  it('says that the review reached its time limit in a sentence of its own, after the other limits', () => {
+    const TOKENS = 'The review reached its token limit, so it may have missed problems.';
+    const TURNS = 'A reviewer reached its limit of 16 turns, so it may have missed problems.';
+    const TIME = 'The review reached its time limit, so it may have missed problems.';
+    const WINDOW = 'A reviewer reached the model’s context window, so it may have missed problems.';
+    for (const provider of ['gitlab', 'github'] as const) {
+      const notesLine = (over: Partial<Done>) => section(done(over), provider).at(-3);
+      expect(notesLine({ notes: ['time_limit_reached'] }), provider).toBe(TIME);
+      // Beside the others, each once: tokens, turns, time, window.
+      expect(
+        notesLine({
+          tokenLimitReached: true,
+          notes: [
+            'context_window_reached',
+            'time_limit_reached',
+            'turn_limit_reached',
+            'time_limit_reached',
+          ],
+        }),
+        provider,
+      ).toBe(`${TOKENS} ${TURNS} ${TIME} ${WINDOW}`);
+      expect(badSectionLine(section(done({ notes: ['time_limit_reached'] }), provider))).toBeNull();
+    }
+    expect(checkProse(TIME)).toBe(true);
+    expect(section(done()).join('\n')).not.toContain('time limit');
   });
 
   it('says that a reviewer reached the model’s context window in a sentence of its own, on GitLab and GitHub', () => {

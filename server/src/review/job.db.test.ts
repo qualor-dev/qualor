@@ -1207,6 +1207,107 @@ describe('the ai-review job (6I-3, R15)', () => {
     expect(reviewCalls()).toHaveLength(calls);
   });
 
+  describe("the review's time (REVIEW_TIME_BUDGET_MS)", () => {
+    const MINUTE = 60_000;
+    /** The summary note of the analysis' merge request, once its decoration ran. */
+    const summaryOf = async (mr: number): Promise<string> => {
+      await runDecorations(h, decorationDeps(h));
+      return (
+        gitlab
+          .discussions(GITLAB_PROJECT, mr)
+          .flatMap((d) => d.notes)
+          .find((n) => markerOf(n.body)?.kind === 'summary')?.body ?? ''
+      );
+    };
+
+    it('a review whose specialists used 60 % of its 45 minutes is done without the rest of them, and the summary notes the time limit', async () => {
+      // A trivial change on a sensitive path: the security reviewer, then the quality reviewer.
+      let at = Date.now();
+      const mr = mergeRequest();
+      const analysisId = await analysisOf(mr);
+      await snapshotOf(analysisId, mr, LOGIN);
+      await forgetDecorations();
+      const calls = reviewCalls().length;
+      llm.enqueue(
+        reviewResponder({
+          security: () => {
+            at += 27 * MINUTE;
+            return JSON.stringify({ findings: [] });
+          },
+        }),
+        reviewResponder(),
+      );
+      expect(await runReviews({ now: () => new Date(at) })).toBe(1);
+      expect(reviewCalls().slice(calls).map(reviewRoleOf)).toEqual(['security', 'judge']);
+      const run = await runOf(analysisId);
+      expect(run).toMatchObject({ status: 'done', reason: null, detail: null, modelCalls: 2 });
+      expect(run.summary).toMatchObject({ notes: ['time_limit_reached'] });
+      expect(await summaryOf(mr)).toContain(
+        'The review reached its time limit, so it may have missed problems.',
+      );
+    });
+
+    it('a review whose judge cannot answer within its 45 minutes fails: provider_error, time_limit, and the next push reviews again', async () => {
+      let at = Date.now();
+      const mr = mergeRequest();
+      const analysisId = await analysisOf(mr);
+      await snapshotOf(analysisId, mr);
+      await forgetDecorations();
+      const calls = reviewCalls().length;
+      llm.enqueue(
+        reviewResponder({
+          quality: () => {
+            at += 45 * MINUTE;
+            return JSON.stringify({ findings: [FINDING] });
+          },
+        }),
+      );
+      expect(await runReviews({ now: () => new Date(at) })).toBe(1);
+      // The judge is not asked once the time is up.
+      expect(reviewCalls().slice(calls).map(reviewRoleOf)).toEqual(['quality']);
+      const run = await runOf(analysisId);
+      expect(run).toMatchObject({
+        status: 'failed',
+        reason: 'provider_error',
+        detail: 'time_limit',
+        findingsNew: 0,
+        modelCalls: 1,
+      });
+      expect(logged).toContainEqual([
+        'info',
+        expect.objectContaining({ runId: run.id, status: 'failed', detail: 'time_limit' }),
+        'AI review run ended',
+      ]);
+      const summary = await summaryOf(mr);
+      expect(summary).toContain(
+        'AI review failed because it ran out of time. The next push reviews again.',
+      );
+      expect(summary).not.toContain('returned an error');
+    });
+
+    it('QUALOR_AI_REVIEW_MAX_MINUTES sets the time instead: 90 minutes leave the same review in time', async () => {
+      let at = Date.now();
+      const mr = mergeRequest();
+      const analysisId = await analysisOf(mr);
+      await snapshotOf(analysisId, mr);
+      llm.enqueue(
+        reviewResponder({
+          ...FOUND,
+          quality: () => {
+            at += 45 * MINUTE;
+            return FOUND.quality as string;
+          },
+        }),
+        reviewResponder(FOUND),
+      );
+      const config = { ...h.ctx.config, aiReviewMaxMinutes: 90 };
+      expect(await runReviews({ config, now: () => new Date(at) })).toBe(1);
+      const run = await runOf(analysisId);
+      expect(run).toMatchObject({ status: 'done', findingsNew: 1 });
+      expect(run.summary).toMatchObject({ notes: [] });
+    });
+  });
+
   it('a run superseded between two model calls stores nothing', async () => {
     const mr = mergeRequest();
     const older = await analysisOf(mr, 1);

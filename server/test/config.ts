@@ -17,6 +17,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     reviewSnapshot: { maxCompressedBytes: 50 * MiB, maxDecompressedBytes: 500 * MiB },
     workerConcurrency: 1,
     reviewWorkerConcurrency: 2,
+    aiReviewMaxMinutes: null,
     requestTimeoutMs: 300_000,
     maxConcurrentUploads: 4,
     uiDir: null,

@@ -77,6 +77,14 @@ export { REVIEW_NOTES, type ReviewFinding, type ReviewNote } from './schemas';
  * wrap-up, and one the window had no room for adds nothing: the review notes either
  * (`context_window_reached`); a judge the window had no room for fails it (`window_full`).
  *
+ * The review has its time as well (`deps.deadline`), shared out the same way: the specialists have
+ * until 60 % of it, so that a slow one cannot take the judge's, and the judge and the verification
+ * until its end. No conversation starts once its stage's time is up, and one that is talking then
+ * answers through its wrap-up (conversation.ts). A specialist or a check that did not run for it,
+ * or gave no answer, adds nothing, and one that answered through the wrap-up adds what it found:
+ * the review notes the time limit (`time_limit_reached`). A judge that has no answer by the end of
+ * the time fails the review (`provider_error`, detail `time_limit`).
+ *
  * Each conversation runs on the model of a tier (model-tiers.ts): the judge and the verification on
  * the strong one, the specialists on the standard one, and the quality reviewer of a trivial review
  * on the fast one.
@@ -95,6 +103,8 @@ const TIER_SPECIALISTS: Readonly<Record<ReviewTier, readonly Specialist[]>> = {
 
 /** Percent of the review's token budget each stage may spend. */
 export const STAGE_SHARES = { specialists: 55, judge: 35, verification: 10 } as const;
+/** The part of the review's time the specialists have: no specialist starts past it. */
+export const SPECIALISTS_TIME_SHARE = 0.6;
 /** The serious security findings verified in one review, at most. */
 export const MAX_VERIFICATIONS = 5;
 
@@ -175,8 +185,9 @@ export type PipelineOutcome =
       /**
        * `window_full`: the judge's call could not be made within the model's context window
        * (`provider_error`, as the provider would have refused it), whatever was cut of its data.
+       * `time_limit`: the judge had no answer when the review's time was up (`provider_error`).
        */
-      detail?: 'window_full';
+      detail?: 'window_full' | 'time_limit';
     }
   | { kind: 'stopped' };
 
@@ -185,10 +196,11 @@ export interface PipelineDeps {
    * One conversation of a role over the tools. `user` is the envelope built with `nonce`; the
    * job's implementation runs `runConversation` with that nonce for the tool results, with
    * `tokenBudget` (more than 0), REVIEW_OUTPUT_TOKENS of the role and the role's cap in the model's
-   * context window (`callInputCap`, the window runReviewPipeline is given), and with `accept` as its
-   * check of an answer: `true` takes it, and a text is what to say in asking again (an answer
-   * that is too long to be read is told so). Every call of the conversation goes to the model of
-   * `modelTier`, which the pipeline picks for the role and the size of the review (`tierOfCall`).
+   * context window (`callInputCap`, the window runReviewPipeline is given), with `deadline` as the
+   * time it has (`limits.deadline`, on the clock of `now`), and with `accept` as its check of an
+   * answer: `true` takes it, and a text is what to say in asking again (an answer that is too long
+   * to be read is told so). Every call of the conversation goes to the model of `modelTier`, which
+   * the pipeline picks for the role and the size of the review (`tierOfCall`).
    */
   converse(
     role: ReviewRole,
@@ -197,9 +209,17 @@ export interface PipelineDeps {
     tokenBudget: number,
     accept: (text: string) => boolean | string,
     modelTier: ModelTier,
+    deadline: number,
   ): Promise<ConversationResult>;
   /** The provider's API key, taken out of every answer before it is used; null when there is none. */
   providerKey: string | null;
+  /**
+   * When the review's time is up, in milliseconds of `now`'s clock: the job's start of the review
+   * and its time (REVIEW_TIME_BUDGET_MS, job.ts). Left out: no limit.
+   */
+  deadline?: number;
+  /** The clock of `deadline`, in milliseconds; Date.now when left out. */
+  now?: () => number;
 }
 
 /** The tier of a review of this many changed lines in this many files. */
@@ -433,6 +453,11 @@ type Asked<T> =
    * made one before.
    */
   | { kind: 'window_full'; ran: boolean }
+  /**
+   * The review's time was up before it had an answer: it did not start, or it had no answer by
+   * the time its last call came back; `ran` when it made a call.
+   */
+  | { kind: 'time_up'; ran: boolean }
   | { kind: 'stopped' }
   | { kind: 'failed'; reason: 'provider_error' | 'provider_no_tools' };
 
@@ -440,12 +465,16 @@ type Asked<T> =
 class Review {
   tokenLimitReached = false;
   readonly notes: ReviewNote[] = [];
+  /** The clock of the review's time (`deps.deadline`). */
+  readonly now: () => number;
 
   constructor(
     private readonly deps: PipelineDeps,
     /** The size of the review, which decides the model tier of its specialists (`tierOfCall`). */
     private readonly sizeTier: ReviewTier,
-  ) {}
+  ) {
+    this.now = deps.now ?? Date.now;
+  }
 
   note(note: ReviewNote): void {
     if (!this.notes.includes(note)) this.notes.push(note);
@@ -457,23 +486,32 @@ class Review {
   }
 
   /**
-   * One slot of a stage: a conversation of `role` over `data` with the tokens `stage` gives it next,
-   * which asks once more for an answer that does not match `schema` (runConversation's `accept`),
-   * and for a shorter one when the answer is longer than it is read. `stage` is told what it spent.
-   * Its answer is checked again here: a conversation that gave one back without checking it is not
-   * believed. A wrap-up for the tokens is noted as the token limit, one for the turns as the turn
-   * limit, one for the model's context window as that, and so is a call the window had no room for.
+   * One slot of a stage: a conversation of `role` over `data` with the tokens `stage` gives it next
+   * and the time its stage has (`until`, on the clock of `now`), which asks once more for an answer
+   * that does not match `schema` (runConversation's `accept`), and for a shorter one when the
+   * answer is longer than it is read. `stage` is told what it spent. Its answer is checked again
+   * here: a conversation that gave one back without checking it is not believed. A wrap-up for the
+   * tokens is noted as the token limit, one for the turns as the turn limit, one for the model's
+   * context window as that, and so is a call the window had no room for; one for the time as the
+   * time limit, and so is a conversation that does not start, or ends, because the time is up.
    */
   async ask<T>(
     role: ReviewRole,
     data: unknown,
     schema: z.ZodType<T>,
     stage: StageTokens,
+    until: number,
   ): Promise<Asked<T>> {
     const tokens = stage.next();
     if (tokens <= 0) {
       this.limitReached();
       return { kind: 'no_tokens' };
+    }
+    if (this.now() >= until) {
+      // Not started: its tokens go forward, as what a conversation leaves does.
+      stage.settle(tokens, 0);
+      this.note('time_limit_reached');
+      return { kind: 'time_up', ran: false };
     }
     /** What the check read of the answers it took, by their text. */
     const accepted = new Map<string, T>();
@@ -493,6 +531,7 @@ class Review {
       tokens,
       accept,
       tierOfCall(role, this.sizeTier),
+      until,
     );
     stage.settle(tokens, result.inputTokens + result.outputTokens);
     if (result.kind === 'stopped') return { kind: 'stopped' };
@@ -501,6 +540,10 @@ class Review {
         this.note('context_window_reached');
         return { kind: 'window_full', ran: result.turns > 0 };
       }
+      if (result.timeLimit === true) {
+        this.note('time_limit_reached');
+        return { kind: 'time_up', ran: result.turns > 0 };
+      }
       return result.reason === 'bad_answer'
         ? { kind: 'unread' }
         : { kind: 'failed', reason: result.reason };
@@ -508,6 +551,7 @@ class Review {
     if (result.wrappedUp === 'budget') this.limitReached();
     if (result.wrappedUp === 'turns') this.note('turn_limit_reached');
     if (result.wrappedUp === 'window') this.note('context_window_reached');
+    if (result.wrappedUp === 'time') this.note('time_limit_reached');
     const value = accepted.get(result.text) ?? this.read(role, result.text, schema);
     return value === undefined ? { kind: 'unread' } : { kind: 'answer', value };
   }
@@ -531,6 +575,12 @@ const JUDGE_WINDOW_FULL = {
   kind: 'failed',
   reason: 'provider_error',
   detail: 'window_full',
+} as const;
+/** A judge that had no answer when the review's time was up. */
+const JUDGE_TIME_LIMIT = {
+  kind: 'failed',
+  reason: 'provider_error',
+  detail: 'time_limit',
 } as const;
 
 /**
@@ -582,24 +632,25 @@ function endOf(asked: Extract<Asked<unknown>, { kind: 'stopped' | 'failed' }>): 
 }
 
 /**
- * The specialists, one after the other: the ones that ran, and the findings they gave, labelled.
- * The review's end when a conversation stopped or failed.
+ * The specialists, one after the other, until `until`: the ones that ran, and the findings they
+ * gave, labelled. The review's end when a conversation stopped or failed.
  */
 async function runSpecialists(
   context: ReviewContext,
   specialists: readonly Specialist[],
   review: Review,
   stage: StageTokens,
+  until: number,
 ): Promise<{ ran: Specialist[]; labelled: LabelledFinding[] } | StageEnd> {
   const ran: Specialist[] = [];
   const labelled: LabelledFinding[] = [];
   const shown = specialistData(context);
   for (const specialist of specialists) {
-    const asked = await review.ask(specialist, shown, specialistAnswerSchema, stage);
+    const asked = await review.ask(specialist, shown, specialistAnswerSchema, stage, until);
     if (asked.kind === 'stopped' || asked.kind === 'failed') return endOf(asked);
     if (asked.kind === 'no_tokens') continue;
-    if (asked.kind === 'window_full') {
-      // It adds nothing, and the review notes the window (`ask`).
+    if (asked.kind === 'window_full' || asked.kind === 'time_up') {
+      // It adds nothing, and the review notes the window or the time (`ask`).
       if (asked.ran) ran.push(specialist);
       continue;
     }
@@ -622,13 +673,14 @@ async function runSpecialists(
 
 /**
  * Verifies the serious findings, one conversation each, at most MAX_VERIFICATIONS of them, with
- * `tokens` shared between them: the verdicts, by finding. The review's end when a conversation
- * stopped or failed.
+ * `tokens` shared between them, until `until`: the verdicts, by finding. The review's end when a
+ * conversation stopped or failed.
  */
 async function verifySerious(
   review: Review,
   serious: readonly JudgedFinding[],
   tokens: number,
+  until: number,
   onPhase: (phase: ReviewPhase) => Promise<void>,
 ): Promise<Map<JudgedFinding, VerifyVerdict> | StageEnd> {
   const verdicts = new Map<JudgedFinding, VerifyVerdict>();
@@ -638,10 +690,16 @@ async function verifySerious(
   const checked = serious.slice(0, MAX_VERIFICATIONS);
   const verification = new StageTokens(tokens, checked.length);
   for (const finding of checked) {
-    const told = await review.ask('verify', verifyData(finding), verifyAnswerSchema, verification);
+    const told = await review.ask(
+      'verify',
+      verifyData(finding),
+      verifyAnswerSchema,
+      verification,
+      until,
+    );
     if (told.kind === 'stopped' || told.kind === 'failed') return endOf(told);
     // Not verified: the finding stays as the judge left it (a window that had no room for the
-    // check is noted by `ask`).
+    // check, or a time that was up, is noted by `ask`).
     if (told.kind === 'unread') review.note('reviewer_unreadable');
     if (told.kind === 'answer') verdicts.set(finding, told.value.verdict);
   }
@@ -672,9 +730,10 @@ function withVerdicts(
  * turn of tools already left no room (conversation.ts), and what it spends past them is taken from
  * no other conversation: the review goes past `budget` by that much at most. `window` is the model's
  * context window, which the judge's data is sized within as the first messages are (`reviewLimits`;
- * `deps.converse` keeps each call within it). `onPhase` is told each stage as it starts. The
+ * `deps.converse` keeps each call within it). The review's time runs from here to `deps.deadline`,
+ * the specialists' to SPECIALISTS_TIME_SHARE of it. `onPhase` is told each stage as it starts. The
  * outcome is `stopped` as soon as a conversation is, and `failed` when the provider fails or the
- * judge gives no answer of its schema: nothing of a failed review is stored.
+ * judge gives no answer of its schema, or none in time: nothing of a failed review is stored.
  */
 export async function runReviewPipeline(
   context: ReviewContext,
@@ -685,6 +744,9 @@ export async function runReviewPipeline(
 ): Promise<PipelineOutcome> {
   const plan = planReview(context.reviewed);
   const review = new Review(deps, plan.tier);
+  const deadline = deps.deadline ?? Number.POSITIVE_INFINITY;
+  const began = review.now();
+  const specialistsUntil = began + SPECIALISTS_TIME_SHARE * (deadline - began);
   const judgeShare = shareOf(budget, STAGE_SHARES.judge);
   // Without a judge nothing can be kept: a budget too small for its share is not spent at all.
   if (judgeShare <= 0) return NOT_JUDGED;
@@ -700,7 +762,13 @@ export async function runReviewPipeline(
     shareOf(budget, STAGE_SHARES.specialists),
     plan.specialists.length,
   );
-  const reviewed = await runSpecialists(context, plan.specialists, review, specialists);
+  const reviewed = await runSpecialists(
+    context,
+    plan.specialists,
+    review,
+    specialists,
+    specialistsUntil,
+  );
   if ('kind' in reviewed) return reviewed;
   const { ran, labelled } = reviewed;
 
@@ -719,9 +787,10 @@ export async function runReviewPipeline(
     roomOf(judgeCap),
   );
   const judge = new StageTokens(judgeShare + specialists.unspent(), 1);
-  const asked = await review.ask('judge', judgeShown, judgeAnswerSchema, judge);
+  const asked = await review.ask('judge', judgeShown, judgeAnswerSchema, judge, deadline);
   if (asked.kind === 'stopped' || asked.kind === 'failed') return endOf(asked);
   if (asked.kind === 'window_full') return JUDGE_WINDOW_FULL;
+  if (asked.kind === 'time_up') return JUDGE_TIME_LIMIT;
   if (asked.kind !== 'answer') return NOT_JUDGED;
   const answer = asked.value;
   const shownBodies = new Map(judgeShown.specialistFindings.map((f) => [f.id, f.body]));
@@ -752,6 +821,7 @@ export async function runReviewPipeline(
     review,
     serious,
     shareOf(budget, STAGE_SHARES.verification) + judge.unspent(),
+    deadline,
     onPhase,
   );
   if ('kind' in verdicts) return verdicts;

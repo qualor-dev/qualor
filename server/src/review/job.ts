@@ -50,8 +50,9 @@ export { sameProvider } from './job-stop';
  *    does not): decided before anything is masked or sent;
  * 10. the pipeline (pipeline.ts), its calls recorded as the review's own (usage.ts), stopping at
  *    the next call to the provider when the run is superseded, review is switched off or its
- *    snapshot is deleted (the merge request was merged or closed: `skipped: closed`); then the
- *    findings are stored (store.ts), or the run fails with the pipeline's reason.
+ *    snapshot is deleted (the merge request was merged or closed: `skipped: closed`), and given
+ *    the review's time (REVIEW_TIME_BUDGET_MS); then the findings are stored (store.ts), or the run
+ *    fails with the pipeline's reason.
  *
  * A stop of the server (`ReviewJobDeps.shutdown`) ends a running review at once, `failed:
  * internal`: its masking and its call in flight are given up, no other call is made and nothing is
@@ -74,6 +75,15 @@ export { sameProvider } from './job-stop';
 
 /** The job's lease: a review waits on its provider, call after call; the worker extends it. */
 export const REVIEW_LEASE_MS = 20 * 60_000;
+/**
+ * A review's time in all, from its first conversation (pipeline.ts): three times what a big merge
+ * request takes. QUALOR_AI_REVIEW_MAX_MINUTES sets another for a slower model.
+ */
+export const REVIEW_TIME_BUDGET_MS = 45 * 60_000;
+
+/** The time of a review on this server: QUALOR_AI_REVIEW_MAX_MINUTES, or REVIEW_TIME_BUDGET_MS. */
+const reviewTimeBudgetMs = (config: Config): number =>
+  config.aiReviewMaxMinutes === null ? REVIEW_TIME_BUDGET_MS : config.aiReviewMaxMinutes * 60_000;
 
 /** The worker's logger; a line that only says what a job left alone goes out at debug, when it can. */
 type Logger = WorkerLogger & Partial<Pick<FastifyBaseLogger, 'debug'>>;
@@ -106,7 +116,10 @@ export interface ReviewJobDeps {
    * given up, and no other call is made. A run not yet started is left waiting for the next server.
    */
   shutdown: AbortSignal;
-  /** The clock a run's deadline is compared with; the database's when left out. */
+  /**
+   * The clock a run's deadlines are compared with: its snapshot's (the database's clock when left
+   * out) and its review's time (Date.now when left out).
+   */
   now?: () => Date;
 }
 
@@ -270,17 +283,22 @@ class ReviewJob {
         pricing: settings.pricing,
       };
       const shouldStop = stopCheck(this.deps, running, controller, this.state);
+      // The review's time starts with its first conversation.
+      const { now: clockOf } = this.deps;
+      const now = clockOf === undefined ? Date.now : () => clockOf().getTime();
       const outcome = await runReviewPipeline(
         context,
         budget,
         {
-          converse: (role, user, nonce, tokenBudget, accept, modelTier) =>
+          converse: (role, user, nonce, tokenBudget, accept, modelTier, deadline) =>
             this.ledger.converse(
-              { running, storedProvider, reader, policy, context, shouldStop },
-              { role, user, nonce, tokenBudget, accept },
+              { running, storedProvider, reader, policy, context, shouldStop, now },
+              { role, user, nonce, tokenBudget, accept, deadline },
               modelTier,
             ),
           providerKey: key.key,
+          deadline: now() + reviewTimeBudgetMs(this.deps.config),
+          now,
         },
         (phase) => this.ledger.phase(run, phase),
         window,
