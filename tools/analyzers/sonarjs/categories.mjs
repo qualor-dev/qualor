@@ -28,7 +28,8 @@ const SCOPES = { Main: 'main', Tests: 'test', All: 'all' };
 
 /** The rule's `scope` as main, test or all, or null when it has none or an unknown one. */
 export function scopeOf(meta) {
-  return SCOPES[meta?.scope] ?? null;
+  const word = meta?.scope;
+  return typeof word === 'string' && Object.hasOwn(SCOPES, word) ? SCOPES[word] : null;
 }
 
 /** { S<N>: scope } for every S<N>.json of `dir` that has one, sorted by key. */
@@ -65,8 +66,18 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.stderr.write(`categories.mjs: no rule metadata in ${dir}\n`);
     process.exit(1);
   }
+  const scopeResult = scopes(dir);
+  const scopeCount = Object.keys(scopeResult).length;
+  if (scopeCount === 0) {
+    process.stderr.write(`categories.mjs: no rule scopes in ${dir}\n`);
+    process.exit(1);
+  }
   const target =
     outFile ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'categories.json');
   writeFileSync(target, `${JSON.stringify(result, null, 2)}\n`);
-  process.stdout.write(`categories.mjs: ${count} rule categories written to ${target}\n`);
+  const scopesTarget = path.join(path.dirname(target), 'scopes.json');
+  writeFileSync(scopesTarget, `${JSON.stringify(scopeResult, null, 2)}\n`);
+  process.stdout.write(
+    `categories.mjs: ${count} rule categories written to ${target}, ${scopeCount} scopes to ${scopesTarget}\n`,
+  );
 }

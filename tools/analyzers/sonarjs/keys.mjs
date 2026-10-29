@@ -63,16 +63,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       process.argv[5] ?? path.join(here, '../../../packages/shared/rules/sonarjs-scopes.json');
     const found = sonarjsScopes(keys, scopes(rulesDir));
     if (Object.keys(found).length !== keys.length) {
-      process.stderr
-        .write(`keys.mjs: ${keys.length - Object.keys(found).length} bundled rules have no scope in ${rulesDir}
-`);
+      process.stderr.write(
+        `keys.mjs: ${keys.length - Object.keys(found).length} bundled rules have no scope in ${rulesDir}\n`,
+      );
       process.exit(1);
     }
-    writeFileSync(
-      scopesOut,
-      `${JSON.stringify(found, null, 2)}
-`,
-    );
+    writeFileSync(scopesOut, `${JSON.stringify(found, null, 2)}\n`);
   }
   writeFileSync(defaultOut, `${JSON.stringify(defaults, null, 2)}\n`);
   process.stdout.write(

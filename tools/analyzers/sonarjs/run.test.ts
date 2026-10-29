@@ -471,6 +471,33 @@ describe('sonarjs rule scopes (0.13)', () => {
     expect(scopeOf({ scope: 'All' })).toBe('all');
     expect(scopeOf({})).toBeNull();
     expect(scopeOf({ scope: 'Other' })).toBeNull();
+    expect(scopeOf({ scope: 'constructor' })).toBeNull();
+    expect(scopeOf({ scope: 'toString' })).toBeNull();
+  });
+
+  it('the categories.mjs command writes scopes.json next to categories.json', () => {
+    const rules = mkdtempSync(path.join(os.tmpdir(), 'sonarjs-rules-'));
+    writeFileSync(
+      path.join(rules, 'S2004.json'),
+      '{"type":"CODE_SMELL","defaultSeverity":"Critical","scope":"Main"}',
+    );
+    writeFileSync(
+      path.join(rules, 'S2699.json'),
+      '{"type":"BUG","defaultSeverity":"Blocker","scope":"Tests"}',
+    );
+    const out = path.join(rules, 'categories.json');
+    execFileSync('node', [path.join(SOURCE, 'categories.mjs'), rules, out], { stdio: 'pipe' });
+    expect(JSON.parse(readFileSync(path.join(rules, 'scopes.json'), 'utf8'))).toEqual({
+      S2004: 'main',
+      S2699: 'test',
+    });
+    const none = mkdtempSync(path.join(os.tmpdir(), 'sonarjs-rules-'));
+    writeFileSync(path.join(none, 'S1.json'), '{"type":"BUG","defaultSeverity":"Major"}');
+    expect(() =>
+      execFileSync('node', [path.join(SOURCE, 'categories.mjs'), none, path.join(none, 'c.json')], {
+        stdio: 'pipe',
+      }),
+    ).toThrow(expect.objectContaining({ status: 1 }));
   });
 
   it('the committed sonarjs-scopes.json gives each of the 328 bundled keys one word', () => {

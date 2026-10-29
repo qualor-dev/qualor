@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs Qualor's sonarjs pass (plan 8A/8B, config.md §6) into $QUALOR_TOOLS/sonarjs (default
 # /opt/qualor/sonarjs): eslint-plugin-sonarjs on Qualor's own ESLint 9, installed from
-# tools/analyzers/sonarjs's lockfile without install scripts, and categories.json built from the
+# tools/analyzers/sonarjs's lockfile without install scripts, and categories.json and scopes.json built from the
 # RSPEC metadata of the SonarJS source archive at the plugin's commit, checked against its SHA-256
 # before it is unpacked; only the rule metadata is unpacked (never committed, .gitignore), and the
 # archive is deleted afterwards. The pins (SONARJS_VERSION, SONARJS_COMMIT, SONARJS_SOURCE_SHA256)
@@ -61,4 +61,4 @@ node "$DEST/categories.mjs" "$TMP/rules"
 rm -rf "$TMP/sonarjs.tar.gz" "$TMP/rules"
 
 chmod -R a+rX "$DEST"
-echo "installed eslint-plugin-sonarjs $SONARJS_VERSION and its categories.json into $DEST"
+echo "installed eslint-plugin-sonarjs $SONARJS_VERSION and its categories.json and scopes.json into $DEST"
