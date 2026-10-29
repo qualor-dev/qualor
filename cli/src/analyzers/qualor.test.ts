@@ -311,6 +311,86 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
     expect(fromEnv.run.args.slice(1, 3)).toEqual(['--config', path.join(other, 'rules')]);
   });
 
+  it('analyses main files only', async () => {
+    const root = tmp();
+    const pack = writePack(tmp());
+    const test = (rel: string, language: ScopeFile['language']): ScopeFile => ({
+      ...scopeFile(root, rel, language),
+      kind: 'test',
+    });
+    const prep = await createQualorAnalyzer({ defaultDir: pack }).prepare(
+      context(root, {
+        files: [
+          scopeFile(root, 'src/app.ts', 'typescript'),
+          test('src/app.test.ts', 'typescript'),
+          test('tests/test_app.py', 'python'),
+        ],
+      }),
+    );
+    if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+    expect(prep.run.args.slice(prep.run.args.indexOf('--') + 1)).toEqual(['src/app.ts']);
+  });
+
+  it('analyses every file when tests.include matches nothing', async () => {
+    const root = tmp();
+    const prep = await createQualorAnalyzer({ defaultDir: writePack(tmp()) }).prepare(
+      context(root, {
+        files: [
+          scopeFile(root, 'src/app.ts', 'typescript'),
+          scopeFile(root, 'src/a.test.ts', 'typescript'),
+        ],
+      }),
+    );
+    if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+    expect(prep.run.args.slice(prep.run.args.indexOf('--') + 1)).toEqual([
+      'src/app.ts',
+      'src/a.test.ts',
+    ]);
+  });
+
+  it('skips when every file of its languages is a test file', async () => {
+    const root = tmp();
+    const prep = await createQualorAnalyzer({ defaultDir: writePack(tmp()) }).prepare(
+      context(root, {
+        files: [{ ...scopeFile(root, 'src/a.test.ts', 'typescript'), kind: 'test' }],
+      }),
+    );
+    expect(prep).toEqual({ skip: 'skipped (no main files in scope)' });
+  });
+
+  it('drops OpenGrep results on test files when it selects the files itself', async () => {
+    const root = tmp();
+    const prep = await createQualorAnalyzer({
+      defaultDir: writePack(tmp()),
+      maxTargetArgBytes: 1,
+    }).prepare(
+      context(root, {
+        files: [
+          scopeFile(root, 'src/app.ts', 'typescript'),
+          { ...scopeFile(root, 'src/app.test.ts', 'typescript'), kind: 'test' },
+        ],
+      }),
+    );
+    if (!('run' in prep) || prep.run.transform === undefined) throw new Error(JSON.stringify(prep));
+    const at = (uri: string) => ({
+      ruleId: 'python.sql-injection',
+      locations: [{ physicalLocation: { artifactLocation: { uri } } }],
+    });
+    const out = prep.run.transform(
+      {
+        version: '2.1.0',
+        runs: [
+          { tool: { driver: { rules: [] } }, results: [at('src/app.ts'), at('src/app.test.ts')] },
+        ],
+      },
+      '',
+    ) as { runs: { results: unknown[] }[] };
+    const resultPath = (r: unknown) =>
+      (r as typeof at extends (u: string) => infer R ? R : never).locations[0]!.physicalLocation
+        .artifactLocation.uri;
+    expect(out.runs[0]!.results.map((r) => resultPath(r))).toEqual(['src/app.ts']);
+  });
+
   it("unpacks OpenGrep's cache first, under the lock every qualor scan sharing the cache takes", async () => {
     const root = tmp();
     const home = tmp();
@@ -814,6 +894,26 @@ describe("qualor with Qualor's Roslyn taint engine under qualor dotnet end (6B-C
     endLine: line,
     endColumn: 1,
     message,
+  });
+
+  it('keeps the engine findings on test files out', async () => {
+    const { root, files, pack } = setup();
+    const taint = ok(root);
+    if (taint.kind !== 'ok') throw new Error('taint');
+    const run = (taint.sarif as unknown as { runs: { results: Record<string, unknown>[] }[] })
+      .runs[0]!;
+    run.results.push(structuredClone(run.results[0]!));
+    const loc = run.results[1]!['locations'] as {
+      physicalLocation: { artifactLocation: { uri: string } };
+    }[];
+    loc[0]!.physicalLocation.artifactLocation.uri = 'src/B.cs';
+    const marked = files.map((f) => (f.path === 'src/B.cs' ? { ...f, kind: 'test' as const } : f));
+    const prep = await createQualorAnalyzer({ defaultDir: pack }).prepare(
+      withTaint(root, marked, taint),
+    );
+    if (!('run' in prep) || prep.run.transform === undefined) throw new Error(JSON.stringify(prep));
+    const out = normalizeIn(root, prep.run.transform(opengrepSarif(), ''));
+    expect(out.findings.map((f) => f.location?.path)).toEqual(['src/A.cs']);
   });
 
   it('does not pass .cs files to OpenGrep, and adds the engine findings with the manifest kind and severity and the flow as related locations', async () => {

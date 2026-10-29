@@ -849,6 +849,9 @@ and `qualor/scanner-dotnet`, which builds on it, include them. There are three k
 - **Hotspots** point at code to review, where only you can tell whether it is safe: a weak hash, a
   cookie without its flags, raw HTML in React, a tar archive extracted without a safe filter.
 
+Qualor's security rules analyse application code. Test files, the files `tests.include` names, are
+not scanned by them.
+
 Each rule knows the frameworks and libraries in its row. **JavaScript and TypeScript** (the `js`
 rules apply to both):
 

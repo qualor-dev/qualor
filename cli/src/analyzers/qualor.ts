@@ -13,7 +13,7 @@ import {
   type QualorManifest,
   type SarifLog,
 } from '@qualor/shared';
-import { MAX_ANALYZED_BYTES } from '../discovery/discover';
+import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { isInside } from './binary';
 import { deadProxyEnv } from './offline';
 import { shown } from './reason';
@@ -415,8 +415,14 @@ interface TaintEngineLog {
  * rules' tags, the flows as related locations and a version naming the engine and the pack.
  * Works on a copy: `qualor dotnet end`'s run stays as it was.
  */
-function taintEngineLog(log: SarifLog, manifest: QualorManifest): TaintEngineLog {
+function taintEngineLog(
+  log: SarifLog,
+  manifest: QualorManifest,
+  root: string,
+  tests: ReadonlySet<string>,
+): TaintEngineLog {
   const sarif = structuredClone(log) as Record<string, unknown>;
+  dropResultsOn(sarif, tests, root);
   withQualorRules(sarif, manifest, { engine: true });
   const byId = new Map(manifest.rules.map((r) => [r.id, r]));
   const declared = manifest.dotnetEngine;
@@ -473,6 +479,18 @@ function resultPath(result: Record<string, unknown>, root: string): string | nul
     return rel;
   } catch {
     return null;
+  }
+}
+
+/** Removes the results whose first location is a file in `tests` (keys as `pathKey`). */
+function dropResultsOn(output: unknown, tests: ReadonlySet<string>, root: string): void {
+  if (tests.size === 0 || !isObject(output) || !Array.isArray(output['runs'])) return;
+  for (const run of output['runs']) {
+    if (!isObject(run) || !Array.isArray(run['results'])) continue;
+    run['results'] = run['results'].filter((r) => {
+      const rel = isObject(r) ? resultPath(r, root) : null;
+      return rel === null || !tests.has(pathKey(rel));
+    });
   }
 }
 
@@ -574,19 +592,27 @@ export function createQualorAnalyzer(
   const prepare = (ctx: AnalyzerContext): Preparation => {
     const pack = locateQualorPack(ctx.root, ctx.env, defaultDir);
     if (!('manifest' in pack)) return pack;
-    const inScope = ctx.files.filter((f) => QUALOR_LANGUAGES.includes(f.language));
-    if (inScope.length === 0) {
+    const ofLanguages = ctx.files.filter((f) => QUALOR_LANGUAGES.includes(f.language));
+    if (ofLanguages.length === 0) {
       return { skip: 'no JavaScript, TypeScript, Python, Java, Go or C# files in scope' };
     }
+    // The rules analyse application code: test files (`tests.include`) are not targets.
+    const inScope = ofLanguages.filter((f) => f.kind === 'main');
+    if (inScope.length === 0) return { skip: 'skipped (no main files in scope)' };
+    const relOf = (f: ScopeFile) => path.relative(ctx.root, f.absPath).split(path.sep).join('/');
+    const tests = new Set(
+      ofLanguages.filter((f) => f.kind === 'test').map((f) => pathKey(relOf(f))),
+    );
     // R-4: the taint engine's complete run replaces the OpenGrep C# rules for the .cs files.
     const taint = ctx.dotnet?.kind === 'collected' ? ctx.dotnet.taint : null;
-    const engine = taint?.kind === 'ok' ? taintEngineLog(taint.sarif, pack.manifest) : null;
+    const engine =
+      taint?.kind === 'ok' ? taintEngineLog(taint.sarif, pack.manifest, ctx.root, tests) : null;
     // Only the files the engine analysed (those of a compilation the build recorded) leave
     // OpenGrep: a .cs file of no built project keeps the OpenGrep C# rules (fix round 1, I2).
     const analysed = new Set(taint?.kind === 'ok' ? taint.sources.map(pathKey) : []);
     const byEngine = (rel: string) => analysed.has(pathKey(rel));
     const files = inScope
-      .map((f) => ({ f, rel: path.relative(ctx.root, f.absPath).split(path.sep).join('/') }))
+      .map((f) => ({ f, rel: relOf(f) }))
       .filter(({ f, rel }) => engine === null || f.language !== 'csharp' || !byEngine(rel))
       .map(({ rel }) => rel);
     if (engine !== null && files.length === 0) return engineOnly(engine, taint);
@@ -631,6 +657,7 @@ export function createQualorAnalyzer(
         transform: (output: unknown) => {
           warnOtherOpengrep(output, pack.manifest, ctx);
           withQualorRules(output, pack.manifest);
+          dropResultsOn(output, tests, ctx.root);
           if (engine !== null) withTaintEngineRuns(output, engine.sarif, ctx.root, byEngine);
           return output;
         },
