@@ -135,21 +135,25 @@ describe('runProcess', () => {
     async () => {
       const marker = path.join(tmp(), 'grandchild-survived');
       const started = path.join(tmp(), 'grandchild-started');
-      // The grandchild announces itself, then would write the marker 6 s later; the timeout
-      // fires at 3 s, so the grandchild exists by then unless the machine is badly overloaded.
-      const grandchild = `require('fs').writeFileSync(${JSON.stringify(started)}, 'up'); setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'alive'), 6000)`;
-      const t0 = performance.now();
-      const r = await runProcess(
+      // The grandchild announces itself, then would write the marker 8 s later. The timeout
+      // (6 s) is far past the grandchild's start, which the test checks before the kill happens,
+      // and the kill (a sweep of about 0.6 s) is far before the marker is due.
+      const grandchild = `require('fs').writeFileSync(${JSON.stringify(started)}, 'up'); setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'alive'), 8000)`;
+      const promise = runProcess(
         node(
           `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' }); setInterval(() => {}, 1000)`,
-          3_000,
+          6_000,
         ),
         silentLogger,
       );
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(started) && Date.now() < deadline) await sleep(20);
+      expect(existsSync(started)).toBe(true); // before the timeout can fire
+      const markerDue = Date.now() + 8_000;
+      const r = await promise;
       expect(r.timedOut).toBe(true);
-      expect(existsSync(started)).toBe(true);
-      expect(performance.now() - t0).toBeLessThan(8_000);
-      await sleep(2_500);
+      // Look only once the marker would have been written, so a survivor cannot be missed.
+      await sleep(Math.max(0, markerDue + 1_500 - Date.now()));
       expect(existsSync(marker)).toBe(false);
     },
   );

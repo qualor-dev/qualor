@@ -132,6 +132,7 @@ function sweepDescendants(roots: readonly number[]): number[] {
 
 function killWindowsTrees(roots: readonly number[]): void {
   const taskkill = taskkillPath();
+  // A pid reused between the snapshot and the kill is not covered; the window is milliseconds.
   const options = { stdio: 'ignore', windowsHide: true } as const;
   // Descendants first, by pid found under the roots; then today's tree kill for the roots.
   const descendants = sweepDescendants(roots);

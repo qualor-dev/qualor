@@ -20,7 +20,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
   runner without the scanner image, or a file that does not exist, skipped the engine and your
   other files never ran. A missing file is logged and reported as a `SEMGREP_CONFIG_MISSING`
   warning, and an AI review snapshot is not sent while a named file is missing.
-- On Windows, a scan that times out or is interrupted stops every process its analyzers started.
+- On Windows, a scan that times out or is interrupted also stops the processes that its analyzers'
+  own child processes started, as long as their parent is still running.
 
 ## [0.12.1] - 2026-10-29
 
