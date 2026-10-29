@@ -6,6 +6,14 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- PHPStan no longer fails with "Call to undefined function Symfony\Polyfill\Mbstring\iconv_strlen()" in the
+  `qualor/scanner` image, which marked the whole scan failed and left out the Code Quality report. The
+  image has no `mbstring` extension, so the mbstring polyfill in PHPStan's phar needs `iconv`, which
+  Qualor's own `php.ini` for PHPStan now loads. It was hit by any code that calls an `mb_*` function with
+  constant arguments.
+
 ## [0.12.1] - 2026-10-29
 
 ### Fixed

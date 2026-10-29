@@ -356,13 +356,13 @@ function watchPhpProcesses(tag: string): { seen: Map<number, PhpProcess>; stop()
   };
 }
 
-const QUALOR_MODULES = ['phar.so', 'tokenizer.so'];
+const QUALOR_MODULES = ['iconv.so', 'phar.so', 'tokenizer.so'];
 
 /**
  * Ruling A9-23: php under Qualor's php.ini has pcre.jit=0, reads no scan directory and loads the
- * two extensions of that ini only; and every php process of the scan, PHPStan's worker processes
+ * three extensions of that ini only; and every php process of the scan, PHPStan's worker processes
  * included, was started with that php.ini, an empty PHP_INI_SCAN_DIR and no PHPRC, and loaded no
- * extension module but those two.
+ * extension module but those three.
  */
 function expectQualorPhpOnly(ini: IniProbe[], processes: Map<number, PhpProcess>): void {
   expect(ini).toHaveLength(1);
@@ -394,8 +394,8 @@ function expectQualorPhpOnly(ini: IniProbe[], processes: Map<number, PhpProcess>
 
   expect(path.basename(probe.given)).toBe('qualor-php.ini');
   expect(probe).toMatchObject({ jit: '0', loaded: probe.given, scanned: false });
-  expect(probe.extensions).toEqual(expect.arrayContaining(['Phar', 'tokenizer']));
-  for (const ext of ['ctype', 'posix', 'Zend OPcache', 'iconv'])
+  expect(probe.extensions).toEqual(expect.arrayContaining(['Phar', 'tokenizer', 'iconv']));
+  for (const ext of ['ctype', 'posix', 'Zend OPcache', 'mbstring'])
     expect(probe.extensions).not.toContain(ext);
 }
 
@@ -526,6 +526,24 @@ describeWithPhpstan()('PHPStan on untrusted checkouts (real PHPStan, Review Focu
         .filter((r) => r.sonar.some((s) => s.startsWith('php:')))
         .flatMap((r) => r.qualor);
       for (const t of targets) expect(ids, t).toContain(t.slice('phpstan:'.length));
+    },
+  );
+
+  it(
+    'evaluates mb_* calls with constant arguments: the bundled mbstring polyfill needs iconv, which Qualor’s php.ini loads',
+    TIMEOUT,
+    async () => {
+      // The qualor/scanner image has no mbstring extension. PHPStan calls the polyfill's mb_strlen()
+      // itself to fold `mb_strlen('abc')`, and the polyfill answers with iconv_strlen(): without
+      // iconv, PHPStan reports "Call to undefined function Symfony\\Polyfill\\Mbstring\\iconv_strlen()"
+      // as a general error and the scan fails.
+      const root = tmp();
+      writeTree(root, {
+        'src/Names.php': `<?php\nnamespace App;\n\nfinal class Names\n{\n    public function f(): int\n    {\n        return mb_strlen('abc') + strlen(mb_strtoupper('áé')) + $nope;\n    }\n}\n`,
+      });
+      const { capture, keys } = await scanPhp(root);
+      expect(capture.status, capture.reason ?? '').toBe('ok');
+      expect(keys).toEqual(['variable.undefined src/Names.php:8']);
     },
   );
 

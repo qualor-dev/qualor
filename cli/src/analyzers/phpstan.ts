@@ -44,8 +44,13 @@ export const PHP_INI_NAME = 'qualor-php.ini';
  * processes), so neither PHPRC nor a php.ini of the checkout can make php run a file first
  * (`auto_prepend_file`). With an empty PHP_INI_SCAN_DIR (phpEnv) no scan directory is read, not
  * even the system's conf.d, so only the extensions the phar cannot run without are loaded, from
- * php's own extension directory (Debian builds both as shared modules; a php that has them built in
+ * php's own extension directory (Debian builds them as shared modules; a php that has them built in
  * warns on stderr and goes on). Warnings go to stderr, never into the report on stdout.
+ * `iconv` is the third: the qualor/scanner image has no mbstring, so the mbstring polyfill that is
+ * bundled in the phar answers `mb_strlen()` and its relatives with `iconv_strlen()`. PHPStan calls
+ * these functions itself while it evaluates a call with constant arguments (`mb_strlen('abc')`);
+ * without iconv it fails with "Call to undefined function Symfony\Polyfill\Mbstring\iconv_strlen()"
+ * and the scan is marked failed.
  * `pcre.jit = 0` (ruling A9-22): PHPStan compiles the regexes it finds in scanned code, and PCRE's
  * JIT is the reachable path of libpcre2 CVE-2026-103111. An ini file rather than `-d` options
  * because PHPStan starts its worker processes as `php -c <the loaded php.ini>`: `-d` options are
@@ -56,6 +61,7 @@ export const PHP_INI = [
   'display_errors = stderr',
   'extension = phar',
   'extension = tokenizer',
+  'extension = iconv',
   'pcre.jit = 0',
   '',
 ].join('\n');
