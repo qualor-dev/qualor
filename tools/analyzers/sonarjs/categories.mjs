@@ -1,9 +1,10 @@
-// Writes categories.json next to run.mjs: each RSPEC key's SonarQube category, e.g.
+// Writes categories.json and scopes.json next to run.mjs: each RSPEC key's SonarQube category, e.g.
 // { "S1192": "Critical Code Smell" }, from the rule metadata (S<N>.json: `type`,
 // `defaultSeverity`) of the SonarJS source at the commit eslint-plugin-sonarjs 2.0.4 was published
 // from. Run by tools/analyzers/install-sonarjs.sh (image build and CI alike), over the rules
 // directory unpacked from the archive pinned in tools/analyzers/install.sh; the metadata itself is
-// never copied, and categories.json is not committed (only keys and category words are kept).
+// never copied, and neither file is committed (only keys and one word each are kept). scopes.json is
+// each rule's `scope` as main, test or all, e.g. { "S2004": "main" }.
 //   node categories.mjs <rules dir> [out file]
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -23,15 +24,31 @@ export function categoryOf(meta) {
   return type && typeof severity === 'string' && severity !== '' ? `${severity} ${type}` : null;
 }
 
+const SCOPES = { Main: 'main', Tests: 'test', All: 'all' };
+
+/** The rule's `scope` as main, test or all, or null when it has none or an unknown one. */
+export function scopeOf(meta) {
+  return SCOPES[meta?.scope] ?? null;
+}
+
+/** { S<N>: scope } for every S<N>.json of `dir` that has one, sorted by key. */
+export function scopes(dir) {
+  return collect(dir, scopeOf);
+}
+
 /** { S<N>: category } for every S<N>.json of `dir` that has one, sorted by key. */
 export function categories(dir) {
+  return collect(dir, categoryOf);
+}
+
+function collect(dir, wordOf) {
   const out = {};
   const files = readdirSync(dir)
     .filter((f) => /^S\d+\.json$/.test(f))
     .sort((a, b) => Number(a.slice(1, -5)) - Number(b.slice(1, -5)));
   for (const file of files) {
-    const category = categoryOf(JSON.parse(readFileSync(path.join(dir, file), 'utf8')));
-    if (category) out[file.slice(0, -5)] = category;
+    const word = wordOf(JSON.parse(readFileSync(path.join(dir, file), 'utf8')));
+    if (word) out[file.slice(0, -5)] = word;
   }
   return out;
 }

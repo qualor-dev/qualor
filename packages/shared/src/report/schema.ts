@@ -4,6 +4,7 @@ import {
   BUILTIN_ENGINES,
   ENGINE_ID_PATTERN,
   ISSUE_KINDS,
+  RULE_SCOPES,
   LANGUAGES,
   REPORT_QUALITIES,
   SEVERITIES,
@@ -86,6 +87,8 @@ const ruleMeta = z.object({
   tags: z.array(z.string().max(REPORT_BOUNDS.ruleTagChars)).max(REPORT_BOUNDS.ruleTags).optional(),
   cwe: z.array(z.number().int().positive()).max(REPORT_BOUNDS.ruleCwes).optional(),
   languages: z.array(z.string().max(64)).max(32).optional(),
+  /** Absent means `all`. An older server strips the key. */
+  scope: z.enum(RULE_SCOPES).optional(),
 });
 
 const engine = z.object({

@@ -119,6 +119,7 @@ describe.skipIf(!have && !required)('sonarjs run.mjs', { timeout: 120_000 }, () 
       'https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1871&rule_key=javascript%3AS1871',
     );
     expect(rule.properties.category).toMatch(/^(Blocker|Critical|Major|Minor|Info) Code Smell$/);
+    expect(rule.properties.scope).toMatch(/^(main|test|all)$/);
   });
 
   it("runs the plugin's recommended config: S1192 is off there", () => {
@@ -458,6 +459,32 @@ describe('sonarjs categories.mjs', () => {
     );
     expect(categoryOf({ type: 'BUG' })).toBeNull();
     expect(categoryOf({ type: 'OTHER', defaultSeverity: 'Major' })).toBeNull();
+  });
+});
+
+describe('sonarjs rule scopes (0.13)', () => {
+  it('categories.mjs turns the rule JSON scope into main, test or all', async () => {
+    // @ts-expect-error: a plain ES module of the image, without type declarations
+    const { scopeOf } = await import('./categories.mjs');
+    expect(scopeOf({ scope: 'Main' })).toBe('main');
+    expect(scopeOf({ scope: 'Tests' })).toBe('test');
+    expect(scopeOf({ scope: 'All' })).toBe('all');
+    expect(scopeOf({})).toBeNull();
+    expect(scopeOf({ scope: 'Other' })).toBeNull();
+  });
+
+  it('the committed sonarjs-scopes.json gives each of the 328 bundled keys one word', () => {
+    const read = (name: string) =>
+      JSON.parse(readFileSync(`packages/shared/rules/${name}`, 'utf8')) as Record<string, string>;
+    const scopes = read('sonarjs-scopes.json');
+    const keys = JSON.parse(
+      readFileSync('packages/shared/rules/sonarjs-keys.json', 'utf8'),
+    ) as string[];
+    expect(Object.keys(scopes).sort()).toEqual([...keys].sort());
+    const count = (word: string) => Object.values(scopes).filter((w) => w === word).length;
+    expect([count('main'), count('all'), count('test')]).toEqual([262, 55, 11]);
+    expect(scopes['S2004']).toBe('main');
+    expect(scopes['S2699']).toBe('test');
   });
 });
 

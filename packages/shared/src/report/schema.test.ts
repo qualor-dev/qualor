@@ -86,6 +86,20 @@ describe('reportSchema', () => {
     expect(issues({ ...base, engines }).join()).toMatch(/engines\.0\.rules\.0\.quality/);
   });
 
+  it('takes a rule scope of main, test or all, and a rule without one (0.13)', () => {
+    const engine = must(base.engines[0]);
+    const rule = { id: 'S2004', kind: 'issue' as const };
+    for (const scope of ['main', 'test', 'all']) {
+      expect(
+        issues({ ...base, engines: [{ ...engine, rules: [{ ...rule, scope }] }] }),
+        scope,
+      ).toEqual([]);
+    }
+    expect(issues({ ...base, engines: [{ ...engine, rules: [rule] }] })).toEqual([]);
+    const bad = [{ ...engine, rules: [{ ...rule, scope: 'Main' }] }];
+    expect(issues({ ...base, engines: bad }).join()).toMatch(/engines.0.rules.0.scope/);
+  });
+
   it('rejects invalid engine ids', () => {
     const engines = [{ ...must(base.engines[0]), id: 'Bad_Id' }];
     expect(issues({ ...base, engines }).join()).toMatch(/engines\.0\.id/);

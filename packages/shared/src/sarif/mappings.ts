@@ -1,4 +1,4 @@
-import type { IssueKind, ReportQuality, Severity } from '../report/taxonomy';
+import { ruleScopeOf, type IssueKind, type ReportQuality, type Severity } from '../report/taxonomy';
 import type { EngineMapping } from './normalize';
 import type { SarifLevel, SarifResult, SarifRule } from './types';
 import { phpstanRule } from '../rules/phpstan';
@@ -245,11 +245,16 @@ const roslyn: EngineMapping = {
  * (should not happen for a bundled rule) it defaults like ESLint's own default.
  */
 const sonarjs: EngineMapping = {
-  rule: (r) =>
-    sonarCategory(String(r.properties?.['category'] ?? '')) ?? {
-      quality: 'maintainability',
-      kind: 'issue',
-    },
+  rule: (r) => {
+    const scope = ruleScopeOf(r.properties?.['scope']);
+    return {
+      ...(sonarCategory(String(r.properties?.['category'] ?? '')) ?? {
+        quality: 'maintainability',
+        kind: 'issue',
+      }),
+      ...(scope !== undefined && { scope }),
+    };
+  },
   severity: (_result, rule) =>
     sonarCategory(String(rule?.properties?.['category'] ?? ''))?.defaultSeverity,
 };

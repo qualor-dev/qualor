@@ -22,7 +22,7 @@ export class SarifError extends Error {
 
 export interface EngineMapping {
   /** Rule-level metadata the engine implies (quality, severity, kind, extra tags). */
-  rule?(rule: SarifRule): Partial<Pick<RuleMeta, 'quality' | 'defaultSeverity' | 'kind'>>;
+  rule?(rule: SarifRule): Partial<Pick<RuleMeta, 'quality' | 'defaultSeverity' | 'kind' | 'scope'>>;
   /** Per-result severity override (e.g. SpotBugs rank). */
   severity?(result: SarifResult, rule: SarifRule | undefined): Severity | undefined;
   /** Replace the flagged region with «redacted» in hashes and snippets (secrets); per rule when a function. */
@@ -592,6 +592,7 @@ function ruleMeta(
     ...(defaultSeverity !== undefined && { defaultSeverity }),
     quality,
     kind: mapped.kind ?? 'issue',
+    ...(mapped.scope !== undefined && { scope: mapped.scope }),
     ...(tags.length > 0 && { tags }),
     ...(cwe.length > 0 && { cwe }),
   };

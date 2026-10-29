@@ -17,6 +17,18 @@ export const ISSUE_KINDS = ['issue', 'hotspot'] as const;
 export type IssueKind = (typeof ISSUE_KINDS)[number];
 
 /**
+ * Which files a rule reports on (0.13): `main` code only, `test` code only, or `all` (the default of
+ * a rule that declares none), as SonarQube's rule scope.
+ */
+export const RULE_SCOPES = ['main', 'test', 'all'] as const;
+export type RuleScope = (typeof RULE_SCOPES)[number];
+
+/** The rule scope `value` names, or undefined when it is none. */
+export function ruleScopeOf(value: unknown): RuleScope | undefined {
+  return RULE_SCOPES.find((s) => s === value);
+}
+
+/**
  * A finding's confidence, set by Qualor's C# taint engine only (`result.properties.confidence` of its SARIF): `medium`
  * when the path it reports goes through the heap, a lookup by a request key or a fallback edge, shown as "possible";
  * `high` otherwise. Every other analyzer, and the OpenGrep rules, set none.

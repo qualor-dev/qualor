@@ -353,6 +353,14 @@
                     "type": "string",
                     "maxLength": 64
                   }
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "main",
+                    "test",
+                    "all"
+                  ]
                 }
               },
               "required": [

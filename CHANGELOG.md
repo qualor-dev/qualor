@@ -6,6 +6,12 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A rule in a report can carry a scope, `main`, `test` or `all`. The sonarjs rules get theirs from
+  SonarSource's rule metadata, for example the limit on nested functions (S2004) is `main`. A report
+  without a scope means `all`, and the report schema version stays 1.
+
 ### Changed
 
 - The scan log names each analyzer that ran with its duration and finding count.

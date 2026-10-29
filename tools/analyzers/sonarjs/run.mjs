@@ -291,6 +291,9 @@ async function main(args) {
   const wantTypes = opt('--type-checking') !== 'off' && existsSync(tsconfig);
 
   const categories = JSON.parse(readFileSync(path.join(here, 'categories.json'), 'utf8')); // { S1192: "Critical Code Smell", ... }
+  // { S2004: "main" }: where a rule applies (categories.mjs); absent in an install that predates it.
+  const scopesFile = path.join(here, 'scopes.json');
+  const scopes = existsSync(scopesFile) ? JSON.parse(readFileSync(scopesFile, 'utf8')) : {};
   const keyOf = rspecKeys();
   const typeAware = new Set(
     Object.entries(sonarjs.rules)
@@ -427,7 +430,12 @@ async function main(args) {
       name,
       shortDescription: { text: sonarjs.rules[name].meta?.docs?.description ?? name },
       helpUri: helpUriOf(key),
-      ...(categories[key] && { properties: { category: categories[key] } }),
+      ...((categories[key] || scopes[key]) && {
+        properties: {
+          ...(categories[key] && { category: categories[key] }),
+          ...(scopes[key] && { scope: scopes[key] }),
+        },
+      }),
     };
   });
   const log = {

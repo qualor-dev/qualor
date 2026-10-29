@@ -6,7 +6,10 @@
 // reports a profile rule mapped to any other key as "mapped, not run by the bundled
 // configuration"). Never reads SonarSource's rule metadata or documentation; the files hold bare
 // rule ids only (spec §6.4).
-//   node tools/analyzers/sonarjs/keys.mjs [out file] [default-keys out file]
+// With a SonarJS rules directory (as categories.mjs reads, from the pinned source archive) it also
+// writes packages/shared/rules/sonarjs-scopes.json: each bundled key's scope word (main, test or
+// all), nothing else of the metadata.
+//   node tools/analyzers/sonarjs/keys.mjs [out file] [default-keys out file] [rules dir [scopes out file]]
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +32,11 @@ export function sonarjsDefaultKeys(keyOf, rules) {
   );
 }
 
+/** { S<N>: scope } for the bundled `keys`, from `scopeByKey` (categories.mjs scopes()). */
+export function sonarjsScopes(keys, scopeByKey) {
+  return Object.fromEntries(keys.filter((k) => scopeByKey[k]).map((k) => [k, scopeByKey[k]]));
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const out =
@@ -48,6 +56,24 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
   const defaults = sonarjsDefaultKeys(keyOf, sonarjs.configs.recommended.rules);
   writeFileSync(out, `${JSON.stringify(keys, null, 2)}\n`);
+  const rulesDir = process.argv[4];
+  if (rulesDir) {
+    const { scopes } = await import('./categories.mjs');
+    const scopesOut =
+      process.argv[5] ?? path.join(here, '../../../packages/shared/rules/sonarjs-scopes.json');
+    const found = sonarjsScopes(keys, scopes(rulesDir));
+    if (Object.keys(found).length !== keys.length) {
+      process.stderr
+        .write(`keys.mjs: ${keys.length - Object.keys(found).length} bundled rules have no scope in ${rulesDir}
+`);
+      process.exit(1);
+    }
+    writeFileSync(
+      scopesOut,
+      `${JSON.stringify(found, null, 2)}
+`,
+    );
+  }
   writeFileSync(defaultOut, `${JSON.stringify(defaults, null, 2)}\n`);
   process.stdout.write(
     `keys.mjs: ${keys.length} rule ids written to ${out}, ${defaults.length} run by default to ${defaultOut}\n`,

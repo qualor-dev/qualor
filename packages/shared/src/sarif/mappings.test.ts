@@ -273,6 +273,17 @@ describe('sonarCategory (report-format.md §7.1)', () => {
     expect(sonarjs.rule!({ id: 'S9999' })).toEqual({ quality: 'maintainability', kind: 'issue' });
   });
 
+  it('sonarjs reads the rule scope from properties.scope, and sets none without it (0.13)', () => {
+    const sonarjs = engineMapping('sonarjs')!;
+    const rule = (properties?: Record<string, unknown>) =>
+      sonarjs.rule!({ id: 'S2004', properties });
+    expect(rule({ scope: 'main' })).toMatchObject({ scope: 'main' });
+    expect(rule({ scope: 'test' })).toMatchObject({ scope: 'test' });
+    expect(rule({ scope: 'all' })).toMatchObject({ scope: 'all' });
+    expect(rule({ scope: 'Main' })).not.toHaveProperty('scope');
+    expect(rule()).not.toHaveProperty('scope');
+  });
+
   it('a SonarAnalyzer result takes its severity from the category, not the SARIF level', () => {
     const roslyn = engineMapping('roslyn')!;
     expect(
