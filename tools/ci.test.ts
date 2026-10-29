@@ -1354,9 +1354,37 @@ describe('dogfood job (plan 1G, brief rule 4)', () => {
     expect(gl?.needs).toEqual(['test']);
     expect(gl?.variables?.['GIT_DEPTH']).toBe(0);
     const ghRuns = (github.jobs['dogfood']?.steps ?? []).map((s) => s.run);
-    for (const command of builds) expect(ghRuns, command).toContain(command);
+    // GitHub builds through buildx with a layer cache (the tags stay local with --load).
+    for (const command of builds.filter((c) => !c.startsWith('docker build')))
+      expect(ghRuns, command).toContain(command);
     expect(ghRuns.some((r) => r?.startsWith('pnpm dogfood --base HEAD^1 --mr'))).toBe(true);
     expect(github.jobs['dogfood']?.needs).toEqual(['test']);
+  });
+
+  it('caches the GitHub dogfood image builds in the gha layer cache, one scope per image', () => {
+    const steps = github.jobs['dogfood']?.steps ?? [];
+    const setup = steps.findIndex((s) => s.uses?.startsWith('docker/setup-buildx-action@'));
+    expect(setup).toBeGreaterThanOrEqual(0);
+    expect(steps[setup]?.uses).toMatch(/@[0-9a-f]{40}$/);
+    expect(
+      steps.some((s) => s.uses?.startsWith('crazy-max/ghaction-github-runtime@')),
+      'buildx needs the Actions cache credentials',
+    ).toBe(true);
+    for (const [image, file] of [
+      ['server', 'deploy/server/Dockerfile'],
+      ['scanner', 'deploy/scanner/Dockerfile'],
+    ] as const) {
+      const at = steps.findIndex(
+        (s) =>
+          s.run?.startsWith('docker buildx build ') && s.run.includes(`-t qualor/${image}:dev`),
+      );
+      expect(at, image).toBeGreaterThan(setup);
+      const run = steps[at]?.run ?? '';
+      expect(run).toContain(`-f ${file}`);
+      expect(run).toContain('--load');
+      expect(run).toContain(`--cache-from type=gha,scope=${image}`);
+      expect(run).toContain(`--cache-to type=gha,mode=min,scope=${image}`);
+    }
   });
 
   it('hands the coverage of the test job to the scan in both CIs', () => {
