@@ -15,7 +15,10 @@ export const COMPONENT_PATH = 'gitlab.com/qualor/qualor/qualor';
 
 /** A YAML scalar: plain when that is safe, else single-quoted. */
 export function yamlScalar(value: string): string {
-  return /^[A-Za-z0-9][A-Za-z0-9_./@:+-]*$/.test(value) && !/:$/.test(value)
+  // Plain only when it starts with a letter (never a number) and is no boolean/null word in
+  // YAML 1.2 core or 1.1 (GitLab parses 1.1: yes/no/on/off/y/n).
+  const special = /^(true|false|yes|no|on|off|y|n|null)$/i;
+  return /^[A-Za-z][A-Za-z0-9_./@:+-]*$/.test(value) && !/:$/.test(value) && !special.test(value)
     ? value
     : `'${value.replace(/'/g, "''")}'`;
 }
@@ -38,6 +41,7 @@ export function gitlabIncludeEntry(o: ComponentOptions, indent: number): string 
   if (o.csharp) {
     lines.push(`${pad}    image: qualor/scanner-dotnet`);
     lines.push(`${pad}    dotnet: true`);
+    lines.push(`${pad}    build-command: dotnet build --no-incremental`);
   }
   return lines.join('\n') + '\n';
 }
@@ -115,12 +119,12 @@ function header(o: WorkflowOptions): string[] {
     '  qualor:',
     '    # Pull requests from forks get no secrets, so they are skipped.',
     `    if: ${FORK_GUARD}`,
-    '    runs-on: ubuntu-latest',
+    `    runs-on: ${o.host === 'self-hosted' ? '[self-hosted, linux]' : 'ubuntu-latest'}`,
   ];
 }
 
-const CHECKOUT_STEP = [
-  `      - uses: ${CHECKOUT}`,
+const checkoutStep = (o: WorkflowOptions): string[] => [
+  `      - uses: ${o.host === 'self-hosted' ? 'actions/checkout@v4' : CHECKOUT}`,
   '        with:',
   '          fetch-depth: 0',
   '          persist-credentials: false',
@@ -141,7 +145,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       ...header(o),
       ...container('qualor/scanner-dotnet'),
       '    steps:',
-      ...CHECKOUT_STEP,
+      ...checkoutStep(o),
       '      - run: qualor dotnet begin',
       "      # Check this build command: use the repository's own build (restore, feeds, configuration)",
       '      # and keep --no-incremental, so every project is compiled and writes its analysis log.',
@@ -158,7 +162,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
     lines = [
       ...header(o),
       '    steps:',
-      ...CHECKOUT_STEP,
+      ...checkoutStep(o),
       '      # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.',
       `      - uses: qualor-dev/scan-action@v${o.minor}`,
       '        with:',
@@ -170,7 +174,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       ...header(o),
       ...container('qualor/scanner'),
       '    steps:',
-      ...CHECKOUT_STEP,
+      ...checkoutStep(o),
       '      # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.',
       '      - run: qualor scan',
       '        env:',

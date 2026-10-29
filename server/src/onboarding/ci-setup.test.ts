@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parse, parseAllDocuments } from 'yaml';
-import { minorOf, planCiSetup, type CiPlan, type CiSetupInput } from './ci-setup';
+import { parse, parseAllDocuments, parseDocument, type YAMLMap } from 'yaml';
+import { editIsSound, minorOf, planCiSetup, type CiPlan, type CiSetupInput } from './ci-setup';
 
 const URL_ = 'https://qualor.acme.io';
 
@@ -333,8 +333,12 @@ deploy:
       'image-tag': '0.14',
       dotnet: true,
       image: 'qualor/scanner-dotnet',
+      'build-command': 'dotnet build --no-incremental',
     });
-    expect(change(gl(null, { csharp: true })).description).toMatch(/build command/i);
+    const d = change(gl(null, { csharp: true })).description;
+    expect(d).toMatch(/build command/i);
+    expect(d).toMatch(/merge request/);
+    expect(d).not.toMatch(/pull request/);
   });
 
   it('accepts local:, project: and remote: includes as normal', () => {
@@ -348,6 +352,57 @@ deploy:
     ].join('\n');
     expect(gl(before).kind).toBe('change');
   });
+});
+
+describe('include edge shapes and the guard', () => {
+  it('appends after a dash with a comment or content on the next line', () => {
+    for (const before of [
+      'include:\n  - # shared\n    local: a.yml\nstages: [test]\n',
+      'include:\n  -\n    local: a.yml\nstages: [test]\n',
+    ]) {
+      const out = glFile(before);
+      inserted(before, out);
+      const doc = parse(out);
+      expect(doc.include).toHaveLength(2);
+      expect(doc.include[0]).toEqual({ local: 'a.yml' });
+    }
+  });
+
+  it('appends to an empty multi-line flow list', () => {
+    const before = 'include: [\n]\nstages: [test]\n';
+    const out = glFile(before);
+    inserted(before, out);
+    expect(parse(out).include).toHaveLength(1);
+  });
+
+  it('the guard accepts a sound edit and rejects bad ones', () => {
+    const before = parseDocument('include:\n  - local: a.yml\nx: 1\n').contents as YAMLMap;
+    const ok = 'include:\n  - local: a.yml\n  - local: b.yml\nx: 1\n';
+    expect(editIsSound(before, ok, 'include')).toBe(true);
+    expect(
+      editIsSound(before, 'include:\n  - local: a.yml\n  - # c\n  local: b\nx: 1\n', 'include'),
+    ).toBe(false);
+    expect(editIsSound(before, 'include:\n  - local: a.yml\nx: 1\n', 'include')).toBe(false);
+    expect(editIsSound(before, 'include:\n  - local: a.yml\n  - local: b.yml\n', 'include')).toBe(
+      false,
+    );
+    expect(editIsSound(before, 'include:\n  - local: a.yml\nx: 1\nqualor: {}\n', 'job')).toBe(true);
+    expect(editIsSound(before, 'include:\n  - local: a.yml\nx: 1\n', 'job')).toBe(false);
+  });
+});
+
+describe('scalar quoting', () => {
+  it.each(['2', '1.0', '2024', 'true', 'yes', 'No', 'off', 'null', '~', '0x1F', '1e3'])(
+    'quotes %s',
+    (v) => {
+      const stage = parse(glFile(`stages: [build, '${v}']\n`)).include[0].inputs.stage;
+      expect(stage).toBe(v);
+      const wf =
+        change(planCiSetup(input({ provider: 'github', defaultBranch: v }))).files[0]?.content ??
+        '';
+      expect(parse(wf).on.push.branches).toEqual([v]);
+    },
+  );
 });
 
 describe('GitLab already set up and unsupported', () => {
@@ -570,6 +625,19 @@ describe('GitHub', () => {
     const job = wf({ host: 'self-hosted', csharp: true }).doc.jobs.qualor;
     expect(job.container.image).toBe('qualor/scanner-dotnet:0.14.3');
     expect(job.steps[3].env.QUALOR_URL).toBe(URL_);
+  });
+
+  it('GHES uses a Linux self-hosted runner and the tag-pinned checkout; cloud keeps the SHA pin', () => {
+    for (const csharp of [false, true]) {
+      const g = wf({ host: 'self-hosted', csharp });
+      const job = g.doc.jobs.qualor;
+      expect(job['runs-on']).toEqual(['self-hosted', 'linux']);
+      expect(job.steps[0].uses).toBe('actions/checkout@v4');
+      expect(g.plan.description).toMatch(/Linux runner with Docker/);
+      const c = wf({ csharp });
+      expect(c.doc.jobs.qualor['runs-on']).toBe('ubuntu-latest');
+      expect(c.doc.jobs.qualor.steps[0].uses).toBe(CHECKOUT);
+    }
   });
 
   it('describes the change', () => {

@@ -134,8 +134,47 @@ function nextLine(text: string, end: number): { at: number; prefix: string } {
 function flowEntry(o: ComponentOptions): string {
   const inputs = [`image-tag: '${o.minor}'`];
   if (o.stage !== null) inputs.push(`stage: ${yamlScalar(o.stage)}`);
-  if (o.csharp) inputs.push('image: qualor/scanner-dotnet', 'dotnet: true');
+  if (o.csharp)
+    inputs.push(
+      'image: qualor/scanner-dotnet',
+      'dotnet: true',
+      'build-command: dotnet build --no-incremental',
+    );
   return `{ component: ${COMPONENT_PATH}@${o.minor}, inputs: { ${inputs.join(', ')} } }`;
+}
+
+function includeCount(root: YAMLMap | null): number {
+  const v = root?.get('include', true);
+  if (v === undefined || v === null) return 0;
+  return isSeq(v) ? v.items.length : 1;
+}
+
+/**
+ * Re-parses the edited file: no errors, one more include entry (or one new `qualor` job), and the
+ * top-level keys otherwise unchanged. A shape the text edit mishandled is caught here.
+ */
+export function editIsSound(
+  before: YAMLMap | null,
+  after: string,
+  kind: 'include' | 'job',
+): boolean {
+  const parsed = parseGitlab(after);
+  if (!parsed.ok || !parsed.root) return false;
+  const keys = (m: YAMLMap | null) =>
+    m ? m.items.map((p) => String((p.key as { value?: unknown }).value)) : [];
+  const expected = new Set(keys(before));
+  expected.add(kind === 'include' ? 'include' : 'qualor');
+  const got = keys(parsed.root);
+  if (
+    got.length !== new Set(got).size ||
+    got.length !== expected.size ||
+    got.some((k) => !expected.has(k))
+  ) {
+    return false;
+  }
+  if (kind === 'job') return isMap(parsed.root.get('qualor', true));
+  const inc = parsed.root.get('include', true);
+  return isSeq(inc) && inc.items.length === includeCount(before) + 1;
 }
 
 function appendTopLevel(text: string, block: string): string {
@@ -196,21 +235,20 @@ function addToSeq(text: string, seq: YAMLSeq, o: ComponentOptions): string | nul
   if (!seq.range) return null;
   const last = seq.items[seq.items.length - 1] as { range?: [number, number, number] } | undefined;
   if (seq.flow) {
-    if (!last) return applyEdits(text, [{ at: seq.range[1] - 1, remove: 0, text: flowEntry(o) }]);
+    if (!last) return applyEdits(text, [{ at: seq.range[0] + 1, remove: 0, text: flowEntry(o) }]);
     if (!last.range) return null;
     return applyEdits(text, [{ at: last.range[1], remove: 0, text: `, ${flowEntry(o)}` }]);
   }
-  const first = seq.items[0] as { range?: [number, number, number] } | undefined;
-  if (!first?.range || !last?.range) return null;
-  const ls = lineStart(text, first.range[0]);
-  const indent = /^[ ]*/.exec(text.slice(ls, first.range[0]))?.[0].length ?? 0;
+  if (!last?.range) return null;
+  const indent = seq.range[0] - lineStart(text, seq.range[0]);
+  if (text.slice(lineStart(text, seq.range[0]), seq.range[0]).trim() !== '') return null;
   const { at, prefix } = nextLine(text, last.range[1]);
   return applyEdits(text, [{ at, remove: 0, text: prefix + gitlabIncludeEntry(o, indent) }]);
 }
 
 function descriptionFor(i: CiSetupInput): string {
   const lines = [
-    'Qualor analyses every pull request and every push to the default branch, and reports the result on the pull request.',
+    `Qualor analyses every ${i.provider === 'gitlab' ? 'merge request' : 'pull request'} and every push to the default branch, and reports the result there.`,
     '',
   ];
   if (i.provider === 'github') {
@@ -229,6 +267,9 @@ function descriptionFor(i: CiSetupInput): string {
       'The token is stored as the masked CI/CD variable `QUALOR_TOKEN` and the server address as `QUALOR_URL`; neither is in any file.',
       `To remove it, ${i.host === 'cloud' ? 'delete the include entry' : 'delete the `qualor` job'} and the two CI/CD variables.`,
     );
+  }
+  if (i.provider === 'github' && i.host === 'self-hosted') {
+    lines.push('The job needs a Linux runner with Docker (labels `self-hosted` and `linux`).');
   }
   if (i.host === 'self-hosted') {
     lines.push(
@@ -311,6 +352,9 @@ export function planCiSetup(input: CiSetupInput): CiPlan {
     } else {
       content = appendTopLevel(base, gitlabIncludeSnippet(o));
     }
+  }
+  if (!editIsSound(parsed.root, content, input.host === 'self-hosted' ? 'job' : 'include')) {
+    return unsupported();
   }
   return change([{ path: GITLAB_FILE, content, update: text !== null }]);
 }
