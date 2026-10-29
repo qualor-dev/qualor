@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { githubBaseUrlProblem, githubGraphqlUrl, githubWebBase, parseRepoRef } from './url';
+import {
+  githubBaseUrlProblem,
+  githubGraphqlUrl,
+  githubHostKind,
+  githubWebBase,
+  parseRepoRef,
+} from './url';
 
 describe('GitHub base URLs (github.md §2.2)', () => {
   it.each([
@@ -55,5 +61,16 @@ describe('owner/repo (github.md §2.3)', () => {
       'acme/',
     ])
       expect(parseRepoRef(bad)).toBeNull();
+  });
+});
+
+describe('which GitHub a base URL is', () => {
+  it.each([
+    ['https://api.github.com', 'cloud'],
+    ['https://api.octo.ghe.com', 'cloud'],
+    ['https://ghe.corp/api/v3', 'enterprise-server'],
+    ['http://127.0.0.1:8080/api/v3', 'enterprise-server'],
+  ] as const)('%s is %s', (base, kind) => {
+    expect(githubHostKind(base)).toBe(kind);
   });
 });

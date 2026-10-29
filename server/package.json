@@ -28,6 +28,7 @@
     "@node-saml/node-saml": "5.1.0",
     "@qualor/shared": "workspace:*",
     "@xmldom/xmldom": "0.8.15",
+    "blakejs": "1.2.1",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.6",
     "fastify-type-provider-zod": "^7.0.0",
@@ -37,6 +38,7 @@
     "pg": "^8.23.0",
     "picomatch": "^4.0.7",
     "pino": "^10.3.1",
+    "tweetnacl": "1.0.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {

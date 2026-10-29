@@ -13,6 +13,7 @@ import {
   MutationPacer,
   tokenCacheKey,
 } from './app-auth';
+import { sealSecret } from './sealed-box';
 import { githubGraphqlUrl, GITHUB_REPO_PATTERN, type GitHubRepoRef } from './url';
 
 /** github.md §5.3. */
@@ -55,9 +56,20 @@ export const INSTALLATION_PERMISSIONS = {
  * for a permission the installation lacks.
  */
 const CONTENTS_WRITE = { contents: 'write' } as const;
+/**
+ * What CI setup adds to a token (`useRepository(ref, { ciSetup: true })`): Workflows (write) to
+ * put `.github/workflows/qualor.yml` on a branch, Secrets (write) to store `QUALOR_TOKEN`. Each is
+ * asked only where the installation grants it, like Contents.
+ */
+const CI_PERMISSIONS = ['workflows', 'secrets'] as const;
+/** What a token needs to list the repositories of an installation. */
+const LISTING_PERMISSIONS = { metadata: 'read' } as const;
 
 /** github.md §5.4: the fixed texts; GitHub's own words are never shown or logged. */
 export const GITHUB_TEXT = {
+  path: 'The path is not a path inside the repository',
+  branch: 'The branch name is not a Git branch name',
+  secretName: 'The name is not a GitHub Actions secret name',
   appRefused:
     "GitHub refused the App's credentials (HTTP 401); check the App id, the private key and the server's clock",
   tokenRefused: 'GitHub refused the installation token (HTTP 401)',
@@ -132,8 +144,38 @@ const repository = z.looseObject({
   id: z.number().int(),
   full_name: z.string(),
   html_url: z.string(),
+  default_branch: z.string().default('main'),
+  language: z.string().nullish().default(null),
+  archived: z.boolean().default(false),
+  private: z.boolean().default(true),
 });
 export type GitHubRepository = z.infer<typeof repository>;
+const installationSummary = z.looseObject({
+  id: z.number().int(),
+  account: z.looseObject({ login: z.string().optional() }).nullish(),
+  permissions: z.unknown().optional(),
+});
+const installationRepositoriesAnswer = z.looseObject({
+  repositories: z.array(
+    z.looseObject({
+      full_name: z.string(),
+      default_branch: z.string().default('main'),
+      language: z.string().nullish().default(null),
+      archived: z.boolean().default(false),
+    }),
+  ),
+});
+const contentsFile = z.looseObject({
+  type: z.string(),
+  sha: z.string(),
+  content: z.string().optional(),
+  encoding: z.string().optional(),
+});
+const contentsEntries = z.array(z.looseObject({ name: z.string() }));
+const gitRef = z.looseObject({ object: z.looseObject({ sha: z.string() }) });
+const createdPullRequest = z.looseObject({ html_url: z.string() });
+const secretsPublicKey = z.looseObject({ key_id: z.string(), key: z.string() });
+const languagesAnswer = z.record(z.string(), z.number());
 const checkRun = z.looseObject({
   id: z.number().int(),
   name: z.string(),
@@ -334,6 +376,22 @@ function installationAccessOf(found: {
   return { permissions, events };
 }
 
+/** An installation of the App as `GET /app/installations` lists it (installations.ts). */
+export interface GitHubInstallationAccess {
+  installationId: number;
+  account: string;
+  workflowsWrite: boolean;
+  secretsWrite: boolean;
+}
+/** A repository an installation can see (installations.ts). */
+export interface GitHubRepoSummary {
+  /** `owner/repo`. */
+  ref: string;
+  defaultBranch: string;
+  language: string | null;
+  archived: boolean;
+}
+
 export interface CheckRunUpdate {
   conclusion: 'success' | 'failure';
   title: string;
@@ -532,8 +590,17 @@ function transportError(result: Extract<OutboundResult, { kind: 'failed' }>): Sc
   }
 }
 
+/** Whether `value` has a character up to `last` (a control character; 0x20 adds the space) or DEL. */
+function hasControl(value: string, last: number): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code <= last || code === 0x7f) return true;
+  }
+  return false;
+}
+
 type Auth = 'app' | 'installation';
-type Method = 'GET' | 'POST' | 'PATCH';
+type Method = 'GET' | 'POST' | 'PATCH' | 'PUT';
 /** A path under the connection's base URL (REST), or an absolute URL beside it (GraphQL). */
 type Target = string | URL;
 interface CallOptions {
@@ -568,6 +635,8 @@ export class GitHubClient {
   #access: InstallationAccess | null = null;
   /** Whether the token is asked for Contents (write) too: the installation grants it. */
   #contents = false;
+  /** The permissions the current token is asked for, and whether the cache key holds them whole. */
+  #permissions: Record<string, string> = { ...INSTALLATION_PERMISSIONS };
   #repo: GitHubRepoRef | null = null;
   #refreshed = false;
 
@@ -826,9 +895,13 @@ export class GitHubClient {
    * github.md §4: the repository's installation (JWT) and what it grants, a token scoped to it
    * (cached), then `GET /repos/{owner}/{repo}`. The token asks for Contents (write) too where the
    * installation grants it, never elsewhere: GitHub would refuse the token. Every later call of
-   * this client is on this repository.
+   * this client is on this repository. With `ciSetup` it asks for Workflows and Secrets (write)
+   * too, where the installation grants them; without it the request is as it always was.
    */
-  async useRepository(ref: GitHubRepoRef): Promise<GitHubRepository> {
+  async useRepository(
+    ref: GitHubRepoRef,
+    options: { ciSetup?: boolean } = {},
+  ): Promise<GitHubRepository> {
     // Checked here too, not only where the mapping is saved: no dot segment or slash reaches a path.
     const dotSegment = (part: string) => part === '.' || part === '..';
     if (
@@ -858,12 +931,26 @@ export class GitHubClient {
     this.#installationId = found.id;
     this.#access = installationAccessOf(found);
     this.#contents = this.#access.permissions['contents'] === 'write';
+    const granted = this.#access.permissions;
+    this.#permissions = {
+      ...INSTALLATION_PERMISSIONS,
+      ...(this.#contents ? CONTENTS_WRITE : {}),
+      ...(options.ciSetup
+        ? Object.fromEntries(
+            CI_PERMISSIONS.filter((name) => granted[name] === 'write').map((name) => [
+              name,
+              'write',
+            ]),
+          )
+        : {}),
+    };
     this.#tokenKey = tokenCacheKey({
       connectionId: this.#connection.connectionId,
       credentials: this.#connection.credentials,
       installationId: found.id,
       repo: `${ref.owner}/${ref.repo}`,
       contents: this.#contents,
+      ...(options.ciSetup ? { permissions: this.#permissions } : {}),
     });
     this.#token = this.tokens.get(this.#tokenKey);
     if (this.#token === null) await this.issueToken();
@@ -872,19 +959,17 @@ export class GitHubClient {
   }
 
   private async issueToken(): Promise<void> {
-    if (this.#installationId === null || this.#repo === null || this.#tokenKey === null) {
+    if (this.#installationId === null || this.#tokenKey === null) {
       throw new Error('useRepository first');
     }
-    const permissions = this.#contents
-      ? { ...INSTALLATION_PERMISSIONS, ...CONTENTS_WRITE }
-      : INSTALLATION_PERMISSIONS;
+    const permissions = this.#permissions;
     let json: unknown;
     try {
       ({ json } = await this.call(
         'POST',
         `/app/installations/${this.#installationId}/access_tokens`,
         'app',
-        { repositories: [this.#repo.repo], permissions },
+        this.#repo === null ? { permissions } : { repositories: [this.#repo.repo], permissions },
       ));
     } catch (err) {
       if (
@@ -908,6 +993,276 @@ export class GitHubClient {
     const issued = this.parse(installationToken, json);
     this.#token = issued.token;
     this.tokens.set(this.#tokenKey, issued.token, Date.parse(issued.expires_at));
+  }
+
+  // ─── Installations (the App's whole reach, for onboarding) ───────────────────────────────
+
+  /**
+   * One page of `GET /app/installations` (the App's JWT): who installed the App and what each
+   * installation grants. `hasMore` follows the `Link` header.
+   */
+  async installations(
+    page: number,
+  ): Promise<{ items: GitHubInstallationAccess[]; hasMore: boolean }> {
+    const { headers, json } = await this.call(
+      'GET',
+      `/app/installations?per_page=${GITHUB_PAGE_SIZE}&page=${this.pageNumber(page)}`,
+      'app',
+    );
+    const items = this.parse(z.array(installationSummary), json).map((found) => {
+      const { permissions } = installationAccessOf(found);
+      return {
+        installationId: found.id,
+        account: found.account?.login ?? '',
+        workflowsWrite: permissions['workflows'] === 'write',
+        secretsWrite: permissions['secrets'] === 'write',
+      };
+    });
+    return { items, hasMore: this.more(headers) };
+  }
+
+  /**
+   * One page of `GET /installation/repositories` for `installationId`, with a token that asks for
+   * Metadata (read) only and no single repository. It replaces the repository of this client: use a
+   * client for listing, not for a repository.
+   */
+  async installationRepositories(
+    installationId: number,
+    page: number,
+  ): Promise<{ items: GitHubRepoSummary[]; hasMore: boolean }> {
+    if (!Number.isSafeInteger(installationId) || installationId <= 0) {
+      throw this.invalid(GITHUB_TEXT.id);
+    }
+    this.#repo = null;
+    this.#installationId = installationId;
+    this.#permissions = { ...LISTING_PERMISSIONS };
+    this.#contents = false;
+    this.#tokenKey = tokenCacheKey({
+      connectionId: this.#connection.connectionId,
+      credentials: this.#connection.credentials,
+      installationId,
+      repo: '*',
+      contents: false,
+      permissions: this.#permissions,
+    });
+    this.#token = this.tokens.get(this.#tokenKey);
+    if (this.#token === null) await this.issueToken();
+    const { headers, json } = await this.repoCall(
+      'GET',
+      `/installation/repositories?per_page=${GITHUB_PAGE_SIZE}&page=${this.pageNumber(page)}`,
+    );
+    const items = this.parse(installationRepositoriesAnswer, json).repositories.map((r) => ({
+      ref: r.full_name,
+      defaultBranch: r.default_branch,
+      language: r.language ?? null,
+      archived: r.archived,
+    }));
+    return { items, hasMore: this.more(headers) };
+  }
+
+  private pageNumber(page: number): number {
+    if (!Number.isSafeInteger(page) || page < 1 || page > 100_000) {
+      throw this.invalid(GITHUB_TEXT.id);
+    }
+    return page;
+  }
+
+  /** Whether the `Link` header names a next page; one that is not understood is an error. */
+  private more(headers: IncomingHttpHeaders): boolean {
+    const next = hasNextPage(headers.link);
+    if (next === null) throw new ScmError('bad_answer', GITHUB_TEXT.badAnswer);
+    return next;
+  }
+
+  // ─── Files, branches, pull requests and secrets of the repository (CI setup) ─────────────
+
+  /** A path of the repository, each segment encoded; no empty, dot or backslash segment. */
+  private contentPath(value: string): string {
+    const segments = value.split('/');
+    if (
+      segments.some((s) => s === '' || s === '.' || s === '..') ||
+      hasControl(value, 0x1f) ||
+      value.includes('\\') ||
+      value.length > 1_000
+    ) {
+      throw this.invalid(GITHUB_TEXT.path);
+    }
+    return segments.map(encodeURIComponent).join('/');
+  }
+
+  /** A branch name, as segments of a path (`qualor/setup`). */
+  private branchPath(name: string): string {
+    if (
+      name === '' ||
+      name.length > 255 ||
+      name.startsWith('/') ||
+      name.endsWith('/') ||
+      name.includes('//') ||
+      name.includes('..') ||
+      hasControl(name, 0x20) ||
+      /[\\~^:?*[]/.test(name)
+    ) {
+      throw this.invalid(GITHUB_TEXT.branch);
+    }
+    return name.split('/').map(encodeURIComponent).join('/');
+  }
+
+  private secretName(name: string): string {
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,99}$/.test(name)) throw this.invalid(GITHUB_TEXT.secretName);
+    return name;
+  }
+
+  /** `GET /contents/{path}` (on `ref`), or null when there is nothing there. */
+  private async contents(path: string, ref?: string): Promise<unknown> {
+    if (ref !== undefined) this.branchPath(ref);
+    const query = ref === undefined ? '' : `?ref=${encodeURIComponent(ref)}`;
+    try {
+      const { json } = await this.repoCall(
+        'GET',
+        `${this.repoPath()}/contents/${this.contentPath(path)}${query}`,
+      );
+      return json;
+    } catch (err) {
+      if (err instanceof ScmError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** The text of the file at `path` (on `ref`, the default branch otherwise), or null. */
+  async fileText(path: string, ref?: string): Promise<string | null> {
+    const json = await this.contents(path, ref);
+    if (json === null || Array.isArray(json)) return null;
+    const file = this.parse(contentsFile, json);
+    if (file.type !== 'file') return null;
+    // A file over 1 MB comes without its content (`encoding: "none"`): not read here.
+    if (file.encoding !== 'base64' || file.content === undefined) {
+      throw new ScmError('bad_answer', GITHUB_TEXT.badAnswer);
+    }
+    return Buffer.from(file.content, 'base64').toString('utf8');
+  }
+
+  /** The blob sha of the file at `path` (on `ref`), which replacing it takes; null if none. */
+  async fileSha(path: string, ref?: string): Promise<string | null> {
+    const json = await this.contents(path, ref);
+    if (json === null || Array.isArray(json)) return null;
+    const file = this.parse(contentsFile, json);
+    return file.type === 'file' ? file.sha : null;
+  }
+
+  /** The names of the entries of the directory at `path` on the default branch; [] if none. */
+  async listDirectory(path: string): Promise<string[]> {
+    const json = await this.contents(path);
+    if (!Array.isArray(json)) return [];
+    return this.parse(contentsEntries, json).map((entry) => entry.name);
+  }
+
+  /** The commit sha a branch points to, or null when there is no such branch. */
+  async branchSha(name: string): Promise<string | null> {
+    try {
+      const { json } = await this.repoCall(
+        'GET',
+        `${this.repoPath()}/git/ref/heads/${this.branchPath(name)}`,
+      );
+      return this.parse(gitRef, json).object.sha;
+    } catch (err) {
+      if (err instanceof ScmError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** A new branch `name` at the commit `fromSha`. */
+  async createBranch(name: string, fromSha: string): Promise<void> {
+    this.branchPath(name);
+    await this.repoCall('POST', `${this.repoPath()}/git/refs`, {
+      ref: `refs/heads/${name}`,
+      sha: this.sha(fromSha),
+    });
+  }
+
+  /** Creates the file on `branch`, or replaces it (then `sha` is the blob sha it has now). */
+  async putFile(input: {
+    path: string;
+    branch: string;
+    content: string;
+    message: string;
+    sha?: string;
+  }): Promise<void> {
+    this.branchPath(input.branch);
+    await this.repoCall('PUT', `${this.repoPath()}/contents/${this.contentPath(input.path)}`, {
+      message: input.message,
+      content: Buffer.from(input.content, 'utf8').toString('base64'),
+      branch: input.branch,
+      ...(input.sha === undefined ? {} : { sha: input.sha }),
+    });
+  }
+
+  /** A pull request from `head` into `base`; its web address. */
+  async openPullRequest(input: {
+    head: string;
+    base: string;
+    title: string;
+    body: string;
+  }): Promise<{ url: string }> {
+    this.branchPath(input.head);
+    this.branchPath(input.base);
+    const { json } = await this.repoCall('POST', `${this.repoPath()}/pulls`, {
+      head: input.head,
+      base: input.base,
+      title: input.title,
+      body: input.body,
+    });
+    return { url: this.parse(createdPullRequest, json).html_url };
+  }
+
+  /** The open pull request whose head is the branch `head` of this repository, or null. */
+  async findOpenPullRequest(head: string): Promise<{ url: string } | null> {
+    this.branchPath(head);
+    const { owner } = this.repoRef();
+    const { json } = await this.repoCall(
+      'GET',
+      `${this.repoPath()}/pulls?state=open&head=${encodeURIComponent(`${owner}:${head}`)}&per_page=1`,
+    );
+    const [found] = this.parse(z.array(createdPullRequest), json);
+    return found ? { url: found.html_url } : null;
+  }
+
+  /** Whether the repository has an Actions secret called `name` (its value is never readable). */
+  async hasActionsSecret(name: string): Promise<boolean> {
+    try {
+      await this.repoCall('GET', `${this.repoPath()}/actions/secrets/${this.secretName(name)}`);
+      return true;
+    } catch (err) {
+      if (err instanceof ScmError && err.status === 404) return false;
+      throw err;
+    }
+  }
+
+  /**
+   * Stores `value` as the Actions secret `name`: sealed for the repository's public key here, so
+   * GitHub and the request only ever see the sealed box. The value is in no error or log line.
+   */
+  async putActionsSecret(name: string, value: string): Promise<void> {
+    const secret = this.secretName(name);
+    const { json } = await this.repoCall('GET', `${this.repoPath()}/actions/secrets/public-key`);
+    const key = this.parse(secretsPublicKey, json);
+    let sealed: string;
+    try {
+      sealed = sealSecret(key.key, value);
+    } catch {
+      throw new ScmError('bad_answer', GITHUB_TEXT.badAnswer);
+    }
+    await this.repoCall('PUT', `${this.repoPath()}/actions/secrets/${secret}`, {
+      encrypted_value: sealed,
+      key_id: key.key_id,
+    });
+  }
+
+  /** The repository's languages, the one with the most bytes first. */
+  async languages(): Promise<string[]> {
+    const { json } = await this.repoCall('GET', `${this.repoPath()}/languages`);
+    return Object.entries(this.parse(languagesAnswer, json))
+      .sort((a, b) => b[1] - a[1])
+      .map(([language]) => language);
   }
 
   /** Qualor's current check runs of `name` on `sha`: this App's only, the newest per name. */

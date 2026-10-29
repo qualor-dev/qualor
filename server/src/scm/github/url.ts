@@ -23,6 +23,16 @@ export function githubBaseUrlProblem(normalised: string): string | null {
   return path.endsWith('/api/v3') ? null : API_ROOT_HINT;
 }
 
+/**
+ * Which GitHub a normalised API base URL is: `cloud` (github.com or a GHE.com subdomain) or an
+ * `enterprise-server` (anything else, `https://<host>/api/v3`).
+ */
+export function githubHostKind(baseUrl: string): 'cloud' | 'enterprise-server' {
+  return baseUrl === 'https://api.github.com' || GHE_COM.test(baseUrl)
+    ? 'cloud'
+    : 'enterprise-server';
+}
+
 /** github.md §2.2: where GitHub's own links (a pull request's `html_url`) live. */
 export function githubWebBase(baseUrl: string): string {
   if (baseUrl === 'https://api.github.com') return 'https://github.com';

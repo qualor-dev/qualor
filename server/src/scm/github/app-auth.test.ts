@@ -202,6 +202,28 @@ describe('InstallationTokenCache (github.md §4)', () => {
     expect(tokenCacheKey({ ...parts, contents: true })).toBe(asked);
   });
 
+  it('keys by the whole permission set asked, so tokens of different scopes are never mixed', () => {
+    const parts = {
+      connectionId: 'c',
+      credentials: 'x',
+      installationId: 9,
+      repo: 'acme/api',
+      contents: true,
+    };
+    const base = tokenCacheKey(parts);
+    const ci = tokenCacheKey({
+      ...parts,
+      permissions: { checks: 'write', contents: 'write', workflows: 'write', secrets: 'write' },
+    });
+    const reordered = tokenCacheKey({
+      ...parts,
+      permissions: { secrets: 'write', workflows: 'write', contents: 'write', checks: 'write' },
+    });
+    const listing = tokenCacheKey({ ...parts, permissions: { metadata: 'read' } });
+    expect(new Set([base, ci, listing]).size).toBe(3);
+    expect(reordered).toBe(ci);
+  });
+
   it('holds at most 1 000 entries, dropping the oldest', () => {
     const cache = new InstallationTokenCache(() => 0);
     for (let i = 0; i < 1_001; i++) cache.set(`k${i}`, `t${i}`, 60 * 60_000);

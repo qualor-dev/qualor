@@ -130,8 +130,21 @@ export function tokenCacheKey(parts: {
   installationId: number;
   repo: string;
   contents: boolean;
+  /**
+   * The whole permission set the token is asked for, where it is not the default one of
+   * `contents` (CI setup, or an installation listing its repositories): tokens of different
+   * scopes are never mixed.
+   */
+  permissions?: Readonly<Record<string, string>>;
 }): string {
-  const scope = parts.contents ? 'contents' : 'base';
+  const scope = parts.permissions
+    ? `perm:${Object.entries(parts.permissions)
+        .map(([name, access]) => `${name}=${access}`)
+        .sort()
+        .join(',')}`
+    : parts.contents
+      ? 'contents'
+      : 'base';
   return `${parts.connectionId}|${parts.credentials}|${parts.installationId}|${parts.repo.toLowerCase()}|${scope}`;
 }
 

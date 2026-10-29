@@ -1,4 +1,6 @@
+import { blake2b } from 'blakejs';
 import {
+  createHash,
   createPublicKey,
   generateKeyPairSync,
   randomBytes,
@@ -10,6 +12,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import nacl from 'tweetnacl';
 
 /**
  * A local fake of the GitHub REST endpoints Qualor uses (github.md §4–§6, §13), served under
@@ -92,6 +95,23 @@ export interface FakeRepository {
   movedTo?: string;
   /** The installation is suspended: a 403 on the token request. */
   suspended?: boolean;
+  /** The default branch (`main`), main language (none), archived (false) and private (true). */
+  defaultBranch?: string;
+  language?: string | null;
+  archived?: boolean;
+  private?: boolean;
+  /** `GET /languages`: bytes per language. */
+  languages?: Record<string, number>;
+}
+/** A pull request opened through `POST /pulls` (the onboarding's setup pull request). */
+export interface FakeOpenedPull {
+  repoId: number;
+  number: number;
+  head: string;
+  base: string;
+  title: string;
+  body: string;
+  state: 'open' | 'closed';
 }
 export interface FakeFile {
   filename: string;
@@ -234,6 +254,21 @@ export interface FakeGitHub {
       expiresAt: number;
     }
   >;
+  /** Pull requests opened with `POST /pulls`. */
+  openedPulls: FakeOpenedPull[];
+  /**
+   * The key of the repositories' Actions secrets (`GET /actions/secrets/public-key`): the fake opens
+   * every secret that is put with its secret key, so a wrongly sealed value is a 422 as on GitHub.
+   */
+  actionsKey: { keyId: string; publicKey: string };
+  /** The Actions secrets as opened, `<repoId>|<name>` to the plain value. */
+  actionsSecrets: Map<string, string>;
+  /** A file on a branch (the default branch unless given), as a commit made it. */
+  addFile(repoId: number, filePath: string, text: string, branch?: string): void;
+  /** The text of a file on a branch (the default branch unless given), or null. */
+  fileText(repoId: number, filePath: string, branch?: string): string | null;
+  /** The head sha of a branch, or null. */
+  branchSha(repoId: number, branch: string): string | null;
   addRepository(repo: FakeRepository): void;
   addPull(repoId: number, pull: FakePull): void;
   updatePull(repoId: number, number: number, changes: Partial<FakePull>): void;
@@ -453,6 +488,25 @@ export async function createFakeGitHub(
     };
   };
   let nextId = 1;
+  let nextPullNumber = 1000;
+  let nextCommit = 1;
+  const newSha = () => createHash('sha1').update(`commit ${nextCommit++}`).digest('hex');
+  /** A branch of a repository: its head sha and the files at it. */
+  interface Branch {
+    sha: string;
+    files: Map<string, { text: string; sha: string }>;
+  }
+  const branchesByRepo = new Map<number, Map<string, Branch>>();
+  const branchesOf = (repo: { id: number; defaultBranch?: string }) => {
+    let branches = branchesByRepo.get(repo.id);
+    if (!branches) {
+      branches = new Map([[repo.defaultBranch ?? 'main', { sha: newSha(), files: new Map() }]]);
+      branchesByRepo.set(repo.id, branches);
+    }
+    return branches;
+  };
+  const repoById = (id: number) => [...repos.values()].find((r) => r.id === id);
+  const actionsKeyPair = nacl.box.keyPair();
   let nextThread = 1;
   let nextReviewComment = FIRST_REVIEW_COMMENT_ID;
 
@@ -492,6 +546,30 @@ export async function createFakeGitHub(
     reviews: [],
     checkRuns: [],
     tokens: new Map(),
+    openedPulls: [],
+    actionsKey: {
+      keyId: '568250167242549743',
+      publicKey: Buffer.from(actionsKeyPair.publicKey).toString('base64'),
+    },
+    actionsSecrets: new Map(),
+    addFile: (repoId, filePath, text, branch) => {
+      const repo = repoById(repoId);
+      if (!repo) throw new Error(`no repository ${repoId}`);
+      const target = branchesOf(repo).get(branch ?? repo.defaultBranch ?? 'main');
+      if (!target) throw new Error(`no branch ${branch}`);
+      target.files.set(filePath, { text, sha: newSha() });
+      target.sha = newSha();
+    },
+    fileText: (repoId, filePath, branch) => {
+      const repo = repoById(repoId);
+      if (!repo) return null;
+      const target = branchesOf(repo).get(branch ?? repo.defaultBranch ?? 'main');
+      return target?.files.get(filePath)?.text ?? null;
+    },
+    branchSha: (repoId, branch) => {
+      const repo = repoById(repoId);
+      return repo ? (branchesOf(repo).get(branch)?.sha ?? null) : null;
+    },
     addRepository: (repo) => repos.set(`${repo.owner}/${repo.name}`.toLowerCase(), repo),
     addPull: (repoId, pull) => pulls.set(`${repoId}#${pull.number}`, structuredClone(pull)),
     updatePull: (repoId, number, changes) => {
@@ -602,7 +680,12 @@ export async function createFakeGitHub(
     }
   };
 
-  const page = <T>(req: URL, res: ServerResponse, items: T[]) => {
+  const page = <T>(
+    req: URL,
+    res: ServerResponse,
+    items: T[],
+    wrap: (slice: T[], total: number) => unknown = (slice) => slice,
+  ) => {
     const per = Math.min(Number(req.searchParams.get('per_page') ?? '30'), 100);
     const n = Number(req.searchParams.get('page') ?? '1');
     const slice = items.slice((n - 1) * per, n * per);
@@ -612,8 +695,20 @@ export async function createFakeGitHub(
       next.searchParams.set('page', String(n + 1));
       headers.link = `<${next.href}>; rel="next", <${next.href}>; rel="last"`;
     }
-    send(res, 200, slice, headers);
+    send(res, 200, wrap(slice, items.length), headers);
   };
+
+  const repositoryJson = (repo: FakeRepository) => ({
+    ...githubShape('repository'),
+    id: repo.id,
+    name: repo.name,
+    full_name: `${repo.owner}/${repo.name}`,
+    html_url: `${webBase()}/${repo.owner}/${repo.name}`,
+    private: repo.private ?? true,
+    archived: repo.archived ?? false,
+    default_branch: repo.defaultBranch ?? 'main',
+    language: repo.language ?? null,
+  });
 
   /** Where the fake's own links live, as GitHub Enterprise Server's are: the API URL without `/api/v3`. */
   const webBase = () => fake.url.slice(0, -PREFIX.length);
@@ -1069,6 +1164,29 @@ export async function createFakeGitHub(
       if (auth !== 'jwt') return deny(res, 401, 'A JSON web token could not be decoded');
       return send(res, 200, { ...githubShape('app'), id: appId, slug });
     }
+    if (method === 'GET' && p === '/app/installations') {
+      if (auth !== 'jwt') return deny(res, 401, 'A JSON web token could not be decoded');
+      const ids = [
+        ...new Set(
+          [...repos.values()].flatMap((r) => (r.installationId === null ? [] : [r.installationId])),
+        ),
+      ];
+      return page(
+        url,
+        res,
+        ids.map((id) => {
+          const first = [...repos.values()].find((r) => r.installationId === id)!;
+          return {
+            ...githubShape('installation'),
+            id,
+            app_id: appId,
+            app_slug: slug,
+            account: { login: first.owner, id: 9001, type: 'Organization' },
+            ...installationOf(id),
+          };
+        }),
+      );
+    }
     const tokenMatch = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(p);
     if (method === 'POST' && tokenMatch) {
       if (auth !== 'jwt') return deny(res, 401, 'A JSON web token could not be decoded');
@@ -1106,6 +1224,24 @@ export async function createFakeGitHub(
         expires_at: new Date(expiresAt).toISOString().replace(/\.\d{3}Z$/, 'Z'),
         permissions: wanted,
       });
+    }
+
+    if (method === 'GET' && p === '/installation/repositories') {
+      const held = fake.tokens.get(bearer);
+      if (auth !== 'token' || !held || held.expiresAt <= now())
+        return deny(res, 401, 'Bad credentials');
+      if (held.permissions['metadata'] === undefined)
+        return deny(res, 403, 'Resource not accessible by integration');
+      return page(
+        url,
+        res,
+        [...repos.values()].filter(
+          (r) =>
+            r.installationId === held.installationId &&
+            held.repositories.includes(r.name.toLowerCase()),
+        ),
+        (slice, total) => ({ total_count: total, repositories: slice.map(repositoryJson) }),
+      );
     }
 
     const repoMatch = /^\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(p);
@@ -1158,13 +1294,197 @@ export async function createFakeGitHub(
 
     if (method === 'GET' && rest === '') {
       if (!need('metadata', 'read')) return forbidden();
+      return send(res, 200, repositoryJson(repo));
+    }
+    if (method === 'GET' && rest === '/languages') {
+      if (!need('metadata', 'read')) return forbidden();
+      return send(res, 200, repo.languages ?? {});
+    }
+    const branches = branchesOf(repo);
+    const defaultBranch = repo.defaultBranch ?? 'main';
+    const contentPath = /^\/contents(?:\/(.*))?$/.exec(rest);
+    if (contentPath) {
+      const filePath = (contentPath[1] ?? '').split('/').map(decodeURIComponent).join('/');
+      if (method === 'GET') {
+        if (!need('contents', 'read')) return forbidden();
+        const branch = branches.get(url.searchParams.get('ref') ?? defaultBranch);
+        if (!branch) return deny(res, 404, 'No commit found for the ref');
+        const file = branch.files.get(filePath);
+        if (file) {
+          return send(res, 200, {
+            type: 'file',
+            name: filePath.split('/').pop(),
+            path: filePath,
+            sha: file.sha,
+            size: Buffer.byteLength(file.text),
+            encoding: 'base64',
+            content: (
+              Buffer.from(file.text)
+                .toString('base64')
+                .match(/.{1,60}/g) ?? []
+            ).join('\n'),
+          });
+        }
+        const prefix = filePath === '' ? '' : `${filePath}/`;
+        const entries = new Map<string, 'file' | 'dir'>();
+        for (const name of branch.files.keys()) {
+          if (!name.startsWith(prefix)) continue;
+          const [head, ...tail] = name.slice(prefix.length).split('/');
+          entries.set(head!, tail.length === 0 ? 'file' : 'dir');
+        }
+        if (entries.size === 0) return deny(res, 404, 'Not Found');
+        return send(
+          res,
+          200,
+          [...entries].map(([name, type]) => ({ type, name, path: `${prefix}${name}` })),
+        );
+      }
+      if (method === 'PUT') {
+        if (!need('contents', 'write')) return forbidden();
+        // Writing a workflow file takes the Workflows permission, whatever else a token holds.
+        if (filePath.startsWith('.github/workflows/') && !need('workflows', 'write'))
+          return forbidden();
+        const b = json() as {
+          message?: unknown;
+          content?: unknown;
+          branch?: unknown;
+          sha?: unknown;
+        };
+        if (
+          typeof b.message !== 'string' ||
+          b.message === '' ||
+          typeof b.content !== 'string' ||
+          (b.branch !== undefined && typeof b.branch !== 'string') ||
+          (b.sha !== undefined && typeof b.sha !== 'string')
+        )
+          return deny(res, 422, 'Invalid request.');
+        const branch = branches.get(b.branch ?? defaultBranch);
+        if (!branch) return deny(res, 404, 'Branch not found');
+        const existing = branch.files.get(filePath);
+        if (existing && b.sha === undefined)
+          return deny(res, 422, 'Invalid request.\n\n"sha" wasn\'t supplied.');
+        if (existing && b.sha !== existing.sha)
+          return deny(res, 409, `${filePath} does not match ${b.sha}`);
+        const blobSha = newSha();
+        branch.files.set(filePath, {
+          text: Buffer.from(b.content, 'base64').toString('utf8'),
+          sha: blobSha,
+        });
+        branch.sha = newSha();
+        return send(res, existing ? 200 : 201, {
+          content: { path: filePath, sha: blobSha },
+          commit: { sha: branch.sha, message: b.message },
+        });
+      }
+    }
+    const refMatch = /^\/git\/ref\/heads\/(.+)$/.exec(rest);
+    if (method === 'GET' && refMatch) {
+      if (!need('contents', 'read')) return forbidden();
+      const name = refMatch[1]!.split('/').map(decodeURIComponent).join('/');
+      const branch = branches.get(name);
+      if (!branch) return deny(res, 404, 'Not Found');
       return send(res, 200, {
-        ...githubShape('repository'),
-        id: repo.id,
-        name: repo.name,
-        full_name: `${repo.owner}/${repo.name}`,
-        html_url: `${webBase()}/${repo.owner}/${repo.name}`,
+        ref: `refs/heads/${name}`,
+        object: { type: 'commit', sha: branch.sha },
       });
+    }
+    if (method === 'POST' && rest === '/git/refs') {
+      if (!need('contents', 'write')) return forbidden();
+      const b = json() as { ref?: unknown; sha?: unknown };
+      const name = typeof b.ref === 'string' ? /^refs\/heads\/(.+)$/.exec(b.ref)?.[1] : undefined;
+      if (name === undefined || typeof b.sha !== 'string')
+        return deny(res, 422, 'Invalid request.');
+      if (branches.has(name)) return deny(res, 422, 'Reference already exists');
+      const from = [...branches.values()].find((x) => x.sha === b.sha);
+      if (!from) return deny(res, 422, 'Object does not exist');
+      branches.set(name, { sha: from.sha, files: new Map(from.files) });
+      return send(res, 201, {
+        ref: `refs/heads/${name}`,
+        object: { type: 'commit', sha: from.sha },
+      });
+    }
+    const openedPullJson = (o: FakeOpenedPull) => ({
+      ...githubShape('pull_request'),
+      number: o.number,
+      title: o.title,
+      state: o.state,
+      html_url: `${webBase()}/${repo.owner}/${repo.name}/pull/${o.number}`,
+      head: { ref: o.head, sha: branches.get(o.head)?.sha ?? newSha(), label: o.head },
+      base: { ref: o.base, sha: branches.get(o.base)?.sha ?? newSha(), label: o.base },
+    });
+    if (method === 'GET' && rest === '/pulls') {
+      if (!need('pull_requests', 'read')) return forbidden();
+      const head = url.searchParams.get('head');
+      const state = url.searchParams.get('state') ?? 'open';
+      return page(
+        url,
+        res,
+        fake.openedPulls
+          .filter(
+            (o) =>
+              o.repoId === repo.id &&
+              (state === 'all' || o.state === state) &&
+              (head === null || head === `${repo.owner}:${o.head}`),
+          )
+          .map(openedPullJson),
+      );
+    }
+    if (method === 'POST' && rest === '/pulls') {
+      if (!need('pull_requests', 'write')) return forbidden();
+      const b = json() as { head?: unknown; base?: unknown; title?: unknown; body?: unknown };
+      if (
+        typeof b.head !== 'string' ||
+        typeof b.base !== 'string' ||
+        typeof b.title !== 'string' ||
+        b.title === '' ||
+        (b.body !== undefined && typeof b.body !== 'string')
+      )
+        return deny(res, 422, 'Validation Failed');
+      if (!branches.has(b.head) || !branches.has(b.base))
+        return deny(res, 422, 'Validation Failed');
+      if (
+        fake.openedPulls.some(
+          (o) => o.repoId === repo.id && o.head === b.head && o.state === 'open',
+        )
+      )
+        return deny(res, 422, 'A pull request already exists');
+      const opened: FakeOpenedPull = {
+        repoId: repo.id,
+        number: nextPullNumber++,
+        head: b.head,
+        base: b.base,
+        title: b.title,
+        body: b.body ?? '',
+        state: 'open',
+      };
+      fake.openedPulls.push(opened);
+      return send(res, 201, openedPullJson(opened));
+    }
+    if (method === 'GET' && rest === '/actions/secrets/public-key') {
+      if (!need('secrets', 'read')) return forbidden();
+      return send(res, 200, { key_id: fake.actionsKey.keyId, key: fake.actionsKey.publicKey });
+    }
+    const secretMatch = /^\/actions\/secrets\/([A-Za-z0-9_]+)$/.exec(rest);
+    if (method === 'GET' && secretMatch) {
+      if (!need('secrets', 'read')) return forbidden();
+      if (!fake.actionsSecrets.has(`${repo.id}|${secretMatch[1]}`))
+        return deny(res, 404, 'Not Found');
+      return send(res, 200, { name: secretMatch[1], created_at: stamp(), updated_at: stamp() });
+    }
+    if (method === 'PUT' && secretMatch) {
+      if (!need('secrets', 'write')) return forbidden();
+      const b = json() as { encrypted_value?: unknown; key_id?: unknown };
+      if (typeof b.encrypted_value !== 'string' || b.key_id !== fake.actionsKey.keyId)
+        return deny(res, 422, 'Validation Failed');
+      const sealed = Buffer.from(b.encrypted_value, 'base64');
+      const ephemeral = sealed.subarray(0, 32);
+      const nonce = blake2b(Buffer.concat([ephemeral, actionsKeyPair.publicKey]), undefined, 24);
+      const opened = nacl.box.open(sealed.subarray(32), nonce, ephemeral, actionsKeyPair.secretKey);
+      if (opened === null) return deny(res, 422, 'Bad encrypted_value');
+      const key = `${repo.id}|${secretMatch[1]}`;
+      const created = !fake.actionsSecrets.has(key);
+      fake.actionsSecrets.set(key, Buffer.from(opened).toString('utf8'));
+      return send(res, created ? 201 : 204);
     }
     const permissionOf = /^\/collaborators\/([^/]+)\/permission$/.exec(rest);
     if (method === 'GET' && permissionOf) {
