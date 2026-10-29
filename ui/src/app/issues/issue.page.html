@@ -261,6 +261,7 @@
           @if (i.path) {
             <dt i18n="@@issue.details.file">File</dt>
             <dd>
+              @let parts = splitPath(i.path);
               @let file = codeFileLink(projectId(), i.branchId, i.path, i.startLine);
               <a
                 class="details-file"
@@ -268,10 +269,13 @@
                 [queryParams]="file.queryParams"
                 [fragment]="file.fragment"
                 ><code
-                  >{{ i.path
-                  }}<span class="details-line">{{
-                    i.startLine ? ':' + i.startLine : ''
-                  }}</span></code
+                  >{{ parts.dir
+                  }}<span class="details-tail"
+                    >{{ parts.base
+                    }}<span class="details-line">{{
+                      i.startLine ? ':' + i.startLine : ''
+                    }}</span></span
+                  ></code
                 ></a
               >
             </dd>

@@ -240,6 +240,28 @@ describe('IssuePage', () => {
     expect(getComputedStyle(line!).whiteSpace).toBe('nowrap');
   });
 
+  it('keeps the file name and the line number together, the directory may wrap', async () => {
+    const { root } = await render();
+    const code = root.querySelector('a.details-file code')!;
+    const tail = code.querySelector('span.details-tail');
+    expect(code.firstChild?.textContent).toBe('src/refunds/');
+    expect(tail?.textContent).toBe('limits.ts:44');
+    expect(getComputedStyle(tail!).display).toBe('inline-block');
+    expect(root.querySelector('a.details-file')?.textContent?.trim()).toBe(
+      'src/refunds/limits.ts:44',
+    );
+  });
+
+  it('puts a path without a slash wholly in the tail', async () => {
+    server.on('GET', `/api/v0/issues/${ID}`, {
+      body: detail({ path: 'package-lock.json', startLine: 3, snippet: null }),
+    });
+    const { root } = await render();
+    const code = root.querySelector('a.details-file code')!;
+    expect(code.firstChild?.textContent ?? '').toBe('');
+    expect(code.querySelector('span.details-tail')?.textContent).toBe('package-lock.json:3');
+  });
+
   it('shows the merge request the issue is on in the project band, and lets go on destroy', async () => {
     server.on('GET', '/api/v0/projects/p1/branches', {
       body: page([

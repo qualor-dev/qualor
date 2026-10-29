@@ -95,6 +95,10 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+.details-tail {
+  display: inline-block;
+  max-width: 100%;
+}
 .details-line {
   white-space: nowrap;
 }

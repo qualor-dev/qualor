@@ -105,6 +105,12 @@ export class IssuePage {
     return permissions !== undefined && !can(permissions, 'issue.triage');
   });
 
+  /** The directory (with its last slash) and the file name, so the name can stay whole. */
+  protected splitPath(path: string): { dir: string; base: string } {
+    const cut = path.lastIndexOf('/') + 1;
+    return { dir: path.slice(0, cut), base: path.slice(cut) };
+  }
+
   protected readonly validId = computed(() => isUuid(this.issueId()));
   protected readonly issue = resource({
     params: () => (this.validId() ? this.issueId() : undefined),

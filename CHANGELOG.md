@@ -22,6 +22,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
   warning, and an AI review snapshot is not sent while a named file is missing.
 - On Windows, a scan that times out or is interrupted also stops the processes that its analyzers'
   own child processes started, as long as their parent is still running.
+- On an issue's page, the File link keeps the line number with the file name: a long path wraps
+  at its slashes, and `limits.ts:12` stays on one line.
 
 ## [0.12.1] - 2026-10-29
 
