@@ -6,20 +6,16 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- PHPStan no longer fails with "Call to undefined function Symfony\Polyfill\Mbstring\iconv_strlen()" in the
-  `qualor/scanner` image, which marked the whole scan failed and left out the Code Quality report. The
-  image has no `mbstring` extension, so the mbstring polyfill in PHPStan's phar needs `iconv`, which
-  Qualor's own `php.ini` for PHPStan now loads. It was hit by any code that calls an `mb_*` function with
-  constant arguments.
-
 ## [0.12.1] - 2026-10-29
 
 ### Fixed
 
 - Qualor's security rules report SQL and NoSQL injection in TypeScript calls with type arguments,
   such as `await pool.query<Row>(sql)`, which they missed. The images pin qualor-rules 2026.10.6.
+- PHPStan analyses PHP code that calls an `mb_*` function with constant arguments, such as
+  `mb_strlen('abc')`. Before, it failed with "Call to undefined function
+  Symfony\Polyfill\Mbstring\iconv_strlen()" and the scan had none of its findings. Qualor's
+  `php.ini` for PHPStan now loads `iconv`, which the mbstring polyfill in PHPStan's phar needs.
 - On an issue's page, the file's line number stays whole instead of breaking inside it, and the
   project's Issues tab counts and opens the issues of the merge request the page shows rather than
   always the main branch's. The issues list does the same for `?branch=`.

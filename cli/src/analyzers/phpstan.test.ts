@@ -193,7 +193,8 @@ describe('phpstanAnalyzer.prepare (config.md §6, plan 9A)', () => {
     if (!('run' in p)) throw new Error(JSON.stringify(p));
     const ini = path.join(s.workDir, 'qualor-php.ini');
     // The whole configuration: only the extensions PHPStan's phar needs (and iconv, for its bundled
-    // mbstring polyfill), from php's own extension directory; warnings never on stdout (the report); no PCRE JIT (ruling A9-22).
+    // mbstring polyfill), from php's own extension directory; warnings never on stdout (the
+    // report); no PCRE JIT (ruling A9-22).
     expect(readFileSync(ini, 'utf8')).toBe(PHP_INI);
     expect(PHP_INI.split('\n').filter((l) => l !== '' && !l.startsWith(';'))).toEqual([
       'display_errors = stderr',
