@@ -88,8 +88,9 @@ The enterprise plugin is not MIT. The server loads it only while a valid licence
 configured, including the key's 14-day grace period after it expires; without one the server
 never reads the file and runs as the community edition (docs/guide/enterprise.md). Running,
 mirroring or redistributing this image with the plugin unused needs no subscription; production
-use of the plugin does, and is limited to what the key enables: its features and its validity,
-grace period included (`/app/enterprise/LICENSE`). Everything else of Qualor in this image is MIT.
+use of the plugin needs a subscription or a trial, and is limited to what the key enables: its
+features and its validity, grace period included. A trial key has no grace period
+(`/app/enterprise/LICENSE`). Everything else of Qualor in this image is MIT.
 
 Node.js bundles, in its binary: V8, libuv, ICU (Unicode-3.0), OpenSSL (Apache-2.0), c-ares,
 llhttp, nghttp2, nghttp3, ngtcp2, zlib, brotli, zstd, simdjson, simdutf, ada, uvwasi, acorn,

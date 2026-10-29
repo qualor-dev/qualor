@@ -62,6 +62,7 @@ describe('image definitions (plan 1G)', () => {
       /mirroring or redistributing this image with the plugin unused needs no subscription/,
     );
     expect(flat).toMatch(/enables: its features and its validity, grace period included/);
+    expect(flat).toMatch(/a trial key has no grace period/i);
     expect(flat).not.toMatch(/organisation limit|read-only/);
     const readme = readFileSync('deploy/README.md', 'utf8').replace(/\s+/g, ' ');
     expect(readme).toMatch(/redistributing the image with the plugin unused needs no subscription/);

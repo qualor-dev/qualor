@@ -60,9 +60,16 @@ describe('the licence boundary (AGENTS.md rule 8, enterprise.md §16)', () => {
     expect(text).toMatch(/Production use is limited to what that key enables/);
     expect(text).not.toMatch(/number of organisations|read-only/);
     expect(text).toMatch(/14-day grace period/);
+    // A trial key allows production use for its period, with no grace period.
+    expect(text).toMatch(
+      /a valid, paid Qualor Enterprise subscription or a trial, each evidenced by a licence key issued for you/,
+    );
+    expect(text).toMatch(/A trial key has no grace period/);
     // The README says the same.
     const readme = read('enterprise/README.md').replace(/\s+/g, ' ');
     expect(readme).toMatch(/only while a licence key is valid, including its 14-day grace period/);
+    expect(readme).toMatch(/Production use needs a subscription or a trial key/);
+    expect(readme).toMatch(/A trial key has no grace period/);
     expect(readme).toMatch(/fork of this repository or a mirror/);
     expect(readme).toMatch(/enables: its features and its validity, grace period included/);
     expect(readme).not.toMatch(/organisation limit|read-only/);

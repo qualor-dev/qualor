@@ -6,6 +6,19 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Trial keys: an instance admin on the community edition selects **Request a trial** in
+  **Settings → Licence** and gets a 30-day key for Business or Enterprise by email. With a trial key
+  the licence page says when the trial ends. Instance admins see a banner in the last 7 days and
+  get emails 7 days and 1 day before the end and on the day it ends. A trial has no grace period:
+  on the end date the server runs as the community edition. Trial keys need Qualor 0.14.0 or later.
+
+### Changed
+
+- The enterprise licence allows a trial key in production for its 30 days, as well as a
+  subscription.
+
 ## [0.13.0] - 2026-10-29
 
 ### Added

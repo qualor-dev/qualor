@@ -16,26 +16,28 @@ Everything outside enterprise/ is licensed under the MIT licence in the root LIC
    Software under this licence and needs no subscription.
 
 3. Production use. You may use the Software in production only if you (and any organisation you
-   act for) have a valid, paid Qualor Enterprise subscription, evidenced by a licence key issued
-   for you, and you comply with the subscription terms. "Production" means any use other than
-   development and testing. Production use is limited to what that key enables:
+   act for) have a valid, paid Qualor Enterprise subscription or a trial, each evidenced by a
+   licence key issued for you, and you comply with the terms under which the key was issued.
+   "Production" means any use other than development and
+   testing. Production use is limited to what that key enables:
    a. the features the key lists;
-   b. the period in which the key is valid, including the 14-day grace period after it expires,
-      during which the server keeps the licensed features on. After the grace period the server
-      turns them off, and production use of the Software ends until a valid key is configured.
+   b. the period in which the key is valid. A subscription key also covers the 14-day grace
+      period after it expires, during which the server keeps the licensed features on. A trial key
+      has no grace period. When the period ends, the server turns the features off, and
+      production use of the Software ends until a valid key is configured.
 
 4. Modifications. You may make and publish patches to the Software. Modified versions may be used
-   in production only under a valid subscription, as in section 3.
+   in production only under a valid subscription or a trial, as in section 3.
 
 5. The licence key. You may not remove, disable, bypass or circumvent the licence-key check or
    the limits it enforces (section 3), or make the licensed features available to anyone without
-   a subscription.
+   a subscription or a trial.
 
 6. Redistribution. You may redistribute the Software as part of a complete copy of the Qualor
    repository (a fork, with or without your published patches) or of a Qualor release or image
    as published by its maintainers (a mirror). Redistributing it this way gives nobody the right
-   to use it in production without a subscription. You may not otherwise distribute, sublicense
-   or sell the Software or modified versions of it.
+   to use it in production without a subscription or a trial. You may not otherwise distribute,
+   sublicense or sell the Software or modified versions of it.
 
 7. Third-party components keep their own licences.
 

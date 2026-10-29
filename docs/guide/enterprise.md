@@ -43,7 +43,7 @@ source is the repository's [`enterprise/`](../../enterprise/) directory, under i
 - you may read it, and copy and change it for development and testing, without a key;
 - running, mirroring or redistributing the `qualor/server` image with no key configured needs no
   subscription, because the enterprise code is not in use then;
-- using the enterprise features in production needs a subscription.
+- using the enterprise features in production needs a subscription or a trial key.
 
 Everything outside `enterprise/` is MIT.
 
@@ -67,6 +67,17 @@ Moving from SonarQube needs no plan: `qualor import sonarqube` is free in every 
 To buy a key, or to ask for a quote first, name the plan in the form on
 [qualor.dev/enterprise](https://qualor.dev/enterprise#contact) or on
 [qualor.dev/contact](https://qualor.dev/contact). We reply by email.
+
+### Try it first
+
+An instance admin on the community edition can ask for a free 30-day trial of Business or
+Enterprise. In **Settings → Licence**, select **Request a trial**. It opens
+[qualor.dev/trial](https://qualor.dev/trial) in a new tab. Choose the plan and enter your company
+and email address. We email you a trial key. A trial key may be used in production for its 30 days.
+Trial keys need Qualor 0.14.0 or later, and older servers reject them.
+
+When the key arrives, paste it as described below and restart the server. To buy a licence or
+extend the trial, email license@qualor.dev.
 
 ## Apply a key
 
@@ -192,6 +203,15 @@ in Qualor also gets a **Remove** button, which asks first.
 Every signed-in user sees the edition and the active features in `GET /api/v0/system/info`. Only
 instance admins see anything else about the licence.
 
+## When a trial ends
+
+A trial key has no grace period. Seven days before the end, instance admins see a banner on every
+page with the days left and license@qualor.dev, which you can dismiss until the next day. They also
+get an email 7 days and 1 day before the end and on the day it ends ([Email](./email.md)). On the
+end date the server runs as the community edition at once, without a restart, and nothing is
+deleted. Each feature then behaves as in the table below. To keep the features, apply a paid key
+and restart.
+
 ## When a licence expires
 
 1. From 30 days before the expiry date, instance admins see a notice at the top of every page: "The
@@ -206,9 +226,9 @@ instance admins see anything else about the licence.
    community edition until the licence is renewed. Nothing was deleted.", and get an email.
 4. Apply a renewed key and restart: everything works as before, with all its data.
 
-After the grace period, each feature behaves like this:
+After the grace period, or on the end date of a trial, each feature behaves like this:
 
-| Feature | After the grace period |
+| Feature | After the grace period or the trial |
 |---|---|
 | Roles, also on a single project | keep working exactly as before: they need no licence |
 | [The audit log](./roles-and-audit.md#when-the-licence-ends) | stops recording new events. Retention keeps removing old ones at the period last saved. **Settings → Audit log**, **Settings → Audit settings** and every `/api/v0/ee/audit` route answer 403 `FEATURE_NOT_LICENSED` until a key listing `audit-log` is applied. A SIEM stream pauses, keeps its settings and catches up after the renewal |

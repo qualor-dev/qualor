@@ -7,8 +7,9 @@ period after it expires. Without a key this code is never read.
 **Licence:** source-available under the Qualor Enterprise Licence, [`LICENSE`](./LICENSE). You
 may read, copy and modify it for development and testing. Carrying it unused (no key configured,
 never loaded), in a fork of this repository or a mirror of a Qualor release or image, needs no
-subscription. Production use needs one, and is limited to what the key enables: its features and
-its validity, grace period included. Licence keys are sold through <https://qualor.dev/contact>.
+subscription. Production use needs a subscription or a trial key, and is limited to what the key
+enables: its features and its validity, grace period included. A trial key has no grace period.
+Licence keys are sold through <https://qualor.dev/contact>.
 Everything outside this directory is MIT. Outside contributions to this directory are not
 accepted.
 
