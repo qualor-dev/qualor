@@ -38,8 +38,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
   fit instead of skipping the AI review as too large for the window. A review that fitted before
   runs as before. Only when the window has no room for them do the rules files share half of its
   room: a short file stays whole, the long ones are cut evenly, and the summary says they were
-  shortened. Only a change that does not fit the window is skipped. The room a model has to think before it answers shrinks with the
-  window too, so on a window of 28 000 tokens no call is refused for it first.
+  shortened. Only a change that does not fit the window is skipped. The room a model has to think
+  before it answers shrinks with the window too, so on a window of 28 000 tokens no call is refused
+  for it first.
 - An AI review has 45 minutes in all. The reviewers stop at 60 % of it, so the judge has time to
   answer, and a retry never waits past the end. A review that reaches the limit says so in its
   summary. One whose judge cannot answer in time fails with "AI review failed because it ran out
@@ -51,8 +52,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - Semgrep and OpenGrep run the rule files they found when another entry in
   `analyzers.semgrep.configs` is skipped: `qualor-default` on a runner without the scanner image,
   or a named file that does not exist. Before, either skipped the engine and your other files never
-  ran. A URL or a path outside the repository still stops the engine. A missing file is logged and reported as a `SEMGREP_CONFIG_MISSING`
-  warning, and an AI review snapshot is not sent while a named file is missing.
+  ran. A URL or a path outside the repository still stops the engine. A missing file is logged and
+  reported as a `SEMGREP_CONFIG_MISSING` warning, and an AI review snapshot is not sent while a
+  named file is missing.
 - On Windows, a scan that times out or is interrupted reads the process table and stops the
   processes below its analyzers before it stops the analyzers, as long as their parent is still
   running.
