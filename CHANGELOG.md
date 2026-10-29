@@ -13,6 +13,14 @@ All notable changes to Qualor are listed here, newest first. The format follows
   files, the files `tests.include` names. Open Qualor findings in test files close on the next
   analysis.
 
+### Fixed
+
+- Semgrep and OpenGrep run the rule files they found when another entry in
+  `analyzers.semgrep.configs` cannot be used. Before, `qualor-default` beside your file on a
+  runner without the scanner image, or a file that does not exist, skipped the engine and your
+  other files never ran. A missing file is logged and reported as a `SEMGREP_CONFIG_MISSING`
+  warning, and an AI review snapshot is not sent while a named file is missing.
+
 ## [0.12.1] - 2026-10-29
 
 ### Fixed

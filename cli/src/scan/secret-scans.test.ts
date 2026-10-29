@@ -80,6 +80,18 @@ describe('the secret scans that did not complete (6I-2 Review Focus 2, ruling G6
     expect(incompleteSecretScans(ENGINES, records, twice, [])).toEqual([]);
   });
 
+  it('counts an ok Semgrep that ran without a rule file the configuration names', () => {
+    const records = engines(['gitleaks', 'ok'], ['semgrep', 'ok'], ['qualor', 'ok']);
+    const named = config({}, ['rules/a.yml', 'rules/gone.yml']);
+    const missing = [{ code: 'SEMGREP_CONFIG_MISSING' }];
+    expect(incompleteSecretScans(ENGINES, records, named, [], missing)).toEqual(['semgrep']);
+    // Complete when every named file ran; other warnings do not matter.
+    expect(incompleteSecretScans(ENGINES, records, named, [], [])).toEqual([]);
+    expect(
+      incompleteSecretScans(ENGINES, records, named, [], [{ code: 'FILE_UNREADABLE' }]),
+    ).toEqual([]);
+  });
+
   it('counts Gitleaks whenever it is not ok, a skip included: it scans every repository', () => {
     const skipped = engines(['gitleaks', 'skipped'], ['semgrep', 'ok'], ['qualor', 'ok']);
     expect(incompleteSecretScans(ENGINES, skipped, config(), [])).toEqual(['gitleaks']);

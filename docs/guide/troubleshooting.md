@@ -32,6 +32,7 @@ The scanner's exit codes are in the [CLI reference](./cli.md#exit-codes).
 | `… is a legacy eslintrc configuration, which ESLint 9 does not read` | ESLint 9 and later read only flat configs | migrate to `eslint.config.js` |
 | SpotBugs: `no compiled classes in …` | the project was not built | build before the scan, or set `classDirs` |
 | `the qualor/scanner image ships no Semgrep rules yet` | no Semgrep rules are bundled | name your rule files in `analyzers.semgrep.configs`, or ignore the message |
+| `SEMGREP_CONFIG_MISSING` | a file in `analyzers.semgrep.configs` does not exist. The other files ran, and an AI review snapshot is not sent | fix the path, or remove the entry |
 | `Qualor's security rules are not installed` | the scan does not run in a `qualor/scanner` image with the rules. Images of earlier Qualor releases have none | use a current `qualor/scanner` image, or unpack a [rules release](https://github.com/qualor-dev/qualor-rules/releases) and set `QUALOR_RULES_DIR` to it. Or ignore the message |
 | `QUALOR_RULES_DIR must be an absolute path outside the repository` | `QUALOR_RULES_DIR` is relative, or points into the checkout | set it to an absolute path outside the checkout, or unset it |
 | `QUALOR_RULES_DIR does not exist` | the directory it names is missing | create or unpack the rules there, or unset `QUALOR_RULES_DIR` |

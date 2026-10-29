@@ -667,9 +667,9 @@ The scanner sends no snapshot when it cannot trust the secret scan. The scan log
     the checkout. Fix them, or set `analyzers.qualor.enabled: false`.
 - **Rule files you named never ran.** Once `analyzers.semgrep.configs` names your own file or
   directory, a Semgrep that did not run stops the snapshot. Causes are a wrong path, neither
-  OpenGrep nor Semgrep installed, a failed run, or `qualor-default` beside your file on a runner
-  without the image's rules directory (the skip drops your file too). Fix the path or the tool, or
-  set `analyzers.semgrep.enabled: false`.
+  OpenGrep nor Semgrep installed, or a failed run. A file that does not exist stops the snapshot
+  too, even when your other files ran (the scan warns `SEMGREP_CONFIG_MISSING`). Fix the path or
+  the tool, or set `analyzers.semgrep.enabled: false`.
 - **The secret scan's output could not be read.**
 - **The files that differ from the checkout could not be scanned** (item 4 above).
 

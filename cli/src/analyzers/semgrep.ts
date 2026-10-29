@@ -8,7 +8,7 @@ import {
   type Stats,
 } from 'node:fs';
 import path from 'node:path';
-import { BUILTIN_EXCLUDES, isUrl, type QualorConfig } from '@qualor/shared';
+import { BUILTIN_EXCLUDES, isUrl, type NormalizeWarning, type QualorConfig } from '@qualor/shared';
 import { parseAllDocuments } from 'yaml';
 import { MAX_ANALYZED_BYTES } from '../discovery/discover';
 import { real, staysInside, within } from './binary';
@@ -154,7 +154,7 @@ export async function warmOpengrep(
 }
 
 /** A config path, `null` for a `qualor-default` that holds no rules, or why none can be used. */
-type Resolved = string | null | { skip: string } | { error: string };
+type Resolved = string | null | { skip: string } | { missing: string } | { error: string };
 
 const NO_DEFAULT_RULES =
   'the qualor/scanner image ships no Semgrep rules yet; set analyzers.semgrep.configs to local rule files';
@@ -191,7 +191,7 @@ function hasRuleFile(dir: string): boolean {
  * in the repository, passed to the tool as an absolute path, so no entry can ever be read as a
  * registry id, a saved snippet (`a:b`) or a URL. A URL (any scheme, `git+https:` included) and a
  * path outside the repository, as written or through a link, are configuration errors (the
- * offline guarantee, ruling V4); a missing file is a skip reason.
+ * offline guarantee, ruling V4); a missing file is `missing`, the entry as shown.
  */
 function resolveConfig(root: string, entry: string, defaultRulesDir: string): Resolved {
   if (entry === 'qualor-default') {
@@ -210,29 +210,45 @@ function resolveConfig(root: string, entry: string, defaultRulesDir: string): Re
     lstatSync(file);
   } catch {
     if (!staysInside(root, file)) return { error: `${name} is outside the repository` };
-    return { skip: `${name} does not exist` };
+    return { missing: shown(entry) };
   }
   if (!staysInside(root, file)) return { error: `${name} is outside the repository` };
   return file;
 }
 
+/**
+ * The absolute paths `configs` resolves to. An entry that cannot be used does not drop the others:
+ * a `qualor-default` without rules here is left out, and a file that does not exist is logged at
+ * warn (`log`) and its path added to `missing` (the caller reports it). Only when nothing is left
+ * is the reason a skip.
+ */
 export function resolveConfigs(
   root: string,
   configs: readonly string[],
   defaultRulesDir: string,
+  log?: Logger,
+  missing: string[] = [],
 ): string[] | { skip: string } | { error: string } {
   if (configs.length > MAX_SEMGREP_CONFIGS) {
     return { error: `more than ${MAX_SEMGREP_CONFIGS} configs` };
   }
   const out: string[] = [];
+  const gone: string[] = [];
+  let noDefault = NO_DEFAULT_RULES;
   for (const c of configs) {
     const r = resolveConfig(root, c, defaultRulesDir);
     if (r === null) continue;
-    if (typeof r !== 'string') return r;
-    out.push(r);
+    if (typeof r === 'string') out.push(r);
+    else if ('missing' in r) gone.push(r.missing);
+    else if ('error' in r) return r;
+    else noDefault = r.skip;
   }
-  if (out.length === 0) return { skip: NO_DEFAULT_RULES };
-  return out;
+  for (const file of gone) log?.warn(`semgrep: ${file} does not exist`);
+  missing.push(...gone);
+  if (out.length > 0) return out;
+  if (gone.length === 1) return { skip: `config ${gone[0]} does not exist` };
+  if (gone.length > 1) return { skip: `configs ${gone.join(', ')} do not exist` };
+  return { skip: noDefault };
 }
 
 const RULE_FILE = /\.(ya?ml|json)$/i;
@@ -441,9 +457,23 @@ export function createSemgrepAnalyzer(defaultRulesDir = DEFAULT_SEMGREP_RULES_DI
     // the same check for any other caller of the runner.
     const problem = checkSemgrepConfig(ctx.root, ctx.config);
     if (problem !== null) return { skip: problem };
-    const configs = resolveConfigs(ctx.root, ctx.config.analyzers.semgrep.configs, defaultRulesDir);
+    const missing: string[] = [];
+    const configs = resolveConfigs(
+      ctx.root,
+      ctx.config.analyzers.semgrep.configs,
+      defaultRulesDir,
+      ctx.log,
+      missing,
+    );
+    // One report warning per file the configuration names that does not exist.
+    const warnings: NormalizeWarning[] = missing.map((file) => ({
+      code: 'SEMGREP_CONFIG_MISSING',
+      message: `${file} does not exist`,
+      count: 1,
+    }));
     if (!Array.isArray(configs)) {
-      return 'skip' in configs ? configs : { skip: configs.error };
+      if ('error' in configs) return { skip: configs.error };
+      return warnings.length > 0 ? { skip: configs.skip, warnings } : configs;
     }
     const binary = findBinary(ctx);
     if (binary === null) {
@@ -478,6 +508,7 @@ export function createSemgrepAnalyzer(defaultRulesDir = DEFAULT_SEMGREP_RULES_DI
         // Without --error both exit 0 with findings; anything else is a failure.
         okExitCodes: [0],
         version: null,
+        ...(warnings.length > 0 && { warnings }),
       },
     };
   };

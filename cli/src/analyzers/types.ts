@@ -163,7 +163,7 @@ export type Preparation =
    * configuration, no PMD rulesets, no compiled classes, no Semgrep rules...): skipped under
    * auto, failed under true. Complete for ruling G6.
    */
-  | { skip: string }
+  | { skip: string; warnings?: readonly NormalizeWarning[] }
   /**
    * The tool cannot run here at all (not installed, or a runtime it needs, such as java, is
    * missing): skipped under auto, failed under true, and marked `unavailable` on the capture, so

@@ -1036,6 +1036,12 @@ analyzers:
 Registry ids such as `p/default` are refused (exit 2), because they would fetch rules over the
 network.
 
+- `qualor-default` next to your files is left out on a runner without the scanner image. Your
+  files still run.
+- A file that does not exist is logged as `semgrep: <path> does not exist` and reported as a
+  `SEMGREP_CONFIG_MISSING` warning. The other files still run. If none is left, the engine is
+  skipped.
+
 ## External SARIF
 
 Any tool that writes SARIF 2.1.0 can feed Qualor: osv-scanner, Checkov, tfsec, Bandit,

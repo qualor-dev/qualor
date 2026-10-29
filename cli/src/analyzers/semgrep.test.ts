@@ -31,7 +31,7 @@ import { parseCommandLine } from '../args';
 import { runScan } from '../scan/run';
 import { useTempDirs, writeTree } from '../../test/tmp';
 import { MAX_ANALYZED_BYTES } from '../discovery/discover';
-import { silentLogger, type Logger } from '../log';
+import { createLogger, silentLogger, type Logger } from '../log';
 import { resolveBinary } from './binary';
 import { deadProxyEnv } from './offline';
 import { runProcess } from './process';
@@ -144,6 +144,52 @@ describe('Semgrep/OpenGrep inputs', () => {
     expect(resolveConfigs(root, ['qualor-default', 'rules/a.yml'], empty)).toEqual([
       path.join(root, 'rules', 'a.yml'),
     ]);
+  });
+
+  it('keeps the rule files it found when qualor-default has no directory (off the image)', () => {
+    const root = tmp();
+    const absent = path.join(tmp(), 'absent');
+    writeTree(root, { 'rules/x.yml': 'rules: []\n' });
+    const x = path.join(root, 'rules', 'x.yml');
+    expect(resolveConfigs(root, ['qualor-default', 'rules/x.yml'], absent)).toEqual([x]);
+    expect(resolveConfigs(root, ['rules/x.yml', 'qualor-default'], absent)).toEqual([x]);
+  });
+
+  it('keeps the rule files it found when another does not exist, and says so', () => {
+    const root = tmp();
+    writeTree(root, { 'rules/x.yml': 'rules: []\n' });
+    const lines: string[] = [];
+    const log = createLogger('info', (t) => lines.push(t));
+    const missing: string[] = [];
+    expect(resolveConfigs(root, ['rules/x.yml', 'rules/missing.yml'], tmp(), log, missing)).toEqual(
+      [path.join(root, 'rules', 'x.yml')],
+    );
+    expect(missing).toEqual(['rules/missing.yml']);
+    expect(lines.filter((l) => l.includes('does not exist'))).toHaveLength(1);
+    expect(lines.join('\n')).toContain('semgrep: rules/missing.yml does not exist');
+  });
+
+  it('skips with the missing file as the reason when no config is left', () => {
+    const root = tmp();
+    const missing: string[] = [];
+    const absent = path.join(tmp(), 'absent');
+    expect(
+      resolveConfigs(root, ['qualor-default', 'rules/g.yml'], absent, undefined, missing),
+    ).toEqual({
+      skip: 'config rules/g.yml does not exist',
+    });
+    expect(missing).toEqual(['rules/g.yml']);
+    expect(resolveConfigs(root, ['a.yml', 'b.yml'], absent)).toEqual({
+      skip: 'configs a.yml, b.yml do not exist',
+    });
+  });
+
+  it('still refuses a URL after a config it resolved', () => {
+    const root = tmp();
+    writeTree(root, { 'rules/x.yml': 'rules: []\n' });
+    expect(resolveConfigs(root, ['rules/x.yml', 'https://x.example/r.yml'], tmp())).toEqual({
+      error: 'config https://x.example/r.yml is a URL (the tool would download it)',
+    });
   });
 
   it('refuses URLs, paths outside the repository and too many configs (offline, ruling V4)', () => {
@@ -373,6 +419,55 @@ describe('semgrepAnalyzer.prepare', () => {
       // Semgrep does not unpack itself, so it runs alongside the qualor engine.
       expect(prep.run.exclusive).toBeUndefined();
     }
+  });
+
+  it('runs the rule file next to a qualor-default that this runner does not have', async () => {
+    const root = setup();
+    const absent = path.join(tmp(), 'absent');
+    const analyzer = createSemgrepAnalyzer(absent);
+    const cfg = { analyzers: { semgrep: { configs: ['qualor-default', 'rules.yml'] } } };
+    const prep = await analyzer.prepare(
+      fakeContext(root, { config: cfg, binaries: { opengrep: '/o' } }),
+    );
+    if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+    const configs = prep.run.args.filter((a, i) => prep.run.args[i - 1] === '--config');
+    expect(configs).toEqual([path.join(root, 'rules.yml')]);
+    expect(prep.run.warnings).toBeUndefined();
+    // Without a tool the run is unavailable, as for any other configuration.
+    expect(await analyzer.prepare(fakeContext(root, { config: cfg }))).toEqual({
+      unavailable: 'OpenGrep or Semgrep is not installed',
+    });
+  });
+
+  it('warns SEMGREP_CONFIG_MISSING once per missing file and runs the others', async () => {
+    const root = setup();
+    const lines: string[] = [];
+    const cfg = {
+      analyzers: { semgrep: { configs: ['rules.yml', 'gone.yml', 'also/gone.yml'] } },
+    };
+    const prep = await semgrepAnalyzer.prepare({
+      ...fakeContext(root, { config: cfg, binaries: { opengrep: '/o' } }),
+      log: createLogger('info', (t) => lines.push(t)),
+    });
+    if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+    expect(prep.run.warnings).toEqual([
+      { code: 'SEMGREP_CONFIG_MISSING', message: 'gone.yml does not exist', count: 1 },
+      { code: 'SEMGREP_CONFIG_MISSING', message: 'also/gone.yml does not exist', count: 1 },
+    ]);
+    expect(lines.join('\n')).toContain('semgrep: gone.yml does not exist');
+  });
+
+  it('skips with the warning when only missing files are named', async () => {
+    const root = setup();
+    const cfg = { analyzers: { semgrep: { configs: ['gone.yml'] } } };
+    expect(
+      await semgrepAnalyzer.prepare(
+        fakeContext(root, { config: cfg, binaries: { opengrep: '/o' } }),
+      ),
+    ).toEqual({
+      skip: 'config gone.yml does not exist',
+      warnings: [{ code: 'SEMGREP_CONFIG_MISSING', message: 'gone.yml does not exist', count: 1 }],
+    });
   });
 
   it('skips when the tool is missing', async () => {
@@ -633,6 +728,24 @@ describeWithTools([['opengrep', 'semgrep']])(
       // The same ids wherever the rule files live (ruling A3).
       expect(keys).toEqual(expectedKeys('mixed-secrets', 'semgrep'));
     });
+
+    it(
+      'runs the rule file next to a qualor-default that this runner does not have',
+      { timeout: 300_000 },
+      async () => {
+        const { keys } = await scanFixtureWith(
+          createSemgrepAnalyzer(path.join(tmp(), 'absent')),
+          'mixed-secrets',
+          tmp(),
+          (root) =>
+            writeTree(root, {
+              'qualor.yml':
+                'version: 1\nanalyzers:\n  semgrep:\n    configs: [qualor-default, semgrep/rules.yml]\n',
+            }),
+        );
+        expect(keys).toEqual(expectedKeys('mixed-secrets', 'semgrep'));
+      },
+    );
 
     it(
       'a join rule fetches its refs without the dead proxy, and reaches nothing with it',
