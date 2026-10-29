@@ -148,9 +148,22 @@ interface Injection {
   answers: InjectedAnswer[];
 }
 
+/** A CI/CD variable of a project, as the fake keeps it. */
+export interface FakeVariable {
+  value: string;
+  masked: boolean;
+  protected: boolean;
+}
+
 interface FakeProject {
   id: number;
   path: string;
+  defaultBranch: string | null;
+  archived: boolean;
+  languages: Record<string, number>;
+  /** Branch name -> its files (path -> text). */
+  branches: Map<string, Map<string, string>>;
+  variables: Map<string, FakeVariable>;
   mergeRequests: Map<number, FakeMergeRequest>;
   discussions: Map<number, FakeDiscussion[]>;
   /** Pipeline id -> its ref. */
@@ -182,7 +195,26 @@ export interface FakeGitLab {
   accessLevel: number;
   readonly requests: RecordedRequest[];
   readonly statuses: FakeStatus[];
-  addProject(project: { id: number; path: string }): void;
+  /**
+   * A project with a `defaultBranch` (default `main`, which exists and holds no files; null: an
+   * empty repository with no branch), `archived` and the `languages` GitLab reports (shares).
+   */
+  addProject(project: {
+    id: number;
+    path: string;
+    defaultBranch?: string | null;
+    archived?: boolean;
+    languages?: Record<string, number>;
+  }): void;
+  /** A branch of the project, empty or with a copy of the files of `from`. */
+  addBranch(projectId: number, name: string, from?: string): void;
+  addFile(projectId: number, branch: string, path: string, content: string): void;
+  /** The text of a file on a branch, or undefined. */
+  file(projectId: number, branch: string, path: string): string | undefined;
+  branches(projectId: number): string[];
+  setVariable(projectId: number, key: string, variable: FakeVariable): void;
+  /** The project's CI/CD variables, by key. */
+  variables(projectId: number): Record<string, FakeVariable>;
   addMergeRequest(projectId: number, mr: FakeMergeRequest): void;
   updateMergeRequest(projectId: number, iid: number, changes: Partial<FakeMergeRequest>): void;
   /** A pipeline of the project, on `ref` (default `main`). */
@@ -303,6 +335,13 @@ export async function createFakeGitLab(
     username: id === botUserId ? 'project_7_bot_4b1e2c' : `user${id}`,
   });
 
+  /** GitLab's check of a variable's fields: a masked value is 8+ characters, no whitespace. */
+  const checkedVariable = (fields: Record<string, unknown>): FakeVariable | string => {
+    const value = typeof fields['value'] === 'string' ? fields['value'] : '';
+    const masked = fields['masked'] === true;
+    if (masked && (value.length < 8 || /\s/.test(value))) return 'is invalid';
+    return { value, masked, protected: fields['protected'] === true };
+  };
   const findProject = (ref: string): FakeProject | undefined => {
     if (/^\d+$/.test(ref)) return projects.get(Number(ref));
     return [...projects.values()].find((p) => p.path === ref);
@@ -440,6 +479,30 @@ export async function createFakeGitLab(
     }
     const segments = apiPath.split('/').slice(1).map(decodeURIComponent);
     if (req.method === 'GET' && apiPath === '/user') return send(res, 200, author(botUserId));
+    if (req.method === 'GET' && apiPath === '/projects') {
+      // GitLab: membership of the token user at `min_access_level` or above; `simple=true` leaves
+      // `archived` out of each row; `search` matches the name or path.
+      const minAccess = Number(params.get('min_access_level') ?? '0');
+      const search = (params.get('search') ?? '').toLowerCase();
+      return paged(
+        res,
+        params,
+        [...projects.values()]
+          .filter(
+            (p) =>
+              accessLevel >= minAccess &&
+              !(params.get('archived') === 'false' && p.archived) &&
+              p.path.toLowerCase().includes(search),
+          )
+          .map((p) => ({
+            id: p.id,
+            path_with_namespace: p.path,
+            default_branch: p.defaultBranch,
+            web_url: `${url}/${p.path}`,
+            ...(params.get('simple') === 'true' ? {} : { archived: p.archived }),
+          })),
+      );
+    }
     if (segments[0] !== 'projects' || segments[1] === undefined) {
       return send(res, 404, { error: '404 Not Found' });
     }
@@ -569,6 +632,137 @@ export async function createFakeGitLab(
       statuses.push(status);
       statusMeta.set(status, { id: nextStatusId++, retried: false });
       return send(res, 201, statusJson(status));
+    }
+    if (req.method === 'GET' && rest.length === 1 && rest[0] === 'languages') {
+      return send(res, 200, project.languages);
+    }
+    if (rest[0] === 'repository') {
+      if (req.method === 'GET' && rest.length === 4 && rest[1] === 'files' && rest[3] === 'raw') {
+        const text = project.branches.get(params.get('ref') ?? '')?.get(rest[2]!);
+        if (text === undefined) return send(res, 404, { message: '404 File Not Found' });
+        res.writeHead(200, { 'content-type': 'text/plain' }).end(text);
+        return;
+      }
+      if (req.method === 'GET' && rest.length === 3 && rest[1] === 'branches') {
+        if (!project.branches.has(rest[2]!)) {
+          return send(res, 404, { message: '404 Branch Not Found' });
+        }
+        return send(res, 200, { name: rest[2], default: rest[2] === project.defaultBranch });
+      }
+      if (req.method === 'POST' && rest.length === 2 && rest[1] === 'branches') {
+        const name = String(json['branch'] ?? '');
+        const from = String(json['ref'] ?? '');
+        if (project.branches.has(name)) return send(res, 400, { message: 'Branch already exists' });
+        if (!project.branches.has(from)) {
+          return send(res, 400, { message: 'Invalid reference name: ' + from });
+        }
+        project.branches.set(name, new Map(project.branches.get(from)));
+        return send(res, 201, { name, default: false });
+      }
+      if (req.method === 'POST' && rest.length === 2 && rest[1] === 'commits') {
+        const files = project.branches.get(String(json['branch'] ?? ''));
+        if (!files) {
+          return send(res, 400, {
+            message: `A branch called '${String(json['branch'])}' does not exist`,
+          });
+        }
+        const actions = Array.isArray(json['actions'])
+          ? (json['actions'] as Record<string, unknown>[])
+          : [];
+        if (typeof json['commit_message'] !== 'string' || actions.length === 0) {
+          return send(res, 400, { error: 'commit_message, actions are missing' });
+        }
+        // GitLab applies all actions or none: check first.
+        for (const a of actions) {
+          const exists = files.has(String(a['file_path']));
+          if (a['action'] === 'create' && exists) {
+            return send(res, 400, { message: 'A file with this name already exists' });
+          }
+          if (a['action'] === 'update' && !exists) {
+            return send(res, 400, { message: "A file with this name doesn't exist" });
+          }
+        }
+        for (const a of actions) files.set(String(a['file_path']), String(a['content'] ?? ''));
+        return send(res, 201, { id: 'c'.repeat(40), message: json['commit_message'] });
+      }
+      return send(res, 404, { error: '404 Not Found' });
+    }
+    if (rest[0] === 'variables') {
+      if (req.method === 'POST' && rest.length === 1) {
+        const key = String(json['key'] ?? '');
+        const variable = checkedVariable(json);
+        if (typeof variable === 'string') return send(res, 400, { message: { value: [variable] } });
+        if (project.variables.has(key)) {
+          return send(res, 400, { message: { key: [`(${key}) has already been taken`] } });
+        }
+        project.variables.set(key, variable);
+        return send(res, 201, { key, variable_type: 'env_var', ...variable });
+      }
+      const key = rest[1];
+      if (key === undefined || rest.length !== 2) return send(res, 404, { error: '404 Not Found' });
+      const current = project.variables.get(key);
+      if (req.method === 'GET') {
+        if (!current) return send(res, 404, { message: '404 Variable Not Found' });
+        return send(res, 200, { key, variable_type: 'env_var', ...current });
+      }
+      if (req.method === 'PUT') {
+        if (!current) return send(res, 404, { message: '404 Variable Not Found' });
+        const variable = checkedVariable({ ...current, ...json });
+        if (typeof variable === 'string') return send(res, 400, { message: { value: [variable] } });
+        project.variables.set(key, variable);
+        return send(res, 200, { key, variable_type: 'env_var', ...variable });
+      }
+      return send(res, 404, { error: '404 Not Found' });
+    }
+    if (rest[0] === 'merge_requests' && rest.length === 1) {
+      if (req.method === 'GET') {
+        const source = params.get('source_branch');
+        return paged(
+          res,
+          params,
+          [...project.mergeRequests.values()]
+            .filter(
+              (m) =>
+                (params.get('state') === null || m.state === params.get('state')) &&
+                (source === null || m.sourceBranch === source),
+            )
+            .map((m) => mrJson(project, m)),
+        );
+      }
+      if (req.method === 'POST') {
+        const source = String(json['source_branch'] ?? '');
+        const target = String(json['target_branch'] ?? '');
+        if (typeof json['title'] !== 'string' || json['title'] === '') {
+          return send(res, 400, { error: 'title is missing' });
+        }
+        if (!project.branches.has(source) || !project.branches.has(target)) {
+          return send(res, 400, { message: 'Branch does not exist' });
+        }
+        const open = [...project.mergeRequests.values()].find(
+          (m) => m.state === 'opened' && m.sourceBranch === source && m.targetBranch === target,
+        );
+        if (open) {
+          return send(res, 409, {
+            message: [
+              `Another open merge request already exists for this source branch: !${open.iid}`,
+            ],
+          });
+        }
+        const iid = Math.max(0, ...project.mergeRequests.keys()) + 1;
+        const created: FakeMergeRequest = {
+          iid,
+          title: json['title'],
+          state: 'opened',
+          sourceBranch: source,
+          targetBranch: target,
+          headSha: 'd'.repeat(40),
+          baseSha: 'e'.repeat(40),
+          startSha: 'e'.repeat(40),
+          diffs: [],
+        };
+        project.mergeRequests.set(iid, created);
+        return send(res, 201, mrJson(project, created));
+      }
     }
     if (rest[0] !== 'merge_requests' || rest[1] === undefined) {
       return send(res, 404, { error: '404 Not Found' });
@@ -731,16 +925,37 @@ export async function createFakeGitLab(
     },
     requests,
     statuses,
-    addProject({ id, path: projectPath }) {
+    addProject({ id, path: projectPath, defaultBranch, archived, languages }) {
+      const branch = defaultBranch === undefined ? 'main' : defaultBranch;
       projects.set(id, {
         id,
         path: projectPath,
+        defaultBranch: branch,
+        archived: archived ?? false,
+        languages: languages ?? {},
+        branches: new Map(branch === null ? [] : [[branch, new Map<string, string>()]]),
+        variables: new Map(),
         mergeRequests: new Map(),
         discussions: new Map(),
         pipelines: new Map(),
         members: new Map(),
       });
     },
+    addBranch(projectId, name, from) {
+      const { branches } = projectOf(projectId);
+      branches.set(name, new Map(from === undefined ? [] : branches.get(from)));
+    },
+    addFile(projectId, branch, filePath, content) {
+      const files = projectOf(projectId).branches.get(branch);
+      if (!files) throw new Error(`fake GitLab: no branch ${branch}`);
+      files.set(filePath, content);
+    },
+    file: (projectId, branch, filePath) => projectOf(projectId).branches.get(branch)?.get(filePath),
+    branches: (projectId) => [...projectOf(projectId).branches.keys()],
+    setVariable(projectId, key, variable) {
+      projectOf(projectId).variables.set(key, variable);
+    },
+    variables: (projectId) => Object.fromEntries(projectOf(projectId).variables),
     addMergeRequest(projectId, mr) {
       projectOf(projectId).mergeRequests.set(mr.iid, mr);
     },

@@ -74,6 +74,9 @@ const project = z.looseObject({
   id: z.number().int(),
   path_with_namespace: z.string(),
   web_url: z.string(),
+  /** Null for an empty repository; absent from some answers. */
+  default_branch: z.string().nullable().optional(),
+  archived: z.boolean().optional(),
   /** The token user's own access (a member of the project, or of its group); absent for some. */
   permissions: z
     .looseObject({ project_access: access, group_access: access })
@@ -81,6 +84,34 @@ const project = z.looseObject({
     .optional(),
 });
 export type GitLabProject = z.infer<typeof project>;
+
+/** One row of `GET /projects?simple=true`; GitLab leaves `archived` out of the simple form. */
+const projectRow = z.looseObject({
+  id: z.number().int(),
+  path_with_namespace: z.string(),
+  default_branch: z.string().nullable().optional(),
+  archived: z.boolean().optional(),
+});
+const languagesAnswer = z.record(z.string(), z.number());
+const createdMergeRequest = z.looseObject({ web_url: z.string() });
+const variableAnswer = z.looseObject({ masked: z.boolean(), protected: z.boolean() });
+
+/** A project the token can set up, as the onboarding page lists it. */
+export interface GitLabProjectSummary {
+  /** The numeric project id, as a string (the form every other method takes). */
+  ref: string;
+  /** `path_with_namespace`. */
+  path: string;
+  /** Null for an empty repository. */
+  defaultBranch: string | null;
+  archived: boolean;
+}
+
+export interface GitLabFileAction {
+  action: 'create' | 'update';
+  path: string;
+  content: string;
+}
 
 /**
  * The token user's access level in the project (the higher of its project and group membership),
@@ -469,17 +500,26 @@ export class GitLabClient {
     body?: unknown,
     forbidden: string = GITLAB_FORBIDDEN.request,
   ): Promise<{ status: number; headers: IncomingHttpHeaders; json: unknown }> {
+    const { status, headers, body: answer } = await this.callRaw(method, path, body, forbidden);
+    if (answer.length === 0) return { status, headers, json: null };
+    try {
+      return { status, headers, json: JSON.parse(answer.toString('utf8')) };
+    } catch {
+      throw new GitLabError('bad_answer', "GitLab's answer was not understood", { status });
+    }
+  }
+
+  /** The same request with the answer's body as it came (a raw file is not JSON). */
+  private async callRaw(
+    method: GitLabMethod,
+    path: string,
+    body?: unknown,
+    forbidden: string = GITLAB_FORBIDDEN.request,
+  ): Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }> {
     const result = await this.sendFollowing(method, path, body);
     if (result.kind === 'failed') throw transportError(result);
     const { status, headers } = result;
-    if (status >= 200 && status < 300) {
-      if (result.body.length === 0) return { status, headers, json: null };
-      try {
-        return { status, headers, json: JSON.parse(result.body.toString('utf8')) };
-      } catch {
-        throw new GitLabError('bad_answer', "GitLab's answer was not understood", { status });
-      }
-    }
+    if (status >= 200 && status < 300) return { status, headers, body: result.body };
     const message = gitlabMessage(result.body, this.#connection.token);
     if (status === 429) {
       throw new GitLabError('rate_limited', 'GitLab answered HTTP 429', {
@@ -771,6 +811,169 @@ export class GitLabClient {
     } catch (err) {
       if (err instanceof GitLabError && (err.status === 400 || err.status === 404)) {
         return input.unchangedWithoutPipeline === true ? 'unchanged' : post(null);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * One page of the projects the token user is a Maintainer or Owner of and that are not archived
+   * (`GET /projects?membership=true&min_access_level=40&archived=false&simple=true`).
+   */
+  async listProjects(input: {
+    page: number;
+    perPage: number;
+    search?: string;
+  }): Promise<{ projects: GitLabProjectSummary[]; hasMore: boolean }> {
+    const query = new URLSearchParams({
+      membership: 'true',
+      min_access_level: '40',
+      archived: 'false',
+      simple: 'true',
+      per_page: String(input.perPage),
+      page: String(input.page),
+    });
+    if (input.search !== undefined && input.search !== '') query.set('search', input.search);
+    const { headers, json } = await this.call('GET', `/projects?${query.toString()}`);
+    const projects = this.parse(z.array(projectRow), json).map((p) => ({
+      ref: String(p.id),
+      path: p.path_with_namespace,
+      defaultBranch: p.default_branch ?? null,
+      archived: p.archived ?? false,
+    }));
+    const next = headers['x-next-page'];
+    return { projects, hasMore: typeof next === 'string' && /^[1-9]\d{0,8}$/.test(next) };
+  }
+
+  /** The project's languages, the one with the largest share first. */
+  async languages(ref: string): Promise<string[]> {
+    const { json } = await this.call('GET', `${this.projectPath(ref)}/languages`);
+    return Object.entries(this.parse(languagesAnswer, json))
+      .sort((a, b) => b[1] - a[1])
+      .map(([language]) => language);
+  }
+
+  /** A file's text on a branch (the raw endpoint), or null when the file or branch is not there. */
+  async fileText(ref: string, filePath: string, branch: string): Promise<string | null> {
+    try {
+      const { body } = await this.callRaw(
+        'GET',
+        `${this.projectPath(ref)}/repository/files/${encodeURIComponent(filePath)}/raw?ref=${encodeURIComponent(branch)}`,
+      );
+      return body.toString('utf8');
+    } catch (err) {
+      if (err instanceof GitLabError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  async branchExists(ref: string, name: string): Promise<boolean> {
+    try {
+      await this.call(
+        'GET',
+        `${this.projectPath(ref)}/repository/branches/${encodeURIComponent(name)}`,
+      );
+      return true;
+    } catch (err) {
+      if (err instanceof GitLabError && err.status === 404) return false;
+      throw err;
+    }
+  }
+
+  async createBranch(ref: string, name: string, from: string): Promise<void> {
+    await this.call('POST', `${this.projectPath(ref)}/repository/branches`, {
+      branch: name,
+      ref: from,
+    });
+  }
+
+  /** One commit on `branch` (`POST …/repository/commits`) with all the file actions. */
+  async commitFiles(
+    ref: string,
+    input: { branch: string; message: string; actions: GitLabFileAction[] },
+  ): Promise<void> {
+    await this.call('POST', `${this.projectPath(ref)}/repository/commits`, {
+      branch: input.branch,
+      commit_message: input.message,
+      actions: input.actions.map((a) => ({
+        action: a.action,
+        file_path: a.path,
+        content: a.content,
+      })),
+    });
+  }
+
+  async openMergeRequest(
+    ref: string,
+    input: { source: string; target: string; title: string; description: string },
+  ): Promise<{ url: string }> {
+    const { json } = await this.call('POST', `${this.projectPath(ref)}/merge_requests`, {
+      source_branch: input.source,
+      target_branch: input.target,
+      title: input.title,
+      description: input.description,
+    });
+    return { url: this.parse(createdMergeRequest, json).web_url };
+  }
+
+  /** An open merge request from `source`, or null. */
+  async findOpenMergeRequest(ref: string, source: string): Promise<{ url: string } | null> {
+    const query = new URLSearchParams({ state: 'opened', source_branch: source });
+    const { json } = await this.call(
+      'GET',
+      `${this.projectPath(ref)}/merge_requests?${query.toString()}`,
+    );
+    const found = this.parse(z.array(createdMergeRequest), json)[0];
+    return found ? { url: found.web_url } : null;
+  }
+
+  /** What a CI/CD variable is (never its value), or null when the project has none by that key. */
+  async variable(
+    ref: string,
+    key: string,
+  ): Promise<{ masked: boolean; protected: boolean } | null> {
+    try {
+      const { json } = await this.call(
+        'GET',
+        `${this.projectPath(ref)}/variables/${encodeURIComponent(key)}`,
+      );
+      const found = this.parse(variableAnswer, json);
+      return { masked: found.masked, protected: found.protected };
+    } catch (err) {
+      if (err instanceof GitLabError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * Creates the CI/CD variable (`POST …/variables`) or, when {@link variable} finds it, updates it
+   * (`PUT …/variables/:key`); `masked` and `protected` are always sent. The value goes only into
+   * the request: GitLab's message is cut of it should it ever echo it back.
+   */
+  async putVariable(
+    ref: string,
+    input: { key: string; value: string; masked: boolean; protected: boolean },
+  ): Promise<void> {
+    const exists = (await this.variable(ref, input.key)) !== null;
+    const { key, ...rest } = input;
+    try {
+      if (exists) {
+        await this.call(
+          'PUT',
+          `${this.projectPath(ref)}/variables/${encodeURIComponent(key)}`,
+          rest,
+        );
+      } else {
+        await this.call('POST', `${this.projectPath(ref)}/variables`, input);
+      }
+    } catch (err) {
+      if (err instanceof GitLabError && err.gitlabMessage?.includes(input.value)) {
+        throw new GitLabError(err.kind, err.message, {
+          status: err.status,
+          retryAfterSeconds: err.retryAfterSeconds,
+          reason: err.reason,
+          gitlabMessage: err.gitlabMessage.split(input.value).join('[value]'),
+        });
       }
       throw err;
     }
