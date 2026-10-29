@@ -598,7 +598,7 @@ export function createQualorAnalyzer(
     }
     // The rules analyse application code: test files (`tests.include`) are not targets.
     const inScope = ofLanguages.filter((f) => f.kind === 'main');
-    if (inScope.length === 0) return { skip: 'skipped (no main files in scope)' };
+    if (inScope.length === 0) return { skip: 'no main files in scope' };
     const relOf = (f: ScopeFile) => path.relative(ctx.root, f.absPath).split(path.sep).join('/');
     const tests = new Set(
       ofLanguages.filter((f) => f.kind === 'test').map((f) => pathKey(relOf(f))),

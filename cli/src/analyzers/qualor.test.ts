@@ -14,6 +14,7 @@ import { expectedKeys, fakeContext, findingKeys, normalizeRecorded } from '../..
 import { FIXTURES_DIR } from '../../test/fixtures';
 import { engineSarif, writeEnginePack } from '../../test/taint';
 import { useTempDirs, writeTree } from '../../test/tmp';
+import { runAnalyzers } from './runner';
 import { MAX_ANALYZED_BYTES, type ScopeFile } from '../discovery/discover';
 import { silentLogger } from '../log';
 import { fileLines, normalizeCaptures } from './normalize';
@@ -355,7 +356,7 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
         files: [{ ...scopeFile(root, 'src/a.test.ts', 'typescript'), kind: 'test' }],
       }),
     );
-    expect(prep).toEqual({ skip: 'skipped (no main files in scope)' });
+    expect(prep).toEqual({ skip: 'no main files in scope' });
   });
 
   it('drops OpenGrep results on test files when it selects the files itself', async () => {
@@ -372,8 +373,8 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
       }),
     );
     if (!('run' in prep) || prep.run.transform === undefined) throw new Error(JSON.stringify(prep));
-    const at = (uri: string) => ({
-      ruleId: 'python.sql-injection',
+    type Result = { locations: { physicalLocation: { artifactLocation: { uri: string } } }[] };
+    const at = (uri: string): Result => ({
       locations: [{ physicalLocation: { artifactLocation: { uri } } }],
     });
     const out = prep.run.transform(
@@ -385,11 +386,63 @@ describe('qualorAnalyzer.prepare (config.md §6, plan 6B-1)', () => {
       },
       '',
     ) as { runs: { results: unknown[] }[] };
-    const resultPath = (r: unknown) =>
-      (r as typeof at extends (u: string) => infer R ? R : never).locations[0]!.physicalLocation
-        .artifactLocation.uri;
-    expect(out.runs[0]!.results.map((r) => resultPath(r))).toEqual(['src/app.ts']);
+    const uris = (out.runs[0]!.results as Result[]).map(
+      (r) => r.locations[0]!.physicalLocation.artifactLocation.uri,
+    );
+    expect(uris).toEqual(['src/app.ts']);
   });
+
+  it('logs the skip once when every file of its languages is a test file', async () => {
+    const root = tmp();
+    const lines: string[] = [];
+    const log = { ...silentLogger, info: (m: string) => lines.push(m) };
+    await runAnalyzers([createQualorAnalyzer({ defaultDir: writePack(tmp()) })], {
+      root,
+      files: [{ ...scopeFile(root, 'src/a.test.ts', 'typescript'), kind: 'test' }],
+      config: parseConfig({ version: 1 }),
+      log,
+      concurrency: 1,
+    });
+    expect(lines).toEqual(['qualor: skipped (no main files in scope)']);
+  });
+
+  it.skipIf(process.platform !== 'win32')(
+    'compares result paths with the test files case-insensitively on Windows',
+    async () => {
+      const root = tmp();
+      const prep = await createQualorAnalyzer({
+        defaultDir: writePack(tmp()),
+        maxTargetArgBytes: 1,
+      }).prepare(
+        context(root, {
+          files: [
+            scopeFile(root, 'src/app.ts', 'typescript'),
+            { ...scopeFile(root, 'src/App.test.ts', 'typescript'), kind: 'test' },
+          ],
+        }),
+      );
+      if (!('run' in prep) || prep.run.transform === undefined) throw new Error('no run');
+      const out = prep.run.transform(
+        {
+          version: '2.1.0',
+          runs: [
+            {
+              tool: { driver: { rules: [] } },
+              results: [
+                {
+                  locations: [
+                    { physicalLocation: { artifactLocation: { uri: 'SRC/app.TEST.ts' } } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        '',
+      ) as { runs: { results: unknown[] }[] };
+      expect(out.runs[0]!.results).toEqual([]);
+    },
+  );
 
   it("unpacks OpenGrep's cache first, under the lock every qualor scan sharing the cache takes", async () => {
     const root = tmp();

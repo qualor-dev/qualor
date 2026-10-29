@@ -9,9 +9,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
 ### Changed
 
 - The scan log names each analyzer that ran with its duration and finding count.
-- Qualor's security rules analyse main code only, so scans are faster and the rules report nothing
-  in test files (the files `tests.include` names). Open Qualor findings in test files close on the
-  next analysis.
+- Qualor's security rules analyse main code only, so scans are faster. They report nothing in test
+  files, the files `tests.include` names. Open Qualor findings in test files close on the next
+  analysis.
 
 ## [0.12.1] - 2026-10-29
 
