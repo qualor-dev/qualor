@@ -154,6 +154,8 @@ const installationSummary = z.looseObject({
   id: z.number().int(),
   account: z.looseObject({ login: z.string().optional() }).nullish(),
   permissions: z.unknown().optional(),
+  /** Set (an ISO date) while GitHub has the installation suspended. */
+  suspended_at: z.string().nullish(),
 });
 const installationRepositoriesAnswer = z.looseObject({
   repositories: z.array(
@@ -385,6 +387,8 @@ export interface GitHubInstallationAccess {
 }
 /** A repository an installation can see (installations.ts). */
 export interface GitHubRepoSummary {
+  /** The installation the repository was listed under: its `workflowsWrite`/`secretsWrite` apply. */
+  installationId: number;
   /** `owner/repo`. */
   ref: string;
   defaultBranch: string;
@@ -1009,15 +1013,17 @@ export class GitHubClient {
       `/app/installations?per_page=${GITHUB_PAGE_SIZE}&page=${this.pageNumber(page)}`,
       'app',
     );
-    const items = this.parse(z.array(installationSummary), json).map((found) => {
-      const { permissions } = installationAccessOf(found);
-      return {
-        installationId: found.id,
-        account: found.account?.login ?? '',
-        workflowsWrite: permissions['workflows'] === 'write',
-        secretsWrite: permissions['secrets'] === 'write',
-      };
-    });
+    const items = this.parse(z.array(installationSummary), json)
+      .filter((found) => !found.suspended_at)
+      .map((found) => {
+        const { permissions } = installationAccessOf(found);
+        return {
+          installationId: found.id,
+          account: found.account?.login ?? '',
+          workflowsWrite: permissions['workflows'] === 'write',
+          secretsWrite: permissions['secrets'] === 'write',
+        };
+      });
     return { items, hasMore: this.more(headers) };
   }
 
@@ -1052,6 +1058,7 @@ export class GitHubClient {
       `/installation/repositories?per_page=${GITHUB_PAGE_SIZE}&page=${this.pageNumber(page)}`,
     );
     const items = this.parse(installationRepositoriesAnswer, json).repositories.map((r) => ({
+      installationId,
       ref: r.full_name,
       defaultBranch: r.default_branch,
       language: r.language ?? null,

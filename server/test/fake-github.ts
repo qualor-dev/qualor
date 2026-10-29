@@ -1182,6 +1182,9 @@ export async function createFakeGitHub(
             app_id: appId,
             app_slug: slug,
             account: { login: first.owner, id: 9001, type: 'Organization' },
+            suspended_at: [...repos.values()].some((r) => r.installationId === id && r.suspended)
+              ? '2026-10-01T00:00:00Z'
+              : null,
             ...installationOf(id),
           };
         }),

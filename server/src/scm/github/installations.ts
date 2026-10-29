@@ -14,7 +14,8 @@ const MAX_INSTALLATION_PAGES = 10;
  * lists the installations; each installation's repositories come with a token that asks for
  * Metadata (read) only. The repositories of the installations are one list in the order GitHub
  * answers them, `perPage` to a page; reading stops as soon as the page and one more are known.
- * `installations` is every installation, with whether it grants Workflows and Secrets (write), which
+ * Suspended installations are not listed; one whose token GitHub refuses (403, 404) is left out of
+ * both lists. `installations` is every other installation, with whether it grants Workflows and Secrets (write), which
  * CI setup needs. Errors are `ScmError`s, as for every GitHub call.
  */
 export async function listInstallationRepositories(
@@ -41,20 +42,33 @@ export async function listInstallationRepositories(
   const start = (opts.page - 1) * opts.perPage;
   const want = start + opts.perPage + 1;
   const found: GitHubRepoSummary[] = [];
+  /** Installations whose repositories could not be read (a token GitHub refused): left out. */
+  const unavailable = new Set<number>();
   collect: for (const installation of installations) {
-    for (let page = 1; ; page++) {
-      const { items, hasMore } = await client.installationRepositories(
-        installation.installationId,
-        page,
-      );
-      found.push(...items);
-      if (found.length >= want) break collect;
-      if (!hasMore) break;
+    const own: GitHubRepoSummary[] = [];
+    try {
+      for (let page = 1; ; page++) {
+        const { items, hasMore } = await client.installationRepositories(
+          installation.installationId,
+          page,
+        );
+        own.push(...items);
+        if (found.length + own.length >= want || !hasMore) break;
+      }
+    } catch (err) {
+      // One broken installation (removed, or without a permission) must not hide the others.
+      if (err instanceof ScmError && (err.kind === 'auth' || err.kind === 'not_found')) {
+        unavailable.add(installation.installationId);
+        continue;
+      }
+      throw err;
     }
+    found.push(...own);
+    if (found.length >= want) break collect;
   }
   return {
     repositories: found.slice(start, start + opts.perPage),
-    installations,
+    installations: installations.filter((i) => !unavailable.has(i.installationId)),
     hasMore: found.length > start + opts.perPage,
   };
 }

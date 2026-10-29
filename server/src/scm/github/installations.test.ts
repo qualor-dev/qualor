@@ -60,12 +60,14 @@ describe('listInstallationRepositories', () => {
     expect(first.repositories).toHaveLength(100);
     expect(first.hasMore).toBe(true);
     expect(first.repositories[0]).toEqual({
+      installationId: 1,
       ref: 'acme/r001',
       defaultBranch: 'trunk',
       language: 'Go',
       archived: true,
     });
     expect(first.repositories[1]).toEqual({
+      installationId: 1,
       ref: 'acme/r002',
       defaultBranch: 'main',
       language: null,
@@ -120,6 +122,49 @@ describe('listInstallationRepositories', () => {
       installations: [],
       hasMore: false,
     });
+  });
+
+  it('tags each repository with its installation', async () => {
+    const { fake: f, deps, row, runtime } = await setup();
+    f.addRepository({ id: 1, owner: 'acme', name: 'a', installationId: 11 });
+    f.addRepository({ id: 2, owner: 'beta', name: 'b', installationId: 22 });
+    const { repositories } = await listInstallationRepositories(row, deps, runtime, {
+      page: 1,
+      perPage: 100,
+    });
+    expect(repositories.map((r) => [r.ref, r.installationId])).toEqual([
+      ['acme/a', 11],
+      ['beta/b', 22],
+    ]);
+  });
+
+  it('skips a suspended installation and lists the other', async () => {
+    const { fake: f, deps, row, runtime } = await setup();
+    f.addRepository({ id: 1, owner: 'acme', name: 'a', installationId: 11, suspended: true });
+    f.addRepository({ id: 2, owner: 'beta', name: 'b', installationId: 22 });
+    const result = await listInstallationRepositories(row, deps, runtime, {
+      page: 1,
+      perPage: 100,
+    });
+    expect(result.repositories.map((r) => r.ref)).toEqual(['beta/b']);
+    expect(result.installations.map((i) => i.installationId)).toEqual([22]);
+    expect(f.requests.some((r) => r.path.includes('/installations/11/'))).toBe(false);
+  });
+
+  it.each([403, 404])('skips an installation whose token request fails with %i', async (status) => {
+    const { fake: f, deps, row, runtime } = await setup();
+    f.addRepository({ id: 1, owner: 'acme', name: 'a', installationId: 11 });
+    f.addRepository({ id: 2, owner: 'beta', name: 'b', installationId: 22 });
+    f.inject('POST', /\/app\/installations\/11\/access_tokens$/, {
+      status,
+      body: { message: 'no' },
+    });
+    const result = await listInstallationRepositories(row, deps, runtime, {
+      page: 1,
+      perPage: 100,
+    });
+    expect(result.repositories.map((r) => r.ref)).toEqual(['beta/b']);
+    expect(result.installations.map((i) => i.installationId)).toEqual([22]);
   });
 
   it('maps a refused App to a ScmError', async () => {
