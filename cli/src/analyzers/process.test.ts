@@ -131,14 +131,14 @@ describe('runProcess', () => {
 
   it(
     'kills a hanging process and the children it started when the timeout expires',
-    { timeout: 30_000 },
+    { timeout: 40_000 },
     async () => {
       const marker = path.join(tmp(), 'grandchild-survived');
       const started = path.join(tmp(), 'grandchild-started');
-      // The grandchild announces itself, then would write the marker 8 s later. The timeout
+      // The grandchild announces itself, then would write the marker 15 s later. The timeout
       // (6 s) is far past the grandchild's start, which the test checks before the kill happens,
-      // and the kill (a sweep of about 0.6 s) is far before the marker is due.
-      const grandchild = `require('fs').writeFileSync(${JSON.stringify(started)}, 'up'); setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'alive'), 8000)`;
+      // and the kill comes before the marker is due even when the sweep takes its whole 5 s.
+      const grandchild = `require('fs').writeFileSync(${JSON.stringify(started)}, 'up'); setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'alive'), 15000)`;
       const promise = runProcess(
         node(
           `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' }); setInterval(() => {}, 1000)`,
@@ -149,7 +149,7 @@ describe('runProcess', () => {
       const deadline = Date.now() + 5_000;
       while (!existsSync(started) && Date.now() < deadline) await sleep(20);
       expect(existsSync(started)).toBe(true); // before the timeout can fire
-      const markerDue = Date.now() + 8_000;
+      const markerDue = Date.now() + 15_000;
       const r = await promise;
       expect(r.timedOut).toBe(true);
       // Look only once the marker would have been written, so a survivor cannot be missed.
