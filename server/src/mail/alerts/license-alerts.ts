@@ -34,7 +34,8 @@ type AlertState = z.infer<typeof stateSchema>;
 
 /**
  * E1 spec: `30d` when 7 < days ≤ 30, `7d` when 1 < days ≤ 7, `1d` when 0 < days ≤ 1, `grace`,
- * `expired`; none otherwise (no licence, an invalid one, or more than 30 days left).
+ * `expired`; none otherwise (no licence, an invalid one, or more than 30 days left). A trial
+ * has no `30d` and no `grace`: it gets `7d`, `1d` and `expired` only.
  */
 export function licenseAlertBucket(state: LicenseState, now: Date): LicenseAlertBucket | null {
   if (state.state === 'grace') return 'grace';
@@ -42,7 +43,7 @@ export function licenseAlertBucket(state: LicenseState, now: Date): LicenseAlert
   if (state.state !== 'active' || state.license === null) return null;
   const days = (Date.parse(state.license.expires) - now.getTime()) / DAY_MS;
   if (days > 30 || days <= 0) return null;
-  if (days > 7) return '30d';
+  if (days > 7) return state.license.trial === true ? null : '30d';
   if (days > 1) return '7d';
   return '1d';
 }
@@ -85,6 +86,7 @@ export async function checkLicenseAlerts(
           variant: bucket,
           licensee: license.customer,
           plan: licensePlan(license.features),
+          trial: license.trial === true,
           expires: new Date(license.expires),
           graceEndsAt: state.graceEndsAt ?? graceEndsAt(license),
           now,

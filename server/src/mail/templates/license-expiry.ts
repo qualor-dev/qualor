@@ -17,6 +17,8 @@ export interface LicenseExpiryInput {
   graceEndsAt: Date;
   now: Date;
   publicUrl: string | null;
+  /** A trial key: no 30-day or grace wording; buying or extending goes through license@qualor.dev. */
+  trial: boolean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -35,8 +37,30 @@ interface LicenseWording {
   badge: NonNullable<LayoutInput['badge']>;
 }
 
+const TRIAL_MAIL = html`<a href="mailto:license@qualor.dev">license@qualor.dev</a>`;
+
+/** The words of a trial: it ends at `expires`, with no grace period. */
+function trialWording(input: LicenseExpiryInput, expires: string): LicenseWording {
+  const buy = html`<p style="margin:0">To buy a licence or extend the trial, write to ${TRIAL_MAIL}.</p>`;
+  if (input.variant === 'expired') {
+    return {
+      subject: `Your Qualor ${input.plan} trial has ended`,
+      intro: html`<p style="margin:0">The Qualor ${input.plan} trial of ${input.licensee} ended on ${expires}. Qualor runs as the community edition: ${WHAT_STOPS}. Nothing was deleted.</p>${buy}`,
+      title: 'The trial has ended',
+      badge: { text: 'Ended', tone: 'bad' },
+    };
+  }
+  return {
+    subject: `Your Qualor ${input.plan} trial ends in ${days(daysUntil(input.expires, input.now))}`,
+    intro: html`<p style="margin:0">The Qualor ${input.plan} trial of ${input.licensee} ends on ${expires}. After that Qualor runs as the community edition: ${WHAT_STOPS}.</p>${buy}`,
+    title: `The trial ends on ${expires}`,
+    badge: { text: 'Ends soon', tone: 'warn' },
+  };
+}
+
 /** The words of each stage: before expiry, in the grace period, and after it. */
 function wording(input: LicenseExpiryInput, expires: string, graceEnds: string): LicenseWording {
+  if (input.trial) return trialWording(input, expires);
   if (input.variant === '30d' || input.variant === '7d' || input.variant === '1d') {
     return {
       subject: `Your Qualor licence expires in ${days(daysUntil(input.expires, input.now))}`,
@@ -77,15 +101,17 @@ export function renderLicenseExpiry(input: LicenseExpiryInput): RenderedMail {
       facts: [
         ['Licensee', input.licensee],
         ['Plan', input.plan],
-        ['Expires', expires],
-        ['Grace ends', graceEnds],
+        [input.trial ? 'Trial ends' : 'Expires', expires],
+        ...(input.trial ? [] : ([['Grace ends', graceEnds]] as [string, string][])),
       ],
       cta: {
         label: 'Open licence settings',
         url: publicLink(input.publicUrl, '/settings/license'),
         fallbackText: 'Open Settings → Licence in Qualor.',
       },
-      after: html`<p style="margin:0">Apply a renewed key in Settings → Licence and restart the server.</p>`,
+      after: input.trial
+        ? html`<p style="margin:0">Apply a new key in Settings → Licence and restart the server.</p>`
+        : html`<p style="margin:0">Apply a renewed key in Settings → Licence and restart the server.</p>`,
       reason: adminAlertReason(host),
       instanceHost: host,
     }),

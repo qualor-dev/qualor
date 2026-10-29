@@ -25,6 +25,7 @@ export function sampleMails(
       graceEndsAt: new Date(Date.parse(expires) + 14 * DAY_MS),
       now: SAMPLE_NOW,
       publicUrl,
+      trial: false,
     });
   return [
     {

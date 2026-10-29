@@ -99,6 +99,7 @@ describe('the E1 messages (E1 spec, Templates)', () => {
       expires: new Date('2026-10-18T00:00:00Z'),
       graceEndsAt: new Date('2026-11-01T00:00:00Z'),
       now: new Date('2026-10-13T09:00:00Z'),
+      trial: false,
       publicUrl: null,
     });
     expect(licence.html).not.toContain('<script>');
