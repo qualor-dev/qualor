@@ -38,15 +38,22 @@ function taskkillPath(): string {
 export interface ProcessRow {
   pid: number;
   parentPid: number;
+  /** Creation time in ms; NaN when it could not be read. */
+  created: number;
 }
 
 /**
  * Every process below the given roots in a process table, breadth first. The roots themselves are
  * not returned. A pid met twice (a cycle, a pid reused as its own parent) is visited once.
+ * `ParentProcessId` is not updated when a parent exits, so it can name a pid that a root got
+ * later: a process counts only when it was created no earlier than its parent, and one whose
+ * time (or its parent's) is unknown does not count.
  */
 export function descendantsOf(roots: readonly number[], table: readonly ProcessRow[]): number[] {
   const children = new Map<number, number[]>();
+  const created = new Map<number, number>();
   for (const row of table) {
+    created.set(row.pid, row.created);
     if (row.pid === row.parentPid) continue;
     const list = children.get(row.parentPid);
     if (list === undefined) children.set(row.parentPid, [row.pid]);
@@ -56,8 +63,12 @@ export function descendantsOf(roots: readonly number[], table: readonly ProcessR
   const found: number[] = [];
   const queue = [...roots];
   for (let i = 0; i < queue.length; i++) {
-    for (const child of children.get(queue[i] as number) ?? []) {
+    const parent = queue[i] as number;
+    const parentCreated = created.get(parent) ?? Number.NaN;
+    for (const child of children.get(parent) ?? []) {
       if (seen.has(child)) continue;
+      const childCreated = created.get(child) ?? Number.NaN;
+      if (!(childCreated >= parentCreated)) continue; // false for NaN too
       seen.add(child);
       found.push(child);
       queue.push(child);
@@ -93,7 +104,7 @@ function sweepDescendants(roots: readonly number[]): number[] {
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+        'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $(if ($_.CreationDate) { ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() })" }',
       ],
       {
         encoding: 'utf8',
@@ -105,8 +116,13 @@ function sweepDescendants(roots: readonly number[]): number[] {
     if (r.status !== 0 || typeof r.stdout !== 'string') return [];
     const table: ProcessRow[] = [];
     for (const line of r.stdout.split(/\r?\n/)) {
-      const m = /^(\d+) (\d+)$/.exec(line.trim());
-      if (m !== null) table.push({ pid: Number(m[1]), parentPid: Number(m[2]) });
+      const m = /^(\d+) (\d+)(?: (\d+))?$/.exec(line.trim());
+      if (m !== null)
+        table.push({
+          pid: Number(m[1]),
+          parentPid: Number(m[2]),
+          created: m[3] === undefined ? Number.NaN : Number(m[3]),
+        });
     }
     return descendantsOf(roots, table);
   } catch {

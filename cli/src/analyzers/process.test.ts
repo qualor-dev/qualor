@@ -17,32 +17,58 @@ const node = (code: string, timeoutMs = 10_000) => ({
 });
 
 describe('descendantsOf', () => {
-  const row = (pid: number, parentPid: number) => ({ pid, parentPid });
+  const row = (pid: number, parentPid: number, created = 100) => ({ pid, parentPid, created });
 
   it('follows a chain', () => {
-    expect(descendantsOf([1], [row(2, 1), row(3, 2), row(4, 3), row(9, 8)])).toEqual([2, 3, 4]);
-  });
-
-  it('finds siblings and their children, breadth first', () => {
-    expect(descendantsOf([1], [row(2, 1), row(3, 1), row(4, 2), row(5, 3)])).toEqual([2, 3, 4, 5]);
-  });
-
-  it('serves several roots and never returns a root', () => {
-    expect(descendantsOf([1, 10], [row(2, 1), row(11, 10), row(12, 11), row(1, 12)])).toEqual([
-      2, 11, 12,
+    expect(descendantsOf([1], [row(1, 0), row(2, 1), row(3, 2), row(4, 3), row(9, 8)])).toEqual([
+      2, 3, 4,
     ]);
   });
 
+  it('finds siblings and their children, breadth first', () => {
+    expect(descendantsOf([1], [row(1, 0), row(2, 1), row(3, 1), row(4, 2), row(5, 3)])).toEqual([
+      2, 3, 4, 5,
+    ]);
+  });
+
+  it('serves several roots and never returns a root', () => {
+    expect(
+      descendantsOf(
+        [1, 10],
+        [row(1, 0), row(10, 0), row(2, 1), row(11, 10), row(12, 11), row(1, 12)],
+      ),
+    ).toEqual([2, 11, 12]);
+  });
+
   it('survives a cycle', () => {
-    expect(descendantsOf([1], [row(2, 1), row(3, 2), row(2, 3)])).toEqual([2, 3]);
+    expect(descendantsOf([1], [row(1, 0), row(2, 1), row(3, 2), row(2, 3)])).toEqual([2, 3]);
   });
 
   it('ignores a pid that is its own parent', () => {
-    expect(descendantsOf([1], [row(2, 1), row(2, 2), row(5, 5)])).toEqual([2]);
+    expect(descendantsOf([1], [row(1, 0), row(2, 1), row(2, 2), row(5, 5)])).toEqual([2]);
   });
 
   it('does not find an orphan whose parent is gone', () => {
-    expect(descendantsOf([1], [row(2, 1), row(7, 99)])).toEqual([2]);
+    expect(descendantsOf([1], [row(1, 0), row(2, 1), row(7, 99)])).toEqual([2]);
+  });
+
+  it('skips a stale process that only carries a root pid as its parent', () => {
+    // 7 is older than root 1, so its parent pid 1 belonged to someone else; 8 hangs under 7.
+    const table = [row(1, 0, 500), row(7, 1, 400), row(8, 7, 600), row(2, 1, 550)];
+    expect(descendantsOf([1], table)).toEqual([2]);
+  });
+
+  it('counts a process created at the same time as its parent', () => {
+    expect(descendantsOf([1], [row(1, 0, 500), row(2, 1, 500), row(3, 2, 500)])).toEqual([2, 3]);
+  });
+
+  it('skips a process whose creation time is unknown, and what hangs under it', () => {
+    const table = [row(1, 0, 500), row(2, 1, Number.NaN), row(3, 2, 600), row(4, 1, 600)];
+    expect(descendantsOf([1], table)).toEqual([4]);
+  });
+
+  it('finds nothing under a root missing from the snapshot', () => {
+    expect(descendantsOf([1], [row(2, 1, 600)])).toEqual([]);
   });
 
   it('returns nothing for an unknown root', () => {
