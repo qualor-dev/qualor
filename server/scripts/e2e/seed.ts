@@ -109,6 +109,16 @@ const ENGINES: Report['engines'] = [
         languages: ['typescript', 'javascript'],
       },
       {
+        id: '@typescript-eslint/no-floating-promises',
+        name: 'Require Promise-like statements to be handled appropriately',
+        shortDescription:
+          'A Promise that is neither awaited nor given a rejection handler hides its failure.',
+        helpUri: 'https://typescript-eslint.io/rules/no-floating-promises/',
+        defaultSeverity: 'medium',
+        quality: 'reliability',
+        languages: ['typescript', 'javascript'],
+      },
+      {
         id: 'eqeqeq',
         name: 'Require === and !==',
         shortDescription: 'Compare with `===` and `!==`, never `==` or `!=`.',
@@ -407,10 +417,11 @@ const PAYMENTS_SECOND: FindingSpec[] = [
 const PAYMENTS_THIRD: FindingSpec[] = [
   {
     engine: 'eslint',
-    rule: '@next/next/no-img-element',
+    rule: '@typescript-eslint/no-floating-promises',
     path: 'src/refunds/limits.ts',
     line: 44,
-    message: XSS_MESSAGE,
+    message:
+      'Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.',
     severity: 'high',
   },
   {
@@ -690,6 +701,16 @@ export async function seedDemo(base: string, credentials: SeedCredentials): Prom
           path: 'src/cart.js',
           line: 22,
           message: 'Unexpected console statement.',
+        },
+        // The markup in this message must stay text (ui/e2e/issues.spec.ts). It lives on Web
+        // Shop so that the screens of the Payments API project read like a real project.
+        {
+          engine: 'eslint',
+          rule: '@next/next/no-img-element',
+          path: 'src/cart.js',
+          line: 40,
+          message: XSS_MESSAGE,
+          severity: 'high',
         },
       ],
     }),

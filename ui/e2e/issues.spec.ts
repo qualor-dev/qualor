@@ -1,5 +1,8 @@
 import { expect, expectAccessible, test } from './fixtures';
-import { AI_FINDING, MERGE_REQUEST, PAYMENTS, XSS_MESSAGE, XSS_RULE_TEXT } from './seed-data';
+import { AI_FINDING, MERGE_REQUEST, PAYMENTS, SHOP, XSS_MESSAGE, XSS_RULE_TEXT } from './seed-data';
+
+const FLOATING_MESSAGE =
+  'Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/projects');
@@ -9,9 +12,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the issues list shows server text as text, with facets', async ({ page }) => {
-  // The message carries an <img onerror>: it must be text, and no dialog may open (fixtures.ts).
-  await expect(page.getByRole('link', { name: XSS_MESSAGE })).toBeVisible();
-  await expect(page.locator('tbody img')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: FLOATING_MESSAGE })).toBeVisible();
   const severity = page.getByRole('group', { name: 'Severity' });
   await expect(severity.getByText('Blocker')).toBeVisible();
   await expectAccessible(page);
@@ -51,6 +52,12 @@ test('a crafted URL is clamped, never sent as a request the server rejects', asy
 test('an issue: rule text stays text, a status change needs its comment, history records it', async ({
   page,
 }) => {
+  // The message carries an <img onerror>: it must be text, and no dialog may open (fixtures.ts).
+  await page.goto('/projects');
+  await page.getByRole('link', { name: SHOP.name }).click();
+  await page.getByRole('link', { name: 'All open issues' }).click();
+  await expect(page.getByRole('link', { name: XSS_MESSAGE })).toBeVisible();
+  await expect(page.locator('tbody img')).toHaveCount(0);
   await page.getByRole('link', { name: XSS_MESSAGE }).click();
   await expect(page).toHaveTitle('Issue · Qualor');
   await expect(page.getByRole('heading', { level: 2 })).toHaveText(XSS_MESSAGE);
@@ -107,9 +114,9 @@ test('checking an issue never moves the list, and focus never hides under the ba
 
 test('the right column of an issue keeps its end in reach on a short screen', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 800 });
-  await page.getByRole('link', { name: XSS_MESSAGE }).click();
+  await page.getByRole('link', { name: FLOATING_MESSAGE }).click();
   await expect(page).toHaveTitle('Issue · Qualor');
-  await expect(page.getByRole('heading', { level: 2 })).toHaveText(XSS_MESSAGE);
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText(FLOATING_MESSAGE);
   // A long story on the left keeps the right column stuck while the page scrolls.
   await page.evaluate(() => {
     const spacer = document.createElement('div');
