@@ -29,6 +29,9 @@ so development servers do not report.
 - `pnpm fixtures`: run the fixture suite
 - `pnpm ui:e2e`, `pnpm ui:screenshots`: the UI's Playwright tests, and one screenshot per screen
   (see `ui/README.md`)
+- `pnpm site:screens`: the qualor.dev site's four product screens, with a real answer from OpenAI for
+  the AI one. It needs `LIVE_OPENAI_API_KEY` and writes to `SITE_SCREENS_OUT` (default
+  `../qualor.dev/src/assets/screens`)
 - `pnpm helm:test`, `pnpm helm:smoke`: the Helm chart's render tests, and an install on k3s in
   Docker
 - `pnpm release:test`, `pnpm release:dry-run`, `pnpm release:verify`: the release tools' tests, a

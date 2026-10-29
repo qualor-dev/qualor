@@ -70,6 +70,7 @@
     "openapi": "pnpm --filter @qualor/server openapi",
     "ui:build": "pnpm --filter @qualor/ui build",
     "ui:e2e": "pnpm --filter @qualor/ui e2e",
+    "site:screens": "tsx tools/ui/site-screens.ts",
     "ui:screenshots": "pnpm --filter @qualor/ui screenshots",
     "deploy:smoke": "tsx tools/deploy/smoke.ts",
     "dogfood": "tsx tools/deploy/dogfood.ts",

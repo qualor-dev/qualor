@@ -103,6 +103,8 @@ export interface ProviderSetup {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /** The API the model speaks; left out, the server's default (Chat Completions) stays. */
+  api?: 'chat_completions' | 'responses';
 }
 
 /**
