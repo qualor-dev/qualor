@@ -959,7 +959,10 @@ export const profileRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
           active: z.enum(['true', 'false']).optional(),
           q: ruleQuery,
           /** `default`: ruling P4's set plus the rules set in the chain; `all`: all it decides. */
-          scope: z.enum(['default', 'all']).default('default'),
+          scope: z.enum(['default', 'all']).default('default').meta({
+            description:
+              "Which rules the list holds, not a rule's scope: `default` the rules the profile's language covers and those set in its chain, `all` every rule it could decide",
+          }),
         }),
         response: {
           200: z.object({ items: z.array(profileRuleSchema), nextCursor: z.string().nullable() }),

@@ -7949,6 +7949,7 @@ export interface paths {
                     cursor?: string;
                     active?: "true" | "false";
                     q?: string;
+                    /** @description Which rules the list holds, not a rule's scope: `default` the rules the profile's language covers and those set in its chain, `all` every rule it could decide */
                     scope?: "default" | "all";
                 };
                 header?: never;
