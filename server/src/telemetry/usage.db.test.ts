@@ -221,6 +221,21 @@ describe('telemetry schema 3: feature use (telemetry.md, 0.13)', () => {
     expect(JSON.stringify(p)).not.toMatch(NAMED);
   });
 
+  it('flags e-mail when the environment configures SMTP though nothing was sent', async () => {
+    const payload = await collectTelemetry({
+      db: h.ctx.db,
+      edition: { edition: () => 'community' },
+      installationId: await installationId(h.ctx.db),
+      database: 'external',
+      env: {},
+      dockerEnvExists: false,
+      smtpConfigured: true,
+    });
+    if (payload.schema !== 3) throw new Error(`a report of schema ${payload.schema}`);
+    expect(payload.features.email).toBe(true);
+    expect(payload.integrations.email.sent30d).toBe(0);
+  });
+
   it('flags e-mail when a server is configured though nothing was sent', async () => {
     await h.ctx.db.insert(instanceSettings).values({
       key: MAIL_SETTINGS_KEY,

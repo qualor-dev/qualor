@@ -96,7 +96,7 @@ The whole report, as an example:
 | `aiReview` | how AI review is used, in counts and flags only: see the next table |
 | `autoFix30d` | the automatic fix suggestions made in the last 30 days, and those posted to the merge request |
 | `integrations` | MCP, chat and e-mail use: see the next table |
-| `reports30d` | the compliance exports that finished (`complianceReady`) or failed in the last 30 days, and the SonarQube status imports |
+| `reports30d` | the compliance exports that finished (`complianceReady`) or failed in the last 30 days, and the SonarQube status imports (counted from audit events, so it reads low once old events are purged) |
 | `licensePolicyOrgs` | how many organisations have a dependency licence policy. Never the licences in it |
 | `mergeRequests30d` | the analyses of merge requests (GitLab) and pull requests (GitHub) in the last 30 days |
 | `ci` | the analyses of the last 30 days that ran in GitLab CI, in GitHub Actions or elsewhere |
@@ -119,9 +119,10 @@ The whole report, as an example:
 | `email` | the mails sent in the last 30 days, in total and by kind (`other` for any kind not listed). Never an address, subject or text |
 
 Servers before 0.13.0 send `schema` 1 or 2, without the fields of the last two tables. Servers
-before 0.12.0 send `schema` 1, without `aiReview`, `assistant30d` and the `aiReview` flag
-of `features`. A newer server also sends `schema` 2 on a day it cannot count its feature use, and `schema` 1 on a
-day it cannot count its AI use. It leaves the fields out and never sends a zero in their place.
+before 0.12.0 send `schema` 1, without `aiReview`, `assistant30d` and the `aiReview` flag of
+`features`. A newer server also sends `schema` 2 on a day it cannot count its feature use, and
+`schema` 1 on a day it cannot count its AI use. It leaves the fields out and never sends a zero in
+their place.
 
 ## What is never sent
 

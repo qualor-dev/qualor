@@ -18,6 +18,7 @@ export interface TelemetryDeps {
   edition: Pick<Edition, 'edition'>;
   url: string;
   database: 'embedded' | 'external';
+  smtpConfigured: boolean;
   logger?: { debug: (obj: object, msg: string) => void } | undefined;
 }
 
@@ -83,6 +84,7 @@ export function telemetryHandlers(deps: TelemetryDeps): JobHandlers {
           edition: deps.edition,
           installationId: await installationId(deps.db),
           database: deps.database,
+          smtpConfigured: deps.smtpConfigured,
           logger: deps.logger,
         });
         const outcome = await sendTelemetry(deps.url, payload, {

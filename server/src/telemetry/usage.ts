@@ -47,9 +47,13 @@ async function row<K extends string>(db: Db, query: SQL): Promise<Record<K, numb
 
 /**
  * Schema 3's numbers. It throws when any query fails, and the report is then of the schema below.
- * The settings are those the report already read.
+ * The settings are those the report already read; `smtpConfigured` is the environment's SMTP.
  */
-export async function collectUsage(db: Db, settings: StoredLlmSettings): Promise<UsageBlocks> {
+export async function collectUsage(
+  db: Db,
+  settings: StoredLlmSettings,
+  smtpConfigured: boolean,
+): Promise<UsageBlocks> {
   const [autoFix, mcp, chat, mailRows, reports, scm, organizations, policies, mail, grants] =
     await Promise.all([
       row<'made' | 'posted'>(
@@ -163,7 +167,7 @@ export async function collectUsage(db: Db, settings: StoredLlmSettings): Promise
       autoFix: autoFixOn,
       mcp: grants.n > 0,
       chat: chat.slack + chat.teams > 0,
-      email: mail.server !== null || sent > 0,
+      email: smtpConfigured || mail.server !== null || sent > 0,
       licensePolicy: licensePolicyOrgs > 0,
     },
   };

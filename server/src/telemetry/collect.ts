@@ -81,6 +81,8 @@ export interface CollectDeps {
   database: 'embedded' | 'external';
   env?: Record<string, string | undefined>;
   dockerEnvExists?: boolean;
+  /** Whether `QUALOR_SMTP_*` configures a mail server (the stored one is read from the database). */
+  smtpConfigured?: boolean;
   logger?: { debug: (obj: object, msg: string) => void } | undefined;
 }
 
@@ -164,7 +166,7 @@ async function countUsage(
 ): Promise<UsageBlocks | null> {
   const read = await settings;
   try {
-    return await collectUsage(deps.db, read);
+    return await collectUsage(deps.db, read, deps.smtpConfigured ?? false);
   } catch (err) {
     deps.logger?.debug(
       {

@@ -257,6 +257,7 @@ async function main(): Promise<void> {
             edition,
             url: config.telemetry.url,
             database: config.databaseUrl === null ? 'embedded' : 'external',
+            smtpConfigured: config.smtp !== null,
             logger,
           })
         : {}),

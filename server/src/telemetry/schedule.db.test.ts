@@ -73,6 +73,7 @@ describe('telemetry schedule (telemetry.md)', () => {
       edition: { edition: () => 'community' },
       url,
       database: 'external',
+      smtpConfigured: false,
     });
     await runUntilIdle(database.db, handlers, silent);
     expect(received).toHaveLength(1);
@@ -89,6 +90,7 @@ describe('telemetry schedule (telemetry.md)', () => {
       edition: { edition: () => 'community' },
       url: 'http://127.0.0.1:9/t',
       database: 'external',
+      smtpConfigured: false,
     });
     await runUntilIdle(database.db, failing, silent);
     expect((await queued()).rows).toHaveLength(1);
