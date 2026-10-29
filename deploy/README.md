@@ -17,7 +17,7 @@ Three images, all built from this repository. `qualor/server`, `qualor/scanner` 
 and the server imports that file only while a valid licence key is configured, including its
 14-day grace period; without one the file is never read.
 Building, running, mirroring or redistributing the image with the plugin unused needs no
-subscription; production use of the plugin does, and is limited to what the key enables (its
+subscription; production use of the plugin needs a subscription or a trial, and is limited to what the key enables (its
 features and its validity, grace period included), as `enterprise/LICENSE` says.
 
 ```sh

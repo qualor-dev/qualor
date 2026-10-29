@@ -66,6 +66,7 @@ describe('image definitions (plan 1G)', () => {
     expect(flat).not.toMatch(/organisation limit|read-only/);
     const readme = readFileSync('deploy/README.md', 'utf8').replace(/\s+/g, ' ');
     expect(readme).toMatch(/redistributing the image with the plugin unused needs no subscription/);
+    expect(readme).toMatch(/production use of the plugin needs a subscription or a trial/);
     expect(readme).toMatch(/\(its features and its validity, grace period included\)/);
     expect(readme).not.toMatch(/organisation limit|beyond which organisations/);
     // The MIT row names only what is MIT.

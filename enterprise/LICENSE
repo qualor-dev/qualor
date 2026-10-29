@@ -18,12 +18,13 @@ Everything outside enterprise/ is licensed under the MIT licence in the root LIC
 3. Production use. You may use the Software in production only if you (and any organisation you
    act for) have a valid, paid Qualor Enterprise subscription or a trial, each evidenced by a
    licence key issued for you, and you comply with the terms under which the key was issued.
-   "Production" means any use other than development and
-   testing. Production use is limited to what that key enables:
+   "Production" means any use other than development and testing. Production use is limited to
+   what that key enables:
    a. the features the key lists;
    b. the period in which the key is valid. A subscription key also covers the 14-day grace
       period after it expires, during which the server keeps the licensed features on. A trial key
-      has no grace period. When the period ends, the server turns the features off, and
+      has no grace period. When that period ends (for a subscription key, at the end of its grace
+      period; for a trial key, on its expiry date), the server turns the features off, and
       production use of the Software ends until a valid key is configured.
 
 4. Modifications. You may make and publish patches to the Software. Modified versions may be used
