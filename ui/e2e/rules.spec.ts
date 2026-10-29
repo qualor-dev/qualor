@@ -38,7 +38,7 @@ test('an admin switches rules of a custom profile and lets one inherit again', a
   await expect(noConsole.getByRole('checkbox')).not.toBeChecked();
   await expect(noConsole).toContainText('Set here');
   const eqeqeq = page.getByRole('row', { name: /eslint:eqeqeq/ });
-  const severity = eqeqeq.getByRole('combobox');
+  const severity = eqeqeq.getByRole('combobox', { name: 'Severity: eslint:eqeqeq' });
   await severity.focus();
   await severity.selectOption({ label: 'Blocker' });
   await expect(eqeqeq).toContainText('Set here');
