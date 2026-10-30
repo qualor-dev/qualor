@@ -20,6 +20,7 @@ import { NewCodePanel } from './new-code-panel';
 import { DeleteProjectPanel } from './delete-project-panel';
 import { ProjectTokensPanel } from './project-tokens-panel';
 import { ProjectWebhooksPanel } from './project-webhooks-panel';
+import { VulnerabilityPanel } from './vulnerability-panel';
 
 /**
  * The panels that took over an earlier panel's address: an old link or bookmark still leads to the
@@ -46,6 +47,7 @@ const MOVED: ReadonlyMap<string, string> = new Map([
     ProjectTokensPanel,
     ProjectWebhooksPanel,
     RouterLink,
+    VulnerabilityPanel,
   ],
   templateUrl: './project-settings.page.html',
   styleUrl: './project-settings.page.css',

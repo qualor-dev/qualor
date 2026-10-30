@@ -33,6 +33,14 @@
         >
         <a
           [routerLink]="[]"
+          fragment="vulnerabilities"
+          [replaceUrl]="true"
+          (click)="go('vulnerabilities', $event)"
+          i18n="@@project.settings.vulnerabilities"
+          >Vulnerability monitoring</a
+        >
+        <a
+          [routerLink]="[]"
           fragment="ai"
           [replaceUrl]="true"
           (click)="go('ai', $event)"
@@ -81,6 +89,7 @@
           />
           <q-gate-profiles-panel [project]="p" (saved)="store.reload()" />
           <q-main-branch-panel [project]="p" (saved)="store.reload()" />
+          <q-vulnerability-panel [project]="p" />
           <q-project-ai-panel [project]="p" (saved)="store.reload()" />
         }
       }

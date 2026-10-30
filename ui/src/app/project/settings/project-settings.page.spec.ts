@@ -92,6 +92,7 @@ describe('ProjectSettingsPage', () => {
       'New code',
       'Quality gate and profiles',
       'Main branch',
+      'Vulnerability monitoring',
       'AI',
       'Analysis tokens',
       'Danger zone',
@@ -101,6 +102,7 @@ describe('ProjectSettingsPage', () => {
       'new-code',
       'gate',
       'main-branch',
+      'vulnerabilities',
       'ai',
       'tokens',
       'danger',
@@ -158,12 +160,13 @@ describe('ProjectSettingsPage index', () => {
       'New code',
       'Quality gate and profiles',
       'Main branch',
+      'Vulnerability monitoring',
       'AI',
       'Danger zone',
     ]);
     // To open in a new tab or copy: the page's own address, with the panel.
     expect(links.map((a) => a.getAttribute('href'))).toEqual(
-      ['new-code', 'gate', 'main-branch', 'ai', 'danger'].map(
+      ['new-code', 'gate', 'main-branch', 'vulnerabilities', 'ai', 'danger'].map(
         (id) => `/projects/${PROJECT}/settings#${id}`,
       ),
     );

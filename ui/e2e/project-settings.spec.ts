@@ -21,6 +21,7 @@ test('the settings tab lists its sections and is accessible', async ({ page }) =
     'New code',
     'Quality gate and profiles',
     'Main branch',
+    'Vulnerability monitoring',
     'AI',
     'Analysis tokens',
     'Webhooks',
@@ -96,6 +97,18 @@ test('a new code definition of the last 14 days is saved and kept after a reload
   await panel.getByRole('radio', { name: /^Default/ }).check();
   await panel.getByRole('button', { name: 'Save' }).click();
   await expect(panel.getByRole('status')).toHaveText('New code definition saved.');
+});
+
+test('the vulnerability monitoring panel renders and saves a branch pattern', async ({ page }) => {
+  await openSettings(page);
+  const panel = page.locator('#vulnerabilities');
+  await expect(
+    panel.getByRole('switch', { name: 'Track vulnerabilities in this project' }),
+  ).toBeVisible();
+  await panel.locator('#vuln-patterns').fill('release/*');
+  await panel.getByRole('button', { name: 'Save' }).click();
+  await expect(panel.getByRole('status')).toHaveText('Saved.');
+  await expect(panel.locator('#vuln-patterns')).toHaveValue('release/*');
 });
 
 test('an analysis token is shown once, then listed, and can be revoked', async ({ page }) => {
