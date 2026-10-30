@@ -25,7 +25,7 @@ qualor scan --project-key acme/payments-api \
 
 ```groovy
 pipeline {
-  agent { docker { image 'qualor/scanner:0.13'; args '--entrypoint=' } }
+  agent { docker { image 'qualor/scanner:0.14'; args '--entrypoint=' } }
   environment {
     QUALOR_URL   = 'https://qualor.example.com'
     QUALOR_TOKEN = credentials('qualor-token')           // a "Secret text" credential
@@ -53,7 +53,7 @@ pipeline {
 Set `QUALOR_URL` and `QUALOR_TOKEN` as secured repository variables.
 
 ```yaml
-image: qualor/scanner:0.13
+image: qualor/scanner:0.14
 clone:
   depth: full
 pipelines:
@@ -84,14 +84,14 @@ release page and your clang-tidy on `PATH`. See
 ```sh
 docker run --rm -v "$PWD":/src -w /src \
   -e QUALOR_URL -e QUALOR_TOKEN -e QUALOR_PROJECT_KEY \
-  qualor/scanner:0.13 scan
+  qualor/scanner:0.14 scan
 ```
 
 Without a server, `--dry-run --output report.json.gz` writes the report to a file and uploads
 nothing:
 
 ```sh
-docker run --rm -v "$PWD":/src -w /src qualor/scanner:0.13 scan --dry-run --output report.json.gz --project-key local/test
+docker run --rm -v "$PWD":/src -w /src qualor/scanner:0.14 scan --dry-run --output report.json.gz --project-key local/test
 ```
 
 When a scan behaves unexpectedly, run `qualor validate` first. It prints the resolved

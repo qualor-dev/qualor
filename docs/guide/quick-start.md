@@ -22,7 +22,7 @@ Save the compose file from [Install the server](./install-server.md#the-compose-
 ```sh
 umask 077
 cat > .env <<EOF
-QUALOR_VERSION=0.13
+QUALOR_VERSION=0.14
 QUALOR_SECRET_KEY=$(openssl rand -hex 32)
 QUALOR_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)
 EOF
@@ -78,7 +78,7 @@ GitLab, or to see each part.
 ### 2. Pull the scanner
 
 ```sh
-docker pull qualor/scanner:0.13
+docker pull qualor/scanner:0.14
 ```
 
 It is about 4.1 GB, 1.4 GB of which is Trivy's vulnerability database. CI runners pull it the same
@@ -110,7 +110,7 @@ docker run --rm --network host \
   -e QUALOR_URL=http://127.0.0.1:8080 \
   -e QUALOR_TOKEN=<token> \
   -e QUALOR_PROJECT_KEY=<project key> \
-  qualor/scanner:0.13 scan
+  qualor/scanner:0.14 scan
 ```
 
 `--network host` lets the container reach the server on `127.0.0.1`, on Linux. With Docker

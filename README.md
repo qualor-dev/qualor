@@ -64,7 +64,7 @@ directory, then:
 ```sh
 umask 077
 cat > .env <<EOF
-QUALOR_VERSION=0.13
+QUALOR_VERSION=0.14
 QUALOR_SECRET_KEY=$(openssl rand -hex 32)
 QUALOR_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)
 EOF
@@ -81,7 +81,7 @@ Then create a project and a CI token: see [Quick start](docs/guide/quick-start.m
 ## Scan in CI
 
 Set `QUALOR_URL` and `QUALOR_TOKEN` (masked) as CI variables. The scanner image is
-`qualor/scanner:<tag>`, for example `0.13` or `0.13.0`.
+`qualor/scanner:<tag>`, for example `0.14` or `0.14.0`.
 
 **GitLab**, with the CI/CD component:
 
@@ -104,7 +104,7 @@ See [GitLab](docs/guide/gitlab.md).
     fetch-depth: 0
     persist-credentials: false
     ref: '${{ github.event.pull_request.head.sha || github.sha }}'
-- uses: qualor-dev/scan-action@v0.13
+- uses: qualor-dev/scan-action@v0.14
   with:
     server-url: '${{ vars.QUALOR_URL }}'
     token: '${{ secrets.QUALOR_TOKEN }}'
