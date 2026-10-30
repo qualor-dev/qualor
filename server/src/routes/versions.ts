@@ -100,7 +100,8 @@ function validGlob(pattern: string): boolean {
     if (code < 0x20 || code === 0x7f) return false;
   }
   try {
-    picomatch.makeRe(pattern, { dot: true });
+    // Without debug, picomatch swallows the RegExp error and returns a match-nothing regex.
+    picomatch.makeRe(pattern, { dot: true, debug: true });
     return true;
   } catch {
     return false;

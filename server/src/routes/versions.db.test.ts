@@ -103,6 +103,15 @@ describe('versions and vulnerability monitoring API (0.15)', () => {
     expect(control.json().errors).toEqual([
       expect.objectContaining({ path: 'body.branchPatterns' }),
     ]);
+    for (const bad of ['release/[z-a]*', 'a{', '[z-a]']) {
+      const res = await put({ branchPatterns: ['release/*', bad] });
+      expect(res.statusCode, bad).toBe(422);
+      expect(res.json().errors, bad).toEqual([
+        expect.objectContaining({ path: 'body.branchPatterns' }),
+      ]);
+    }
+    const valid = await put({ branchPatterns: ['release/*', 'hotfix/**', 'v1.[0-9]*', 'f/{a,b}'] });
+    expect(valid.statusCode, valid.body).toBe(200);
     expect((await put({ extra: 1 })).statusCode).toBe(422);
   });
 
