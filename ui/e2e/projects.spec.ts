@@ -51,8 +51,13 @@ test('search narrows the list and lives in the URL', async ({ page }) => {
 test('an expired session sends the next request to the login page', async ({ page, guard }) => {
   // The search after the cookies are gone answers 401, which the browser logs.
   guard.allowFailedLoad('/api/v0/projects', 401);
+  // The setup checklist loads when the browser is idle and then asks for its state. Wait for that
+  // answer too: a request still to come when the cookie goes would get the 401 before the search
+  // does (a race of the test, not of the app).
+  const checklist = page.waitForResponse((r) => r.url().endsWith('/setup-checklist'));
   await page.goto('/projects');
   await expect(page.getByRole('link', { name: PAYMENTS.name })).toBeVisible();
+  await checklist;
   await page.context().clearCookies();
   await page.getByRole('searchbox', { name: 'Search projects' }).fill('pay');
   await page.getByRole('button', { name: 'Search' }).click();
