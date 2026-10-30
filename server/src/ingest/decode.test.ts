@@ -49,6 +49,18 @@ describe('decodeStoredReport', () => {
     }
   });
 
+  it('keeps scm.tag and dependencyIgnores', () => {
+    const r = sampleReport();
+    const dependencyIgnores = [{ id: 'CVE-2026-1' }, { id: 'GHSA-x', expiresAt: '2026-12-31' }];
+    const result = decodeStoredReport(
+      gzipJson({ ...r, scm: { ...r.scm, tag: 'v2.3.4' }, dependencyIgnores }),
+      limits,
+    );
+    if (!result.ok) throw new Error('expected success');
+    expect(result.report.scm.tag).toBe('v2.3.4');
+    expect(result.report.dependencyIgnores).toEqual(dependencyIgnores);
+  });
+
   it('reports malformed JSON and an undecompressable body as REPORT_INVALID', () => {
     expect(decodeStoredReport(gzipSync(Buffer.from('{"schemaVersion":')), limits)).toEqual({
       ok: false,

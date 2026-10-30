@@ -335,3 +335,37 @@ describe('reportSchema dependencies', () => {
     expect(with_(Array(50_001).fill(entry))).not.toEqual([]);
   });
 });
+
+describe('reportSchema scm.tag and dependencyIgnores', () => {
+  const withTag = (tag: unknown) => issues({ ...base, scm: { ...base.scm, tag } });
+  const withIgnores = (dependencyIgnores: unknown) => issues({ ...base, dependencyIgnores });
+
+  it('accepts both fields and keeps them unchanged', () => {
+    const report = {
+      ...base,
+      scm: { ...base.scm, tag: 'v2.3.4' },
+      dependencyIgnores: [{ id: 'CVE-2026-1' }, { id: 'GHSA-x', expiresAt: '2026-12-31' }],
+    };
+    expect(reportSchema.parse(report)).toEqual(report);
+    expect(withTag(null)).toEqual([]);
+  });
+
+  it('still accepts a report without either field', () => {
+    expect(issues(base)).toEqual([]);
+  });
+
+  it('refuses an empty or over-long tag', () => {
+    expect(withTag('')).not.toEqual([]);
+    expect(withTag('a'.repeat(255))).toEqual([]);
+    expect(withTag('a'.repeat(256))).not.toEqual([]);
+  });
+
+  it('bounds dependencyIgnores and checks expiresAt', () => {
+    const one = { id: 'CVE-2026-1' };
+    expect(withIgnores(Array(10_000).fill(one))).toEqual([]);
+    expect(withIgnores(Array(10_001).fill(one))).not.toEqual([]);
+    expect(withIgnores([{ id: '' }])).not.toEqual([]);
+    expect(withIgnores([{ id: 'a'.repeat(513) }])).not.toEqual([]);
+    expect(withIgnores([{ id: 'CVE-2026-1', expiresAt: '2026-13-01' }])).not.toEqual([]);
+  });
+});

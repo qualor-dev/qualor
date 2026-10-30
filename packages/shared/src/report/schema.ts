@@ -34,6 +34,7 @@ export const REPORT_BOUNDS = {
   ruleCwes: 64,
   engineVersionChars: 128,
   dependencies: 50_000,
+  dependencyIgnores: 10_000,
 } as const;
 
 const repoPath = z.string().superRefine((p, ctx) => {
@@ -196,6 +197,8 @@ const scm = z.object({
   revision: gitRevision,
   branch: z.string().min(1).max(255).nullable(),
   mainBranch: z.string().min(1).max(255),
+  /** The git tag of a tag pipeline; the server stores such a scan as a project version. */
+  tag: z.string().min(1).max(255).nullable().optional(),
   mergeRequest: z
     .object({
       id: z.string().min(1).max(64),
@@ -252,6 +255,13 @@ export const dependencyEntrySchema = z.object({
 });
 export type DependencyEntry = z.infer<typeof dependencyEntrySchema>;
 
+/** A vulnerability id the project ignores (from `.trivyignore`), optionally until a date. */
+export const dependencyIgnoreSchema = z.object({
+  id: z.string().min(1).max(REPORT_BOUNDS.ruleIdChars),
+  expiresAt: z.iso.date().optional(),
+});
+export type DependencyIgnore = z.infer<typeof dependencyIgnoreSchema>;
+
 export const reportSchema = z
   .object({
     schemaVersion: z.literal(REPORT_SCHEMA_VERSION),
@@ -292,6 +302,11 @@ export const reportSchema = z
     // Dependency licences (6M). Optional, schemaVersion stays 1: servers older than 6M strip it
     // (this schema is a plain z.object), so a newer scanner stays compatible with them.
     dependencies: z.array(dependencyEntrySchema).max(REPORT_BOUNDS.dependencies).optional(),
+    // Ignored vulnerability ids (0.15). Optional, schemaVersion stays 1: older servers strip it.
+    dependencyIgnores: z
+      .array(dependencyIgnoreSchema)
+      .max(REPORT_BOUNDS.dependencyIgnores)
+      .optional(),
   })
   .superRefine((r, ctx) => {
     const paths = new Set<string>();
