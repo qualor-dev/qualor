@@ -166,7 +166,8 @@ On GitHub, in the organisation that owns the repositories, go to **Settings → 
 GitHub Apps → New GitHub App**. You can also register it from the manifest
 [`integrations/github/app-manifest.json`](../../integrations/github/app-manifest.json).
 
-Give it these repository permissions, and nothing else:
+Give it these repository permissions, and nothing else. [CI setup](#set-up-ci-with-a-pull-request)
+needs two more:
 
 | Permission | Access | What Qualor uses it for |
 |---|---|---|
@@ -334,10 +335,12 @@ workflow or a `QUALOR_TOKEN` secret, or is empty. It never overwrites either.
 
 ### What the App needs
 
-CI setup needs two permissions that the App does not otherwise have:
+CI setup needs the App to have **Contents**, **Workflows** and **Secrets**, each at **Read and
+write**:
 
 | Permission | Access | What Qualor uses it for |
 |---|---|---|
+| Contents | Read and write | creating the branch and committing the file (already part of the [base setup](#create-it)) |
 | Workflows | Read and write | adding the workflow file |
 | Secrets | Read and write | storing `QUALOR_TOKEN` |
 
@@ -345,8 +348,9 @@ The server also needs `QUALOR_PUBLIC_URL` ([Server settings](./install-server.md
 
 - **New App:** register it from
   [`integrations/github/app-manifest-ci-setup.json`](../../integrations/github/app-manifest-ci-setup.json).
-  It is the manifest of [Create it](#create-it) plus the two permissions.
-- **Existing App:** add the two permissions as in
+  It is the manifest of [Create it](#create-it) plus Workflows and Secrets.
+- **Existing App:** add the missing ones (an App created before Contents: Read and write was part
+  of the setup lacks it too) as in
   [Update an App you created before](#update-an-app-you-created-before). The owner of each
   installation must accept them.
 

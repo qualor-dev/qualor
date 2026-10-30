@@ -18,7 +18,7 @@ All notable changes to Qualor are listed here, newest first. The format follows
   Connect GitHub or GitLab, Add repositories, Get the first analysis, Turn on AI review and Invite
   your team. It ticks from the server's state, and **Don't show again** hides it for good.
 - CI-setup settings: a GitLab connection has the setting **Allow Qualor to set up CI**, off for
-  existing connections. A GitHub App needs the permissions **Workflows** and **Secrets** (read and
+  existing connections. A GitHub App needs **Contents**, **Workflows** and **Secrets** (each read and
   write) for CI setup, and **Settings → GitHub** shows which are missing.
   `integrations/github/app-manifest-ci-setup.json` registers a new App with both. Existing Apps add
   them, and the installations accept them.

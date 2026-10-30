@@ -46,7 +46,7 @@ An organization admin does this in the UI. Qualor creates the projects and sets 
 1. Connect GitHub ([GitHub](./github.md#3-the-github-app)) or GitLab
    ([GitLab](./gitlab.md#3-merge-request-comments-and-commit-status)). For CI setup, also set
    `QUALOR_PUBLIC_URL` on the server, turn on **Allow Qualor to set up CI** on a GitLab connection,
-   or give a GitHub App the **Workflows** and **Secrets** permissions.
+   or give a GitHub App **Contents**, **Workflows** and **Secrets** (each Read and write).
 2. Open **Projects → Add repositories**, pick the connection and tick up to 50 repositories.
    Repositories that already have a project are marked. An archived repository cannot be picked.
 3. Leave **Set up CI with a merge request** on, and start. Qualor creates a project for each
