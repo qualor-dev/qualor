@@ -19169,6 +19169,47 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "ciSetup": {
+                            "type": "object",
+                            "properties": {
+                              "available": {
+                                "type": "boolean"
+                              },
+                              "reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "not_allowed",
+                                      "missing_permissions",
+                                      "no_public_url"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read)."
+                              },
+                              "missing": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "workflows_write",
+                                    "secrets_write"
+                                  ]
+                                },
+                                "description": "GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read."
+                              }
+                            },
+                            "required": [
+                              "available",
+                              "reason",
+                              "missing"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
@@ -19178,7 +19219,8 @@
                           "baseUrl",
                           "createdAt",
                           "github",
-                          "gitlab"
+                          "gitlab",
+                          "ciSetup"
                         ],
                         "additionalProperties": false
                       }
@@ -19458,6 +19500,47 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "ciSetup": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "not_allowed",
+                                "missing_permissions",
+                                "no_public_url"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read)."
+                        },
+                        "missing": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "workflows_write",
+                              "secrets_write"
+                            ]
+                          },
+                          "description": "GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read."
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "reason",
+                        "missing"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -19467,7 +19550,8 @@
                     "baseUrl",
                     "createdAt",
                     "github",
-                    "gitlab"
+                    "gitlab",
+                    "ciSetup"
                   ],
                   "additionalProperties": false
                 }
@@ -19694,6 +19778,47 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "ciSetup": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "not_allowed",
+                                "missing_permissions",
+                                "no_public_url"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read)."
+                        },
+                        "missing": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "workflows_write",
+                              "secrets_write"
+                            ]
+                          },
+                          "description": "GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read."
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "reason",
+                        "missing"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -19703,7 +19828,8 @@
                     "baseUrl",
                     "createdAt",
                     "github",
-                    "gitlab"
+                    "gitlab",
+                    "ciSetup"
                   ],
                   "additionalProperties": false
                 }
@@ -20053,6 +20179,194 @@
           },
           "422": {
             "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/scm-connections/{id}/repositories": {
+      "get": {
+        "summary": "One page of the repositories a connection reaches (100 to a page), with the project that maps or could adopt each; for members who may create projects",
+        "tags": [
+          "scm"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "in": "query",
+            "name": "filter",
+            "required": false,
+            "description": "Case-insensitive part of the repository name. GitLab searches on its side; GitHub has no search over an installation’s repositories, so the listed page is filtered here"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string",
+                            "description": "What a project maps to: the GitLab project id, or the GitHub owner/repo"
+                          },
+                          "name": {
+                            "type": "string",
+                            "description": "owner/repo (GitHub) or the full path (GitLab)"
+                          },
+                          "defaultBranch": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "language": {
+                            "description": "GitHub only; null for GitLab",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "archived": {
+                            "type": "boolean"
+                          },
+                          "project": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "mapped",
+                                      "adoptable"
+                                    ],
+                                    "description": "`mapped`: the project already maps this repository. `adoptable`: an unmapped project has the key the repository would get."
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "key",
+                                  "state"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "ref",
+                          "name",
+                          "defaultBranch",
+                          "language",
+                          "archived",
+                          "project"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "hasMore"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error",
             "content": {
               "application/problem+json": {
                 "schema": {

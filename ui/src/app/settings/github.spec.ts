@@ -34,6 +34,7 @@ const GITHUB: Connection = {
     webhookUrl: 'https://q.example/api/v0/github/webhooks/g1',
   },
   gitlab: null,
+  ciSetup: { available: false, reason: 'missing_permissions', missing: [] },
 };
 const GITLAB: Connection = {
   ...GITHUB,

@@ -28,6 +28,7 @@ const CONNECTION: Connection = {
     webhookUrl: null,
     ciSetupAllowed: false,
   },
+  ciSetup: { available: false, reason: 'not_allowed', missing: [] },
 };
 
 const GITHUB: Connection = {
@@ -44,6 +45,7 @@ const GITHUB: Connection = {
     webhookUrl: null,
   },
   gitlab: null,
+  ciSetup: { available: false, reason: 'missing_permissions', missing: [] },
 };
 
 function project(id: string, overrides: Record<string, unknown> = {}) {

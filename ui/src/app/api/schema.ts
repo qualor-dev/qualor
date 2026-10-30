@@ -9355,6 +9355,13 @@ export interface paths {
                                     webhookUrl: string | null;
                                     ciSetupAllowed: boolean;
                                 } | null;
+                                ciSetup: {
+                                    available: boolean;
+                                    /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read). */
+                                    reason: ("not_allowed" | "missing_permissions" | "no_public_url") | null;
+                                    /** @description GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read. */
+                                    missing: ("workflows_write" | "secrets_write")[];
+                                };
                             }[];
                             nextCursor: string | null;
                         };
@@ -9468,6 +9475,13 @@ export interface paths {
                                 webhookUrl: string | null;
                                 ciSetupAllowed: boolean;
                             } | null;
+                            ciSetup: {
+                                available: boolean;
+                                /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read). */
+                                reason: ("not_allowed" | "missing_permissions" | "no_public_url") | null;
+                                /** @description GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read. */
+                                missing: ("workflows_write" | "secrets_write")[];
+                            };
                         };
                     };
                 };
@@ -9654,6 +9668,13 @@ export interface paths {
                                 webhookUrl: string | null;
                                 ciSetupAllowed: boolean;
                             } | null;
+                            ciSetup: {
+                                available: boolean;
+                                /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read). */
+                                reason: ("not_allowed" | "missing_permissions" | "no_public_url") | null;
+                                /** @description GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read. */
+                                missing: ("workflows_write" | "secrets_write")[];
+                            };
                         };
                     };
                 };
@@ -9806,6 +9827,115 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/scm-connections/{id}/repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One page of the repositories a connection reaches (100 to a page), with the project that maps or could adopt each; for members who may create projects */
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    /** @description Case-insensitive part of the repository name. GitLab searches on its side; GitHub has no search over an installation’s repositories, so the listed page is filtered here */
+                    filter?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                /** @description What a project maps to: the GitLab project id, or the GitHub owner/repo */
+                                ref: string;
+                                /** @description owner/repo (GitHub) or the full path (GitLab) */
+                                name: string;
+                                defaultBranch: string | null;
+                                /** @description GitHub only; null for GitLab */
+                                language: string | null;
+                                archived: boolean;
+                                project: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                    /**
+                                     * @description `mapped`: the project already maps this repository. `adoptable`: an unmapped project has the key the repository would get.
+                                     * @enum {string}
+                                     */
+                                    state: "mapped" | "adoptable";
+                                } | null;
+                            }[];
+                            hasMore: boolean;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Error */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;

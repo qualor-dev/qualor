@@ -126,6 +126,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
         webhookUrl: null,
         ciSetupAllowed: false,
       },
+      ciSetup: { available: false, reason: 'no_public_url', missing: [] },
     });
     const [row] = await h.ctx.db
       .select()

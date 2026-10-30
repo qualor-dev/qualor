@@ -64,6 +64,7 @@ import {
   encryptPrivateKey,
   encryptWebhookSecret,
 } from '../scm/github/credentials';
+import { createCiSetupStatus, type CiSetupStatus } from '../scm/ci-setup-status';
 import { GITHUB_REPO_PATTERN, githubBaseUrlProblem } from '../scm/github/url';
 import { normalBaseUrl, scmBaseUrlProblem } from '../scm/url';
 
@@ -87,6 +88,18 @@ const gitlabSchema = z.object({
   ciSetupAllowed: z.boolean(),
 });
 
+const ciSetupSchema = z.object({
+  available: z.boolean(),
+  reason: z.enum(['not_allowed', 'missing_permissions', 'no_public_url']).nullable().meta({
+    description:
+      'Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read).',
+  }),
+  missing: z.array(z.enum(['workflows_write', 'secrets_write'])).meta({
+    description:
+      'GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read.',
+  }),
+});
+
 const connectionSchema = z.object({
   id: z.uuid(),
   organizationId: z.uuid(),
@@ -97,6 +110,8 @@ const connectionSchema = z.object({
   github: githubSchema.nullable(),
   /** What GitLab's webhook needs (6I-4); null for GitHub. Never the secret. */
   gitlab: gitlabSchema.nullable(),
+  /** Whether Qualor can open CI-setup pull or merge requests through this connection. */
+  ciSetup: ciSetupSchema,
 });
 
 const testResultSchema = z.object({
@@ -121,6 +136,7 @@ function connectionDto(
   row: ScmConnectionRow,
   key: Buffer,
   publicUrl: string | null,
+  ciSetup: CiSetupStatus,
 ): z.infer<typeof connectionSchema> {
   const secretSet = row.webhookSecretEnc !== null;
   const secretReadable = secretSet && decryptWebhookSecret(key, row.webhookSecretEnc) !== null;
@@ -148,6 +164,7 @@ function connectionDto(
           webhookUrl: secretSet ? gitlabWebhookUrl(publicUrl, row.id) : null,
           ciSetupAllowed: row.ciSetupAllowed,
         },
+    ciSetup,
   };
 }
 
@@ -251,7 +268,6 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
 ) => {
   const key = encryptionKey(deps.config.secretKey);
   const publicUrl = deps.config.publicUrl;
-  const dto = (row: ScmConnectionRow) => connectionDto(row, key, publicUrl);
   /**
    * rbac-audit.md §8, §9: one event about `connection` in the change's transaction `tx`. Its
    * base URL is recorded in full (it holds no credentials); never a token, key or secret.
@@ -276,6 +292,13 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     secretKey: deps.config.secretKey,
     internalHosts: deps.config.scmInternalHosts,
   };
+  const ciSetupOf = createCiSetupStatus({
+    deps: scmDeps,
+    publicUrl,
+    warn: (message, context) => app.log.warn(context, message),
+  });
+  const dto = async (row: ScmConnectionRow) =>
+    connectionDto(row, key, publicUrl, await ciSetupOf(row));
   const checkedBaseUrl = (raw: string, provider: 'gitlab' | 'github'): string => {
     const problem = scmBaseUrlProblem(raw, deps.config.scmInternalHosts);
     if (problem) throw validationFailed([{ path: 'body.baseUrl', message: problem }]);
@@ -314,7 +337,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         .orderBy(asc(scmConnections.id))
         .limit(limit + 1);
       const page = toPage(rows, limit);
-      return { items: page.items.map(dto), nextCursor: page.nextCursor };
+      return { items: await Promise.all(page.items.map(dto)), nextCursor: page.nextCursor };
     },
   );
 
@@ -411,7 +434,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         });
         return row;
       });
-      return reply.code(201).send(dto(created));
+      return reply.code(201).send(await dto(created));
     },
   );
 
@@ -570,7 +593,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         }
         return written;
       });
-      return dto(updated);
+      return await dto(updated);
     },
   );
 

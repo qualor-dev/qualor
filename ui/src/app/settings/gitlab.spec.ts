@@ -27,6 +27,7 @@ const CONNECTION: Connection = {
     webhookUrl: null,
     ciSetupAllowed: false,
   },
+  ciSetup: { available: false, reason: 'not_allowed', missing: [] },
 };
 
 // Assembled at run time, so the repository's own Gitleaks check finds no fake secret here (.gitleaks.toml).
@@ -57,6 +58,7 @@ const GITHUB: Connection = {
     webhookUrl: null,
   },
   gitlab: null,
+  ciSetup: { available: false, reason: 'missing_permissions', missing: [] },
 };
 
 function project(id: string, overrides: Record<string, unknown> = {}) {

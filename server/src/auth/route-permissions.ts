@@ -136,6 +136,7 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'PATCH /scm-connections/:id': 'org.scm.manage',
   'DELETE /scm-connections/:id': 'org.scm.manage',
   'POST /scm-connections/:id/test': 'org.scm.manage',
+  'GET /scm-connections/:id/repositories': 'org.projects.create',
   'POST /api/v0/github/webhooks/:connectionId': 'public',
   'POST /api/v0/gitlab/webhooks/:connectionId': 'public',
   'POST /issues/:id/ai/:feature': 'ai.use',
