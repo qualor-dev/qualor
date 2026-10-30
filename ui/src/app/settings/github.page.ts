@@ -202,7 +202,7 @@ export class GitHubPage {
     return error?.field === field ? error.message : null;
   }
 
-  /** Which of Workflows and Secrets the App lacks for CI setup, in one sentence. */
+  /** Which of Contents, Workflows and Secrets the App lacks for CI setup, in one sentence. */
   protected missingText(connection: Connection): string {
     return ciSetupMissingText(connection.ciSetup.missing);
   }

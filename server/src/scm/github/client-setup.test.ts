@@ -74,7 +74,7 @@ describe('GitHub client: files, pull requests and Actions secrets (onboarding)',
 
   beforeAll(async () => {
     fake = await createFakeGitHub({ now: () => clock });
-    // 777 grants CI setup (Workflows and Secrets write); 778 and 779 do not.
+    // 777 grants CI setup (Contents, Workflows and Secrets write); 778 and 779 do not.
     fake.addRepository({
       id: 1,
       owner: 'acme',

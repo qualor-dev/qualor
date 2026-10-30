@@ -60,7 +60,8 @@ const POLL_SECONDS = 2;
 
 const CI_SETUP_UNAVAILABLE: Record<CiSetupReason, string> = {
   not_allowed: 'The connection does not allow CI setup',
-  missing_permissions: 'The GitHub App lacks the Workflows and Secrets (write) permissions',
+  missing_permissions:
+    'The GitHub App lacks the Contents, Workflows and Secrets (write) permissions',
   no_public_url: 'CI setup needs QUALOR_PUBLIC_URL',
 };
 

@@ -784,6 +784,16 @@ describe('GitHubPage (github.md §2)', () => {
             reason: 'missing_permissions',
             missing: ['secrets_write'],
           }),
+          app('contents', {
+            available: false,
+            reason: 'missing_permissions',
+            missing: ['contents_write'],
+          }),
+          app('all', {
+            available: false,
+            reason: 'missing_permissions',
+            missing: ['contents_write', 'workflows_write', 'secrets_write'],
+          }),
           app('unread', { available: false, reason: 'missing_permissions', missing: [] }),
           app('url', { available: false, reason: 'no_public_url', missing: [] }),
         ]),
@@ -802,8 +812,14 @@ describe('GitHubPage (github.md §2)', () => {
       );
       expect(status(root, 'secrets').text).not.toContain('Workflows');
       expect(status(root, 'secrets').link).toBe(how);
+      expect(status(root, 'contents').text).toContain(
+        'The GitHub App lacks the Contents permission.',
+      );
+      expect(status(root, 'all').text).toContain(
+        'The GitHub App lacks the Contents, Workflows and Secrets permissions.',
+      );
       expect(status(root, 'unread').text).toContain(
-        "Qualor could not read the GitHub App's permissions. It needs Workflows and Secrets, read and write.",
+        "Qualor could not read the GitHub App's permissions. It needs Contents, Workflows and Secrets, read and write.",
       );
       expect(status(root, 'unread').link).toBe(how);
       expect(status(root, 'url').text).toContain(

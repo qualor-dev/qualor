@@ -64,7 +64,7 @@ import {
   encryptPrivateKey,
   encryptWebhookSecret,
 } from '../scm/github/credentials';
-import { createCiSetupStatus, type CiSetupStatus } from '../scm/ci-setup-status';
+import { CI_SETUP_MISSING, createCiSetupStatus, type CiSetupStatus } from '../scm/ci-setup-status';
 import { GITHUB_REPO_PATTERN, githubBaseUrlProblem } from '../scm/github/url';
 import { normalBaseUrl, scmBaseUrlProblem } from '../scm/url';
 
@@ -92,11 +92,11 @@ const ciSetupSchema = z.object({
   available: z.boolean(),
   reason: z.enum(['not_allowed', 'missing_permissions', 'no_public_url']).nullable().meta({
     description:
-      'Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read).',
+      'Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Contents, Workflows and Secrets, read and write, or they could not be read).',
   }),
-  missing: z.array(z.enum(['workflows_write', 'secrets_write'])).meta({
+  missing: z.array(z.enum(CI_SETUP_MISSING)).meta({
     description:
-      'GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read.',
+      'GitHub: the permissions the best installation of the App lacks (the first that grants the most of the three). Empty for GitLab, and when they could not be read.',
   }),
 });
 

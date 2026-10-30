@@ -119,7 +119,7 @@ export function errorText(item: RunItem, provider: string | null): string {
 /** The server's three permission texts (setup-run.ts), in the page's words. */
 function permissionText(message: string): string {
   if (message.startsWith('The GitHub App')) {
-    return $localize`:@@addRepos.error.githubPermission:The GitHub App needs the Workflows and Secrets permissions, read and write.`;
+    return $localize`:@@addRepos.error.githubPermission:The GitHub App needs the Contents, Workflows and Secrets permissions, read and write.`;
   }
   if (message.startsWith('The GitLab token')) {
     return $localize`:@@addRepos.error.gitlabPermission:The GitLab token needs the api scope and the Maintainer role.`;

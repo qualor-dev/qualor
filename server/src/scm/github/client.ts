@@ -382,12 +382,13 @@ function installationAccessOf(found: {
 export interface GitHubInstallationAccess {
   installationId: number;
   account: string;
+  contentsWrite: boolean;
   workflowsWrite: boolean;
   secretsWrite: boolean;
 }
 /** A repository an installation can see (installations.ts). */
 export interface GitHubRepoSummary {
-  /** The installation the repository was listed under: its `workflowsWrite`/`secretsWrite` apply. */
+  /** The installation the repository was listed under: its `contentsWrite`, `workflowsWrite` and `secretsWrite` apply. */
   installationId: number;
   /** `owner/repo`. */
   ref: string;
@@ -1020,6 +1021,7 @@ export class GitHubClient {
         return {
           installationId: found.id,
           account: found.account?.login ?? '',
+          contentsWrite: permissions['contents'] === 'write',
           workflowsWrite: permissions['workflows'] === 'write',
           secretsWrite: permissions['secrets'] === 'write',
         };

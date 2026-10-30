@@ -552,7 +552,10 @@ describe('the repository-setup run', () => {
         projectOutcome: 'created',
         ciOutcome: 'failed',
         token: null,
-        error: { code: 'permission', message: 'The GitHub App needs Workflows and Secrets write' },
+        error: {
+          code: 'permission',
+          message: 'The GitHub App needs Contents, Workflows and Secrets write',
+        },
       });
       // A .sln at the root: the dotnet layout.
       expect(fake.fileText(1000, WORKFLOW, BRANCH)).toContain('qualor/scanner-dotnet');

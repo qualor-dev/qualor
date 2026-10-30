@@ -20,8 +20,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - CI-setup settings: a GitLab connection has the setting **Allow Qualor to set up CI**, off for
   existing connections. A GitHub App needs **Contents**, **Workflows** and **Secrets** (each read and
   write) for CI setup, and **Settings → GitHub** shows which are missing.
-  `integrations/github/app-manifest-ci-setup.json` registers a new App with both. Existing Apps add
-  them, and the installations accept them.
+  `integrations/github/app-manifest-ci-setup.json` registers a new App with all three. Existing Apps
+  add the missing ones, and the installations accept them.
 - Trial keys: an instance admin on the community edition selects **Request a trial** in
   **Settings → Licence** and gets a 30-day key for Business or Enterprise by email. With a trial key
   the licence page says when the trial ends. Instance admins see a banner in the last 7 days and

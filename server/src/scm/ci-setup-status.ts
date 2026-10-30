@@ -1,9 +1,14 @@
 import { ScmError } from './provider';
 import type { ScmConnectionRow, ScmDeps } from './connections';
-import { listInstallations } from './github/installations';
+import { listInstallations, type GitHubInstallationAccess } from './github/installations';
 
 export type CiSetupReason = 'not_allowed' | 'missing_permissions' | 'no_public_url';
-export type CiSetupMissing = 'workflows_write' | 'secrets_write';
+/**
+ * What a GitHub CI setup needs from one installation, in write: Contents (the branch), Workflows
+ * (the workflow file) and Secrets (QUALOR_TOKEN).
+ */
+export const CI_SETUP_MISSING = ['contents_write', 'workflows_write', 'secrets_write'] as const;
+export type CiSetupMissing = (typeof CI_SETUP_MISSING)[number];
 
 /** Whether Qualor can set up CI through a connection, and if not, why (the Connections page). */
 export interface CiSetupStatus {
@@ -30,13 +35,31 @@ interface Grants {
   granted: boolean;
 }
 
-/** Whether one GitHub App installation grants Workflows and Secrets (write); errors are ScmErrors. */
+const GRANTED: Record<CiSetupMissing, (i: GitHubInstallationAccess) => boolean> = {
+  contents_write: (i) => i.contentsWrite,
+  workflows_write: (i) => i.workflowsWrite,
+  secrets_write: (i) => i.secretsWrite,
+};
+
+/** What one installation lacks for CI setup. */
+function lacks(installation: GitHubInstallationAccess | null): CiSetupMissing[] {
+  return CI_SETUP_MISSING.filter((p) => installation === null || !GRANTED[p](installation));
+}
+
+/**
+ * Whether one GitHub App installation grants Contents, Workflows and Secrets (write); errors are
+ * ScmErrors. `missing` is what the best installation lacks (the first that grants the most of the
+ * three): permissions split over installations do not add up, since a run changes a repository
+ * through its own installation only.
+ */
 async function githubGrants(row: ScmConnectionRow, deps: ScmDeps): Promise<Grants> {
   const installations = await listInstallations(row, deps);
-  const missing: CiSetupMissing[] = [];
-  if (!installations.some((i) => i.workflowsWrite)) missing.push('workflows_write');
-  if (!installations.some((i) => i.secretsWrite)) missing.push('secrets_write');
-  return { missing, granted: installations.some((i) => i.workflowsWrite && i.secretsWrite) };
+  let missing = lacks(null);
+  for (const installation of installations) {
+    const lacking = lacks(installation);
+    if (lacking.length < missing.length) missing = lacking;
+  }
+  return { missing, granted: missing.length === 0 };
 }
 
 function statusOf(
@@ -72,9 +95,9 @@ export async function readCiSetupStatus(
 
 /**
  * The CI-setup status of a connection. GitLab needs the connection's setting; GitHub needs an
- * installation granting Workflows and Secrets (write), read from the App's installations and kept
- * for {@link CI_SETUP_CACHE_MS} per connection. An SCM error while reading counts as missing
- * permissions (no names), and is logged without anything the provider said.
+ * installation granting Contents, Workflows and Secrets (write), read from the App's installations
+ * and kept for {@link CI_SETUP_CACHE_MS} per connection. An SCM error while reading counts as
+ * missing permissions (no names), and is logged without anything the provider said.
  */
 export function createCiSetupStatus(options: {
   deps: ScmDeps;

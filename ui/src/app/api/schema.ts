@@ -9357,10 +9357,10 @@ export interface paths {
                                 } | null;
                                 ciSetup: {
                                     available: boolean;
-                                    /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read). */
+                                    /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Contents, Workflows and Secrets, read and write, or they could not be read). */
                                     reason: ("not_allowed" | "missing_permissions" | "no_public_url") | null;
-                                    /** @description GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read. */
-                                    missing: ("workflows_write" | "secrets_write")[];
+                                    /** @description GitHub: the permissions the best installation of the App lacks (the first that grants the most of the three). Empty for GitLab, and when they could not be read. */
+                                    missing: ("contents_write" | "workflows_write" | "secrets_write")[];
                                 };
                             }[];
                             nextCursor: string | null;
@@ -9477,10 +9477,10 @@ export interface paths {
                             } | null;
                             ciSetup: {
                                 available: boolean;
-                                /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read). */
+                                /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Contents, Workflows and Secrets, read and write, or they could not be read). */
                                 reason: ("not_allowed" | "missing_permissions" | "no_public_url") | null;
-                                /** @description GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read. */
-                                missing: ("workflows_write" | "secrets_write")[];
+                                /** @description GitHub: the permissions the best installation of the App lacks (the first that grants the most of the three). Empty for GitLab, and when they could not be read. */
+                                missing: ("contents_write" | "workflows_write" | "secrets_write")[];
                             };
                         };
                     };
@@ -9670,10 +9670,10 @@ export interface paths {
                             } | null;
                             ciSetup: {
                                 available: boolean;
-                                /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Workflows and Secrets, read and write, or they could not be read). */
+                                /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Contents, Workflows and Secrets, read and write, or they could not be read). */
                                 reason: ("not_allowed" | "missing_permissions" | "no_public_url") | null;
-                                /** @description GitHub: the permissions no installation of the App grants. Empty for GitLab, and when they could not be read. */
-                                missing: ("workflows_write" | "secrets_write")[];
+                                /** @description GitHub: the permissions the best installation of the App lacks (the first that grants the most of the three). Empty for GitLab, and when they could not be read. */
+                                missing: ("contents_write" | "workflows_write" | "secrets_write")[];
                             };
                         };
                     };

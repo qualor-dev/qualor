@@ -122,7 +122,7 @@ const ERROR_TEXT: Record<Exclude<SetupErrorCode, 'permission'>, string> = {
 /** A refused permission while reading the repository, or while changing it for CI setup. */
 const PERMISSION_TEXT = {
   read: 'The connection was refused access to the repository',
-  github: 'The GitHub App needs Workflows and Secrets write',
+  github: 'The GitHub App needs Contents, Workflows and Secrets write',
   gitlab: 'The GitLab token needs the api scope and the Maintainer role',
 } as const;
 
@@ -472,7 +472,8 @@ function gitlabRepository(
 
 /**
  * One client for the repository (the request budget is per client), and what the provider calls
- * it. GitHub's token asks for Workflows and Secrets (write) only when the run changes CI.
+ * it. GitHub's token asks for Workflows and Secrets (write) only when the run changes CI (Contents
+ * (write) whenever the installation grants it).
  */
 async function openRepository(
   deps: SetupRunDeps,

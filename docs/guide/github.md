@@ -251,8 +251,8 @@ An App keeps the permissions and events it was created with. To add **Contents: 
 
 To allow [CI setup](#set-up-ci-with-a-pull-request), set two more repository permissions the same
 way: **Workflows: Read and write** and **Secrets: Read and write**. The owner of each installation
-then accepts them on the installation's page. **Settings → GitHub** shows which of the two the
-installations still lack.
+then accepts them on the installation's page. **Settings → GitHub** shows which of the three
+permissions CI setup still lacks (Contents included).
 
 ### What reviewers see
 
@@ -354,7 +354,8 @@ The server also needs `QUALOR_PUBLIC_URL` ([Server settings](./install-server.md
   [Update an App you created before](#update-an-app-you-created-before). The owner of each
   installation must accept them.
 
-Without both, **Add repositories** still creates the projects and shows the snippet and the token.
+Without all three on one installation, **Add repositories** still creates the projects and shows
+the snippet and the token.
 
 ### CI setup on GitHub Enterprise Server
 

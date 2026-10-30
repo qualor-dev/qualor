@@ -23,7 +23,7 @@ async function allInstallations(
 }
 
 /**
- * The App's installations with whether each grants Workflows and Secrets (write): the JWT's
+ * The App's installations with whether each grants Contents, Workflows and Secrets (write): the JWT's
  * `GET /app/installations` alone, so an installation whose repositories cannot be read still counts.
  */
 export async function listInstallations(
@@ -43,8 +43,9 @@ export async function listInstallations(
  * Metadata (read) only. The repositories of the installations are one list in the order GitHub
  * answers them, `perPage` to a page; reading stops as soon as the page and one more are known.
  * Suspended installations are not listed; one whose token GitHub refuses (403, 404) is left out of
- * both lists. `installations` is every other installation, with whether it grants Workflows and Secrets (write), which
- * CI setup needs. Errors are `ScmError`s, as for every GitHub call.
+ * both lists. `installations` is every other installation, with whether it grants Contents,
+ * Workflows and Secrets (write), which CI setup needs. Errors are `ScmError`s, as for every
+ * GitHub call.
  */
 export async function listInstallationRepositories(
   row: ScmConnectionRow,

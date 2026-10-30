@@ -698,6 +698,24 @@ describe('AddRepositoriesPage', () => {
       expect(new Set(ids).size).toBe(ids.length);
     });
 
+    it('names the three GitHub permissions a refused change needs', async () => {
+      server.on('GET', `/api/v0/repository-setups/${RUN_ID}`, {
+        body: run('done', [
+          done('acme/billing', {
+            ciOutcome: 'failed',
+            error: {
+              code: 'permission',
+              message: 'The GitHub App needs Contents, Workflows and Secrets write',
+            },
+          }),
+        ]),
+      });
+      const { root } = await render({ runId: RUN_ID, connection: GITHUB_ID });
+      expect(text(root.querySelector('article.result .fail-reason'))).toBe(
+        'The GitHub App needs the Contents, Workflows and Secrets permissions, read and write.',
+      );
+    });
+
     it('keeps a token it was given once, and points to the token settings when it has none', async () => {
       const answers = [
         run(

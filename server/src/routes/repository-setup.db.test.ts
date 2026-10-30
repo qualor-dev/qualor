@@ -30,8 +30,10 @@ interface CiSetup {
   missing: string[];
 }
 
-const BOTH = {
+/** What CI setup needs: Contents, Workflows and Secrets (write). */
+const CI_SETUP = {
   metadata: 'read',
+  contents: 'write',
   pull_requests: 'write',
   workflows: 'write',
   secrets: 'write',
@@ -145,7 +147,7 @@ describe('Listing a connection’s repositories and its CI-setup status', () => 
         { owner: 'acme', name: 'web', installationId: 1, defaultBranch: 'trunk' },
         { owner: 'acme', name: 'lib', installationId: 1 },
         { owner: 'acme', name: 'old', installationId: 1, archived: true },
-        { owner: 'beta', name: 'tool', installationId: 2, permissions: BOTH },
+        { owner: 'beta', name: 'tool', installationId: 2, permissions: CI_SETUP },
         { owner: 'beta', name: 'taken', installationId: 2 },
       ]);
       const { id } = await connectGitHub(fake);
@@ -329,18 +331,88 @@ describe('Listing a connection’s repositories and its CI-setup status', () => 
       expect(patched.json().ciSetup).toEqual({ available: true, reason: null, missing: [] });
     });
 
-    it('GitHub: needs Workflows and Secrets (write) on one installation', async () => {
-      const full = await github([{ owner: 'a', name: 'x', installationId: 1, permissions: BOTH }]);
-      const none = await github([{ owner: 'a', name: 'x', installationId: 1 }]);
+    it('GitHub: needs Contents, Workflows and Secrets (write) on one installation', async () => {
+      const full = await github([
+        { owner: 'a', name: 'x', installationId: 1, permissions: CI_SETUP },
+      ]);
+      const none = await github([
+        { owner: 'a', name: 'x', installationId: 1, permissions: { metadata: 'read' } },
+      ]);
       const workflowsOnly = await github([
         {
           owner: 'a',
           name: 'x',
           installationId: 1,
-          permissions: { metadata: 'read', workflows: 'write' },
+          permissions: { metadata: 'read', contents: 'write', workflows: 'write' },
         },
       ]);
+      // An App made before CI setup asked for Contents: it may not push the branch.
+      const noContents = await github([
+        {
+          owner: 'a',
+          name: 'x',
+          installationId: 1,
+          permissions: { metadata: 'read', workflows: 'write', secrets: 'write' },
+        },
+      ]);
+      const contentsRead = await github([
+        {
+          owner: 'a',
+          name: 'x',
+          installationId: 1,
+          permissions: { ...CI_SETUP, contents: 'read' },
+        },
+      ]);
+      expect((await connectGitHub(full)).ciSetup).toEqual({
+        available: true,
+        reason: null,
+        missing: [],
+      });
+      expect((await connectGitHub(none)).ciSetup).toEqual({
+        available: false,
+        reason: 'missing_permissions',
+        missing: ['contents_write', 'workflows_write', 'secrets_write'],
+      });
+      expect((await connectGitHub(workflowsOnly)).ciSetup).toEqual({
+        available: false,
+        reason: 'missing_permissions',
+        missing: ['secrets_write'],
+      });
+      expect((await connectGitHub(noContents)).ciSetup).toEqual({
+        available: false,
+        reason: 'missing_permissions',
+        missing: ['contents_write'],
+      });
+      expect((await connectGitHub(contentsRead)).ciSetup).toEqual({
+        available: false,
+        reason: 'missing_permissions',
+        missing: ['contents_write'],
+      });
+    });
+
+    it('GitHub: names what the best installation lacks when the permissions are split', async () => {
+      // Each permission is granted somewhere, but no single installation has all three.
       const split = await github([
+        {
+          owner: 'a',
+          name: 'x',
+          installationId: 1,
+          permissions: { metadata: 'read', contents: 'write', workflows: 'write' },
+        },
+        {
+          owner: 'b',
+          name: 'y',
+          installationId: 2,
+          permissions: { metadata: 'read', secrets: 'write' },
+        },
+      ]);
+      expect((await connectGitHub(split)).ciSetup).toEqual({
+        available: false,
+        reason: 'missing_permissions',
+        missing: ['secrets_write'],
+      });
+      // Two installations as good as each other: the first one listed.
+      const even = await github([
         {
           owner: 'a',
           name: 'x',
@@ -354,31 +426,17 @@ describe('Listing a connection’s repositories and its CI-setup status', () => 
           permissions: { metadata: 'read', secrets: 'write' },
         },
       ]);
-      expect((await connectGitHub(full)).ciSetup).toEqual({
-        available: true,
-        reason: null,
-        missing: [],
-      });
-      expect((await connectGitHub(none)).ciSetup).toEqual({
+      expect((await connectGitHub(even)).ciSetup).toEqual({
         available: false,
         reason: 'missing_permissions',
-        missing: ['workflows_write', 'secrets_write'],
-      });
-      expect((await connectGitHub(workflowsOnly)).ciSetup).toEqual({
-        available: false,
-        reason: 'missing_permissions',
-        missing: ['secrets_write'],
-      });
-      // Each is granted somewhere, but no single installation has both.
-      expect((await connectGitHub(split)).ciSetup).toEqual({
-        available: false,
-        reason: 'missing_permissions',
-        missing: [],
+        missing: ['contents_write', 'secrets_write'],
       });
     });
 
     it('GitHub: an SCM error means missing permissions, and the answer is kept for a minute', async () => {
-      const fake = await github([{ owner: 'a', name: 'x', installationId: 1, permissions: BOTH }]);
+      const fake = await github([
+        { owner: 'a', name: 'x', installationId: 1, permissions: CI_SETUP },
+      ]);
       fake.inject('GET', /^\/app\/installations/, { status: 500, body: { message: 'x' } });
       const created = await connectGitHub(fake);
       expect(created.ciSetup).toEqual({
@@ -395,7 +453,9 @@ describe('Listing a connection’s repositories and its CI-setup status', () => 
     });
 
     it('GitHub: reads the permissions once for repeated lists', async () => {
-      const fake = await github([{ owner: 'a', name: 'x', installationId: 1, permissions: BOTH }]);
+      const fake = await github([
+        { owner: 'a', name: 'x', installationId: 1, permissions: CI_SETUP },
+      ]);
       const created = await connectGitHub(fake);
       const calls = () =>
         fake.requests.filter((r) => r.path.startsWith('/app/installations')).length;
@@ -406,7 +466,9 @@ describe('Listing a connection’s repositories and its CI-setup status', () => 
     });
 
     it('GitHub: reads only the installations, so one whose repositories fail still counts', async () => {
-      const fake = await github([{ owner: 'a', name: 'x', installationId: 1, permissions: BOTH }]);
+      const fake = await github([
+        { owner: 'a', name: 'x', installationId: 1, permissions: CI_SETUP },
+      ]);
       fake.inject(
         'POST',
         /access_tokens$/,
@@ -420,7 +482,9 @@ describe('Listing a connection’s repositories and its CI-setup status', () => 
     });
 
     it('keeps a failed read for 10 s and a successful one for 60 s', async () => {
-      const fake = await github([{ owner: 'a', name: 'x', installationId: 1, permissions: BOTH }]);
+      const fake = await github([
+        { owner: 'a', name: 'x', installationId: 1, permissions: CI_SETUP },
+      ]);
       const { id } = await connectGitHub(fake);
       const [row] = await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, id));
       let clock = 0;

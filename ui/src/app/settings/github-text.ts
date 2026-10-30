@@ -57,14 +57,23 @@ export function githubTestText(result: TestResult): string {
 /** The permissions a GitHub App's installations lack for CI setup (`ciSetup.missing`). */
 export type CiSetupMissing = ItemOf<'/api/v0/scm-connections'>['ciSetup']['missing'];
 
-/** Which of Workflows and Secrets a GitHub App lacks for CI setup, in one sentence. */
+/** GitHub's names of the permissions CI setup needs, in the order its settings list them. */
+const PERMISSION_NAMES: Record<CiSetupMissing[number], string> = {
+  contents_write: 'Contents',
+  workflows_write: 'Workflows',
+  secrets_write: 'Secrets',
+};
+
+/** Which of Contents, Workflows and Secrets a GitHub App lacks for CI setup, in one sentence. */
 export function ciSetupMissingText(missing: CiSetupMissing): string {
-  const workflows = missing.includes('workflows_write');
-  const secrets = missing.includes('secrets_write');
-  if (workflows && secrets) {
-    return $localize`:@@addRepos.why.missingBoth:The GitHub App lacks the Workflows and Secrets permissions.`;
+  const [a, b, c] = (Object.keys(PERMISSION_NAMES) as CiSetupMissing[number][])
+    .filter((p) => missing.includes(p))
+    .map((p) => PERMISSION_NAMES[p]);
+  if (c !== undefined) {
+    return $localize`:@@addRepos.why.missingThree:The GitHub App lacks the ${a}:first:, ${b}:second: and ${c}:third: permissions.`;
   }
-  return workflows
-    ? $localize`:@@addRepos.why.missingWorkflows:The GitHub App lacks the Workflows permission.`
-    : $localize`:@@addRepos.why.missingSecrets:The GitHub App lacks the Secrets permission.`;
+  if (b !== undefined) {
+    return $localize`:@@addRepos.why.missingTwo:The GitHub App lacks the ${a}:first: and ${b}:second: permissions.`;
+  }
+  return $localize`:@@addRepos.why.missingOne:The GitHub App lacks the ${a}:permission: permission.`;
 }

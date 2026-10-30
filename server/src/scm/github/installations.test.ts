@@ -48,7 +48,7 @@ describe('listInstallationRepositories', () => {
         owner: 'acme',
         name: `r${String(i).padStart(3, '0')}`,
         installationId: 1,
-        permissions: { metadata: 'read', workflows: 'write', secrets: 'write' },
+        permissions: { metadata: 'read', contents: 'write', workflows: 'write', secrets: 'write' },
         ...(i === 1 ? { language: 'Go', defaultBranch: 'trunk', archived: true } : {}),
       });
     }
@@ -74,8 +74,21 @@ describe('listInstallationRepositories', () => {
       archived: false,
     });
     expect(first.installations).toEqual([
-      { installationId: 1, account: 'acme', workflowsWrite: true, secretsWrite: true },
-      { installationId: 2, account: 'beta', workflowsWrite: false, secretsWrite: false },
+      {
+        installationId: 1,
+        account: 'acme',
+        contentsWrite: true,
+        workflowsWrite: true,
+        secretsWrite: true,
+      },
+      // The guide's App: Contents (write), no Workflows or Secrets.
+      {
+        installationId: 2,
+        account: 'beta',
+        contentsWrite: true,
+        workflowsWrite: false,
+        secretsWrite: false,
+      },
     ]);
     // The App's JWT lists installations; each installation's token asks for Metadata (read) only.
     expect(f.requests[0]).toMatchObject({ method: 'GET', auth: 'jwt' });
