@@ -646,6 +646,17 @@ async function settleProject(
 
 // ─── CI ────────────────────────────────────────────────────────────────────────────────────
 
+/** The item's project, as CI setup needs it: its key goes into every CI file and snippet. */
+type SetupProject = Pick<ProjectRow, 'id' | 'key'>;
+
+async function setupProjectOf(db: Executor, projectId: string): Promise<SetupProject | null> {
+  const [row] = await db
+    .select({ id: projects.id, key: projects.key })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  return row ?? null;
+}
+
 /** Whether the project has a live CI setup token already: a snippet then gets no second one. */
 async function hasSetupToken(db: Executor, projectId: string): Promise<boolean> {
   const [row] = await db
@@ -726,12 +737,19 @@ async function finishWithSnippet(
  * the CI secrets and the merge request, in that order (the pipeline the merge request starts
  * finds the token). A token whose write failed is revoked; one that may be stored stays.
  */
-async function setUpCi(ctx: ItemContext, repo: OpenedRepository, projectId: string): Promise<void> {
+async function setUpCi(
+  ctx: ItemContext,
+  repo: OpenedRepository,
+  project: SetupProject,
+): Promise<void> {
   const { deps, run, connection, status, item } = ctx;
+  const projectId = project.id;
   const base = {
     provider: connection.provider,
     host: (deps.host ?? ciHostOf)(connection),
     serverUrl: deps.publicUrl ?? URL_PLACEHOLDER,
+    // Always written: the key may differ from the repository's path, which the scanner would use.
+    projectKey: project.key,
     version: VERSION,
     defaultBranch: repo.defaultBranch ?? 'main',
   };
@@ -864,12 +882,15 @@ async function setUpRepository(ctx: ItemContext): Promise<void> {
     });
   }
 
-  let projectId = item.projectId;
+  let project: SetupProject | null;
   if (item.projectOutcome === 'pending') {
-    const project = await settleProject(deps, run, item, connection.id, repo, ctx.by);
+    project = await settleProject(deps, run, item, connection.id, repo, ctx.by);
     if (project === null) return;
-    projectId = project.id;
-  } else if (projectId === null) {
+  } else {
+    // A resumed item: its project as it is now (deleted since: none).
+    project = item.projectId === null ? null : await setupProjectOf(deps.db, item.projectId);
+  }
+  if (project === null) {
     return updateItem(deps.db, item, {
       ciOutcome: 'failed',
       errorCode: 'project_gone',
@@ -887,7 +908,7 @@ async function setUpRepository(ctx: ItemContext): Promise<void> {
   }
 
   try {
-    await setUpCi(ctx, repo, projectId);
+    await setUpCi(ctx, repo, project);
   } catch (err) {
     if (!(err instanceof ScmError)) throw err;
     // The item stays pending: the next job resumes it (the branch is reused, the files kept).

@@ -407,6 +407,35 @@ describe('the repository-setup run', () => {
           name: 'gamma/lib',
           scmProjectRef: 'gamma/lib',
         });
+        // The snippet uploads to that key, not to the repository's path.
+        expect(item!.snippet).toContain('QUALOR_PROJECT_KEY: gamma/lib-3');
+      } finally {
+        await h.ctx.db.delete(organizations).where(eq(organizations.id, org!.id));
+      }
+    });
+
+    it('writes the suffixed key into the pull request’s workflow', async () => {
+      const fake = await github([
+        { owner: 'gamma', name: 'app', installationId: 3, permissions: ALL },
+      ]);
+      const connectionId = await connectGitHub(fake);
+      const [org] = await h.ctx.db
+        .insert(organizations)
+        .values({ key: 'setup-elsewhere', name: 'Elsewhere' })
+        .returning();
+      await h.ctx.db
+        .insert(projects)
+        .values({ organizationId: org!.id, key: 'gamma/app', name: 'theirs' });
+      try {
+        const runId = await start({ connectionId, repositories: ['gamma/app'], ciSetup: true });
+        await runSetups();
+        expect((await read(runId)).items[0]).toMatchObject({
+          project: { key: 'gamma/app-2' },
+          ciOutcome: 'merge_request',
+        });
+        const workflow = fake.fileText(1000, WORKFLOW, BRANCH)!;
+        expect(workflow).toContain('QUALOR_PROJECT_KEY: gamma/app-2');
+        expect(fake.openedPulls[0]!.body).toContain('`gamma/app-2`');
       } finally {
         await h.ctx.db.delete(organizations).where(eq(organizations.id, org!.id));
       }
@@ -883,6 +912,33 @@ describe('the repository-setup run', () => {
       expect(fake.file(8, BRANCH, '.gitlab-ci.yml')).toContain(
         `component: gitlab.com/qualor/qualor/qualor@${minorOf(VERSION)}`,
       );
+    });
+
+    it('passes the suffixed key to the component', async () => {
+      const fake = await gitlab();
+      fake.addProject({ id: 16, path: 'acme/taken' });
+      const connectionId = await connectGitLab(fake);
+      // Another project of the instance holds the repository's path as its key.
+      const [org] = await h.ctx.db
+        .insert(organizations)
+        .values({ key: 'setup-elsewhere', name: 'Elsewhere' })
+        .returning();
+      await h.ctx.db
+        .insert(projects)
+        .values({ organizationId: org!.id, key: 'acme/taken', name: 'theirs' });
+      try {
+        const runId = await start({ connectionId, repositories: ['16'], ciSetup: true });
+        await runSetups({ host: () => 'cloud' });
+        expect((await read(runId)).items[0]).toMatchObject({
+          project: { key: 'acme/taken-2' },
+          ciOutcome: 'merge_request',
+        });
+        expect(fake.file(16, BRANCH, '.gitlab-ci.yml')).toContain(
+          "args: '--project-key acme/taken-2'",
+        );
+      } finally {
+        await h.ctx.db.delete(organizations).where(eq(organizations.id, org!.id));
+      }
     });
 
     it('gives the snippet and the token for a CI configuration at a custom path', async () => {

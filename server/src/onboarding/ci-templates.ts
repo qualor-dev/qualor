@@ -23,10 +23,21 @@ export function yamlScalar(value: string): string {
     : `'${value.replace(/'/g, "''")}'`;
 }
 
+/**
+ * The scanner's `--project-key` flag for a key, as one shell word (a key has no space or shell
+ * character, PROJECT_KEY_PATTERN). A key that starts with a dash is joined with `=`, so the scanner
+ * reads it as the flag's value rather than another flag.
+ */
+export function projectKeyArg(key: string): string {
+  return key.startsWith('-') ? `--project-key=${key}` : `--project-key ${key}`;
+}
+
 export interface ComponentOptions {
   minor: string;
   stage: string | null;
   csharp: boolean;
+  /** The project's key: the component passes it to the scan as `args`. */
+  projectKey: string;
 }
 
 /** The `include` list entry for the GitLab CI/CD component, with its first line at `indent` spaces. */
@@ -36,6 +47,7 @@ export function gitlabIncludeEntry(o: ComponentOptions, indent: number): string 
     `${pad}- component: ${COMPONENT_PATH}@${o.minor}`,
     `${pad}  inputs:`,
     `${pad}    image-tag: '${o.minor}'`,
+    `${pad}    args: ${yamlScalar(projectKeyArg(o.projectKey))}`,
   ];
   if (o.stage !== null) lines.push(`${pad}    stage: ${yamlScalar(o.stage)}`);
   if (o.csharp) {
@@ -54,22 +66,26 @@ export interface JobOptions {
   version: string;
   stage: string | null;
   csharp: boolean;
+  projectKey: string;
 }
 
 /** The plain `qualor:` job for self-managed GitLab (the guide's "Without the component"). */
 export function gitlabPlainJob(o: JobOptions): string {
   const image = o.csharp ? 'qualor/scanner-dotnet' : 'qualor/scanner';
+  const key = `      ${projectKeyArg(o.projectKey)}`;
   const script = o.csharp
     ? [
         '    - qualor dotnet begin',
         '    - dotnet build --no-incremental',
         '    - >-',
         '      qualor dotnet end',
+        key,
         ...GITLAB_REPORT_FLAGS.split(' --').map((f, i) => `      ${i === 0 ? f : `--${f}`}`),
       ]
     : [
         '    - >-',
         '      qualor scan',
+        key,
         ...GITLAB_REPORT_FLAGS.split(' --').map((f, i) => `      ${i === 0 ? f : `--${f}`}`),
       ];
   const lines = [
@@ -101,6 +117,7 @@ export interface WorkflowOptions {
   host: 'cloud' | 'self-hosted';
   csharp: boolean;
   serverUrl: string;
+  projectKey: string;
   version: string;
   minor: string;
   defaultBranch: string;
@@ -131,9 +148,13 @@ const checkoutStep = (o: WorkflowOptions): string[] => [
   `          ref: ${REF}`,
 ];
 
-/** The workflow file `.github/workflows/qualor.yml`. The server address is written literally. */
+/**
+ * The workflow file `.github/workflows/qualor.yml`. The server address and the project key are
+ * written literally.
+ */
 export function githubWorkflow(o: WorkflowOptions): string {
   const url = yamlScalar(o.serverUrl);
+  const key = yamlScalar(o.projectKey);
   const container = (image: string) => [
     '    container:',
     `      image: ${image}:${o.version}`,
@@ -154,6 +175,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       '      - run: qualor dotnet end',
       '        env:',
       `          QUALOR_URL: ${url}`,
+      `          QUALOR_PROJECT_KEY: ${key}`,
       `          QUALOR_TOKEN: ${TOKEN}`,
       '      - if: failure() || cancelled()',
       '        run: qualor dotnet abort',
@@ -167,6 +189,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       `      - uses: qualor-dev/scan-action@v${o.minor}`,
       '        with:',
       `          server-url: ${url}`,
+      `          project-key: ${key}`,
       `          token: ${TOKEN}`,
     ];
   } else {
@@ -179,6 +202,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       '      - run: qualor scan',
       '        env:',
       `          QUALOR_URL: ${url}`,
+      `          QUALOR_PROJECT_KEY: ${key}`,
       `          QUALOR_TOKEN: ${TOKEN}`,
     ];
   }

@@ -19,6 +19,7 @@ import {
   gitlabIncludeEntry,
   gitlabIncludeSnippet,
   gitlabPlainJob,
+  projectKeyArg,
   yamlScalar,
   type ComponentOptions,
 } from './ci-templates';
@@ -30,6 +31,11 @@ export interface CiSetupInput {
   provider: 'github' | 'gitlab';
   host: 'cloud' | 'self-hosted';
   serverUrl: string;
+  /**
+   * The project's key, written into every file and snippet: it may differ from the repository's
+   * path (a `-2` suffix, an adopted project), which the scanner would use otherwise.
+   */
+  projectKey: string;
   /** The server's VERSION. */
   version: string;
   csharp: boolean;
@@ -132,7 +138,7 @@ function nextLine(text: string, end: number): { at: number; prefix: string } {
 }
 
 function flowEntry(o: ComponentOptions): string {
-  const inputs = [`image-tag: '${o.minor}'`];
+  const inputs = [`image-tag: '${o.minor}'`, `args: ${yamlScalar(projectKeyArg(o.projectKey))}`];
   if (o.stage !== null) inputs.push(`stage: ${yamlScalar(o.stage)}`);
   if (o.csharp)
     inputs.push(
@@ -249,6 +255,7 @@ function addToSeq(text: string, seq: YAMLSeq, o: ComponentOptions): string | nul
 function descriptionFor(i: CiSetupInput): string {
   const lines = [
     `Qualor analyses every ${i.provider === 'gitlab' ? 'merge request' : 'pull request'} and every push to the default branch, and reports the result there.`,
+    `The analyses go to the Qualor project \`${i.projectKey}\`.`,
     '',
   ];
   if (i.provider === 'github') {
@@ -256,7 +263,7 @@ function descriptionFor(i: CiSetupInput): string {
       i.host === 'cloud' && !i.csharp
         ? `The workflow \`${WORKFLOW_FILE}\` runs the Qualor Action pinned at v${minorOf(i.version)}.`
         : `The workflow \`${WORKFLOW_FILE}\` runs the Qualor scanner image ${i.csharp ? 'qualor/scanner-dotnet' : 'qualor/scanner'}:${i.version}.`,
-      'The token is stored as the Actions secret `QUALOR_TOKEN`; it is not in any file. The server address is in the workflow.',
+      'The token is stored as the Actions secret `QUALOR_TOKEN`; it is not in any file. The server address and the project key are in the workflow.',
       `To remove it, delete \`${WORKFLOW_FILE}\` and the \`QUALOR_TOKEN\` secret.`,
     );
   } else {
@@ -287,7 +294,7 @@ function descriptionFor(i: CiSetupInput): string {
 
 export function planCiSetup(input: CiSetupInput): CiPlan {
   const minor = minorOf(input.version);
-  const { existing } = input;
+  const { existing, projectKey } = input;
   const change = (files: { path: string; content: string; update: boolean }[]): CiPlan => ({
     kind: 'change',
     files,
@@ -301,6 +308,7 @@ export function planCiSetup(input: CiSetupInput): CiPlan {
       host: input.host,
       csharp: input.csharp,
       serverUrl: input.serverUrl,
+      projectKey: input.projectKey,
       version: input.version,
       minor,
       defaultBranch: input.defaultBranch,
@@ -320,8 +328,8 @@ export function planCiSetup(input: CiSetupInput): CiPlan {
   const stage = parsed.ok ? stageFor(parsed.root) : null;
   const snippetFor = (st: string | null) =>
     input.host === 'cloud'
-      ? gitlabIncludeSnippet({ minor, stage: st, csharp: input.csharp })
-      : gitlabPlainJob({ version: input.version, stage: st, csharp: input.csharp });
+      ? gitlabIncludeSnippet({ minor, stage: st, csharp: input.csharp, projectKey })
+      : gitlabPlainJob({ version: input.version, stage: st, csharp: input.csharp, projectKey });
 
   const already = parsed.ok
     ? hasQualorEntry(parsed.root)
@@ -341,10 +349,10 @@ export function planCiSetup(input: CiSetupInput): CiPlan {
   if (input.host === 'self-hosted') {
     content = appendTopLevel(
       base,
-      gitlabPlainJob({ version: input.version, stage, csharp: input.csharp }),
+      gitlabPlainJob({ version: input.version, stage, csharp: input.csharp, projectKey }),
     );
   } else {
-    const o: ComponentOptions = { minor, stage, csharp: input.csharp };
+    const o: ComponentOptions = { minor, stage, csharp: input.csharp, projectKey };
     if (parsed.root?.has('include')) {
       const edited = addToInclude(base, parsed.root, o);
       if (edited === null) return unsupported();

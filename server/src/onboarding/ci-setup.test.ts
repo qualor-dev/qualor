@@ -3,6 +3,8 @@ import { parse, parseAllDocuments, parseDocument, type YAMLMap } from 'yaml';
 import { editIsSound, minorOf, planCiSetup, type CiPlan, type CiSetupInput } from './ci-setup';
 
 const URL_ = 'https://qualor.acme.io';
+/** The project's key: not the repository's path, as when `acme/app` was taken. */
+const KEY = 'acme/app-2';
 
 function input(
   over: Partial<Omit<CiSetupInput, 'existing'>> & {
@@ -14,6 +16,7 @@ function input(
     provider: 'gitlab',
     host: 'cloud',
     serverUrl: URL_,
+    projectKey: KEY,
     version: '0.14.3',
     csharp: false,
     defaultBranch: 'main',
@@ -75,7 +78,7 @@ describe('GitLab cloud', () => {
         path: '.gitlab-ci.yml',
         update: false,
         content:
-          "include:\n  - component: gitlab.com/qualor/qualor/qualor@0.14\n    inputs:\n      image-tag: '0.14'\n",
+          "include:\n  - component: gitlab.com/qualor/qualor/qualor@0.14\n    inputs:\n      image-tag: '0.14'\n      args: '--project-key acme/app-2'\n",
       },
     ]);
     expect(plan.secrets).toEqual([{ name: 'QUALOR_TOKEN' }]);
@@ -117,7 +120,10 @@ describe('GitLab cloud', () => {
     expect(added).toContain('include:');
     expect(out.startsWith(before)).toBe(true);
     expect(parse(out).include).toEqual([
-      { component: 'gitlab.com/qualor/qualor/qualor@0.14', inputs: { 'image-tag': '0.14' } },
+      {
+        component: 'gitlab.com/qualor/qualor/qualor@0.14',
+        inputs: { 'image-tag': '0.14', args: '--project-key acme/app-2' },
+      },
     ]);
   });
 
@@ -146,6 +152,7 @@ describe('GitLab cloud', () => {
         '  - component: gitlab.com/qualor/qualor/qualor@0.14',
         '    inputs:',
         "      image-tag: '0.14'",
+        "      args: '--project-key acme/app-2'",
         '',
       ].join('\n'),
     );
@@ -308,22 +315,31 @@ deploy:
     expect(added).not.toContain('stage:');
     const doc = parse(out);
     expect(doc.include).toHaveLength(4);
-    expect(doc.include[3].inputs).toEqual({ 'image-tag': '0.14' });
+    expect(doc.include[3].inputs).toEqual({
+      'image-tag': '0.14',
+      args: '--project-key acme/app-2',
+    });
     expect(Object.keys(doc)).toEqual(Object.keys(parse(before)));
   });
 
   it('adds a stage input when stages has no test', () => {
     const doc = parse(glFile('stages:\n  - build\n  - deploy\n'));
-    expect(doc.include[0].inputs).toEqual({ 'image-tag': '0.14', stage: 'deploy' });
+    expect(doc.include[0].inputs).toEqual({
+      'image-tag': '0.14',
+      stage: 'deploy',
+      args: '--project-key acme/app-2',
+    });
     expect(parse(glFile('stages: [prepare, ship]\n')).include[0].inputs.stage).toBe('ship');
   });
 
   it('adds no stage input when test is listed, or stages is absent', () => {
     expect(parse(glFile('stages: [build, test]\n')).include[0].inputs).toEqual({
       'image-tag': '0.14',
+      args: '--project-key acme/app-2',
     });
     expect(parse(glFile('job:\n  script: [x]\n')).include[0].inputs).toEqual({
       'image-tag': '0.14',
+      args: '--project-key acme/app-2',
     });
   });
 
@@ -331,6 +347,7 @@ deploy:
     const doc = parse(glFile(null, { csharp: true }));
     expect(doc.include[0].inputs).toEqual({
       'image-tag': '0.14',
+      args: '--project-key acme/app-2',
       dotnet: true,
       image: 'qualor/scanner-dotnet',
       'build-command': 'dotnet build --no-incremental',
@@ -500,7 +517,7 @@ describe('GitLab self-managed', () => {
     expect(doc.qualor.variables).toEqual({ GIT_DEPTH: '0' });
     expect(doc.qualor.script).toHaveLength(1);
     expect(doc.qualor.script[0]).toContain(
-      'qualor scan --gitlab-code-quality gl-code-quality-report.json',
+      'qualor scan --project-key acme/app-2 --gitlab-code-quality gl-code-quality-report.json',
     );
     expect(doc.qualor.script[0]).toContain('--gitlab-sast gl-sast-report.json');
     expect(doc.qualor.script[0]).toContain(
@@ -534,7 +551,9 @@ describe('GitLab self-managed', () => {
       'qualor dotnet begin',
       'dotnet build --no-incremental',
     ]);
-    expect(doc.qualor.script[2]).toContain('qualor dotnet end --gitlab-code-quality');
+    expect(doc.qualor.script[2]).toContain(
+      'qualor dotnet end --project-key acme/app-2 --gitlab-code-quality',
+    );
     expect(doc.qualor.after_script).toEqual(['qualor dotnet abort']);
   });
 
@@ -578,7 +597,11 @@ describe('GitHub', () => {
     });
     expect(job.steps[1]).toEqual({
       uses: 'qualor-dev/scan-action@v0.14',
-      with: { 'server-url': URL_, token: '${{ secrets.QUALOR_TOKEN }}' },
+      with: {
+        'server-url': URL_,
+        'project-key': KEY,
+        token: '${{ secrets.QUALOR_TOKEN }}',
+      },
     });
     expect(content).not.toContain('vars.');
   });
@@ -606,6 +629,7 @@ describe('GitHub', () => {
     ]);
     expect(job.steps[3].env).toEqual({
       QUALOR_URL: URL_,
+      QUALOR_PROJECT_KEY: KEY,
       QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
     });
     expect(job.steps[2].env).toBeUndefined();
@@ -617,7 +641,11 @@ describe('GitHub', () => {
     expect(job.container).toEqual({ image: 'qualor/scanner:0.14.3', options: '--user 1001' });
     expect(job.steps[1]).toEqual({
       run: 'qualor scan',
-      env: { QUALOR_URL: URL_, QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}' },
+      env: {
+        QUALOR_URL: URL_,
+        QUALOR_PROJECT_KEY: KEY,
+        QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
+      },
     });
   });
 
@@ -625,6 +653,7 @@ describe('GitHub', () => {
     const job = wf({ host: 'self-hosted', csharp: true }).doc.jobs.qualor;
     expect(job.container.image).toBe('qualor/scanner-dotnet:0.14.3');
     expect(job.steps[3].env.QUALOR_URL).toBe(URL_);
+    expect(job.steps[3].env.QUALOR_PROJECT_KEY).toBe(KEY);
   });
 
   it('GHES uses a Linux self-hosted runner and the tag-pinned checkout; cloud keeps the SHA pin', () => {
@@ -646,6 +675,89 @@ describe('GitHub', () => {
     expect(plan.description).toMatch(/remove|delete/i);
     expect(wf({ host: 'self-hosted' }).plan.description).toMatch(/version/i);
     expect(wf({ csharp: true }).plan.description).toMatch(/build command/i);
+  });
+});
+
+describe('the project key', () => {
+  const variants = (['github', 'gitlab'] as const).flatMap((provider) =>
+    (['cloud', 'self-hosted'] as const).flatMap((host) =>
+      [false, true].map((csharp) => ({ provider, host, csharp })),
+    ),
+  );
+
+  /** Where each variant names the key: the Action's input, the step's env, the scan's flag. */
+  function keyOf(content: string, v: (typeof variants)[number]): string | undefined {
+    const doc = parse(content);
+    if (v.provider === 'github') {
+      const steps = doc.jobs.qualor.steps as {
+        with?: Record<string, string>;
+        env?: Record<string, string>;
+      }[];
+      if (v.host === 'cloud' && !v.csharp) return steps[1]?.with?.['project-key'];
+      const scan = steps.find((s) => s.env?.['QUALOR_TOKEN'] !== undefined);
+      return scan?.env?.['QUALOR_PROJECT_KEY'];
+    }
+    if (v.host === 'cloud') {
+      const args = (doc.include as { inputs: { args?: string } }[]).at(-1)?.inputs.args;
+      return /^--project-key (\S+)$/.exec(args ?? '')?.[1];
+    }
+    const script = (doc.qualor.script as string[]).join('\n');
+    return /--project-key (\S+)/.exec(script)?.[1];
+  }
+
+  it.each(variants)('is written into the file and the snippet: %o', (v) => {
+    const plan = change(planCiSetup(input(v)));
+    expect(keyOf(plan.files[0]?.content ?? '', v)).toBe(KEY);
+    const snippet = planCiSetup(input({ ...v, existing: { tokenSecretSet: true } }));
+    if (snippet.kind !== 'snippet') throw new Error('expected snippet');
+    expect(keyOf(snippet.snippet, v)).toBe(KEY);
+  });
+
+  it('is written into every include shape GitLab gets', () => {
+    for (const before of [
+      'include:\n  - local: a.yml\n',
+      'include: [ {local: a.yml} ]\n',
+      'include: []\n',
+      'include: ci/base.yml\n',
+      'include:\n  local: a.yml\n',
+      'include: { local: a.yml }\n',
+    ]) {
+      const inputs = (parse(glFile(before)).include as { inputs?: { args?: string } }[]).at(
+        -1,
+      )?.inputs;
+      expect(inputs?.args, before).toBe('--project-key acme/app-2');
+    }
+  });
+
+  it('is quoted where YAML or the shell would read it otherwise', () => {
+    for (const key of ['acme/app:2', 'yes', '2024', 'a.b_c:d']) {
+      const gh = change(planCiSetup(input({ provider: 'github', projectKey: key })));
+      expect(parse(gh.files[0]?.content ?? '').jobs.qualor.steps[1].with['project-key']).toBe(key);
+      const ghes = change(
+        planCiSetup(input({ provider: 'github', host: 'self-hosted', projectKey: key })),
+      );
+      expect(parse(ghes.files[0]?.content ?? '').jobs.qualor.steps[1].env.QUALOR_PROJECT_KEY).toBe(
+        key,
+      );
+      expect(parse(glFile(null, { projectKey: key })).include[0].inputs.args).toBe(
+        `--project-key ${key}`,
+      );
+      expect(
+        parse(glFile('include: [ {local: a.yml} ]\n', { projectKey: key })).include[1].inputs.args,
+      ).toBe(`--project-key ${key}`);
+    }
+    // A key that starts with a dash is still the flag's value, not another flag.
+    expect(parse(glFile(null, { projectKey: '-x' })).include[0].inputs.args).toBe(
+      '--project-key=-x',
+    );
+    const job = parse(glFile(null, { host: 'self-hosted', projectKey: '-x' })).qualor;
+    expect(job.script[0]).toContain('qualor scan --project-key=-x --gitlab-code-quality');
+  });
+
+  it('names the project in the description', () => {
+    for (const provider of ['github', 'gitlab'] as const) {
+      expect(change(planCiSetup(input({ provider }))).description).toContain('`acme/app-2`');
+    }
   });
 });
 
