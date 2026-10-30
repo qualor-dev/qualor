@@ -105,6 +105,24 @@ describe('/system/vulnerability-db (API)', () => {
     });
   });
 
+  it('drops the password when the registry host changes, keeps it on the same host', async () => {
+    const a = 'registry.corp:5000/mirror/trivy-db:2';
+    await put({ source: { kind: 'mirror', repository: a, username: 'u', password: 'pw' } });
+    const sameHost = await put({
+      source: { kind: 'mirror', repository: 'REGISTRY.corp:5000/other/path:3'.toLowerCase() },
+    });
+    expect(sameHost.json().source).toMatchObject({ passwordSet: true, username: 'u' });
+    expect(lastChanged()).toEqual(['source.repository']);
+    const moved = await put({ source: { kind: 'mirror', repository: 'evil.example/m/t:2' } });
+    expect(moved.json().source).toMatchObject({ passwordSet: false, username: 'u' });
+    expect(lastChanged()).toEqual(['source.repository', 'source.password']);
+    await put({ source: { kind: 'mirror', repository: a, password: 'pw2' } });
+    const withPassword = await put({
+      source: { kind: 'mirror', repository: 'other.host/m/t:2', password: 'pw3' },
+    });
+    expect(withPassword.json().source.passwordSet).toBe(true);
+  });
+
   it('answers 422 on a bad repository and on intervalHours 5', async () => {
     for (const repository of ['Bad Repo', 'nohost', 'r.io/a/b', `r.io/a/${'b'.repeat(520)}:1`]) {
       const res = await put({ source: { kind: 'mirror', repository } });

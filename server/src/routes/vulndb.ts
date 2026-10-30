@@ -103,10 +103,9 @@ function changedFields(
     if (was?.repository !== after.source.repository) fields.push('source.repository');
     if ((was?.username ?? null) !== after.source.username) fields.push('source.username');
     // A new password is a change; removing one only when there was one.
-    if (
-      passwordSent &&
-      (after.source.passwordEnc !== null || (was?.passwordEnc ?? null) !== null)
-    ) {
+    const hadPassword = (was?.passwordEnc ?? null) !== null;
+    const dropped = !passwordSent && hadPassword && after.source.passwordEnc === null;
+    if (dropped || (passwordSent && (after.source.passwordEnc !== null || hadPassword))) {
       fields.push('source.password');
     }
   }

@@ -89,6 +89,11 @@ export interface VulndbSettingsPatch {
   source?: VulndbSourceInput;
 }
 
+/** The host[:port] of a repository: the part before the first slash, lowercased. */
+function registryHost(repository: string): string {
+  return repository.split('/')[0]?.toLowerCase() ?? '';
+}
+
 function nextSource(
   input: VulndbSourceInput,
   current: VulndbSource,
@@ -97,9 +102,14 @@ function nextSource(
   if (input.kind !== 'mirror') return { kind: input.kind };
   // Credentials carry over only from an existing mirror; a new mirror starts without any.
   const before = current.kind === 'mirror' ? current : null;
+  // The stored password never follows the repository to another registry host.
+  const sameHost =
+    before !== null && registryHost(before.repository) === registryHost(input.repository);
   const passwordEnc =
     input.password === undefined
-      ? (before?.passwordEnc ?? null)
+      ? sameHost
+        ? (before?.passwordEnc ?? null)
+        : null
       : input.password === null
         ? null
         : encryptSecret(encryptionKey(secretKey), input.password, VULNDB_PASSWORD_AAD);
