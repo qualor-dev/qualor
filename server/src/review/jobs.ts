@@ -67,6 +67,37 @@ export async function queueRemapPurge(tx: Executor, projectId: string): Promise<
 }
 
 /**
+ * R41, for a change of a project's mapping (`PATCH /projects/:id`, the repository-setup run):
+ * mapped to another repository or connection, or mapped again after an unmap whose purge has not
+ * run yet (it would find the project active and keep the old copies), the copies of the old
+ * mapping go ({@link queueRemapPurge}). A first mapping has copies to drop only after such an
+ * unmap; one without any snapshot queues nothing.
+ */
+export async function queueRemapPurgeIfCopies(
+  tx: Executor,
+  before: { id: string; scmConnectionId: string | null; scmProjectRef: string | null },
+  after: { scmConnectionId: string | null; scmProjectRef: string | null },
+): Promise<void> {
+  if (
+    after.scmConnectionId === null ||
+    (after.scmConnectionId === before.scmConnectionId &&
+      after.scmProjectRef === before.scmProjectRef)
+  ) {
+    return;
+  }
+  const holdsCopies =
+    before.scmConnectionId !== null ||
+    (
+      await tx
+        .select({ id: reviewSnapshots.id })
+        .from(reviewSnapshots)
+        .where(eq(reviewSnapshots.projectId, before.id))
+        .limit(1)
+    ).length > 0;
+  if (holdsCopies) await queueRemapPurge(tx, before.id);
+}
+
+/**
  * The queue that unpacks the uploaded review snapshots (6I-2) and purges those of the projects
  * AI review no longer covers (6I-3); main.ts runs it on the analysis worker. Unpacking never
  * throws for what the scanner sent: a snapshot it refuses is `rejected`, with the reason logged (it

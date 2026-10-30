@@ -14,6 +14,7 @@ import { PUBLIC_URL } from '../../test/scm';
 import type { AuditRecorder } from '../audit/recorder';
 import { hashToken } from '../auth/tokens';
 import {
+  analyses,
   apiTokens,
   auditEvents,
   jobs,
@@ -21,11 +22,13 @@ import {
   projects,
   repositorySetupItems,
   repositorySetupRuns,
+  reviewSnapshots,
   scmConnections,
   users,
 } from '../db/schema';
 import { VERSION } from '../index';
 import { runUntilIdle } from '../queue/worker';
+import { REVIEW_SNAPSHOT_QUEUE } from '../review/snapshot-store';
 import { InstallationTokenCache, MutationPacer } from '../scm/github/app-auth';
 import { minorOf } from './ci-setup';
 import {
@@ -204,6 +207,7 @@ describe('the repository-setup run', () => {
   afterEach(async () => {
     await h.ctx.db.delete(repositorySetupRuns);
     await h.ctx.db.delete(jobs).where(eq(jobs.queue, REPOSITORY_SETUP_QUEUE));
+    await h.ctx.db.delete(jobs).where(eq(jobs.queue, REVIEW_SNAPSHOT_QUEUE));
     await h.ctx.db.delete(scmConnections);
     await h.ctx.db.delete(projects);
     for (const close of closers.splice(0)) await close();
@@ -641,6 +645,115 @@ describe('the repository-setup run', () => {
       expect(here!.token).toMatch(/^qlr_prj_/);
     });
 
+    it('queues the purge of the review copies an adopted project still holds, and none for a fresh one', async () => {
+      const fake = await github([
+        { owner: 'nu', name: 'held', installationId: 18 },
+        { owner: 'nu', name: 'fresh', installationId: 18 },
+      ]);
+      const connectionId = await connectGitHub(fake);
+      // Copies of an earlier mapping, unmapped since, whose purge has not run.
+      const held = await h.project('nu/held');
+      const fresh = await h.project('nu/fresh');
+      const [analysis] = await h.ctx.db.insert(analyses).values({ projectId: held.id }).returning();
+      await h.ctx.db.insert(reviewSnapshots).values({
+        analysisId: analysis!.id,
+        projectId: held.id,
+        compressedBytes: 4,
+        body: Buffer.from('gzip'),
+      });
+
+      const runId = await start({
+        connectionId,
+        repositories: ['nu/held', 'nu/fresh'],
+        ciSetup: false,
+      });
+      await runSetups();
+
+      expect((await read(runId)).items.map((i) => [i.project?.id, i.projectOutcome])).toEqual([
+        [held.id, 'adopted'],
+        [fresh.id, 'adopted'],
+      ]);
+      const purged = (
+        await h.ctx.db
+          .select({ payload: jobs.payload })
+          .from(jobs)
+          .where(eq(jobs.queue, REVIEW_SNAPSHOT_QUEUE))
+      ).map((j) => (j.payload as { purgeProjectId?: string }).purgeProjectId);
+      expect(purged.filter((id) => id === held.id)).toHaveLength(1);
+      expect(purged).not.toContain(fresh.id);
+    });
+
+    it('takes C# for the main language only', async () => {
+      const hub = await github([
+        {
+          owner: 'xi',
+          name: 'mostly-ts',
+          installationId: 20,
+          languages: { TypeScript: 900, 'C#': 10 },
+        },
+        {
+          owner: 'xi',
+          name: 'mostly-cs',
+          installationId: 20,
+          languages: { 'C#': 900, TypeScript: 10 },
+        },
+      ]);
+      const lab = await gitlab();
+      lab.addProject({ id: 16, path: 'yi/mostly-ts', languages: { TypeScript: 90, 'C#': 10 } });
+      lab.addProject({ id: 17, path: 'yi/mostly-cs', languages: { 'C#': 90, TypeScript: 10 } });
+      const hubRun = await start({
+        connectionId: await connectGitHub(hub),
+        repositories: ['xi/mostly-ts', 'xi/mostly-cs'],
+        ciSetup: false,
+      });
+      const labRun = await start({
+        connectionId: await connectGitLab(lab),
+        repositories: ['16', '17'],
+        ciSetup: false,
+      });
+      await runSetups();
+      for (const id of [hubRun, labRun]) {
+        const [ts, cs] = (await read(id)).items;
+        expect(ts!.snippet).toContain(`qualor/scanner:${VERSION}`);
+        expect(ts!.snippet).not.toContain('scanner-dotnet');
+        expect(cs!.snippet).toContain(`qualor/scanner-dotnet:${VERSION}`);
+      }
+    });
+
+    it('pauses a CI-setup run whose status cannot be read, and sets up CI when it reads again', async () => {
+      const fake = await github([
+        { owner: 'omicron', name: 'svc', installationId: 21, permissions: ALL },
+      ]);
+      const connectionId = await connectGitHub(fake);
+      const runId = await start({ connectionId, repositories: ['omicron/svc'], ciSetup: true });
+      // A blip at the run's start: no answer is not "not available".
+      fake.inject('GET', /^\/app\/installations$/, { status: 500 });
+      await runSetups();
+
+      const paused = await read(runId);
+      expect(paused.status).toBe('running');
+      expect(paused.items[0]).toMatchObject({ projectOutcome: 'pending', ciOutcome: 'pending' });
+      const [job] = await h.ctx.db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.queue, REPOSITORY_SETUP_QUEUE), eq(jobs.status, 'queued')));
+      expect(job).toMatchObject({ concurrencyKey: connectionId, payload: { runId, pauses: 1 } });
+      expect(githubWrites(fake.requests)).toEqual([]);
+
+      await h.ctx.db
+        .update(jobs)
+        .set({ runAt: sql`now()` })
+        .where(eq(jobs.id, job!.id));
+      await runSetups();
+      expect((await read(runId)).items[0]).toMatchObject({
+        projectOutcome: 'created',
+        ciOutcome: 'merge_request',
+        ciReason: null,
+        token: null,
+      });
+      expect(fake.openedPulls).toHaveLength(1);
+    });
+
     it('uses the Action on github.com', async () => {
       const fake = await github([
         { owner: 'lambda', name: 'ui', installationId: 11, permissions: ALL },
@@ -715,6 +828,45 @@ describe('the repository-setup run', () => {
       });
       expect(fake.variables(7)['QUALOR_TOKEN']!.value).toBe(variables['QUALOR_TOKEN']!.value);
       expect(fake.branches(7).sort()).toEqual(['main', BRANCH]);
+      expect(await tokensOf(project.id)).toHaveLength(1);
+    });
+
+    it('sets QUALOR_URL on a later run when an earlier one stored the token and stopped there', async () => {
+      const fake = await gitlab();
+      fake.addProject({ id: 15, path: 'acme/halfway' });
+      const connectionId = await connectGitLab(fake);
+      // QUALOR_TOKEN is created; the QUALOR_URL write then fails.
+      fake.inject(
+        'POST',
+        /^\/projects\/15\/variables$/,
+        { status: 0, passThrough: true },
+        { status: 500 },
+      );
+      const runId = await start({ connectionId, repositories: ['15'], ciSetup: true });
+      await runSetups();
+
+      expect((await read(runId)).items[0]).toMatchObject({
+        ciOutcome: 'failed',
+        error: { code: 'unavailable' },
+      });
+      expect(Object.keys(fake.variables(15))).toEqual(['QUALOR_TOKEN']);
+      const stored = fake.variables(15)['QUALOR_TOKEN']!.value;
+      const project = await projectByKey('acme/halfway');
+      expect((await tokensOf(project.id)).map((t) => t.revokedAt)).toEqual([null]);
+
+      const again = await start({ connectionId, repositories: ['15'], ciSetup: true });
+      await runSetups();
+      expect((await read(again)).items[0]).toMatchObject({
+        ciOutcome: 'merge_request',
+        ciUrl: `${fake.url}/acme/halfway/-/merge_requests/1`,
+        error: null,
+      });
+      expect(fake.variables(15)['QUALOR_URL']).toEqual({
+        value: PUBLIC_URL,
+        masked: false,
+        protected: false,
+      });
+      expect(fake.variables(15)['QUALOR_TOKEN']!.value).toBe(stored);
       expect(await tokensOf(project.id)).toHaveLength(1);
     });
 

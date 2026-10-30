@@ -26,7 +26,6 @@ import {
   projectMemberships,
   projects,
   qualityGates,
-  reviewSnapshots,
   scmConnections,
   type OrganizationRole,
   type ProjectRole,
@@ -59,7 +58,7 @@ import { PROJECT_KEY_PATTERN } from '../patterns';
 import { projectForUser, type ProjectRow } from '../projects/access';
 import { createProject } from '../projects/create';
 import { createProjectToken } from '../projects/tokens';
-import { queueRemapPurge, queueSnapshotPurge } from '../review/jobs';
+import { queueRemapPurgeIfCopies, queueSnapshotPurge } from '../review/jobs';
 import { projectAiReview } from '../review/settings';
 import { forgetForeignMergeRequestUrls } from '../scm/connections';
 import { projectAutoFixSchema } from './auto-fix';
@@ -571,25 +570,8 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
             await queueSnapshotPurge(tx, saved.organizationId);
           }
           // Mapped to another repository or connection, or mapped again after an unmap whose
-          // purge has not run yet (it would find the project active and keep the old copies):
-          // the copies of the old mapping go (R41).
-          if (
-            saved.scmConnectionId !== null &&
-            (saved.scmConnectionId !== locked.scmConnectionId ||
-              saved.scmProjectRef !== locked.scmProjectRef)
-          ) {
-            // A first mapping has copies to drop only after an unmap whose purge is still queued.
-            const holdsCopies =
-              locked.scmConnectionId !== null ||
-              (
-                await tx
-                  .select({ id: reviewSnapshots.id })
-                  .from(reviewSnapshots)
-                  .where(eq(reviewSnapshots.projectId, saved.id))
-                  .limit(1)
-              ).length > 0;
-            if (holdsCopies) await queueRemapPurge(tx, saved.id);
-          }
+          // purge has not run yet: the copies of the old mapping go (R41).
+          await queueRemapPurgeIfCopies(tx, locked, saved);
           // rbac-audit.md §8: only the fields whose value changed.
           const fieldChanges = PROJECT_CHANGE_FIELDS.filter(
             (field) => canonicalJson(locked[field]) !== canonicalJson(saved[field]),

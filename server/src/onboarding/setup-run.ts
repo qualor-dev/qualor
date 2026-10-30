@@ -30,7 +30,8 @@ import { createProject, type AuditedActor } from '../projects/create';
 import { createProjectToken, revokeProjectToken } from '../projects/tokens';
 import { enqueue } from '../queue/queue';
 import type { JobHandlers, WorkerLogger } from '../queue/worker';
-import { createCiSetupStatus, type CiSetupStatus } from '../scm/ci-setup-status';
+import { queueRemapPurgeIfCopies } from '../review/jobs';
+import { readCiSetupStatus, type CiSetupStatus } from '../scm/ci-setup-status';
 import {
   forgetForeignMergeRequestUrls,
   gitlabClientFor,
@@ -62,10 +63,11 @@ const MAX_KEY_SUFFIX = 20;
 const URL_PLACEHOLDER = 'https://qualor.example.com';
 const PROJECT_NAME_MAX = 255;
 /**
- * A rate-limited provider pauses the run: its job is queued again for when the provider says (a
- * minute when it does not), at most this many times; after that a rate limit fails the repository.
+ * A rate-limited provider, or a failed read of the connection's CI-setup status, pauses the run:
+ * its job is queued again for when the provider says (a minute when it does not), at most this
+ * many times; after that the error fails the repository's CI.
  */
-const MAX_RATE_LIMIT_PAUSES = 5;
+const MAX_PAUSES = 5;
 const DEFAULT_PAUSE_SECONDS = 60;
 
 /**
@@ -152,7 +154,7 @@ export function ciHostOf(row: {
 
 const payloadSchema = z.object({
   runId: z.uuid(),
-  /** How often the run paused for a rate limit already. */
+  /** How often the run paused already ({@link MAX_PAUSES}). */
   pauses: z.number().int().min(0).default(0),
 });
 
@@ -262,7 +264,7 @@ async function actorOf(db: Executor, userId: string | null): Promise<AuditActorC
 
 /** What a CI change does on either provider, on the branch {@link SETUP_BRANCH}. */
 interface CiRepository {
-  /** Whether the repository is C#: the provider says so, or a solution or project at the root. */
+  /** Whether C# is the repository's main language (GitHub: or a .sln or .csproj at the root). */
   csharp(): Promise<boolean>;
   /** What the planner needs, read from the default branch; `empty`: no commit to branch from. */
   read(): Promise<{
@@ -306,8 +308,9 @@ function githubRepository(
   const defaultBranch = found.default_branch;
   const granted = client.installationAccess?.permissions ?? {};
   let baseSha: string | null = null;
+  // C#: the main language (the most bytes), or a solution or project file at the root.
   const csharp = async () => {
-    if ((await client.languages()).includes('C#')) return true;
+    if ((await client.languages())[0] === 'C#') return true;
     return (await client.listDirectory('')).some((f) => /\.(sln|csproj)$/i.test(f));
   };
   return {
@@ -387,7 +390,8 @@ function gitlabRepository(
   const ref = String(found.id);
   const defaultBranch = found.default_branch ?? null;
   const configPath = found.ci_config_path ?? '';
-  const csharp = async () => (await client.languages(ref)).includes('C#');
+  // C#: the main language only; the GitLab client lists no tree to look for a .sln or .csproj.
+  const csharp = async () => (await client.languages(ref))[0] === 'C#';
   return {
     name: found.path_with_namespace,
     mappingRef: ref,
@@ -493,7 +497,8 @@ async function openRepository(
 
 /**
  * Maps the project to the repository as `PATCH /projects/:id` does, with its `project.updated`
- * event. A new mapping: there are no review copies of an older one to purge.
+ * event. An adopted project may still hold review copies of an earlier mapping (an unmap whose
+ * purge has not run yet): they go, as `PATCH` has them go (R41).
  */
 async function mapProject(
   tx: Executor,
@@ -513,6 +518,7 @@ async function mapProject(
   if (project.scmConnectionId !== connectionId) {
     await forgetForeignMergeRequestUrls(tx, { projectId: saved.id });
   }
+  await queueRemapPurgeIfCopies(tx, project, saved);
   const changes = PROJECT_CHANGE_FIELDS.filter(
     (field) => canonicalJson(project[field]) !== canonicalJson(saved[field]),
   ).map((field) => ({ field, from: project[field], to: saved[field] }));
@@ -686,6 +692,8 @@ interface ItemContext {
   connection: ScmConnectionRow;
   status: CiSetupStatus | null;
   by: AuditedActor;
+  /** The CI-setup status could not be read, and the run paused as often as it may. */
+  statusFailure: ScmError | null;
   /** A rate limit pauses the run (rather than failing the repository). */
   mayPause: boolean;
 }
@@ -775,6 +783,8 @@ async function setUpCi(ctx: ItemContext, repo: OpenedRepository, projectId: stri
         existing: { ...input.existing, tokenSecretSet: false },
       });
       if (resumed.kind === 'change' && (await repo.ci.branchExists())) {
+        // What failed after the token may be a variable: set them again (an upsert) first.
+        await repo.ci.setVariables(resumed.variables);
         const url = await repo.ci.openMergeRequest(resumed.description);
         return updateItem(deps.db, item, { ciOutcome: 'merge_request', ciUrl: url });
       }
@@ -865,6 +875,15 @@ async function setUpRepository(ctx: ItemContext): Promise<void> {
       errorMessage: ERROR_TEXT.project_gone,
     });
   }
+  if (run.ciSetup && ctx.statusFailure !== null) {
+    // Never a snippet for want of an answer: the CI setup fails, with why.
+    const error = scmErrorOf(ctx.statusFailure, provider, 'read');
+    return updateItem(deps.db, item, {
+      ciOutcome: 'failed',
+      errorCode: error.code,
+      errorMessage: error.message,
+    });
+  }
 
   try {
     await setUpCi(ctx, repo, projectId);
@@ -885,11 +904,23 @@ async function setUpRepository(ctx: ItemContext): Promise<void> {
   }
 }
 
-async function runSetup(
+/** The same run, later: the job is queued again, under the same key (one job per connection). */
+async function pauseRun(
   deps: SetupRunDeps,
-  statusOf: (row: ScmConnectionRow) => Promise<CiSetupStatus>,
-  payload: z.infer<typeof payloadSchema>,
+  run: RunRow,
+  connectionId: string,
+  pauses: number,
+  seconds: number,
 ): Promise<void> {
+  await enqueue(deps.db, {
+    queue: REPOSITORY_SETUP_QUEUE,
+    payload: { runId: run.id, pauses: pauses + 1 },
+    concurrencyKey: connectionId,
+    runAt: sql`now() + make_interval(secs => ${seconds})`,
+  });
+}
+
+async function runSetup(deps: SetupRunDeps, payload: z.infer<typeof payloadSchema>): Promise<void> {
   const { runId, pauses } = payload;
   const [run] = await deps.db
     .select()
@@ -915,8 +946,34 @@ async function runSetup(
             ),
           );
   const by: AuditedActor = { audit: deps.audit, actor: await actorOf(deps.db, run.createdBy) };
-  // Read once per run: the GitHub installations' permissions, the GitLab setting, the URL.
-  const status = connection && run.ciSetup ? await statusOf(connection) : null;
+  // Read once per run, uncached: the GitHub installations' permissions, the GitLab setting, the
+  // URL. Only a definite "not available" turns the repositories' CI into snippets; a failed read
+  // pauses the run and reads again later.
+  let status: CiSetupStatus | null = null;
+  let statusFailure: ScmError | null = null;
+  if (connection && run.ciSetup) {
+    try {
+      status = await readCiSetupStatus(connection, deps.scm, deps.publicUrl);
+    } catch (err) {
+      if (!(err instanceof ScmError)) throw err;
+      deps.logger?.warn(
+        { runId: run.id, kind: err.kind, reason: err.reason, status: err.status },
+        'repository setup could not read the CI-setup status',
+      );
+      // An unusable connection (its key, its address) does not get better: each repository
+      // fails on it at once.
+      if (err.reason !== 'invalid_input' && pauses < MAX_PAUSES) {
+        const seconds = err.retryAfterSeconds ?? DEFAULT_PAUSE_SECONDS;
+        await pauseRun(deps, run, connection.id, pauses, seconds);
+        deps.logger?.info(
+          { runId: run.id, retryInSeconds: seconds },
+          'repository setup paused: the CI-setup status could not be read',
+        );
+        return;
+      }
+      statusFailure = err;
+    }
+  }
   const items = await deps.db
     .select()
     .from(repositorySetupItems)
@@ -935,18 +992,13 @@ async function runSetup(
         item,
         connection,
         status,
+        statusFailure,
         by,
-        mayPause: pauses < MAX_RATE_LIMIT_PAUSES,
+        mayPause: pauses < MAX_PAUSES,
       });
     } catch (err) {
       if (err instanceof RateLimitPause) {
-        // The same run, later: one job per connection at a time still holds (the key).
-        await enqueue(deps.db, {
-          queue: REPOSITORY_SETUP_QUEUE,
-          payload: { runId: run.id, pauses: pauses + 1 },
-          concurrencyKey: connection.id,
-          runAt: sql`now() + make_interval(secs => ${err.seconds})`,
-        });
+        await pauseRun(deps, run, connection.id, pauses, err.seconds);
         deps.logger?.info(
           { runId: run.id, position: item.position, retryInSeconds: err.seconds },
           'repository setup paused: the provider is rate limiting',
@@ -979,11 +1031,6 @@ async function runSetup(
 
 /** The `repository-setup` queue's handler; the `scm` worker runs it (main.ts). */
 export function repositorySetupHandlers(deps: SetupRunDeps): JobHandlers {
-  const statusOf = createCiSetupStatus({
-    deps: deps.scm,
-    publicUrl: deps.publicUrl,
-    warn: (message, context) => deps.logger?.warn(context, message),
-  });
   return {
     [REPOSITORY_SETUP_QUEUE]: async (job) => {
       const parsed = payloadSchema.safeParse(job.payload);
@@ -991,7 +1038,7 @@ export function repositorySetupHandlers(deps: SetupRunDeps): JobHandlers {
         deps.logger?.warn({ jobId: job.id }, 'malformed repository-setup job payload; completing');
         return;
       }
-      await runSetup(deps, statusOf, parsed.data);
+      await runSetup(deps, parsed.data);
     },
   };
 }

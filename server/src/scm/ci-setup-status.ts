@@ -22,7 +22,52 @@ interface Cached {
   expires: number;
   /** What the cached answer was read for: a changed address, App or key reads again. */
   fingerprint: string;
-  permissions: { missing: CiSetupMissing[]; granted: boolean };
+  permissions: Grants;
+}
+
+interface Grants {
+  missing: CiSetupMissing[];
+  granted: boolean;
+}
+
+/** Whether one GitHub App installation grants Workflows and Secrets (write); errors are ScmErrors. */
+async function githubGrants(row: ScmConnectionRow, deps: ScmDeps): Promise<Grants> {
+  const installations = await listInstallations(row, deps);
+  const missing: CiSetupMissing[] = [];
+  if (!installations.some((i) => i.workflowsWrite)) missing.push('workflows_write');
+  if (!installations.some((i) => i.secretsWrite)) missing.push('secrets_write');
+  return { missing, granted: installations.some((i) => i.workflowsWrite && i.secretsWrite) };
+}
+
+function statusOf(
+  row: ScmConnectionRow,
+  publicUrl: string | null,
+  grants: Grants | null,
+): CiSetupStatus {
+  if (row.provider === 'gitlab') {
+    if (publicUrl === null) return { available: false, reason: 'no_public_url', missing: [] };
+    return row.ciSetupAllowed
+      ? { available: true, reason: null, missing: [] }
+      : { available: false, reason: 'not_allowed', missing: [] };
+  }
+  const { missing, granted } = grants ?? { missing: [], granted: false };
+  if (publicUrl === null) return { available: false, reason: 'no_public_url', missing };
+  return granted
+    ? { available: true, reason: null, missing: [] }
+    : { available: false, reason: 'missing_permissions', missing };
+}
+
+/**
+ * The CI-setup status of a connection read now, without a cache: for the repository-setup job,
+ * which must tell a definite "not available" from a failed read. A failed GitHub read throws its
+ * ScmError instead of counting as missing permissions.
+ */
+export async function readCiSetupStatus(
+  row: ScmConnectionRow,
+  deps: ScmDeps,
+  publicUrl: string | null,
+): Promise<CiSetupStatus> {
+  return statusOf(row, publicUrl, row.provider === 'github' ? await githubGrants(row, deps) : null);
 }
 
 /**
@@ -40,21 +85,14 @@ export function createCiSetupStatus(options: {
   const { deps, publicUrl, warn, now = Date.now } = options;
   const cache = new Map<string, Cached>();
 
-  const githubPermissions = async (row: ScmConnectionRow): Promise<Cached['permissions']> => {
+  const githubPermissions = async (row: ScmConnectionRow): Promise<Grants> => {
     const fingerprint = `${row.baseUrl}|${row.appId ?? ''}|${JSON.stringify(row.tokenEnc)}`;
     const hit = cache.get(row.id);
     if (hit && hit.fingerprint === fingerprint && hit.expires > now()) return hit.permissions;
-    let permissions: Cached['permissions'];
+    let permissions: Grants;
     let ttl = CI_SETUP_CACHE_MS;
     try {
-      const installations = await listInstallations(row, deps);
-      const missing: CiSetupMissing[] = [];
-      if (!installations.some((i) => i.workflowsWrite)) missing.push('workflows_write');
-      if (!installations.some((i) => i.secretsWrite)) missing.push('secrets_write');
-      permissions = {
-        missing,
-        granted: installations.some((i) => i.workflowsWrite && i.secretsWrite),
-      };
+      permissions = await githubGrants(row, deps);
     } catch (err) {
       if (!(err instanceof ScmError)) throw err;
       warn('Could not read the GitHub App installations for the CI-setup status', {
@@ -73,17 +111,6 @@ export function createCiSetupStatus(options: {
     return permissions;
   };
 
-  return async (row) => {
-    if (row.provider === 'gitlab') {
-      if (publicUrl === null) return { available: false, reason: 'no_public_url', missing: [] };
-      return row.ciSetupAllowed
-        ? { available: true, reason: null, missing: [] }
-        : { available: false, reason: 'not_allowed', missing: [] };
-    }
-    const { missing, granted } = await githubPermissions(row);
-    if (publicUrl === null) return { available: false, reason: 'no_public_url', missing };
-    return granted
-      ? { available: true, reason: null, missing: [] }
-      : { available: false, reason: 'missing_permissions', missing };
-  };
+  return async (row) =>
+    statusOf(row, publicUrl, row.provider === 'github' ? await githubPermissions(row) : null);
 }
