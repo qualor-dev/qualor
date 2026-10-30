@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { addMember, createUser, login, type Session } from '../../test/app';
 import { createFakeGitHub, type FakeGitHub, type FakeRepository } from '../../test/fake-github';
@@ -5,6 +6,11 @@ import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { PUBLIC_URL } from '../../test/scm';
 import { scmConnections } from '../db/schema';
+import {
+  CI_SETUP_CACHE_MS,
+  CI_SETUP_FAILURE_CACHE_MS,
+  createCiSetupStatus,
+} from '../scm/ci-setup-status';
 
 interface Option {
   ref: string;
@@ -397,6 +403,50 @@ describe('Listing a connection’s repositories and its CI-setup status', () => 
       await ciSetupOf(h, created.id);
       await ciSetupOf(h, created.id);
       expect(calls()).toBe(before);
+    });
+
+    it('GitHub: reads only the installations, so one whose repositories fail still counts', async () => {
+      const fake = await github([{ owner: 'a', name: 'x', installationId: 1, permissions: BOTH }]);
+      fake.inject(
+        'POST',
+        /access_tokens$/,
+        ...Array(5).fill({ status: 403, body: { message: 'no' } }),
+      );
+      const created = await connectGitHub(fake);
+      expect(created.ciSetup).toEqual({ available: true, reason: null, missing: [] });
+      const paths = fake.requests.map((r) => r.path.split('?')[0]);
+      expect(paths.length).toBeGreaterThan(0);
+      expect(new Set(paths)).toEqual(new Set(['/app/installations']));
+    });
+
+    it('keeps a failed read for 10 s and a successful one for 60 s', async () => {
+      const fake = await github([{ owner: 'a', name: 'x', installationId: 1, permissions: BOTH }]);
+      const { id } = await connectGitHub(fake);
+      const [row] = await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, id));
+      let clock = 0;
+      const status = createCiSetupStatus({
+        deps: { secretKey: h.ctx.config.secretKey, internalHosts: hosts as ReadonlySet<string> },
+        publicUrl: PUBLIC_URL,
+        warn: () => undefined,
+        now: () => clock,
+      });
+      const calls = () =>
+        fake.requests.filter((r) => r.path.startsWith('/app/installations')).length;
+      fake.clearRequests();
+      fake.inject('GET', /^\/app\/installations/, { status: 500, body: { message: 'x' } });
+      expect((await status(row!)).reason).toBe('missing_permissions');
+      clock = CI_SETUP_FAILURE_CACHE_MS - 1;
+      await status(row!);
+      expect(calls()).toBe(1);
+      clock = CI_SETUP_FAILURE_CACHE_MS;
+      expect((await status(row!)).available).toBe(true);
+      expect(calls()).toBe(2);
+      clock += CI_SETUP_CACHE_MS - 1;
+      await status(row!);
+      expect(calls()).toBe(2);
+      clock += 1;
+      await status(row!);
+      expect(calls()).toBe(3);
     });
 
     it('is no_public_url first, on both providers', async () => {

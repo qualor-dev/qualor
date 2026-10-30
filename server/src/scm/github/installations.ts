@@ -9,6 +9,34 @@ export type { GitHubInstallationAccess, GitHubRepoSummary };
 /** Installations one listing reads at most (100 to a page): far more than any App has. */
 const MAX_INSTALLATION_PAGES = 10;
 
+/** Every installation the App's JWT lists (suspended ones left out): no token, no repository call. */
+async function allInstallations(
+  client: Extract<ReturnType<typeof githubClientFor>, { client: unknown }>['client'],
+): Promise<GitHubInstallationAccess[]> {
+  const installations: GitHubInstallationAccess[] = [];
+  for (let page = 1; page <= MAX_INSTALLATION_PAGES; page++) {
+    const { items, hasMore } = await client.installations(page);
+    installations.push(...items);
+    if (!hasMore) break;
+  }
+  return installations;
+}
+
+/**
+ * The App's installations with whether each grants Workflows and Secrets (write): the JWT's
+ * `GET /app/installations` alone, so an installation whose repositories cannot be read still counts.
+ */
+export async function listInstallations(
+  row: ScmConnectionRow,
+  deps: ScmDeps,
+): Promise<GitHubInstallationAccess[]> {
+  const made = githubClientFor(row, deps);
+  if ('problem' in made) {
+    throw new ScmError('refused', made.problem, { reason: 'invalid_input' });
+  }
+  return allInstallations(made.client);
+}
+
 /**
  * One page of the repositories the App can reach, across all of its installations. The App's JWT
  * lists the installations; each installation's repositories come with a token that asks for
@@ -33,12 +61,7 @@ export async function listInstallationRepositories(
     throw new ScmError('refused', made.problem, { reason: 'invalid_input' });
   }
   const { client } = made;
-  const installations: GitHubInstallationAccess[] = [];
-  for (let page = 1; page <= MAX_INSTALLATION_PAGES; page++) {
-    const { items, hasMore } = await client.installations(page);
-    installations.push(...items);
-    if (!hasMore) break;
-  }
+  const installations = await allInstallations(client);
   const start = (opts.page - 1) * opts.perPage;
   const want = start + opts.perPage + 1;
   const found: GitHubRepoSummary[] = [];

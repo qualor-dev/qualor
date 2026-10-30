@@ -1,6 +1,6 @@
 import { ScmError } from './provider';
 import type { ScmConnectionRow, ScmDeps } from './connections';
-import { listInstallationRepositories } from './github/installations';
+import { listInstallations } from './github/installations';
 
 export type CiSetupReason = 'not_allowed' | 'missing_permissions' | 'no_public_url';
 export type CiSetupMissing = 'workflows_write' | 'secrets_write';
@@ -14,6 +14,8 @@ export interface CiSetupStatus {
 
 /** How long a GitHub connection's permissions are kept: the Connections page must not call GitHub on every render. */
 export const CI_SETUP_CACHE_MS = 60_000;
+/** A failed read is kept briefly: one transient error must not show missing permissions for a minute. */
+export const CI_SETUP_FAILURE_CACHE_MS = 10_000;
 const MAX_CACHED = 200;
 
 interface Cached {
@@ -43,11 +45,9 @@ export function createCiSetupStatus(options: {
     const hit = cache.get(row.id);
     if (hit && hit.fingerprint === fingerprint && hit.expires > now()) return hit.permissions;
     let permissions: Cached['permissions'];
+    let ttl = CI_SETUP_CACHE_MS;
     try {
-      const { installations } = await listInstallationRepositories(row, deps, undefined, {
-        page: 1,
-        perPage: 100,
-      });
+      const installations = await listInstallations(row, deps);
       const missing: CiSetupMissing[] = [];
       if (!installations.some((i) => i.workflowsWrite)) missing.push('workflows_write');
       if (!installations.some((i) => i.secretsWrite)) missing.push('secrets_write');
@@ -63,12 +63,13 @@ export function createCiSetupStatus(options: {
         reason: err.reason,
       });
       permissions = { missing: [], granted: false };
+      ttl = CI_SETUP_FAILURE_CACHE_MS;
     }
     if (cache.size >= MAX_CACHED) {
       for (const [id, entry] of cache) if (entry.expires <= now()) cache.delete(id);
       if (cache.size >= MAX_CACHED) cache.clear();
     }
-    cache.set(row.id, { expires: now() + CI_SETUP_CACHE_MS, fingerprint, permissions });
+    cache.set(row.id, { expires: now() + ttl, fingerprint, permissions });
     return permissions;
   };
 
