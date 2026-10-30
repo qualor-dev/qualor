@@ -30166,6 +30166,304 @@
           }
         }
       }
+    },
+    "/api/v0/organizations/{id}/setup-checklist": {
+      "get": {
+        "summary": "The organization's first-setup checklist and whether the caller closed it (org.projects.create)",
+        "tags": [
+          "organizations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "connect",
+                              "repositories",
+                              "analysis",
+                              "ai_review",
+                              "team"
+                            ]
+                          },
+                          "done": {
+                            "type": "boolean",
+                            "description": "Read from the server state, never from clicks"
+                          },
+                          "hint": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "merge_request",
+                                  "ask_server_admin"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "`merge_request`: a CI setup merge request is open and the project has no analysis yet. `ask_server_admin`: no AI provider is set and only an instance admin can set one"
+                          },
+                          "blocking": {
+                            "type": "boolean",
+                            "description": "Whether the step holds back `allDone`"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "done",
+                          "hint",
+                          "blocking"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "closed": {
+                      "type": "boolean",
+                      "description": "The viewer closed the checklist of this organization"
+                    },
+                    "allDone": {
+                      "type": "boolean",
+                      "description": "Every blocking step is done"
+                    }
+                  },
+                  "required": [
+                    "steps",
+                    "closed",
+                    "allDone"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Close or reopen the first-setup checklist for the caller in this organization (org.projects.create)",
+        "tags": [
+          "organizations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "closed": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "closed"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "connect",
+                              "repositories",
+                              "analysis",
+                              "ai_review",
+                              "team"
+                            ]
+                          },
+                          "done": {
+                            "type": "boolean",
+                            "description": "Read from the server state, never from clicks"
+                          },
+                          "hint": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "merge_request",
+                                  "ask_server_admin"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "`merge_request`: a CI setup merge request is open and the project has no analysis yet. `ask_server_admin`: no AI provider is set and only an instance admin can set one"
+                          },
+                          "blocking": {
+                            "type": "boolean",
+                            "description": "Whether the step holds back `allDone`"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "done",
+                          "hint",
+                          "blocking"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "closed": {
+                      "type": "boolean",
+                      "description": "The viewer closed the checklist of this organization"
+                    },
+                    "allDone": {
+                      "type": "boolean",
+                      "description": "Every blocking step is done"
+                    }
+                  },
+                  "required": [
+                    "steps",
+                    "closed",
+                    "allDone"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "security": [

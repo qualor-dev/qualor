@@ -71,6 +71,8 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   // 6I-2: AI review's settings and data-sharing consent, and what the scanner asks before it uploads.
   'GET /organizations/:id/ai/review': 'org.ai.manage',
   'PUT /organizations/:id/ai/review': 'org.ai.manage',
+  'GET /organizations/:id/setup-checklist': 'org.projects.create',
+  'PUT /organizations/:id/setup-checklist': 'org.projects.create',
   'GET /organizations/:id/license-policy': 'org.read',
   'PUT /organizations/:id/license-policy': 'org.licenses.manage',
   'GET /projects': 'list:project.read',

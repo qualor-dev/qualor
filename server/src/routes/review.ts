@@ -264,6 +264,15 @@ function ownProjectIds(
   return [...new Set(ids)].filter((id) => owners.get(id) === organizationId).sort();
 }
 
+/** Why AI review cannot run for the organisation, or null when it can. */
+export function reviewUnavailableReason(
+  settings: StoredLlmSettings,
+  organizationId: string,
+): 'no_provider' | 'organization_disabled' | null {
+  if (reviewProvider(settings) === null) return 'no_provider';
+  return organizationSettings(settings, organizationId).enabled ? null : 'organization_disabled';
+}
+
 /**
  * The answer for the organisation: `projectIds` are those of its projects that still exist, and
  * `test` is the stored last Test of the provider, fresh or not.
@@ -278,9 +287,7 @@ function organizationReview(
 ): OrganizationReview {
   const provider = reviewProvider(settings);
   const organization = organizationSettings(settings, organizationId);
-  let unavailableReason: 'no_provider' | 'organization_disabled' | null = null;
-  if (provider === null) unavailableReason = 'no_provider';
-  else if (!organization.enabled) unavailableReason = 'organization_disabled';
+  const unavailableReason = reviewUnavailableReason(settings, organizationId);
   const review = organization.review;
   return {
     available: unavailableReason === null,
