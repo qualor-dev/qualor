@@ -226,7 +226,7 @@ describe('LicensePage (enterprise.md §11)', () => {
     expect(texts[2]).toContain('past its grace period');
   });
 
-  it('says a trial key has expired when the server titles it so', async () => {
+  it('says a trial key has expired when the server marks it with reason trial', async () => {
     const server = setup(COMMUNITY);
     server.on('PUT', '/api/v0/license', () => ({
       status: 422,
@@ -234,7 +234,8 @@ describe('LicensePage (enterprise.md §11)', () => {
         ...problem(422, 'LICENSE_EXPIRED', [
           { path: 'body.key', message: 'This licence has expired' },
         ]),
-        title: 'This trial key has expired.',
+        title: 'Words the UI does not read',
+        reason: 'trial',
       },
     }));
     const { fixture, root } = await render();

@@ -271,6 +271,7 @@ describe('the licence API (enterprise.md §9)', () => {
       title: 'This licence is past its grace period',
       errors: [{ path: 'body.key' }],
     });
+    expect(res.json()).not.toHaveProperty('reason');
     expect(await storedRows(ctx)).toHaveLength(0);
   });
 
@@ -310,7 +311,7 @@ describe('the licence API (enterprise.md §9)', () => {
     expect(paid).toMatchObject({ trial: false, plan: 'Business' });
   });
 
-  it('titles an expired trial key as a trial key, with no grace period', async () => {
+  it('marks an expired trial key with reason trial, with no grace period', async () => {
     ctx = await context();
     const admin = await login(ctx, 'admin', ADMIN_PASSWORD);
     const key = signTest(
@@ -322,6 +323,7 @@ describe('the licence API (enterprise.md §9)', () => {
     expect(res.json()).toMatchObject({
       code: 'LICENSE_EXPIRED',
       title: 'This trial key has expired.',
+      reason: 'trial',
     });
   });
 

@@ -283,7 +283,7 @@ curl -fsS -X DELETE -H "$H" "$QUALOR_URL/api/v0/license"           # remove the 
 | Status and code | Meaning |
 |---|---|
 | 422 `LICENSE_INVALID` | the key was refused. The `reason` field gives the reason as a code: `malformed` (not a Qualor licence key: check that it was copied completely), `unknown-key` (signed with a key this version of Qualor does not accept), `bad-signature` (changed: the signature does not match), `bad-payload` (contents not valid), `revoked`, or `not-yet-valid`. `errors[0].message` says the same in English |
-| 422 `LICENSE_EXPIRED` | the key is past its grace period: ask for a renewed one. For a trial key the `title` is `This trial key has expired.`: a trial has no grace period, so write to license@qualor.dev to buy a licence or extend the trial |
+| 422 `LICENSE_EXPIRED` | the key is past its grace period: ask for a renewed one. A trial key has no grace period and comes with `reason: trial`: write to license@qualor.dev to buy a licence or extend the trial |
 | 409 `LICENSE_MANAGED_BY_ENVIRONMENT` | the key comes from `QUALOR_LICENSE` or `QUALOR_LICENSE_FILE`. Change the variable and restart instead |
 | 413 `BODY_TOO_LARGE` | the request body is larger than 17 KiB. A key is far smaller: check what you sent |
 | 403 | you are not an instance admin, or the token lacks the Admin scope |

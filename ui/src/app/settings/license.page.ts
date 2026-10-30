@@ -24,7 +24,6 @@ import {
   licenseTexts,
   MAX_KEY_TEXT,
   reasonText,
-  TRIAL_EXPIRED_TITLE,
   type LicenseStatus,
 } from './license-text';
 
@@ -276,10 +275,8 @@ export class LicensePage {
     if (!(err instanceof ApiError) || err.status !== 422) return null;
     const message = fieldErrors(err)['body.key'];
     if (err.code === 'LICENSE_EXPIRED') {
-      // The problem carries no trial field; the server titles an expired trial key as a trial key.
-      return err.problem?.title === TRIAL_EXPIRED_TITLE
-        ? licenseTexts.trialExpired()
-        : licenseTexts.expired();
+      // The machine code in `reason` (enterprise.md §9), never the English title.
+      return err.problem?.reason === 'trial' ? licenseTexts.trialExpired() : licenseTexts.expired();
     }
     // The machine code in `reason` (enterprise.md §9), never the English `errors[].message`.
     if (err.code === 'LICENSE_INVALID') {

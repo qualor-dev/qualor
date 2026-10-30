@@ -172,7 +172,7 @@ export const licenseRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
           problemDescriptions: {
             409: MANAGED_BY_ENVIRONMENT,
             413: 'BODY_TOO_LARGE: the body is larger than 17 KiB',
-            422: 'VALIDATION_FAILED: the body is not { key } with 1 to 16 KiB of text (checked first); LICENSE_INVALID: the key failed verification, `reason` says why; LICENSE_EXPIRED: the key is past its grace period',
+            422: 'VALIDATION_FAILED: the body is not { key } with 1 to 16 KiB of text (checked first); LICENSE_INVALID: the key failed verification, `reason` says why; LICENSE_EXPIRED: the key is past its grace period, `reason: trial` for a trial key (which has none)',
           },
         },
       },
@@ -213,6 +213,8 @@ export const licenseRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
             ? 'This trial key has expired.'
             : 'This licence is past its grace period',
           {
+            // Clients tell a trial key by `reason`, never by the English title (enterprise.md §9).
+            extensions: verification.license.trial === true ? { reason: 'trial' } : undefined,
             errors: [{ path: 'body.key', message: 'This licence has expired' }],
           },
         );

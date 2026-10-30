@@ -11861,7 +11861,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description VALIDATION_FAILED: the body is not { key } with 1 to 16 KiB of text (checked first); LICENSE_INVALID: the key failed verification, `reason` says why; LICENSE_EXPIRED: the key is past its grace period */
+                /** @description VALIDATION_FAILED: the body is not { key } with 1 to 16 KiB of text (checked first); LICENSE_INVALID: the key failed verification, `reason` says why; LICENSE_EXPIRED: the key is past its grace period, `reason: trial` for a trial key (which has none) */
                 422: {
                     headers: {
                         [name: string]: unknown;

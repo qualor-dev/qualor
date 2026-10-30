@@ -60,8 +60,6 @@ export function knownReasonText(reason: unknown): string | null {
 /** Where a trial is requested (a plain link: the server sends nothing) and whom to write to. */
 export const TRIAL_URL = 'https://qualor.dev/trial';
 export const LICENSE_EMAIL = 'license@qualor.dev';
-/** The title the server gives a refused, expired trial key (the problem carries nothing else that says trial). */
-export const TRIAL_EXPIRED_TITLE = 'This trial key has expired.';
 
 export const licenseTexts = {
   trialUrl: TRIAL_URL,
