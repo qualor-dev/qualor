@@ -1119,15 +1119,16 @@ export class GitHubClient {
     return name;
   }
 
-  /** `GET /contents/{path}` (on `ref`), or null when there is nothing there. */
-  private async contents(path: string, ref?: string): Promise<unknown> {
+  /**
+   * `GET /contents/{path}` (on `ref`), or null when there is nothing there; a null `path` is the
+   * repository's root directory.
+   */
+  private async contents(path: string | null, ref?: string): Promise<unknown> {
     if (ref !== undefined) this.branchPath(ref);
     const query = ref === undefined ? '' : `?ref=${encodeURIComponent(ref)}`;
+    const target = path === null ? '' : `/${this.contentPath(path)}`;
     try {
-      const { json } = await this.repoCall(
-        'GET',
-        `${this.repoPath()}/contents/${this.contentPath(path)}${query}`,
-      );
+      const { json } = await this.repoCall('GET', `${this.repoPath()}/contents${target}${query}`);
       return json;
     } catch (err) {
       if (err instanceof ScmError && err.status === 404) return null;
@@ -1156,9 +1157,12 @@ export class GitHubClient {
     return file.type === 'file' ? file.sha : null;
   }
 
-  /** The names of the entries of the directory at `path` on the default branch; [] if none. */
+  /**
+   * The names of the entries of the directory at `path` on the default branch (`''`: the root);
+   * [] if none.
+   */
   async listDirectory(path: string): Promise<string[]> {
-    const json = await this.contents(path);
+    const json = await this.contents(path === '' ? null : path);
     if (!Array.isArray(json)) return [];
     return this.parse(contentsEntries, json).map((entry) => entry.name);
   }

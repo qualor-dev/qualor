@@ -161,6 +161,8 @@ interface FakeProject {
   defaultBranch: string | null;
   archived: boolean;
   languages: Record<string, number>;
+  /** The project's CI/CD configuration file (`ci_config_path`); null: GitLab's default. */
+  ciConfigPath: string | null;
   /** Branch name -> its files (path -> text). */
   branches: Map<string, Map<string, string>>;
   variables: Map<string, FakeVariable>;
@@ -197,7 +199,8 @@ export interface FakeGitLab {
   readonly statuses: FakeStatus[];
   /**
    * A project with a `defaultBranch` (default `main`, which exists and holds no files; null: an
-   * empty repository with no branch), `archived` and the `languages` GitLab reports (shares).
+   * empty repository with no branch), `archived`, the `languages` GitLab reports (shares) and
+   * its `ciConfigPath` (unset: the default `.gitlab-ci.yml`, which GitLab answers as null).
    */
   addProject(project: {
     id: number;
@@ -205,6 +208,7 @@ export interface FakeGitLab {
     defaultBranch?: string | null;
     archived?: boolean;
     languages?: Record<string, number>;
+    ciConfigPath?: string | null;
   }): void;
   /** A branch of the project, empty or with a copy of the files of `from`. */
   addBranch(projectId: number, name: string, from?: string): void;
@@ -526,6 +530,9 @@ export async function createFakeGitLab(
         id: project.id,
         path_with_namespace: project.path,
         web_url: `${url}/${project.path}`,
+        default_branch: project.defaultBranch,
+        archived: project.archived,
+        ci_config_path: project.ciConfigPath,
         permissions: {
           project_access: { access_level: accessLevel, notification_level: 3 },
           group_access: null,
@@ -925,7 +932,7 @@ export async function createFakeGitLab(
     },
     requests,
     statuses,
-    addProject({ id, path: projectPath, defaultBranch, archived, languages }) {
+    addProject({ id, path: projectPath, defaultBranch, archived, languages, ciConfigPath }) {
       const branch = defaultBranch === undefined ? 'main' : defaultBranch;
       projects.set(id, {
         id,
@@ -933,6 +940,7 @@ export async function createFakeGitLab(
         defaultBranch: branch,
         archived: archived ?? false,
         languages: languages ?? {},
+        ciConfigPath: ciConfigPath ?? null,
         branches: new Map(branch === null ? [] : [[branch, new Map<string, string>()]]),
         variables: new Map(),
         mergeRequests: new Map(),

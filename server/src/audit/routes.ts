@@ -23,6 +23,8 @@ export const UNAUDITED_MUTATIONS: ReadonlySet<string> = new Set([
   // GitHub's own deliveries, and GitLab's, which only queue a scan of a merge request's notes.
   'POST /api/v0/github/webhooks/:connectionId',
   'POST /api/v0/gitlab/webhooks/:connectionId',
+  // Onboarding: the run's job records each project, mapping and token it makes.
+  'POST /repository-setups',
 ]);
 
 /**

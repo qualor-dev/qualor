@@ -34,6 +34,7 @@ import { MAIL_LEASE_MS, MAIL_WORKER_CONCURRENCY, mailHandlers } from './mail/del
 import { mailDeps } from './mail/outbox';
 import { notifyAnalysesFailed } from './notifications/analysis';
 import { notifyDeps } from './notifications/deps';
+import { reconcileStuckSetupRuns, repositorySetupHandlers } from './onboarding/setup-run';
 import { bootEnterprise, type EnterpriseBoot } from './plugins/boot';
 import { ensurePluginSchedules, startPluginWorker } from './plugins/mount';
 import { startWorker } from './queue/worker';
@@ -299,18 +300,36 @@ async function main(): Promise<void> {
   // down never delays analyses or webhook deliveries.
   const scmWorker = startWorker({
     db: database.db,
-    handlers: scmHandlers({
-      db: database.db,
-      scm: { secretKey: config.secretKey, internalHosts: config.scmInternalHosts },
-      runtime: scmRuntime,
-      publicUrl: config.publicUrl,
-      logger,
-      // An automatic fix post checks the licence's seam again when it runs (4E-3a §3).
-      limits: () => edition.limits(),
-    }),
+    handlers: {
+      ...scmHandlers({
+        db: database.db,
+        scm: { secretKey: config.secretKey, internalHosts: config.scmInternalHosts },
+        runtime: scmRuntime,
+        publicUrl: config.publicUrl,
+        logger,
+        // An automatic fix post checks the licence's seam again when it runs (4E-3a §3).
+        limits: () => edition.limits(),
+      }),
+      // Onboarding: a connection's repositories added as projects, with their CI setup.
+      ...repositorySetupHandlers({
+        db: database.db,
+        scm: { secretKey: config.secretKey, internalHosts: config.scmInternalHosts },
+        runtime: scmRuntime,
+        publicUrl: config.publicUrl,
+        audit,
+        logger,
+      }),
+    },
     concurrency: SCM_WORKER_CONCURRENCY,
     leaseMs: SCM_LEASE_MS,
     logger,
+    // A run whose job died is finished, so its page stops waiting.
+    afterReap: async (db) => {
+      const finished = await reconcileStuckSetupRuns(db);
+      if (finished > 0) {
+        logger.warn({ finished }, 'finished repository-setup runs whose job was lost');
+      }
+    },
   });
   // Two circuits (6I R40): the AI requests (explain, triage, fix) have the `llm` runtime, AI reviews
   // and replies one of their own, so failing background reviews never pause the assistant. Only the

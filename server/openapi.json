@@ -20378,6 +20378,370 @@
         }
       }
     },
+    "/api/v0/repository-setups": {
+      "post": {
+        "summary": "Add a connection's repositories as projects in the background (202 with the run's id); for members who may create projects",
+        "tags": [
+          "scm"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "organizationId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "connectionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "repositories": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 255,
+                      "pattern": "^(?!(?:.*\\/)?\\.{1,2}(?:\\/|$))(?:[0-9]{1,20}|[A-Za-z0-9_.][A-Za-z0-9_.-]*(?:\\/[A-Za-z0-9_.][A-Za-z0-9_.-]*)+)$|^[A-Za-z0-9][A-Za-z0-9-]{0,38}\\/(?!\\.{1,2}$)[A-Za-z0-9._-]{1,100}$"
+                    },
+                    "description": "Refs as `GET /scm-connections/{id}/repositories` lists them, 1 to 50; one the provider does not know fails in the run"
+                  },
+                  "ciSetup": {
+                    "type": "boolean",
+                    "description": "Also open a merge request per repository that adds the Qualor job; only where the connection's `ciSetup.available`"
+                  }
+                },
+                "required": [
+                  "organizationId",
+                  "connectionId",
+                  "repositories",
+                  "ciSetup"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/repository-setups/{id}": {
+      "get": {
+        "summary": "A repository-setup run and each repository's outcome (Retry-After: 2 until it is done); its creator sees each new token once",
+        "tags": [
+          "scm"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "done"
+                      ]
+                    },
+                    "ciSetup": {
+                      "type": "boolean"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ref": {
+                            "type": "string",
+                            "description": "The repository as the run was given it"
+                          },
+                          "name": {
+                            "type": "string",
+                            "description": "owner/repo (GitHub) or the full path (GitLab) once read; the ref until then"
+                          },
+                          "project": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "key": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "key"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "projectOutcome": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "created",
+                              "adopted",
+                              "failed"
+                            ],
+                            "description": "`adopted`: an existing project (unmapped with the same key, or already mapped to this repository) is used"
+                          },
+                          "ciOutcome": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "merge_request",
+                              "snippet",
+                              "already",
+                              "skipped",
+                              "failed"
+                            ],
+                            "description": "`merge_request`: opened, or already open (`ciUrl`); `snippet`: CI could not be set up (`ciReason`), copy the snippet; `already`: the repository has a Qualor job or token; `skipped`: the run did not set up CI"
+                          },
+                          "ciUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "ciReason": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "already_set_up",
+                                  "yaml_unsupported",
+                                  "custom_ci_path",
+                                  "no_public_url",
+                                  "not_allowed",
+                                  "missing_permissions",
+                                  "empty_repository"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "snippet": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "token": {
+                            "description": "The project's new CI setup token, for the snippet: shown to the run's creator on the first read after the repository is done, never again",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "error": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "not_found",
+                                      "key_taken",
+                                      "connection_gone",
+                                      "connection_unusable",
+                                      "project_gone",
+                                      "permission",
+                                      "rate_limited",
+                                      "unavailable",
+                                      "refused",
+                                      "bad_answer",
+                                      "budget",
+                                      "internal",
+                                      "abandoned"
+                                    ]
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "code",
+                                  "message"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "ref",
+                          "name",
+                          "project",
+                          "projectOutcome",
+                          "ciOutcome",
+                          "ciUrl",
+                          "ciReason",
+                          "snippet",
+                          "token",
+                          "error"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "ciSetup",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v0/system/llm": {
       "get": {
         "summary": "The AI provider settings (instance admins); never the API key",

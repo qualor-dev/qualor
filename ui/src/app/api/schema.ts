@@ -9942,6 +9942,205 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/repository-setups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a connection's repositories as projects in the background (202 with the run's id); for members who may create projects */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        organizationId: string;
+                        /** Format: uuid */
+                        connectionId: string;
+                        /** @description Refs as `GET /scm-connections/{id}/repositories` lists them, 1 to 50; one the provider does not know fails in the run */
+                        repositories: string[];
+                        /** @description Also open a merge request per repository that adds the Qualor job; only where the connection's `ciSetup.available` */
+                        ciSetup: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/repository-setups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A repository-setup run and each repository's outcome (Retry-After: 2 until it is done); its creator sees each new token once */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            status: "queued" | "running" | "done";
+                            ciSetup: boolean;
+                            items: {
+                                /** @description The repository as the run was given it */
+                                ref: string;
+                                /** @description owner/repo (GitHub) or the full path (GitLab) once read; the ref until then */
+                                name: string;
+                                project: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                } | null;
+                                /**
+                                 * @description `adopted`: an existing project (unmapped with the same key, or already mapped to this repository) is used
+                                 * @enum {string}
+                                 */
+                                projectOutcome: "pending" | "created" | "adopted" | "failed";
+                                /**
+                                 * @description `merge_request`: opened, or already open (`ciUrl`); `snippet`: CI could not be set up (`ciReason`), copy the snippet; `already`: the repository has a Qualor job or token; `skipped`: the run did not set up CI
+                                 * @enum {string}
+                                 */
+                                ciOutcome: "pending" | "merge_request" | "snippet" | "already" | "skipped" | "failed";
+                                ciUrl: string | null;
+                                ciReason: ("already_set_up" | "yaml_unsupported" | "custom_ci_path" | "no_public_url" | "not_allowed" | "missing_permissions" | "empty_repository") | null;
+                                snippet: string | null;
+                                /** @description The project's new CI setup token, for the snippet: shown to the run's creator on the first read after the repository is done, never again */
+                                token: string | null;
+                                error: {
+                                    /** @enum {string} */
+                                    code: "not_found" | "key_taken" | "connection_gone" | "connection_unusable" | "project_gone" | "permission" | "rate_limited" | "unavailable" | "refused" | "bad_answer" | "budget" | "internal" | "abandoned";
+                                    message: string;
+                                } | null;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/system/llm": {
         parameters: {
             query?: never;

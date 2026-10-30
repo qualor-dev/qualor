@@ -77,6 +77,8 @@ const project = z.looseObject({
   /** Null for an empty repository; absent from some answers. */
   default_branch: z.string().nullable().optional(),
   archived: z.boolean().optional(),
+  /** The project's CI/CD configuration file; null, empty or absent: GitLab's `.gitlab-ci.yml`. */
+  ci_config_path: z.string().nullable().optional(),
   /** The token user's own access (a member of the project, or of its group); absent for some. */
   permissions: z
     .looseObject({ project_access: access, group_access: access })

@@ -160,6 +160,7 @@ describe('GitHub client: files, pull requests and Actions secrets (onboarding)',
       expect(await client.fileText('README.md', 'no-such-branch')).toBeNull();
       expect(await client.listDirectory('.github/workflows')).toEqual(['ci.yml']);
       expect(await client.listDirectory('nothing/here')).toEqual([]);
+      expect((await client.listDirectory('')).sort()).toEqual(['.github', 'README.md']);
       expect(await client.branchSha('trunk')).toBe(fake.branchSha(1, 'trunk'));
       expect(await client.branchSha('qualor/none')).toBeNull();
       expect(requests()).toEqual([
@@ -168,6 +169,7 @@ describe('GitHub client: files, pull requests and Actions secrets (onboarding)',
         'GET /repos/acme/api/contents/README.md?ref=no-such-branch',
         'GET /repos/acme/api/contents/.github/workflows',
         'GET /repos/acme/api/contents/nothing/here',
+        'GET /repos/acme/api/contents',
         'GET /repos/acme/api/git/ref/heads/trunk',
         'GET /repos/acme/api/git/ref/heads/qualor/none',
       ]);
