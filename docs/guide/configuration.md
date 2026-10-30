@@ -33,7 +33,8 @@ version: 1                          # required; only 1 is valid
 project:
   key: acme/payments-api            # default: CI_PROJECT_PATH / GITHUB_REPOSITORY
   name: Payments API                # default: last segment of the key
-  version: ${CI_COMMIT_TAG}         # optional label; a tag scan's version, and "previous_version" new code
+  version: 2.3.4                    # optional: a tag scan's version (default: the tag) and the
+                                    # label previous_version compares on the main branch
 
 server:
   timeoutSeconds: 30                # per HTTP request

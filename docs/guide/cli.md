@@ -16,7 +16,8 @@ qualor scan [--config PATH] [--project-key KEY] [--sarif PATH]... [--coverage PA
 
 It runs the analyzers, computes metrics, duplication, coverage and the diff against the baseline,
 and uploads one gzip report. Then it waits for the quality gate, prints the failed conditions and
-exits. Run it from the repository root. On a tag, it records a [version](./releases.md) instead.
+exits. Run it from the repository root. In a tag pipeline, or with `--tag`, it records the checkout
+as a [version](./releases.md) instead.
 
 | Option | Meaning |
 | --- | --- |
@@ -26,7 +27,7 @@ exits. Run it from the repository root. On a tag, it records a [version](./relea
 | `--coverage PATH` | an extra coverage report. Repeatable |
 | `--branch NAME` | the branch name, when CI detection does not give it |
 | `--mr ID --mr-target BRANCH` | analyse as a merge or pull request into `BRANCH` |
-| `--tag NAME` | scan the tag `NAME` and record it as a [version](./releases.md). Not with `--branch` or `--mr` |
+| `--tag NAME` | record the checkout as the [version](./releases.md) of tag `NAME`, so check out the tag first. Not with `--branch` or `--mr` |
 | `--no-wait` | exit 0 once the server has queued the analysis, without waiting for the gate |
 | `--token-file PATH` | read the token from a file (overrides `QUALOR_TOKEN`) |
 | `--server-url URL` | the server (overrides `QUALOR_URL`) |

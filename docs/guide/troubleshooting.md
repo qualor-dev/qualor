@@ -68,7 +68,7 @@ The reasons of `TAINT_ENGINE_FALLBACK` ([C#](./languages-and-analyzers.md#c)):
 | a coverage condition shows "no value" | no coverage report was imported | run the tests with coverage before the scan, and list the report in `coverage.reports` |
 | coverage is 0 % for tested files | the report's paths do not match the repository's | set `coverage.pathPrefixes`, or generate the report from the repository root |
 | the gate fails on old issues | an overall condition, which counts on the main branch only, or new lines that really touch old code | open the failed condition in the UI. The issue list filters by "new code" |
-| `NEW_CODE_DEFINITION_FALLBACK` | `previous_version` is set, but no analysis has a version label | set `project.version`, for example to `${CI_COMMIT_TAG}` |
+| `NEW_CODE_DEFINITION_FALLBACK` | `previous_version` is set, but no main-branch analysis has another version label | set `project.version` from your build's version on the main branch |
 | marking a false positive does not change the verdict | the change applies to the branch's latest analysis | reload: the re-evaluation runs within seconds |
 
 ## Merge request and pull request comments

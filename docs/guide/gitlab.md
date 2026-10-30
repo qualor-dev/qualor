@@ -49,12 +49,12 @@ include:
       image-tag: '0.14'
 ```
 
-The job runs in merge request pipelines, on the default branch and on tags. On a tag, it records a
-[version](./releases.md) and applies no quality gate. Elsewhere it uploads the analysis, fails with
-the quality gate, and keeps GitLab's **Code Quality**, **SAST** and **Dependency Scanning** reports
-as artifacts. The Code Quality report lists every finding in the merge request widget, on every
-tier. GitLab shows the SAST and Dependency Scanning reports, in the security widget and the security
-tab, on GitLab Ultimate only.
+The job runs in merge request pipelines, on the default branch and on tags. It keeps GitLab's
+**Code Quality**, **SAST** and **Dependency Scanning** reports as artifacts. On a tag, it records a
+[version](./releases.md) and applies no quality gate, and the three reports hold no findings.
+Elsewhere it uploads the analysis and fails with the quality gate. The Code Quality report lists
+every finding in the merge request widget, on every tier. GitLab shows the SAST and Dependency
+Scanning reports, in the security widget and the security tab, on GitLab Ultimate only.
 
 | Input | Default | Meaning |
 |---|---|---|

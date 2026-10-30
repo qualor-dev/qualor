@@ -4,9 +4,9 @@ Qualor records each release of a project as a **version**: a label and the relea
 list. A scan in a tag pipeline records it. The GitLab component and the GitHub workflow templates
 run that scan on every tag.
 
-A project's rules decide which of its versions are tracked. Qualor does not check versions for
-vulnerabilities yet. Today, a tracked version is marked as tracked in the settings panel, the
-**Dependencies** tab and the API.
+A project's rules decide which of its versions are tracked. The settings panel, the
+**Dependencies** tab and the API show which ones are. Qualor does not check versions for
+vulnerabilities yet.
 
 ## Record a version on each tag
 
@@ -74,8 +74,10 @@ A tag scan collects only the dependency list.
 - It applies no quality gate. The release's code was already checked on its branch and in merge
   requests.
 - It needs Trivy. With `analyzers.trivy.enabled: false`, it exits 2.
-- When Trivy is not installed, the scan warns `LICENSE_SCAN_FAILED`, and the version has no
-  packages. The scanner images include Trivy.
+- When Trivy is not installed, the scan warns `LICENSE_SCAN_FAILED`. A new version then has no
+  packages, and a version scanned before keeps its own. The scanner images include Trivy.
+- A server older than 0.15 cannot record versions. The scanner then uploads nothing, warns, and
+  exits 0, so the release pipeline does not fail.
 - With C#, the job still runs `qualor dotnet begin` and your build. `qualor dotnet end` then
   records the version and reads no Roslyn log.
 - To run the full scan with the quality gate in a tag pipeline, pass `--branch <name>`. The
@@ -86,23 +88,23 @@ A tag scan collects only the dependency list.
 A version's label is `project.version` from `qualor.yml` when it is set. Otherwise it is the tag's
 name, such as `v2.3.4`.
 
-- A label has at most 100 characters. A longer one fails the analysis with `VERSION_LABEL_INVALID`.
-- Scanning the same label again replaces that version's packages. The version keeps its pin or
-  unsupported mark.
-- A scan that started before the one already stored fails with `STALE_ANALYSIS`. The stored
-  packages stay.
+- A label has at most 100 characters. A longer tag needs a shorter `project.version`. Without one,
+  the scanner exits 2 before the upload.
+- Scanning the same label again replaces that version's packages. A scan without a dependency list
+  leaves them as they are. The version keeps its pin or unsupported mark.
+- A tag scan that started before the stored tag scan of its label fails with `STALE_ANALYSIS`. The
+  stored packages stay.
 
 ## Exit codes
 
 | Code | When |
 |---|---|
-| 0 | the server recorded the version, and the scanner logged `Recorded version <label>`. With `--no-wait` or `gate.wait: false`, the scanner exits 0 right after the upload |
-| 2 | `--tag` with `--branch` or `--mr`, a tag name git does not accept, or `analyzers.trivy.enabled: false` |
-| 4 | the server did not record the version. The scanner prints the server's code and message, such as `VERSION_LABEL_INVALID` |
+| 0 | the server recorded the version, and the scanner logged `Recorded version <label>`. With `--no-wait` or `gate.wait: false`, the scanner exits 0 right after the upload. With a server older than 0.15, it uploads nothing and exits 0 with a warning |
+| 2 | `--tag` with `--branch` or `--mr`, a tag name git does not accept, a label longer than 100 characters, or `analyzers.trivy.enabled: false` |
+| 4 | the server did not record the version. The scanner prints the server's code and message, such as `STALE_ANALYSIS`. Also when the server has not confirmed the version within `gate.timeoutSeconds`: the scanner says the version was uploaded but not confirmed |
 
-Codes 2, 4 and 5 also have the causes they have for any scan, such as an unreachable server
-([CLI reference](./cli.md#exit-codes)). A tag scan never exits 1 or 3: it has no quality gate and
-no required analyzer.
+Codes 2, 4 and 5 also have their usual causes ([CLI reference](./cli.md#exit-codes)). A tag scan
+never exits 1 or 3: it has no quality gate and no required analyzer.
 
 ## Which versions are tracked
 
@@ -115,15 +117,18 @@ or `2.4.0-SNAPSHOT`.
 
 | Rule | Tracked versions |
 |---|---|
-| **The newest version of each line** (the default) | the highest version of each of the newest N lines. `2.3.4` replaces `2.3.0` to `2.3.3`. N is 1 to 20, and 5 by default. Of the labels that are not version numbers, the N scanned most recently |
+| **The newest version of each line** (the default) | the highest version of each of the newest N lines. `2.3.4` replaces `2.3.0` to `2.3.3`. N is 1 to 20, and 5 by default |
 | **Every version** | every version |
 | **None** | none |
 
+- **The newest version of each line** tracks labels that are not version numbers by date: the N
+  scanned most recently.
 - No rule tracks a pre-release.
 - **Now tracked** lists the tracked labels, the most recently scanned first, up to 50.
 - A version that is not tracked keeps its packages.
 
-Two marks on a version override the rule. You set them through the API ([The API](#the-api)):
+A version's mark decides whether the rule applies. You set it through the API
+([The API](#the-api)):
 
 | Mark | Effect |
 |---|---|
@@ -142,9 +147,12 @@ project admins change them.
 | Setting | Meaning |
 |---|---|
 | **Track vulnerabilities in this project** | on by default. Versions are recorded whether it is on or off |
-| **Branches** | the tracked branches: the main branch, always, and the branches that match **And branches matching**. That field takes up to 10 patterns, such as `release/*`, separated by commas. **Matches now** lists the branches that match |
+| **Branches** | the tracked branches: the main branch, always, and those that match **And branches matching** |
 | **Released versions** | the rule of [Which versions are tracked](#which-versions-are-tracked) |
 | **Also take versions from branch analyses that carry project.version** | off by default. See [Version labels on branch analyses](#version-labels-on-branch-analyses) |
+
+- **And branches matching** takes up to 10 patterns, such as `release/*`, separated by commas.
+- **Matches now** lists the branches that match them.
 
 While the project has no version, the panel shows the two CI snippets of
 [Record a version on each tag](#record-a-version-on-each-tag).
@@ -154,6 +162,9 @@ While the project has no version, the panel shows the two CI snippets of
 With **Also take versions from branch analyses that carry project.version** on, an analysis of a
 tracked branch records a version too. The tracked branches are those of the panel's **Branches**.
 The version's label is `project.version`, and its packages are that analysis's.
+
+Turn it on only when `project.version` changes once per release, not with every build. Otherwise
+each analysis records a new version.
 
 - Merge request analyses never record a version.
 - Pre-release labels, such as `2.4.0-SNAPSHOT` or `2.4.0-rc.1`, are skipped.
@@ -209,8 +220,8 @@ q -X PUT "$QUALOR_URL/api/v0/projects/<project id>/vulnerability-monitoring" -d 
   - `labelVersions`, true or false.
 - The two reads need read access to the project. `PATCH` and `PUT` need the right to change project
   settings, and a personal token needs the **Admin** scope for them.
-- `GET /analyses/{id}` of a tag scan answers `version` (`id` and `label`), no `branch`, and the gate
-  status `none`.
+- `GET /analyses/{id}` of a tag scan answers `version` (`id` and `label`), `"branch": null`, and
+  the gate status `none`.
 - With `audit-log`, changes are recorded as `project.vulnerability_monitoring_updated` and
   `project_version.updated` ([Roles and the audit log](./roles-and-audit.md#what-is-recorded)).
 
@@ -231,8 +242,10 @@ q -X PUT "$QUALOR_URL/api/v0/projects/<project id>/vulnerability-monitoring" -d 
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `BRANCH_REQUIRED` in a tag pipeline | the scanner or the server is older than 0.15 | upgrade both to 0.15 or later |
-| exit 4, `VERSION_LABEL_INVALID` | `project.version`, or the tag, is longer than 100 characters | shorten `project.version` |
-| exit 4, `STALE_ANALYSIS` | a newer scan of the same label was stored first | none needed: the newer packages stay |
-| the version has no packages | Trivy did not run (`LICENSE_SCAN_FAILED`), or the repository has no lockfile Trivy reads | use the scanner image ([Dependencies (Trivy)](./languages-and-analyzers.md#dependencies-trivy)) |
+| `BRANCH_REQUIRED` in a tag pipeline | the scanner is older than 0.15, or the server is older than 0.15 and did not report its version | upgrade both to 0.15 or later |
+| exit 0 and no version, with the warning "The server is older than 0.15 and cannot record versions; upgrade the server to record releases" | the server is older than 0.15. The scanner uploaded nothing | upgrade the server to 0.15 or later, then scan the tag again |
+| exit 2, "A version label is at most 100 characters; set project.version" | `project.version` is not set, and the tag is longer than 100 characters. The scanner refuses the label before the upload. The server would fail it with `VERSION_LABEL_INVALID` | set `project.version` to a label of at most 100 characters |
+| exit 4, `STALE_ANALYSIS` | a newer tag scan of the same label was stored first | none needed: the newer packages stay |
+| the version has no packages, and the scan warned `LICENSE_SCAN_FAILED` | Trivy did not run | use the scanner image ([Dependencies (Trivy)](./languages-and-analyzers.md#dependencies-trivy)) |
+| the version has no packages, and no `LICENSE_SCAN_FAILED` | the repository has no lockfile Trivy reads | see [Which ecosystems give licences](./dependency-licenses.md#which-ecosystems-give-licences) |
 | a tag pipeline does not run the job | the job has no rule or trigger for tags | add the [snippet](#record-a-version-on-each-tag) |

@@ -30,7 +30,7 @@ in the API ([Projects](./users-projects-tokens.md#projects)):
 | Definition | Baseline |
 |---|---|
 | `{ "type": "days", "value": 30 }` (default); **Default (30 days)** or **Last days** in the UI | the oldest analysis of the last 30 days (**Last days** takes 1 to 3650) |
-| `{ "type": "previous_version" }`; **Since the previous version** | the latest analysis with another `project.version`, for example `${CI_COMMIT_TAG}` |
+| `{ "type": "previous_version" }`; **Since the previous version** | the latest main-branch analysis with another `project.version`. Set `project.version` from your build's version on the main branch |
 | `{ "type": "analysis", "analysisId": "…" }`; **From a specific analysis** | a fixed analysis, chosen from the main branch's recent analyses |
 
 The panel shows the analysis new code is measured from. It warns when no analysis has a version
