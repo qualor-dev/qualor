@@ -1028,6 +1028,15 @@ export async function seedRoles(
   await admin.json('PUT', `/api/v0/projects/${shop.id}/members/${petra.id}`, {
     role: 'project_admin',
   });
+
+  // The organisation admins of the suite are past onboarding: their setup checklist is closed, as
+  // an admin closes it once the server is set up ("Don't show again"). ui/e2e's
+  // setup-checklist.spec.ts opens the admin's again for itself.
+  const olgaSession = new Client(base);
+  await olgaSession.login('olga', users.olgaPassword);
+  for (const session of [admin, olgaSession]) {
+    await session.json('PUT', `/api/v0/organizations/${org.id}/setup-checklist`, { closed: true });
+  }
 }
 
 /**

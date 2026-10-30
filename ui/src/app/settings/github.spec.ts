@@ -753,4 +753,63 @@ describe('GitHubPage (github.md §2)', () => {
     expect(root.querySelector('form')).toBeNull();
     expect(server.requestsTo('GET', '/api/v0/scm-connections')).toHaveLength(0);
   });
+
+  describe('CI setup (onboarding, "Connections")', () => {
+    const app = (id: string, ciSetup: Connection['ciSetup']): Connection => ({
+      ...GITHUB,
+      id,
+      baseUrl: `https://${id}.example/api/v3`,
+      ciSetup,
+    });
+    const status = (root: HTMLElement, id: string) => {
+      const card = root.querySelector(`section[data-key="${id}"] .ci-status`);
+      return {
+        text: (card?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+        link: card?.querySelector('a')?.getAttribute('href') ?? null,
+      };
+    };
+
+    it('says whether CI setup is available, and which permissions the App lacks', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/scm-connections', {
+        body: page([
+          app('ready', { available: true, reason: null, missing: [] }),
+          app('both', {
+            available: false,
+            reason: 'missing_permissions',
+            missing: ['workflows_write', 'secrets_write'],
+          }),
+          app('secrets', {
+            available: false,
+            reason: 'missing_permissions',
+            missing: ['secrets_write'],
+          }),
+          app('unread', { available: false, reason: 'missing_permissions', missing: [] }),
+          app('url', { available: false, reason: 'no_public_url', missing: [] }),
+        ]),
+      });
+      const { root } = await render();
+      expect(status(root, 'ready').text).toContain('CI setup available');
+      expect(status(root, 'ready').link).toBeNull();
+
+      const how = '/docs/github#update-an-app-you-created-before';
+      expect(status(root, 'both')).toEqual({
+        text: 'Read only The GitHub App lacks the Workflows and Secrets permissions. How to grant them',
+        link: how,
+      });
+      expect(status(root, 'secrets').text).toContain(
+        'The GitHub App lacks the Secrets permission.',
+      );
+      expect(status(root, 'secrets').text).not.toContain('Workflows');
+      expect(status(root, 'secrets').link).toBe(how);
+      expect(status(root, 'unread').text).toContain(
+        "Qualor could not read the GitHub App's permissions. It needs Workflows and Secrets, read and write.",
+      );
+      expect(status(root, 'unread').link).toBe(how);
+      expect(status(root, 'url').text).toContain(
+        'Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI.',
+      );
+      expect(status(root, 'url').link).toBe('/docs/install-server#the-settings-file');
+    });
+  });
 });

@@ -89,4 +89,45 @@ describe('Lens', () => {
     expect(root.classList).toContain('lens-bad');
     expect(root.querySelector('.lens-mark')?.getAttribute('d')).toMatch(/^M/);
   });
+
+  it('prints only the rows above the old level, bottom-up, and raises the level line', async () => {
+    // The setup checklist's reveal (onboarding notes, Motion): from 20 % to 40 %.
+    TestBed.configureTestingModule({ imports: [Lens] });
+    const fixture = TestBed.createComponent(Lens);
+    fixture.componentRef.setInput('value', 40);
+    fixture.componentRef.setInput('size', 72);
+    fixture.componentRef.setInput('from', 20);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const before = lensGeometry(20, 72);
+    const dots = [...root.querySelectorAll<SVGCircleElement>('.lens-dots circle')];
+    const fresh = dots.filter((d) => d.classList.contains('new'));
+    expect(fresh.length).toBeGreaterThan(0);
+    // The new dots are those above the old level; the old ones are drawn still.
+    const top = before.levelY + before.step * 0.2;
+    const cy = (d: SVGCircleElement) => Number(d.getAttribute('cy'));
+    expect(fresh.every((d) => cy(d) < top)).toBe(true);
+    expect(dots.filter((d) => !fresh.includes(d)).every((d) => cy(d) >= top)).toBe(true);
+    // Row by row from the bottom, 45 ms apart.
+    const delay = (d: SVGCircleElement) => parseInt(d.style.animationDelay, 10);
+    const lowest = fresh.reduce((a, d) => (cy(d) > cy(a) ? d : a));
+    const highest = fresh.reduce((a, d) => (cy(d) < cy(a) ? d : a));
+    expect(delay(lowest)).toBe(0);
+    expect(delay(highest)).toBeGreaterThan(0);
+    expect(delay(highest) % 45).toBe(0);
+    const level = root.querySelector<SVGLineElement>('.lens-level')!;
+    expect(level.classList).toContain('rising');
+    expect(parseFloat(level.style.getPropertyValue('--dy'))).toBeGreaterThan(0);
+  });
+
+  it('prints nothing without a previous value', async () => {
+    TestBed.configureTestingModule({ imports: [Lens] });
+    const fixture = TestBed.createComponent(Lens);
+    fixture.componentRef.setInput('value', 40);
+    fixture.componentRef.setInput('size', 72);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelectorAll('.lens-dots .new')).toHaveLength(0);
+    expect(root.querySelector('.lens-level')?.classList).not.toContain('rising');
+  });
 });

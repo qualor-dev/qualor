@@ -21,6 +21,7 @@ import { OrgContext } from '../org/org-context';
 import { isChecked } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { type Crumb, PageHeader } from '../shared/page-header';
+import { ciSetupMissingText } from '../settings/github-text';
 import { Requirement } from '../shared/requirement';
 import { RepositoryList } from './repository-list';
 import {
@@ -254,14 +255,7 @@ export class AddRepositoriesPage {
 
   /** "the Workflows and Secrets permissions": only the permissions the App lacks. */
   protected missingText(connection: Connection): string {
-    const workflows = connection.ciSetup.missing.includes('workflows_write');
-    const secrets = connection.ciSetup.missing.includes('secrets_write');
-    if (workflows && secrets) {
-      return $localize`:@@addRepos.why.missingBoth:The GitHub App lacks the Workflows and Secrets permissions.`;
-    }
-    return workflows
-      ? $localize`:@@addRepos.why.missingWorkflows:The GitHub App lacks the Workflows permission.`
-      : $localize`:@@addRepos.why.missingSecrets:The GitHub App lacks the Secrets permission.`;
+    return ciSetupMissingText(connection.ciSetup.missing);
   }
 
   /** "github.com, App 12345": where a connection is, and which App for GitHub. */

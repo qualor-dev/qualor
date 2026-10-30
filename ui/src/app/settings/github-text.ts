@@ -1,4 +1,4 @@
-import type { ResponseBody } from '../api/types';
+import type { ItemOf, ResponseBody } from '../api/types';
 
 /*
  * The GitHub test answer's texts, apart from the lazy GitHub page: the GitLab tab's mapping
@@ -52,4 +52,19 @@ export function githubTestText(result: TestResult): string {
   return result.project
     ? $localize`:@@github.testOkRepository:Connected as ${result.user.username}:user:; the repository ${result.project.pathWithNamespace}:repository: is reachable.`
     : $localize`:@@github.testOk:Connected as ${result.user.username}:user:.`;
+}
+
+/** The permissions a GitHub App's installations lack for CI setup (`ciSetup.missing`). */
+export type CiSetupMissing = ItemOf<'/api/v0/scm-connections'>['ciSetup']['missing'];
+
+/** Which of Workflows and Secrets a GitHub App lacks for CI setup, in one sentence. */
+export function ciSetupMissingText(missing: CiSetupMissing): string {
+  const workflows = missing.includes('workflows_write');
+  const secrets = missing.includes('secrets_write');
+  if (workflows && secrets) {
+    return $localize`:@@addRepos.why.missingBoth:The GitHub App lacks the Workflows and Secrets permissions.`;
+  }
+  return workflows
+    ? $localize`:@@addRepos.why.missingWorkflows:The GitHub App lacks the Workflows permission.`
+    : $localize`:@@addRepos.why.missingSecrets:The GitHub App lacks the Secrets permission.`;
 }

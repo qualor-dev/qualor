@@ -1532,6 +1532,8 @@ details[open] > summary {
 }
 .app-main {
   display: block;
+  /* Room at the page's end for the setup checklist in the corner (setup-checklist.ts). */
+  padding-bottom: var(--setup-clearance, 0px);
 }
 /* Pages that draw their own header band carry the host class `bleed`; the others keep a column. */
 .app-main > :not(router-outlet):not(.bleed),

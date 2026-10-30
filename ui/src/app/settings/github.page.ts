@@ -21,7 +21,7 @@ import { keepFocus } from '../shared/focus';
 import { clearField, inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
-import { githubTestText, type MissingAccess } from './github-text';
+import { ciSetupMissingText, githubTestText, type MissingAccess } from './github-text';
 import type { Connection } from './gitlab.page';
 import { WEBHOOK_SECRET } from './webhook-secret';
 
@@ -91,6 +91,10 @@ function savedText(s: {
  * (the server keeps no state), with its facts, the test and a quiet Delete; its forms and the new
  * App's form (a long configuration form, so on the page) in setting rows; a deletion asks in the
  * page's dialog instead of `confirm()`.
+ *
+ * Onboarding ("Connections"): each App says whether Add repositories can set up CI through it, and
+ * otherwise why not (the Workflows or Secrets permission it lacks, or no QUALOR_PUBLIC_URL) with a
+ * link to how to fix it.
  */
 @Component({
   selector: 'q-github-page',
@@ -196,6 +200,11 @@ export class GitHubPage {
   protected rowError(connection: Connection, field: RowError['field']): string | null {
     const error = this.rowErrors()[connection.id];
     return error?.field === field ? error.message : null;
+  }
+
+  /** Which of Workflows and Secrets the App lacks for CI setup, in one sentence. */
+  protected missingText(connection: Connection): string {
+    return ciSetupMissingText(connection.ciSetup.missing);
   }
 
   /** The name of a connection's card: its App id and address (two Apps may share an address). */

@@ -1,0 +1,189 @@
+/*
+ * The setup checklist (onboarding notes, Layout): shell chrome on ink in the bottom-right corner,
+ * the same in both schemes. The lens on ink takes the band's fixed halftone blue, and the green of
+ * the passed badge at "All set", its check drawn in ink over the dots.
+ */
+.setup {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 15;
+  color: var(--ink-text);
+  font-size: 14px;
+}
+.setup [hidden] {
+  display: none !important;
+}
+.setup :focus-visible {
+  outline-color: var(--cobalt-bright);
+}
+q-lens {
+  --lens-ink: var(--cobalt-bright);
+  --lens-track: #14305a;
+}
+.all-set q-lens {
+  --lens-ink: #5fd39c;
+  --lens-track: #0f3a2c;
+  --lens-mark: var(--ink);
+  --lens-mark-width: 3.4;
+}
+.setup-panel {
+  width: 352px;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-lg);
+  background: var(--ink);
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 0.25),
+    0 28px 64px -22px rgb(0 0 0 / 0.7);
+}
+.setup-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 12px 16px 16px;
+  border-bottom: 1px solid var(--ink-line);
+}
+.setup-head h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.setup-count {
+  margin: 3px 0 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.all-set :is(.setup-count, .launch-count) {
+  color: #8fe3bb;
+  font-weight: 600;
+}
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  align-self: start;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.icon-btn:hover,
+.setup-foot .btn-quiet:hover {
+  background: rgb(255 255 255 / 0.07);
+  color: #fff;
+}
+.setup-note {
+  margin: 0;
+  padding: 4px 18px 14px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.setup-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--ink-line);
+}
+.setup-foot .btn-quiet {
+  color: var(--ink-muted);
+  font-weight: 550;
+}
+.setup-error {
+  margin: 0;
+  padding: 0 8px 6px;
+  color: #ffb4ab;
+  font-size: 13px;
+}
+.setup-launcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 18px 0 7px;
+  border: 1px solid var(--ink-line);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--ink-text);
+  font: 600 13.5px/1.2 var(--font);
+  text-align: left;
+  cursor: pointer;
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 0.25),
+    0 18px 40px -16px rgb(0 0 0 / 0.65);
+}
+.setup-launcher:hover {
+  border-color: #2d5184;
+  background: #0d2140;
+}
+.launch-text {
+  display: grid;
+}
+.launch-count {
+  color: var(--ink-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.launch-short {
+  display: none;
+}
+/*
+ * Phone: the button sits in the header's first row, left of the account button (64 px + 8); open,
+ * the panel drops below that row over the page, like the user menu. Not a modal.
+ */
+@media (max-width: 40rem) {
+  .setup {
+    position: absolute;
+    top: 12px;
+    right: var(--gutter);
+    bottom: auto !important;
+    left: var(--gutter);
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .setup > * {
+    pointer-events: auto;
+  }
+  .setup[data-open='true'] {
+    z-index: 30;
+  }
+  .setup-launcher {
+    order: -1;
+    height: 36px;
+    gap: 7px;
+    margin-right: 72px;
+    padding: 0 11px 0 5px;
+    border-color: rgb(255 255 255 / 0.14);
+    box-shadow: none;
+  }
+  .setup[data-open='true'] .setup-launcher {
+    background: rgb(255 255 255 / 0.09);
+  }
+  .launch-text {
+    display: none;
+  }
+  .launch-short {
+    display: inline;
+    color: var(--ink-text);
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .setup-panel {
+    align-self: stretch;
+    width: auto;
+    max-height: none;
+  }
+}

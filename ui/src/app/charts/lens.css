@@ -31,8 +31,34 @@ svg {
 }
 .lens-mark {
   fill: none;
-  stroke: var(--lens-ink);
-  stroke-width: 2.4;
+  stroke: var(--lens-mark, var(--lens-ink));
+  stroke-width: var(--lens-mark-width, 2.4);
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+/* The reveal: new rows of dots print in (each scales up), and the level line rises to its place. */
+@keyframes print {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+@keyframes rise {
+  from {
+    transform: translateY(var(--dy));
+  }
+}
+.new {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: print 260ms cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+}
+.rising {
+  animation: rise 520ms cubic-bezier(0.3, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .new,
+  .rising {
+    animation: none;
+  }
 }

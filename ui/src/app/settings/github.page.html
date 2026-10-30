@@ -90,6 +90,56 @@
                 The webhook secret can no longer be read: set it again.
               </p>
             }
+            <!-- CI setup (onboarding): whether Add repositories can open pull requests that add
+                 the Qualor workflow, and else why not and how to fix it. -->
+            <div class="ci-status">
+              @if (c.ciSetup.available) {
+                <span class="badge badge-passed"
+                  ><q-icon name="check" /><ng-container i18n="@@addRepos.ciAvailable"
+                    >CI setup available</ng-container
+                  ></span
+                >
+                <span class="hint" i18n="@@github.ciSetup.available"
+                  >When you add repositories, Qualor can open a pull request in each that adds the
+                  Qualor workflow.</span
+                >
+              } @else {
+                <span class="badge badge-none" i18n="@@addRepos.readOnly">Read only</span>
+                <p class="req">
+                  <q-icon name="alert" />
+                  @if (c.ciSetup.reason === 'no_public_url') {
+                    <span
+                      ><ng-container i18n="@@addRepos.why.noPublicUrl"
+                        >Qualor needs its public address (QUALOR_PUBLIC_URL) to set up
+                        CI.</ng-container
+                      >&ngsp;<a
+                        routerLink="/docs/install-server"
+                        fragment="the-settings-file"
+                        i18n="@@addRepos.why.setIt"
+                        >How to set it</a
+                      ></span
+                    >
+                  } @else {
+                    <span>
+                      @if (c.ciSetup.missing.length > 0) {
+                        {{ missingText(c) }}
+                      } @else {
+                        <ng-container i18n="@@addRepos.why.unread"
+                          >Qualor could not read the GitHub App's permissions. It needs Workflows
+                          and Secrets, read and write.</ng-container
+                        >
+                      }
+                      &ngsp;<a
+                        routerLink="/docs/github"
+                        fragment="update-an-app-you-created-before"
+                        i18n="@@addRepos.why.howToGrant"
+                        >How to grant them</a
+                      ></span
+                    >
+                  }
+                </p>
+              }
+            </div>
             @if (!gh.webhookSecretSet) {
               <p class="muted" i18n="@@github.noSecret">
                 No webhook secret: the Re-run button does nothing, and replies and commands are

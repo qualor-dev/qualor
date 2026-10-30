@@ -7,13 +7,21 @@
 >
   <circle class="lens-track" [attr.cx]="g().c" [attr.cy]="g().c" [attr.r]="g().r" />
   <g class="lens-dots">
-    @for (dot of g().dots; track $index) {
-      <circle [attr.cx]="dot.x" [attr.cy]="dot.y" [attr.r]="dot.r" />
+    @for (dot of dots(); track $index) {
+      <circle
+        [attr.cx]="dot.x"
+        [attr.cy]="dot.y"
+        [attr.r]="dot.r"
+        [class.new]="dot.delay !== null"
+        [style.animation-delay.ms]="dot.delay"
+      />
     }
   </g>
   @if (g().level; as level) {
     <line
       class="lens-level"
+      [class.rising]="rise() > 0"
+      [style.--dy]="rise() > 0 ? rise() + 'px' : null"
       [attr.x1]="level.x1"
       [attr.x2]="level.x2"
       [attr.y1]="level.y"

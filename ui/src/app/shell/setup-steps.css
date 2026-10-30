@@ -1,0 +1,135 @@
+/* The checklist's steps, on ink (onboarding notes): a tick per step in the lens's blue. */
+:host {
+  display: block;
+}
+ol {
+  margin: 0;
+  padding: 6px 8px 8px;
+  list-style: none;
+}
+li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 9px 10px;
+  border-radius: var(--radius);
+  line-height: 1.35;
+}
+.step-name {
+  color: var(--ink-text);
+  font-weight: 500;
+}
+a.step-name {
+  text-decoration: none;
+}
+/* The whole row is the link's target; a hint's own link sits above it. */
+a.step-name::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+li:has(a.step-name):hover {
+  background: rgb(255 255 255 / 0.05);
+}
+li:has(a.step-name):hover .step-name {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+a:focus-visible {
+  outline-color: var(--cobalt-bright);
+}
+.done .step-name {
+  color: var(--ink-muted);
+  font-weight: 450;
+}
+.waiting .step-name {
+  color: var(--ink-muted);
+}
+/* The next step: white and bolder, its ring in cobalt. */
+.next .step-name {
+  color: #fff;
+  font-weight: 650;
+}
+.step-hint {
+  margin: 3px 0 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.next .step-hint {
+  color: #c9d8ee;
+}
+.step-hint a {
+  position: relative;
+  z-index: 1;
+  color: #8db6f7;
+  font-weight: 550;
+}
+.mark {
+  width: 20px;
+  height: 20px;
+  margin-top: -1px;
+}
+.mark circle {
+  fill: none;
+  stroke: rgb(180 198 224 / 0.5);
+  stroke-width: 1.5;
+}
+.mark path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+}
+.next .mark circle {
+  stroke: var(--cobalt-bright);
+  stroke-width: 2;
+}
+.waiting .mark circle {
+  stroke-dasharray: 2.6 2.6;
+}
+.done .mark circle {
+  fill: var(--cobalt-bright);
+  stroke: var(--cobalt-bright);
+}
+.done .mark path {
+  opacity: 1;
+}
+:host(.all-set) .done .mark circle {
+  fill: #5fd39c;
+  stroke: #5fd39c;
+}
+/* A step just done: its ring fills, then its check draws (after the lens's new dots). */
+@keyframes fill-in {
+  from {
+    fill: transparent;
+    stroke: rgb(180 198 224 / 0.5);
+  }
+}
+@keyframes draw {
+  from {
+    stroke-dashoffset: 16;
+    opacity: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+.just-done .mark circle {
+  animation: fill-in 200ms 380ms ease-out both;
+}
+.just-done .mark path {
+  stroke-dasharray: 16;
+  animation: draw 260ms 520ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .just-done .mark circle,
+  .just-done .mark path {
+    animation: none;
+  }
+}

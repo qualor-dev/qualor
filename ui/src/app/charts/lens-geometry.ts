@@ -13,6 +13,10 @@ export interface LensGeometry {
   dots: LensDot[];
   /** The level line across the circle; none when empty or full. */
   level: { x1: number; x2: number; y: number } | null;
+  /** Where the fill ends (the circle's bottom when empty), even when no line is drawn there. */
+  levelY: number;
+  /** The grid's pitch: the distance between two rows (and two columns) of dots. */
+  step: number;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -44,5 +48,5 @@ export function lensGeometry(value: number | null, size: number): LensGeometry {
   const half = Math.sqrt(Math.max(0, r * r - (levelY - c) ** 2));
   const level =
     pct > 0 && pct < 100 ? { x1: round2(c - half), x2: round2(c + half), y: round2(levelY) } : null;
-  return { size, c, r, dots, level };
+  return { size, c, r, dots, level, levelY, step };
 }

@@ -86,6 +86,46 @@
           </div>
         </div>
         <div class="panel-body connection-body">
+          <div class="ci-setup">
+            <div class="switch-row">
+              <input
+                [id]="'ci-setup-' + c.id"
+                type="checkbox"
+                role="switch"
+                class="switch"
+                [attr.aria-describedby]="'ci-setup-help-' + c.id"
+                [checked]="c.gitlab?.ciSetupAllowed ?? false"
+                [disabled]="!canManage()"
+                (change)="setCiSetup(c, $event)"
+              />
+              <label [attr.for]="'ci-setup-' + c.id">
+                <span class="sw-name" i18n="@@gitlab.ciSetup"
+                  >Allow Qualor to set up CI (opens merge requests, writes CI/CD variables)</span
+                >&ngsp;<span
+                  [id]="'ci-setup-help-' + c.id"
+                  class="sw-help"
+                  i18n="@@gitlab.ciSetupHelp"
+                  >When you add repositories, Qualor opens a merge request in each. Nothing changes
+                  until you merge it.</span
+                >
+              </label>
+            </div>
+            @if (c.gitlab?.ciSetupAllowed && c.ciSetup.reason === 'no_public_url') {
+              <p class="req">
+                <q-icon name="alert" />
+                <span
+                  ><ng-container i18n="@@addRepos.why.noPublicUrl"
+                    >Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI.</ng-container
+                  >&ngsp;<a
+                    routerLink="/docs/install-server"
+                    fragment="the-settings-file"
+                    i18n="@@addRepos.why.setIt"
+                    >How to set it</a
+                  ></span
+                >
+              </p>
+            }
+          </div>
           @if (c.gitlab; as gl) {
             @if (gl.webhookSecretSet && !gl.webhookSecretReadable) {
               <p class="alert alert-error" i18n="@@gitlab.secretUnreadable">
@@ -374,6 +414,25 @@
             @if (tokenError(); as message) {
               <span id="gitlab-token-error" class="field-error" role="alert">{{ message }}</span>
             }
+          </div>
+          <div class="switch-row">
+            <input
+              id="gitlab-ci-setup"
+              type="checkbox"
+              role="switch"
+              class="switch"
+              aria-describedby="gitlab-ci-setup-help"
+              [checked]="ciSetupAllowed()"
+              (change)="setCreateCiSetup($event)"
+            />
+            <label for="gitlab-ci-setup">
+              <span class="sw-name" i18n="@@gitlab.ciSetup"
+                >Allow Qualor to set up CI (opens merge requests, writes CI/CD variables)</span
+              >&ngsp;<span id="gitlab-ci-setup-help" class="sw-help" i18n="@@gitlab.ciSetupHelp"
+                >When you add repositories, Qualor opens a merge request in each. Nothing changes
+                until you merge it.</span
+              >
+            </label>
           </div>
         </div>
         <div class="dialog-actions">

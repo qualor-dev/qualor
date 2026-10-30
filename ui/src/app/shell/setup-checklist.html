@@ -1,0 +1,83 @@
+@if (view(); as v) {
+  <aside
+    #aside
+    class="setup"
+    [class.all-set]="v.allSet"
+    [attr.data-open]="expanded()"
+    [style.bottom.px]="lift() || null"
+    aria-labelledby="setup-title"
+    (keydown.escape)="escape()"
+  >
+    <div class="setup-panel" id="setup-panel" [hidden]="!expanded()">
+      <div class="setup-head">
+        <q-lens
+          [value]="v.value"
+          [size]="72"
+          [tone]="v.allSet ? 'ok' : 'accent'"
+          [mark]="v.allSet ? 'check' : null"
+          [from]="v.from"
+        />
+        <div>
+          <h2 id="setup-title" i18n="@@setup.title">Set up Qualor</h2>
+          <p class="setup-count">{{ v.count }}</p>
+        </div>
+        <button
+          #collapseButton
+          type="button"
+          class="icon-btn"
+          aria-expanded="true"
+          aria-controls="setup-panel"
+          aria-label="Collapse"
+          i18n-aria-label="@@setup.collapse"
+          (click)="collapse()"
+        >
+          <q-icon name="chevron-down" />
+        </button>
+      </div>
+      <q-setup-steps [steps]="v.steps" [allSet]="v.allSet" (followed)="followed()" />
+      @if (v.allSet) {
+        <p class="setup-note" i18n="@@setup.allSetNote">
+          Every step is done. Add more repositories from Projects at any time.
+        </p>
+      }
+      <div class="setup-foot">
+        <button
+          type="button"
+          class="btn-quiet"
+          [attr.aria-disabled]="closing() ? true : null"
+          (click)="close()"
+          i18n="@@setup.close"
+        >
+          Don't show again
+        </button>
+        @if (closeError(); as message) {
+          <p class="setup-error" role="alert">{{ message }}</p>
+        }
+      </div>
+    </div>
+    <button
+      #launcher
+      type="button"
+      class="setup-launcher"
+      [hidden]="expanded() && !phone()"
+      [attr.aria-expanded]="expanded()"
+      aria-controls="setup-panel"
+      (click)="toggle()"
+    >
+      <q-lens
+        [value]="v.value"
+        [size]="phone() ? 26 : 34"
+        [tone]="v.allSet ? 'ok' : 'accent'"
+        [mark]="v.allSet ? 'check' : null"
+        [from]="v.from"
+      />
+      <span class="launch-text" aria-hidden="true"
+        ><span i18n="@@setup.title">Set up Qualor</span
+        ><span class="launch-count">{{ v.count }}</span></span
+      >
+      <span class="launch-short" aria-hidden="true">{{ v.short }}</span>
+      <span class="visually-hidden">{{ v.name }}</span>
+    </button>
+    <p class="visually-hidden" aria-live="polite" aria-atomic="true">{{ announcement() }}</p>
+  </aside>
+}

@@ -136,6 +136,7 @@ describe('GitLabPage (scm.md §2)', () => {
       provider: 'gitlab',
       baseUrl: 'https://gitlab.acme.test',
       token: 'glpat-secret-value',
+      ciSetupAllowed: true,
     });
     expect(token.value).toBe('');
     expect(root.textContent).not.toContain('glpat-secret-value');
@@ -660,5 +661,112 @@ describe('GitLabPage (scm.md §2)', () => {
     expect(root.textContent).toContain('Only organization administrators connect GitLab.');
     expect(server.requestsTo('GET', '/api/v0/scm-connections')).toHaveLength(0);
     expect(root.querySelector('form')).toBeNull();
+  });
+
+  describe('CI setup (onboarding, "Connections")', () => {
+    const LABEL = 'Allow Qualor to set up CI (opens merge requests, writes CI/CD variables)';
+    const nameOf = (input: HTMLInputElement | null) =>
+      (input?.labels?.[0]?.querySelector('.sw-name')?.textContent ?? '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    it('asks when a connection is added, and sends the answer', async () => {
+      const server = setup();
+      server.on('POST', '/api/v0/scm-connections', {
+        status: 201,
+        body: { ...CONNECTION, id: 'c2' },
+      });
+      const { fixture, root } = await render();
+      button(root, 'New connection').click();
+      await settle(fixture);
+      const allow = root.querySelector<HTMLInputElement>('#gitlab-ci-setup')!;
+      expect(allow.getAttribute('role')).toBe('switch');
+      expect(nameOf(allow)).toBe(LABEL);
+      expect(allow.checked).toBe(true);
+      allow.click();
+      type(root, '#gitlab-url', 'https://gitlab.acme.test');
+      type(root, '#gitlab-token', 'glpat-secret-value');
+      root
+        .querySelector<HTMLFormElement>('#create-dialog form')!
+        .dispatchEvent(new Event('submit'));
+      await settle(fixture);
+      expect(server.requestsTo('POST', '/api/v0/scm-connections')[0]?.body).toMatchObject({
+        ciSetupAllowed: false,
+      });
+      // The next "New connection" asks again, from the default.
+      button(root, 'New connection').click();
+      await settle(fixture);
+      expect(root.querySelector<HTMLInputElement>('#gitlab-ci-setup')!.checked).toBe(true);
+    });
+
+    it('turns it on and off on a connection, off by default for an existing one', async () => {
+      const server = setup();
+      const allowed: Connection = {
+        ...CONNECTION,
+        gitlab: { ...CONNECTION.gitlab!, ciSetupAllowed: true },
+        ciSetup: { available: true, reason: null, missing: [] },
+      };
+      server.on('PATCH', '/api/v0/scm-connections/c1', (r) =>
+        (r.body as { ciSetupAllowed: boolean }).ciSetupAllowed
+          ? { body: allowed }
+          : { body: CONNECTION },
+      );
+      const { fixture, root } = await render();
+      const toggle = root.querySelector<HTMLInputElement>('#ci-setup-c1')!;
+      expect(toggle.getAttribute('role')).toBe('switch');
+      expect(nameOf(toggle)).toBe(LABEL);
+      expect(toggle.checked).toBe(false);
+      toggle.click();
+      await settle(fixture);
+      expect(server.requestsTo('PATCH', '/api/v0/scm-connections/c1').map((r) => r.body)).toEqual([
+        { ciSetupAllowed: true },
+      ]);
+      expect(root.querySelector<HTMLInputElement>('#ci-setup-c1')!.checked).toBe(true);
+      expect(root.querySelector('[role="status"]')?.textContent).toContain(
+        'CI setup is on for https://gitlab.example.com.',
+      );
+      root.querySelector<HTMLInputElement>('#ci-setup-c1')!.click();
+      await settle(fixture);
+      expect(server.requestsTo('PATCH', '/api/v0/scm-connections/c1').map((r) => r.body)).toEqual([
+        { ciSetupAllowed: true },
+        { ciSetupAllowed: false },
+      ]);
+      expect(root.querySelector<HTMLInputElement>('#ci-setup-c1')!.checked).toBe(false);
+      expect(root.querySelector('[role="status"]')?.textContent).toContain(
+        'CI setup is off for https://gitlab.example.com.',
+      );
+    });
+
+    it('puts the switch back when the change is refused', async () => {
+      const server = setup();
+      server.on('PATCH', '/api/v0/scm-connections/c1', {
+        status: 403,
+        body: problem(403, 'FORBIDDEN'),
+      });
+      const { fixture, root } = await render();
+      root.querySelector<HTMLInputElement>('#ci-setup-c1')!.click();
+      await settle(fixture);
+      expect(root.querySelector<HTMLInputElement>('#ci-setup-c1')!.checked).toBe(false);
+      expect(root.querySelector('[role="alert"]')).not.toBeNull();
+    });
+
+    it('says why CI setup still cannot work when the server has no public address', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/scm-connections', {
+        body: page([
+          {
+            ...CONNECTION,
+            gitlab: { ...CONNECTION.gitlab!, ciSetupAllowed: true },
+            ciSetup: { available: false, reason: 'no_public_url', missing: [] },
+          },
+        ]),
+      });
+      const { root } = await render();
+      const card = root.querySelector('section.card')!;
+      expect(card.textContent).toContain(
+        'Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI.',
+      );
+      expect(card.querySelector('a[href="/docs/install-server#the-settings-file"]')).not.toBeNull();
+    });
   });
 });

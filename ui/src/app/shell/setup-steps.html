@@ -1,0 +1,54 @@
+<ol class="setup-steps">
+  @for (s of steps(); track s.id) {
+    <li
+      [class.done]="s.done"
+      [class.next]="s.next"
+      [class.waiting]="s.waiting"
+      [class.just-done]="s.justDone"
+    >
+      <svg class="mark" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <circle cx="10" cy="10" r="8.6" />
+        <path d="M5.9 10.3l2.9 2.9 5.4-5.6" />
+      </svg>
+      <div>
+        <span class="visually-hidden">{{ s.state }}</span
+        >&ngsp;
+        @if (s.link) {
+          <a class="step-name" [routerLink]="s.link" (click)="followed.emit()">{{ s.name }}</a>
+        } @else {
+          <span class="step-name">{{ s.name }}</span>
+        }
+        @if (!s.done) {
+          @switch (s.id) {
+            @case ('connect') {
+              <p class="step-hint" i18n="@@setup.hint.gitlab">
+                Or
+                <a routerLink="/settings/gitlab" (click)="followed.emit()">connect GitLab</a>
+              </p>
+            }
+            @case ('repositories') {
+              <p class="step-hint" i18n="@@setup.hint.sonarqube">
+                Or
+                <a routerLink="/docs/migrate-from-sonarqube" (click)="followed.emit()"
+                  >import from SonarQube</a
+                >
+              </p>
+            }
+          }
+          @switch (s.hint) {
+            @case ('merge_request') {
+              <p class="step-hint" i18n="@@setup.hint.mergeRequest">
+                Merge the Qualor merge request
+              </p>
+            }
+            @case ('ask_server_admin') {
+              <p class="step-hint" i18n="@@setup.hint.askServerAdmin">
+                Ask your server admin to set up an AI provider
+              </p>
+            }
+          }
+        }
+      </div>
+    </li>
+  }
+</ol>

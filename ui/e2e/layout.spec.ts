@@ -50,9 +50,17 @@ test.describe('on a laptop with two organizations', () => {
     await page.goto(`/projects/${payments.id}/issues/${issues.items[0]!.id}`);
     await expect(page.getByRole('combobox', { name: 'Organization', exact: true })).toBeVisible();
     // The issue, its code and its history in, before anything is measured: only then is the page
-    // tall enough to scroll as far as below.
+    // tall enough to scroll as far as below. The room the setup checklist keeps at the page's end
+    // (main's bottom padding) does not count.
     await expect
-      .poll(() => page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight))
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.documentElement.scrollHeight -
+            window.innerHeight -
+            parseFloat(getComputedStyle(document.querySelector('main')!).paddingBottom),
+        ),
+      )
       .toBeGreaterThanOrEqual(280);
     const bar = (await page.locator('.app-header').boundingBox())!;
     expect(bar.height).toBeGreaterThan(72);

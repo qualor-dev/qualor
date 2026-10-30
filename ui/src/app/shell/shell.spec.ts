@@ -322,6 +322,37 @@ describe('Shell', () => {
     expect(banner?.textContent).toContain('Enterprise features are off');
   });
 
+  it('shows the setup checklist to an admin, before the page, and asks nothing for others', async () => {
+    const path = /^\/api\/v0\/organizations\/[^/]+\/setup-checklist$/;
+    const asked = () => server.requests.filter((r) => path.test(r.path));
+    server.on('GET', path, {
+      body: {
+        steps: [
+          { id: 'connect', done: true, hint: null, blocking: true },
+          { id: 'repositories', done: false, hint: null, blocking: true },
+          { id: 'analysis', done: false, hint: null, blocking: true },
+          { id: 'ai_review', done: false, hint: null, blocking: true },
+          { id: 'team', done: false, hint: null, blocking: true },
+        ],
+        closed: false,
+        allDone: false,
+      },
+    });
+    const member = TestBed.createComponent(Shell);
+    await settle(member);
+    expect(asked()).toHaveLength(0);
+    member.destroy();
+
+    TestBed.inject(SessionStore).set(me({ admin: true }));
+    const fixture = TestBed.createComponent(Shell);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    const aside = root.querySelector('q-setup-checklist + main')?.previousElementSibling;
+    expect(aside?.querySelector('aside h2')?.textContent).toBe('Set up Qualor');
+    expect(aside?.querySelector('.setup-count')?.textContent).toBe('1 of 5 done');
+    localStorage.clear();
+  });
+
   it('shows the forced-password banner to an instance admin under the licence banner', async () => {
     TestBed.inject(SessionStore).set(me({ admin: true }));
     server.on('GET', '/api/v0/system/info', {

@@ -19,7 +19,7 @@ import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
-import { clearField, inputValue } from '../shared/forms';
+import { clearField, inputValue, isChecked } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { CopyValue } from './copy-value';
@@ -64,6 +64,10 @@ interface RowError {
  * here went (Not tested, Connected, Test failed: the server keeps no state), with Test and a quiet
  * Delete; its own form in setting rows; "New connection" (a short create form) in a dialog; the
  * deletion asks in the page's dialog instead of `confirm()`.
+ *
+ * Onboarding ("Connections"): each connection has the switch "Allow Qualor to set up CI", which
+ * lets Add repositories open merge requests and write CI/CD variables. It is off for connections
+ * made before it existed, and asked (on by default) in "New connection". A switch saves at once.
  */
 @Component({
   selector: 'q-gitlab-page',
@@ -94,6 +98,8 @@ export class GitLabPage {
   protected readonly token = signal('');
   protected readonly urlError = signal<string | null>(null);
   protected readonly tokenError = signal<string | null>(null);
+  /** "New connection": whether Qualor may set up CI through it. */
+  protected readonly ciSetupAllowed = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly announcement = signal<string | null>(null);
   protected readonly busy = signal(false);
@@ -165,6 +171,7 @@ export class GitLabPage {
   protected openCreate(): void {
     this.url.set('');
     clearField(this.tokenField(), this.token);
+    this.ciSetupAllowed.set(true);
     this.urlError.set(null);
     this.tokenError.set(null);
     this.createError.set(null);
@@ -197,7 +204,13 @@ export class GitLabPage {
         async () => {
           await ok(
             this.api.client.POST('/api/v0/scm-connections', {
-              body: { organizationId, provider: 'gitlab', baseUrl, token },
+              body: {
+                organizationId,
+                provider: 'gitlab',
+                baseUrl,
+                token,
+                ciSetupAllowed: this.ciSetupAllowed(),
+              },
             }),
           );
           if (generation !== this.orgGeneration) return;
@@ -326,6 +339,38 @@ export class GitLabPage {
     );
   }
 
+  protected setCreateCiSetup(event: Event): void {
+    this.ciSetupAllowed.set(isChecked(event));
+  }
+
+  /**
+   * The CI-setup switch of a connection, saved at once. Refused (or while another change runs), the
+   * switch goes back to what the connection says.
+   */
+  protected async setCiSetup(connection: Connection, event: Event): Promise<void> {
+    const toggle = event.target instanceof HTMLInputElement ? event.target : null;
+    const allowed = isChecked(event);
+    const was = connection.gitlab?.ciSetupAllowed ?? false;
+    if (this.busy()) {
+      if (toggle) toggle.checked = was;
+      return;
+    }
+    const generation = this.orgGeneration;
+    let saved = false;
+    await this.run(async () => {
+      const updated = await this.patch(connection, { ciSetupAllowed: allowed }, false);
+      saved = true;
+      if (generation !== this.orgGeneration) return;
+      const url = updated.baseUrl;
+      this.announcement.set(
+        allowed
+          ? $localize`:@@gitlab.ciSetupOn:CI setup is on for ${url}:url:.`
+          : $localize`:@@gitlab.ciSetupOff:CI setup is off for ${url}:url:.`,
+      );
+    });
+    if (!saved && toggle) toggle.checked = was;
+  }
+
   protected async removeSecret(connection: Connection): Promise<void> {
     if (this.busy()) return;
     const generation = this.orgGeneration;
@@ -340,11 +385,18 @@ export class GitLabPage {
 
   /**
    * Changes the connection (`PATCH`) and puts the answer in the list. A changed token, address or
-   * secret has not been tested yet, and the last test's result is of what it was.
+   * secret has not been tested yet, and the last test's result is of what it was (`untested`); the
+   * CI-setup switch changes nothing a test checks.
    */
   private async patch(
     connection: Connection,
-    body: { baseUrl?: string; token?: string; webhookSecret?: string | null },
+    body: {
+      baseUrl?: string;
+      token?: string;
+      webhookSecret?: string | null;
+      ciSetupAllowed?: boolean;
+    },
+    untested = true,
   ): Promise<Connection> {
     const updated = await ok(
       this.api.client.PATCH('/api/v0/scm-connections/{id}', {
@@ -353,8 +405,10 @@ export class GitLabPage {
       }),
     );
     this.connections.items.update((items) => items.map((c) => (c.id === updated.id ? updated : c)));
-    this.results.update((all) => without(all, connection.id));
-    this.outcomes.update((all) => without(all, connection.id));
+    if (untested) {
+      this.results.update((all) => without(all, connection.id));
+      this.outcomes.update((all) => without(all, connection.id));
+    }
     return updated;
   }
 

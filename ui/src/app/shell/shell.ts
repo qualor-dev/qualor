@@ -14,6 +14,7 @@ import { SessionStore } from '../auth/session';
 import { OrgContext } from '../org/org-context';
 import { Icon } from '../shared/icon';
 import { LicenseBanner } from './license-banner';
+import { SetupChecklist } from './setup-checklist';
 import { SsoBanner } from './sso-banner';
 import { SystemInfo } from './system-info';
 import { UpdateBanner } from './update-banner';
@@ -44,6 +45,7 @@ const pathOf = (url: string) => url.split(/[?#]/, 1)[0] ?? url;
     RouterLinkActive,
     RouterOutlet,
     LicenseBanner,
+    SetupChecklist,
     SsoBanner,
     UpdateBanner,
     Icon,
