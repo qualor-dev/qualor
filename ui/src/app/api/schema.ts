@@ -4273,6 +4273,11 @@ export interface paths {
                                 kind: "branch" | "merge_request";
                                 name: string;
                             } | null;
+                            version: {
+                                /** Format: uuid */
+                                id: string;
+                                label: string;
+                            } | null;
                             revision: string | null;
                             analysisDate: string | null;
                             gateStatus: ("passed" | "failed" | "error" | "none") | null;
@@ -4399,6 +4404,11 @@ export interface paths {
                                     /** @enum {string} */
                                     kind: "branch" | "merge_request";
                                     name: string;
+                                } | null;
+                                version: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    label: string;
                                 } | null;
                                 revision: string | null;
                                 analysisDate: string | null;

@@ -1,4 +1,4 @@
-import type { LlmFeature, RuleScope } from '@qualor/shared';
+import type { DependencyIgnore, LlmFeature, RuleScope } from '@qualor/shared';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -492,7 +492,7 @@ export const analyses = pgTable(
       onDelete: 'set null',
     }),
     // The report's `dependencyIgnores`: [{id, expiresAt?}]; NULL when it carried none.
-    dependencyIgnores: jsonb('dependency_ignores').$type<unknown>(),
+    dependencyIgnores: jsonb('dependency_ignores').$type<DependencyIgnore[]>(),
     analysisDate: at('analysis_date'),
     status: text('status').notNull().default('queued').$type<AnalysisStatus>(),
     error: jsonb('error').$type<AnalysisError>(),

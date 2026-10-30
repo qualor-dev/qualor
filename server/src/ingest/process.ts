@@ -21,6 +21,7 @@ import { decodeStoredReport } from './decode';
 import { ANALYSIS_QUEUE } from './service';
 import type { IngestionState } from './state';
 import { scmContextOf } from '../scm/context';
+import { ingestVersion } from '../versions/ingest';
 
 type BranchRow = typeof branches.$inferSelect;
 type AnalysisRow = typeof analyses.$inferSelect;
@@ -151,6 +152,8 @@ export function analysisFields(
 ) {
   return {
     branchId,
+    // The report's ignore list for vulnerability monitoring; NULL when it carried none.
+    dependencyIgnores: report.dependencyIgnores ?? null,
     // scm.md §7: what a later re-evaluation needs of the report, which is not kept.
     scmContext: scmContextOf(report, logger),
     revision: report.scm.revision,
@@ -332,9 +335,12 @@ export async function processAnalysis(deps: ProcessDeps, analysisId: string): Pr
   }
   const target = branchTarget(report);
   if (!target) {
+    // A tag scan is a project version (vulnerability monitoring, 0.15); nothing else lacks a branch.
+    if (report.scm.tag) return ingestVersion(deps, analysis, project, report, logger);
     return fail({
       code: 'BRANCH_REQUIRED',
-      message: 'The report names neither a branch nor a merge request (detached checkout?)',
+      message:
+        'The report names no branch, merge request or tag (a detached checkout?). Scanners from 0.15 record a tag scan as a version.',
     });
   }
 

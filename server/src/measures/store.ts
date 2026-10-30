@@ -362,6 +362,30 @@ export function mergeDependencyEntries(entries: readonly DependencyEntry[]): Dep
 }
 
 /**
+ * Inserts an inventory's merged rows into `branch_dependencies` or `version_dependencies` (the
+ * two tables share their columns; only the owner key differs), in {@link DEPENDENCY_BATCH} chunks.
+ */
+export async function insertDependencyRows(
+  tx: Executor,
+  table: 'branch_dependencies' | 'version_dependencies',
+  ownerId: string,
+  analysisId: string,
+  entries: readonly DependencyEntry[],
+): Promise<void> {
+  const owner = sql.identifier(table === 'branch_dependencies' ? 'branch_id' : 'version_id');
+  const rows = mergeDependencyEntries(entries);
+  for (const chunk of jsonChunks(rows, { maxRows: DEPENDENCY_BATCH })) {
+    await tx.execute(sql`
+      INSERT INTO ${sql.identifier(table)} (${owner}, path, ecosystem, name, version, licenses,
+        direct, line, analysis_id)
+      SELECT ${ownerId}, r.path, r.ecosystem, r.name, r.version, r.licenses, r.direct, r.line,
+        ${analysisId}
+      FROM jsonb_to_recordset(${chunk}::jsonb) AS r(path text, ecosystem text, name text,
+        version text, licenses text[], direct boolean, line integer)`);
+  }
+}
+
+/**
  * 6M §4: `branch_dependencies` is the dependency inventory of the branch's latest analysis that
  * carried one, replaced in the ingestion transaction. The entries are stored as the report gives
  * them (the scanner already normalised the licences), except that duplicates are merged
@@ -374,14 +398,5 @@ export async function replaceBranchDependencies(
   entries: readonly DependencyEntry[],
 ): Promise<void> {
   await tx.delete(branchDependencies).where(eq(branchDependencies.branchId, branchId));
-  const rows = mergeDependencyEntries(entries);
-  for (const chunk of jsonChunks(rows, { maxRows: DEPENDENCY_BATCH })) {
-    await tx.execute(sql`
-      INSERT INTO branch_dependencies (branch_id, path, ecosystem, name, version, licenses,
-        direct, line, analysis_id)
-      SELECT ${branchId}, r.path, r.ecosystem, r.name, r.version, r.licenses, r.direct, r.line,
-        ${analysisId}
-      FROM jsonb_to_recordset(${chunk}::jsonb) AS r(path text, ecosystem text, name text,
-        version text, licenses text[], direct boolean, line integer)`);
-  }
+  await insertDependencyRows(tx, 'branch_dependencies', branchId, analysisId, entries);
 }

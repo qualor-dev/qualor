@@ -16,6 +16,8 @@ export const analysisSchema = z.object({
   branch: z
     .object({ id: z.uuid(), kind: z.enum(['branch', 'merge_request']), name: z.string() })
     .nullable(),
+  // The released version a tag scan recorded; null for a branch analysis.
+  version: z.object({ id: z.uuid(), label: z.string() }).nullable(),
   revision: z.string().nullable(),
   analysisDate: timestamp.nullable(),
   gateStatus: gateStatusSchema.nullable(),
@@ -56,6 +58,10 @@ export function analysisDto(
     projectId: analysis.projectId,
     status: analysis.status,
     branch: branch ? { id: branch.id, kind: branch.kind, name: branch.name } : null,
+    version:
+      analysis.versionId && analysis.versionLabel
+        ? { id: analysis.versionId, label: analysis.versionLabel }
+        : null,
     revision: analysis.revision,
     analysisDate: isoOrNull(analysis.analysisDate),
     gateStatus: analysis.gateStatus,

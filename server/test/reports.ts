@@ -1,5 +1,5 @@
 import { gzipSync } from 'node:zlib';
-import { BUILTIN_ENGINES, hex32, type Report } from '@qualor/shared';
+import { BUILTIN_ENGINES, hex32, type DependencyIgnore, type Report } from '@qualor/shared';
 import type { TestContext } from './app';
 
 export const REPORT_CONTENT_TYPE = 'application/vnd.qualor.report+json';
@@ -10,6 +10,10 @@ export interface ReportOverrides {
   mergeRequest?: Report['scm']['mergeRequest'];
   analysisDate?: string;
   revision?: string;
+  /** The git tag of a tag scan (`scm.tag`); left out of the report when undefined. */
+  tag?: string | null;
+  /** `dependencyIgnores`; left out of the report when undefined. */
+  dependencyIgnores?: DependencyIgnore[];
 }
 
 /** A small report that satisfies reportSchema (one file, one ESLint finding, one warning). */
@@ -121,6 +125,7 @@ export function reportWith(parts: ReportParts): Report {
       ...base.scm,
       baseline: parts.baseline ?? base.scm.baseline,
       renames: parts.renames ?? base.scm.renames,
+      ...(parts.tag === undefined ? {} : { tag: parts.tag }),
     },
     engines: parts.engines ?? base.engines,
     files: parts.files ?? base.files,
@@ -128,6 +133,9 @@ export function reportWith(parts: ReportParts): Report {
     duplications: parts.duplications ?? base.duplications,
     warnings: parts.warnings ?? [],
     ...(parts.dependencies === undefined ? {} : { dependencies: parts.dependencies }),
+    ...(parts.dependencyIgnores === undefined
+      ? {}
+      : { dependencyIgnores: parts.dependencyIgnores }),
   };
 }
 

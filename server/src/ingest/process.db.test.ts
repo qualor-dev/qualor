@@ -228,10 +228,14 @@ describe('analysis processing job', () => {
     expect((await read(id)).error.code).toBe('PROJECT_KEY_MISMATCH');
   });
 
-  it('fails a detached report (no branch, no MR) with BRANCH_REQUIRED', async () => {
+  it('fails a detached report (no branch, no MR, no tag) with BRANCH_REQUIRED', async () => {
     const id = await upload(sampleReport({ branch: null }));
     await processAll();
-    expect((await read(id)).error.code).toBe('BRANCH_REQUIRED');
+    const body = await read(id);
+    expect(body.error.code).toBe('BRANCH_REQUIRED');
+    expect(body.error.message).toBe(
+      'The report names no branch, merge request or tag (a detached checkout?). Scanners from 0.15 record a tag scan as a version.',
+    );
   });
 
   it('caps the warnings stored on a STALE_ANALYSIS too', async () => {
