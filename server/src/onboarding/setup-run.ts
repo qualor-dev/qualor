@@ -299,6 +299,27 @@ interface OpenedRepository {
 }
 
 const WORKFLOWS = '.github/workflows';
+/** Workflow files read at most for a Qualor step: one request each, within the job's budget. */
+const MAX_WORKFLOW_FILES = 50;
+
+/**
+ * The texts of the repository's workflow files on the default branch (the first
+ * {@link MAX_WORKFLOW_FILES} YAML files). A file GitHub serves without its content (over 1 MB) is
+ * left out: it is no Qualor workflow.
+ */
+async function workflowTexts(client: GitHubClient, names: string[]): Promise<string[]> {
+  const texts: string[] = [];
+  for (const name of names.filter((n) => /\.ya?ml$/i.test(n)).slice(0, MAX_WORKFLOW_FILES)) {
+    try {
+      const text = await client.fileText(`${WORKFLOWS}/${name}`);
+      if (text !== null) texts.push(text);
+    } catch (err) {
+      if (err instanceof ScmError && err.kind === 'bad_answer') continue;
+      throw err;
+    }
+  }
+  return texts;
+}
 const GITLAB_CI = '.gitlab-ci.yml';
 
 function githubRepository(
@@ -323,7 +344,6 @@ function githubRepository(
       async read() {
         baseSha = await client.branchSha(defaultBranch);
         const workflowFiles = await client.listDirectory(WORKFLOWS);
-        const qualor = workflowFiles.find((f) => /^qualor[^/]*\.ya?ml$/i.test(f));
         return {
           csharp: await csharp(),
           empty: baseSha === null,
@@ -331,9 +351,9 @@ function githubRepository(
           existing: {
             gitlabCi: null,
             workflowFiles,
-            workflowQualor:
-              qualor === undefined ? null : await client.fileText(`${WORKFLOWS}/${qualor}`),
+            workflowTexts: await workflowTexts(client, workflowFiles),
             tokenSecretSet: await client.hasActionsSecret('QUALOR_TOKEN'),
+            inheritedTokenSet: await client.hasOrganizationSecret('QUALOR_TOKEN'),
           },
         };
       },
@@ -409,8 +429,11 @@ function gitlabRepository(
             gitlabCi:
               defaultBranch === null ? null : await client.fileText(ref, GITLAB_CI, defaultBranch),
             workflowFiles: [],
-            workflowQualor: null,
+            workflowTexts: [],
             tokenSecretSet: (await client.variable(ref, 'QUALOR_TOKEN')) !== null,
+            // A group's or the instance's variable: no API answers it for a project token (the
+            // guide says to add such a repository by hand).
+            inheritedTokenSet: false,
           },
         };
       },
@@ -692,7 +715,13 @@ function createSetupToken(
 function freshSnippet(input: Omit<CiSetupInput, 'existing'>): string {
   const plan = planCiSetup({
     ...input,
-    existing: { gitlabCi: null, workflowFiles: [], workflowQualor: null, tokenSecretSet: false },
+    existing: {
+      gitlabCi: null,
+      workflowFiles: [],
+      workflowTexts: [],
+      tokenSecretSet: false,
+      inheritedTokenSet: false,
+    },
   });
   return plan.kind === 'change' ? (plan.files[0]?.content ?? '') : plan.snippet;
 }

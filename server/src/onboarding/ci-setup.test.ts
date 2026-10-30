@@ -23,8 +23,9 @@ function input(
     existing: {
       gitlabCi: null,
       workflowFiles: [],
-      workflowQualor: null,
+      workflowTexts: [],
       tokenSecretSet: false,
+      inheritedTokenSet: false,
       ...existing,
     },
     ...rest,
@@ -453,7 +454,7 @@ describe('GitLab already set up and unsupported', () => {
         input({
           ...base,
           existing: {
-            workflowQualor: 'name: qualor\n',
+            workflowTexts: ['name: qualor\n'],
             workflowFiles: ['.github/workflows/qualor.yml'],
           },
         }),
@@ -468,6 +469,60 @@ describe('GitLab already set up and unsupported', () => {
       planCiSetup(input({ ...base, existing: { workflowFiles: ['.github/workflows/ci.yml'] } }))
         .kind,
     ).toBe('change');
+  });
+
+  it('detects Qualor in any workflow file on GitHub', () => {
+    const steps = [
+      '      - uses: qualor-dev/scan-action@v0.13',
+      '        container: { image: qualor/scanner:0.13.2 }',
+      '      - run: qualor scan --sarif osv.sarif',
+      '      - run: qualor  dotnet end',
+      '      - run: docker run --rm qualor/scanner-dotnet:0.13 dotnet begin',
+    ];
+    for (const step of steps) {
+      const plan = planCiSetup(
+        input({
+          provider: 'github',
+          existing: {
+            workflowFiles: ['build.yml', 'ci.yml'],
+            workflowTexts: ['name: build\n', `name: ci\njobs:\n  a:\n    steps:\n${step}\n`],
+          },
+        }),
+      );
+      expect(plan, step).toMatchObject({ kind: 'snippet', reason: 'already_set_up' });
+    }
+    // Words alone are not a Qualor step.
+    const other = planCiSetup(
+      input({
+        provider: 'github',
+        existing: {
+          workflowFiles: ['ci.yml'],
+          workflowTexts: ['name: ci # see qualor.dev\njobs:\n  qualor-lint:\n    steps: []\n'],
+        },
+      }),
+    );
+    expect(other.kind).toBe('change');
+  });
+
+  it('counts a QUALOR_TOKEN the repository inherits as set up, on both providers', () => {
+    for (const provider of ['github', 'gitlab'] as const) {
+      expect(planCiSetup(input({ provider, existing: { inheritedTokenSet: true } }))).toMatchObject(
+        { kind: 'snippet', reason: 'already_set_up' },
+      );
+    }
+  });
+
+  it('detects Qualor anywhere in .gitlab-ci.yml', () => {
+    for (const text of [
+      'scan:\n  image: qualor/scanner:0.13\n  script: [make]\n',
+      'check:\n  script:\n    - qualor scan --gitlab-sast gl-sast.json\n',
+      'net:\n  script:\n    - qualor dotnet begin\n',
+      'include:\n  - component: $CI_SERVER_FQDN/mirrors/ci/qualor@0.13\n',
+      'include:\n  - component: gitlab.example.com/tools/qualor@1.0\n    inputs: { image-tag: "1.0" }\n',
+    ]) {
+      expect(gl(text), text).toMatchObject({ kind: 'snippet', reason: 'already_set_up' });
+    }
+    expect(gl('build:\n  script: [make] # then qualor.dev\n').kind).toBe('change');
   });
 
   it('gives a snippet that is valid YAML', () => {

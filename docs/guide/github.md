@@ -331,8 +331,14 @@ new file, `.github/workflows/qualor.yml`, and leaves your other workflows alone:
 - The token is the Actions secret `QUALOR_TOKEN`, a project analysis token named **CI setup**.
   It is never in the pull request.
 
-Qualor shows the snippet instead of opening a pull request when the repository already has a Qualor
-workflow or a `QUALOR_TOKEN` secret, or is empty. It never overwrites either.
+Qualor shows the snippet instead of opening a pull request when the repository is empty or already
+set up:
+
+- a workflow already runs Qualor (the Action, the scanner image, `qualor scan` or `qualor dotnet`);
+- the repository has a `QUALOR_TOKEN` secret;
+- the organisation shares a `QUALOR_TOKEN` secret with the repository.
+
+It never overwrites a workflow or a secret.
 
 ### What the App needs
 

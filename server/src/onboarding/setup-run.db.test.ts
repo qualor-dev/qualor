@@ -652,6 +652,42 @@ describe('the repository-setup run', () => {
       expect(githubWrites(fake.requests)).toEqual([]);
     });
 
+    it('changes nothing where an organisation secret or another workflow already runs Qualor', async () => {
+      const fake = await github([
+        { owner: 'org', name: 'shared', installationId: 30, permissions: ALL },
+        { owner: 'org', name: 'custom', installationId: 30, permissions: ALL },
+        { owner: 'org', name: 'fresh', installationId: 30, permissions: ALL },
+      ]);
+      fake.organizationSecrets.set(1000, ['NPM_TOKEN', 'QUALOR_TOKEN']);
+      fake.organizationSecrets.set(1002, ['NPM_TOKEN']);
+      fake.addFile(1001, '.github/workflows/build.yml', 'name: build\n');
+      fake.addFile(
+        1001,
+        '.github/workflows/ci.yml',
+        'name: ci\non: push\njobs:\n  scan:\n    runs-on: ubuntu-latest\n    steps:\n      - run: qualor scan\n',
+      );
+      fake.addFile(1002, '.github/workflows/build.yml', 'name: build\n');
+      const connectionId = await connectGitHub(fake);
+      const runId = await start({
+        connectionId,
+        repositories: ['org/shared', 'org/custom', 'org/fresh'],
+        ciSetup: true,
+      });
+      await runSetups();
+      const items = (await read(runId)).items;
+      for (const item of items.slice(0, 2)) {
+        expect(item).toMatchObject({
+          projectOutcome: 'created',
+          ciOutcome: 'already',
+          ciReason: 'already_set_up',
+          ciUrl: null,
+        });
+      }
+      expect(items[2]).toMatchObject({ ciOutcome: 'merge_request' });
+      expect(fake.openedPulls.map((p) => p.repoId)).toEqual([1002]);
+      expect([...fake.actionsSecrets.keys()]).toEqual(['1002|QUALOR_TOKEN']);
+    });
+
     it('fails a repository the App cannot see, and goes on with the others', async () => {
       const fake = await github([{ owner: 'kappa', name: 'here', installationId: 10 }]);
       const connectionId = await connectGitHub(fake);
@@ -939,6 +975,27 @@ describe('the repository-setup run', () => {
       } finally {
         await h.ctx.db.delete(organizations).where(eq(organizations.id, org!.id));
       }
+    });
+
+    it('changes nothing where .gitlab-ci.yml already runs the scanner under another name', async () => {
+      const fake = await gitlab();
+      fake.addProject({ id: 17, path: 'acme/scanned' });
+      fake.addFile(
+        17,
+        'main',
+        '.gitlab-ci.yml',
+        'code-scan:\n  image: qualor/scanner:0.13\n  script: [qualor scan]\n',
+      );
+      const connectionId = await connectGitLab(fake);
+      const runId = await start({ connectionId, repositories: ['17'], ciSetup: true });
+      await runSetups();
+      expect((await read(runId)).items[0]).toMatchObject({
+        projectOutcome: 'created',
+        ciOutcome: 'already',
+        ciReason: 'already_set_up',
+      });
+      expect(fake.branches(17)).toEqual(['main']);
+      expect(fake.variables(17)).toEqual({});
     });
 
     it('gives the snippet and the token for a CI configuration at a custom path', async () => {

@@ -332,6 +332,31 @@ describe('GitHub client: files, pull requests and Actions secrets (onboarding)',
       await client.useRepository(REPO, { ciSetup: true });
       for (const bad of ['', '1ABC', 'a/b', 'A-B', 'a'.repeat(101)]) {
         expect((await failure(client.hasActionsSecret(bad))).reason).toBe('invalid_input');
+        expect((await failure(client.hasOrganizationSecret(bad))).reason).toBe('invalid_input');
+      }
+    });
+
+    it('finds an organisation secret shared with the repository, on any page and in any case', async () => {
+      const client = clientFor();
+      await client.useRepository(REPO, { ciSetup: true });
+      fake.clearRequests();
+      expect(await client.hasOrganizationSecret('QUALOR_TOKEN')).toBe(false);
+      expect(requests()).toEqual([
+        'GET /repos/acme/api/actions/organization-secrets?per_page=100&page=1',
+      ]);
+      const others = Array.from({ length: 150 }, (_, i) => `OTHER_${i}`);
+      fake.organizationSecrets.set(1, [...others, 'qualor_token']);
+      try {
+        fake.clearRequests();
+        expect(await client.hasOrganizationSecret('QUALOR_TOKEN')).toBe(true);
+        expect(requests()).toEqual([
+          'GET /repos/acme/api/actions/organization-secrets?per_page=100&page=1',
+          'GET /repos/acme/api/actions/organization-secrets?per_page=100&page=2',
+        ]);
+        expect(await client.hasOrganizationSecret('OTHER_3')).toBe(true);
+        expect(await client.hasOrganizationSecret('NOT_THERE')).toBe(false);
+      } finally {
+        fake.organizationSecrets.delete(1);
       }
     });
   });

@@ -28,6 +28,8 @@ export const GITHUB_PAGE_SIZE = 100;
  * always written.
  */
 export const MAX_GITHUB_REQUESTS = 350;
+/** Pages of an organisation's secrets read at most (100 to a page). */
+const MAX_SECRET_PAGES = 5;
 /** Ruling T6: pages of 100 review threads one job reads at most. */
 export const MAX_THREAD_PAGES = 10;
 /** GraphQL's `Int` is a signed 32-bit integer: the largest pull request number a query can carry. */
@@ -177,6 +179,7 @@ const contentsEntries = z.array(z.looseObject({ name: z.string() }));
 const gitRef = z.looseObject({ object: z.looseObject({ sha: z.string() }) });
 const createdPullRequest = z.looseObject({ html_url: z.string() });
 const secretsPublicKey = z.looseObject({ key_id: z.string(), key: z.string() });
+const secretsList = z.looseObject({ secrets: z.array(z.looseObject({ name: z.string() })) });
 const languagesAnswer = z.record(z.string(), z.number());
 const checkRun = z.looseObject({
   id: z.number().int(),
@@ -1248,6 +1251,31 @@ export class GitHubClient {
       if (err instanceof ScmError && err.status === 404) return false;
       throw err;
     }
+  }
+
+  /**
+   * Whether the organisation shares an Actions secret called `name` with the repository
+   * (`GET /actions/organization-secrets`, Secrets read). GitHub compares secret names without case.
+   * At most {@link MAX_SECRET_PAGES} pages are read; an account that is no organisation has none.
+   */
+  async hasOrganizationSecret(name: string): Promise<boolean> {
+    const wanted = this.secretName(name).toUpperCase();
+    for (let page = 1; page <= MAX_SECRET_PAGES; page++) {
+      let answer: { headers: IncomingHttpHeaders; json: unknown };
+      try {
+        answer = await this.repoCall(
+          'GET',
+          `${this.repoPath()}/actions/organization-secrets?per_page=${GITHUB_PAGE_SIZE}&page=${page}`,
+        );
+      } catch (err) {
+        if (err instanceof ScmError && err.status === 404) return false;
+        throw err;
+      }
+      const { secrets } = this.parse(secretsList, answer.json);
+      if (secrets.some((s) => s.name.toUpperCase() === wanted)) return true;
+      if (!this.more(answer.headers)) return false;
+    }
+    return false;
   }
 
   /**

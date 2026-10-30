@@ -263,6 +263,11 @@ export interface FakeGitHub {
   actionsKey: { keyId: string; publicKey: string };
   /** The Actions secrets as opened, `<repoId>|<name>` to the plain value. */
   actionsSecrets: Map<string, string>;
+  /**
+   * The names of the organisation's Actions secrets a repository can read, by repository id
+   * (`GET /actions/organization-secrets`).
+   */
+  organizationSecrets: Map<number, string[]>;
   /** A file on a branch (the default branch unless given), as a commit made it. */
   addFile(repoId: number, filePath: string, text: string, branch?: string): void;
   /** The text of a file on a branch (the default branch unless given), or null. */
@@ -552,6 +557,7 @@ export async function createFakeGitHub(
       publicKey: Buffer.from(actionsKeyPair.publicKey).toString('base64'),
     },
     actionsSecrets: new Map(),
+    organizationSecrets: new Map(),
     addFile: (repoId, filePath, text, branch) => {
       const repo = repoById(repoId);
       if (!repo) throw new Error(`no repository ${repoId}`);
@@ -1466,6 +1472,20 @@ export async function createFakeGitHub(
     if (method === 'GET' && rest === '/actions/secrets/public-key') {
       if (!need('secrets', 'read')) return forbidden();
       return send(res, 200, { key_id: fake.actionsKey.keyId, key: fake.actionsKey.publicKey });
+    }
+    if (method === 'GET' && rest === '/actions/organization-secrets') {
+      if (!need('secrets', 'read')) return forbidden();
+      return page(
+        url,
+        res,
+        (fake.organizationSecrets.get(repo.id) ?? []).map((name) => ({
+          name,
+          created_at: stamp(),
+          updated_at: stamp(),
+          visibility: 'all',
+        })),
+        (slice, total) => ({ total_count: total, secrets: slice }),
+      );
     }
     const secretMatch = /^\/actions\/secrets\/([A-Za-z0-9_]+)$/.exec(rest);
     if (method === 'GET' && secretMatch) {

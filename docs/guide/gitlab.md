@@ -302,7 +302,9 @@ The merge request is on the branch `qualor/setup`, titled **Add Qualor code anal
 
 Qualor shows the snippet instead of opening a merge request when the project already has a Qualor
 job, include or `QUALOR_TOKEN` variable, keeps its CI configuration at a custom path, has YAML that
-Qualor cannot edit without loss, or is empty. It never overwrites a variable.
+Qualor cannot edit without loss, or is empty. A Qualor job is any job on the scanner image or with
+`qualor scan` or `qualor dotnet`, and a Qualor include is a `qualor` component from any path. It
+never overwrites a variable. If a group sets `QUALOR_TOKEN`, add the repository by hand instead.
 
 On self-managed GitLab the component is not available
 ([On self-managed GitLab](#on-self-managed-gitlab)). Qualor adds a plain `qualor:` job instead, on

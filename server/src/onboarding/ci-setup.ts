@@ -42,10 +42,26 @@ export interface CiSetupInput {
   defaultBranch: string;
   existing: {
     gitlabCi: string | null;
+    /** The names of the files in `.github/workflows`. */
     workflowFiles: string[];
-    workflowQualor: string | null;
+    /** The texts of the workflow files Qualor read, searched for a Qualor step. */
+    workflowTexts: string[];
+    /** The repository's own QUALOR_TOKEN secret (GitHub) or CI/CD variable (GitLab) exists. */
     tokenSecretSet: boolean;
+    /** A QUALOR_TOKEN the repository inherits exists: an organisation secret on GitHub. */
+    inheritedTokenSet: boolean;
   };
+}
+
+/**
+ * A CI file that already runs Qualor: the Action, the scanner image, the scanner's commands, or a
+ * CI/CD component include of a `qualor` component from any path (a mirror's too).
+ */
+const QUALOR_IN_CI = /qualor-dev\/scan-action|qualor\/scanner|qualor\s+(scan|dotnet)\b|\/qualor@/;
+
+/** Whether a CI file's text shows a Qualor step. */
+export function runsQualor(text: string): boolean {
+  return QUALOR_IN_CI.test(text);
 }
 
 export type CiPlan =
@@ -314,9 +330,9 @@ export function planCiSetup(input: CiSetupInput): CiPlan {
       defaultBranch: input.defaultBranch,
     });
     const hasWorkflow =
-      existing.workflowQualor !== null ||
-      existing.workflowFiles.some((f) => /^qualor[^/]*$/i.test(f.split('/').pop() ?? ''));
-    if (existing.tokenSecretSet || hasWorkflow) {
+      existing.workflowFiles.some((f) => /^qualor[^/]*$/i.test(f.split('/').pop() ?? '')) ||
+      existing.workflowTexts.some(runsQualor);
+    if (existing.tokenSecretSet || existing.inheritedTokenSet || hasWorkflow) {
       return { kind: 'snippet', reason: 'already_set_up', snippet: content };
     }
     return change([{ path: WORKFLOW_FILE, content, update: false }]);
@@ -331,10 +347,12 @@ export function planCiSetup(input: CiSetupInput): CiPlan {
       ? gitlabIncludeSnippet({ minor, stage: st, csharp: input.csharp, projectKey })
       : gitlabPlainJob({ version: input.version, stage: st, csharp: input.csharp, projectKey });
 
-  const already = parsed.ok
-    ? hasQualorEntry(parsed.root)
-    : text !== null && (/qualor\/qualor/.test(text) || /^qualor:/m.test(text));
-  if (existing.tokenSecretSet || already) {
+  const already =
+    (text !== null && runsQualor(text)) ||
+    (parsed.ok
+      ? hasQualorEntry(parsed.root)
+      : text !== null && (/qualor\/qualor/.test(text) || /^qualor:/m.test(text)));
+  if (existing.tokenSecretSet || existing.inheritedTokenSet || already) {
     return { kind: 'snippet', reason: 'already_set_up', snippet: snippetFor(stage) };
   }
   if (!parsed.ok) return { kind: 'snippet', reason: 'yaml_unsupported', snippet: snippetFor(null) };
