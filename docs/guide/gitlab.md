@@ -278,8 +278,9 @@ analysis.
 ## Set up CI with a merge request
 
 **Add repositories** (in **Projects**, [Quick start](./quick-start.md#fastest-path-add-repositories))
-can add the Qualor job to each project for you. Qualor opens a merge request and sets the CI/CD
-variables. Nothing changes in your repository until you merge it.
+can add the Qualor job to each project for you. Qualor opens a merge request. Your pipelines don't
+change until you merge it. The CI/CD variables are set right away. The merge request's own pipeline
+is the first analysis.
 
 First turn on **Allow Qualor to set up CI (opens merge requests, writes CI/CD variables)** for the
 connection, in **Settings → GitLab**. It is off for connections that existed before, and the
@@ -291,6 +292,7 @@ The merge request is on the branch `qualor/setup`, titled **Add Qualor code anal
 
 - It adds one `include` entry for the component to `.gitlab-ci.yml`, with `image-tag` set to the
   server's minor version, as in [With the CI/CD component](#with-the-cicd-component-recommended).
+  Its `args` input passes the project's key (`--project-key <key>`).
   The rest of the file stays as it was. Qualor creates `.gitlab-ci.yml` when it is missing. When the
   file's `stages:` has no `test`, the entry sets `stage` to an existing stage.
 - A C# repository gets `dotnet: true` and a build command. Check the command before you merge.
@@ -304,8 +306,8 @@ Qualor cannot edit without loss, or is empty. It never overwrites a variable.
 
 On self-managed GitLab the component is not available
 ([On self-managed GitLab](#on-self-managed-gitlab)). Qualor adds a plain `qualor:` job instead, on
-`qualor/scanner:<version>` (`qualor/scanner-dotnet` for C#). The runners must be able to pull the
-image from Docker Hub or your mirror. To upgrade the scanner, edit the version in the file.
+`qualor/scanner:<version>` (`qualor/scanner-dotnet` for C#), with `--project-key <key>`. The
+runners must be able to pull the image from Docker Hub or your mirror. To upgrade the scanner, edit the version in the file.
 
 ### Undo CI setup
 

@@ -201,7 +201,9 @@ describe('SetupChecklist (onboarding, "The checklist (UI)")', () => {
       expect(row(root, 'Connect GitHub').classList).toContain('done');
       // The first open step is the next one.
       expect(row(root, 'Get the first analysis').classList).toContain('next');
-      expect(text(row(root, 'Get the first analysis'))).toContain('Merge the Qualor merge request');
+      expect(text(row(root, 'Get the first analysis'))).toContain(
+        "The Qualor merge request's pipeline runs it",
+      );
     });
 
     it('links each open step to where it is done; step 2 also to the SonarQube import', async () => {

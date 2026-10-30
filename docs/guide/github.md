@@ -316,16 +316,17 @@ certificate comes from a private CA, give the Qualor server that CA with `NODE_E
 
 **Add repositories** (in **Projects**, [Quick start](./quick-start.md#fastest-path-add-repositories))
 can add the Qualor workflow to each repository for you. Qualor opens a pull request (its pages call
-it a merge request) and stores the project's token as an Actions secret. Nothing changes in your
-repository until you merge it.
+it a merge request). Your workflows don't change until you merge it. The project's token is stored
+as an Actions secret right away. The pull request's own run is the first analysis.
 
 The pull request is on the branch `qualor/setup`, titled **Add Qualor code analysis**. It adds one
 new file, `.github/workflows/qualor.yml`, and leaves your other workflows alone:
 
-- The workflow is the one from [The workflow](#2-the-workflow), with your Qualor address written in
-  and the Action pinned to the server's minor version, such as `qualor-dev/scan-action@v0.13`.
+- The workflow is the one from [The workflow](#2-the-workflow), with your Qualor address and the
+  project's key written in. The Action is pinned to the server's minor version, such as
+  `qualor-dev/scan-action@v0.13`.
 - A C# repository gets the workflow of `integrations/github/qualor-dotnet.yml`, with the image tag
-  written in. The token is in the `qualor dotnet end` step only. Check its build command before you
+  and the project's key written in. The token is in the `qualor dotnet end` step only. Check its build command before you
   merge.
 - The token is the Actions secret `QUALOR_TOKEN`, a project analysis token named **CI setup**.
   It is never in the pull request.

@@ -269,7 +269,7 @@ describe('AddRepositoriesPage', () => {
       expect(ci.checked).toBe(true);
       expect(ci.disabled).toBe(false);
       expect(text(root.querySelector('#ci-setup-help'))).toBe(
-        "Qualor opens a merge request that adds the Qualor job, and stores the project's token as the Actions secret QUALOR_TOKEN. Nothing changes until you merge it.",
+        "Qualor opens a merge request that adds the Qualor job. Your pipelines don't change until you merge it. The project's token is stored as the Actions secret QUALOR_TOKEN right away.",
       );
       // GitLab, read only: the switch is off and disabled, and says what happens instead.
       radios(root)[1]!.click();

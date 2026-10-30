@@ -53,8 +53,8 @@ An organization admin does this in the UI. Qualor creates the projects and sets 
    repository, with the repository path as its key and the organization's default gate and profiles.
    A project that already has that key and no repository is mapped to the repository and keeps its
    history.
-4. Merge the merge request in each repository. The first analysis runs when the pipeline of the
-   merged commit finishes.
+4. Each merge request's own pipeline runs the first analysis. Merge it to analyse every push to
+   the default branch.
 
 Qualor opens a merge request only when it can edit the CI files safely. Otherwise, and when you turn
 CI setup off, it shows the snippet to add and the project token, once. Copy the token then: it is

@@ -221,15 +221,15 @@
                     >
                   } @else if (chosen()?.provider === 'gitlab') {
                     <ng-container i18n="@@addRepos.ciSetup.gitlab"
-                      >Qualor opens a merge request that adds the Qualor job, and stores the
-                      project's token as the CI/CD variable QUALOR_TOKEN. Nothing changes until you
-                      merge it.</ng-container
+                      >Qualor opens a merge request that adds the Qualor job. Your pipelines don't
+                      change until you merge it. The project's token is stored as the CI/CD variable
+                      QUALOR_TOKEN right away.</ng-container
                     >
                   } @else {
                     <ng-container i18n="@@addRepos.ciSetup.github"
-                      >Qualor opens a merge request that adds the Qualor job, and stores the
-                      project's token as the Actions secret QUALOR_TOKEN. Nothing changes until you
-                      merge it.</ng-container
+                      >Qualor opens a merge request that adds the Qualor job. Your pipelines don't
+                      change until you merge it. The project's token is stored as the Actions secret
+                      QUALOR_TOKEN right away.</ng-container
                     >
                   }
                 </span>
