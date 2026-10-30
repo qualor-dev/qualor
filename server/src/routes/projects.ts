@@ -15,7 +15,6 @@ import { projectRefs } from '../audit/refs';
 import { projectFacts, visibleProjectsCondition } from '../auth/facts';
 import { PROJECT_PERMISSIONS, projectPermissions } from '../auth/policy';
 import type { UserRow } from '../auth/sessions';
-import { generateToken } from '../auth/tokens';
 import type { Executor } from '../db/client';
 import { PG_UNIQUE_VIOLATION, pgErrorCode } from '../db/errors';
 import { first } from '../db/rows';
@@ -58,6 +57,8 @@ import { headlineMeasures } from '../measures/read';
 import { containsPattern } from '../issues/query';
 import { PROJECT_KEY_PATTERN } from '../patterns';
 import { projectForUser, type ProjectRow } from '../projects/access';
+import { createProject } from '../projects/create';
+import { createProjectToken } from '../projects/tokens';
 import { queueRemapPurge, queueSnapshotPurge } from '../review/jobs';
 import { projectAiReview } from '../review/settings';
 import { forgetForeignMergeRequestUrls } from '../scm/connections';
@@ -318,43 +319,15 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
       );
       let project: ProjectRow;
       try {
-        project = await deps.db.transaction(async (tx) => {
-          const created = first(
-            await tx
-              .insert(projects)
-              .values({
-                organizationId: body.organizationId,
-                key: body.key,
-                name: body.name,
-                mainBranchName: body.mainBranchName ?? 'main',
-              })
-              .returning(),
-          );
-          await tx.insert(branches).values({
-            projectId: created.id,
-            kind: 'branch',
-            name: created.mainBranchName,
-            isMain: true,
-          });
-          // The refs are an audit-only read: none while audit-log is inactive (§8.1).
-          if (deps.audit.active()) {
-            const refs = await projectRefs(tx, created.id);
-            await deps.audit.record(tx, actorOf(request), [
-              {
-                action: 'project.created',
-                organization: refs.organization,
-                project: refs.project,
-                target: { type: 'project', id: created.id, label: created.name },
-                details: {
-                  key: created.key,
-                  name: created.name,
-                  mainBranchName: created.mainBranchName,
-                },
-              },
-            ]);
-          }
-          return created;
-        });
+        project = await deps.db.transaction((tx) =>
+          createProject(tx, {
+            organizationId: body.organizationId,
+            key: body.key,
+            name: body.name,
+            mainBranchName: body.mainBranchName ?? 'main',
+            createdBy: { audit: deps.audit, actor: actorOf(request) },
+          }),
+        );
       } catch (err) {
         if (pgErrorCode(err) === PG_UNIQUE_VIOLATION)
           throw conflict('PROJECT_KEY_TAKEN', 'That project key is already taken');
@@ -751,42 +724,16 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
         request.params.id,
         'project.tokens.manage',
       );
-      const generated = generateToken('project');
-      const row = await deps.db.transaction(async (tx) => {
-        const created = first(
-          await tx
-            .insert(apiTokens)
-            .values({
-              kind: 'project',
-              projectId: project.id,
-              name: request.body.name,
-              prefix: generated.prefix,
-              secretHash: generated.secretHash,
-              scopes: ['analysis:write'],
-              expiresAt: expiresAtFrom(request.body.expiresInDays),
-              createdBy: principal.user.id,
-            })
-            .returning(),
-        );
-        if (deps.audit.active()) {
-          const refs = await projectRefs(tx, project.id);
-          await deps.audit.record(tx, actorOf(request), [
-            {
-              action: 'project_token.created',
-              organization: refs.organization,
-              project: refs.project,
-              target: { type: 'token', id: created.id, label: created.name },
-              details: {
-                name: created.name,
-                prefix: created.prefix,
-                expiresAt: created.expiresAt?.toISOString() ?? null,
-              },
-            },
-          ]);
-        }
-        return created;
-      });
-      return reply.code(201).send({ ...tokenDto(row), token: generated.token });
+      const { row, token } = await deps.db.transaction((tx) =>
+        createProjectToken(tx, {
+          projectId: project.id,
+          name: request.body.name,
+          scopes: ['analysis:write'],
+          expiresAt: expiresAtFrom(request.body.expiresInDays),
+          createdBy: { userId: principal.user.id, audit: deps.audit, actor: actorOf(request) },
+        }),
+      );
+      return reply.code(201).send({ ...tokenDto(row), token });
     },
   );
 
