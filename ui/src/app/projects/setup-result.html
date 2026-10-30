@@ -1,0 +1,166 @@
+@let it = item();
+@let i = index();
+<article class="card panel result" [attr.aria-labelledby]="'result-' + i">
+  <div class="result-head">
+    <div>
+      <h2 [id]="'result-' + i">
+        <span class="owner">{{ parts().owner }}</span
+        ><b>{{ parts().last }}</b>
+      </h2>
+      <p class="result-sub">
+        @if (it.project; as project) {
+          @if (it.projectOutcome === 'adopted') {
+            <ng-container i18n="@@addRepos.result.adopted"
+              >Mapped to the existing project
+              <a [routerLink]="['/projects', project.id]">{{ project.key }}</a></ng-container
+            >
+          } @else {
+            <ng-container i18n="@@addRepos.result.created"
+              >Project
+              <a [routerLink]="['/projects', project.id]">{{ project.key }}</a>
+              created</ng-container
+            >
+          }
+        } @else {
+          <ng-container i18n="@@addRepos.result.noProject">No project was created.</ng-container>
+        }
+      </p>
+    </div>
+    <q-setup-badge [state]="state()" />
+  </div>
+  <div class="result-body">
+    @switch (state()) {
+      @case ('merge_request') {
+        @if (link(); as href) {
+          <p>
+            <a class="mr-link" [href]="href" target="_blank" rel="noopener noreferrer"
+              ><q-icon name="merge-request" /><ng-container i18n="@@addRepos.result.mrTitle"
+                >Add Qualor code analysis</ng-container
+              >
+              @if (number(); as n) {
+                &ngsp;<span class="num">{{ n }}</span>
+              }
+              <q-icon name="external"
+            /></a>
+          </p>
+        }
+        <p class="hint" i18n="@@addRepos.result.mergeIt">Merge it to run the first analysis.</p>
+        @if (csharp()) {
+          <p class="note">
+            <q-icon name="info" />
+            <span i18n="@@addRepos.result.csharp"
+              >A C# repository: check the build command in the merge request before you merge
+              it.</span
+            >
+          </p>
+        }
+      }
+      @case ('failed') {
+        <p class="fail-reason">{{ error() }}</p>
+        <ng-container *ngTemplateOutlet="tryAgain" />
+      }
+      @case ('ci_failed') {
+        <p class="fail-reason">{{ error() }}</p>
+        <p class="hint" i18n="@@addRepos.result.projectReady">
+          The project is ready. Fix the cause, then try again.
+        </p>
+        <ng-container *ngTemplateOutlet="tryAgain" />
+      }
+      @default {
+        <p>{{ reason() }}</p>
+        <div class="result-split">
+          <div>
+            <h3 class="part-title">{{ secretTitle() }} <code>QUALOR_TOKEN</code></h3>
+            @if (token(); as value) {
+              <q-secret-once
+                [value]="value"
+                [label]="tokenLabel()"
+                [fieldId]="'token-' + i"
+                [intro]="secretIntro()"
+                [autofocus]="false"
+                [showDone]="false"
+              />
+            } @else {
+              <p class="note token-gone">
+                <q-icon name="info" />
+                @if (it.project; as project) {
+                  @if (state() === 'already') {
+                    <span i18n="@@addRepos.result.tokenAlready"
+                      >If the repository has no QUALOR_TOKEN of this project, create one in
+                      <a [routerLink]="['/projects', project.id, 'settings']" fragment="tokens"
+                        >the project's token settings</a
+                      >.</span
+                    >
+                  } @else {
+                    <span i18n="@@addRepos.result.tokenGone"
+                      >The token is shown only once, and this page no longer has it. Create a new
+                      one in
+                      <a [routerLink]="['/projects', project.id, 'settings']" fragment="tokens"
+                        >the project's token settings</a
+                      >.</span
+                    >
+                  }
+                } @else {
+                  <span i18n="@@addRepos.result.tokenGoneNoProject"
+                    >The token is shown only once, and this page no longer has it.</span
+                  >
+                }
+              </p>
+            }
+            <p class="hint where">{{ secretWhere() }}</p>
+          </div>
+          @if (it.snippet !== null) {
+            <div>
+              <h3 class="part-title" i18n="@@addRepos.result.job">The job Qualor would add</h3>
+              <div class="code-window">
+                <div class="code-head">
+                  <code [id]="'file-' + i">{{ file() }}</code>
+                  <span class="copy">
+                    <span class="copy-status" aria-live="polite">
+                      @switch (copyState()) {
+                        @case ('copied') {
+                          <ng-container i18n="@@copyValue.copied">Copied.</ng-container>
+                        }
+                        @case ('failed') {
+                          <ng-container i18n="@@copyValue.failed"
+                            >Copying failed: select the text and copy it yourself.</ng-container
+                          >
+                        }
+                      }
+                    </span>
+                    <button
+                      type="button"
+                      class="btn"
+                      [attr.aria-describedby]="'file-' + i"
+                      (click)="copySnippet()"
+                      i18n="@@copyValue.copy"
+                    >
+                      Copy
+                    </button>
+                  </span>
+                </div>
+                <pre class="snippet" tabindex="0">{{ it.snippet }}</pre>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    }
+  </div>
+</article>
+
+<ng-template #tryAgain>
+  @if (canRetry()) {
+    <p>
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-disabled]="retrying() ? true : null"
+        (click)="retry.emit()"
+        i18n="@@addRepos.result.tryAgain"
+      >
+        Try again
+      </button>
+    </p>
+  }
+</ng-template>

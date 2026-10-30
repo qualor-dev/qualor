@@ -1,0 +1,213 @@
+/* Add repositories (onboarding UI notes): the issues page's layout, choices in a narrow left
+   column (sticky on desktop), the list at the right, the float bar for the action. The list
+   (q-repository-list) and each result (q-setup-result) style themselves. */
+.add-layout {
+  display: grid;
+  grid-template-columns: minmax(19rem, 23rem) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.add-side {
+  display: grid;
+  gap: 24px;
+  position: sticky;
+  top: var(--sticky-top);
+}
+.add-layout .card {
+  margin: 0;
+}
+/* The page keeps its last rows clear of the float bar. */
+.page-body.has-bar {
+  padding-bottom: 120px;
+}
+
+/* Connections: one radio row each, its CI-setup state, and why not when it is read only. */
+.conn-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 12px 14px;
+  border: 0;
+}
+.conn {
+  padding: 12px 12px 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+.conn:hover {
+  background: var(--surface-2);
+}
+.conn:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.conn:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.conn label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  cursor: pointer;
+}
+.conn input {
+  grid-row: span 3;
+  margin-top: 3px;
+}
+.conn-name {
+  font-size: 14.5px;
+  font-weight: 650;
+}
+.conn-meta {
+  color: var(--text-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.conn label .badge {
+  justify-self: start;
+  margin-top: 6px;
+}
+.conn .req,
+.conn q-requirement {
+  margin: 10px 0 0 calc(1.05rem + 12px);
+}
+.req a {
+  font-weight: 600;
+}
+.no-connection {
+  margin: 0;
+}
+
+/* For each repository: the fact, then the switch. */
+.opt-body {
+  display: grid;
+  gap: 18px;
+}
+.opt-fact {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  margin: 0;
+}
+.opt-fact q-icon {
+  justify-self: center;
+  margin-top: 2px;
+  color: var(--ok);
+}
+.opt-fact strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+.opt-fact .hint {
+  display: block;
+  margin-top: 2px;
+}
+.sw-help.off {
+  color: var(--text-2);
+}
+
+/* The float bar's words. */
+.add-bar .bar-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 0 auto 0 0;
+}
+.add-bar .bar-count strong {
+  color: #fff;
+  font-size: 14px;
+}
+
+/* Progress: the meter, then a row per repository, its badge beside its name. */
+.run-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.run-alert p {
+  margin: 0;
+}
+.run-meter {
+  max-width: 34rem;
+}
+.run-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--hairline);
+}
+.run-list li {
+  display: grid;
+  grid-template-columns: minmax(12rem, 20rem) minmax(0, 1fr);
+  justify-items: start;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--hairline);
+}
+.run-list li:last-child {
+  border-bottom: 0;
+}
+.repo-name {
+  overflow-wrap: anywhere;
+}
+.owner,
+.waiting .repo-name {
+  color: var(--text-muted);
+}
+.repo-name b {
+  font-weight: 650;
+}
+.why {
+  grid-column: 2;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* Results. */
+.results {
+  display: grid;
+  gap: 16px;
+}
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+@media (max-width: 64rem) {
+  .add-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .add-side {
+    position: static;
+  }
+}
+@media (max-width: 40rem) {
+  .conn-list {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .run-list li {
+    grid-template-columns: minmax(0, 1fr);
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .why {
+    grid-column: 1;
+  }
+  .add-bar .btn-primary {
+    flex: 1 1 auto;
+  }
+  .page-body.has-bar {
+    padding-bottom: 150px;
+  }
+}

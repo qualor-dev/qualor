@@ -1,0 +1,378 @@
+<q-page-header [compact]="true" [crumbs]="crumbs">
+  <h1 pageTitle #heading tabindex="-1">
+    @if (!runId()) {
+      <ng-container i18n="@@addRepos.title">Add repositories</ng-container>
+    } @else if (run(); as r) {
+      @if (r.status === 'done') {
+        <ng-container i18n="@@addRepos.added">{counts().added, plural,
+          =0 {No repository added}
+          =1 {1 repository added}
+          other {{{ counts().added }} repositories added}
+        }</ng-container>
+      } @else {
+        <ng-container i18n="@@addRepos.adding">{r.items.length, plural,
+          =1 {Adding 1 repository}
+          other {Adding {{ r.items.length }} repositories}
+        }</ng-container>
+      }
+    } @else {
+      <ng-container i18n="@@addRepos.addingSome">Adding repositories</ng-container>
+    }
+  </h1>
+  @if (run(); as r) {
+    <p pageMeta class="page-meta">
+      @if (r.status === 'done') {
+        @if (counts().mergeRequests > 0) {
+          <span
+            ><q-icon name="merge-request" /><ng-container
+              i18n="@@addRepos.meta.mergeRequests"
+              >{counts().mergeRequests, plural,
+                =1 {1 merge request to merge}
+                other {{{ counts().mergeRequests }} merge requests to merge}
+              }</ng-container
+            ></span
+          >&ngsp;
+        }
+        @if (counts().jobs > 0) {
+          <span
+            ><q-icon name="key" /><ng-container i18n="@@addRepos.meta.jobs">{counts().jobs, plural,
+              =1 {1 CI job to add}
+              other {{{ counts().jobs }} CI jobs to add}
+            }</ng-container></span
+          >&ngsp;
+        }
+        @if (counts().already > 0) {
+          <span
+            ><q-icon name="check" /><ng-container i18n="@@addRepos.meta.already"
+              >{{ counts().already }} already set up</ng-container
+            ></span
+          >&ngsp;
+        }
+        @if (counts().failed > 0) {
+          <span
+            ><q-icon name="cross" /><ng-container i18n="@@addRepos.meta.failed"
+              >{{ counts().failed }} failed</ng-container
+            ></span
+          >&ngsp;
+        }
+      } @else {
+        @if (runConnection(); as c) {
+          <span i18n="@@addRepos.meta.from"
+            >From {{ providerName(c) }}, {{ connectionHost(c) }}</span
+          >&ngsp;
+        }
+        @if (r.ciSetup) {
+          <span
+            ><q-icon name="check" /><ng-container i18n="@@addRepos.meta.ci"
+              >CI setup with a merge request</ng-container
+            ></span
+          >&ngsp;
+        } @else {
+          <span i18n="@@addRepos.meta.noCi">Without CI setup</span>
+        }
+      }
+    </p>
+  }
+</q-page-header>
+
+<div class="page-body" [class.has-bar]="!runId() && chosen() !== null">
+  @if (!runId()) {
+    <!-- Picking: the connection and the options at the left, the repositories at the right. -->
+    @if (startError(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    <div class="add-layout">
+      <div class="add-side">
+        <section class="card panel" aria-labelledby="conn-heading">
+          <div class="panel-head">
+            <h2 id="conn-heading" i18n="@@addRepos.connection">Connection</h2>
+          </div>
+          @if (connectionsError(); as message) {
+            <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
+          } @else if (connections()?.length === 0) {
+            <p class="panel-body no-connection" i18n="@@addRepos.noConnection">
+              Connect GitHub or GitLab first, in
+              <a routerLink="/settings/github">Settings → GitHub</a> or
+              <a routerLink="/settings/gitlab">Settings → GitLab</a>.
+            </p>
+          } @else {
+            <fieldset class="conn-list" [attr.aria-busy]="connections() === null">
+              <legend class="visually-hidden" i18n="@@addRepos.connection">Connection</legend>
+              @for (c of connections(); track c.id; let i = $index) {
+                @let why = whyNot(c);
+                <div class="conn">
+                  <label>
+                    <input
+                      type="radio"
+                      name="connection"
+                      [value]="c.id"
+                      [checked]="c.id === chosenId()"
+                      [attr.aria-describedby]="why ? 'conn-why-' + i : null"
+                      (change)="choose(c.id)"
+                    />
+                    <span class="conn-name">{{ providerName(c) }}</span
+                    >&ngsp; <span class="conn-meta">{{ connectionMeta(c) }}</span
+                    >&ngsp;
+                    @if (c.ciSetup.available) {
+                      <span class="badge badge-passed"
+                        ><q-icon name="check" /><ng-container i18n="@@addRepos.ciAvailable"
+                          >CI setup available</ng-container
+                        ></span
+                      >
+                    } @else {
+                      <span class="badge badge-none" i18n="@@addRepos.readOnly">Read only</span>
+                    }
+                  </label>
+                  @switch (why) {
+                    @case ('not_allowed') {
+                      <q-requirement
+                        [noteId]="'conn-why-' + i"
+                        place="gitlab"
+                        text="CI setup is off for this connection. Turn it on in"
+                        i18n-text="@@addRepos.why.notAllowed"
+                      />
+                    }
+                    @case ('permissions') {
+                      <p class="req" [id]="'conn-why-' + i">
+                        <q-icon name="alert" />
+                        <span
+                          >{{ missingText(c) }}&ngsp;<a
+                            routerLink="/docs/github"
+                            fragment="update-an-app-you-created-before"
+                            i18n="@@addRepos.why.howToGrant"
+                            >How to grant them</a
+                          ></span
+                        >
+                      </p>
+                    }
+                    @case ('unread') {
+                      <p class="req" [id]="'conn-why-' + i">
+                        <q-icon name="alert" />
+                        <span
+                          ><ng-container i18n="@@addRepos.why.unread"
+                            >Qualor could not read the GitHub App's permissions. It needs Workflows
+                            and Secrets, read and write.</ng-container
+                          >&ngsp;<a
+                            routerLink="/docs/github"
+                            fragment="update-an-app-you-created-before"
+                            i18n="@@addRepos.why.howToGrant"
+                            >How to grant them</a
+                          ></span
+                        >
+                      </p>
+                    }
+                    @case ('url') {
+                      <p class="req" [id]="'conn-why-' + i">
+                        <q-icon name="alert" />
+                        <span
+                          ><ng-container i18n="@@addRepos.why.noPublicUrl"
+                            >Qualor needs its public address (QUALOR_PUBLIC_URL) to set up
+                            CI.</ng-container
+                          >&ngsp;<a
+                            routerLink="/docs/install-server"
+                            fragment="the-settings-file"
+                            i18n="@@addRepos.why.setIt"
+                            >How to set it</a
+                          ></span
+                        >
+                      </p>
+                    }
+                  }
+                </div>
+              }
+            </fieldset>
+          }
+        </section>
+
+        <section class="card panel" aria-labelledby="options-heading">
+          <div class="panel-head">
+            <h2 id="options-heading" i18n="@@addRepos.options">For each repository</h2>
+          </div>
+          <div class="panel-body opt-body">
+            <p class="opt-fact">
+              <q-icon name="check" />
+              <span
+                ><strong i18n="@@addRepos.createsProject">Qualor creates a project</strong
+                >&ngsp;<span class="hint" i18n="@@addRepos.createsProjectHint"
+                  >Its key is the repository's path. It gets the default quality gate and
+                  profile.</span
+                ></span
+              >
+            </p>
+            <div class="switch-row">
+              <input
+                id="ci-setup"
+                type="checkbox"
+                role="switch"
+                class="switch"
+                aria-describedby="ci-setup-help"
+                [checked]="ciSetup()"
+                [disabled]="!ciAvailable()"
+                (change)="ciWanted.set(isChecked($event))"
+              />
+              <label for="ci-setup">
+                <span class="sw-name" i18n="@@addRepos.ciSetup">Set up CI with a merge request</span
+                >&ngsp;
+                <span id="ci-setup-help" class="sw-help" [class.off]="!ciAvailable()">
+                  @if (!ciAvailable()) {
+                    <ng-container i18n="@@addRepos.ciSetup.off"
+                      >Not available for this connection. You get the CI job and a token to copy for
+                      each project.</ng-container
+                    >
+                  } @else if (chosen()?.provider === 'gitlab') {
+                    <ng-container i18n="@@addRepos.ciSetup.gitlab"
+                      >Qualor opens a merge request that adds the Qualor job, and stores the
+                      project's token as the CI/CD variable QUALOR_TOKEN. Nothing changes until you
+                      merge it.</ng-container
+                    >
+                  } @else {
+                    <ng-container i18n="@@addRepos.ciSetup.github"
+                      >Qualor opens a merge request that adds the Qualor job, and stores the
+                      project's token as the Actions secret QUALOR_TOKEN. Nothing changes until you
+                      merge it.</ng-container
+                    >
+                  }
+                </span>
+              </label>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      @if (chosen(); as c) {
+        <q-repository-list [connection]="c" [(selected)]="selected" />
+      }
+    </div>
+
+    @if (chosen() !== null) {
+      <div
+        class="float-bar add-bar"
+        role="region"
+        aria-label="Selected repositories"
+        i18n-aria-label="@@addRepos.bar"
+      >
+        <p class="bar-count" role="status">
+          @if (full()) {
+            <strong i18n="@@addRepos.full">{{ count() }} selected: the most for one run.</strong
+            >&ngsp;<span class="hint" i18n="@@addRepos.fullHint">Add the rest in another run.</span>
+          } @else {
+            <strong i18n="@@addRepos.count">{{ count() }} selected</strong>&ngsp;<span
+              class="hint"
+              i18n="@@addRepos.limit"
+              >Up to {{ max }} at a time</span
+            >
+          }
+        </p>
+        <button
+          type="button"
+          class="btn"
+          [disabled]="count() === 0"
+          (click)="clear()"
+          i18n="@@addRepos.clear"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          [disabled]="count() === 0"
+          [attr.aria-disabled]="starting() ? true : null"
+          (click)="start()"
+          i18n="@@addRepos.add"
+        >
+          {count(), plural,
+            =0 {Add repositories}
+            =1 {Add 1 repository}
+            other {Add {{ count() }} repositories}
+          }
+        </button>
+      </div>
+    }
+  } @else if (runError(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  } @else {
+    @if (pollStopped()) {
+      <div class="alert alert-error run-alert" role="alert">
+        <p i18n="@@addRepos.pollStopped">
+          The progress could not be read. The run goes on; check again in a moment.
+        </p>
+        <button type="button" class="btn" (click)="checkAgain()" i18n="@@addRepos.checkAgain">
+          Check again
+        </button>
+      </div>
+    }
+    @if (run(); as r) {
+      @if (r.status !== 'done') {
+        <!-- Progress: no spinner; the rows change as the page reads the run again. -->
+        <section class="card panel" aria-labelledby="progress-heading">
+          <div class="panel-head">
+            <h2 id="progress-heading" i18n="@@addRepos.progress">Progress</h2>
+            <span class="panel-sub" i18n="@@addRepos.goesOn"
+              >The run goes on if you leave this page.</span
+            >
+          </div>
+          <div class="panel-body">
+            <q-meter
+              class="run-meter"
+              label="Finished"
+              i18n-label="@@addRepos.finished"
+              [trackRole]="'progressbar'"
+              [value]="finished()"
+              [max]="r.items.length"
+              [text]="finishedText(r)"
+            />
+          </div>
+          <ol class="run-list" aria-busy="true" aria-live="polite">
+            @for (item of r.items; track item.ref) {
+              @let state = stateOf(item);
+              @let parts = pathParts(item.name);
+              <li [class]="state">
+                <span class="repo-name"
+                  ><span class="owner">{{ parts.owner }}</span
+                  ><b>{{ parts.last }}</b></span
+                >&ngsp;
+                <q-setup-badge [state]="state" [ciSetup]="r.ciSetup" />
+                @if (state === 'failed' || state === 'ci_failed') {
+                  <p class="why">{{ errorOf(item) }}</p>
+                }
+              </li>
+            }
+          </ol>
+        </section>
+      } @else {
+        <!-- Results: a card per repository, in run order. -->
+        @if (retryError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        <div class="results">
+          @for (item of r.items; track item.ref; let i = $index) {
+            <q-setup-result
+              [item]="item"
+              [index]="i"
+              [connection]="runConnection()"
+              [token]="tokens()[item.ref] ?? null"
+              [csharp]="csharp().has(item.ref)"
+              [canRetry]="runConnection() !== null"
+              [retrying]="retrying() === item.ref"
+              (retry)="retry(item)"
+            />
+          }
+        </div>
+        <div class="result-actions">
+          <a class="btn btn-primary" routerLink="/projects" i18n="@@addRepos.goToProjects"
+            >Go to Projects</a
+          >
+          <a
+            class="btn"
+            routerLink="/projects/add"
+            [queryParams]="connection() ? { connection: connection() } : {}"
+            i18n="@@addRepos.addMore"
+            >Add more repositories</a
+          >
+        </div>
+      }
+    } @else if (!pollStopped()) {
+      <p class="muted" i18n="@@addRepos.reading">Reading the run…</p>
+    }
+  }
+</div>

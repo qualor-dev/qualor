@@ -1,0 +1,50 @@
+@switch (state()) {
+  @case ('merge_request') {
+    <span class="badge badge-passed"
+      ><q-icon name="merge-request" /><ng-container i18n="@@addRepos.state.mergeRequest"
+        >Merge request opened</ng-container
+      ></span
+    >
+  }
+  @case ('snippet') {
+    <span class="badge badge-accent"
+      ><q-icon name="key" /><ng-container i18n="@@addRepos.state.snippet"
+        >CI job to add</ng-container
+      ></span
+    >
+  }
+  @case ('already') {
+    <span class="badge badge-none"
+      ><q-icon name="check" /><ng-container i18n="@@addRepos.state.already"
+        >Already set up</ng-container
+      ></span
+    >
+  }
+  @case ('ci_failed') {
+    <span class="badge badge-failed"
+      ><q-icon name="cross" /><ng-container i18n="@@addRepos.state.ciFailed"
+        >CI setup failed</ng-container
+      ></span
+    >
+  }
+  @case ('failed') {
+    <span class="badge badge-failed"
+      ><q-icon name="cross" /><ng-container i18n="@@addRepos.state.failed"
+        >Failed</ng-container
+      ></span
+    >
+  }
+  @case ('working') {
+    <span class="badge badge-accent"
+      ><q-icon name="clock" />
+      @if (ciSetup()) {
+        <ng-container i18n="@@addRepos.state.working">Setting up CI</ng-container>
+      } @else {
+        <ng-container i18n="@@addRepos.state.adding">Adding</ng-container>
+      }
+    </span>
+  }
+  @default {
+    <span class="badge badge-none" i18n="@@addRepos.state.waiting">Waiting</span>
+  }
+}

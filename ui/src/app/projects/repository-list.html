@@ -1,0 +1,156 @@
+<div class="panel-head">
+  <h2 id="repos-heading" i18n="@@addRepos.repositories">Repositories</h2>
+</div>
+<form role="search" class="repo-toolbar" (submit)="submitFilter($event)">
+  <span class="search-field">
+    <q-icon name="search" />
+    <label for="repo-filter" class="visually-hidden" i18n="@@addRepos.filter.label"
+      >Filter repositories</label
+    >
+    <input
+      id="repo-filter"
+      type="search"
+      placeholder="Filter by name"
+      i18n-placeholder="@@addRepos.filter.placeholder"
+      autocomplete="off"
+      [attr.maxlength]="maxFilter"
+      [value]="filterText()"
+      (input)="setFilter(inputValue($event))"
+    />
+  </span>
+</form>
+@if (error(); as message) {
+  <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
+}
+<div class="panel-scroll" tabindex="0" role="group" aria-labelledby="repos-caption">
+  <table class="repo-table" [attr.aria-busy]="loading()">
+    <caption id="repos-caption" class="visually-hidden" i18n="@@addRepos.caption">
+      Repositories of the connection; those already in Qualor cannot be selected
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col" class="check-col">
+          <input
+            #selectPage
+            id="select-page"
+            type="checkbox"
+            aria-label="Select the repositories on this page"
+            i18n-aria-label="@@addRepos.selectPage"
+            [checked]="pageState().all"
+            [disabled]="selectable().length === 0 || (full() && !pageState().some)"
+            (change)="toggleAll($event)"
+          />
+        </th>
+        <th scope="col" i18n="@@addRepos.col.repository">Repository</th>
+        @if (languages()) {
+          <th scope="col" class="desk-only" i18n="@@addRepos.col.language">Language</th>
+        }
+        <th scope="col" class="desk-only" i18n="@@addRepos.col.branch">Default branch</th>
+        <th scope="col" i18n="@@addRepos.col.inQualor">In Qualor</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (repo of repos(); track repo.ref; let i = $index) {
+        @let mapped = repo.project?.state === 'mapped';
+        @let parts = pathParts(repo.name);
+        <tr
+          [class.is-selected]="isSelected(repo)"
+          [class.is-mapped]="mapped"
+          [class.is-off]="!canPick(repo)"
+        >
+          <td class="check-col">
+            <input
+              type="checkbox"
+              [id]="'repo-' + i"
+              [checked]="isSelected(repo)"
+              [disabled]="boxDisabled(repo)"
+              [attr.aria-describedby]="canPick(repo) ? null : 'repo-' + i + '-state'"
+              (change)="toggle(repo, $event)"
+            />
+          </td>
+          <th scope="row">
+            <label class="repo-name" [for]="'repo-' + i"
+              ><span class="owner">{{ parts.owner }}</span
+              ><b>{{ parts.last }}</b></label
+            >
+            <div class="phone-only meta-cell">
+              @if (languages()) {
+                @if (repo.language; as language) {
+                  <span>{{ language }}</span
+                  >&ngsp;
+                } @else {
+                  <span i18n="@@addRepos.noLanguage">No language</span>&ngsp;
+                }
+              }
+              @if (repo.defaultBranch; as branch) {
+                <span class="branch">{{ branch }}</span>
+              }
+            </div>
+          </th>
+          @if (languages()) {
+            <td class="lang desk-only">
+              @if (repo.language; as language) {
+                {{ language }}
+              } @else {
+                <span class="muted">–</span>
+              }
+            </td>
+          }
+          <td class="desk-only">
+            @if (repo.defaultBranch; as branch) {
+              <span class="branch">{{ branch }}</span>
+            } @else {
+              <span class="muted" i18n="@@addRepos.emptyRepository">Empty</span>
+            }
+          </td>
+          <td class="state-cell" [id]="'repo-' + i + '-state'">
+            @if (mapped) {
+              <ng-container i18n="@@addRepos.mapped"
+                >Added as
+                <a [routerLink]="['/projects', repo.project?.id]">{{
+                  repo.project?.key
+                }}</a></ng-container
+              >
+            } @else if (repo.archived) {
+              <span class="badge badge-tag" i18n="@@addRepos.archived">Archived</span>&ngsp;
+              <span class="hint" i18n="@@addRepos.archivedHint"
+                >An archived repository runs no CI</span
+              >
+            } @else if (repo.project?.state === 'adoptable') {
+              <span class="badge badge-accent" i18n="@@addRepos.adoptable">Existing project</span
+              >&ngsp;
+              <span class="hint" i18n="@@addRepos.adoptableHint">Keeps its key and history</span>
+            }
+          </td>
+        </tr>
+      } @empty {
+        @if (loaded()) {
+          <tr class="empty-row">
+            <td [attr.colspan]="languages() ? 5 : 4" class="muted">
+              @if (filterText().trim()) {
+                <ng-container i18n="@@addRepos.noMatch">No repository matches.</ng-container>
+              } @else {
+                <ng-container i18n="@@addRepos.none"
+                  >The connection reaches no repositories.</ng-container
+                >
+              }
+            </td>
+          </tr>
+        }
+      }
+    </tbody>
+  </table>
+</div>
+@if (hasMore()) {
+  <div class="list-foot">
+    <button
+      type="button"
+      class="btn"
+      [attr.aria-disabled]="loading() ? true : null"
+      (click)="more()"
+      i18n="@@list.more"
+    >
+      Load more
+    </button>
+  </div>
+}

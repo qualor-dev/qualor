@@ -251,12 +251,10 @@ describe('ProjectsPage', () => {
     server.on('GET', '/api/v0/projects', { body: page([]) });
     server.on('POST', '/api/v0/projects', { status: 201, body: project('new', 'New Service') });
     const { fixture, root } = await render();
-    expect(root.textContent).toContain('No projects match.');
     // Creation is the band's "New project" button, above the list.
-    expect(root.querySelector('.empty-state')?.textContent).toContain(
-      'Create one with New project',
+    expect(text(root.querySelector('.empty-state p'))).toBe(
+      'No projects yet. Add your repositories from GitHub or GitLab, or create one with New project.',
     );
-    expect(root.querySelector('.empty-state')?.textContent).not.toContain('below');
     type(root, '#project-key', 'acme/new');
     type(root, '#project-name', 'New Service');
     root.querySelector('dialog form')!.dispatchEvent(new Event('submit'));
@@ -401,5 +399,47 @@ describe('ProjectsPage', () => {
     expect(root.querySelector('dialog')).toBeNull();
     expect(root.querySelector('#project-key')).toBeNull();
     expect(root.textContent).not.toContain('New project');
+    expect(root.textContent).not.toContain('Add repositories');
+  });
+
+  it("offers Add repositories as the band's primary action, after New project", async () => {
+    server.on('GET', '/api/v0/projects', { body: page([project('a', 'Alpha')]) });
+    const { root } = await render();
+    const actions = [...root.querySelectorAll('.band-actions > :is(a, button)')];
+    expect(actions.map(text)).toEqual(['New project', 'Add repositories']);
+    const [create, add] = actions;
+    expect(create?.classList).not.toContain('btn-primary');
+    expect(create?.querySelector('q-icon')).toBeNull();
+    expect(add?.classList).toContain('btn-primary');
+    expect(add?.tagName).toBe('A');
+    expect(add?.getAttribute('href')).toBe('/projects/add');
+  });
+
+  it('shows an empty organization only the empty state, with Add repositories', async () => {
+    server.on('GET', '/api/v0/projects', { body: page([]) });
+    const { root } = await render();
+    // No table: its columns would scroll sideways on a phone around a lone sentence.
+    expect(root.querySelector('table')).toBeNull();
+    const empty = root.querySelector('.empty-state')!;
+    const add = empty.querySelector('a.btn-primary');
+    expect(text(add)).toBe('Add repositories');
+    expect(add?.getAttribute('href')).toBe('/projects/add');
+  });
+
+  it('keeps the table and says nothing matches when a search finds nothing', async () => {
+    server.on('GET', '/api/v0/projects', { body: page([]) });
+    const { root } = await render('zzz');
+    expect(root.querySelector('table')).not.toBeNull();
+    expect(text(root.querySelector('.empty-state p'))).toBe('No projects match.');
+    expect(root.querySelector('.empty-state a')).toBeNull();
+  });
+
+  it('shows a member without projects that there are none yet, and nothing to add', async () => {
+    TestBed.resetTestingModule();
+    configure(false);
+    server.on('GET', '/api/v0/projects', { body: page([]) });
+    const { root } = await render();
+    expect(text(root.querySelector('.empty-state p'))).toBe('No projects yet.');
+    expect(root.querySelector('.empty-state a')).toBeNull();
   });
 });

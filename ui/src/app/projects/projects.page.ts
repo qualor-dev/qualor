@@ -37,7 +37,8 @@ const MAX_TEXT = 255;
  * The current organisation's projects (brief §2.3, spec §7.2) on the ink band: a search that lives
  * in the URL, a summary of the listed projects (gate outcomes, open issues, average coverage, lines
  * of code, from the list itself), the table with keyset pages, and project creation in a dialog for
- * organisation admins.
+ * organisation admins. For those who may create projects, **Add repositories** (`/projects/add`)
+ * is the band's primary action and the empty organisation's way in; **New project** is secondary.
  */
 @Component({
   selector: 'q-projects-page',
@@ -57,6 +58,8 @@ export class ProjectsPage {
   readonly q = input<string>();
 
   protected readonly maxText = MAX_TEXT;
+  /** A search is in the URL: an empty list then means no match, not no projects at all. */
+  protected readonly searching = computed(() => (this.q() ?? '').trim() !== '');
   /** The main-branch measures the table shows, in column order. */
   protected readonly columns = ['issues', 'coverage', 'duplicated_lines_density', 'ncloc'];
   protected readonly search = signal('');

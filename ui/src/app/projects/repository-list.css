@@ -1,0 +1,153 @@
+/* The repositories of a connection (onboarding UI notes): a filter, then a table whose rows become
+   cards on a phone (the .stack-table pattern). Paths scan by name: the owner muted, the name bold. */
+:host {
+  display: block;
+  margin: 0;
+}
+.repo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin: 0;
+  padding: 14px 22px 0;
+}
+.search-field {
+  position: relative;
+  flex: 0 1 24rem;
+  min-width: 0;
+}
+.search-field q-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search-field input {
+  width: 100%;
+  padding-left: 34px;
+}
+.check-col {
+  width: 1px;
+  padding-right: 0;
+}
+input:disabled {
+  opacity: 0.35;
+}
+th[scope='row'] {
+  font-weight: inherit;
+}
+.repo-name {
+  display: inline-block;
+  font-weight: 450;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.owner {
+  color: var(--text-muted);
+}
+.repo-name b {
+  font-weight: 650;
+}
+tr.is-selected {
+  background: color-mix(in srgb, var(--accent-soft) 75%, transparent);
+}
+tr.is-off .repo-name {
+  cursor: default;
+}
+tr.is-mapped .repo-name b {
+  color: var(--text-muted);
+  font-weight: 550;
+}
+.lang {
+  color: var(--text-2);
+}
+.branch {
+  color: var(--text-2);
+  font: 12.5px var(--mono);
+}
+.state-cell {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.state-cell a {
+  font-weight: 600;
+  text-decoration: none;
+}
+.state-cell a:hover {
+  text-decoration: underline;
+}
+.state-cell .badge + .hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+}
+.list-foot {
+  display: flex;
+  gap: 12px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--hairline);
+}
+.phone-only {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .repo-toolbar {
+    padding: 14px 16px 0;
+  }
+  .search-field {
+    flex: 1 1 100%;
+  }
+  thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  tbody tr:not(.empty-row) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  tbody tr:last-child {
+    border-bottom: 0;
+  }
+  /* Important: as strong as a panel's edge rules (.card.panel > … :first-child, :last-child). */
+  tbody tr:not(.empty-row) > :is(td, th) {
+    display: block;
+    padding: 0 !important;
+    border: 0;
+  }
+  td.check-col {
+    grid-row: span 3;
+    width: auto;
+    padding-top: 3px !important;
+  }
+  tbody .desk-only {
+    display: none !important;
+  }
+  .phone-only {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 8px;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .state-cell {
+    grid-column: 2;
+  }
+  .state-cell:empty {
+    display: none !important;
+  }
+  .list-foot {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}

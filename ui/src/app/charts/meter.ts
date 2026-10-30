@@ -36,6 +36,8 @@ export class Meter {
    * why. The failure red is for what already stopped: a reached budget, an expired licence.
    */
   readonly alert = input<MeterAlert | null>(null);
+  /** `progressbar` for a task's progress (a run's finished repositories) rather than a measure. */
+  readonly trackRole = input<'meter' | 'progressbar'>('meter');
 
   /** A budget meter: no words of its own were given for its value. */
   private readonly budget = computed(() => this.text() === null);

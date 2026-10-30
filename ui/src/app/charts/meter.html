@@ -11,7 +11,7 @@
   @if (max() !== null) {
     <div
       class="meter-track"
-      role="meter"
+      [attr.role]="trackRole()"
       aria-valuemin="0"
       [attr.aria-label]="label()"
       [attr.aria-valuenow]="trackValue()"

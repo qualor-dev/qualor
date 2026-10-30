@@ -63,6 +63,20 @@ export const routes: Routes = [
         loadComponent: () => import('./projects/projects.page').then((m) => m.ProjectsPage),
       },
       {
+        // Onboarding: add a connection's repositories as projects; `:runId` follows a run. Before
+        // `projects/:projectId`, which would take `add` for a project id.
+        path: 'projects/add',
+        title: $localize`:@@title.addRepositories:Add repositories`,
+        loadComponent: () =>
+          import('./projects/add-repositories.page').then((m) => m.AddRepositoriesPage),
+      },
+      {
+        path: 'projects/add/:runId',
+        title: $localize`:@@title.addRepositories:Add repositories`,
+        loadComponent: () =>
+          import('./projects/add-repositories.page').then((m) => m.AddRepositoriesPage),
+      },
+      {
         path: 'projects/:projectId',
         loadComponent: () => import('./project/project.page').then((m) => m.ProjectPage),
         loadChildren: () => import('./project/project.routes').then((m) => m.projectRoutes),

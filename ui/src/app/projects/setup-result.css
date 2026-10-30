@@ -1,0 +1,151 @@
+/* One repository's outcome (onboarding UI notes, "Results"): its path as the heading, what
+   happened to the project under it, the badge at the right; then the merge request, the job to
+   copy with its token, or why it failed. */
+:host {
+  display: block;
+}
+.result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 18px 22px 14px;
+}
+.card .result-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 450;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.owner {
+  color: var(--text-muted);
+}
+h2 b {
+  font-weight: 700;
+}
+.result-sub {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.result-sub a,
+.token-gone a {
+  font-weight: 600;
+}
+.result-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 22px 20px;
+}
+.result-body p {
+  margin: 0;
+}
+.mr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.mr-link:hover {
+  text-decoration: underline;
+}
+.num {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.mr-link q-icon:last-child {
+  width: 13px;
+  height: 13px;
+}
+.result-split {
+  display: grid;
+  grid-template-columns: minmax(0, 29rem) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.card .part-title {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.part-title code {
+  font-size: 12.5px;
+}
+.result-body .where {
+  margin: 10px 0 0;
+}
+.token-gone {
+  max-width: none;
+}
+/* The one-time secret: its sentence, then the field and Copy on one line. */
+q-secret-once ::ng-deep .secret-once {
+  margin: 0;
+}
+q-secret-once ::ng-deep p {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+q-secret-once ::ng-deep p:last-child {
+  margin: 0;
+}
+q-secret-once ::ng-deep .row {
+  flex-wrap: nowrap;
+}
+q-secret-once ::ng-deep input {
+  font-size: 12.5px;
+}
+.code-head {
+  align-items: center;
+  padding: 8px 10px 8px 16px;
+}
+.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.code-head .btn {
+  min-height: 28px;
+  padding: 0 10px;
+  border-color: var(--ink-line);
+  background: transparent;
+  color: var(--ink-text);
+  font-size: 12.5px;
+}
+.code-head .btn:hover {
+  border-color: var(--cobalt-bright);
+  background: rgb(255 255 255 / 0.07);
+}
+.code-window :focus-visible {
+  outline-color: var(--cobalt-bright);
+}
+/* A file to copy: no ligatures, so == and || read as typed. */
+.code-window .snippet {
+  padding: var(--space-4);
+  font-size: 12.5px;
+  font-variant-ligatures: none;
+}
+.fail-reason {
+  color: var(--text);
+}
+
+@media (max-width: 64rem) {
+  .result-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 40rem) {
+  .result-head {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .result-body {
+    padding: 0 16px 18px;
+  }
+  q-secret-once ::ng-deep .row {
+    flex-wrap: wrap;
+  }
+}

@@ -27,9 +27,11 @@ test('the list is usable with the keyboard alone', async ({ page }) => {
   await expect(search).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Search' })).toBeFocused();
-  // The admin's "New project" follows the search in the band, then the list.
+  // The admin's "New project" and "Add repositories" follow the search in the band, then the list.
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'New project' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Add repositories' })).toBeFocused();
   // The scrolling table is a stop of its own, so a keyboard user can scroll it sideways.
   await page.keyboard.press('Tab');
   await expect(page.getByRole('group', { name: 'Projects with their quality gate' })).toBeFocused();

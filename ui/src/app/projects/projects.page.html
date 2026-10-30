@@ -17,9 +17,14 @@
       <button type="submit" class="btn" i18n="@@projects.search.submit">Search</button>
     </form>
     @if (org.canChange('org.projects.create')) {
-      <button type="button" class="btn btn-primary" (click)="openCreate()">
-        <q-icon name="plus" /><ng-container i18n="@@projects.create.open">New project</ng-container>
+      <button type="button" class="btn" (click)="openCreate()" i18n="@@projects.create.open">
+        New project
       </button>
+      <a class="btn btn-primary" routerLink="/projects/add">
+        <q-icon name="plus" /><ng-container i18n="@@projects.add.open"
+          >Add repositories</ng-container
+        >
+      </a>
     }
   </div>
 </q-page-header>
@@ -65,79 +70,94 @@
     </section>
   }
 
-  <section class="card panel projects-panel">
-    <div class="panel-scroll" tabindex="0" role="group" aria-labelledby="projects-caption">
-      <table [attr.aria-busy]="list.loading()">
-        <caption id="projects-caption" class="visually-hidden" i18n="@@projects.caption">
-          Projects with their quality gate and main-branch measures
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col" i18n="@@projects.col.project">Project</th>
-            <th scope="col" i18n="@@projects.col.gate">Quality gate</th>
-            <th scope="col" class="num" i18n="@@projects.col.issues">Issues</th>
-            <th scope="col" class="num" i18n="@@projects.col.coverage">Coverage</th>
-            <th scope="col" class="num" i18n="@@projects.col.duplications">Duplications</th>
-            <th scope="col" class="num" i18n="@@projects.col.ncloc">Lines of code</th>
-            <th scope="col" i18n="@@projects.col.lastAnalysis">Last analysis</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (project of list.items(); track project.id) {
+  @if (list.loaded() && list.items().length === 0 && !searching()) {
+    <!-- No projects at all: the empty state alone, without the table's columns (a phone would
+         scroll them sideways around one sentence). -->
+    <section
+      class="card panel projects-panel"
+      aria-label="Projects"
+      i18n-aria-label="@@projects.title"
+    >
+      <div class="empty-state">
+        <img src="art/empty.webp" alt="" width="900" height="675" />
+        @if (org.canChange('org.projects.create')) {
+          <p i18n="@@projects.noneYetAdmin">
+            No projects yet. Add your repositories from GitHub or GitLab, or create one with New
+            project.
+          </p>
+          <a class="btn btn-primary" routerLink="/projects/add">
+            <q-icon name="plus" /><ng-container i18n="@@projects.add.open"
+              >Add repositories</ng-container
+            >
+          </a>
+        } @else {
+          <p i18n="@@projects.noneYet">No projects yet.</p>
+        }
+      </div>
+    </section>
+  } @else {
+    <section class="card panel projects-panel">
+      <div class="panel-scroll" tabindex="0" role="group" aria-labelledby="projects-caption">
+        <table [attr.aria-busy]="list.loading()">
+          <caption id="projects-caption" class="visually-hidden" i18n="@@projects.caption">
+            Projects with their quality gate and main-branch measures
+          </caption>
+          <thead>
             <tr>
-              <td>
-                <a [routerLink]="['/projects', project.id]">{{ project.name }}</a>
-                <div class="muted">
-                  <code>{{ project.key }}</code>
-                </div>
-              </td>
-              <td><q-gate-badge [status]="project.mainBranch?.gateStatus" /></td>
-              @for (metric of columns; track metric) {
-                <td class="num">
-                  {{ project.mainBranch?.measures?.[metric] | measure: metric }}
-                  @if (metric === 'coverage' && project.mainBranch?.measures?.[metric] != null) {
-                    <span class="cov-bar" aria-hidden="true"
-                      ><span [style.width.%]="project.mainBranch?.measures?.[metric]"></span
-                    ></span>
+              <th scope="col" i18n="@@projects.col.project">Project</th>
+              <th scope="col" i18n="@@projects.col.gate">Quality gate</th>
+              <th scope="col" class="num" i18n="@@projects.col.issues">Issues</th>
+              <th scope="col" class="num" i18n="@@projects.col.coverage">Coverage</th>
+              <th scope="col" class="num" i18n="@@projects.col.duplications">Duplications</th>
+              <th scope="col" class="num" i18n="@@projects.col.ncloc">Lines of code</th>
+              <th scope="col" i18n="@@projects.col.lastAnalysis">Last analysis</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (project of list.items(); track project.id) {
+              <tr>
+                <td>
+                  <a [routerLink]="['/projects', project.id]">{{ project.name }}</a>
+                  <div class="muted">
+                    <code>{{ project.key }}</code>
+                  </div>
+                </td>
+                <td><q-gate-badge [status]="project.mainBranch?.gateStatus" /></td>
+                @for (metric of columns; track metric) {
+                  <td class="num">
+                    {{ project.mainBranch?.measures?.[metric] | measure: metric }}
+                    @if (metric === 'coverage' && project.mainBranch?.measures?.[metric] != null) {
+                      <span class="cov-bar" aria-hidden="true"
+                        ><span [style.width.%]="project.mainBranch?.measures?.[metric]"></span
+                      ></span>
+                    }
+                  </td>
+                }
+                <td class="nowrap">
+                  @if (project.mainBranch?.lastAnalyzedAt; as at) {
+                    <span [title]="at | dateTime">{{ at | dateTime: 'date' }}</span>
+                  } @else {
+                    <span class="muted" i18n="@@projects.never">Never</span>
                   }
                 </td>
-              }
-              <td class="nowrap">
-                @if (project.mainBranch?.lastAnalyzedAt; as at) {
-                  <span [title]="at | dateTime">{{ at | dateTime: 'date' }}</span>
-                } @else {
-                  <span class="muted" i18n="@@projects.never">Never</span>
-                }
-              </td>
-            </tr>
-          } @empty {
-            @if (list.loaded()) {
-              <tr>
-                @if (org.canChange('org.projects.create')) {
-                  <td colspan="7">
-                    <div class="empty-state">
-                      <img src="art/empty.webp" alt="" width="900" height="675" />
-                      <p i18n="@@projects.emptyAdmin">
-                        No projects match. Create one with New project, then run qualor scan in its
-                        CI pipeline.
-                      </p>
-                    </div>
-                  </td>
-                } @else {
+              </tr>
+            } @empty {
+              @if (list.loaded()) {
+                <tr>
                   <td colspan="7">
                     <div class="empty-state">
                       <img src="art/empty.webp" alt="" width="900" height="675" />
                       <p i18n="@@projects.empty">No projects match.</p>
                     </div>
                   </td>
-                }
-              </tr>
+                </tr>
+              }
             }
-          }
-        </tbody>
-      </table>
-    </div>
-  </section>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
 
   @if (list.nextCursor()) {
     <p class="load-more">
