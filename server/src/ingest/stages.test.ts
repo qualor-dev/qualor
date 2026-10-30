@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { licensePolicyStage } from '../licenses/stage';
+import { measuresStage } from '../measures/stage';
 import { notificationStage } from '../notifications/stage';
 import { reviewSnapshotStage } from '../review/stage';
 import { rulesStage } from '../rules/stage';
 import { scmStage } from '../scm/stage';
 import { trackingStage } from '../tracking/stage';
+import { versionLabelStage } from '../versions/stage';
 import { webhookStage } from '../webhooks/stage';
 import { DEFAULT_STAGES } from './stages';
 
@@ -21,6 +23,13 @@ describe('DEFAULT_STAGES', () => {
     expect(licensePolicyStage.name).toBe('license-policy');
     expect(DEFAULT_STAGES[at - 1]).toBe(rulesStage);
     expect(DEFAULT_STAGES[at + 1]).toBe(trackingStage);
+  });
+
+  it('takes versions from labels right after the measures stage', () => {
+    const at = DEFAULT_STAGES.indexOf(versionLabelStage);
+    expect(versionLabelStage.name).toBe('version-label');
+    expect(DEFAULT_STAGES[at - 1]).toBe(measuresStage);
+    expect(DEFAULT_STAGES.filter((s) => s === versionLabelStage)).toHaveLength(1);
   });
 
   it('links the review snapshot after the SCM stage and before the webhooks (6I-2)', () => {

@@ -6,6 +6,7 @@ import { reviewSnapshotStage } from '../review/stage';
 import { rulesStage } from '../rules/stage';
 import { scmStage } from '../scm/stage';
 import { trackingStage } from '../tracking/stage';
+import { versionLabelStage } from '../versions/stage';
 import { webhookStage } from '../webhooks/stage';
 import type { IngestionStage } from './process';
 
@@ -22,6 +23,7 @@ export const DEFAULT_STAGES: readonly IngestionStage[] = [
   licensePolicyStage,
   trackingStage,
   measuresStage,
+  versionLabelStage,
   gateStage,
   scmStage,
   reviewSnapshotStage,
