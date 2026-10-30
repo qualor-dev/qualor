@@ -32,6 +32,8 @@ export class SecretOnce {
   readonly showDone = input(true);
   /** The user has copied the secret (or given up on it): the page forgets it. */
   readonly done = output();
+  /** The secret was copied: with Copy, or from its field (selected, then copied). */
+  readonly copied = output();
   protected readonly copyState = signal<'idle' | 'copied' | 'failed'>('idle');
   private readonly field = viewChild.required<ElementRef<HTMLInputElement>>('field');
 
@@ -45,6 +47,7 @@ export class SecretOnce {
     try {
       await navigator.clipboard.writeText(this.value());
       this.copyState.set('copied');
+      this.copied.emit();
     } catch {
       // No Clipboard API (an insecure context) or permission refused: the field stays selectable.
       this.copyState.set('failed');

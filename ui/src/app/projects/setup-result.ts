@@ -1,5 +1,16 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, input, output, signal } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  type ElementRef,
+  inject,
+  Injector,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { SecretOnce } from '../settings/secret-once';
 import { Icon } from '../shared/icon';
@@ -46,7 +57,19 @@ export class SetupResult {
   /** **Try again** is offered (the run's connection is known), and whether a retry is on its way. */
   readonly canRetry = input(false);
   readonly retrying = input(false);
+  /**
+   * Other repositories of the run hold one-time tokens the person has not copied: **Try again**
+   * asks first, inline, whether to go on or stay and copy them.
+   */
+  readonly askBeforeRetry = input(false);
   readonly retry = output();
+  /** The token was copied: with Copy, or from its field. */
+  readonly tokenCopied = output();
+  private readonly injector = inject(Injector);
+  /** **Try again** waits for the person's answer to the question about uncopied tokens. */
+  protected readonly asking = signal(false);
+  private readonly question = viewChild<ElementRef<HTMLElement>>('question');
+  private readonly retryButton = viewChild<ElementRef<HTMLElement>>('retryButton');
 
   protected readonly state = computed(() => itemState(this.item(), null));
   protected readonly parts = computed(() => pathParts(this.item().name));
@@ -117,6 +140,28 @@ export class SetupResult {
   protected readonly tokenLabel = computed(
     () => $localize`:@@addRepos.secret.label:Token for ${this.item().name}:repository:`,
   );
+
+  /** **Try again**: at once, or after asking while other tokens of the run are not copied. */
+  protected tryAgain(): void {
+    if (this.retrying()) return;
+    if (!this.askBeforeRetry()) {
+      this.retry.emit();
+      return;
+    }
+    this.asking.set(true);
+    afterNextRender(() => this.question()?.nativeElement.focus(), { injector: this.injector });
+  }
+
+  protected goOn(): void {
+    this.asking.set(false);
+    this.retry.emit();
+  }
+
+  /** Stay: the question goes, and focus is back on **Try again**. */
+  protected stay(): void {
+    this.asking.set(false);
+    afterNextRender(() => this.retryButton()?.nativeElement.focus(), { injector: this.injector });
+  }
 
   protected async copySnippet(): Promise<void> {
     try {

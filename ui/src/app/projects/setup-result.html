@@ -57,14 +57,14 @@
       }
       @case ('failed') {
         <p class="fail-reason">{{ error() }}</p>
-        <ng-container *ngTemplateOutlet="tryAgain" />
+        <ng-container *ngTemplateOutlet="retryBlock" />
       }
       @case ('ci_failed') {
         <p class="fail-reason">{{ error() }}</p>
         <p class="hint" i18n="@@addRepos.result.projectReady">
           The project is ready. Fix the cause, then try again.
         </p>
-        <ng-container *ngTemplateOutlet="tryAgain" />
+        <ng-container *ngTemplateOutlet="retryBlock" />
       }
       @default {
         <p>{{ reason() }}</p>
@@ -79,6 +79,7 @@
                 [intro]="secretIntro()"
                 [autofocus]="false"
                 [showDone]="false"
+                (copied)="tokenCopied.emit()"
               />
             } @else {
               <p class="note token-gone">
@@ -149,18 +150,41 @@
   </div>
 </article>
 
-<ng-template #tryAgain>
+<ng-template #retryBlock>
   @if (canRetry()) {
-    <p>
-      <button
-        type="button"
-        class="btn"
-        [attr.aria-disabled]="retrying() ? true : null"
-        (click)="retry.emit()"
-        i18n="@@addRepos.result.tryAgain"
-      >
-        Try again
-      </button>
-    </p>
+    @if (asking()) {
+      <!-- A new run's page replaces this one: the tokens shown here are not copied yet. -->
+      <div class="alert alert-info stack retry-ask">
+        <p #question tabindex="-1" i18n="@@addRepos.result.copyFirst">
+          Copy the tokens on this page first: they are shown only once.
+        </p>
+        <p class="row">
+          <button type="button" class="btn" (click)="stay()" i18n="@@addRepos.result.stay">
+            Stay
+          </button>
+          <button
+            type="button"
+            class="btn"
+            (click)="goOn()"
+            i18n="@@addRepos.result.tryAgainAnyway"
+          >
+            Try again anyway
+          </button>
+        </p>
+      </div>
+    } @else {
+      <p>
+        <button
+          #retryButton
+          type="button"
+          class="btn"
+          [attr.aria-disabled]="retrying() ? true : null"
+          (click)="tryAgain()"
+          i18n="@@addRepos.result.tryAgain"
+        >
+          Try again
+        </button>
+      </p>
+    }
   }
 </ng-template>

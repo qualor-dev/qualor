@@ -350,11 +350,13 @@
               [item]="item"
               [index]="i"
               [connection]="runConnection()"
-              [token]="tokens()[item.ref] ?? null"
+              [token]="tokenOf(item)"
               [csharp]="csharp().has(item.ref)"
               [canRetry]="runConnection() !== null"
               [retrying]="retrying() === item.ref"
+              [askBeforeRetry]="uncopied()"
               (retry)="retry(item)"
+              (tokenCopied)="markCopied(item)"
             />
           }
         </div>

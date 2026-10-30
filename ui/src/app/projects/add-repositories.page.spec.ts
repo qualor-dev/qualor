@@ -770,6 +770,120 @@ describe('AddRepositoriesPage', () => {
       );
     });
 
+    describe('one-time tokens across runs', () => {
+      const RUN_B = '0190a6c2-0000-7000-8000-0000000000e2';
+      const TOKEN = 'qlr_prj_only_once';
+      /** Run A: a snippet whose token the first read reveals (later reads have none), and a failure. */
+      function runA(token: string | null) {
+        return run('done', [
+          done('acme/website', { ciOutcome: 'snippet', snippet: WORKFLOW, token }),
+          done('acme/mobile-app', {
+            ciOutcome: 'failed',
+            error: { code: 'unavailable', message: 'The provider could not be reached' },
+          }),
+        ]);
+      }
+      beforeEach(() => {
+        server.on(
+          'GET',
+          `/api/v0/repository-setups/${RUN_ID}`,
+          sequence([{ body: runA(TOKEN) }, { body: runA(null) }]),
+        );
+        server.on('GET', `/api/v0/repository-setups/${RUN_B}`, {
+          body: run('done', [done('acme/mobile-app', { ciOutcome: 'merge_request', ciUrl: null })]),
+        });
+        server.on('POST', '/api/v0/repository-setups', { status: 202, body: { id: RUN_B } });
+      });
+      const posts = () => server.requestsTo('POST', '/api/v0/repository-setups');
+      const tokenField = (root: HTMLElement) =>
+        root.querySelector<HTMLInputElement>('q-secret-once input');
+
+      it('asks before Try again while a token of the run is not copied, and Stay keeps the page', async () => {
+        const { root } = await render({ runId: RUN_ID, connection: GITHUB_ID });
+        const retry = button(root, 'Try again')!;
+        retry.click();
+        await flush();
+        expect(posts()).toHaveLength(0);
+        const ask = root.querySelector('.retry-ask');
+        expect(text(ask?.querySelector('p'))).toBe(
+          'Copy the tokens on this page first: they are shown only once.',
+        );
+        expect(document.activeElement).toBe(ask?.querySelector('p'));
+        button(root, 'Stay')!.click();
+        await flush();
+        expect(root.querySelector('.retry-ask')).toBeNull();
+        expect(posts()).toHaveLength(0);
+        expect(document.activeElement).toBe(button(root, 'Try again'));
+        expect(tokenField(root)?.value).toBe(TOKEN);
+        // Asked again, the person goes on anyway.
+        button(root, 'Try again')!.click();
+        await flush();
+        button(root, 'Try again anyway')!.click();
+        await flush();
+        expect(posts()[0]?.body).toMatchObject({ repositories: ['acme/mobile-app'] });
+        expect(TestBed.inject(Router).url).toBe(`/projects/add/${RUN_B}?connection=${GITHUB_ID}`);
+      });
+
+      it('does not ask once the token was copied with Copy', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+        const { root } = await render({ runId: RUN_ID, connection: GITHUB_ID });
+        button(root.querySelector('q-secret-once')!, 'Copy')!.click();
+        await flush();
+        button(root, 'Try again')!.click();
+        await flush();
+        expect(root.querySelector('.retry-ask')).toBeNull();
+        expect(posts()).toHaveLength(1);
+      });
+
+      it('does not ask once the token was copied from its field (selected and copied)', async () => {
+        const { root } = await render({ runId: RUN_ID, connection: GITHUB_ID });
+        tokenField(root)!.dispatchEvent(new Event('copy', { bubbles: true }));
+        await flush();
+        button(root, 'Try again')!.click();
+        await flush();
+        expect(root.querySelector('.retry-ask')).toBeNull();
+        expect(posts()).toHaveLength(1);
+      });
+
+      it('shows a run its tokens again after another run and on a new page, and stores none', async () => {
+        const { fixture, root } = await render({ runId: RUN_ID, connection: GITHUB_ID });
+        expect(tokenField(root)?.value).toBe(TOKEN);
+        // Try again's run, on the same page (the router reuses it for /projects/add/<run>).
+        fixture.componentRef.setInput('runId', RUN_B);
+        await flush();
+        expect(text(root.querySelector('h1'))).toBe('1 repository added');
+        // Back to the first run: the server reveals the token no more, the page still has it.
+        fixture.componentRef.setInput('runId', RUN_ID);
+        await flush();
+        expect(server.requestsTo('GET', `/api/v0/repository-setups/${RUN_ID}`)).toHaveLength(2);
+        expect(tokenField(root)?.value).toBe(TOKEN);
+        expect(root.querySelector('.token-gone')).toBeNull();
+        // Another visit in the same browser page (left and opened again): still there.
+        fixture.destroy();
+        current = null;
+        const again = await render({ runId: RUN_ID, connection: GITHUB_ID });
+        expect(tokenField(again.root)?.value).toBe(TOKEN);
+        // Kept in memory only.
+        const stored = JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage });
+        expect(stored).not.toContain(TOKEN);
+      });
+
+      it('shows another user signed in on the same page none of the tokens', async () => {
+        const first = await render({ runId: RUN_ID, connection: GITHUB_ID });
+        expect(tokenField(first.root)?.value).toBe(TOKEN);
+        first.fixture.destroy();
+        current = null;
+        TestBed.inject(SessionStore).set({
+          ...me({ admin: true }),
+          user: { ...me({ admin: true }).user, id: '0190a6c2-0000-7000-8000-00000000000b' },
+        });
+        const second = await render({ runId: RUN_ID, connection: GITHUB_ID });
+        expect(tokenField(second.root)).toBeNull();
+        expect(second.root.querySelector('.token-gone')).not.toBeNull();
+      });
+    });
+
     it('says the C# repository needs its build command checked', async () => {
       server.on('GET', `/api/v0/repository-setups/${RUN_ID}`, {
         body: run('done', [

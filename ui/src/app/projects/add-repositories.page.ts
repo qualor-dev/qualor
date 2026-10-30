@@ -38,6 +38,7 @@ import {
 } from './repository-setup';
 import { SetupBadge } from './setup-badge';
 import { SetupResult } from './setup-result';
+import { type RevealedToken, SetupTokens } from './setup-tokens';
 
 export type { SetupRun } from './repository-setup';
 
@@ -134,10 +135,17 @@ export class AddRepositoriesPage {
   /** The reads gave up: the page offers to read the run again. */
   protected readonly pollStopped = signal(false);
   /**
-   * The one-time tokens by repository ref, as the server revealed them (once, on the first read
-   * after the repository was done). Kept in this page only: never in storage, never logged.
+   * The run's one-time tokens by repository ref, as the server revealed them (once, on the first
+   * read after the repository was done), kept by `SetupTokens` for the browser page's life (memory
+   * only), so moving to another run and back loses none.
    */
-  protected readonly tokens = signal<Readonly<Record<string, string>>>({});
+  private readonly setupTokens = inject(SetupTokens);
+  protected readonly tokens = computed(() => {
+    const runId = this.runId();
+    return runId ? this.setupTokens.forRun(runId) : new Map<string, RevealedToken>();
+  });
+  /** Tokens of this run not copied yet: **Try again** (a new run's page) asks first. */
+  protected readonly uncopied = computed(() => [...this.tokens().values()].some((t) => !t.copied));
   /** The repositories GitHub reported as C#, handed over by the navigation that started the run. */
   protected readonly csharp = signal<ReadonlySet<string>>(new Set());
   protected readonly retrying = signal<string | null>(null);
@@ -322,7 +330,6 @@ export class AddRepositoriesPage {
     this.run.set(null);
     this.runError.set(null);
     this.pollStopped.set(false);
-    this.tokens.set({});
     this.failures = 0;
     this.sawDone = false;
     if (runId !== null) void this.read(runId, generation);
@@ -335,13 +342,15 @@ export class AddRepositoriesPage {
         '/api/v0/repository-setups/{id}',
         { params: { path: { id: runId } } },
       );
+      // A revealed token is kept even when the page moved on meanwhile: the server shows it once.
+      if (data) this.setupTokens.keep(runId, revealedTokens(data));
       if (generation !== this.runGeneration) return;
       const retryAfter = response.headers.get('retry-after');
       if (!response.ok || !data) {
         throw new ApiError(response.status, isProblem(error) ? error : null, retryAfter);
       }
       this.failures = 0;
-      this.store(data);
+      this.run.set(data);
       if (data.status !== 'done') {
         this.plan(runId, generation, waitFor(retryAfter) ?? POLL_MS);
       } else if (!this.sawDone) {
@@ -369,13 +378,14 @@ export class AddRepositoriesPage {
     this.pollTimer = setTimeout(() => void this.read(runId, generation), ms);
   }
 
-  /** Keeps the run and every token it revealed: a later read never shows a token again. */
-  private store(run: SetupRun): void {
-    const revealed = run.items.flatMap((i) => (i.token === null ? [] : [[i.ref, i.token]]));
-    if (revealed.length > 0) {
-      this.tokens.update((all) => ({ ...all, ...Object.fromEntries(revealed) }));
-    }
-    this.run.set(run);
+  protected tokenOf(item: RunItem): string | null {
+    return this.tokens().get(item.ref)?.token ?? null;
+  }
+
+  /** The person copied a token (Copy, or from its field): **Try again** need not ask for it. */
+  protected markCopied(item: RunItem): void {
+    const runId = this.runId();
+    if (runId) this.setupTokens.markCopied(runId, item.ref);
   }
 
   protected checkAgain(): void {
@@ -434,6 +444,11 @@ export class AddRepositoriesPage {
       this.retrying.set(null);
     }
   }
+}
+
+/** The tokens a read of the run revealed, by repository ref. */
+function revealedTokens(run: SetupRun): { ref: string; token: string }[] {
+  return run.items.flatMap((i) => (i.token === null ? [] : [{ ref: i.ref, token: i.token }]));
 }
 
 /** A `Retry-After` of plain seconds as milliseconds, within reason; null without one. */
