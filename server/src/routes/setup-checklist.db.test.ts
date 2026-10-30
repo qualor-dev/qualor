@@ -311,6 +311,18 @@ describe('The setup checklist', () => {
     expect((await checklist()).closed).toBe(false);
   });
 
+  it('answers 422 to a body with an unknown field', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: url(),
+      headers: admin.headers,
+      payload: { closed: true, extra: 1 },
+    });
+    expect(res.statusCode, res.body).toBe(422);
+    expect(res.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect((await checklist()).closed).toBe(false);
+  });
+
   it('refuses a member who is not an admin, and an unknown or foreign organization', async () => {
     await addMember(ctx, org, memberId, 'member');
     expect((await get(member)).statusCode).toBe(403);

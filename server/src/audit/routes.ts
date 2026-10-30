@@ -25,6 +25,8 @@ export const UNAUDITED_MUTATIONS: ReadonlySet<string> = new Set([
   'POST /api/v0/gitlab/webhooks/:connectionId',
   // Onboarding: the run's job records each project, mapping and token it makes.
   'POST /repository-setups',
+  // Onboarding: the viewer's own display preference, like PUT /me/notifications.
+  'PUT /organizations/:id/setup-checklist',
 ]);
 
 /**

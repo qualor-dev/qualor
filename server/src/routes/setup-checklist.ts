@@ -142,7 +142,7 @@ export const setupChecklistRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = 
         summary:
           'Close or reopen the first-setup checklist for the caller in this organization (org.projects.create)',
         params: idParams,
-        body: z.object({ closed: z.boolean() }),
+        body: z.strictObject({ closed: z.boolean() }),
         response: { 200: checklistSchema },
       },
     },

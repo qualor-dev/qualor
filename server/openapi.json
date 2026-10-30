@@ -30320,7 +30320,8 @@
                 },
                 "required": [
                   "closed"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -30434,16 +30435,6 @@
           },
           "404": {
             "description": "Not found, or not visible to the caller",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
             "content": {
               "application/problem+json": {
                 "schema": {
