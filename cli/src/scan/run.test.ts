@@ -896,6 +896,140 @@ describe('qualor scan .trivyignore ids and tags (versions)', () => {
   });
 });
 
+describe('qualor scan on a tag: version mode', () => {
+  /** An analyzer that must never run in version mode. */
+  const forbidden: Analyzer = {
+    id: 'pmd',
+    languages: [],
+    prepare: () => {
+      throw new Error('an analyzer ran in version mode');
+    },
+  };
+  const inventory = {
+    SchemaVersion: 2,
+    Trivy: { Version: '0.74.0' },
+    Results: [
+      {
+        Target: 'web/package-lock.json',
+        Class: 'lang-pkgs',
+        Type: 'npm',
+        Packages: [{ Name: 'minimist', Version: '1.2.5', Relationship: 'direct' }],
+      },
+    ],
+  };
+  const licensePass = {
+    resolveBinary: () => '/opt/qualor/bin/trivy',
+    runProcess: (spec: ProcessSpec): Promise<ProcessResult> => {
+      const out = spec.args[spec.args.indexOf('--output') + 1];
+      if (out !== undefined) writeFileSync(out, JSON.stringify(inventory));
+      return Promise.resolve({
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 1,
+        stdout: '',
+        stderr: '',
+      });
+    },
+  };
+
+  async function tagScan(repo: string, extra: string[] = []) {
+    const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
+    const code = await runScan(
+      scanFlags([
+        '--dry-run',
+        '--output',
+        'out/report.json.gz',
+        '--project-key',
+        'fixtures/deps-vulnerable',
+        '--tag',
+        'v1.2.0',
+        ...extra,
+      ]),
+      c.io,
+      silentLogger,
+      { analyzers: [forbidden], licensePass },
+    );
+    return {
+      code,
+      stderr: c.stderr(),
+      report: () => readReport(path.join(repo, 'out/report.json.gz')),
+    };
+  }
+
+  it('reports the inventory and .trivyignore ids only, even with licenses: false', async () => {
+    const repo = fixtureRepo('deps-vulnerable');
+    writeFileSync(path.join(repo, '.trivyignore'), 'CVE-2026-1\n');
+    writeFileSync(
+      path.join(repo, 'qualor.yml'),
+      'version: 1\nproject:\n  version: 1.2.0\nanalyzers:\n  trivy:\n    licenses: false\n',
+    );
+    const run = await tagScan(repo);
+    expect(run.code, run.stderr).toBe(0);
+    const report = run.report();
+    expect(report.scm).toMatchObject({ tag: 'v1.2.0', branch: null, mergeRequest: null });
+    expect(report.files).toEqual([]);
+    expect(report.findings).toEqual([]);
+    expect(report.duplications).toEqual([]);
+    expect(report.dependencies).toMatchObject([{ name: 'minimist', version: '1.2.5' }]);
+    expect(report.dependencyIgnores).toEqual([{ id: 'CVE-2026-1' }]);
+    expect(report.project.version).toBe('1.2.0');
+  });
+
+  it('is a usage error with analyzers.trivy.enabled: false', async () => {
+    const repo = fixtureRepo('deps-vulnerable');
+    writeFileSync(
+      path.join(repo, 'qualor.yml'),
+      'version: 1\nanalyzers:\n  trivy:\n    enabled: false\n',
+    );
+    await expect(tagScan(repo)).rejects.toMatchObject({
+      exitCode: 2,
+      message: expect.stringContaining(
+        'A tag scan records the dependency list and needs Trivy (analyzers.trivy.enabled)',
+      ) as string,
+    });
+  });
+
+  it('still runs the trivy analyzer config guard', async () => {
+    const repo = fixtureRepo('deps-vulnerable');
+    mkdirSync(path.join(repo, '.trivyignore'));
+    const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
+    await expect(
+      runScan(
+        scanFlags(['--dry-run', '--output', 'o.gz', '--project-key', 'k', '--tag', 'v1']),
+        c.io,
+        silentLogger,
+        { analyzers: builtinAnalyzers(), licensePass },
+      ),
+    ).rejects.toMatchObject({ exitCode: 2 });
+  });
+
+  it('does not read --sarif or --coverage files and says so', async () => {
+    const repo = fixtureRepo('deps-vulnerable');
+    const run = await tagScan(repo, ['--sarif', 'missing.sarif', '--coverage', 'missing.xml']);
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.report().warnings.map((w) => w.code)).toContain('TAG_SCAN_IGNORES_INPUTS');
+  });
+
+  it('takes the tag of a CI tag pipeline, and rejects an invalid one with a usage error', async () => {
+    const repo = fixtureRepo('deps-vulnerable');
+    const flags = scanFlags(['--dry-run', '--output', 'o.gz', '--project-key', 'k']);
+    const deps = { analyzers: [forbidden], licensePass };
+    const ok = captureIO({
+      cwd: repo,
+      env: { ...SCAN_TEST_ENV, GITLAB_CI: 'true', CI_COMMIT_TAG: 'v2.0.0' },
+    });
+    expect(await runScan(flags, ok.io, silentLogger, deps)).toBe(0);
+    expect(readReport(path.join(repo, 'o.gz')).scm.tag).toBe('v2.0.0');
+    const bad = captureIO({
+      cwd: repo,
+      env: { ...SCAN_TEST_ENV, GITLAB_CI: 'true', CI_COMMIT_TAG: 'bad..tag' },
+    });
+    await expect(runScan(flags, bad.io, silentLogger, deps)).rejects.toMatchObject({
+      exitCode: 2,
+    });
+  });
+});
+
 describe('qualor scan --gitlab-dependency-scanning (scm.md §9, plan 2B)', () => {
   /** Trivy as the runner sees it: a process writing its recorded JSON, converted like the adapter. */
   const recordedTrivy = (tool: string, edit: (sarif: unknown) => unknown = (x) => x): Analyzer => ({

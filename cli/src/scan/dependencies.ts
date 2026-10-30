@@ -66,6 +66,11 @@ export interface CollectDependenciesOptions extends DependencyPassHooks {
   /** The CLI's own environment (the analyzers'). */
   env?: Readonly<Record<string, string | undefined>>;
   tempRoot?: string;
+  /**
+   * A tag scan (version mode) needs the inventory whatever `analyzers.trivy.licenses` says; only
+   * `analyzers.trivy.enabled: false` still turns the pass off.
+   */
+  force?: boolean;
 }
 
 /** `analyzers.trivy`: the licence pass runs unless Trivy or the pass itself is switched off. */
@@ -139,7 +144,9 @@ function finishInventory(parsed: ReturnType<typeof trivyJsonToInventory>): {
 export async function collectDependencies(
   o: CollectDependenciesOptions,
 ): Promise<DependencyPass | null> {
-  if (!licensePassEnabled(o.config)) return null;
+  const enabled =
+    o.force === true ? o.config.analyzers.trivy.enabled !== false : licensePassEnabled(o.config);
+  if (!enabled) return null;
   const started = performance.now();
   const parentEnv = o.env ?? process.env;
   const settings = o.config.analyzers.trivy;

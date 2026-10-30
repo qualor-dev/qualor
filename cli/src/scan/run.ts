@@ -29,7 +29,7 @@ import { discoverFiles } from '../discovery/discover';
 import { detectDuplications } from '../duplication/detect';
 import { CliError, EXIT, type ExitCode } from '../errors';
 import { createGit, type Git } from '../git/git';
-import { fetchPolicy, resolveScm } from '../git/scm';
+import { fetchPolicy, resolveScm, scanTag } from '../git/scm';
 import { VERSION } from '../index';
 import type { CliIO } from '../io';
 import type { Logger } from '../log';
@@ -47,6 +47,7 @@ import { clean, type ServerEndpoint } from '../server/http';
 import { uploadReport } from '../server/upload';
 import { checkServerVersion } from '../server/version';
 import { Warnings } from '../warnings';
+import { checkCiTag, versionExitCode, versionLabel } from './version';
 import { collectDependencies, type DependencyPassHooks } from './dependencies';
 import {
   analyzeFiles,
@@ -143,6 +144,67 @@ function readDependencyIgnores(
   return entries;
 }
 
+/**
+ * Version mode: the report of a tag scan holds the dependency list (the licence pass, forced on)
+ * and the `.trivyignore` ids, and nothing the server would turn into issues. File discovery still
+ * ran, because the inventory is scoped to the scan's files (`knownPaths`).
+ */
+async function buildVersionReport(inputs: {
+  settings: Settings;
+  projectKey: string;
+  io: CliIO;
+  log: Logger;
+  deps: ScanDeps;
+  scm: Awaited<ReturnType<typeof resolveScm>>;
+  scope: readonly { path: string }[];
+  warnings: Warnings;
+  analysisDate: Date;
+}): Promise<BuiltReport> {
+  const { settings, projectKey, io, log, deps, scm, scope, warnings, analysisDate } = inputs;
+  const { root, config } = settings;
+  const licenses = await collectDependencies({
+    root,
+    config,
+    knownPaths: new Set(scope.map((f) => f.path)),
+    log,
+    env: io.env,
+    force: true,
+    ...deps.licensePass,
+  });
+  if (licenses !== null) warnings.addAll(licenses.warnings);
+  const dependencyIgnores = readDependencyIgnores(settings, warnings);
+  const report = validateReport(
+    scrubRuleIds(
+      scrubSecretValues(
+        assembleReport({
+          config,
+          projectKey,
+          scm,
+          analysisDate,
+          files: [],
+          coverage: new Map(),
+          duplications: [],
+          engines: {
+            engines: licenses === null ? [] : [licenses.engine],
+            findings: [],
+            warnings: [],
+          },
+          warnings,
+          ...(licenses?.entries !== undefined && { dependencies: licenses.entries }),
+          ...(dependencyIgnores !== undefined && { dependencyIgnores }),
+        }),
+        [settings.token],
+      ),
+      [],
+    ),
+  );
+  return {
+    report,
+    failed: [],
+    gitlab: { redaction: { texts: [], unknown: false }, incomplete: [] },
+  };
+}
+
 async function buildReport(inputs: {
   settings: Settings;
   flags: ScanFlags;
@@ -160,7 +222,15 @@ async function buildReport(inputs: {
   for (const w of deps.extraWarnings ?? []) warnings.add(w.code, w.message);
 
   // Fail fast on a bad --sarif file: a usage error must come before any git or network call.
-  const external = loadExternalSarif(config.sarif, { root, warnings });
+  // A tag scan is a version: the dependency list only, no analyzer, metric or coverage input.
+  const versionMode = scanTag(flags, settings.ci) !== null;
+  if (versionMode && (config.sarif.length > 0 || config.coverage.reports.length > 0)) {
+    warnings.add(
+      'TAG_SCAN_IGNORES_INPUTS',
+      'a tag scan records the dependency list only: --sarif and --coverage files were not read',
+    );
+  }
+  const external = versionMode ? [] : loadExternalSarif(config.sarif, { root, warnings });
 
   const baselineClient =
     deps.baselineClient !== undefined
@@ -178,6 +248,7 @@ async function buildReport(inputs: {
   });
 
   const scope = discoverFiles({ root, config, warnings, log });
+  if (versionMode) return buildVersionReport({ ...inputs, scm, scope, warnings, analysisDate });
   const parsers = deps.parsers ?? (await loadParsers());
   let analyzed: AnalyzedFile[];
   try {
@@ -704,9 +775,19 @@ export async function runScan(
   log.info(`qualor ${VERSION} (${platformId()})`);
   const settings = loadSettings({ cwd: io.cwd, env: io.env, flags, log });
   const analyzers = deps.analyzers ?? builtinAnalyzers();
+  const tag = scanTag(flags, settings.ci);
+  // The tag of a tag pipeline is CI's; `--tag` was checked with the arguments.
+  if (tag !== null && flags.tag === undefined) checkCiTag(tag);
+  if (tag !== null && settings.config.analyzers.trivy.enabled === false) {
+    throw new CliError(
+      EXIT.USAGE,
+      'A tag scan records the dependency list and needs Trivy (analyzers.trivy.enabled)',
+    );
+  }
   // A configuration error of an enabled analyzer stops the scan before any git, tool or network
-  // call (ruling V4: a PMD ruleset that references a URL).
-  for (const analyzer of analyzers) {
+  // call (ruling V4: a PMD ruleset that references a URL). A tag scan runs no analyzer but
+  // Trivy's inventory pass, whose `.trivyignore` and cache guards are the trivy analyzer's.
+  for (const analyzer of tag === null ? analyzers : analyzers.filter((a) => a.id === 'trivy')) {
     if (settings.config.analyzers[analyzer.id].enabled === false) continue;
     const problem = analyzer.checkConfig?.(settings.root, settings.config, io.env) ?? null;
     if (problem !== null) throw new CliError(EXIT.USAGE, `analyzers.${analyzer.id}: ${problem}`);
@@ -775,6 +856,24 @@ export async function runScan(
   // server ruling T2), but the gate is not awaited: exit 3 wins. No AI review snapshot either: the
   // scan's results, the secrets it masks among them, may be incomplete.
   if (failed.length > 0) return failedRequired();
+  if (report.scm.tag !== undefined && report.scm.tag !== null) {
+    // A version has no issues and no gate: the exit code is the upload's and the processing's.
+    const label = versionLabel(report.project.version, report.scm.tag);
+    if (!settings.config.gate.wait) {
+      log.info('not waiting for the analysis (gate.wait is false)');
+      return EXIT.OK;
+    }
+    const analysis = await waitForAnalysis(endpoint, analysisId, {
+      timeoutMs: settings.config.gate.timeoutSeconds * 1000,
+      log,
+      ...(deps.wait !== undefined && { wait: deps.wait }),
+      ...(deps.clock !== undefined && { now: deps.clock }),
+    });
+    const outcome = versionExitCode(analysis, label);
+    if (outcome.code === EXIT.OK) log.info(outcome.message);
+    else log.error(outcome.message);
+    return outcome.code;
+  }
   if (settings.ci.mergeRequest !== null) {
     await sendReviewSnapshot({
       endpoint,

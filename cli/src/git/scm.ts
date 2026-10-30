@@ -194,6 +194,15 @@ export function fetchPolicy(
   return { autoFetch: settings.config.scm.autoFetch, deepenSteps };
 }
 
+/**
+ * The tag a scan records as a version: `--tag`, else the CI tag pipeline's tag unless `--branch`
+ * or `--mr` named another ref. Null: a branch or merge request scan.
+ */
+export function scanTag(flags: ScmFlags, ci: { tag: string | null }): string | null {
+  const explicitRef = flags.branch !== undefined || flags.mr !== undefined;
+  return flags.tag ?? (explicitRef ? null : ci.tag);
+}
+
 export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
   const { git, settings, flags, warnings, log } = o;
   const inside = await git(['rev-parse', '--is-inside-work-tree']);
@@ -221,8 +230,7 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
   }
   // A tag scan (`--tag`, or a CI tag pipeline when --branch/--mr were not given) is a version:
   // no branch, no merge request, no baseline.
-  const explicitRef = flags.branch !== undefined || flags.mr !== undefined;
-  const tag = flags.tag ?? (explicitRef ? null : settings.ci.tag);
+  const tag = scanTag(flags, settings.ci);
   const branch =
     tag !== null ? null : (flags.branch ?? settings.ci.branch ?? (await currentBranch(git)));
   const mainBranch =

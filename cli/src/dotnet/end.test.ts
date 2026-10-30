@@ -279,6 +279,47 @@ describe('qualor dotnet end (config.md §6.1, ruling D7)', () => {
   });
 });
 
+describe('qualor dotnet end on a tag', () => {
+  it('records a version without reading the Roslyn logs or running the taint engine', async () => {
+    const { root, env } = setup();
+    runDotnetBegin({}, captureIO({ cwd: root, env }).io, silentLogger);
+    build(root, 'Lib', 'net8.0');
+    let taintRuns = 0;
+    const out = path.join(tmp(), 'r.json.gz');
+    const code = await runDotnetEnd(
+      {
+        sarif: [],
+        coverage: [],
+        wait: true,
+        dryRun: true,
+        output: out,
+        projectKey: 'p',
+        tag: 'v1.0.0',
+      },
+      captureIO({ cwd: root, env }).io,
+      silentLogger,
+      {
+        parsers: await testParsers(),
+        baselineClient: null,
+        licensePass: { resolveBinary: () => null },
+        runTaint: () => {
+          taintRuns += 1;
+          return Promise.reject(new Error('must not run'));
+        },
+      },
+    );
+    expect(code).toBe(EXIT.OK);
+    expect(taintRuns).toBe(0);
+    const report = JSON.parse(gunzipSync(readFileSync(out)).toString('utf8'));
+    expect(report.scm.tag).toBe('v1.0.0');
+    expect(report.findings).toEqual([]);
+    expect(report.files).toEqual([]);
+    expect(report.engines.some((e: { id: string }) => e.id === 'roslyn')).toBe(false);
+    // The session is still cleaned up.
+    expect(existsSync(path.join(root, '.qualor', 'dotnet'))).toBe(false);
+  });
+});
+
 describe("qualor dotnet end with Qualor's Roslyn taint engine (6B-C# R, spec §4.2, R-4)", () => {
   /** A session whose build recorded one project's compiler inputs, with a pack that has the engine. */
   function session(o: { config?: string; engine?: boolean } = {}) {

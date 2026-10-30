@@ -117,12 +117,17 @@ const REF_FORBIDDEN = /[\u0000- \u007f~^:?*[\\]|\.\.|@\{|\/\/|^[-/.]|[/.]$|\.loc
  * A light version of `git check-ref-format` (the SCM step still asks git itself): rejects names
  * git would refuse and, above all, names that could be read as a git option.
  */
+/** Why `v` is not a usable branch or tag name, or null when it is. */
+export function refNameProblem(v: string): string | null {
+  if (v.length > MAX_BRANCH_CHARS) return `is longer than ${MAX_BRANCH_CHARS} characters`;
+  if (REF_FORBIDDEN.test(v)) return 'is not a valid git branch name';
+  return null;
+}
+
 function branchName(name: string, v: string | undefined): string | undefined {
   if (v === undefined) return v;
-  if (v.length > MAX_BRANCH_CHARS) {
-    throw usageError(`--${name} is longer than ${MAX_BRANCH_CHARS} characters`);
-  }
-  if (REF_FORBIDDEN.test(v)) throw usageError(`--${name} is not a valid git branch name`);
+  const problem = refNameProblem(v);
+  if (problem !== null) throw usageError(`--${name} ${problem}`);
   return v;
 }
 

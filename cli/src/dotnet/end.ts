@@ -5,6 +5,7 @@ import { readRoslynLogs, mergeRoslynLogs } from '../analyzers/roslyn-logs';
 import type { DotnetRun, TaintRun } from '../analyzers/types';
 import type { ScanFlags } from '../args';
 import { loadSettings } from '../config/settings';
+import { scanTag } from '../git/scm';
 import type { ExitCode } from '../errors';
 import type { CliIO } from '../io';
 import { silentLogger, type Logger } from '../log';
@@ -171,6 +172,17 @@ async function runSessionTaint(
   return taint;
 }
 
+/** Whether this scan is of a tag (`--tag` or CI's tag pipeline): a version, not an analysis. */
+function isTagScan(root: string, flags: ScanFlags, io: CliIO): boolean {
+  try {
+    const { ci } = loadSettings({ cwd: root, env: io.env, flags, log: silentLogger });
+    return scanTag(flags, ci) !== null;
+  } catch {
+    // The scan reports the configuration problem itself.
+    return false;
+  }
+}
+
 /**
  * `qualor dotnet end` (config.md §6.1): hook and lease first, then the logs and the taint engine
  * (6B-C# R) on what the build left, then the session is deleted and the scan runs.
@@ -187,12 +199,17 @@ export async function runDotnetEnd(
   const warnings: { code: string; message: string }[] = [];
   let run: DotnetRun;
   try {
-    run = collectDotnetRun(root, log, (code, message) => {
-      log.warn(message);
-      warnings.push({ code, message });
-    });
-    if (run.kind === 'collected') {
-      run = { ...run, taint: await runSessionTaint(root, flags, io, log, runTaint) };
+    if (isTagScan(root, flags, io)) {
+      // A tag scan records a version (the dependency list): no analyzer reads the build's logs.
+      run = { kind: 'no-session' };
+    } else {
+      run = collectDotnetRun(root, log, (code, message) => {
+        log.warn(message);
+        warnings.push({ code, message });
+      });
+      if (run.kind === 'collected') {
+        run = { ...run, taint: await runSessionTaint(root, flags, io, log, runTaint) };
+      }
     }
   } finally {
     removeSession(root);

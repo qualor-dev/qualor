@@ -389,6 +389,71 @@ const CONTEXT = 'GET /api/v0/projects/review-context';
 const SNAPSHOT = `POST /api/v0/analyses/${ID}/review-snapshot`;
 const GATE = `GET /api/v0/analyses/${ID}`;
 
+describe('qualor scan on a tag: version mode (exit code from processing, never the gate)', () => {
+  const NO_TRIVY: ScanDeps = { licensePass: { resolveBinary: () => null } };
+  const failedWith = (code: string, message: string) => ({
+    id: ID,
+    status: 'failed',
+    gateStatus: null,
+    gateResult: null,
+    error: { code, message },
+  });
+
+  it(
+    'uploads the version report, waits for processing and exits 0 whatever the gate says',
+    { timeout: 60_000 },
+    async () => {
+      const server = await fakeServer([done(null, 'queued'), done('failed')]);
+      const { code, stderr } = await scan(
+        repo('version: 1\nproject:\n  version: 1.2.0\n'),
+        server,
+        ['--tag', 'v1.2.0'],
+        NO_TRIVY,
+      );
+      expect(code, stderr).toBe(0);
+      expect(server.uploaded[0]?.scm).toMatchObject({ tag: 'v1.2.0', branch: null });
+      expect(server.uploaded[0]?.files).toEqual([]);
+      expect(server.paths.filter((p) => p === `GET /api/v0/analyses/${ID}`)).toHaveLength(2);
+      expect(stderr).toContain('Recorded version 1.2.0');
+      expect(stderr).not.toContain('quality gate');
+    },
+  );
+
+  it(
+    'labels the version with the tag when project.version is empty',
+    { timeout: 60_000 },
+    async () => {
+      const server = await fakeServer([done('none')]);
+      const { code, stderr } = await scan(repo(), server, ['--tag', 'v3'], NO_TRIVY);
+      expect(code, stderr).toBe(0);
+      expect(stderr).toContain('Recorded version v3');
+    },
+  );
+
+  it(
+    'exits 4 and prints the message when the server fails the analysis (an older server)',
+    { timeout: 60_000 },
+    async () => {
+      const server = await fakeServer([failedWith('BRANCH_REQUIRED', 'a branch is required')]);
+      const { code, stderr } = await scan(
+        repo('version: 1\ngate:\n  failOnError: false\n'),
+        server,
+        ['--tag', 'v1'],
+        NO_TRIVY,
+      );
+      expect(code).toBe(4);
+      expect(stderr).toContain('BRANCH_REQUIRED a branch is required');
+    },
+  );
+
+  it('exits 0 right after the upload with --no-wait', { timeout: 60_000 }, async () => {
+    const server = await fakeServer([]);
+    const { code } = await scan(repo(), server, ['--tag', 'v1', '--no-wait'], NO_TRIVY);
+    expect(code).toBe(0);
+    expect(server.paths).not.toContain(`GET /api/v0/analyses/${ID}`);
+  });
+});
+
 describe('qualor scan: the AI review snapshot of a merge request (6I-2)', () => {
   it(
     'a merge request scan with review on uploads a snapshot after the report',
