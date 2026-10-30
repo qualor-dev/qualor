@@ -137,6 +137,7 @@ describe('the GitLab CI/CD component (scm.md §10)', () => {
       rules: [
         { if: '$CI_PIPELINE_SOURCE == "merge_request_event"' },
         { if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH' },
+        { if: '$CI_COMMIT_TAG' },
       ],
     });
     // The instance's default expiry: a fixed one would drop the target branch's reports, which
@@ -155,6 +156,22 @@ describe('the GitLab CI/CD component (scm.md §10)', () => {
       stage: 'verify',
       image: { name: 'registry.acme.test/qualor/scanner:0.3.0' },
     });
+  });
+
+  it('also runs in tag pipelines, where the scan records a version (the UI panel shows this rule)', () => {
+    const { text, bodyText } = load();
+    // The rule exactly as Project → Settings → Vulnerability monitoring shows it.
+    expect(bodyText).toContain('rules:\n    - if: $CI_PIPELINE_SOURCE');
+    expect(bodyText).toMatch(/^ {4}- if: \$CI_COMMIT_TAG$/m);
+    for (const dotnet of ['false', 'true']) {
+      const job = interpolate(bodyText, { ...DEFAULTS, dotnet })['qualor'] as {
+        rules: { if: string }[];
+      };
+      expect(job.rules).toContainEqual({ if: '$CI_COMMIT_TAG' });
+    }
+    // The header says what a tag pipeline does.
+    expect(text).toMatch(/on[\s#]+tags/);
+    expect(text).toMatch(/records[\s#]+a[\s#]+version/);
   });
 
   it('runs qualor dotnet begin, the build and end when dotnet is true (scm.md §10, ruling D8)', () => {

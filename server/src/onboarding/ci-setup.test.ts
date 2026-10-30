@@ -583,7 +583,10 @@ describe('GitLab self-managed', () => {
     expect(doc.qualor.rules).toEqual([
       { if: '$CI_PIPELINE_SOURCE == "merge_request_event"' },
       { if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH' },
+      // A tag pipeline records a version (templates/qualor.yml has the same rule).
+      { if: '$CI_COMMIT_TAG' },
     ]);
+    expect(content).toMatch(/^ {4}- if: \$CI_COMMIT_TAG$/m);
     expect(doc.include).toBeUndefined();
     expect(content).not.toContain(URL_);
     expect(plan.variables).toEqual([{ key: 'QUALOR_URL', value: URL_ }]);
@@ -610,6 +613,7 @@ describe('GitLab self-managed', () => {
       'qualor dotnet end --project-key acme/app-2 --gitlab-code-quality',
     );
     expect(doc.qualor.after_script).toEqual(['qualor dotnet abort']);
+    expect(doc.qualor.rules).toContainEqual({ if: '$CI_COMMIT_TAG' });
   });
 
   it('also guards unsupported files', () => {
@@ -636,7 +640,9 @@ describe('GitHub', () => {
   it('cloud non-C#: the scan-action workflow', () => {
     const { doc, content } = wf();
     expect(doc.name).toBe('qualor');
-    expect(doc.on).toEqual({ pull_request: null, push: { branches: ['main'] } });
+    // Every tag too: a tag scan records a version (integrations/github/qualor.yml does the same).
+    expect(doc.on).toEqual({ pull_request: null, push: { branches: ['main'], tags: ['**'] } });
+    expect(content).toContain("  push:\n    branches: [main]\n    tags: ['**']\n");
     expect(doc.permissions).toEqual({ contents: 'read' });
     const job = doc.jobs.qualor;
     expect(job.if).toBe(
@@ -659,6 +665,14 @@ describe('GitHub', () => {
       },
     });
     expect(content).not.toContain('vars.');
+  });
+
+  it('runs on tags in every layout', () => {
+    for (const host of ['cloud', 'self-hosted'] as const) {
+      for (const csharp of [false, true]) {
+        expect(wf({ host, csharp }).doc.on.push.tags).toEqual(['**']);
+      }
+    }
   });
 
   it('uses the default branch', () => {
@@ -812,6 +826,16 @@ describe('the project key', () => {
   it('names the project in the description', () => {
     for (const provider of ['github', 'gitlab'] as const) {
       expect(change(planCiSetup(input({ provider }))).description).toContain('`acme/app-2`');
+    }
+  });
+
+  it('says in the description that a tag records a version', () => {
+    for (const provider of ['github', 'gitlab'] as const) {
+      for (const host of ['cloud', 'self-hosted'] as const) {
+        expect(change(planCiSetup(input({ provider, host }))).description).toMatch(
+          /On each tag, it records a version: the release's dependency list\./,
+        );
+      }
     }
   });
 });

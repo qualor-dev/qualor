@@ -271,6 +271,7 @@ function addToSeq(text: string, seq: YAMLSeq, o: ComponentOptions): string | nul
 function descriptionFor(i: CiSetupInput): string {
   const lines = [
     `Qualor analyses every ${i.provider === 'gitlab' ? 'merge request' : 'pull request'} and every push to the default branch, and reports the result there.`,
+    "On each tag, it records a version: the release's dependency list.",
     `The analyses go to the Qualor project \`${i.projectKey}\`.`,
     '',
   ];

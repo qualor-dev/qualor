@@ -108,6 +108,8 @@ export function gitlabPlainJob(o: JobOptions): string {
     '  rules:',
     '    - if: $CI_PIPELINE_SOURCE == "merge_request_event"',
     '    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH',
+    // A tag pipeline records a version (docs/guide/releases.md).
+    '    - if: $CI_COMMIT_TAG',
   );
   return lines.join('\n') + '\n';
 }
@@ -130,6 +132,8 @@ function header(o: WorkflowOptions): string[] {
     '  pull_request:',
     '  push:',
     `    branches: [${yamlScalar(o.defaultBranch)}]`,
+    // A tag push records a version (docs/guide/releases.md).
+    "    tags: ['**']",
     'permissions:',
     '  contents: read',
     'jobs:',

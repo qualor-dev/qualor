@@ -13,6 +13,8 @@
 # The job is skipped for pull requests from forks: GitHub gives them no secrets, so the scan could
 # not upload. Never switch to pull_request_target, which would run a fork's code with the token.
 # Change `main` below if your default branch has another name.
+# The job also runs on tags. There `qualor dotnet end` records a version: the release's dependency
+# list, with no analyzer and no quality gate (https://qualor.dev/docs/releases).
 #
 # The C# analyzers run inside the project's own build: `qualor dotnet begin` installs an MSBuild
 # hook, the build writes Roslyn's logs, `qualor dotnet end` reads them and scans. The token is in
@@ -27,6 +29,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['**']
 permissions:
   contents: read
 jobs:

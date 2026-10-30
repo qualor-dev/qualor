@@ -37,6 +37,13 @@ describe('integrations/github/qualor.yml', () => {
 
   it('runs on pull requests and on pushes, never on pull_request_target', () => {
     expect(Object.keys(workflow.on).sort()).toEqual(['pull_request', 'push']);
+    // Pushes of the default branch, and of every tag: a tag scan records a version.
+    expect(workflow.on['push']).toEqual({ branches: ['main'], tags: ['**'] });
+    // The trigger exactly as Project → Settings → Vulnerability monitoring shows it.
+    expect(text).toContain("  push:\n    branches: [main]\n    tags: ['**']\n");
+    // The header says what a tag push does.
+    expect(text).toMatch(/on[\s#]+tags/);
+    expect(text).toMatch(/records[\s#]+a[\s#]+version/);
     // The header comment warns against it by name; no line of the workflow itself uses it.
     const code = text.split('\n').filter((line) => !line.trimStart().startsWith('#'));
     expect(code.join('\n')).not.toContain('pull_request_target');
@@ -127,6 +134,10 @@ describe('integrations/github/qualor-dotnet.yml (github.md §11, config.md §6.1
 
   it("has the plain template's triggers, fork guard, permissions and pinned checkout", () => {
     expect(workflow.on).toEqual(plain.on);
+    // On tags too: `qualor dotnet end` on a tag records a version.
+    expect(workflow.on['push']).toEqual({ branches: ['main'], tags: ['**'] });
+    expect(text).toMatch(/on[\s#]+tags/);
+    expect(text).toMatch(/records[\s#]+a[\s#]+version/);
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(Object.keys(workflow.jobs)).toEqual(['qualor']);
     expect(job.if).toBe(plain.jobs.qualor!.if);

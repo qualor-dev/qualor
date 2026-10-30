@@ -13,14 +13,16 @@
 # Set QUALOR_URL and QUALOR_TOKEN (masked, not protected) as CI/CD variables; the component never
 # holds them and takes no secret as an input. Not protected: GitLab gives a protected variable only
 # to pipelines of protected branches, so merge request pipelines would get no token. The job runs
-# in merge request pipelines and on the default branch, uploads the analysis, fails with the
-# quality gate and keeps GitLab's Code Quality, SAST and Dependency Scanning reports
-# as artifacts, so findings show in the merge request widget and the security tab (vulnerable
-# dependencies, found by Trivy, in Dependency Scanning). GitLab reads the SAST and Dependency
-# Scanning reports (the security widget and the vulnerability report) on GitLab Ultimate only; the
-# Code Quality report, which lists every finding, works on every tier. The job runs from the
-# repository root (the report paths are relative to it). Artifacts keep the instance's default
-# expiry, so the target branch's reports stay available for the merge request comparison.
+# in merge request pipelines, on the default branch and on tags. On a tag it records a version:
+# the release's dependency list, with no analyzer and no quality gate
+# (https://qualor.dev/docs/releases). Elsewhere it uploads the analysis, fails with the quality
+# gate and keeps GitLab's Code Quality, SAST and Dependency Scanning reports as artifacts, so
+# findings show in the merge request widget and the security tab (vulnerable dependencies, found
+# by Trivy, in Dependency Scanning). GitLab reads the SAST and Dependency Scanning reports (the
+# security widget and the vulnerability report) on GitLab Ultimate only; the Code Quality report,
+# which lists every finding, works on every tier. The job runs from the repository root (the report
+# paths are relative to it). Artifacts keep the instance's default expiry, so the target branch's
+# reports stay available for the merge request comparison.
 spec:
   inputs:
     stage:
@@ -92,3 +94,4 @@ spec:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
