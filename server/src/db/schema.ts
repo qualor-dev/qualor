@@ -34,6 +34,10 @@ export type AnalysisStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
 export type GateStatus = 'passed' | 'failed' | 'error' | 'none';
 export type BaselineStatus = 'ok' | 'unavailable' | 'first_analysis';
 export type BranchKind = 'branch' | 'merge_request';
+export type VersionSource = 'tag' | 'label';
+/** How a project version is tracked: by the project's rule (`auto`) or by hand. */
+export type VersionTracking = 'auto' | 'pinned' | 'unsupported';
+export type VulnerabilityVersionRule = 'lines' | 'all' | 'none';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'dead';
 export interface FieldIssue {
   path: string;
@@ -483,6 +487,12 @@ export const analyses = pgTable(
     baselineRevision: text('baseline_revision'),
     baselineStatus: text('baseline_status').$type<BaselineStatus>(),
     versionLabel: text('version_label'),
+    // A tag scan belongs to a released version instead of a branch (never both).
+    versionId: uuid('version_id').references((): AnyPgColumn => projectVersions.id, {
+      onDelete: 'set null',
+    }),
+    // The report's `dependencyIgnores`: [{id, expiresAt?}]; NULL when it carried none.
+    dependencyIgnores: jsonb('dependency_ignores').$type<unknown>(),
     analysisDate: at('analysis_date'),
     status: text('status').notNull().default('queued').$type<AnalysisStatus>(),
     error: jsonb('error').$type<AnalysisError>(),
@@ -522,12 +532,53 @@ export const analyses = pgTable(
     ),
     check(
       'analyses_succeeded_is_complete',
-      sql`status <> 'succeeded' OR (branch_id IS NOT NULL AND revision IS NOT NULL
-        AND analysis_date IS NOT NULL AND baseline_status IS NOT NULL
+      sql`status <> 'succeeded' OR ((branch_id IS NOT NULL OR version_id IS NOT NULL)
+        AND revision IS NOT NULL AND analysis_date IS NOT NULL AND baseline_status IS NOT NULL
         AND scanner_version IS NOT NULL)`,
     ),
+    check('analyses_one_target', sql`branch_id IS NULL OR version_id IS NULL`),
+    index('analyses_version_idx')
+      .on(t.versionId, t.id)
+      .where(sql`version_id IS NOT NULL`),
   ],
 );
+
+/**
+ * A released version of a project (vulnerability monitoring, 0.15): one row per label, created by
+ * a tag scan or taken from a branch analysis that carries `project.version`. `analysis_id` is the
+ * analysis whose dependency inventory the version holds.
+ */
+export const projectVersions = pgTable(
+  'project_versions',
+  {
+    id: id(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    source: text('source').notNull().$type<VersionSource>(),
+    tag: text('tag'),
+    analysisId: uuid('analysis_id').references((): AnyPgColumn => analyses.id, {
+      onDelete: 'set null',
+    }),
+    analyzedAt: at('analyzed_at').notNull(),
+    tracking: text('tracking').notNull().default('auto').$type<VersionTracking>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('project_versions_project_label').on(t.projectId, t.label),
+    index('project_versions_project_analyzed_idx').on(t.projectId, t.analyzedAt.desc()),
+    // Supporting index for the analyses foreign key (set null).
+    index('project_versions_analysis_idx')
+      .on(t.analysisId)
+      .where(sql`analysis_id IS NOT NULL`),
+    check('project_versions_label_check', sql`char_length(label) BETWEEN 1 AND 100`),
+    check('project_versions_source_check', sql`source IN ('tag','label')`),
+    check('project_versions_tracking_check', sql`tracking IN ('auto','pinned','unsupported')`),
+  ],
+);
+export type ProjectVersionRow = typeof projectVersions.$inferSelect;
 
 export const analysisReports = pgTable('analysis_reports', {
   analysisId: uuid('analysis_id')
@@ -608,6 +659,52 @@ export const branchDependencies = pgTable(
     index('branch_dependencies_licenses').using('gin', t.licenses),
     // Supporting index for the analyses foreign key (cascades).
     index('branch_dependencies_analysis_idx').on(t.analysisId),
+  ],
+);
+
+/** The dependency inventory of a released version, the counterpart of `branch_dependencies`. */
+export const versionDependencies = pgTable(
+  'version_dependencies',
+  {
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => projectVersions.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    ecosystem: text('ecosystem').notNull(),
+    name: text('name').notNull(),
+    version: text('version').notNull(),
+    licenses: text('licenses').array().notNull(),
+    direct: boolean('direct'),
+    line: integer('line'),
+    analysisId: uuid('analysis_id')
+      .notNull()
+      .references(() => analyses.id, { onDelete: 'cascade' }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.versionId, t.path, t.ecosystem, t.name, t.version] }),
+    index('version_dependencies_licenses').using('gin', t.licenses),
+    // Supporting index for the analyses foreign key (cascades).
+    index('version_dependencies_analysis_idx').on(t.analysisId),
+  ],
+);
+
+/** What a project monitors for vulnerabilities (0.15); no row means the defaults. */
+export const projectVulnerabilitySettings = pgTable(
+  'project_vulnerability_settings',
+  {
+    projectId: uuid('project_id')
+      .primaryKey()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').notNull().default(true),
+    branchPatterns: text('branch_patterns').array().notNull().default(emptyTextArray),
+    versionRule: text('version_rule').notNull().default('lines').$type<VulnerabilityVersionRule>(),
+    versionLines: integer('version_lines').notNull().default(5),
+    labelVersions: boolean('label_versions').notNull().default(false),
+    updatedAt: updatedAt(),
+  },
+  () => [
+    check('project_vulnerability_settings_rule_check', sql`version_rule IN ('lines','all','none')`),
+    check('project_vulnerability_settings_lines_check', sql`version_lines BETWEEN 1 AND 20`),
   ],
 );
 

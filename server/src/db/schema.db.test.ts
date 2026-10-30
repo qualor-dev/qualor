@@ -45,6 +45,8 @@ const TABLES = [
   'profile_rules',
   'project_memberships',
   'project_profiles',
+  'project_versions',
+  'project_vulnerability_settings',
   'project_watches',
   'projects',
   'quality_gates',
@@ -67,6 +69,7 @@ const TABLES = [
   'sso_group_mappings',
   'sso_states',
   'users',
+  'version_dependencies',
   'webhook_deliveries',
   'webhook_subscriptions',
 ];

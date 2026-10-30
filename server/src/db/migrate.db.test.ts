@@ -57,8 +57,9 @@ describe('runMigrations / pendingMigrations', () => {
     // the repository snapshots of the AI review), 0016_review_runs (phase 6I-3, the review runs
     // and the AI findings), 0017_review_replies (phase 6I-4, the replies ledger), 0018_rule_scope
     // (0.13, a rule's scope and its profile override), 0019_onboarding (the onboarding runs and the
-    // GitLab CI-setup setting).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(20);
+    // GitLab CI-setup setting), 0020_versions (0.15, the released versions of a project, their
+    // dependencies and the vulnerability settings).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(21);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -321,6 +322,8 @@ describe('runMigrations / pendingMigrations', () => {
       'oauth_grants', // 0013_oauth
       'oauth_requests', // 0013_oauth
       'oauth_tokens', // 0013_oauth
+      'project_versions', // 0020_versions
+      'project_vulnerability_settings', // 0020_versions
       'project_watches',
       'repository_setup_items', // 0019_onboarding
       'repository_setup_runs', // 0019_onboarding
@@ -330,6 +333,7 @@ describe('runMigrations / pendingMigrations', () => {
       'review_snapshot_files', // 0015_review_snapshots
       'review_snapshots', // 0015_review_snapshots
       'setup_checklist_closures', // 0019_onboarding
+      'version_dependencies', // 0020_versions
     ].sort();
     expect(Object.keys(after).filter((name) => !(name in before))).toEqual(added);
     for (const name of added) expect(after[name], name).toEqual([]);
