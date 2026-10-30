@@ -355,6 +355,8 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
       },
     },
     async (request, reply) => {
+      // The answer may hold a token shown once: no cache keeps it.
+      void reply.header('cache-control', 'no-store');
       const principal = requireUser(request);
       const [run] = await deps.db
         .select()

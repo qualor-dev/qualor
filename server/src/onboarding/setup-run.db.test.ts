@@ -1156,6 +1156,20 @@ describe('the repository-setup run', () => {
       ]);
     });
 
+    it('is never stored by a cache, while running or with a token to show', async () => {
+      const fake = await gitlab();
+      fake.addProject({ id: 18, path: 'acme/cached' });
+      const connectionId = await connectGitLab(fake, false);
+      const id = await start({ connectionId, repositories: ['18'], ciSetup: false });
+      const queued = await get(id);
+      expect(queued.headers['cache-control']).toBe('no-store');
+      await runSetups();
+      const done = await get(id);
+      expect(done.statusCode, done.body).toBe(200);
+      expect((done.json() as Run).items[0]!.token).toMatch(/^qlr_prj_/);
+      expect(done.headers['cache-control']).toBe('no-store');
+    });
+
     it('is for the organisation’s admins only', async () => {
       const fake = await gitlab();
       const connectionId = await connectGitLab(fake, false);
