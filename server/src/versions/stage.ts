@@ -1,5 +1,3 @@
-import { and, eq } from 'drizzle-orm';
-import { projectVersions } from '../db/schema';
 import type { IngestionStage } from '../ingest/process';
 import { parseVersionLabel } from './label';
 import { isTrackedBranch, vulnerabilitySettings } from './settings';
@@ -24,12 +22,7 @@ export const versionLabelStage: IngestionStage = {
     if (parseVersionLabel(label)?.prerelease) return;
     const settings = await vulnerabilitySettings(tx, ctx.project.id);
     if (!settings.labelVersions || !isTrackedBranch(settings, ctx.branch)) return;
-    const [existing] = await tx
-      .select({ source: projectVersions.source })
-      .from(projectVersions)
-      .where(and(eq(projectVersions.projectId, ctx.project.id), eq(projectVersions.label, label)));
-    if (existing?.source === 'tag') return;
-    // A stale label (a newer analysis already holds it) changes nothing.
+    // A tag version of the label (`'kept'`) or a newer analysis of it (`'stale'`) changes nothing.
     await upsertVersion(tx, {
       projectId: ctx.project.id,
       label,

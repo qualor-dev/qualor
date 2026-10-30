@@ -26,6 +26,9 @@ export interface UpsertVersionInput {
  * the version's packages and `.trivyignore` ids are replaced by the analysis's. The `tracking`
  * override is the user's and stays.
  *
+ * Returns `'kept'`, changing nothing, when a `label` write meets a version a tag scan made: the
+ * tag is the release and a branch's `project.version` never replaces it.
+ *
  * Returns `'stale'`, changing nothing, when the stored version was analysed later than
  * `analyzedAt`: an older scan never replaces a newer inventory. A tag scan of a version taken from
  * a label is never stale: the tag is the release, whenever its job ran.
@@ -33,13 +36,14 @@ export interface UpsertVersionInput {
 export async function upsertVersion(
   tx: Executor,
   input: UpsertVersionInput,
-): Promise<ProjectVersionRow | 'stale'> {
+): Promise<ProjectVersionRow | 'stale' | 'kept'> {
   const [existing] = await tx
     .select({ analyzedAt: projectVersions.analyzedAt, source: projectVersions.source })
     .from(projectVersions)
     .where(
       and(eq(projectVersions.projectId, input.projectId), eq(projectVersions.label, input.label)),
     );
+  if (existing?.source === 'tag' && input.source === 'label') return 'kept';
   const takesOver = input.source === 'tag' && existing?.source === 'label';
   if (existing && !takesOver && existing.analyzedAt.getTime() > input.analyzedAt.getTime()) {
     return 'stale';
@@ -50,6 +54,8 @@ export async function upsertVersion(
     analysisId: input.analysisId,
     analyzedAt: input.analyzedAt,
     dependencyIgnores: inventory?.ignores ?? null,
+    // Even an empty inventory counts: the version was scanned and has no packages.
+    ...(inventory && { hasInventory: true }),
   };
   const version = first(
     await tx

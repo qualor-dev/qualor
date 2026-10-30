@@ -566,6 +566,8 @@ export const projectVersions = pgTable(
     tracking: text('tracking').notNull().default('auto').$type<VersionTracking>(),
     // The report's `dependencyIgnores` that came with the inventory; NULL when it carried none.
     dependencyIgnores: jsonb('dependency_ignores').$type<DependencyIgnore[]>(),
+    // True once an inventory was written, even an empty one: tells no packages from never scanned.
+    hasInventory: boolean('has_inventory').notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -710,6 +712,105 @@ export const projectVulnerabilitySettings = pgTable(
   () => [
     check('project_vulnerability_settings_rule_check', sql`version_rule IN ('lines','all','none')`),
     check('project_vulnerability_settings_lines_check', sql`version_lines BETWEEN 1 AND 20`),
+  ],
+);
+
+// ─── Vulnerability database and matches (0.15) ──────────────────────────────
+
+/** A Trivy vulnerability database held by the server, stored in chunks. */
+export const vulndbDatasets = pgTable(
+  'vulndb_datasets',
+  {
+    id: id(),
+    kind: text('kind').notNull().$type<'trivy'>(),
+    digest: text('digest').notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    // The build time of the database itself (metadata UpdatedAt).
+    builtAt: at('built_at'),
+    source: text('source').notNull().$type<'official' | 'mirror' | 'upload'>(),
+    status: text('status').notNull().$type<'incomplete' | 'ready'>(),
+    chunkCount: integer('chunk_count').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('vulndb_datasets_kind_created_idx').on(t.kind, t.createdAt.desc()),
+    check('vulndb_datasets_kind_check', sql`kind IN ('trivy')`),
+    check('vulndb_datasets_digest_check', sql`digest ~ '^sha256:[0-9a-f]{64}$'`),
+    check('vulndb_datasets_source_check', sql`source IN ('official','mirror','upload')`),
+    check('vulndb_datasets_status_check', sql`status IN ('incomplete','ready')`),
+  ],
+);
+export type VulndbDatasetRow = typeof vulndbDatasets.$inferSelect;
+
+export const vulndbChunks = pgTable(
+  'vulndb_chunks',
+  {
+    datasetId: uuid('dataset_id')
+      .notNull()
+      .references(() => vulndbDatasets.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    data: bytea('data').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.datasetId, t.seq] })],
+);
+
+/** The vulnerabilities found for a package (purl); shared by every project. */
+export const vulnerabilityMatches = pgTable(
+  'vulnerability_matches',
+  {
+    purl: text('purl').notNull(),
+    vulnerabilityId: text('vulnerability_id').notNull(),
+    severity: text('severity')
+      .notNull()
+      .$type<'critical' | 'high' | 'medium' | 'low' | 'unknown'>(),
+    title: text('title'),
+    fixedVersion: text('fixed_version'),
+    primaryUrl: text('primary_url'),
+    publishedAt: at('published_at'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.purl, t.vulnerabilityId] }),
+    check(
+      'vulnerability_matches_severity_check',
+      sql`severity IN ('critical','high','medium','low','unknown')`,
+    ),
+  ],
+);
+
+/** The packages already matched, and against which database. */
+export const matchedPackages = pgTable('matched_packages', {
+  purl: text('purl').primaryKey(),
+  datasetDigest: text('dataset_digest').notNull(),
+  matchedAt: at('matched_at').notNull().defaultNow(),
+});
+
+/** A vulnerability of a package on a branch or in a version of a project. */
+export const targetVulnerabilities = pgTable(
+  'target_vulnerabilities',
+  {
+    id: id(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    branchId: uuid('branch_id').references(() => branches.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id').references(() => projectVersions.id, { onDelete: 'cascade' }),
+    ecosystem: text('ecosystem').notNull(),
+    packageName: text('package_name').notNull(),
+    packageVersion: text('package_version').notNull(),
+    purl: text('purl').notNull(),
+    vulnerabilityId: text('vulnerability_id').notNull(),
+    ignored: boolean('ignored').notNull().default(false),
+    firstSeenAt: at('first_seen_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('target_vulnerabilities_branch_uq')
+      .on(t.branchId, t.purl, t.vulnerabilityId)
+      .where(sql`branch_id IS NOT NULL`),
+    uniqueIndex('target_vulnerabilities_version_uq')
+      .on(t.versionId, t.purl, t.vulnerabilityId)
+      .where(sql`version_id IS NOT NULL`),
+    index('target_vulnerabilities_project_idx').on(t.projectId),
+    check('target_vulnerabilities_one_target', sql`(branch_id IS NULL) <> (version_id IS NULL)`),
   ],
 );
 

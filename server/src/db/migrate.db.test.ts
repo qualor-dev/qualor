@@ -58,8 +58,9 @@ describe('runMigrations / pendingMigrations', () => {
     // and the AI findings), 0017_review_replies (phase 6I-4, the replies ledger), 0018_rule_scope
     // (0.13, a rule's scope and its profile override), 0019_onboarding (the onboarding runs and the
     // GitLab CI-setup setting), 0020_versions (0.15, the released versions of a project, their
-    // dependencies and the vulnerability settings).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(21);
+    // dependencies and the vulnerability settings), 0021_vulndb (0.15, the vulnerability database,
+    // its matches and the vulnerabilities of branches and versions).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(22);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -314,6 +315,11 @@ describe('runMigrations / pendingMigrations', () => {
     const added = [
       ...added0006,
       'compliance_reports', // 0007_compliance_reports
+      'matched_packages', // 0021_vulndb
+      'target_vulnerabilities', // 0021_vulndb
+      'vulndb_chunks', // 0021_vulndb
+      'vulndb_datasets', // 0021_vulndb
+      'vulnerability_matches', // 0021_vulndb
       'branch_dependencies', // 0008_branch_dependencies
       'mail_messages', // 0009_mail
       'account_tokens', // 0010_account_tokens
@@ -392,6 +398,53 @@ describe('runMigrations / pendingMigrations', () => {
       code: '23514',
       constraint: 'llm_requests_feature_check',
     });
+  });
+
+  it('marks the versions that hold packages as having an inventory (0021, vulnerability database)', async () => {
+    const db = await createTestDatabase({ migrated: false });
+    t = db;
+    const upTo20 = migrationsUpTo(21); // 0000_extensions … 0020_versions
+    try {
+      await runMigrations(db.pool, upTo20.dir);
+    } finally {
+      upTo20.remove();
+    }
+    const org = randomUUID();
+    const project = randomUUID();
+    const withPackages = randomUUID();
+    const without = randomUUID();
+    await db.pool.query(
+      `INSERT INTO organizations (id, key, name) VALUES ($1, 'mig-0021', 'Mig')`,
+      [org],
+    );
+    await db.pool.query(
+      `INSERT INTO projects (id, organization_id, key, name) VALUES ($1, $2, 'mig/0021', 'P')`,
+      [project, org],
+    );
+    for (const [id, label] of [
+      [withPackages, '1.0.0'],
+      [without, '2.0.0'],
+    ] as const) {
+      await db.pool.query(
+        `INSERT INTO project_versions (id, project_id, label, source, analyzed_at)
+         VALUES ($1, $2, $3, 'tag', now())`,
+        [id, project, label],
+      );
+    }
+    await db.pool.query(
+      `INSERT INTO version_dependencies (version_id, path, ecosystem, name, version, licenses)
+       VALUES ($1, 'package.json', 'npm', 'zod', '4.0.0', '{MIT}')`,
+      [withPackages],
+    );
+
+    await runMigrations(db.pool, MIGRATIONS_DIR);
+    const { rows } = await db.pool.query(
+      'SELECT label, has_inventory FROM project_versions ORDER BY label',
+    );
+    expect(rows).toEqual([
+      { label: '1.0.0', has_inventory: true },
+      { label: '2.0.0', has_inventory: false },
+    ]);
   });
 
   it('adds the replies ledger to a database that holds connections, runs and AI requests, and keeps every row (0017, phase 6I-4)', async () => {

@@ -92,6 +92,7 @@ describe('tag scans as versions', () => {
       source: 'tag',
       tag: 'v2.3.4',
       analysisId: id,
+      hasInventory: true,
     });
     expect(row.versionId).toBe(version!.id);
     expect(row.versionLabel).toBe('v2.3.4');
@@ -156,6 +157,7 @@ describe('tag scans as versions', () => {
     const row = await analysis(id);
     expect(row.warnings.map((w) => w.code)).toContain('VERSION_WITHOUT_INVENTORY');
     const [version] = await versions(p);
+    expect(version!.hasInventory).toBe(false);
     expect(
       await h.ctx.db
         .select()

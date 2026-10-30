@@ -78,6 +78,8 @@ export async function ingestVersion(
         inventory: { dependencies: report.dependencies, ignores: report.dependencyIgnores ?? null },
       }),
     });
+    // A tag scan never meets 'kept' (only a label write does).
+    if (version === 'kept') throw new Error('A tag scan cannot be kept out by a tag version');
     if (version === 'stale') {
       await markFailed(
         tx,
