@@ -141,9 +141,16 @@
     @if (!answer.inventory) {
       <div class="empty-state">
         <img src="art/empty.webp" alt="" width="900" height="675" />
-        <p i18n="@@deps.noInventory">
-          No dependency inventory yet. Scans with Qualor 0.9 or later record one.
-        </p>
+        @if (urlVersion()) {
+          <p i18n="@@deps.noVersionInventory">
+            No dependency list for this version. The tag scan found no lockfile Trivy reads, or
+            Trivy did not run.
+          </p>
+        } @else {
+          <p i18n="@@deps.noInventory">
+            No dependency inventory yet. Scans with Qualor 0.9 or later record one.
+          </p>
+        }
       </div>
     } @else {
       <div class="panel-scroll" tabindex="0" role="group" aria-labelledby="deps-heading">

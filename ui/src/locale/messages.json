@@ -826,6 +826,7 @@
     "deps.heading": "Dependencies",
     "deps.summary": "{$INTERPOLATION} of {$INTERPOLATION_1} packages have a known licence",
     "deps.guideLink": "Which lockfiles Qualor reads",
+    "deps.noVersionInventory": " No dependency list for this version. The tag scan found no lockfile Trivy reads, or Trivy did not run. ",
     "deps.noInventory": " No dependency inventory yet. Scans with Qualor 0.9 or later record one. ",
     "deps.caption": " Dependencies with their licences ",
     "deps.col.package": "Package",

@@ -435,6 +435,16 @@ describe('DependenciesPage (6M §8)', () => {
     expect(root.querySelector('.deps-summary')).toBeNull();
   });
 
+  it('says why a version has no dependency list, with no table', async () => {
+    fake.inventory = false;
+    const { root } = await render(`/?version=${VERSION_ID}`);
+    expect(lastQuery()?.get('version')).toBe(VERSION_ID);
+    expect(text(root.querySelector('.empty-state'))).toBe(
+      'No dependency list for this version. The tag scan found no lockfile Trivy reads, or Trivy did not run.',
+    );
+    expect(root.querySelector('table')).toBeNull();
+  });
+
   it('asks for the main branch at once, and a project never analysed says it has no inventory', async () => {
     server.on('GET', `/api/v0/projects/${PROJECT}/branches`, { body: page([]) });
     fake.inventory = false;
