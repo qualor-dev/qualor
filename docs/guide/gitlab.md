@@ -31,8 +31,8 @@ The token must not be protected: GitLab gives protected variables only to pipeli
 branches, so merge request pipelines would get no token.
 
 A token on a group has to be a personal token with **Upload analyses**, because a project token
-uploads to its one project only. If the token's user is an org admin, Qualor creates missing
-projects on their first upload.
+uploads to its one project only. An upload never creates a project: create each one first, or let
+[Add repositories](#set-up-ci-with-a-merge-request) do it.
 
 ## 2. The CI job
 
@@ -274,6 +274,45 @@ again in GitLab. Qualor therefore answers 204 to every delivery it can:
 If **Recent events** shows 401, 429, 404, 400 or 415, fix the URL or the secret. A 413 or a 500 can
 reach a real delivery: GitLab counts it as a failure, and the comments are answered at the next
 analysis.
+
+## Set up CI with a merge request
+
+**Add repositories** (in **Projects**, [Quick start](./quick-start.md#fastest-path-add-repositories))
+can add the Qualor job to each project for you. Qualor opens a merge request and sets the CI/CD
+variables. Nothing changes in your repository until you merge it.
+
+First turn on **Allow Qualor to set up CI (opens merge requests, writes CI/CD variables)** for the
+connection, in **Settings → GitLab**. It is off for connections that existed before, and the
+new-connection dialog asks. The token already needs the scope `api` and the role Maintainer, which
+cover branches, files, merge requests and CI/CD variables. The server also needs
+`QUALOR_PUBLIC_URL`.
+
+The merge request is on the branch `qualor/setup`, titled **Add Qualor code analysis**:
+
+- It adds one `include` entry for the component to `.gitlab-ci.yml`, with `image-tag` set to the
+  server's minor version, as in [With the CI/CD component](#with-the-cicd-component-recommended).
+  The rest of the file stays as it was. Qualor creates `.gitlab-ci.yml` when it is missing. When the
+  file's `stages:` has no `test`, the entry sets `stage` to an existing stage.
+- A C# repository gets `dotnet: true` and a build command. Check the command before you merge.
+- Qualor sets two CI/CD variables on the project. `QUALOR_TOKEN` is a project analysis token named
+  **CI setup**, masked and not protected, so merge request pipelines can read it. `QUALOR_URL` is
+  your Qualor address. The token is never in the merge request.
+
+Qualor shows the snippet instead of opening a merge request when the project already has a Qualor
+job, include or `QUALOR_TOKEN` variable, keeps its CI configuration at a custom path, has YAML that
+Qualor cannot edit without loss, or is empty. It never overwrites a variable.
+
+On self-managed GitLab the component is not available
+([On self-managed GitLab](#on-self-managed-gitlab)). Qualor adds a plain `qualor:` job instead, on
+`qualor/scanner:<version>` (`qualor/scanner-dotnet` for C#). The runners must be able to pull the
+image from Docker Hub or your mirror. To upgrade the scanner, edit the version in the file.
+
+### Undo CI setup
+
+1. Close the merge request and delete the branch `qualor/setup`.
+2. Delete the CI/CD variables `QUALOR_TOKEN` and `QUALOR_URL` under **Settings → CI/CD →
+   Variables**.
+3. In Qualor, revoke the project's **CI setup** token in the project's token settings.
 
 ## 4. Block merges on the gate
 

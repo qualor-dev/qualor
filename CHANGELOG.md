@@ -8,6 +8,20 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
+- Add repositories: on **Projects**, an organization admin picks a GitHub or GitLab connection and
+  ticks up to 50 repositories. Qualor creates a project for each, with the repository path as its
+  key, and maps an existing project with that key to the repository. With **Set up CI with a merge
+  request**, it opens a merge request that adds the Qualor job and stores the project's token as a
+  CI secret, and it merges nothing. Where it cannot edit safely, it shows the CI snippet and the
+  token, once. CI setup needs `QUALOR_PUBLIC_URL`.
+- The setup checklist **Set up Qualor**: a corner panel for organization admins with the steps
+  Connect GitHub or GitLab, Add repositories, Get the first analysis, Turn on AI review and Invite
+  your team. It ticks from the server's state, and **Don't show again** hides it for good.
+- CI-setup settings: a GitLab connection has the setting **Allow Qualor to set up CI**, off for
+  existing connections. A GitHub App needs the permissions **Workflows** and **Secrets** (read and
+  write) for CI setup, and **Settings → GitHub** shows which are missing.
+  `integrations/github/app-manifest-ci-setup.json` registers a new App with both. Existing Apps add
+  them, and the installations accept them.
 - Trial keys: an instance admin on the community edition selects **Request a trial** in
   **Settings → Licence** and gets a 30-day key for Business or Enterprise by email. With a trial key
   the licence page says when the trial ends. Instance admins see a banner in the last 7 days and

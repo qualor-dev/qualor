@@ -144,9 +144,10 @@ group still maps to it.
 A project is one analysed codebase, usually one repository. A monorepo can hold several projects,
 each with its own key and its own `sources.include`.
 
-- **Create one** in **Projects → New project**, with a key and a name. Or let the first upload
-  create it: this happens when the scan uses a personal token of an org admin with the **Upload
-  analyses** scope.
+- **Create one** in **Projects → New project**, with a key and a name. To create many at once from
+  a GitHub or GitLab connection, use **Add repositories**
+  ([Quick start](./quick-start.md#fastest-path-add-repositories)). An upload never creates a
+  project: the project must exist before the first scan.
 - **The key** is what the scanner reports. It defaults to the CI project path (`CI_PROJECT_PATH`,
   `GITHUB_REPOSITORY`). Set it with `project.key` in `qualor.yml`, `QUALOR_PROJECT_KEY` or
   `--project-key`. Keys are unique on the instance and may contain letters, digits, `.`, `_`, `-`,
@@ -243,7 +244,7 @@ tokens**.
 | Use | Token |
 |---|---|
 | CI of one repository | a project analysis token |
-| One CI token for many repositories, with projects created on first scan | a personal token (**Upload analyses**) of a dedicated bot user who is org admin |
+| One CI token for many repositories | a personal token (**Upload analyses**) of a dedicated bot user. The projects must exist |
 | Scripts and automation (onboarding, reports) | a personal token with **Read**, **Write** or **Admin**, as needed |
 | `qualor import sonarqube` | a personal token with **Admin**, of an org admin |
 

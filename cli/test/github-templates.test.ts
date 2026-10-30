@@ -222,3 +222,19 @@ describe('integrations/github/app-manifest.json', () => {
     expect(hook.active).toBe(false);
   });
 });
+
+describe('integrations/github/app-manifest-ci-setup.json', () => {
+  const base = JSON.parse(read('app-manifest.json')) as Record<string, unknown>;
+  const manifest = JSON.parse(read('app-manifest-ci-setup.json')) as Record<string, unknown>;
+
+  it('is the plain manifest plus Workflows and Secrets (write), for CI setup', () => {
+    expect(manifest.default_permissions).toEqual({
+      ...(base.default_permissions as Record<string, string>),
+      workflows: 'write',
+      secrets: 'write',
+    });
+    expect(manifest.default_events).toEqual(base.default_events);
+    expect(manifest.public).toBe(false);
+    expect(manifest.hook_attributes).toEqual(base.hook_attributes);
+  });
+});

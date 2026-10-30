@@ -231,7 +231,8 @@ API. A comment by a bot, Qualor's own App included, starts nothing.
 ### Update an App you created before
 
 An App keeps the permissions and events it was created with. To add **Contents: Read and write**,
-**Issues: Read-only** and the comment events:
+**Issues: Read-only** and the comment events (for the **Workflows** and **Secrets** permissions of
+[CI setup](#set-up-ci-with-a-pull-request), see the end of this section):
 
 1. On GitHub, open the App's settings (**Settings → Developer settings → GitHub Apps**, your App,
    **Edit**) and go to **Permissions & events**. Under **Repository permissions**, set **Contents**
@@ -246,6 +247,11 @@ An App keeps the permissions and events it was created with. To add **Contents: 
    ([above](#turn-on-the-webhook-recommended)). The App's **Advanced** tab lists recent deliveries
    and Qualor's answers.
 4. On **Settings → GitHub**, **Test** the App with a repository: it lists what the App still lacks.
+
+To allow [CI setup](#set-up-ci-with-a-pull-request), set two more repository permissions the same
+way: **Workflows: Read and write** and **Secrets: Read and write**. The owner of each installation
+then accepts them on the installation's page. **Settings → GitHub** shows which of the two the
+installations still lack.
 
 ### What reviewers see
 
@@ -304,6 +310,60 @@ analysis.
 When GitHub Enterprise Server is on an internal network, the Qualor server needs its host in
 `QUALOR_SCM_INTERNAL_HOSTS` ([Server settings](./install-server.md#server-settings)). When its
 certificate comes from a private CA, give the Qualor server that CA with `NODE_EXTRA_CA_CERTS`.
+
+## Set up CI with a pull request
+
+**Add repositories** (in **Projects**, [Quick start](./quick-start.md#fastest-path-add-repositories))
+can add the Qualor workflow to each repository for you. Qualor opens a pull request (its pages call
+it a merge request) and stores the project's token as an Actions secret. Nothing changes in your
+repository until you merge it.
+
+The pull request is on the branch `qualor/setup`, titled **Add Qualor code analysis**. It adds one
+new file, `.github/workflows/qualor.yml`, and leaves your other workflows alone:
+
+- The workflow is the one from [The workflow](#2-the-workflow), with your Qualor address written in
+  and the Action pinned to the server's minor version, such as `qualor-dev/scan-action@v0.13`.
+- A C# repository gets the workflow of `integrations/github/qualor-dotnet.yml`, with the image tag
+  written in. The token is in the `qualor dotnet end` step only. Check its build command before you
+  merge.
+- The token is the Actions secret `QUALOR_TOKEN`, a project analysis token named **CI setup**.
+  It is never in the pull request.
+
+Qualor shows the snippet instead of opening a pull request when the repository already has a Qualor
+workflow or a `QUALOR_TOKEN` secret, or is empty. It never overwrites either.
+
+### What the App needs
+
+CI setup needs two permissions that the App does not otherwise have:
+
+| Permission | Access | What Qualor uses it for |
+|---|---|---|
+| Workflows | Read and write | adding the workflow file |
+| Secrets | Read and write | storing `QUALOR_TOKEN` |
+
+The server also needs `QUALOR_PUBLIC_URL` ([Server settings](./install-server.md#server-settings)).
+
+- **New App:** register it from
+  [`integrations/github/app-manifest-ci-setup.json`](../../integrations/github/app-manifest-ci-setup.json).
+  It is the manifest of [Create it](#create-it) plus the two permissions.
+- **Existing App:** add the two permissions as in
+  [Update an App you created before](#update-an-app-you-created-before). The owner of each
+  installation must accept them.
+
+Without both, **Add repositories** still creates the projects and shows the snippet and the token.
+
+### CI setup on GitHub Enterprise Server
+
+The Action lives on github.com, so a GitHub Enterprise Server cannot use it. There Qualor writes a
+plain job that runs `qualor/scanner:<version>` in a container on a runner labelled
+`[self-hosted, linux]`. The runner needs Docker and access to Docker Hub or your mirror. To upgrade
+the scanner, edit the version in the file. GitHub.com and GHE.com get the Action.
+
+### Undo CI setup
+
+1. Close the pull request and delete the branch `qualor/setup`.
+2. Delete the Actions secret `QUALOR_TOKEN` under **Settings → Secrets and variables → Actions**.
+3. In Qualor, revoke the project's **CI setup** token in the project's token settings.
 
 ## 4. Block merges on the gate
 
