@@ -33,6 +33,7 @@ import { ruleRoutes } from './rules';
 import { systemRoutes } from './system';
 import { tokenRoutes } from './tokens';
 import { userRoutes } from './users';
+import { versionRoutes } from './versions';
 import { repositorySetupRoutes } from './repository-setup';
 import { scmConnectionRoutes } from './scm-connections';
 import { webhookRoutes } from './webhooks';
@@ -60,6 +61,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   await app.register(newCodeRoutes, { prefix: '/api/v0', deps });
   await app.register(measureRoutes, { prefix: '/api/v0', deps });
   await app.register(dependencyRoutes, { prefix: '/api/v0', deps });
+  await app.register(versionRoutes, { prefix: '/api/v0', deps });
   await app.register(gateRoutes, { prefix: '/api/v0', deps });
   await app.register(issueRoutes, { prefix: '/api/v0', deps, chargeIssueChanges });
   await app.register(issueStatusImportRoutes, { prefix: '/api/v0', deps });

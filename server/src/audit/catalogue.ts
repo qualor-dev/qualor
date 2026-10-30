@@ -84,6 +84,13 @@ export const PROJECT_CHANGE_FIELDS = [
   'scmConnectionId',
   'scmProjectRef',
 ] as const;
+/** 0.15: the names `project.vulnerability_monitoring_updated` may list (names only). */
+export const VULNERABILITY_MONITORING_CHANGED_FIELDS = [
+  'enabled',
+  'branchPatterns',
+  'versionRule',
+  'labelVersions',
+] as const;
 export const QUALITY_PROFILE_CHANGE_FIELDS = ['name', 'unknownRules'] as const;
 /** spec §8: the names `scm_connection.updated` may list (names only, never values). */
 export const SCM_CONNECTION_CHANGED_FIELDS = [
@@ -421,6 +428,21 @@ export const AUDIT_CATALOGUE = {
   'project.updated': {
     target: 'project',
     details: z.strictObject({ changes: changesOf(PROJECT_CHANGE_FIELDS, 20) }),
+  },
+  'project.vulnerability_monitoring_updated': {
+    target: 'project',
+    details: z.strictObject({
+      changed: z
+        .array(z.enum(VULNERABILITY_MONITORING_CHANGED_FIELDS))
+        .max(VULNERABILITY_MONITORING_CHANGED_FIELDS.length),
+    }),
+  },
+  'project_version.updated': {
+    target: 'project',
+    details: z.strictObject({
+      label: z.string().max(100),
+      tracking: z.enum(['auto', 'pinned', 'unsupported']),
+    }),
   },
   'project.deleted': { target: 'project', details: z.strictObject({ key: projectKey }) },
   'project.profile_assigned': {

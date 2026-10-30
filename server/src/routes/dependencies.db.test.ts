@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { addMember, createUser, login, type Session } from '../../test/app';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { engine, file, reportWith, type ReportParts } from '../../test/reports';
-import { branches, instanceSettings } from '../db/schema';
+import { branches, instanceSettings, projectVersions } from '../db/schema';
 import { fixedEdition } from '../license/edition';
 import { LICENSE_POLICY_SETTINGS_KEY, writeLicensePolicy } from '../licenses/settings';
 
@@ -235,6 +235,50 @@ describe('GET /projects/{id}/dependencies (6M)', () => {
     await addMember(h.ctx, h.organizationId, viewer.id, 'viewer');
     const viewerSession = await login(h.ctx, viewer.username, viewer.password);
     expect((await get(url(p), viewerSession)).statusCode).toBe(200);
+  });
+
+  it('answers the inventory of a version with ?version, not combined with branch or mr', async () => {
+    const q = await h.project('deps/by-version');
+    await q.ingestOk(report(q, { dependencies: [dep('on-main')] }));
+    await q.ingestOk(
+      report(q, {
+        branch: null,
+        tag: 'v1.2.3',
+        version: '1.2.3',
+        findings: [],
+        files: [],
+        dependencies: [dep('in-version', { licenses: ['GPL-3.0-only'] }), dep('second')],
+      }),
+    );
+    const [version] = await h.ctx.db
+      .select()
+      .from(projectVersions)
+      .where(eq(projectVersions.projectId, q.id));
+    const res = await get(`/projects/${q.id}/dependencies?version=${version!.id}`);
+    expect(res.statusCode, res.body).toBe(200);
+    const body = res.json();
+    expect(body.rows.map((r: { name: string }) => r.name)).toEqual(['in-version', 'second']);
+    expect(body).toMatchObject({ total: 2, inventory: true, summary: { total: 2 } });
+    const filtered = await get(`/projects/${q.id}/dependencies?version=${version!.id}&q=sec`);
+    expect(filtered.json().rows.map((r: { name: string }) => r.name)).toEqual(['second']);
+    // The branch inventory is untouched.
+    expect((await get(url(q))).json().rows.map((r: { name: string }) => r.name)).toEqual([
+      'on-main',
+    ]);
+
+    for (const extra of ['branch=main', 'mr=1']) {
+      const both = await get(`/projects/${q.id}/dependencies?version=${version!.id}&${extra}`);
+      expect(both.statusCode, extra).toBe(422);
+    }
+    expect((await get(`/projects/${q.id}/dependencies?version=not-a-uuid`)).statusCode).toBe(422);
+    const unknown = await get(
+      `/projects/${q.id}/dependencies?version=00000000-0000-4000-8000-000000000000`,
+    );
+    expect(unknown.statusCode).toBe(404);
+    // A version of another project is not found either.
+    expect((await get(`/projects/${p.id}/dependencies?version=${version!.id}`)).statusCode).toBe(
+      404,
+    );
   });
 });
 

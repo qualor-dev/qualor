@@ -10,13 +10,14 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
 import { accessOf, requireUser } from '../auth/access';
-import { branches } from '../db/schema';
+import { branches, projectVersions } from '../db/schema';
 import {
   dependencySummary,
   hasInventory,
   listAllDependencies,
   listDependencies,
   type DependencyFilter,
+  type DependencyTarget,
   type DependencyRow,
 } from '../dependencies/query';
 import { notFound } from '../http/problem';
@@ -61,7 +62,7 @@ const responseSchema = z.object({
   pageSize: z.number().int(),
   /** Entries matching the filters. */
   total: z.number().int(),
-  /** The whole inventory of the branch, whatever the filters. */
+  /** The whole inventory of the branch or version, whatever the filters. */
   summary: summarySchema,
   /** `false`: no analysis of the branch has reported a dependency inventory yet. */
   inventory: z.boolean(),
@@ -78,6 +79,8 @@ const querySchema = z
     branch: text(255).optional(),
     /** A merge request by its number. */
     mr: z.coerce.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
+    /** A released version of the project (`GET /projects/{id}/versions`); not with `branch` or `mr`. */
+    version: z.uuid().optional(),
     license: text(256).optional(),
     group: z.enum(GROUP_IDS).optional(),
     ecosystem: z
@@ -97,6 +100,10 @@ const querySchema = z
   .refine((q) => q.branch === undefined || q.mr === undefined, {
     message: 'Give branch or mr, not both',
     path: ['mr'],
+  })
+  .refine((q) => q.version === undefined || (q.branch === undefined && q.mr === undefined), {
+    message: 'Give version, or branch or mr, not both',
+    path: ['version'],
   });
 
 const EMPTY_SUMMARY = { total: 0, known: 0, unknown: 0, byLicense: [] };
@@ -144,6 +151,31 @@ function verdictOf(policy: LicensePolicy): (row: DependencyRow) => LicenseVerdic
   };
 }
 
+/**
+ * The inventory the query names: the version (`notFound('Version')` when it is not the project's),
+ * or the branch, merge request or main branch; `null` when that branch does not exist (the caller
+ * answers 404 for a named one).
+ */
+async function targetOf(
+  deps: RouteDeps,
+  projectId: string,
+  query: DependencyQuery,
+): Promise<DependencyTarget | null> {
+  if (query.version !== undefined) {
+    const [version] = await deps.db
+      .select({ id: projectVersions.id })
+      .from(projectVersions)
+      .where(and(eq(projectVersions.id, query.version), eq(projectVersions.projectId, projectId)));
+    if (!version) throw notFound('Version');
+    return { kind: 'version', versionId: version.id };
+  }
+  const [branch] = await deps.db
+    .select({ id: branches.id })
+    .from(branches)
+    .where(and(eq(branches.projectId, projectId), branchOfQuery(query)));
+  return branch ? { kind: 'branch', branchId: branch.id } : null;
+}
+
 export const dependencyRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
   app,
   { deps },
@@ -155,7 +187,7 @@ export const dependencyRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asyn
       schema: {
         tags: ['dependencies'],
         summary:
-          'The dependency inventory of a branch or merge request (the main branch by default), filtered and paged',
+          'The dependency inventory of a branch, merge request or released version (the main branch by default), filtered and paged',
         params: idParams,
         querystring: querySchema,
         response: { 200: responseSchema },
@@ -171,17 +203,14 @@ export const dependencyRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asyn
       );
 
       const named = query.mr !== undefined || query.branch !== undefined;
-      const [branch] = await deps.db
-        .select({ id: branches.id })
-        .from(branches)
-        .where(and(eq(branches.projectId, project.id), branchOfQuery(query)));
+      const target = await targetOf(deps, project.id, query);
       const paging = { page: query.page, pageSize: query.pageSize };
       // 6M §8: the verdicts need the feature and a policy of the project's organisation.
       const policy = deps.edition.limits().licenses.policy
         ? await policyFor(deps.db, project.organizationId)
         : null;
       const verdicts = policy !== null;
-      if (!branch) {
+      if (!target) {
         if (named) throw notFound('Branch');
         // The main branch has no analysis yet.
         return {
@@ -198,16 +227,16 @@ export const dependencyRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asyn
       const judge = policy === null ? null : verdictOf(policy);
       const [list, summary] = await Promise.all([
         judge !== null && query.verdict !== undefined
-          ? verdictPage(deps, branch.id, filter, judge, query.verdict, paging)
-          : listDependencies(deps.db, branch.id, filter, paging),
-        dependencySummary(deps.db, branch.id),
+          ? verdictPage(deps, target, filter, judge, query.verdict, paging)
+          : listDependencies(deps.db, target, filter, paging),
+        dependencySummary(deps.db, target),
       ]);
       return {
         rows: judge === null ? list.rows : list.rows.map((r) => ({ ...r, verdict: judge(r) })),
         ...paging,
         total: list.total,
         summary,
-        inventory: await hasInventory(deps.db, branch.id, summary.total),
+        inventory: await hasInventory(deps.db, target, summary.total),
         verdicts,
       };
     },
@@ -220,13 +249,13 @@ export const dependencyRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asyn
  */
 async function verdictPage(
   deps: RouteDeps,
-  branchId: string,
+  target: DependencyTarget,
   filter: DependencyFilter,
   judge: (row: DependencyRow) => LicenseVerdict,
   verdict: LicenseVerdict,
   page: { page: number; pageSize: number },
 ): Promise<{ rows: DependencyRow[]; total: number }> {
-  const matching = (await listAllDependencies(deps.db, branchId, filter)).filter(
+  const matching = (await listAllDependencies(deps.db, target, filter)).filter(
     (r) => judge(r) === verdict,
   );
   const start = (page.page - 1) * page.pageSize;

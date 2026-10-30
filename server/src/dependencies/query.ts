@@ -1,7 +1,7 @@
 import { LICENSE_GROUPS, type LicenseGroupId } from '@qualor/shared';
 import { and, asc, eq, ilike, sql, type SQL } from 'drizzle-orm';
 import type { Executor } from '../db/client';
-import { analyses, branchDependencies } from '../db/schema';
+import { analyses, branchDependencies, projectVersions, versionDependencies } from '../db/schema';
 import { containsPattern } from '../issues/query';
 
 /** The filters of the inventory list (6M §8). Every filter narrows; none means the whole list. */
@@ -51,6 +51,17 @@ export const SUMMARY_LICENSES = 20;
 /** The CLI's engine entry for its licence pass (cli/src/analyzers/trivy-licenses.ts). */
 const LICENSE_ENGINE_ID = 'trivy-licenses';
 
+/** Whose inventory: a branch's latest snapshot, or a released version's. */
+export type DependencyTarget =
+  { kind: 'branch'; branchId: string } | { kind: 'version'; versionId: string };
+
+/** The inventory table of the target, and its owner column. */
+function tableOf(target: DependencyTarget) {
+  return target.kind === 'branch'
+    ? { d: branchDependencies, owner: branchDependencies.branchId, id: target.branchId }
+    : { d: versionDependencies, owner: versionDependencies.versionId, id: target.versionId };
+}
+
 const GROUP_MEMBERS = new Map<LicenseGroupId, readonly string[]>(
   LICENSE_GROUPS.map((g) => [g.id, g.members]),
 );
@@ -65,10 +76,10 @@ function whenGiven(value: boolean | undefined, yes: SQL, no: SQL): SQL | undefin
   return value ? yes : no;
 }
 
-function dependencyFilter(branchId: string, f: DependencyFilter): SQL | undefined {
-  const d = branchDependencies;
+function dependencyFilter(target: DependencyTarget, f: DependencyFilter): SQL | undefined {
+  const { d, owner, id } = tableOf(target);
   return and(
-    eq(d.branchId, branchId),
+    eq(owner, id),
     f.license === undefined ? undefined : sql`${d.licenses} @> ARRAY[${f.license}]::text[]`,
     f.group === undefined
       ? undefined
@@ -80,8 +91,8 @@ function dependencyFilter(branchId: string, f: DependencyFilter): SQL | undefine
   );
 }
 
-function selectRows(db: Executor, where: SQL | undefined) {
-  const d = branchDependencies;
+function selectRows(db: Executor, target: DependencyTarget, where: SQL | undefined) {
+  const { d } = tableOf(target);
   return db
     .select({
       ecosystem: d.ecosystem,
@@ -97,17 +108,17 @@ function selectRows(db: Executor, where: SQL | undefined) {
     .orderBy(asc(d.name), asc(d.version), asc(d.path), asc(d.ecosystem));
 }
 
-/** One page of a branch's inventory, by name, version, lockfile and ecosystem, and the filtered total. */
+/** One page of an inventory, by name, version, lockfile and ecosystem, and the filtered total. */
 export async function listDependencies(
   db: Executor,
-  branchId: string,
+  target: DependencyTarget,
   filter: DependencyFilter,
   page: DependencyPage,
 ): Promise<{ rows: DependencyRow[]; total: number }> {
-  const d = branchDependencies;
-  const where = dependencyFilter(branchId, filter);
+  const { d } = tableOf(target);
+  const where = dependencyFilter(target, filter);
   const [rows, [count]] = await Promise.all([
-    selectRows(db, where)
+    selectRows(db, target, where)
       .limit(page.pageSize)
       .offset((page.page - 1) * page.pageSize),
     db
@@ -119,23 +130,23 @@ export async function listDependencies(
 }
 
 /**
- * Every entry of a branch's inventory that matches `filter`, in the list's order: for a filter
+ * Every entry of an inventory that matches `filter`, in the list's order: for a filter
  * SQL cannot apply (the licence policy's verdict). A snapshot holds at most 50 000 entries.
  */
 export async function listAllDependencies(
   db: Executor,
-  branchId: string,
+  target: DependencyTarget,
   filter: DependencyFilter,
 ): Promise<DependencyRow[]> {
-  return selectRows(db, dependencyFilter(branchId, filter));
+  return selectRows(db, target, dependencyFilter(target, filter));
 }
 
-/** The whole inventory of a branch at a glance; filters do not apply. */
+/** The whole inventory at a glance; filters do not apply. */
 export async function dependencySummary(
   db: Executor,
-  branchId: string,
+  target: DependencyTarget,
 ): Promise<DependencySummary> {
-  const d = branchDependencies;
+  const { d, owner, id } = tableOf(target);
   const [[counts], byLicense] = await Promise.all([
     db
       .select({
@@ -143,11 +154,11 @@ export async function dependencySummary(
         unknown: sql<number>`count(*) FILTER (WHERE cardinality(${d.licenses}) = 0)::int`,
       })
       .from(d)
-      .where(eq(d.branchId, branchId)),
+      .where(eq(owner, id)),
     db.execute<{ license: string; count: number }>(sql`
       SELECT l.license, count(*)::int AS count
       FROM ${d}, unnest(${d.licenses}) AS l(license)
-      WHERE ${d.branchId} = ${branchId}
+      WHERE ${owner} = ${id}
       GROUP BY l.license
       ORDER BY count DESC, l.license
       LIMIT ${SUMMARY_LICENSES}`),
@@ -163,26 +174,33 @@ export async function dependencySummary(
 }
 
 /**
- * Whether the branch has an inventory snapshot. Rows prove it; without rows, the latest snapshot
- * may still be an empty one: a succeeded analysis of the branch whose licence pass completed
- * (its `trivy-licenses` engine is `ok`, which is when the report carries `dependencies`).
+ * Whether the target has an inventory snapshot. Rows prove it; without rows, the latest snapshot
+ * may still be an empty one: a succeeded analysis (the branch's, or the one the version holds)
+ * whose licence pass completed (its `trivy-licenses` engine is `ok`, which is when the report
+ * carries `dependencies`).
  */
 export async function hasInventory(
   db: Executor,
-  branchId: string,
+  target: DependencyTarget,
   rowCount: number,
 ): Promise<boolean> {
   if (rowCount > 0) return true;
-  const [row] = await db
-    .select({ id: analyses.id })
-    .from(analyses)
-    .where(
-      and(
-        eq(analyses.branchId, branchId),
-        eq(analyses.status, 'succeeded'),
-        sql`${analyses.engines} @> ${JSON.stringify([{ id: LICENSE_ENGINE_ID, status: 'ok' }])}::jsonb`,
-      ),
-    )
-    .limit(1);
+  const licensePassDone = and(
+    eq(analyses.status, 'succeeded'),
+    sql`${analyses.engines} @> ${JSON.stringify([{ id: LICENSE_ENGINE_ID, status: 'ok' }])}::jsonb`,
+  );
+  const [row] =
+    target.kind === 'branch'
+      ? await db
+          .select({ id: analyses.id })
+          .from(analyses)
+          .where(and(eq(analyses.branchId, target.branchId), licensePassDone))
+          .limit(1)
+      : await db
+          .select({ id: analyses.id })
+          .from(analyses)
+          .innerJoin(projectVersions, eq(projectVersions.analysisId, analyses.id))
+          .where(and(eq(projectVersions.id, target.versionId), licensePassDone))
+          .limit(1);
   return row !== undefined;
 }

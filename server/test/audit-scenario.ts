@@ -2,7 +2,14 @@ import { createHash, generateKeyPairSync } from 'node:crypto';
 import { asc, eq, sql } from 'drizzle-orm';
 import type { Report } from '@qualor/shared';
 import type { Config } from '../src/config';
-import { analyses, branches, instanceSettings, issues, jobs } from '../src/db/schema';
+import {
+  analyses,
+  branches,
+  instanceSettings,
+  issues,
+  jobs,
+  projectVersions,
+} from '../src/db/schema';
 import { gateHandlers } from '../src/gates/reevaluate';
 import { jobHandlers } from '../src/ingest/handlers';
 import { createEdition } from '../src/license/edition';
@@ -326,6 +333,27 @@ export async function runAuditScenario(
   await call('PUT', `/projects/${main.id}/members/${userId}`, 200, { role: 'member' });
   await call('PUT', `/projects/${main.id}/members/${userId}`, 200, { role: 'viewer' });
   await call('DELETE', `/projects/${main.id}/members/${userId}`, 204);
+
+  // project.vulnerability_monitoring_updated and project_version.updated (0.15)
+  await call('PUT', `/projects/${main.id}/vulnerability-monitoring`, 200, {
+    enabled: true,
+    branchPatterns: ['release/*'],
+    versionRule: { kind: 'lines', lines: 3 },
+    labelVersions: false,
+  });
+  const [scenarioVersion] = await ctx.db
+    .insert(projectVersions)
+    .values({
+      projectId: main.id,
+      label: '1.0.0',
+      source: 'tag',
+      tag: 'v1.0.0',
+      analyzedAt: new Date(),
+    })
+    .returning({ id: projectVersions.id });
+  await call('PATCH', `/projects/${main.id}/versions/${scenarioVersion!.id}`, 200, {
+    tracking: 'pinned',
+  });
 
   const ingest = async (token: string, key: string, report: Report) => {
     const analysisId = await uploadReport(ctx, bearer(token), key, gzipJson(report));
