@@ -252,6 +252,8 @@ function report(input: {
   files: FileSpec[];
   findings: FindingSpec[];
   duplications?: DuplicationSpec[];
+  /** A tag scan: no branch; the server stores it as a project version (vulnerability monitoring). */
+  tag?: string;
   /** 6M: the dependency inventory; the report then names the licence pass too. */
   dependencies?: DependencyEntry[];
 }): Report {
@@ -263,7 +265,8 @@ function report(input: {
     scm: {
       provider: 'gitlab',
       revision: input.revision,
-      branch: input.branch,
+      branch: input.tag ? null : input.branch,
+      ...(input.tag ? { tag: input.tag } : {}),
       mainBranch: 'main',
       mergeRequest: input.mergeRequest ? { targetBranch: 'main', ...input.mergeRequest } : null,
       baseline: input.firstAnalysis
@@ -674,6 +677,25 @@ export async function seedDemo(base: string, credentials: SeedCredentials): Prom
       files: paymentsFiles(1, true),
       findings: [...PAYMENTS_BASE, ...PAYMENTS_THIRD],
       dependencies: PAYMENTS_DEPENDENCIES,
+    }),
+  );
+
+  // A tag scan is a released version of the project, with its own inventory (the Dependencies
+  // tab's Versions group; ui/e2e/seed-data.ts VERSION).
+  await upload(
+    base,
+    payments.token,
+    payments.key,
+    report({
+      ...common,
+      version: '1.0.0',
+      tag: 'v1.0.0',
+      date: '2026-09-01T09:00:00Z',
+      revision: 'c'.repeat(40),
+      firstAnalysis: true,
+      files: [],
+      findings: [],
+      dependencies: [npm('legacy-queue', '0.9.0', ['MIT'], 3, true)],
     }),
   );
 

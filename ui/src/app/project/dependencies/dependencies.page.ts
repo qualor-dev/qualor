@@ -41,6 +41,10 @@ export const LICENSE_GROUP_IDS: readonly LicenseGroupFilter[] = [
 const PAGE_SIZE = 50;
 /** The branch list's first page; a branch past it is looked up on its own. */
 const BRANCH_PAGE = 500;
+/** The version list's one page: the newest 100 are what the selector offers. */
+const VERSION_PAGE = 100;
+/** A version's value in the selector, apart from the branch ids. */
+const VERSION_PREFIX = 'version:';
 const Q_MAX_LENGTH = 200;
 /** api.md: what `ecosystem` may be (the report format's rule). */
 const ECOSYSTEM = /^[a-z0-9-]{1,32}$/;
@@ -83,10 +87,13 @@ export function dependencyFilters(params: Params): DependencyFilters {
   };
 }
 
-/** The URL's query for a branch and filters; defaults are left out. */
-function filterParams(branch: string | null, f: DependencyFilters): Params {
+/** The URL's query for a branch or a version (never both) and filters; defaults are left out. */
+function filterParams(
+  scope: { branch?: string | null; version?: string | null },
+  f: DependencyFilters,
+): Params {
   return {
-    ...(branch ? { branch } : {}),
+    ...(scope.version ? { version: scope.version } : scope.branch ? { branch: scope.branch } : {}),
     ...(f.q ? { q: f.q } : {}),
     ...(f.ecosystem ? { ecosystem: f.ecosystem } : {}),
     ...(f.license ? { license: f.license } : {}),
@@ -137,9 +144,39 @@ export class DependenciesPage {
 
   private readonly params = toSignal(this.route.queryParams, { initialValue: {} as Params });
   protected readonly filters = computed(() => dependencyFilters(this.params()));
+  /** A released version (`?version=<id>`) is shown instead of a branch; it wins over `?branch=`. */
+  protected readonly urlVersion = computed(() => {
+    const version: unknown = this.params()['version'];
+    return isUuid(version) ? version : null;
+  });
   private readonly urlBranch = computed(() => {
+    if (this.urlVersion()) return null;
     const branch: unknown = this.params()['branch'];
     return isUuid(branch) ? branch : null;
+  });
+
+  private readonly versions = resource({
+    params: () => this.projectId(),
+    loader: async ({ params }) =>
+      (
+        await ok(
+          this.api.client.GET('/api/v0/projects/{id}/versions', {
+            params: { path: { id: params }, query: { limit: VERSION_PAGE } },
+          }),
+        )
+      ).items,
+  });
+  /** The versions the selector offers, newest first; the URL's own when it is not among them. */
+  protected readonly versionOptions = computed(() => {
+    const list = this.versions.hasValue() ? this.versions.value() : [];
+    const options = list.map((v) => ({
+      id: v.id,
+      title: v.tracked ? $localize`:@@deps.versionTracked:${v.label}:label: (tracked)` : v.label,
+    }));
+    const wanted = this.urlVersion();
+    return wanted && !options.some((o) => o.id === wanted)
+      ? [...options, { id: wanted, title: wanted }]
+      : options;
   });
 
   protected readonly branches = resource({
@@ -162,7 +199,7 @@ export class DependenciesPage {
    */
   private readonly extraBranch = resource({
     params: () => {
-      if (!this.branches.hasValue()) return undefined;
+      if (this.urlVersion() || !this.branches.hasValue()) return undefined;
       const list = this.branches.value();
       const wanted = this.urlBranch();
       const projectId = this.projectId();
@@ -175,6 +212,7 @@ export class DependenciesPage {
   });
   /** The branch shown: the URL's, else the main one; null until known. */
   protected readonly branch = computed<Branch | null>(() => {
+    if (this.urlVersion()) return null;
     const wanted = this.urlBranch();
     const listed = this.branchList().find((b) => isShown(b, wanted));
     if (listed) return listed;
@@ -188,8 +226,9 @@ export class DependenciesPage {
       ? [...options, { id: shown.id, title: branchTitle(shown) }]
       : options;
   });
+  protected readonly versionPrefix = VERSION_PREFIX;
   protected readonly branchError = computed(() => {
-    const error = this.branches.error() ?? this.extraBranch.error();
+    const error = this.branches.error() ?? this.extraBranch.error() ?? this.versions.error();
     return error ? problemMessage(error) : null;
   });
 
@@ -197,6 +236,8 @@ export class DependenciesPage {
     params: () => {
       const projectId = this.projectId();
       const filters = this.filters();
+      const version = this.urlVersion();
+      if (version) return { projectId, branch: { version }, filters };
       // The main branch is the route's default: it is asked for at once, found or not.
       if (!this.urlBranch()) return { projectId, branch: {}, filters };
       const branch = this.branch();
@@ -298,7 +339,7 @@ export class DependenciesPage {
     });
     effect(() => {
       const answer = this.current();
-      const branch = this.branch()?.id ?? null;
+      const branch = this.branch()?.id ?? this.urlVersion();
       if (!answer) return;
       const before = this.seen();
       const ecosystems = new Set(before.branch === branch ? before.ecosystems : []);
@@ -329,16 +370,19 @@ export class DependenciesPage {
     const next = { ...this.filters(), page: 1, ...changes };
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: filterParams(this.urlBranch(), next),
+      queryParams: filterParams({ branch: this.urlBranch(), version: this.urlVersion() }, next),
       replaceUrl: true,
     });
   }
 
   protected setBranch(event: Event): void {
-    const branch = inputValue(event);
+    const chosen = inputValue(event);
+    const scope = chosen.startsWith(VERSION_PREFIX)
+      ? { version: chosen.slice(VERSION_PREFIX.length) }
+      : { branch: chosen || null };
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: filterParams(branch || null, { ...this.filters(), page: 1 }),
+      queryParams: filterParams(scope, { ...this.filters(), page: 1 }),
       replaceUrl: true,
     });
   }

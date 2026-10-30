@@ -5,6 +5,15 @@
       @for (b of branchOptions(); track b.id) {
         <option [value]="b.id" [selected]="b.id === branch()?.id">{{ b.title }}</option>
       }
+      @if (versionOptions().length > 0) {
+        <optgroup label="Versions" i18n-label="@@deps.versions">
+          @for (v of versionOptions(); track v.id) {
+            <option [value]="versionPrefix + v.id" [selected]="v.id === urlVersion()">
+              {{ v.title }}
+            </option>
+          }
+        </optgroup>
+      }
     </select>
   </div>
   <form role="search" class="deps-search" novalidate (submit)="submitSearch($event)">
@@ -164,14 +173,18 @@
                 </td>
                 <td>{{ row.ecosystem }}</td>
                 <td class="lockfile-cell">
-                  @let f = fileLink(row);
-                  <a
-                    class="lockfile"
-                    [routerLink]="f.commands"
-                    [queryParams]="f.queryParams"
-                    [fragment]="f.fragment"
-                    ><code>{{ row.path }}{{ row.line ? ':' + row.line : '' }}</code></a
-                  >
+                  @if (urlVersion()) {
+                    <code>{{ row.path }}{{ row.line ? ':' + row.line : '' }}</code>
+                  } @else {
+                    @let f = fileLink(row);
+                    <a
+                      class="lockfile"
+                      [routerLink]="f.commands"
+                      [queryParams]="f.queryParams"
+                      [fragment]="f.fragment"
+                      ><code>{{ row.path }}{{ row.line ? ':' + row.line : '' }}</code></a
+                    >
+                  }
                 </td>
                 <td>
                   @if (row.licenses.length > 0) {
@@ -207,14 +220,16 @@
                     @switch (row.verdict) {
                       @case ('forbidden') {
                         <span class="badge badge-failed">{{ verdictLabels.forbidden }}</span>
-                        &ngsp;<a
-                          class="verdict-issues"
-                          [routerLink]="['/projects', projectId(), 'issues']"
-                          [queryParams]="issuesParams(row)"
-                          [attr.aria-label]="issuesLabel(row)"
-                          i18n="@@deps.issuesLink"
-                          >Issues</a
-                        >
+                        @if (!urlVersion()) {
+                          &ngsp;<a
+                            class="verdict-issues"
+                            [routerLink]="['/projects', projectId(), 'issues']"
+                            [queryParams]="issuesParams(row)"
+                            [attr.aria-label]="issuesLabel(row)"
+                            i18n="@@deps.issuesLink"
+                            >Issues</a
+                          >
+                        }
                       }
                       @case ('allowed') {
                         <span class="badge badge-passed">{{ verdictLabels.allowed }}</span>

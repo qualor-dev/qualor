@@ -1,5 +1,5 @@
 import { expect, expectAccessible, test } from './fixtures';
-import { DEPENDENCIES, MERGE_REQUEST, PAYMENTS } from './seed-data';
+import { DEPENDENCIES, MERGE_REQUEST, PAYMENTS, VERSION } from './seed-data';
 
 /**
  * 6M §8: the Dependencies tab on the community server. The seed's last analyses of Payments API
@@ -81,6 +81,26 @@ test('the Dependencies tab shows the inventory of a merge request', async ({ pag
   await expect(page.locator('.deps-summary')).toContainText(
     `${DEPENDENCIES.known} of ${DEPENDENCIES.total} packages have a known licence`,
   );
+  await expectAccessible(page);
+});
+
+test('the Dependencies tab shows the inventory of a released version', async ({ page }) => {
+  await page.goto('/projects');
+  await page.getByRole('link', { name: PAYMENTS.name }).click();
+  await page
+    .getByRole('navigation', { name: 'Project' })
+    .getByRole('link', { name: 'Dependencies' })
+    .click();
+  await expect(page.locator('.deps-summary')).toBeVisible();
+  const request = page.waitForRequest(
+    (r) => new URL(r.url()).pathname.endsWith('/dependencies') && r.url().includes('version='),
+  );
+  await page.getByLabel('Branch').selectOption({ label: VERSION.option });
+  await expect(page).toHaveURL(/[?&]version=/);
+  expect(new URL((await request).url()).searchParams.has('branch')).toBe(false);
+  const table = page.getByRole('table', { name: 'Dependencies with their licences' });
+  await expect(table.getByRole('row')).toHaveCount(2);
+  await expect(table.getByRole('row', { name: new RegExp(VERSION.package) })).toBeVisible();
   await expectAccessible(page);
 });
 

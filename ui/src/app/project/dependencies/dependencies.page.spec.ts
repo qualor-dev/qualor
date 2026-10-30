@@ -47,6 +47,26 @@ const MR: Branch = {
   mrTargetBranch: 'main',
 };
 
+const VERSION_ID = '0190a6c2-0000-7000-8000-0000000000c1';
+const OLD_VERSION_ID = '0190a6c2-0000-7000-8000-0000000000c2';
+const VERSIONS = [
+  version({ id: VERSION_ID, label: '2.1.0', tracked: true }),
+  version({ id: OLD_VERSION_ID, label: '1.9.0', tracked: false }),
+];
+
+function version(over: { id: string; label: string; tracked: boolean }) {
+  return {
+    source: 'tag' as const,
+    tag: `v${over.label}`,
+    analyzedAt: '2026-09-10T09:00:00.000Z',
+    tracking: 'auto' as const,
+    trackingReason: 'newest_in_line' as const,
+    prerelease: false,
+    packages: 7,
+    ...over,
+  };
+}
+
 const XSS = 'left-pad<img src=x onerror="alert(1)">';
 const ROWS = [
   dependency({ verdict: 'allowed' }),
@@ -85,6 +105,7 @@ describe('DependenciesPage (6M §8)', () => {
   beforeEach(() => {
     server = new FakeServer();
     server.on('GET', `/api/v0/projects/${PROJECT}/branches`, { body: page([MAIN, DEVELOP, MR]) });
+    server.on('GET', `/api/v0/projects/${PROJECT}/versions`, { body: page(VERSIONS) });
     server.on('GET', `/api/v0/projects/${PROJECT}`, {
       body: { id: PROJECT, organizationId: ORG_ID, permissions: [...VIEWER_PROJECT_PERMISSIONS] },
     });
@@ -301,7 +322,7 @@ describe('DependenciesPage (6M §8)', () => {
   it('asks for a merge request by its number and a branch by its name', async () => {
     const { fixture, root } = await render();
     expect(
-      [...root.querySelectorAll<HTMLOptionElement>('#deps-branch option')].map((o) => text(o)),
+      [...root.querySelectorAll<HTMLOptionElement>('#deps-branch > option')].map((o) => text(o)),
     ).toEqual(['main', 'develop', '!42 feature/refund-limits → main']);
     choose(root, 'deps-branch', MR_ID);
     await settle(fixture);
@@ -314,6 +335,65 @@ describe('DependenciesPage (6M §8)', () => {
     await settle(fixture);
     expect(lastQuery()?.get('branch')).toBe('develop');
     expect(lastQuery()?.has('mr')).toBe(false);
+  });
+
+  it('lists the released versions after the branches, tracked ones marked', async () => {
+    const { root } = await render();
+    const group = root.querySelector<HTMLOptGroupElement>('#deps-branch optgroup');
+    expect(group?.label).toBe('Versions');
+    expect([...group!.querySelectorAll('option')].map((o) => text(o))).toEqual([
+      '2.1.0 (tracked)',
+      '1.9.0',
+    ]);
+    expect(
+      server.requestsTo('GET', `/api/v0/projects/${PROJECT}/versions`).at(-1)?.query.get('limit'),
+    ).toBe('100');
+  });
+
+  it('shows no Versions group when the project has no versions', async () => {
+    server.on('GET', `/api/v0/projects/${PROJECT}/versions`, { body: page([]) });
+    const { root } = await render();
+    expect(root.querySelector('#deps-branch optgroup')).toBeNull();
+  });
+
+  it('asks for a version by its id, keeps the filters and clears the branch', async () => {
+    const { fixture, root } = await render(`/?branch=${DEV_ID}`);
+    choose(root, 'deps-branch', `version:${VERSION_ID}`);
+    await settle(fixture);
+    expect(TestBed.inject(Router).url).toBe(`/?version=${VERSION_ID}`);
+    expect(lastQuery()?.get('version')).toBe(VERSION_ID);
+    expect(lastQuery()?.has('branch')).toBe(false);
+    expect(lastQuery()?.has('mr')).toBe(false);
+    expect(root.querySelector<HTMLSelectElement>('#deps-branch')?.value).toBe(
+      `version:${VERSION_ID}`,
+    );
+
+    choose(root, 'deps-group', 'weak-copyleft');
+    await settle(fixture);
+    expect(TestBed.inject(Router).url).toBe(`/?version=${VERSION_ID}&group=weak-copyleft`);
+    expect(lastQuery()?.get('version')).toBe(VERSION_ID);
+
+    choose(root, 'deps-branch', DEV_ID);
+    await settle(fixture);
+    expect(TestBed.inject(Router).url).toBe(`/?branch=${DEV_ID}&group=weak-copyleft`);
+    expect(lastQuery()?.has('version')).toBe(false);
+    expect(lastQuery()?.get('branch')).toBe('develop');
+  });
+
+  it('falls back to the main branch for a version that is not a UUID', async () => {
+    const { root } = await render('/?version=not-a-uuid');
+    expect(lastQuery()?.has('version')).toBe(false);
+    expect(root.querySelector<HTMLSelectElement>('#deps-branch')?.value).toBe(MAIN_ID);
+  });
+
+  it('still asks for a version past the first page, and says when it is not found', async () => {
+    const unknown = '0190a6c2-0000-7000-8000-0000000000c9';
+    server.on('GET', ROUTE, { status: 404, body: problem(404, 'NOT_FOUND') });
+    const { root } = await render(`/?version=${unknown}`);
+    expect(lastQuery()?.get('version')).toBe(unknown);
+    expect(text(root.querySelector('[role="alert"]'))).toBe(
+      'This item does not exist, or you cannot see it.',
+    );
   });
 
   it('pages through a long inventory', async () => {

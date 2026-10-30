@@ -73,6 +73,12 @@ export const DEPENDENCIES = {
 };
 
 /**
+ * Vulnerability monitoring: the tag scan of Payments API (seed.ts, tag `v1.0.0`) stored as a
+ * released version with one package that no branch has.
+ */
+export const VERSION = { option: '1.0.0 (tracked)', package: 'legacy-queue' };
+
+/**
  * Plan 4C (rbac-audit.md §17): the licensed e2e server `server/scripts/e2e/serve.ts` starts next
  * to the community one, with the Enterprise plan's features (`ENTERPRISE_FEATURES`, plan 5D:
  * `audit-log.stream` and `sso.multi` among them), its own database and its own admin session
