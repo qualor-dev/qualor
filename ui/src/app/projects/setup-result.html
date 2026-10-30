@@ -70,7 +70,7 @@
         <p>{{ reason() }}</p>
         <div class="result-split">
           <div>
-            <h3 class="part-title">{{ secretTitle() }} <code>QUALOR_TOKEN</code></h3>
+            <h3 class="part-title">{{ secretTitle() }} <code>{{ secretName }}</code></h3>
             @if (token(); as value) {
               <q-secret-once
                 [value]="value"

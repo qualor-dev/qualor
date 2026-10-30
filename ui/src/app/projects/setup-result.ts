@@ -30,6 +30,8 @@ import { SetupBadge } from './setup-badge';
 /** The files a snippet goes into. */
 const WORKFLOW_FILE = '.github/workflows/qualor.yml';
 const GITLAB_CI_FILE = '.gitlab-ci.yml';
+/** The name of the secret or CI/CD variable the token goes into: a name, not text to translate. */
+const SECRET_NAME = 'QUALOR_TOKEN';
 
 /**
  * `q-setup-result`: what a finished repository-setup run did for one repository, as an article
@@ -95,6 +97,7 @@ export class SetupResult {
     this.provider() === 'github' ? WORKFLOW_FILE : GITLAB_CI_FILE,
   );
   protected readonly copyState = signal<'idle' | 'copied' | 'failed'>('idle');
+  protected readonly secretName = SECRET_NAME;
 
   /** Why the repository got a snippet rather than a merge request, in one sentence. */
   protected readonly reason = computed(() => {

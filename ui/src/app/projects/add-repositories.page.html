@@ -278,13 +278,12 @@
           [disabled]="count() === 0"
           [attr.aria-disabled]="starting() ? true : null"
           (click)="start()"
-          i18n="@@addRepos.add"
         >
-          {count(), plural,
+          <ng-container i18n="@@addRepos.add">{count(), plural,
             =0 {Add repositories}
             =1 {Add 1 repository}
             other {Add {{ count() }} repositories}
-          }
+          }</ng-container>
         </button>
       </div>
     }
