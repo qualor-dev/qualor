@@ -41,6 +41,12 @@ describe('loadConfig', () => {
       scmInternalHosts: new Set(),
       llmInternalHosts: new Set(),
       ssoInternalHosts: new Set(),
+      vulndb: {
+        dir: resolve('/var/cache/qualor/vulndb'),
+        trivyPath: resolve('/usr/local/bin/trivy'),
+        internalHosts: new Set(),
+        uploadMaxBytes: 1_073_741_824,
+      },
       chatTestHosts: new Set(),
       forcePasswordSignIn: false,
       license: { text: null, file: null },
@@ -389,6 +395,33 @@ describe('licence and plugin variables (enterprise.md §6, api.md §4.1)', () =>
     );
     const nine = Array.from({ length: 9 }, (_, i) => resolve(`/p/${i}.js`)).join(',');
     expect(() => loadConfig({ ...base, QUALOR_PLUGIN_PATHS: nine })).toThrow(/QUALOR_PLUGIN_PATHS/);
+  });
+});
+
+describe('vulnerability database variables (0.15)', () => {
+  it('reads the four variables', () => {
+    const config = loadConfig({
+      ...base,
+      QUALOR_VULNDB_DIR: resolve('/data/vulndb'),
+      QUALOR_TRIVY_PATH: resolve('/opt/trivy'),
+      QUALOR_VULNDB_INTERNAL_HOSTS: 'Registry.corp:5000, 127.0.0.1:5001',
+      QUALOR_VULNDB_UPLOAD_MAX_BYTES: '2048',
+    });
+    expect(config.vulndb.dir).toBe(resolve('/data/vulndb'));
+    expect(config.vulndb.trivyPath).toBe(resolve('/opt/trivy'));
+    expect([...config.vulndb.internalHosts].sort()).toEqual([
+      '127.0.0.1:5001',
+      'registry.corp:5000',
+    ]);
+    expect(config.vulndb.uploadMaxBytes).toBe(2048);
+  });
+
+  it.each([
+    ['QUALOR_VULNDB_DIR', 'relative/dir'],
+    ['QUALOR_TRIVY_PATH', 'trivy'],
+    ['QUALOR_VULNDB_UPLOAD_MAX_BYTES', '10'],
+  ])('rejects a bad %s', (name, value) => {
+    expect(problems({ ...base, [name]: value }).join(' ')).toContain(name);
   });
 });
 

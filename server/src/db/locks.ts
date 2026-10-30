@@ -100,4 +100,10 @@ export const LOCKS = {
    * branch's row (ingestion), which does not take it. No order is owed to the other locks.
    */
   replyScan: 7_310_027,
+  /** `pg_advisory_xact_lock(key)`: one writer of the `vulndb` settings row at a time (0.15). */
+  vulndbSettings: 7_310_028,
+  /** `pg_advisory_xact_lock(key)`: the `vulndb.update` job schedule, one writer at a time (0.15). */
+  vulndbSchedule: 7_310_029,
+  /** `pg_advisory_xact_lock(key)`: one read-modify-write of the `vulndb_state` row at a time (0.15). */
+  vulndbState: 7_310_030,
 } as const;

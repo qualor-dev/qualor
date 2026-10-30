@@ -267,6 +267,10 @@ const envSchema = z
         .regex(/^postgres(ql)?:\/\//, 'must be a postgres:// URL')
         .optional(),
     ),
+    QUALOR_VULNDB_DIR: absoluteDir('/var/cache/qualor/vulndb'),
+    QUALOR_TRIVY_PATH: absoluteDir('/usr/local/bin/trivy'),
+    QUALOR_VULNDB_INTERNAL_HOSTS: internalHostsSchema,
+    QUALOR_VULNDB_UPLOAD_MAX_BYTES: bytes(1024 * MiB),
     QUALOR_DATA_DIR: absoluteDir('/var/lib/qualor'),
     QUALOR_POSTGRES_DIR: absoluteDir('/opt/postgresql'),
     QUALOR_SECRET_KEY: z.string().min(32, 'must be at least 32 characters'),
@@ -452,6 +456,13 @@ export interface Config {
   llmInternalHosts: ReadonlySet<string>;
   /** QUALOR_SSO_INTERNAL_HOSTS, normalised (sso-scim.md §14). */
   ssoInternalHosts: ReadonlySet<string>;
+  /** The vulnerability database (0.15): local copy, Trivy binary, mirror hosts, upload cap. */
+  vulndb: {
+    dir: string;
+    trivyPath: string;
+    internalHosts: ReadonlySet<string>;
+    uploadMaxBytes: number;
+  };
   /** QUALOR_CHAT_TEST_HOSTS, normalised: extra hosts a Slack or Teams webhook may use (6G R7). */
   chatTestHosts: ReadonlySet<string>;
   /** QUALOR_FORCE_PASSWORD_SIGN_IN=true: re-enables password sign-in for everyone (sso-scim.md §10.4). */
@@ -520,6 +531,12 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     scmInternalHosts: e.QUALOR_SCM_INTERNAL_HOSTS,
     llmInternalHosts: e.QUALOR_LLM_INTERNAL_HOSTS,
     ssoInternalHosts: e.QUALOR_SSO_INTERNAL_HOSTS,
+    vulndb: {
+      dir: resolve(e.QUALOR_VULNDB_DIR.trim()),
+      trivyPath: resolve(e.QUALOR_TRIVY_PATH.trim()),
+      internalHosts: e.QUALOR_VULNDB_INTERNAL_HOSTS,
+      uploadMaxBytes: e.QUALOR_VULNDB_UPLOAD_MAX_BYTES,
+    },
     chatTestHosts: e.QUALOR_CHAT_TEST_HOSTS,
     forcePasswordSignIn: e.QUALOR_FORCE_PASSWORD_SIGN_IN,
     license: {

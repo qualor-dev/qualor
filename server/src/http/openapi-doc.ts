@@ -44,6 +44,12 @@ export async function openApiDocument(plugins?: OpenApiPlugins): Promise<unknown
     llmInternalHosts: new Set(),
     ssoInternalHosts: new Set(),
     chatTestHosts: new Set(),
+    vulndb: {
+      dir: '/var/cache/qualor/vulndb',
+      trivyPath: '/usr/local/bin/trivy',
+      internalHosts: new Set(),
+      uploadMaxBytes: 1_073_741_824,
+    },
     forcePasswordSignIn: false,
     // The committed document is generated without a licence or plugins (enterprise.md §10.2).
     license: { text: null, file: null },

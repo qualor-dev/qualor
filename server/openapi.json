@@ -24646,6 +24646,672 @@
         }
       }
     },
+    "/api/v0/system/vulnerability-db": {
+      "get": {
+        "summary": "The vulnerability database settings and status (instance admins); never the mirror password",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "official",
+                            "mirror",
+                            "upload"
+                          ]
+                        },
+                        "repository": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "passwordSet": {
+                          "type": "boolean"
+                        },
+                        "passwordReadable": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "intervalHours": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            3
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            6
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            12
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            24
+                          ]
+                        }
+                      ],
+                      "description": "Hours between checks for a new database: 1, 3, 6, 12, 24"
+                    },
+                    "officialRepository": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "no_data",
+                        "updating",
+                        "up_to_date",
+                        "stale",
+                        "failed"
+                      ]
+                    },
+                    "current": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "builtAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "sizeBytes": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "official",
+                                "mirror",
+                                "upload"
+                              ]
+                            },
+                            "digest": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "builtAt",
+                            "sizeBytes",
+                            "source",
+                            "digest"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastCheckAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "nextCheckAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lastError": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastRecheck": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "at": {
+                              "type": "string"
+                            },
+                            "projects": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "packages": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unchecked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "durationMs": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "projects",
+                            "packages",
+                            "unchecked",
+                            "durationMs"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "source",
+                    "intervalHours",
+                    "officialRepository",
+                    "status",
+                    "current",
+                    "lastCheckAt",
+                    "nextCheckAt",
+                    "lastError",
+                    "lastRecheck"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Change the vulnerability database settings (instance admins); the mirror password is write-only: a string sets it, null removes it, absent keeps it",
+        "tags": [
+          "system"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "intervalHours": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "enum": [
+                          1
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          3
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          6
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          12
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          24
+                        ]
+                      }
+                    ],
+                    "description": "Hours between checks for a new database: 1, 3, 6, 12, 24"
+                  },
+                  "source": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "official"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "mirror"
+                            ]
+                          },
+                          "repository": {
+                            "type": "string",
+                            "maxLength": 512,
+                            "pattern": "^[a-z0-9.-]+(:[0-9]+)?(\\/[a-z0-9._-]+)+(:[A-Za-z0-9._-]{1,128}|@sha256:[0-9a-f]{64})$",
+                            "description": "host[:port]/path:tag or host[:port]/path@sha256:digest"
+                          },
+                          "username": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "password": {
+                            "description": "Write-only. A string sets the password, null removes it, absent keeps it",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1024
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "repository"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "upload"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "official",
+                            "mirror",
+                            "upload"
+                          ]
+                        },
+                        "repository": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "passwordSet": {
+                          "type": "boolean"
+                        },
+                        "passwordReadable": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "intervalHours": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            3
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            6
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            12
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            24
+                          ]
+                        }
+                      ],
+                      "description": "Hours between checks for a new database: 1, 3, 6, 12, 24"
+                    },
+                    "officialRepository": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "no_data",
+                        "updating",
+                        "up_to_date",
+                        "stale",
+                        "failed"
+                      ]
+                    },
+                    "current": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "builtAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "sizeBytes": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "official",
+                                "mirror",
+                                "upload"
+                              ]
+                            },
+                            "digest": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "builtAt",
+                            "sizeBytes",
+                            "source",
+                            "digest"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastCheckAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "nextCheckAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lastError": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastRecheck": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "at": {
+                              "type": "string"
+                            },
+                            "projects": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "packages": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unchecked": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "durationMs": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "projects",
+                            "packages",
+                            "unchecked",
+                            "durationMs"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "source",
+                    "intervalHours",
+                    "officialRepository",
+                    "status",
+                    "current",
+                    "lastCheckAt",
+                    "nextCheckAt",
+                    "lastError",
+                    "lastRecheck"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v0/oauth/requests/{id}": {
       "get": {
         "summary": "A pending OAuth authorization request",

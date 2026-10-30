@@ -31,6 +31,7 @@ export const AUDIT_TARGET_TYPES = [
   'scim_group',
   'sign_in_settings',
   'mail_settings',
+  'vulndb_settings',
   'compliance_report',
   'oauth_client',
   'oauth_grant',
@@ -116,6 +117,16 @@ export const MAIL_SETTINGS_CHANGED_FIELDS = [
   'alerts.webhookFailures',
 ] as const;
 export type MailSettingsChangedField = (typeof MAIL_SETTINGS_CHANGED_FIELDS)[number];
+/** The names `vulndb.settings_updated` may list (names only, never a value). */
+export const VULNDB_SETTINGS_CHANGED_FIELDS = [
+  'enabled',
+  'intervalHours',
+  'source.kind',
+  'source.repository',
+  'source.username',
+  'source.password',
+] as const;
+export type VulndbSettingsChangedField = (typeof VULNDB_SETTINGS_CHANGED_FIELDS)[number];
 /** sso-scim.md §7.7: the SSO flow failure codes, reused by `sso.sign_in_failed` and Task 12's errors.ts. */
 export const SSO_ERROR_REASONS = [
   'unavailable',
@@ -585,6 +596,14 @@ export const AUDIT_CATALOGUE = {
       changed: z
         .array(z.enum(MAIL_SETTINGS_CHANGED_FIELDS))
         .max(MAIL_SETTINGS_CHANGED_FIELDS.length),
+    }),
+  },
+  'vulndb.settings_updated': {
+    target: 'vulndb_settings',
+    details: z.strictObject({
+      changed: z
+        .array(z.enum(VULNDB_SETTINGS_CHANGED_FIELDS))
+        .max(VULNDB_SETTINGS_CHANGED_FIELDS.length),
     }),
   },
   'mail.test_sent': {

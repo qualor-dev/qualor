@@ -50,6 +50,8 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'POST /system/llm/test': 'instance-admin',
   'GET /system/mail': 'instance-admin',
   'PUT /system/mail': 'instance-admin',
+  'GET /system/vulnerability-db': 'instance-admin',
+  'PUT /system/vulnerability-db': 'instance-admin',
   'POST /system/mail/test': 'instance-admin',
   'GET /system/mail/messages': 'instance-admin',
   'GET /system/mcp': 'instance-admin',

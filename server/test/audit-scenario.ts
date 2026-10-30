@@ -588,6 +588,9 @@ export async function runAuditScenario(
   });
   await call('POST', '/system/mail/test', 502, { to: 'scenario@example.com' });
 
+  // vulndb.settings_updated (0.15): the six-hour default interval moved to a day
+  await call('PUT', '/system/vulnerability-db', 200, { intervalHours: 24 });
+
   // oauth.settings_changed (6N): the instance's MCP client policy
   await call('PUT', '/system/mcp', 200, { dcr: false, cimd: true, allowedClients: [] });
 
