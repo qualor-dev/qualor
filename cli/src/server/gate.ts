@@ -59,6 +59,8 @@ export interface WaitOptions {
   log: Logger;
   now?: () => number;
   wait?: (ms: number) => Promise<unknown>;
+  /** The label of the version a tag scan uploaded: it has no quality gate to wait for. */
+  version?: string;
 }
 
 /**
@@ -84,9 +86,13 @@ export async function waitForAnalysis(
       last === null
         ? `the state of analysis ${analysisId} is unknown; last error: ${lastError ?? 'none'}`
         : `analysis ${analysisId} is still ${last}${lastError === null ? '' : `; last error: ${lastError}`}`;
+    const what =
+      o.version === undefined
+        ? 'the quality gate was not available'
+        : `version ${clean(o.version)} was uploaded but not confirmed`;
     return new CliError(
       EXIT.SERVER,
-      `the quality gate was not available after ${Math.round(o.timeoutMs / 1000)} s (${state}); raise gate.timeoutSeconds or use --no-wait`,
+      `${what} after ${Math.round(o.timeoutMs / 1000)} s (${state}); raise gate.timeoutSeconds or use --no-wait`,
     );
   };
   let delay = POLL_MIN_MS;

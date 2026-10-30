@@ -47,7 +47,13 @@ import { clean, type ServerEndpoint } from '../server/http';
 import { uploadReport } from '../server/upload';
 import { checkServerVersion } from '../server/version';
 import { Warnings } from '../warnings';
-import { checkCiTag, versionExitCode, versionLabel } from './version';
+import {
+  checkCiTag,
+  checkVersionLabel,
+  serverRecordsVersions,
+  versionExitCode,
+  versionLabel,
+} from './version';
 import { collectDependencies, type DependencyPassHooks } from './dependencies';
 import {
   analyzeFiles,
@@ -88,8 +94,11 @@ export interface ScanDeps {
   clock?: () => number;
   /** `qualor dotnet end`'s logs (config.md §6.1); absent or null in a plain `qualor scan`. */
   dotnet?: DotnetRun | null;
-  /** undefined: ask the server for its version when a scan starts; null: do not (tests). */
-  serverVersion?: ((endpoint: ServerEndpoint, log: Logger) => Promise<unknown>) | null;
+  /**
+   * undefined: ask the server for its version when a scan starts; null: do not (tests). Resolves
+   * to the version, or null when the server did not say.
+   */
+  serverVersion?: ((endpoint: ServerEndpoint, log: Logger) => Promise<string | null>) | null;
   /** `qualor dotnet end`'s own warnings (config.md §6.1), added to the report's `warnings`. */
   extraWarnings?: readonly { code: string; message: string }[];
   /** The Trivy licence pass's process helper and binary lookup (tests fake them). */
@@ -784,6 +793,7 @@ export async function runScan(
       'A tag scan records the dependency list and needs Trivy (analyzers.trivy.enabled)',
     );
   }
+  if (tag !== null) checkVersionLabel(versionLabel(settings.config.project.version, tag));
   // A configuration error of an enabled analyzer stops the scan before any git, tool or network
   // call (ruling V4: a PMD ruleset that references a URL). A tag scan runs no analyzer but
   // Trivy's inventory pass, whose `.trivyignore` and cache guards are the trivy analyzer's.
@@ -816,9 +826,10 @@ export async function runScan(
       'no project key: set project.key, QUALOR_PROJECT_KEY or --project-key (in CI it defaults to the project path)',
     );
   }
-  if (endpoint !== null && deps.serverVersion !== null) {
-    await (deps.serverVersion ?? checkServerVersion)(endpoint, log);
-  }
+  const serverVersion =
+    endpoint !== null && deps.serverVersion !== null
+      ? await (deps.serverVersion ?? checkServerVersion)(endpoint, log)
+      : null;
   const { report, failed, gitlab } = await buildReport({
     settings,
     flags,
@@ -843,6 +854,13 @@ export async function runScan(
   }
 
   if (endpoint === null) throw new Error('internal error: requireServer passed without a server');
+  // Spec §13: a tag scan never fails a release pipeline because the server predates versions.
+  if (tag !== null && !serverRecordsVersions(serverVersion)) {
+    log.warn(
+      'The server is older than 0.15 and cannot record versions; upgrade the server to record releases',
+    );
+    return EXIT.OK;
+  }
   const { analysisId } = await withPrivateReportFile(report, ({ file, size }) => {
     log.info(`uploading the report (${size} bytes gzipped): ${summary(report)}`);
     return uploadReport(
@@ -866,6 +884,7 @@ export async function runScan(
     const analysis = await waitForAnalysis(endpoint, analysisId, {
       timeoutMs: settings.config.gate.timeoutSeconds * 1000,
       log,
+      version: label,
       ...(deps.wait !== undefined && { wait: deps.wait }),
       ...(deps.clock !== undefined && { now: deps.clock }),
     });

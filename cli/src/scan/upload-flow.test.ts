@@ -76,11 +76,15 @@ interface FakeReview {
   snapshot?: (req: IncomingMessage, res: ServerResponse) => void;
 }
 
-/** A Qualor server double: the baseline, the upload and a scripted analysis status. */
+/**
+ * A Qualor server double: the baseline, the upload and a scripted analysis status. It runs this
+ * scanner's release unless `version` names another one, or is null (it does not say).
+ */
 async function fakeServer(
   statuses: unknown[],
   upload?: (res: Parameters<typeof json>[0]) => void,
   review: FakeReview = {},
+  version: string | null = VERSION,
 ): Promise<Fake> {
   const uploaded: Report[] = [];
   const reportTexts: string[] = [];
@@ -90,8 +94,8 @@ async function fakeServer(
   const { url } = await serve((req, res, recorded) => {
     const u = new URL(req.url ?? '/', 'http://x');
     paths.push(`${req.method} ${u.pathname}`);
-    if (u.pathname === '/api/v0/system/version') {
-      json(res, 200, { version: VERSION });
+    if (u.pathname === '/api/v0/system/version' && version !== null) {
+      json(res, 200, { version });
     } else if (u.pathname === '/api/v0/projects/new-code-baseline') {
       json(res, 200, { revision: null, warnings: [] });
     } else if (u.pathname === '/api/v0/analyses' && req.method === 'POST') {
@@ -398,12 +402,16 @@ describe('qualor scan on a tag: version mode (exit code from processing, never t
     gateResult: null,
     error: { code, message },
   });
+  /** A server of the first release that records versions. */
+  const versionServer = (statuses: unknown[]) => fakeServer(statuses, undefined, {}, '0.15.0');
+  const OLDER =
+    'warn: The server is older than 0.15 and cannot record versions; upgrade the server to record releases';
 
   it(
     'uploads the version report, waits for processing and exits 0 whatever the gate says',
     { timeout: 60_000 },
     async () => {
-      const server = await fakeServer([done(null, 'queued'), done('failed')]);
+      const server = await versionServer([done(null, 'queued'), done('failed')]);
       const { code, stderr } = await scan(
         repo('version: 1\nproject:\n  version: 1.2.0\n'),
         server,
@@ -423,7 +431,7 @@ describe('qualor scan on a tag: version mode (exit code from processing, never t
     'labels the version with the tag when project.version is empty',
     { timeout: 60_000 },
     async () => {
-      const server = await fakeServer([done('none')]);
+      const server = await versionServer([done('none')]);
       const { code, stderr } = await scan(repo(), server, ['--tag', 'v3'], NO_TRIVY);
       expect(code, stderr).toBe(0);
       expect(stderr).toContain('Recorded version v3');
@@ -431,10 +439,15 @@ describe('qualor scan on a tag: version mode (exit code from processing, never t
   );
 
   it(
-    'exits 4 and prints the message when the server fails the analysis (an older server)',
+    'uploads when the server does not say its version, and exits 4 when it fails the analysis',
     { timeout: 60_000 },
     async () => {
-      const server = await fakeServer([failedWith('BRANCH_REQUIRED', 'a branch is required')]);
+      const server = await fakeServer(
+        [failedWith('BRANCH_REQUIRED', 'a branch is required')],
+        undefined,
+        {},
+        null,
+      );
       const { code, stderr } = await scan(
         repo('version: 1\ngate:\n  failOnError: false\n'),
         server,
@@ -442,12 +455,83 @@ describe('qualor scan on a tag: version mode (exit code from processing, never t
         NO_TRIVY,
       );
       expect(code).toBe(4);
+      expect(server.paths).toContain('POST /api/v0/analyses');
       expect(stderr).toContain('BRANCH_REQUIRED a branch is required');
+      expect(stderr).not.toContain(OLDER);
+    },
+  );
+
+  it(
+    'does not upload to a server older than 0.15: a warning, and exit 0',
+    { timeout: 60_000 },
+    async () => {
+      const server = await fakeServer([], undefined, {}, '0.14.2');
+      const { code, stderr } = await scan(repo(), server, ['--tag', 'v1'], NO_TRIVY);
+      expect(code, stderr).toBe(0);
+      expect(server.paths).not.toContain('POST /api/v0/analyses');
+      expect(stderr.split('\n')).toContain(OLDER);
+    },
+  );
+
+  it('writes the report with --dry-run, whatever the server', { timeout: 60_000 }, async () => {
+    const server = await fakeServer([], undefined, {}, '0.14.2');
+    const root = repo();
+    const { code, stderr } = await scan(
+      root,
+      server,
+      ['--tag', 'v1', '--dry-run', '--output', 'out.json.gz'],
+      NO_TRIVY,
+    );
+    expect(code, stderr).toBe(0);
+    expect(existsSync(path.join(root, 'out.json.gz'))).toBe(true);
+    expect(stderr).not.toContain(OLDER);
+  });
+
+  it(
+    'exits 2 before any request when the version label is longer than 100 characters',
+    { timeout: 60_000 },
+    async () => {
+      const server = await versionServer([]);
+      // The tag is the label when project.version is empty (qualor.yml caps project.version).
+      const { code, stderr } = await scan(
+        repo(),
+        server,
+        ['--tag', `v${'1'.repeat(100)}`],
+        NO_TRIVY,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toContain('A version label is at most 100 characters; set project.version');
+      expect(server.paths).toEqual([]);
+    },
+  );
+
+  it(
+    'exits 4 when the version is not confirmed within gate.timeoutSeconds, naming no gate',
+    { timeout: 60_000 },
+    async () => {
+      const server = await versionServer([]);
+      let t = 0;
+      const { code, stderr } = await scan(
+        repo('version: 1\ngate:\n  timeoutSeconds: 5\n'),
+        server,
+        ['--tag', 'v1'],
+        {
+          ...NO_TRIVY,
+          clock: () => t,
+          wait: (ms) => {
+            t += ms;
+            return Promise.resolve();
+          },
+        },
+      );
+      expect(code).toBe(4);
+      expect(stderr).toContain('version v1 was uploaded but not confirmed after 5 s');
+      expect(stderr).not.toContain('quality gate');
     },
   );
 
   it('exits 0 right after the upload with --no-wait', { timeout: 60_000 }, async () => {
-    const server = await fakeServer([]);
+    const server = await versionServer([]);
     const { code } = await scan(repo(), server, ['--tag', 'v1', '--no-wait'], NO_TRIVY);
     expect(code).toBe(0);
     expect(server.paths).not.toContain(`GET /api/v0/analyses/${ID}`);

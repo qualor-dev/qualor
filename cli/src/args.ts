@@ -113,10 +113,6 @@ const MR_ID = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/;
 // eslint-disable-next-line no-control-regex -- control characters are exactly what is rejected
 const REF_FORBIDDEN = /[\u0000- \u007f~^:?*[\\]|\.\.|@\{|\/\/|^[-/.]|[/.]$|\.lock$|\/\./;
 
-/**
- * A light version of `git check-ref-format` (the SCM step still asks git itself): rejects names
- * git would refuse and, above all, names that could be read as a git option.
- */
 /** Why `v` is not a usable branch or tag name, or null when it is. */
 export function refNameProblem(v: string): string | null {
   if (v.length > MAX_BRANCH_CHARS) return `is longer than ${MAX_BRANCH_CHARS} characters`;
@@ -124,6 +120,10 @@ export function refNameProblem(v: string): string | null {
   return null;
 }
 
+/**
+ * A light version of `git check-ref-format` (the SCM step still asks git itself): rejects names
+ * git would refuse and, above all, names that could be read as a git option.
+ */
 function branchName(name: string, v: string | undefined): string | undefined {
   if (v === undefined) return v;
   const problem = refNameProblem(v);
