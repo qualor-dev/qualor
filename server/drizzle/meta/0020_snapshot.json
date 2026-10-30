@@ -1,5 +1,5 @@
 {
-  "id": "57927cca-7f4a-470e-a144-b95213ca9b91",
+  "id": "00136b5b-66ad-454d-ac3b-9c754da4747d",
   "prevId": "13119b6a-9aba-4ae4-b398-87919b05ff9f",
   "version": "7",
   "dialect": "postgresql",
@@ -4715,6 +4715,12 @@
           "notNull": true,
           "default": "'auto'"
         },
+        "dependency_ignores": {
+          "name": "dependency_ignores",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8167,7 +8173,7 @@
           "name": "analysis_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         }
       },
       "indexes": {
@@ -8218,7 +8224,7 @@
           "tableTo": "analyses",
           "columnsFrom": ["analysis_id"],
           "columnsTo": ["id"],
-          "onDelete": "cascade",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

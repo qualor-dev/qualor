@@ -1,18 +1,18 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bearer } from '../../test/app';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
-import { reportWith } from '../../test/reports';
+import { reportWith, sampleReport } from '../../test/reports';
 import {
   analyses,
-  branchDependencies,
+  branches,
   issues,
   measures,
-  mailMessages,
+  projects,
   projectVersions,
   versionDependencies,
-  webhookDeliveries,
 } from '../db/schema';
+import { resolveBaseline } from '../newcode/baseline';
 import { versionLabelOf } from './ingest';
 
 const DEPS = [
@@ -78,7 +78,9 @@ describe('tag scans as versions', () => {
 
   it('stores a tag scan as a version and runs no stages', async () => {
     const p = await project();
-    const id = await p.ingestOk(tagReport(p, { version: '' }));
+    // A finding in a scanned file: the stages, had they run, would measure it and open an issue.
+    const { files, findings } = sampleReport();
+    const id = await p.ingestOk(tagReport(p, { version: '', files, findings }));
     const row = await analysis(id);
     expect(row.status).toBe('succeeded');
     expect(row.gateStatus).toBe('none');
@@ -105,15 +107,14 @@ describe('tag scans as versions', () => {
       ['zod', ['MIT']],
     ]);
     expect(stored.every((d) => d.analysisId === id)).toBe(true);
-    for (const table of [issues, measures, webhookDeliveries, mailMessages, branchDependencies]) {
-      expect(await h.ctx.db.select().from(table).limit(1)).toEqual([]);
-    }
-    const branches = await h.ctx.app.inject({
+    expect(await h.ctx.db.select().from(measures).where(eq(measures.analysisId, id))).toEqual([]);
+    expect(await h.ctx.db.select().from(issues).where(eq(issues.projectId, p.id))).toEqual([]);
+    const listed = await h.ctx.app.inject({
       method: 'GET',
       url: `/api/v0/projects/${p.id}/branches`,
       headers: h.orgAdmin.headers,
     });
-    expect(branches.json().items.map((b: { name: string }) => b.name)).toEqual(['main']);
+    expect(listed.json().items.map((b: { name: string }) => b.name)).toEqual(['main']);
   });
 
   it('takes the label from project.version and keeps the tag', async () => {
@@ -163,6 +164,40 @@ describe('tag scans as versions', () => {
     ).toEqual([]);
   });
 
+  it('keeps the packages and the analysis of a version when a re-scan carries no inventory', async () => {
+    const p = await project();
+    const ignores = [{ id: 'CVE-2026-3' }];
+    const first = await p.ingestOk(
+      tagReport(p, { analysisDate: '2026-10-01T10:00:00Z', dependencyIgnores: ignores }),
+    );
+    const again = await p.ingestOk(
+      tagReport(p, { analysisDate: '2026-10-02T10:00:00Z', dependencies: undefined }),
+    );
+    const [version] = await versions(p);
+    const stored = await h.ctx.db
+      .select()
+      .from(versionDependencies)
+      .where(eq(versionDependencies.versionId, version!.id));
+    expect(stored.map((d) => [d.name, d.analysisId]).sort()).toEqual([
+      ['left-pad', first],
+      ['zod', first],
+    ]);
+    const row = await analysis(again);
+    expect(row.versionId).toBe(version!.id);
+    expect(row.warnings.map((w) => w.code)).toContain('VERSION_WITHOUT_INVENTORY');
+    expect(version).toMatchObject({ analysisId: first, dependencyIgnores: ignores });
+    expect(version!.analyzedAt.toISOString()).toBe('2026-10-01T10:00:00.000Z');
+  });
+
+  it('fails a tag scan whose label is longer than 100 characters', async () => {
+    const p = await project();
+    const id = await p.ingest(tagReport(p, { version: '', tag: `v${'1'.repeat(100)}` }));
+    const row = await analysis(id);
+    expect(row.status).toBe('failed');
+    expect(row.error?.code).toBe('VERSION_LABEL_INVALID');
+    expect(await versions(p)).toEqual([]);
+  });
+
   it('stores dependencyIgnores for branch and version analyses; null when absent', async () => {
     const p = await project();
     const ignores = [{ id: 'CVE-2026-1' }, { id: 'CVE-2026-2', expiresAt: '2027-01-01' }];
@@ -176,21 +211,45 @@ describe('tag scans as versions', () => {
     expect((await analysis(none)).dependencyIgnores).toBeNull();
     expect((await analysis(b)).versionId).toBeNull();
     expect((await read(p, b)).version).toBeNull();
+    // The version keeps its own snapshot of the ids, next to its inventory.
+    expect((await versions(p))[0]!.dependencyIgnores).toEqual(ignores);
+    const other = await project();
+    await other.ingestOk(tagReport(other));
+    expect((await versions(other))[0]!.dependencyIgnores).toBeNull();
   });
 
   it('leaves the main branch overview and previous version alone', async () => {
     const p = await project();
-    await p.ingestOk(reportWith({ projectKey: p.key, branch: 'main', version: '1.0.0' }));
-    await p.ingestOk(tagReport(p, { version: '9.9.9' }));
-    const [overview] = (
-      await h.ctx.app.inject({
-        method: 'GET',
-        url: `/api/v0/projects/${p.id}/branches`,
-        headers: h.orgAdmin.headers,
-      })
-    ).json().items;
-    expect(overview.name).toBe('main');
-    const rows = await h.ctx.db.select().from(analyses).where(eq(analyses.projectId, p.id));
-    expect(rows.filter((r) => r.branchId !== null)).toHaveLength(1);
+    await h.ctx.db
+      .update(projects)
+      .set({ newCodeDefinition: { type: 'previous_version' } })
+      .where(eq(projects.id, p.id));
+    const mainAnalysis = await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        branch: 'main',
+        version: '1.0.0',
+        analysisDate: '2026-10-01T10:00:00Z',
+      }),
+    );
+    await p.ingestOk(tagReport(p, { version: '2.0.0', analysisDate: '2026-10-02T10:00:00Z' }));
+    const [main] = await h.ctx.db
+      .select()
+      .from(branches)
+      .where(and(eq(branches.projectId, p.id), eq(branches.isMain, true)));
+    expect(main!.lastAnalysisId).toBe(mainAnalysis);
+    // previous_version reads the main branch's labels only: the tag scan's 2.0.0 is not one.
+    const [row] = await h.ctx.db.select().from(projects).where(eq(projects.id, p.id));
+    const latest = await resolveBaseline(h.ctx.db, row!, main!.id, undefined);
+    expect(latest.warnings).toEqual(['NEW_CODE_DEFINITION_FALLBACK']);
+    const next = await resolveBaseline(h.ctx.db, row!, main!.id, '1.1.0');
+    expect(next).toMatchObject({ baseline: { id: mainAnalysis }, warnings: [] });
+    const history = await h.ctx.app.inject({
+      method: 'GET',
+      url: `/api/v0/branches/${main!.id}/analyses`,
+      headers: h.orgAdmin.headers,
+    });
+    expect(history.statusCode).toBe(200);
+    expect(history.json().items.map((a: { id: string }) => a.id)).toEqual([mainAnalysis]);
   });
 });

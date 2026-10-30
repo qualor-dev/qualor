@@ -185,6 +185,40 @@ describe('migration 0020_versions', () => {
     expect(after!.versionId).toBeNull();
   });
 
+  it('keeps a version and its packages when their analysis is deleted, and stores ignores', async () => {
+    const projectId = await newProject('acme/analysis-gone');
+    const version = await newVersion(projectId, '4.1.0');
+    const [analysis] = await t.db
+      .insert(analyses)
+      .values({ projectId, versionId: version.id })
+      .returning();
+    const ignores = [{ id: 'CVE-2026-9' }];
+    await t.db
+      .update(projectVersions)
+      .set({ analysisId: analysis!.id, dependencyIgnores: ignores })
+      .where(eq(projectVersions.id, version.id));
+    await t.db.insert(versionDependencies).values({
+      versionId: version.id,
+      path: 'go.sum',
+      ecosystem: 'gomod',
+      name: 'golang.org/x/net',
+      version: 'v0.30.0',
+      licenses: ['BSD-3-Clause'],
+      analysisId: analysis!.id,
+    });
+    await t.db.delete(analyses).where(eq(analyses.id, analysis!.id));
+    const deps = await t.db
+      .select()
+      .from(versionDependencies)
+      .where(eq(versionDependencies.versionId, version.id));
+    expect(deps.map((d) => [d.name, d.analysisId])).toEqual([['golang.org/x/net', null]]);
+    const [after] = await t.db
+      .select()
+      .from(projectVersions)
+      .where(eq(projectVersions.id, version.id));
+    expect(after).toMatchObject({ analysisId: null, dependencyIgnores: ignores });
+  });
+
   it('cascades a project deletion to versions, dependencies and settings', async () => {
     const projectId = await newProject('acme/cascade');
     const version = await newVersion(projectId, '5.0.0');

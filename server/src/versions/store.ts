@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import type { DependencyEntry } from '@qualor/shared';
+import type { DependencyEntry, DependencyIgnore } from '@qualor/shared';
 import type { Executor } from '../db/client';
 import { first } from '../db/rows';
 import { projectVersions, versionDependencies, type ProjectVersionRow } from '../db/schema';
@@ -12,50 +12,65 @@ export interface UpsertVersionInput {
   tag: string | null;
   analysisId: string;
   analyzedAt: Date;
+  /**
+   * The report's dependency inventory and `.trivyignore` ids (null when it carried none). Left
+   * out when the report carried no inventory: an existing version then keeps its packages, its
+   * ids, its analysis and its date.
+   */
+  inventory?: { dependencies: readonly DependencyEntry[]; ignores: DependencyIgnore[] | null };
 }
 
 /**
  * Creates the version of `label`, or points the existing one at this analysis (its source and tag
- * follow, so a tag scan turns a version taken from a label into a tag version). The `tracking`
- * override is the user's and stays. Returns `'stale'`, changing nothing, when the stored version
- * was analysed later than `analyzedAt`: an older scan never replaces a newer inventory.
+ * follow, so a tag scan turns a version taken from a label into a tag version). With an inventory,
+ * the version's packages and `.trivyignore` ids are replaced by the analysis's. The `tracking`
+ * override is the user's and stays.
+ *
+ * Returns `'stale'`, changing nothing, when the stored version was analysed later than
+ * `analyzedAt`: an older scan never replaces a newer inventory. A tag scan of a version taken from
+ * a label is never stale: the tag is the release, whenever its job ran.
  */
 export async function upsertVersion(
   tx: Executor,
   input: UpsertVersionInput,
 ): Promise<ProjectVersionRow | 'stale'> {
   const [existing] = await tx
-    .select({ analyzedAt: projectVersions.analyzedAt })
+    .select({ analyzedAt: projectVersions.analyzedAt, source: projectVersions.source })
     .from(projectVersions)
     .where(
       and(eq(projectVersions.projectId, input.projectId), eq(projectVersions.label, input.label)),
     );
-  if (existing && existing.analyzedAt.getTime() > input.analyzedAt.getTime()) return 'stale';
-  const fields = {
-    source: input.source,
-    tag: input.tag,
+  const takesOver = input.source === 'tag' && existing?.source === 'label';
+  if (existing && !takesOver && existing.analyzedAt.getTime() > input.analyzedAt.getTime()) {
+    return 'stale';
+  }
+  const { inventory } = input;
+  const owner = { source: input.source, tag: input.tag };
+  const snapshot = {
     analysisId: input.analysisId,
     analyzedAt: input.analyzedAt,
+    dependencyIgnores: inventory?.ignores ?? null,
   };
-  return first(
+  const version = first(
     await tx
       .insert(projectVersions)
-      .values({ projectId: input.projectId, label: input.label, ...fields })
+      .values({ projectId: input.projectId, label: input.label, ...owner, ...snapshot })
       .onConflictDoUpdate({
         target: [projectVersions.projectId, projectVersions.label],
-        set: { ...fields, updatedAt: sql`now()` },
+        set: { ...owner, ...(inventory ? snapshot : {}), updatedAt: sql`now()` },
       })
       .returning(),
   );
-}
-
-/** The inventory of a version, replaced by the analysis's (duplicates merged as for a branch). */
-export async function replaceVersionDependencies(
-  tx: Executor,
-  versionId: string,
-  analysisId: string,
-  entries: readonly DependencyEntry[],
-): Promise<void> {
-  await tx.delete(versionDependencies).where(eq(versionDependencies.versionId, versionId));
-  await insertDependencyRows(tx, 'version_dependencies', versionId, analysisId, entries);
+  if (inventory) {
+    // Duplicates merged as for a branch.
+    await tx.delete(versionDependencies).where(eq(versionDependencies.versionId, version.id));
+    await insertDependencyRows(
+      tx,
+      'version_dependencies',
+      version.id,
+      input.analysisId,
+      inventory.dependencies,
+    );
+  }
+  return version;
 }

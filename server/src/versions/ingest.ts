@@ -4,7 +4,7 @@ import type { Db } from '../db/client';
 import { analyses } from '../db/schema';
 import { analysisFields, capWarnings, markFailed, type ProcessLogger } from '../ingest/fields';
 import type { ProjectRow } from '../projects/access';
-import { replaceVersionDependencies, upsertVersion } from './store';
+import { upsertVersion } from './store';
 
 type AnalysisRow = typeof analyses.$inferSelect;
 
@@ -66,6 +66,7 @@ export async function ingestVersion(
       .where(eq(analyses.id, analysisId));
     if (!current || current.status !== 'processing') return;
 
+    // Without an inventory, an existing version keeps the one it has (its packages and ids).
     const version = await upsertVersion(tx, {
       projectId: project.id,
       label,
@@ -73,6 +74,9 @@ export async function ingestVersion(
       tag: report.scm.tag ?? null,
       analysisId,
       analyzedAt: fields.analysisDate,
+      ...(report.dependencies !== undefined && {
+        inventory: { dependencies: report.dependencies, ignores: report.dependencyIgnores ?? null },
+      }),
     });
     if (version === 'stale') {
       await markFailed(
@@ -90,10 +94,10 @@ export async function ingestVersion(
     if (report.dependencies === undefined) {
       warnings.push({
         code: 'VERSION_WITHOUT_INVENTORY',
-        message: 'The report carries no dependency inventory; the version is stored without one',
+        message:
+          'The report carries no dependency inventory; the version keeps the packages it had, if any',
       });
     }
-    await replaceVersionDependencies(tx, version.id, analysisId, report.dependencies ?? []);
     await tx
       .update(analyses)
       .set({

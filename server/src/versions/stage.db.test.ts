@@ -1,11 +1,19 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { reportWith, type ReportParts } from '../../test/reports';
-import { projectVersions, projectVulnerabilitySettings, versionDependencies } from '../db/schema';
+import {
+  branches,
+  projectVersions,
+  projectVulnerabilitySettings,
+  versionDependencies,
+} from '../db/schema';
 
 const DEPS = [
   { path: 'package-lock.json', ecosystem: 'npm', name: 'zod', version: '4.0.0', licenses: ['MIT'] },
+];
+const TAG_DEPS = [
+  { path: 'package-lock.json', ecosystem: 'npm', name: 'zod', version: '4.1.0', licenses: ['MIT'] },
 ];
 
 describe('versions from project.version on branch analyses', () => {
@@ -122,6 +130,63 @@ describe('versions from project.version on branch analyses', () => {
     const [after] = await versions(p);
     expect(after!.analysisId).toBe(before!.analysisId);
     expect(after!.analyzedAt.toISOString()).toBe('2026-10-03T10:00:00.000Z');
+  });
+
+  it('keeps its packages and .trivyignore ids when the branch it came from is deleted', async () => {
+    const p = await project({ labelVersions: true, branchPatterns: ['release/*'] });
+    const ignores = [{ id: 'CVE-2026-7', expiresAt: '2027-01-01' }];
+    await p.ingestOk(branchReport(p, { branch: 'release/2.3', dependencyIgnores: ignores }));
+    const [before] = await versions(p);
+    const [release] = await h.ctx.db
+      .select({ id: branches.id })
+      .from(branches)
+      .where(and(eq(branches.projectId, p.id), eq(branches.name, 'release/2.3')));
+    const res = await h.ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/v0/branches/${release!.id}`,
+      headers: h.orgAdmin.headers,
+    });
+    expect(res.statusCode).toBe(204);
+    const deps = await h.ctx.db
+      .select()
+      .from(versionDependencies)
+      .where(eq(versionDependencies.versionId, before!.id));
+    expect(deps.map((d) => [d.name, d.analysisId])).toEqual([['zod', null]]);
+    const [after] = await versions(p);
+    expect(after).toMatchObject({ id: before!.id, analysisId: null, dependencyIgnores: ignores });
+  });
+
+  it('gives way to an older tag scan of the label, which keeps the tracking mark', async () => {
+    const p = await project();
+    await p.ingestOk(branchReport(p, { analysisDate: '2026-10-05T10:00:00Z' }));
+    await h.ctx.db
+      .update(projectVersions)
+      .set({ tracking: 'pinned' })
+      .where(eq(projectVersions.projectId, p.id));
+    // The tag job started before the branch analysis and uploads after it.
+    const tagId = await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        branch: null,
+        tag: 'v2.3.4',
+        version: '2.3.4',
+        dependencies: TAG_DEPS,
+        analysisDate: '2026-10-01T10:00:00Z',
+      }),
+    );
+    const [v] = await versions(p);
+    expect(v).toMatchObject({
+      source: 'tag',
+      tag: 'v2.3.4',
+      analysisId: tagId,
+      tracking: 'pinned',
+    });
+    expect(v!.analyzedAt.toISOString()).toBe('2026-10-01T10:00:00.000Z');
+    const deps = await h.ctx.db
+      .select()
+      .from(versionDependencies)
+      .where(eq(versionDependencies.versionId, v!.id));
+    expect(deps.map((d) => [d.name, d.version])).toEqual([['zod', '4.1.0']]);
   });
 
   it('turns into a tag version when a tag scan of the label follows', async () => {

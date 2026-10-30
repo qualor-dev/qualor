@@ -546,7 +546,8 @@ export const analyses = pgTable(
 /**
  * A released version of a project (vulnerability monitoring, 0.15): one row per label, created by
  * a tag scan or taken from a branch analysis that carries `project.version`. `analysis_id` is the
- * analysis whose dependency inventory the version holds.
+ * analysis whose dependency inventory the version holds; the version keeps that inventory, and
+ * the `.trivyignore` ids that came with it, after the analysis is deleted.
  */
 export const projectVersions = pgTable(
   'project_versions',
@@ -563,6 +564,8 @@ export const projectVersions = pgTable(
     }),
     analyzedAt: at('analyzed_at').notNull(),
     tracking: text('tracking').notNull().default('auto').$type<VersionTracking>(),
+    // The report's `dependencyIgnores` that came with the inventory; NULL when it carried none.
+    dependencyIgnores: jsonb('dependency_ignores').$type<DependencyIgnore[]>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -662,7 +665,11 @@ export const branchDependencies = pgTable(
   ],
 );
 
-/** The dependency inventory of a released version, the counterpart of `branch_dependencies`. */
+/**
+ * The dependency inventory of a released version, the counterpart of `branch_dependencies`. Its
+ * analysis may be a branch analysis (a version taken from `project.version`): deleting that branch
+ * or analysis leaves the rows, with `analysis_id` NULL.
+ */
 export const versionDependencies = pgTable(
   'version_dependencies',
   {
@@ -676,14 +683,12 @@ export const versionDependencies = pgTable(
     licenses: text('licenses').array().notNull(),
     direct: boolean('direct'),
     line: integer('line'),
-    analysisId: uuid('analysis_id')
-      .notNull()
-      .references(() => analyses.id, { onDelete: 'cascade' }),
+    analysisId: uuid('analysis_id').references(() => analyses.id, { onDelete: 'set null' }),
   },
   (t) => [
     primaryKey({ columns: [t.versionId, t.path, t.ecosystem, t.name, t.version] }),
     index('version_dependencies_licenses').using('gin', t.licenses),
-    // Supporting index for the analyses foreign key (cascades).
+    // Supporting index for the analyses foreign key (set null).
     index('version_dependencies_analysis_idx').on(t.analysisId),
   ],
 );

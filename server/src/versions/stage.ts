@@ -3,7 +3,7 @@ import { projectVersions } from '../db/schema';
 import type { IngestionStage } from '../ingest/process';
 import { parseVersionLabel } from './label';
 import { isTrackedBranch, vulnerabilitySettings } from './settings';
-import { replaceVersionDependencies, upsertVersion } from './store';
+import { upsertVersion } from './store';
 
 /** The longest version label (`project_versions_label_check`). */
 const MAX_LABEL_CHARS = 100;
@@ -29,15 +29,15 @@ export const versionLabelStage: IngestionStage = {
       .from(projectVersions)
       .where(and(eq(projectVersions.projectId, ctx.project.id), eq(projectVersions.label, label)));
     if (existing?.source === 'tag') return;
-    const version = await upsertVersion(tx, {
+    // A stale label (a newer analysis already holds it) changes nothing.
+    await upsertVersion(tx, {
       projectId: ctx.project.id,
       label,
       source: 'label',
       tag: null,
       analysisId: ctx.analysisId,
       analyzedAt: new Date(report.analysisDate),
+      inventory: { dependencies: report.dependencies, ignores: report.dependencyIgnores ?? null },
     });
-    if (version === 'stale') return;
-    await replaceVersionDependencies(tx, version.id, ctx.analysisId, report.dependencies);
   },
 };
