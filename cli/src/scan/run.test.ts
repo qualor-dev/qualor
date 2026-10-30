@@ -975,6 +975,21 @@ describe('qualor scan on a tag: version mode', () => {
     expect(report.project.version).toBe('1.2.0');
   });
 
+  it('warns LICENSE_SCAN_FAILED when Trivy is not installed', async () => {
+    const repo = fixtureRepo('deps-vulnerable');
+    const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
+    const code = await runScan(
+      scanFlags(['--dry-run', '--output', 'o.gz', '--project-key', 'k', '--tag', 'v1']),
+      c.io,
+      silentLogger,
+      { analyzers: [forbidden], licensePass: { resolveBinary: () => null } },
+    );
+    expect(code, c.stderr()).toBe(0);
+    const report = readReport(path.join(repo, 'o.gz'));
+    expect(report.dependencies).toBeUndefined();
+    expect(report.warnings.map((w) => w.code)).toContain('LICENSE_SCAN_FAILED');
+  });
+
   it('is a usage error with analyzers.trivy.enabled: false', async () => {
     const repo = fixtureRepo('deps-vulnerable');
     writeFileSync(

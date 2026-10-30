@@ -172,7 +172,7 @@ export async function collectDependencies(
     return {
       engine: engine('skipped', reason),
       warnings:
-        settings.licenses === true
+        settings.licenses === true || o.force === true
           ? [warning('LICENSE_SCAN_FAILED', `${reason}: no dependency inventory`)]
           : [],
     };
