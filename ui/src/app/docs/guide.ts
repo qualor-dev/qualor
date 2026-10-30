@@ -27,6 +27,7 @@ const PAGES: Readonly<Record<string, () => Promise<{ default: string }>>> = {
   portfolio: () => import('../../../../docs/guide/portfolio.md'),
   'quality-gates': () => import('../../../../docs/guide/quality-gates.md'),
   'quick-start': () => import('../../../../docs/guide/quick-start.md'),
+  releases: () => import('../../../../docs/guide/releases.md'),
   'roles-and-audit': () => import('../../../../docs/guide/roles-and-audit.md'),
   'sso-and-scim': () => import('../../../../docs/guide/sso-and-scim.md'),
   'support-bundle': () => import('../../../../docs/guide/support-bundle.md'),

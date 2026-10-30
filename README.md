@@ -91,10 +91,11 @@ include:
     inputs: { image-tag: <tag> }
 ```
 
-The job runs in merge request pipelines and on the default branch. It also writes GitLab's Code
-Quality report, which works on every tier, and the SAST and Dependency Scanning reports, which
-GitLab shows on GitLab Ultimate only. A self-managed GitLab needs its own copy of the component.
-See [GitLab](docs/guide/gitlab.md).
+The job runs in merge request pipelines, on the default branch and on tags. On a tag it records a
+[version](docs/guide/releases.md) of the release. It also writes GitLab's Code Quality report, which
+works on every tier, and the SAST and Dependency Scanning reports, which GitLab shows on GitLab
+Ultimate only. A self-managed GitLab needs its own copy of the component. See
+[GitLab](docs/guide/gitlab.md).
 
 **GitHub Actions**, with the Qualor Action:
 

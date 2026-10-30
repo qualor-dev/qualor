@@ -6,6 +6,28 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Versions: a scan in a tag pipeline (GitLab `CI_COMMIT_TAG`, a GitHub tag push), or with
+  `qualor scan --tag <name>`, records a version of the project. A version is a label and the
+  release's dependency list. The label is `project.version`, else the tag. A tag scan runs no code
+  analyzer and no quality gate, and exits 0 once the version is recorded.
+- **Project → Settings → Vulnerability monitoring**: which branches and released versions a project
+  tracks. By default it tracks the newest version of each of the last 5 major.minor lines. Versions
+  can also come from analyses of tracked branches that carry `project.version` (off by default).
+  Qualor does not check versions for vulnerabilities yet.
+- The **Dependencies** tab lists the project's versions in its **Branch** picker.
+- API: `GET /projects/{id}/versions`, `PATCH /projects/{id}/versions/{versionId}`,
+  `GET/PUT /projects/{id}/vulnerability-monitoring`, and `?version=` on
+  `GET /projects/{id}/dependencies`. An analysis has `version`. The audit events are
+  `project_version.updated` and `project.vulnerability_monitoring_updated`.
+- The scanner sends the ids of the root `.trivyignore`, with their `exp:` dates, to the server.
+
+### Changed
+
+- The GitLab component, the GitHub workflow templates and the CI that **Add repositories** sets up
+  run the Qualor job on tags too.
+
 ## [0.14.0] - 2026-10-30
 
 ### Added

@@ -208,7 +208,8 @@ Do this:
 2. Add a `qualor` job: the component if there is one, otherwise the
    plain job from gitlab.md. It must:
    - set GIT_DEPTH 0;
-   - run in merge request pipelines and on the default branch;
+   - run in merge request pipelines, on the default branch and on
+     tags (a tag records a version, releases.md);
    - install the dependencies (JS/TS, `go mod download` for Go) or
      build (Java, and C/C++ for clang-tidy) before the scan, so the
      analyzers and the dependency licence inventory
@@ -256,9 +257,10 @@ Do this:
    commands and paths, the ESLint config, the default branch, and
    the existing workflows.
 2. Create .github/workflows/qualor.yml from the template in
-   github.md: triggers on pull_request and on push to the default
-   branch, permissions contents: read, the scanner container with
-   --user 1001, actions/checkout pinned by SHA with fetch-depth 0,
+   github.md: triggers on pull_request, on push to the default
+   branch and on push of tags (a tag records a version,
+   releases.md), permissions contents: read, the scanner container
+   with --user 1001, actions/checkout pinned by SHA with fetch-depth 0,
    persist-credentials false and the PR head ref, the fork guard,
    then install/build (installed dependencies also give Qualor their
    licences), tests with coverage, and `qualor scan`. For C#, use

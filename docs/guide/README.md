@@ -32,30 +32,32 @@ guide of its own release, under **Docs** in the top bar (`/docs`, for signed-in 
    secrets, dependencies, SARIF files and coverage.
 8. [Dependency licences](./dependency-licenses.md): each project's dependencies and their licences,
    and a licence policy (Business and Enterprise).
-9. [Configuration reference](./configuration.md): `qualor.yml` and environment variables.
-10. [Quality gates, profiles and issues](./quality-gates.md): metrics, new code, gates, profiles and
+9. [Releases and versions](./releases.md): a version for each release tag, with its dependencies,
+   and which versions are tracked.
+10. [Configuration reference](./configuration.md): `qualor.yml` and environment variables.
+11. [Quality gates, profiles and issues](./quality-gates.md): metrics, new code, gates, profiles and
     issue statuses.
-11. [AI assistant](./ai-assistant.md): explain an issue, suggest triage or a fix, with your own
+12. [AI assistant](./ai-assistant.md): explain an issue, suggest triage or a fix, with your own
     model.
-12. [AI review](./ai-review.md): a model reviews merge requests and answers replies.
-13. [Email](./email.md): the SMTP server, account emails, notifications and alerts.
-14. [CLI reference](./cli.md): commands, options and exit codes.
-15. [Migrating from SonarQube](./migrate-from-sonarqube.md): `qualor import sonarqube`.
-16. [Webhooks and REST API](./webhooks-and-api.md): events, signatures and the main endpoints.
-17. [Enterprise](./enterprise.md): what a licence key adds, and how to apply it.
-18. [Roles and the audit log](./roles-and-audit.md): roles, project access and the audit log.
-19. [Single sign-on and SCIM](./sso-and-scim.md): OIDC, SAML, group mapping and SCIM.
-20. [Compliance reports](./compliance-reports.md): OWASP Top 10, CWE Top 25, OWASP ASVS and PCI DSS
+13. [AI review](./ai-review.md): a model reviews merge requests and answers replies.
+14. [Email](./email.md): the SMTP server, account emails, notifications and alerts.
+15. [CLI reference](./cli.md): commands, options and exit codes.
+16. [Migrating from SonarQube](./migrate-from-sonarqube.md): `qualor import sonarqube`.
+17. [Webhooks and REST API](./webhooks-and-api.md): events, signatures and the main endpoints.
+18. [Enterprise](./enterprise.md): what a licence key adds, and how to apply it.
+19. [Roles and the audit log](./roles-and-audit.md): roles, project access and the audit log.
+20. [Single sign-on and SCIM](./sso-and-scim.md): OIDC, SAML, group mapping and SCIM.
+21. [Compliance reports](./compliance-reports.md): OWASP Top 10, CWE Top 25, OWASP ASVS and PCI DSS
     reports.
-21. [Portfolio reports](./portfolio.md): every project's quality and trends in one view.
-22. [Troubleshooting](./troubleshooting.md): common errors and their fixes.
-23. [AI prompts](./ai-prompts.md): prompts that let an AI agent roll Qualor out.
-24. [Telemetry](./telemetry.md): what the server sends, and how to turn it off.
-25. [The support bundle](./support-bundle.md): one zip of diagnostics, without secrets, for a
+22. [Portfolio reports](./portfolio.md): every project's quality and trends in one view.
+23. [Troubleshooting](./troubleshooting.md): common errors and their fixes.
+24. [AI prompts](./ai-prompts.md): prompts that let an AI agent roll Qualor out.
+25. [Telemetry](./telemetry.md): what the server sends, and how to turn it off.
+26. [The support bundle](./support-bundle.md): one zip of diagnostics, without secrets, for a
     support request.
-26. [MCP server for AI agents](./mcp.md): Claude Code, Cursor and other agents read the gate and
+27. [MCP server for AI agents](./mcp.md): Claude Code, Cursor and other agents read the gate and
     the issues.
-27. [Slack and Microsoft Teams](./chat-notifications.md): gate failures and a weekly security
+28. [Slack and Microsoft Teams](./chat-notifications.md): gate failures and a weekly security
     digest in a channel.
 
 ## How Qualor works

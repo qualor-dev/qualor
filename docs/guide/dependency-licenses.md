@@ -121,6 +121,8 @@ analyzers:
 - `auto` runs the licence pass whenever Trivy runs. `true` does the same, and also warns
   (`LICENSE_SCAN_FAILED`) when Trivy is not installed. `false` skips the pass, and the analysis
   records no inventory. `analyzers.trivy.enabled: false` turns off both Trivy passes.
+- A tag scan runs the pass whatever `licenses` says
+  ([What a tag scan does](./releases.md#what-a-tag-scan-does)).
 - The pass reads every installed package, so a large `node_modules` takes time: about 100 seconds
   for 800 MB. `licenseTimeoutSeconds` (default 300) bounds this pass on its own.
 - A pass that fails or times out never fails the scan. The vulnerability findings are kept, the
@@ -134,6 +136,10 @@ The analysis lists the pass as the engine `trivy-licenses`, with its status.
 **Branch** picker. Each row shows the package, version, ecosystem, lockfile (a link to that line in
 the **Code** tab), licences, and **Direct** or **Transitive**. The header says how many packages
 have a known licence.
+
+The picker also lists the project's [versions](./releases.md) under **Versions**: the 100 most
+recently scanned, with **(tracked)** after each tracked one. For a version, the lockfiles are not
+links, and forbidden packages do not link to issues.
 
 Filter by **Licence**, **Licence group** or ecosystem, tick **Unknown only** or **Direct only**, or
 search by package name. Until a scan of the branch has recorded an inventory, the tab says so.
@@ -260,7 +266,8 @@ the audit log](./roles-and-audit.md#what-is-recorded)).
 ## The API
 
 ```sh
-# the inventory of the main branch (or ?branch=<name>, ?mr=<number>), forbidden packages only
+# the inventory of the main branch (or ?branch=<name>, ?mr=<number>, ?version=<version id>),
+# forbidden packages only
 q "$QUALOR_URL/api/v0/projects/<project id>/dependencies?verdict=forbidden&pageSize=100"
 
 # the policy, the groups with their licences, and the SPDX ids a policy may name
@@ -274,10 +281,13 @@ q -X PUT "$QUALOR_URL/api/v0/organizations/<org id>/license-policy" -d '{"policy
 
 `q` is the helper of [Webhooks and REST API](./webhooks-and-api.md#rest-api).
 
-- `GET /projects/{id}/dependencies` filters by `branch` or `mr`, `license`, `group`, `ecosystem`,
-  `unknown=true|false`, `direct=true|false`, `q` (the package name), and `verdict` (`allowed`,
-  `forbidden` or `unknown`; only with a policy). It pages with `page` and `pageSize` (at most 500).
-  The answer holds:
+- `GET /projects/{id}/dependencies` reads the main branch by default. `branch`, `mr` or `version`
+  names another branch, a merge request or a version. `version` is a version's id from
+  `GET /projects/{id}/versions` ([Releases and versions](./releases.md#the-api)), and cannot be
+  combined with `branch` or `mr`.
+- It filters by `license`, `group`, `ecosystem`, `unknown=true|false`, `direct=true|false`, `q`
+  (the package name), and `verdict` (`allowed`, `forbidden` or `unknown`; only with a policy).
+  It pages with `page` and `pageSize` (at most 500). The answer holds:
   - `rows`, `page`, `pageSize` and `total`;
   - `summary`, for the whole inventory: `total`, `known`, `unknown` and the 20 most frequent
     licences;

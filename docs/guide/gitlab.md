@@ -49,11 +49,12 @@ include:
       image-tag: '0.14'
 ```
 
-The job runs in merge request pipelines and on the default branch. It uploads the analysis, fails
-with the quality gate, and keeps GitLab's **Code Quality**, **SAST** and **Dependency Scanning**
-reports as artifacts. The Code Quality report lists every finding in the merge request widget, on
-every tier. GitLab shows the SAST and Dependency Scanning reports, in the security widget and the
-security tab, on GitLab Ultimate only.
+The job runs in merge request pipelines, on the default branch and on tags. On a tag, it records a
+[version](./releases.md) and applies no quality gate. Elsewhere it uploads the analysis, fails with
+the quality gate, and keeps GitLab's **Code Quality**, **SAST** and **Dependency Scanning** reports
+as artifacts. The Code Quality report lists every finding in the merge request widget, on every
+tier. GitLab shows the SAST and Dependency Scanning reports, in the security widget and the security
+tab, on GitLab Ultimate only.
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -130,6 +131,7 @@ qualor:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
 ```
 
 - `entrypoint: ['']`: the image's entrypoint is `qualor`, and GitLab needs a shell.
@@ -138,6 +140,7 @@ qualor:
   [AI review](./ai-review.md#what-your-ci-needs) needs the full history too.
 - Run the job in **merge request pipelines** (`merge_request_event`), as the `rules` do. Only there
   does the CLI know the target branch, so the analysis becomes a merge request analysis.
+- The `$CI_COMMIT_TAG` rule runs the job on tags, where it records a [version](./releases.md).
 
 A C# project uses `qualor/scanner-dotnet` and wraps its own build
 ([C#](./languages-and-analyzers.md#c)). For Go, run `go mod download` before `qualor scan` in the

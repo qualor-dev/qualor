@@ -14,6 +14,8 @@ reads the revision and the branch from git, and you pass the rest.
    or `project.key` in `qualor.yml`.
 5. For a pull request or merge request: `--mr <id> --mr-target <target branch>`. Without them the
    scan is a branch analysis, compared with the project's main branch.
+6. For a release tag: `--tag <tag>`. The scan then records a [version](./releases.md) of the
+   release.
 
 ```sh
 qualor scan --project-key acme/payments-api \

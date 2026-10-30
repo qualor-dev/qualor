@@ -8,14 +8,15 @@ and call `qualor` in `script`. `qualor help` (or `--help`) prints the usage.
 
 ```text
 qualor scan [--config PATH] [--project-key KEY] [--sarif PATH]... [--coverage PATH]...
-            [--branch NAME] [--mr ID --mr-target BRANCH] [--no-wait] [--token-file PATH]
-            [--server-url URL] [--ca-file PATH] [--dry-run --output report.json.gz]
+            [--branch NAME] [--mr ID --mr-target BRANCH] [--tag NAME] [--no-wait]
+            [--token-file PATH] [--server-url URL] [--ca-file PATH]
+            [--dry-run --output report.json.gz]
             [--gitlab-code-quality FILE] [--gitlab-sast FILE] [--gitlab-dependency-scanning FILE]
 ```
 
 It runs the analyzers, computes metrics, duplication, coverage and the diff against the baseline,
 and uploads one gzip report. Then it waits for the quality gate, prints the failed conditions and
-exits. Run it from the repository root.
+exits. Run it from the repository root. On a tag, it records a [version](./releases.md) instead.
 
 | Option | Meaning |
 | --- | --- |
@@ -25,6 +26,7 @@ exits. Run it from the repository root.
 | `--coverage PATH` | an extra coverage report. Repeatable |
 | `--branch NAME` | the branch name, when CI detection does not give it |
 | `--mr ID --mr-target BRANCH` | analyse as a merge or pull request into `BRANCH` |
+| `--tag NAME` | scan the tag `NAME` and record it as a [version](./releases.md). Not with `--branch` or `--mr` |
 | `--no-wait` | exit 0 once the server has queued the analysis, without waiting for the gate |
 | `--token-file PATH` | read the token from a file (overrides `QUALOR_TOKEN`) |
 | `--server-url URL` | the server (overrides `QUALOR_URL`) |
@@ -95,5 +97,7 @@ It prints the CLI version, its platform and the bundled grammars.
 | 4 | server unreachable, upload rejected, gate wait timed out, or an internal error | check `QUALOR_URL`, the proxy and TLS setup, and the server logs |
 | 5 | authentication or authorisation failure (401/403) | check the token, its scope and its project |
 | 130 / 143 / 129 | interrupted (SIGINT / SIGTERM / SIGHUP) | — |
+
+A tag scan has exit codes of its own ([Releases and versions](./releases.md#exit-codes)).
 
 Set `QUALOR_LOG_LEVEL=debug` to see each analyzer's command and output.

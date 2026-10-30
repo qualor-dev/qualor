@@ -25,7 +25,9 @@ A generic webhook sends the events you choose:
 
 The payload is the analysis as `GET /api/v0/analyses/{id}` returns it: status, revision, gate status
 and result, engines and warnings. It also carries `project` (`id`, `key`, `name`) and `branch`
-(`id`, `kind`, `name`, `isMain`). For `gate.status_changed` it adds `previousGateStatus`.
+(`id`, `kind`, `name`, `isMain`). For `gate.status_changed` it adds `previousGateStatus`. A tag
+scan sends no webhook, so the payload's `version` is always `null`
+([Releases and versions](./releases.md#the-api)).
 
 Every request is a `POST` with a JSON body and these headers:
 
@@ -119,7 +121,8 @@ q "$QUALOR_URL/api/v0/issues?branchId=<id>&severity=blocker&severity=high&inNewC
 | Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{id}`, `GET /projects/by-key`, `POST/GET/DELETE /projects/{id}/tokens`, `GET /projects/{id}/members` and `PUT/DELETE /projects/{id}/members/{userId}` (a role on one project, [Roles and the audit log](./roles-and-audit.md#managing-members)) |
 | Branches and analyses | `GET /projects/{id}/branches`, `GET /branches/{id}/analyses`, `GET /analyses/{id}`, `DELETE /branches/{id}` |
 | Measures | `GET /branches/{id}/measures`, `GET /branches/{id}/measures/history`, `GET /branches/{id}/files`, `GET /branches/{id}/file?path=` |
-| Dependencies | `GET /projects/{id}/dependencies` (every edition): a branch's dependencies and their licences. Takes `?branch=` or `?mr=`, filters and paging ([Dependency licences](./dependency-licenses.md#the-api)) |
+| Dependencies | `GET /projects/{id}/dependencies` (every edition): the dependencies of a branch or a version, and their licences. Takes `?branch=`, `?mr=` or `?version=`, filters and paging ([Dependency licences](./dependency-licenses.md#the-api)) |
+| Versions | `GET /projects/{id}/versions`, `PATCH /projects/{id}/versions/{versionId}` (a version's `tracking`), `GET/PUT /projects/{id}/vulnerability-monitoring` (which branches and versions are tracked) ([Releases and versions](./releases.md#the-api)) |
 | Issues | `GET /issues`, `GET /issues/{id}`, `POST /issues/{id}/transition`, `POST /issues/bulk-transition`, `PATCH /issues/{id}` (severity), `GET /issues/{id}/changelog` |
 | Rules, profiles, gates | `GET /rules`, `/quality-profiles…`, `/quality-gates…` (conditions, copy, set-default), `GET /metrics` |
 | Users and organisations | `GET/POST/PATCH /users` (each user with `hasPassword` and `sso`; `GET /users?signIn=no-password`), `GET /users/lookup?username=`, `GET /users/search?q=` ([below](#searching-users)), `GET /organizations`, `…/members` (each with `managedBy`; `?q=`, trimmed, keeps the active members that match, as `/users/search` does) |

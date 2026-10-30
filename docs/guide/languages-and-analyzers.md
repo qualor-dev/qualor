@@ -811,7 +811,9 @@ known vulnerabilities. Development dependencies are left out.
 A vulnerability counts as **new code** only when the merge request adds the package or changes its
 version. So a database update never fails a merge request that did not touch the dependency.
 
-Ignore a vulnerability by id in `.trivyignore` at the repository root.
+Ignore a vulnerability by id in `.trivyignore` at the repository root. The scanner also sends the
+file's ids, with their `exp:YYYY-MM-DD` dates, to the server with each analysis. It sends at most
+10 000 ids. A longer file gives the warning `TRIVYIGNORE_TRUNCATED`.
 
 The vulnerability database comes from the image and is never downloaded during a scan. It is as old
 as the scanner release you run. Keep the scanner current (the minor tag `0.14` follows its patch

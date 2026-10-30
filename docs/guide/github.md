@@ -42,6 +42,7 @@ on:
   pull_request:
   push:
     branches: [main]          # your default branch
+    tags: ['**']              # a tag push records a version
 permissions:
   contents: read
 jobs:
@@ -75,6 +76,8 @@ The step fails when the gate fails, when an analyzer that `qualor.yml` marks as 
 when the upload is refused because the token is wrong or revoked. It needs a Linux runner with
 Docker (`ubuntu-latest` or self-hosted). The scanner cannot write into the checkout: an option that
 writes a file, such as `--output`, needs a path under `/tmp`.
+
+On a tag push, the scan records a [version](./releases.md) instead, and applies no quality gate.
 
 The Action's version follows Qualor's. `@v0.14.0` runs `qualor/scanner:0.14.0`, `@v0.14` follows the
 0.14 patch releases, and `@v0` follows the latest release. Use the version of your Qualor server, or
@@ -130,6 +133,7 @@ on:
   pull_request:
   push:
     branches: [main]          # your default branch
+    tags: ['**']              # a tag push records a version
 permissions:
   contents: read
 jobs:
