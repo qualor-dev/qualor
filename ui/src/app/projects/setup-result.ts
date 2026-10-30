@@ -118,8 +118,11 @@ export class SetupResult {
         return $localize`:@@addRepos.reason.customPath:The project reads its CI configuration from another file than .gitlab-ci.yml, so Qualor did not change it.`;
       case 'yaml_unsupported':
         return $localize`:@@addRepos.reason.yaml:Qualor cannot change this .gitlab-ci.yml safely (anchors, several documents or invalid YAML), so it did not change it.`;
+      // The address is in GitHub's workflow file; GitLab's job reads it from a CI/CD variable.
       case 'no_public_url':
-        return $localize`:@@addRepos.reason.noPublicUrl:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Replace https://qualor.example.com in the file with this server's address.`;
+        return this.provider() === 'github'
+          ? $localize`:@@addRepos.reason.noPublicUrlGithub:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Replace https://qualor.example.com in the file with this server's address.`
+          : $localize`:@@addRepos.reason.noPublicUrlGitlab:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Set the CI/CD variable QUALOR_URL to this server's address.`;
       default:
         return $localize`:@@addRepos.reason.other:Qualor did not change the repository.`;
     }

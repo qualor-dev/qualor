@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { SessionStore } from '../auth/session';
 
 /** A one-time token a run revealed, and whether the person copied it (Copy, or from its field). */
@@ -14,7 +14,8 @@ type RunTokens = ReadonlyMap<string, RevealedToken>;
  * the browser page lives: the server shows each token once, so a token must survive moving
  * between runs (**Try again**, back, a link) and leaving the page. Memory only: never storage,
  * never a log. They belong to the user who received them: another user signed in on the same page
- * sees none of them, and the first token that user receives replaces them.
+ * sees none of them, and the first token that user receives replaces them. Signing out forgets
+ * them all.
  */
 @Injectable({ providedIn: 'root' })
 export class SetupTokens {
@@ -24,6 +25,13 @@ export class SetupTokens {
     runs: new Map(),
   });
   private readonly user = computed(() => this.session.user()?.id ?? null);
+
+  constructor() {
+    // Signed out (null), not merely unknown while the session is asked again (undefined).
+    effect(() => {
+      if (this.session.me() === null) this.kept.set({ owner: null, runs: new Map() });
+    });
+  }
 
   /** A run's tokens by ref, for the signed-in user. */
   forRun(runId: string): RunTokens {

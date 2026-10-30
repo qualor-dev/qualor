@@ -716,6 +716,34 @@ describe('AddRepositoriesPage', () => {
       );
     });
 
+    it('says where the address goes without a public URL: in the file on GitHub, a variable on GitLab', async () => {
+      const noUrl = (snippet: string) =>
+        run('done', [
+          done('acme/billing', {
+            ciOutcome: 'snippet',
+            ciReason: 'no_public_url',
+            snippet,
+            token: 'qlr_prj_secret',
+          }),
+        ]);
+      server.on('GET', `/api/v0/repository-setups/${RUN_ID}`, { body: noUrl(WORKFLOW) });
+      const { root } = await render({ runId: RUN_ID, connection: GITHUB_ID });
+      expect(text(root.querySelector('article.result .result-body > p'))).toBe(
+        "Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Replace https://qualor.example.com in the file with this server's address.",
+      );
+      current?.destroy();
+
+      server.on('GET', `/api/v0/repository-setups/${RUN_ID}`, {
+        body: noUrl('include:\n  - component: gitlab.com/qualor/qualor/qualor@0.14\n'),
+      });
+      const gitlab = await render({ runId: RUN_ID, connection: GITLAB_ID });
+      const reason = text(gitlab.root.querySelector('article.result .result-body > p'));
+      expect(reason).toBe(
+        "Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Set the CI/CD variable QUALOR_URL to this server's address.",
+      );
+      expect(reason).not.toContain('in the file');
+    });
+
     it('keeps a token it was given once, and points to the token settings when it has none', async () => {
       const answers = [
         run(
