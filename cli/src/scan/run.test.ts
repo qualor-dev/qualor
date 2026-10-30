@@ -830,6 +830,72 @@ describe('qualor scan --dry-run', () => {
   );
 });
 
+describe('qualor scan .trivyignore ids and tags (versions)', () => {
+  async function dryRun(
+    repo: string,
+    extra: string[] = [],
+    deps: { analyzers: Analyzer[] } = { analyzers: [] },
+  ) {
+    const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
+    const code = await runScan(
+      scanFlags([
+        '--dry-run',
+        '--output',
+        'out/report.json.gz',
+        '--project-key',
+        'fixtures/ts-basic',
+        ...extra,
+      ]),
+      c.io,
+      silentLogger,
+      deps,
+    );
+    expect(code, c.stderr()).toBe(0);
+    return readReport(path.join(repo, 'out', 'report.json.gz'));
+  }
+
+  it('reports the ids of the root .trivyignore', async () => {
+    const repo = fixtureRepo('ts-basic');
+    writeFileSync(path.join(repo, '.trivyignore'), '# note\nCVE-2026-1 exp:2026-12-31\nGHSA-x\n');
+    const report = await dryRun(repo);
+    expect(report.dependencyIgnores).toEqual([
+      { id: 'CVE-2026-1', expiresAt: '2026-12-31' },
+      { id: 'GHSA-x' },
+    ]);
+  });
+
+  it('omits dependencyIgnores without a .trivyignore or with trivy disabled', async () => {
+    const repo = fixtureRepo('ts-basic');
+    expect((await dryRun(repo)).dependencyIgnores).toBeUndefined();
+    writeFileSync(path.join(repo, '.trivyignore'), 'CVE-1\n');
+    writeFileSync(
+      path.join(repo, 'qualor.yml'),
+      'version: 1\nanalyzers:\n  trivy:\n    enabled: false\n',
+    );
+    expect((await dryRun(repo)).dependencyIgnores).toBeUndefined();
+  });
+
+  it('warns TRIVYIGNORE_TRUNCATED past 10 000 ids', async () => {
+    const repo = fixtureRepo('ts-basic');
+    writeFileSync(
+      path.join(repo, '.trivyignore'),
+      Array.from({ length: 10_001 }, (_, i) => `CVE-${i}`).join('\n'),
+    );
+    const report = await dryRun(repo);
+    expect(report.dependencyIgnores).toHaveLength(10_000);
+    expect(report.warnings.map((w) => w.code)).toContain('TRIVYIGNORE_TRUNCATED');
+  });
+
+  it('records --tag as scm.tag with a null branch, and null otherwise', async () => {
+    const repo = fixtureRepo('ts-basic');
+    expect((await dryRun(repo, ['--tag', 'v1.2.0'])).scm).toMatchObject({
+      tag: 'v1.2.0',
+      branch: null,
+    });
+    expect((await dryRun(repo)).scm).toMatchObject({ tag: null, branch: 'main' });
+  });
+});
+
 describe('qualor scan --gitlab-dependency-scanning (scm.md §9, plan 2B)', () => {
   /** Trivy as the runner sees it: a process writing its recorded JSON, converted like the adapter. */
   const recordedTrivy = (tool: string, edit: (sarif: unknown) => unknown = (x) => x): Analyzer => ({

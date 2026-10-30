@@ -9,6 +9,8 @@ export interface ScanFlags {
   branch?: string;
   mr?: string;
   mrTarget?: string;
+  /** Record this scan as a version (a release tag). */
+  tag?: string;
   wait: boolean;
   dryRun: boolean;
   output?: string;
@@ -66,7 +68,7 @@ export type Command =
 
 export const USAGE = `Usage:
   qualor scan [--config PATH] [--project-key KEY] [--sarif PATH]... [--coverage PATH]...
-              [--branch NAME] [--mr ID --mr-target BRANCH] [--no-wait] [--token-file PATH]
+              [--branch NAME] [--mr ID --mr-target BRANCH] [--tag NAME] [--no-wait] [--token-file PATH]
               [--server-url URL] [--ca-file PATH] [--dry-run --output report.json.gz]
               [--gitlab-code-quality FILE] [--gitlab-sast FILE]
               [--gitlab-dependency-scanning FILE]
@@ -145,6 +147,7 @@ function parseScan(args: string[]): Command {
         branch: { type: 'string' },
         mr: { type: 'string' },
         'mr-target': { type: 'string' },
+        tag: { type: 'string' },
         'no-wait': { type: 'boolean' },
         'dry-run': { type: 'boolean' },
         output: { type: 'string' },
@@ -169,6 +172,7 @@ function parseScan(args: string[]): Command {
     branch: branchName('branch', value('branch', v.branch)),
     mr: mrId(value('mr', v.mr)),
     mrTarget: branchName('mr-target', value('mr-target', v['mr-target'])),
+    tag: branchName('tag', value('tag', v.tag)),
     output: value('output', v.output),
     tokenFile: value('token-file', v['token-file']),
     serverUrl: value('server-url', v['server-url']),
@@ -182,6 +186,9 @@ function parseScan(args: string[]): Command {
   }
   if ((flags.mr === undefined) !== (flags.mrTarget === undefined)) {
     throw usageError('--mr and --mr-target must be given together');
+  }
+  if (flags.tag !== undefined && (flags.branch !== undefined || flags.mr !== undefined)) {
+    throw usageError('--tag cannot be combined with --branch or --mr');
   }
   if (flags.dryRun && flags.output === undefined) throw usageError('--dry-run needs --output FILE');
   if (!flags.dryRun && flags.output !== undefined) {

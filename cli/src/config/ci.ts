@@ -14,6 +14,8 @@ export interface CiInfo {
   provider: CiProvider;
   revision: string | null;
   branch: string | null;
+  /** The git tag of a tag pipeline (GitLab `CI_COMMIT_TAG`, GitHub `GITHUB_REF_TYPE=tag`), else null. */
+  tag: string | null;
   mergeRequest: CiMergeRequest | null;
   mainBranch: string | null;
   projectPath: string | null;
@@ -163,6 +165,7 @@ export function detectCi(
       provider: 'gitlab',
       revision: get(env, 'CI_COMMIT_SHA'),
       branch: get(env, 'CI_COMMIT_TAG') !== null ? null : get(env, 'CI_COMMIT_REF_NAME'),
+      tag: get(env, 'CI_COMMIT_TAG'),
       mergeRequest:
         iid !== null && target !== null
           ? {
@@ -192,6 +195,7 @@ export function detectCi(
         get(env, 'GITHUB_REF_TYPE') === 'tag'
           ? null
           : (get(env, 'GITHUB_HEAD_REF') ?? get(env, 'GITHUB_REF_NAME')),
+      tag: get(env, 'GITHUB_REF_TYPE') === 'tag' ? get(env, 'GITHUB_REF_NAME') : null,
       mergeRequest:
         pr !== undefined && target !== null
           ? {
@@ -213,6 +217,7 @@ export function detectCi(
     provider: 'none',
     revision: null,
     branch: null,
+    tag: null,
     mergeRequest: null,
     mainBranch: null,
     projectPath: null,

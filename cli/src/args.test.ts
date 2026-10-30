@@ -332,3 +332,25 @@ describe('qualor import sonarqube (import-sonarqube.md §3)', () => {
     expect(() => parseCommandLine(['import', 'jenkins'])).toThrow(/sonarqube/);
   });
 });
+
+describe('scan --tag', () => {
+  it('parses a tag', () => {
+    expect(parseCommandLine(['scan', '--tag', 'v1'])).toMatchObject({ flags: { tag: 'v1' } });
+  });
+
+  it('refuses --tag with --branch or --mr', () => {
+    for (const rest of [
+      ['--branch', 'main'],
+      ['--mr', '1', '--mr-target', 'main'],
+    ]) {
+      const err = usageError(['scan', '--tag', 'v1', ...rest]);
+      expect(err.exitCode).toBe(2);
+      expect(err.message).toContain('--tag cannot be combined with --branch or --mr');
+    }
+  });
+
+  it('refuses an empty or too long tag', () => {
+    expect(usageError(['scan', '--tag', '']).exitCode).toBe(2);
+    expect(usageError(['scan', '--tag', 'x'.repeat(256)]).exitCode).toBe(2);
+  });
+});

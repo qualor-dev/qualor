@@ -10,6 +10,7 @@ import {
   REPORT_SCHEMA_VERSION,
   reportSchema,
   type DependencyEntry,
+  type DependencyIgnore,
   type QualorConfig,
   type Report,
   type ReportFile,
@@ -36,6 +37,8 @@ export interface ReportParts {
   warnings: Warnings;
   /** The licence pass's inventory (spec §1), when it completed; absent otherwise. */
   dependencies?: DependencyEntry[];
+  /** The ids of the root `.trivyignore`; absent when there is none. */
+  dependencyIgnores?: DependencyIgnore[];
 }
 
 /** report-format §3–§8 (findings, snippets and hashes come from the SARIF normaliser). */
@@ -89,6 +92,7 @@ export function assembleReport(p: ReportParts): Report {
     duplications: p.duplications,
     warnings: p.warnings.list(),
     ...(p.dependencies !== undefined && { dependencies: p.dependencies }),
+    ...(p.dependencyIgnores !== undefined && { dependencyIgnores: p.dependencyIgnores }),
   };
 }
 

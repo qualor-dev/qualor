@@ -23,6 +23,7 @@ export interface ScmFlags {
   branch?: string;
   mr?: string;
   mrTarget?: string;
+  tag?: string;
 }
 
 export interface ScmResolution {
@@ -218,13 +219,20 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
     else
       warnings.add('CI_REVISION_INVALID', 'the CI commit SHA is not a git revision; HEAD was used');
   }
-  const branch = flags.branch ?? settings.ci.branch ?? (await currentBranch(git));
+  // A tag scan (`--tag`, or a CI tag pipeline when --branch/--mr were not given) is a version:
+  // no branch, no merge request, no baseline.
+  const explicitRef = flags.branch !== undefined || flags.mr !== undefined;
+  const tag = flags.tag ?? (explicitRef ? null : settings.ci.tag);
+  const branch =
+    tag !== null ? null : (flags.branch ?? settings.ci.branch ?? (await currentBranch(git)));
   const mainBranch =
     settings.config.scm.mainBranch ?? settings.ci.mainBranch ?? (await originHead(git)) ?? 'main';
   const mr =
-    flags.mr !== undefined && flags.mrTarget !== undefined
-      ? { id: flags.mr, targetBranch: flags.mrTarget }
-      : settings.ci.mergeRequest;
+    tag !== null
+      ? null
+      : flags.mr !== undefined && flags.mrTarget !== undefined
+        ? { id: flags.mr, targetBranch: flags.mrTarget }
+        : settings.ci.mergeRequest;
   // Field by field: what CI says of the merge request beyond these (its title and description,
   // for the AI review's snapshot) never reaches the report.
   const mergeRequest =
@@ -235,7 +243,9 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
   const ctx: BaselineContext = { log, warnings };
 
   let baseline: Baseline;
-  if (mergeRequest !== null) {
+  if (tag !== null) {
+    baseline = { revision: null, kind: 'none', status: 'unavailable' };
+  } else if (mergeRequest !== null) {
     baseline = await mergeBaseBaseline(git, mergeRequest.targetBranch, policy, ctx);
   } else if (branch === null) {
     warnings.add(
@@ -263,6 +273,7 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
       provider: settings.ci.provider,
       revision,
       branch,
+      tag,
       mainBranch,
       mergeRequest,
       baseline,

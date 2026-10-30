@@ -1,5 +1,12 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { engineMapping, type QualorConfig, type Report } from '@qualor/shared';
+import {
+  engineMapping,
+  REPORT_BOUNDS,
+  type DependencyIgnore,
+  type QualorConfig,
+  type Report,
+} from '@qualor/shared';
 import { loadExternalSarif } from '../analyzers/external';
 import { fileLines, normalizeCaptures } from '../analyzers/normalize';
 import { builtinAnalyzers } from '../analyzers/registry';
@@ -11,6 +18,7 @@ import {
   withEmergencyCleanup,
 } from '../analyzers/runner';
 import { LICENSE_ENGINE_ID } from '../analyzers/trivy-licenses';
+import { parseTrivyIgnore } from '../analyzers/trivyignore';
 import type { Analyzer, DotnetRun } from '../analyzers/types';
 import type { ScanFlags } from '../args';
 import { platformId } from '../commands/version';
@@ -109,6 +117,32 @@ interface GitLabContext {
   incomplete: string[];
 }
 
+/**
+ * The ids of the root `.trivyignore` (it already passed `checkTrivyConfig`: inside the repository,
+ * a regular file, at most 1 MiB), for the report's `dependencyIgnores`. Undefined when there is no
+ * such file or Trivy is turned off.
+ */
+function readDependencyIgnores(
+  settings: Settings,
+  warnings: Warnings,
+): DependencyIgnore[] | undefined {
+  if (settings.config.analyzers.trivy.enabled === false) return undefined;
+  let text: string;
+  try {
+    text = readFileSync(path.join(settings.root, '.trivyignore'), 'utf8');
+  } catch {
+    return undefined;
+  }
+  const { entries, truncated } = parseTrivyIgnore(text);
+  if (truncated) {
+    warnings.add(
+      'TRIVYIGNORE_TRUNCATED',
+      `.trivyignore lists more than ${REPORT_BOUNDS.dependencyIgnores} ids; the rest were not reported`,
+    );
+  }
+  return entries;
+}
+
 async function buildReport(inputs: {
   settings: Settings;
   flags: ScanFlags;
@@ -204,6 +238,8 @@ async function buildReport(inputs: {
     : null;
   if (licenses !== null) warnings.addAll(licenses.warnings);
 
+  const dependencyIgnores = readDependencyIgnores(settings, warnings);
+
   const report = validateReport(
     scrubRuleIds(
       scrubSecretValues(
@@ -221,6 +257,7 @@ async function buildReport(inputs: {
               : { ...engines, engines: [...engines.engines, licenses.engine] },
           warnings,
           ...(licenses?.entries !== undefined && { dependencies: licenses.entries }),
+          ...(dependencyIgnores !== undefined && { dependencyIgnores }),
         }),
         [settings.token],
       ),

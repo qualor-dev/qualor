@@ -619,3 +619,58 @@ describe('scm.github.checkout (github.md §3)', () => {
     expect(await resolveWith(root, none)).not.toHaveProperty('github');
   });
 });
+
+describe('scm.tag (versions)', () => {
+  const tagCi = (tag: string | null = 'v1.2.0') => ({ ...detectCi({}), tag });
+
+  function tagRepo(): string {
+    const root = tmp();
+    initRepo(root);
+    writeTree(root, { 'a.ts': 'a\n' });
+    commitAll(root, 'a');
+    return root;
+  }
+
+  it('sets tag from the CI, with no branch, no merge request and no detached-head warning', async () => {
+    const root = tagRepo();
+    const { result, warnings } = resolve(root, { ci: tagCi() });
+    const { scm } = await result;
+    expect(scm).toMatchObject({
+      tag: 'v1.2.0',
+      branch: null,
+      mergeRequest: null,
+      baseline: { revision: null, kind: 'none', status: 'unavailable' },
+    });
+    expect(codes(warnings)).not.toContain('BASELINE_DETACHED_HEAD');
+  });
+
+  it('prefers flags.tag over the CI tag', async () => {
+    const { scm } = await resolve(tagRepo(), { flags: { tag: 'v9' }, ci: tagCi() }).result;
+    expect(scm).toMatchObject({ tag: 'v9', branch: null, mergeRequest: null });
+  });
+
+  it('takes flags.tag outside CI', async () => {
+    const { scm } = await resolve(tagRepo(), { flags: { tag: 'v9' } }).result;
+    expect(scm.tag).toBe('v9');
+    expect(scm.branch).toBeNull();
+  });
+
+  it('ignores the CI tag when --branch is given: a normal scan with tag null', async () => {
+    const { scm } = await resolve(tagRepo(), { flags: { branch: 'main' }, ci: tagCi() }).result;
+    expect(scm).toMatchObject({ tag: null, branch: 'main' });
+  });
+
+  it('ignores the CI tag when --mr is given', async () => {
+    const { scm } = await resolve(tagRepo(), {
+      flags: { mr: '5', mrTarget: 'main' },
+      ci: tagCi(),
+    }).result;
+    expect(scm.tag).toBeNull();
+    expect(scm.mergeRequest).not.toBeNull();
+  });
+
+  it('has tag null without any tag', async () => {
+    const { scm } = await resolve(tagRepo()).result;
+    expect(scm.tag).toBeNull();
+  });
+});

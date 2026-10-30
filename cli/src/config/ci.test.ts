@@ -11,6 +11,7 @@ describe('detectCi', () => {
       provider: 'none',
       revision: null,
       branch: null,
+      tag: null,
       mergeRequest: null,
       mainBranch: null,
       projectPath: null,
@@ -41,6 +42,7 @@ describe('detectCi', () => {
       ),
     ).toEqual({
       provider: 'gitlab',
+      tag: null,
       revision: 'a'.repeat(40),
       branch: 'feature/x',
       mergeRequest: {
@@ -229,6 +231,7 @@ describe('detectCi', () => {
       provider: 'github',
       revision: 'b'.repeat(40),
       branch: 'feature/y',
+      tag: null,
       mergeRequest: {
         id: '17',
         targetBranch: 'main',
@@ -328,5 +331,36 @@ describe('GitHub Actions context (github.md §3)', () => {
     expect(detectCi({ ...env, GITHUB_EVENT_PATH: '' }, () => event).pullRequestHead).toBeNull();
     const bad = JSON.stringify({ pull_request: { number: 7, head: { sha: 'abc' } } });
     expect(detectCi(env, () => bad).pullRequestHead).toBeNull();
+  });
+});
+
+describe('detectCi tag (versions)', () => {
+  it('reads a GitLab tag pipeline', () => {
+    const ci = detectCi(
+      { GITLAB_CI: 'true', CI_COMMIT_REF_NAME: 'v1.2.0', CI_COMMIT_TAG: 'v1.2.0' },
+      noFile,
+    );
+    expect(ci.tag).toBe('v1.2.0');
+    expect(ci.branch).toBeNull();
+  });
+
+  it('reads a GitHub tag push', () => {
+    const ci = detectCi(
+      { GITHUB_ACTIONS: 'true', GITHUB_REF_TYPE: 'tag', GITHUB_REF_NAME: 'v1.2.0' },
+      noFile,
+    );
+    expect(ci.tag).toBe('v1.2.0');
+    expect(ci.branch).toBeNull();
+  });
+
+  it('has no tag on a branch push or outside CI', () => {
+    expect(detectCi({ GITLAB_CI: 'true', CI_COMMIT_REF_NAME: 'main' }, noFile).tag).toBeNull();
+    expect(
+      detectCi(
+        { GITHUB_ACTIONS: 'true', GITHUB_REF_TYPE: 'branch', GITHUB_REF_NAME: 'main' },
+        noFile,
+      ).tag,
+    ).toBeNull();
+    expect(detectCi({}, noFile).tag).toBeNull();
   });
 });
