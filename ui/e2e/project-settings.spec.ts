@@ -109,6 +109,12 @@ test('the vulnerability monitoring panel renders and saves a branch pattern', as
   await panel.getByRole('button', { name: 'Save' }).click();
   await expect(panel.getByRole('status')).toHaveText('Saved.');
   await expect(panel.locator('#vuln-patterns')).toHaveValue('release/*');
+
+  // Back to the seed's empty pattern, so a rerun finds the same state.
+  await panel.locator('#vuln-patterns').fill('');
+  await panel.getByRole('button', { name: 'Save' }).click();
+  await expect(panel.getByRole('status')).toHaveText('Saved.');
+  await expect(panel.locator('#vuln-patterns')).toHaveValue('');
 });
 
 test('an analysis token is shown once, then listed, and can be revoked', async ({ page }) => {

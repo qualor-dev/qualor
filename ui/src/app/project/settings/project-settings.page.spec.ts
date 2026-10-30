@@ -43,6 +43,18 @@ function setup(options: Setup): FakeServer {
     },
   });
   server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, { body: orgAi() });
+  server.on('GET', `/api/v0/projects/${PROJECT}/vulnerability-monitoring`, {
+    body: {
+      enabled: true,
+      branchPatterns: [],
+      versionRule: { kind: 'lines', lines: 5 },
+      labelVersions: false,
+      mainBranchName: 'main',
+      matchingBranches: [],
+      trackedVersions: [],
+      versionCount: 1,
+    },
+  });
   TestBed.configureTestingModule({
     providers: [
       provideRouter(options.routes ?? [{ path: '**', children: [] }], withComponentInputBinding()),
@@ -98,6 +110,7 @@ describe('ProjectSettingsPage', () => {
       'Danger zone',
     ]);
     expect(texts(root, 'nav.settings-index a')).toEqual(headings);
+    expect(root.querySelector('q-vulnerability-panel .alert-error')).toBeNull();
     expect([...root.querySelectorAll('.card.panel')].map((p) => p.id)).toEqual([
       'new-code',
       'gate',
