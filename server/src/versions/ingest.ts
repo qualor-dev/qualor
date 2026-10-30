@@ -1,17 +1,17 @@
 import { eq, sql } from 'drizzle-orm';
 import type { Report } from '@qualor/shared';
+import type { Db } from '../db/client';
 import { analyses } from '../db/schema';
-import {
-  analysisFields,
-  capWarnings,
-  markFailed,
-  type ProcessDeps,
-  type ProcessLogger,
-} from '../ingest/process';
+import { analysisFields, capWarnings, markFailed, type ProcessLogger } from '../ingest/fields';
 import type { ProjectRow } from '../projects/access';
 import { replaceVersionDependencies, upsertVersion } from './store';
 
 type AnalysisRow = typeof analyses.$inferSelect;
+
+/** What a tag scan's ingestion needs of the job's dependencies (`ProcessDeps` has it). */
+export interface VersionIngestDeps {
+  db: Db;
+}
 
 /** The longest version label (`project_versions_label_check`). */
 const MAX_LABEL_CHARS = 100;
@@ -29,7 +29,7 @@ export function versionLabelOf(report: Report): string | null {
  * rules, issues, measures, gate, decoration or notifications).
  */
 export async function ingestVersion(
-  deps: ProcessDeps,
+  deps: VersionIngestDeps,
   analysis: AnalysisRow,
   project: ProjectRow,
   report: Report,
