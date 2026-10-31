@@ -4,6 +4,9 @@ import { createTestContext, type TestContext } from '../../test/app';
 import { instanceSettings } from '../db/schema';
 import {
   DEFAULT_VULNDB_SETTINGS,
+  OFFICIAL_EPSS_URL,
+  OFFICIAL_KEV_URL,
+  priorityUrl,
   readVulndbSettings,
   VULNDB_PASSWORD_AAD,
   writeVulndbSettings,
@@ -217,5 +220,65 @@ describe('vulndbStatus', () => {
     ['fresh', settings, state, dataset(1), false, 'up_to_date'],
   ] as const)('%s', (_name, s, st, current, running, expected) => {
     expect(vulndbStatus(s, st, current, running, now)).toBe(expected);
+  });
+});
+
+describe('mirror KEV and EPSS URLs', () => {
+  let ctx: TestContext;
+  beforeAll(async () => {
+    ctx = await createTestContext();
+  });
+  beforeEach(async () => {
+    await ctx.db.delete(instanceSettings).where(eq(instanceSettings.key, 'vulndb'));
+  });
+  afterAll(async () => {
+    await ctx.close();
+  });
+  const mirror = { kind: 'mirror', repository: 'r.io/a/b:1' } as const;
+  const write = (source: Parameters<typeof writeVulndbSettings>[1]['source']) =>
+    ctx.db.transaction((tx) => writeVulndbSettings(tx, { source }, SECRET));
+
+  it('stores kevUrl, keeps it when absent and clears it with null', async () => {
+    await write({ ...mirror, kevUrl: 'https://m.corp/kev.json' });
+    expect((await readVulndbSettings(ctx.db)).source).toMatchObject({
+      kevUrl: 'https://m.corp/kev.json',
+      epssUrl: null,
+    });
+    await write({ ...mirror });
+    expect((await readVulndbSettings(ctx.db)).source).toMatchObject({
+      kevUrl: 'https://m.corp/kev.json',
+    });
+    await write({ ...mirror, kevUrl: null });
+    expect((await readVulndbSettings(ctx.db)).source).toMatchObject({ kevUrl: null });
+  });
+
+  it('starts a mirror with both null after the official source', async () => {
+    await write({ kind: 'official' });
+    await write({ ...mirror });
+    expect((await readVulndbSettings(ctx.db)).source).toMatchObject({
+      kevUrl: null,
+      epssUrl: null,
+    });
+  });
+
+  it('reads a damaged kevUrl as null and keeps the repository', async () => {
+    await ctx.db.insert(instanceSettings).values({
+      key: 'vulndb',
+      value: { source: { kind: 'mirror', repository: 'r.io/a/b:1', kevUrl: 42 } },
+    });
+    expect((await readVulndbSettings(ctx.db)).source).toMatchObject({
+      kind: 'mirror',
+      repository: 'r.io/a/b:1',
+      kevUrl: null,
+    });
+  });
+
+  it('priorityUrl falls back to the official URL', async () => {
+    expect(priorityUrl({ kind: 'official' }, 'kev')).toBe(OFFICIAL_KEV_URL);
+    expect(priorityUrl({ kind: 'upload' }, 'epss')).toBe(OFFICIAL_EPSS_URL);
+    await write({ ...mirror, kevUrl: 'https://m.corp/kev.json' });
+    const { source } = await readVulndbSettings(ctx.db);
+    expect(priorityUrl(source, 'kev')).toBe('https://m.corp/kev.json');
+    expect(priorityUrl(source, 'epss')).toBe(OFFICIAL_EPSS_URL);
   });
 });

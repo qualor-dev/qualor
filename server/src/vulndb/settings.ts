@@ -9,6 +9,11 @@ export const VULNDB_SETTINGS_KEY = 'vulndb';
 /** The stored mirror password's envelope decrypts only under this AAD. */
 export const VULNDB_PASSWORD_AAD = 'instance_settings.vulndb.mirror.password';
 export const OFFICIAL_REPOSITORY = 'ghcr.io/aquasecurity/trivy-db:2';
+export const OFFICIAL_KEV_URL =
+  'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
+export const OFFICIAL_EPSS_URL = 'https://epss.empiricalsecurity.com/epss_scores-current.csv.gz';
+/** The two datasets of the paid `vuln.priority` feature. */
+export type PriorityDataset = 'kev' | 'epss';
 export const VULNDB_INTERVAL_HOURS = [1, 3, 6, 12, 24] as const;
 export type VulndbIntervalHours = (typeof VULNDB_INTERVAL_HOURS)[number];
 
@@ -25,6 +30,8 @@ const sourceSchema = z.discriminatedUnion('kind', [
     repository: z.string().max(512).regex(VULNDB_REPOSITORY_PATTERN),
     username: z.string().max(256).nullable().catch(null),
     passwordEnc: encrypted.nullable().catch(null),
+    kevUrl: z.string().max(2048).nullable().catch(null),
+    epssUrl: z.string().max(2048).nullable().catch(null),
   }),
   z.object({ kind: z.literal('upload') }),
 ]);
@@ -36,6 +43,8 @@ export type VulndbSource =
       repository: string;
       username: string | null;
       passwordEnc: EncryptedValue | null;
+      kevUrl: string | null;
+      epssUrl: string | null;
     }
   | { kind: 'upload' };
 
@@ -89,7 +98,7 @@ export async function readVulndbSettings(db: Executor): Promise<VulndbSettings> 
   return onRead.parse(value) as VulndbSettings;
 }
 
-/** `password`: a string sets it, null removes it, absent keeps it; `username` likewise. */
+/** `password`: a string sets it, null removes it, absent keeps it; `username`, `kevUrl` and `epssUrl` likewise. */
 export type VulndbSourceInput =
   | { kind: 'official' }
   | {
@@ -97,6 +106,8 @@ export type VulndbSourceInput =
       repository: string;
       username?: string | null;
       password?: string | null;
+      kevUrl?: string | null;
+      epssUrl?: string | null;
     }
   | { kind: 'upload' };
 
@@ -136,7 +147,18 @@ function nextSource(
     repository: input.repository,
     username: input.username === undefined ? (before?.username ?? null) : input.username,
     passwordEnc,
+    kevUrl: input.kevUrl === undefined ? (before?.kevUrl ?? null) : input.kevUrl,
+    epssUrl: input.epssUrl === undefined ? (before?.epssUrl ?? null) : input.epssUrl,
   };
+}
+
+/** Where a priority dataset comes from: the mirror's URL when set, else the official one. */
+export function priorityUrl(source: VulndbSource, dataset: PriorityDataset): string {
+  if (source.kind === 'mirror') {
+    const url = dataset === 'kev' ? source.kevUrl : source.epssUrl;
+    if (url !== null) return url;
+  }
+  return dataset === 'kev' ? OFFICIAL_KEV_URL : OFFICIAL_EPSS_URL;
 }
 
 /** Applies `patch` under LOCKS.vulndbSettings; returns the row before and after, for the audit. */
