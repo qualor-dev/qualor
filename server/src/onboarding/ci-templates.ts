@@ -6,9 +6,10 @@ const CHECKOUT = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 /** The cache actions, pinned by commit like the checkout (actions/cache v4.3.0). */
 const CACHE_RESTORE = 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0';
 const CACHE_SAVE = 'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0';
+/** Set in the scanner step's shell: in a container job `${{ github.workspace }}` can be the host's path. */
+const TRIVY_CACHE_ENV = 'QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy"';
 /** Where the scanner keeps the vulnerability database archive inside the checkout. */
 const TRIVY_CACHE_PATH = '.qualor/trivy';
-const TRIVY_CACHE_DIR = '${{ github.workspace }}/.qualor/trivy';
 const FORK_GUARD =
   "github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository";
 const REF = '${{ github.event.pull_request.head.sha || github.sha }}';
@@ -208,11 +209,10 @@ export function githubWorkflow(o: WorkflowOptions): string {
       '      # and keep --no-incremental, so every project is compiled and writes its analysis log.',
       '      - run: dotnet build --no-incremental',
       "      # The token is in this step only: the build runs the repository's code and must not see it.",
-      '      - run: qualor dotnet end',
+      `      - run: ${TRIVY_CACHE_ENV} qualor dotnet end`,
       '        env:',
       `          QUALOR_URL: ${url}`,
       `          QUALOR_PROJECT_KEY: ${key}`,
-      `          QUALOR_TRIVY_CACHE_DIR: ${TRIVY_CACHE_DIR}`,
       `          QUALOR_TOKEN: ${TOKEN}`,
       ...cacheSaveStep(),
       '      - if: failure() || cancelled()',
@@ -240,11 +240,10 @@ export function githubWorkflow(o: WorkflowOptions): string {
       ...checkoutStep(o),
       ...cacheRestoreStep(),
       '      # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.',
-      '      - run: qualor scan',
+      `      - run: ${TRIVY_CACHE_ENV} qualor scan`,
       '        env:',
       `          QUALOR_URL: ${url}`,
       `          QUALOR_PROJECT_KEY: ${key}`,
-      `          QUALOR_TRIVY_CACHE_DIR: ${TRIVY_CACHE_DIR}`,
       `          QUALOR_TOKEN: ${TOKEN}`,
       ...cacheSaveStep(),
     ];

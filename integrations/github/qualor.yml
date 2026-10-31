@@ -43,10 +43,11 @@ jobs:
           restore-keys: qualor-trivy-db-
       # Analyzers that load the project's own plugins or classes (ESLint plugins, compiled Java
       # classes for SpotBugs) need its dependencies: install or build them here, before the scan.
-      - run: qualor scan
+      # The scanner keeps its vulnerability database in the checkout. The path comes from the shell's
+      # $GITHUB_WORKSPACE: a container job's github.workspace expression can be the host path.
+      - run: QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy" qualor scan
         env:
           QUALOR_URL: ${{ vars.QUALOR_URL }}
-          QUALOR_TRIVY_CACHE_DIR: ${{ github.workspace }}/.qualor/trivy
           QUALOR_TOKEN: ${{ secrets.QUALOR_TOKEN }}
       - if: always() && hashFiles('.qualor/trivy/server.json') != ''
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0

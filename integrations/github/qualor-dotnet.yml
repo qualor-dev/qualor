@@ -55,10 +55,11 @@ jobs:
       # Replace with the project's own build (restore, feeds, configuration); keep --no-incremental,
       # so every project is compiled and writes its Roslyn log.
       - run: dotnet build --no-incremental
-      - run: qualor dotnet end
+      # The scanner keeps its vulnerability database in the checkout. The path comes from the shell's
+      # $GITHUB_WORKSPACE: a container job's github.workspace expression can be the host path.
+      - run: QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy" qualor dotnet end
         env:
           QUALOR_URL: ${{ vars.QUALOR_URL }}
-          QUALOR_TRIVY_CACHE_DIR: ${{ github.workspace }}/.qualor/trivy
           QUALOR_TOKEN: ${{ secrets.QUALOR_TOKEN }}
       - if: always() && hashFiles('.qualor/trivy/server.json') != ''
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0

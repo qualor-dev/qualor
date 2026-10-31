@@ -116,19 +116,24 @@ describe('integrations/github/qualor.yml', () => {
       image: '${{ vars.QUALOR_SCANNER_IMAGE }}',
       options: '--user 1001',
     });
-    const scan = job.steps.find((s) => s.run?.startsWith('qualor scan'));
+    const scan = job.steps.find((s) => s.run?.includes('qualor scan'));
     expect(scan?.env).toEqual({
       QUALOR_URL: '${{ vars.QUALOR_URL }}',
       QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
-      QUALOR_TRIVY_CACHE_DIR: '${{ github.workspace }}/.qualor/trivy',
     });
-    expect(() => parseCommandLine(scan!.run!.split(/\s+/).slice(1))).not.toThrow();
+    // The path comes from the shell, right inside a container job (not ${{ github.workspace }}).
+    expect(
+      scan?.run?.startsWith('QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy" qualor scan'),
+    ).toBe(true);
+    expect(() => parseCommandLine(scan!.run!.split(/\s+/).slice(2))).not.toThrow();
+    for (const step of job.steps)
+      expect(JSON.stringify(step.env ?? {})).not.toContain('github.workspace');
   });
 
   it("caches the scanner's vulnerability database around the scan, pinned by commit", () => {
     expectDbCache(
       job.steps,
-      job.steps.find((s) => s.run?.startsWith('qualor scan'))!,
+      job.steps.find((s) => s.run?.includes('qualor scan'))!,
     );
   });
 
@@ -164,7 +169,7 @@ describe('integrations/github/qualor-dotnet.yml (github.md §11, config.md §6.1
   const plain = parse(read('qualor.yml')) as typeof workflow;
   const job = workflow.jobs.qualor!;
   const run = (prefix: string) => {
-    const found = job.steps.filter((s) => s.run?.trim().startsWith(prefix));
+    const found = job.steps.filter((s) => s.run?.includes(prefix));
     expect(found).toHaveLength(1);
     return found[0]!;
   };
@@ -208,7 +213,7 @@ describe('integrations/github/qualor-dotnet.yml (github.md §11, config.md §6.1
     expect(parseCommandLine(begin.run!.trim().split(/\s+/).slice(1))).toEqual({
       name: 'dotnet-begin',
     });
-    expect(parseCommandLine(end.run!.trim().split(/\s+/).slice(1))).toMatchObject({
+    expect(parseCommandLine(end.run!.trim().split(/\s+/).slice(2))).toMatchObject({
       name: 'dotnet-end',
     });
     expect(parseCommandLine(abort.run!.trim().split(/\s+/).slice(1))).toEqual({
@@ -223,8 +228,12 @@ describe('integrations/github/qualor-dotnet.yml (github.md §11, config.md §6.1
     expect(end.env).toEqual({
       QUALOR_URL: '${{ vars.QUALOR_URL }}',
       QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
-      QUALOR_TRIVY_CACHE_DIR: '${{ github.workspace }}/.qualor/trivy',
     });
+    expect(end.run).toBe(
+      'QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy" qualor dotnet end',
+    );
+    for (const step of job.steps)
+      expect(JSON.stringify(step.env ?? {})).not.toContain('github.workspace');
     expectDbCache(job.steps, end);
     for (const step of job.steps) {
       if (step !== end) expect(step.env ?? {}).not.toHaveProperty('QUALOR_TOKEN');

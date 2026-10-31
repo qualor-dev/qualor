@@ -733,16 +733,18 @@ describe('GitHub', () => {
       undefined,
       'qualor dotnet begin',
       'dotnet build --no-incremental',
-      'qualor dotnet end',
+      'QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy" qualor dotnet end',
       undefined,
       'qualor dotnet abort',
     ]);
     expect(job.steps[4].env).toEqual({
       QUALOR_URL: URL_,
       QUALOR_PROJECT_KEY: KEY,
-      QUALOR_TRIVY_CACHE_DIR: '${{ github.workspace }}/.qualor/trivy',
       QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
     });
+    expect(job.steps[4].run).toBe(
+      'QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy" qualor dotnet end',
+    );
     expect(job.steps[3].env).toBeUndefined();
     expectDbCache(job.steps, job.steps[4]);
     expect(job.steps[6].if).toBe('failure() || cancelled()');
@@ -753,11 +755,10 @@ describe('GitHub', () => {
     expect(job.container).toEqual({ image: 'qualor/scanner:0.14.3', options: '--user 1001' });
     expectDbCache(job.steps, job.steps[2]);
     expect(job.steps[2]).toEqual({
-      run: 'qualor scan',
+      run: 'QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy" qualor scan',
       env: {
         QUALOR_URL: URL_,
         QUALOR_PROJECT_KEY: KEY,
-        QUALOR_TRIVY_CACHE_DIR: '${{ github.workspace }}/.qualor/trivy',
         QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
       },
     });
