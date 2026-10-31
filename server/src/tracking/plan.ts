@@ -56,13 +56,15 @@ export interface InheritedIssue {
 }
 
 /**
- * The vulnerability decision in force for a finding's pair on the branch, when it is not Open
- * (vuln plan 2b, D4): a new issue takes its status, over the one it would inherit.
+ * The vulnerability decision in force for a finding's pair on the branch (vuln plan 2b, D4). A
+ * new issue takes its status when it is not Open, over the one it would inherit. On `main` and
+ * the tracked branches, a matched issue that reopens takes its status whatever it is (final
+ * review F1).
  */
 export interface FindingDecision {
-  status: 'false_positive' | 'wont_fix';
+  status: 'open' | 'false_positive' | 'wont_fix';
   comment: string | null;
-  /** Who made it: the new issue is resolved by them, as a decision resolves existing issues. */
+  /** Who made it: the issue is resolved by them, as a decision resolves existing issues. */
   decidedBy: string | null;
 }
 
@@ -111,6 +113,14 @@ export interface IssueUpdate extends IssueWrite {
    * exercise on its own, but the issues API of server step 12 will run concurrently with it).
    */
   from_status: IssueStatus;
+  /**
+   * Set when a vulnerability decision gave this reopening issue a status other than the one it
+   * would reopen to (final review F1). A status other than open is then resolved now by
+   * `decided_by`, and the changelog row carries `decision_comment`.
+   */
+  decided?: boolean;
+  decided_by?: string | null;
+  decision_comment?: string | null;
 }
 
 export interface StatusChange {
@@ -177,6 +187,11 @@ export interface PlanInput {
   inherited?: ReadonlyMap<number, InheritedIssue>;
   /** By position in `findings`: the vulnerability decision in force (vuln plan 2b, D4). */
   decisions?: ReadonlyMap<number, FindingDecision>;
+  /**
+   * The branch mirrors the vulnerability decisions (D4: `main` or a tracked branch), so a
+   * reopening Trivy issue takes the decision in force (final review F1).
+   */
+  mirrored?: boolean;
   /**
    * The server engines (rules/server-engines.ts) that ran for this analysis with status ok.
    * Whether one ran comes from here, never from the report: a report entry claiming one with
@@ -267,10 +282,11 @@ function write(
 /**
  * data-model.md §5.2 steps 0–4 and §6 (system transitions) for one analysis, without I/O:
  * matched issues are updated (see {@link reopenedStatus} for how a `closed` or `resolved` one is
- * reopened), unmatched findings become new issues, and an unmatched candidate is closed only when
- * its engine reported `status: ok` in this report — an analyzer that failed, timed out, was
- * skipped or is absent leaves its issues untouched. A server engine's status is the server's
- * own (`serverOkEngines`), whatever the report says.
+ * reopened; on a mirrored branch a reopening Trivy issue takes the decision in force instead,
+ * final review F1), unmatched findings become new issues, and an unmatched candidate is closed
+ * only when its engine reported `status: ok` in this report — an analyzer that failed, timed
+ * out, was skipped or is absent leaves its issues untouched. A server engine's status is the
+ * server's own (`serverOkEngines`), whatever the report says.
  */
 export function planTracking(input: PlanInput): TrackingPlan {
   const { report, findings, candidates, classifier, now } = input;
@@ -309,7 +325,12 @@ export function planTracking(input: PlanInput): TrackingPlan {
     const candidate = candidateIndex === undefined ? undefined : candidates[candidateIndex];
     if (candidateIndex !== undefined && candidate) {
       matchedCandidates.add(candidateIndex);
-      const status = reopenedStatus(candidate);
+      const reopened = reopenedStatus(candidate);
+      // F1: on a mirrored branch a reopening issue mirrors the decision in force, Open included.
+      const reopening = candidate.status === 'closed' || candidate.status === 'resolved';
+      const decision = input.mirrored && reopening ? input.decisions?.get(i) : undefined;
+      const decided = decision?.status === reopened ? undefined : decision;
+      const status: IssueStatus = decided?.status ?? reopened;
       const inNewCode = classifier.inNewCode(
         location?.path ?? null,
         location?.startLine ?? null,
@@ -319,6 +340,11 @@ export function planTracking(input: PlanInput): TrackingPlan {
       plan.updates.push({
         ...write(f, candidate.id, status, inNewCode, severity),
         from_status: candidate.status,
+        ...(decided && {
+          decided: true,
+          decided_by: decided.decidedBy,
+          decision_comment: decided.comment,
+        }),
       });
       liveOf(
         candidate.id,
@@ -331,9 +357,13 @@ export function planTracking(input: PlanInput): TrackingPlan {
     const inherited = input.inherited?.get(i);
     const id = uuidv7();
     const inheritedStatus = inherited?.status ?? 'open';
-    // D4: a new Trivy issue takes the decision in force over the status it would inherit.
+    // D4: a new Trivy issue takes the decision in force, when it is not Open, over the status it
+    // would inherit.
     const decision = input.decisions?.get(i);
-    const decided = decision?.status === inheritedStatus ? undefined : decision;
+    const decided =
+      decision === undefined || decision.status === 'open' || decision.status === inheritedStatus
+        ? undefined
+        : { ...decision, status: decision.status };
     const status: IssueStatus = decided?.status ?? inheritedStatus;
     const inNewCode = classifier.inNewCode(
       location?.path ?? null,

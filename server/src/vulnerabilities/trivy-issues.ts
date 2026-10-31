@@ -148,10 +148,11 @@ export function findingPairs(
 
 /**
  * D4 at ingestion: the decision in force on the branch for each Trivy finding with a package
- * name, by its position in `findings`, when it is not Open. The decision in force is the branch's
- * own row of the pair, else the project's. One query for the whole analysis (one per chunk of
- * 5 000 pairs). The caller holds the pairs' locks ({@link findingPairs}, shared), so no decision
- * of them changes until it commits.
+ * name, by its position in `findings`, Open decisions included (a reopening issue on a mirrored
+ * branch takes those too, final review F1). The decision in force is the branch's own row of the
+ * pair, else the project's. A pair with no row has none. One query for the whole analysis (one
+ * per chunk of 5 000 pairs). The caller holds the pairs' locks ({@link findingPairs}, shared), so
+ * no decision of them changes until it commits.
  */
 export async function findingDecisions(
   tx: Executor,
@@ -184,7 +185,6 @@ export async function findingDecisions(
          AND (d.branch_id = ${at.branchId} OR (d.branch_id IS NULL AND d.version_id IS NULL))
        ORDER BY d.package_name, d.vulnerability_id, d.branch_id IS NULL`);
     for (const row of rows.rows) {
-      if (row.status === 'open') continue;
       inForce.set(pairKey(row.package_name, row.vulnerability_id), {
         status: row.status,
         comment: row.comment,

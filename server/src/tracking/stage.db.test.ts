@@ -741,6 +741,70 @@ describe('issue tracking (server step 8, data-model.md §5.2 and §6)', () => {
       ]);
     });
 
+    describe('a re-detected issue on a mirrored branch takes the decision (final review F1)', () => {
+      const gone = {
+        engines: [engine('trivy')],
+        files: [file(LOCK, { language: 'other' })],
+        findings: [],
+      } satisfies ReportParts;
+      const decideNow = (projectId: string, status: 'open' | 'false_positive') =>
+        h.ctx.db.transaction((tx) =>
+          writeDecision(tx, {
+            projectId,
+            packageName: 'lodash',
+            vulnerabilityId: VULN,
+            scope: { kind: 'project' },
+            status,
+            reason: status === 'false_positive' ? 'component_not_present' : null,
+            comment: status === 'open' ? 'shipped again' : 'not shipped',
+            userId: h.ctx.adminId,
+            source: 'tab',
+          }),
+        );
+
+      it('reopens a closed issue on main as Not affected when the decision says so', async () => {
+        const p = await h.project('track/trivy-reopen-decided');
+        const first = await p.ingestOk(report(p, withTrivy));
+        const closing = await p.ingestOk(report(p, gone));
+        // A decision written while the issue is closed leaves it alone (D4).
+        expect((await decideNow(p.id, 'false_positive')).appliedIssueIds).toEqual([]);
+        const back = await p.ingestOk(report(p, withTrivy));
+        const [issue] = await issuesOf(p);
+        expect(issue).toMatchObject({ status: 'false_positive', resolvedBy: h.ctx.adminId });
+        expect(issue!.resolvedAt).not.toBeNull();
+        expect(issue!.firstSeenAnalysisId).toBe(first);
+        expect(await statusLog(issue!.id)).toEqual([
+          ['open', 'closed', closing, null, null],
+          ['closed', 'false_positive', back, null, 'not shipped'],
+        ]);
+      });
+
+      it('reopens a closed Not affected issue on main as open when the decision is Open', async () => {
+        const p = await h.project('track/trivy-reopen-open');
+        await p.ingestOk(report(p, withTrivy));
+        await decideNow(p.id, 'false_positive');
+        const closing = await p.ingestOk(report(p, gone));
+        expect((await decideNow(p.id, 'open')).appliedIssueIds).toEqual([]);
+        const back = await p.ingestOk(report(p, withTrivy));
+        const [issue] = await issuesOf(p);
+        expect(issue).toMatchObject({ status: 'open', resolvedAt: null, resolvedBy: null });
+        expect((await statusLog(issue!.id)).slice(-2)).toEqual([
+          ['false_positive', 'closed', closing, null, null],
+          ['closed', 'open', back, null, 'shipped again'],
+        ]);
+      });
+
+      it('restores the pre-close status on a merge request, whatever the decision', async () => {
+        const p = await h.project('track/trivy-reopen-mr');
+        await p.ingestOk(report(p, { ...withTrivy, ...mr }));
+        await p.ingestOk(report(p, { ...gone, ...mr }));
+        await decideNow(p.id, 'false_positive');
+        await p.ingestOk(report(p, { ...withTrivy, ...mr }));
+        const [issue] = await issuesOn(p, 'merge_request', '7');
+        expect(issue).toMatchObject({ status: 'open', resolvedBy: null });
+      });
+    });
+
     describe('a decision written while an ingestion creates the issue (final review I1)', () => {
       const notAffected = (projectId: string): DecisionInput => ({
         projectId,

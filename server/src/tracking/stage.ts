@@ -1,6 +1,7 @@
 import type { IngestionContext, IngestionStage } from '../ingest/process';
 import { requireState } from '../ingest/state';
 import { newCodeClassifier } from '../newcode/lines';
+import { isTrackedBranch, vulnerabilitySettings } from '../versions/settings';
 import { lockDecisionPairs } from '../vulnerabilities/decisions';
 import { findingDecisions, findingPairs } from '../vulnerabilities/trivy-issues';
 import { planCarryOver, writeCarryOver } from './carry-over';
@@ -50,6 +51,9 @@ export async function buildTrackingPlan(ctx: IngestionContext): Promise<BuiltTra
     { projectId: ctx.project.id, branchId: ctx.branch.id },
     findings,
   );
+  const mirrored =
+    decisions.size > 0 &&
+    isTrackedBranch(await vulnerabilitySettings(ctx.tx, ctx.project.id), ctx.branch);
   const plan = planTracking({
     report: ctx.report,
     findings,
@@ -58,6 +62,7 @@ export async function buildTrackingPlan(ctx: IngestionContext): Promise<BuiltTra
     now,
     inherited,
     decisions,
+    mirrored,
     serverOkEngines: ctx.state.serverOkEngines ?? [],
   });
   return { plan, inherited };

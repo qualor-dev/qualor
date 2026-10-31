@@ -86,8 +86,8 @@ const WRITE_RECORD = `id uuid, rule_id uuid, fingerprint text, line_hash text, c
   message text, severity text, quality text, kind text, status text, in_new_code boolean,
   snippet jsonb, secondary_locations jsonb, confidence text, package_name text`;
 
-/** {@link WRITE_RECORD} plus the guard column updateMatched needs (see its SQL). */
-const UPDATE_RECORD = `${WRITE_RECORD}, from_status text`;
+/** {@link WRITE_RECORD} plus the guard and decision columns updateMatched needs (see its SQL). */
+const UPDATE_RECORD = `${WRITE_RECORD}, from_status text, decided boolean, decided_by uuid`;
 
 /** Sorts by a stable key before chunking, so a batched statement's row (and lock) order is a
  *  reproducible function of the input, not of incidental report/array iteration order. Every call
@@ -122,9 +122,12 @@ async function updateMatched(
   rows: TrackingPlan['updates'],
   analysisId: string,
   blocked: string[],
-): Promise<StatusChange[]> {
-  const applied: StatusChange[] = [];
+): Promise<(StatusChange & { comment?: string | null })[]> {
+  const applied: (StatusChange & { comment?: string | null })[] = [];
   const seenStatus = new Map<string, string>();
+  const decidedComment = new Map(
+    rows.filter((r) => r.decided).map((r) => [r.id, r.decision_comment ?? null]),
+  );
   // Sorted by id for a reproducible statement order. The rows are already locked by
   // lockPlannedRows (one id-ordered pass over the matched and close sets together, which is what
   // keeps this deadlock-free against user transitions and other writers); the locked read below
@@ -155,10 +158,13 @@ async function updateMatched(
         last_seen_analysis_id = ${analysisId},
         -- A matched row is never left 'closed', so once the guard passes closed_at always clears.
         closed_at = CASE WHEN i.status = r.from_status THEN NULL ELSE i.closed_at END,
+        -- A status a vulnerability decision gave (final review F1) is resolved now by its decider.
         resolved_at = CASE WHEN i.status <> r.from_status THEN i.resolved_at
-                           WHEN r.status = 'open' THEN NULL ELSE i.resolved_at END,
+                           WHEN r.status = 'open' THEN NULL
+                           WHEN r.decided THEN now() ELSE i.resolved_at END,
         resolved_by = CASE WHEN i.status <> r.from_status THEN i.resolved_by
-                           WHEN r.status = 'open' THEN NULL ELSE i.resolved_by END,
+                           WHEN r.status = 'open' THEN NULL
+                           WHEN r.decided THEN r.decided_by ELSE i.resolved_by END,
         updated_at = now()
       FROM jsonb_to_recordset(${chunk}::jsonb) AS r(${sql.raw(UPDATE_RECORD)})
       WHERE i.id = r.id
@@ -170,6 +176,7 @@ async function updateMatched(
           issueId: row.id,
           oldValue: row.old_value as IssueStatus,
           newValue: row.new_value as IssueStatus,
+          ...(decidedComment.has(row.id) && { comment: decidedComment.get(row.id) }),
         });
       }
     }
