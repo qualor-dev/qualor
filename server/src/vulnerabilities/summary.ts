@@ -295,10 +295,20 @@ export async function newVulnerabilityMarkers(
     is_main: boolean | null;
     kind: string | null;
   }>(sql`
-    WITH r AS (${scopedRows(sql`tv.project_id IN ${uuidList(on)}`)})
-    SELECT n.project_id, n.branch_id, n.version_id, b.name, b.is_main, b.kind
-      FROM (SELECT DISTINCT project_id, branch_id, version_id FROM r WHERE ${IS_NEW}) n
-      LEFT JOIN branches b ON b.id = n.branch_id`);
+    SELECT DISTINCT n.project_id, n.branch_id, n.version_id, b.name, b.is_main, b.kind
+      FROM (
+        SELECT tv.project_id, tv.branch_id, tv.version_id, tv.package_name, tv.vulnerability_id
+          FROM target_vulnerabilities tv
+          JOIN vulnerability_matches m ON m.purl = tv.purl AND m.vulnerability_id = tv.vulnerability_id
+          LEFT JOIN vulnerability_target_checks cb ON cb.branch_id = tv.branch_id
+          LEFT JOIN vulnerability_target_checks cv ON cv.version_id = tv.version_id
+         WHERE tv.project_id IN ${uuidList(on)}
+           AND NOT tv.ignored
+           AND tv.first_seen_at > COALESCE(cb.baseline_at, cv.baseline_at)
+      ) n
+      ${effectiveDecisionJoin('n', 'd')}
+      LEFT JOIN branches b ON b.id = n.branch_id
+     WHERE COALESCE(d.status, 'open') = 'open'`);
 
   const versionCandidates = new Map<string, Set<string>>();
   for (const row of candidates.rows) {
@@ -310,6 +320,7 @@ export async function newVulnerabilityMarkers(
       set.add(row.version_id);
       versionCandidates.set(row.project_id, set);
     } else if (
+      row.kind === 'branch' &&
       row.name !== null &&
       isTrackedBranch(own, { name: row.name, isMain: row.is_main === true, kind: row.kind ?? '' })
     ) {

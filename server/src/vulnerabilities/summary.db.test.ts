@@ -350,4 +350,41 @@ describe('the Vulnerabilities tab: target summary', () => {
     expect(markers.get(quiet.projectId)).toEqual({ main: false, branches: 0, versions: 0 });
     expect((await newVulnerabilityMarkers(t.db, [])).size).toBe(0);
   });
+
+  it('marks only branch-kind targets, and leaves ignored and triaged rows out', async () => {
+    const p = await setup();
+    const main = await p.branch('main', true);
+    const mergeRequest = first(
+      await t.db
+        .insert(branches)
+        .values({ projectId: p.projectId, kind: 'merge_request', name: 'release/7' })
+        .returning(),
+    ).id;
+    await seedCheck(t.db, { projectId: p.projectId, branchId: main, baselineAt: T0 });
+    await seedCheck(t.db, { projectId: p.projectId, branchId: mergeRequest, baselineAt: T0 });
+    const row = (branchId: string, name: string, extra: { ignored?: boolean } = {}) =>
+      seedTargetRow(t.db, {
+        projectId: p.projectId,
+        branchId,
+        packageName: name,
+        vulnerabilityId: `CVE-${name}`,
+        firstSeenAt: AFTER,
+        ...extra,
+      });
+    await row(mergeRequest, 'mr');
+    await row(main, 'ignored', { ignored: true });
+    await row(main, 'triaged');
+    await decide(p.projectId, 'triaged', 'CVE-triaged', 'wont_fix');
+    expect((await newVulnerabilityMarkers(t.db, [p.projectId])).get(p.projectId)).toEqual({
+      main: false,
+      branches: 0,
+      versions: 0,
+    });
+    await row(main, 'open');
+    expect((await newVulnerabilityMarkers(t.db, [p.projectId])).get(p.projectId)).toEqual({
+      main: true,
+      branches: 0,
+      versions: 0,
+    });
+  });
 });

@@ -4690,6 +4690,46 @@
                               "reason"
                             ],
                             "additionalProperties": false
+                          },
+                          "vulnerabilities": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "newIn": {
+                                    "type": "object",
+                                    "properties": {
+                                      "main": {
+                                        "type": "boolean"
+                                      },
+                                      "branches": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "versions": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "main",
+                                      "branches",
+                                      "versions"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "newIn"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -4707,7 +4747,8 @@
                           "mainBranch",
                           "permissions",
                           "autoFix",
-                          "aiReview"
+                          "aiReview",
+                          "vulnerabilities"
                         ],
                         "additionalProperties": false
                       }
@@ -5096,6 +5137,46 @@
                         "reason"
                       ],
                       "additionalProperties": false
+                    },
+                    "vulnerabilities": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "newIn": {
+                              "type": "object",
+                              "properties": {
+                                "main": {
+                                  "type": "boolean"
+                                },
+                                "branches": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "versions": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "main",
+                                "branches",
+                                "versions"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "newIn"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -5113,7 +5194,8 @@
                     "mainBranch",
                     "permissions",
                     "autoFix",
-                    "aiReview"
+                    "aiReview",
+                    "vulnerabilities"
                   ],
                   "additionalProperties": false
                 }
@@ -5484,6 +5566,46 @@
                         "reason"
                       ],
                       "additionalProperties": false
+                    },
+                    "vulnerabilities": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "newIn": {
+                              "type": "object",
+                              "properties": {
+                                "main": {
+                                  "type": "boolean"
+                                },
+                                "branches": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "versions": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "main",
+                                "branches",
+                                "versions"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "newIn"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -5501,7 +5623,8 @@
                     "mainBranch",
                     "permissions",
                     "autoFix",
-                    "aiReview"
+                    "aiReview",
+                    "vulnerabilities"
                   ],
                   "additionalProperties": false
                 }
@@ -5863,6 +5986,46 @@
                         "reason"
                       ],
                       "additionalProperties": false
+                    },
+                    "vulnerabilities": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "newIn": {
+                              "type": "object",
+                              "properties": {
+                                "main": {
+                                  "type": "boolean"
+                                },
+                                "branches": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "versions": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "main",
+                                "branches",
+                                "versions"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "newIn"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -5880,7 +6043,8 @@
                     "mainBranch",
                     "permissions",
                     "autoFix",
-                    "aiReview"
+                    "aiReview",
+                    "vulnerabilities"
                   ],
                   "additionalProperties": false
                 }
@@ -6367,6 +6531,46 @@
                         "reason"
                       ],
                       "additionalProperties": false
+                    },
+                    "vulnerabilities": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "newIn": {
+                              "type": "object",
+                              "properties": {
+                                "main": {
+                                  "type": "boolean"
+                                },
+                                "branches": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "versions": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "main",
+                                "branches",
+                                "versions"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "newIn"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -6384,7 +6588,8 @@
                     "mainBranch",
                     "permissions",
                     "autoFix",
-                    "aiReview"
+                    "aiReview",
+                    "vulnerabilities"
                   ],
                   "additionalProperties": false
                 }

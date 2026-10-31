@@ -62,6 +62,10 @@ import { queueRemapPurgeIfCopies, queueSnapshotPurge } from '../review/jobs';
 import { projectAiReview } from '../review/settings';
 import { forgetForeignMergeRequestUrls } from '../scm/connections';
 import { projectAutoFixSchema } from './auto-fix';
+import { vulnerabilitySettingsOf } from '../versions/settings';
+import { newVulnerabilityMarkers, type NewMarker } from '../vulnerabilities/summary';
+import { enqueueRecheck } from '../vulnerabilities/recheck';
+import { readVulndbSettings } from '../vulndb/settings';
 import { projectAiReviewSchema } from './review';
 import { projectRefProblem, scmProjectRef } from './scm-connections';
 
@@ -109,6 +113,19 @@ export const projectSchema = z.object({
    * project.
    */
   aiReview: projectAiReviewSchema,
+  /**
+   * Dependency vulnerability monitoring: how many tracked targets have new vulnerabilities (main,
+   * branches, versions). Null while the instance or the project switch is off.
+   */
+  vulnerabilities: z
+    .object({
+      newIn: z.object({
+        main: z.boolean(),
+        branches: z.number().int(),
+        versions: z.number().int(),
+      }),
+    })
+    .nullable(),
 });
 export type ProjectDto = z.infer<typeof projectSchema>;
 
@@ -195,6 +212,12 @@ export async function projectDtos(
     db,
     mains.flatMap((m) => (m.branch.lastAnalysisId ? [m.branch.lastAnalysisId] : [])),
   );
+  const ids = rows.map((r) => r.id);
+  // Null for every project while the instance switch is off, and for those whose own is off.
+  const monitored = (await readVulndbSettings(db)).enabled
+    ? await vulnerabilitySettingsOf(db, ids)
+    : null;
+  const markers = monitored ? await newVulnerabilityMarkers(db, ids) : null;
   return rows.map((p) => {
     const main = byProject.get(p.id);
     return {
@@ -236,6 +259,10 @@ export async function projectDtos(
         excludedFromAi: projectExcludedFromAi(llmSettings, p),
       },
       aiReview: projectAiReview(llmSettings, p),
+      vulnerabilities:
+        monitored?.get(p.id)?.enabled === true && markers?.has(p.id)
+          ? { newIn: markers.get(p.id) as NewMarker }
+          : null,
     };
   });
 }
@@ -498,6 +525,7 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
               provider === null || ref === null ? null : projectRefProblem(provider, ref);
             if (problem) throw validationFailed([{ path: 'body.scmProjectRef', message: problem }]);
           }
+          let mainSwitched = false;
           const changes: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
           if (body.name !== undefined) changes.name = body.name;
           if (body.newCodeDefinition !== undefined)
@@ -523,6 +551,7 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
                 target: [branches.projectId, branches.kind, branches.name],
                 set: { isMain: true },
               });
+            mainSwitched = true;
           }
           if (body.newCodeDefinition?.type === 'analysis') {
             // gates.md §5: a newCodeDefinition of type 'analysis' is a main-branch baseline. This
@@ -587,6 +616,11 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
                 details: { changes: fieldChanges },
               },
             ]);
+          }
+          // Another branch is main now: which target counts as main for monitoring changed. Last
+          // in the transaction: enqueueRecheck holds a global lock until the commit.
+          if (mainSwitched && (await readVulndbSettings(tx)).enabled) {
+            await enqueueRecheck(tx, { projectIds: [saved.id] });
           }
           return saved;
         });

@@ -37,6 +37,7 @@ function project(id: string, name: string, overrides: Partial<Project> = {}): Pr
     permissions: ['project.read'],
     autoFix: { available: false, enabled: true, organizationEnabled: false, excludedFromAi: false },
     aiReview: { enabled: false, organizationEnabled: false, reason: 'review_disabled' },
+    vulnerabilities: null,
     ...overrides,
   };
 }
