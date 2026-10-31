@@ -28,8 +28,9 @@ The Qualor web app: Angular 22 (standalone components, signals, zoneless), plain
   a local SIEM receiver on the port after): the Playwright projects `enterprise-setup` (its own
   admin session) and `enterprise` (`e2e/enterprise.spec.ts`, `e2e/sso.spec.ts`), and shots 24
   to 30. Plan 5D: a third server, on the port after the receiver, serves the licensed server's
-  database under a Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`); the Playwright project
-  `business` (`e2e/business.spec.ts`) runs there after `enterprise`, on the same admin session.
+  database under a Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`,
+  `vuln.priority`, `vuln.alerts`, `sbom`); the Playwright project `business`
+  (`e2e/business.spec.ts`) runs there after `enterprise`, on the same admin session.
   The roles, the Members screen and the Access tab are in every edition since plan 5B:
   `e2e/roles.spec.ts` and shots 22 and 23 run on the community server.
 

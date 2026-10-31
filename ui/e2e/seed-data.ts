@@ -85,10 +85,11 @@ export const VERSION = { option: '1.0.0 (tracked)', package: 'legacy-queue' };
  * (`enterprise.setup.ts`), and the local receiver its audit stream may post to.
  *
  * Plan 5D: a third server on BUSINESS_PORT serves the enterprise server's database under a
- * Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`), as a replica would after a move to the
- * Business plan. It shares that database's sessions, so the enterprise admin's session works
- * there too (cookies do not depend on the port). `business.spec.ts` runs after the enterprise
- * tests, so it sees the stream they configured, kept and paused.
+ * Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`, `vuln.priority`,
+ * `vuln.alerts`, `sbom`), as a replica would after a move to the Business plan. It shares that
+ * database's sessions, so the enterprise admin's session works there too (cookies do not depend
+ * on the port). `business.spec.ts` runs after the enterprise tests, so it sees the stream they
+ * configured, kept and paused.
  */
 const E2E_PORT = Number(process.env.QUALOR_E2E_PORT ?? '4280');
 export const ENTERPRISE_PORT = E2E_PORT + 1;

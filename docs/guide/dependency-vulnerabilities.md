@@ -101,7 +101,7 @@ Prediction Scoring System (EPSS). Without the feature the tab shows none of it.
 | **Exploited (KEV)** badge on a card | the vulnerability is in KEV. The tooltip gives the date CISA added it, and says "Known to be used in ransomware" when KEV marks it so |
 | **EPSS** on a card | the probability that the vulnerability is exploited in the next 30 days, such as "EPSS 42.0%". Below 0.1% it reads "<0.1%". The tooltip adds the percentile |
 | **Exploited only** filter | lists only the cards with the badge. It is kept in the URL as `exploited=true` |
-| order of the cards | exploited cards come first |
+| order of the cards | open cards first, then the others. Within each group, exploited cards come first, and both parts run by severity |
 
 KEV and EPSS cover CVE ids only. A vulnerability with another id, such as a GHSA id without a CVE
 alias, has no badge and no EPSS. [The vulnerability database](./vulnerability-database.md) lists
