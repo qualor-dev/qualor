@@ -119,7 +119,8 @@ export function requestVulndbUpdateNow(db: Db): Promise<boolean> {
 
 /**
  * A new check interval (PUT): the waiting run moves to the last check plus the new interval, or to
- * now when that time has passed, and `nextCheckAt` follows. Before a first check the waiting run
+ * now when that time has passed, and `nextCheckAt` follows. A run that is already due stays as it
+ * is: a new interval never delays it. Before a first check the waiting run
  * stays where it is (a minute after the start); a running check schedules the next one with the
  * new interval itself. Under LOCKS.vulndbSchedule.
  */
@@ -133,7 +134,7 @@ export async function rescheduleVulndbUpdate(db: Db): Promise<void> {
       UPDATE jobs
          SET run_at = greatest(now(), ${lastCheckAt}::timestamptz + make_interval(hours => ${hours})),
              updated_at = now()
-       WHERE queue = ${VULNDB_UPDATE_QUEUE} AND status = 'queued'
+       WHERE queue = ${VULNDB_UPDATE_QUEUE} AND status = 'queued' AND run_at > now()
       RETURNING run_at`);
     return moved.rows[0]?.run_at ?? null;
   });

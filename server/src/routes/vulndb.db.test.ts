@@ -311,6 +311,29 @@ describe('/system/vulnerability-db (API)', () => {
       expect(await dueNow()).toBe(0);
     });
 
+    it('a new interval never delays a run that is already due', async () => {
+      await ctx.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      const dueSince = new Date(Date.now() - 10 * 60_000);
+      await ctx.db.insert(jobs).values({
+        id: uuidv7(),
+        queue: VULNDB_UPDATE_QUEUE,
+        payload: {},
+        concurrencyKey: VULNDB_UPDATE_QUEUE,
+        runAt: dueSince,
+      });
+      await updateVulndbState(ctx.db, (s) => ({
+        ...s,
+        lastCheckAt: new Date(Date.now() - 3_600_000).toISOString(),
+      }));
+      // 24 h after the last check is far ahead, but the waiting run is due and stays so.
+      expect((await put({ intervalHours: 24 })).statusCode).toBe(200);
+      const [row] = await ctx.db
+        .select({ runAt: jobs.runAt })
+        .from(jobs)
+        .where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      expect(row?.runAt.toISOString()).toBe(dueSince.toISOString());
+    });
+
     it('a new interval before the first check leaves the first one where it is', async () => {
       await parkLater();
       await put({ intervalHours: 3 });
