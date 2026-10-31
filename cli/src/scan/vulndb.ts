@@ -8,6 +8,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  type Stats,
   writeFileSync,
 } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
@@ -102,7 +103,10 @@ const MAX_METADATA_BYTES = 64 * 1024;
 const HOUR_MS = 60 * 60 * 1000;
 /** P8: `daily` reuses a copy fetched less than this long ago. */
 const DAY_MS = 24 * HOUR_MS;
-/** A staging directory this old belongs to no running scan (the longest timeout is a day). */
+/**
+ * A staging directory or private copy this old belongs to no running scan (the longest timeout is
+ * a day).
+ */
 const STAGING_MAX_AGE_MS = 48 * HOUR_MS;
 /** The private copy's directory: `createWorkDir` names it `qualor-vulndb-` and six characters. */
 const WORK_ID = 'vulndb';
@@ -235,8 +239,19 @@ function prune(cache: string, log: Logger): void {
 }
 
 /**
+ * A directory this module made with `mkdtemp`, as `lstat` saw it: a directory (never a link) and,
+ * on POSIX, this user's with mode 0700. In a shared `/tmp`, another user's lookalike is skipped.
+ */
+function ownWorkDir(s: Stats): boolean {
+  if (!s.isDirectory()) return false;
+  if (process.platform === 'win32' || process.getuid === undefined) return true;
+  return s.uid === process.getuid() && (s.mode & 0o777) === 0o700;
+}
+
+/**
  * Removes the private copies (over a gigabyte each) that scans killed before their cleanup left in
- * `tempRoot`: this module's directories only, a day old or more.
+ * `tempRoot`: this module's directories only, two days old or more, so a running scan's copy
+ * stays. The removal unlinks a link it meets and never follows one.
  */
 function sweepWorkDirs(tempRoot: string, log: Logger): void {
   let names: string[];
@@ -251,7 +266,7 @@ function sweepWorkDirs(tempRoot: string, log: Logger): void {
     const dir = path.join(tempRoot, name);
     try {
       const s = lstatSync(dir);
-      if (s.isDirectory() && now - s.mtimeMs >= DAY_MS) removeQuietly(dir, log);
+      if (ownWorkDir(s) && now - s.mtimeMs >= STAGING_MAX_AGE_MS) removeQuietly(dir, log);
     } catch {
       // Gone already (another scan removed it).
     }

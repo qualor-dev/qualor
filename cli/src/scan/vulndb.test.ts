@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
+  lutimesSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -503,32 +507,63 @@ describe('resolveVulnerabilityDb: a new archive that is not usable keeps the cac
 });
 
 describe('resolveVulnerabilityDb: private copies a killed scan left behind', () => {
-  it('removes qualor-vulndb-* directories older than a day from the temporary directory, and nothing else', async () => {
+  const posix = process.platform !== 'win32';
+  /** The entry itself (a link too), not what it points to. */
+  const present = (p: string) => {
+    try {
+      lstatSync(p);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it('removes this user’s 0700 qualor-vulndb-* directories two days old or more from the temporary directory, and nothing else', async () => {
     const server = await fakeServer({ meta: 404 });
     const tempRoot = tmp();
-    const dayAgo = new Date(Date.now() - 25 * HOUR);
-    const make = (name: string, old: boolean, kind: 'dir' | 'file' = 'dir') => {
-      const p = path.join(tempRoot, name);
-      if (kind === 'dir') {
+    const elsewhere = tmp();
+    const ago = (hours: number) => new Date(Date.now() - hours * HOUR);
+    const make = (
+      where: string,
+      name: string,
+      hours: number,
+      o: { kind?: 'dir' | 'file'; mode?: number } = {},
+    ) => {
+      const p = path.join(where, name);
+      if ((o.kind ?? 'dir') === 'dir') {
         mkdirSync(path.join(p, 'db'), { recursive: true });
         writeFileSync(path.join(p, 'db', 'trivy.db'), 'a copy');
+        // As mkdtemp makes it.
+        chmodSync(p, o.mode ?? 0o700);
       } else {
         writeFileSync(p, 'a file');
       }
-      if (old) utimesSync(p, dayAgo, dayAgo);
+      utimesSync(p, ago(hours), ago(hours));
       return p;
     };
-    const stale = make('qualor-vulndb-AbC123', true);
+    const stale = make(tempRoot, 'qualor-vulndb-AbC123', 49);
+    // A link with the name, to an old directory elsewhere: neither is touched.
+    const target = make(elsewhere, 'qualor-vulndb-T4rget', 49);
+    const link = path.join(tempRoot, 'qualor-vulndb-L1nk00');
+    symlinkSync(target, link, 'junction');
+    lutimesSync(link, ago(49), ago(49));
     const kept = [
-      make('qualor-vulndb-xYz789', false),
-      make('qualor-review-AbC123', true),
-      make('qualor-vulndb-AbC1234', true),
-      make('qualor-vulndb-Fi1e00', true, 'file'),
+      make(tempRoot, 'qualor-vulndb-xYz789', 0),
+      // More than a day old: a scan may still be using it.
+      make(tempRoot, 'qualor-vulndb-Day1ok', 30),
+      make(tempRoot, 'qualor-review-AbC123', 49),
+      make(tempRoot, 'qualor-vulndb-AbC1234', 49),
+      make(tempRoot, 'qualor-vulndb-Fi1e00', 49, { kind: 'file' }),
+      link,
+      target,
+      path.join(target, 'db', 'trivy.db'),
+      // POSIX: not as mkdtemp makes it, so not this module's.
+      ...(posix ? [make(tempRoot, 'qualor-vulndb-M0de55', 49, { mode: 0o755 })] : []),
     ];
     const got = await choose({ endpoint: server.endpoint, cache: path.join(tmp(), 'c'), tempRoot });
     expect(got).toMatchObject({ dir: null, warnings: [] });
-    expect(existsSync(stale)).toBe(false);
-    for (const p of kept) expect(existsSync(p), p).toBe(true);
+    expect(present(stale)).toBe(false);
+    for (const p of kept) expect(present(p), p).toBe(true);
     await got.cleanup();
   });
 });
