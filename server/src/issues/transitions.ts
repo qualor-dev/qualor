@@ -129,8 +129,9 @@ export async function lockIssues(
  *
  * 1. Read without locks: the issues of `ids` and their duplicates whose triage writes a
  *    vulnerability decision (`decidingIssues`), unless `decisions` is false (`resolved`).
- * 2. The advisory lock of each of their pairs, in `hashtext` order (`lockDecisionPairs`), which
- *    every decision writer takes first.
+ * 2. The advisory lock of each of their pairs, in one statement in ascending key order
+ *    (`lockDecisionPairs`), which every decision writer takes first and an ingestion takes shared
+ *    before it reads the decisions.
  * 3. `ids`, their duplicates and every Trivy issue of those pairs, in ONE id-ordered statement
  *    ({@link lockIssues}): the decisions then change only rows already held.
  *

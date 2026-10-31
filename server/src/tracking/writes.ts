@@ -284,7 +284,9 @@ export interface WrittenPlan {
  * locks its issues in one statement as well), so the two can no longer form a lock cycle:
  * without this, ingestion locked the matched set, then (after the inserts)
  * the close set in a second pass, and a transition holding a closing row while waiting on a
- * matched one deadlocked with it — and Postgres could abort the whole ingestion.
+ * matched one deadlocked with it — and Postgres could abort the whole ingestion. The shared
+ * vulnerability decision pair locks come before this pass (stage.ts `buildTrackingPlan`), as a
+ * decision writer's pair locks come before its issue locks.
  *
  * `FOR NO KEY UPDATE` is the lock every later statement here needs (no `issues` column it
  * changes is a key: the only unique index is the primary key), so none of them has to upgrade;

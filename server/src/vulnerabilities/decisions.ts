@@ -97,7 +97,10 @@ type Candidate = {
  * Locks, in this order: the pair ({@link lockDecisionPairs}, free when the caller holds it), the
  * decision row, then the pair's issues in one id-ordered `FOR NO KEY UPDATE` statement. A
  * transition passes `heldIssueIds` instead: it took the pair and every issue it may change before
- * it changed anything (issues/transitions.ts `lockForTransition`).
+ * it changed anything (issues/transitions.ts `lockForTransition`). An ingestion holds the pair's
+ * lock shared from before it reads the decisions to its commit (tracking/stage.ts), so the
+ * issues it creates are committed before this reads the pair's issues, or created with this
+ * decision.
  */
 export async function writeDecision(
   tx: Executor,
@@ -222,28 +225,67 @@ export async function recordDecision(
   ]);
 }
 
-const pairKey = (pair: DecisionPair): string =>
-  JSON.stringify([pair.projectId, pair.packageName, pair.vulnerabilityId]);
+/**
+ * The pair locks of one project are this many buckets: a transaction takes at most this many
+ * locks per project, however many pairs a report names, so an ingestion of thousands of Trivy
+ * findings never fills the server's shared lock table.
+ */
+export const PAIR_LOCK_BUCKETS = 1024;
 
 /**
- * Takes the advisory lock of each pair ({@link LOCKS.vulnerabilityDecision}), in `hashtext`
- * order, so two writers of the same pairs never wait on each other in a cycle. Every writer of a
- * decision takes it before any issue or decision row; taking it again in the same transaction is
- * free.
+ * The bucket of a pair within its project: FNV-1a over its package name and vulnerability id,
+ * then murmur3's finaliser, which carries every bit into the low ones the bucket keeps (FNV-1a's
+ * lowest bit alone is a parity of the characters).
+ */
+export function pairBucket(pair: DecisionPair): number {
+  const key = JSON.stringify([pair.packageName, pair.vulnerabilityId]);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  hash ^= hash >>> 16;
+  hash = Math.imul(hash, 0x85ebca6b);
+  hash ^= hash >>> 13;
+  hash = Math.imul(hash, 0xc2b2ae35);
+  hash ^= hash >>> 16;
+  return (hash >>> 0) % PAIR_LOCK_BUCKETS;
+}
+
+/**
+ * Takes the advisory lock of each pair ({@link LOCKS.vulnerabilityDecision}) in one statement, in
+ * ascending key order, so no two takers of overlapping pairs wait on each other in a cycle. The
+ * second key is `hashtext(<project id>:<bucket>)` ({@link pairBucket}), so pairs of one bucket
+ * share a lock.
+ *
+ * - `exclusive` (every writer of a decision): taken before any issue or decision row.
+ * - `shared` (ingestion, tracking/stage.ts): taken before the decisions are read and before any
+ *   issue is locked, so an ingestion and a writer of one pair run one after the other, and
+ *   ingestions never wait on each other.
+ *
+ * Taking a lock again in the same transaction is free.
  */
 export async function lockDecisionPairs(
   tx: Executor,
   pairs: readonly DecisionPair[],
+  mode: 'exclusive' | 'shared' = 'exclusive',
 ): Promise<void> {
   if (pairs.length === 0) return;
-  const keys = [...new Set(pairs.map(pairKey))];
-  const hashes = await tx.execute<{ hash: number }>(sql`
-    SELECT DISTINCT hashtext(k) AS hash
-      FROM jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb) AS k
-     ORDER BY hash`);
-  for (const { hash } of hashes.rows) {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulnerabilityDecision}, ${hash})`);
+  const buckets = new Map<string, { p: string; b: number }>();
+  for (const pair of pairs) {
+    const b = pairBucket(pair);
+    buckets.set(`${pair.projectId}:${b}`, { p: pair.projectId, b });
   }
+  const lock = sql.raw(
+    mode === 'shared' ? 'pg_advisory_xact_lock_shared' : 'pg_advisory_xact_lock',
+  );
+  // The subquery (DISTINCT, ORDER BY) is never pulled up, so the locks follow its order.
+  await tx.execute(sql`
+    SELECT ${lock}(${LOCKS.vulnerabilityDecision}, s.key)
+      FROM (SELECT DISTINCT hashtext(r.p || ':' || r.b::text) AS key
+              FROM jsonb_to_recordset(${JSON.stringify([...buckets.values()])}::jsonb)
+                AS r(p text, b integer)
+             ORDER BY key) AS s`);
 }
 
 /**

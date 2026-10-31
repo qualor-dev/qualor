@@ -72,8 +72,11 @@ export interface DecidingIssue extends DecisionPair {
 /**
  * The issues of `issueIds` and their duplicates for which {@link writesDecision} holds, with
  * their pairs. One query reads the issues, one more the settings of their projects. Read without
- * locks, before a transition locks anything: what it reads (engine, package, branch) is not what
- * a transition or an ingestion changes under each other.
+ * locks, before a transition takes any: the transition locks the pairs found here. An ingestion
+ * that commits between this read and the transition's issue lock can change what it read: it
+ * sets the package name of a matched issue that had none, and it links new duplicates. The
+ * transition then handles such an issue as read here, so an issue read without a package name
+ * writes no decision this time.
  */
 export async function decidingIssues(
   db: Executor,
@@ -126,11 +129,29 @@ export async function decidingIssues(
 const pairKey = (packageName: string, vulnerabilityId: string): string =>
   JSON.stringify([packageName, vulnerabilityId]);
 
+/** The decision pairs of the Trivy findings with a package name, each once. */
+export function findingPairs(
+  projectId: string,
+  findings: readonly AcceptedFinding[],
+): DecisionPair[] {
+  const pairs = new Map<string, DecisionPair>();
+  for (const f of findings) {
+    if (f.packageName === null) continue;
+    pairs.set(pairKey(f.packageName, f.finding.ruleId), {
+      projectId,
+      packageName: f.packageName,
+      vulnerabilityId: f.finding.ruleId,
+    });
+  }
+  return [...pairs.values()];
+}
+
 /**
  * D4 at ingestion: the decision in force on the branch for each Trivy finding with a package
  * name, by its position in `findings`, when it is not Open. The decision in force is the branch's
  * own row of the pair, else the project's. One query for the whole analysis (one per chunk of
- * 5 000 pairs).
+ * 5 000 pairs). The caller holds the pairs' locks ({@link findingPairs}, shared), so no decision
+ * of them changes until it commits.
  */
 export async function findingDecisions(
   tx: Executor,

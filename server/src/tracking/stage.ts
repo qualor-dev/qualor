@@ -1,7 +1,8 @@
 import type { IngestionContext, IngestionStage } from '../ingest/process';
 import { requireState } from '../ingest/state';
 import { newCodeClassifier } from '../newcode/lines';
-import { findingDecisions } from '../vulnerabilities/trivy-issues';
+import { lockDecisionPairs } from '../vulnerabilities/decisions';
+import { findingDecisions, findingPairs } from '../vulnerabilities/trivy-issues';
 import { planCarryOver, writeCarryOver } from './carry-over';
 import { liveAfterWrites, planDedupe, writeDedupe } from './dedupe';
 import {
@@ -22,9 +23,16 @@ export interface BuiltTracking {
 /**
  * Loads the branch's candidates (and, on a first analysis, the reference issues) and the
  * vulnerability decisions in force for its Trivy findings, and plans.
+ *
+ * Final review I1: the decision pairs of the Trivy findings are locked shared first, before the
+ * decisions are read and before any issue is locked (writes.ts `lockPlannedRows`), the order every
+ * decision writer follows (vulnerabilities/decisions.ts `lockDecisionPairs`). A writer of one of
+ * these pairs that holds its lock commits first, and the new issues take its decision. A writer
+ * that comes later waits until this ingestion commits, then finds the issues it created.
  */
 export async function buildTrackingPlan(ctx: IngestionContext): Promise<BuiltTracking> {
   const findings = requireState(ctx.state, 'findings');
+  await lockDecisionPairs(ctx.tx, findingPairs(ctx.project.id, findings), 'shared');
   const now = await dbNow(ctx.tx);
   const candidates = await loadCandidates(ctx.tx, ctx.branch.id);
   // data-model.md §5.4: only the first analysis of a non-main branch or MR inherits: no

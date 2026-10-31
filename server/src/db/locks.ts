@@ -115,11 +115,18 @@ export const LOCKS = {
    */
   vulnerabilityRecheck: 7_310_031,
   /**
-   * The first key of `pg_advisory_xact_lock(key, hashtext(<project, package, vulnerability>))`:
-   * one writer of a pair's vulnerability decisions at a time (vuln plan 2b,
-   * vulnerabilities/decisions.ts `lockDecisionPairs`). Taken first, before any issue or decision
-   * row, in `hashtext` order when a transition writes several pairs; the issues of the pairs are
-   * then locked in one id-ordered statement.
+   * The first key of `pg_advisory_xact_lock(key, hashtext(<project id>:<bucket>))`: one writer of
+   * a (project, package, vulnerability) pair's decisions at a time (vuln plan 2b,
+   * vulnerabilities/decisions.ts `lockDecisionPairs`). The pairs of a project fall into 1 024
+   * buckets (`pairBucket`), so a transaction holds at most 1 024 of these per project. Lock order:
+   * - A writer (a decision, a transition, the status import) takes it exclusive first, before any
+   *   issue or decision row, all of its pairs in one statement in ascending key order; the
+   *   issues of the pairs are then locked in one id-ordered statement.
+   * - An ingestion takes it shared for the pairs of its Trivy findings (tracking/stage.ts
+   *   `buildTrackingPlan`), the same way, before it reads the decisions and before it locks any
+   *   issue (tracking/writes.ts `lockPlannedRows`). Before that it holds only its analysis row,
+   *   its branch row (`FOR NO KEY UPDATE`, which a writer's foreign-key check never waits on) and
+   *   rule rows, none of which a writer waits on.
    */
   vulnerabilityDecision: 7_310_032,
 } as const;

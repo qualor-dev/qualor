@@ -1,9 +1,11 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { QUIET_AUDIT_LOG } from '../../test/audit-log';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
 import { seedIssue, seedRule } from '../../test/issues';
 import { createAuditRecorder, SYSTEM_ACTOR } from '../audit/recorder';
+import type { Executor } from '../db/client';
+import { LOCKS } from '../db/locks';
 import { first } from '../db/rows';
 import {
   auditEvents,
@@ -21,6 +23,8 @@ import {
 import { GATE_QUEUE } from '../gates/reevaluate';
 import {
   effectiveDecision,
+  lockDecisionPairs,
+  PAIR_LOCK_BUCKETS,
   writeDecision,
   type DecisionInput,
   type DecisionStatus,
@@ -324,6 +328,32 @@ describe('the vulnerability decision store', () => {
     expect(await effectiveDecision(t.db, at(f.ids.release))).toMatchObject({ status: 'open' });
     expect(await effectiveDecision(t.db, at(f.ids.main))).toMatchObject({ status: 'wont_fix' });
     expect(await effectiveDecision(t.db, at(null))).toMatchObject({ status: 'wont_fix' });
+  });
+
+  it('locks the pairs of a project in at most PAIR_LOCK_BUCKETS locks, shared or not', async () => {
+    const f = await fixture();
+    const pairs = Array.from({ length: 3_000 }, (_, i) => ({
+      projectId: f.projectId,
+      packageName: `pkg-${i}`,
+      vulnerabilityId: `CVE-2026-${10_000 + i}`,
+    }));
+    const held = async (tx: Executor, mode: 'ExclusiveLock' | 'ShareLock') =>
+      first(
+        (
+          await tx.execute<{ n: number }>(sql`
+            SELECT count(*)::int AS n FROM pg_locks
+             WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND mode = ${mode}
+               AND classid::bigint = ${LOCKS.vulnerabilityDecision}`)
+        ).rows,
+      ).n;
+    for (const mode of ['shared', 'exclusive'] as const) {
+      await t.db.transaction(async (tx) => {
+        await lockDecisionPairs(tx, pairs, mode);
+        const n = await held(tx, mode === 'shared' ? 'ShareLock' : 'ExclusiveLock');
+        expect(n, mode).toBeGreaterThan(PAIR_LOCK_BUCKETS / 2);
+        expect(n, mode).toBeLessThanOrEqual(PAIR_LOCK_BUCKETS);
+      });
+    }
   });
 
   it('records the audit event with the details of the change', async () => {

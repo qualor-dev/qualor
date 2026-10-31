@@ -3,6 +3,7 @@ import { hex32, type Quality, type Report, type Severity } from '@qualor/shared'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { engine, file, finding, reportWith, type ReportParts } from '../../test/reports';
+import { LOCKS } from '../db/locks';
 import {
   branches,
   issueChanges,
@@ -12,6 +13,9 @@ import {
   qualityProfiles,
   vulnerabilityDecisions,
 } from '../db/schema';
+import type { IngestionStage } from '../ingest/process';
+import { DEFAULT_STAGES } from '../ingest/stages';
+import { writeDecision, type DecisionInput } from '../vulnerabilities/decisions';
 import { REOPEN_WINDOW_DAYS } from './plan';
 import { writePlan } from './writes';
 
@@ -735,6 +739,89 @@ describe('issue tracking (server step 8, data-model.md §5.2 and §6)', () => {
         ['open', 'wont_fix', null, h.ctx.adminId, 'later'],
         ['wont_fix', 'false_positive', onMr, null, 'not shipped'],
       ]);
+    });
+
+    describe('a decision written while an ingestion creates the issue (final review I1)', () => {
+      const notAffected = (projectId: string): DecisionInput => ({
+        projectId,
+        packageName: 'lodash',
+        vulnerabilityId: VULN,
+        scope: { kind: 'project' },
+        status: 'false_positive',
+        reason: 'component_not_present',
+        comment: 'not shipped',
+        userId: h.ctx.adminId,
+        source: 'tab',
+      });
+      /** Until `done()`, or until a backend waits on a pair lock (the one the test expects). */
+      const untilDoneOrWaitingOnPair = async (done: () => boolean) => {
+        for (;;) {
+          if (done()) return;
+          const [row] = (
+            await h.ctx.db.execute<{ n: number }>(sql`
+              SELECT count(*)::int AS n FROM pg_locks
+               WHERE locktype = 'advisory' AND NOT granted
+                 AND classid::bigint = ${LOCKS.vulnerabilityDecision}`)
+          ).rows;
+          if (row!.n > 0) return;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      };
+
+      it('gives the new issue a decision committed while the ingestion waits for its pair', async () => {
+        const p = await h.project('track/trivy-race-decision-first');
+        let ingesting: Promise<string> | undefined;
+        let ingested = false;
+        await h.ctx.db.transaction(async (tx) => {
+          // The writer is past its pair lock and has applied the decision to no issue (none yet).
+          expect((await writeDecision(tx, notAffected(p.id))).appliedIssueIds).toEqual([]);
+          ingesting = p.ingestOk(report(p, withTrivy)).finally(() => {
+            ingested = true;
+          });
+          await untilDoneOrWaitingOnPair(() => ingested);
+        });
+        const analysisId = await ingesting!;
+        const [issue] = await issuesOf(p);
+        expect(issue).toMatchObject({ status: 'false_positive', resolvedBy: h.ctx.adminId });
+        expect(await statusLog(issue!.id)).toEqual([
+          ['open', 'false_positive', analysisId, null, 'not shipped'],
+        ]);
+      });
+
+      it('lets a writer that waited for the ingestion mirror the issue it committed', async () => {
+        const p = await h.project('track/trivy-race-ingestion-first');
+        let reached!: () => void;
+        let release!: () => void;
+        const atHold = new Promise<void>((resolve) => (reached = resolve));
+        const hold = new Promise<void>((resolve) => (release = resolve));
+        const tracking = DEFAULT_STAGES.findIndex((stage) => stage.name === 'tracking');
+        const stages = [
+          ...DEFAULT_STAGES.slice(0, tracking + 1),
+          {
+            name: 'hold',
+            async run() {
+              reached();
+              await hold;
+            },
+          } satisfies IngestionStage,
+          ...DEFAULT_STAGES.slice(tracking + 1),
+        ];
+        const ingesting = p.ingestOk(report(p, withTrivy), stages);
+        await atHold;
+        let written = false;
+        const writing = h.ctx.db
+          .transaction((tx) => writeDecision(tx, notAffected(p.id)))
+          .finally(() => {
+            written = true;
+          });
+        await untilDoneOrWaitingOnPair(() => written);
+        release();
+        await ingesting;
+        const result = await writing;
+        const [issue] = await issuesOf(p);
+        expect(issue).toMatchObject({ status: 'false_positive', resolvedBy: h.ctx.adminId });
+        expect(result.appliedIssueIds).toEqual([issue!.id]);
+      });
     });
   });
 });
