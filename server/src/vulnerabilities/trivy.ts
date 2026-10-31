@@ -64,7 +64,10 @@ const SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
 
 const text = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 
-/** Reads `trivy sbom --format json` output into matches keyed by the package purl. Throws on bad JSON. */
+/**
+ * Reads `trivy sbom --format json` output into matches keyed by each package's BOMRef (the purl
+ * our SBOM put there, unchanged), falling back to Trivy's PURL. Throws on bad JSON.
+ */
 export function parseTrivyOutput(json: string): Map<string, VulnerabilityMatch[]> {
   const doc: unknown = JSON.parse(json);
   const matches = new Map<string, VulnerabilityMatch[]>();

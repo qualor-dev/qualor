@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addMember,
   ADMIN_PASSWORD,
@@ -17,6 +17,20 @@ import { readVulndbState, updateVulndbState } from '../vulndb/state';
 import { instanceSettings, jobs, vulndbDatasets } from '../db/schema';
 import { VULNDB_UPDATE_QUEUE } from '../vulndb/state';
 import { RECHECK_QUEUE } from '../vulnerabilities/recheck';
+import type * as Store from '../vulndb/store';
+
+/** pruneDatasets, made to fail while `failing` is set. */
+const prune = vi.hoisted(() => ({ failing: false }));
+vi.mock('../vulndb/store', async (importOriginal) => {
+  const actual = await importOriginal<typeof Store>();
+  return {
+    ...actual,
+    pruneDatasets: async (...args: Parameters<typeof actual.pruneDatasets>) => {
+      if (prune.failing) throw new Error('prune failed');
+      return actual.pruneDatasets(...args);
+    },
+  };
+});
 
 describe('/system/vulnerability-db (API)', () => {
   let ctx: TestContext;
@@ -398,6 +412,27 @@ describe('/system/vulnerability-db (API)', () => {
       } finally {
         await licensed.close();
       }
+    });
+
+    it('queues the re-check before it prunes; a failed prune is logged, never a 500', async () => {
+      await ctx.db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      prune.failing = true;
+      try {
+        const res = await upload(trivyArchive());
+        expect(res.statusCode, res.body).toBe(200);
+        expect(res.json()).toMatchObject({ lastError: null, current: { source: 'upload' } });
+      } finally {
+        prune.failing = false;
+      }
+      expect(
+        await ctx.db
+          .select({ payload: jobs.payload })
+          .from(jobs)
+          .where(eq(jobs.queue, RECHECK_QUEUE)),
+      ).toEqual([{ payload: { all: true } }]);
+      expect(ctx.logs.some((l) => l.includes('old vulnerability datasets were not pruned'))).toBe(
+        true,
+      );
     });
 
     it('answers 422 for an invalid archive and keeps the current dataset', async () => {

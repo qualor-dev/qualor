@@ -43,7 +43,8 @@ const segment = (s: string): string =>
  * or null when the ecosystem has no purl type (it is counted as "not checked").
  */
 export function purlOf(ecosystem: string, name: string, version: string): string | null {
-  const type = TYPE_OF[ecosystem];
+  // Own keys only: `constructor` or `__proto__` is no ecosystem.
+  const type = Object.hasOwn(TYPE_OF, ecosystem) ? TYPE_OF[ecosystem] : undefined;
   if (type === undefined || name === '' || version === '') return null;
   let path = name;
   if (type === 'pypi') path = name.toLowerCase().replace(/_/g, '-');

@@ -378,8 +378,16 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
             'The upload expired before it was stored, because it took too long. Upload the file again',
         });
       }
-      await pruneDatasets(deps.db);
       await enqueueRecheck(deps.db, { all: true });
+      // After the re-check is queued, and never a 500: an old dataset left now goes with the next.
+      try {
+        await pruneDatasets(deps.db);
+      } catch (err) {
+        request.log.warn(
+          { errorClass: err instanceof Error ? err.constructor.name : typeof err },
+          'old vulnerability datasets were not pruned',
+        );
+      }
       await deps.audit.record(deps.db, actorOf(request), [
         {
           action: 'vulndb.file_uploaded',

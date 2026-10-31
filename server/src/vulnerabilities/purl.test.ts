@@ -55,4 +55,11 @@ describe('purlOf', () => {
     expect(purlOf('npm', 'x', '')).toBeNull();
     expect(purlOf('pom', 'nocolon', '1')).toBe('pkg:maven/nocolon@1');
   });
+
+  it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
+    'gives null for the inherited name %s, not a purl type',
+    (eco) => {
+      expect(purlOf(eco, 'x', '1')).toBeNull();
+    },
+  );
 });

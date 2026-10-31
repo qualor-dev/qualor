@@ -117,6 +117,9 @@ export function requestVulndbUpdateNow(db: Db): Promise<boolean> {
 
 const problemOf = (code: string, message: string): LastError => ({ code, message });
 
+const errorClass = (err: unknown): string =>
+  err instanceof Error ? err.constructor.name : typeof err;
+
 /** The mirror's credentials; a stored password that no longer decrypts is an AUTH problem. */
 function sourceOf(
   settings: VulndbSettings,
@@ -181,17 +184,23 @@ async function checkSource(
       'The downloaded database was removed before it could be used. The next check tries again',
     );
   }
-  await pruneDatasets(deps.db);
   await (deps.enqueueRecheck ?? realEnqueueRecheck)(deps.db, { all: true });
+  // After the re-check is queued, and never the run's problem: an old dataset left now goes with
+  // the next new one.
+  try {
+    await pruneDatasets(deps.db);
+  } catch (err) {
+    deps.logger?.warn(
+      { component: 'vulndb', errorClass: errorClass(err) },
+      'old vulnerability datasets were not pruned',
+    );
+  }
   deps.logger?.info(
     { component: 'vulndb', sizeBytes: stored.dataset.sizeBytes },
     'vulnerability database updated',
   );
   return null;
 }
-
-const errorClass = (err: unknown): string =>
-  err instanceof Error ? err.constructor.name : typeof err;
 
 /**
  * One run of the `vulndb.update` job. Never throws: a problem becomes `lastError` and the current

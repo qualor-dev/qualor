@@ -9,7 +9,9 @@ import { enqueueRecheck } from './recheck';
  * transaction, so the job never runs before the inventory is committed. Nothing while the
  * instance or the project switch is off.
  *
- * The last stage: enqueueRecheck holds a global lock until the commit, so nothing runs after it.
+ * The last stage (ruling R14): enqueueRecheck holds a global lock until the commit, so the window
+ * stays small. After it the ingestion only updates its analysis and branch rows
+ * (ingest/process.ts), which takes no other lock.
  */
 export const vulnerabilityRecheckStage: IngestionStage = {
   name: 'vulnerability-recheck',

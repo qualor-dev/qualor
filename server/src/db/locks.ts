@@ -108,8 +108,10 @@ export const LOCKS = {
   vulndbState: 7_310_030,
   /**
    * `pg_advisory_xact_lock(key)`: requests for a vulnerability re-check merge into the queued job
-   * one at a time, so two never both insert one (0.15, vulnerabilities/recheck.ts). Taken last in
-   * the caller's transaction (the ingestion's, a route's), with nothing taken after it.
+   * one at a time, so two never both insert one (0.15, vulnerabilities/recheck.ts). Taken as late
+   * as the caller's transaction allows (the ingestion's, a route's) and held to its commit: an
+   * ingestion still updates its analysis and branch rows after it (ingest/process.ts), under the
+   * locks it already holds, and takes no other lock.
    */
   vulnerabilityRecheck: 7_310_031,
 } as const;

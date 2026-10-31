@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestContext, createUser, type TestContext } from '../../test/app';
 import { testSmtp } from '../../test/mail';
 import { metadataJson, trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
@@ -10,6 +10,7 @@ import type { fetchLayerDescriptor, openBlob, OciProblem } from './oci';
 import { OFFICIAL_REPOSITORY, writeVulndbSettings } from './settings';
 import { readVulndbState, updateVulndbState, VULNDB_UPDATE_QUEUE } from './state';
 import { currentDataset } from './store';
+import type * as Store from './store';
 import {
   ensureVulndbScheduled,
   requestVulndbUpdateNow,
@@ -19,6 +20,19 @@ import {
 } from './update';
 
 const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
+
+/** pruneDatasets, made to fail while `failing` is set. */
+const prune = vi.hoisted(() => ({ failing: false }));
+vi.mock('./store', async (importOriginal) => {
+  const actual = await importOriginal<typeof Store>();
+  return {
+    ...actual,
+    pruneDatasets: async (...args: Parameters<typeof actual.pruneDatasets>) => {
+      if (prune.failing) throw new Error('prune failed');
+      return actual.pruneDatasets(...args);
+    },
+  };
+});
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BUILT = Date.parse(UPDATED_AT);
 const digestOf = (bytes: Buffer): string =>
@@ -138,6 +152,34 @@ describe('vulnerability database updates', () => {
     const next = (await queued()).rows;
     expect(next).toHaveLength(1);
     expect(next[0]!.secs).toBeGreaterThan(6 * 3600 - 60);
+  });
+
+  it('queues the re-check before it prunes; a failed prune is logged, not a lastError', async () => {
+    const registry = fakeRegistry(trivyArchive());
+    const warnings: string[] = [];
+    prune.failing = true;
+    try {
+      await t.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      await requestVulndbUpdateNow(t.db);
+      await runUntilIdle(
+        t.db,
+        vulndbUpdateHandlers({
+          ...deps(registry),
+          logger: {
+            info: () => undefined,
+            warn: (...args: unknown[]) => void warnings.push(String(args[1])),
+          },
+        }),
+        silent,
+      );
+    } finally {
+      prune.failing = false;
+    }
+    expect(rechecks).toEqual([{ all: true }]);
+    const state = await readVulndbState(t.db);
+    expect(state.lastError).toBeNull();
+    expect((await currentDataset(t.db, state))?.digest).toBe(digestOf(registry.archive as Buffer));
+    expect(warnings).toContain('old vulnerability datasets were not pruned');
   });
 
   it('downloads nothing when the digest is the current one', async () => {
