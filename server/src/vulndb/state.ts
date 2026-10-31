@@ -12,6 +12,22 @@ export const VULNDB_UPDATE_QUEUE = 'vulndb.update';
 /** A dataset built more than this long ago is stale. */
 export const STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
 
+/**
+ * Whether a dataset is stale at `now`. Its age counts from the earlier of its build time and the
+ * time it was stored, so a build time in the future (a clock error in the source) cannot hide a
+ * dataset that has sat here for days; a missing build time counts from the storing time.
+ */
+export function isDatasetStale(
+  dataset: Pick<DatasetRow, 'builtAt' | 'createdAt'>,
+  now: Date,
+): boolean {
+  const since = Math.min(
+    dataset.builtAt?.getTime() ?? dataset.createdAt.getTime(),
+    dataset.createdAt.getTime(),
+  );
+  return now.getTime() - since > STALE_AFTER_MS;
+}
+
 export interface VulndbState {
   currentDatasetId: string | null;
   lastCheckAt: string | null;
@@ -99,7 +115,7 @@ export type VulndbStatus = 'off' | 'no_data' | 'updating' | 'up_to_date' | 'stal
 export function vulndbStatus(
   settings: Pick<VulndbSettings, 'enabled'>,
   state: Pick<VulndbState, 'lastError' | 'lastRecheckError'>,
-  current: Pick<DatasetRow, 'builtAt'> | null,
+  current: Pick<DatasetRow, 'builtAt' | 'createdAt'> | null,
   running: boolean,
   now: Date = new Date(),
 ): VulndbStatus {
@@ -107,10 +123,7 @@ export function vulndbStatus(
   if (running) return 'updating';
   const failing = state.lastError !== null || state.lastRecheckError !== null;
   if (current === null) return failing ? 'failed' : 'no_data';
-  // A dataset without a build time has unknown age: stale.
-  if (current.builtAt === null || now.getTime() - current.builtAt.getTime() > STALE_AFTER_MS) {
-    return 'stale';
-  }
+  if (isDatasetStale(current, now)) return 'stale';
   if (failing) return 'failed';
   return 'up_to_date';
 }

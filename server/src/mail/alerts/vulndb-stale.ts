@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '../../db/client';
 import { LOCKS } from '../../db/locks';
-import { readVulndbState, STALE_AFTER_MS, updateVulndbStateLocked } from '../../vulndb/state';
+import { isDatasetStale, readVulndbState, updateVulndbStateLocked } from '../../vulndb/state';
 import { currentDataset } from '../../vulndb/store';
 import { queueMailToAdmins, type MailDeps } from '../outbox';
 import { renderVulndbStale } from '../templates/vulndb-stale';
@@ -23,8 +23,7 @@ export async function notifyIfVulndbStale(deps: VulndbStaleDeps): Promise<boolea
     const state = await readVulndbState(tx);
     const current = await currentDataset(tx, state);
     if (current === null) return false;
-    const stale =
-      current.builtAt === null || deps.now().getTime() - current.builtAt.getTime() > STALE_AFTER_MS;
+    const stale = isDatasetStale(current, deps.now());
     if (!stale) {
       if (state.staleNotifiedDigest !== null) {
         await updateVulndbStateLocked(tx, (s) => ({ ...s, staleNotifiedDigest: null }));

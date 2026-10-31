@@ -5,6 +5,7 @@ import { createTestContext, createUser, type TestContext } from '../../test/app'
 import { testSmtp } from '../../test/mail';
 import { metadataJson, trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
 import { instanceSettings, jobs, mailMessages, users, vulndbDatasets } from '../db/schema';
+import { notifyIfVulndbStale } from '../mail/alerts/vulndb-stale';
 import { runUntilIdle } from '../queue/worker';
 import type { fetchLayerDescriptor, openBlob, OciProblem } from './oci';
 import { OFFICIAL_REPOSITORY, writeVulndbSettings } from './settings';
@@ -454,14 +455,19 @@ describe('vulnerability database updates', () => {
       await runOnce(registry);
       expect(await stale()).toHaveLength(2);
       // A fresh dataset resets the record ...
-      registry.archive = trivyArchive({ metadata: metadataJson(2, '2026-11-03T00:00:00Z') });
-      now = new Date(Date.parse('2026-11-03T12:00:00Z'));
+      // Staleness counts from the earlier of the build and the storing time, and the storing time
+      // is the database's real clock: this dataset is built, stored and judged around the real now.
+      const realNow = Date.now();
+      registry.archive = trivyArchive({
+        metadata: metadataJson(2, new Date(realNow).toISOString()),
+      });
+      now = new Date(realNow + DAY_MS / 2);
       await runOnce(registry);
       expect((await readVulndbState(t.db)).staleNotifiedDigest).toBeNull();
       expect(await stale()).toHaveLength(2);
       // ... so the next time it goes stale, administrators hear about it again.
       registry.archive = { code: 'UNREACHABLE', message: 'The registry did not answer' };
-      now = new Date(Date.parse('2026-11-08T00:00:00Z'));
+      now = new Date(realNow + 5 * DAY_MS);
       await runOnce(registry);
       expect(await stale()).toHaveLength(4);
     });
@@ -485,6 +491,25 @@ describe('vulnerability database updates', () => {
       expect(await stale()).toHaveLength(0);
       now = new Date(BUILT + 4 * DAY_MS);
       await runOnce(registry);
+      expect(await stale()).toHaveLength(2);
+    });
+
+    it('a build time in the future does not suppress the mail', async () => {
+      const [row] = await t.db
+        .insert(vulndbDatasets)
+        .values({
+          kind: 'trivy',
+          digest: `sha256:${'b'.repeat(64)}`,
+          sizeBytes: 1,
+          source: 'official',
+          status: 'ready',
+          builtAt: new Date(now.getTime() + 30 * DAY_MS),
+          createdAt: new Date(now.getTime() - 4 * DAY_MS),
+        })
+        .returning();
+      await updateVulndbState(t.db, (s) => ({ ...s, currentDatasetId: row!.id }));
+      const sent = await notifyIfVulndbStale({ db: t.db, config: t.config, now: () => now });
+      expect(sent).toBe(true);
       expect(await stale()).toHaveLength(2);
     });
 

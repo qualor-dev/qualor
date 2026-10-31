@@ -155,6 +155,15 @@ describe('vulndbStatus', () => {
   const off = { ...settings, enabled: false };
   const failing = { ...state, lastError: err };
   const recheckFailing = { ...state, lastRecheckError: err };
+  it('a build time in the future does not hide a dataset stored four days ago', () => {
+    const future = {
+      ...dataset(-30),
+      createdAt: new Date(now.getTime() - 4 * 86_400_000),
+    };
+    expect(vulndbStatus(settings, state, future, false, now)).toBe('stale');
+    const unknown = { ...future, builtAt: null };
+    expect(vulndbStatus(settings, state, unknown, false, now)).toBe('stale');
+  });
   it.each([
     ['disabled', off, state, null, false, 'off'],
     ['disabled beats running', off, state, null, true, 'off'],
