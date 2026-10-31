@@ -26,8 +26,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
   database, from the official registry, your mirror or an uploaded file, and checks it every 1 to 24
   hours (6 by default). A **Vulnerability monitoring** switch (on by default) turns the downloads and
   re-checks off. The tracked branches and versions are re-checked after an analysis, a new version,
-  a settings change and a new database. The server needs 4 GiB for the copy (Helm:
-  `vulnerabilityDatabase.cacheSizeLimit`, 6Gi by default; Compose: the `vulndb-cache` volume),
+  a settings change and a new database. The server needs a cache volume for the copy (Helm:
+  `vulnerabilityDatabase.cacheSizeLimit`; Compose: the `vulndb-cache` volume),
   and reaches `ghcr.io` and `pkg-containers.githubusercontent.com` while the switch is on. Add the
   `vulndb-cache` volume to an existing `compose.yml`
   ([The vulnerability database](docs/guide/vulnerability-database.md)).
