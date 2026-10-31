@@ -168,7 +168,7 @@ function basicCredential(token: string): string {
   return Buffer.from(`${token}:`, 'utf8').toString('base64');
 }
 
-function authorization(ep: ServerEndpoint): Record<string, string> {
+export function authorization(ep: ServerEndpoint): Record<string, string> {
   switch (ep.auth ?? 'bearer') {
     case 'bearer':
       return { authorization: `Bearer ${ep.token}` };
@@ -231,7 +231,7 @@ const keepAliveAgents = new Map<string, http.Agent>();
  * that closes its connection after the request; with it, one shared agent that keeps the
  * connection for the next request (an idle pooled socket does not keep the process alive).
  */
-function agentFor(isHttps: boolean, ep: ServerEndpoint): http.Agent {
+export function agentFor(isHttps: boolean, ep: ServerEndpoint): http.Agent {
   const Agent = isHttps ? https.Agent : http.Agent;
   if (ep.keepAlive !== true) return new Agent({ keepAlive: false, timeout: ep.timeoutMs });
   const key = `${isHttps ? 'https' : 'http'}:${ep.timeoutMs}`;
