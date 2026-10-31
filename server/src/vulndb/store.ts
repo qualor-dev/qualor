@@ -5,7 +5,7 @@ import { LOCKS } from '../db/locks';
 import { vulndbChunks, vulndbDatasets, type VulndbDatasetRow } from '../db/schema';
 import { OutboundStreamError } from '../http/outbound';
 import { readVulndbState, updateVulndbStateLocked, type VulndbState } from './state';
-import { readTarGz, TarError } from './tar';
+import { readTarGz, TarError } from '@qualor/shared/tar';
 
 /** A `vulndb_datasets` row. */
 export type DatasetRow = VulndbDatasetRow;

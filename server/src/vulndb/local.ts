@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { Executor } from '../db/client';
 import { readDatasetChunks, type DatasetRow } from './store';
-import { readTarGz, TarError } from './tar';
+import { readTarGz, TarError } from '@qualor/shared/tar';
 
 /**
  * The local, extracted copy of the current Trivy database: `trivy --cache-dir` needs files, the

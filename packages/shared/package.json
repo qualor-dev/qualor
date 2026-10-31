@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tar": "./src/tar.ts"
   },
   "scripts": {
     "schemas": "tsx scripts/export-schemas.ts"

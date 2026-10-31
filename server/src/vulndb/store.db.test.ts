@@ -2,7 +2,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
-import { metadataJson, tarGz, trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
+import {
+  metadataJson,
+  tarGz,
+  trivyArchive,
+  UPDATED_AT,
+} from '../../../packages/shared/test/trivy-archive';
 import { vulndbChunks, vulndbDatasets } from '../db/schema';
 import { OutboundStreamError } from '../http/outbound';
 import { readVulndbState, updateVulndbState } from './state';

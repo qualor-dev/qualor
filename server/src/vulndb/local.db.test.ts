@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
-import { metadataJson, tarGz, trivyArchive } from '../../test/trivy-archive';
+import { metadataJson, tarGz, trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { vulndbChunks, vulndbDatasets } from '../db/schema';
 import { withLocalDatabase, type LocalResult } from './local';
 import { storeDataset, type DatasetRow } from './store';

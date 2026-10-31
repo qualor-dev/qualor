@@ -6,7 +6,7 @@ import type { DependencyEntry, DependencyIgnore } from '@qualor/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { reportWith, type ReportParts } from '../../test/reports';
-import { trivyArchive } from '../../test/trivy-archive';
+import { trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { uuidv7 } from '../db/ids';
 import {
   analyses,

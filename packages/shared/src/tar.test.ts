@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { metadataJson, tar, tarGz, trivyArchive } from '../../test/trivy-archive';
+import { metadataJson, tar, tarGz, trivyArchive } from '../test/trivy-archive';
 import { normalName, readTarGz, TarError, type TarEntry } from './tar';
 
 /** The archive in pieces of `size` bytes, as a download or the stored chunks deliver it. */

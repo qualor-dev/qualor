@@ -12,7 +12,7 @@ import {
 } from '../../test/app';
 import { uuidv7 } from '../db/ids';
 import { adminHeaders, auditRows, ssoContext } from '../../test/sso';
-import { trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
+import { trivyArchive, UPDATED_AT } from '../../../packages/shared/test/trivy-archive';
 import { readVulndbState, updateVulndbState } from '../vulndb/state';
 import { instanceSettings, jobs, vulndbDatasets } from '../db/schema';
 import { VULNDB_UPDATE_QUEUE } from '../vulndb/state';

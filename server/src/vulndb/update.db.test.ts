@@ -3,7 +3,11 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestContext, createUser, type TestContext } from '../../test/app';
 import { testSmtp } from '../../test/mail';
-import { metadataJson, trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
+import {
+  metadataJson,
+  trivyArchive,
+  UPDATED_AT,
+} from '../../../packages/shared/test/trivy-archive';
 import { instanceSettings, jobs, mailMessages, users, vulndbDatasets } from '../db/schema';
 import { notifyIfVulndbStale } from '../mail/alerts/vulndb-stale';
 import { runUntilIdle } from '../queue/worker';
