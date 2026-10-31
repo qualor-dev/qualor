@@ -224,6 +224,9 @@ export function githubWorkflow(o: WorkflowOptions): string {
       '    steps:',
       ...checkoutStep(o),
       ...cacheRestoreStep(),
+      // The action runs as the scanner image's user, not the runner's: the cache directory must be writable.
+      '      - name: Make the vulnerability database cache writable',
+      '        run: mkdir -p .qualor/trivy && chmod 0777 .qualor/trivy',
       '      # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.',
       `      - uses: qualor-dev/scan-action@v${o.minor}`,
       '        with:',

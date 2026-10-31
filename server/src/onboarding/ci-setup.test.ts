@@ -694,8 +694,12 @@ describe('GitHub', () => {
       'persist-credentials': false,
       ref: '${{ github.event.pull_request.head.sha || github.sha }}',
     });
-    expectDbCache(job.steps, job.steps[2]);
-    expect(job.steps[2]).toEqual({
+    expectDbCache(job.steps, job.steps[3]);
+    // Restore, prepare (the action runs as another user than the runner), action, save.
+    expect(job.steps[1].uses.startsWith('actions/cache/restore@')).toBe(true);
+    expect(job.steps[2].run).toBe('mkdir -p .qualor/trivy && chmod 0777 .qualor/trivy');
+    expect(job.steps[4].uses.startsWith('actions/cache/save@')).toBe(true);
+    expect(job.steps[3]).toEqual({
       uses: 'qualor-dev/scan-action@v0.14',
       with: {
         'server-url': URL_,
@@ -704,6 +708,17 @@ describe('GitHub', () => {
       },
     });
     expect(content).not.toContain('vars.');
+  });
+
+  it('only the cloud action layout prepares the cache directory', () => {
+    for (const [host, csharp] of [
+      ['cloud', true],
+      ['self-hosted', false],
+      ['self-hosted', true],
+    ] as const) {
+      const steps = wf({ host, csharp }).doc.jobs.qualor.steps as { run?: string }[];
+      expect(steps.some((s) => s.run?.includes('chmod'))).toBe(false);
+    }
   });
 
   it('runs on tags in every layout', () => {
@@ -850,7 +865,7 @@ describe('the project key', () => {
   it('is quoted where YAML or the shell would read it otherwise', () => {
     for (const key of ['acme/app:2', 'yes', '2024', 'a.b_c:d']) {
       const gh = change(planCiSetup(input({ provider: 'github', projectKey: key })));
-      expect(parse(gh.files[0]?.content ?? '').jobs.qualor.steps[2].with['project-key']).toBe(key);
+      expect(parse(gh.files[0]?.content ?? '').jobs.qualor.steps[3].with['project-key']).toBe(key);
       const ghes = change(
         planCiSetup(input({ provider: 'github', host: 'self-hosted', projectKey: key })),
       );
