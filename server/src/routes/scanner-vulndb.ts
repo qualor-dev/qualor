@@ -4,6 +4,8 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
 import { requirePrincipal } from '../auth/access';
+import { isDemoUser } from '../auth/demo';
+import type { Principal } from '../auth/principal';
 import { vulndbDatasets } from '../db/schema';
 import { UploadSlots } from '../ingest/upload';
 import { notFound, ProblemError } from '../http/problem';
@@ -33,6 +35,13 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     title: 'Too many concurrent database downloads; retry shortly',
     retryAfter: RETRY_AFTER_SECONDS,
   });
+
+  /**
+   * The public demo account (QUALOR_DEMO_USER) is offered no database: anyone may sign in as it,
+   * and an archive is over 100 MiB.
+   */
+  const isDemo = (principal: Principal): boolean =>
+    principal.kind !== 'project' && isDemoUser(deps.config.demoUser, principal.user);
 
   /** The database this server serves, or null when it serves none. */
   async function served() {
@@ -68,8 +77,7 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       },
     },
     async (request) => {
-      requirePrincipal(request);
-      const offer = await served();
+      const offer = isDemo(requirePrincipal(request)) ? null : await served();
       if (offer === null) {
         const { scanners } = await readVulndbSettings(deps.db);
         return { serve: false, policy: scanners.policy, current: null, accepted: [] };
@@ -120,7 +128,9 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         throw new ProblemError(400, 'BAD_REQUEST', 'The digest is not 64 lowercase hex characters');
       }
       const digest = `sha256:${sha256}`;
-      if ((await served()) === null) throw notFound('Vulnerability database');
+      if (isDemo(principal) || (await served()) === null) {
+        throw notFound('Vulnerability database');
+      }
       const [dataset] = await deps.db
         .select()
         .from(vulndbDatasets)

@@ -9,6 +9,7 @@ import {
   createProject,
   createProjectToken,
   createTestContext,
+  createUser,
   login,
   organizationId,
   type Session,
@@ -40,6 +41,9 @@ const digestOf = (bytes: Buffer): string =>
 describe('/scanner/vulnerability-db (API)', () => {
   let ctx: TestContext;
   let admin: Session;
+  /** QUALOR_DEMO_USER's session, and an ordinary user's. */
+  let guest: Session;
+  let reader: Session;
   let token: string;
   const meta = '/api/v0/scanner/vulnerability-db';
   const asProject = (): Record<string, string> => bearer(token);
@@ -72,8 +76,14 @@ describe('/scanner/vulnerability-db (API)', () => {
     const probe = await createTestContext();
     const base = probe.config.vulndb;
     await probe.close();
-    ctx = await createTestContext({ config: { vulndb: { ...base, maxDownloads: 1 } } });
+    ctx = await createTestContext({
+      config: { vulndb: { ...base, maxDownloads: 1 }, demoUser: 'guest' },
+    });
     admin = await login(ctx, 'admin', ADMIN_PASSWORD);
+    const g = await createUser(ctx, { username: 'guest' });
+    guest = await login(ctx, g.username, g.password);
+    const r = await createUser(ctx, { username: 'scanner-db-reader' });
+    reader = await login(ctx, r.username, r.password);
     const project = await createProject(ctx, admin, {
       organizationId: await organizationId(ctx, 'default'),
       key: 'scanner-db',
@@ -157,6 +167,22 @@ describe('/scanner/vulnerability-db (API)', () => {
     expect([unknown.statusCode, unknown.json().code]).toEqual([404, 'NOT_FOUND']);
     expect((await get('abc')).statusCode).toBe(400);
     expect((await get('A'.repeat(64))).statusCode).toBe(400);
+  });
+
+  it('offers the demo account no database, and an ordinary session the same as a token', async () => {
+    const digest = await store(trivyArchive(), true);
+    const get = (url: string, s: Session) =>
+      ctx.app.inject({ method: 'GET', url, headers: s.headers });
+    const demoMeta = await get(meta, guest);
+    expect(demoMeta.statusCode, demoMeta.body).toBe(200);
+    expect(demoMeta.json()).toEqual({ serve: false, policy: 'daily', current: null, accepted: [] });
+    const demoDownload = await get(`${meta}/${digest.slice(7)}`, guest);
+    expect([demoDownload.statusCode, demoDownload.json().code]).toEqual([404, 'NOT_FOUND']);
+
+    expect((await get(meta, reader)).json()).toMatchObject({ serve: true, current: { digest } });
+    const download = await get(`${meta}/${digest.slice(7)}`, reader);
+    expect(download.statusCode, download.body).toBe(200);
+    expect(digestOf(download.rawPayload)).toBe(digest);
   });
 
   it('needs a token', async () => {
