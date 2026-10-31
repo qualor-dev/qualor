@@ -206,6 +206,9 @@ location / {
 }
 ```
 
+The vulnerability database file upload needs a second `location` with a 1 GiB body: see
+[Reverse proxy and TLS](../docs/guide/install-server.md#reverse-proxy-and-tls) in the guide.
+
 Neither snippet has been run against Qualor yet. Never publish the server on `0.0.0.0` without
 TLS in front of it: tokens and passwords would cross the network in clear text.
 

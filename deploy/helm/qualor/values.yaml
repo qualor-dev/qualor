@@ -112,10 +112,14 @@ resources:
     memory: 4Gi
 
 # The server keeps its copy of the Trivy vulnerability database on an emptyDir of this size
-# (1.6 GiB per dataset unpacked; two exist while one replaces the other). The server unpacks it again
-# from its PostgreSQL after the pod is rescheduled to another node.
+# (1.56 GiB per dataset unpacked; two exist while one replaces the other). The server unpacks it
+# again from its PostgreSQL after the pod is rescheduled to another node.
 vulnerabilityDatabase:
   cacheSizeLimit: 6Gi
+  # With the ingress on, the upload of a database file (PUT /api/v0/system/vulnerability-db/file)
+  # has an Ingress of its own with this body size (ingress-nginx format), no request buffering and
+  # a 300 s read timeout. Keep it at QUALOR_VULNDB_UPLOAD_MAX_BYTES (1 GiB by default).
+  uploadBodySize: 1g
 
 serviceAccount:
   create: true

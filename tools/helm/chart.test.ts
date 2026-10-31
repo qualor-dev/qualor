@@ -62,6 +62,11 @@ describe('values.schema.json (release.md §6.3)', () => {
     ['replicaCount 0', { replicaCount: 0 }],
     ['a nodePort outside 30000-32767', { service: { type: 'NodePort', nodePort: 8080 } }],
     ['a worker concurrency of 0', { config: { workerConcurrency: 0 } }],
+    // ingress-nginx's size format, as proxy-body-size takes it.
+    [
+      'an upload body size nginx cannot read',
+      { vulnerabilityDatabase: { uploadBodySize: '1 GiB' } },
+    ],
     // release.md §2 and install-server.md: never latest, for the server or the bundled PostgreSQL.
     ['the server tag latest', { image: { tag: 'latest' } }],
     ['the server tag Latest', { image: { tag: 'Latest' } }],

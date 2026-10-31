@@ -14,6 +14,9 @@ The user documentation is at <https://qualor.dev/docs/install-server#kubernetes-
   reads it when present). Either way set `config.smtpFrom`.
 - `ingress.annotations`: Helm merges yours with the defaults (the ingress-nginx body size, request
   buffering and read timeout). Set a key to `null` to remove a default.
+- `vulnerabilityDatabase.uploadBodySize`: the body size of the second Ingress, which the chart
+  renders with the first for the vulnerability database file upload only
+  (`/api/v0/system/vulnerability-db/file`). Keep it at `QUALOR_VULNDB_UPLOAD_MAX_BYTES`.
 - `database.external.caSecret`: a Secret with the certificate of a private CA (key
   `database.external.caKey`, default `ca.crt`). It is mounted read-only and set as
   `NODE_EXTRA_CA_CERTS`; do not set that variable in `extraEnv` too.

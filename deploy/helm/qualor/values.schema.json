@@ -85,7 +85,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "cacheSizeLimit": { "$ref": "#/definitions/quantity" }
+        "cacheSizeLimit": { "$ref": "#/definitions/quantity" },
+        "uploadBodySize": { "type": "string", "pattern": "^[0-9]+[kKmMgG]?$" }
       }
     },
     "persistence": {

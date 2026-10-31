@@ -132,6 +132,69 @@ describe('database modes (release.md §6.2)', () => {
   });
 });
 
+describe('the vulnerability database upload (plan 2a, R18)', () => {
+  const UPLOAD = 'qualor-vulndb-upload';
+  const PATH = '/api/v0/system/vulnerability-db/file';
+
+  it('gets an Ingress of its own for its exact path: 1g, no buffering, 300 s', () => {
+    const objects = render(['ci/bundled-values.yaml']);
+    const main = find(objects, 'Ingress', 'qualor');
+    const upload = find(objects, 'Ingress', UPLOAD);
+    expect(upload.metadata.annotations).toEqual({
+      'nginx.ingress.kubernetes.io/proxy-body-size': '1g',
+      'nginx.ingress.kubernetes.io/proxy-request-buffering': 'off',
+      'nginx.ingress.kubernetes.io/proxy-read-timeout': '300',
+    });
+    // Everything else keeps the global 50m.
+    expect(main.metadata.annotations?.['nginx.ingress.kubernetes.io/proxy-body-size']).toBe('50m');
+    expect(upload.spec).toEqual({
+      ingressClassName: 'nginx',
+      tls: main.spec?.tls,
+      rules: [
+        {
+          host: 'qualor.example.test',
+          http: {
+            paths: [
+              {
+                path: PATH,
+                pathType: 'Exact',
+                backend: { service: { name: 'qualor', port: { name: 'http' } } },
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
+  it('takes vulnerabilityDatabase.uploadBodySize, and your annotations under its own three', () => {
+    const upload = find(
+      render(['ci/bundled-values.yaml'], {
+        vulnerabilityDatabase: { uploadBodySize: '2g' },
+        ingress: {
+          annotations: {
+            'nginx.ingress.kubernetes.io/whitelist-source-range': '10.0.0.0/8',
+            'nginx.ingress.kubernetes.io/proxy-body-size': '80m',
+          },
+        },
+      }),
+      'Ingress',
+      UPLOAD,
+    );
+    expect(upload.metadata.annotations).toMatchObject({
+      'nginx.ingress.kubernetes.io/proxy-body-size': '2g',
+      'nginx.ingress.kubernetes.io/whitelist-source-range': '10.0.0.0/8',
+    });
+  });
+
+  it('exists only with the main Ingress', () => {
+    expect(kinds(render(EMBEDDED))).not.toContain(`Ingress/${UPLOAD}`);
+    expect(kinds(render(EMBEDDED, { ingress: { enabled: true, host: 'q.example.test' } }))).toEqual(
+      expect.arrayContaining(['Ingress/qualor', `Ingress/${UPLOAD}`]),
+    );
+  });
+});
+
 describe('security (release.md §6.4)', () => {
   it.each(MODES)('%s: every pod and container is locked down', (mode) => {
     const pods = podSpecs(render([`ci/${mode}-values.yaml`]));

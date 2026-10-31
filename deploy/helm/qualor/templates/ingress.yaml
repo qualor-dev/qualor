@@ -29,4 +29,43 @@ spec:
                 name: {{ include "qualor.fullname" . }}
                 port:
                   name: http
+---
+{{- /*
+  Plan 2a (R18): the vulnerability database upload, up to QUALOR_VULNDB_UPLOAD_MAX_BYTES, on its
+  exact path, with your annotations under its own body size, buffering and timeout. Everything
+  else keeps the annotations above.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "qualor.fullname" . }}-vulndb-upload
+  labels:
+    {{- include "qualor.labels" . | nindent 4 }}
+  {{- $size := dig "uploadBodySize" "1g" (.Values.vulnerabilityDatabase | default dict) }}
+  {{- $upload := dict
+    "nginx.ingress.kubernetes.io/proxy-body-size" (toString $size)
+    "nginx.ingress.kubernetes.io/proxy-request-buffering" "off"
+    "nginx.ingress.kubernetes.io/proxy-read-timeout" "300" }}
+  annotations:
+    {{- toYaml (merge $upload (.Values.ingress.annotations | default dict)) | nindent 4 }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls.secretName }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /api/v0/system/vulnerability-db/file
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "qualor.fullname" . }}
+                port:
+                  name: http
 {{- end }}

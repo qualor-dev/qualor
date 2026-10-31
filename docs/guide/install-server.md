@@ -308,6 +308,11 @@ The default ingress annotations are for ingress-nginx: a 50 MB request body, no 
 and a 300 s read timeout. Give any other ingress controller or load balancer the same limits. Your
 `ingress.annotations` add to these defaults. Set one to `null` to drop it.
 
+The chart adds a second Ingress for the vulnerability database file upload,
+`/api/v0/system/vulnerability-db/file`, on the same host. It allows a body of
+`vulnerabilityDatabase.uploadBodySize` (`1g`, which matches `QUALOR_VULNDB_UPLOAD_MAX_BYTES`). It
+carries your `ingress.annotations` too, under its own body size, buffering and timeout.
+
 The NetworkPolicy is off by default. With it on, the server accepts connections only on its port,
 from the sources you list or from anywhere, and a `bundled` PostgreSQL only from the server.
 Outgoing connections stay open unless you list `egress` rules. If you do, list your SCM, model,
@@ -460,14 +465,28 @@ location / {
   proxy_set_header X-Forwarded-Proto $scheme;
   proxy_read_timeout 300s;
 }
+location = /api/v0/system/vulnerability-db/file {
+  client_max_body_size 1g;         # = QUALOR_VULNDB_UPLOAD_MAX_BYTES
+  proxy_request_buffering off;
+  proxy_pass http://127.0.0.1:8080;
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_read_timeout 300s;
+}
 ```
 
 The same body limit covers [AI review](./ai-review.md) snapshots, whose own limit
 (`QUALOR_REVIEW_SNAPSHOT_MAX_COMPRESSED_BYTES`) is also 50 MiB by default. Set the proxy to the
 larger of the two limits.
 
-A cloud load balancer works too. Give it the same body size limit and a 300 s timeout, and set
-`QUALOR_TRUST_PROXY` to its hop count or address range.
+The second `location` is the [vulnerability database](./vulnerability-database.md#offline) file
+upload. It has a limit of its own, `QUALOR_VULNDB_UPLOAD_MAX_BYTES`, 1 GiB by default. Without it,
+the proxy refuses the file.
+
+A cloud load balancer works too. Give it the same body size limits and a 300 s timeout, and set
+`QUALOR_TRUST_PROXY` to its hop count or address range. A load balancer with one limit for every
+path needs 1 GiB.
 
 **Under a path**, such as `QUALOR_PUBLIC_URL=https://example.com/qualor`, the proxy removes
 `/qualor` before it passes a request to Qualor. Pass every address that starts with

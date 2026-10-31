@@ -2845,6 +2845,8 @@
     "vulndb.uploadButton": "Upload",
     "vulndb.howToGet": "How to get the file",
     "vulndb.uploaded": "Uploaded.",
+    "vulndb.upload.proxyRefused": "The proxy in front of Qualor refused the file. Raise its body size limit for this path.",
+    "vulndb.upload.proxyHelp": "Reverse proxy and TLS",
     "vulndb.interval": "Check for updates every",
     "vulndb.hours": "{VAR_PLURAL, plural, =1 {1 hour} other {{INTERPOLATION} hours}}",
     "vulndb.footer": "Data: the Trivy vulnerability database, built from public advisory sources.",
