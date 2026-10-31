@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -274,6 +275,12 @@ describe('resolveVulnerabilityDb: the decision table', () => {
       fetchedAt: NOW.toISOString(),
     });
     expect(readdirSync(cache).sort()).toEqual(['db', 'db.tar.gz', 'server.json']);
+    // Readable by all: a CI cache step that runs as another user saves them.
+    if (process.platform !== 'win32') {
+      for (const name of ['db.tar.gz', 'server.json']) {
+        expect(statSync(path.join(cache, name)).mode & 0o777, name).toBe(0o644);
+      }
+    }
     await got.cleanup();
   });
 

@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
-import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import {
+  createWriteStream,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from 'node:fs';
 import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
@@ -119,6 +126,22 @@ describe('downloadServerVulndb', () => {
     expect(leftovers(dir)).toEqual(['db.tar.gz']);
     expect(s.requests[0]?.url).toBe(`/api/v0/scanner/vulnerability-db/${hex}`);
     expect(s.requests[0]?.headers.authorization).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('writes the archive readable by all (0644): a CI cache step that runs as another user saves it', async () => {
+    const dir = tmp();
+    const dest = path.join(dir, 'db.tar.gz');
+    const s = await serve((_req, res) => send(res, payload));
+    const modes: number[] = [];
+    const got = await downloadServerVulndb(endpoint(s.url), digest, payload.length, dest, {
+      createStream: (file, o) => {
+        modes.push(o.mode);
+        return createWriteStream(file, o);
+      },
+    });
+    expect(got).toEqual({ ok: true });
+    expect(modes).toEqual([0o644]);
+    if (process.platform !== 'win32') expect(statSync(dest).mode & 0o777).toBe(0o644);
   });
 
   const expectFailed = async (

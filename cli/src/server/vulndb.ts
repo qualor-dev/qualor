@@ -196,9 +196,11 @@ function attempt(
         fail('unexpected response');
         return;
       }
+      // Readable by all, like server.json: the archive is public advisory data, and a CI cache
+      // step that runs as another user (actions/cache after the scan-action) must read it.
       const stream = (opts.createStream ?? createWriteStream)(partial, {
         flags: 'wx',
-        mode: 0o600,
+        mode: 0o644,
       });
       out = stream;
       stream.on('error', () => fail('cannot write the database file'));
