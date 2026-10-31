@@ -2933,6 +2933,7 @@
     "vulndb.col.state": "State",
     "vulndb.row.name": "Vulnerabilities",
     "vulndb.row.sub": "Trivy DB",
+    "vulndb.priority.lastCheck": "Checked {$INTERPOLATION}",
     "vulndb.lastCheck": "Last check {$INTERPOLATION}",
     "vulndb.nextCheck": "next {$INTERPOLATION}",
     "vulndb.projects": "{VAR_PLURAL, plural, =1 {1 project} other {{INTERPOLATION} projects}}",
