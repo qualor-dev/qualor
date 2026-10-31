@@ -152,7 +152,8 @@ same job ([Go](./languages-and-analyzers.md#go-staticcheck-go-vet-gosec)).
 The scanner takes the vulnerability database from your Qualor server and keeps the download in
 `QUALOR_TRIVY_CACHE_DIR` ([how it chooses and checks it](./languages-and-analyzers.md#the-vulnerability-database)).
 The component already sets the variable and a cache, so each runner downloads the database about
-once a day. In a job without the component, add the same lines:
+once a day. The job's `cache:` replaces a pipeline's `default: cache` for that job. In a job
+without the component, add the same lines:
 
 ```yaml
 qualor:

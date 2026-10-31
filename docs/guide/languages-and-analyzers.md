@@ -832,10 +832,12 @@ The scanner keeps the archive it downloaded in `QUALOR_TRIVY_CACHE_DIR`, by defa
 `~/.cache/qualor/trivy`, and reuses it. Persist that directory between jobs to save the download of
 about 131 MiB: see [GitLab](./gitlab.md#the-vulnerability-database-cache),
 [GitHub](./github.md#the-vulnerability-database-cache) and
-[other CI](./other-ci.md#the-vulnerability-database-cache). The directory may be inside the
-checkout. The scanner uses an archive only after its sha256 matches a database the server lists, so
-a branch cannot plant a database there. Outside the checkout, the scanner also keeps the unpacked
-database in `<cache>/db`. Inside it, the scanner unpacks into a temporary directory.
+[other CI](./other-ci.md#the-vulnerability-database-cache).
+
+| The cache directory is | The scanner |
+|---|---|
+| inside the checkout, as in the CI integrations | verifies it. It hashes the archive on every scan and uses it only when the sha256 matches a database the server lists, so a branch cannot plant a database there. It unpacks the archive into a temporary directory and never reads a `db/` there |
+| outside the checkout, such as the default `~/.cache/qualor/trivy` | also keeps the unpacked database in `<cache>/db`, and trusts it by the digest it wrote next to it, without unpacking again. A directory outside the checkout was always trusted: keep it out of reach of jobs that run repository code |
 
 The instance admin sets how often a scanner downloads
 ([The vulnerability database](./vulnerability-database.md#scanners)):
@@ -845,20 +847,22 @@ The instance admin sets how often a scanner downloads
 | **At most once a day** (default) | when its cached copy was fetched 24 hours ago or more |
 | **At every analysis** | whenever the server has a newer one |
 
-When the server cannot give a database, the scan goes on and the exit code does not change. The
-scanner uses the verified cached copy, or else the image's database, and warns:
+The database never changes the exit code. When the server cannot give one, the scanner uses the
+verified cached copy, or else the image's database. It warns:
 
 | Warning | Meaning |
 |---|---|
 | `VULNERABILITY_DB_FETCH_FAILED` | the download failed. The message says whether the scan used the cached copy, with its build date, or the image |
 | `VULNERABILITY_DB_CACHE_UNTRUSTED` | the server gave no database, and `QUALOR_TRIVY_CACHE_DIR` inside the checkout holds a database of its own (`db/trivy.db`). The scan ignored it and used the image |
 
-[Troubleshooting](./troubleshooting.md) says what to do. To use a database of your own, for example
-from a mirror, run `trivy image --download-db-only --cache-dir <dir>` in the job and set
-`QUALOR_TRIVY_CACHE_DIR=<dir>`. This applies when the server is older than 0.15 or its setting is
-off. Use an absolute path outside the checkout that jobs
-running repository code cannot write.
+[Troubleshooting](./troubleshooting.md) says what to do.
 
+To use a database of your own, for example from a mirror, run
+`trivy image --download-db-only --cache-dir <dir>` in the job and set
+`QUALOR_TRIVY_CACHE_DIR=<dir>`. Use an absolute path outside the checkout that jobs running
+repository code cannot write. This works only while the server gives no database: it is older than
+0.15, or its scanner setting is off. When the server serves a database, the scanner replaces
+`<dir>/db` with the server's.
 
 A second Trivy pass reads the **licences** of your dependencies, offline and without the database.
 It gives every project a dependency inventory (the **Dependencies** tab) and, with a licence policy
