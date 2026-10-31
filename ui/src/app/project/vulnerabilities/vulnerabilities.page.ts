@@ -69,6 +69,7 @@ export class VulnerabilitiesPage {
       ? value
       : '';
   });
+  protected readonly exploited = computed(() => one(this.params(), 'exploited') === 'true');
   protected readonly pageNumber = computed(() => {
     const n = Number(one(this.params(), 'page'));
     return Number.isInteger(n) && n >= 1 ? n : 1;

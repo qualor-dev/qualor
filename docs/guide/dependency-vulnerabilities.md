@@ -89,6 +89,24 @@ Two filters narrow the list:
 | **Status** | All, Open, Not affected, Won't fix |
 | **Severity** | All, Critical, High, Medium, Low, Unknown |
 
+## Exploited and exploit probability (Business and Enterprise)
+
+With the `vuln.priority` feature the tab shows which vulnerabilities attackers use already. The
+data comes from the CISA Known Exploited Vulnerabilities catalog (KEV) and from the FIRST Exploit
+Prediction Scoring System (EPSS). Without the feature the tab shows none of it.
+
+| Where | What it shows |
+|---|---|
+| **Exploited** column of **By version** | the open vulnerabilities of the target that are in KEV. A count leaves out decided and ignored ones, like the other counts. It shows 0 when there are none |
+| **Exploited (KEV)** badge on a card | the vulnerability is in KEV. The tooltip gives the date CISA added it, and says "Known to be used in ransomware" when KEV marks it so |
+| **EPSS** on a card | the probability that the vulnerability is exploited in the next 30 days, such as "EPSS 42.0%". Below 0.1% it reads "<0.1%". The tooltip adds the percentile |
+| **Exploited only** filter | lists only the cards with the badge. It is kept in the URL as `exploited=true` |
+| order of the cards | exploited cards come first |
+
+KEV and EPSS cover CVE ids only. A vulnerability with another id, such as a GHSA id without a CVE
+alias, has no badge and no EPSS. [The vulnerability database](./vulnerability-database.md) lists
+the sources and how the server keeps them up to date.
+
 ## New vulnerabilities
 
 A target shows "N new" for the vulnerabilities that need a decision. A vulnerability counts as new
@@ -202,7 +220,7 @@ the API answers 429 `RATE_LIMITED` with a `Retry-After` header, and a decision i
 | Route | Needs | Answers |
 |---|---|---|
 | `GET /api/v0/projects/:id/vulnerabilities/targets` | read access to the project | the tracked targets with their counts and `new`, the untracked versions, the data date and the last check |
-| `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, as cards. Query: `target` (`branch:<id>` or `version:<id>`), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
+| `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, as cards. Query: `target` (`branch:<id>` or `version:<id>`), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `exploited=true` (needs `vuln.priority`, else 403), `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
 | `PUT /api/v0/projects/:id/vulnerability-decisions` | `issue.triage` | the decision and `appliedIssues`, the number of issues it changed |
 
 A decision is a body like this:

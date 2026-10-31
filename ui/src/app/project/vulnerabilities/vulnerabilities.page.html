@@ -72,6 +72,8 @@
         [targetName]="targetName()"
         [status]="status()"
         [severity]="severity()"
+        [priority]="a.priority"
+        [exploited]="exploited()"
         [page]="pageNumber()"
         (changed)="summary.reload()"
       />
@@ -80,6 +82,8 @@
         [projectId]="projectId()"
         [status]="status()"
         [severity]="severity()"
+        [priority]="a.priority"
+        [exploited]="exploited()"
         [page]="pageNumber()"
         (changed)="summary.reload()"
       />
@@ -115,6 +119,9 @@
                   <th scope="col" class="num" i18n="@@vuln.col.critical">Critical</th>
                   <th scope="col" class="num" i18n="@@vuln.col.high">High</th>
                   <th scope="col" class="num" i18n="@@vuln.col.medium">Medium</th>
+                  @if (a.priority) {
+                    <th scope="col" class="num" i18n="@@vuln.col.exploited">Exploited</th>
+                  }
                   <th scope="col" i18n="@@vuln.col.new">New</th>
                 </tr>
               </thead>
@@ -136,6 +143,9 @@
                     <td class="num">{{ t.counts.critical }}</td>
                     <td class="num">{{ t.counts.high }}</td>
                     <td class="num">{{ t.counts.medium }}</td>
+                    @if (a.priority) {
+                      <td class="num">{{ t.exploited }}</td>
+                    }
                     <td>
                       @if (t.new > 0) {
                         <span class="badge badge-high" i18n="@@vuln.newCount">{{ t.new }} new</span>
@@ -156,6 +166,9 @@
                       <td class="num">{{ v.counts.critical }}</td>
                       <td class="num">{{ v.counts.high }}</td>
                       <td class="num">{{ v.counts.medium }}</td>
+                      @if (a.priority) {
+                        <td class="num">{{ v.exploited }}</td>
+                      }
                       <td></td>
                     </tr>
                   }

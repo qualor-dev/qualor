@@ -142,6 +142,50 @@ describe('VulnerabilitiesPage', () => {
     expect(hrefs[1]).toContain(`target=version:${V21}`);
   });
 
+  describe('the Exploited column', () => {
+    const withExploited = [
+      vulnerabilityTarget({
+        id: MAIN,
+        name: 'main',
+        isMain: true,
+        counts: { critical: 1, high: 3, medium: 4, low: 0, unknown: 0 },
+        exploited: 2,
+        new: 2,
+      }),
+      vulnerabilityTarget({ kind: 'version', id: V21, name: '2.1.0', exploited: 0 }),
+    ];
+
+    it('comes after Medium and before New with priority, in tracked and untracked rows', async () => {
+      const root = await render({
+        priority: true,
+        targets: withExploited,
+        untracked: [untrackedVersion({ exploited: 5 })],
+      });
+      expect([...root.querySelectorAll('thead th')].map((th) => text(th))).toEqual([
+        'Branch or version',
+        'Critical',
+        'High',
+        'Medium',
+        'Exploited',
+        'New',
+      ]);
+      button(root, 'Show')?.click();
+      await settle();
+      const cells = rows(root).map((r) => [...r.querySelectorAll('td')].map((td) => text(td)));
+      expect(cells[0]).toEqual(['1', '3', '4', '2', '2 new']);
+      expect(cells[1]?.[3]).toBe('0');
+      expect(cells[2]?.[3]).toBe('5');
+    });
+
+    it('is absent without priority', async () => {
+      const root = await render({ priority: false, targets: withExploited });
+      expect([...root.querySelectorAll('thead th')].map((th) => text(th))).not.toContain(
+        'Exploited',
+      );
+      expect(rows(root)[0]?.querySelectorAll('td')).toHaveLength(4);
+    });
+  });
+
   describe('the untracked fold', () => {
     it('shows two labels and a count; Show lists every untracked version', async () => {
       const root = await render({ targets: TARGETS, untracked: untracked(16) });

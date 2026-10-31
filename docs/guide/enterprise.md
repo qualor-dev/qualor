@@ -22,7 +22,7 @@ community edition.
 | [The support bundle](./support-bundle.md): one zip with versions, configuration without secrets, health and recent failures | `support-bundle` | no | yes | yes |
 | [Dependency licences](./dependency-licenses.md): every project's dependencies and their licences, on the **Dependencies** tab | none | yes | yes | yes |
 | [A licence policy](./dependency-licenses.md#the-licence-policy-business-and-enterprise): forbidden licences become issues and fail the gate | `license-policy` | no | yes | yes |
-| [Exploited vulnerabilities and exploit probability](./dependency-vulnerabilities.md) (CISA KEV, FIRST EPSS) on the **Vulnerabilities** tab | `vuln.priority` | no | yes | yes |
+| [Exploited vulnerabilities and exploit probability](./dependency-vulnerabilities.md#exploited-and-exploit-probability-business-and-enterprise) (CISA KEV, FIRST EPSS) on the **Vulnerabilities** tab | `vuln.priority` | no | yes | yes |
 
 A key switches on the features it lists, and nothing else. Two features work only with the one
 they extend: `audit-log.stream` needs `audit-log`, and `sso.multi` needs `sso`. A key that lists
@@ -240,7 +240,7 @@ After the grace period, or on the end date of a trial, each feature behaves like
 | [The support bundle](./support-bundle.md#when-the-licence-lapses) | **Settings → Support** and the support bundle command stop working, and the download answers 403 `FEATURE_NOT_LICENSED`. Nothing is deleted |
 | [Portfolio](./portfolio.md#when-the-licence-lapses) | leaves the top bar, and every `/api/v0/ee/portfolio` route answers 403 `FEATURE_NOT_LICENSED`. It keeps no data of its own, so nothing is lost |
 | [The licence policy](./dependency-licenses.md#when-the-licence-lapses) | kept but no longer applied: analyses neither add nor close licence issues, and changing the policy answers 403 `FEATURE_NOT_LICENSED`. The **Dependencies** tab keeps working |
-| [Exploited vulnerabilities and exploit probability](./dependency-vulnerabilities.md) | the **Vulnerabilities** tab and the API stop showing KEV and EPSS, and the server stops downloading them. The stored data stays |
+| [Exploited vulnerabilities and exploit probability](./dependency-vulnerabilities.md#exploited-and-exploit-probability-business-and-enterprise) | the **Vulnerabilities** tab and the API stop showing KEV and EPSS, and the server stops downloading them. The stored data stays |
 
 Removing a key, or replacing it with one that lists fewer features, has the same effect at the
 next start, for the features the new key no longer lists.

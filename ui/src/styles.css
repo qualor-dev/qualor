@@ -987,6 +987,11 @@ tbody tr:has(.empty-state):hover {
   background: var(--bad-soft);
   color: var(--bad);
 }
+/* Known to be exploited (CISA KEV): the blocker colour on the same soft ground as Critical. */
+.badge-exploited {
+  background: var(--bad-soft);
+  color: var(--sev-blocker);
+}
 .badge-error,
 .badge-medium {
   background: var(--warn-soft);
