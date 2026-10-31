@@ -588,6 +588,7 @@ describe('SettingsPage navigation for members and enterprise entries (rbac-audit
       'Users',
       'AI provider',
       'Email',
+      'Vulnerability database',
       'MCP',
       'Licence',
     ]);

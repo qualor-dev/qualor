@@ -109,6 +109,7 @@ test.describe('on a tablet', () => {
     '/settings/ai-review',
     '/settings/ai',
     '/settings/email',
+    '/settings/vulnerability-db',
     '/settings/mcp',
     '/settings/notifications',
     '/settings/license',
@@ -154,6 +155,7 @@ test.describe('on a phone', () => {
     '/settings/ai-review',
     '/settings/ai',
     '/settings/email',
+    '/settings/vulnerability-db',
     '/settings/notifications',
     '/settings/license',
   ]) {
@@ -645,4 +647,24 @@ test('an organization admin adds a member by name, changes the role and removes 
   await remove.getByRole('button', { name: 'Remove' }).click();
   await expect(page.getByRole('status')).toHaveText('dora removed.');
   await expect(dora).toHaveCount(0);
+});
+
+test('the vulnerability database page saves the check interval', async ({ page }) => {
+  await page.goto('/settings');
+  await page
+    .getByRole('navigation', { name: 'Settings' })
+    .getByRole('link', { name: 'Vulnerability database' })
+    .click();
+  await expect(page).toHaveURL(/\/settings\/vulnerability-db$/);
+  await expect(
+    page.getByRole('heading', { name: 'Vulnerability database', level: 2 }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Vulnerability monitoring')).toBeVisible();
+  const interval = page.getByLabel('Check for updates every');
+  await interval.selectOption('12');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('status')).toHaveText('Saved.');
+  await page.reload();
+  await expect(page.getByLabel('Check for updates every')).toHaveValue('12');
+  await expectAccessible(page);
 });

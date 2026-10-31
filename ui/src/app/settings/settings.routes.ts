@@ -11,6 +11,14 @@ export const settingsRoutes: Routes = [
     loadComponent: () => import('./tokens.page').then((m) => m.TokensPage),
   },
   {
+    // Plan 2a: where the vulnerability database comes from and its state, for instance admins.
+    // Leaving it with unsaved edits asks first.
+    path: 'vulnerability-db',
+    title: $localize`:@@title.vulnerabilityDb:Vulnerability database`,
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () => import('./vulnerability-db.page').then((m) => m.VulnerabilityDbPage),
+  },
+  {
     // 6N spec §8: the MCP clients you connected (OAuth grants).
     path: 'connected-apps',
     title: $localize`:@@title.connectedApps:Connected apps`,

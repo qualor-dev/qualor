@@ -71,7 +71,7 @@ export class FakeServer {
       path: url.pathname,
       query: url.searchParams,
       headers: request.headers,
-      body: text ? (JSON.parse(text) as unknown) : undefined,
+      body: text ? parseBody(text, request.headers.get('content-type')) : undefined,
     };
     this.requests.push(recorded);
     const route = this.routes.find(
@@ -93,6 +93,11 @@ export class FakeServer {
       },
     });
   };
+}
+
+/** A JSON body parsed; any other body (an uploaded file) as its text. */
+function parseBody(text: string, contentType: string | null): unknown {
+  return contentType?.includes('json') === false ? text : (JSON.parse(text) as unknown);
 }
 
 /** The reply of a responder: itself, or what the function answers for the request. */
