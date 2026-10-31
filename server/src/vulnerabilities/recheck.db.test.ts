@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { DependencyEntry, DependencyIgnore } from '@qualor/shared';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { reportWith, type ReportParts } from '../../test/reports';
 import { trivyArchive } from '../../test/trivy-archive';
@@ -926,6 +926,31 @@ describe('vulnerability re-checks', () => {
       expect(await recheckJobs()).toEqual([
         { status: 'queued', payload: { projectIds: [p.id] }, key: RECHECK_QUEUE },
       ]);
+    });
+
+    it('logs a stop at info, never at warn', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      const stop = new AbortController();
+      // Trivy fails the way a killed process does, with the stop already signalled.
+      const killed: TrivyRunner = {
+        run: () => {
+          stop.abort();
+          return Promise.resolve({ ok: false, code: 'FAILED', message: 'Trivy exited with 137' });
+        },
+      };
+      const info = vi.fn();
+      const warn = vi.fn();
+      const result = await recheck(
+        { projectIds: [p.id] },
+        { runner: killed, shutdown: stop.signal, logger: { info, warn } },
+      );
+      expect(result).toEqual({ kind: 'stopped' });
+      expect(warn).not.toHaveBeenCalled();
+      expect(info).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining('re-check stopped'),
+      );
     });
 
     it('does not start once the server is stopping', async () => {
