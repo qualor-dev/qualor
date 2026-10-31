@@ -160,6 +160,49 @@ describe('readTarGz', () => {
     expect(seen[0]?.data.toString()).toBe(metadataJson());
   });
 
+  /** One pax record, `<length> <keyword>=<value>\n`, its length counting itself. */
+  const paxRecord = (keyword: string, value: string): string => {
+    const body = ` ${keyword}=${value}\n`;
+    let length = body.length + 1;
+    while (`${length}${body}`.length !== length) length = `${length}${body}`.length;
+    return `${length}${body}`;
+  };
+
+  it.each([
+    ['an extended', 'size', 'x', '10'],
+    ['an extended', 'path', 'x', 'evil.json'],
+    ['a global', 'size', 'g', '10'],
+    ['a global', 'path', 'g', 'evil.json'],
+  ])('rejects %s pax header that sets %s (final review F9)', async (_what, key, type, value) => {
+    const error = await rejection(
+      readAll(
+        tarGz([
+          {
+            name: 'PaxHeader',
+            type,
+            data: paxRecord('mtime', '1700000000.5') + paxRecord(key, value),
+          },
+          { name: 'metadata.json', data: metadataJson() },
+        ]),
+      ),
+    );
+    expect(error).toBeInstanceOf(TarError);
+    expect((error as Error).message).toMatch(/pax header that sets the size or the name/);
+  });
+
+  it('rejects a pax header whose records are malformed (final review F9)', async () => {
+    const error = await rejection(
+      readAll(
+        tarGz([
+          { name: 'PaxHeader', type: 'x', data: '99 path=evil.json\n' },
+          { name: 'metadata.json', data: metadataJson() },
+        ]),
+      ),
+    );
+    expect(error).toBeInstanceOf(TarError);
+    expect((error as Error).message).toMatch(/malformed pax header/);
+  });
+
   it('rejects a header whose checksum is wrong', async () => {
     const error = await rejection(
       readAll(tarGz([{ name: 'metadata.json', data: metadataJson(), badChecksum: true }])),

@@ -176,8 +176,45 @@ const OTHER_TYPES: Record<string, string> = {
 interface Header {
   name: string;
   size: number;
-  /** `skipped`: a directory or a pax header, passed over with its data. */
-  type: 'file' | 'skipped';
+  /**
+   * `skipped`: a directory, passed over with its data. `pax`: a pax extended (`x`) or global (`g`)
+   * header, whose records are read and checked ({@link checkPax}), then passed over.
+   */
+  type: 'file' | 'skipped' | 'pax';
+}
+
+/**
+ * The pax keywords that would change how the entries after the header are read: their size or
+ * their name. This reader reads every entry from its ustar header, so it refuses an archive with
+ * them rather than read a wrong size (and lose its place) or name a file wrongly.
+ */
+const PAX_OVERRIDES = new Set(['size', 'path']);
+
+/**
+ * The records of a pax header (`<length> <keyword>=<value>\n`, the length in bytes counting the
+ * whole record) are well formed and set neither the size nor the name of an entry.
+ */
+function checkPax(data: Buffer): void {
+  const malformed = () => new TarError('The archive has a malformed pax header');
+  let at = 0;
+  while (at < data.length) {
+    const space = data.indexOf(0x20, at);
+    const digits = space === -1 ? '' : data.toString('latin1', at, space);
+    if (!/^[1-9][0-9]{0,6}$/.test(digits)) throw malformed();
+    const end = at + Number(digits);
+    if (end > data.length || end <= space + 1 || data.readUInt8(end - 1) !== 0x0a) {
+      throw malformed();
+    }
+    const record = data.toString('utf8', space + 1, end - 1);
+    const equals = record.indexOf('=');
+    if (equals <= 0) throw malformed();
+    if (PAX_OVERRIDES.has(record.slice(0, equals))) {
+      throw new TarError(
+        'The archive has a pax header that sets the size or the name of an entry; only ustar headers are read',
+      );
+    }
+    at = end;
+  }
 }
 
 /** A 512-byte header; null for the zero block that ends the archive. */
@@ -193,9 +230,11 @@ function parseHeader(block: Buffer): Header | null {
   const flag = String.fromCharCode(block.readUInt8(156));
   let type: Header['type'];
   if (flag === '0' || flag === '\0' || flag === '7') type = 'file';
-  // Directories, and pax extended (`x`) and global (`g`) headers, which carry times and owners
-  // that this reader ignores. GNU long names and link names (`L`, `K`) are refused below.
-  else if (flag === '5' || flag === 'x' || flag === 'g') type = 'skipped';
+  // Directories are passed over. Pax extended (`x`) and global (`g`) headers carry times and
+  // owners that this reader ignores, and are refused when they set a size or a name (checkPax).
+  // GNU long names and link names (`L`, `K`) are refused below.
+  else if (flag === '5') type = 'skipped';
+  else if (flag === 'x' || flag === 'g') type = 'pax';
   else {
     const what = OTHER_TYPES[flag] ?? 'an entry of an unknown type';
     throw new TarError(`The archive holds ${what}; only plain files are allowed`);
@@ -209,8 +248,8 @@ function parseHeader(block: Buffer): Header | null {
 /**
  * Reads a gzipped tar archive from `chunks`, in one pass, as the bytes arrive. Regular files
  * (ustar and GNU tar) are offered to `want` under their {@link normalName}; directories and pax
- * `x`/`g` headers are passed over; any other entry (a link, a device, a GNU long name) rejects
- * the archive. A
+ * `x`/`g` headers are passed over, a pax header that sets a size or a name rejects the archive
+ * ({@link checkPax}); any other entry (a link, a device, a GNU long name) rejects it too. A
  * `keep` entry over {@link KEEP_MAX_BYTES} rejects it too. `onFile` is awaited for each wanted
  * entry, in archive order (see {@link TarEntry}). Rejects with a {@link TarError} for an archive
  * that is not valid, or with what `chunks` or `onFile` threw. Stops at the archive's end marker.
@@ -231,7 +270,13 @@ export async function readTarGz(
       const name = normalName(header.name);
       const wanted = header.type === 'file' ? want(name) : 'skip';
       let unread = header.size;
-      if (wanted === 'keep') {
+      if (header.type === 'pax') {
+        if (header.size > KEEP_MAX_BYTES) throw new TarError('A pax header is larger than 1 MiB');
+        const data = await reader.exactly(header.size);
+        if ((data?.length ?? 0) !== header.size) throw new TarError('The archive ends early');
+        if (data) checkPax(data);
+        unread = 0;
+      } else if (wanted === 'keep') {
         if (header.size > KEEP_MAX_BYTES) throw new TarError(`${name} is larger than 1 MiB`);
         const data = Buffer.from((await reader.exactly(header.size)) ?? Buffer.alloc(0));
         if (data.length !== header.size) throw new TarError('The archive ends early');
