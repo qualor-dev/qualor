@@ -24818,7 +24818,32 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The update's last problem: a download, a store or the source"
+                    },
+                    "lastRecheckError": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The re-check's last problem: DISK or RECHECK_FAILED"
                     },
                     "lastRecheck": {
                       "anyOf": [
@@ -24874,6 +24899,7 @@
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",
+                    "lastRecheckError",
                     "lastRecheck"
                   ],
                   "additionalProperties": false
@@ -25206,7 +25232,32 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The update's last problem: a download, a store or the source"
+                    },
+                    "lastRecheckError": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The re-check's last problem: DISK or RECHECK_FAILED"
                     },
                     "lastRecheck": {
                       "anyOf": [
@@ -25262,6 +25313,7 @@
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",
+                    "lastRecheckError",
                     "lastRecheck"
                   ],
                   "additionalProperties": false
@@ -25314,7 +25366,7 @@
     },
     "/api/v0/system/vulnerability-db/update": {
       "post": {
-        "summary": "Check for a new vulnerability database now (instance admins); the check runs in the background, and a check already running is not repeated",
+        "summary": "Check for a new vulnerability database now (instance admins); the check runs in the background, and a check already running is not repeated. After a failed re-check, every tracked target is re-checked too",
         "tags": [
           "system"
         ],
@@ -25484,7 +25536,32 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The update's last problem: a download, a store or the source"
+                    },
+                    "lastRecheckError": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The re-check's last problem: DISK or RECHECK_FAILED"
                     },
                     "lastRecheck": {
                       "anyOf": [
@@ -25540,6 +25617,7 @@
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",
+                    "lastRecheckError",
                     "lastRecheck"
                   ],
                   "additionalProperties": false
@@ -25752,7 +25830,32 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The update's last problem: a download, a store or the source"
+                    },
+                    "lastRecheckError": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The re-check's last problem: DISK or RECHECK_FAILED"
                     },
                     "lastRecheck": {
                       "anyOf": [
@@ -25808,6 +25911,7 @@
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",
+                    "lastRecheckError",
                     "lastRecheck"
                   ],
                   "additionalProperties": false

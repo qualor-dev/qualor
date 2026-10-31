@@ -16,7 +16,10 @@ export interface VulndbState {
   currentDatasetId: string | null;
   lastCheckAt: string | null;
   nextCheckAt: string | null;
+  /** The update job's last problem (download, store, source); the re-check never touches it. */
   lastError: { code: string; message: string } | null;
+  /** The re-check's last problem (DISK, RECHECK_FAILED); the update job never touches it (R19). */
+  lastRecheckError: { code: string; message: string } | null;
   lastRecheck: {
     at: string;
     projects: number;
@@ -34,6 +37,7 @@ const onRead = z.object({
   lastCheckAt: z.string().nullable().catch(null),
   nextCheckAt: z.string().nullable().catch(null),
   lastError: z.object({ code: z.string(), message: z.string() }).nullable().catch(null),
+  lastRecheckError: z.object({ code: z.string(), message: z.string() }).nullable().catch(null),
   lastRecheck: z
     .object({
       at: z.string(),
@@ -90,22 +94,23 @@ export type VulndbStatus = 'off' | 'no_data' | 'updating' | 'up_to_date' | 'stal
 
 /**
  * What the settings tab shows. Order: off, updating, failed with no dataset, no data, stale,
- * failed, up to date (ruling R7).
+ * failed, up to date (ruling R7). Failed is either error: the update's or the re-check's (R19).
  */
 export function vulndbStatus(
   settings: Pick<VulndbSettings, 'enabled'>,
-  state: Pick<VulndbState, 'lastError'>,
+  state: Pick<VulndbState, 'lastError' | 'lastRecheckError'>,
   current: Pick<DatasetRow, 'builtAt'> | null,
   running: boolean,
   now: Date = new Date(),
 ): VulndbStatus {
   if (!settings.enabled) return 'off';
   if (running) return 'updating';
-  if (current === null) return state.lastError !== null ? 'failed' : 'no_data';
+  const failing = state.lastError !== null || state.lastRecheckError !== null;
+  if (current === null) return failing ? 'failed' : 'no_data';
   // A dataset without a build time has unknown age: stale.
   if (current.builtAt === null || now.getTime() - current.builtAt.getTime() > STALE_AFTER_MS) {
     return 'stale';
   }
-  if (state.lastError !== null) return 'failed';
+  if (failing) return 'failed';
   return 'up_to_date';
 }

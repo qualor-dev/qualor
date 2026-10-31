@@ -190,6 +190,23 @@ describe('vulnerability database updates', () => {
     expect(rechecks).toHaveLength(1);
   });
 
+  it("never touches the re-check's error", async () => {
+    const recheckError = { code: 'DISK', message: 'The vulnerability database cannot be written' };
+    await updateVulndbState(t.db, (s) => ({ ...s, lastRecheckError: recheckError }));
+    const registry = fakeRegistry(trivyArchive());
+    await runOnce(registry);
+    expect(await readVulndbState(t.db)).toMatchObject({
+      lastError: null,
+      lastRecheckError: recheckError,
+    });
+    registry.archive = { code: 'UNREACHABLE', message: 'The registry did not answer' };
+    await runOnce(registry);
+    expect(await readVulndbState(t.db)).toMatchObject({
+      lastError: { code: 'UNREACHABLE' },
+      lastRecheckError: recheckError,
+    });
+  });
+
   it('survives a source that throws', async () => {
     const registry = fakeRegistry(trivyArchive());
     registry.fetchLayerDescriptor = (() => {

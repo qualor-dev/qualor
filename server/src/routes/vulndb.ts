@@ -83,7 +83,14 @@ const settingsDto = z.object({
     .nullable(),
   lastCheckAt: z.string().nullable(),
   nextCheckAt: z.string().nullable(),
-  lastError: z.object({ code: z.string(), message: z.string() }).nullable(),
+  lastError: z
+    .object({ code: z.string(), message: z.string() })
+    .nullable()
+    .meta({ description: "The update's last problem: a download, a store or the source" }),
+  lastRecheckError: z
+    .object({ code: z.string(), message: z.string() })
+    .nullable()
+    .meta({ description: "The re-check's last problem: DISK or RECHECK_FAILED" }),
   lastRecheck: z
     .object({
       at: z.string(),
@@ -181,6 +188,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       lastCheckAt: state.lastCheckAt,
       nextCheckAt: state.nextCheckAt,
       lastError: state.lastError,
+      lastRecheckError: state.lastRecheckError,
       lastRecheck: state.lastRecheck,
     };
   };
@@ -256,13 +264,18 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       schema: {
         tags: ['system'],
         summary:
-          'Check for a new vulnerability database now (instance admins); the check runs in the background, and a check already running is not repeated',
+          'Check for a new vulnerability database now (instance admins); the check runs in the background, and a check already running is not repeated. After a failed re-check, every tracked target is re-checked too',
         response: { 202: settingsDto },
       },
     },
     async (request, reply) => {
       const principal = requireInstanceAdmin(request);
       const queued = await requestVulndbUpdateNow(deps.db);
+      // R19: a failed re-check is tried again too, whatever the source: an unchanged download
+      // queues none, and an uploaded file is never downloaded.
+      if ((await readVulndbState(deps.db)).lastRecheckError !== null) {
+        await enqueueRecheck(deps.db, { all: true });
+      }
       await deps.audit.record(deps.db, actorOf(request), [
         {
           action: 'vulndb.update_requested',

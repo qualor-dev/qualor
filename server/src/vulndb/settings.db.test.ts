@@ -106,6 +106,7 @@ describe('vulnerability database settings and state', () => {
       lastCheckAt: null,
       nextCheckAt: null,
       lastError: null,
+      lastRecheckError: null,
       lastRecheck: null,
       staleNotifiedDigest: null,
     });
@@ -118,6 +119,12 @@ describe('vulnerability database settings and state', () => {
     const s = await readVulndbState(ctx.db);
     expect(s.lastCheckAt).toMatch(/^t\d$/);
     expect(s.lastError).toEqual({ code: 'X', message: 'm' });
+    // A damaged key reads as its empty value; the others survive.
+    await updateVulndbState(ctx.db, (s) => ({ ...s, lastRecheckError: 'broken' as never }));
+    expect(await readVulndbState(ctx.db)).toMatchObject({
+      lastRecheckError: null,
+      lastError: { code: 'X', message: 'm' },
+    });
   });
 });
 
@@ -129,6 +136,7 @@ describe('vulndbStatus', () => {
     lastCheckAt: null,
     nextCheckAt: null,
     lastError: null,
+    lastRecheckError: null,
     lastRecheck: null,
     staleNotifiedDigest: null,
   };
@@ -146,6 +154,7 @@ describe('vulndbStatus', () => {
   const err = { code: 'E', message: 'm' };
   const off = { ...settings, enabled: false };
   const failing = { ...state, lastError: err };
+  const recheckFailing = { ...state, lastRecheckError: err };
   it.each([
     ['disabled', off, state, null, false, 'off'],
     ['disabled beats running', off, state, null, true, 'off'],
@@ -156,6 +165,16 @@ describe('vulndbStatus', () => {
     ['4 days old', settings, state, dataset(4), false, 'stale'],
     ['stale beats an error', settings, failing, dataset(4), false, 'stale'],
     ['an error with a fresh dataset', settings, failing, dataset(1), false, 'failed'],
+    [
+      'a re-check error with a fresh dataset',
+      settings,
+      recheckFailing,
+      dataset(1),
+      false,
+      'failed',
+    ],
+    ['stale beats a re-check error', settings, recheckFailing, dataset(4), false, 'stale'],
+    ['running beats a re-check error', settings, recheckFailing, dataset(1), true, 'updating'],
     ['fresh', settings, state, dataset(1), false, 'up_to_date'],
   ] as const)('%s', (_name, s, st, current, running, expected) => {
     expect(vulndbStatus(s, st, current, running, now)).toBe(expected);

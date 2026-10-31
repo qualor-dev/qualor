@@ -648,7 +648,7 @@ describe('vulnerability re-checks', () => {
     });
   });
 
-  describe('failures (R12)', () => {
+  describe('failures (R12, R19: lastRecheckError)', () => {
     it('a Trivy failure leaves rows and matches alone and is shown until a re-check succeeds', async () => {
       const p = await project();
       await onBranch(p, 'main', { dependencies: [A, B] });
@@ -663,25 +663,36 @@ describe('vulnerability re-checks', () => {
       const result = await recheck({ projectIds: [p.id] });
       expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
       const state = await readVulndbState(db());
-      expect(state.lastError?.code).toBe('RECHECK_FAILED');
-      expect(state.lastError?.message).toContain('TIMEOUT');
+      expect(state.lastRecheckError?.code).toBe('RECHECK_FAILED');
+      expect(state.lastRecheckError?.message).toContain('TIMEOUT');
+      expect(state.lastError).toBeNull();
       expect(state.lastRecheck).toEqual(lastRecheck);
       expect(await rows(p)).toEqual(before);
       expect(await digests([PA, PB])).toEqual(matchedBefore);
 
       trivy.failure = null;
       expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
-      expect((await readVulndbState(db())).lastError).toBeNull();
+      expect((await readVulndbState(db())).lastRecheckError).toBeNull();
       expect(await described(p)).toEqual([`main ${PA} CVE-2026-0001`]);
     });
 
-    it('keeps an error that is not its own', async () => {
+    it("never touches the update's lastError, failing or succeeding", async () => {
       const p = await project();
       await onBranch(p, 'main', { dependencies: [A] });
       const auth = { code: 'AUTH', message: 'registry answered 401' };
       await updateVulndbState(db(), (s) => ({ ...s, lastError: auth }));
+      trivy.failure = { ok: false, code: 'FAILED', message: 'Trivy exited with 1' };
+      expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'failed' });
+      expect(await readVulndbState(db())).toMatchObject({
+        lastError: auth,
+        lastRecheckError: { code: 'RECHECK_FAILED' },
+      });
+      trivy.failure = null;
       expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
-      expect((await readVulndbState(db())).lastError).toEqual(auth);
+      expect(await readVulndbState(db())).toMatchObject({
+        lastError: auth,
+        lastRecheckError: null,
+      });
     });
 
     it('a directory that cannot be written is a DISK error, cleared by the next good run', async () => {
@@ -694,11 +705,11 @@ describe('vulnerability re-checks', () => {
         { config: { vulndb: { dir: join(file, 'sub'), trivyPath: '/nonexistent/trivy' } } },
       );
       expect(result).toMatchObject({ kind: 'failed', error: { code: 'DISK' } });
-      expect((await readVulndbState(db())).lastError?.code).toBe('DISK');
+      expect((await readVulndbState(db())).lastRecheckError?.code).toBe('DISK');
       expect(trivy.calls).toEqual([]);
       expect(await rows(p)).toEqual([]);
       await recheck({ projectIds: [p.id] });
-      expect((await readVulndbState(db())).lastError).toBeNull();
+      expect((await readVulndbState(db())).lastRecheckError).toBeNull();
       expect(await rows(p)).toHaveLength(1);
     });
 
@@ -710,7 +721,7 @@ describe('vulnerability re-checks', () => {
       await makeDatasetCurrent(db(), broken.id);
       const result = await recheck({ projectIds: [p.id] });
       expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
-      expect((await readVulndbState(db())).lastError?.code).toBe('RECHECK_FAILED');
+      expect((await readVulndbState(db())).lastRecheckError?.code).toBe('RECHECK_FAILED');
       expect(trivy.calls).toEqual([]);
     });
   });
@@ -751,7 +762,10 @@ describe('vulnerability re-checks', () => {
       expect(Date.now() - stoppedAt).toBeLessThan(3_000);
       expect(signalled).toBe(stop.signal);
       expect(result).toEqual({ kind: 'stopped' });
-      expect((await readVulndbState(db())).lastError).toBeNull();
+      expect(await readVulndbState(db())).toMatchObject({
+        lastError: null,
+        lastRecheckError: null,
+      });
       expect(await rows(p)).toEqual([]);
       expect(await recheckJobs()).toEqual([
         { status: 'queued', payload: { projectIds: [p.id] }, key: RECHECK_QUEUE },

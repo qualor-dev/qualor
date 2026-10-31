@@ -29,8 +29,6 @@ export const TRIVY_MAX_OUTPUT_BYTES = 512 * 1024 * 1024;
 const PROJECT_BATCH = 25;
 /** Values in one IN-list. */
 const LIST_CHUNK = 10_000;
-/** The `lastError` codes a re-check owns (ruling R12): a good re-check clears only these. */
-const OWN_ERRORS = new Set(['DISK', 'RECHECK_FAILED']);
 
 /** What to re-check: every project, or these. */
 export type RecheckScope = { all: true } | { projectIds: string[] };
@@ -97,14 +95,14 @@ export interface RecheckDeps {
 }
 
 export type RecheckSummary = NonNullable<VulndbState['lastRecheck']>;
-type Problem = NonNullable<VulndbState['lastError']>;
+type Problem = NonNullable<VulndbState['lastRecheckError']>;
 
 export type RecheckResult =
   /** The instance switch is off: nothing was touched (ruling R6). */
   | { kind: 'off' }
   /** No current dataset: nothing was touched. */
   | { kind: 'no_data' }
-  /** Stopped; `lastError` says why (ruling R12). */
+  /** Stopped; `lastRecheckError` says why (rulings R12, R19). */
   | { kind: 'failed'; error: Problem }
   /** The server is stopping: nothing recorded, the scope queued again for the next server. */
   | { kind: 'stopped' }
@@ -591,8 +589,9 @@ async function recheckAll(
   return counts;
 }
 
+/** R19: the re-check's own field; the update job's `lastError` is never touched here. */
 const setError = (db: Db, error: Problem) =>
-  updateVulndbState(db, (state) => ({ ...state, lastError: error }));
+  updateVulndbState(db, (state) => ({ ...state, lastRecheckError: error }));
 
 /**
  * A run the server's stop ended: nothing is recorded, and the scope is queued again, for the next
@@ -614,13 +613,13 @@ async function stoppedRun(deps: RecheckDeps, scope: RecheckScope): Promise<Reche
  * 1. The instance switch off, or no dataset: nothing is touched. The dataset is read once and used
  *    to the end, even when another becomes current meanwhile (its digest tags what it matched).
  * 2. The local copy of that dataset is held for the run; DISK (or MISSING, as RECHECK_FAILED)
- *    goes to `lastError`.
+ *    goes to `lastRecheckError` (ruling R19), as does a failed Trivy run (R12).
  * 3–5. The packages not yet matched against it run through Trivy, 20 000 per SBOM.
  * 6–7. Each tracked target's rows follow its inventory ({@link writeTargets}).
  * 8. Untracked targets (a version not tracked, a branch that no longer matches, every target of a
  *    project switched off) are not re-checked and keep their rows (ruling R17, spec §6.2, §8.1).
  * 9. A full re-check writes `lastRecheck` (a scoped one leaves it, ruling R15); any good run
- *    clears an earlier DISK or RECHECK_FAILED error.
+ *    clears `lastRecheckError`. The update job's `lastError` is never touched.
  *
  * A stop of the server (`shutdown`) cuts the extraction or kills Trivy, and ends the run before
  * its next batch or chunk ({@link stoppedRun}).
@@ -695,8 +694,7 @@ export async function recheckProjects(
     ...state,
     // R15: the admin line describes the last full re-check, not the last ingestion.
     lastRecheck: 'all' in scope ? summary : state.lastRecheck,
-    lastError:
-      state.lastError !== null && OWN_ERRORS.has(state.lastError.code) ? null : state.lastError,
+    lastRecheckError: null,
   }));
   deps.logger?.info({ component: 'vulnerabilities', ...summary }, 'vulnerability re-check done');
   return { kind: 'done', summary };

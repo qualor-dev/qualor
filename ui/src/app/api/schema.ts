@@ -11658,7 +11658,13 @@ export interface paths {
                             } | null;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
+                            /** @description The update's last problem: a download, a store or the source */
                             lastError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** @description The re-check's last problem: DISK or RECHECK_FAILED */
+                            lastRecheckError: {
                                 code: string;
                                 message: string;
                             } | null;
@@ -11755,7 +11761,13 @@ export interface paths {
                             } | null;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
+                            /** @description The update's last problem: a download, a store or the source */
                             lastError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** @description The re-check's last problem: DISK or RECHECK_FAILED */
+                            lastRecheckError: {
                                 code: string;
                                 message: string;
                             } | null;
@@ -11823,7 +11835,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Check for a new vulnerability database now (instance admins); the check runs in the background, and a check already running is not repeated */
+        /** Check for a new vulnerability database now (instance admins); the check runs in the background, and a check already running is not repeated. After a failed re-check, every tracked target is re-checked too */
         post: {
             parameters: {
                 query?: never;
@@ -11863,7 +11875,13 @@ export interface paths {
                             } | null;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
+                            /** @description The update's last problem: a download, a store or the source */
                             lastError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** @description The re-check's last problem: DISK or RECHECK_FAILED */
+                            lastRecheckError: {
                                 code: string;
                                 message: string;
                             } | null;
@@ -11966,7 +11984,13 @@ export interface paths {
                             } | null;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
+                            /** @description The update's last problem: a download, a store or the source */
                             lastError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** @description The re-check's last problem: DISK or RECHECK_FAILED */
+                            lastRecheckError: {
                                 code: string;
                                 message: string;
                             } | null;

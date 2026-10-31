@@ -13,7 +13,7 @@ import {
 import { uuidv7 } from '../db/ids';
 import { adminHeaders, auditRows, ssoContext } from '../../test/sso';
 import { trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
-import { readVulndbState } from '../vulndb/state';
+import { readVulndbState, updateVulndbState } from '../vulndb/state';
 import { instanceSettings, jobs, vulndbDatasets } from '../db/schema';
 import { VULNDB_UPDATE_QUEUE } from '../vulndb/state';
 import { RECHECK_QUEUE } from '../vulnerabilities/recheck';
@@ -67,6 +67,7 @@ describe('/system/vulnerability-db (API)', () => {
       lastCheckAt: null,
       nextCheckAt: null,
       lastError: null,
+      lastRecheckError: null,
       lastRecheck: null,
     });
   });
@@ -269,6 +270,24 @@ describe('/system/vulnerability-db (API)', () => {
       await parkLater();
       await put({ source: { kind: 'mirror', repository: 'registry.corp:5000/m/t:2' } });
       expect(await dueNow()).toBe(0);
+    });
+
+    it('also queues a full re-check while the last re-check failed, whatever the source (R19)', async () => {
+      const rechecks = () =>
+        ctx.db
+          .select({ status: jobs.status, payload: jobs.payload })
+          .from(jobs)
+          .where(eq(jobs.queue, RECHECK_QUEUE));
+      await ctx.db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      expect((await post()).statusCode).toBe(202);
+      expect(await rechecks()).toEqual([]);
+      const failure = { code: 'RECHECK_FAILED', message: 'Trivy failed (TIMEOUT)' };
+      await updateVulndbState(ctx.db, (s) => ({ ...s, lastRecheckError: failure }));
+      await put({ source: { kind: 'upload' } });
+      const res = await post();
+      expect(res.statusCode, res.body).toBe(202);
+      expect(res.json()).toMatchObject({ lastRecheckError: failure });
+      expect(await rechecks()).toEqual([{ status: 'queued', payload: { all: true } }]);
     });
 
     it('switching monitoring on also queues a full re-check; other changes do not', async () => {
