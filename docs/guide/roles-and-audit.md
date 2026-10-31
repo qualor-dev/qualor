@@ -136,6 +136,10 @@ in `.*` (for example `issue.*`).
   override; one summary event for a `qualor import sonarqube` status import, never one per issue.
   A status changed by a reply in a merge request
   ([AI review](./ai-review.md#replies-and-commands)) is recorded by `system`, with no user.
+- **Vulnerability decisions:** a status set for a vulnerability, for the project or for one branch
+  or version (`vulnerability.decision_changed`, with the package, the vulnerability id, the old and
+  new status, the reason and how many issues it changed). A change on the Issues tab to a Trivy
+  issue of the main branch or a tracked branch records it too, besides the issue's own event.
 - **Integrations:** a GitLab or GitHub connection created, changed or deleted; a webhook created,
   changed or deleted, its secret regenerated, or a delivery resent.
 - **The licence:** a key uploaded or removed, never the key itself.

@@ -5,8 +5,8 @@ list. A scan in a tag pipeline records it. The GitLab component and the GitHub w
 run that scan on every tag.
 
 A project's rules decide which of its versions are tracked. The settings panel, the
-**Dependencies** tab and the API show which ones are. Qualor does not check versions for
-vulnerabilities yet.
+**Dependencies** tab and the API show which ones are. The server checks the tracked ones for
+vulnerabilities ([Dependency vulnerabilities](./dependency-vulnerabilities.md)).
 
 ## Record a version on each tag
 
@@ -127,7 +127,9 @@ or `2.4.0-SNAPSHOT`.
 - **Now tracked** lists the tracked labels, the most recently scanned first, up to 50.
 - A version that is not tracked keeps its packages.
 
-A version's mark decides whether the rule applies. You set it through the API
+A version's mark decides whether the rule applies. You set it in the row menu of the
+**Vulnerabilities** tab (**Pin**, **Unpin**, **Mark as unsupported**, **Track automatically**;
+[Dependency vulnerabilities](./dependency-vulnerabilities.md#by-version)) or through the API
 ([The API](#the-api)):
 
 | Mark | Effect |
@@ -247,5 +249,6 @@ q -X PUT "$QUALOR_URL/api/v0/projects/<project id>/vulnerability-monitoring" -d 
 | exit 2, "A version label is at most 100 characters; set project.version" | `project.version` is not set, and the tag is longer than 100 characters. The scanner refuses the label before the upload. The server would fail it with `VERSION_LABEL_INVALID` | set `project.version` to a label of at most 100 characters |
 | exit 4, `STALE_ANALYSIS` | a newer tag scan of the same label was stored first | none needed: the newer packages stay |
 | the version has no packages, and the scan warned `LICENSE_SCAN_FAILED` | Trivy did not run | use the scanner image ([Dependencies (Trivy)](./languages-and-analyzers.md#dependencies-trivy)) |
+| the version has no packages, and the scan warned `LICENSE_SCAN_TIMEOUT` | Trivy's licence pass took longer than `analyzers.trivy.licenseTimeoutSeconds` (300 s by default) | raise the timeout, or exclude directories you do not ship ([Dependency licences](./dependency-licenses.md#warnings)) |
 | the version has no packages, and no `LICENSE_SCAN_FAILED` | the repository has no lockfile Trivy reads | see [Which ecosystems give licences](./dependency-licenses.md#which-ecosystems-give-licences) |
 | a tag pipeline does not run the job | the job has no rule or trigger for tags | add the [snippet](#record-a-version-on-each-tag) |

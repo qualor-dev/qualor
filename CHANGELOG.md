@@ -15,7 +15,6 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - **Project → Settings → Vulnerability monitoring**: which branches and released versions a project
   tracks. By default it tracks the newest version of each of the last 5 major.minor lines. Versions
   can also come from analyses of tracked branches that carry `project.version` (off by default).
-  Qualor does not check versions for vulnerabilities yet.
 - The **Dependencies** tab lists the project's versions in its **Branch** picker.
 - API: `GET /projects/{id}/versions`, `PATCH /projects/{id}/versions/{versionId}`,
   `GET/PUT /projects/{id}/vulnerability-monitoring`, and `?version=` on
@@ -38,6 +37,24 @@ All notable changes to Qualor are listed here, newest first. The format follows
   admins get one email.
 - API: `GET/PUT /system/vulnerability-db`, `POST /system/vulnerability-db/update` and
   `PUT /system/vulnerability-db/file`.
+- **Project → Vulnerabilities**, between Issues and Dependencies: the open vulnerabilities of the
+  main branch, the tracked branches and the tracked versions, by version (Critical, High, Medium and
+  "N new") or by vulnerability. The row menu of a version pins it, marks it unsupported, or returns
+  it to the rule. A badge "New vulnerabilities in main and 2 versions" shows in the projects list
+  and on the project page. The tab shows while both vulnerability monitoring switches are on
+  ([Dependency vulnerabilities](docs/guide/dependency-vulnerabilities.md)).
+- Triage by vulnerability: **Change status** sets Open, Not affected (false positive) or Affected,
+  won't fix for a package and vulnerability id, for the whole project or for one branch or version.
+  Not affected needs a reason, one of the five VEX justifications, and a comment. A decision applies
+  to the matching Trivy issues and to new ones.
+- A false positive on a Trivy issue of the main branch or a tracked branch asks for a reason, and
+  writes the project's decision. Existing false positive and won't fix Trivy issues on the main
+  branch became decisions with "Reason not given".
+- API: `GET /projects/{id}/vulnerabilities/targets`, `GET /projects/{id}/vulnerabilities` and
+  `PUT /projects/{id}/vulnerability-decisions`. `POST /issues/{id}/transition`,
+  `POST /issues/bulk-transition` and the MCP tool `qualor_transition_issue` accept `reason`; the
+  problem codes are `REASON_REQUIRED` and `COMMENT_REQUIRED`. The audit event is
+  `vulnerability.decision_changed`.
 
 ### Changed
 

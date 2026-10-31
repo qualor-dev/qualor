@@ -482,7 +482,8 @@ larger of the two limits.
 
 The second `location` is the [vulnerability database](./vulnerability-database.md#offline) file
 upload. It has a limit of its own, `QUALOR_VULNDB_UPLOAD_MAX_BYTES`, 1 GiB by default. Without it,
-the proxy refuses the file.
+the proxy refuses the file. Under a path prefix, put the prefix in this `location`, for example
+`location = /qualor/api/v0/system/vulnerability-db/file`.
 
 A cloud load balancer works too. Give it the same body size limits and a 300 s timeout, and set
 `QUALOR_TRUST_PROXY` to its hop count or address range. A load balancer with one limit for every

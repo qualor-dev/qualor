@@ -61,6 +61,8 @@ guide of its own release, under **Docs** in the top bar (`/docs`, for signed-in 
     digest in a channel.
 29. [The vulnerability database](./vulnerability-database.md): the server's copy of Trivy's
     database, its source, states and re-checks.
+30. [Dependency vulnerabilities](./dependency-vulnerabilities.md): the Vulnerabilities tab, what is
+    new, and triage with reasons.
 
 ## How Qualor works
 

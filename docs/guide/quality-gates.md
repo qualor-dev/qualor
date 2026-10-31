@@ -33,8 +33,12 @@ in the API ([Projects](./users-projects-tokens.md#projects)):
 | `{ "type": "previous_version" }`; **Since the previous version** | the latest main-branch analysis with another `project.version`. Set `project.version` from your build's version on the main branch |
 | `{ "type": "analysis", "analysisId": "…" }`; **From a specific analysis** | a fixed analysis, chosen from the main branch's recent analyses |
 
-The panel shows the analysis new code is measured from. It warns when no analysis has a version
-label yet (the last 30 days are used instead), and when the chosen analysis is gone.
+The panel shows the analysis new code is measured from. It warns in two cases, and then the last
+30 days are new code instead:
+
+- **Since the previous version** finds no earlier version: no analysis of the main branch has a
+  version label other than the current one;
+- **From a specific analysis** points at an analysis that is gone.
 
 An issue is **new** when its line is in new code. A newly enabled rule that flags old lines
 therefore does not fail merge requests.
@@ -171,7 +175,7 @@ path before you act. The mark does not change the severity, the gate or the coun
 | open | system / user | an active problem |
 | resolved | user | "fixed". If the next analysis still finds it, it reopens |
 | won't fix | user, **comment required** | accepted as is. It stays so across analyses |
-| false positive | user, **comment required** | the analyzer is wrong. It stays so across analyses |
+| false positive | user, **comment required** | the analyzer is wrong. It stays so across analyses. On a Trivy issue of the main branch or a tracked branch, it also needs a **Reason** |
 | closed | system | no longer detected. If it comes back within 30 days, its earlier won't fix or false positive is restored |
 
 Won't fix and false positive issues do not count in the gate. A status change re-judges the branch's
@@ -185,6 +189,11 @@ suggestion was shown.
 An issue keeps its identity when code moves. Its fingerprint is the rule, the path and the
 surrounding code, and it tolerates line shifts. When two analyzers report the same finding, Qualor
 shows one issue.
+
+A Trivy issue (a vulnerable dependency) on the main branch or on a tracked branch shares its status
+with the whole project: the change is a project decision, applied to the other branches and to the
+Vulnerabilities tab. Resolving writes none. See
+[Dependency vulnerabilities](./dependency-vulnerabilities.md#trivy-issues-on-the-issues-tab).
 
 Merge requests and branches inherit the target branch's statuses. A false positive marked on `main`
 stays a false positive in every merge request.
