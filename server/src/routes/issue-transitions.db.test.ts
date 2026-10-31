@@ -853,6 +853,92 @@ describe('issue transitions, severity override and changelog (data-model.md §6,
       }
     });
 
+    it('mirrors a requested issue that failed its own transition (ruling R4, amended)', async () => {
+      const f = await fixture();
+      await h.ctx.db
+        .update(issues)
+        .set({ status: 'false_positive' })
+        .where(eq(issues.id, f.issue.release));
+      const res = await call('POST', '/issues/bulk-transition', member, {
+        ids: [f.issue.main, f.issue.release],
+        to: 'wont_fix',
+        comment: 'accepted',
+      });
+      expect(res.json()).toEqual({
+        succeeded: [f.issue.main],
+        failed: [{ id: f.issue.release, code: 'INVALID_TRANSITION' }],
+      });
+      expect(await statuses(f)).toMatchObject({ main: 'wont_fix', release: 'wont_fix' });
+    });
+
+    it('updates the branch row of a branch with its own decision, not the project row (ruling R5)', async () => {
+      const f = await fixture();
+      await h.ctx.db.insert(vulnerabilityDecisions).values([
+        {
+          projectId: f.projectId,
+          packageName: 'lodash',
+          vulnerabilityId: VULN,
+          status: 'false_positive',
+          reason: 'component_not_present',
+          comment: 'not shipped',
+        },
+        {
+          projectId: f.projectId,
+          packageName: 'lodash',
+          vulnerabilityId: VULN,
+          branchId: f.ids.release,
+          status: 'open',
+        },
+      ]);
+      const res = await transition(f.issue.release, { to: 'wont_fix', comment: 'accepted on 1.x' });
+      expect(res.statusCode, res.body).toBe(200);
+      const rows = await decisionsOf(f);
+      expect(rows).toHaveLength(2);
+      expect(rows.find((r) => r.branchId === null)).toMatchObject({
+        status: 'false_positive',
+        reason: 'component_not_present',
+        comment: 'not shipped',
+        decidedBy: null,
+      });
+      expect(rows.find((r) => r.branchId === f.ids.release)).toMatchObject({
+        status: 'wont_fix',
+        comment: 'accepted on 1.x',
+        decidedBy: memberId,
+      });
+      expect(res.json().vulnerability.decision).toMatchObject({
+        status: 'wont_fix',
+        scope: 'branch',
+      });
+      expect(await statuses(f)).toMatchObject({ main: 'open', release: 'wont_fix' });
+    });
+
+    it('locks the pair with the requested issue in one id-ordered pass: an ingestion holding a pair-mate never deadlocks with it', async () => {
+      const f = await fixture();
+      // main was seeded first, so its issue id sorts before the release/1.x one.
+      expect(f.issue.main < f.issue.release).toBe(true);
+      const holder = new pg.Client({ connectionString: h.ctx.database.url });
+      await holder.connect();
+      let racing: ReturnType<typeof transition> | undefined;
+      try {
+        // Like lockPlannedRows: an ingestion of main holds the smaller id of the pair ...
+        await holder.query('BEGIN');
+        await holder.query("SELECT set_config('lock_timeout', '3s', true)");
+        await holder.query('SELECT 1 FROM issues WHERE id = $1 FOR NO KEY UPDATE', [f.issue.main]);
+        racing = transition(f.issue.release, { to: 'wont_fix', comment: 'accepted' });
+        await waitForLockWaiters(h.ctx.db, 1);
+        // ... and goes on to a larger one, which the waiting transition must not hold yet.
+        await holder.query('SELECT 1 FROM issues WHERE id = $1 FOR NO KEY UPDATE', [
+          f.issue.release,
+        ]);
+        await holder.query('COMMIT');
+      } finally {
+        await holder.end();
+      }
+      const res = await racing;
+      expect(res.statusCode, res.body).toBe(200);
+      expect(await statuses(f)).toMatchObject({ main: 'wont_fix', release: 'wont_fix' });
+    });
+
     it('shows the vulnerability and the decision in force on the issue', async () => {
       const f = await fixture();
       const get = async (id: string) => (await call('GET', `/issues/${id}`)).json();

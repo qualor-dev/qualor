@@ -21,8 +21,9 @@ import type { Db, Executor } from '../db/client';
 import { branches } from '../db/schema';
 import { ProblemError, validationFailed } from '../http/problem';
 import type { IssueStatus } from '../tracking/plan';
+import { recordDecision } from '../vulnerabilities/decisions';
 import {
-  lockIssues,
+  lockForTransition,
   setLockTimeout,
   TRANSITION_LOCK_TIMEOUT_MS,
   transitionIssuesIn,
@@ -79,8 +80,10 @@ type CandidateRow = {
  * project's organisation.
  *
  * Candidates are read and matched outside any lock. All the transitions then run in ONE
- * transaction: every issue to change (and its duplicates) is locked first in one id-ordered
- * statement, the lock order of every transition and ingestion, and each status's transition runs
+ * transaction: every issue to change (and its duplicates, with the Trivy issues of the
+ * vulnerability decision pairs they write, after those pairs' advisory locks) is locked first in
+ * one id-ordered statement, the lock order of every transition and ingestion
+ * (`lockForTransition`), and each status's transition runs
  * through {@link transitionIssuesIn} (visibility, the lost-update guard, mirroring onto
  * duplicates, the changelog with each item's own comment, the gate re-evaluation). A lock held
  * longer than `lockTimeoutMs` fails the whole request (SQLSTATE 55P03, 503 over HTTP) with
@@ -283,15 +286,17 @@ export async function importIssueStatuses(
   }
   return db.transaction(async (tx) => {
     await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
-    await lockIssues(
+    // Both statuses write vulnerability decisions: their pairs and issues are locked here too.
+    await lockForTransition(
       tx,
       pending.flatMap((to) => [...toApply[to].keys()]),
+      true,
     );
     const done: [ImportStatus, TransitionResult][] = [];
     for (const to of pending) {
       const own = toApply[to];
       // No `audit` here: the import is one summary event, not one per issue. Its vulnerability
-      // decisions need no reason (vuln plan 2b, D9).
+      // decisions need no reason (vuln plan 2b, D9), and their events are recorded below.
       done.push([
         to,
         await transitionIssuesIn(tx, user, [...own.keys()], to, null, {
@@ -301,6 +306,14 @@ export async function importIssueStatuses(
       ]);
     }
     applyOutcomes(done);
+    // After the last transition queued its re-evaluations, like every audit event of the import.
+    if (options.audit) {
+      for (const [, result] of done) {
+        for (const { input, result: written } of result.decisions) {
+          await recordDecision(tx, options.audit, input, written);
+        }
+      }
+    }
     const final = response();
     await recordImport(tx, final);
     return final;

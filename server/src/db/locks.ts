@@ -114,4 +114,12 @@ export const LOCKS = {
    * locks it already holds, and takes no other lock.
    */
   vulnerabilityRecheck: 7_310_031,
+  /**
+   * The first key of `pg_advisory_xact_lock(key, hashtext(<project, package, vulnerability>))`:
+   * one writer of a pair's vulnerability decisions at a time (vuln plan 2b,
+   * vulnerabilities/decisions.ts `lockDecisionPairs`). Taken first, before any issue or decision
+   * row, in `hashtext` order when a transition writes several pairs; the issues of the pairs are
+   * then locked in one id-ordered statement.
+   */
+  vulnerabilityDecision: 7_310_032,
 } as const;

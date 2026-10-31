@@ -227,6 +227,22 @@ describe('the vulnerability decision store', () => {
     expect(result.appliedIssueIds).toEqual([another]);
   });
 
+  it('changes only the issues a transition holds, and leaves their re-evaluation to it', async () => {
+    const f = await fixture();
+    await t.db.delete(jobs);
+    const result = await write(
+      input(f, 'false_positive', { heldIssueIds: [f.issue.main, f.issue.feature] }),
+    );
+    expect(await statuses(f)).toMatchObject({
+      main: 'false_positive',
+      release: 'open',
+      feature: 'false_positive',
+      mr: 'open',
+    });
+    expect([...result.appliedIssueIds].sort()).toEqual([f.issue.main, f.issue.feature].sort());
+    expect(await t.db.select().from(jobs).where(eq(jobs.queue, GATE_QUEUE))).toEqual([]);
+  });
+
   it('applies a branch decision to that branch only', async () => {
     const f = await fixture();
     await write(input(f, 'wont_fix', { scope: { kind: 'branch', id: f.ids.feature } }));

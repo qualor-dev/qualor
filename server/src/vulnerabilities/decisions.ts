@@ -3,6 +3,7 @@ import type { AuditActorContext, AuditRecorder } from '../audit/recorder';
 import { projectRefs } from '../audit/refs';
 import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
+import { LOCKS } from '../db/locks';
 import { first } from '../db/rows';
 import { uuidv7 } from '../db/ids';
 import { vulnerabilityDecisions } from '../db/schema';
@@ -40,9 +41,29 @@ export interface DecisionInput {
   replaceOverrideOf?: TargetScope;
   /** The issues the caller changes itself, so the decision leaves them alone. */
   skipIssueIds?: readonly string[];
+  /**
+   * Set by a transition, which already holds these issues locked (the pair's issues among them)
+   * and queues the gate re-evaluations itself, once: the decision changes only these issues,
+   * takes no new issue lock and queues nothing (the caller queues `appliedIssueIds`). Without it,
+   * the decision locks the pair's issues itself, in one id-ordered statement, and queues them.
+   */
+  heldIssueIds?: readonly string[];
+}
+
+/** A (project, package, vulnerability) whose decisions one writer at a time changes. */
+export interface DecisionPair {
+  projectId: string;
+  packageName: string;
+  vulnerabilityId: string;
 }
 
 export type DecisionRow = typeof vulnerabilityDecisions.$inferSelect;
+
+export interface DecisionResult {
+  decision: DecisionRow;
+  previous: DecisionRow | null;
+  appliedIssueIds: string[];
+}
 
 /** Where the event of a decision is recorded (the caller's recorder and the acting person). */
 export interface DecisionAudit {
@@ -72,13 +93,19 @@ type Candidate = {
  * Decisions ignore the monitoring switches (D5). Each changed issue gets its `issue_changes` row
  * and its branch's gate is evaluated again. With `audit`, one `vulnerability.decision_changed`
  * event is recorded.
+ *
+ * Locks, in this order: the pair ({@link lockDecisionPairs}, free when the caller holds it), the
+ * decision row, then the pair's issues in one id-ordered `FOR NO KEY UPDATE` statement. A
+ * transition passes `heldIssueIds` instead: it took the pair and every issue it may change before
+ * it changed anything (issues/transitions.ts `lockForTransition`).
  */
 export async function writeDecision(
   tx: Executor,
   input: DecisionInput,
   audit?: DecisionAudit,
-): Promise<{ decision: DecisionRow; previous: DecisionRow | null; appliedIssueIds: string[] }> {
+): Promise<DecisionResult> {
   const { projectId, packageName, vulnerabilityId, scope } = input;
+  await lockDecisionPairs(tx, [input]);
   if (input.replaceOverrideOf && scope.kind !== 'project') {
     throw new Error('replaceOverrideOf needs a project-wide decision');
   }
@@ -152,32 +179,124 @@ export async function writeDecision(
   const decision = first(await upsert.returning());
 
   const appliedIssueIds = scope.kind === 'version' ? [] : await applyToIssues(tx, input);
-  await enqueueReevaluations(tx, appliedIssueIds);
+  if (!input.heldIssueIds) await enqueueReevaluations(tx, appliedIssueIds);
 
-  if (audit?.recorder.active()) {
-    const refs = await projectRefs(tx, projectId);
-    await audit.recorder.record(tx, audit.context, [
-      {
-        action: 'vulnerability.decision_changed',
-        organization: refs.organization,
-        project: refs.project,
-        target: { type: 'vulnerability_decision', id: decision.id, label: null },
-        details: {
-          packageName,
-          vulnerabilityId,
-          scope: scope.kind,
-          targetId: scope.kind === 'project' ? null : scope.id,
-          from: previous?.status ?? null,
-          to: input.status,
-          reason: input.reason,
-          commented: input.comment !== null,
-          appliedIssues: appliedIssueIds.length,
-          source: input.source,
-        },
+  const result = { decision, previous, appliedIssueIds };
+  if (audit) await recordDecision(tx, audit, input, result);
+  return result;
+}
+
+/**
+ * The `vulnerability.decision_changed` event of a decision {@link writeDecision} wrote. A
+ * transition records it itself, after it queued its gate re-evaluations, so no re-evaluation lock
+ * is ever taken after the audit chain's.
+ */
+export async function recordDecision(
+  tx: Executor,
+  audit: DecisionAudit,
+  input: DecisionInput,
+  { decision, previous, appliedIssueIds }: DecisionResult,
+): Promise<void> {
+  if (!audit.recorder.active()) return;
+  const { scope } = input;
+  const refs = await projectRefs(tx, input.projectId);
+  await audit.recorder.record(tx, audit.context, [
+    {
+      action: 'vulnerability.decision_changed',
+      organization: refs.organization,
+      project: refs.project,
+      target: { type: 'vulnerability_decision', id: decision.id, label: null },
+      details: {
+        packageName: input.packageName,
+        vulnerabilityId: input.vulnerabilityId,
+        scope: scope.kind,
+        targetId: scope.kind === 'project' ? null : scope.id,
+        from: previous?.status ?? null,
+        to: input.status,
+        reason: input.reason,
+        commented: input.comment !== null,
+        appliedIssues: appliedIssueIds.length,
+        source: input.source,
       },
-    ]);
+    },
+  ]);
+}
+
+const pairKey = (pair: DecisionPair): string =>
+  JSON.stringify([pair.projectId, pair.packageName, pair.vulnerabilityId]);
+
+/**
+ * Takes the advisory lock of each pair ({@link LOCKS.vulnerabilityDecision}), in `hashtext`
+ * order, so two writers of the same pairs never wait on each other in a cycle. Every writer of a
+ * decision takes it before any issue or decision row; taking it again in the same transaction is
+ * free.
+ */
+export async function lockDecisionPairs(
+  tx: Executor,
+  pairs: readonly DecisionPair[],
+): Promise<void> {
+  if (pairs.length === 0) return;
+  const keys = [...new Set(pairs.map(pairKey))];
+  const hashes = await tx.execute<{ hash: number }>(sql`
+    SELECT DISTINCT hashtext(k) AS hash
+      FROM jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb) AS k
+     ORDER BY hash`);
+  for (const { hash } of hashes.rows) {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulnerabilityDecision}, ${hash})`);
   }
-  return { decision, previous, appliedIssueIds };
+}
+
+/**
+ * Every Trivy issue of the pairs, whatever its branch and status: the issues a decision of one
+ * may change, which a transition locks with its own before it changes anything.
+ */
+export async function pairIssueIds(
+  db: Executor,
+  pairs: readonly DecisionPair[],
+): Promise<string[]> {
+  if (pairs.length === 0) return [];
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT i.id
+      FROM jsonb_to_recordset(${JSON.stringify(
+        pairs.map((p) => ({
+          project_id: p.projectId,
+          package_name: p.packageName,
+          vulnerability_id: p.vulnerabilityId,
+        })),
+      )}::jsonb) AS p(project_id uuid, package_name text, vulnerability_id text)
+      JOIN issues i ON i.project_id = p.project_id AND i.package_name = p.package_name
+      JOIN rules r ON r.id = i.rule_id
+     WHERE r.engine_id = 'trivy' AND r.engine_rule_id = p.vulnerability_id`);
+  return rows.rows.map((r) => r.id);
+}
+
+/**
+ * Of the (branch, pair)s, those whose branch has a decision row of its own (ruling R5: a
+ * transition there updates that row), as `JSON.stringify([branchId, packageName, vulnerabilityId])`.
+ */
+export async function branchDecisionKeys(
+  db: Executor,
+  at: readonly { branchId: string; packageName: string; vulnerabilityId: string }[],
+): Promise<Set<string>> {
+  if (at.length === 0) return new Set();
+  const rows = await db.execute<{
+    branch_id: string;
+    package_name: string;
+    vulnerability_id: string;
+  }>(sql`
+    SELECT d.branch_id, d.package_name, d.vulnerability_id
+      FROM jsonb_to_recordset(${JSON.stringify(
+        at.map((a) => ({
+          branch_id: a.branchId,
+          package_name: a.packageName,
+          vulnerability_id: a.vulnerabilityId,
+        })),
+      )}::jsonb) AS p(branch_id uuid, package_name text, vulnerability_id text)
+      JOIN vulnerability_decisions d ON d.branch_id = p.branch_id
+       AND d.package_name = p.package_name AND d.vulnerability_id = p.vulnerability_id`);
+  return new Set(
+    rows.rows.map((r) => JSON.stringify([r.branch_id, r.package_name, r.vulnerability_id])),
+  );
 }
 
 /** The row of the input's own scope and pair, locked, else undefined. */
@@ -215,6 +334,7 @@ async function applyToIssues(tx: Executor, input: DecisionInput): Promise<string
        AND i.package_name = ${packageName}
        AND i.status IN ('open', 'false_positive', 'wont_fix')
        ${input.skipIssueIds?.length ? sql`AND i.id NOT IN ${uuidList(input.skipIssueIds)}` : sql``}
+       ${input.heldIssueIds ? sql`AND i.id IN ${uuidList(input.heldIssueIds)}` : sql``}
        ${scope.kind === 'branch' ? sql`AND b.id = ${scope.id}` : sql``}
        ${
          scope.kind === 'project'
@@ -225,7 +345,7 @@ async function applyToIssues(tx: Executor, input: DecisionInput): Promise<string
            : sql``
        }
      ORDER BY i.id
-       FOR UPDATE OF i`);
+       FOR NO KEY UPDATE OF i`);
   if (candidates.rows.length === 0) return [];
 
   const settings = await vulnerabilitySettings(tx, projectId);

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -8,11 +8,14 @@ import {
   sonarLineHash,
 } from '@qualor/shared';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
+import { QUIET_AUDIT_LOG } from '../../test/audit-log';
 import { expectPgError } from '../../test/db';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { mainBranchId, seedIssue, seedRule, type IssueSeed } from '../../test/issues';
 import { engine, file, finding, reportWith } from '../../test/reports';
+import { createAuditRecorder, SYSTEM_ACTOR } from '../audit/recorder';
 import {
+  auditEvents,
   issueChanges,
   issues,
   organizations,
@@ -242,6 +245,61 @@ describe('POST /projects/{id}/issue-status-import (import-sonarqube.md §10–§
         comment,
       },
     ]);
+  });
+
+  it('records the vulnerability decision it writes, with source import (vuln plan 2b)', async () => {
+    const v = await h.project('acme/import-trivy-audit');
+    await v.ingestOk(reportWith({ projectKey: v.key }));
+    const vuln = 'CVE-2026-0002';
+    const message = `lodash 4.17.20: ${vuln} Prototype pollution (fixed in 4.17.21)`;
+    await seedIssue(h.ctx.db, {
+      projectId: v.id,
+      branchId: await mainBranchId(h.ctx.db, v.id),
+      ruleId: await seedRule(h.ctx.db, { key: `trivy:${vuln}`, quality: 'security' }),
+      path: 'package-lock.json',
+      startLine: 12,
+      message,
+      packageName: 'lodash',
+    });
+    const [admin] = await h.ctx.db.select().from(users).where(eq(users.username, 'ingest-admin'));
+    const recorder = createAuditRecorder({ log: QUIET_AUDIT_LOG, isActive: () => true });
+    const done = await importIssueStatuses(
+      { db: h.ctx.db },
+      admin!,
+      v.id,
+      [
+        item({
+          ref: 'AYv-2',
+          ruleKeys: [`trivy:${vuln}`],
+          path: 'package-lock.json',
+          line: 12,
+          sonarLineHash: null,
+          message,
+        }) as ImportRequestItem,
+      ],
+      false,
+      { audit: { recorder, context: SYSTEM_ACTOR } },
+    );
+    expect(done.results[0]).toMatchObject({ outcome: 'applied', status: 'false_positive' });
+    const events = await h.ctx.db
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.action, 'vulnerability.decision_changed'),
+          eq(auditEvents.projectId, v.id),
+        ),
+      );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ targetType: 'vulnerability_decision' });
+    expect(events[0]?.details).toMatchObject({
+      packageName: 'lodash',
+      vulnerabilityId: vuln,
+      scope: 'project',
+      to: 'false_positive',
+      reason: null,
+      source: 'import',
+    });
   });
 
   it('is 409 PROJECT_NOT_ANALYSED before the first analysis', async () => {

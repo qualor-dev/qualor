@@ -9,6 +9,7 @@ import {
   vulnerabilitySettingsOf,
   type VulnerabilitySettings,
 } from '../versions/settings';
+import type { DecisionPair } from './decisions';
 
 /** The engine whose issues share the project's vulnerability decisions. */
 export const TRIVY_ENGINE = 'trivy';
@@ -63,39 +64,40 @@ export function writesDecision(settings: VulnerabilitySettings, issue: DecisionC
   );
 }
 
-/** The project and the pair whose decision the triage of an issue writes. */
-export interface DecisionPair {
-  projectId: string;
-  packageName: string;
-  vulnerabilityId: string;
+/** An issue whose triage writes its pair's decision, with its branch (ruling R5). */
+export interface DecidingIssue extends DecisionPair {
+  branchId: string;
 }
 
 /**
- * The issues of `issueIds` for which {@link writesDecision} holds, with their pairs. One query
- * reads the issues, one more the settings of their projects.
+ * The issues of `issueIds` and their duplicates for which {@link writesDecision} holds, with
+ * their pairs. One query reads the issues, one more the settings of their projects. Read without
+ * locks, before a transition locks anything: what it reads (engine, package, branch) is not what
+ * a transition or an ingestion changes under each other.
  */
 export async function decidingIssues(
   db: Executor,
   issueIds: readonly string[],
-): Promise<Map<string, DecisionPair>> {
-  const deciding = new Map<string, DecisionPair>();
+): Promise<Map<string, DecidingIssue>> {
+  const deciding = new Map<string, DecidingIssue>();
   if (issueIds.length === 0) return deciding;
   const rows = (
     await db.execute<{
       id: string;
       project_id: string;
+      branch_id: string;
       package_name: string;
       vulnerability_id: string;
       name: string;
       is_main: boolean;
       kind: string;
     }>(sql`
-      SELECT i.id, i.project_id, i.package_name, r.engine_rule_id AS vulnerability_id,
-             b.name, b.is_main, b.kind
+      SELECT i.id, i.project_id, i.branch_id, i.package_name,
+             r.engine_rule_id AS vulnerability_id, b.name, b.is_main, b.kind
         FROM issues i
         JOIN rules r ON r.id = i.rule_id
         JOIN branches b ON b.id = i.branch_id
-       WHERE i.id IN ${uuidList(issueIds)}
+       WHERE (i.id IN ${uuidList(issueIds)} OR i.duplicate_of_issue_id IN ${uuidList(issueIds)})
          AND r.engine_id = ${TRIVY_ENGINE} AND i.package_name IS NOT NULL`)
   ).rows;
   if (rows.length === 0) return deciding;
@@ -113,6 +115,7 @@ export async function decidingIssues(
     }
     deciding.set(row.id, {
       projectId: row.project_id,
+      branchId: row.branch_id,
       packageName: row.package_name,
       vulnerabilityId: row.vulnerability_id,
     });

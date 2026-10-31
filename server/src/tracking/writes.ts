@@ -279,8 +279,10 @@ export interface WrittenPlan {
 /**
  * Locks every existing issue the plan will change — the matched set and the close set together —
  * in ONE id-ordered pass, before any write (Task 3 fix round 1). A user transition locks its
- * issues in id order too, in one statement (issues/transitions.ts), so the two can no longer
- * form a lock cycle: without this, ingestion locked the matched set, then (after the inserts)
+ * issues in id order too, in one statement (issues/transitions.ts `lockForTransition`, which
+ * includes the issues of the vulnerability decisions it writes; a decision written on its own
+ * locks its issues in one statement as well), so the two can no longer form a lock cycle:
+ * without this, ingestion locked the matched set, then (after the inserts)
  * the close set in a second pass, and a transition holding a closing row while waiting on a
  * matched one deadlocked with it — and Postgres could abort the whole ingestion.
  *

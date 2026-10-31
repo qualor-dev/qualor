@@ -12,8 +12,17 @@ import { uuidv7 } from '../db/ids';
 import type { OrganizationRole, ProjectRole } from '../db/schema';
 import { enqueueReevaluations } from '../gates/reevaluate';
 import type { IssueStatus } from '../tracking/plan';
-import { writeDecision, type VexJustification } from '../vulnerabilities/decisions';
-import { decidingIssues, type DecisionPair } from '../vulnerabilities/trivy-issues';
+import {
+  branchDecisionKeys,
+  lockDecisionPairs,
+  pairIssueIds,
+  recordDecision,
+  writeDecision,
+  type DecisionInput,
+  type DecisionResult,
+  type VexJustification,
+} from '../vulnerabilities/decisions';
+import { decidingIssues, type DecidingIssue } from '../vulnerabilities/trivy-issues';
 
 /** data-model.md §6: the statuses a user may set; only the system sets `closed`. */
 export const USER_STATUSES = ['open', 'resolved', 'wont_fix', 'false_positive'] as const;
@@ -66,10 +75,22 @@ export interface TransitionFailure {
   from?: IssueStatus;
 }
 
+/** A vulnerability decision a transition wrote (vuln plan 2b), with what its event records. */
+export interface WrittenDecision {
+  input: DecisionInput;
+  result: DecisionResult;
+}
+
 export interface TransitionResult {
   /** Requested ids whose status changed, in request order (mirrored duplicates not listed). */
   succeeded: string[];
   failed: TransitionFailure[];
+  /**
+   * The vulnerability decisions the transition wrote. With `audit` their events are recorded
+   * already; without, a caller that records them does so after its last transition
+   * (`recordDecision`), so no re-evaluation lock follows the audit chain's.
+   */
+  decisions: WrittenDecision[];
 }
 
 export type LockedIssue = {
@@ -79,22 +100,52 @@ export type LockedIssue = {
 };
 
 /**
- * Locks `ids` and their duplicates `FOR NO KEY UPDATE` in one statement, in id order (step 2
- * below): the one lock order every transition and ingestion (tracking/writes.ts
- * `lockPlannedRows`) follows, so none of them wait on each other in a cycle. Taking a lock again
- * later in the same transaction is free, so a caller that runs several transitions in one
- * transaction locks all of their issues here first.
+ * Locks `ids`, their duplicates and the issues `also` names `FOR NO KEY UPDATE` in one statement,
+ * in id order (step 2 below): the one lock order every transition and ingestion
+ * (tracking/writes.ts `lockPlannedRows`) follows, so none of them wait on each other in a cycle.
+ * Taking a lock again later in the same transaction is free, so a caller that runs several
+ * transitions in one transaction locks all of their issues here first ({@link lockForTransition}).
  */
-export async function lockIssues(tx: Executor, ids: readonly string[]): Promise<LockedIssue[]> {
-  if (ids.length === 0) return [];
+export async function lockIssues(
+  tx: Executor,
+  ids: readonly string[],
+  also: readonly string[] = [],
+): Promise<LockedIssue[]> {
+  if (ids.length === 0 && also.length === 0) return [];
   return (
     await tx.execute<LockedIssue>(sql`
       SELECT id, status, duplicate_of_issue_id FROM issues
        WHERE id IN ${uuidList(ids)}
           OR duplicate_of_issue_id IN ${uuidList(ids)}
+          ${also.length > 0 ? sql`OR id IN ${uuidList(also)}` : sql``}
        ORDER BY id
          FOR NO KEY UPDATE`)
   ).rows;
+}
+
+/**
+ * Everything a transition of `ids` locks, before it changes anything, in the order every writer
+ * of issues and decisions follows (vuln plan 2b):
+ *
+ * 1. Read without locks: the issues of `ids` and their duplicates whose triage writes a
+ *    vulnerability decision (`decidingIssues`), unless `decisions` is false (`resolved`).
+ * 2. The advisory lock of each of their pairs, in `hashtext` order (`lockDecisionPairs`), which
+ *    every decision writer takes first.
+ * 3. `ids`, their duplicates and every Trivy issue of those pairs, in ONE id-ordered statement
+ *    ({@link lockIssues}): the decisions then change only rows already held.
+ *
+ * Answers the locked rows, the deciding issues and the ids held.
+ */
+export async function lockForTransition(
+  tx: Executor,
+  ids: readonly string[],
+  decisions: boolean,
+): Promise<{ locked: LockedIssue[]; deciding: Map<string, DecidingIssue>; held: string[] }> {
+  const deciding = decisions ? await decidingIssues(tx, ids) : new Map<string, DecidingIssue>();
+  const pairs = [...deciding.values()];
+  await lockDecisionPairs(tx, pairs);
+  const locked = await lockIssues(tx, ids, await pairIssueIds(tx, pairs));
+  return { locked, deciding, held: locked.map((row) => row.id) };
 }
 
 /**
@@ -115,7 +166,10 @@ export interface TransitionOptions {
   lockTimeoutMs?: number;
   /** A requested issue's own changelog comment (instead of `comment`); its mirrored duplicates get the same one. */
   comments?: ReadonlyMap<string, string>;
-  /** Absent: nothing is recorded (the status import records one summary event itself). */
+  /**
+   * Absent: nothing is recorded (the status import records one summary event itself, and the
+   * events of the decisions in `TransitionResult.decisions`).
+   */
   audit?: TransitionAudit;
   /**
    * The VEX justification of a false positive that writes the project's vulnerability decision
@@ -179,7 +233,10 @@ async function issueAccess(
  *    `NOT_FOUND`, exactly like one that does not exist; one it can read but not triage (a viewer)
  *    fails as `FORBIDDEN`. Only the issues it may triage are locked and changed.
  * 2. The requested issues and their duplicates are locked `FOR NO KEY UPDATE` in one statement,
- *    in id order, and each transition is validated against the status read under that lock. Two
+ *    in id order, together with every Trivy issue of the vulnerability decision pairs they may
+ *    write, after those pairs' advisory locks ({@link lockForTransition}); the decisions of step 5
+ *    then change only rows held here. Each transition is validated against the status read under
+ *    that lock. Two
  *    concurrent transitions of one issue therefore serialise, and the second is judged against
  *    the first one's result (the lost-update guard). The same holds against ingestion in both
  *    directions: a transition waiting on a row ingestion closed or reopened sees the status
@@ -194,14 +251,17 @@ async function issueAccess(
  * 4. Every change that took effect writes one `issue_changes` row (user, old, new, comment): the
  *    comment is `options.comments`' entry of the requested issue (a duplicate: of its primary),
  *    else `comment`.
- * 5. (scm.md §7): the branches of the issues that changed get a re-evaluation of their
- *    latest analysis's gate, enqueued in the same transaction (at most one waiting per branch).
- * 6. (vuln plan 2b, D4): a Trivy issue with a package name on `main` or a tracked branch shares
- *    its pair's project-wide vulnerability decision. A false positive of one needs a reason
+ * 5. (vuln plan 2b, D4): a Trivy issue with a package name on `main` or a tracked branch shares
+ *    its pair's vulnerability decision. A false positive of one needs a reason
  *    (`REASON_REQUIRED` otherwise, checked before anything of it is written; a duplicate that
  *    would need one keeps its status). Once every issue has its own status, `open`,
- *    `false_positive` and `wont_fix` write the decision once per pair among the changed issues,
- *    leaving every requested issue alone (ruling R4). `resolved` writes none.
+ *    `false_positive` and `wont_fix` write the decision once per pair and scope among the
+ *    changed issues: the row of the issue's branch when it has one (ruling R5), else the
+ *    project's. It leaves alone the requested issues this request changed, and mirrors those it
+ *    could not change (ruling R4). `resolved` writes none.
+ * 6. (scm.md §7): the branches of the issues that changed, the decisions' included, get a
+ *    re-evaluation of their latest analysis's gate, enqueued once in the same transaction (at
+ *    most one waiting per branch), before any audit event is recorded.
  */
 export async function transitionIssues(
   access: AccessContext & { db: Db },
@@ -239,15 +299,12 @@ export async function transitionIssuesIn(
   const { comments } = options;
   const ids = [...new Set(requested)];
   const { allowed, forbidden } = await issueAccess(tx, user, ids);
-  const locked = await lockIssues(tx, [...allowed.keys()]);
+  const { locked, deciding, held } = await lockForTransition(
+    tx,
+    [...allowed.keys()],
+    to !== 'resolved',
+  );
   const byId = new Map(locked.map((r) => [r.id, r]));
-  const deciding =
-    to === 'resolved'
-      ? new Map<string, DecisionPair>()
-      : await decidingIssues(
-          tx,
-          locked.map((r) => r.id),
-        );
   const reasonMissing = (id: string) =>
     to === 'false_positive' && options.source !== 'import' && !options.reason && deciding.has(id);
   const duplicatesOf = new Map<string, LockedIssue[]>();
@@ -260,7 +317,7 @@ export async function transitionIssuesIn(
 
   const changes = new Map<string, IssueStatus>();
   const commentOf = new Map<string, string | null>();
-  const result: TransitionResult = { succeeded: [], failed: [] };
+  const result: TransitionResult = { succeeded: [], failed: [], decisions: [] };
   for (const id of ids) {
     if (forbidden.has(id)) {
       result.failed.push({ id, code: 'FORBIDDEN' });
@@ -308,41 +365,78 @@ export async function transitionIssuesIn(
       comment: commentOf.get(a.id) ?? comment,
     }));
   await writeStatusLog(tx, log, user.id, to);
-  await enqueueReevaluations(
-    tx,
-    applied.map((a) => a.id),
-  );
-  if (options.audit) await recordStatusChanges(tx, options.audit, log, to, result.succeeded);
   if (to !== 'resolved') {
-    // Ruling R4: one decision per pair, written after every issue has its own status, so a
-    // second requested issue of the pair never fails its status guard on the first's mirror.
-    const pairs = new Map<string, DecisionPair & { comment: string | null }>();
-    for (const change of log) {
-      const pair = deciding.get(change.issue_id);
-      if (!pair) continue;
-      const key = JSON.stringify([pair.projectId, pair.packageName, pair.vulnerabilityId]);
-      if (!pairs.has(key)) pairs.set(key, { ...pair, comment: change.comment });
-    }
-    for (const pair of pairs.values()) {
-      await writeDecision(
-        tx,
-        {
-          projectId: pair.projectId,
-          packageName: pair.packageName,
-          vulnerabilityId: pair.vulnerabilityId,
-          scope: { kind: 'project' },
-          status: to,
-          reason: to === 'false_positive' ? (options.reason ?? null) : null,
-          comment: pair.comment,
-          userId: user.id,
-          source: options.source ?? 'issue',
-          skipIssueIds: ids,
-        },
-        options.audit && { recorder: options.audit.recorder, context: options.audit.context },
-      );
+    const changed = new Set(log.map((change) => change.issue_id));
+    result.decisions = await writeDecisionsOf(tx, log, deciding, {
+      status: to,
+      reason: to === 'false_positive' ? (options.reason ?? null) : null,
+      userId: user.id,
+      source: options.source ?? 'issue',
+      // Ruling R4 (amended): a requested issue that could not change is mirrored like any other.
+      skipIssueIds: ids.filter((id) => changed.has(id)),
+      heldIssueIds: held,
+    });
+  }
+  await enqueueReevaluations(tx, [
+    ...applied.map((a) => a.id),
+    ...result.decisions.flatMap((d) => d.result.appliedIssueIds),
+  ]);
+  if (options.audit) {
+    await recordStatusChanges(tx, options.audit, log, to, result.succeeded);
+    for (const { input, result: written } of result.decisions) {
+      await recordDecision(tx, options.audit, input, written);
     }
   }
   return result;
+}
+
+/**
+ * Step 5 of {@link transitionIssues}: one decision per pair and scope among the changed issues
+ * that write one, in changelog order, with the comment of the first of them. The scope is the
+ * issue's branch when that branch has a row of its own for the pair (ruling R5), else the
+ * project. Ruling R4: written after every issue has its own status, so a second requested issue
+ * of a pair never fails its status guard on the first's mirror.
+ */
+async function writeDecisionsOf(
+  tx: Tx,
+  log: readonly StatusLogRow[],
+  deciding: ReadonlyMap<string, DecidingIssue>,
+  shared: Pick<
+    DecisionInput,
+    'status' | 'reason' | 'userId' | 'source' | 'skipIssueIds' | 'heldIssueIds'
+  >,
+): Promise<WrittenDecision[]> {
+  const changed = log.flatMap((change) => {
+    const issue = deciding.get(change.issue_id);
+    return issue ? [{ ...issue, comment: change.comment }] : [];
+  });
+  const ownRow = await branchDecisionKeys(tx, changed);
+  const inputs = new Map<string, DecisionInput>();
+  for (const issue of changed) {
+    const atBranch = ownRow.has(
+      JSON.stringify([issue.branchId, issue.packageName, issue.vulnerabilityId]),
+    );
+    const key = JSON.stringify([
+      issue.projectId,
+      issue.packageName,
+      issue.vulnerabilityId,
+      atBranch ? issue.branchId : null,
+    ]);
+    if (inputs.has(key)) continue;
+    inputs.set(key, {
+      ...shared,
+      projectId: issue.projectId,
+      packageName: issue.packageName,
+      vulnerabilityId: issue.vulnerabilityId,
+      scope: atBranch ? { kind: 'branch', id: issue.branchId } : { kind: 'project' },
+      comment: issue.comment,
+    });
+  }
+  const written: WrittenDecision[] = [];
+  for (const input of inputs.values()) {
+    written.push({ input, result: await writeDecision(tx, input) });
+  }
+  return written;
 }
 
 /** One `issue_changes` row of a status change, as a transition writes it. */
