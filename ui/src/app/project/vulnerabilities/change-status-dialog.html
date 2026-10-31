@@ -114,7 +114,7 @@
       <button
         type="submit"
         class="btn btn-primary"
-        [disabled]="busy() || !ready()"
+        [disabled]="busy() || !ready() || unchanged()"
         i18n="@@vulns.dialog.save"
       >
         Save

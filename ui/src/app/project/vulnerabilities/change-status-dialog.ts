@@ -45,8 +45,9 @@ const STATUSES: DecisionStatus[] = ['open', 'false_positive', 'wont_fix'];
 /**
  * Change status (vuln 2b §9.3): the status of one (package, vulnerability) for the whole project,
  * or, in the one-target view, for that target only. Not affected needs a VEX reason and a
- * comment, Affected, won't fix a comment; Save stays disabled until they are given. Choosing the
- * project while the viewed target has its own decision replaces that override (D10).
+ * comment, Affected, won't fix a comment; Save stays disabled until they are given, and while
+ * nothing differs from the current decision. Choosing the project while the viewed target has its
+ * own decision replaces that override (D10).
  */
 @Component({
   selector: 'q-change-status-dialog',
@@ -88,6 +89,24 @@ export class ChangeStatusDialog {
       (!this.needsReason() || this.reason() !== '') &&
       (!this.needsComment() || this.comment().trim() !== ''),
   );
+  /**
+   * Status, reason, comment and Applies to all equal the card's current decision (final review
+   * F5); without one, Open with no reason, no comment, for the project. Save would only stamp it
+   * with another name and date.
+   */
+  protected readonly unchanged = computed(() => {
+    const item = this.item();
+    if (!item) return true;
+    const decision = item.decision;
+    const appliesTo =
+      this.target() && decision && decision.scope !== 'project' ? 'target' : 'project';
+    return (
+      this.status() === (decision?.status ?? 'open') &&
+      (this.needsReason() ? this.reason() : '') === (decision?.reason ?? '') &&
+      this.comment().trim() === (decision?.comment ?? '').trim() &&
+      this.appliesTo() === appliesTo
+    );
+  });
 
   /** Opens the dialog on a card, preselecting its current decision. */
   open(item: VulnerabilityItem): void {
@@ -147,7 +166,7 @@ export class ChangeStatusDialog {
   protected async submit(event: Event): Promise<void> {
     event.preventDefault();
     const item = this.item();
-    if (!item || this.busy() || !this.ready()) return;
+    if (!item || this.busy() || !this.ready() || this.unchanged()) return;
     const target = this.target();
     const own = target && item.decision && item.decision.scope !== 'project';
     const reason = this.reason();

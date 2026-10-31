@@ -61,13 +61,64 @@ describe('ChangeStatusDialog', () => {
 
   it('keeps Save disabled until Not affected has a reason and a comment', async () => {
     const d = await open(vulnerabilityCard());
-    expect(d.save().disabled).toBe(false);
     await d.choose('vuln-status', 'false_positive');
     expect(d.save().disabled).toBe(true);
     await d.type('Only in tests');
     expect(d.save().disabled).toBe(true);
     await d.choose('vuln-reason', 'component_not_present');
     expect(d.save().disabled).toBe(false);
+  });
+
+  describe('Save with nothing changed (final review F5)', () => {
+    const decided = vulnerabilityCard({
+      status: 'false_positive',
+      decision: {
+        id: '0190a6c2-0000-7000-8000-0000000000f1',
+        scope: 'project',
+        status: 'false_positive',
+        reason: 'component_not_present',
+        comment: 'Not shipped',
+        decidedAt: '2026-10-25T10:00:00.000Z',
+        decidedBy: null,
+      },
+    });
+
+    it('is disabled without a decision until something differs from Open', async () => {
+      const d = await open(vulnerabilityCard());
+      expect(d.save().disabled).toBe(true);
+      await d.type('A note');
+      expect(d.save().disabled).toBe(false);
+      await d.type('  ');
+      expect(d.save().disabled).toBe(true);
+      await d.choose('vuln-status', 'wont_fix');
+      await d.type('Accepted');
+      expect(d.save().disabled).toBe(false);
+    });
+
+    it('is disabled on the current decision, and enabled by any one field', async () => {
+      const d = await open(decided);
+      expect(d.save().disabled).toBe(true);
+      await d.type('Not shipped at all');
+      expect(d.save().disabled).toBe(false);
+      await d.type('Not shipped');
+      expect(d.save().disabled).toBe(true);
+      await d.choose('vuln-reason', 'vulnerable_code_not_present');
+      expect(d.save().disabled).toBe(false);
+      await d.choose('vuln-reason', 'component_not_present');
+      await d.choose('vuln-status', 'open');
+      expect(d.save().disabled).toBe(false);
+      d.save().click();
+      await settle(d.fixture);
+      expect(server.requestsTo('PUT', PUT)).toHaveLength(1);
+    });
+
+    it('is enabled by Applies to alone in the one-target view', async () => {
+      const d = await open(decided, TARGET);
+      expect(d.save().disabled).toBe(true);
+      d.root.querySelectorAll<HTMLInputElement>('input[type="radio"]')[1]?.click();
+      await settle(d.fixture);
+      expect(d.save().disabled).toBe(false);
+    });
   });
 
   it('shows the reason only for Not affected, with the five texts', async () => {
