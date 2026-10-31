@@ -24,13 +24,15 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - The scanner sends the ids of the root `.trivyignore`, with their `exp:` dates, to the server.
 - **Settings → Vulnerability database**: the server keeps its own copy of the Trivy vulnerability
   database, from the official registry, your mirror or an uploaded file, and checks it every 1 to 24
-  hours (6 by default). A **Vulnerability monitoring** switch (on by default) turns the downloads and
+  hours. A **Vulnerability monitoring** switch (on by default) turns the downloads and
   re-checks off. The tracked branches and versions are re-checked after an analysis, a new version,
   a settings change and a new database. The server needs a cache volume for the copy (Helm:
   `vulnerabilityDatabase.cacheSizeLimit`; Compose: the `vulndb-cache` volume),
   and reaches `ghcr.io` and `pkg-containers.githubusercontent.com` while the switch is on. Add the
   `vulndb-cache` volume to an existing `compose.yml`
-  ([The vulnerability database](docs/guide/vulnerability-database.md)).
+  ([The vulnerability database](docs/guide/vulnerability-database.md)). The file upload needs a
+  1 GiB body at the reverse proxy: the Helm chart adds an Ingress for its path
+  (`vulnerabilityDatabase.uploadBodySize`), and the guide's nginx example a `location`.
 - New settings `QUALOR_VULNDB_DIR`, `QUALOR_TRIVY_PATH`, `QUALOR_VULNDB_INTERNAL_HOSTS` and
   `QUALOR_VULNDB_UPLOAD_MAX_BYTES`. When the database is stale (more than 3 days old), instance
   admins get one email.

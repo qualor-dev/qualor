@@ -150,12 +150,14 @@ Behind a firewall or with your own registry mirror, the check fails quietly and 
 
 ## Vulnerability database
 
-While **Vulnerability monitoring** is on, which it is by default, the server downloads Trivy's
-vulnerability database every few hours (6 by default). It calls `ghcr.io/aquasecurity/trivy-db:2`
-and the host `ghcr.io` sends the file from, or the mirror an instance admin set. The requests are
-anonymous `GET`s with the header `User-Agent: Qualor/<version>`. They carry nothing about your
-installation, and nothing is sent to qualor.dev. `QUALOR_TELEMETRY=false` does not turn them off:
-turn the switch off in **Settings → Vulnerability database**, or upload the file instead. See
+While **Vulnerability monitoring** is on, which it is by default, the server checks for a new Trivy
+vulnerability database at the interval an instance admin sets, and downloads it only when it
+changed. It calls `ghcr.io/aquasecurity/trivy-db:2` and the host `ghcr.io` sends the file from, or
+the mirror an instance admin set. The requests are `GET`s with the header
+`User-Agent: Qualor/<version>`: anonymous to `ghcr.io`, and with the user and password of a mirror
+that needs them. They carry nothing about your installation, and nothing is sent to qualor.dev.
+`QUALOR_TELEMETRY=false` does not turn them off: turn the switch off in
+**Settings → Vulnerability database**, or upload the file instead. See
 [The vulnerability database](./vulnerability-database.md).
 
 At every start the server adds the download to the log line above, for example:

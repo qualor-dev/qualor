@@ -11,7 +11,7 @@ PostgreSQL 18 on a volume. It needs no Elasticsearch, Redis or message broker. R
 | | Minimum | Notes |
 |---|---|---|
 | CPU | 1 vCPU | 2 or more for many parallel pipelines |
-| Memory | 1.5 GiB for the server with its database | about 4 GiB for reports near the 500 MiB decompressed limit. A vulnerability re-check added under 20 MiB in our tests. With [AI review](./ai-review.md) on, add up to 512 MiB for each AI review or answer to a reply that runs at once (`QUALOR_REVIEW_WORKER_CONCURRENCY`, 2 by default) |
+| Memory | 1.5 GiB for the server with its database | about 4 GiB for reports near the 500 MiB decompressed limit. Vulnerability re-checks run Trivy ([memory](./vulnerability-database.md#the-vulnerability-database)). With [AI review](./ai-review.md) on, add up to 512 MiB for each AI review or answer to a reply that runs at once (`QUALOR_REVIEW_WORKER_CONCURRENCY`, 2 by default) |
 | Disk | a few GiB for the data volume | reports are kept 7 days; analyses and measures are small. The [vulnerability database](./vulnerability-database.md) needs a cache volume of its own ([how big](./vulnerability-database.md#the-vulnerability-database)). PostgreSQL also holds up to two copies of the compressed file, about 131 MiB each |
 | Software | Docker with Compose v2 | or Kubernetes 1.29+ with Helm, or any container platform that runs the image with a volume |
 | Inbound network | HTTPS from CI runners and users | |
