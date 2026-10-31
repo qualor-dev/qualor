@@ -23,7 +23,7 @@ import {
 } from '../vulndb/settings';
 import { readVulndbState, VULNDB_UPDATE_QUEUE, vulndbStatus } from '../vulndb/state';
 import { enqueueRecheck } from '../vulndb/recheck-queue';
-import { requestVulndbUpdateNow } from '../vulndb/update';
+import { requestVulndbUpdateNow, rescheduleVulndbUpdate } from '../vulndb/update';
 import { currentDataset, makeDatasetCurrent, pruneDatasets, storeDataset } from '../vulndb/store';
 
 const UPLOAD_TYPES = ['application/gzip', 'application/octet-stream'] as const;
@@ -255,6 +255,8 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       // R5: switching monitoring on, or pointing it at another source, fetches data now rather
       // than at the next scheduled check.
       if (wantsUpdateNow(before, after, passwordSent)) await requestVulndbUpdateNow(deps.db);
+      // M4: a new interval counts from the last check, not from the run already waiting.
+      else if (before.intervalHours !== after.intervalHours) await rescheduleVulndbUpdate(deps.db);
       return readDto();
     },
   );

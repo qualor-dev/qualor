@@ -1,7 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { DependencyEntry, DependencyIgnore } from '@qualor/shared';
 import type { Executor } from '../db/client';
-import { first } from '../db/rows';
 import { projectVersions, versionDependencies, type ProjectVersionRow } from '../db/schema';
 import { insertDependencyRows } from '../measures/store';
 
@@ -57,16 +56,18 @@ export async function upsertVersion(
     // Even an empty inventory counts: the version was scanned and has no packages.
     ...(inventory && { hasInventory: true }),
   };
-  const version = first(
-    await tx
-      .insert(projectVersions)
-      .values({ projectId: input.projectId, label: input.label, ...owner, ...snapshot })
-      .onConflictDoUpdate({
-        target: [projectVersions.projectId, projectVersions.label],
-        set: { ...owner, ...(inventory ? snapshot : {}), updatedAt: sql`now()` },
-      })
-      .returning(),
-  );
+  const [version] = await tx
+    .insert(projectVersions)
+    .values({ projectId: input.projectId, label: input.label, ...owner, ...snapshot })
+    .onConflictDoUpdate({
+      target: [projectVersions.projectId, projectVersions.label],
+      set: { ...owner, ...(inventory ? snapshot : {}), updatedAt: sql`now()` },
+      // The 'kept' rule again, under the row's lock: a tag scan's version that committed after
+      // the read above is not replaced either.
+      setWhere: sql`${projectVersions.source} <> 'tag' OR excluded.source = 'tag'`,
+    })
+    .returning();
+  if (version === undefined) return 'kept';
   if (inventory) {
     // Duplicates merged as for a branch.
     await tx.delete(versionDependencies).where(eq(versionDependencies.versionId, version.id));

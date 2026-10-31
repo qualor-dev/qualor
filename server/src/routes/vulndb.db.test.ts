@@ -279,6 +279,43 @@ describe('/system/vulnerability-db (API)', () => {
       expect(await dueNow()).toBe(0);
     });
 
+    it('a new interval moves the next check to the last one plus the interval, or now (M4)', async () => {
+      await parkLater();
+      const last = new Date(Date.now() - 2 * 3_600_000);
+      await updateVulndbState(ctx.db, (s) => ({
+        ...s,
+        lastCheckAt: last.toISOString(),
+        nextCheckAt: new Date(last.getTime() + 6 * 3_600_000).toISOString(),
+      }));
+      const runAt = async () =>
+        (
+          await ctx.db
+            .select({ runAt: jobs.runAt })
+            .from(jobs)
+            .where(eq(jobs.queue, VULNDB_UPDATE_QUEUE))
+        ).map((r) => r.runAt.toISOString());
+      // 3 h after the last check: an hour from now.
+      expect((await put({ intervalHours: 3 })).statusCode).toBe(200);
+      const inThree = new Date(last.getTime() + 3 * 3_600_000).toISOString();
+      expect(await runAt()).toEqual([inThree]);
+      expect((await get()).json().nextCheckAt).toBe(inThree);
+      // 1 h after the last check has passed: now.
+      await put({ intervalHours: 1 });
+      expect(await dueNow()).toBe(1);
+      expect(Date.parse((await get()).json().nextCheckAt)).toBeLessThanOrEqual(Date.now() + 1000);
+      // An unchanged interval moves nothing.
+      await parkLater();
+      await put({ intervalHours: 1 });
+      expect(await dueNow()).toBe(0);
+    });
+
+    it('a new interval before the first check leaves the first one where it is', async () => {
+      await parkLater();
+      await put({ intervalHours: 3 });
+      expect(await dueNow()).toBe(0);
+      expect((await get()).json().nextCheckAt).toBeNull();
+    });
+
     it('a source change while monitoring is off waits for the switch', async () => {
       await put({ enabled: false });
       await parkLater();

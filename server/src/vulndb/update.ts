@@ -115,6 +115,31 @@ export function requestVulndbUpdateNow(db: Db): Promise<boolean> {
   return schedule(db, { kind: 'now' });
 }
 
+/**
+ * A new check interval (PUT): the waiting run moves to the last check plus the new interval, or to
+ * now when that time has passed, and `nextCheckAt` follows. Before a first check the waiting run
+ * stays where it is (a minute after the start); a running check schedules the next one with the
+ * new interval itself. Under LOCKS.vulndbSchedule.
+ */
+export async function rescheduleVulndbUpdate(db: Db): Promise<void> {
+  const { lastCheckAt } = await readVulndbState(db);
+  if (lastCheckAt === null) return;
+  const hours = (await readVulndbSettings(db)).intervalHours;
+  const runAt = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulndbSchedule})`);
+    const moved = await tx.execute<{ run_at: string | Date }>(sql`
+      UPDATE jobs
+         SET run_at = greatest(now(), ${lastCheckAt}::timestamptz + make_interval(hours => ${hours})),
+             updated_at = now()
+       WHERE queue = ${VULNDB_UPDATE_QUEUE} AND status = 'queued'
+      RETURNING run_at`);
+    return moved.rows[0]?.run_at ?? null;
+  });
+  if (runAt === null) return;
+  const next = new Date(runAt).toISOString();
+  await updateVulndbState(db, (state) => ({ ...state, nextCheckAt: next }));
+}
+
 const problemOf = (code: string, message: string): LastError => ({ code, message });
 
 const errorClass = (err: unknown): string =>

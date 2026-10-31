@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
 import {
@@ -73,6 +73,52 @@ describe('upsertVersion', () => {
         .select()
         .from(versionDependencies)
         .where(eq(versionDependencies.versionId, before.id)),
+    ).toHaveLength(1);
+  });
+
+  it('keeps a tag version that committed while a label write waited on its row (M5)', async () => {
+    const [analysis] = await t.db.insert(analyses).values({ projectId }).returning();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let inserted!: () => void;
+    const tagInserted = new Promise<void>((resolve) => {
+      inserted = resolve;
+    });
+    const tagScan = t.db.transaction(async (tx) => {
+      await upsertVersion(tx, {
+        projectId,
+        label: '5.0.0',
+        source: 'tag',
+        tag: 'v5.0.0',
+        analysisId: analysis!.id,
+        analyzedAt: new Date('2026-10-01T10:00:00Z'),
+        inventory: { dependencies: [DEP], ignores: null },
+      });
+      inserted();
+      await held;
+    });
+    await tagInserted;
+    // The label write reads no row (the tag scan has not committed) and waits on its insert.
+    const labelWrite = write('5.0.0', 'label', { dependencies: [], at: '2026-10-02T10:00:00Z' });
+    for (let i = 0; i < 100; i++) {
+      const waiting = await t.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock'`,
+      );
+      if ((waiting.rows[0]?.n ?? 0) > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    release();
+    await tagScan;
+    expect(await labelWrite).toBe('kept');
+    const version = await read('5.0.0');
+    expect(version).toMatchObject({ source: 'tag', tag: 'v5.0.0' });
+    expect(
+      await t.db
+        .select()
+        .from(versionDependencies)
+        .where(eq(versionDependencies.versionId, version.id)),
     ).toHaveLength(1);
   });
 
