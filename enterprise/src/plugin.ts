@@ -26,6 +26,7 @@ const plugin: QualorPlugin = {
   // 4E-3a: llm.auto-fix is Enterprise only and has no prerequisite.
   // 4E-3b: support-bundle is Business and Enterprise, with no prerequisite.
   // 6M: license-policy is Business and Enterprise, with no prerequisite.
+  // 0.15: vuln.priority, vuln.alerts and sbom are Business and Enterprise, with no prerequisite.
   // 6I (D10): llm.fix-quota is kept, so a licence already issued that lists it stays active (and
   // the deploy probe, tools/deploy/checks.ts, still finds it), but it sets no limit: the community
   // edition has no ceiling on AI fix suggestions.
@@ -41,6 +42,9 @@ const plugin: QualorPlugin = {
     'llm.auto-fix',
     'support-bundle',
     'license-policy',
+    'vuln.priority',
+    'vuln.alerts',
+    'sbom',
   ],
   register(ctx) {
     // 4E-3a: the seam core reads for automatic fix suggestions; the routes and the opt-out are core's.
@@ -48,6 +52,10 @@ const plugin: QualorPlugin = {
     // 6M: the seam core reads for the organisation licence policy; the routes, the ingest stage and
     // the permission are core's.
     ctx.limits('license-policy', { licenses: { policy: true } });
+    // 0.15: the seams core reads for KEV and EPSS, vulnerability alert rules and the SBOM export.
+    ctx.limits('vuln.priority', { vulnerabilities: { priority: true } });
+    ctx.limits('vuln.alerts', { vulnerabilities: { alerts: true } });
+    ctx.limits('sbom', { vulnerabilities: { sbom: true } });
     // rbac-audit.md §13: mounted under /api/v0/ee, 403 while the feature is inactive. The grant
     // routes are core routes since 5B (§16).
     ctx.routes('audit-log', auditRoutes(ctx));

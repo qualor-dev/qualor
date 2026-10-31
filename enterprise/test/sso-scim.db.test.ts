@@ -165,7 +165,7 @@ describe('the enterprise SSO and SCIM API (sso-scim.md §17)', () => {
 
   const inject = (options: InjectOptions) => ctx.app.inject(options);
 
-  it('loads with its ten features and the four 4D settings entries', async () => {
+  it('loads with its thirteen features and the four 4D settings entries', async () => {
     expect(ctx.edition!.plugins()).toEqual([
       {
         name: 'qualor-enterprise',
@@ -182,6 +182,9 @@ describe('the enterprise SSO and SCIM API (sso-scim.md §17)', () => {
           'llm.auto-fix',
           'support-bundle',
           'license-policy',
+          'vuln.priority',
+          'vuln.alerts',
+          'sbom',
         ],
         error: null,
       },
@@ -826,8 +829,11 @@ describe('sso.multi: one connection in effect without it (sso-scim.md §4.4)', (
     expect(ctx!.edition!.activeFeatures()).toEqual([
       'audit-log',
       'license-policy',
+      'sbom',
       'sso',
       'support-bundle',
+      'vuln.alerts',
+      'vuln.priority',
     ]);
     expect(await rowCounts(ctx!, TABLES)).toEqual(counts);
     expect(await enabledFlags()).toEqual(flags);

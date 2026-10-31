@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { signTest, testPayload, testSigner, verifyWith, T0 } from '../../test/license';
+import {
+  BUSINESS_FEATURES,
+  signTest,
+  testPayload,
+  testSigner,
+  verifyWith,
+  T0,
+} from '../../test/license';
 import { communityLimits } from '../limits';
+import { licensePlan } from './plan';
 import type { EditionPlugins } from './edition';
 import {
   createEdition,
@@ -86,6 +94,7 @@ describe('createEdition (enterprise.md §7)', () => {
     ).toEqual({
       llm: { automaticFixSuggestions: true },
       licenses: { policy: false },
+      vulnerabilities: { priority: false, alerts: false, sbom: false },
     });
     // A licence that does not list the feature leaves its override unused.
     expect(createEdition({ boot, plugins: autoFixPlugins, now: () => T0 }).limits()).toEqual(
@@ -230,13 +239,46 @@ describe('createEdition (enterprise.md §7)', () => {
     const limits = {
       llm: { automaticFixSuggestions: true },
       licenses: { policy: true },
+      vulnerabilities: { priority: true, alerts: false, sbom: false },
     };
     const edition = fixedEdition(limits);
     expect(edition.limits()).toEqual(limits);
     // A copy: a caller cannot change the edition's limits through the answer.
     edition.limits().licenses.policy = false;
     expect(edition.limits().licenses.policy).toBe(true);
+    edition.limits().vulnerabilities.priority = false;
+    expect(edition.limits().vulnerabilities.priority).toBe(true);
     expect(edition.edition()).toBe('community');
     expect(edition.state().state).toBe('none');
+  });
+
+  it('activates the vulnerability features of a Business key and still says Business', () => {
+    const vulnFeatures = ['vuln.priority', 'vuln.alerts', 'sbom'];
+    const businessBoot: BootLicense = {
+      source: 'environment',
+      keyHash: 'h',
+      verification: {
+        ok: true,
+        kid: 'test-a',
+        license: testPayload({ expires: '2027-10-01T00:00:00Z', features: [...BUSINESS_FEATURES] }),
+      },
+    };
+    const edition = createEdition({
+      boot: businessBoot,
+      plugins: {
+        reports: [],
+        features: new Set(vulnFeatures),
+        limitOverrides: [
+          { feature: 'vuln.priority', override: { vulnerabilities: { priority: true } } },
+          { feature: 'vuln.alerts', override: { vulnerabilities: { alerts: true } } },
+          { feature: 'sbom', override: { vulnerabilities: { sbom: true } } },
+        ],
+        extensions: [],
+      },
+      now: () => T0,
+    });
+    for (const f of vulnFeatures) expect(edition.isFeatureActive(f)).toBe(true);
+    expect(edition.limits().vulnerabilities).toEqual({ priority: true, alerts: true, sbom: true });
+    expect(licensePlan(BUSINESS_FEATURES)).toBe('Business');
   });
 });

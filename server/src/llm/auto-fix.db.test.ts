@@ -89,6 +89,7 @@ describe('automatic fix suggestions (4E-3a §3)', () => {
   const limits: Limits = {
     llm: { automaticFixSuggestions: true },
     licenses: { policy: false },
+    vulnerabilities: { priority: false, alerts: false, sbom: false },
   };
   const autoDeps = (over: Partial<AutoFixDeps> = {}): AutoFixDeps => ({
     db: h.ctx.db,

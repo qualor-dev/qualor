@@ -67,7 +67,7 @@ import { sweepE2eDatabases } from './sweep';
  * loopback (the `webhooks` instance setting), and a SIEM receiver on 127.0.0.1 that answers 204
  * (QUALOR_E2E_SIEM_PORT) for the audit stream. It starts before the community server, so it is
  * up when Playwright's readiness check passes. Plan 5D: a third server on QUALOR_E2E_BUSINESS_PORT
- * serves the same database under a Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`), as a
+ * serves the same database under a Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`, `vuln.priority`, `vuln.alerts`, `sbom`), as a
  * replica would after a move to the Business plan. It starts on the first connection to its port
  * (see {@link lazyServer}). Mail E2: a reader on QUALOR_E2E_MAIL_PORT hands the tests the body of a
  * pending account email.

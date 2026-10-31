@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { Db } from '../db/client';
 import type { EditionPlugins } from '../license/edition';
 import { FEATURE_PATTERN, type LicensePayload } from '../license/token';
-import type { LicenseLimits, LlmLimits, PluginLimitOverride } from '../limits';
+import type { LicenseLimits, LlmLimits, PluginLimitOverride, VulnerabilityLimits } from '../limits';
 import { DEFAULT_MAX_ATTEMPTS, enqueue, type EnqueueOptions } from '../queue/queue';
 import {
   PLUGIN_API_VERSION,
@@ -169,6 +169,22 @@ function validateLicenseOverride(value: unknown): Partial<LicenseLimits> {
   return Object.freeze(licenses);
 }
 
+const VULNERABILITY_KEYS = ['priority', 'alerts', 'sbom'] as const;
+
+/** 0.15: `vulnerabilities.priority`, `.alerts` and `.sbom`, booleans, and nothing else. */
+function validateVulnerabilityOverride(value: unknown): Partial<VulnerabilityLimits> {
+  const raw = snapshot(value, 'vulnerabilities');
+  const out: Partial<VulnerabilityLimits> = {};
+  for (const key of Object.keys(raw)) {
+    const name = VULNERABILITY_KEYS.find((k) => k === key);
+    if (name === undefined) throw new PluginError(`unknown limit vulnerabilities.${key}`);
+    const v = raw[key];
+    if (typeof v !== 'boolean') throw new PluginError(`vulnerabilities.${name} must be a boolean`);
+    out[name] = v;
+  }
+  return Object.freeze(out);
+}
+
 /**
  * enterprise.md §10.5: only the automatic fix suggestions switch of the LLM limits (the fix quota
  * is gone, 6I D10) and the licence policy (6M), checked at registration.
@@ -176,16 +192,21 @@ function validateLicenseOverride(value: unknown): Partial<LicenseLimits> {
 function validateOverride(value: unknown): PluginLimitOverride {
   const override = snapshot(value, 'a limit override');
   for (const key of Object.keys(override)) {
-    if (key !== 'llm' && key !== 'licenses') {
-      throw new PluginError('a plugin may override only llm and licenses limits');
+    if (key !== 'llm' && key !== 'licenses' && key !== 'vulnerabilities') {
+      throw new PluginError('a plugin may override only llm, licenses and vulnerabilities limits');
     }
   }
   const licenses =
     override.licenses === undefined ? undefined : validateLicenseOverride(override.licenses);
   const llm = override.llm === undefined ? undefined : validateLlmOverride(override.llm);
+  const vulnerabilities =
+    override.vulnerabilities === undefined
+      ? undefined
+      : validateVulnerabilityOverride(override.vulnerabilities);
   return Object.freeze({
     ...(llm === undefined ? {} : { llm }),
     ...(licenses === undefined ? {} : { licenses }),
+    ...(vulnerabilities === undefined ? {} : { vulnerabilities }),
   });
 }
 

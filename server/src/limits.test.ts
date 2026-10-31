@@ -15,11 +15,17 @@ describe('licensed limits (enterprise.md §7.2)', () => {
     expect(communityLimits()).toEqual({
       llm: { automaticFixSuggestions: false },
       licenses: { policy: false },
+      vulnerabilities: { priority: false, alerts: false, sbom: false },
     });
-    expect(licensedLimits([])).toEqual({ llm: COMMUNITY_LLM_LIMITS, licenses: { policy: false } });
+    expect(licensedLimits([])).toEqual({
+      llm: COMMUNITY_LLM_LIMITS,
+      licenses: { policy: false },
+      vulnerabilities: { priority: false, alerts: false, sbom: false },
+    });
     expect(licensedLimits([{ llm: { automaticFixSuggestions: true } }])).toEqual({
       llm: { automaticFixSuggestions: true },
       licenses: { policy: false },
+      vulnerabilities: { priority: false, alerts: false, sbom: false },
     });
   });
 
@@ -41,7 +47,11 @@ describe('licensed limits (enterprise.md §7.2)', () => {
         { llm: { automaticFixSuggestions: true } },
         { organizations: 9999 } as never,
       ]),
-    ).toEqual({ llm: { automaticFixSuggestions: true }, licenses: { policy: false } });
+    ).toEqual({
+      llm: { automaticFixSuggestions: true },
+      licenses: { policy: false },
+      vulnerabilities: { priority: false, alerts: false, sbom: false },
+    });
     expect(
       licensedLimits([
         { llm: { automaticFixSuggestions: true } },
@@ -81,7 +91,11 @@ describe('licensed limits (enterprise.md §7.2)', () => {
       { licenses: { policy: true, inventory: true } as never },
       { licences: { policy: true } } as never,
     ]);
-    expect(limits).toEqual({ llm: COMMUNITY_LLM_LIMITS, licenses: { policy: true } });
+    expect(limits).toEqual({
+      llm: COMMUNITY_LLM_LIMITS,
+      licenses: { policy: true },
+      vulnerabilities: { priority: false, alerts: false, sbom: false },
+    });
   });
 
   it('reads the policy override once', () => {
@@ -94,5 +108,20 @@ describe('licensed limits (enterprise.md §7.2)', () => {
     };
     expect(licensedLimits([{ licenses }]).licenses.policy).toBe(true);
     expect(reads).toBe(1);
+  });
+
+  it('turns each vulnerability switch on only with a boolean override', () => {
+    expect(communityLimits().vulnerabilities).toEqual({
+      priority: false,
+      alerts: false,
+      sbom: false,
+    });
+    expect(
+      licensedLimits([
+        { vulnerabilities: { priority: true } },
+        { vulnerabilities: { sbom: true } },
+        { vulnerabilities: { alerts: 'true' as never } },
+      ]).vulnerabilities,
+    ).toEqual({ priority: true, alerts: false, sbom: true });
   });
 });

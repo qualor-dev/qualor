@@ -8,6 +8,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
+- Business and Enterprise: exploited vulnerabilities (CISA KEV) and exploit probability (FIRST EPSS)
+  on the Vulnerabilities tab (`vuln.priority`).
 - Versions: a scan in a tag pipeline (GitLab `CI_COMMIT_TAG`, a GitHub tag push), or with
   `qualor scan --tag <name>`, records a version of the project. A version is a label and the
   release's dependency list. The label is `project.version`, else the tag. A tag scan runs no code

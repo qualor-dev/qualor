@@ -27,6 +27,9 @@ export const BUSINESS_FEATURES: readonly string[] = Object.freeze([
   'audit-log',
   'support-bundle',
   'license-policy',
+  'vuln.priority',
+  'vuln.alerts',
+  'sbom',
 ]);
 
 /**
@@ -44,6 +47,9 @@ export const ENTERPRISE_FEATURES: readonly string[] = Object.freeze([
   'llm.auto-fix',
   'support-bundle',
   'license-policy',
+  'vuln.priority',
+  'vuln.alerts',
+  'sbom',
 ]);
 
 export function testPayload(overrides: Partial<LicensePayload> = {}): LicensePayload {

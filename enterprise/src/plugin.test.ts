@@ -42,6 +42,9 @@ describe('qualor-enterprise', () => {
         'llm.auto-fix',
         'support-bundle',
         'license-policy',
+        'vuln.priority',
+        'vuln.alerts',
+        'sbom',
       ],
     });
     await plugin.register(ctx);
@@ -49,6 +52,9 @@ describe('qualor-enterprise', () => {
     expect(limits).toEqual([
       ['llm.auto-fix', { llm: { automaticFixSuggestions: true } }],
       ['license-policy', { licenses: { policy: true } }],
+      ['vuln.priority', { vulnerabilities: { priority: true } }],
+      ['vuln.alerts', { vulnerabilities: { alerts: true } }],
+      ['sbom', { vulnerabilities: { sbom: true } }],
     ]);
     expect(routes).toEqual([
       'audit-log',
@@ -135,7 +141,7 @@ describe('qualor-enterprise', () => {
     expect(JSON.stringify(logged)).not.toMatch(/Acme|6f1c2a9e/);
   });
 
-  it('declares llm.fix-quota, audit-log, audit-log.stream, sso, sso.multi, scim, compliance-export, portfolio, llm.auto-fix, support-bundle and license-policy, and never a retired feature (enterprise.md §1.4, §1.7)', () => {
+  it('declares llm.fix-quota, audit-log, audit-log.stream, sso, sso.multi, scim, compliance-export, portfolio, llm.auto-fix, support-bundle, license-policy, vuln.priority, vuln.alerts and sbom, and never a retired feature (enterprise.md §1.4, §1.7)', () => {
     // RETIRED_FEATURES lives in server/src/license/token.ts; enterprise/src imports core as types
     // only (tools/boundaries.test.ts), so the retired list is inlined here, kept in sync by hand.
     const RETIRED_FEATURES: readonly string[] = ['rbac'];
@@ -151,6 +157,9 @@ describe('qualor-enterprise', () => {
       'llm.auto-fix',
       'support-bundle',
       'license-policy',
+      'vuln.priority',
+      'vuln.alerts',
+      'sbom',
     ]);
     expect(plugin.features).toContain('compliance-export');
     expect(plugin.features).toContain('portfolio');

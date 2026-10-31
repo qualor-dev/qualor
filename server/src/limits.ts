@@ -25,23 +25,45 @@ export interface LicenseLimits {
 
 export const COMMUNITY_LICENSE_LIMITS: Readonly<LicenseLimits> = { policy: false };
 
+/**
+ * Dependency vulnerability monitoring (0.15): `priority` is KEV and EPSS (`vuln.priority`),
+ * `alerts` the alert rules (`vuln.alerts`), `sbom` the SBOM export (`sbom`).
+ */
+export interface VulnerabilityLimits {
+  priority: boolean;
+  alerts: boolean;
+  sbom: boolean;
+}
+
+export const COMMUNITY_VULNERABILITY_LIMITS: Readonly<VulnerabilityLimits> = {
+  priority: false,
+  alerts: false,
+  sbom: false,
+};
+
 export interface Limits {
   llm: LlmLimits;
   licenses: LicenseLimits;
+  vulnerabilities: VulnerabilityLimits;
 }
 
 /** The community edition's limits; a licence changes them through `licensedLimits` (enterprise.md §7.2). */
 export function communityLimits(): Limits {
-  return { llm: { ...COMMUNITY_LLM_LIMITS }, licenses: { ...COMMUNITY_LICENSE_LIMITS } };
+  return {
+    llm: { ...COMMUNITY_LLM_LIMITS },
+    licenses: { ...COMMUNITY_LICENSE_LIMITS },
+    vulnerabilities: { ...COMMUNITY_VULNERABILITY_LIMITS },
+  };
 }
 
 /** enterprise.md §5: enterprise features stay on this many days after `expires` (not for a trial key). */
 export const LICENSE_GRACE_DAYS = 14;
 
-/** What a plugin may override (enterprise.md §10.5): the LLM limits and the licence policy. */
+/** What a plugin may override (enterprise.md §10.5): the LLM limits, the licence policy and the vulnerability switches. */
 export interface PluginLimitOverride {
   llm?: Partial<LlmLimits>;
   licenses?: Partial<LicenseLimits>;
+  vulnerabilities?: Partial<VulnerabilityLimits>;
 }
 
 /**
@@ -51,6 +73,7 @@ export interface PluginLimitOverride {
 export function licensedLimits(overrides: readonly PluginLimitOverride[]): Limits {
   const llm: LlmLimits = { ...COMMUNITY_LLM_LIMITS };
   const licenses: LicenseLimits = { ...COMMUNITY_LICENSE_LIMITS };
+  const vulnerabilities: VulnerabilityLimits = { ...COMMUNITY_VULNERABILITY_LIMITS };
   for (const override of overrides) {
     const o: Partial<Record<keyof LlmLimits, unknown>> = override.llm ?? {};
     // Each value is read once: what is checked is what is used.
@@ -59,6 +82,13 @@ export function licensedLimits(overrides: readonly PluginLimitOverride[]): Limit
     const l: Partial<Record<keyof LicenseLimits, unknown>> = override.licenses ?? {};
     const policy = l.policy;
     if (typeof policy === 'boolean') licenses.policy = policy;
+    const v: Partial<Record<keyof VulnerabilityLimits, unknown>> = override.vulnerabilities ?? {};
+    const priority = v.priority;
+    if (typeof priority === 'boolean') vulnerabilities.priority = priority;
+    const alerts = v.alerts;
+    if (typeof alerts === 'boolean') vulnerabilities.alerts = alerts;
+    const sbom = v.sbom;
+    if (typeof sbom === 'boolean') vulnerabilities.sbom = sbom;
   }
-  return { llm, licenses };
+  return { llm, licenses, vulnerabilities };
 }

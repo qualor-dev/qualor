@@ -106,6 +106,14 @@ describe('StagedPlugin (ruling EE4)', () => {
       (ctx) => ctx.limits('fixture.echo', { licenses: { policy: 'yes' } } as never),
     ],
     [
+      'an unknown vulnerabilities limit',
+      (ctx) => ctx.limits('fixture.echo', { vulnerabilities: { reach: true } } as never),
+    ],
+    [
+      'a non-boolean vulnerabilities.priority',
+      (ctx) => ctx.limits('fixture.echo', { vulnerabilities: { priority: 'yes' } } as never),
+    ],
+    [
       'an unknown licenses limit',
       (ctx) => ctx.limits('fixture.echo', { licenses: { inventory: true } } as never),
     ],
@@ -204,6 +212,26 @@ describe('StagedPlugin (ruling EE4)', () => {
       { llm: { automaticFixSuggestions: true }, licenses: {} },
     ]);
     expect(Object.isFrozen(registry.limitOverrides[0]!.override.licenses)).toBe(true);
+  });
+
+  it('keeps a vulnerabilities override and names the refusals', () => {
+    const registry = emptyRegistry();
+    const staged = new StagedPlugin(plugin(), registry);
+    const ctx = staged.context(base, registry);
+    ctx.limits('fixture.echo', { vulnerabilities: { priority: true } });
+    expect(() => ctx.limits('fixture.echo', { vulnerabilities: { reach: true } } as never)).toThrow(
+      'unknown limit vulnerabilities.reach',
+    );
+    expect(() =>
+      ctx.limits('fixture.echo', { vulnerabilities: { priority: 'yes' } } as never),
+    ).toThrow('vulnerabilities.priority must be a boolean');
+    expect(() => ctx.limits('fixture.echo', { foo: true } as never)).toThrow(
+      'a plugin may override only llm, licenses and vulnerabilities limits',
+    );
+    staged.commit(registry);
+    expect(registry.limitOverrides.map((o) => o.override)).toEqual([
+      { vulnerabilities: { priority: true } },
+    ]);
   });
 
   it('refuses a getter that returns a bad value on its one read', () => {
