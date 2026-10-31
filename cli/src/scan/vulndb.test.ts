@@ -624,6 +624,21 @@ describe('resolveVulnerabilityDb: the cache directory', () => {
     await second.cleanup();
   });
 
+  it('replaces a <cache>/db that carries the current marker but no trivy.db', async () => {
+    const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+    const cache = fillCache(path.join(tmp(), 'cache'), NEW.archive);
+    const live = path.join(cache, 'db');
+    mkdirSync(live);
+    writeFileSync(path.join(live, 'metadata.json'), metadataJson(2, NEW.updatedAt));
+    writeFileSync(path.join(live, 'qualor-digest'), `${NEW.digest}\n`);
+    const got = await choose({ endpoint: server.endpoint, cache });
+    expect(downloads(server.paths)).toEqual([]);
+    expect(got.dir).toBe(cache);
+    expect(databaseIn(got.dir)).toEqual(holds(NEW));
+    await got.cleanup();
+    expect(readdirSync(cache).sort()).toEqual(['db', 'db.tar.gz']);
+  });
+
   it('replaces the extracted database when the archive changes', async () => {
     const cache = path.join(tmp(), 'cache');
     const before = await fakeServer({ meta: meta(OLD), archives: [OLD.archive] });

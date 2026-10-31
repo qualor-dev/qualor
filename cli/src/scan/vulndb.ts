@@ -155,6 +155,17 @@ function markerOf(db: string): string | null {
   }
 }
 
+/**
+ * The build date of `<cache>/db` when it is the unpacked archive `digest`: its marker, a readable
+ * metadata.json and a trivy.db file. Null otherwise.
+ */
+function unpackedDate(cache: string, digest: string): string | null {
+  const live = path.join(cache, 'db');
+  if (markerOf(live) !== digest) return null;
+  if (!regularFile(path.join(live, 'trivy.db'), Number.POSITIVE_INFINITY)) return null;
+  return readDatabaseDate(cache);
+}
+
 interface Hint {
   digest: string;
   /** Epoch milliseconds, or null when server.json gives no valid date. */
@@ -302,7 +313,7 @@ function place(db: string, cache: string, digest: string, log: Logger): boolean 
     } catch {
       // `<cache>/db` exists: the same database (keep it), or another one (move it aside).
     }
-    if (markerOf(live) === digest && readDatabaseDate(cache) !== null) return true;
+    if (unpackedDate(cache, digest) !== null) return true;
     const aside = path.join(cache, `db.${hex6()}.old`);
     try {
       renameSync(live, aside);
@@ -472,15 +483,8 @@ class Choice {
   ): Promise<{ dir: string; updatedAt: string } | Failure> {
     const cache = this.cache;
     if (cache !== null && !this.inside) {
-      const live = path.join(cache, 'db');
-      const updatedAt = readDatabaseDate(cache);
-      if (
-        markerOf(live) === digest &&
-        updatedAt !== null &&
-        regularFile(path.join(live, 'trivy.db'), Number.POSITIVE_INFINITY)
-      ) {
-        return { dir: cache, updatedAt };
-      }
+      const updatedAt = unpackedDate(cache, digest);
+      if (updatedAt !== null) return { dir: cache, updatedAt };
     }
     const shared = cache !== null && !this.inside && this.cacheWritable() ? cache : null;
     const staging = path.join(shared ?? this.workDir(), `db.${hex6()}.tmp`);
