@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import {
@@ -16,7 +17,7 @@ import {
   type SnapshotLine,
   type SnapshotOmittedLine,
 } from '@qualor/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { metadataJson, trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { describeWithTools } from '../../test/analyzers';
 import { commitAll, gitSync, initRepo, SCAN_TEST_ENV } from '../../test/git';
@@ -431,6 +432,61 @@ describe('qualor scan: the vulnerability database from the server', () => {
         },
       ]);
       expect(stderr).toContain('could not get the vulnerability database from the server');
+    },
+  );
+
+  /** A server that serves `archive` as its current database. */
+  const servingServer = (archive: Buffer) => {
+    const digest = `sha256:${createHash('sha256').update(archive).digest('hex')}`;
+    return fakeServer([], undefined, {}, VERSION, {
+      meta: {
+        serve: true,
+        policy: 'daily',
+        current: { digest, sizeBytes: archive.length, builtAt: null },
+        accepted: [digest],
+      },
+      archive,
+    });
+  };
+
+  it(
+    'a bad --sarif file is a usage error before any request (Controller ruling R6)',
+    { timeout: 60_000 },
+    async () => {
+      const server = await servingServer(trivyArchive());
+      const { code, stderr } = await scan(
+        repo(),
+        server,
+        ['--no-wait', '--sarif', 'missing.sarif'],
+        { analyzers: [trivyStub] },
+        { QUALOR_TRIVY_CACHE_DIR: path.join(tmp(), 'trivy-cache') },
+      );
+      expect(code, stderr).toBe(2);
+      expect(server.paths).toEqual([]);
+    },
+  );
+
+  it(
+    'takes the server’s database when the home directory cannot be named (Controller ruling R7)',
+    { timeout: 60_000 },
+    async () => {
+      const homedir = vi.spyOn(os, 'homedir').mockImplementation(() => {
+        throw new Error('ENOENT: no home directory for this user');
+      });
+      try {
+        const server = await servingServer(trivyArchive({ metadata: metadataJson(2, UPDATED_AT) }));
+        const { code, stderr } = await scan(repo(), server, ['--no-wait'], {
+          analyzers: [trivyWithFakeBinary()],
+        });
+        expect(code, stderr).toBe(0);
+        expect(server.uploaded[0]?.engines.find((e) => e.id === 'trivy')).toMatchObject({
+          status: 'ok',
+          database: { name: 'trivy-db', updatedAt: UPDATED_AT },
+        });
+        expect(homedir).toHaveBeenCalled();
+      } finally {
+        homedir.mockRestore();
+      }
     },
   );
 

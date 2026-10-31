@@ -1,8 +1,7 @@
 import { lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { BUILTIN_EXCLUDES, type QualorConfig } from '@qualor/shared';
-import { isInside, real, staysInside, within } from './binary';
+import { isInside, staysInside } from './binary';
 import { deadProxyEnv } from './offline';
 import { shown } from './reason';
 import { trivyJsonToSarif } from './trivy-output';
@@ -37,39 +36,11 @@ export function skipDirs(): string[] {
 const CACHE_ENTRIES = ['db.tar.gz', 'server.json', 'db', 'db/trivy.db', 'db/metadata.json'];
 
 /**
- * Where the scanner keeps the server's database archive (P6): `QUALOR_TRIVY_CACHE_DIR` when it is
- * set and absolute, else `<home>/.cache/qualor/trivy`.
- */
-export function vulnerabilityCacheDir(env: Env): string {
-  const named = env['QUALOR_TRIVY_CACHE_DIR'];
-  if (named !== undefined && named !== '' && path.isAbsolute(named)) return named;
-  return path.join(os.homedir(), '.cache', 'qualor', 'trivy');
-}
-
-/**
  * True when the cache directory `dir`, or one of the files in it, is inside the checkout, as
  * written or after resolving symlinks: a merge request controls its content.
  */
 export function cacheInRepository(root: string, dir: string): boolean {
   return isInside(root, dir) || CACHE_ENTRIES.some((e) => isInside(root, path.join(dir, e)));
-}
-
-/**
- * The cache directory as a `/`-separated path relative to the checkout, when it lies inside it
- * (it is left out of the report's files and Trivy's scan); null otherwise, or when it is the
- * checkout itself.
- */
-export function cacheDirInRepository(root: string, env: Env): string | null {
-  const dir = vulnerabilityCacheDir(env);
-  for (const [r, d] of [
-    [path.resolve(root), path.resolve(dir)],
-    [real(root), real(dir)],
-  ] as const) {
-    if (!within(r, d)) continue;
-    const rel = path.relative(r, d);
-    return rel === '' ? null : rel.split(path.sep).join('/');
-  }
-  return null;
 }
 
 /**
@@ -191,8 +162,8 @@ export function createTrivyAnalyzer(
       writeFileSync(ignoreFile, '');
     }
     const out = path.join(ctx.workDir, 'trivy.json');
-    // A cache directory inside the checkout holds the archive, not lockfiles of the project.
-    const inRepository = cacheDirInRepository(ctx.root, ctx.env);
+    // The scan's cache directory inside the checkout holds the archive, not the project's lockfiles.
+    const inRepository = ctx.trivyCacheSkipDir ?? null;
     const ageDays = (now().getTime() - new Date(updatedAt).getTime()) / DAY_MS;
     const timeout = ctx.config.analyzers.trivy.timeoutSeconds;
     return Promise.resolve({

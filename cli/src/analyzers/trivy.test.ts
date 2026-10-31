@@ -220,7 +220,7 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     expect(prep.run.database).toEqual({ name: 'trivy-db', updatedAt: UPDATED_AT });
   });
 
-  it('ignores a QUALOR_TRIVY_CACHE_DIR inside the checkout: the image database, and the directory skipped (P5)', async () => {
+  it('ignores a QUALOR_TRIVY_CACHE_DIR inside the checkout: the image database, and the directory the scan names skipped (P5)', async () => {
     const root = tmp();
     writeTree(root, {
       'ci/trivy/db/trivy.db': 'a database the merge request supplied',
@@ -230,10 +230,14 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
       }),
     });
     const image = database();
-    const ctx = fakeContext(root, {
-      binaries: { trivy: '/usr/bin/trivy' },
-      env: { QUALOR_TRIVY_CACHE_DIR: path.join(root, 'ci', 'trivy') },
-    });
+    const ctx = {
+      ...fakeContext(root, {
+        binaries: { trivy: '/usr/bin/trivy' },
+        env: { QUALOR_TRIVY_CACHE_DIR: path.join(root, 'ci', 'trivy') },
+      }),
+      // The scan's database step names the cache inside the checkout (no recomputation here).
+      trivyCacheSkipDir: 'ci/trivy',
+    };
     mkdirSync(ctx.workDir, { recursive: true });
     const prep = await createTrivyAnalyzer(image).prepare(ctx);
     if (!('run' in prep)) throw new Error(JSON.stringify(prep));

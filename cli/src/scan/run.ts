@@ -17,10 +17,9 @@ import {
   runAnalyzers,
   withEmergencyCleanup,
 } from '../analyzers/runner';
-import { cacheDirInRepository } from '../analyzers/trivy';
 import { LICENSE_ENGINE_ID } from '../analyzers/trivy-licenses';
 import { parseTrivyIgnore } from '../analyzers/trivyignore';
-import type { Analyzer, DotnetRun } from '../analyzers/types';
+import type { Analyzer, DotnetRun, SarifCapture } from '../analyzers/types';
 import type { ScanFlags } from '../args';
 import { platformId } from '../commands/version';
 import type { CiMergeRequest } from '../config/ci';
@@ -235,6 +234,8 @@ async function buildReport(inputs: {
   io: CliIO;
   log: Logger;
   deps: ScanDeps;
+  /** The `--sarif` files, read before any request (a bad one is a usage error), and their warnings. */
+  external: { captures: SarifCapture[]; warnings: Warnings };
   /** The vulnerability pass's database (vuln plan 3); null when none was chosen. */
   vulnerabilityDb: VulnerabilityDbChoice | null;
 }): Promise<BuiltReport> {
@@ -245,7 +246,6 @@ async function buildReport(inputs: {
   for (const w of deps.extraWarnings ?? []) warnings.add(w.code, w.message);
   for (const w of inputs.vulnerabilityDb?.warnings ?? []) warnings.add(w.code, w.message);
 
-  // Fail fast on a bad --sarif file: a usage error must come before any git or network call.
   // A tag scan is a version: the dependency list only, no analyzer, metric or coverage input.
   const versionMode = scanTag(flags, settings.ci) !== null;
   if (versionMode && (config.sarif.length > 0 || config.coverage.reports.length > 0)) {
@@ -254,7 +254,8 @@ async function buildReport(inputs: {
       'a tag scan records the dependency list only: --sarif and --coverage files were not read',
     );
   }
-  const external = versionMode ? [] : loadExternalSarif(config.sarif, { root, warnings });
+  const external = inputs.external.captures;
+  warnings.addAll(inputs.external.warnings.list());
 
   const baselineClient =
     deps.baselineClient !== undefined
@@ -272,7 +273,7 @@ async function buildReport(inputs: {
   });
 
   // The vulnerability database cache inside the checkout holds the archive, not the project.
-  const cacheDir = trivyRuns(analyzers, config) ? cacheDirInRepository(root, io.env) : null;
+  const cacheDir = inputs.vulnerabilityDb?.repositoryCacheDir ?? null;
   const scope = discoverFiles({
     root,
     config,
@@ -314,6 +315,7 @@ async function buildReport(inputs: {
       env: io.env,
       dotnet: deps.dotnet ?? null,
       trivyDatabaseDir: inputs.vulnerabilityDb?.dir ?? null,
+      trivyCacheSkipDir: cacheDir,
     })),
     ...external,
   ];
@@ -850,29 +852,25 @@ export async function runScan(
       'no project key: set project.key, QUALOR_PROJECT_KEY or --project-key (in CI it defaults to the project path)',
     );
   }
+  // Fail fast on a bad --sarif file: a usage error comes before any git or network call, and
+  // before the vulnerability database is downloaded (ruling R6). A tag scan reads none.
+  const sarifWarnings = new Warnings();
+  const external = {
+    captures:
+      tag === null
+        ? loadExternalSarif(settings.config.sarif, {
+            root: settings.root,
+            warnings: sarifWarnings,
+          })
+        : [],
+    warnings: sarifWarnings,
+  };
   const serverVersion =
     endpoint !== null && deps.serverVersion !== null
       ? await (deps.serverVersion ?? checkServerVersion)(endpoint, log)
       : null;
-  // Vuln plan 3: the vulnerability pass's database, chosen before it runs. A tag scan has no
-  // vulnerability pass, and --dry-run asks the server for nothing new (Review Focus 3).
-  const choose = deps.vulnerabilityDb === undefined ? resolveVulnerabilityDb : deps.vulnerabilityDb;
-  const vulnerabilityDb =
-    choose !== null && tag === null && trivyRuns(analyzers, settings.config)
-      ? await withEmergencyCleanup(log, () =>
-          choose({
-            endpoint: flags.dryRun ? null : endpoint,
-            root: settings.root,
-            env: io.env,
-            log,
-            now: deps.now ?? (() => new Date()),
-          }),
-        )
-      : null;
-  for (const w of vulnerabilityDb?.warnings ?? []) log.warn(w.message);
-  let built: BuiltReport;
-  try {
-    built = await buildReport({
+  const build = (vulnerabilityDb: VulnerabilityDbChoice | null) =>
+    buildReport({
       settings,
       flags,
       projectKey,
@@ -881,13 +879,32 @@ export async function runScan(
       io,
       log,
       deps,
+      external,
       vulnerabilityDb,
     });
-  } finally {
-    // The private copy of the database lives until the analyzers are done, whatever happened.
-    await vulnerabilityDb?.cleanup();
-  }
-  const { report, failed, gitlab } = built;
+  // Vuln plan 3: the vulnerability pass's database, chosen before it runs. A tag scan has no
+  // vulnerability pass, and --dry-run asks the server for nothing new (Review Focus 3). Its
+  // private copy lives until the analyzers are done: Ctrl+C or a cancelled job removes it at any
+  // point in between, like the AI review's snapshot.
+  const choose = deps.vulnerabilityDb === undefined ? resolveVulnerabilityDb : deps.vulnerabilityDb;
+  const { report, failed, gitlab } =
+    choose !== null && tag === null && trivyRuns(analyzers, settings.config)
+      ? await withEmergencyCleanup(log, async () => {
+          const vulnerabilityDb = await choose({
+            endpoint: flags.dryRun ? null : endpoint,
+            root: settings.root,
+            env: io.env,
+            log,
+            now: deps.now ?? (() => new Date()),
+          });
+          for (const w of vulnerabilityDb.warnings) log.warn(w.message);
+          try {
+            return await build(vulnerabilityDb);
+          } finally {
+            await vulnerabilityDb.cleanup();
+          }
+        })
+      : await build(null);
   const failedRequired = (): ExitCode => {
     log.error(`required analyzers failed: ${failed.join(', ')}`);
     return EXIT.ANALYZER_FAILED;

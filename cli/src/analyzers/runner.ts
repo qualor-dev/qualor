@@ -72,6 +72,8 @@ export interface RunAnalyzersOptions {
   dotnet?: DotnetRun | null;
   /** The Trivy database directory the scan chose (vuln plan 3); absent or null: none. */
   trivyDatabaseDir?: string | null;
+  /** The scan's database cache directory inside the checkout, repo-relative (vuln plan 3). */
+  trivyCacheSkipDir?: string | null;
 }
 
 function readSarif(
@@ -248,6 +250,14 @@ export function createWorkDir(id: string, tempRoot: string = os.tmpdir()): strin
   return dir;
 }
 
+/**
+ * Tracks a private directory made elsewhere (the vulnerability database's staging copy in its cache
+ * directory) like a `createWorkDir` one: the signal handler removes it until it is released.
+ */
+export function trackWorkDir(dir: string): void {
+  activeWorkDirs.add(dir);
+}
+
 /** Removes a `createWorkDir` directory (failures are logged at debug, never thrown). */
 export function releaseWorkDir(dir: string, log: Logger): void {
   activeWorkDirs.delete(dir);
@@ -371,6 +381,7 @@ function analyzerContext(
     log: o.log,
     dotnet: o.dotnet ?? null,
     trivyDatabaseDir: o.trivyDatabaseDir ?? null,
+    trivyCacheSkipDir: o.trivyCacheSkipDir ?? null,
     // Ruling V3: every built-in analyzer binary comes from PATH or the scanner image, never
     // from the repository being scanned.
     resolveBinary: (name) => resolveBinary(name, { root: o.root, env: parentEnv }),

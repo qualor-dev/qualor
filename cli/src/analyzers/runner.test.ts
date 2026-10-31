@@ -1096,15 +1096,22 @@ describe('the collected preparation (plan 2D)', () => {
       id: 'trivy',
       languages: [],
       prepare: (ctx) => {
-        seen.push(ctx.trivyDatabaseDir);
+        seen.push([ctx.trivyDatabaseDir, ctx.trivyCacheSkipDir]);
         return Promise.resolve({ skip: 'x' });
       },
     };
     const base = { root: tmp(), config: parseConfig({ version: 1 }), files: [], log: silentLogger };
     const chosen = tmp();
-    await runAnalyzers([analyzer], { ...base, trivyDatabaseDir: chosen });
+    await runAnalyzers([analyzer], {
+      ...base,
+      trivyDatabaseDir: chosen,
+      trivyCacheSkipDir: 'ci/t',
+    });
     await runAnalyzers([analyzer], base);
-    expect(seen).toEqual([chosen, null]);
+    expect(seen).toEqual([
+      [chosen, 'ci/t'],
+      [null, null],
+    ]);
   });
 });
 

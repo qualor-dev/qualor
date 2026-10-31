@@ -11,11 +11,13 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { readTarGz, TarError } from '@qualor/shared/tar';
-import { createWorkDir, releaseWorkDir } from '../analyzers/runner';
-import { cacheInRepository, readDatabaseDate, vulnerabilityCacheDir } from '../analyzers/trivy';
+import { real, within } from '../analyzers/binary';
+import { createWorkDir, releaseWorkDir, trackWorkDir } from '../analyzers/runner';
+import { cacheInRepository, readDatabaseDate } from '../analyzers/trivy';
 import type { Logger } from '../log';
 import { clean, type ServerEndpoint } from '../server/http';
 import { downloadServerVulndb, fetchServerVulndb, type ServerVulndb } from '../server/vulndb';
@@ -41,8 +43,37 @@ export interface VulnerabilityDbChoice {
   dir: string | null;
   /** Report warnings, each code at most once. */
   warnings: { code: string; message: string }[];
+  /**
+   * The cache directory as a `/`-separated path inside the checkout, or null: it is left out of
+   * the report's files and of Trivy's scan (`--skip-dirs`).
+   */
+  repositoryCacheDir: string | null;
   /** Removes the private copy; never throws. Called after the analyzers. */
   cleanup: () => Promise<void>;
+}
+
+/**
+ * Where the scanner keeps the server's database archive (P6): `QUALOR_TRIVY_CACHE_DIR` when it is
+ * set and absolute, else `<home>/.cache/qualor/trivy`. Throws when the home directory cannot be
+ * named (`os.homedir()`); `resolveVulnerabilityDb` catches that.
+ */
+export function vulnerabilityCacheDir(env: Env): string {
+  const named = env['QUALOR_TRIVY_CACHE_DIR'];
+  if (named !== undefined && named !== '' && path.isAbsolute(named)) return named;
+  return path.join(os.homedir(), '.cache', 'qualor', 'trivy');
+}
+
+/** `dir` as a `/`-separated path inside `root` (on-disk names first); null outside or at the root. */
+function repositoryPath(root: string, dir: string): string | null {
+  for (const [r, d] of [
+    [real(root), real(dir)],
+    [path.resolve(root), path.resolve(dir)],
+  ] as const) {
+    if (!within(r, d)) continue;
+    const rel = path.relative(r, d);
+    return rel === '' ? null : rel.split(path.sep).join('/');
+  }
+  return null;
 }
 
 type Warning = VulnerabilityDbChoice['warnings'][number];
@@ -160,9 +191,9 @@ function writeHint(cache: string, hint: object, log: Logger): void {
 }
 
 /**
- * R4: removes what a killed scan left in the cache: partial downloads and temporary `server.json`
- * files older than an hour, staging directories older than two days. Only the names this module
- * and the download client make, so nothing else in the directory is touched.
+ * R4: removes what a killed scan left in the cache: partial and unverified downloads and temporary
+ * `server.json` files older than an hour, staging directories older than two days. Only the names
+ * this module and the download client make, so nothing else in the directory is touched.
  */
 function prune(cache: string, log: Logger): void {
   let names: string[];
@@ -174,7 +205,8 @@ function prune(cache: string, log: Logger): void {
   const now = Date.now();
   for (const name of names) {
     let maxAge: number;
-    if (/^db\.tar\.gz\.[0-9a-f]{12}\.partial$/.test(name)) maxAge = HOUR_MS;
+    if (/^db\.(?:[0-9a-f]{12}\.)?tar\.gz\.[0-9a-f]{12}\.partial$/.test(name)) maxAge = HOUR_MS;
+    else if (/^db\.[0-9a-f]{12}\.tar\.gz$/.test(name)) maxAge = HOUR_MS;
     else if (/^server\.json\.[0-9a-f]{12}\.tmp$/.test(name)) maxAge = HOUR_MS;
     else if (/^db\.[0-9a-f]{12}\.old$/.test(name)) maxAge = HOUR_MS;
     else if (/^db\.[0-9a-f]{12}\.tmp$/.test(name)) maxAge = STAGING_MAX_AGE_MS;
@@ -288,20 +320,32 @@ type Used =
 
 /** One scan's choice: the cache directory, a private temporary directory, what to clean up. */
 class Choice {
-  readonly cache: string;
-  readonly archive: string;
+  /** Null when it cannot be named (no home directory, R7): downloads go to a temporary directory. */
+  readonly cache: string | null;
+  readonly archive: string | null;
   /** P4: inside the checkout, the cache is never trusted alone and never extracted in place. */
   readonly inside: boolean;
   /** P5: `QUALOR_TRIVY_CACHE_DIR` names a directory inside the checkout. */
   readonly namedInside: boolean;
+  /** The cache directory inside the checkout, `/`-separated, for the report and `--skip-dirs`. */
+  readonly repositoryCacheDir: string | null;
   private work: string | null = null;
   private writable: boolean | undefined;
   private readonly leftovers: string[] = [];
 
   constructor(private readonly input: VulnerabilityDbInput) {
-    this.cache = vulnerabilityCacheDir(input.env);
-    this.archive = path.join(this.cache, ARCHIVE);
-    this.inside = cacheInRepository(input.root, this.cache);
+    let cache: string | null = null;
+    try {
+      cache = vulnerabilityCacheDir(input.env);
+    } catch (err) {
+      input.log.debug(
+        `no vulnerability database cache (the home directory is unknown: ${message(err)}); downloading without caching`,
+      );
+    }
+    this.cache = cache;
+    this.archive = cache === null ? null : path.join(cache, ARCHIVE);
+    this.inside = cache !== null && cacheInRepository(input.root, cache);
+    this.repositoryCacheDir = cache === null ? null : repositoryPath(input.root, cache);
     const named = input.env['QUALOR_TRIVY_CACHE_DIR'];
     this.namedInside = named !== undefined && named !== '' && path.isAbsolute(named) && this.inside;
   }
@@ -311,7 +355,12 @@ class Choice {
   }
 
   result(dir: string | null, warnings: Warning[]): VulnerabilityDbChoice {
-    return { dir, warnings, cleanup: () => this.cleanup() };
+    return {
+      dir,
+      warnings,
+      repositoryCacheDir: this.repositoryCacheDir,
+      cleanup: () => this.cleanup(),
+    };
   }
 
   /** Today's choice, without a warning unless a cache in the checkout is ignored (P5). */
@@ -344,6 +393,10 @@ class Choice {
   /** P6: the cache directory exists and takes a file; false (logged at debug) otherwise. */
   cacheWritable(): boolean {
     if (this.writable !== undefined) return this.writable;
+    if (this.cache === null) {
+      this.writable = false;
+      return false;
+    }
     try {
       mkdirSync(this.cache, { recursive: true });
       const probe = path.join(this.cache, `.write-check.${hex6()}`);
@@ -364,11 +417,13 @@ class Choice {
    * same open file (a concurrent rename cannot swap it in between). A rejected archive is never
    * extracted. Never throws.
    */
-  async use(file: string, accept: (digest: string) => boolean): Promise<Used> {
+  async use(file: string | null, accept: (digest: string) => boolean): Promise<Used> {
     let fh: FileHandle | undefined;
     try {
       // A regular file only: never a link, a FIFO (which would block) or a directory.
-      if (!regularFile(file, MAX_ARCHIVE_BYTES)) return { ok: false, digest: null };
+      if (file === null || !regularFile(file, MAX_ARCHIVE_BYTES)) {
+        return { ok: false, digest: null };
+      }
       // O_NONBLOCK: a FIFO swapped in after the check cannot block the scan.
       fh = await open(file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
       const stat = await fh.stat();
@@ -400,46 +455,69 @@ class Choice {
     fh: FileHandle,
     digest: string,
   ): Promise<{ dir: string; updatedAt: string } | Failure> {
-    if (!this.inside) {
-      const live = path.join(this.cache, 'db');
-      const updatedAt = readDatabaseDate(this.cache);
+    const cache = this.cache;
+    if (cache !== null && !this.inside) {
+      const live = path.join(cache, 'db');
+      const updatedAt = readDatabaseDate(cache);
       if (
         markerOf(live) === digest &&
         updatedAt !== null &&
         regularFile(path.join(live, 'trivy.db'), Number.POSITIVE_INFINITY)
       ) {
-        return { dir: this.cache, updatedAt };
+        return { dir: cache, updatedAt };
       }
     }
-    const shared = !this.inside && this.cacheWritable();
-    const staging = path.join(shared ? this.cache : this.workDir(), `db.${hex6()}.tmp`);
+    const shared = cache !== null && !this.inside && this.cacheWritable() ? cache : null;
+    const staging = path.join(shared ?? this.workDir(), `db.${hex6()}.tmp`);
+    // A staging copy in the cache is removed on Ctrl+C too (the work directory already is).
+    if (shared !== null) trackWorkDir(staging);
+    const discard = () => {
+      if (shared === null) removeQuietly(staging, this.log);
+      else releaseWorkDir(staging, this.log);
+    };
     const db = path.join(staging, 'db');
     try {
       mkdirSync(db, { recursive: true });
       const problem = await unpack(fh, db);
       const updatedAt = problem === null ? readDatabaseDate(staging) : null;
       if (problem !== null || updatedAt === null) {
-        removeQuietly(staging, this.log);
+        discard();
         return problem ?? { reason: UNUSABLE, bad: true };
       }
       writeFileSync(path.join(db, MARKER), `${digest}\n`, { flag: 'wx', mode: 0o644 });
-      if (!shared) return { dir: staging, updatedAt };
-      if (place(db, this.cache, digest, this.log)) {
-        removeQuietly(staging, this.log);
-        return { dir: this.cache, updatedAt: readDatabaseDate(this.cache) ?? updatedAt };
+      if (shared === null) return { dir: staging, updatedAt };
+      if (place(db, shared, digest, this.log)) {
+        discard();
+        return { dir: shared, updatedAt: readDatabaseDate(shared) ?? updatedAt };
       }
       // Another scan holds `<cache>/db` open: this scan reads its own copy, removed afterwards.
       this.leftovers.push(staging);
       return { dir: staging, updatedAt };
     } catch (err) {
       this.log.debug(`cannot extract the vulnerability database: ${message(err)}`);
-      removeQuietly(staging, this.log);
+      discard();
       return { reason: WRITE_FAILED, bad: false };
     }
   }
 
+  /**
+   * Row 6: a downloaded archive replaces the cached one only once it proved usable; `server.json`
+   * follows it. Never throws.
+   */
+  keepDownload(incoming: string, hint: object | null): void {
+    if (this.cache === null || this.archive === null) return;
+    try {
+      renameSync(incoming, this.archive);
+    } catch (err) {
+      this.log.debug(`could not keep the downloaded vulnerability database: ${message(err)}`);
+      removeQuietly(incoming, this.log);
+      return;
+    }
+    if (hint !== null) writeHint(this.cache, hint, this.log);
+  }
+
   cleanup(): Promise<void> {
-    for (const dir of this.leftovers.splice(0)) removeQuietly(dir, this.log);
+    for (const dir of this.leftovers.splice(0)) releaseWorkDir(dir, this.log);
     if (this.work !== null) {
       releaseWorkDir(this.work, this.log);
       this.work = null;
@@ -479,7 +557,14 @@ export async function resolveVulnerabilityDb(
     return await decide(choice, input);
   } catch (err) {
     input.log.debug(`choosing the vulnerability database failed: ${message(err)}`);
-    if (choice === undefined) return { dir: null, warnings: [], cleanup: () => Promise.resolve() };
+    if (choice === undefined) {
+      return {
+        dir: null,
+        warnings: [],
+        repositoryCacheDir: null,
+        cleanup: () => Promise.resolve(),
+      };
+    }
     await choice.cleanup();
     return choice.fallback('unexpected error');
   }
@@ -496,7 +581,7 @@ async function decide(c: Choice, input: VulnerabilityDbInput): Promise<Vulnerabi
 
 /** The metadata request failed: only a cache outside the checkout, as server.json names it. */
 async function metadataFailed(c: Choice, reason: string): Promise<VulnerabilityDbChoice> {
-  if (!c.inside) {
+  if (c.cache !== null && !c.inside) {
     const hint = readHint(c.cache);
     if (hint !== null) {
       const used = await c.use(c.archive, (digest) => digest === hint.digest);
@@ -517,9 +602,9 @@ async function served(
 ): Promise<VulnerabilityDbChoice> {
   const accepted = new Set([current.digest, ...meta.accepted]);
   const now = input.now().getTime();
-  const hint = readHint(c.cache);
+  const hint = c.cache === null ? null : readHint(c.cache);
   const writable = c.cacheWritable();
-  if (writable) prune(c.cache, c.log);
+  if (writable && c.cache !== null) prune(c.cache, c.log);
   /** Digests of archives that are not a Trivy database: never tried again. */
   const bad = new Set<string>();
   /** Why the server's database is not used, once something failed. */
@@ -542,24 +627,29 @@ async function served(
   if (cached.ok) return c.result(cached.dir, []);
   note(cached);
 
-  // Download the current archive (the cache already holds it when only its extraction failed).
+  // Download the current archive (the cache already holds it when only its extraction failed),
+  // under a new name: the cached archive stays until the new one proved usable (row 6).
   if (cached.digest !== current.digest) {
-    const target = writable ? c.archive : path.join(c.workDir(), ARCHIVE);
+    const incoming =
+      writable && c.cache !== null
+        ? path.join(c.cache, `db.${hex6()}.tar.gz`)
+        : path.join(c.workDir(), ARCHIVE);
     const mib = Math.max(1, Math.round(current.sizeBytes / 1024 / 1024));
     c.log.info(`downloading the vulnerability database from the server (${mib} MiB)`);
-    const got = await downloadServerVulndb(endpoint, current.digest, current.sizeBytes, target);
+    const got = await downloadServerVulndb(endpoint, current.digest, current.sizeBytes, incoming);
     if (got.ok) {
-      const used = await c.use(target, (digest) => accepted.has(digest) && !bad.has(digest));
+      const used = await c.use(incoming, (digest) => accepted.has(digest) && !bad.has(digest));
       if (used.ok) {
-        if (writable && used.digest === current.digest) {
-          writeHint(
-            c.cache,
-            {
-              digest: current.digest,
-              builtAt: current.builtAt,
-              fetchedAt: input.now().toISOString(),
-            },
-            c.log,
+        if (writable) {
+          c.keepDownload(
+            incoming,
+            used.digest === current.digest
+              ? {
+                  digest: current.digest,
+                  builtAt: current.builtAt,
+                  fetchedAt: input.now().toISOString(),
+                }
+              : null,
           );
         }
         return c.result(used.dir, []);
@@ -569,6 +659,7 @@ async function served(
     } else {
       why.reason = got.reason;
     }
+    removeQuietly(incoming, c.log);
   }
 
   // The download failed: a cached archive the server still accepts (another scan may have just

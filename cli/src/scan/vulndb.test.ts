@@ -10,17 +10,20 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { metadataJson, trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { json, problem, useTestServers } from '../../test/http';
 import { useTempDirs } from '../../test/tmp';
-import { readDatabaseDate, vulnerabilityCacheDir } from '../analyzers/trivy';
+import { readDatabaseDate } from '../analyzers/trivy';
 import { silentLogger } from '../log';
 import type { ServerEndpoint } from '../server/http';
-import { resolveVulnerabilityDb } from './vulndb';
+import { resolveVulnerabilityDb, vulnerabilityCacheDir } from './vulndb';
 
 const serve = useTestServers();
 const tmp = useTempDirs();
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 const TOKEN = 'qlr_prj_vulndb_choice_token';
 const NOW = new Date('2026-10-31T12:00:00Z');
 const HOUR = 60 * 60 * 1000;
@@ -213,6 +216,7 @@ describe('resolveVulnerabilityDb: the decision table', () => {
     const got = await choose({ endpoint: server.endpoint, cache });
     // Outside the checkout it is extracted into <cache>/db, for the next runs too (P4).
     expect(got.dir).toBe(cache);
+    expect(got.repositoryCacheDir).toBeNull();
     expect(databaseIn(got.dir)).toEqual(holds(NEW));
     expect(got.warnings).toEqual([]);
     expect(server.paths).toEqual([META_PATH]);
@@ -361,7 +365,11 @@ describe('resolveVulnerabilityDb: the decision table', () => {
       fetchedAt: hoursAgo(1),
     });
     const none = await choose({ endpoint: null, cache, root });
-    expect(none).toMatchObject({ dir: null, warnings: [UNTRUSTED] });
+    expect(none).toMatchObject({
+      dir: null,
+      warnings: [UNTRUSTED],
+      repositoryCacheDir: 'ci/trivy',
+    });
     await none.cleanup();
     const older = await fakeServer({ meta: 404 });
     const a = await choose({ endpoint: older.endpoint, cache, root });
@@ -384,6 +392,7 @@ describe('resolveVulnerabilityDb: the decision table', () => {
     const got = await choose({ endpoint: server.endpoint, cache, root, tempRoot });
     expect(downloads(server.paths)).toEqual([]);
     expect(got.warnings).toEqual([]);
+    expect(got.repositoryCacheDir).toBe('.qualor/trivy');
     expect(got.dir).not.toBeNull();
     const dir = got.dir ?? '';
     expect(path.relative(tempRoot, dir).startsWith('..')).toBe(false);
@@ -407,6 +416,67 @@ describe('resolveVulnerabilityDb: the decision table', () => {
     expect(got.warnings).toEqual([]);
     await got.cleanup();
     expect(readdirSync(tempRoot)).toEqual([]);
+  });
+});
+
+describe('resolveVulnerabilityDb: a new archive that is not usable keeps the cached one (row 6)', () => {
+  it.each(['outside', 'inside'] as const)(
+    'uses the accepted cached archive, unchanged, with the warning (cache %s the checkout)',
+    async (where) => {
+      const broken = trivyArchive({ metadata: null });
+      const server = await fakeServer({
+        meta: {
+          serve: true,
+          policy: 'every',
+          current: { digest: sha(broken), sizeBytes: broken.length, builtAt: null },
+          accepted: [sha(broken), OLD.digest],
+        },
+        archives: [broken],
+      });
+      const root = tmp();
+      const tempRoot = tmp();
+      const cache = fillCache(
+        where === 'inside' ? path.join(root, '.qualor', 'trivy') : path.join(tmp(), 'cache'),
+        OLD.archive,
+      );
+      const got = await choose({ endpoint: server.endpoint, cache, root, tempRoot });
+      expect(downloads(server.paths)).toHaveLength(1);
+      expect(databaseIn(got.dir)).toEqual(holds(OLD));
+      expect(got.warnings).toEqual([
+        failed('the archive is not a Trivy database', cached('2026-10-30')),
+      ]);
+      expect(readFileSync(path.join(cache, 'db.tar.gz')).equals(OLD.archive)).toBe(true);
+      expect(readdirSync(cache).sort()).toEqual(
+        where === 'inside' ? ['db.tar.gz'] : ['db', 'db.tar.gz'],
+      );
+      await got.cleanup();
+      expect(readdirSync(tempRoot)).toEqual([]);
+    },
+  );
+});
+
+describe('resolveVulnerabilityDb: no home directory (R7)', () => {
+  it('downloads into a temporary directory when the default cache cannot be named, and never throws', async () => {
+    vi.spyOn(os, 'homedir').mockImplementation(() => {
+      throw new Error('ENOENT: no home directory for this user');
+    });
+    const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+    const tempRoot = tmp();
+    const got = await choose({ endpoint: server.endpoint, tempRoot });
+    expect(got.warnings).toEqual([]);
+    expect(got.repositoryCacheDir).toBeNull();
+    expect(databaseIn(got.dir)).toEqual(holds(NEW));
+    expect(path.relative(tempRoot, got.dir ?? '').startsWith('..')).toBe(false);
+    await got.cleanup();
+    expect(readdirSync(tempRoot)).toEqual([]);
+    const none = await choose({ endpoint: null });
+    expect(none).toMatchObject({ dir: null, warnings: [], repositoryCacheDir: null });
+    const down = await fakeServer({ meta: 500 });
+    const failedMeta = await choose({ endpoint: down.endpoint });
+    expect(failedMeta).toMatchObject({
+      dir: null,
+      warnings: [failed('server answered 500', IMAGE)],
+    });
   });
 });
 
@@ -530,8 +600,8 @@ describe('resolveVulnerabilityDb: the cache directory', () => {
     const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
     const cache = path.join(tmp(), 'cache');
     mkdirSync(cache);
-    const stale = path.join(cache, 'db.tar.gz.0123456789ab.partial');
-    const fresh = path.join(cache, 'db.tar.gz.ba9876543210.partial');
+    const stale = path.join(cache, 'db.0123456789ab.tar.gz.0123456789ab.partial');
+    const fresh = path.join(cache, 'db.ba9876543210.tar.gz.ba9876543210.partial');
     writeFileSync(stale, 'half');
     writeFileSync(fresh, 'half');
     const twoHoursAgo = new Date(Date.now() - 2 * HOUR);

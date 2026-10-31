@@ -58,6 +58,11 @@ export interface AnalyzerContext {
    */
   trivyDatabaseDir?: string | null;
   /**
+   * The scan's vulnerability database cache directory when it lies inside the checkout
+   * (repo-relative, `/`-separated): one more Trivy `--skip-dirs`. Null or absent: none.
+   */
+  trivyCacheSkipDir?: string | null;
+  /**
    * config.md §6 (ruling V3): PATH, then the scanner image, never a file inside the repository;
    * null when the tool is not installed there.
    */

@@ -1,4 +1,13 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -9,7 +18,8 @@ import {
   reportSchema,
   type Report,
 } from '@qualor/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { FIXTURES_DIR, loadFixture } from '../../test/fixtures';
 import {
   codeQualityValidator,
@@ -32,6 +42,7 @@ import { trivyJsonToSarif } from '../analyzers/trivy-output';
 import type { Analyzer } from '../analyzers/types';
 import { ANALYZER_OUTPUT_DIR } from '../../test/analyzers';
 import { runScan } from './run';
+import { resolveVulnerabilityDb } from './vulndb';
 
 const tmp = useTempDirs();
 const serve = useTestServers();
@@ -1410,15 +1421,16 @@ copyFileSync(${JSON.stringify(
 
 describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', () => {
   const UNTRUSTED = 'VULNERABILITY_DB_CACHE_UNTRUSTED';
-  /** Trivy as the step sees it: present and enabled; it records what its context says. */
+  /** Trivy as the step sees it: present and enabled; it records its database and skip dir. */
   const trivyStub = (seen: unknown[] = []): Analyzer => ({
     id: 'trivy',
     languages: [],
     prepare: (ctx) => {
-      seen.push(ctx.trivyDatabaseDir);
+      seen.push({ dir: ctx.trivyDatabaseDir, skip: ctx.trivyCacheSkipDir });
       return Promise.resolve({ skip: 'no database here' });
     },
   });
+  const noDb = { dir: null, warnings: [], repositoryCacheDir: null };
   const dryFlags = (extra: string[] = []) =>
     scanFlags(['--dry-run', '--output', 'out/r.json.gz', '--project-key', 'k', ...extra]);
 
@@ -1456,7 +1468,8 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     });
     const code = await runScan(dryFlags(), c.io, silentLogger, { analyzers: [trivyStub(seen)] });
     expect(code, c.stderr()).toBe(0);
-    expect(seen).toEqual([null]);
+    // Today's choice (the image), and the cache directory is one more --skip-dirs for Trivy.
+    expect(seen).toEqual([{ dir: null, skip: 'ci-cache/trivy' }]);
     const report = readReport(path.join(repo, 'out', 'r.json.gz'));
     expect(report.warnings.filter((w) => w.code === UNTRUSTED)).toEqual([
       {
@@ -1480,7 +1493,7 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
       ...trivyStub(seen),
       prepare: (ctx) => {
         events.push('trivy');
-        seen.push(ctx.trivyDatabaseDir);
+        seen.push({ dir: ctx.trivyDatabaseDir, skip: ctx.trivyCacheSkipDir });
         return Promise.resolve({ skip: 'x' });
       },
     };
@@ -1492,6 +1505,7 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
         return Promise.resolve({
           dir: chosen,
           warnings: [{ code: 'VULNERABILITY_DB_FETCH_FAILED', message: 'from the step' }],
+          repositoryCacheDir: null,
           cleanup: () => {
             events.push('cleanup');
             return Promise.resolve();
@@ -1501,24 +1515,25 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     });
     expect(code, c.stderr()).toBe(0);
     expect(events).toEqual(['choose:no-server', 'trivy', 'cleanup']);
-    expect(seen).toEqual([chosen]);
+    expect(seen).toEqual([{ dir: chosen, skip: null }]);
     const report = readReport(path.join(repo, 'out', 'r.json.gz'));
     expect(report.warnings.filter((w) => w.code.startsWith('VULNERABILITY_DB_'))).toEqual([
       { code: 'VULNERABILITY_DB_FETCH_FAILED', message: 'from the step', count: 1 },
     ]);
   });
 
-  it('cleans up even when the scan fails', async () => {
-    const repo = fixtureRepo('ts-basic');
+  it('cleans up even when the scan fails after the choice', async () => {
+    // Not a git work tree: resolveScm stops the scan with exit 2 after the database step.
+    const dir = tmp();
+    writeTree(dir, { 'qualor.yml': 'version: 1\n', 'src/a.ts': 'export const a = 1;\n' });
     let cleaned = 0;
-    const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
+    const c = captureIO({ cwd: dir, env: SCAN_TEST_ENV });
     await expect(
-      runScan(dryFlags(['--sarif', 'missing.sarif']), c.io, silentLogger, {
+      runScan(dryFlags(), c.io, silentLogger, {
         analyzers: [trivyStub()],
         vulnerabilityDb: () =>
           Promise.resolve({
-            dir: null,
-            warnings: [],
+            ...noDb,
             cleanup: () => {
               cleaned += 1;
               return Promise.resolve();
@@ -1533,7 +1548,7 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     let calls = 0;
     const spy = () => {
       calls += 1;
-      return Promise.resolve({ dir: null, warnings: [], cleanup: () => Promise.resolve() });
+      return Promise.resolve({ ...noDb, cleanup: () => Promise.resolve() });
     };
     const repo = fixtureRepo('ts-basic');
     const off = path.join(tmp(), 'off');
@@ -1555,5 +1570,77 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     expect(calls).toBe(0);
     expect(await run(repo, [trivyStub()])).toBe(0);
     expect(calls).toBe(1);
+  });
+
+  it('removes the private copy of the database on a signal between the choice and the analyzers', async () => {
+    const archive = trivyArchive();
+    const digest = `sha256:${createHash('sha256').update(archive).digest('hex')}`;
+    // Only the handlers the scan installs are called (the test runner's own stay out of it).
+    const before = new Set(process.listeners('SIGTERM'));
+    const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    let copy: string | null = null;
+    let removedAtSignal: boolean | null = null;
+    const server = await serve((req, res) => {
+      const at = new URL(req.url ?? '/', 'http://x').pathname;
+      if (at === '/api/v0/projects/new-code-baseline') {
+        // After the choice (the copy exists), before the analyzers: the job is cancelled.
+        for (const listener of process.listeners('SIGTERM')) {
+          if (!before.has(listener)) (listener as (signal: string) => void)('SIGTERM');
+        }
+        removedAtSignal = copy !== null && !existsSync(copy);
+        problem(res, 404, 'NOT_FOUND');
+      } else if (at === '/api/v0/scanner/vulnerability-db') {
+        json(res, 200, {
+          serve: true,
+          policy: 'daily',
+          current: { digest, sizeBytes: archive.length, builtAt: null },
+          accepted: [digest],
+        });
+      } else if (at === `/api/v0/scanner/vulnerability-db/${digest.slice(7)}`) {
+        res.writeHead(200, {
+          'content-type': 'application/gzip',
+          'content-length': String(archive.length),
+        });
+        res.end(archive);
+      } else {
+        problem(res, 404, 'NOT_FOUND');
+      }
+    });
+    const repo = fixtureRepo('ts-basic');
+    const tempRoot = tmp();
+    const c = captureIO({
+      cwd: repo,
+      env: {
+        ...SCAN_TEST_ENV,
+        QUALOR_URL: server.url,
+        QUALOR_TOKEN: 'qlr_prj_signal_token',
+        // Inside the checkout: the verified archive is extracted to a private temporary copy.
+        QUALOR_TRIVY_CACHE_DIR: path.join(repo, '.qualor', 'trivy'),
+      },
+    });
+    const exitCodes: unknown[] = [];
+    try {
+      const code = await runScan(dryFlags(), c.io, silentLogger, {
+        analyzers: [trivyStub()],
+        // --dry-run sends the step no endpoint; this one asks the test server anyway.
+        vulnerabilityDb: async (input) => {
+          const got = await resolveVulnerabilityDb({
+            ...input,
+            endpoint: { url: server.url, token: 'qlr_prj_signal_token', timeoutMs: 5000 },
+            tempRoot,
+          });
+          copy = got.dir;
+          return got;
+        },
+      });
+      expect(code, c.stderr()).toBe(0);
+      exitCodes.push(...exit.mock.calls.map((call) => call[0]));
+    } finally {
+      exit.mockRestore();
+    }
+    expect(copy).not.toBeNull();
+    expect(removedAtSignal).toBe(true);
+    expect(exitCodes).toEqual([143]);
+    expect(readdirSync(tempRoot)).toEqual([]);
   });
 });
