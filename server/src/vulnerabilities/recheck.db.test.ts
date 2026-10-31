@@ -658,6 +658,76 @@ describe('vulnerability re-checks', () => {
     });
   });
 
+  describe('pruning what no inventory needs', () => {
+    const ORPHAN = 'pkg:npm/orphan@1.0.0';
+    const KEPT = 'pkg:npm/only-untracked@2.0.0';
+    /** Matches and matched marks for a package no inventory has, and one an untracked target has. */
+    const seedStale = async (p: IngestProject): Promise<void> => {
+      const old = await versionId(p, '1.0.0');
+      await db().insert(targetVulnerabilities).values({
+        projectId: p.id,
+        versionId: old,
+        ecosystem: 'npm',
+        packageName: 'only-untracked',
+        packageVersion: '2.0.0',
+        purl: KEPT,
+        vulnerabilityId: 'CVE-2026-0900',
+      });
+      for (const purl of [ORPHAN, KEPT]) {
+        await db()
+          .insert(vulnerabilityMatches)
+          .values({ purl, vulnerabilityId: 'CVE-2026-0900', severity: 'low' });
+        await db().insert(matchedPackages).values({ purl, datasetDigest: primary.digest });
+      }
+    };
+    const matchPurls = async () =>
+      (await db().select({ purl: vulnerabilityMatches.purl }).from(vulnerabilityMatches))
+        .map((r) => r.purl)
+        .sort();
+    const markedPurls = async () =>
+      (await db().select({ purl: matchedPackages.purl }).from(matchedPackages))
+        .map((r) => r.purl)
+        .sort();
+    const setup = async (): Promise<IngestProject> => {
+      const p = await project({ versionRule: 'lines', versionLines: 1 });
+      await tagScan(p, '1.0.0', { dependencies: [A] });
+      await tagScan(p, '2.0.0', { dependencies: [D] });
+      await seedStale(p);
+      return p;
+    };
+
+    it('a good full re-check deletes the matches and marks of packages no inventory has', async () => {
+      await setup();
+      expect(await recheck({ all: true })).toMatchObject({ kind: 'done' });
+      // The package of the tracked version stays matched; the orphan goes; the package an
+      // untracked target still lists keeps its matches (they are that target's) but not its mark.
+      // (Other tests' projects stay in this database, so only these packages are asserted.)
+      const matches = await matchPurls();
+      expect(matches).toContain(PD);
+      expect(matches).toContain(KEPT);
+      expect(matches).not.toContain(ORPHAN);
+      const marked = await markedPurls();
+      expect(marked).toContain(PD);
+      expect(marked).not.toContain(KEPT);
+      expect(marked).not.toContain(ORPHAN);
+    });
+
+    it('a re-check of some projects deletes nothing', async () => {
+      const p = await setup();
+      expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
+      expect(await matchPurls()).toEqual([ORPHAN, PD, KEPT].sort());
+      expect(await markedPurls()).toEqual([ORPHAN, PD, KEPT].sort());
+    });
+
+    it('a failed full re-check deletes nothing', async () => {
+      await setup();
+      trivy.failure = { ok: false, code: 'FAILED', message: 'boom' };
+      expect(await recheck({ all: true })).toMatchObject({ kind: 'failed' });
+      expect(await matchPurls()).toEqual([ORPHAN, KEPT].sort());
+      expect(await markedPurls()).toEqual([ORPHAN, KEPT].sort());
+    });
+  });
+
   describe('.trivyignore', () => {
     // At 2026-10-31T12:00Z. An entry ends at 00:00 UTC of its expiry day, as Trivy's exp: (R16).
     const ignores: DependencyIgnore[] = [

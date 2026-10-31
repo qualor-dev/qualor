@@ -682,6 +682,27 @@ async function recheckAll(
   return counts;
 }
 
+/**
+ * The end of a good full re-check: the matches and marks of packages that no tracked inventory
+ * has any more (`purls` is the run's set) go. The matches of a package some target still lists
+ * stay, as an untracked target keeps its rows (R17); its mark goes, so the package is matched
+ * again when a run needs it. Here and not in housekeeping: only a full run knows every inventory.
+ */
+async function pruneUnused(db: Db, purls: ReadonlySet<string>): Promise<void> {
+  const inRun = JSON.stringify([...purls]);
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      DELETE FROM vulnerability_matches m
+       WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${inRun}::jsonb) AS p(purl)
+                          WHERE p.purl = m.purl)
+         AND NOT EXISTS (SELECT 1 FROM target_vulnerabilities t WHERE t.purl = m.purl)`);
+    await tx.execute(sql`
+      DELETE FROM matched_packages m
+       WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${inRun}::jsonb) AS p(purl)
+                          WHERE p.purl = m.purl)`);
+  });
+}
+
 /** R19: the re-check's own field; the update job's `lastError` is never touched here. */
 const setError = (db: Db, error: Problem) =>
   updateVulndbState(db, (state) => ({ ...state, lastRecheckError: error }));
@@ -780,6 +801,20 @@ export async function recheckProjects(
       'vulnerability re-check failed',
     );
     return { kind: 'failed', error: outcome };
+  }
+  if ('all' in scope) {
+    // Housekeeping of the shared tables: a problem here never fails a re-check that is done.
+    try {
+      await pruneUnused(deps.db, outcome.packages);
+    } catch (err) {
+      deps.logger?.warn(
+        {
+          component: 'vulnerabilities',
+          errorClass: err instanceof Error ? err.constructor.name : typeof err,
+        },
+        'vulnerability matches were not pruned',
+      );
+    }
   }
   const summary: RecheckSummary = {
     at: now().toISOString(),
