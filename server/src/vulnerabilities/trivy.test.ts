@@ -196,6 +196,24 @@ describe('createTrivyRunner', () => {
     });
   });
 
+  it('a stop that arrives while the run is being set up still kills Trivy', async () => {
+    // Not aborted at the first look, aborted by the time the listener is added: no event follows.
+    let looks = 0;
+    const late = {
+      get aborted() {
+        return ++looks > 1;
+      },
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    } as unknown as AbortSignal;
+    const before = workdirs().length;
+    const started = Date.now();
+    const r = await runner('sleep').run(sbom, os.tmpdir(), late);
+    expect(r).toMatchObject({ ok: false, code: 'ABORTED' });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(workdirs().length).toBe(before);
+  });
+
   it('reports BAD_OUTPUT on garbage, FAILED on a non-zero exit', async () => {
     expect(await runner('garbage').run(sbom, os.tmpdir())).toMatchObject({
       ok: false,

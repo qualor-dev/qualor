@@ -195,6 +195,8 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
               finish({ kind: 'aborted' });
             };
             signal.addEventListener('abort', onAbort, { once: true });
+            // Aborted since the first look (while the work directory was made): no event will come.
+            if (signal.aborted) onAbort();
           }
           child.stderr.on('data', (c: Buffer) => {
             if (stderr.length < 4000) stderr += c.toString('utf8');
