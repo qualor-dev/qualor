@@ -66,6 +66,10 @@ const NOT_FROM_CORE_ROUTES = new Map<string, string>([
     'compliance.report.deleted',
     'recorded by the enterprise compliance routes (4E-1 Task 9); covered by their own tests',
   ],
+  [
+    'vulnerability.decision_changed',
+    'recorded by the decision store (vuln 2b Task 2) for the decision routes and the issue transition; covered by vulnerabilities/decisions.db.test.ts',
+  ],
   ['audit.pruned', 'recorded by retention in housekeeping (Task 11), not by a request'],
   [
     'oauth.client_registered',

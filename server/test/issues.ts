@@ -70,6 +70,7 @@ export interface IssueSeed {
   inNewCode?: boolean;
   duplicateOfIssueId?: string | null;
   snippet?: unknown;
+  packageName?: string | null;
 }
 
 let seedCounter = 0;
@@ -98,6 +99,7 @@ export async function seedIssue(db: Executor, seed: IssueSeed): Promise<string> 
         inNewCode: seed.inNewCode ?? false,
         duplicateOfIssueId: seed.duplicateOfIssueId ?? null,
         snippet: seed.snippet ?? null,
+        packageName: seed.packageName ?? null,
         firstSeenAt: sql`now()`,
         closedAt: seed.status === 'closed' ? sql`now()` : null,
       })

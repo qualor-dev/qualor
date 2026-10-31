@@ -448,6 +448,21 @@ export const AUDIT_CATALOGUE = {
         .max(VULNERABILITY_MONITORING_CHANGED_FIELDS.length),
     }),
   },
+  'vulnerability.decision_changed': {
+    target: 'project',
+    details: z.strictObject({
+      packageName: str,
+      vulnerabilityId: str,
+      scope: z.enum(['project', 'branch', 'version']),
+      targetId: nullableId,
+      from: z.enum(['open', 'false_positive', 'wont_fix']).nullable(),
+      to: z.enum(['open', 'false_positive', 'wont_fix']),
+      reason: z.string().max(64).nullable(),
+      commented: z.boolean(),
+      appliedIssues: z.number().int().min(0),
+      source: z.enum(['tab', 'issue', 'import']),
+    }),
+  },
   'project_version.updated': {
     target: 'project',
     details: z.strictObject({

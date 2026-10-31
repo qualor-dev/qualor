@@ -281,7 +281,7 @@ export async function transitionIssuesIn(
 }
 
 /** One `issue_changes` row of a status change, as a transition writes it. */
-interface StatusLogRow {
+export interface StatusLogRow {
   id: string;
   issue_id: string;
   old_value: string;
@@ -293,8 +293,8 @@ interface StatusLogRow {
  * resolved now by the user `resolvedBy` (null: nobody, a change of the system's), or no longer
  * resolved when `to` is `open`. Answers the issues it changed, with the status each had.
  */
-async function writeStatus(
-  tx: Tx,
+export async function writeStatus(
+  tx: Executor,
   rows: readonly { id: string; from_status: string }[],
   to: UserStatus,
   resolvedBy: string | null,
@@ -316,8 +316,8 @@ async function writeStatus(
 }
 
 /** The changelog of a status change to `to`: one row of `log` each, by `userId` (null: the system). */
-async function writeStatusLog(
-  tx: Tx,
+export async function writeStatusLog(
+  tx: Executor,
   log: readonly StatusLogRow[],
   userId: string | null,
   to: UserStatus,
