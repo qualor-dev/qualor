@@ -88,7 +88,23 @@ async function removeOthers(dir: string, keep: string): Promise<void> {
   }
 }
 
-async function extract(db: Executor, dir: string, dataset: DatasetRow): Promise<LocalResult> {
+/** `chunks`, cut by `signal`: once it aborts, the next chunk throws its reason. */
+async function* until(
+  chunks: AsyncIterable<Buffer>,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<Buffer, void, undefined> {
+  for await (const chunk of chunks) {
+    signal?.throwIfAborted();
+    yield chunk;
+  }
+}
+
+async function extract(
+  db: Executor,
+  dir: string,
+  dataset: DatasetRow,
+  signal?: AbortSignal,
+): Promise<LocalResult> {
   const digest = dataset.digest;
   if (digest === null || !/^sha256:[0-9a-f]{64}$/.test(digest)) {
     return { problem: { code: 'MISSING', message: 'The vulnerability dataset has no digest.' } };
@@ -111,7 +127,7 @@ async function extract(db: Executor, dir: string, dataset: DatasetRow): Promise<
     const found = new Set<string>();
     // Fixed target paths only: an archive entry name is never joined into a path.
     await readTarGz(
-      readDatasetChunks(db, dataset.id),
+      until(readDatasetChunks(db, dataset.id), signal),
       (n) => (n === 'trivy.db' ? 'stream' : n === 'metadata.json' ? 'keep' : 'skip'),
       async (entry) => {
         found.add(entry.name);
@@ -150,7 +166,7 @@ async function extract(db: Executor, dir: string, dataset: DatasetRow): Promise<
         },
       };
     }
-    // Anything else (a database error, a bug) propagates.
+    // Anything else (a database error, a bug, the signal's abort) propagates.
     throw err;
   }
 }
@@ -172,16 +188,18 @@ export function ensureLocalDatabase(
 /**
  * Ensures `dataset` locally, then runs `fn(cacheDir)` while holding the lock: a refresh or another
  * re-check waits, so the directory cannot change under `fn`. A problem is returned without
- * calling `fn`.
+ * calling `fn`. `signal` (the server is stopping) cuts an extraction: it rejects with the
+ * signal's reason, and the partial copy is removed.
  */
 export function withLocalDatabase<T>(
   db: Executor,
   dir: string,
   dataset: DatasetRow,
   fn: (cacheDir: string) => Promise<T>,
+  options: { signal?: AbortSignal | undefined } = {},
 ): Promise<{ result: T } | { problem: LocalProblem }> {
   return locked(async () => {
-    const got = await extract(db, dir, dataset);
+    const got = await extract(db, dir, dataset, options.signal);
     if ('problem' in got) return got;
     return { result: await fn(got.cacheDir) };
   });

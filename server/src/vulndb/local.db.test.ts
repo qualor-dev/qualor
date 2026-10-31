@@ -174,6 +174,26 @@ describe('local database copy', () => {
     expect(called).toBe(false);
   });
 
+  it('withLocalDatabase: a stop cuts the extraction, removes the partial copy, calls no fn', async () => {
+    const d = await store(Buffer.from('stopped'));
+    const stop = new AbortController();
+    stop.abort();
+    let called = false;
+    const got = withLocalDatabase(
+      t.db,
+      dir,
+      d,
+      () => {
+        called = true;
+        return Promise.resolve(1);
+      },
+      { signal: stop.signal },
+    );
+    await expect(got).rejects.toMatchObject({ name: 'AbortError' });
+    expect(called).toBe(false);
+    expect(await readdir(dir)).toEqual([]);
+  });
+
   it('keeps metadata.json as stored', async () => {
     const d = await store(Buffer.from('m'), metadataJson(2));
     await ensureLocalDatabase(t.db, dir, d);

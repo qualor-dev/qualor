@@ -203,6 +203,60 @@ describe('vulnerability database updates', () => {
     expect((await queued()).rows).toHaveLength(1);
   });
 
+  it('a stop cuts a slow download: the run ends at once, records nothing and retries in a minute', async () => {
+    const registry = fakeRegistry(trivyArchive());
+    const stop = new AbortController();
+    let signalled: AbortSignal | undefined;
+    let downloading!: () => void;
+    const started = new Promise<void>((resolve) => {
+      downloading = resolve;
+    });
+    registry.openBlob = async (_ref, _digest, _auth, opts) => {
+      await Promise.resolve();
+      signalled = opts.signal;
+      return (async function* () {
+        yield Buffer.alloc(1024);
+        downloading();
+        // A download that stalls: it fails on its own after 8 s, or at once when cut.
+        await new Promise<void>((_resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('stalled')), 8_000);
+          opts.signal?.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer);
+              reject(new Error('cut'));
+            },
+            { once: true },
+          );
+        });
+      })();
+    };
+    await t.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+    await requestVulndbUpdateNow(t.db);
+    const run = runUntilIdle(
+      t.db,
+      vulndbUpdateHandlers({ ...deps(registry), shutdown: stop.signal }),
+      silent,
+    );
+    await started;
+    const stoppedAt = Date.now();
+    stop.abort();
+    await run;
+    expect(Date.now() - stoppedAt).toBeLessThan(3_000);
+    expect(signalled).toBe(stop.signal);
+    expect(await readVulndbState(t.db)).toMatchObject({
+      currentDatasetId: null,
+      lastCheckAt: null,
+      lastError: null,
+    });
+    expect(await t.db.select().from(vulndbDatasets)).toEqual([]);
+    expect(rechecks).toEqual([]);
+    // The next server (or another replica) checks again in a minute.
+    const next = (await queued()).rows;
+    expect(next).toHaveLength(1);
+    expect(next[0]!.secs).toBeLessThanOrEqual(60);
+  });
+
   it('does nothing but schedule when switched off', async () => {
     await settings({ enabled: false });
     const registry = fakeRegistry(trivyArchive());

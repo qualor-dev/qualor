@@ -10,7 +10,7 @@ import { LOCKS } from '../db/locks';
 import { projects } from '../db/schema';
 import { enqueue } from '../queue/queue';
 import type { JobHandlers } from '../queue/worker';
-import { withLocalDatabase } from '../vulndb/local';
+import { withLocalDatabase, type LocalProblem } from '../vulndb/local';
 import { readVulndbSettings } from '../vulndb/settings';
 import { readVulndbState, updateVulndbState, type VulndbState } from '../vulndb/state';
 import { currentDataset } from '../vulndb/store';
@@ -92,6 +92,8 @@ export interface RecheckDeps {
   runner?: TrivyRunner;
   now?: () => Date;
   logger?: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
+  /** The server is stopping (main.ts): Trivy is killed, and the run ends at its next step. */
+  shutdown?: AbortSignal;
 }
 
 export type RecheckSummary = NonNullable<VulndbState['lastRecheck']>;
@@ -104,6 +106,8 @@ export type RecheckResult =
   | { kind: 'no_data' }
   /** Stopped; `lastError` says why (ruling R12). */
   | { kind: 'failed'; error: Problem }
+  /** The server is stopping: nothing recorded, the scope queued again for the next server. */
+  | { kind: 'stopped' }
   | { kind: 'done'; summary: RecheckSummary };
 
 interface Package {
@@ -120,7 +124,13 @@ interface Run {
   digest: string;
   /** When the run started: the time {@link ignoreActive} judges expiry dates against. */
   now: Date;
+  shutdown: AbortSignal | undefined;
 }
+
+/** What a run answers when the server's stop ended it (before a step, or by killing Trivy). */
+const STOPPED = 'stopped';
+const stopping = (of: { shutdown?: AbortSignal | undefined }): boolean =>
+  of.shutdown?.aborted === true;
 
 interface Counts {
   projects: number;
@@ -228,12 +238,17 @@ async function storeMatches(
 
 /**
  * Runs Trivy on `packages` in SBOMs of at most {@link SBOM_MAX_COMPONENTS}, storing each chunk's
- * matches as it comes. A failed run stops there, its chunk untouched (ruling R12).
+ * matches as it comes. A failed run stops there, its chunk untouched (ruling R12); so does a stop.
  */
-async function matchPackages(run: Run, packages: readonly SbomPackage[]): Promise<Problem | null> {
+async function matchPackages(
+  run: Run,
+  packages: readonly SbomPackage[],
+): Promise<Problem | typeof STOPPED | null> {
   for (const chunk of slices(packages, SBOM_MAX_COMPONENTS)) {
-    const got = await run.runner.run(buildSbom(chunk), run.cacheDir);
+    if (stopping(run)) return STOPPED;
+    const got = await run.runner.run(buildSbom(chunk), run.cacheDir, run.shutdown);
     if (!got.ok) {
+      if (stopping(run)) return STOPPED;
       return {
         code: 'RECHECK_FAILED',
         message: `The vulnerability re-check stopped: Trivy failed (${got.code}): ${got.message}`,
@@ -511,9 +526,13 @@ async function writeTargets(
  * targets. Only tracked targets are read, matched and written: an untracked one keeps its rows
  * (R17). A package that entered an inventory between the passes is matched in the second.
  */
-async function recheckAll(run: Run, projectIds: readonly string[]): Promise<Counts | Problem> {
+async function recheckAll(
+  run: Run,
+  projectIds: readonly string[],
+): Promise<Counts | Problem | typeof STOPPED> {
   const pending = new Map<string, SbomPackage>();
   for (const batch of slices(projectIds, PROJECT_BATCH)) {
+    if (stopping(run)) return STOPPED;
     const targets = [...(await projectTargets(run.db, batch)).values()].flat();
     const byPurl = new Map<string, SbomPackage>();
     for (const p of await distinctPackages(run.db, targets)) {
@@ -532,6 +551,7 @@ async function recheckAll(run: Run, projectIds: readonly string[]): Promise<Coun
 
   const counts: Counts = { projects: 0, packages: new Set(), unchecked: new Set() };
   for (const batch of slices(projectIds, PROJECT_BATCH)) {
+    if (stopping(run)) return STOPPED;
     const targetsOf = await projectTargets(run.db, batch);
     const batchInventories = await inventories(run, targetsOf, counts);
     const late = new Map<string, SbomPackage>();
@@ -575,6 +595,20 @@ const setError = (db: Db, error: Problem) =>
   updateVulndbState(db, (state) => ({ ...state, lastError: error }));
 
 /**
+ * A run the server's stop ended: nothing is recorded, and the scope is queued again, for the next
+ * server (main.ts stops this one's worker from claiming it). What the run already stored stays
+ * valid: matches carry their dataset's digest, and each written batch is a whole diff.
+ */
+async function stoppedRun(deps: RecheckDeps, scope: RecheckScope): Promise<RecheckResult> {
+  await enqueueRecheck(deps.db, scope);
+  deps.logger?.info(
+    { component: 'vulnerabilities' },
+    'vulnerability re-check stopped: the server is stopping; it is queued again',
+  );
+  return { kind: STOPPED };
+}
+
+/**
  * One re-check of the scope's projects against the current dataset, without a scan:
  *
  * 1. The instance switch off, or no dataset: nothing is touched. The dataset is read once and used
@@ -587,6 +621,9 @@ const setError = (db: Db, error: Problem) =>
  *    project switched off) are not re-checked and keep their rows (ruling R17, spec §6.2, §8.1).
  * 9. A full re-check writes `lastRecheck` (a scoped one leaves it, ruling R15); any good run
  *    clears an earlier DISK or RECHECK_FAILED error.
+ *
+ * A stop of the server (`shutdown`) cuts the extraction or kills Trivy, and ends the run before
+ * its next batch or chunk ({@link stoppedRun}).
  */
 export async function recheckProjects(
   deps: RecheckDeps,
@@ -597,6 +634,7 @@ export async function recheckProjects(
   if (!(await readVulndbSettings(deps.db)).enabled) return { kind: 'off' };
   const dataset = await currentDataset(deps.db, await readVulndbState(deps.db));
   if (dataset === null) return { kind: 'no_data' };
+  if (stopping(deps)) return stoppedRun(deps, scope);
   const projectIds = await projectsOf(deps.db, scope);
   const runner =
     deps.runner ??
@@ -605,25 +643,39 @@ export async function recheckProjects(
       timeoutMs: TRIVY_TIMEOUT_MS,
       maxOutputBytes: TRIVY_MAX_OUTPUT_BYTES,
     });
-  const local = await withLocalDatabase(deps.db, deps.config.vulndb.dir, dataset, (cacheDir) =>
-    recheckAll(
-      {
-        db: deps.db,
-        runner,
-        cacheDir,
-        digest: dataset.digest,
-        now: now(),
-      },
-      projectIds,
-    ),
-  );
-  const outcome: Counts | Problem =
+  let local: { result: Counts | Problem | typeof STOPPED } | { problem: LocalProblem };
+  try {
+    local = await withLocalDatabase(
+      deps.db,
+      deps.config.vulndb.dir,
+      dataset,
+      (cacheDir) =>
+        recheckAll(
+          {
+            db: deps.db,
+            runner,
+            cacheDir,
+            digest: dataset.digest,
+            now: now(),
+            shutdown: deps.shutdown,
+          },
+          projectIds,
+        ),
+      { signal: deps.shutdown },
+    );
+  } catch (err) {
+    // The stop cut the extraction (or whatever it was doing): not this run's failure.
+    if (stopping(deps)) return stoppedRun(deps, scope);
+    throw err;
+  }
+  const outcome: Counts | Problem | typeof STOPPED =
     'problem' in local
       ? {
           code: local.problem.code === 'DISK' ? 'DISK' : 'RECHECK_FAILED',
           message: local.problem.message,
         }
       : local.result;
+  if (outcome === STOPPED) return stoppedRun(deps, scope);
   if ('code' in outcome) {
     await setError(deps.db, outcome);
     deps.logger?.warn(

@@ -156,6 +156,22 @@ describe('createTrivyRunner', () => {
     expect(workdirs().length).toBe(before);
   });
 
+  it('a stop kills the run at once and cleans up', async () => {
+    const before = workdirs().length;
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 300);
+    const started = Date.now();
+    const r = await runner('sleep').run(sbom, os.tmpdir(), stop.signal);
+    expect(r).toMatchObject({ ok: false, code: 'ABORTED' });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(workdirs().length).toBe(before);
+    // Already stopped: Trivy is not started.
+    expect(await runner('ok').run(sbom, os.tmpdir(), stop.signal)).toMatchObject({
+      ok: false,
+      code: 'ABORTED',
+    });
+  });
+
   it('reports BAD_OUTPUT on garbage, FAILED on a non-zero exit', async () => {
     expect(await runner('garbage').run(sbom, os.tmpdir())).toMatchObject({
       ok: false,

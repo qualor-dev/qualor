@@ -428,11 +428,14 @@ async function main(): Promise<void> {
   // 0.15: the vulnerability database has its own worker (one job at a time, a 30 min lease), so a
   // download or a re-check never holds up an analysis. The worker tries the queues in this order:
   // a waiting update runs before a waiting re-check, which then matches against the new data.
+  // A download or a Trivy run takes up to 15 min: a stop cuts it, and its work is due again for
+  // the next server (vulndb/update.ts, vulnerabilities/recheck.ts).
+  const vulndbShutdown = new AbortController();
   const vulndbWorker = startWorker({
     db: database.db,
     handlers: {
-      ...vulndbUpdateHandlers({ db: database.db, config, logger }),
-      ...recheckHandlers({ db: database.db, config, logger }),
+      ...vulndbUpdateHandlers({ db: database.db, config, logger, shutdown: vulndbShutdown.signal }),
+      ...recheckHandlers({ db: database.db, config, logger, shutdown: vulndbShutdown.signal }),
     },
     concurrency: VULNDB_WORKER_CONCURRENCY,
     leaseMs: VULNDB_LEASE_MS,
@@ -506,15 +509,18 @@ async function main(): Promise<void> {
       // A review runs for minutes, longer than a stop's grace period (60 s in Compose and Helm):
       // the running ones end now, failed (the next push reviews again), and the worker takes no
       // new one, before anything is waited for. The calls of AI requests are cut the same way, and
-      // their requests wait in the queue for the next server. The database stays up until the
-      // workers are done.
+      // their requests wait in the queue for the next server. So are a vulnerability database
+      // download and a Trivy run. The database stays up until the workers are done.
       reviewShutdown.abort();
       llmShutdown.abort();
+      vulndbShutdown.abort();
       const reviewsStopped = reviewWorker.stop();
       // The llm worker stops polling now too: a request its stop put back in the queue comes due
       // again in a few seconds, and this server, while it drains, does not claim it and put it back
       // again.
       const requestsStopped = llmWorker.stop();
+      // So does the vulndb worker: a re-check its stop queued again is not claimed by this server.
+      const vulndbStopped = vulndbWorker.stop();
       updates?.stop();
       await app.close();
       await worker.stop();
@@ -523,7 +529,7 @@ async function main(): Promise<void> {
       await requestsStopped;
       await reviewsStopped;
       await mailWorker.stop();
-      await vulndbWorker.stop();
+      await vulndbStopped;
       await pluginWorker?.stop();
       await database.close();
       await embedded?.stop();

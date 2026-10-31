@@ -14,10 +14,15 @@ export interface VulnerabilityMatch {
 
 export type TrivyRun =
   | { ok: true; matches: Map<string, VulnerabilityMatch[]> }
-  | { ok: false; code: 'NOT_INSTALLED' | 'TIMEOUT' | 'FAILED' | 'BAD_OUTPUT'; message: string };
+  | {
+      ok: false;
+      code: 'NOT_INSTALLED' | 'TIMEOUT' | 'FAILED' | 'BAD_OUTPUT' | 'ABORTED';
+      message: string;
+    };
 
 export interface TrivyRunner {
-  run(sbomJson: string, cacheDir: string): Promise<TrivyRun>;
+  /** `signal`: the server is stopping; Trivy is killed and the run answers ABORTED. */
+  run(sbomJson: string, cacheDir: string, signal?: AbortSignal): Promise<TrivyRun>;
 }
 
 export interface TrivyRunnerOptions {
@@ -81,10 +86,16 @@ function killTree(pid: number | undefined): void {
 export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
   const [program, ...lead] = options.command;
   return {
-    async run(sbomJson, cacheDir) {
+    async run(sbomJson, cacheDir, signal) {
       if (program === undefined) {
         return { ok: false, code: 'NOT_INSTALLED', message: 'no Trivy command configured' };
       }
+      const aborted: TrivyRun = {
+        ok: false,
+        code: 'ABORTED',
+        message: 'Trivy was stopped: the server is stopping',
+      };
+      if (signal?.aborted === true) return aborted;
       const work = await mkdtemp(path.join(os.tmpdir(), 'qualor-trivy-'));
       try {
         const input = path.join(work, 'sbom.json');
@@ -115,13 +126,16 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
           | { kind: 'exit'; code: number | null; stderr: string }
           | { kind: 'spawn-error'; error: NodeJS.ErrnoException }
           | { kind: 'timeout' }
+          | { kind: 'aborted' }
         >((resolve) => {
           let stderr = '';
           let done = false;
+          let onAbort: (() => void) | undefined;
           const finish = (r: Parameters<typeof resolve>[0]) => {
             if (done) return;
             done = true;
             clearTimeout(timer);
+            if (onAbort !== undefined) signal?.removeEventListener('abort', onAbort);
             resolve(r);
           };
           const child = spawn(program, args, {
@@ -135,6 +149,13 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
             killTree(child.pid);
             finish({ kind: 'timeout' });
           }, options.timeoutMs);
+          if (signal !== undefined) {
+            onAbort = () => {
+              killTree(child.pid);
+              finish({ kind: 'aborted' });
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+          }
           child.stderr.on('data', (c: Buffer) => {
             if (stderr.length < 4000) stderr += c.toString('utf8');
           });
@@ -143,6 +164,7 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
           );
           child.on('close', (code) => finish({ kind: 'exit', code, stderr }));
         });
+        if (exit.kind === 'aborted') return aborted;
         if (exit.kind === 'timeout') {
           return {
             ok: false,

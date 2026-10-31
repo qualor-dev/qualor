@@ -715,6 +715,63 @@ describe('vulnerability re-checks', () => {
     });
   });
 
+  describe('a stop (the server shuts down)', () => {
+    it('kills a slow Trivy run, records nothing and leaves the scope for the next server', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      await db().delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      const stop = new AbortController();
+      let signalled: AbortSignal | undefined;
+      let stoppedAt = 0;
+      // Ends on its own only after 8 s; the signal ends it at once.
+      const slow: TrivyRunner = {
+        run: (_sbom, _cacheDir, signal) => {
+          signalled = signal;
+          setTimeout(() => {
+            stoppedAt = Date.now();
+            stop.abort();
+          }, 100);
+          return new Promise((resolve) => {
+            const timer = setTimeout(
+              () => resolve({ ok: false, code: 'TIMEOUT', message: 'slow' }),
+              8_000,
+            );
+            signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                resolve({ ok: false, code: 'ABORTED', message: 'stopped' });
+              },
+              { once: true },
+            );
+          });
+        },
+      };
+      const result = await recheck({ projectIds: [p.id] }, { runner: slow, shutdown: stop.signal });
+      expect(Date.now() - stoppedAt).toBeLessThan(3_000);
+      expect(signalled).toBe(stop.signal);
+      expect(result).toEqual({ kind: 'stopped' });
+      expect((await readVulndbState(db())).lastError).toBeNull();
+      expect(await rows(p)).toEqual([]);
+      expect(await recheckJobs()).toEqual([
+        { status: 'queued', payload: { projectIds: [p.id] }, key: RECHECK_QUEUE },
+      ]);
+    });
+
+    it('does not start once the server is stopping', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      await db().delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      const stop = new AbortController();
+      stop.abort();
+      expect(await recheck({ all: true }, { shutdown: stop.signal })).toEqual({ kind: 'stopped' });
+      expect(trivy.calls).toEqual([]);
+      expect(await recheckJobs()).toEqual([
+        { status: 'queued', payload: { all: true }, key: RECHECK_QUEUE },
+      ]);
+    });
+  });
+
   describe('the queue', () => {
     it('merges a request into the queued job; all wins; a running job gets one queued behind it', async () => {
       const [a, b, c] = [uuidv7(), uuidv7(), uuidv7()];

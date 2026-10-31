@@ -43,6 +43,8 @@ export interface VulndbUpdateDeps extends MailDeps {
   enqueueRecheck?: typeof realEnqueueRecheck;
   now?: () => Date;
   logger?: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
+  /** The server is stopping (main.ts): a download is cut, and the run ends without a verdict. */
+  shutdown?: AbortSignal;
 }
 
 type ScheduleMode =
@@ -151,7 +153,10 @@ async function checkSource(
   const { repository, auth } = resolved;
   const fetchDescriptor = deps.fetchLayerDescriptor ?? realFetchLayerDescriptor;
   const open = deps.openBlob ?? realOpenBlob;
-  const opts = { internalHosts: deps.config.vulndb.internalHosts };
+  const opts = {
+    internalHosts: deps.config.vulndb.internalHosts,
+    ...(deps.shutdown ? { signal: deps.shutdown } : {}),
+  };
 
   const descriptor = await fetchDescriptor(repository, auth, opts);
   if (isOciProblem(descriptor)) return problemOf(descriptor.code, descriptor.message);
@@ -192,10 +197,20 @@ const errorClass = (err: unknown): string =>
  * One run of the `vulndb.update` job. Never throws: a problem becomes `lastError` and the current
  * dataset stays. Switched off: only the next run is scheduled. Source `upload`: only staleness is
  * checked. Always ends by scheduling the next run.
+ *
+ * A stop of the server (`shutdown`) cuts the download: the run ends at once, writes neither the
+ * problem the cut caused nor the check times, and the next run is due in
+ * {@link VULNDB_BOOT_DELAY_SECONDS}, for whichever server is up then.
  */
 export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
   const now = deps.now ?? (() => new Date());
+  const stopping = (): boolean => deps.shutdown?.aborted === true;
+  let stopped = false;
   try {
+    if (stopping()) {
+      stopped = true;
+      return;
+    }
     const settings = await readVulndbSettings(deps.db);
     if (!settings.enabled) return;
     {
@@ -210,6 +225,15 @@ export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
           'vulnerability database update failed',
         );
         error = problemOf('UPDATE_FAILED', 'The update failed. See the server log');
+      }
+      // The stop cut the check: what it ran into says nothing about the source.
+      if (stopping() && error !== undefined && error !== null) {
+        stopped = true;
+        deps.logger?.info(
+          { component: 'vulndb' },
+          'vulnerability database update stopped: the server is stopping',
+        );
+        return;
       }
       const checkedAt = now();
       await updateVulndbState(deps.db, (state) => ({
@@ -236,11 +260,12 @@ export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
     );
   } finally {
     try {
-      await schedule(deps.db, {
-        kind: 'ensure',
-        delaySeconds: await intervalSeconds(deps.db),
-        alsoRunning: false,
-      });
+      await schedule(
+        deps.db,
+        stopped
+          ? { kind: 'boot', delaySeconds: VULNDB_BOOT_DELAY_SECONDS }
+          : { kind: 'ensure', delaySeconds: await intervalSeconds(deps.db), alsoRunning: false },
+      );
     } catch (err) {
       // Not retried: afterReap's ensureVulndbScheduled re-creates the run.
       deps.logger?.warn(
