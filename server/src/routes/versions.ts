@@ -24,6 +24,8 @@ import { branchMatches, normalizePatterns } from '../versions/branches';
 import { parseVersionLabel } from '../versions/label';
 import { vulnerabilitySettings, type VulnerabilitySettings } from '../versions/settings';
 import { computeTracking, type TrackingReason } from '../versions/tracking';
+import { enqueueRecheck } from '../vulnerabilities/recheck';
+import { readVulndbSettings } from '../vulndb/settings';
 
 /** Lists in the monitoring answer are bounded. */
 const LIST_LIMIT = 50;
@@ -209,6 +211,14 @@ async function monitoringDto(
 
 const sameValue = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+/**
+ * What the project tracks changed: its vulnerability rows follow at a re-check. Last in the
+ * transaction (enqueueRecheck holds a global lock until the commit); none while monitoring is off.
+ */
+async function recheckProject(tx: Executor, projectId: string): Promise<void> {
+  if ((await readVulndbSettings(tx)).enabled) await enqueueRecheck(tx, { projectIds: [projectId] });
+}
+
 export const versionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app, { deps }) => {
   app.get(
     '/projects/:id/versions',
@@ -302,6 +312,7 @@ export const versionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
           ]);
         }
         const counts = await packageCounts(tx, [version.id]);
+        await recheckProject(tx, project.id);
         return versionDto(track, counts.get(version.id) ?? 0);
       });
     },
@@ -397,7 +408,9 @@ export const versionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
             },
           ]);
         }
-        return monitoringDto(tx, project);
+        const dto = await monitoringDto(tx, project);
+        if (changed.length > 0) await recheckProject(tx, project.id);
+        return dto;
       });
     },
   );

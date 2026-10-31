@@ -16,6 +16,7 @@ import { trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
 import { readVulndbState } from '../vulndb/state';
 import { instanceSettings, jobs, vulndbDatasets } from '../db/schema';
 import { VULNDB_UPDATE_QUEUE } from '../vulndb/state';
+import { RECHECK_QUEUE } from '../vulnerabilities/recheck';
 
 describe('/system/vulnerability-db (API)', () => {
   let ctx: TestContext;
@@ -268,6 +269,23 @@ describe('/system/vulnerability-db (API)', () => {
       await parkLater();
       await put({ source: { kind: 'mirror', repository: 'registry.corp:5000/m/t:2' } });
       expect(await dueNow()).toBe(0);
+    });
+
+    it('switching monitoring on also queues a full re-check; other changes do not', async () => {
+      const rechecks = () =>
+        ctx.db
+          .select({ status: jobs.status, payload: jobs.payload })
+          .from(jobs)
+          .where(eq(jobs.queue, RECHECK_QUEUE));
+      await ctx.db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      await put({ enabled: false });
+      await put({ intervalHours: 12 });
+      await put({ source: { kind: 'upload' } });
+      expect(await rechecks()).toEqual([]);
+      expect((await put({ enabled: true })).statusCode).toBe(200);
+      expect(await rechecks()).toEqual([{ status: 'queued', payload: { all: true } }]);
+      await put({ enabled: true });
+      expect(await rechecks()).toEqual([{ status: 'queued', payload: { all: true } }]);
     });
   });
 

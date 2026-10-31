@@ -7,6 +7,7 @@ import { rulesStage } from '../rules/stage';
 import { scmStage } from '../scm/stage';
 import { trackingStage } from '../tracking/stage';
 import { versionLabelStage } from '../versions/stage';
+import { vulnerabilityRecheckStage } from '../vulnerabilities/stage';
 import { webhookStage } from '../webhooks/stage';
 import type { IngestionStage } from './process';
 
@@ -15,8 +16,9 @@ import type { IngestionStage } from './process';
  * only enqueues a decoration job (scm.md §4.1). The licence policy stage adds its findings to the
  * rules stage's before tracking (6M §6). The review snapshot stage (6I-2) links a merge request's
  * snapshot to its newest analysis. The webhook stage is the last stage that may touch the
- * analysis (stages.test.ts): its payload is the analysis as ingestion stores it. Only the
- * notification stage (mail E3), which writes no analysis column, comes after it.
+ * analysis (stages.test.ts): its payload is the analysis as ingestion stores it. Only stages that
+ * write no analysis column come after it: the notification stage (mail E3), then the
+ * vulnerability re-check request (0.15), last because it holds a global lock until the commit.
  */
 export const DEFAULT_STAGES: readonly IngestionStage[] = [
   rulesStage,
@@ -29,4 +31,5 @@ export const DEFAULT_STAGES: readonly IngestionStage[] = [
   reviewSnapshotStage,
   webhookStage,
   notificationStage,
+  vulnerabilityRecheckStage,
 ];

@@ -252,8 +252,8 @@ export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
 }
 
 /**
- * The `vulndb` worker's handler for `vulndb.update` (main.ts). The `vulnerabilities.recheck`
- * handler joins the same map (Task 8).
+ * The `vulndb` worker's handler for `vulndb.update` (main.ts). The same worker runs
+ * `vulnerabilities.recheck` (vulnerabilities/recheck.ts `recheckHandlers`).
  */
 export function vulndbUpdateHandlers(deps: VulndbUpdateDeps): JobHandlers {
   return {

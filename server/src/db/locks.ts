@@ -106,4 +106,10 @@ export const LOCKS = {
   vulndbSchedule: 7_310_029,
   /** `pg_advisory_xact_lock(key)`: one read-modify-write of the `vulndb_state` row at a time (0.15). */
   vulndbState: 7_310_030,
+  /**
+   * `pg_advisory_xact_lock(key)`: requests for a vulnerability re-check merge into the queued job
+   * one at a time, so two never both insert one (0.15, vulnerabilities/recheck.ts). Taken last in
+   * the caller's transaction (the ingestion's, a route's), with nothing taken after it.
+   */
+  vulnerabilityRecheck: 7_310_031,
 } as const;

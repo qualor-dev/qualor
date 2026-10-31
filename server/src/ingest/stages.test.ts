@@ -7,13 +7,15 @@ import { rulesStage } from '../rules/stage';
 import { scmStage } from '../scm/stage';
 import { trackingStage } from '../tracking/stage';
 import { versionLabelStage } from '../versions/stage';
+import { vulnerabilityRecheckStage } from '../vulnerabilities/stage';
 import { webhookStage } from '../webhooks/stage';
 import { DEFAULT_STAGES } from './stages';
 
 describe('DEFAULT_STAGES', () => {
-  it('ends with the webhook stage, then only the notification stage, which writes no analysis', () => {
-    expect(DEFAULT_STAGES.at(-2)).toBe(webhookStage);
-    expect(DEFAULT_STAGES.at(-1)).toBe(notificationStage);
+  it('ends with the webhook stage, then only stages that write no analysis column', () => {
+    expect(DEFAULT_STAGES.at(-3)).toBe(webhookStage);
+    expect(DEFAULT_STAGES.at(-2)).toBe(notificationStage);
+    expect(DEFAULT_STAGES.at(-1)).toBe(vulnerabilityRecheckStage);
     expect(DEFAULT_STAGES.filter((s) => s === webhookStage)).toHaveLength(1);
     expect(DEFAULT_STAGES.filter((s) => s === notificationStage)).toHaveLength(1);
   });
@@ -38,5 +40,14 @@ describe('DEFAULT_STAGES', () => {
     expect(DEFAULT_STAGES[at - 1]).toBe(scmStage);
     expect(DEFAULT_STAGES[at + 1]).toBe(webhookStage);
     expect(DEFAULT_STAGES.filter((s) => s === reviewSnapshotStage)).toHaveLength(1);
+  });
+
+  it('queues the vulnerability re-check last, after the version label stage', () => {
+    expect(vulnerabilityRecheckStage.name).toBe('vulnerability-recheck');
+    expect(DEFAULT_STAGES.indexOf(vulnerabilityRecheckStage)).toBeGreaterThan(
+      DEFAULT_STAGES.indexOf(versionLabelStage),
+    );
+    expect(DEFAULT_STAGES.at(-1)).toBe(vulnerabilityRecheckStage);
+    expect(DEFAULT_STAGES.filter((s) => s === vulnerabilityRecheckStage)).toHaveLength(1);
   });
 });

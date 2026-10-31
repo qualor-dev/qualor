@@ -4,6 +4,9 @@ import type { Db } from '../db/client';
 import { analyses } from '../db/schema';
 import { analysisFields, capWarnings, markFailed, type ProcessLogger } from '../ingest/fields';
 import type { ProjectRow } from '../projects/access';
+import { enqueueRecheck } from '../vulnerabilities/recheck';
+import { readVulndbSettings } from '../vulndb/settings';
+import { vulnerabilitySettings } from './settings';
 import { upsertVersion } from './store';
 
 type AnalysisRow = typeof analyses.$inferSelect;
@@ -113,5 +116,14 @@ export async function ingestVersion(
         finishedAt: sql`statement_timestamp()`,
       })
       .where(eq(analyses.id, analysisId));
+    // A new version, or a new inventory, changes what the project tracks: re-check it (last, as
+    // enqueueRecheck holds a global lock until the commit). Even without an inventory, a new
+    // version can push an older one out of tracking.
+    if (
+      (await readVulndbSettings(tx)).enabled &&
+      (await vulnerabilitySettings(tx, project.id)).enabled
+    ) {
+      await enqueueRecheck(tx, { projectIds: [project.id] });
+    }
   });
 }

@@ -62,6 +62,7 @@ import {
   VULNDB_WORKER_CONCURRENCY,
   vulndbUpdateHandlers,
 } from './vulndb/update';
+import { recheckHandlers } from './vulnerabilities/recheck';
 import { updateCheckerFor } from './update-check/checker';
 import { webhookHandlers } from './webhooks/deliver';
 import { digestHandlers, ensureDigestScheduled, scheduleDigestAtBoot } from './webhooks/digest';
@@ -420,11 +421,13 @@ async function main(): Promise<void> {
     logger,
   });
   // 0.15: the vulnerability database has its own worker (one job at a time, a 30 min lease), so a
-  // download never holds up an analysis. Task 8 adds `vulnerabilities.recheck` to this map.
+  // download or a re-check never holds up an analysis. The worker tries the queues in this order:
+  // a waiting update runs before a waiting re-check, which then matches against the new data.
   const vulndbWorker = startWorker({
     db: database.db,
     handlers: {
       ...vulndbUpdateHandlers({ db: database.db, config, logger }),
+      ...recheckHandlers({ db: database.db, config, logger }),
     },
     concurrency: VULNDB_WORKER_CONCURRENCY,
     leaseMs: VULNDB_LEASE_MS,

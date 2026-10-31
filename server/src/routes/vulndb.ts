@@ -238,6 +238,9 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
             details: { changed: fields },
           },
         ]);
+        // R5: switched on, every tracked target is re-checked against the data there is. Last in
+        // the transaction: enqueueRecheck holds a global lock until the commit.
+        if (!before.enabled && after.enabled) await enqueueRecheck(tx, { all: true });
         return { fields, before, after };
       });
       request.log.info({ userId: principal.user.id, fields: changed }, 'vulndb settings changed');

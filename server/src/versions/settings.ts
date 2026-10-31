@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { projectVulnerabilitySettings } from '../db/schema';
 import { branchMatches } from './branches';
@@ -28,6 +28,28 @@ export async function vulnerabilitySettings(
     .from(projectVulnerabilitySettings)
     .where(eq(projectVulnerabilitySettings.projectId, projectId))
     .limit(1);
+  return settingsOf(row);
+}
+
+/** {@link vulnerabilitySettings} of several projects in one query. */
+export async function vulnerabilitySettingsOf(
+  db: Executor,
+  projectIds: readonly string[],
+): Promise<Map<string, VulnerabilitySettings>> {
+  const rows =
+    projectIds.length === 0
+      ? []
+      : await db
+          .select()
+          .from(projectVulnerabilitySettings)
+          .where(inArray(projectVulnerabilitySettings.projectId, [...projectIds]));
+  const byProject = new Map(rows.map((row) => [row.projectId, row]));
+  return new Map(projectIds.map((id) => [id, settingsOf(byProject.get(id))]));
+}
+
+function settingsOf(
+  row: typeof projectVulnerabilitySettings.$inferSelect | undefined,
+): VulnerabilitySettings {
   if (!row) {
     return {
       ...DEFAULT_VULNERABILITY_SETTINGS,
