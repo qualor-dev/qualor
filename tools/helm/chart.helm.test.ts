@@ -187,6 +187,34 @@ describe('the vulnerability database upload (plan 2a, R18)', () => {
     });
   });
 
+  it('leaves cert-manager annotations to the main Ingress and shares its TLS secret', () => {
+    const objects = render(['ci/bundled-values.yaml'], {
+      ingress: {
+        annotations: {
+          'cert-manager.io/cluster-issuer': 'letsencrypt',
+          'cert-manager.io/issuer-kind': 'ClusterIssuer',
+          'nginx.ingress.kubernetes.io/whitelist-source-range': '10.0.0.0/8',
+        },
+      },
+    });
+    const main = find(objects, 'Ingress', 'qualor');
+    const upload = find(objects, 'Ingress', UPLOAD);
+    // Two Ingresses asking cert-manager for one secret would fight over it.
+    expect(Object.keys(main.metadata.annotations ?? {})).toEqual(
+      expect.arrayContaining(['cert-manager.io/cluster-issuer', 'cert-manager.io/issuer-kind']),
+    );
+    expect(
+      Object.keys(upload.metadata.annotations ?? {}).filter((k) =>
+        k.startsWith('cert-manager.io/'),
+      ),
+    ).toEqual([]);
+    expect(upload.metadata.annotations).toMatchObject({
+      'nginx.ingress.kubernetes.io/whitelist-source-range': '10.0.0.0/8',
+    });
+    expect(main.spec?.tls?.[0]?.secretName).toBeTruthy();
+    expect(upload.spec?.tls).toEqual(main.spec?.tls);
+  });
+
   it('exists only with the main Ingress', () => {
     expect(kinds(render(EMBEDDED))).not.toContain(`Ingress/${UPLOAD}`);
     expect(kinds(render(EMBEDDED, { ingress: { enabled: true, host: 'q.example.test' } }))).toEqual(

@@ -32,8 +32,8 @@ spec:
 ---
 {{- /*
   Plan 2a (R18): the vulnerability database upload, up to QUALOR_VULNDB_UPLOAD_MAX_BYTES, on its
-  exact path, with your annotations under its own body size, buffering and timeout. Everything
-  else keeps the annotations above.
+  exact path, with your annotations (except cert-manager.io/*, which stay on the main Ingress)
+  under its own body size, buffering and timeout. Everything else keeps the annotations above.
 */}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -42,12 +42,19 @@ metadata:
   labels:
     {{- include "qualor.labels" . | nindent 4 }}
   {{- $size := dig "uploadBodySize" "1g" (.Values.vulnerabilityDatabase | default dict) }}
+  {{- /* cert-manager annotations stay on the main Ingress: two would both manage the TLS secret. */}}
+  {{- $shared := dict }}
+  {{- range $key, $value := (.Values.ingress.annotations | default dict) }}
+  {{- if not (hasPrefix "cert-manager.io/" $key) }}
+  {{- $_ := set $shared $key $value }}
+  {{- end }}
+  {{- end }}
   {{- $upload := dict
     "nginx.ingress.kubernetes.io/proxy-body-size" (toString $size)
     "nginx.ingress.kubernetes.io/proxy-request-buffering" "off"
     "nginx.ingress.kubernetes.io/proxy-read-timeout" "300" }}
   annotations:
-    {{- toYaml (merge $upload (.Values.ingress.annotations | default dict)) | nindent 4 }}
+    {{- toYaml (merge $upload $shared) | nindent 4 }}
 spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
