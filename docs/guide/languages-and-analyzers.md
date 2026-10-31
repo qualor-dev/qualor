@@ -851,7 +851,7 @@ scanner uses the verified cached copy, or else the image's database, and warns:
 | Warning | Meaning |
 |---|---|
 | `VULNERABILITY_DB_FETCH_FAILED` | the download failed. The message says whether the scan used the cached copy, with its build date, or the image |
-| `VULNERABILITY_DB_CACHE_UNTRUSTED` | `QUALOR_TRIVY_CACHE_DIR` is inside the checkout and holds no archive the server confirmed, so the scan used the image |
+| `VULNERABILITY_DB_CACHE_UNTRUSTED` | the server gave no database, and `QUALOR_TRIVY_CACHE_DIR` inside the checkout holds a database of its own (`db/trivy.db`). The scan ignored it and used the image |
 
 [Troubleshooting](./troubleshooting.md) says what to do. To use a database of your own, for example
 from a mirror, run `trivy image --download-db-only --cache-dir <dir>` in the job and set

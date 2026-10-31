@@ -78,8 +78,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - The GitLab component, the GitHub workflow templates and the CI that **Add repositories** sets up
   run the Qualor job on tags too.
 - `QUALOR_TRIVY_CACHE_DIR` inside the checkout is no longer an error. The scanner uses an archive
-  there only after the server confirms its checksum; otherwise it ignores the directory with the
-  warning `VULNERABILITY_DB_CACHE_UNTRUSTED`.
+  there only after the server confirms its checksum, and never a database unpacked there. When the
+  server gives no database and the directory holds one of its own (`db/trivy.db`), the scan uses the
+  image's with the warning `VULNERABILITY_DB_CACHE_UNTRUSTED`.
 
 ## [0.14.0] - 2026-10-30
 

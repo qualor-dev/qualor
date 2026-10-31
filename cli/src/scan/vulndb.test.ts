@@ -358,30 +358,70 @@ describe('resolveVulnerabilityDb: the decision table', () => {
     await c.cleanup();
   });
 
-  it('QUALOR_TRIVY_CACHE_DIR inside the checkout without a server-verified archive: the image and VULNERABILITY_DB_CACHE_UNTRUSTED', async () => {
-    const root = tmp();
-    const cache = fillCache(path.join(root, 'ci', 'trivy'), NEW.archive, {
-      digest: NEW.digest,
-      fetchedAt: hoursAgo(1),
-    });
-    const none = await choose({ endpoint: null, cache, root });
-    expect(none).toMatchObject({
-      dir: null,
-      warnings: [UNTRUSTED],
-      repositoryCacheDir: 'ci/trivy',
-    });
-    await none.cleanup();
+  /** The scans that get no database from the server: no server or --dry-run, an older one, serve: false. */
+  async function withoutServerDatabase(): Promise<[string, ServerEndpoint | null][]> {
     const older = await fakeServer({ meta: 404 });
-    const a = await choose({ endpoint: older.endpoint, cache, root });
-    expect(a).toMatchObject({ dir: null, warnings: [UNTRUSTED] });
-    await a.cleanup();
     const off = await fakeServer({
       meta: { serve: false, policy: 'daily', current: null, accepted: [] },
     });
-    const b = await choose({ endpoint: off.endpoint, cache, root });
-    expect(b).toMatchObject({ dir: null, warnings: [UNTRUSTED] });
-    await b.cleanup();
-    expect(readdirSync(cache).sort()).toEqual(['db.tar.gz', 'server.json']);
+    return [
+      ['no server or --dry-run', null],
+      ['an older server', older.endpoint],
+      ['serve: false', off.endpoint],
+    ];
+  }
+
+  it.each([
+    ['missing', () => undefined],
+    ['empty', (cache: string) => mkdirSync(cache, { recursive: true })],
+    [
+      'holding only an archive and server.json',
+      (cache: string) =>
+        fillCache(cache, NEW.archive, { digest: NEW.digest, fetchedAt: hoursAgo(1) }),
+    ],
+    [
+      'holding leftovers of a killed scan',
+      (cache: string) => {
+        fillCache(cache, NEW.archive);
+        writeFileSync(path.join(cache, 'db.tar.gz.0123456789ab.partial'), 'half');
+        writeFileSync(path.join(cache, 'server.json.0123456789ab.tmp'), '{');
+        mkdirSync(path.join(cache, 'db.0123456789ab.tmp', 'db'), { recursive: true });
+        mkdirSync(path.join(cache, 'db'));
+        writeFileSync(path.join(cache, 'db', 'metadata.json'), metadataJson(2, NEW.updatedAt));
+      },
+    ],
+  ])(
+    'QUALOR_TRIVY_CACHE_DIR inside the checkout %s, without the server’s database: today’s choice, no warning',
+    async (_name, fill) => {
+      const root = tmp();
+      const cache = path.join(root, 'ci', 'trivy');
+      fill(cache);
+      const before = existsSync(cache) ? readdirSync(cache).sort() : null;
+      for (const [name, endpoint] of await withoutServerDatabase()) {
+        const got = await choose({ endpoint, cache, root });
+        expect(got.dir, name).toBeNull();
+        expect(got.warnings, name).toEqual([]);
+        expect(got.repositoryCacheDir, name).toBe('ci/trivy');
+        await got.cleanup();
+      }
+      expect(existsSync(cache) ? readdirSync(cache).sort() : null).toEqual(before);
+    },
+  );
+
+  it('QUALOR_TRIVY_CACHE_DIR inside the checkout holding a database of its own, without the server’s: the image and VULNERABILITY_DB_CACHE_UNTRUSTED', async () => {
+    const root = tmp();
+    const cache = fillCache(path.join(root, 'ci', 'trivy'), NEW.archive);
+    mkdirSync(path.join(cache, 'db'));
+    writeFileSync(path.join(cache, 'db', 'trivy.db'), FAKE.db);
+    writeFileSync(path.join(cache, 'db', 'metadata.json'), metadataJson(2, FAKE.updatedAt));
+    for (const [name, endpoint] of await withoutServerDatabase()) {
+      const got = await choose({ endpoint, cache, root });
+      expect(got.dir, name).toBeNull();
+      expect(got.warnings, name).toEqual([UNTRUSTED]);
+      await got.cleanup();
+    }
+    expect(readdirSync(cache).sort()).toEqual(['db', 'db.tar.gz']);
+    expect(readFileSync(path.join(cache, 'db', 'trivy.db'), 'utf8')).toBe(FAKE.db);
   });
 
   it('a cache inside the checkout is used once the server confirms its checksum, extracted to a private temporary directory', async () => {

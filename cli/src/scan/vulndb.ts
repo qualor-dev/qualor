@@ -363,9 +363,24 @@ class Choice {
     };
   }
 
-  /** Today's choice, without a warning unless a cache in the checkout is ignored (P5). */
+  /** Today's choice, without a warning unless a database of the user's in the checkout is ignored. */
   keep(): VulnerabilityDbChoice {
-    return this.result(null, this.namedInside ? [UNTRUSTED] : []);
+    return this.result(null, this.ignoresOwnDatabase() ? [UNTRUSTED] : []);
+  }
+
+  /**
+   * P5: `QUALOR_TRIVY_CACHE_DIR` inside the checkout holds a database someone put there
+   * (`db/trivy.db`), and the scan does not use it. The scanner never unpacks into a cache inside
+   * the checkout, so its own archive, `server.json` or leftovers are no such database.
+   */
+  private ignoresOwnDatabase(): boolean {
+    if (!this.namedInside || this.cache === null) return false;
+    try {
+      lstatSync(path.join(this.cache, 'db', 'trivy.db'));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Today's choice after a failure: one `VULNERABILITY_DB_FETCH_FAILED`. */
@@ -541,10 +556,12 @@ class Choice {
  * | Metadata failed, the cache directory outside the root, and the archive's sha256 equal to `server.json`'s digest | use the cache, warn `VULNERABILITY_DB_FETCH_FAILED` with its build date (a cache outside the checkout is trusted, as today) |
  * | Metadata failed and the cache directory inside the root | never use it: nothing can verify it. Image, warn `VULNERABILITY_DB_FETCH_FAILED` |
  * | Download or metadata failed, no usable cache | `dir: null` (image), warn `VULNERABILITY_DB_FETCH_FAILED` "…using the database in the scanner image" |
- * | `QUALOR_TRIVY_CACHE_DIR` inside the root and no server-verified archive | image, warn `VULNERABILITY_DB_CACHE_UNTRUSTED` |
+ * | No endpoint, a missing route or `serve: false`, and `QUALOR_TRIVY_CACHE_DIR` inside the root holding a `db/trivy.db` of the user's | image, warn `VULNERABILITY_DB_CACHE_UNTRUSTED` |
  *
  * One warning per scan: a failure warns `VULNERABILITY_DB_FETCH_FAILED` (which says the image is
- * used), anything else that ignores a cache in the checkout `VULNERABILITY_DB_CACHE_UNTRUSTED`.
+ * used); a scan without the server's database that ignores a database the user put in a cache in
+ * the checkout warns `VULNERABILITY_DB_CACHE_UNTRUSTED`. An archive, `server.json` or leftovers
+ * there give no warning (spec §10: an older server, `serve: false` and `--dry-run` warn nothing).
  * "Trivy disabled" is the caller's (it does not ask). An archive that is not a Trivy database
  * counts as a failed download. Never throws: a scan never fails because of this (spec §13).
  */

@@ -1458,7 +1458,9 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     writeTree(repo, {
       'ci-cache/trivy/db.tar.gz': gzipSync(Buffer.from('not the server’s archive')),
       'ci-cache/trivy/server.json': '{"digest":"sha256:0","fetchedAt":"2026-10-31T00:00:00Z"}\n',
+      // A database of its own, which the scan ignores: the warning says so.
       'ci-cache/trivy/db/metadata.json': '{"Version":2,"UpdatedAt":"2030-01-01T00:00:00Z"}\n',
+      'ci-cache/trivy/db/trivy.db': 'a database a branch put here\n',
       'ci-cache/notes.txt': 'next to the cache\n',
     });
     const seen: unknown[] = [];
