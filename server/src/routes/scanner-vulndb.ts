@@ -16,6 +16,9 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 /** Seconds a scanner waits before it asks again when the gate is full. */
 const RETRY_AFTER_SECONDS = 5;
 
+/** Seconds-scale knob: a download that takes no bytes for this long is cut off (tests shorten it). */
+export const downloadTimeouts = { stallMs: 60_000 };
+
 /**
  * 0.15 plan 3: what a scanner needs to take the Trivy database from this server. Any token may
  * read it (P2): the database is public advisory data.
@@ -130,15 +133,53 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         );
       if (dataset === undefined) throw notFound('Vulnerability database');
 
+      // The scanner may have gone while the lookups ran: its 'close' has fired and a listener
+      // added now would never run, so a slot taken now would never be freed.
+      if (request.raw.destroyed || reply.raw.destroyed || reply.raw.writableEnded) {
+        reply.hijack();
+        return reply;
+      }
+      // Taken and hooked in one synchronous step, and freed exactly once on every path.
       slots.take();
-      // Freed once, whether the stream ends, fails or the scanner goes away: the socket closes.
-      reply.raw.once('close', () => slots.release());
+      const datasetId = dataset.id;
+      let released = false;
+      let stall: NodeJS.Timeout | undefined;
+      const release = (): void => {
+        if (released) return;
+        released = true;
+        clearTimeout(stall);
+        slots.release();
+      };
+      // A reader that takes no bytes for stallMs is cut off, and its slot freed.
+      const arm = (): void => {
+        clearTimeout(stall);
+        stall = setTimeout(() => {
+          stream.destroy();
+          reply.raw.destroy();
+          release();
+        }, downloadTimeouts.stallMs);
+        stall.unref();
+      };
+      // The stream pulls the next chunk only when the socket has taken the last: a pull is progress.
+      async function* paced(): AsyncGenerator<Buffer, void, undefined> {
+        for await (const chunk of readDatasetChunks(deps.db, datasetId)) {
+          arm();
+          yield chunk;
+        }
+      }
+      const stream = Readable.from(paced());
+      arm();
+      stream.on('error', release);
+      reply.raw.once('close', () => {
+        stream.destroy();
+        release();
+      });
       request.log.info({ digest, principal: principal.kind }, 'vulndb archive download');
       return reply
         .header('content-type', 'application/gzip')
         .header('content-length', String(dataset.sizeBytes))
         .header('etag', `"${digest}"`)
-        .send(Readable.from(readDatasetChunks(deps.db, dataset.id)) as never);
+        .send(stream as never);
     },
   );
 };

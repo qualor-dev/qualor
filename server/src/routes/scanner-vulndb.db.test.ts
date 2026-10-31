@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ADMIN_PASSWORD,
   bearer,
@@ -17,7 +17,22 @@ import {
 import { trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { instanceSettings, vulndbDatasets } from '../db/schema';
 import { updateVulndbState } from '../vulndb/state';
+import type * as Store from '../vulndb/store';
 import { makeDatasetCurrent, storeDataset } from '../vulndb/store';
+import { downloadTimeouts } from './scanner-vulndb';
+
+/** currentDataset, made slow while `slow.ms` is set: the window in which a client can abort. */
+const slow = vi.hoisted(() => ({ ms: 0 }));
+vi.mock('../vulndb/store', async (importOriginal) => {
+  const actual = await importOriginal<typeof Store>();
+  return {
+    ...actual,
+    currentDataset: async (...args: Parameters<typeof actual.currentDataset>) => {
+      if (slow.ms > 0) await new Promise((r) => setTimeout(r, slow.ms));
+      return actual.currentDataset(...args);
+    },
+  };
+});
 
 const digestOf = (bytes: Buffer): string =>
   `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
@@ -196,6 +211,56 @@ describe('/scanner/vulnerability-db (API)', () => {
         await new Promise((r) => setTimeout(r, 50));
       }
       expect(status).toBe(200);
+    }, 60_000);
+
+    it('frees the slot of a client that aborts while the lookups run', async () => {
+      const hex = (await store(trivyArchive(), true)).slice(7);
+      slow.ms = 400;
+      try {
+        await new Promise<void>((resolve) => {
+          const req = httpRequest(
+            { host: '127.0.0.1', port, path: `${meta}/${hex}`, headers: asProject() },
+            () => undefined,
+          );
+          req.on('error', () => resolve());
+          req.end();
+          setTimeout(() => req.destroy(), 100);
+        });
+        await new Promise((r) => setTimeout(r, 1_000));
+      } finally {
+        slow.ms = 0;
+      }
+      for (let i = 0; i < 3; i++) {
+        const res = await ctx.app.inject({
+          method: 'GET',
+          url: `${meta}/${hex}`,
+          headers: asProject(),
+        });
+        expect(res.statusCode, res.body).toBe(200);
+      }
+    });
+
+    it('cuts off a reader that stalls, and frees its slot', async () => {
+      const big = trivyArchive({ db: randomBytes(48 * 1024 * 1024) });
+      const hex = (await store(big, true)).slice(7);
+      const before = downloadTimeouts.stallMs;
+      downloadTimeouts.stallMs = 500;
+      try {
+        const first = await open(hex);
+        expect(first.res.statusCode).toBe(200);
+        first.res.pause();
+        // Never read: only the server's stall timer can free the slot.
+        let status = 0;
+        for (let i = 0; i < 30 && status !== 200; i++) {
+          const next = await open(hex);
+          status = next.res.statusCode ?? 0;
+          next.abort();
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        expect(status).toBe(200);
+      } finally {
+        downloadTimeouts.stallMs = before;
+      }
     }, 60_000);
   });
 });
