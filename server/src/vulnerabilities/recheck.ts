@@ -118,8 +118,8 @@ interface Run {
   runner: TrivyRunner;
   cacheDir: string;
   digest: string;
-  /** UTC `YYYY-MM-DD`: an ignore entry applies until the end of its `expiresAt` day. */
-  today: string;
+  /** When the run started: the time {@link ignoreActive} judges expiry dates against. */
+  now: Date;
 }
 
 interface Counts {
@@ -249,7 +249,7 @@ async function matchPackages(run: Run, packages: readonly SbomPackage[]): Promis
   return null;
 }
 
-/** A target's distinct packages (one per purl) and the ignore ids that apply today. */
+/** A target's distinct packages (one per purl) and the ignore ids active when the run started. */
 interface Inventory {
   projectId: string;
   target: Target;
@@ -261,12 +261,23 @@ const ignoreList = z
   .array(z.object({ id: z.string(), expiresAt: z.string().optional() }))
   .catch([]);
 
-/** The ids of a stored `.trivyignore` list that apply on `today` (an expiry day still counts). */
-function ignoredIds(value: unknown, today: string): Set<string> {
+/**
+ * Whether a `.trivyignore` entry still applies at `now`. As Trivy applies `exp:` in a scan, the
+ * entry ends at 00:00 UTC of its `expiresAt` day: that day itself is no longer ignored (ruling
+ * R16). Without `expiresAt` it never ends; an unreadable date ends it.
+ */
+export function ignoreActive(entry: { expiresAt?: string | undefined }, now: Date): boolean {
+  if (entry.expiresAt === undefined) return true;
+  const end = Date.parse(`${entry.expiresAt}T00:00:00Z`);
+  return !Number.isNaN(end) && now.getTime() < end;
+}
+
+/** The ids of a stored `.trivyignore` list that are active at `now`. */
+function ignoredIds(value: unknown, now: Date): Set<string> {
   return new Set(
     ignoreList
       .parse(value ?? [])
-      .filter((e) => e.expiresAt === undefined || e.expiresAt >= today)
+      .filter((e) => ignoreActive(e, now))
       .map((e) => e.id),
   );
 }
@@ -332,7 +343,7 @@ async function inventories(
       SELECT id, dependency_ignores AS ignores FROM analyses
        WHERE id IN ${uuidList([...branchesOf.keys()])}`);
     for (const row of got.rows) {
-      const ids = ignoredIds(row.ignores, run.today);
+      const ids = ignoredIds(row.ignores, run.now);
       for (const inventory of branchesOf.get(row.id) ?? []) {
         for (const id of ids) inventory.ignored.add(id);
       }
@@ -344,7 +355,7 @@ async function inventories(
        WHERE id IN ${uuidList([...ofVersion.keys()])}`);
     for (const row of got.rows) {
       const inventory = ofVersion.get(row.id);
-      if (inventory !== undefined) inventory.ignored = ignoredIds(row.ignores, run.today);
+      if (inventory !== undefined) inventory.ignored = ignoredIds(row.ignores, run.now);
     }
   }
   return [...ofBranch.values(), ...ofVersion.values()];
@@ -380,23 +391,32 @@ const rowKey = (target: string, purl: string, vulnerabilityId: string): string =
   `${target}\u0000${purl}\u0000${vulnerabilityId}`;
 
 /**
- * Makes the rows of the batch's projects what `wanted` says: new rows are inserted (first seen
- * now), kept rows keep their id and first_seen_at and follow `ignored`, every other row of these
- * projects goes (gone vulnerabilities, untracked targets). One transaction; the projects, then
- * the targets, are held FOR KEY SHARE until it commits, so a deletion waits for it, and a target
- * deleted before it gets no rows.
+ * Makes the rows of the tracked targets in `targetsOf` what `wanted` says: new rows are inserted
+ * (first seen now), kept rows keep their id and first_seen_at and follow `ignored`, and a tracked
+ * target's other rows go (vulnerabilities no longer found). Rows of untracked targets (a version
+ * not tracked, a branch that no longer matches, every target of a project switched off) are left
+ * as they are (ruling R17, spec §6.2 and §8.1): they go only with their target (FK cascade), and a
+ * target tracked again is diffed against them, so its first_seen_at survives.
+ *
+ * One transaction; the projects, then the targets, are held FOR KEY SHARE until it commits, so a
+ * deletion waits for it, and a target deleted before it gets no rows.
  */
 async function writeTargets(
   db: Db,
-  projectIds: readonly string[],
+  targetsOf: ReadonlyMap<string, Target[]>,
   wanted: ReadonlyMap<string, Wanted>,
 ): Promise<void> {
+  const projectIds = new Set<string>();
   const branchIds = new Set<string>();
   const versionIds = new Set<string>();
-  for (const w of wanted.values()) {
-    if (w.target.kind === 'branch') branchIds.add(w.target.branchId);
-    else versionIds.add(w.target.versionId);
+  for (const [projectId, targets] of targetsOf) {
+    for (const t of targets) {
+      projectIds.add(projectId);
+      if (t.kind === 'branch') branchIds.add(t.branchId);
+      else versionIds.add(t.versionId);
+    }
   }
+  if (projectIds.size === 0) return;
   await db.transaction(async (tx) => {
     const ids = async (table: 'projects' | 'branches' | 'project_versions', of: Set<string>) =>
       of.size === 0
@@ -408,10 +428,13 @@ async function writeTargets(
                  ORDER BY id FOR KEY SHARE`)
             ).rows.map((r) => r.id),
           );
-    await ids('projects', new Set(projectIds));
+    await ids('projects', projectIds);
     const liveBranches = await ids('branches', branchIds);
     const liveVersions = await ids('project_versions', versionIds);
 
+    const ofTracked: SQL[] = [];
+    if (branchIds.size > 0) ofTracked.push(sql`branch_id IN ${uuidList([...branchIds])}`);
+    if (versionIds.size > 0) ofTracked.push(sql`version_id IN ${uuidList([...versionIds])}`);
     const existing = await tx.execute<{
       id: string;
       branch_id: string | null;
@@ -422,7 +445,7 @@ async function writeTargets(
     }>(sql`
       SELECT id, branch_id, version_id, purl, vulnerability_id, ignored
         FROM target_vulnerabilities
-       WHERE project_id IN ${uuidList([...projectIds])}`);
+       WHERE ${sql.join(ofTracked, sql` OR `)}`);
     const seen = new Set<string>();
     const gone: string[] = [];
     const flips: { id: string; ignored: boolean }[] = [];
@@ -484,8 +507,9 @@ async function writeTargets(
 /**
  * Steps 3–8 of a re-check, inside the local copy's lock. Two passes over the projects, a batch at a
  * time: the first collects the distinct packages not yet matched against this dataset and matches
- * them in as few Trivy runs as the 20 000 cap allows; the second diffs each batch's targets. A
- * package that entered an inventory between the passes is matched in the second.
+ * them in as few Trivy runs as the 20 000 cap allows; the second diffs each batch's tracked
+ * targets. Only tracked targets are read, matched and written: an untracked one keeps its rows
+ * (R17). A package that entered an inventory between the passes is matched in the second.
  */
 async function recheckAll(run: Run, projectIds: readonly string[]): Promise<Counts | Problem> {
   const pending = new Map<string, SbomPackage>();
@@ -541,7 +565,7 @@ async function recheckAll(run: Run, projectIds: readonly string[]): Promise<Coun
         }
       }
     }
-    await writeTargets(run.db, batch, wanted);
+    await writeTargets(run.db, targetsOf, wanted);
     for (const targets of targetsOf.values()) if (targets.length > 0) counts.projects += 1;
   }
   return counts;
@@ -558,9 +582,11 @@ const setError = (db: Db, error: Problem) =>
  * 2. The local copy of that dataset is held for the run; DISK (or MISSING, as RECHECK_FAILED)
  *    goes to `lastError`.
  * 3–5. The packages not yet matched against it run through Trivy, 20 000 per SBOM.
- * 6–8. Every project's rows follow its tracked targets ({@link writeTargets}); a project switched
- *    off, or a target no longer tracked, loses its rows.
- * 9. `lastRecheck` is written, and an earlier DISK or RECHECK_FAILED error cleared.
+ * 6–7. Each tracked target's rows follow its inventory ({@link writeTargets}).
+ * 8. Untracked targets (a version not tracked, a branch that no longer matches, every target of a
+ *    project switched off) are not re-checked and keep their rows (ruling R17, spec §6.2, §8.1).
+ * 9. A full re-check writes `lastRecheck` (a scoped one leaves it, ruling R15); any good run
+ *    clears an earlier DISK or RECHECK_FAILED error.
  */
 export async function recheckProjects(
   deps: RecheckDeps,
@@ -586,7 +612,7 @@ export async function recheckProjects(
         runner,
         cacheDir,
         digest: dataset.digest,
-        today: now().toISOString().slice(0, 10),
+        now: now(),
       },
       projectIds,
     ),
@@ -615,7 +641,8 @@ export async function recheckProjects(
   };
   await updateVulndbState(deps.db, (state) => ({
     ...state,
-    lastRecheck: summary,
+    // R15: the admin line describes the last full re-check, not the last ingestion.
+    lastRecheck: 'all' in scope ? summary : state.lastRecheck,
     lastError:
       state.lastError !== null && OWN_ERRORS.has(state.lastError.code) ? null : state.lastError,
   }));

@@ -9,6 +9,7 @@ import { reportWith, type ReportParts } from '../../test/reports';
 import { trivyArchive } from '../../test/trivy-archive';
 import { uuidv7 } from '../db/ids';
 import {
+  analyses,
   branches,
   instanceSettings,
   jobs,
@@ -28,6 +29,7 @@ import { makeDatasetCurrent, storeDataset, type DatasetRow } from '../vulndb/sto
 import { purlOf } from './purl';
 import {
   enqueueRecheck,
+  ignoreActive,
   RECHECK_QUEUE,
   recheckHandlers,
   recheckProjects,
@@ -328,6 +330,21 @@ describe('vulnerability re-checks', () => {
       expect(state.lastRecheck).toMatchObject({ at: now.toISOString() });
       expect(state.lastRecheck!.projects).toBeGreaterThanOrEqual(1);
     });
+
+    it('a scoped re-check leaves the summary of the last full one (R15)', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      await recheck({ all: true });
+      const full = (await readVulndbState(db())).lastRecheck;
+      expect(full).not.toBeNull();
+      now = new Date('2026-11-02T08:00:00Z');
+      await onBranch(p, 'main', { dependencies: [A, B] });
+      expect(await recheck({ projectIds: [p.id] })).toMatchObject({
+        kind: 'done',
+        summary: { projects: 1, packages: 2 },
+      });
+      expect((await readVulndbState(db())).lastRecheck).toEqual(full);
+    });
   });
 
   describe('a target changes', () => {
@@ -357,58 +374,108 @@ describe('vulnerability re-checks', () => {
       expect(await described(p)).toEqual([`main ${PA} CVE-2026-0001`]);
     });
 
-    it('deletes the rows of a version that is unpinned out of tracking', async () => {
+    // R17 (spec §6.2, §8.1): an untracked target keeps its rows; it is not re-checked or deleted.
+    it('keeps the rows of a version unpinned out of tracking, untouched; re-pinning keeps first_seen_at', async () => {
       const p = await project({ versionRule: 'lines', versionLines: 1 });
       await tagScan(p, '1.0.0', { dependencies: [A] });
       await tagScan(p, '2.0.0', { dependencies: [D] });
       const old = await versionId(p, '1.0.0');
-      expect(
-        (await api('PATCH', `/projects/${p.id}/versions/${old}`, { tracking: 'pinned' }))
-          .statusCode,
-      ).toBe(200);
+      const track = async (tracking: string) =>
+        expect(
+          (await api('PATCH', `/projects/${p.id}/versions/${old}`, { tracking })).statusCode,
+        ).toBe(200);
+      await track('pinned');
       await recheck({ projectIds: [p.id] });
+      const both = [`1.0.0 ${PA} CVE-2026-0001`, `2.0.0 ${PD} CVE-2026-0004`];
+      expect(await described(p)).toEqual(both);
+      const pinned = (await rows(p)).find((r) => r.purl === PA)!;
+
+      await track('auto');
+      // Not re-checked: a row changed by hand stays changed, and a new dataset skips its package.
+      await db()
+        .update(targetVulnerabilities)
+        .set({ ignored: true })
+        .where(eq(targetVulnerabilities.id, pinned.id));
+      expect(await makeDatasetCurrent(db(), (await storeDs('after unpinning')).id)).toBe(true);
+      await recheck({ projectIds: [p.id] });
+      expect(trivy.calls.map((c) => [...c.purls].sort())).toEqual([[PA, PD].sort(), [PD]]);
       expect(await described(p)).toEqual([
-        `1.0.0 ${PA} CVE-2026-0001`,
+        `1.0.0 ${PA} CVE-2026-0001 ignored`,
         `2.0.0 ${PD} CVE-2026-0004`,
       ]);
-      expect(
-        (await api('PATCH', `/projects/${p.id}/versions/${old}`, { tracking: 'auto' })).statusCode,
-      ).toBe(200);
+      expect((await rows(p)).find((r) => r.id === pinned.id)?.firstSeenAt).toEqual(
+        pinned.firstSeenAt,
+      );
+
+      // Pinned again: diffed against the kept rows, the same row with its first_seen_at.
+      await track('pinned');
       await recheck({ projectIds: [p.id] });
-      expect(await described(p)).toEqual([`2.0.0 ${PD} CVE-2026-0004`]);
+      expect(await described(p)).toEqual(both);
+      expect((await rows(p)).find((r) => r.purl === PA)).toMatchObject({
+        id: pinned.id,
+        firstSeenAt: pinned.firstSeenAt,
+      });
     });
 
-    it('deletes the rows of a branch that no longer matches the patterns', async () => {
+    it('keeps the rows of a branch that no longer matches the patterns, and skips it', async () => {
       const p = await project({ branchPatterns: ['release/*'] });
       await onBranch(p, 'main', { dependencies: [A] });
       await onBranch(p, 'release/1.0', { dependencies: [B] });
       await recheck({ projectIds: [p.id] });
-      expect(await described(p)).toHaveLength(3);
+      const before = await rows(p);
+      expect(before).toHaveLength(3);
       await db()
         .update(projectVulnerabilitySettings)
         .set({ branchPatterns: [] })
         .where(eq(projectVulnerabilitySettings.projectId, p.id));
+      expect(await makeDatasetCurrent(db(), (await storeDs('after the pattern change')).id)).toBe(
+        true,
+      );
       await recheck({ projectIds: [p.id] });
-      expect(await described(p)).toEqual([`main ${PA} CVE-2026-0001`]);
+      expect(trivy.calls.map((c) => [...c.purls].sort())).toEqual([[PA, PB].sort(), [PA]]);
+      expect(await rows(p)).toEqual(before);
     });
 
-    it('deletes the rows of a project switched off, in a scoped and in a full re-check', async () => {
-      const scoped = await project();
-      const full = await project();
-      for (const p of [scoped, full]) {
-        await onBranch(p, 'main', { dependencies: [A] });
-        await recheck({ projectIds: [p.id] });
-        expect(await rows(p)).toHaveLength(1);
-        await db()
-          .update(projectVulnerabilitySettings)
-          .set({ enabled: false })
-          .where(eq(projectVulnerabilitySettings.projectId, p.id));
-      }
-      await recheck({ projectIds: [scoped.id] });
-      expect(await rows(scoped)).toEqual([]);
-      expect(await rows(full)).toHaveLength(1);
+    it('keeps the rows of a project switched off and skips it, in a scoped and a full re-check', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A, B] });
+      await recheck({ projectIds: [p.id] });
+      const before = await rows(p);
+      expect(before).toHaveLength(3);
+      await db()
+        .update(projectVulnerabilitySettings)
+        .set({ enabled: false })
+        .where(eq(projectVulnerabilitySettings.projectId, p.id));
+      // Neither a new inventory nor a new dataset reaches the rows of a project switched off.
+      await onBranch(p, 'main', { dependencies: [A] });
+      expect(await makeDatasetCurrent(db(), (await storeDs('after switching off')).id)).toBe(true);
+      expect(await recheck({ projectIds: [p.id] })).toMatchObject({
+        kind: 'done',
+        summary: { projects: 0, packages: 0 },
+      });
+      expect(trivy.calls).toHaveLength(1);
       await recheck({ all: true });
-      expect(await rows(full)).toEqual([]);
+      expect(await rows(p)).toEqual(before);
+    });
+
+    it('deleting a branch or a version deletes its rows', async () => {
+      const p = await project({ branchPatterns: ['release/*'] });
+      await onBranch(p, 'main', { dependencies: [A] });
+      await onBranch(p, 'release/1.0', { dependencies: [B] });
+      await tagScan(p, '1.0.0', { dependencies: [D] });
+      await recheck({ projectIds: [p.id] });
+      expect(await described(p)).toHaveLength(4);
+      const deleted = await h.ctx.app.inject({
+        method: 'DELETE',
+        url: `/api/v0/branches/${await branchId(p, 'release/1.0')}`,
+        headers: h.orgAdmin.headers,
+      });
+      expect(deleted.statusCode, deleted.body).toBe(204);
+      // The app never deletes a version; a succeeded tag scan must go first (its check constraint).
+      const version = await versionId(p, '1.0.0');
+      await db().delete(analyses).where(eq(analyses.versionId, version));
+      await db().delete(projectVersions).where(eq(projectVersions.id, version));
+      expect(await described(p)).toEqual([`main ${PA} CVE-2026-0001`]);
     });
 
     it('a scoped re-check touches only its own projects', async () => {
@@ -450,13 +517,17 @@ describe('vulnerability re-checks', () => {
   });
 
   describe('.trivyignore', () => {
+    // At 2026-10-31T12:00Z. An entry ends at 00:00 UTC of its expiry day, as Trivy's exp: (R16).
     const ignores: DependencyIgnore[] = [
+      // No expiry: ignored.
       { id: 'CVE-2026-0001' },
-      { id: 'CVE-2026-0002', expiresAt: '2026-10-30' },
-      { id: 'CVE-2026-0003', expiresAt: '2026-10-31' },
+      // Its expiry day: no longer ignored.
+      { id: 'CVE-2026-0002', expiresAt: '2026-10-31' },
+      // The day before its expiry: ignored.
+      { id: 'CVE-2026-0003', expiresAt: '2026-11-01' },
     ];
 
-    it("sets ignored from the target's own ids until their expiry", async () => {
+    it("sets ignored from the target's own ids until their expiry day begins", async () => {
       const p = await project();
       await onBranch(p, 'main', { dependencies: [A, B], dependencyIgnores: ignores });
       await tagScan(p, '1.0.0', {
@@ -475,11 +546,24 @@ describe('vulnerability re-checks', () => {
       );
       const kept = (await rows(p)).find((r) => r.vulnerabilityId === 'CVE-2026-0003')!;
 
-      // A day later the entry that ran until 2026-10-31 has expired; the row stays the same row.
-      now = new Date('2026-11-01T00:00:01Z');
+      // The last second before its expiry day the entry still applies.
+      now = new Date('2026-10-31T23:59:59Z');
+      await recheck({ projectIds: [p.id] });
+      expect((await rows(p)).find((r) => r.id === kept.id)?.ignored).toBe(true);
+      // From 00:00 UTC of that day it does not; the row stays the same row.
+      now = new Date('2026-11-01T00:00:00Z');
       await recheck({ projectIds: [p.id] });
       const row = (await rows(p)).find((r) => r.vulnerabilityId === 'CVE-2026-0003')!;
       expect(row).toMatchObject({ id: kept.id, ignored: false, firstSeenAt: kept.firstSeenAt });
+    });
+
+    it('ignoreActive: no expiry, the day before, the expiry day, an unreadable date', () => {
+      const at = (iso: string) => new Date(iso);
+      expect(ignoreActive({}, at('2099-01-01T00:00:00Z'))).toBe(true);
+      expect(ignoreActive({ expiresAt: '2026-11-01' }, at('2026-10-31T23:59:59.999Z'))).toBe(true);
+      expect(ignoreActive({ expiresAt: '2026-11-01' }, at('2026-11-01T00:00:00Z'))).toBe(false);
+      expect(ignoreActive({ expiresAt: '2026-11-01' }, at('2026-11-01T18:00:00Z'))).toBe(false);
+      expect(ignoreActive({ expiresAt: 'soon' }, at('2026-10-01T00:00:00Z'))).toBe(false);
     });
 
     it("takes a branch's ids from the analysis its inventory came from", async () => {
@@ -510,7 +594,8 @@ describe('vulnerability re-checks', () => {
       const summary = { projects: 1, packages: 1, unchecked: 2 };
       expect(result).toMatchObject({ kind: 'done', summary });
       expect(trivy.calls.map((c) => c.purls)).toEqual([[PA]]);
-      expect((await readVulndbState(db())).lastRecheck).toMatchObject(summary);
+      // A scoped run writes no summary (R15).
+      expect((await readVulndbState(db())).lastRecheck).toBeNull();
     });
 
     it('runs no Trivy for targets without packages', async () => {
