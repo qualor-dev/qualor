@@ -94,7 +94,9 @@ when it is all of these:
 | A version | when the vulnerability is triaged, or the version stops being tracked. A rescan of the same tag also resets it |
 
 Right after you upgrade to 0.15, nothing is new: what the server finds first is the baseline. A
-branch or version that starts to be tracked shows nothing new from its first re-check either.
+branch or version tracked for the first time shows nothing new from its first re-check either. A
+version that is tracked again keeps its earlier baseline, so the vulnerabilities found while it was
+untracked show as new.
 
 The **badge** "New vulnerabilities in main and 2 versions" shows in the projects list and on the
 project page. It names the main branch, the number of branches and the number of versions with new
@@ -151,7 +153,8 @@ A Trivy vulnerability is also an issue of the Trivy engine. Both places use the 
 The other direction:
 
 - A project decision that is not Open sets the matching Trivy issues on `main` and on tracked
-  branches to that status, and closes out the open ones everywhere else.
+  branches to that status. On other branches and in merge requests, it sets the open Trivy issues to
+  that status.
 - A new Trivy issue takes the decision at ingestion.
 - Resolved and closed issues never change.
 - A branch with its own decision is not changed by a project-wide decision.
