@@ -74,6 +74,21 @@ pipelines:
             - qualor scan --project-key acme/payments-api --branch main
 ```
 
+## The vulnerability database cache
+
+The scanner takes the vulnerability database from your Qualor server and keeps the download in
+`QUALOR_TRIVY_CACHE_DIR`, by default `~/.cache/qualor/trivy`
+([how it chooses and checks it](./languages-and-analyzers.md#the-vulnerability-database)).
+A job on a fresh machine downloads about 131 MiB each time. Persist one directory with your CI's
+cache and point the variable at it:
+
+```sh
+export QUALOR_TRIVY_CACHE_DIR="$WORKSPACE/.qualor/trivy"   # any directory the cache keeps
+```
+
+The directory may be inside the checkout: the scanner uses an archive only after the server
+confirms its checksum. Without a cache, the scan still works and downloads the database.
+
 ## C and C++
 
 The `qualor/scanner` image runs cppcheck only. clang-tidy needs your build's compile database and

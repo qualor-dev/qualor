@@ -51,6 +51,21 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - API: `GET /projects/{id}/vulnerabilities/targets`, `GET /projects/{id}/vulnerabilities` and
   `PUT /projects/{id}/vulnerability-decisions`, whose problem codes are `REASON_REQUIRED` and
   `COMMENT_REQUIRED`. The audit event is `vulnerability.decision_changed`.
+- Scanners take the Trivy vulnerability database from the Qualor server, so every scan checks
+  against the data the server checks against. **Settings → Vulnerability database → Scanners** has
+  the switch "Scanners take the database from this server" (on by default) and the policy "At most
+  once a day" (default) or "At every analysis". The scanner keeps the download in
+  `QUALOR_TRIVY_CACHE_DIR` (default `~/.cache/qualor/trivy`) and uses it only after its sha256
+  matches a digest the server lists. When the download fails, the scan goes on with the cached copy
+  or the database in the scanner image, with the warning `VULNERABILITY_DB_FETCH_FAILED`. An older
+  server, `--dry-run` and tag scans behave as before
+  ([Dependencies (Trivy)](docs/guide/languages-and-analyzers.md#the-vulnerability-database)).
+- The GitLab component, the GitHub templates and the scan-action cache the database between runs
+  (`.qualor/trivy`). With the scan-action, add the restore, `mkdir` and save steps from its README.
+- New setting `QUALOR_VULNDB_MAX_DOWNLOADS` (1 to 64, default 4): scanners downloading the database
+  at once. More get `503 DOWNLOADS_BUSY`.
+- API: `GET /scanner/vulnerability-db` and `GET /scanner/vulnerability-db/{sha256}`, open to any
+  authenticated caller.
 
 ### Changed
 
@@ -62,6 +77,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
   given".
 - The GitLab component, the GitHub workflow templates and the CI that **Add repositories** sets up
   run the Qualor job on tags too.
+- `QUALOR_TRIVY_CACHE_DIR` inside the checkout is no longer an error. The scanner uses an archive
+  there only after the server confirms its checksum; otherwise it ignores the directory with the
+  warning `VULNERABILITY_DB_CACHE_UNTRUSTED`.
 
 ## [0.14.0] - 2026-10-30
 

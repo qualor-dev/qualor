@@ -3,7 +3,8 @@
 The Qualor server sends anonymous usage statistics to the Qualor project once a day: how many
 servers run, which versions, and which languages and features they use. They tell us what to work
 on. While telemetry is on, the server also checks Docker Hub daily for a newer release. The scanner
-(`qualor scan`) sends nothing.
+(`qualor scan`) sends no telemetry. It downloads the vulnerability database from the Qualor server
+you configured, and from nowhere else.
 
 ## Turn it off
 

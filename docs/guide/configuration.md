@@ -170,7 +170,7 @@ The server's variables, such as `QUALOR_PUBLIC_URL`, `QUALOR_SCM_INTERNAL_HOSTS`
 | `QUALOR_CONFIG` | path to the config file |
 | `QUALOR_CA_FILE` | a PEM CA bundle for the server's certificate. Keep it outside the checkout |
 | `QUALOR_LOG_LEVEL` | `error`, `warn`, `info` (default) or `debug` |
-| `QUALOR_TRIVY_CACHE_DIR` | another Trivy database directory (absolute, outside the checkout) |
+| `QUALOR_TRIVY_CACHE_DIR` | where the scanner keeps the vulnerability database it downloads from the server (absolute; default `~/.cache/qualor/trivy`; may be inside the checkout). See [the vulnerability database](./languages-and-analyzers.md#the-vulnerability-database) |
 | `QUALOR_SONARJS_DIR` | another location for Qualor's sonarjs pass (absolute, outside the checkout; default `/opt/qualor/sonarjs`, set in `qualor/scanner`) |
 | `QUALOR_WEBLINT_DIR` | directory of the HTML and CSS linters (absolute, outside the checkout; default `/opt/qualor/weblint`, in `qualor/scanner`) |
 | `QUALOR_DETEKT_JAR` | another location for detekt's jar (absolute, outside the checkout; default `/opt/qualor/lib/detekt/detekt-cli.jar`, set in `qualor/scanner`) |

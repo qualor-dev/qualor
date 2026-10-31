@@ -99,6 +99,36 @@ What the checkout settings do:
 For Go, run `go mod download` in the same job before the Qualor step
 ([Go](./languages-and-analyzers.md#go-staticcheck-go-vet-gosec)).
 
+### The vulnerability database cache
+
+The Action takes the vulnerability database from your Qualor server and keeps the download in
+`.qualor/trivy` of the workspace ([how it chooses and checks it](./languages-and-analyzers.md#the-vulnerability-database)).
+A Docker action cannot call `actions/cache`, so put a restore step, a `mkdir` step, and a save step
+around it. The `mkdir` step lets the Action's user write the directory.
+
+```yaml
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .qualor/trivy
+          key: qualor-trivy-db-${{ github.run_id }}
+          restore-keys: qualor-trivy-db-
+      - run: mkdir -p .qualor/trivy && chmod 0777 .qualor/trivy
+      - uses: qualor-dev/scan-action@v0.14
+        with:
+          server-url: ${{ vars.QUALOR_URL }}
+          token: ${{ secrets.QUALOR_TOKEN }}
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: always() && hashFiles('.qualor/trivy/server.json') != ''
+        with:
+          path: .qualor/trivy
+          key: qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}
+```
+
+The same steps go around `qualor-dev/scan-action/dotnet`. The
+[Action's README](https://github.com/qualor-dev/scan-action#cache-the-vulnerability-database) shows
+them too. The template in [Without the Action](#without-the-action-your-own-image-or-a-mirror)
+below has them built in.
+
 ### C#
 
 Qualor analyses C# inside your build ([C#](./languages-and-analyzers.md#c)). Use the `dotnet`
@@ -149,11 +179,22 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # The scanner's vulnerability database archive, kept between runs.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .qualor/trivy
+          key: qualor-trivy-db-${{ github.run_id }}
+          restore-keys: qualor-trivy-db-
       # Install dependencies (JS/TS) or build (Java) here, before the scan.
-      - run: qualor scan
+      - run: QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy" qualor scan
         env:
           QUALOR_URL: ${{ vars.QUALOR_URL }}
           QUALOR_TOKEN: ${{ secrets.QUALOR_TOKEN }}
+      - if: always() && hashFiles('.qualor/trivy/server.json') != ''
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .qualor/trivy
+          key: qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}
 ```
 
 `--user 1001` runs the container as the runner's user, so the checkout is writable. For an image in

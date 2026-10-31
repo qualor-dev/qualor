@@ -141,10 +141,31 @@ qualor:
 - Run the job in **merge request pipelines** (`merge_request_event`), as the `rules` do. Only there
   does the CLI know the target branch, so the analysis becomes a merge request analysis.
 - The `$CI_COMMIT_TAG` rule runs the job on tags, where it records a [version](./releases.md).
+- Add the cache from [the next section](#the-vulnerability-database-cache).
 
 A C# project uses `qualor/scanner-dotnet` and wraps its own build
 ([C#](./languages-and-analyzers.md#c)). For Go, run `go mod download` before `qualor scan` in the
 same job ([Go](./languages-and-analyzers.md#go-staticcheck-go-vet-gosec)).
+
+### The vulnerability database cache
+
+The scanner takes the vulnerability database from your Qualor server and keeps the download in
+`QUALOR_TRIVY_CACHE_DIR` ([how it chooses and checks it](./languages-and-analyzers.md#the-vulnerability-database)).
+The component already sets the variable and a cache, so each runner downloads the database about
+once a day. In a job without the component, add the same lines:
+
+```yaml
+qualor:
+  variables:
+    QUALOR_TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.qualor/trivy
+  cache:
+    key: qualor-trivy-db
+    paths: [.qualor/trivy/]
+    when: always
+```
+
+The directory is inside the checkout, which is safe: the scanner uses an archive only after the
+server confirms its checksum.
 
 ## 3. Merge request comments and commit status
 

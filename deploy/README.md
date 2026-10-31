@@ -278,37 +278,22 @@ ESLint runs from the project's own `node_modules` (install the dependencies firs
 needs compiled classes, so build Java projects before `qualor scan`.
 
 **Trivy's vulnerability database.** The image carries a snapshot, pinned in
-`tools/analyzers/install.sh` (`TRIVY_DB_DIGEST`, `TRIVY_DB_CREATED`); the scan never downloads one,
-so its vulnerability data is as old as the image. Reports carry the database's date
-(`engines[].database`) and a `VULNERABILITY_DB_STALE` warning past 14 days. Refresh it by moving
-the pin and rebuilding the image: `pnpm trivy-db:pin` writes the newest snapshot's digest into
-`install.sh` (upstream builds one every 6 hours and deletes old ones after a time it does not
-document, so the pin must also move when a build reports it gone; the CIs cache the pinned layer,
-which gives a grace period), then build and release as below; a weekly image rebuild keeps it
-fresh enough. Or give a CI job its own database: fetch one in the scan job before `qualor scan`
-(`trivy image --download-db-only --cache-dir /tmp/trivy`, from a mirror you choose with
-`--db-repository`; Trivy is in the image) and set `QUALOR_TRIVY_CACHE_DIR=/tmp/trivy`. The CLI
-refuses a directory inside the checkout, or one whose `db/` files resolve into it, and trusts
-whatever database it finds: the directory must not be writable by jobs that run repository code.
+`tools/analyzers/install.sh` (`TRIVY_DB_DIGEST`, `TRIVY_DB_CREATED`). A scan against a server 0.15
+or later takes the server's database instead, and the snapshot is the fallback: when the server
+offers none or cannot be reached, the vulnerability data is as old as the image. Reports carry the
+database's date (`engines[].database`) and a `VULNERABILITY_DB_STALE` warning past 14 days. Refresh
+the snapshot by moving the pin and rebuilding the image: `pnpm trivy-db:pin` writes the newest
+snapshot's digest into `install.sh` (upstream builds one every 6 hours and deletes old ones after a
+time it does not document, so the pin must also move when a build reports it gone; the CIs cache
+the pinned layer, which gives a grace period), then build and release as below; a weekly image
+rebuild keeps it fresh enough.
 
-On GitLab, `cache:paths` must lie inside `$CI_PROJECT_DIR` (the checkout), so a cached database
-has to be copied out before the scan, after checking that the branch did not commit it:
-
-```yaml
-qualor:
-  cache: { key: trivy-db, paths: [.trivy-db/], policy: pull }
-  script:
-    - test -z "$(git ls-files .trivy-db)"
-    - rm -rf /tmp/trivy && cp -R .trivy-db /tmp/trivy && rm -rf .trivy-db
-    - QUALOR_TRIVY_CACHE_DIR=/tmp/trivy qualor scan --gitlab-code-quality gl-code-quality-report.json
-```
-
-Push that cache only from a pipeline of a protected branch, and keep the project setting that
-separates the caches of protected and unprotected branches (on by default): a cache that merge
-request pipelines of unprotected branches can write can be poisoned by any of them, with a
-database that knows none of their vulnerabilities. Merge request pipelines then read the
-unprotected cache, which they can write themselves; for them, fetching in the job is the safe
-choice.
+The scanner keeps what it downloads from the server in `QUALOR_TRIVY_CACHE_DIR`, and the
+integrations persist it between jobs: the GitLab component caches `.qualor/trivy/`, and the GitHub
+templates and the scan-action restore and save it with `actions/cache`. A cache inside the
+checkout is safe, because the scanner uses an archive only after its sha256 matches a digest the
+server lists. Nobody needs to copy a database out of the checkout before the scan. Users' docs:
+[docs/guide/languages-and-analyzers.md](../docs/guide/languages-and-analyzers.md#the-vulnerability-database).
 
 Third-party licences are in `/opt/qualor/NOTICE.md` and `/opt/qualor/licenses/` inside the
 image ([scanner/NOTICE.md](scanner/NOTICE.md)), with where the source of its copyleft components

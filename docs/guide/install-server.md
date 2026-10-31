@@ -435,6 +435,7 @@ goes into a `postgres://` URL.
 | `QUALOR_TRIVY_PATH` | `/usr/local/bin/trivy` | the Trivy program the server runs for re-checks. The image has it |
 | `QUALOR_VULNDB_INTERNAL_HOSTS` | none | the mirror of the [vulnerability database](./vulnerability-database.md) on your internal network that Qualor may call, a list of its own, comma-separated, each with an optional port (`registry.corp:5000`). It lifts the check for private addresses only; the registry must still use HTTPS |
 | `QUALOR_VULNDB_UPLOAD_MAX_BYTES` | 1 GiB | the largest `db.tar.gz` the vulnerability database page accepts |
+| `QUALOR_VULNDB_MAX_DOWNLOADS` | 4 | how many scanners may download the [vulnerability database](./vulnerability-database.md#scanners) at once, 1 to 64. More get `503 DOWNLOADS_BUSY` and use their cached copy or image |
 | `NODE_EXTRA_CA_CERTS` | none | a PEM bundle, when your GitLab, GitHub Enterprise, webhook receivers, SMTP server or vulnerability database mirror use a private CA. Mount the file into the container |
 | `QUALOR_LICENSE` | none | an [enterprise licence](./enterprise.md) key. Not together with `QUALOR_LICENSE_FILE` |
 | `QUALOR_LICENSE_FILE` | none | the path of a file holding the licence key, such as a Docker or Kubernetes secret, read at start: UTF-8, or UTF-16 with a byte-order mark. A file that cannot be read stops the start |
@@ -592,14 +593,12 @@ A daily housekeeping job deletes old data:
 
 ## Trivy's vulnerability database
 
-Each scanner image carries a snapshot of Trivy's vulnerability database from the day it was built,
-and the scan never downloads one. Reports carry the database date, and a scan warns with
-`VULNERABILITY_DB_STALE` once it is more than 14 days old. Keep the scanner on a current release
-(the minor tag `0.14` follows its patch releases), or fetch a fresh database in the job and point
-`QUALOR_TRIVY_CACHE_DIR` at it: see
-[Languages and analyzers](./languages-and-analyzers.md#dependencies-trivy).
-
 The server keeps a database of its own for re-checking your tracked branches and versions:
-[The vulnerability database](./vulnerability-database.md). With Helm, the volume is an `emptyDir` of
+[The vulnerability database](./vulnerability-database.md). Scanners take it from the server by
+default ([Scanners](./vulnerability-database.md#scanners)), so a scan is as current as the server.
+Each scanner image still carries a snapshot from the day it was built, for scanners that cannot
+reach the server's copy; a scan warns with `VULNERABILITY_DB_STALE` once the database it used is
+more than 14 days old. Scanners call only the server you configured, so the egress rules below do
+not change. With Helm, the volume is an `emptyDir` of
 `vulnerabilityDatabase.cacheSizeLimit`; add `ghcr.io` and
 `pkg-containers.githubusercontent.com` to the `egress` rules.
