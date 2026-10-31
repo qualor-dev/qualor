@@ -5508,6 +5508,255 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/projects/{id}/vulnerabilities/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The tracked branches and versions with their vulnerability counts */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            monitoring: "on" | "off";
+                            data: {
+                                builtAt: string | null;
+                            } | null;
+                            checkedAt: string | null;
+                            versionCount: number;
+                            targets: {
+                                /** @enum {string} */
+                                kind: "branch" | "version";
+                                /** Format: uuid */
+                                id: string;
+                                name: string;
+                                isMain: boolean;
+                                tracking: ("auto" | "pinned" | "unsupported") | null;
+                                hasInventory: boolean;
+                                counts: {
+                                    critical: number;
+                                    high: number;
+                                    medium: number;
+                                    low: number;
+                                    unknown: number;
+                                };
+                                new: number;
+                                checkedAt: string | null;
+                            }[];
+                            untracked: {
+                                /** Format: uuid */
+                                id: string;
+                                name: string;
+                                /** @enum {string} */
+                                tracking: "auto" | "pinned" | "unsupported";
+                                /** @enum {string} */
+                                trackingReason: "pinned" | "unsupported" | "prerelease" | "newest_in_line" | "replaced" | "older_line" | "recent" | "older" | "rule_all" | "rule_none";
+                                counts: {
+                                    critical: number;
+                                    high: number;
+                                    medium: number;
+                                    low: number;
+                                    unknown: number;
+                                };
+                                checkedAt: string | null;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/projects/{id}/vulnerabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The vulnerabilities of the tracked targets, or of one target, by package and vulnerability */
+        get: {
+            parameters: {
+                query?: {
+                    target?: string;
+                    status?: "all" | "open" | "false_positive" | "wont_fix";
+                    severity?: "critical" | "high" | "medium" | "low" | "unknown";
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                vulnerabilityId: string;
+                                packageName: string;
+                                ecosystem: string;
+                                /** @enum {string} */
+                                severity: "critical" | "high" | "medium" | "low" | "unknown";
+                                title: string | null;
+                                primaryUrl: string | null;
+                                installedVersions: string[];
+                                fixedVersion: string | null;
+                                in: {
+                                    /** @enum {string} */
+                                    kind: "branch" | "version";
+                                    /** Format: uuid */
+                                    id: string;
+                                    name: string;
+                                }[];
+                                notIn: {
+                                    /** @enum {string} */
+                                    kind: "branch" | "version";
+                                    /** Format: uuid */
+                                    id: string;
+                                    name: string;
+                                }[];
+                                /** Format: date-time */
+                                foundAt: string;
+                                withoutScan: boolean;
+                                new: boolean;
+                                ignored: boolean;
+                                /** @enum {string} */
+                                status: "open" | "false_positive" | "wont_fix";
+                                decision: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    scope: "project" | "branch" | "version";
+                                    /** @enum {string} */
+                                    status: "open" | "false_positive" | "wont_fix";
+                                    reason: ("component_not_present" | "vulnerable_code_not_present" | "vulnerable_code_not_in_execute_path" | "vulnerable_code_cannot_be_controlled_by_adversary" | "inline_mitigations_already_exist") | null;
+                                    comment: string | null;
+                                    /** Format: date-time */
+                                    decidedAt: string;
+                                    decidedBy: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        name: string;
+                                    } | null;
+                                } | null;
+                            }[];
+                            total: number;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/metrics": {
         parameters: {
             query?: never;
