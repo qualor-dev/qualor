@@ -1,6 +1,7 @@
 import { reportFingerprints } from '@qualor/shared';
 import { AnalysisFailure, type IngestionStage } from '../ingest/process';
 import type { AcceptedFinding } from '../ingest/state';
+import { packageNameOf } from '../vulnerabilities/trivy-issues';
 import { ruleKey, upsertReportedRules } from './catalog';
 import { governingLanguage, loadProfileSet, ruleSetting } from './profiles';
 import { SERVER_ENGINES } from './server-engines';
@@ -72,6 +73,7 @@ export const rulesStage: IngestionStage = {
         rule,
         severity: setting.severityOverride ?? finding.severity ?? rule.defaultSeverity,
         fingerprint: fingerprints[index] ?? '',
+        packageName: packageNameOf(finding),
       });
     });
     if (filtered > 0) {

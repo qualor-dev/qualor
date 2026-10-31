@@ -12,7 +12,14 @@ import { expectPgError } from '../../test/db';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { mainBranchId, seedIssue, seedRule, type IssueSeed } from '../../test/issues';
 import { engine, file, finding, reportWith } from '../../test/reports';
-import { issueChanges, issues, organizations, projects, users } from '../db/schema';
+import {
+  issueChanges,
+  issues,
+  organizations,
+  projects,
+  users,
+  vulnerabilityDecisions,
+} from '../db/schema';
 import {
   importIssueStatuses,
   sanitizeImportComment,
@@ -182,6 +189,59 @@ describe('POST /projects/{id}/issue-status-import (import-sonarqube.md §10–§
     expect(res.json().results[0]).toMatchObject({ outcome: 'applied', status: 'false_positive' });
     const [row] = await h.ctx.db.select().from(issues).where(eq(issues.projectId, cs.id));
     expect(row?.status).toBe('false_positive');
+  });
+
+  it('writes the decision of a Trivy issue on main, with no reason (vuln plan 2b, D9)', async () => {
+    const v = await h.project('acme/import-trivy');
+    await v.ingestOk(reportWith({ projectKey: v.key }));
+    const vuln = 'CVE-2026-0001';
+    const message = `lodash 4.17.20: ${vuln} Prototype pollution (fixed in 4.17.21)`;
+    const issueId = await seedIssue(h.ctx.db, {
+      projectId: v.id,
+      branchId: await mainBranchId(h.ctx.db, v.id),
+      ruleId: await seedRule(h.ctx.db, { key: `trivy:${vuln}`, quality: 'security' }),
+      path: 'package-lock.json',
+      startLine: 12,
+      message,
+      packageName: 'lodash',
+    });
+    const comment = 'Imported from SonarQube issue AYv-1 (False positive on 2026-09-10)';
+    const res = await post(
+      {
+        dryRun: false,
+        items: [
+          item({
+            ref: 'AYv-1',
+            ruleKeys: [`trivy:${vuln}`],
+            path: 'package-lock.json',
+            line: 12,
+            sonarLineHash: null,
+            message,
+            comment,
+          }),
+        ],
+      },
+      h.orgAdmin,
+      v.id,
+    );
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().results[0]).toMatchObject({ outcome: 'applied', status: 'false_positive' });
+    expect(await statusOf(issueId)).toBe('false_positive');
+    expect(
+      await h.ctx.db
+        .select()
+        .from(vulnerabilityDecisions)
+        .where(eq(vulnerabilityDecisions.projectId, v.id)),
+    ).toMatchObject([
+      {
+        branchId: null,
+        packageName: 'lodash',
+        vulnerabilityId: vuln,
+        status: 'false_positive',
+        reason: null,
+        comment,
+      },
+    ]);
   });
 
   it('is 409 PROJECT_NOT_ANALYSED before the first analysis', async () => {

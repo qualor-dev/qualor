@@ -205,18 +205,26 @@ describe('the vulnerability decision store', () => {
     expect(result.appliedIssueIds).toHaveLength(3);
   });
 
-  it('never changes resolved or closed issues, and skips skipIssueId', async () => {
+  it('never changes resolved or closed issues, and skips skipIssueIds', async () => {
     const f = await fixture();
+    const another = await seedIssue(t.db, {
+      projectId: f.projectId,
+      branchId: f.ids.feature,
+      ruleId: await seedRule(t.db, { key: `trivy:${VULN}` }),
+      packageName: 'lodash',
+    });
     await t.db.update(issues).set({ status: 'resolved' }).where(eq(issues.id, f.issue.main));
     await t.db.update(issues).set({ status: 'closed' }).where(eq(issues.id, f.issue.release));
-    const result = await write(input(f, 'wont_fix', { skipIssueId: f.issue.mr }));
+    const result = await write(
+      input(f, 'wont_fix', { skipIssueIds: [f.issue.mr, f.issue.feature] }),
+    );
     expect(await statuses(f)).toMatchObject({
       main: 'resolved',
       release: 'closed',
-      feature: 'wont_fix',
+      feature: 'open',
       mr: 'open',
     });
-    expect(result.appliedIssueIds).toEqual([f.issue.feature]);
+    expect(result.appliedIssueIds).toEqual([another]);
   });
 
   it('applies a branch decision to that branch only', async () => {

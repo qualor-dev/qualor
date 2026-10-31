@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { VEX_JUSTIFICATIONS } from '../../vulnerabilities/decisions';
 import { issueLine, type IssueListItem } from '../format';
 import { clientLabel, unwrap } from '../inject';
 import type { McpTool } from '../tool';
@@ -19,6 +20,12 @@ const input = z.object({
     .enum(['false_positive', 'wont_fix', 'open'])
     .describe('false_positive, wont_fix, or open to reopen'),
   comment: z.string().trim().min(1).max(COMMENT_MAX).describe('Why; reviewers read it'),
+  reason: z
+    .enum(VEX_JUSTIFICATIONS)
+    .optional()
+    .describe(
+      'The VEX justification; required for false_positive on a Trivy issue of main or a tracked branch, whose decision covers the whole project',
+    ),
 });
 
 /** Spec §5, ruling R2: the one write tool; the project role decides, exactly as for a person. */
@@ -36,11 +43,12 @@ export const transitionTool: McpTool<typeof input> = {
     idempotentHint: true,
     openWorldHint: false,
   },
-  async run({ issueId, to, comment }, { call, principal }) {
+  async run({ issueId, to, comment, reason }, { call, principal }) {
     const issue = unwrap(
       await call.post<IssueListItem>(`/api/v0/issues/${issueId}/transition`, {
         to,
         comment: `${comment}\n\n${MCP_VIA_LINE(principal.clientName)}`,
+        ...(reason === undefined ? {} : { reason }),
       }),
     );
     return { text: `Now ${issue.status}: ${issueLine(issue)}`, structured: { issue } };

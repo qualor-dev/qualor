@@ -1,9 +1,17 @@
-import { asc, eq, sql } from 'drizzle-orm';
-import type { Quality, Report, Severity } from '@qualor/shared';
+import { and, asc, eq, sql } from 'drizzle-orm';
+import { hex32, type Quality, type Report, type Severity } from '@qualor/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { engine, file, finding, reportWith, type ReportParts } from '../../test/reports';
-import { issueChanges, issues, profileRules, projectProfiles, qualityProfiles } from '../db/schema';
+import {
+  branches,
+  issueChanges,
+  issues,
+  profileRules,
+  projectProfiles,
+  qualityProfiles,
+  vulnerabilityDecisions,
+} from '../db/schema';
 import { REOPEN_WINDOW_DAYS } from './plan';
 import { writePlan } from './writes';
 
@@ -494,12 +502,14 @@ describe('issue tracking (server step 8, data-model.md §5.2 and §6)', () => {
             snippet: issue!.snippet,
             secondary_locations: issue!.secondaryLocations,
             confidence: issue!.confidence,
+            package_name: issue!.packageName,
             from_status: 'open',
           },
         ],
         inserts: [],
         closes: [],
         live: [],
+        decided: [],
       },
       { projectId: p.id, branchId: issue!.branchId, analysisId },
     );
@@ -549,12 +559,14 @@ describe('issue tracking (server step 8, data-model.md §5.2 and §6)', () => {
             snippet: issue!.snippet,
             secondary_locations: issue!.secondaryLocations,
             confidence: issue!.confidence,
+            package_name: issue!.packageName,
             from_status: 'open', // planned from a stale read
           },
         ],
         inserts: [],
         closes: [],
         live: [],
+        decided: [],
       },
       { projectId: p.id, branchId: issue!.branchId, analysisId },
     );
@@ -581,12 +593,148 @@ describe('issue tracking (server step 8, data-model.md §5.2 and §6)', () => {
       .where(eq(issues.id, issue!.id));
     await writePlan(
       h.ctx.db,
-      { updates: [], inserts: [], closes: [{ id: issue!.id, from_status: 'open' }], live: [] },
+      {
+        updates: [],
+        inserts: [],
+        closes: [{ id: issue!.id, from_status: 'open' }],
+        live: [],
+        decided: [],
+      },
       { projectId: p.id, branchId: issue!.branchId, analysisId },
     );
     expect(await issuesOf(p)).toMatchObject([
       { id: issue!.id, status: 'wont_fix', resolvedBy: h.ctx.adminId },
     ]);
     expect(await changesOf(issue!.id)).toEqual([]);
+  });
+
+  describe('Trivy issues and the vulnerability decisions (vuln plan 2b, D2 and D4)', () => {
+    const VULN = 'CVE-2026-0001';
+    const LOCK = 'package-lock.json';
+    const trivy = {
+      engineId: 'trivy',
+      ruleId: VULN,
+      message: `lodash 4.17.20: ${VULN} Prototype pollution (fixed in 4.17.21)`,
+      severity: 'high',
+      location: { path: LOCK, startLine: 5 },
+      lineHash: hex32(`line:${VULN}`),
+      contextHash: hex32(`context:${VULN}`),
+      properties: { dependency: { name: 'lodash', version: '4.17.20' } },
+    } satisfies Report['findings'][number];
+    const withTrivy = {
+      engines: [engine('trivy')],
+      files: [file(LOCK, { language: 'other' })],
+      findings: [trivy],
+    } satisfies ReportParts;
+    const mr = {
+      branch: 'feature/x',
+      mergeRequest: { id: '7', targetBranch: 'main', sourceBranch: 'feature/x' },
+    } satisfies ReportParts;
+    const decide = (projectId: string, status: 'open' | 'false_positive', branchId?: string) =>
+      h.ctx.db.insert(vulnerabilityDecisions).values({
+        projectId,
+        packageName: 'lodash',
+        vulnerabilityId: VULN,
+        branchId: branchId ?? null,
+        status,
+        reason: status === 'false_positive' ? 'component_not_present' : null,
+        comment: 'not shipped',
+        decidedBy: h.ctx.adminId,
+      });
+    const issuesOn = async (p: IngestProject, kind: 'branch' | 'merge_request', name: string) => {
+      const [branch] = await h.ctx.db
+        .select()
+        .from(branches)
+        .where(and(eq(branches.projectId, p.id), eq(branches.kind, kind), eq(branches.name, name)));
+      return h.ctx.db
+        .select()
+        .from(issues)
+        .where(eq(issues.branchId, branch!.id))
+        .orderBy(asc(issues.id));
+    };
+    const statusLog = async (issueId: string) =>
+      (await changesOf(issueId)).map((c) => [
+        c.oldValue,
+        c.newValue,
+        c.analysisId,
+        c.userId,
+        c.comment,
+      ]);
+
+    it('stores the package name of a Trivy finding', async () => {
+      const p = await h.project('track/trivy-name');
+      await p.ingestOk(report(p, withTrivy));
+      expect(await issuesOf(p)).toMatchObject([{ packageName: 'lodash', status: 'open' }]);
+    });
+
+    it('starts a new issue on main and on a merge request with the project decision', async () => {
+      const p = await h.project('track/trivy-decided');
+      await decide(p.id, 'false_positive');
+      const onMr = await p.ingestOk(report(p, { ...withTrivy, ...mr }));
+      const onMain = await p.ingestOk(report(p, withTrivy));
+      for (const [kind, name, analysisId] of [
+        ['merge_request', '7', onMr],
+        ['branch', 'main', onMain],
+      ] as const) {
+        const [issue] = await issuesOn(p, kind, name);
+        expect(issue, name).toMatchObject({ status: 'false_positive', resolvedBy: h.ctx.adminId });
+        expect(issue!.resolvedAt).not.toBeNull();
+        expect(await statusLog(issue!.id), name).toEqual([
+          ['open', 'false_positive', analysisId, null, 'not shipped'],
+        ]);
+      }
+    });
+
+    it('lets an Open decision of the branch stand over the project one', async () => {
+      const p = await h.project('track/trivy-override');
+      await p.ingestOk(report(p, { branch: 'release/1.x', findings: [] }));
+      const [release] = await h.ctx.db
+        .select()
+        .from(branches)
+        .where(and(eq(branches.projectId, p.id), eq(branches.name, 'release/1.x')));
+      await decide(p.id, 'false_positive');
+      await decide(p.id, 'open', release!.id);
+      await p.ingestOk(report(p, { ...withTrivy, branch: 'release/1.x' }));
+      const [issue] = await issuesOn(p, 'branch', 'release/1.x');
+      expect(issue).toMatchObject({ status: 'open', resolvedAt: null, packageName: 'lodash' });
+      expect(await changesOf(issue!.id)).toEqual([]);
+    });
+
+    it('leaves a matched issue as it is', async () => {
+      const p = await h.project('track/trivy-matched');
+      await p.ingestOk(report(p, withTrivy));
+      const [before] = await issuesOf(p);
+      await decide(p.id, 'false_positive');
+      await p.ingestOk(report(p, withTrivy));
+      expect(await issuesOf(p)).toMatchObject([{ id: before!.id, status: 'open' }]);
+      expect(await changesOf(before!.id)).toEqual([]);
+    });
+
+    it('lets the decision win over an inherited status, logged after the copied changelog', async () => {
+      const p = await h.project('track/trivy-inherited');
+      await p.ingestOk(report(p, withTrivy));
+      const [onMain] = await issuesOf(p);
+      await h.ctx.db
+        .update(issues)
+        .set({ status: 'wont_fix', resolvedAt: new Date(), resolvedBy: h.ctx.adminId })
+        .where(eq(issues.id, onMain!.id));
+      await h.ctx.db.insert(issueChanges).values({
+        issueId: onMain!.id,
+        userId: h.ctx.adminId,
+        field: 'status',
+        oldValue: 'open',
+        newValue: 'wont_fix',
+        comment: 'later',
+        createdAt: sql`now() - interval '1 day'`,
+      });
+      await decide(p.id, 'false_positive');
+      const onMr = await p.ingestOk(report(p, { ...withTrivy, ...mr }));
+      const [issue] = await issuesOn(p, 'merge_request', '7');
+      expect(issue).toMatchObject({ status: 'false_positive', firstSeenAt: onMain!.firstSeenAt });
+      expect(await statusLog(issue!.id)).toEqual([
+        ['open', 'wont_fix', null, h.ctx.adminId, 'later'],
+        ['wont_fix', 'false_positive', onMr, null, 'not shipped'],
+      ]);
+    });
   });
 });

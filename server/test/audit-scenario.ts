@@ -36,6 +36,7 @@ import {
 } from './app';
 import { createFakeGitLab, type FakeGitLab } from './fake-gitlab';
 import { createFakeLlm, type FakeLlm } from './fake-llm';
+import { mainBranchId, seedIssue, seedRule } from './issues';
 import { closedPort } from './mail';
 import { signTest, testPayload, testSigner, verifyWith, type TestSigner } from './license';
 import { RBAC_FIXTURE } from './rbac';
@@ -67,6 +68,7 @@ const S = {
   transitionComment: 'scenario comment: single transition 64',
   bulkComment: 'scenario comment: bulk transition 75',
   importComment: 'scenario comment: imported from SonarQube 86',
+  decisionComment: 'scenario comment: vulnerability decision 97',
   smtpPassword: ['smtp', 'scenario', 'pass', 'word', '5M'].join('-'),
 } as const;
 
@@ -427,6 +429,19 @@ export async function runAuditScenario(
     comment: S.bulkComment,
   });
   await call('PATCH', `/issues/${open.id}`, 200, { severity: 'low' });
+
+  // vulnerability.decision_changed: a Trivy issue on main writes the project's decision (vuln 2b)
+  const trivyIssue = await seedIssue(ctx.db, {
+    projectId: main.id,
+    branchId: await mainBranchId(ctx.db, main.id),
+    ruleId: await seedRule(ctx.db, { key: 'trivy:CVE-2026-0001', quality: 'security' }),
+    path: 'package-lock.json',
+    packageName: 'lodash',
+  });
+  await call('POST', `/issues/${trivyIssue}/transition`, 200, {
+    to: 'wont_fix',
+    comment: S.decisionComment,
+  });
 
   // quality_profile.*, project.profile_assigned
   const profile = (

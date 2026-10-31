@@ -1,6 +1,7 @@
 import type { IngestionContext, IngestionStage } from '../ingest/process';
 import { requireState } from '../ingest/state';
 import { newCodeClassifier } from '../newcode/lines';
+import { findingDecisions } from '../vulnerabilities/trivy-issues';
 import { planCarryOver, writeCarryOver } from './carry-over';
 import { liveAfterWrites, planDedupe, writeDedupe } from './dedupe';
 import {
@@ -11,14 +12,17 @@ import {
   referenceBranchId,
 } from './inherit';
 import { planTracking, type InheritedIssue, type TrackingPlan } from './plan';
-import { dbNow, loadCandidates, writePlan } from './writes';
+import { dbNow, loadCandidates, logChanges, writePlan } from './writes';
 
 export interface BuiltTracking {
   plan: TrackingPlan;
   inherited: ReadonlyMap<number, InheritedIssue> | undefined;
 }
 
-/** Loads the branch's candidates (and, on a first analysis, the reference issues) and plans. */
+/**
+ * Loads the branch's candidates (and, on a first analysis, the reference issues) and the
+ * vulnerability decisions in force for its Trivy findings, and plans.
+ */
 export async function buildTrackingPlan(ctx: IngestionContext): Promise<BuiltTracking> {
   const findings = requireState(ctx.state, 'findings');
   const now = await dbNow(ctx.tx);
@@ -33,6 +37,11 @@ export async function buildTrackingPlan(ctx: IngestionContext): Promise<BuiltTra
       inherited = planInheritance(ctx.report, findings, reference, candidates);
     }
   }
+  const decisions = await findingDecisions(
+    ctx.tx,
+    { projectId: ctx.project.id, branchId: ctx.branch.id },
+    findings,
+  );
   const plan = planTracking({
     report: ctx.report,
     findings,
@@ -40,12 +49,16 @@ export async function buildTrackingPlan(ctx: IngestionContext): Promise<BuiltTra
     classifier: newCodeClassifier(ctx.report),
     now,
     inherited,
+    decisions,
     serverOkEngines: ctx.state.serverOkEngines ?? [],
   });
   return { plan, inherited };
 }
 
-/** Writes a plan, copies inherited changelogs and recomputes cross-engine dedupe. */
+/**
+ * Writes a plan, copies inherited changelogs, logs the statuses vulnerability decisions gave new
+ * issues after them, and recomputes cross-engine dedupe.
+ */
 export async function applyTrackingPlan(
   ctx: IngestionContext,
   { plan, inherited }: BuiltTracking,
@@ -56,6 +69,7 @@ export async function applyTrackingPlan(
     analysisId: ctx.analysisId,
   });
   await copyChangelogs(ctx.tx, plan.inserts);
+  await logChanges(ctx.tx, plan.decided, ctx.analysisId);
   const live = await liveAfterWrites(ctx.tx, plan.live, written.blockedIds);
   const duplicates = planDedupe(live);
   await writeDedupe(ctx.tx, duplicates);
@@ -75,6 +89,7 @@ export async function applyTrackingPlan(
       created: plan.inserts.length,
       closed: plan.closes.length,
       inherited: inherited?.size ?? 0,
+      decided: plan.decided.length,
       duplicatesChanged: duplicates.length,
       carried,
     },

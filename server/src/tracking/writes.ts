@@ -84,7 +84,7 @@ export async function loadCandidates(tx: Executor, branchId: string): Promise<Ca
 const WRITE_RECORD = `id uuid, rule_id uuid, fingerprint text, line_hash text, context_hash text,
   path text, start_line integer, start_column integer, end_line integer, end_column integer,
   message text, severity text, quality text, kind text, status text, in_new_code boolean,
-  snippet jsonb, secondary_locations jsonb, confidence text`;
+  snippet jsonb, secondary_locations jsonb, confidence text, package_name text`;
 
 /** {@link WRITE_RECORD} plus the guard column updateMatched needs (see its SQL). */
 const UPDATE_RECORD = `${WRITE_RECORD}, from_status text`;
@@ -151,7 +151,7 @@ async function updateMatched(
         status = CASE WHEN i.status = r.from_status THEN r.status ELSE i.status END,
         in_new_code = r.in_new_code,
         snippet = r.snippet, secondary_locations = r.secondary_locations,
-        confidence = r.confidence,
+        confidence = r.confidence, package_name = r.package_name,
         last_seen_analysis_id = ${analysisId},
         -- A matched row is never left 'closed', so once the guard passes closed_at always clears.
         closed_at = CASE WHEN i.status = r.from_status THEN NULL ELSE i.closed_at END,
@@ -197,13 +197,13 @@ async function insertNew(
       INSERT INTO issues (id, project_id, branch_id, rule_id, fingerprint, line_hash,
         context_hash, path, start_line, start_column, end_line, end_column, message, severity,
         severity_overridden, quality, kind, status, in_new_code, snippet, secondary_locations,
-        confidence, first_seen_analysis_id, first_seen_at, last_seen_analysis_id, resolved_at,
-        resolved_by)
+        confidence, package_name, first_seen_analysis_id, first_seen_at, last_seen_analysis_id,
+        resolved_at, resolved_by)
       SELECT r.id, ${ids.projectId}, ${ids.branchId}, r.rule_id, r.fingerprint, r.line_hash,
         r.context_hash, r.path, r.start_line, r.start_column, r.end_line, r.end_column,
         r.message, r.severity, r.severity_overridden, r.quality, r.kind, r.status, r.in_new_code,
-        r.snippet, r.secondary_locations, r.confidence, ${ids.analysisId}, r.first_seen_at,
-        ${ids.analysisId}, r.resolved_at, r.resolved_by
+        r.snippet, r.secondary_locations, r.confidence, r.package_name, ${ids.analysisId},
+        r.first_seen_at, ${ids.analysisId}, r.resolved_at, r.resolved_by
       FROM jsonb_to_recordset(${chunk}::jsonb) AS r(${sql.raw(WRITE_RECORD)},
         severity_overridden boolean, first_seen_at timestamptz, resolved_at timestamptz,
         resolved_by uuid)`);
@@ -239,9 +239,13 @@ async function closeUnmatched(
   return applied;
 }
 
-async function logChanges(
+/**
+ * The changelog of the system's status changes in this analysis: one row each, with no user and
+ * the analysis, and the comment a change carries (a vulnerability decision's, D4), else none.
+ */
+export async function logChanges(
   tx: Executor,
-  changes: readonly StatusChange[],
+  changes: readonly (StatusChange & { comment?: string | null })[],
   analysisId: string,
 ): Promise<void> {
   // Sorted by issue_id for the same determinism reason as insertNew: this INSERT's FK to `issues`
@@ -251,13 +255,15 @@ async function logChanges(
     issue_id: c.issueId,
     old_value: c.oldValue,
     new_value: c.newValue,
+    comment: c.comment ?? null,
   }));
   for (const chunk of jsonChunks(rows)) {
     await tx.execute(sql`
-      INSERT INTO issue_changes (id, issue_id, user_id, analysis_id, field, old_value, new_value)
-      SELECT r.id, r.issue_id, NULL, ${analysisId}, 'status', r.old_value, r.new_value
+      INSERT INTO issue_changes (id, issue_id, user_id, analysis_id, field, old_value, new_value,
+        comment)
+      SELECT r.id, r.issue_id, NULL, ${analysisId}, 'status', r.old_value, r.new_value, r.comment
       FROM jsonb_to_recordset(${chunk}::jsonb)
-        AS r(id uuid, issue_id uuid, old_value text, new_value text)`);
+        AS r(id uuid, issue_id uuid, old_value text, new_value text, comment text)`);
   }
 }
 

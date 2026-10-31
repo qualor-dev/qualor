@@ -290,10 +290,14 @@ export async function importIssueStatuses(
     const done: [ImportStatus, TransitionResult][] = [];
     for (const to of pending) {
       const own = toApply[to];
-      // No `audit` here: the import is one summary event, not one per issue.
+      // No `audit` here: the import is one summary event, not one per issue. Its vulnerability
+      // decisions need no reason (vuln plan 2b, D9).
       done.push([
         to,
-        await transitionIssuesIn(tx, user, [...own.keys()], to, null, { comments: own }),
+        await transitionIssuesIn(tx, user, [...own.keys()], to, null, {
+          comments: own,
+          source: 'import',
+        }),
       ]);
     }
     applyOutcomes(done);

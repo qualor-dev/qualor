@@ -8,7 +8,16 @@ import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { mainBranchId, seedIssue, seedRule, type IssueSeed } from '../../test/issues';
 import { finding, reportWith } from '../../test/reports';
 import type { Db } from '../db/client';
-import { branches, issueChanges, issues, organizations, projects, users } from '../db/schema';
+import {
+  branches,
+  issueChanges,
+  issues,
+  organizations,
+  projects,
+  projectVulnerabilitySettings,
+  users,
+  vulnerabilityDecisions,
+} from '../db/schema';
 import type { IngestionStage } from '../ingest/process';
 import { DEFAULT_STAGES } from '../ingest/stages';
 import { transitionIssues } from '../issues/transitions';
@@ -623,6 +632,282 @@ describe('issue transitions, severity override and changelog (data-model.md §6,
       expect(page2.items.map((c) => c.newValue)).toEqual(['open', 'closed']);
       expect(page2.items[1]!.user).toBeNull();
       expect(page2.nextCursor).toBeNull();
+    });
+  });
+
+  describe('Trivy issues share the vulnerability decision (vuln plan 2b, D4 and D9)', () => {
+    const VULN = 'CVE-2026-0001';
+    const MESSAGE = `lodash 4.17.20: ${VULN} Prototype pollution (fixed in 4.17.21)`;
+    let trivyRule: string;
+    let qualorRule: string;
+    let n = 0;
+
+    interface Fixture {
+      projectId: string;
+      ids: { main: string; release: string; feature: string; mr: string };
+      issue: { main: string; release: string; feature: string; mr: string };
+    }
+
+    /** main, release/1.x (tracked), feature/x and merge request 7, an open lodash issue each. */
+    const fixture = async (): Promise<Fixture> => {
+      n += 1;
+      const { id: projectId } = await h.project(`acme/vuln-${n}`);
+      await h.ctx.db
+        .insert(projectVulnerabilitySettings)
+        .values({ projectId, branchPatterns: ['release/*'] });
+      const branch = async (kind: 'branch' | 'merge_request', name: string) =>
+        (await h.ctx.db.insert(branches).values({ projectId, kind, name }).returning())[0]!.id;
+      const ids = {
+        main: await mainBranchId(h.ctx.db, projectId),
+        release: await branch('branch', 'release/1.x'),
+        feature: await branch('branch', 'feature/x'),
+        mr: await branch('merge_request', '7'),
+      };
+      const open = (branchId: string) =>
+        seedIssue(h.ctx.db, {
+          projectId,
+          branchId,
+          ruleId: trivyRule,
+          message: MESSAGE,
+          packageName: 'lodash',
+        });
+      return {
+        projectId,
+        ids,
+        issue: {
+          main: await open(ids.main),
+          release: await open(ids.release),
+          feature: await open(ids.feature),
+          mr: await open(ids.mr),
+        },
+      };
+    };
+    const statuses = async (f: Fixture) => ({
+      main: (await statusOf(f.issue.main)).status,
+      release: (await statusOf(f.issue.release)).status,
+      feature: (await statusOf(f.issue.feature)).status,
+      mr: (await statusOf(f.issue.mr)).status,
+    });
+    const decisionsOf = (f: Fixture) =>
+      h.ctx.db
+        .select()
+        .from(vulnerabilityDecisions)
+        .where(eq(vulnerabilityDecisions.projectId, f.projectId));
+    const notAffected = {
+      to: 'false_positive',
+      reason: 'vulnerable_code_not_in_execute_path',
+      comment: 'never called',
+    };
+
+    beforeAll(async () => {
+      trivyRule = await seedRule(h.ctx.db, { key: `trivy:${VULN}`, quality: 'security' });
+      qualorRule = await seedRule(h.ctx.db, { key: 'qualor:js-eval', quality: 'security' });
+    });
+
+    it('writes the project decision from main, and release/1.x follows', async () => {
+      const f = await fixture();
+      const res = await transition(f.issue.main, notAffected);
+      expect(res.statusCode, res.body).toBe(200);
+      expect(await decisionsOf(f)).toMatchObject([
+        {
+          branchId: null,
+          versionId: null,
+          packageName: 'lodash',
+          vulnerabilityId: VULN,
+          status: 'false_positive',
+          reason: 'vulnerable_code_not_in_execute_path',
+          comment: 'never called',
+          decidedBy: memberId,
+        },
+      ]);
+      // D4: main and the tracked branch mirror it; elsewhere a non-Open decision closes open ones.
+      expect(await statuses(f)).toEqual({
+        main: 'false_positive',
+        release: 'false_positive',
+        feature: 'false_positive',
+        mr: 'false_positive',
+      });
+      for (const id of [f.issue.main, f.issue.release]) {
+        expect(
+          (await changesOf(id)).map((c) => [c.oldValue, c.newValue, c.userId, c.comment]),
+        ).toEqual([['open', 'false_positive', memberId, 'never called']]);
+      }
+      expect(res.json().vulnerability).toMatchObject({
+        writesDecision: true,
+        decision: { status: 'false_positive', scope: 'project' },
+      });
+    });
+
+    it('answers 422 REASON_REQUIRED for a decision-writing false positive without a reason, writing nothing', async () => {
+      const f = await fixture();
+      const res = await transition(f.issue.main, { to: 'false_positive', comment: 'never called' });
+      expect(res.statusCode).toBe(422);
+      expect(res.json()).toMatchObject({
+        code: 'REASON_REQUIRED',
+        errors: [{ path: 'body.reason' }],
+      });
+      expect(await statuses(f)).toEqual({
+        main: 'open',
+        release: 'open',
+        feature: 'open',
+        mr: 'open',
+      });
+      expect(await decisionsOf(f)).toEqual([]);
+      expect(await changesOf(f.issue.main)).toEqual([]);
+    });
+
+    it('sets the decision back to open on a reopen of main, which reopens release/1.x only', async () => {
+      const f = await fixture();
+      expect((await transition(f.issue.main, notAffected)).statusCode).toBe(200);
+      const res = await transition(f.issue.main, { to: 'open', reason: 'component_not_present' });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(await decisionsOf(f)).toMatchObject([
+        { branchId: null, status: 'open', reason: null, comment: null, decidedBy: memberId },
+      ]);
+      // An Open decision changes no local triage (D4).
+      expect(await statuses(f)).toEqual({
+        main: 'open',
+        release: 'open',
+        feature: 'false_positive',
+        mr: 'false_positive',
+      });
+    });
+
+    it('writes no decision when an issue is resolved', async () => {
+      const f = await fixture();
+      expect((await transition(f.issue.main, { to: 'resolved' })).statusCode).toBe(200);
+      expect(await decisionsOf(f)).toEqual([]);
+      expect(await statuses(f)).toMatchObject({ main: 'resolved', release: 'open' });
+    });
+
+    it('keeps triage on feature/x and the merge request local, with no reason asked', async () => {
+      const f = await fixture();
+      const feature = await transition(f.issue.feature, { to: 'wont_fix', comment: 'spike' });
+      expect(feature.statusCode, feature.body).toBe(200);
+      expect(feature.json().vulnerability).toMatchObject({ writesDecision: false, decision: null });
+      const mr = await transition(f.issue.mr, { to: 'false_positive', comment: 'test only' });
+      expect(mr.statusCode, mr.body).toBe(200);
+      expect(await decisionsOf(f)).toEqual([]);
+      expect(await statuses(f)).toEqual({
+        main: 'open',
+        release: 'open',
+        feature: 'wont_fix',
+        mr: 'false_positive',
+      });
+    });
+
+    it('transitions a Trivy issue without a package name as before, without a reason', async () => {
+      const f = await fixture();
+      const old = await seedIssue(h.ctx.db, {
+        projectId: f.projectId,
+        branchId: f.ids.main,
+        ruleId: trivyRule,
+        message: `lodash@4.17.20: ${VULN}`,
+        packageName: null,
+      });
+      const res = await transition(old, { to: 'false_positive', comment: 'never called' });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toMatchObject({ status: 'false_positive', vulnerability: null });
+      expect(await decisionsOf(f)).toEqual([]);
+      expect(await statuses(f)).toMatchObject({ main: 'open', release: 'open' });
+    });
+
+    it('fails only the decision-writing false positive without a reason in a bulk request', async () => {
+      const f = await fixture();
+      const other = await seedIssue(h.ctx.db, {
+        projectId: f.projectId,
+        branchId: f.ids.main,
+        ruleId: qualorRule,
+      });
+      const res = await call('POST', '/issues/bulk-transition', member, {
+        ids: [f.issue.main, other],
+        to: 'false_positive',
+        comment: 'checked',
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toEqual({
+        succeeded: [other],
+        failed: [{ id: f.issue.main, code: 'REASON_REQUIRED' }],
+      });
+      expect((await statusOf(other)).status).toBe('false_positive');
+      expect((await statusOf(f.issue.main)).status).toBe('open');
+      expect(await decisionsOf(f)).toEqual([]);
+    });
+
+    it('writes one decision for two issues of one pair in a bulk request (ruling R4)', async () => {
+      const f = await fixture();
+      const res = await call('POST', '/issues/bulk-transition', member, {
+        ids: [f.issue.release, f.issue.main],
+        ...notAffected,
+      });
+      expect(res.json()).toEqual({ succeeded: [f.issue.release, f.issue.main], failed: [] });
+      expect(await decisionsOf(f)).toMatchObject([
+        { branchId: null, status: 'false_positive', reason: 'vulnerable_code_not_in_execute_path' },
+      ]);
+      expect(await statuses(f)).toMatchObject({
+        main: 'false_positive',
+        release: 'false_positive',
+      });
+      for (const id of [f.issue.main, f.issue.release]) {
+        expect(await changesOf(id)).toHaveLength(1);
+      }
+    });
+
+    it('shows the vulnerability and the decision in force on the issue', async () => {
+      const f = await fixture();
+      const get = async (id: string) => (await call('GET', `/issues/${id}`)).json();
+      expect((await get(f.issue.main)).vulnerability).toEqual({
+        packageName: 'lodash',
+        vulnerabilityId: VULN,
+        writesDecision: true,
+        decision: null,
+      });
+      await h.ctx.db.insert(vulnerabilityDecisions).values([
+        {
+          projectId: f.projectId,
+          packageName: 'lodash',
+          vulnerabilityId: VULN,
+          status: 'false_positive',
+          reason: 'component_not_present',
+          comment: 'not shipped',
+          decidedBy: memberId,
+        },
+        {
+          projectId: f.projectId,
+          packageName: 'lodash',
+          vulnerabilityId: VULN,
+          branchId: f.ids.release,
+          status: 'open',
+        },
+      ]);
+      expect((await get(f.issue.main)).vulnerability).toEqual({
+        packageName: 'lodash',
+        vulnerabilityId: VULN,
+        writesDecision: true,
+        decision: {
+          status: 'false_positive',
+          reason: 'component_not_present',
+          comment: 'not shipped',
+          decidedAt: expect.any(String),
+          decidedBy: { id: memberId, name: 'triager' },
+          scope: 'project',
+        },
+      });
+      expect((await get(f.issue.release)).vulnerability.decision).toMatchObject({
+        status: 'open',
+        decidedBy: null,
+        scope: 'branch',
+      });
+      expect((await get(f.issue.mr)).vulnerability).toMatchObject({
+        writesDecision: false,
+        decision: { status: 'false_positive', scope: 'project' },
+      });
+      const plain = await seedIssue(h.ctx.db, {
+        projectId: f.projectId,
+        branchId: f.ids.main,
+        ruleId: qualorRule,
+      });
+      expect((await get(plain)).vulnerability).toBeNull();
     });
   });
 });

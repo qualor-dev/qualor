@@ -73,6 +73,7 @@ function detail(overrides: Partial<IssueDetail> = {}): IssueDetail {
     lastSeenAnalysisId: null,
     resolvedBy: null,
     aiReview: null,
+    vulnerability: null,
     ...overrides,
   };
 }

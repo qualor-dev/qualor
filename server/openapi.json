@@ -13484,6 +13484,123 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "vulnerability": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "packageName": {
+                              "type": "string"
+                            },
+                            "vulnerabilityId": {
+                              "type": "string"
+                            },
+                            "writesDecision": {
+                              "type": "boolean"
+                            },
+                            "decision": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "open",
+                                        "false_positive",
+                                        "wont_fix"
+                                      ]
+                                    },
+                                    "reason": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "component_not_present",
+                                            "vulnerable_code_not_present",
+                                            "vulnerable_code_not_in_execute_path",
+                                            "vulnerable_code_cannot_be_controlled_by_adversary",
+                                            "inline_mitigations_already_exist"
+                                          ]
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "comment": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "decidedAt": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    "decidedBy": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "scope": {
+                                      "type": "string",
+                                      "enum": [
+                                        "project",
+                                        "branch"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "status",
+                                    "reason",
+                                    "comment",
+                                    "decidedAt",
+                                    "decidedBy",
+                                    "scope"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "packageName",
+                            "vulnerabilityId",
+                            "writesDecision",
+                            "decision"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -13516,7 +13633,8 @@
                     "firstSeenAnalysisId",
                     "lastSeenAnalysisId",
                     "resolvedBy",
-                    "aiReview"
+                    "aiReview",
+                    "vulnerability"
                   ],
                   "additionalProperties": false
                 }
@@ -14060,6 +14178,123 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "vulnerability": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "packageName": {
+                              "type": "string"
+                            },
+                            "vulnerabilityId": {
+                              "type": "string"
+                            },
+                            "writesDecision": {
+                              "type": "boolean"
+                            },
+                            "decision": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "open",
+                                        "false_positive",
+                                        "wont_fix"
+                                      ]
+                                    },
+                                    "reason": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "component_not_present",
+                                            "vulnerable_code_not_present",
+                                            "vulnerable_code_not_in_execute_path",
+                                            "vulnerable_code_cannot_be_controlled_by_adversary",
+                                            "inline_mitigations_already_exist"
+                                          ]
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "comment": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "decidedAt": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    "decidedBy": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "scope": {
+                                      "type": "string",
+                                      "enum": [
+                                        "project",
+                                        "branch"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "status",
+                                    "reason",
+                                    "comment",
+                                    "decidedAt",
+                                    "decidedBy",
+                                    "scope"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "packageName",
+                            "vulnerabilityId",
+                            "writesDecision",
+                            "decision"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -14092,7 +14327,8 @@
                     "firstSeenAnalysisId",
                     "lastSeenAnalysisId",
                     "resolvedBy",
-                    "aiReview"
+                    "aiReview",
+                    "vulnerability"
                   ],
                   "additionalProperties": false
                 }
@@ -14174,7 +14410,7 @@
     },
     "/api/v0/issues/{id}/transition": {
       "post": {
-        "summary": "Change the status (open, resolved, wont_fix, false_positive); mirrored onto duplicates",
+        "summary": "Change the status (open, resolved, wont_fix, false_positive); mirrored onto duplicates, and onto the vulnerability decision of a Trivy issue on main or a tracked branch",
         "tags": [
           "issues"
         ],
@@ -14197,6 +14433,16 @@
                   "comment": {
                     "type": "string",
                     "maxLength": 2000
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "component_not_present",
+                      "vulnerable_code_not_present",
+                      "vulnerable_code_not_in_execute_path",
+                      "vulnerable_code_cannot_be_controlled_by_adversary",
+                      "inline_mitigations_already_exist"
+                    ]
                   },
                   "suggestionId": {
                     "type": "string",
@@ -14676,6 +14922,123 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "vulnerability": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "packageName": {
+                              "type": "string"
+                            },
+                            "vulnerabilityId": {
+                              "type": "string"
+                            },
+                            "writesDecision": {
+                              "type": "boolean"
+                            },
+                            "decision": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "open",
+                                        "false_positive",
+                                        "wont_fix"
+                                      ]
+                                    },
+                                    "reason": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "component_not_present",
+                                            "vulnerable_code_not_present",
+                                            "vulnerable_code_not_in_execute_path",
+                                            "vulnerable_code_cannot_be_controlled_by_adversary",
+                                            "inline_mitigations_already_exist"
+                                          ]
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "comment": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "decidedAt": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    "decidedBy": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "scope": {
+                                      "type": "string",
+                                      "enum": [
+                                        "project",
+                                        "branch"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "status",
+                                    "reason",
+                                    "comment",
+                                    "decidedAt",
+                                    "decidedBy",
+                                    "scope"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "packageName",
+                            "vulnerabilityId",
+                            "writesDecision",
+                            "decision"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -14708,7 +15071,8 @@
                     "firstSeenAnalysisId",
                     "lastSeenAnalysisId",
                     "resolvedBy",
-                    "aiReview"
+                    "aiReview",
+                    "vulnerability"
                   ],
                   "additionalProperties": false
                 }
@@ -14756,7 +15120,7 @@
             }
           },
           "422": {
-            "description": "Validation failed (VALIDATION_FAILED; also a suggestionId that is not a succeeded AI triage suggestion of this issue), or a required comment is missing (COMMENT_REQUIRED)",
+            "description": "Validation failed (VALIDATION_FAILED; also a suggestionId that is not a succeeded AI triage suggestion of this issue), a required comment is missing (COMMENT_REQUIRED), or a false positive that writes the vulnerability decision has no reason (REASON_REQUIRED)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14823,6 +15187,16 @@
                   "comment": {
                     "type": "string",
                     "maxLength": 2000
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "component_not_present",
+                      "vulnerable_code_not_present",
+                      "vulnerable_code_not_in_execute_path",
+                      "vulnerable_code_cannot_be_controlled_by_adversary",
+                      "inline_mitigations_already_exist"
+                    ]
                   }
                 },
                 "required": [
@@ -14865,7 +15239,8 @@
                             "enum": [
                               "NOT_FOUND",
                               "FORBIDDEN",
-                              "INVALID_TRANSITION"
+                              "INVALID_TRANSITION",
+                              "REASON_REQUIRED"
                             ]
                           }
                         },

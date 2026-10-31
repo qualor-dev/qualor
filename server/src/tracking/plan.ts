@@ -55,6 +55,17 @@ export interface InheritedIssue {
   severityOverride: Severity | null;
 }
 
+/**
+ * The vulnerability decision in force for a finding's pair on the branch, when it is not Open
+ * (vuln plan 2b, D4): a new issue takes its status, over the one it would inherit.
+ */
+export interface FindingDecision {
+  status: 'false_positive' | 'wont_fix';
+  comment: string | null;
+  /** Who made it: the new issue is resolved by them, as a decision resolves existing issues. */
+  decidedBy: string | null;
+}
+
 /** Row shape bound through jsonb_to_recordset by writes.ts (snake_case = column names). */
 export interface IssueWrite {
   id: string;
@@ -77,6 +88,8 @@ export interface IssueWrite {
   secondary_locations: unknown;
   /** Qualor's C# taint engine's confidence (R-9), null when the finding has none. */
   confidence: Confidence | null;
+  /** The package of a Trivy finding (vuln plan 2b, D2), null for every other finding. */
+  package_name: string | null;
 }
 
 export interface IssueInsert extends IssueWrite {
@@ -104,6 +117,14 @@ export interface StatusChange {
   issueId: string;
   oldValue: IssueStatus;
   newValue: IssueStatus;
+}
+
+/**
+ * A new issue whose status a vulnerability decision set (D4): its changelog row, written by the
+ * system with the decision's comment after the inherited changelog is copied, so it comes last.
+ */
+export interface DecidedIssue extends StatusChange {
+  comment: string | null;
 }
 
 /**
@@ -141,6 +162,8 @@ export interface TrackingPlan {
    */
   closes: CloseWrite[];
   live: LiveIssue[];
+  /** The new issues a vulnerability decision gave their status. */
+  decided: DecidedIssue[];
 }
 
 export interface PlanInput {
@@ -152,6 +175,8 @@ export interface PlanInput {
   now: Date;
   /** By position in `findings`; see data-model.md §5.4. */
   inherited?: ReadonlyMap<number, InheritedIssue>;
+  /** By position in `findings`: the vulnerability decision in force (vuln plan 2b, D4). */
+  decisions?: ReadonlyMap<number, FindingDecision>;
   /**
    * The server engines (rules/server-engines.ts) that ran for this analysis with status ok.
    * Whether one ran comes from here, never from the report: a report entry claiming one with
@@ -235,6 +260,7 @@ function write(
     // Stored as reported. Their paths may lie outside files[]; nothing joins on them (ruling T6).
     secondary_locations: f.finding.secondaryLocations ?? [],
     confidence: findingConfidence(f.finding) ?? null,
+    package_name: f.packageName,
   };
 }
 
@@ -262,6 +288,7 @@ export function planTracking(input: PlanInput): TrackingPlan {
     inserts: [],
     closes: [],
     live: [],
+    decided: [],
   };
   const matchedCandidates = new Set<number>();
   const liveOf = (id: string, f: AcceptedFinding, status: IssueStatus, dup: string | null) =>
@@ -303,7 +330,11 @@ export function planTracking(input: PlanInput): TrackingPlan {
     }
     const inherited = input.inherited?.get(i);
     const id = uuidv7();
-    const status: IssueStatus = inherited?.status ?? 'open';
+    const inheritedStatus = inherited?.status ?? 'open';
+    // D4: a new Trivy issue takes the decision in force over the status it would inherit.
+    const decision = input.decisions?.get(i);
+    const decided = decision?.status === inheritedStatus ? undefined : decision;
+    const status: IssueStatus = decided?.status ?? inheritedStatus;
     const inNewCode = classifier.inNewCode(
       location?.path ?? null,
       location?.startLine ?? null,
@@ -313,10 +344,18 @@ export function planTracking(input: PlanInput): TrackingPlan {
       ...write(f, id, status, inNewCode, inherited?.severityOverride ?? f.severity),
       severity_overridden: (inherited?.severityOverride ?? null) !== null,
       first_seen_at: (inherited?.firstSeenAt ?? now).toISOString(),
-      resolved_at: inherited?.resolvedAt?.toISOString() ?? null,
-      resolved_by: inherited?.resolvedBy ?? null,
+      resolved_at: decided ? now.toISOString() : (inherited?.resolvedAt?.toISOString() ?? null),
+      resolved_by: decided ? decided.decidedBy : (inherited?.resolvedBy ?? null),
       inherited_from: inherited?.sourceIssueId ?? null,
     });
+    if (decided) {
+      plan.decided.push({
+        issueId: id,
+        oldValue: inheritedStatus,
+        newValue: decided.status,
+        comment: decided.comment,
+      });
+    }
     liveOf(id, f, status, null);
   });
 

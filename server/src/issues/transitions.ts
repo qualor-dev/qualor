@@ -12,6 +12,8 @@ import { uuidv7 } from '../db/ids';
 import type { OrganizationRole, ProjectRole } from '../db/schema';
 import { enqueueReevaluations } from '../gates/reevaluate';
 import type { IssueStatus } from '../tracking/plan';
+import { writeDecision, type VexJustification } from '../vulnerabilities/decisions';
+import { decidingIssues, type DecisionPair } from '../vulnerabilities/trivy-issues';
 
 /** data-model.md §6: the statuses a user may set; only the system sets `closed`. */
 export const USER_STATUSES = ['open', 'resolved', 'wont_fix', 'false_positive'] as const;
@@ -55,9 +57,11 @@ export interface TransitionFailure {
   id: string;
   /**
    * NOT_FOUND: the issue does not exist or the caller cannot read it; FORBIDDEN: it can read it
-   * but its role does not allow triage (rbac-audit.md §5, a viewer).
+   * but its role does not allow triage (rbac-audit.md §5, a viewer); REASON_REQUIRED: it is a
+   * false positive that writes the project's vulnerability decision, and no reason was given
+   * (vuln plan 2b, D9).
    */
-  code: 'NOT_FOUND' | 'FORBIDDEN' | 'INVALID_TRANSITION';
+  code: 'NOT_FOUND' | 'FORBIDDEN' | 'INVALID_TRANSITION' | 'REASON_REQUIRED';
   /** The status the issue has (INVALID_TRANSITION only). */
   from?: IssueStatus;
 }
@@ -113,6 +117,13 @@ export interface TransitionOptions {
   comments?: ReadonlyMap<string, string>;
   /** Absent: nothing is recorded (the status import records one summary event itself). */
   audit?: TransitionAudit;
+  /**
+   * The VEX justification of a false positive that writes the project's vulnerability decision
+   * (vuln plan 2b, D9); ignored for every other issue and status.
+   */
+  reason?: VexJustification | null;
+  /** `import`: the SonarQube status import, whose decisions need no reason (D9). Default `issue`. */
+  source?: 'issue' | 'import';
 }
 
 /** The requested issues, split by what the user's roles allow on each one's project. */
@@ -185,6 +196,12 @@ async function issueAccess(
  *    else `comment`.
  * 5. (scm.md §7): the branches of the issues that changed get a re-evaluation of their
  *    latest analysis's gate, enqueued in the same transaction (at most one waiting per branch).
+ * 6. (vuln plan 2b, D4): a Trivy issue with a package name on `main` or a tracked branch shares
+ *    its pair's project-wide vulnerability decision. A false positive of one needs a reason
+ *    (`REASON_REQUIRED` otherwise, checked before anything of it is written; a duplicate that
+ *    would need one keeps its status). Once every issue has its own status, `open`,
+ *    `false_positive` and `wont_fix` write the decision once per pair among the changed issues,
+ *    leaving every requested issue alone (ruling R4). `resolved` writes none.
  */
 export async function transitionIssues(
   access: AccessContext & { db: Db },
@@ -200,6 +217,8 @@ export async function transitionIssues(
     return transitionIssuesIn(tx, user, requested, to, comment, {
       comments: options.comments,
       audit: options.audit,
+      reason: options.reason,
+      source: options.source,
     });
   });
 }
@@ -215,13 +234,22 @@ export async function transitionIssuesIn(
   requested: readonly string[],
   to: UserStatus,
   comment: string | null,
-  options: Pick<TransitionOptions, 'comments' | 'audit'> = {},
+  options: Pick<TransitionOptions, 'comments' | 'audit' | 'reason' | 'source'> = {},
 ): Promise<TransitionResult> {
   const { comments } = options;
   const ids = [...new Set(requested)];
   const { allowed, forbidden } = await issueAccess(tx, user, ids);
   const locked = await lockIssues(tx, [...allowed.keys()]);
   const byId = new Map(locked.map((r) => [r.id, r]));
+  const deciding =
+    to === 'resolved'
+      ? new Map<string, DecisionPair>()
+      : await decidingIssues(
+          tx,
+          locked.map((r) => r.id),
+        );
+  const reasonMissing = (id: string) =>
+    to === 'false_positive' && options.source !== 'import' && !options.reason && deciding.has(id);
   const duplicatesOf = new Map<string, LockedIssue[]>();
   for (const row of locked) {
     if (row.duplicate_of_issue_id === null) continue;
@@ -247,11 +275,19 @@ export async function transitionIssuesIn(
       result.failed.push({ id, code: 'INVALID_TRANSITION', from: row.status });
       continue;
     }
+    if (!changes.has(id) && reasonMissing(id)) {
+      result.failed.push({ id, code: 'REASON_REQUIRED' });
+      continue;
+    }
     changes.set(id, row.status);
     commentOf.set(id, comments?.get(id) ?? comment);
     result.succeeded.push(id);
     for (const duplicate of duplicatesOf.get(id) ?? []) {
-      if (!changes.has(duplicate.id) && transitionAllowed(duplicate.status, to)) {
+      if (
+        !changes.has(duplicate.id) &&
+        transitionAllowed(duplicate.status, to) &&
+        !reasonMissing(duplicate.id)
+      ) {
         changes.set(duplicate.id, duplicate.status);
         commentOf.set(duplicate.id, commentOf.get(id) ?? comment);
       }
@@ -277,6 +313,35 @@ export async function transitionIssuesIn(
     applied.map((a) => a.id),
   );
   if (options.audit) await recordStatusChanges(tx, options.audit, log, to, result.succeeded);
+  if (to !== 'resolved') {
+    // Ruling R4: one decision per pair, written after every issue has its own status, so a
+    // second requested issue of the pair never fails its status guard on the first's mirror.
+    const pairs = new Map<string, DecisionPair & { comment: string | null }>();
+    for (const change of log) {
+      const pair = deciding.get(change.issue_id);
+      if (!pair) continue;
+      const key = JSON.stringify([pair.projectId, pair.packageName, pair.vulnerabilityId]);
+      if (!pairs.has(key)) pairs.set(key, { ...pair, comment: change.comment });
+    }
+    for (const pair of pairs.values()) {
+      await writeDecision(
+        tx,
+        {
+          projectId: pair.projectId,
+          packageName: pair.packageName,
+          vulnerabilityId: pair.vulnerabilityId,
+          scope: { kind: 'project' },
+          status: to,
+          reason: to === 'false_positive' ? (options.reason ?? null) : null,
+          comment: pair.comment,
+          userId: user.id,
+          source: options.source ?? 'issue',
+          skipIssueIds: ids,
+        },
+        options.audit && { recorder: options.audit.recorder, context: options.audit.context },
+      );
+    }
+  }
   return result;
 }
 

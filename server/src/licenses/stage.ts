@@ -352,6 +352,7 @@ export const licensePolicyStage: IngestionStage = {
       rule,
       severity: rule.defaultSeverity,
       fingerprint: fingerprints[i] ?? '',
+      packageName: null,
     }));
     ctx.state.findings = [...findings, ...accepted];
     const truncated =

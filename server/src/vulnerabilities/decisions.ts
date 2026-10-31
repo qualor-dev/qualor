@@ -1,6 +1,7 @@
 import { and, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { AuditActorContext, AuditRecorder } from '../audit/recorder';
 import { projectRefs } from '../audit/refs';
+import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
 import { first } from '../db/rows';
 import { uuidv7 } from '../db/ids';
@@ -37,8 +38,8 @@ export interface DecisionInput {
   source: 'tab' | 'issue' | 'import';
   /** A project-wide write only: the override of this target is removed in the same transaction. */
   replaceOverrideOf?: TargetScope;
-  /** The issue the caller changes itself, so the decision leaves it alone. */
-  skipIssueId?: string;
+  /** The issues the caller changes itself, so the decision leaves them alone. */
+  skipIssueIds?: readonly string[];
 }
 
 export type DecisionRow = typeof vulnerabilityDecisions.$inferSelect;
@@ -213,7 +214,7 @@ async function applyToIssues(tx: Executor, input: DecisionInput): Promise<string
        AND r.engine_id = 'trivy' AND r.engine_rule_id = ${vulnerabilityId}
        AND i.package_name = ${packageName}
        AND i.status IN ('open', 'false_positive', 'wont_fix')
-       ${input.skipIssueId ? sql`AND i.id <> ${input.skipIssueId}` : sql``}
+       ${input.skipIssueIds?.length ? sql`AND i.id NOT IN ${uuidList(input.skipIssueIds)}` : sql``}
        ${scope.kind === 'branch' ? sql`AND b.id = ${scope.id}` : sql``}
        ${
          scope.kind === 'project'

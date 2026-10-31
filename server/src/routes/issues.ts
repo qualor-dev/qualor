@@ -13,7 +13,7 @@ import type { RouteDeps } from '../app';
 import { actorOf } from '../audit/recorder';
 import { accessOf, requireUser } from '../auth/access';
 import { first } from '../db/rows';
-import { AI_CATEGORIES, issueChanges, reviewFindings, rules, users } from '../db/schema';
+import { AI_CATEGORIES, branches, issueChanges, reviewFindings, rules, users } from '../db/schema';
 import { decodeCursor, pageQuery, pageSchema, toPage } from '../http/pagination';
 import { conflict, forbidden, notFound, ProblemError, validationFailed } from '../http/problem';
 import { idParams, iso, isoOrNull, noNul, text, timestamp } from '../http/schemas';
@@ -44,6 +44,14 @@ import {
 } from '../issues/transitions';
 import { branchForUser, issueForUser, type IssueRow } from '../projects/access';
 import type { IssueStatus } from '../tracking/plan';
+import { vulnerabilitySettings } from '../versions/settings';
+import {
+  DECISION_STATUSES,
+  effectiveDecision,
+  VEX_JUSTIFICATIONS,
+  type VexJustification,
+} from '../vulnerabilities/decisions';
+import { TRIVY_ENGINE, writesDecision } from '../vulnerabilities/trivy-issues';
 
 export const issueStatusSchema = z.enum(ISSUE_STATUSES);
 
@@ -103,6 +111,27 @@ const aiReviewSchema = z.object({
   reviewedCommit: z.string(),
 });
 
+/**
+ * A Trivy issue's pair and the project's decision on it (vuln plan 2b, D4): the one in force on
+ * the issue's branch, its own row else the project's, null while there is none.
+ */
+const vulnerabilitySchema = z.object({
+  packageName: z.string(),
+  vulnerabilityId: z.string(),
+  /** Whether triage of this issue writes the project-wide decision (main or a tracked branch). */
+  writesDecision: z.boolean(),
+  decision: z
+    .object({
+      status: z.enum(DECISION_STATUSES),
+      reason: z.enum(VEX_JUSTIFICATIONS).nullable(),
+      comment: z.string().nullable(),
+      decidedAt: timestamp,
+      decidedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+      scope: z.enum(['project', 'branch']),
+    })
+    .nullable(),
+});
+
 export const issueDetailSchema = issueSchema.extend({
   rule: z.object({
     key: z.string(),
@@ -124,6 +153,8 @@ export const issueDetailSchema = issueSchema.extend({
   resolvedBy: z.object({ id: z.uuid(), username: z.string() }).nullable(),
   /** The finding of an AI review; null for every issue the analyzers report. */
   aiReview: aiReviewSchema.nullable(),
+  /** The vulnerability of a Trivy issue with a package name (vuln plan 2b); null for others. */
+  vulnerability: vulnerabilitySchema.nullable(),
 });
 
 const changeSchema = z.object({
@@ -139,7 +170,12 @@ const changeSchema = z.object({
 
 /** data-model.md §6: at most 2 000 characters (issue_changes_comment_length), no U+0000. */
 const commentField = noNul(z.string().max(2_000)).optional();
-const transitionBody = { to: z.enum(USER_STATUSES), comment: commentField };
+const transitionBody = {
+  to: z.enum(USER_STATUSES),
+  comment: commentField,
+  /** Required for a false positive that writes the project's vulnerability decision (D9). */
+  reason: z.enum(VEX_JUSTIFICATIONS).optional(),
+};
 /** api.md §3: a bulk transition names at most this many issues. */
 const BULK_TRANSITION_MAX_IDS = 500;
 
@@ -152,6 +188,16 @@ function transitionComment(to: UserStatus, raw: string | undefined): string | nu
     });
   }
   return comment;
+}
+
+/** 422 REASON_REQUIRED: the transition of a false positive that writes a decision named none. */
+function reasonRequired(): ProblemError {
+  return new ProblemError(
+    422,
+    'REASON_REQUIRED',
+    'A reason is required to set false_positive on a Trivy issue of main or a tracked branch',
+    { errors: [{ path: 'body.reason', message: 'Required for false_positive' }] },
+  );
 }
 
 const facetValues = z.array(z.object({ value: z.string(), count: z.number().int() }));
@@ -253,6 +299,53 @@ export const issueRoutes: FastifyPluginAsyncZod<{
   // change; checked before anything is read or written.
   const chargeChanges = chargeIssueChanges ?? issueChangeCharge();
 
+  /** The pair of a Trivy issue and the decision in force on its branch; null for other issues. */
+  const vulnerabilityOf = async (
+    issue: IssueRow,
+    rule: typeof rules.$inferSelect,
+  ): Promise<z.infer<typeof vulnerabilitySchema> | null> => {
+    if (rule.engineId !== TRIVY_ENGINE || issue.packageName === null) return null;
+    const branch = first(
+      await deps.db
+        .select({ name: branches.name, isMain: branches.isMain, kind: branches.kind })
+        .from(branches)
+        .where(eq(branches.id, issue.branchId)),
+    );
+    const settings = await vulnerabilitySettings(deps.db, issue.projectId);
+    const decision = await effectiveDecision(deps.db, {
+      projectId: issue.projectId,
+      branchId: issue.branchId,
+      versionId: null,
+      packageName: issue.packageName,
+      vulnerabilityId: rule.engineRuleId,
+    });
+    const [decider] = decision?.decidedBy
+      ? await deps.db
+          .select({ id: users.id, username: users.username, displayName: users.displayName })
+          .from(users)
+          .where(eq(users.id, decision.decidedBy))
+      : [];
+    return {
+      packageName: issue.packageName,
+      vulnerabilityId: rule.engineRuleId,
+      writesDecision: writesDecision(settings, {
+        engineId: rule.engineId,
+        packageName: issue.packageName,
+        branch,
+      }),
+      decision: decision && {
+        status: decision.status,
+        reason: decision.reason as VexJustification | null,
+        comment: decision.comment,
+        decidedAt: iso(decision.decidedAt),
+        decidedBy: decider
+          ? { id: decider.id, name: decider.displayName ?? decider.username }
+          : null,
+        scope: decision.branchId === null ? 'project' : 'branch',
+      },
+    };
+  };
+
   /** The full issue (snippet, secondary locations, rule summary), after the access check. */
   const detail = async (issue: IssueRow): Promise<z.infer<typeof issueDetailSchema>> => {
     const rule = first(await deps.db.select().from(rules).where(eq(rules.id, issue.ruleId)));
@@ -301,6 +394,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
             reviewedCommit: finding.reviewedHeadSha,
           }
         : null,
+      vulnerability: await vulnerabilityOf(issue, rule),
     };
   };
 
@@ -364,7 +458,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
           problemDescriptions: {
             409: 'The transition is not allowed from the current status (INVALID_TRANSITION)',
             429: 'Too many issue changes by this user (RATE_LIMITED); see Retry-After',
-            422: 'Validation failed (VALIDATION_FAILED; also a suggestionId that is not a succeeded AI triage suggestion of this issue), or a required comment is missing (COMMENT_REQUIRED)',
+            422: 'Validation failed (VALIDATION_FAILED; also a suggestionId that is not a succeeded AI triage suggestion of this issue), a required comment is missing (COMMENT_REQUIRED), or a false positive that writes the vulnerability decision has no reason (REASON_REQUIRED)',
             503: 'The issue stayed locked by an ingestion (CONCURRENCY_CONFLICT); see Retry-After',
           },
         },
@@ -372,7 +466,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
       schema: {
         tags: ['issues'],
         summary:
-          'Change the status (open, resolved, wont_fix, false_positive); mirrored onto duplicates',
+          'Change the status (open, resolved, wont_fix, false_positive); mirrored onto duplicates, and onto the vulnerability decision of a Trivy issue on main or a tracked branch',
         params: idParams,
         body: z.strictObject({ ...transitionBody, suggestionId: z.uuid().optional() }),
         response: { 200: issueDetailSchema },
@@ -423,12 +517,14 @@ export const issueRoutes: FastifyPluginAsyncZod<{
             suggestionId: request.body.suggestionId ?? null,
             mcpClientId: principal.kind === 'oauth' ? principal.clientId : null,
           },
+          reason: request.body.reason ?? null,
         },
       );
       const [failure] = result.failed;
       if (failure?.code === 'NOT_FOUND') throw notFound('Issue');
       if (failure?.code === 'FORBIDDEN')
         throw forbidden('FORBIDDEN', 'Your role does not allow this');
+      if (failure?.code === 'REASON_REQUIRED') throw reasonRequired();
       if (failure) {
         throw conflict(
           'INVALID_TRANSITION',
@@ -467,7 +563,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
             failed: z.array(
               z.object({
                 id: z.uuid(),
-                code: z.enum(['NOT_FOUND', 'FORBIDDEN', 'INVALID_TRANSITION']),
+                code: z.enum(['NOT_FOUND', 'FORBIDDEN', 'INVALID_TRANSITION', 'REASON_REQUIRED']),
               }),
             ),
           }),
@@ -492,6 +588,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
             bulk: true,
             suggestionId: null,
           },
+          reason: request.body.reason ?? null,
         },
       );
       return {

@@ -13,7 +13,7 @@ import {
 import { mainBranchId, seedIssue, seedRule } from '../../test/issues';
 import { callTool, mcpCall, sdkClient } from '../../test/mcp';
 import { oauthTokens as runOAuth } from '../../test/oauth';
-import { issueChanges, issues, oauthClients } from '../db/schema';
+import { issueChanges, issues, oauthClients, vulnerabilityDecisions } from '../db/schema';
 import { MCP_VIA_LINE } from './tools/transition';
 
 describe('qualor_transition_issue (spec §5, ruling R2)', () => {
@@ -22,6 +22,7 @@ describe('qualor_transition_issue (spec §5, ruling R2)', () => {
   let reader: string;
   let viewer: string;
   let maint: Session;
+  let projectId: string;
   let issueId: string;
   beforeAll(async () => {
     ctx = await createTestContext({ config: { publicUrl: 'https://q.example' } });
@@ -31,7 +32,7 @@ describe('qualor_transition_issue (spec §5, ruling R2)', () => {
     const v = await createUser(ctx, { username: 'view' });
     await addMember(ctx, org, m.id, 'member');
     await addMember(ctx, org, v.id, 'viewer');
-    const projectId = (await createProject(ctx, admin, { organizationId: org, key: 'shop' })).id;
+    projectId = (await createProject(ctx, admin, { organizationId: org, key: 'shop' })).id;
     const ruleId = await seedRule(ctx.db, { key: 'eslint:no-eval' });
     issueId = await seedIssue(ctx.db, {
       projectId,
@@ -64,6 +65,31 @@ describe('qualor_transition_issue (spec §5, ruling R2)', () => {
     expect(changes.at(-1)?.comment).toBe(
       'Input is a compile-time constant\n\nvia MCP · Test agent',
     );
+  });
+
+  it('passes the reason on: a Trivy issue on main writes it into the project decision', async () => {
+    const trivy = await seedIssue(ctx.db, {
+      projectId,
+      branchId: await mainBranchId(ctx.db, projectId),
+      ruleId: await seedRule(ctx.db, { key: 'trivy:CVE-2026-0001', quality: 'security' }),
+      packageName: 'lodash',
+    });
+    const r = await callTool(ctx, writer, 'qualor_transition_issue', {
+      issueId: trivy,
+      to: 'false_positive',
+      reason: 'vulnerable_code_not_in_execute_path',
+      comment: 'The vulnerable function is never called',
+    });
+    expect(r.isError, r.text).toBe(false);
+    const [decision] = await ctx.db
+      .select()
+      .from(vulnerabilityDecisions)
+      .where(eq(vulnerabilityDecisions.projectId, projectId));
+    expect(decision).toMatchObject({
+      packageName: 'lodash',
+      status: 'false_positive',
+      reason: 'vulnerable_code_not_in_execute_path',
+    });
   });
 
   it('needs a comment', async () => {

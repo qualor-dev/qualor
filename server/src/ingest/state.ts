@@ -46,6 +46,11 @@ export interface AcceptedFinding {
   severity: Severity;
   /** data-model.md §5.1, computed over ALL report findings (before filtering). */
   fingerprint: string;
+  /**
+   * The package of a Trivy finding (vuln plan 2b, D2: vulnerabilities/trivy-issues.ts
+   * `packageNameOf`), which keys its vulnerability decision; null for every other finding.
+   */
+  packageName: string | null;
 }
 
 /** Measure values keyed like gate metrics: `coverage` (overall) and `new_coverage` (new). */

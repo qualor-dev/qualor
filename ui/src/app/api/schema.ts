@@ -6730,6 +6730,26 @@ export interface paths {
                                 } | null;
                                 reviewedCommit: string;
                             } | null;
+                            vulnerability: {
+                                packageName: string;
+                                vulnerabilityId: string;
+                                writesDecision: boolean;
+                                decision: {
+                                    /** @enum {string} */
+                                    status: "open" | "false_positive" | "wont_fix";
+                                    reason: ("component_not_present" | "vulnerable_code_not_present" | "vulnerable_code_not_in_execute_path" | "vulnerable_code_cannot_be_controlled_by_adversary" | "inline_mitigations_already_exist") | null;
+                                    comment: string | null;
+                                    /** Format: date-time */
+                                    decidedAt: string;
+                                    decidedBy: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        name: string;
+                                    } | null;
+                                    /** @enum {string} */
+                                    scope: "project" | "branch";
+                                } | null;
+                            } | null;
                         };
                     };
                 };
@@ -6879,6 +6899,26 @@ export interface paths {
                                 } | null;
                                 reviewedCommit: string;
                             } | null;
+                            vulnerability: {
+                                packageName: string;
+                                vulnerabilityId: string;
+                                writesDecision: boolean;
+                                decision: {
+                                    /** @enum {string} */
+                                    status: "open" | "false_positive" | "wont_fix";
+                                    reason: ("component_not_present" | "vulnerable_code_not_present" | "vulnerable_code_not_in_execute_path" | "vulnerable_code_cannot_be_controlled_by_adversary" | "inline_mitigations_already_exist") | null;
+                                    comment: string | null;
+                                    /** Format: date-time */
+                                    decidedAt: string;
+                                    decidedBy: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        name: string;
+                                    } | null;
+                                    /** @enum {string} */
+                                    scope: "project" | "branch";
+                                } | null;
+                            } | null;
                         };
                     };
                 };
@@ -6958,7 +6998,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Change the status (open, resolved, wont_fix, false_positive); mirrored onto duplicates */
+        /** Change the status (open, resolved, wont_fix, false_positive); mirrored onto duplicates, and onto the vulnerability decision of a Trivy issue on main or a tracked branch */
         post: {
             parameters: {
                 query?: never;
@@ -6974,6 +7014,8 @@ export interface paths {
                         /** @enum {string} */
                         to: "open" | "resolved" | "wont_fix" | "false_positive";
                         comment?: string;
+                        /** @enum {string} */
+                        reason?: "component_not_present" | "vulnerable_code_not_present" | "vulnerable_code_not_in_execute_path" | "vulnerable_code_cannot_be_controlled_by_adversary" | "inline_mitigations_already_exist";
                         /** Format: uuid */
                         suggestionId?: string;
                     };
@@ -7064,6 +7106,26 @@ export interface paths {
                                 } | null;
                                 reviewedCommit: string;
                             } | null;
+                            vulnerability: {
+                                packageName: string;
+                                vulnerabilityId: string;
+                                writesDecision: boolean;
+                                decision: {
+                                    /** @enum {string} */
+                                    status: "open" | "false_positive" | "wont_fix";
+                                    reason: ("component_not_present" | "vulnerable_code_not_present" | "vulnerable_code_not_in_execute_path" | "vulnerable_code_cannot_be_controlled_by_adversary" | "inline_mitigations_already_exist") | null;
+                                    comment: string | null;
+                                    /** Format: date-time */
+                                    decidedAt: string;
+                                    decidedBy: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        name: string;
+                                    } | null;
+                                    /** @enum {string} */
+                                    scope: "project" | "branch";
+                                } | null;
+                            } | null;
                         };
                     };
                 };
@@ -7103,7 +7165,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Validation failed (VALIDATION_FAILED; also a suggestionId that is not a succeeded AI triage suggestion of this issue), or a required comment is missing (COMMENT_REQUIRED) */
+                /** @description Validation failed (VALIDATION_FAILED; also a suggestionId that is not a succeeded AI triage suggestion of this issue), a required comment is missing (COMMENT_REQUIRED), or a false positive that writes the vulnerability decision has no reason (REASON_REQUIRED) */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -7162,6 +7224,8 @@ export interface paths {
                         /** @enum {string} */
                         to: "open" | "resolved" | "wont_fix" | "false_positive";
                         comment?: string;
+                        /** @enum {string} */
+                        reason?: "component_not_present" | "vulnerable_code_not_present" | "vulnerable_code_not_in_execute_path" | "vulnerable_code_cannot_be_controlled_by_adversary" | "inline_mitigations_already_exist";
                     };
                 };
             };
@@ -7178,7 +7242,7 @@ export interface paths {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                code: "NOT_FOUND" | "FORBIDDEN" | "INVALID_TRANSITION";
+                                code: "NOT_FOUND" | "FORBIDDEN" | "INVALID_TRANSITION" | "REASON_REQUIRED";
                             }[];
                         };
                     };
