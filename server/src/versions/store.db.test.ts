@@ -104,7 +104,7 @@ describe('upsertVersion', () => {
     const labelWrite = write('5.0.0', 'label', { dependencies: [], at: '2026-10-02T10:00:00Z' });
     for (let i = 0; i < 100; i++) {
       const waiting = await t.db.execute<{ n: number }>(
-        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock'`,
+        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`,
       );
       if ((waiting.rows[0]?.n ?? 0) > 0) break;
       await new Promise((resolve) => setTimeout(resolve, 50));

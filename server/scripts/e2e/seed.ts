@@ -940,11 +940,6 @@ export async function seedAi(
 }
 
 /**
- * Email (E1 spec) for the screenshots and the settings tests: a server nothing listens on (no real
- * SMTP in the tests), so Settings → Email shows a configured server, its alerts and one failed
- * test message in the log.
- */
-/**
  * Plan 2a: vulnerability monitoring off, first thing on every e2e database, through the settings
  * API. The first check of the Trivy database is due a minute after a server starts: with the
  * switch on, every e2e server would download it from ghcr.io. No e2e test needs it on (the
@@ -959,6 +954,11 @@ export async function seedVulndbOff(base: string, credentials: SeedCredentials):
   if (saved.enabled) throw new Error('vulnerability monitoring stayed on');
 }
 
+/**
+ * Email (E1 spec) for the screenshots and the settings tests: a server nothing listens on (no real
+ * SMTP in the tests), so Settings → Email shows a configured server, its alerts and one failed
+ * test message in the log.
+ */
 export async function seedMail(base: string, credentials: SeedCredentials): Promise<void> {
   const admin = new Client(base);
   await admin.login(credentials.adminUsername, credentials.adminPassword);
