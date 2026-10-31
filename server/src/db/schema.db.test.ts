@@ -74,7 +74,9 @@ const TABLES = [
   'version_dependencies',
   'vulndb_chunks',
   'vulndb_datasets',
+  'vulnerability_decisions',
   'vulnerability_matches',
+  'vulnerability_target_checks',
   'webhook_deliveries',
   'webhook_subscriptions',
 ];

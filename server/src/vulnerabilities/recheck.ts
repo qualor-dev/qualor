@@ -519,7 +519,43 @@ async function writeTargets(
                purl text, vulnerability_id text, ignored boolean)
         ON CONFLICT DO NOTHING`);
     }
+    // After the inserts: a target's new rows and its baseline share the transaction's now().
+    await writeChecks(tx, [...liveBranches], [...liveVersions]);
   });
+}
+
+/**
+ * Records that the targets were checked now. A target's `basis` is its branch's last analysis
+ * (empty when it has none) or its version's analysis time (UTC, to the millisecond, the same text
+ * every run); a changed basis moves `baseline_at`, which is what the rows first seen in this run
+ * (`first_seen_at` = now()) count as new from. Every target given is written, rows or none.
+ */
+async function writeChecks(
+  tx: Executor,
+  branchIds: readonly string[],
+  versionIds: readonly string[],
+): Promise<void> {
+  const moved = sql`
+    checked_at = now(),
+    basis = EXCLUDED.basis,
+    baseline_at = CASE WHEN vulnerability_target_checks.basis IS DISTINCT FROM EXCLUDED.basis
+                       THEN now() ELSE vulnerability_target_checks.baseline_at END`;
+  for (const part of slices(branchIds, LIST_CHUNK)) {
+    await tx.execute(sql`
+      INSERT INTO vulnerability_target_checks (project_id, branch_id, basis, baseline_at, checked_at)
+      SELECT b.project_id, b.id, coalesce(b.last_analysis_id::text, ''), now(), now()
+        FROM branches b WHERE b.id IN ${uuidList(part)}
+      ON CONFLICT (branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET ${moved}`);
+  }
+  for (const part of slices(versionIds, LIST_CHUNK)) {
+    await tx.execute(sql`
+      INSERT INTO vulnerability_target_checks (project_id, version_id, basis, baseline_at, checked_at)
+      SELECT v.project_id, v.id,
+             coalesce(to_char(v.analyzed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), ''),
+             now(), now()
+        FROM project_versions v WHERE v.id IN ${uuidList(part)}
+      ON CONFLICT (version_id) WHERE version_id IS NOT NULL DO UPDATE SET ${moved}`);
+  }
 }
 
 /**

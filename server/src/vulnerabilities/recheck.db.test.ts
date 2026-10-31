@@ -20,6 +20,7 @@ import {
   targetVulnerabilities,
   vulndbChunks,
   vulnerabilityMatches,
+  vulnerabilityTargetChecks,
 } from '../db/schema';
 import { claimJob } from '../queue/queue';
 import { runUntilIdle } from '../queue/worker';
@@ -344,6 +345,120 @@ describe('vulnerability re-checks', () => {
         summary: { projects: 1, packages: 2 },
       });
       expect((await readVulndbState(db())).lastRecheck).toEqual(full);
+    });
+  });
+
+  describe('per-target checks', () => {
+    const checks = async (p: IngestProject) => {
+      const names = new Map<string, string>();
+      for (const b of await db()
+        .select({ id: branches.id, name: branches.name })
+        .from(branches)
+        .where(eq(branches.projectId, p.id))) {
+        names.set(b.id, b.name);
+      }
+      for (const v of await db()
+        .select({ id: projectVersions.id, label: projectVersions.label })
+        .from(projectVersions)
+        .where(eq(projectVersions.projectId, p.id))) {
+        names.set(v.id, v.label);
+      }
+      const got = await db()
+        .select()
+        .from(vulnerabilityTargetChecks)
+        .where(eq(vulnerabilityTargetChecks.projectId, p.id));
+      return new Map(got.map((r) => [names.get(r.branchId ?? r.versionId ?? '') ?? '?', r]));
+    };
+    const lastAnalysis = async (p: IngestProject, name: string): Promise<string> => {
+      const [row] = await db()
+        .select({ id: branches.lastAnalysisId })
+        .from(branches)
+        .where(eq(branches.id, await branchId(p, name)));
+      return row!.id ?? '';
+    };
+
+    it('writes a check for every tracked target, with the first_seen_at of its rows as baseline', async () => {
+      const p = await project({ branchPatterns: ['release/*'] });
+      await onBranch(p, 'main', { dependencies: [A] });
+      await onBranch(p, 'release/1.0', { dependencies: [C] });
+      await tagScan(p, '1.0.0', { dependencies: [A] });
+      expect((await checks(p)).size).toBe(0);
+
+      await recheck({ projectIds: [p.id] });
+      const got = await checks(p);
+      expect([...got.keys()].sort()).toEqual(['1.0.0', 'main', 'release/1.0']);
+      const [seen] = await rows(p);
+      for (const check of got.values()) {
+        expect(check.baselineAt).toEqual(check.checkedAt);
+      }
+      // The rows were first seen in the same run, at the same moment.
+      expect(got.get('main')!.baselineAt).toEqual(seen!.firstSeenAt);
+      expect(got.get('main')!.basis).toBe(await lastAnalysis(p, 'main'));
+      // A target without a vulnerability is checked too.
+      expect(got.get('release/1.0')!.basis).toBe(await lastAnalysis(p, 'release/1.0'));
+      const [version] = await db()
+        .select({ analyzedAt: projectVersions.analyzedAt })
+        .from(projectVersions)
+        .where(eq(projectVersions.id, await versionId(p, '1.0.0')));
+      expect(got.get('1.0.0')!.basis).toBe(version!.analyzedAt.toISOString());
+    });
+
+    it('moves only checked_at when nothing was analysed since, and baseline_at after a new analysis', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      await tagScan(p, '1.0.0', { dependencies: [A] });
+      await recheck({ projectIds: [p.id] });
+      const first = await checks(p);
+
+      await recheck({ projectIds: [p.id] });
+      const second = await checks(p);
+      for (const label of ['main', '1.0.0']) {
+        expect(second.get(label)).toMatchObject({
+          basis: first.get(label)!.basis,
+          baselineAt: first.get(label)!.baselineAt,
+        });
+        expect(second.get(label)!.checkedAt.getTime()).toBeGreaterThan(
+          first.get(label)!.checkedAt.getTime(),
+        );
+      }
+
+      await onBranch(p, 'main', { dependencies: [A, B] });
+      await recheck({ projectIds: [p.id] });
+      const third = await checks(p);
+      expect(third.get('main')!.basis).toBe(await lastAnalysis(p, 'main'));
+      expect(third.get('main')!.basis).not.toBe(first.get('main')!.basis);
+      expect(third.get('main')!.baselineAt.getTime()).toBeGreaterThan(
+        second.get('main')!.baselineAt.getTime(),
+      );
+      // The new rows were first seen at the new baseline; the old rows stay older.
+      const fresh = (await rows(p)).filter((r) => r.purl === PB);
+      expect(fresh.length).toBeGreaterThan(0);
+      for (const r of fresh) expect(r.firstSeenAt).toEqual(third.get('main')!.baselineAt);
+      // The version was not scanned again.
+      expect(third.get('1.0.0')).toMatchObject({
+        basis: first.get('1.0.0')!.basis,
+        baselineAt: first.get('1.0.0')!.baselineAt,
+      });
+    });
+
+    it('leaves the check of an untracked target as it is (R17)', async () => {
+      const p = await project({ versionRule: 'lines', versionLines: 1 });
+      await tagScan(p, '1.0.0', { dependencies: [A] });
+      await tagScan(p, '2.0.0', { dependencies: [D] });
+      const old = await versionId(p, '1.0.0');
+      const track = async (tracking: string) =>
+        expect(
+          (await api('PATCH', `/projects/${p.id}/versions/${old}`, { tracking })).statusCode,
+        ).toBe(200);
+      await track('pinned');
+      await recheck({ projectIds: [p.id] });
+      const before = (await checks(p)).get('1.0.0')!;
+
+      await track('auto');
+      await recheck({ projectIds: [p.id] });
+      const after = await checks(p);
+      expect(after.get('1.0.0')).toEqual(before);
+      expect(after.get('2.0.0')).toBeDefined();
     });
   });
 

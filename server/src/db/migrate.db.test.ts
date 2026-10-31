@@ -59,8 +59,9 @@ describe('runMigrations / pendingMigrations', () => {
     // (0.13, a rule's scope and its profile override), 0019_onboarding (the onboarding runs and the
     // GitLab CI-setup setting), 0020_versions (0.15, the released versions of a project, their
     // dependencies and the vulnerability settings), 0021_vulndb (0.15, the vulnerability database,
-    // its matches and the vulnerabilities of branches and versions).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(22);
+    // its matches and the vulnerabilities of branches and versions), 0022_vulnerability_decisions
+    // (0.15, the decisions on vulnerabilities and the checks of their targets).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(23);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -317,6 +318,8 @@ describe('runMigrations / pendingMigrations', () => {
       'compliance_reports', // 0007_compliance_reports
       'matched_packages', // 0021_vulndb
       'target_vulnerabilities', // 0021_vulndb
+      'vulnerability_decisions', // 0022_vulnerability_decisions
+      'vulnerability_target_checks', // 0022_vulnerability_decisions
       'vulndb_chunks', // 0021_vulndb
       'vulndb_datasets', // 0021_vulndb
       'vulnerability_matches', // 0021_vulndb
@@ -444,6 +447,95 @@ describe('runMigrations / pendingMigrations', () => {
     expect(rows).toEqual([
       { label: '1.0.0', has_inventory: true },
       { label: '2.0.0', has_inventory: false },
+    ]);
+  });
+
+  it('names the package of Trivy issues and turns main decisions into project-wide ones (0022, vulnerability decisions)', async () => {
+    const db = await createTestDatabase({ migrated: false });
+    t = db;
+    const upTo21 = migrationsUpTo(22); // 0000_extensions … 0021_vulndb
+    try {
+      await runMigrations(db.pool, upTo21.dir);
+    } finally {
+      upTo21.remove();
+    }
+    const org = randomUUID();
+    const project = randomUUID();
+    const main = randomUUID();
+    const release = randomUUID();
+    const trivyRule = randomUUID();
+    const otherRule = randomUUID();
+    const user = randomUUID();
+    const message = 'lodash 4.17.20: CVE-2026-0001 Prototype pollution (fixed in 4.17.21)';
+    await db.pool.query(
+      `INSERT INTO organizations (id, key, name) VALUES ($1, 'mig-0022', 'Mig')`,
+      [org],
+    );
+    await db.pool.query(
+      `INSERT INTO projects (id, organization_id, key, name) VALUES ($1, $2, 'mig/0022', 'P')`,
+      [project, org],
+    );
+    await db.pool.query(
+      `INSERT INTO users (id, username, email) VALUES ($1, 'mig0022', 'u@mig.test')`,
+      [user],
+    );
+    await db.pool.query(
+      `INSERT INTO branches (id, project_id, kind, name, is_main) VALUES ($1, $3, 'branch', 'main', true), ($2, $3, 'branch', 'release/1.x', false)`,
+      [main, release, project],
+    );
+    for (const [id, engine, ruleId] of [
+      [trivyRule, 'trivy', 'CVE-2026-0001'],
+      [otherRule, 'qualor', 'Q-1'],
+    ] as const) {
+      await db.pool.query(
+        `INSERT INTO rules (id, key, engine_id, engine_rule_id, name, default_severity, quality, kind, origin)
+         VALUES ($1, $2, $3, $4, $4, 'high', 'security', 'issue', 'reported')`,
+        [id, `${engine}:${ruleId}`, engine, ruleId],
+      );
+    }
+    const issue = async (branch: string, rule: string, text: string, status: string) => {
+      const id = randomUUID();
+      await db.pool.query(
+        `INSERT INTO issues (id, project_id, branch_id, rule_id, fingerprint, line_hash, context_hash,
+           message, severity, quality, kind, status, first_seen_at, resolved_at, resolved_by)
+         VALUES ($1, $2, $3, $4, $5, 'h', 'c', $6, 'high', 'security', 'issue', $7, now(), now(), $8)`,
+        [id, project, branch, rule, id.replaceAll('-', ''), text, status, user],
+      );
+      return id;
+    };
+    const onMain = await issue(main, trivyRule, message, 'false_positive');
+    const onRelease = await issue(release, trivyRule, message, 'false_positive');
+    const other = await issue(main, otherRule, 'Something: Q-1 else', 'false_positive');
+    await db.pool.query(
+      `INSERT INTO issue_changes (id, issue_id, field, old_value, new_value, comment, created_at)
+       VALUES ($1, $2, 'status', 'open', 'false_positive', 'Not reachable', now()),
+              ($3, $2, 'comment', NULL, NULL, 'Later remark', now() + interval '1 second')`,
+      [randomUUID(), onMain, randomUUID()],
+    );
+
+    await runMigrations(db.pool, MIGRATIONS_DIR);
+    const { rows: names } = await db.pool.query('SELECT id, package_name FROM issues ORDER BY id');
+    expect(Object.fromEntries(names.map((r) => [r.id, r.package_name]))).toEqual({
+      [onMain]: 'lodash',
+      [onRelease]: 'lodash',
+      [other]: null,
+    });
+    const { rows } = await db.pool.query(
+      `SELECT project_id, package_name, vulnerability_id, branch_id, version_id, status, reason,
+              comment, decided_by FROM vulnerability_decisions`,
+    );
+    expect(rows).toEqual([
+      {
+        project_id: project,
+        package_name: 'lodash',
+        vulnerability_id: 'CVE-2026-0001',
+        branch_id: null,
+        version_id: null,
+        status: 'false_positive',
+        reason: null,
+        comment: 'Not reachable',
+        decided_by: user,
+      },
     ]);
   });
 

@@ -814,6 +814,90 @@ export const targetVulnerabilities = pgTable(
   ],
 );
 
+/**
+ * A decision on a (package, vulnerability) pair: for the whole project (no target), one branch or
+ * one version. At most one per pair and scope.
+ */
+export const vulnerabilityDecisions = pgTable(
+  'vulnerability_decisions',
+  {
+    id: id(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    packageName: text('package_name').notNull(),
+    vulnerabilityId: text('vulnerability_id').notNull(),
+    branchId: uuid('branch_id').references(() => branches.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id').references(() => projectVersions.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().$type<'open' | 'false_positive' | 'wont_fix'>(),
+    reason: text('reason'),
+    comment: text('comment'),
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    decidedAt: at('decided_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('vulnerability_decisions_project_uq')
+      .on(t.projectId, t.packageName, t.vulnerabilityId)
+      .where(sql`branch_id IS NULL AND version_id IS NULL`),
+    uniqueIndex('vulnerability_decisions_branch_uq')
+      .on(t.branchId, t.packageName, t.vulnerabilityId)
+      .where(sql`branch_id IS NOT NULL`),
+    uniqueIndex('vulnerability_decisions_version_uq')
+      .on(t.versionId, t.packageName, t.vulnerabilityId)
+      .where(sql`version_id IS NOT NULL`),
+    index('vulnerability_decisions_project_idx').on(t.projectId),
+    index('vulnerability_decisions_decided_by_idx')
+      .on(t.decidedBy)
+      .where(sql`decided_by IS NOT NULL`),
+    check('vulnerability_decisions_one_scope', sql`branch_id IS NULL OR version_id IS NULL`),
+    check(
+      'vulnerability_decisions_status_check',
+      sql`status IN ('open','false_positive','wont_fix')`,
+    ),
+    check(
+      'vulnerability_decisions_reason_check',
+      sql`reason IS NULL OR reason IN ('component_not_present','vulnerable_code_not_present','vulnerable_code_not_in_execute_path','vulnerable_code_cannot_be_controlled_by_adversary','inline_mitigations_already_exist')`,
+    ),
+    check(
+      'vulnerability_decisions_reason_status',
+      sql`reason IS NULL OR status = 'false_positive'`,
+    ),
+    check('vulnerability_decisions_comment_length', sql`char_length(comment) <= 2000`),
+  ],
+);
+
+/**
+ * When the server last checked a tracked target, and the point "new" counts from. `basis` names
+ * the scan the check saw (a branch's last analysis, a version's analysis time); a changed basis
+ * moves `baseline_at`.
+ */
+export const vulnerabilityTargetChecks = pgTable(
+  'vulnerability_target_checks',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    branchId: uuid('branch_id').references(() => branches.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id').references(() => projectVersions.id, { onDelete: 'cascade' }),
+    basis: text('basis').notNull(),
+    baselineAt: at('baseline_at').notNull(),
+    checkedAt: at('checked_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('vulnerability_target_checks_branch_uq')
+      .on(t.branchId)
+      .where(sql`branch_id IS NOT NULL`),
+    uniqueIndex('vulnerability_target_checks_version_uq')
+      .on(t.versionId)
+      .where(sql`version_id IS NOT NULL`),
+    index('vulnerability_target_checks_project_idx').on(t.projectId),
+    check(
+      'vulnerability_target_checks_one_target',
+      sql`(branch_id IS NULL) <> (version_id IS NULL)`,
+    ),
+  ],
+);
+
 // ─── 4.4 Rules and profiles ─────────────────────────────────────────────────
 
 export const rules = pgTable(
@@ -959,6 +1043,8 @@ export const issues = pgTable(
     endLine: integer('end_line'),
     endColumn: integer('end_column'),
     message: text('message').notNull(),
+    /** The package of a Trivy finding (0.15), for its project-wide decision; null for any other. */
+    packageName: text('package_name'),
     severity: text('severity').notNull(),
     // Ruling R6: text severities sort alphabetically; lists sort by this rank.
     severityRank: smallint('severity_rank')
@@ -1003,6 +1089,9 @@ export const issues = pgTable(
     index('issues_message_trgm_idx').using('gin', sql`message gin_trgm_ops`),
     // Supporting indexes for foreign keys (cascades, SET NULL and RESTRICT checks).
     index('issues_project_idx').on(t.projectId),
+    index('issues_package_idx')
+      .on(t.projectId, t.packageName)
+      .where(sql`package_name IS NOT NULL`),
     index('issues_rule_id_idx').on(t.ruleId),
     index('issues_duplicate_of_idx')
       .on(t.duplicateOfIssueId)
