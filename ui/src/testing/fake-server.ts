@@ -968,6 +968,92 @@ export class FakeDependencies {
   }
 }
 
+export type VulnerabilityTargets = ResponseBody<
+  '/api/v0/projects/{id}/vulnerabilities/targets',
+  'get'
+>;
+export type VulnerabilityTarget = VulnerabilityTargets['targets'][number];
+export type UntrackedVersion = VulnerabilityTargets['untracked'][number];
+
+const NO_COUNTS = { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 };
+
+/** One tracked target of the vulnerability summary: a branch with no open vulnerabilities by default. */
+export function vulnerabilityTarget(given: Partial<VulnerabilityTarget> = {}): VulnerabilityTarget {
+  return {
+    kind: 'branch',
+    id: '0190a6c2-0000-7000-8000-0000000000d0',
+    name: 'main',
+    isMain: false,
+    tracking: null,
+    hasInventory: true,
+    counts: NO_COUNTS,
+    new: 0,
+    checkedAt: '2026-10-30T09:00:00.000Z',
+    ...given,
+  };
+}
+
+/** One version no rule tracks. */
+export function untrackedVersion(given: Partial<UntrackedVersion> = {}): UntrackedVersion {
+  return {
+    id: '0190a6c2-0000-7000-8000-0000000000e0',
+    name: '1.0.0',
+    tracking: 'auto',
+    trackingReason: 'older',
+    counts: NO_COUNTS,
+    checkedAt: null,
+    ...given,
+  };
+}
+
+/**
+ * The vulnerability summary route (vuln 2b, `GET /projects/{id}/vulnerabilities/targets`) over an
+ * in-memory `answer`, and `PATCH /projects/{id}/versions/{versionId}`, which records the new
+ * tracking on the version's row (a test changes `answer` itself for anything more). A test
+ * answers a route itself with `server.on`, which wins.
+ */
+export class FakeVulnerabilities {
+  answer: VulnerabilityTargets;
+
+  /** Answers the summary of project `projectId` on `server`. */
+  static install(
+    server: FakeServer,
+    projectId: string,
+    answer: Partial<VulnerabilityTargets> = {},
+  ): FakeVulnerabilities {
+    return new FakeVulnerabilities(server, projectId, answer);
+  }
+
+  private constructor(
+    server: FakeServer,
+    projectId: string,
+    answer: Partial<VulnerabilityTargets>,
+  ) {
+    this.answer = {
+      monitoring: 'on',
+      data: { builtAt: '2026-10-29T03:00:00.000Z' },
+      checkedAt: '2026-10-30T09:00:00.000Z',
+      versionCount: 1,
+      targets: [],
+      untracked: [],
+      ...answer,
+    };
+    server.on('GET', `/api/v0/projects/${projectId}/vulnerabilities/targets`, () => ({
+      body: this.answer,
+    }));
+    const version = new RegExp(`^/api/v0/projects/${projectId}/versions/([^/]+)$`);
+    server.on('PATCH', version, (r) => {
+      const id = version.exec(r.path)?.[1];
+      const tracking = (r.body as { tracking: VulnerabilityTarget['tracking'] }).tracking;
+      this.answer = {
+        ...this.answer,
+        targets: this.answer.targets.map((t) => (t.id === id ? { ...t, tracking } : t)),
+      };
+      return { body: {} };
+    });
+  }
+}
+
 const LICENSE_POLICY = /^\/api\/v0\/organizations\/([^/]+)\/license-policy$/;
 /** The SPDX ids the fake knows, in their canonical spelling (the server sends the whole list). */
 export const FAKE_SPDX_IDS: OrgLicensePolicy['spdxIds'] = {

@@ -24,6 +24,13 @@ export const projectRoutes: Routes = [
     loadComponent: () => import('../issues/issue.page').then((m) => m.IssuePage),
   },
   {
+    // Vuln 2b §9.3: the tracked branches and versions with their open dependency vulnerabilities.
+    path: 'vulnerabilities',
+    title: $localize`:@@title.vulnerabilities:Vulnerabilities`,
+    loadComponent: () =>
+      import('./vulnerabilities/vulnerabilities.page').then((m) => m.VulnerabilitiesPage),
+  },
+  {
     // 6M §8: the branch's dependency inventory and, with a licence policy, its verdicts.
     path: 'dependencies',
     title: $localize`:@@title.dependencies:Dependencies`,

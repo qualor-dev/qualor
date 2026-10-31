@@ -44,6 +44,9 @@
           ><q-icon name="branch" />{{ p.mainBranchName }}</a
         >
       }
+      @if (newVulnerabilities(); as text) {
+        <a class="badge badge-high new-vulns" routerLink="vulnerabilities">{{ text }}</a>
+      }
     </p>
     <nav #tabs pageTabs class="tabs" aria-label="Project" i18n-aria-label="@@project.tabs">
       <a
@@ -72,6 +75,15 @@
           <span class="tab-count" aria-hidden="true">{{ issueCount() }}</span>
         }
       </a>
+      @if (showVulnerabilities()) {
+        <a
+          routerLink="vulnerabilities"
+          routerLinkActive="active"
+          ariaCurrentWhenActive="page"
+          i18n="@@project.tab.vulnerabilities"
+          >Vulnerabilities</a
+        >
+      }
       <a
         routerLink="dependencies"
         routerLinkActive="active"

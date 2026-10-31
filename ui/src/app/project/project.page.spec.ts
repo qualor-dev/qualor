@@ -420,4 +420,39 @@ describe('ProjectPage', () => {
       expect(tabs(await render(ID))).not.toContain('Compliance');
     });
   });
+
+  describe('the Vulnerabilities tab and its marker (vuln 2b)', () => {
+    const tabs = (root: HTMLElement) =>
+      [...root.querySelectorAll('nav[aria-label="Project"] a')].map((a) => a.textContent?.trim());
+    const withVulns = (vulnerabilities: object | null) =>
+      server.on('GET', `/api/v0/projects/${ID}`, { body: { ...PROJECT, vulnerabilities } });
+
+    it('is hidden while monitoring is off for the project', async () => {
+      withVulns(null);
+      const root = await render(ID);
+      expect(tabs(root)).not.toContain('Vulnerabilities');
+      expect(root.querySelector('.new-vulns')).toBeNull();
+    });
+
+    it('is a tab between Issues and Dependencies while monitoring is on', async () => {
+      withVulns({ newIn: { main: false, branches: 0, versions: 0 } });
+      const root = await render(ID);
+      const names = tabs(root);
+      expect(names.indexOf('Vulnerabilities')).toBe(
+        names.findIndex((n) => n?.startsWith('Issues')) + 1,
+      );
+      expect(names.indexOf('Dependencies')).toBe(names.indexOf('Vulnerabilities') + 1);
+      expect(root.querySelector('.new-vulns')).toBeNull();
+    });
+
+    it('shows a badge in the header that links to the tab when something is new', async () => {
+      withVulns({ newIn: { main: true, branches: 0, versions: 2 } });
+      const root = await render(ID);
+      const badge = root.querySelector('.new-vulns');
+      expect(badge?.textContent.trim()).toBe('New vulnerabilities in main and 2 versions');
+      expect(badge?.tagName).toBe('A');
+      expect(badge?.getAttribute('href')).toMatch(/\/vulnerabilities$/);
+      expect(badge?.classList.contains('badge-high')).toBe(true);
+    });
+  });
 });

@@ -56,6 +56,30 @@ describe('label', () => {
     expect(label('verdict', 'forbidden')).toBe('Forbidden');
   });
 
+  it('names vulnerability severities, decision statuses and VEX reasons (vuln 2b)', () => {
+    expect(label('vulnSeverity', 'critical')).toBe('Critical');
+    expect(label('vulnSeverity', 'high')).toBe('High');
+    expect(label('vulnSeverity', 'medium')).toBe('Medium');
+    expect(label('vulnSeverity', 'low')).toBe('Low');
+    expect(label('vulnSeverity', 'unknown')).toBe('Unknown');
+    expect(label('decisionStatus', 'open')).toBe('Open');
+    expect(label('decisionStatus', 'false_positive')).toBe('Not affected');
+    expect(label('decisionStatus', 'wont_fix')).toBe("Won't fix");
+    expect(label('vexReason', 'component_not_present')).toBe('The package is not in the build');
+    expect(label('vexReason', 'vulnerable_code_not_present')).toBe(
+      'The vulnerable code is not in the build',
+    );
+    expect(label('vexReason', 'vulnerable_code_not_in_execute_path')).toBe(
+      'The vulnerable code is never called',
+    );
+    expect(label('vexReason', 'vulnerable_code_cannot_be_controlled_by_adversary')).toBe(
+      'An attacker cannot control the input',
+    );
+    expect(label('vexReason', 'inline_mitigations_already_exist')).toBe(
+      'Another control already protects it',
+    );
+  });
+
   it('falls back to the raw value for an unknown value, and to empty for none', () => {
     expect(label('severity', 'catastrophic')).toBe('catastrophic');
     expect(label('metric', 'new_mystery')).toBe('mystery on new code');

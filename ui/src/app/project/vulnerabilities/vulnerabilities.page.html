@@ -1,0 +1,185 @@
+@if (loadError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+}
+@if (answer(); as a) {
+  @if (a.data; as data) {
+    @if (a.checkedAt) {
+      <p class="vuln-header" i18n="@@vuln.header.checked">
+        Vulnerability data from {{ data.builtAt | dateTime: 'date' }} · checked
+        {{ a.checkedAt | dateTime }}
+      </p>
+    } @else {
+      <p class="vuln-header" i18n="@@vuln.header">
+        Vulnerability data from {{ data.builtAt | dateTime: 'date' }}
+      </p>
+    }
+    <nav class="view-tabs" aria-label="View" i18n-aria-label="@@vuln.views">
+      <a
+        routerLink="."
+        [queryParams]="{}"
+        [attr.aria-current]="view() === 'version' ? 'page' : null"
+        [class.active]="view() === 'version'"
+        i18n="@@vuln.view.version"
+        >By version</a
+      >
+      <a
+        routerLink="."
+        [queryParams]="{ view: 'vulnerability' }"
+        [attr.aria-current]="view() === 'vulnerability' ? 'page' : null"
+        [class.active]="view() === 'vulnerability'"
+        i18n="@@vuln.view.vulnerability"
+        >By vulnerability</a
+      >
+    </nav>
+    @if (error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    <!-- By vulnerability and the one-target view are the next task's. -->
+    @if (view() === 'version' && !target()) {
+      @if (clean() && !expanded()) {
+        <div class="empty-state">
+          <img src="art/empty.webp" alt="" width="900" height="675" />
+          <p i18n="@@vuln.empty.clean">No open vulnerabilities in tracked branches and versions.</p>
+        </div>
+      } @else {
+        <section class="card panel">
+          <div
+            class="panel-scroll"
+            tabindex="0"
+            role="group"
+            aria-label="Branches and versions"
+            i18n-aria-label="@@vuln.table.label"
+          >
+            <table [attr.aria-busy]="summary.isLoading()">
+              <thead>
+                <tr>
+                  <th scope="col" i18n="@@vuln.col.target">Branch or version</th>
+                  <th scope="col" class="num" i18n="@@vuln.col.critical">Critical</th>
+                  <th scope="col" class="num" i18n="@@vuln.col.high">High</th>
+                  <th scope="col" class="num" i18n="@@vuln.col.medium">Medium</th>
+                  <th scope="col" i18n="@@vuln.col.new">New</th>
+                </tr>
+              </thead>
+              <tbody id="vuln-untracked">
+                @for (t of targets(); track t.kind + t.id) {
+                  <tr>
+                    <th scope="row" class="target">
+                      <a routerLink="." [queryParams]="{ target: targetParam(t) }">{{ t.name }}</a>
+                      @if (t.tracking === 'pinned') {
+                        <span class="chip" i18n="@@vuln.pinned">Pinned</span>
+                      }
+                      @if (!t.hasInventory) {
+                        <span class="hint" i18n="@@vuln.noInventory">No dependency list</span>
+                      }
+                      @if (canPin() && choices(t).length > 0) {
+                        <span class="row-menu">
+                          <button
+                            #trigger
+                            type="button"
+                            class="btn-quiet menu-trigger"
+                            [attr.popovertarget]="'vuln-menu-' + t.id"
+                            i18n-aria-label="@@vuln.menu.label"
+                            aria-label="Change tracking of {{ t.name }}"
+                            (click)="place(trigger, menu)"
+                          >
+                            <q-icon name="chevron-down" />
+                          </button>
+                          <div
+                            #menu
+                            [id]="'vuln-menu-' + t.id"
+                            popover
+                            role="group"
+                            class="menu-panel row-menu-panel"
+                            aria-label="Tracking of {{ t.name }}"
+                            i18n-aria-label="@@vuln.menu.group"
+                          >
+                            @for (c of choices(t); track c) {
+                              <button type="button" (click)="change(menu, t, c)">
+                                {{ choiceLabel(c, t.tracking) }}
+                              </button>
+                            }
+                          </div>
+                        </span>
+                      }
+                    </th>
+                    <td class="num">{{ t.counts.critical }}</td>
+                    <td class="num">{{ t.counts.high }}</td>
+                    <td class="num">{{ t.counts.medium }}</td>
+                    <td>
+                      @if (t.new > 0) {
+                        <span class="badge badge-high" i18n="@@vuln.newCount">{{ t.new }} new</span>
+                      }
+                    </td>
+                  </tr>
+                }
+                @if (expanded()) {
+                  @for (v of untracked(); track v.id) {
+                    <tr class="untracked-row">
+                      <th scope="row" class="target">
+                        {{ v.name }}
+                        <span class="hint" i18n="@@vuln.notTracked">Not tracked</span>
+                      </th>
+                      <td class="num">{{ v.counts.critical }}</td>
+                      <td class="num">{{ v.counts.high }}</td>
+                      <td class="num">{{ v.counts.medium }}</td>
+                      <td></td>
+                    </tr>
+                  }
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+      @if (untracked().length > 0) {
+        <p class="untracked">
+          @if (foldMore() > 0) {
+            <span i18n="@@vuln.fold.more"
+              >{{ foldLabels() }} · {{ foldMore() }} more — not tracked</span
+            >
+          } @else {
+            <span i18n="@@vuln.fold.few">{{ foldLabels() }} — not tracked</span>
+          }
+          <button
+            type="button"
+            class="btn-quiet"
+            aria-controls="vuln-untracked"
+            [attr.aria-expanded]="expanded()"
+            (click)="expanded.set(!expanded())"
+          >
+            @if (expanded()) {
+              <ng-container i18n="@@vuln.hide">Hide</ng-container>
+            } @else {
+              <ng-container i18n="@@vuln.show">Show</ng-container>
+            }
+          </button>
+        </p>
+      }
+      @if (a.versionCount === 0) {
+        <section class="tag-hint">
+          <p i18n="@@vuln.tags.how">No released versions yet. Run the Qualor job on tags:</p>
+          <p class="hint" i18n="@@vuln.tags.gitlab">GitLab</p>
+          <pre>{{ gitlabSnippet }}</pre>
+          <p class="hint" i18n="@@vuln.tags.github">GitHub Actions</p>
+          <pre>{{ githubSnippet }}</pre>
+        </section>
+      }
+    }
+  } @else {
+    <div class="empty-state">
+      <img src="art/empty.webp" alt="" width="900" height="675" />
+      <p i18n="@@vuln.empty.noData">No vulnerability data yet.</p>
+      @if (isInstanceAdmin()) {
+        <p>
+          <a routerLink="/settings/vulnerability-db" i18n="@@vuln.empty.adminLink"
+            >Settings → Vulnerability database</a
+          >
+        </p>
+      } @else {
+        <p i18n="@@vuln.empty.member">
+          An instance admin sets it up in Settings → Vulnerability database.
+        </p>
+      }
+    </div>
+  }
+}

@@ -981,6 +981,7 @@ tbody tr:has(.empty-state):hover {
   color: var(--ok);
 }
 .badge-failed,
+.badge-critical,
 .badge-blocker,
 .badge-high {
   background: var(--bad-soft);
@@ -993,16 +994,19 @@ tbody tr:has(.empty-state):hover {
 }
 .badge-low,
 .badge-info,
+.badge-unknown,
 .badge-none {
   background: var(--neutral-soft);
   color: var(--text-muted);
 }
 .badge-warn::before,
+.badge-critical::before,
 .badge-blocker::before,
 .badge-high::before,
 .badge-medium::before,
 .badge-low::before,
-.badge-info::before {
+.badge-info::before,
+.badge-unknown::before {
   content: '';
   width: 0.45em;
   height: 0.45em;
@@ -1010,6 +1014,7 @@ tbody tr:has(.empty-state):hover {
   background: currentColor;
 }
 /* A severity's dot is the colour the charts draw it in (facets, distribution, legend). */
+.badge-critical::before,
 .badge-blocker::before {
   background: var(--sev-blocker);
 }

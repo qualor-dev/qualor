@@ -22,7 +22,10 @@ export type LabelKind =
   | 'engine'
   | 'licenseGroup'
   | 'verdict'
-  | 'scope';
+  | 'scope'
+  | 'vulnSeverity'
+  | 'decisionStatus'
+  | 'vexReason';
 
 const LABELS: Record<LabelKind, Record<string, string>> = {
   severity: {
@@ -138,6 +141,28 @@ const LABELS: Record<LabelKind, Record<string, string>> = {
     allowed: $localize`:@@label.verdict.allowed:Allowed`,
     forbidden: $localize`:@@label.verdict.forbidden:Forbidden`,
     unknown: $localize`:@@label.verdict.unknown:Unknown`,
+  },
+  /** A dependency vulnerability's severity (vuln 2b). */
+  vulnSeverity: {
+    critical: $localize`:@@label.vulnSeverity.critical:Critical`,
+    high: $localize`:@@label.vulnSeverity.high:High`,
+    medium: $localize`:@@label.vulnSeverity.medium:Medium`,
+    low: $localize`:@@label.vulnSeverity.low:Low`,
+    unknown: $localize`:@@label.vulnSeverity.unknown:Unknown`,
+  },
+  /** A vulnerability decision's status (vuln 2b). */
+  decisionStatus: {
+    open: $localize`:@@label.decisionStatus.open:Open`,
+    false_positive: $localize`:@@label.decisionStatus.falsePositive:Not affected`,
+    wont_fix: $localize`:@@label.decisionStatus.wontFix:Won't fix`,
+  },
+  /** The VEX justification of a Not affected decision (vuln 2b). */
+  vexReason: {
+    component_not_present: $localize`:@@label.vexReason.componentNotPresent:The package is not in the build`,
+    vulnerable_code_not_present: $localize`:@@label.vexReason.codeNotPresent:The vulnerable code is not in the build`,
+    vulnerable_code_not_in_execute_path: $localize`:@@label.vexReason.notInExecutePath:The vulnerable code is never called`,
+    vulnerable_code_cannot_be_controlled_by_adversary: $localize`:@@label.vexReason.cannotBeControlled:An attacker cannot control the input`,
+    inline_mitigations_already_exist: $localize`:@@label.vexReason.mitigated:Another control already protects it`,
   },
   metric: {
     files: $localize`:@@metric.files:Files`,

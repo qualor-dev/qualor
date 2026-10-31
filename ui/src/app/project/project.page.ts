@@ -27,6 +27,7 @@ import { SystemInfo } from '../shell/system-info';
 import { mergeRequestLink, notFound } from './branches';
 import { CurrentProject } from './current-project';
 import { settingsVisible } from './settings/settings-visibility';
+import { newMarkerText } from './vulnerabilities/new-marker';
 import { WatchButton } from './watch-button';
 
 /**
@@ -112,6 +113,16 @@ export class ProjectPage {
     matrixParams: 'ignored',
     fragment: 'ignored',
   };
+  /**
+   * The Vulnerabilities tab (vuln 2b): while monitoring is on for the project, `vulnerabilities` is
+   * not null.
+   */
+  protected readonly showVulnerabilities = computed(() => !!this.current()?.vulnerabilities);
+  /** The header badge: where the project has new vulnerabilities, or null. */
+  protected readonly newVulnerabilities = computed(() => {
+    const vulnerabilities = this.current()?.vulnerabilities;
+    return vulnerabilities ? newMarkerText(vulnerabilities.newIn) : null;
+  });
   /** A malformed id in the URL (422 on the path) is, for the reader, a project that does not exist. */
   protected readonly errorMessage = computed(() => {
     const error = this.project.error();
@@ -139,6 +150,7 @@ export class ProjectPage {
       this.complianceTab();
       this.showAccess();
       this.showSettings();
+      this.showVulnerabilities();
       const nav = this.tabs()?.nativeElement;
       if (!nav) return;
       queueMicrotask(() => revealActiveTab(nav));
