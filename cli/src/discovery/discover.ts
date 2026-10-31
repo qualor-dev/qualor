@@ -29,6 +29,11 @@ export interface DiscoverOptions {
   config: QualorConfig;
   warnings: Warnings;
   log: Logger;
+  /**
+   * Directories (repo-relative, `/`-separated) left out entirely and silently: the scanner's
+   * vulnerability database cache inside the checkout (vuln plan 3).
+   */
+  leaveOut?: readonly string[];
 }
 
 /** config.md §3.1: larger files are skipped for metrics and duplication, with a warning. */
@@ -65,6 +70,7 @@ const byName = (a: Dirent, b: Dirent) => (a.name < b.name ? -1 : a.name > b.name
 
 export function discoverFiles(o: DiscoverOptions): ScopeFile[] {
   const { root, config, warnings, log } = o;
+  const leaveOut = new Set(o.leaveOut ?? []);
   const include = globMatcher(config.sources.include, false); // ruling C16: no dotfiles by default
   const excluded = globMatcher([...BUILTIN_EXCLUDES, ...config.sources.exclude], true);
   const testInclude = globMatcher(config.tests.include, true);
@@ -114,6 +120,7 @@ export function discoverFiles(o: DiscoverOptions): ScopeFile[] {
       }
       const abs = path.join(dir.abs, entry.name);
       if (entry.isDirectory()) {
+        if (leaveOut.has(rel)) continue;
         if (useGitignore && isIgnored(layers, rel, true)) continue;
         // picomatch's `**` does not cross a line break, so every file below would be dropped
         // silently; U+0085 too, as SwiftLint's file list would split on it (final review minor 1).

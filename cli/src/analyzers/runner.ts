@@ -70,6 +70,8 @@ export interface RunAnalyzersOptions {
   tempRoot?: string;
   /** `qualor dotnet end`'s logs (config.md §6.1); absent or null in a plain `qualor scan`. */
   dotnet?: DotnetRun | null;
+  /** The Trivy database directory the scan chose (vuln plan 3); absent or null: none. */
+  trivyDatabaseDir?: string | null;
 }
 
 function readSarif(
@@ -368,6 +370,7 @@ function analyzerContext(
     workDir,
     log: o.log,
     dotnet: o.dotnet ?? null,
+    trivyDatabaseDir: o.trivyDatabaseDir ?? null,
     // Ruling V3: every built-in analyzer binary comes from PATH or the scanner image, never
     // from the repository being scanned.
     resolveBinary: (name) => resolveBinary(name, { root: o.root, env: parentEnv }),

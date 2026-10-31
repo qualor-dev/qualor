@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import {
   compareFixture,
   REDACTED,
@@ -17,7 +17,7 @@ import {
   sastValidator,
 } from '../../test/gitlab-schema';
 import { commitAll, initRepo, SCAN_TEST_ENV } from '../../test/git';
-import { json, useTestServers } from '../../test/http';
+import { json, problem, useTestServers } from '../../test/http';
 import { captureIO } from '../../test/io';
 import { useTempDirs, writeTree } from '../../test/tmp';
 import { parseCommandLine, type ScanFlags } from '../args';
@@ -1405,5 +1405,155 @@ copyFileSync(${JSON.stringify(
       exitCode: 2,
       message: '--gitlab-dependency-scanning web: is a directory',
     });
+  });
+});
+
+describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', () => {
+  const UNTRUSTED = 'VULNERABILITY_DB_CACHE_UNTRUSTED';
+  /** Trivy as the step sees it: present and enabled; it records what its context says. */
+  const trivyStub = (seen: unknown[] = []): Analyzer => ({
+    id: 'trivy',
+    languages: [],
+    prepare: (ctx) => {
+      seen.push(ctx.trivyDatabaseDir);
+      return Promise.resolve({ skip: 'no database here' });
+    },
+  });
+  const dryFlags = (extra: string[] = []) =>
+    scanFlags(['--dry-run', '--output', 'out/r.json.gz', '--project-key', 'k', ...extra]);
+
+  it('--dry-run makes no request beyond today’s, even with a server configured', async () => {
+    // Today a dry run with a trusted URL asks for the version and the baseline (here: an older
+    // server without either); it never asks for the vulnerability database.
+    const server = await serve((_req, res) => problem(res, 404, 'NOT_FOUND'));
+    const repo = fixtureRepo('ts-basic');
+    const c = captureIO({
+      cwd: repo,
+      env: { ...SCAN_TEST_ENV, QUALOR_URL: server.url, QUALOR_TOKEN: 'qlr_prj_dry_run_token' },
+    });
+    const code = await runScan(dryFlags(), c.io, silentLogger, { analyzers: [trivyStub()] });
+    expect(code, c.stderr()).toBe(0);
+    expect(server.requests.map((r) => r.url.split('?')[0])).toEqual([
+      '/api/v0/system/version',
+      '/api/v0/projects/new-code-baseline',
+    ]);
+    const report = readReport(path.join(repo, 'out', 'r.json.gz'));
+    expect(report.warnings.filter((w) => w.code.startsWith('VULNERABILITY_DB_'))).toEqual([]);
+  });
+
+  it('a QUALOR_TRIVY_CACHE_DIR inside the repository: no exit 2, the warning, and none of its files in the report', async () => {
+    const repo = fixtureRepo('ts-basic');
+    writeTree(repo, {
+      'ci-cache/trivy/db.tar.gz': gzipSync(Buffer.from('not the server’s archive')),
+      'ci-cache/trivy/server.json': '{"digest":"sha256:0","fetchedAt":"2026-10-31T00:00:00Z"}\n',
+      'ci-cache/trivy/db/metadata.json': '{"Version":2,"UpdatedAt":"2030-01-01T00:00:00Z"}\n',
+      'ci-cache/notes.txt': 'next to the cache\n',
+    });
+    const seen: unknown[] = [];
+    const c = captureIO({
+      cwd: repo,
+      env: { ...SCAN_TEST_ENV, QUALOR_TRIVY_CACHE_DIR: path.join(repo, 'ci-cache', 'trivy') },
+    });
+    const code = await runScan(dryFlags(), c.io, silentLogger, { analyzers: [trivyStub(seen)] });
+    expect(code, c.stderr()).toBe(0);
+    expect(seen).toEqual([null]);
+    const report = readReport(path.join(repo, 'out', 'r.json.gz'));
+    expect(report.warnings.filter((w) => w.code === UNTRUSTED)).toEqual([
+      {
+        code: UNTRUSTED,
+        message:
+          'QUALOR_TRIVY_CACHE_DIR is inside the repository; its database is used only after the server confirms its checksum. Using the database in the scanner image.',
+        count: 1,
+      },
+    ]);
+    const files = report.files.map((f) => f.path);
+    expect(files).toContain('ci-cache/notes.txt');
+    expect(files.filter((f) => f.startsWith('ci-cache/trivy/'))).toEqual([]);
+  });
+
+  it('passes the chosen directory to Trivy and its warnings to the report once, and cleans up after the analyzers', async () => {
+    const repo = fixtureRepo('ts-basic');
+    const chosen = tmp();
+    const events: string[] = [];
+    const seen: unknown[] = [];
+    const trivy: Analyzer = {
+      ...trivyStub(seen),
+      prepare: (ctx) => {
+        events.push('trivy');
+        seen.push(ctx.trivyDatabaseDir);
+        return Promise.resolve({ skip: 'x' });
+      },
+    };
+    const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
+    const code = await runScan(dryFlags(), c.io, silentLogger, {
+      analyzers: [trivy],
+      vulnerabilityDb: (input) => {
+        events.push(`choose:${input.endpoint === null ? 'no-server' : 'server'}`);
+        return Promise.resolve({
+          dir: chosen,
+          warnings: [{ code: 'VULNERABILITY_DB_FETCH_FAILED', message: 'from the step' }],
+          cleanup: () => {
+            events.push('cleanup');
+            return Promise.resolve();
+          },
+        });
+      },
+    });
+    expect(code, c.stderr()).toBe(0);
+    expect(events).toEqual(['choose:no-server', 'trivy', 'cleanup']);
+    expect(seen).toEqual([chosen]);
+    const report = readReport(path.join(repo, 'out', 'r.json.gz'));
+    expect(report.warnings.filter((w) => w.code.startsWith('VULNERABILITY_DB_'))).toEqual([
+      { code: 'VULNERABILITY_DB_FETCH_FAILED', message: 'from the step', count: 1 },
+    ]);
+  });
+
+  it('cleans up even when the scan fails', async () => {
+    const repo = fixtureRepo('ts-basic');
+    let cleaned = 0;
+    const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
+    await expect(
+      runScan(dryFlags(['--sarif', 'missing.sarif']), c.io, silentLogger, {
+        analyzers: [trivyStub()],
+        vulnerabilityDb: () =>
+          Promise.resolve({
+            dir: null,
+            warnings: [],
+            cleanup: () => {
+              cleaned += 1;
+              return Promise.resolve();
+            },
+          }),
+      }),
+    ).rejects.toMatchObject({ exitCode: 2 });
+    expect(cleaned).toBe(1);
+  });
+
+  it('does not run without Trivy: disabled, not among the analyzers, or a tag scan', async () => {
+    let calls = 0;
+    const spy = () => {
+      calls += 1;
+      return Promise.resolve({ dir: null, warnings: [], cleanup: () => Promise.resolve() });
+    };
+    const repo = fixtureRepo('ts-basic');
+    const off = path.join(tmp(), 'off');
+    cpSync(repo, off, { recursive: true });
+    writeFileSync(
+      path.join(off, 'qualor.yml'),
+      'version: 1\nanalyzers:\n  trivy:\n    enabled: false\n',
+    );
+    const run = (cwd: string, analyzers: Analyzer[], extra: string[] = []) =>
+      runScan(dryFlags(extra), captureIO({ cwd, env: SCAN_TEST_ENV }).io, silentLogger, {
+        analyzers,
+        vulnerabilityDb: spy,
+        licensePass: { resolveBinary: () => null },
+      });
+    expect(await run(off, [trivyStub()])).toBe(0);
+    expect(await run(repo, [])).toBe(0);
+    // A tag scan records the dependency list only: no vulnerability pass, so no database.
+    expect(await run(repo, [trivyStub()], ['--tag', 'v1.0.0'])).toBe(0);
+    expect(calls).toBe(0);
+    expect(await run(repo, [trivyStub()])).toBe(0);
+    expect(calls).toBe(1);
   });
 });

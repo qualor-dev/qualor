@@ -1089,6 +1089,23 @@ describe('the collected preparation (plan 2D)', () => {
     });
     expect(seen).toEqual({ kind: 'no-build' });
   });
+
+  it("passes the scan's vulnerability database directory to the context, null by default", async () => {
+    const seen: unknown[] = [];
+    const analyzer: Analyzer = {
+      id: 'trivy',
+      languages: [],
+      prepare: (ctx) => {
+        seen.push(ctx.trivyDatabaseDir);
+        return Promise.resolve({ skip: 'x' });
+      },
+    };
+    const base = { root: tmp(), config: parseConfig({ version: 1 }), files: [], log: silentLogger };
+    const chosen = tmp();
+    await runAnalyzers([analyzer], { ...base, trivyDatabaseDir: chosen });
+    await runAnalyzers([analyzer], base);
+    expect(seen).toEqual([chosen, null]);
+  });
 });
 
 describe('mapLimit', () => {

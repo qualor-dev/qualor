@@ -31,6 +31,7 @@ import { deadProxyEnv } from './offline';
 import { runProcess } from './process';
 import { runAnalyzers } from './runner';
 import {
+  cacheInRepository,
   checkTrivyConfig,
   createTrivyAnalyzer,
   isTrivyVariable,
@@ -202,6 +203,55 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
     expect(prep.run.args[prep.run.args.indexOf('--cache-dir') + 1]).toBe(named);
   });
 
+  it('uses the database directory the scan chose over QUALOR_TRIVY_CACHE_DIR and the image', async () => {
+    const root = tmp();
+    const chosen = database();
+    const ctx = {
+      ...fakeContext(root, {
+        binaries: { trivy: '/usr/bin/trivy' },
+        env: { QUALOR_TRIVY_CACHE_DIR: database() },
+      }),
+      trivyDatabaseDir: chosen,
+    };
+    mkdirSync(ctx.workDir, { recursive: true });
+    const prep = await createTrivyAnalyzer(tmp()).prepare(ctx);
+    if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+    expect(prep.run.args[prep.run.args.indexOf('--cache-dir') + 1]).toBe(chosen);
+    expect(prep.run.database).toEqual({ name: 'trivy-db', updatedAt: UPDATED_AT });
+  });
+
+  it('ignores a QUALOR_TRIVY_CACHE_DIR inside the checkout: the image database, and the directory skipped (P5)', async () => {
+    const root = tmp();
+    writeTree(root, {
+      'ci/trivy/db/trivy.db': 'a database the merge request supplied',
+      'ci/trivy/db/metadata.json': JSON.stringify({
+        Version: 2,
+        UpdatedAt: '2030-01-01T00:00:00Z',
+      }),
+    });
+    const image = database();
+    const ctx = fakeContext(root, {
+      binaries: { trivy: '/usr/bin/trivy' },
+      env: { QUALOR_TRIVY_CACHE_DIR: path.join(root, 'ci', 'trivy') },
+    });
+    mkdirSync(ctx.workDir, { recursive: true });
+    const prep = await createTrivyAnalyzer(image).prepare(ctx);
+    if (!('run' in prep)) throw new Error(JSON.stringify(prep));
+    const args = prep.run.args;
+    expect(args[args.indexOf('--cache-dir') + 1]).toBe(image);
+    expect(prep.run.database).toEqual({ name: 'trivy-db', updatedAt: UPDATED_AT });
+    // The cache directory inside the checkout is one more --skip-dirs, after the built-in ones.
+    const skipped = args.flatMap((a, i) => (args[i - 1] === '--skip-dirs' ? [a] : []));
+    expect(skipped).toEqual([...skipDirs(), 'ci/trivy']);
+    // A verified copy the scan chose is still taken, and the directory still skipped.
+    const chosen = database();
+    const ctx2 = { ...ctx, workDir: tmp(), trivyDatabaseDir: chosen };
+    const prep2 = await createTrivyAnalyzer(image).prepare(ctx2);
+    if (!('run' in prep2)) throw new Error(JSON.stringify(prep2));
+    expect(prep2.run.args[prep2.run.args.indexOf('--cache-dir') + 1]).toBe(chosen);
+    expect(prep2.run.args).toContain('ci/trivy');
+  });
+
   it('drops every TRIVY_ variable, in any case, and nothing else', () => {
     for (const name of ['TRIVY_SERVER', 'TRIVY_DB_REPOSITORY', 'trivy_config', 'Trivy_Cache_Dir']) {
       expect(isTrivyVariable(name), name).toBe(true);
@@ -213,14 +263,15 @@ describe('trivyAnalyzer.prepare (config.md §6)', () => {
 });
 
 describe('checkTrivyConfig: configuration errors (exit 2)', () => {
-  it('refuses a relative QUALOR_TRIVY_CACHE_DIR or one inside the checkout', () => {
+  it('refuses a relative QUALOR_TRIVY_CACHE_DIR, and no longer one inside the checkout (P5)', () => {
     const root = tmp();
     expect(checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: 'cache/trivy' })).toBe(
       'QUALOR_TRIVY_CACHE_DIR must be an absolute path',
     );
-    expect(checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: path.join(root, 'db') })).toBe(
-      'QUALOR_TRIVY_CACHE_DIR is inside the repository (the database must come from the CI, not the checkout)',
-    );
+    // Inside the checkout it is ignored with a warning (the scan's database choice), not exit 2.
+    expect(
+      checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: path.join(root, 'db') }),
+    ).toBeNull();
     expect(checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: tmp() })).toBeNull();
     expect(checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: '' })).toBeNull();
   });
@@ -249,26 +300,24 @@ describe('checkTrivyConfig: configuration errors (exit 2)', () => {
   );
 
   it.runIf(process.platform !== 'win32')(
-    'refuses a QUALOR_TRIVY_CACHE_DIR whose database files resolve into the checkout',
+    'no longer refuses a QUALOR_TRIVY_CACHE_DIR whose database files resolve into the checkout (P5)',
     () => {
-      const refused = (file: string) =>
-        `QUALOR_TRIVY_CACHE_DIR/db/${file} resolves into the repository (the database must come from the CI, not the checkout)`;
       for (const file of ['trivy.db', 'metadata.json']) {
         const root = tmp();
         writeTree(root, { [`planted/${file}`]: 'x' });
         const dir = database();
         rmSync(path.join(dir, 'db', file));
         symlinkSync(path.join(root, 'planted', file), path.join(dir, 'db', file));
-        expect(checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: dir })).toBe(refused(file));
+        expect(checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: dir })).toBeNull();
+        expect(cacheInRepository(root, dir)).toBe(true);
       }
       const root = tmp();
       writeTree(root, { 'planted/trivy.db': 'x', 'planted/metadata.json': '{}' });
       const dir = tmp();
       symlinkSync(path.join(root, 'planted'), path.join(dir, 'db'));
-      expect(checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: dir })).toBe(
-        refused('trivy.db'),
-      );
-      expect(checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: database() })).toBeNull();
+      expect(checkTrivyConfig(root, cfg, { QUALOR_TRIVY_CACHE_DIR: dir })).toBeNull();
+      expect(cacheInRepository(root, dir)).toBe(true);
+      expect(cacheInRepository(root, database())).toBe(false);
     },
   );
 

@@ -53,6 +53,11 @@ export interface AnalyzerContext {
   /** `qualor dotnet end`'s logs for the roslyn engine; null in a plain `qualor scan`. */
   dotnet: DotnetRun | null;
   /**
+   * The Trivy database directory the scan chose (a server-verified copy, vuln plan 3), which the
+   * Trivy adapter uses over `QUALOR_TRIVY_CACHE_DIR` and the image's; null or absent: none.
+   */
+  trivyDatabaseDir?: string | null;
+  /**
    * config.md §6 (ruling V3): PATH, then the scanner image, never a file inside the repository;
    * null when the tool is not installed there.
    */

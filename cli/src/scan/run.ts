@@ -17,6 +17,7 @@ import {
   runAnalyzers,
   withEmergencyCleanup,
 } from '../analyzers/runner';
+import { cacheDirInRepository } from '../analyzers/trivy';
 import { LICENSE_ENGINE_ID } from '../analyzers/trivy-licenses';
 import { parseTrivyIgnore } from '../analyzers/trivyignore';
 import type { Analyzer, DotnetRun } from '../analyzers/types';
@@ -55,6 +56,7 @@ import {
   versionLabel,
 } from './version';
 import { collectDependencies, type DependencyPassHooks } from './dependencies';
+import { resolveVulnerabilityDb, type VulnerabilityDbChoice } from './vulndb';
 import {
   analyzeFiles,
   duplicationFilter,
@@ -108,6 +110,16 @@ export interface ScanDeps {
    * (tests); the system's temporary directory by default.
    */
   reviewTempRoot?: string;
+  /**
+   * undefined: choose the Trivy vulnerability database (the server's, a verified cache, or
+   * today's) before the analyzers, when Trivy runs (vuln plan 3); null: do not (tests).
+   */
+  vulnerabilityDb?: null | typeof resolveVulnerabilityDb;
+}
+
+/** Trivy's vulnerability pass runs in this scan: among the analyzers and not turned off. */
+function trivyRuns(analyzers: readonly Analyzer[], config: QualorConfig): boolean {
+  return analyzers.some((a) => a.id === 'trivy') && config.analyzers.trivy.enabled !== false;
 }
 
 interface BuiltReport {
@@ -223,12 +235,15 @@ async function buildReport(inputs: {
   io: CliIO;
   log: Logger;
   deps: ScanDeps;
+  /** The vulnerability pass's database (vuln plan 3); null when none was chosen. */
+  vulnerabilityDb: VulnerabilityDbChoice | null;
 }): Promise<BuiltReport> {
   const { settings, flags, projectKey, endpoint, analyzers, io, log, deps } = inputs;
   const { root, config } = settings;
   const analysisDate = (deps.now ?? (() => new Date()))();
   const warnings = new Warnings();
   for (const w of deps.extraWarnings ?? []) warnings.add(w.code, w.message);
+  for (const w of inputs.vulnerabilityDb?.warnings ?? []) warnings.add(w.code, w.message);
 
   // Fail fast on a bad --sarif file: a usage error must come before any git or network call.
   // A tag scan is a version: the dependency list only, no analyzer, metric or coverage input.
@@ -256,7 +271,15 @@ async function buildReport(inputs: {
     log,
   });
 
-  const scope = discoverFiles({ root, config, warnings, log });
+  // The vulnerability database cache inside the checkout holds the archive, not the project.
+  const cacheDir = trivyRuns(analyzers, config) ? cacheDirInRepository(root, io.env) : null;
+  const scope = discoverFiles({
+    root,
+    config,
+    warnings,
+    log,
+    ...(cacheDir !== null && { leaveOut: [cacheDir] }),
+  });
   if (versionMode) return buildVersionReport({ ...inputs, scm, scope, warnings, analysisDate });
   const parsers = deps.parsers ?? (await loadParsers());
   let analyzed: AnalyzedFile[];
@@ -290,6 +313,7 @@ async function buildReport(inputs: {
       log,
       env: io.env,
       dotnet: deps.dotnet ?? null,
+      trivyDatabaseDir: inputs.vulnerabilityDb?.dir ?? null,
     })),
     ...external,
   ];
@@ -830,16 +854,40 @@ export async function runScan(
     endpoint !== null && deps.serverVersion !== null
       ? await (deps.serverVersion ?? checkServerVersion)(endpoint, log)
       : null;
-  const { report, failed, gitlab } = await buildReport({
-    settings,
-    flags,
-    projectKey,
-    endpoint,
-    analyzers,
-    io,
-    log,
-    deps,
-  });
+  // Vuln plan 3: the vulnerability pass's database, chosen before it runs. A tag scan has no
+  // vulnerability pass, and --dry-run asks the server for nothing new (Review Focus 3).
+  const choose = deps.vulnerabilityDb === undefined ? resolveVulnerabilityDb : deps.vulnerabilityDb;
+  const vulnerabilityDb =
+    choose !== null && tag === null && trivyRuns(analyzers, settings.config)
+      ? await withEmergencyCleanup(log, () =>
+          choose({
+            endpoint: flags.dryRun ? null : endpoint,
+            root: settings.root,
+            env: io.env,
+            log,
+            now: deps.now ?? (() => new Date()),
+          }),
+        )
+      : null;
+  for (const w of vulnerabilityDb?.warnings ?? []) log.warn(w.message);
+  let built: BuiltReport;
+  try {
+    built = await buildReport({
+      settings,
+      flags,
+      projectKey,
+      endpoint,
+      analyzers,
+      io,
+      log,
+      deps,
+      vulnerabilityDb,
+    });
+  } finally {
+    // The private copy of the database lives until the analyzers are done, whatever happened.
+    await vulnerabilityDb?.cleanup();
+  }
+  const { report, failed, gitlab } = built;
   const failedRequired = (): ExitCode => {
     log.error(`required analyzers failed: ${failed.join(', ')}`);
     return EXIT.ANALYZER_FAILED;

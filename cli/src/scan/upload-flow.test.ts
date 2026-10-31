@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
@@ -16,6 +17,7 @@ import {
   type SnapshotOmittedLine,
 } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
+import { metadataJson, trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { describeWithTools } from '../../test/analyzers';
 import { commitAll, gitSync, initRepo, SCAN_TEST_ENV } from '../../test/git';
 import { json, problem, useTestServers } from '../../test/http';
@@ -26,6 +28,7 @@ import { useTempDirs, writeTree } from '../../test/tmp';
 import { createQualorAnalyzer } from '../analyzers/qualor';
 import { builtinAnalyzers } from '../analyzers/registry';
 import { createSemgrepAnalyzer } from '../analyzers/semgrep';
+import { createTrivyAnalyzer } from '../analyzers/trivy';
 import type { Analyzer } from '../analyzers/types';
 import { CliError } from '../errors';
 import { parseCommandLine, type ScanFlags } from '../args';
@@ -76,6 +79,12 @@ interface FakeReview {
   snapshot?: (req: IncomingMessage, res: ServerResponse) => void;
 }
 
+/** The scanner routes of the vulnerability database (vuln plan 3); without them, 404. */
+interface FakeVulndb {
+  meta: unknown;
+  archive: Buffer;
+}
+
 /**
  * A Qualor server double: the baseline, the upload and a scripted analysis status. It runs this
  * scanner's release unless `version` names another one, or is null (it does not say).
@@ -85,6 +94,7 @@ async function fakeServer(
   upload?: (res: Parameters<typeof json>[0]) => void,
   review: FakeReview = {},
   version: string | null = VERSION,
+  vulndb?: FakeVulndb,
 ): Promise<Fake> {
   const uploaded: Report[] = [];
   const reportTexts: string[] = [];
@@ -96,6 +106,14 @@ async function fakeServer(
     paths.push(`${req.method} ${u.pathname}`);
     if (u.pathname === '/api/v0/system/version' && version !== null) {
       json(res, 200, { version });
+    } else if (u.pathname === '/api/v0/scanner/vulnerability-db' && vulndb !== undefined) {
+      json(res, 200, vulndb.meta);
+    } else if (u.pathname.startsWith('/api/v0/scanner/vulnerability-db/') && vulndb !== undefined) {
+      res.writeHead(200, {
+        'content-type': 'application/gzip',
+        'content-length': String(vulndb.archive.length),
+      });
+      res.end(vulndb.archive);
     } else if (u.pathname === '/api/v0/projects/new-code-baseline') {
       json(res, 200, { revision: null, warnings: [] });
     } else if (u.pathname === '/api/v0/analyses' && req.method === 'POST') {
@@ -296,6 +314,137 @@ describe('qualor scan: upload, gate polling and exit codes (config.md §7)', () 
       expect(server.paths).toContain('POST /api/v0/analyses');
     },
   );
+});
+
+// ─── The vulnerability database from the server (vuln plan 3) ───────────────
+
+describe('qualor scan: the vulnerability database from the server', () => {
+  const META = 'GET /api/v0/scanner/vulnerability-db';
+  const UPDATED_AT = '2026-10-31T06:00:00Z';
+  /** Present and enabled, so the step runs; it never needs a database. */
+  const trivyStub: Analyzer = {
+    id: 'trivy',
+    languages: [],
+    prepare: () => Promise.resolve({ skip: 'no database here' }),
+  };
+  /**
+   * The real Trivy adapter, with a fake trivy that writes an empty result: its engine record
+   * carries the date of the database the adapter was given.
+   */
+  const trivyWithFakeBinary = (): Analyzer => {
+    const real = createTrivyAnalyzer(path.join(tmp(), 'no-image-database'));
+    return {
+      ...real,
+      prepare: async (ctx) => {
+        const prep = await real.prepare({ ...ctx, resolveBinary: () => process.execPath });
+        if (!('run' in prep)) return prep;
+        const tool = path.join(ctx.workDir, 'fake-trivy.mjs');
+        writeFileSync(
+          tool,
+          "import { writeFileSync } from 'node:fs';\nwriteFileSync(process.argv[2], JSON.stringify({ SchemaVersion: 2, Results: [] }));\n",
+        );
+        return { run: { ...prep.run, args: [tool, prep.run.sarifPath] } };
+      },
+    };
+  };
+
+  it(
+    'an older server (no route): one metadata request, no warning',
+    { timeout: 60_000 },
+    async () => {
+      const server = await fakeServer([]);
+      const { code, stderr } = await scan(repo(), server, ['--no-wait'], {
+        analyzers: [trivyStub],
+      });
+      expect(code, stderr).toBe(0);
+      expect(server.paths.filter((p) => p.startsWith(META))).toEqual([META]);
+      const warnings = server.uploaded[0]?.warnings ?? [];
+      expect(warnings.filter((w) => w.code.startsWith('VULNERABILITY_DB_'))).toEqual([]);
+      expect(stderr).not.toContain('vulnerability database');
+    },
+  );
+
+  it(
+    'takes the server’s database: engines[].database.updatedAt is its archive’s date',
+    { timeout: 60_000 },
+    async () => {
+      const archive = trivyArchive({ metadata: metadataJson(2, UPDATED_AT) });
+      const digest = `sha256:${createHash('sha256').update(archive).digest('hex')}`;
+      const server = await fakeServer([], undefined, {}, VERSION, {
+        meta: {
+          serve: true,
+          policy: 'daily',
+          current: { digest, sizeBytes: archive.length, builtAt: '2026-10-31T06:00:00.000Z' },
+          accepted: [digest],
+        },
+        archive,
+      });
+      const cache = path.join(tmp(), 'trivy-cache');
+      const { code, stderr } = await scan(
+        repo(),
+        server,
+        ['--no-wait'],
+        { analyzers: [trivyWithFakeBinary()] },
+        { QUALOR_TRIVY_CACHE_DIR: cache },
+      );
+      expect(code, stderr).toBe(0);
+      expect(server.paths).toEqual([
+        'GET /api/v0/system/version',
+        META,
+        `${META}/${digest.slice(7)}`,
+        'GET /api/v0/projects/new-code-baseline',
+        'POST /api/v0/analyses',
+      ]);
+      const report = server.uploaded[0];
+      expect(report?.engines.find((e) => e.id === 'trivy')).toMatchObject({
+        status: 'ok',
+        database: { name: 'trivy-db', updatedAt: UPDATED_AT },
+      });
+      expect(report?.warnings.filter((w) => w.code.startsWith('VULNERABILITY_DB_'))).toEqual([]);
+      expect(existsSync(path.join(cache, 'db', 'trivy.db'))).toBe(true);
+    },
+  );
+
+  it(
+    'warns once and keeps the scan’s exit code when the server cannot give the database',
+    { timeout: 60_000 },
+    async () => {
+      const server = await fakeServer([], undefined, {}, VERSION, {
+        meta: { serve: 'yes' },
+        archive: Buffer.alloc(0),
+      });
+      const { code, stderr } = await scan(
+        repo(),
+        server,
+        ['--no-wait'],
+        { analyzers: [trivyStub] },
+        { QUALOR_TRIVY_CACHE_DIR: path.join(tmp(), 'trivy-cache') },
+      );
+      expect(code, stderr).toBe(0);
+      const warnings = server.uploaded[0]?.warnings ?? [];
+      expect(warnings.filter((w) => w.code.startsWith('VULNERABILITY_DB_'))).toEqual([
+        {
+          code: 'VULNERABILITY_DB_FETCH_FAILED',
+          message:
+            'could not get the vulnerability database from the server (unexpected response); using the database in the scanner image',
+          count: 1,
+        },
+      ]);
+      expect(stderr).toContain('could not get the vulnerability database from the server');
+    },
+  );
+
+  it('asks nothing with Trivy disabled', { timeout: 60_000 }, async () => {
+    const server = await fakeServer([]);
+    const { code } = await scan(
+      repo('version: 1\nanalyzers:\n  trivy:\n    enabled: false\n'),
+      server,
+      ['--no-wait'],
+      { analyzers: [trivyStub] },
+    );
+    expect(code).toBe(0);
+    expect(server.paths.filter((p) => p.startsWith(META))).toEqual([]);
+  });
 });
 
 // ─── AI review: the repository snapshot of a merge request (6I-2) ───────────
