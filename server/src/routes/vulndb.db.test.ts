@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addMember,
@@ -125,17 +125,21 @@ describe('/system/vulnerability-db (API)', () => {
     });
   });
 
-  it('changes the scanner setting by key, audits it and does not queue an update', async () => {
-    await put({ enabled: false });
-    await ctx.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+  it('changes the scanner setting by key, audits it and queues no update or re-check', async () => {
+    // With monitoring on (the default), where other changes do queue work.
+    const queues = [VULNDB_UPDATE_QUEUE, RECHECK_QUEUE];
+    await ctx.db.delete(jobs).where(inArray(jobs.queue, queues));
     const res = await put({ scanners: { policy: 'every' } });
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json().scanners).toEqual({ enabled: true, policy: 'every' });
+    expect(res.json()).toMatchObject({
+      enabled: true,
+      scanners: { enabled: true, policy: 'every' },
+    });
     expect(lastChanged()).toEqual(['scanners.policy']);
     const off = await put({ scanners: { enabled: false } });
     expect(off.json().scanners).toEqual({ enabled: false, policy: 'every' });
     expect(lastChanged()).toEqual(['scanners.enabled']);
-    expect(await ctx.db.select().from(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE))).toEqual([]);
+    expect(await ctx.db.select().from(jobs).where(inArray(jobs.queue, queues))).toEqual([]);
   });
 
   it('answers 422 on an unknown key inside scanners', async () => {
