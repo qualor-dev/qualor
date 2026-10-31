@@ -87,6 +87,8 @@ export type DownloadOptions = {
   totalMs?: number;
   /** A 503 is retried once when its `retry-after` is at most this (default 10 s). */
   retryAfterCapMs?: number;
+  /** Test seam: opens the partial file (default `fs.createWriteStream`). */
+  createStream?: (file: string, o: { flags: string; mode: number }) => WriteStream;
 };
 
 type Attempt = { ok: true } | { ok: false; reason: string; busyAfterMs?: number | null };
@@ -106,6 +108,7 @@ function attempt(
   dest: string,
   idleMs: number,
   totalMs: number,
+  opts: DownloadOptions,
 ): Promise<Attempt> {
   let url: URL;
   try {
@@ -193,7 +196,10 @@ function attempt(
         fail('unexpected response');
         return;
       }
-      const stream = createWriteStream(partial, { flags: 'wx', mode: 0o600 });
+      const stream = (opts.createStream ?? createWriteStream)(partial, {
+        flags: 'wx',
+        mode: 0o600,
+      });
       out = stream;
       stream.on('error', () => fail('cannot write the database file'));
       r.on('data', (chunk: Buffer) => {
@@ -222,8 +228,13 @@ function attempt(
           return;
         }
         clearTimeout(idle);
-        stream.end(() => {
+        // Rename only once the descriptor is closed and every byte reached the file.
+        stream.once('close', () => {
           if (settled) return;
+          if (stream.bytesWritten !== sizeBytes) {
+            fail('cannot write the database file');
+            return;
+          }
           try {
             renameSync(partial, dest);
           } catch {
@@ -231,6 +242,9 @@ function attempt(
             return;
           }
           finish({ ok: true });
+        });
+        stream.end((err?: Error | null) => {
+          if (err) fail('cannot write the database file');
         });
       });
     });
@@ -265,7 +279,7 @@ export async function downloadServerVulndb(
   const totalMs = opts.totalMs ?? 15 * 60_000;
   const cap = opts.retryAfterCapMs ?? 10_000;
   const started = Date.now();
-  let result = await attempt(ep, hex, sizeBytes, dest, idleMs, totalMs);
+  let result = await attempt(ep, hex, sizeBytes, dest, idleMs, totalMs, opts);
   if (
     !result.ok &&
     result.busyAfterMs !== undefined &&
@@ -274,7 +288,7 @@ export async function downloadServerVulndb(
   ) {
     await sleep(result.busyAfterMs);
     const left = Math.max(1, totalMs - (Date.now() - started));
-    result = await attempt(ep, hex, sizeBytes, dest, idleMs, left);
+    result = await attempt(ep, hex, sizeBytes, dest, idleMs, left, opts);
   }
   return result.ok ? { ok: true } : { ok: false, reason: result.reason };
 }

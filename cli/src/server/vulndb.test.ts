@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
@@ -265,6 +265,30 @@ describe('downloadServerVulndb', () => {
     const got = await downloadServerVulndb(endpoint(s.url), digest, payload.length, dest);
     expect(got.ok).toBe(false);
     expect(s.requests).toHaveLength(2);
+  });
+
+  it('fails when the partial file cannot be opened', async () => {
+    const dir = tmp();
+    const dest = path.join(dir, 'missing', 'db.tar.gz');
+    const s = await serve((_req, res) => send(res, payload));
+    const got = await downloadServerVulndb(endpoint(s.url), digest, payload.length, dest);
+    expect(got.ok).toBe(false);
+    expect(leftovers(dir)).toEqual([]);
+  });
+
+  it('fails when the final write fails, leaving no dest and no partial', async () => {
+    const dir = tmp();
+    const dest = path.join(dir, 'db.tar.gz');
+    const s = await serve((_req, res) => send(res, payload));
+    const got = await downloadServerVulndb(endpoint(s.url), digest, payload.length, dest, {
+      createStream: (file, o) => {
+        const stream = createWriteStream(file, o);
+        stream._final = (cb) => cb(Object.assign(new Error('no space'), { code: 'ENOSPC' }));
+        return stream;
+      },
+    });
+    expect(got).toEqual({ ok: false, reason: 'cannot write the database file' });
+    expect(leftovers(dir)).toEqual([]);
   });
 
   describe('TLS', () => {
