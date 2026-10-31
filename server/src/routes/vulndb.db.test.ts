@@ -11,6 +11,9 @@ import {
   type TestContext,
 } from '../../test/app';
 import { uuidv7 } from '../db/ids';
+import { adminHeaders, auditRows, ssoContext } from '../../test/sso';
+import { trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
+import { readVulndbState } from '../vulndb/state';
 import { instanceSettings, jobs, vulndbDatasets } from '../db/schema';
 import { VULNDB_UPDATE_QUEUE } from '../vulndb/state';
 
@@ -165,5 +168,105 @@ describe('/system/vulnerability-db (API)', () => {
       concurrencyKey: 'vulndb.update',
     });
     expect((await get()).json().status).toBe('updating');
+  });
+
+  describe('PUT /system/vulnerability-db/file', () => {
+    const fileUrl = `${url}/file`;
+    const upload = (body: Buffer, session = admin, contentType = 'application/gzip') =>
+      ctx.app.inject({
+        method: 'PUT',
+        url: fileUrl,
+        headers: { ...session.headers, 'content-type': contentType },
+        payload: body,
+      });
+
+    it('is for instance admins only', async () => {
+      expect((await upload(trivyArchive(), orgAdmin)).statusCode).toBe(403);
+      expect(
+        (
+          await ctx.app.inject({
+            method: 'PUT',
+            url: fileUrl,
+            headers: { 'content-type': 'application/gzip' },
+            payload: trivyArchive(),
+          })
+        ).statusCode,
+      ).toBe(401);
+    });
+
+    it('makes a valid archive current and audits it', async () => {
+      const archive = trivyArchive();
+      const res = await upload(archive, admin, 'application/octet-stream');
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toMatchObject({
+        status: 'up_to_date',
+        lastError: null,
+        current: {
+          builtAt: new Date(UPDATED_AT).toISOString(),
+          sizeBytes: archive.length,
+          source: 'upload',
+        },
+      });
+      const [row] = await ctx.db.select().from(vulndbDatasets);
+      expect((await readVulndbState(ctx.db)).currentDatasetId).toBe(row?.id);
+    });
+
+    it('audits the upload with its size and build time', async () => {
+      const licensed = await ssoContext();
+      try {
+        const archive = trivyArchive();
+        const res = await licensed.app.inject({
+          method: 'PUT',
+          url: fileUrl,
+          headers: { ...(await adminHeaders(licensed)), 'content-type': 'application/gzip' },
+          payload: archive,
+        });
+        expect(res.statusCode, res.body).toBe(200);
+        const event = (await auditRows(licensed)).find((e) => e.action === 'vulndb.file_uploaded');
+        expect(event?.details).toEqual({
+          sizeBytes: archive.length,
+          builtAt: new Date(UPDATED_AT).toISOString(),
+        });
+      } finally {
+        await licensed.close();
+      }
+    });
+
+    it('answers 422 for an invalid archive and keeps the current dataset', async () => {
+      const ok = await upload(trivyArchive());
+      const digest = ok.json().current.digest;
+      const bad = await upload(trivyArchive({ metadata: null }));
+      expect(bad.statusCode, bad.body).toBe(422);
+      expect(bad.json()).toMatchObject({ code: 'INVALID_DATABASE' });
+      expect(bad.json().detail).toContain('metadata.json');
+      expect((await get()).json().current.digest).toBe(digest);
+      expect(await ctx.db.select().from(vulndbDatasets)).toHaveLength(1);
+    });
+
+    it('answers 413 TOO_LARGE for a file over the limit', async () => {
+      const small = await createTestContext({
+        config: {
+          vulndb: {
+            dir: '/var/cache/qualor/vulndb',
+            trivyPath: '/usr/local/bin/trivy',
+            internalHosts: new Set(),
+            uploadMaxBytes: 64,
+          },
+        },
+      });
+      try {
+        const session = await login(small, 'admin', ADMIN_PASSWORD);
+        const res = await small.app.inject({
+          method: 'PUT',
+          url: fileUrl,
+          headers: { ...session.headers, 'content-type': 'application/gzip' },
+          payload: trivyArchive(),
+        });
+        expect(res.statusCode, res.body).toBe(413);
+        expect(res.json().code).toBe('TOO_LARGE');
+      } finally {
+        await small.close();
+      }
+    });
   });
 });

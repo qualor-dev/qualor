@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -7,6 +8,9 @@ import { actorOf } from '../audit/recorder';
 import { requireInstanceAdmin } from '../auth/access';
 import { decryptSecret, encryptionKey } from '../crypto/secrets';
 import { jobs } from '../db/schema';
+import { sendContinue } from '../http/expect-continue';
+import { closeAfterRefusal } from '../http/lingering-close';
+import { ProblemError } from '../http/problem';
 import { isoOrNull } from '../http/schemas';
 import {
   OFFICIAL_REPOSITORY,
@@ -18,7 +22,10 @@ import {
   type VulndbSettings,
 } from '../vulndb/settings';
 import { readVulndbState, VULNDB_UPDATE_QUEUE, vulndbStatus } from '../vulndb/state';
-import { currentDataset } from '../vulndb/store';
+import { enqueueRecheck } from '../vulndb/recheck-queue';
+import { currentDataset, makeDatasetCurrent, pruneDatasets, storeDataset } from '../vulndb/store';
+
+const UPLOAD_TYPES = ['application/gzip', 'application/octet-stream'] as const;
 
 const intervalHours = z
   .union([z.literal(1), z.literal(3), z.literal(6), z.literal(12), z.literal(24)])
@@ -210,6 +217,102 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         return fields;
       });
       request.log.info({ userId: principal.user.id, fields: changed }, 'vulndb settings changed');
+      return readDto();
+    },
+  );
+  // The upload is handed to the handler as the raw request stream; storeDataset enforces the
+  // limit. Scoped to this plugin: no other route sees these content types.
+  for (const type of UPLOAD_TYPES) {
+    app.addContentTypeParser(type, (_request, payload, done) => {
+      done(null, payload);
+    });
+  }
+
+  app.put(
+    '/system/vulnerability-db/file',
+    {
+      // Fastify's own body limit would answer 413 BODY_TOO_LARGE before the route's own
+      // TOO_LARGE; the route enforces config.vulndb.uploadMaxBytes itself.
+      bodyLimit: Number.MAX_SAFE_INTEGER,
+      config: {
+        deferContinue: true,
+        openapi: {
+          problems: [413, 415, 422],
+          requestBody: {
+            required: true,
+            description:
+              'The Trivy database archive (db.tar.gz) as downloaded, at most QUALOR_VULNDB_UPLOAD_MAX_BYTES (default 1 GiB).',
+            content: Object.fromEntries(
+              UPLOAD_TYPES.map((type) => [type, { schema: { type: 'string', format: 'binary' } }]),
+            ),
+          },
+        },
+      },
+      schema: {
+        tags: ['system'],
+        summary:
+          'Upload a vulnerability database file, db.tar.gz (instance admins); it becomes the current database',
+        response: { 200: settingsDto },
+      },
+      preParsing: async (request, reply, payload) => {
+        const mime = request.headers['content-type']?.split(';')[0]?.trim().toLowerCase();
+        if (!UPLOAD_TYPES.some((type) => type === mime)) sendContinue(request, reply);
+        return payload;
+      },
+      onSend: async (request, reply, payload) => {
+        closeAfterRefusal(request, reply, deps.config.vulndb.uploadMaxBytes);
+        return payload;
+      },
+    },
+    async (request, reply) => {
+      const principal = requireInstanceAdmin(request);
+      const maxBytes = deps.config.vulndb.uploadMaxBytes;
+      const tooLarge = () =>
+        new ProblemError(413, 'TOO_LARGE', 'The file is too large', {
+          detail: `The file is larger than ${maxBytes} bytes`,
+        });
+      if (!(request.body instanceof Readable)) {
+        throw new ProblemError(
+          415,
+          'UNSUPPORTED_MEDIA_TYPE',
+          'Send the database file as application/gzip or application/octet-stream',
+        );
+      }
+      const declared = Number(request.headers['content-length']);
+      if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
+      sendContinue(request, reply);
+      const stored = await storeDataset(deps.db, {
+        kind: 'trivy',
+        source: 'upload',
+        chunks: request.body as AsyncIterable<Buffer>,
+        maxBytes,
+      });
+      if ('problem' in stored) {
+        if (stored.problem.code === 'TOO_LARGE') throw tooLarge();
+        throw new ProblemError(422, 'INVALID_DATABASE', 'The file is not a usable database', {
+          detail: stored.problem.message,
+        });
+      }
+      const { dataset } = stored;
+      if (!(await makeDatasetCurrent(deps.db, dataset.id))) {
+        throw new ProblemError(422, 'INVALID_DATABASE', 'The file is not a usable database', {
+          detail:
+            'The upload expired before it was stored, because it took too long. Upload the file again',
+        });
+      }
+      await pruneDatasets(deps.db);
+      await enqueueRecheck(deps.db, { all: true });
+      await deps.audit.record(deps.db, actorOf(request), [
+        {
+          action: 'vulndb.file_uploaded',
+          target: { type: 'vulndb_settings', id: 'vulndb' },
+          details: { sizeBytes: dataset.sizeBytes, builtAt: isoOrNull(dataset.builtAt) },
+        },
+      ]);
+      request.log.info(
+        { userId: principal.user.id, sizeBytes: dataset.sizeBytes },
+        'vulndb file uploaded',
+      );
       return readDto();
     },
   );

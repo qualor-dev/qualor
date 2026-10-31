@@ -39,6 +39,7 @@ import { createFakeLlm, type FakeLlm } from './fake-llm';
 import { closedPort } from './mail';
 import { signTest, testPayload, testSigner, verifyWith, type TestSigner } from './license';
 import { RBAC_FIXTURE } from './rbac';
+import { trivyArchive } from './trivy-archive';
 import { engine, file, finding, gzipJson, reportWith, uploadReport } from './reports';
 import { mergeRequestReport, silentLogger } from './scm';
 
@@ -590,6 +591,18 @@ export async function runAuditScenario(
 
   // vulndb.settings_updated (0.15): the six-hour default interval moved to a day
   await call('PUT', '/system/vulnerability-db', 200, { intervalHours: 24 });
+
+  // vulndb.file_uploaded (0.15): a tiny valid Trivy archive as a raw upload
+  expectStatus(
+    await ctx.app.inject({
+      method: 'PUT',
+      url: '/api/v0/system/vulnerability-db/file',
+      headers: { ...root.headers, 'content-type': 'application/gzip' },
+      payload: trivyArchive(),
+    }),
+    200,
+    'PUT /system/vulnerability-db/file',
+  );
 
   // oauth.settings_changed (6N): the instance's MCP client policy
   await call('PUT', '/system/mcp', 200, { dcr: false, cimd: true, allowedClients: [] });

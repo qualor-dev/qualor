@@ -66,16 +66,24 @@ export async function updateVulndbState(
 ): Promise<VulndbState> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulndbState})`);
-    const next = fn(await readVulndbState(tx));
-    await tx
-      .insert(instanceSettings)
-      .values({ key: VULNDB_STATE_KEY, value: next })
-      .onConflictDoUpdate({
-        target: instanceSettings.key,
-        set: { value: next, updatedAt: sql`now()` },
-      });
-    return next;
+    return updateVulndbStateLocked(tx, fn);
   });
+}
+
+/** {@link updateVulndbState} for a caller that already holds LOCKS.vulndbState in `tx`. */
+export async function updateVulndbStateLocked(
+  tx: Executor,
+  fn: (state: VulndbState) => VulndbState,
+): Promise<VulndbState> {
+  const next = fn(await readVulndbState(tx));
+  await tx
+    .insert(instanceSettings)
+    .values({ key: VULNDB_STATE_KEY, value: next })
+    .onConflictDoUpdate({
+      target: instanceSettings.key,
+      set: { value: next, updatedAt: sql`now()` },
+    });
+  return next;
 }
 
 export type VulndbStatus = 'off' | 'no_data' | 'updating' | 'up_to_date' | 'stale' | 'failed';

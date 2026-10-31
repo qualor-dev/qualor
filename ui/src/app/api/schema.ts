@@ -11814,6 +11814,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/system/vulnerability-db/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upload a vulnerability database file, db.tar.gz (instance admins); it becomes the current database */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The Trivy database archive (db.tar.gz) as downloaded, at most QUALOR_VULNDB_UPLOAD_MAX_BYTES (default 1 GiB). */
+            requestBody: {
+                content: {
+                    "application/gzip": string;
+                    "application/octet-stream": string;
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            enabled: boolean;
+                            source: {
+                                /** @enum {string} */
+                                kind: "official" | "mirror" | "upload";
+                                repository?: string;
+                                username?: string | null;
+                                passwordSet?: boolean;
+                                passwordReadable?: boolean;
+                            };
+                            /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
+                            intervalHours: 1 | 3 | 6 | 12 | 24;
+                            officialRepository: string;
+                            /** @enum {string} */
+                            status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                            current: {
+                                builtAt: string | null;
+                                sizeBytes: number;
+                                /** @enum {string} */
+                                source: "official" | "mirror" | "upload";
+                                digest: string;
+                            } | null;
+                            lastCheckAt: string | null;
+                            nextCheckAt: string | null;
+                            lastError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            lastRecheck: {
+                                at: string;
+                                projects: number;
+                                packages: number;
+                                unchecked: number;
+                                durationMs: number;
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Too large (REPORT_TOO_LARGE, BODY_TOO_LARGE) */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Unsupported Content-Type or Content-Encoding */
+                415: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/oauth/requests/{id}": {
         parameters: {
             query?: never;

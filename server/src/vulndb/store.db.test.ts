@@ -5,10 +5,11 @@ import { createTestDatabase, type TestDatabase } from '../../test/db';
 import { metadataJson, tarGz, trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
 import { vulndbChunks, vulndbDatasets } from '../db/schema';
 import { OutboundStreamError } from '../http/outbound';
-import { updateVulndbState } from './state';
+import { readVulndbState, updateVulndbState } from './state';
 import {
   CHUNK_BYTES,
   currentDataset,
+  makeDatasetCurrent,
   pruneDatasets,
   readDatasetChunks,
   storeDataset,
@@ -170,6 +171,27 @@ describe('dataset storage', () => {
       expect('dataset' in ok).toBe(true);
       await storeDataset(t.db, input(trivyArchive({ metadata: null })));
       expect(await counts()).toEqual({ datasets: 1, chunks: 1 });
+    });
+  });
+
+  describe('makeDatasetCurrent', () => {
+    it('names a ready dataset current and clears the last error', async () => {
+      const got = await storeDataset(t.db, input(trivyArchive()));
+      if (!('dataset' in got)) throw new Error(JSON.stringify(got));
+      await updateVulndbState(t.db, (s) => ({ ...s, lastError: { code: 'X', message: 'old' } }));
+      expect(await makeDatasetCurrent(t.db, got.dataset.id)).toBe(true);
+      const state = await readVulndbState(t.db);
+      expect(state.currentDatasetId).toBe(got.dataset.id);
+      expect(state.lastError).toBeNull();
+    });
+
+    it('answers false for a deleted row and leaves the state alone', async () => {
+      const got = await storeDataset(t.db, input(trivyArchive()));
+      if (!('dataset' in got)) throw new Error(JSON.stringify(got));
+      await t.db.delete(vulndbDatasets).where(eq(vulndbDatasets.id, got.dataset.id));
+      const before = await readVulndbState(t.db);
+      expect(await makeDatasetCurrent(t.db, got.dataset.id)).toBe(false);
+      expect(await readVulndbState(t.db)).toEqual(before);
     });
   });
 

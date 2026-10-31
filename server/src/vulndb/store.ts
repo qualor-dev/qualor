@@ -4,7 +4,7 @@ import type { Db, Executor } from '../db/client';
 import { LOCKS } from '../db/locks';
 import { vulndbChunks, vulndbDatasets, type VulndbDatasetRow } from '../db/schema';
 import { OutboundStreamError } from '../http/outbound';
-import { readVulndbState, type VulndbState } from './state';
+import { readVulndbState, updateVulndbStateLocked, type VulndbState } from './state';
 import { readTarGz, TarError } from './tar';
 
 /** A `vulndb_datasets` row. */
@@ -233,6 +233,28 @@ export async function storeDataset(db: Db, input: StoreDatasetInput): Promise<St
         .catch(() => undefined);
     }
   }
+}
+
+/**
+ * Names a `ready` dataset current and clears the state's `lastError`, under LOCKS.vulndbState.
+ * False (the state untouched) when the row is gone or not `ready`: a prune or a delete got there
+ * first, which a caller answers as a problem, never a crash.
+ */
+export async function makeDatasetCurrent(db: Db, datasetId: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulndbState})`);
+    const [row] = await tx
+      .select({ id: vulndbDatasets.id })
+      .from(vulndbDatasets)
+      .where(and(eq(vulndbDatasets.id, datasetId), eq(vulndbDatasets.status, 'ready')));
+    if (row === undefined) return false;
+    await updateVulndbStateLocked(tx, (state) => ({
+      ...state,
+      currentDatasetId: datasetId,
+      lastError: null,
+    }));
+    return true;
+  });
 }
 
 /**
