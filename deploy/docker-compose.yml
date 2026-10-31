@@ -61,6 +61,9 @@ services:
       # Email (docs/guide/email.md): the SMTP server and the sender, if Qualor sends email.
       # QUALOR_SMTP_URL: smtp://qualor%40example.com:<password>@smtp.example.com:587
       # QUALOR_SMTP_FROM: Qualor <qualor@example.com>
+    volumes:
+      # The server's copy of the Trivy vulnerability database (re-checks of tag scans).
+      - vulndb-cache:/var/cache/qualor/vulndb
     ports:
       - '${QUALOR_BIND_ADDRESS:-127.0.0.1}:${QUALOR_PORT:-8080}:8080'
     read_only: true
@@ -86,3 +89,4 @@ networks:
 
 volumes:
   pgdata:
+  vulndb-cache:

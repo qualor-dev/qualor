@@ -508,7 +508,42 @@ describe('fix wave: a private CA for the external database (release.md §6.2)', 
   it('adds nothing without a CA Secret', () => {
     const dep = find(render(EXTERNAL), 'Deployment', 'qualor');
     expect(env(dep, 'NODE_EXTRA_CA_CERTS')).toBeUndefined();
-    expect(dep.spec?.template?.spec.volumes?.map((v) => v.name)).toEqual(['tmp']);
+    expect(dep.spec?.template?.spec.volumes?.map((v) => v.name)).toEqual(['tmp', 'vulndb']);
+  });
+});
+
+describe('vulnerability database cache (plan 2a)', () => {
+  const MOUNT = { name: 'vulndb', mountPath: '/var/cache/qualor/vulndb' };
+  const owner = (mode: string): K8sObject =>
+    find(
+      render([`ci/${mode}-values.yaml`]),
+      mode === 'embedded' ? 'StatefulSet' : 'Deployment',
+      'qualor',
+    );
+
+  it.each(MODES)('%s: the server mounts an emptyDir vulndb of 6Gi by default', (mode) => {
+    const o = owner(mode);
+    expect(server(o)?.volumeMounts).toContainEqual(MOUNT);
+    expect(o.spec?.template?.spec.volumes).toContainEqual({
+      name: 'vulndb',
+      emptyDir: { sizeLimit: '6Gi' },
+    });
+  });
+
+  it.each(MODES)('%s: vulnerabilityDatabase.cacheSizeLimit sets the limit', (mode) => {
+    const objects = render([`ci/${mode}-values.yaml`], {
+      vulnerabilityDatabase: { cacheSizeLimit: '10Gi' },
+    });
+    const o = find(objects, mode === 'embedded' ? 'StatefulSet' : 'Deployment', 'qualor');
+    expect(o.spec?.template?.spec.volumes).toContainEqual({
+      name: 'vulndb',
+      emptyDir: { sizeLimit: '10Gi' },
+    });
+  });
+
+  it('the bundled PostgreSQL pod and the test pod do not get the cache', () => {
+    const pg = find(render(['ci/bundled-values.yaml']), 'StatefulSet', 'qualor-postgres');
+    expect(pg.spec?.template?.spec.volumes?.map((v) => v.name)).not.toContain('vulndb');
   });
 });
 

@@ -111,6 +111,12 @@ resources:
   limits:
     memory: 4Gi
 
+# The server keeps its copy of the Trivy vulnerability database on an emptyDir of this size
+# (1.6 GiB per dataset unpacked; two exist while one replaces the other). It is fetched again, or
+# uploaded again, after the pod is rescheduled to another node.
+vulnerabilityDatabase:
+  cacheSizeLimit: 6Gi
+
 serviceAccount:
   create: true
   name: ''

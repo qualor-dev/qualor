@@ -81,6 +81,13 @@
         }
       }
     },
+    "vulnerabilityDatabase": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cacheSizeLimit": { "$ref": "#/definitions/quantity" }
+      }
+    },
     "persistence": {
       "type": "object",
       "additionalProperties": false,

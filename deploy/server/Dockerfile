@@ -56,6 +56,28 @@ USER 0:0
 # the template is readable by every user, as the server copies it with its own modes.
 RUN mv /tmp/template /opt/postgresql/template   && rm -f /opt/postgresql/template/postmaster.opts /opt/postgresql/template/postmaster.pid   && chmod -R a+rX,go-w /opt/postgresql/template   && cd /opt/postgresql/bin   && find . -type f ! -name postgres ! -name pg_dump ! -name pg_restore ! -name psql -delete   && rm -rf /opt/postgresql/include /opt/postgresql/lib/pgxs /opt/postgresql/share/man     /opt/postgresql/share/doc   && find /opt/postgresql/lib -name '*.a' -delete   && strip --strip-unneeded /opt/postgresql/bin/* /opt/postgresql/lib/*.so* /opt/postgresql/lib/postgresql/*.so 2>/dev/null;   /opt/postgresql/bin/postgres --version
 
+# Trivy, the scanner of the dependency vulnerability re-checks (it runs offline on the database
+# the server keeps in /var/cache/qualor/vulndb). The version and the SHA-256 of the release
+# archive are read from tools/analyzers/install.sh, the one place that pins them (also for the
+# scanner image). The directory is made here because the final stage has no shell.
+FROM node:22.23.4-bookworm@sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205abf1f5d6bf0913f3384 AS trivy
+ARG TARGETARCH
+COPY tools/analyzers/install.sh /tmp/install.sh
+RUN set -eu; \
+  eval "$(grep -E '^TRIVY_(VERSION|SHA256_X64|SHA256_ARM64)=' /tmp/install.sh)"; \
+  case "${TARGETARCH:-amd64}" in \
+    amd64) TV_ARCH=64bit; TV_SHA=$TRIVY_SHA256_X64 ;; \
+    arm64) TV_ARCH=ARM64; TV_SHA=$TRIVY_SHA256_ARM64 ;; \
+    *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL -o /tmp/trivy.tgz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TV_ARCH}.tar.gz"; \
+  echo "${TV_SHA}  /tmp/trivy.tgz" | sha256sum -c -; \
+  mkdir /tmp/trivy; \
+  tar -xzf /tmp/trivy.tgz -C /tmp/trivy trivy; \
+  install -d -m 0755 /out/bin; \
+  install -m 0755 /tmp/trivy/trivy /out/bin/trivy; \
+  install -d -m 0755 -o 65532 -g 65532 /out/vulndb
+
 # Only the node binary is taken from here: the runtime is distroless (no shell, no package
 # manager), and its own Node 22 lags the engines floor of package.json.
 FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS node
@@ -65,6 +87,11 @@ COPY --from=node /usr/local/bin/node /usr/local/bin/node
 # Owned by root, read-only to the server; the data volume is the server's.
 COPY --from=postgres /opt/postgresql /opt/postgresql
 COPY --from=postgres --chown=65532:65532 /var/lib/qualor /var/lib/qualor
+# Trivy (Apache-2.0), read-only to the server. The server's copy of the vulnerability database
+# goes to /var/cache/qualor/vulndb, which the server's user owns; mount a volume there to keep
+# it across container re-creation.
+COPY --from=trivy /out/bin/trivy /usr/local/bin/trivy
+COPY --from=trivy --chown=65532:65532 /out/vulndb /var/cache/qualor/vulndb
 # The base runs as "nonroot"; create /app as root so the server's user cannot add files to it.
 USER 0:0
 WORKDIR /app
@@ -87,6 +114,7 @@ COPY --chmod=0644 LICENSE ./LICENSE
 COPY --chmod=0644 deploy/server/NOTICE.md ./NOTICE.md
 COPY --chmod=0644 deploy/server/SOURCES.md ./SOURCES.md
 COPY --chmod=0644 deploy/scanner/licenses/NODE-LICENSE.txt ./NODE-LICENSE.txt
+COPY --chmod=0644 deploy/scanner/licenses/TRIVY-LICENSE.txt deploy/scanner/licenses/TRIVY-NOTICE.txt ./
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8080 \
@@ -95,7 +123,7 @@ ENV NODE_ENV=production \
 # The distroless "nonroot" user (65532).
 USER 65532:65532
 # The embedded PostgreSQL's cluster and socket; unused (and empty) with an external database.
-VOLUME ["/var/lib/qualor"]
+VOLUME ["/var/lib/qualor", "/var/cache/qualor/vulndb"]
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
   CMD ["/usr/local/bin/node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]

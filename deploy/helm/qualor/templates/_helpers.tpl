@@ -322,6 +322,8 @@ spec:
       volumeMounts:
         - name: tmp
           mountPath: /tmp
+        - name: vulndb
+          mountPath: /var/cache/qualor/vulndb
         {{- if eq .Values.database.mode "embedded" }}
         - name: data
           mountPath: /var/lib/qualor
@@ -333,6 +335,10 @@ spec:
         {{- end }}
   volumes:
     {{- include "qualor.tmpVolume" "256Mi" | nindent 4 }}
+    {{/* The local copy of the vulnerability database; the server fetches it again after a restart. */}}
+    - name: vulndb
+      emptyDir:
+        sizeLimit: {{ .Values.vulnerabilityDatabase.cacheSizeLimit }}
     {{- with .Values.database.external }}
     {{- if and (eq $.Values.database.mode "external") .caSecret }}
     - name: database-ca
