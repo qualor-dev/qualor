@@ -323,6 +323,11 @@ describe('the vulnerability decision store', () => {
       )
       .orderBy(asc(auditEvents.seq));
     expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      targetType: 'vulnerability_decision',
+      targetId: expect.any(String),
+      projectId: f.projectId,
+    });
     expect(events[0]?.details).toEqual({
       packageName: 'lodash',
       vulnerabilityId: VULN,

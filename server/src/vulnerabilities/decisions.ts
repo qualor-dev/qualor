@@ -160,7 +160,7 @@ export async function writeDecision(
         action: 'vulnerability.decision_changed',
         organization: refs.organization,
         project: refs.project,
-        target: { type: 'project', id: projectId, label: null },
+        target: { type: 'vulnerability_decision', id: decision.id, label: null },
         details: {
           packageName,
           vulnerabilityId,

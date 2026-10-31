@@ -36,6 +36,7 @@ export const AUDIT_TARGET_TYPES = [
   'oauth_client',
   'oauth_grant',
   'mcp_settings',
+  'vulnerability_decision',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
@@ -449,7 +450,7 @@ export const AUDIT_CATALOGUE = {
     }),
   },
   'vulnerability.decision_changed': {
-    target: 'project',
+    target: 'vulnerability_decision',
     details: z.strictObject({
       packageName: str,
       vulnerabilityId: str,
