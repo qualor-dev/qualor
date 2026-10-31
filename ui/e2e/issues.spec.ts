@@ -170,7 +170,8 @@ test('a false positive on a Trivy issue needs a reason', async ({ page }) => {
   await page.getByRole('button', { name: 'False positive' }).click();
   const history = page.getByRole('region', { name: 'History' });
   await expect(history).toContainText('Status: Open → False positive');
-  // Back to open, so the Vulnerabilities tab test starts from the seeded state.
+  // Back to open. This also reopens the project-wide decision (a Trivy issue on main writes it),
+  // so the Vulnerabilities tab test starts from the seeded, untriaged state.
   await page.getByRole('button', { name: 'Reopen' }).click();
   await expect(history).toContainText('Status: False positive → Open');
 });

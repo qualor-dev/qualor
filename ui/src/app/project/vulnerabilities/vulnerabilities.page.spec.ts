@@ -186,6 +186,19 @@ describe('VulnerabilitiesPage', () => {
       expect(items(body[2])).toEqual(['Pin', 'Mark as unsupported']);
     });
 
+    it('names the trigger and the group after the version, as attributes', async () => {
+      const root = await render({ targets: TARGETS }, { permissions: SETTINGS });
+      const row = rows(root)[1];
+      const name = row?.querySelector('th a')?.textContent?.trim() ?? '';
+      expect(name).not.toBe('');
+      expect(row?.querySelector('.menu-trigger')?.getAttribute('aria-label')).toBe(
+        'Change tracking of ' + name,
+      );
+      expect(row?.querySelector('.row-menu-panel')?.getAttribute('aria-label')).toBe(
+        'Tracking of ' + name,
+      );
+    });
+
     it('offers tracking again and pinning for an unsupported version', async () => {
       const root = await render(
         {

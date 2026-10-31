@@ -193,8 +193,7 @@
         type="button"
         class="btn-quiet menu-trigger"
         [attr.popovertarget]="'vuln-menu-' + row.id"
-        i18n-aria-label="@@vuln.menu.label"
-        aria-label="Change tracking of {{ row.name }}"
+        [attr.aria-label]="menuLabel(row.name)"
         (click)="place(trigger, menu)"
       >
         <q-icon name="chevron-down" />
@@ -205,8 +204,7 @@
         popover
         role="group"
         class="menu-panel row-menu-panel"
-        aria-label="Tracking of {{ row.name }}"
-        i18n-aria-label="@@vuln.menu.group"
+        [attr.aria-label]="groupLabel(row.name)"
       >
         @for (c of choices(row.tracking); track c) {
           <button type="button" (click)="change(menu, row.id, c)">

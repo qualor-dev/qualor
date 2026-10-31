@@ -1,11 +1,47 @@
+import type { APIRequestContext } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { LEGACY, PAYMENTS, VULNERABILITIES } from './seed-data';
 
 /**
  * Vulnerability monitoring (0.15): the Vulnerabilities tab, triage and the badge, on the rows
  * `seedVulnerabilities` writes. Nothing here depends on the status of the vulnerability database.
+ *
+ * The seed is per run (serve.ts creates a fresh database for every run), but the tests change it,
+ * so `afterAll` puts it back: the critical pair is Open again (its "1 new" returns) and 0.9.0 is
+ * unsupported again. A second pass in the same server session starts from the seeded state.
  */
 test.describe.configure({ mode: 'serial' });
+
+async function projectId(request: APIRequestContext, key: string): Promise<string> {
+  const answer = await request.get('/api/v0/projects?limit=100');
+  const { items } = (await answer.json()) as { items: { id: string; key: string }[] };
+  return items.find((p) => p.key === key)!.id;
+}
+
+test.afterAll(async ({ request }) => {
+  const me = (await (await request.get('/api/v0/auth/me')).json()) as { csrfToken: string };
+  const headers = { 'x-qualor-csrf': me.csrfToken };
+  const payments = await projectId(request, PAYMENTS.key);
+  const decision = await request.put(`/api/v0/projects/${payments}/vulnerability-decisions`, {
+    headers,
+    data: {
+      packageName: VULNERABILITIES.critical.package,
+      vulnerabilityId: VULNERABILITIES.critical.id,
+      scope: { kind: 'project' },
+      status: 'open',
+    },
+  });
+  expect(decision.ok()).toBe(true);
+  const legacy = await projectId(request, LEGACY.key);
+  const versions = await request.get(`/api/v0/projects/${legacy}/versions`);
+  const { items } = (await versions.json()) as { items: { id: string; label: string }[] };
+  const old = items.find((v) => v.label === VULNERABILITIES.legacy.untracked)!;
+  const patch = await request.patch(`/api/v0/projects/${legacy}/versions/${old.id}`, {
+    headers,
+    data: { tracking: 'unsupported' },
+  });
+  expect(patch.ok()).toBe(true);
+});
 
 test('the projects list shows where vulnerabilities are new', async ({ page }) => {
   await page.goto('/projects');
@@ -73,13 +109,12 @@ test('an admin pins a version from the fold', async ({ page }) => {
     .getByRole('link', { name: 'Vulnerabilities' })
     .click();
   await expect(page.getByText(/0\.9\.0 — not tracked/)).toBeVisible();
-  await page.getByRole('button', { name: 'Show' }).click();
-  await expect(page.getByText('Not tracked')).toBeVisible();
-  // The trigger has no accessible name in the build today (no aria-label in the DOM), so it is
-  // found by its class.
-  const trigger = page.getByRole('row', { name: /0.9.0/ }).locator('.menu-trigger');
-  await trigger.click();
+  const fold = page.locator('p.untracked');
+  await fold.getByRole('button', { name: 'Show' }).click();
+  const row = page.getByRole('row', { name: /0\.9\.0/ });
+  await expect(row.getByText('Not tracked')).toBeVisible();
+  await row.getByRole('button', { name: /Change tracking of 0\.9\.0/ }).click();
   await page.getByRole('button', { name: 'Pin', exact: true }).click();
-  await expect(page.getByText('Pinned')).toBeVisible();
+  await expect(row.getByText('Pinned')).toBeVisible();
   await expect(page.getByText('Not tracked')).toHaveCount(0);
 });

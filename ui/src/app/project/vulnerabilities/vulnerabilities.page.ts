@@ -140,6 +140,14 @@ export class VulnerabilitiesPage {
     return tracking ? CHOICES[tracking] : [];
   }
 
+  protected menuLabel(name: string): string {
+    return $localize`:@@vuln.menu.label:Change tracking of ${name}:name:`;
+  }
+
+  protected groupLabel(name: string): string {
+    return $localize`:@@vuln.menu.group:Tracking of ${name}:name:`;
+  }
+
   protected choiceLabel(tracking: Tracking, from: Target['tracking']): string {
     if (tracking === 'pinned') return $localize`:@@vuln.menu.pin:Pin`;
     if (tracking === 'unsupported') return $localize`:@@vuln.menu.unsupported:Mark as unsupported`;
