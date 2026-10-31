@@ -45,11 +45,15 @@ export interface OciAuth {
 }
 
 export interface OciOptions {
-  /**
-   * `config.vulndb.internalHosts`: only a request to one of these may reach a private address,
-   * or use plain http.
-   */
+  /** `config.vulndb.internalHosts`: only a request to one of these may reach a private address. */
   internalHosts: ReadonlySet<string>;
+  /**
+   * The registry origin's scheme; https when left out. No production caller and no setting or
+   * variable sets it (ruling R8: plain-http registries are not supported). Tests set `http` to
+   * run a plain-http fake registry. It covers the registry origin alone: a token realm or a
+   * redirect on any other origin must be https.
+   */
+  scheme?: 'https' | 'http';
   /** Tests substitute DNS; the default is the system resolver. */
   resolve?: Resolver;
   /** The caller gives up: the exchange (and a blob's stream) is cut. */
@@ -105,11 +109,8 @@ interface Session {
   ref: OciReference;
   auth: OciAuth;
   opts: OciOptions;
-  /**
-   * The registry's origin once a request reached it: `https://`, or `http://` for a listed
-   * registry that answers no TLS.
-   */
-  base: string | null;
+  /** The registry's origin: `https://registry` (`http://` only under a test's `scheme`). */
+  origin: string;
   /** The registry's `authorization` header, once the handshake gave one. */
   authorization: string | null;
   /** When the whole call must be over (epoch ms). */
@@ -121,8 +122,8 @@ type Mode = 'buffer' | 'stream';
 type Got =
   | { kind: 'response'; url: URL; status: number; headers: IncomingHttpHeaders; body: Buffer }
   | { kind: 'stream'; url: URL; chunks: AsyncIterable<Buffer> }
-  /** No answer: `first` says it was the request to the start URL (no redirect followed yet). */
-  | { kind: 'failed'; url: URL; failed: OutboundFailed; first: boolean };
+  /** No answer from `url`. */
+  | { kind: 'failed'; url: URL; failed: OutboundFailed };
 
 function single(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -161,10 +162,22 @@ function statusProblem(got: { url: URL; status: number }, missing: string): OciP
 }
 
 /**
- * One request, with no redirect followed (http/outbound.ts): https, or http only for a host in
- * the internal-host list, which is also the only kind of host that may resolve to a private
- * address. Link-local and cloud metadata addresses are never reached, and loopback only for a
- * loopback host.
+ * Ruling R8: every URL is https. Plain http only for the registry origin itself when a test set
+ * `scheme: 'http'` (its own redirects and a token realm on that same origin); never in production.
+ */
+function schemeProblem(session: Session, url: URL): OciProblem | null {
+  if (url.protocol === 'https:') return null;
+  if (url.protocol === 'http:' && url.origin === session.origin) return null;
+  if (url.protocol === 'http:') {
+    return problem('BLOCKED', `${url.host} is reached over plain http; only https is allowed`);
+  }
+  return problem('BLOCKED', 'The registry sent a URL that is not https');
+}
+
+/**
+ * One request, with no redirect followed (http/outbound.ts), over https ({@link schemeProblem}).
+ * Only a host in the internal-host list may resolve to a private address. Link-local and cloud
+ * metadata addresses are never reached, and loopback only for a loopback host.
  */
 async function exchange(
   session: Session,
@@ -172,18 +185,10 @@ async function exchange(
   headers: Record<string, string>,
   mode: Mode,
   maxBytes: number,
-  first: boolean,
 ): Promise<Got | OciProblem> {
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    return problem('BLOCKED', 'The registry sent a URL that is not http or https');
-  }
+  const refused = schemeProblem(session, url);
+  if (refused !== null) return refused;
   const internal = isInternalHostAllowed(url, session.opts.internalHosts);
-  if (url.protocol === 'http:' && !internal) {
-    return problem(
-      'BLOCKED',
-      `${url.host} is reached over plain http, which only a host in ${INTERNAL_HOSTS_VARIABLE} may use`,
-    );
-  }
   const remainingMs = session.deadline - Date.now();
   if (remainingMs <= 0) {
     return problem(
@@ -206,7 +211,7 @@ async function exchange(
       maxResponseBytes: maxBytes,
       overflow: 'fail',
     });
-    if (got.kind === 'failed') return { kind: 'failed', url, failed: got, first };
+    if (got.kind === 'failed') return { kind: 'failed', url, failed: got };
     return { kind: 'response', url, status: got.status, headers: got.headers, body: got.body };
   }
   const got = await outboundStream(request, {
@@ -219,15 +224,16 @@ async function exchange(
       maxErrorBytes: ERROR_BODY_BYTES,
     },
   });
-  if (got.kind === 'failed') return { kind: 'failed', url, failed: got, first };
+  if (got.kind === 'failed') return { kind: 'failed', url, failed: got };
   if (got.kind === 'stream') return { kind: 'stream', url, chunks: got.chunks };
   return { kind: 'response', url, status: got.status, headers: got.headers, body: got.body };
 }
 
 /**
  * A request to `start` and the redirects it answers with, by hand, at most {@link MAX_REDIRECTS}.
- * Every hop is checked again ({@link exchange}). `authorization` goes only to `start`'s origin, so
- * a registry's token never reaches the host its blobs redirect to.
+ * Every hop is checked again ({@link exchange}): a redirect to http is BLOCKED. `authorization`
+ * goes only to `start`'s origin (the registry, or the token realm), so credentials never reach the
+ * host a blob redirects to (ruling R9).
  */
 async function follow(
   session: Session,
@@ -244,7 +250,7 @@ async function follow(
     if (authorization !== null && url.origin === start.origin) {
       headers.authorization = authorization;
     }
-    const got = await exchange(session, url, headers, mode, maxBytes, redirects === 0);
+    const got = await exchange(session, url, headers, mode, maxBytes);
     if (isOciProblem(got) || got.kind !== 'response' || !REDIRECT_STATUSES.has(got.status)) {
       return got;
     }
@@ -263,38 +269,16 @@ async function follow(
   }
 }
 
-/**
- * A request to the registry. Its origin is found on the first one: https; for a listed registry
- * that gives no answer over https, plain http (as Docker treats an insecure registry).
- */
-async function reach(
+/** A request to the registry origin, with the session's authorization. */
+function reach(
   session: Session,
   path: string,
   accept: string | null,
   mode: Mode,
   maxBytes: number,
 ): Promise<Got | OciProblem> {
-  const send = (base: string) =>
-    follow(session, new URL(path, base), session.authorization, accept, mode, maxBytes);
-  if (session.base !== null) return send(session.base);
-  const https = `https://${session.ref.registry}`;
-  const got = await send(https);
-  if (isOciProblem(got) || got.kind !== 'failed' || !got.first) {
-    if (!isOciProblem(got)) session.base = https;
-    return got;
-  }
-  const http = `http://${session.ref.registry}`;
-  if (
-    got.failed.cause !== 'connection' ||
-    !isInternalHostAllowed(new URL(http), session.opts.internalHosts)
-  ) {
-    return got;
-  }
-  const plain = await send(http);
-  // Neither answers: what https said is the more telling.
-  if (!isOciProblem(plain) && plain.kind === 'failed' && plain.first) return got;
-  session.base = http;
-  return plain;
+  const url = new URL(path, session.origin);
+  return follow(session, url, session.authorization, accept, mode, maxBytes);
 }
 
 interface Challenge {
@@ -352,6 +336,9 @@ async function authorize(
   } catch {
     return problem('BAD_ANSWER', 'The registry named a token service URL that is not valid');
   }
+  // Ruling R9: the realm must be https before any credentials are attached to a request to it.
+  const insecure = schemeProblem(session, url);
+  if (insecure !== null) return insecure;
   const service = challenge?.params.service;
   if (service !== undefined && service !== '') url.searchParams.set('service', service);
   url.searchParams.set('scope', `repository:${session.ref.repository}:pull`);
@@ -386,7 +373,10 @@ async function authorize(
   return null;
 }
 
-/** A registry request, with the token handshake when the registry answers 401 (once). */
+/**
+ * A registry request, with the token handshake when the registry answers 401 (once). Ruling R9:
+ * only a 401 from the registry origin itself starts it; a redirect target's 401 is AUTH.
+ */
 async function toRegistry(
   session: Session,
   path: string,
@@ -396,18 +386,19 @@ async function toRegistry(
 ): Promise<Got | OciProblem> {
   const got = await reach(session, path, accept, mode, maxBytes);
   if (isOciProblem(got) || got.kind !== 'response' || got.status !== 401) return got;
-  if (session.authorization !== null) return got;
+  if (got.url.origin !== session.origin || session.authorization !== null) return got;
   const refused = await authorize(session, got.headers['www-authenticate']);
   if (refused !== null) return refused;
   return reach(session, path, accept, mode, maxBytes);
 }
 
 function sessionOf(ref: string, auth: OciAuth, opts: OciOptions): Session {
+  const parsed = parseReference(ref);
   return {
-    ref: parseReference(ref),
+    ref: parsed,
     auth,
     opts,
-    base: null,
+    origin: new URL(`${opts.scheme ?? 'https'}://${parsed.registry}`).origin,
     authorization: null,
     deadline: Date.now() + DOWNLOAD_TOTAL_MS,
   };

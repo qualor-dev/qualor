@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM, trustTestCa } from '../../test/tls';
 import { parseInternalHosts } from '../scm/url';
 import {
   DOCKER_MANIFEST_TYPE,
@@ -53,6 +55,8 @@ interface Behaviour {
   challenge: string | null;
   /** The registry itself takes Basic credentials (a `Basic` challenge). */
   basicAtRegistry: boolean;
+  /** The registry answers without any authorization (no 401 at all). */
+  open: boolean;
   manifestStatus: number;
   manifest: string;
   manifestType: string;
@@ -64,20 +68,29 @@ interface Behaviour {
 interface Host {
   host: string;
   seen: Seen[];
-  /** Connections that spoke no HTTP: the client's TLS handshake to this plain-http server. */
+  /** Connections that spoke no HTTP to a plain-http server: a client's TLS handshake. */
   tlsAttempts: () => number;
   close: () => Promise<void>;
 }
 
+/**
+ * A loopback server: plain http, or https with the test CA's certificate for 127.0.0.1 (which the
+ * tests trust for the client while they run).
+ */
 async function serve(
   handle: (req: IncomingMessage, res: ServerResponse, host: string) => void,
+  scheme: 'http' | 'https' = 'http',
 ): Promise<Host> {
   const seen: Seen[] = [];
   let host = '';
-  const server = createServer((req, res) => {
+  const onRequest = (req: IncomingMessage, res: ServerResponse): void => {
     seen.push({ path: req.url ?? '', authorization: req.headers.authorization });
     handle(req, res, host);
-  });
+  };
+  const server =
+    scheme === 'https'
+      ? createHttpsServer({ key: TEST_SERVER_KEY_PEM, cert: TEST_SERVER_CERT_PEM }, onRequest)
+      : createServer(onRequest);
   let tlsAttempts = 0;
   server.on('clientError', (_err, socket) => {
     tlsAttempts++;
@@ -128,26 +141,37 @@ describe('parseReference', () => {
 });
 
 describe('the OCI client', () => {
+  /** The fake registry: plain http, which only the test-only `scheme: 'http'` reaches. */
   let registry: Host;
+  /** The blob storage the registry redirects to, and a token realm on another origin: https. */
   let cdn: Host;
+  /** Another listed origin, over plain http: nothing may ever reach it. */
+  let plain: Host;
   let behaviour: Behaviour;
   let opts: OciOptions;
   let ref: string;
+  let untrust: () => void;
 
   const tokenFor = (b: Behaviour): string => (b.credentials ? 'user-token' : 'anon-token');
 
+  /** A token realm: Basic credentials checked when the behaviour demands them. */
+  function answerToken(res: ServerResponse, authorization: string | undefined): void {
+    if (behaviour.credentials && authorization !== BASIC) {
+      res.writeHead(401, { 'content-type': 'application/json' }).end('{"errors":[]}');
+      return;
+    }
+    res
+      .writeHead(200, { 'content-type': 'application/json' })
+      .end(JSON.stringify({ token: tokenFor(behaviour) }));
+  }
+
   beforeAll(async () => {
+    untrust = trustTestCa();
     registry = await serve((req, res, host) => {
       const url = new URL(req.url ?? '/', `http://${host}`);
       const authorization = req.headers.authorization;
       if (url.pathname === '/token') {
-        if (behaviour.credentials && authorization !== BASIC) {
-          res.writeHead(401, { 'content-type': 'application/json' }).end('{"errors":[]}');
-          return;
-        }
-        res
-          .writeHead(200, { 'content-type': 'application/json' })
-          .end(JSON.stringify({ token: tokenFor(behaviour) }));
+        answerToken(res, authorization);
         return;
       }
       const hop = /^\/hop\/(\d+)$/.exec(url.pathname);
@@ -158,6 +182,7 @@ describe('the OCI client', () => {
         return;
       }
       const authorised =
+        behaviour.open ||
         authorization === `Bearer ${tokenFor(behaviour)}` ||
         (behaviour.basicAtRegistry && authorization === BASIC);
       if (!authorised) {
@@ -183,34 +208,51 @@ describe('the OCI client', () => {
       }
       res.writeHead(404).end();
     });
-    cdn = await serve((req, res) => {
-      if (req.url?.startsWith('/cdn/')) res.writeHead(200).end(BLOB);
-      else if (req.url?.startsWith('/cut/')) {
+    cdn = await serve((req, res, host) => {
+      const path = req.url ?? '';
+      if (path.startsWith('/cdn/')) res.writeHead(200).end(BLOB);
+      else if (path.startsWith('/cut/')) {
         res.writeHead(200, { 'content-length': String(BLOB.length) });
         res.write(BLOB.subarray(0, BLOB.length / 2), () => res.destroy());
+      } else if (path.startsWith('/token')) answerToken(res, req.headers.authorization);
+      else if (path === '/deny') {
+        res.writeHead(401, { 'www-authenticate': `Bearer realm="https://${host}/token"` }).end();
+      } else if (path === '/to-plain') {
+        res.writeHead(302, { location: `http://${plain.host}/blob` }).end();
       } else res.writeHead(404).end();
+    }, 'https');
+    plain = await serve((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"token":"plain"}');
     });
   });
 
   afterAll(async () => {
+    untrust();
     await registry.close();
     await cdn.close();
+    await plain.close();
   });
 
   beforeEach(() => {
     registry.seen.length = 0;
     cdn.seen.length = 0;
+    plain.seen.length = 0;
     behaviour = {
       credentials: null,
+      // The realm shares the registry's origin: plain http only under the test-only scheme.
       challenge: `Bearer realm="http://${registry.host}/token",service="fake-registry",scope="repository:mirror/trivy-db:pull"`,
       basicAtRegistry: false,
+      open: false,
       manifestStatus: 200,
       manifest: manifestOf(),
       manifestType: OCI_MANIFEST_TYPE,
       blobStatus: 200,
-      blobLocation: `http://${cdn.host}/cdn/blob?sig=signed`,
+      blobLocation: `https://${cdn.host}/cdn/blob?sig=signed`,
     };
-    opts = { internalHosts: parseInternalHosts(`${registry.host},${cdn.host}`) };
+    opts = {
+      internalHosts: parseInternalHosts(`${registry.host},${cdn.host},${plain.host}`),
+      scheme: 'http',
+    };
     ref = `${registry.host}/mirror/trivy-db:2`;
   });
 
@@ -238,12 +280,32 @@ describe('the OCI client', () => {
       expect(manifests.map((s) => s.authorization)).toEqual([undefined, 'Bearer anon-token']);
     });
 
-    it('tries a listed registry over https first, then keeps to plain http', async () => {
+    it('reaches a registry over https only: no fallback to plain http, even for a listed one', async () => {
       const before = registry.tlsAttempts();
-      expect(await fetchLayerDescriptor(ref, {}, opts)).toMatchObject({ digest: LAYER_DIGEST });
-      // One https attempt for the session; the token realm and the retry go straight to http.
+      const got = await fetchLayerDescriptor(ref, {}, { internalHosts: opts.internalHosts });
+      expect(got).toMatchObject({ code: 'UNREACHABLE' });
+      // One TLS handshake to the plain-http port, and never a plain-http request.
       expect(registry.tlsAttempts() - before).toBe(1);
-      expect(registry.seen).toHaveLength(3);
+      expect(registry.seen).toEqual([]);
+    });
+
+    it('sends basic credentials to an https token realm on another origin', async () => {
+      behaviour.credentials = USER;
+      behaviour.challenge = `Bearer realm="https://${cdn.host}/token",service="fake-registry"`;
+      expect(await fetchLayerDescriptor(ref, USER, opts)).toMatchObject({ digest: LAYER_DIGEST });
+      expect(cdn.seen.map((s) => s.authorization)).toEqual([BASIC]);
+      const manifests = registry.seen.filter((s) => s.path.includes('/manifests/'));
+      expect(manifests.map((s) => s.authorization)).toEqual([undefined, 'Bearer user-token']);
+    });
+
+    it('refuses a token realm over plain http before sending anything to it', async () => {
+      behaviour.credentials = USER;
+      behaviour.challenge = `Bearer realm="http://${plain.host}/token",service="fake-registry"`;
+      const got = await fetchLayerDescriptor(ref, USER, opts);
+      expect(got).toMatchObject({ code: 'BLOCKED' });
+      expect((got as OciProblem).message).toMatch(/plain http/);
+      expect(plain.seen).toEqual([]);
+      expect(plain.tlsAttempts()).toBe(0);
     });
 
     it('sends basic credentials to the token realm only', async () => {
@@ -344,7 +406,7 @@ describe('the OCI client', () => {
     });
 
     it('answers BLOCKED for a registry on a private address that is not listed', async () => {
-      const got = await fetchLayerDescriptor(ref, {}, { internalHosts: new Set() });
+      const got = await fetchLayerDescriptor(ref, {}, { internalHosts: new Set(), scheme: 'http' });
       expect(got).toMatchObject({ code: 'BLOCKED' });
       expect((got as OciProblem).message).toMatch(/QUALOR_VULNDB_INTERNAL_HOSTS/);
       expect(registry.seen).toEqual([]);
@@ -356,9 +418,7 @@ describe('the OCI client', () => {
       const got = await fetchLayerDescriptor(
         `${gone.host}/mirror/trivy-db:2`,
         {},
-        {
-          internalHosts: parseInternalHosts(gone.host),
-        },
+        { internalHosts: parseInternalHosts(gone.host), scheme: 'http' },
       );
       expect(got).toMatchObject({ code: 'UNREACHABLE' });
     });
@@ -373,8 +433,48 @@ describe('the OCI client', () => {
       expect(blobs.map((s) => s.authorization)).toEqual([undefined, 'Bearer anon-token']);
     });
 
+    it('never sends Basic credentials to the host a blob redirects to', async () => {
+      behaviour.challenge = 'Basic realm="fake-registry"';
+      behaviour.basicAtRegistry = true;
+      const bytes = await bytesOf(await openBlob(ref, LAYER_DIGEST, USER, opts));
+      expect(bytes.equals(BLOB)).toBe(true);
+      const blobs = registry.seen.filter((s) => s.path.includes('/blobs/'));
+      expect(blobs.map((s) => s.authorization)).toEqual([undefined, BASIC]);
+      expect(cdn.seen).toEqual([{ path: '/cdn/blob?sig=signed', authorization: undefined }]);
+    });
+
+    it.each([
+      ['an anonymous registry', true],
+      ['a registry that gave a token', false],
+    ])(
+      'answers AUTH for a 401 from the redirect target of %s, without a handshake there',
+      async (_what, open) => {
+        behaviour.open = open;
+        behaviour.credentials = USER;
+        behaviour.blobLocation = `https://${cdn.host}/deny`;
+        const got = await openBlob(ref, LAYER_DIGEST, USER, opts);
+        expect(got).toMatchObject({ code: 'AUTH' });
+        expect((got as OciProblem).message).toMatch(/401/);
+        // One request to the storage, without credentials; its realm is never asked for a token.
+        expect(cdn.seen).toEqual([{ path: '/deny', authorization: undefined }]);
+        expect(tokenRequests().map((s) => s.authorization)).toEqual(open ? [] : [BASIC]);
+      },
+    );
+
+    it.each([
+      ['from the registry', () => `http://${plain.host}/blob`],
+      ['from an https host', () => `https://${cdn.host}/to-plain`],
+    ])('answers BLOCKED for a redirect %s to plain http on a listed host', async (_w, location) => {
+      behaviour.blobLocation = location();
+      const got = await openBlob(ref, LAYER_DIGEST, {}, opts);
+      expect(got).toMatchObject({ code: 'BLOCKED' });
+      expect((got as OciProblem).message).toMatch(/plain http/);
+      expect(plain.seen).toEqual([]);
+      expect(plain.tlsAttempts()).toBe(0);
+    });
+
     it('throws from the chunks when the download is cut halfway', async () => {
-      behaviour.blobLocation = `http://${cdn.host}/cut/blob`;
+      behaviour.blobLocation = `https://${cdn.host}/cut/blob`;
       const blob = await openBlob(ref, LAYER_DIGEST, {}, opts);
       await expect(bytesOf(blob)).rejects.toMatchObject({
         name: 'OutboundStreamError',
