@@ -9,14 +9,33 @@ const gunzipAsync = promisify(gunzip);
  * are 1.5 to 12 MB; the caps keep the worst-case buffers within a small deployment's memory.
  */
 export const PRIORITY_FILE_MAX_BYTES = 32 * 1024 * 1024;
-/** ...and at most this many bytes inflated. */
+/** ...and an EPSS file at most this many bytes inflated (the real one is about 12 MB). */
 export const PRIORITY_DATA_MAX_BYTES = 64 * 1024 * 1024;
-/** At most this many entries (KEV) or rows (EPSS) in one file. */
-export const EPSS_MAX_ROWS = 2_000_000;
+/**
+ * A KEV catalog is at most this many bytes inflated (the real one is about 1.5 MB). `JSON.parse`
+ * builds every value at once, so this cap bounds its heap: 8 MiB of `{},` is about 180 MB.
+ */
+export const KEV_DATA_MAX_BYTES = 8 * 1024 * 1024;
+/** At most this many entries in a KEV catalog (the real one has about 1 500). */
+export const KEV_MAX_ENTRIES = 100_000;
+/**
+ * At most this many lines in an EPSS file, blank and comment lines included (the real one has
+ * about 300 000).
+ */
+export const EPSS_MAX_LINES = 1_000_000;
+/**
+ * PostgreSQL's `real` refuses a non-zero value below about 1.2e-38, so a score or percentile below
+ * this one is skipped instead of failing the whole file.
+ */
+const REAL_MIN = 1e-37;
 
+/** Test seam; production uses the constants above. */
 export interface PriorityLimits {
   maxDataBytes?: number;
-  maxRows?: number;
+  /** KEV entries. */
+  maxEntries?: number;
+  /** EPSS lines. */
+  maxLines?: number;
 }
 
 export type PriorityProblem = {
@@ -66,11 +85,17 @@ function isCalendarDate(value: string): boolean {
   return date.getUTCFullYear() === y && date.getUTCMonth() === mo - 1 && date.getUTCDate() === d;
 }
 
-/** A date-time with a real calendar day, as a Date; null if it is not one. */
+/**
+ * A date-time with a real calendar day and an offset of `Z`, `±HH:MM` or `±HHMM` (older EPSS
+ * files), as a Date; null if it is not one.
+ */
 function parseDateTime(value: string): Date | null {
-  const m = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
-  if (m === null || !isCalendarDate(m[1] as string)) return null;
-  const time = Date.parse(value);
+  const m = /^((\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|([+-]\d{2}):?(\d{2}))$/.exec(
+    value,
+  );
+  if (m === null || !isCalendarDate(m[2] as string)) return null;
+  const offset = m[3] === 'Z' ? 'Z' : `${m[4] as string}:${m[5] as string}`;
+  const time = Date.parse(`${m[1] as string}${offset}`);
   return Number.isNaN(time) ? null : new Date(time);
 }
 
@@ -109,7 +134,7 @@ export async function parseKev(
   limits: PriorityLimits = {},
 ): Promise<KevFile | PriorityProblem> {
   try {
-    const text = await readText(body, limits.maxDataBytes ?? PRIORITY_DATA_MAX_BYTES);
+    const text = await readText(body, limits.maxDataBytes ?? KEV_DATA_MAX_BYTES);
     if (typeof text !== 'string') return text;
     let json: unknown;
     try {
@@ -121,9 +146,9 @@ export async function parseKev(
     if (!top.success) return invalid('The KEV catalog lacks its version, date or entries.');
     const releasedAt = parseDateTime(top.data.dateReleased);
     if (releasedAt === null) return invalid('The KEV catalog has no valid release date.');
-    const maxRows = limits.maxRows ?? EPSS_MAX_ROWS;
-    if (top.data.vulnerabilities.length > maxRows) {
-      return tooLarge(`The KEV catalog has more than ${maxRows} entries.`);
+    const maxEntries = limits.maxEntries ?? KEV_MAX_ENTRIES;
+    if (top.data.vulnerabilities.length > maxEntries) {
+      return tooLarge(`The KEV catalog has more than ${maxEntries} entries.`);
     }
     const entries: KevEntry[] = [];
     const seen = new Set<string>();
@@ -156,7 +181,8 @@ function unit(value: string | undefined): number | null {
   if (value === undefined || value.length > 32) return null;
   if (!/^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/.test(value)) return null;
   const n = Number(value);
-  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : null;
+  if (!Number.isFinite(n) || n < 0 || n > 1) return null;
+  return n !== 0 && n < REAL_MIN ? null : n;
 }
 
 export async function parseEpss(
@@ -166,7 +192,7 @@ export async function parseEpss(
   try {
     const text = await readText(body, limits.maxDataBytes ?? PRIORITY_DATA_MAX_BYTES);
     if (typeof text !== 'string') return text;
-    const maxRows = limits.maxRows ?? EPSS_MAX_ROWS;
+    const maxLines = limits.maxLines ?? EPSS_MAX_LINES;
     let scoreDate: Date | null = null;
     let modelVersion: string | null = null;
     let headerSeen = false;
@@ -175,22 +201,31 @@ export async function parseEpss(
     const percentiles: number[] = [];
     let skipped = 0;
     const seen = new Set<string>();
-    let rows = 0;
-    for (let line of text.split('\n')) {
+    let lines = 0;
+    // One line at a time, never `split('\n')`: 64 MiB of newlines would be a 67M-element array.
+    // Every split below has a limit for the same reason, so a long line costs no more than its text.
+    for (let start = 0; start < text.length;) {
+      const newline = text.indexOf('\n', start);
+      const end = newline === -1 ? text.length : newline;
+      let line = text.slice(start, end);
+      start = end + 1;
+      if (++lines > maxLines) return tooLarge(`The EPSS file has more than ${maxLines} lines.`);
       if (line.endsWith('\r')) line = line.slice(0, -1);
       if (line.trim() === '') continue;
       if (!headerSeen) {
         if (line.startsWith('#')) {
-          for (const part of line.slice(1).split(',')) {
-            const [key, ...rest] = part.split(':');
-            const value = rest.join(':').trim();
-            if (key?.trim() === 'model_version' && value !== '') modelVersion = value;
-            if (key?.trim() === 'score_date') scoreDate = parseDateTime(value);
+          for (const part of line.slice(1).split(',', 8)) {
+            const colon = part.indexOf(':');
+            if (colon === -1) continue;
+            const key = part.slice(0, colon).trim();
+            const value = part.slice(colon + 1).trim();
+            if (key === 'model_version' && value !== '') modelVersion = value;
+            if (key === 'score_date') scoreDate = parseDateTime(value);
           }
           continue;
         }
         const columns = line
-          .split(',')
+          .split(',', 4)
           .map((c) => c.trim())
           .join(',')
           .toLowerCase();
@@ -200,8 +235,8 @@ export async function parseEpss(
         headerSeen = true;
         continue;
       }
-      if (++rows > maxRows) return tooLarge(`The EPSS file has more than ${maxRows} rows.`);
-      const cells = line.split(',').map((c) => c.trim());
+      // A fourth cell makes the row invalid, so nothing past it is split.
+      const cells = line.split(',', 4).map((c) => c.trim());
       const score = cells.length === 3 ? unit(cells[1]) : null;
       const percentile = cells.length === 3 ? unit(cells[2]) : null;
       const id = cells[0] ?? '';

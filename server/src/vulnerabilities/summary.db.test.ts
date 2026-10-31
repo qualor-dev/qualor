@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
 import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
@@ -520,6 +520,17 @@ describe('the Vulnerabilities tab: target summary', () => {
         { priority: false },
       );
       expect(noop.total).toBe(list.total);
+    });
+
+    it('gives the KEV date as YYYY-MM-DD whatever the session DateStyle', async () => {
+      const { projectId } = await seed();
+      // Open items only: a decision's timestamps do not survive this DateStyle either (drizzle).
+      const list = await t.db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL DateStyle = 'SQL, DMY'`);
+        return listVulnerabilities(tx, projectId, { ...query, status: 'open' }, { priority: true });
+      });
+      const item = list.items.find((i) => i.vulnerabilityId === 'CVE-2024-0001');
+      expect(item?.exploited).toEqual({ dateAdded: '2024-03-05', ransomware: true });
     });
   });
 });

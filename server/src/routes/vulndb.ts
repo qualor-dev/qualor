@@ -26,6 +26,7 @@ import {
   type PriorityDataset,
   type VulndbSettings,
 } from '../vulndb/settings';
+import { PRIORITY_FEATURE, priorityNotLicensed } from '../vulndb/priority/feature';
 import { PRIORITY_FILE_MAX_BYTES } from '../vulndb/priority/parse';
 import { readPriorityState, priorityStatus } from '../vulndb/priority/state';
 import { storePriorityFile } from '../vulndb/priority/update';
@@ -47,8 +48,6 @@ const repository = z
   .max(512)
   .regex(VULNDB_REPOSITORY_PATTERN, 'A registry repository with a tag or a sha256 digest')
   .meta({ description: 'host[:port]/path:tag or host[:port]/path@sha256:digest' });
-
-const FEATURE = 'vuln.priority';
 
 const mirrorUrl = z
   .string()
@@ -208,13 +207,6 @@ function wantsUpdateNow(
     passwordSent
   );
 }
-
-const notLicensed = (): ProblemError =>
-  new ProblemError(
-    403,
-    'FEATURE_NOT_LICENSED',
-    `The enterprise feature "${FEATURE}" is not licensed`,
-  );
 
 const PRIORITY_FILES = {
   kev: 'known_exploited_vulnerabilities.json',
@@ -525,9 +517,14 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         deferContinue: true,
         openapi: {
           problems: [403, 413, 415, 422],
+          problemDescriptions: {
+            403: `FEATURE_NOT_LICENSED (the enterprise feature ${PRIORITY_FEATURE} is not active), FORBIDDEN or INSUFFICIENT_SCOPE`,
+            413: `TOO_LARGE: the body is over ${maxBytes} bytes, or the unpacked file is over its cap or has too many entries; \`detail\` says which`,
+            422: 'INVALID_DATA: the file is not a usable catalog or score file; `detail` says why',
+          },
           requestBody: {
             required: true,
-            description: `The ${label} (${PRIORITY_FILES[dataset]}) as downloaded, gzipped or plain, at most 32 MiB. Needs the vuln.priority feature.`,
+            description: `The ${label} (${PRIORITY_FILES[dataset]}) as downloaded, gzipped or plain, at most 32 MiB. Needs the ${PRIORITY_FEATURE} feature.`,
             content: Object.fromEntries(
               UPLOAD_TYPES.map((type) => [type, { schema: { type: 'string', format: 'binary' } }]),
             ),
@@ -542,7 +539,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       // Admin, then the feature, then the type: all before any body is read.
       preParsing: async (request: FastifyRequest, _reply: FastifyReply, payload: Readable) => {
         requireInstanceAdmin(request);
-        if (!deps.edition.limits().vulnerabilities.priority) throw notLicensed();
+        if (!deps.edition.limits().vulnerabilities.priority) throw priorityNotLicensed();
         const mime = request.headers['content-type']?.split(';')[0]?.trim().toLowerCase();
         if (!UPLOAD_TYPES.some((type) => type === mime)) {
           throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', priorityTypeMessage);
@@ -555,7 +552,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       },
     };
     const handle = async (request: FastifyRequest, reply: FastifyReply, userId: string) => {
-      if (!deps.edition.limits().vulnerabilities.priority) throw notLicensed();
+      if (!deps.edition.limits().vulnerabilities.priority) throw priorityNotLicensed();
       if (!(request.body instanceof Readable)) {
         throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', priorityTypeMessage);
       }
@@ -579,10 +576,12 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         request.log,
       );
       if ('problem' in stored) {
-        if (stored.problem.code === 'TOO_LARGE') throw tooLarge();
-        throw new ProblemError(422, 'INVALID_DATA', 'The file is not usable', {
-          detail: stored.problem.message,
-        });
+        // The body fit; the parser refused its inflated size or its entry count, and says which.
+        const [status, code, title] =
+          stored.problem.code === 'TOO_LARGE'
+            ? ([413, 'TOO_LARGE', 'The file is too large'] as const)
+            : ([422, 'INVALID_DATA', 'The file is not usable'] as const);
+        throw new ProblemError(status, code, title, { detail: stored.problem.message });
       }
       request.log.info({ userId, dataset, sizeBytes: total }, 'vulndb priority file uploaded');
       return { dataset, sizeBytes: stored.sizeBytes ?? total, builtAt: stored.dataDate };

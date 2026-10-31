@@ -13,6 +13,8 @@ import {
   targetVulnerabilities,
   users,
   vulnerabilityDecisions,
+  vulnerabilityEpss,
+  vulnerabilityKev,
   vulnerabilityMatches,
   vulnerabilityTargetChecks,
 } from '../db/schema';
@@ -571,5 +573,54 @@ describe('the Vulnerabilities tab with vuln.priority', () => {
       h.ctx.app.inject({ method: 'GET', url: `/api/v0${url}`, headers: h.orgAdmin.headers });
     expect((await get(`/projects/${p.id}/vulnerabilities?exploited=true`)).statusCode).toBe(200);
     expect((await get(`/projects/${p.id}/vulnerabilities/targets`)).json().priority).toBe(true);
+  });
+
+  it('sends an exploited item and an EPSS score through the response schema', async () => {
+    const p = await h.project('acme/vprio-3');
+    await h.ctx.db.insert(projectVulnerabilitySettings).values({ projectId: p.id });
+    const [main] = await h.ctx.db
+      .select({ id: branches.id })
+      .from(branches)
+      .where(and(eq(branches.projectId, p.id), eq(branches.isMain, true)));
+    const row = (packageName: string, vulnerabilityId: string) =>
+      seedTargetRow(h.ctx.db, {
+        projectId: p.id,
+        branchId: main!.id,
+        packageName,
+        vulnerabilityId,
+      });
+    await row('kev-pkg', 'CVE-2026-1001');
+    await row('epss-pkg', 'CVE-2026-1002');
+    await h.ctx.db
+      .insert(vulnerabilityKev)
+      .values({ vulnerabilityId: 'CVE-2026-1001', dateAdded: '2026-10-21', ransomware: true });
+    await h.ctx.db
+      .insert(vulnerabilityEpss)
+      .values({ vulnerabilityId: 'CVE-2026-1002', score: 0.25, percentile: 0.75 });
+
+    const res = await h.ctx.app.inject({
+      method: 'GET',
+      url: `/api/v0/projects/${p.id}/vulnerabilities`,
+      headers: h.orgAdmin.headers,
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const body = res.json() as {
+      items: {
+        vulnerabilityId: string;
+        exploited: { dateAdded: string; ransomware: boolean } | null;
+        epss: { score: unknown; percentile: unknown } | null;
+      }[];
+    };
+    expect(body.items.map((i) => i.vulnerabilityId)).toEqual(['CVE-2026-1001', 'CVE-2026-1002']);
+    const [kev, scored] = body.items;
+    expect(kev).toMatchObject({
+      exploited: { dateAdded: '2026-10-21', ransomware: true },
+      epss: null,
+    });
+    expect(scored?.exploited).toBeNull();
+    expect(typeof scored?.epss?.score).toBe('number');
+    expect(typeof scored?.epss?.percentile).toBe('number');
+    expect(scored?.epss?.score).toBeCloseTo(0.25, 5);
+    expect(scored?.epss?.percentile).toBeCloseTo(0.75, 5);
   });
 });

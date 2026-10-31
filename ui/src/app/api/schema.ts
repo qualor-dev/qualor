@@ -5768,7 +5768,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                /** @description FEATURE_NOT_LICENSED (`exploited=true` needs the enterprise feature vuln.priority), FORBIDDEN or INSUFFICIENT_SCOPE */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -12886,7 +12886,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                /** @description FEATURE_NOT_LICENSED (the enterprise feature vuln.priority is not active), FORBIDDEN or INSUFFICIENT_SCOPE */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -12904,7 +12904,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Too large (REPORT_TOO_LARGE, BODY_TOO_LARGE) */
+                /** @description TOO_LARGE: the body is over 33554432 bytes, or the unpacked file is over its cap or has too many entries; `detail` says which */
                 413: {
                     headers: {
                         [name: string]: unknown;
@@ -12922,7 +12922,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                /** @description INVALID_DATA: the file is not a usable catalog or score file; `detail` says why */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -13066,7 +13066,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                /** @description FEATURE_NOT_LICENSED (the enterprise feature vuln.priority is not active), FORBIDDEN or INSUFFICIENT_SCOPE */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -13084,7 +13084,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Too large (REPORT_TOO_LARGE, BODY_TOO_LARGE) */
+                /** @description TOO_LARGE: the body is over 33554432 bytes, or the unpacked file is over its cap or has too many entries; `detail` says which */
                 413: {
                     headers: {
                         [name: string]: unknown;
@@ -13102,7 +13102,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                /** @description INVALID_DATA: the file is not a usable catalog or score file; `detail` says why */
                 422: {
                     headers: {
                         [name: string]: unknown;

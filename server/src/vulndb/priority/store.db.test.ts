@@ -81,6 +81,15 @@ describe('replaceEpss', () => {
     expect(rows[0]?.percentile).toBeCloseTo(0.25, 5);
   });
 
+  it('stores 1e-37, the smallest non-zero value the parser keeps; real refuses 1e-50', async () => {
+    expect(await replaceEpss(t.db, epss(1, 1e-37))).toEqual({ count: 1 });
+    const { rows } = await t.db.execute<{ score: number }>(
+      sql`SELECT score FROM vulnerability_epss`,
+    );
+    expect(rows[0]?.score).toBeGreaterThan(0);
+    await expect(replaceEpss(t.db, epss(1, 1e-50))).rejects.toThrow();
+  });
+
   it('rolls everything back when a row breaks a check', async () => {
     await replaceEpss(t.db, epss(3));
     const bad = epss(6000);

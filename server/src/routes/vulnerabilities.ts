@@ -19,6 +19,7 @@ import {
 } from '../vulnerabilities/decisions';
 import { decisionsOf, listVulnerabilities } from '../vulnerabilities/list';
 import { readTargetSummary, SEVERITIES } from '../vulnerabilities/summary';
+import { PRIORITY_FEATURE, priorityNotLicensed } from '../vulndb/priority/feature';
 import { transitionComment } from './issues';
 
 const TRACKING_REASONS = [
@@ -244,7 +245,14 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
   app.get(
     '/projects/:id/vulnerabilities',
     {
-      config: { openapi: { problems: [404] } },
+      config: {
+        openapi: {
+          problems: [404],
+          problemDescriptions: {
+            403: `FEATURE_NOT_LICENSED (\`exploited=true\` needs the enterprise feature ${PRIORITY_FEATURE}), FORBIDDEN or INSUFFICIENT_SCOPE`,
+          },
+        },
+      },
       schema: {
         tags: ['vulnerabilities'],
         summary:
@@ -263,13 +271,7 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
         request.params.id,
         'project.read',
       );
-      if (exploited === 'true' && !priority) {
-        throw new ProblemError(
-          403,
-          'FEATURE_NOT_LICENSED',
-          'The enterprise feature "vuln.priority" is not licensed',
-        );
-      }
+      if (exploited === 'true' && !priority) throw priorityNotLicensed();
       const [kind, id] = target?.split(':') ?? [];
       return listVulnerabilities(
         deps.db,

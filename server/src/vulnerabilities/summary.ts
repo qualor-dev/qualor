@@ -76,7 +76,7 @@ export function scopedRows(where: SQL): SQL {
            m.severity, m.title, m.fixed_version, m.primary_url,
            COALESCE(d.status, 'open') AS eff_status,
            k.vulnerability_id IS NOT NULL AS kev,
-           k.date_added::text AS kev_date_added,
+           to_char(k.date_added, 'YYYY-MM-DD') AS kev_date_added,
            k.ransomware AS kev_ransomware,
            e.score AS epss_score,
            e.percentile AS epss_percentile,

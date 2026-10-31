@@ -182,10 +182,10 @@ function groups(
 
 /**
  * The vulnerabilities of the tracked targets (or of one target, tracked or not), grouped by
- * package and vulnerability id, open first, then (with `vuln.priority`) exploited first, then by severity, id and package. The decision of an
- * item is the viewed target's effective one, or the project-wide one without a target. One
- * statement for the page, whatever the number of targets. Empty while monitoring is off, with or
- * without a target.
+ * package and vulnerability id, open first, then (with `vuln.priority`) exploited first, then by
+ * severity, id and package. The decision of an item is the viewed target's effective one, or the
+ * project-wide one without a target. One statement for the page, whatever the number of targets.
+ * Empty while monitoring is off, with or without a target.
  */
 export async function listVulnerabilities(
   db: Executor,
@@ -246,8 +246,8 @@ export async function listVulnerabilities(
       status: row.status,
       decision: row.decision_id === null ? null : (decisions.get(row.decision_id) ?? null),
       exploited:
-        options.priority && row.kev
-          ? { dateAdded: row.kev_date_added ?? '', ransomware: row.kev_ransomware === true }
+        options.priority && row.kev && row.kev_date_added !== null
+          ? { dateAdded: row.kev_date_added, ransomware: row.kev_ransomware === true }
           : null,
       epss:
         options.priority && row.epss_score !== null && row.epss_percentile !== null

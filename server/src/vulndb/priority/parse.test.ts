@@ -1,6 +1,14 @@
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { parseEpss, parseKev, PRIORITY_DATA_MAX_BYTES, PRIORITY_FILE_MAX_BYTES } from './parse';
+import {
+  EPSS_MAX_LINES,
+  KEV_DATA_MAX_BYTES,
+  KEV_MAX_ENTRIES,
+  parseEpss,
+  parseKev,
+  PRIORITY_DATA_MAX_BYTES,
+  PRIORITY_FILE_MAX_BYTES,
+} from './parse';
 
 function entry(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -34,6 +42,9 @@ describe('constants', () => {
   it('has the production limits', () => {
     expect(PRIORITY_DATA_MAX_BYTES).toBe(64 * 1024 * 1024);
     expect(PRIORITY_FILE_MAX_BYTES).toBe(32 * 1024 * 1024);
+    expect(KEV_DATA_MAX_BYTES).toBe(8 * 1024 * 1024);
+    expect(KEV_MAX_ENTRIES).toBe(100_000);
+    expect(EPSS_MAX_LINES).toBe(1_000_000);
   });
 });
 
@@ -100,7 +111,29 @@ describe('parseKev', () => {
     expect(await parseKev(gzipSync(two), { maxDataBytes: 50 })).toMatchObject({
       problem: { code: 'TOO_LARGE' },
     });
-    expect(await parseKev(two, { maxRows: 1 })).toMatchObject({ problem: { code: 'TOO_LARGE' } });
+    expect(await parseKev(two, { maxEntries: 1 })).toMatchObject({
+      problem: { code: 'TOO_LARGE' },
+    });
+    expect(await parseKev(two, { maxEntries: 2 })).toMatchObject({ skipped: 0 });
+  });
+
+  it('gives TOO_LARGE past 100 000 entries by default', async () => {
+    const many = catalog(Array.from({ length: KEV_MAX_ENTRIES + 1 }, () => ({})));
+    expect(await parseKev(many)).toMatchObject({
+      problem: { code: 'TOO_LARGE', message: 'The KEV catalog has more than 100000 entries.' },
+    });
+  });
+
+  it.each([
+    ['Z', '2025-03-14T10:00:00Z'],
+    ['+00:00', '2025-03-14T10:00:00+00:00'],
+    ['+0000', '2025-03-14T10:00:00+0000'],
+    ['+0530', '2025-03-14T15:30:00+0530'],
+    ['-0200', '2025-03-14T08:00:00-0200'],
+  ])('reads a release date with the offset %s', async (_name, dateReleased) => {
+    expect(await parseKev(catalog([entry()], { dateReleased }))).toMatchObject({
+      releasedAt: new Date('2025-03-14T10:00:00Z'),
+    });
   });
 });
 
@@ -163,14 +196,44 @@ describe('parseEpss', () => {
     expect(await parseEpss(big, { maxDataBytes: 40 })).toMatchObject({
       problem: { code: 'TOO_LARGE' },
     });
+    // Five lines: the comment, the header and three rows.
     const rows = `${text}CVE-2024-0002,0.1,0.1\nCVE-2024-0003,0.1,0.1\n`;
-    expect(await parseEpss(Buffer.from(rows), { maxRows: 2 })).toMatchObject({
-      problem: { code: 'TOO_LARGE' },
+    expect(await parseEpss(Buffer.from(rows), { maxLines: 4 })).toMatchObject({
+      problem: { code: 'TOO_LARGE', message: 'The EPSS file has more than 4 lines.' },
     });
-    expect(await parseEpss(Buffer.from(rows), { maxRows: 3 })).toMatchObject({
+    expect(await parseEpss(Buffer.from(rows), { maxLines: 5 })).toMatchObject({
       ids: expect.any(Array),
     });
   });
+
+  it('counts blank and comment lines against the line limit', async () => {
+    const body = Buffer.from(`\n\n#a\n#b\n${text}`);
+    expect(await parseEpss(body, { maxLines: 6 })).toMatchObject({
+      problem: { code: 'TOO_LARGE' },
+    });
+    expect(await parseEpss(body, { maxLines: 7 })).toMatchObject({ ids: ['CVE-2024-0001'] });
+  });
+
+  it.each([
+    ['+0000', '2025-03-14T00:00:00+0000', '2025-03-14T00:00:00Z'],
+    ['+00:00', '2025-03-14T00:00:00+00:00', '2025-03-14T00:00:00Z'],
+    ['-0130', '2025-03-14T00:00:00-0130', '2025-03-14T01:30:00Z'],
+  ])('reads a score date with the offset %s', async (_name, value, utc) => {
+    const body = Buffer.from(
+      `#model_version:v1,score_date:${value}\ncve,epss,percentile\nCVE-2024-0001,0.95,0.999\n`,
+    );
+    expect(await parseEpss(body)).toMatchObject({ scoreDate: new Date(utc) });
+  });
+
+  it.each([['+000'], ['+00:0'], ['+00000'], ['+2500'], ['+0060']])(
+    'gives no score date for the offset %s',
+    async (offset) => {
+      const body = Buffer.from(
+        `#score_date:2025-03-14T00:00:00${offset}\ncve,epss,percentile\nCVE-2024-0001,0.95,0.999\n`,
+      );
+      expect(await parseEpss(body)).toMatchObject({ scoreDate: null });
+    },
+  );
 });
 
 describe('hostile input', () => {
@@ -208,6 +271,21 @@ describe('hostile input', () => {
     expect(got).toMatchObject({ ids: ['CVE-2024-0001'], skipped: 4 });
   });
 
+  it('skips a non-zero score or percentile below 1e-37, which PostgreSQL real refuses', async () => {
+    const got = await parseEpss(
+      Buffer.from(
+        `cve,epss,percentile\n${row}CVE-2024-0002,1e-50,0.1\nCVE-2024-0003,0.1,1e-38\n` +
+          `CVE-2024-0004,0,0\nCVE-2024-0005,1e-37,0.5\nCVE-2024-0006,9.9e-38,0.5\n`,
+      ),
+    );
+    expect(got).toMatchObject({
+      ids: ['CVE-2024-0001', 'CVE-2024-0004', 'CVE-2024-0005'],
+      scores: [0.95, 0, 1e-37],
+      percentiles: [0.999, 0, 0.5],
+      skipped: 3,
+    });
+  });
+
   it('skips a 100 000-digit cell quickly', async () => {
     const started = Date.now();
     const got = await parseEpss(
@@ -222,6 +300,47 @@ describe('hostile input', () => {
     const half = whole.subarray(0, Math.floor(whole.length / 2));
     expect(await parseEpss(half)).toMatchObject({ problem: { code: 'INVALID_DATA' } });
     expect(await parseKev(half)).toMatchObject({ problem: { code: 'INVALID_DATA' } });
+  });
+
+  it('gives TOO_LARGE for a gzipped newline bomb, quickly', async () => {
+    const bomb = gzipSync(Buffer.alloc(PRIORITY_DATA_MAX_BYTES, 0x0a));
+    const started = Date.now();
+    expect(await parseEpss(bomb)).toMatchObject({
+      problem: { code: 'TOO_LARGE', message: 'The EPSS file has more than 1000000 lines.' },
+    });
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it('gives TOO_LARGE for a gzipped KEV of empty entries past 8 MiB, quickly', async () => {
+    const top = '"catalogVersion":"x","dateReleased":"2026-10-30T00:00:00Z"';
+    const bomb = gzipSync(Buffer.from(`{${top},"vulnerabilities":[${'{},'.repeat(3_000_000)}{}]}`));
+    const started = Date.now();
+    expect(await parseKev(bomb)).toMatchObject({
+      problem: {
+        code: 'TOO_LARGE',
+        message: 'The file is larger than 8388608 bytes when inflated.',
+      },
+    });
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it('gives TOO_LARGE for a plain KEV past 8 MiB', async () => {
+    const body = Buffer.alloc(KEV_DATA_MAX_BYTES + 1, 0x20);
+    expect(await parseKev(body)).toMatchObject({
+      problem: { code: 'TOO_LARGE', message: 'The file is larger than 8388608 bytes.' },
+    });
+  });
+
+  it('skips a row of 64 million commas, and refuses such a header, quickly', async () => {
+    const commas = ','.repeat(PRIORITY_DATA_MAX_BYTES - 64);
+    const started = Date.now();
+    const rowBomb = gzipSync(Buffer.from(`cve,epss,percentile\n${row}${commas}\n`));
+    expect(await parseEpss(rowBomb)).toMatchObject({ ids: ['CVE-2024-0001'], skipped: 1 });
+    const headerBomb = gzipSync(Buffer.from(`cve,epss,percentile${commas}\n${row}`));
+    expect(await parseEpss(headerBomb)).toMatchObject({ problem: { code: 'INVALID_DATA' } });
+    const commentBomb = gzipSync(Buffer.from(`#${commas}\ncve,epss,percentile\n${row}`));
+    expect(await parseEpss(commentBomb)).toMatchObject({ ids: ['CVE-2024-0001'] });
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 
   it('gives TOO_LARGE for a gzip bomb', async () => {

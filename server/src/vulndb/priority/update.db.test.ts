@@ -476,4 +476,17 @@ describe('storePriorityFile', () => {
       { component: 'vulndb', dataset: 'epss', count: 1, sizeBytes: epss.length },
     ]);
   });
+
+  it('skips and counts an EPSS score below 1e-37, which real refuses, and stores the rest', async () => {
+    const infos: unknown[] = [];
+    const body = Buffer.from(
+      `#score_date:${EPSS_DATE}\ncve,epss,percentile\n${A},0.5,0.5\n${B},1e-50,0.5\n`,
+    );
+    const logger = { info: (fields: unknown) => void infos.push(fields) };
+    const got = await storePriorityFile(t.db, 'epss', body, 'upload', none, now, logger);
+    expect(got).toMatchObject({ count: 1, lastError: null });
+    expect(infos).toEqual([
+      { component: 'vulndb', dataset: 'epss', count: 1, sizeBytes: body.length, skipped: 1 },
+    ]);
+  });
 });

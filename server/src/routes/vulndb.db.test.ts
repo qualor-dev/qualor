@@ -773,8 +773,25 @@ describe('KEV and EPSS on /system/vulnerability-db (API)', () => {
         extra: { 'content-length': String(PRIORITY_FILE_MAX_BYTES + 1) },
       });
       expect(res.statusCode, res.body).toBe(413);
-      expect(res.json().code).toBe('TOO_LARGE');
+      expect(res.json()).toMatchObject({
+        code: 'TOO_LARGE',
+        detail: `The file is larger than ${PRIORITY_FILE_MAX_BYTES} bytes`,
+      });
     });
+
+    it.each([
+      ['kev', 8 * 1024 * 1024 + 1, 'The file is larger than 8388608 bytes when inflated.'],
+      ['epss', 64 * 1024 * 1024 + 1, 'The file is larger than 67108864 bytes when inflated.'],
+    ] as const)(
+      'answers 413 TOO_LARGE with the parse problem for a small %s gzip that inflates past the cap',
+      async (dataset, inflated, detail) => {
+        const body = gzipSync(Buffer.alloc(inflated, 0x20));
+        expect(body.length).toBeLessThan(PRIORITY_FILE_MAX_BYTES);
+        const res = await upload(dataset, body, { type: 'application/gzip' });
+        expect(res.statusCode, res.body).toBe(413);
+        expect(res.json()).toMatchObject({ code: 'TOO_LARGE', detail });
+      },
+    );
 
     it('answers 415 for application/json', async () => {
       const res = await upload('kev', kevFile(['CVE-2024-0001']), { type: 'application/json' });
