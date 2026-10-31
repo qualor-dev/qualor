@@ -173,10 +173,17 @@ server has a copy, they add its `If-None-Match` and `If-Modified-Since` values, 
 file is not sent again. A mirror URL an instance admin sets replaces either one. Without
 `vuln.priority`, the server never calls them.
 
-At every start the server adds the download to the log line above, for example:
+At every start the server adds the downloads to the log line above, for example:
 
 ```text
 Telemetry: disabled. The Trivy vulnerability database is downloaded from ghcr.io while Vulnerability monitoring is on (see /docs/vulnerability-database)
+```
+
+With `vuln.priority`, the line also names the host of each file: the mirror's when an instance admin
+set one, else the official one.
+
+```text
+Telemetry: disabled. The Trivy vulnerability database is downloaded from ghcr.io, CISA KEV from www.cisa.gov and FIRST EPSS from epss.empiricalsecurity.com while Vulnerability monitoring is on (see /docs/vulnerability-database)
 ```
 
 ## What happens on our side

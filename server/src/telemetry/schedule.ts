@@ -5,6 +5,7 @@ import { LOCKS } from '../db/locks';
 import { VERSION } from '../index';
 import type { Edition } from '../license/edition';
 import type { JobHandlers } from '../queue/worker';
+import { priorityUrl, type PriorityDataset, type VulndbSource } from '../vulndb/settings';
 import { collectTelemetry } from './collect';
 import { installationId } from './installation-id';
 import { sendTelemetry } from './send';
@@ -25,21 +26,44 @@ export interface TelemetryDeps {
 /** Where the vulnerability database comes from while its instance switch is on; null: off. */
 export type VulndbBootSource = 'official' | 'mirror' | 'upload' | null;
 
+/** With `vuln.priority`: the host the KEV and the EPSS file are each fetched from. */
+export interface PriorityBootHosts {
+  kev: string;
+  epss: string;
+}
+
+const MIRROR_SETTING = 'the mirror set in Settings → Vulnerability database';
+
+/** The host of each priority URL: the mirror's when it names one, else the official one. */
+export function priorityBootHosts(source: VulndbSource): PriorityBootHosts {
+  const hostOf = (dataset: PriorityDataset): string => {
+    try {
+      return new URL(priorityUrl(source, dataset)).host;
+    } catch {
+      return MIRROR_SETTING;
+    }
+  };
+  return { kev: hostOf('kev'), epss: hostOf('epss') };
+}
+
 /**
  * The boot line. While the vulnerability database switch is on, it also names the download: the
- * server calls the official registry or the admin's mirror (an upload needs no network).
+ * server calls the official registry or the admin's mirror (an upload needs no network). With
+ * `vuln.priority` (`priority` set), it names the KEV and EPSS hosts too, each on its own.
  */
 export function telemetryBootMessage(
   enabled: boolean,
   vulndbSource: VulndbBootSource = null,
+  priority: PriorityBootHosts | null = null,
 ): string {
   const telemetry = enabled
     ? 'Telemetry: enabled — anonymous usage statistics are sent daily to qualor.dev and Docker Hub is checked daily for a new version; set QUALOR_TELEMETRY=false to turn off (see /docs/telemetry)'
     : 'Telemetry: disabled';
   if (vulndbSource === null || vulndbSource === 'upload') return telemetry;
-  const from =
-    vulndbSource === 'official' ? 'ghcr.io' : 'the mirror set in Settings → Vulnerability database';
-  return `${telemetry}. The Trivy vulnerability database is downloaded from ${from} while Vulnerability monitoring is on (see /docs/vulnerability-database)`;
+  const from = vulndbSource === 'official' ? 'ghcr.io' : MIRROR_SETTING;
+  const also =
+    priority === null ? '' : `, CISA KEV from ${priority.kev} and FIRST EPSS from ${priority.epss}`;
+  return `${telemetry}. The Trivy vulnerability database is downloaded from ${from}${also} while Vulnerability monitoring is on (see /docs/vulnerability-database)`;
 }
 
 /** Inserts one run `delaySeconds` from now unless one is queued (`alsoRunning`: or running). */

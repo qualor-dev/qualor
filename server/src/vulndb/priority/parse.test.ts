@@ -32,8 +32,8 @@ function catalog(entries: unknown[], over: Record<string, unknown> = {}): Buffer
 
 describe('constants', () => {
   it('has the production limits', () => {
-    expect(PRIORITY_DATA_MAX_BYTES).toBe(256 * 1024 * 1024);
-    expect(PRIORITY_FILE_MAX_BYTES).toBe(64 * 1024 * 1024);
+    expect(PRIORITY_DATA_MAX_BYTES).toBe(64 * 1024 * 1024);
+    expect(PRIORITY_FILE_MAX_BYTES).toBe(32 * 1024 * 1024);
   });
 });
 

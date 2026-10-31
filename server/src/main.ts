@@ -51,6 +51,7 @@ import { databaseStartupError, formatStartupError } from './startup-error';
 import {
   cancelTelemetry,
   ensureTelemetryScheduled,
+  priorityBootHosts,
   scheduleTelemetryAtBoot,
   telemetryBootMessage,
   telemetryHandlers,
@@ -201,7 +202,11 @@ async function main(): Promise<void> {
   const vulndb = await readVulndbSettings(database.db);
   logger.info(
     { component: 'telemetry' },
-    telemetryBootMessage(config.telemetry.enabled, vulndb.enabled ? vulndb.source.kind : null),
+    telemetryBootMessage(
+      config.telemetry.enabled,
+      vulndb.enabled ? vulndb.source.kind : null,
+      edition.limits().vulnerabilities.priority ? priorityBootHosts(vulndb.source) : null,
+    ),
   );
   // sso-scim.md §10.4: the emergency switch is loud. One warn line per boot, and the event while
   // audit-log is active; a failure to record (a malformed anchor) is logged and never stops the boot.

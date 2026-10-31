@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { testConfig } from '../../../test/config';
 import { createTestDatabase, type TestDatabase } from '../../../test/db';
 import { instanceSettings } from '../../db/schema';
@@ -20,7 +20,28 @@ import {
   updatePriorityState,
   type PriorityDatasetState,
 } from './state';
+import type * as Store from './store';
 import { checkPriorityDatasets, storePriorityFile, type PriorityUpdateDeps } from './update';
+
+/**
+ * While `pause.ms` is set, the first replaceEpss call waits that long after it wrote its rows and
+ * before it returns: the window in which a second store used to slip in between a store's rows and
+ * its state.
+ */
+const pause = vi.hoisted(() => ({ ms: 0, calls: 0 }));
+vi.mock('./store', async (importOriginal) => {
+  const actual = await importOriginal<typeof Store>();
+  return {
+    ...actual,
+    replaceEpss: async (...args: Parameters<typeof actual.replaceEpss>) => {
+      const replaced = await actual.replaceEpss(...args);
+      if (pause.ms > 0 && pause.calls++ === 0) {
+        await new Promise((resolve) => setTimeout(resolve, pause.ms));
+      }
+      return replaced;
+    },
+  };
+});
 
 const A = 'CVE-2024-0001';
 const B = 'CVE-2024-0002';
@@ -339,6 +360,37 @@ describe('checkPriorityDatasets', () => {
 
 describe('storePriorityFile', () => {
   const none = { etag: null, lastModified: null, url: null };
+
+  it('keeps the table and the state on the same file when two stores run at once', async () => {
+    const many = epssFile(Array.from({ length: 2_000 }, (_, i) => `CVE-2025-${10_000 + i}`));
+    const few = epssFile([A, B, C]);
+    for (let round = 0; round < 2; round++) {
+      await t.db.execute(sql`DELETE FROM vulnerability_epss`);
+      await t.db.delete(instanceSettings).where(eq(instanceSettings.key, PRIORITY_STATE_KEY));
+      // A job's download and an upload, started together, in both orders. The first to write its
+      // rows is held before its state for long enough that the other one could finish.
+      const [first, second] = round === 0 ? [many, few] : [few, many];
+      Object.assign(pause, { ms: 800, calls: 0 });
+      try {
+        await Promise.all([
+          storePriorityFile(t.db, 'epss', first, 'official', none, now),
+          storePriorityFile(t.db, 'epss', second, 'upload', none, now),
+        ]);
+      } finally {
+        pause.ms = 0;
+      }
+      const state = (await readPriorityState(t.db)).epss;
+      const { rows } = await t.db.execute<{ n: number; b: number }>(sql`
+        SELECT count(*)::int AS n,
+               count(*) FILTER (WHERE vulnerability_id = ${B})::int AS b
+          FROM vulnerability_epss`);
+      // B is only in the small file: the table holds the file the state names.
+      const holdsFew = rows[0]?.b === 1;
+      expect(state.digest, `round ${round}`).toBe(digestOf(holdsFew ? few : many));
+      expect(state.count, `round ${round}`).toBe(rows[0]?.n);
+      expect(state.count, `round ${round}`).toBe(holdsFew ? 3 : 2_000);
+    }
+  });
 
   it('stores an uploaded file without validators', async () => {
     const body = epssFile([A, B]);

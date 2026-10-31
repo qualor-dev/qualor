@@ -4,10 +4,13 @@ import { z } from 'zod';
 
 const gunzipAsync = promisify(gunzip);
 
-/** A priority file (KEV, EPSS) is at most this many bytes as downloaded or uploaded. */
-export const PRIORITY_FILE_MAX_BYTES = 64 * 1024 * 1024;
+/**
+ * A priority file (KEV, EPSS) is at most this many bytes as downloaded or uploaded. The real files
+ * are 1.5 to 12 MB; the caps keep the worst-case buffers within a small deployment's memory.
+ */
+export const PRIORITY_FILE_MAX_BYTES = 32 * 1024 * 1024;
 /** ...and at most this many bytes inflated. */
-export const PRIORITY_DATA_MAX_BYTES = 256 * 1024 * 1024;
+export const PRIORITY_DATA_MAX_BYTES = 64 * 1024 * 1024;
 /** At most this many entries (KEV) or rows (EPSS) in one file. */
 export const EPSS_MAX_ROWS = 2_000_000;
 

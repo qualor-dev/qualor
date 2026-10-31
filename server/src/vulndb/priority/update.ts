@@ -1,13 +1,20 @@
 import { createHash } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Config } from '../../config';
-import type { Db } from '../../db/client';
+import type { Db, Executor } from '../../db/client';
+import { LOCKS } from '../../db/locks';
 import type { MailDeps } from '../../mail/outbox';
 import { fetchHttpsFile as realFetchHttpsFile, isOciProblem } from '../oci';
 import { priorityUrl, type PriorityDataset, type VulndbSettings } from '../settings';
 import { parseEpss, parseKev, PRIORITY_FILE_MAX_BYTES, type PriorityProblem } from './parse';
 import { replaceEpss, replaceKev } from './store';
-import { readPriorityState, updatePriorityState, type PriorityDatasetState } from './state';
+import {
+  readPriorityState,
+  updatePriorityState,
+  updatePriorityStateLocked,
+  type PriorityDatasetState,
+} from './state';
 
 /** The order of a run: KEV, then EPSS. */
 const PRIORITY_DATASETS: readonly PriorityDataset[] = ['kev', 'epss'];
@@ -40,12 +47,43 @@ const UPDATE_FAILED: LastError = {
 const errorClass = (err: unknown): string =>
   err instanceof Error ? err.constructor.name : typeof err;
 
+/** A parsed file, ready to replace its table. */
+interface ParsedFile {
+  replace: (tx: Executor) => Promise<number>;
+  dataDate: Date | null;
+  skipped: number;
+}
+
+async function parseFile(
+  dataset: PriorityDataset,
+  body: Buffer,
+): Promise<ParsedFile | PriorityProblem> {
+  if (dataset === 'kev') {
+    const kev = await parseKev(body);
+    if ('problem' in kev) return kev;
+    return {
+      replace: async (tx) => (await replaceKev(tx, kev.entries)).count,
+      dataDate: kev.releasedAt,
+      skipped: kev.skipped,
+    };
+  }
+  const epss = await parseEpss(body);
+  if ('problem' in epss) return epss;
+  return {
+    replace: async (tx) => (await replaceEpss(tx, epss)).count,
+    dataDate: epss.scoreDate,
+    skipped: epss.skipped,
+  };
+}
+
 /**
- * Stores one KEV or EPSS file as downloaded or uploaded (gzip or not): the parse, the sha256
- * compare with the stored file, the table replace, and the state. The same bytes as the stored
- * file write only the validators and the check times: no row, and `storedAt` stays. A file that
- * does not parse is the answer, with no state written (the job records it as `lastError`; an
- * upload answers 422). Logs the entries it skipped.
+ * Stores one KEV or EPSS file as downloaded or uploaded (gzip or not). A file that does not parse
+ * is the answer, with no state written (the job records it as `lastError`; an upload answers 422).
+ * Otherwise one transaction, under LOCKS.vulnerabilityPriority and then LOCKS.vulndbPriorityState
+ * (always in that order), compares the sha256 with the stored file's, replaces the table and
+ * writes the state, so two stores at once (the job and an upload) leave the table and the state on
+ * the same file. The same bytes as the stored file write only the validators and the check times:
+ * no row, and `storedAt` stays. Logs what it stored, with the entries it skipped.
  */
 export async function storePriorityFile(
   db: Db,
@@ -58,54 +96,50 @@ export async function storePriorityFile(
 ): Promise<PriorityDatasetState | PriorityProblem> {
   const at = now.toISOString();
   const digest = `sha256:${createHash('sha256').update(body).digest('hex')}`;
-  if ((await readPriorityState(db))[dataset].digest === digest) {
-    return updatePriorityState(db, dataset, (s) => ({
-      ...s,
-      ...validators,
+  const parsed = await parseFile(dataset, body);
+  if ('problem' in parsed) return parsed;
+  const { state, count } = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulnerabilityPriority})`);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulndbPriorityState})`);
+    if ((await readPriorityState(tx))[dataset].digest === digest) {
+      const confirmed = await updatePriorityStateLocked(tx, dataset, (s) => ({
+        ...s,
+        ...validators,
+        refreshedAt: at,
+        lastCheckAt: at,
+        lastError: null,
+      }));
+      return { state: confirmed, count: null };
+    }
+    const replaced = await parsed.replace(tx);
+    const stored = await updatePriorityStateLocked(tx, dataset, () => ({
+      source,
+      dataDate: parsed.dataDate === null ? null : parsed.dataDate.toISOString(),
+      storedAt: at,
       refreshedAt: at,
       lastCheckAt: at,
-      lastError: null,
-    }));
-  }
-  let count: number;
-  let dataDate: Date | null;
-  let skipped: number;
-  if (dataset === 'kev') {
-    const parsed = await parseKev(body);
-    if ('problem' in parsed) return parsed;
-    count = (await replaceKev(db, parsed.entries)).count;
-    dataDate = parsed.releasedAt;
-    skipped = parsed.skipped;
-  } else {
-    const parsed = await parseEpss(body);
-    if ('problem' in parsed) return parsed;
-    count = (await replaceEpss(db, parsed)).count;
-    dataDate = parsed.scoreDate;
-    skipped = parsed.skipped;
-  }
-  logger?.info(
-    {
-      component: 'vulndb',
-      dataset,
-      count,
       sizeBytes: body.length,
-      ...(skipped > 0 ? { skipped } : {}),
-    },
-    'priority data stored',
-  );
-  return updatePriorityState(db, dataset, () => ({
-    source,
-    dataDate: dataDate === null ? null : dataDate.toISOString(),
-    storedAt: at,
-    refreshedAt: at,
-    lastCheckAt: at,
-    sizeBytes: body.length,
-    count,
-    digest,
-    ...validators,
-    lastError: null,
-    staleNotifiedDigest: null,
-  }));
+      count: replaced,
+      digest,
+      ...validators,
+      lastError: null,
+      staleNotifiedDigest: null,
+    }));
+    return { state: stored, count: replaced };
+  });
+  if (count !== null) {
+    logger?.info(
+      {
+        component: 'vulndb',
+        dataset,
+        count,
+        sizeBytes: body.length,
+        ...(parsed.skipped > 0 ? { skipped: parsed.skipped } : {}),
+      },
+      'priority data stored',
+    );
+  }
+  return state;
 }
 
 /** Where a dataset comes from: the mirror only when the mirror names a URL for it. */

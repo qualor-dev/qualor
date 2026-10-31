@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { Db } from '../../db/client';
+import type { Executor } from '../../db/client';
 import { LOCKS } from '../../db/locks';
 import type { EpssFile, KevEntry } from './parse';
 
@@ -7,11 +7,12 @@ import type { EpssFile, KevEntry } from './parse';
 const BATCH_ROWS = 5000;
 
 /**
- * Makes the KEV table hold exactly `entries`, in one transaction. The `listed_at` of an id that was
- * already there stays; `added` counts the ids that were not.
+ * Makes the KEV table hold exactly `entries`, in one transaction (a savepoint when `db` is a
+ * transaction already). The `listed_at` of an id that was already there stays; `added` counts the
+ * ids that were not.
  */
 export async function replaceKev(
-  db: Db,
+  db: Executor,
   entries: readonly KevEntry[],
 ): Promise<{ count: number; added: number }> {
   return db.transaction(async (tx) => {
@@ -37,8 +38,11 @@ export async function replaceKev(
   });
 }
 
-/** Makes the EPSS table hold exactly the rows of `file`, in one transaction. */
-export async function replaceEpss(db: Db, file: EpssFile): Promise<{ count: number }> {
+/**
+ * Makes the EPSS table hold exactly the rows of `file`, in one transaction (a savepoint when `db`
+ * is a transaction already).
+ */
+export async function replaceEpss(db: Executor, file: EpssFile): Promise<{ count: number }> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulnerabilityPriority})`);
     await tx.execute(sql`DELETE FROM vulnerability_epss`);
