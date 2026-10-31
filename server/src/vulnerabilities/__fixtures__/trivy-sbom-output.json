@@ -1,0 +1,179 @@
+{
+  "SchemaVersion": 2,
+  "Results": [
+    {
+      "Target": "Java",
+      "Class": "lang-pkgs",
+      "Type": "jar",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2021-44228",
+          "PkgName": "org.apache.logging.log4j:log4j-core",
+          "PkgIdentifier": {
+            "PURL": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+            "UID": "45fa651edb220601",
+            "BOMRef": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"
+          },
+          "InstalledVersion": "2.14.1",
+          "FixedVersion": "2.15.0, 2.3.1, 2.12.2",
+          "Status": "fixed",
+          "Severity": "CRITICAL",
+          "Title": "log4j-core: Remote code execution in Log4j 2.x when logs contain an attacker-controlled string value",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-44228",
+          "PublishedDate": "2021-12-10T10:15:09.143Z",
+          "LastModifiedDate": "2026-08-11T19:33:44.513Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2021-44832",
+          "PkgName": "org.apache.logging.log4j:log4j-core",
+          "PkgIdentifier": {
+            "PURL": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+            "UID": "45fa651edb220601",
+            "BOMRef": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"
+          },
+          "InstalledVersion": "2.14.1",
+          "FixedVersion": "2.3.2, 2.12.4, 2.17.1",
+          "Status": "fixed",
+          "Severity": "MEDIUM",
+          "Title": "log4j-core: remote code execution via JDBC Appender",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-44832",
+          "PublishedDate": "2021-12-28T20:15:08.4Z",
+          "LastModifiedDate": "2026-06-17T04:12:52.013Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2021-45046",
+          "PkgName": "org.apache.logging.log4j:log4j-core",
+          "PkgIdentifier": {
+            "PURL": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+            "UID": "45fa651edb220601",
+            "BOMRef": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"
+          },
+          "InstalledVersion": "2.14.1",
+          "FixedVersion": "2.16.0, 2.12.2",
+          "Status": "fixed",
+          "Severity": "CRITICAL",
+          "Title": "log4j-core: DoS in log4j 2.x with thread context message pattern and context lookup pattern (incomplete fix for CVE-2021-44228)",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-45046",
+          "PublishedDate": "2021-12-14T19:15:07.733Z",
+          "LastModifiedDate": "2026-06-17T04:13:05.57Z"
+        }
+      ]
+    },
+    {
+      "Target": "Node.js",
+      "Class": "lang-pkgs",
+      "Type": "node-pkg",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2020-28500",
+          "PkgName": "lodash",
+          "PkgIdentifier": {
+            "PURL": "pkg:npm/lodash@4.17.20",
+            "UID": "ebbfc0e6c3417df1",
+            "BOMRef": "pkg:npm/lodash@4.17.20"
+          },
+          "InstalledVersion": "4.17.20",
+          "FixedVersion": "4.17.21",
+          "Status": "fixed",
+          "Severity": "MEDIUM",
+          "Title": "nodejs-lodash: ReDoS via the toNumber, trim and trimEnd functions",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2020-28500",
+          "PublishedDate": "2021-02-15T11:15:12.397Z",
+          "LastModifiedDate": "2026-06-17T03:10:32.757Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2021-23337",
+          "PkgName": "lodash",
+          "PkgIdentifier": {
+            "PURL": "pkg:npm/lodash@4.17.20",
+            "UID": "ebbfc0e6c3417df1",
+            "BOMRef": "pkg:npm/lodash@4.17.20"
+          },
+          "InstalledVersion": "4.17.20",
+          "FixedVersion": "4.17.21",
+          "Status": "fixed",
+          "Severity": "HIGH",
+          "Title": "nodejs-lodash: command injection via template",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-23337",
+          "PublishedDate": "2021-02-15T13:15:12.56Z",
+          "LastModifiedDate": "2026-06-17T03:38:34.773Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-13465",
+          "PkgName": "lodash",
+          "PkgIdentifier": {
+            "PURL": "pkg:npm/lodash@4.17.20",
+            "UID": "ebbfc0e6c3417df1",
+            "BOMRef": "pkg:npm/lodash@4.17.20"
+          },
+          "InstalledVersion": "4.17.20",
+          "FixedVersion": "4.17.23",
+          "Status": "fixed",
+          "Severity": "MEDIUM",
+          "Title": "lodash: prototype pollution in _.unset and _.omit functions",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2025-13465",
+          "PublishedDate": "2026-01-21T20:16:05.25Z",
+          "LastModifiedDate": "2026-09-10T13:16:56.537Z"
+        }
+      ]
+    },
+    {
+      "Target": "Python",
+      "Class": "lang-pkgs",
+      "Type": "python-pkg",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2021-31542",
+          "PkgName": "django",
+          "PkgIdentifier": {
+            "PURL": "pkg:pypi/django@3.2.0",
+            "UID": "c90e78977e8b15ad",
+            "BOMRef": "pkg:pypi/django@3.2.0"
+          },
+          "InstalledVersion": "3.2.0",
+          "FixedVersion": "2.2.21, 3.1.9, 3.2.1",
+          "Status": "fixed",
+          "Severity": "HIGH",
+          "Title": "django: Potential directory-traversal via uploaded files",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-31542",
+          "PublishedDate": "2021-05-05T15:15:08.483Z",
+          "LastModifiedDate": "2026-06-17T03:51:58.72Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2021-32052",
+          "PkgName": "django",
+          "PkgIdentifier": {
+            "PURL": "pkg:pypi/django@3.2.0",
+            "UID": "c90e78977e8b15ad",
+            "BOMRef": "pkg:pypi/django@3.2.0"
+          },
+          "InstalledVersion": "3.2.0",
+          "FixedVersion": "2.2.22, 3.1.10, 3.2.2",
+          "Status": "fixed",
+          "Severity": "MEDIUM",
+          "Title": "django: header injection possibility since URLValidator accepted newlines in input on Python 3.9.5+",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-32052",
+          "PublishedDate": "2021-05-06T16:15:07.52Z",
+          "LastModifiedDate": "2026-06-17T03:52:43.533Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2021-33203",
+          "PkgName": "django",
+          "PkgIdentifier": {
+            "PURL": "pkg:pypi/django@3.2.0",
+            "UID": "c90e78977e8b15ad",
+            "BOMRef": "pkg:pypi/django@3.2.0"
+          },
+          "InstalledVersion": "3.2.0",
+          "FixedVersion": "2.2.24, 3.1.12, 3.2.4",
+          "Status": "fixed",
+          "Severity": "MEDIUM",
+          "Title": "django: Potential directory traversal via ``admindocs``",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-33203",
+          "PublishedDate": "2021-06-08T18:15:08.48Z",
+          "LastModifiedDate": "2026-06-17T03:54:20.903Z"
+        }
+      ]
+    }
+  ]
+}
