@@ -663,7 +663,8 @@ test('the vulnerability database page saves the check interval', async ({ page }
   const interval = page.getByLabel('Check for updates every');
   await interval.selectOption('12');
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByRole('status')).toHaveText('Saved.');
+  // The page has a status region for the database as well (seeded with a dataset): find ours.
+  await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toHaveText('Saved.');
   await page.reload();
   await expect(page.getByLabel('Check for updates every')).toHaveValue('12');
   await expectAccessible(page);

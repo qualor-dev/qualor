@@ -329,6 +329,18 @@ test('40 project dependencies', async ({ page }) => {
   await shootThemes(page, '40-project-dependencies');
 });
 
+// 0.15 (plan 2b): the Vulnerabilities tab of Payments API, By version, with the new marker.
+test('43 project vulnerabilities', async ({ page }) => {
+  await page.goto('/projects');
+  await page.getByRole('link', { name: PAYMENTS.name, exact: true }).click();
+  await page
+    .getByRole('navigation', { name: 'Project' })
+    .getByRole('link', { name: 'Vulnerabilities' })
+    .click();
+  await expect(page.getByRole('row', { name: /^main/ }).getByText('1 new')).toBeVisible();
+  await shootThemes(page, '43-project-vulnerabilities');
+});
+
 /**
  * Plan 4C: the enterprise screens, on the licensed server (`audit-log`, and since plan 4D `sso`
  * and `scim`) and its session.

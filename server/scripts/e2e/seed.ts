@@ -5,7 +5,20 @@ import { type DependencyEntry, hex32, type Report } from '@qualor/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { createDatabase } from '../../src/db/client';
-import { branches, issues, projects, reviewFindings } from '../../src/db/schema';
+import {
+  branches,
+  issues,
+  projects,
+  projectVersions,
+  reviewFindings,
+  rules,
+  targetVulnerabilities,
+  vulndbDatasets,
+  vulnerabilityMatches,
+  vulnerabilityTargetChecks,
+} from '../../src/db/schema';
+import { writeVulndbSettings } from '../../src/vulndb/settings';
+import { updateVulndbStateLocked } from '../../src/vulndb/state';
 import { ensureAiRules } from '../../src/review/rules';
 
 /**
@@ -1288,6 +1301,200 @@ export async function seedAiFinding(databaseUrl: string): Promise<void> {
         suggestion: AI_FINDING.suggestion,
         anchorLine: AI_FINDING.line,
         reviewedHeadSha: AI_FINDING.headSha,
+      });
+    });
+  } finally {
+    await database.close();
+  }
+}
+
+const SEED_CRITICAL = {
+  id: 'CVE-2019-19919',
+  pkg: 'handlebars',
+  version: '4.0.11',
+  fixed: '4.3.0',
+  title: 'Prototype pollution in handlebars',
+};
+const SEED_HIGH = {
+  id: 'CVE-2020-8203',
+  pkg: 'lodash',
+  version: '4.17.15',
+  fixed: '4.17.19',
+  title: 'Prototype pollution in zipObjectDeep',
+};
+const SEED_LEGACY = {
+  id: 'CVE-2024-99001',
+  pkg: 'legacy-queue',
+  version: '0.9.0',
+  fixed: null,
+  title: 'Unbounded retry loop in legacy-queue',
+};
+
+/**
+ * Vulnerability monitoring (0.15, plan 2b), straight into the database like the AI finding: a
+ * current Trivy dataset (no chunks, nothing to download: the source is an upload) and matches for
+ * the tab, the triage and the badge (ui/e2e/seed-data.ts VULNERABILITIES). Nothing here enqueues a
+ * job.
+ *
+ * - Payments API main: `handlebars` critical, first seen after the target's baseline (new), and
+ *   `lodash` high, before it; an open Trivy issue for the critical one.
+ * - Legacy Billing (no scan of its own): version 1.0.0 is tracked, with a new `legacy-queue` row;
+ *   version 0.9.0 is marked unsupported (the fold), with the `lodash` row it kept.
+ */
+export async function seedVulnerabilities(databaseUrl: string): Promise<void> {
+  const database = createDatabase(databaseUrl, { max: 1 });
+  try {
+    const { db } = database;
+    const projectOf = async (key: string) => {
+      const [row] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.key, key));
+      if (!row) throw new Error(`no project ${key}`);
+      return row.id;
+    };
+    const paymentsId = await projectOf('acme/payments-api');
+    const legacyId = await projectOf('acme/legacy-billing');
+    const [main] = await db
+      .select({ id: branches.id })
+      .from(branches)
+      .where(and(eq(branches.projectId, paymentsId), eq(branches.isMain, true)));
+    if (!main) throw new Error('Payments API has no main branch');
+
+    const purl = (v: { pkg: string; version: string }) => `pkg:npm/${v.pkg}@${v.version}`;
+    const day = (n: number) => sql`now() - make_interval(days => ${n})`;
+
+    await db.transaction(async (tx) => {
+      await writeVulndbSettings(
+        tx,
+        { enabled: true, intervalHours: 6, source: { kind: 'upload' } },
+        'e2e-unused',
+      );
+      const [dataset] = await tx
+        .insert(vulndbDatasets)
+        .values({
+          kind: 'trivy',
+          digest: `sha256:${'a'.repeat(64)}`,
+          sizeBytes: 1024,
+          builtAt: day(1),
+          source: 'upload',
+          status: 'ready',
+          chunkCount: 0,
+        })
+        .returning({ id: vulndbDatasets.id });
+      if (!dataset) throw new Error('the dataset was not stored');
+      await updateVulndbStateLocked(tx, (state) => ({ ...state, currentDatasetId: dataset.id }));
+
+      for (const [v, severity] of [
+        [SEED_CRITICAL, 'critical'],
+        [SEED_HIGH, 'high'],
+        [SEED_LEGACY, 'medium'],
+      ] as const) {
+        await tx.insert(vulnerabilityMatches).values({
+          purl: purl(v),
+          vulnerabilityId: v.id,
+          severity,
+          title: v.title,
+          fixedVersion: v.fixed,
+          primaryUrl: `https://avd.aquasec.com/nvd/${v.id.toLowerCase()}`,
+        });
+      }
+
+      const row = (
+        target: { branchId: string } | { versionId: string },
+        projectId: string,
+        v: { pkg: string; version: string; id: string },
+        firstSeenDays: number,
+      ) => ({
+        projectId,
+        ...target,
+        ecosystem: 'npm',
+        packageName: v.pkg,
+        packageVersion: v.version,
+        purl: purl(v),
+        vulnerabilityId: v.id,
+        firstSeenAt: day(firstSeenDays),
+      });
+      await tx
+        .insert(targetVulnerabilities)
+        .values([
+          row({ branchId: main.id }, paymentsId, SEED_CRITICAL, 1),
+          row({ branchId: main.id }, paymentsId, SEED_HIGH, 3),
+        ]);
+      await tx.insert(vulnerabilityTargetChecks).values({
+        projectId: paymentsId,
+        branchId: main.id,
+        basis: 'e2e',
+        baselineAt: day(2),
+        checkedAt: day(0),
+      });
+
+      const [tracked] = await tx
+        .insert(projectVersions)
+        .values({
+          projectId: legacyId,
+          label: '1.0.0',
+          source: 'label',
+          analyzedAt: day(5),
+          hasInventory: true,
+        })
+        .returning({ id: projectVersions.id });
+      const [unsupported] = await tx
+        .insert(projectVersions)
+        .values({
+          projectId: legacyId,
+          label: '0.9.0',
+          source: 'label',
+          analyzedAt: day(30),
+          tracking: 'unsupported',
+          hasInventory: true,
+        })
+        .returning({ id: projectVersions.id });
+      if (!tracked || !unsupported) throw new Error('the versions were not stored');
+      await tx
+        .insert(targetVulnerabilities)
+        .values([
+          row({ versionId: tracked.id }, legacyId, SEED_LEGACY, 1),
+          row({ versionId: unsupported.id }, legacyId, SEED_HIGH, 3),
+        ]);
+      await tx.insert(vulnerabilityTargetChecks).values({
+        projectId: legacyId,
+        versionId: tracked.id,
+        basis: 'e2e',
+        baselineAt: day(2),
+        checkedAt: day(0),
+      });
+
+      // The Trivy issue of the critical row on main, as an ingested scan leaves it.
+      const [rule] = await tx
+        .insert(rules)
+        .values({
+          key: `trivy:${SEED_CRITICAL.id}`,
+          engineId: 'trivy',
+          engineRuleId: SEED_CRITICAL.id,
+          name: SEED_CRITICAL.title,
+          defaultSeverity: 'blocker',
+          quality: 'security',
+          kind: 'issue',
+          origin: 'reported',
+        })
+        .returning({ id: rules.id });
+      if (!rule) throw new Error('the Trivy rule was not stored');
+      await tx.insert(issues).values({
+        projectId: paymentsId,
+        branchId: main.id,
+        ruleId: rule.id,
+        fingerprint: hex32('e2e-trivy-finding'),
+        lineHash: hex32('e2e-trivy-line'),
+        contextHash: hex32('e2e-trivy-context'),
+        path: 'pnpm-lock.yaml',
+        message: `${SEED_CRITICAL.pkg} ${SEED_CRITICAL.version}: ${SEED_CRITICAL.id} ${SEED_CRITICAL.title} (fixed in ${SEED_CRITICAL.fixed})`,
+        packageName: SEED_CRITICAL.pkg,
+        severity: 'blocker',
+        quality: 'security',
+        kind: 'issue',
+        status: 'open',
+        firstSeenAt: sql`now()`,
       });
     });
   } finally {

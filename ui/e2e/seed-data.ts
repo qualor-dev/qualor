@@ -128,3 +128,17 @@ export const VERA = {
   initialPassword: 'vera initial passphrase',
   password: 'vera e2e passphrase',
 };
+
+/**
+ * Vulnerability monitoring (seed.ts `seedVulnerabilities`): Payments API main has a critical
+ * `handlebars` row that is new and a high `lodash` row that is not, with an open Trivy issue for
+ * the critical one. Legacy Billing has a tracked version 1.0.0 with a new row, and an unsupported
+ * version 0.9.0 (the fold).
+ */
+export const VULNERABILITIES = {
+  critical: { id: 'CVE-2019-19919', package: 'handlebars' },
+  high: { id: 'CVE-2020-8203', package: 'lodash' },
+  legacy: { id: 'CVE-2024-99001', package: 'legacy-queue', tracked: '1.0.0', untracked: '0.9.0' },
+  issueMessage:
+    'handlebars 4.0.11: CVE-2019-19919 Prototype pollution in handlebars (fixed in 4.3.0)',
+};

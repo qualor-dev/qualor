@@ -1,5 +1,13 @@
 import { expect, expectAccessible, test } from './fixtures';
-import { AI_FINDING, MERGE_REQUEST, PAYMENTS, SHOP, XSS_MESSAGE, XSS_RULE_TEXT } from './seed-data';
+import {
+  AI_FINDING,
+  MERGE_REQUEST,
+  PAYMENTS,
+  SHOP,
+  VULNERABILITIES,
+  XSS_MESSAGE,
+  XSS_RULE_TEXT,
+} from './seed-data';
 
 const FLOATING_MESSAGE =
   'Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.';
@@ -145,4 +153,24 @@ test('the issues of a merge request change status in bulk', async ({ page }) => 
   // The button is disabled once the selection is empty: focus stays on the result.
   await expect(page.getByRole('status')).toBeFocused();
   await expect(page.getByText('No issue matches.')).toBeVisible();
+});
+
+test('a false positive on a Trivy issue needs a reason', async ({ page }) => {
+  await page.getByRole('link', { name: VULNERABILITIES.issueMessage }).click();
+  await expect(page).toHaveTitle('Issue · Qualor');
+  await expect(
+    page.getByText(
+      'Trivy issues on main and tracked branches share one decision for the whole project.',
+    ),
+  ).toBeVisible();
+  await page.getByLabel('Comment').fill('Only reachable from the build scripts.');
+  await page.getByRole('button', { name: 'False positive' }).click();
+  await expect(page.getByText('Select a reason.')).toBeVisible();
+  await page.getByLabel('Reason').selectOption({ label: 'The vulnerable code is never called' });
+  await page.getByRole('button', { name: 'False positive' }).click();
+  const history = page.getByRole('region', { name: 'History' });
+  await expect(history).toContainText('Status: Open → False positive');
+  // Back to open, so the Vulnerabilities tab test starts from the seeded state.
+  await page.getByRole('button', { name: 'Reopen' }).click();
+  await expect(history).toContainText('Status: False positive → Open');
 });

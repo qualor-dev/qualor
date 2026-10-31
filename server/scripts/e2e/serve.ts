@@ -35,6 +35,7 @@ import {
   seedSso,
   seedSsoIdentity,
   seedVulndbOff,
+  seedVulnerabilities,
   type SsoSeed,
 } from './seed';
 import { sweepE2eDatabases } from './sweep';
@@ -305,6 +306,8 @@ async function main(): Promise<void> {
   }
   // What a finished AI review leaves on merge request !42, which no review of the e2e server could.
   await seedAiFinding(databaseUrl(adminUrl, name));
+  // Monitoring on, with a dataset and matches (after seedVulndbOff, which turned it off).
+  await seedVulnerabilities(databaseUrl(adminUrl, name));
   // A GitHub App stored under another server key: the served server can no longer read its key
   // and webhook secret, and the GitHub tab says so (github.md §2.2).
   const rotated = start({

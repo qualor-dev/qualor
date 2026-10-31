@@ -16,6 +16,7 @@ test('the Dependencies tab lists the inventory, filters it and opens a lockfile'
     'Overview',
     'Branches and merge requests',
     'Issues',
+    'Vulnerabilities',
     'Dependencies',
     'Code',
   ]);
