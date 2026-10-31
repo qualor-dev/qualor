@@ -14,6 +14,8 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'GET /api/v0/openapi.json': 'public',
   'GET /api/v0/system/info': 'authenticated',
   'GET /api/v0/system/version': 'authenticated',
+  'GET /scanner/vulnerability-db': 'authenticated',
+  'GET /scanner/vulnerability-db/:sha256': 'authenticated',
   'POST /auth/login': 'public',
   'GET /auth/methods': 'public',
   'POST /auth/demo': 'public',

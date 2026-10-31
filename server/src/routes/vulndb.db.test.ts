@@ -536,6 +536,7 @@ describe('/system/vulnerability-db (API)', () => {
             trivyPath: '/usr/local/bin/trivy',
             internalHosts: new Set(),
             uploadMaxBytes: 64,
+            maxDownloads: 4,
           },
         },
       });

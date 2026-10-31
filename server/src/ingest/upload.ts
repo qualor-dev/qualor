@@ -34,8 +34,18 @@ export const REPORT_UPLOAD_PROBLEMS: UploadProblems = { tooLarge: reportTooLarge
 export class UploadSlots {
   private taken = 0;
 
-  /** `max` is the number of slots. */
-  constructor(readonly max: number) {}
+  /**
+   * `max` is the number of slots. `busy` names the refusal of another kind of gate (the scanner
+   * database downloads); the default is the uploads'.
+   */
+  constructor(
+    readonly max: number,
+    private readonly busy: { code: string; title: string; retryAfter: number } = {
+      code: 'UPLOADS_BUSY',
+      title: 'Too many concurrent uploads; retry shortly',
+      retryAfter: 1,
+    },
+  ) {}
 
   /**
    * Takes a slot, or refuses with 503 UPLOADS_BUSY when none is free; {@link release} frees it.
@@ -45,8 +55,8 @@ export class UploadSlots {
    */
   take(options: { reserve?: number } = {}): void {
     if (this.taken >= this.max - (options.reserve ?? 0)) {
-      throw new ProblemError(503, 'UPLOADS_BUSY', 'Too many concurrent uploads; retry shortly', {
-        headers: { 'retry-after': '1' },
+      throw new ProblemError(503, this.busy.code, this.busy.title, {
+        headers: { 'retry-after': String(this.busy.retryAfter) },
       });
     }
     this.taken += 1;

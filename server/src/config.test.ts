@@ -46,6 +46,7 @@ describe('loadConfig', () => {
         trivyPath: resolve('/usr/local/bin/trivy'),
         internalHosts: new Set(),
         uploadMaxBytes: 1_073_741_824,
+        maxDownloads: 4,
       },
       chatTestHosts: new Set(),
       forcePasswordSignIn: false,
@@ -420,8 +421,15 @@ describe('vulnerability database variables (0.15)', () => {
     ['QUALOR_VULNDB_DIR', 'relative/dir'],
     ['QUALOR_TRIVY_PATH', 'trivy'],
     ['QUALOR_VULNDB_UPLOAD_MAX_BYTES', '10'],
+    ['QUALOR_VULNDB_MAX_DOWNLOADS', '0'],
+    ['QUALOR_VULNDB_MAX_DOWNLOADS', '65'],
   ])('rejects a bad %s', (name, value) => {
     expect(problems({ ...base, [name]: value }).join(' ')).toContain(name);
+  });
+
+  it('allows 4 downloads at once by default, and up to 64', () => {
+    expect(loadConfig(base).vulndb.maxDownloads).toBe(4);
+    expect(loadConfig({ ...base, QUALOR_VULNDB_MAX_DOWNLOADS: '64' }).vulndb.maxDownloads).toBe(64);
   });
 });
 

@@ -31,6 +31,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
       trivyPath: '/usr/local/bin/trivy',
       internalHosts: new Set(),
       uploadMaxBytes: 1_073_741_824,
+      maxDownloads: 4,
     },
     forcePasswordSignIn: false,
     license: { text: null, file: null },

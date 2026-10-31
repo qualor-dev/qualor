@@ -271,6 +271,7 @@ const envSchema = z
     QUALOR_TRIVY_PATH: absoluteDir('/usr/local/bin/trivy'),
     QUALOR_VULNDB_INTERNAL_HOSTS: internalHostsSchema,
     QUALOR_VULNDB_UPLOAD_MAX_BYTES: bytes(1024 * MiB),
+    QUALOR_VULNDB_MAX_DOWNLOADS: z.coerce.number().int().min(1).max(64).default(4),
     QUALOR_DATA_DIR: absoluteDir('/var/lib/qualor'),
     QUALOR_POSTGRES_DIR: absoluteDir('/opt/postgresql'),
     QUALOR_SECRET_KEY: z.string().min(32, 'must be at least 32 characters'),
@@ -462,6 +463,8 @@ export interface Config {
     trivyPath: string;
     internalHosts: ReadonlySet<string>;
     uploadMaxBytes: number;
+    /** QUALOR_VULNDB_MAX_DOWNLOADS: the database archives scanners download at once. */
+    maxDownloads: number;
   };
   /** QUALOR_CHAT_TEST_HOSTS, normalised: extra hosts a Slack or Teams webhook may use (6G R7). */
   chatTestHosts: ReadonlySet<string>;
@@ -536,6 +539,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       trivyPath: resolve(e.QUALOR_TRIVY_PATH.trim()),
       internalHosts: e.QUALOR_VULNDB_INTERNAL_HOSTS,
       uploadMaxBytes: e.QUALOR_VULNDB_UPLOAD_MAX_BYTES,
+      maxDownloads: e.QUALOR_VULNDB_MAX_DOWNLOADS,
     },
     chatTestHosts: e.QUALOR_CHAT_TEST_HOSTS,
     forcePasswordSignIn: e.QUALOR_FORCE_PASSWORD_SIGN_IN,
