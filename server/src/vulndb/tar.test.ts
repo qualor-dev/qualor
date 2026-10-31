@@ -131,20 +131,33 @@ describe('readTarGz', () => {
   it.each([
     ['a symbolic link', '2'],
     ['a hard link', '1'],
-    ['a pax header', 'x'],
     ['a GNU long name', 'L'],
     ['a FIFO', '6'],
   ])('rejects an archive that holds %s', async (_what, type) => {
     const error = await rejection(
       readAll(
         tarGz([
-          { name: 'link', type, data: type === 'x' || type === 'L' ? 'payload' : '' },
+          { name: 'link', type, data: type === 'L' ? 'payload' : '' },
           { name: 'metadata.json', data: metadataJson() },
         ]),
       ),
     );
     expect(error).toBeInstanceOf(TarError);
     expect((error as Error).message).toMatch(/only plain files/);
+  });
+
+  it.each([
+    ['a pax extended header', 'x'],
+    ['a pax global header', 'g'],
+  ])('skips %s and reads the entries around it', async (_what, type) => {
+    const seen = await readAll(
+      tarGz([
+        { name: 'PaxHeader', type, data: '30 mtime=1700000000.123456789\n' },
+        { name: 'metadata.json', data: metadataJson() },
+      ]),
+    );
+    expect(seen.map((s) => s.name)).toEqual(['metadata.json']);
+    expect(seen[0]?.data.toString()).toBe(metadataJson());
   });
 
   it('rejects a header whose checksum is wrong', async () => {

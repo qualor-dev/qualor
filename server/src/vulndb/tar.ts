@@ -169,8 +169,6 @@ const OTHER_TYPES: Record<string, string> = {
   '3': 'a character device',
   '4': 'a block device',
   '6': 'a FIFO',
-  x: 'a pax header',
-  g: 'a pax header',
   L: 'a GNU long name',
   K: 'a GNU long link name',
 };
@@ -178,7 +176,8 @@ const OTHER_TYPES: Record<string, string> = {
 interface Header {
   name: string;
   size: number;
-  type: 'file' | 'directory';
+  /** `skipped`: a directory or a pax header, passed over with its data. */
+  type: 'file' | 'skipped';
 }
 
 /** A 512-byte header; null for the zero block that ends the archive. */
@@ -194,7 +193,9 @@ function parseHeader(block: Buffer): Header | null {
   const flag = String.fromCharCode(block.readUInt8(156));
   let type: Header['type'];
   if (flag === '0' || flag === '\0' || flag === '7') type = 'file';
-  else if (flag === '5') type = 'directory';
+  // Directories, and pax extended (`x`) and global (`g`) headers, which carry times and owners
+  // that this reader ignores. GNU long names and link names (`L`, `K`) are refused below.
+  else if (flag === '5' || flag === 'x' || flag === 'g') type = 'skipped';
   else {
     const what = OTHER_TYPES[flag] ?? 'an entry of an unknown type';
     throw new TarError(`The archive holds ${what}; only plain files are allowed`);
@@ -207,8 +208,9 @@ function parseHeader(block: Buffer): Header | null {
 
 /**
  * Reads a gzipped tar archive from `chunks`, in one pass, as the bytes arrive. Regular files
- * (ustar and GNU tar) are offered to `want` under their {@link normalName}; directories are passed
- * over; any other entry (a link, a device, a pax or GNU extension header) rejects the archive. A
+ * (ustar and GNU tar) are offered to `want` under their {@link normalName}; directories and pax
+ * `x`/`g` headers are passed over; any other entry (a link, a device, a GNU long name) rejects
+ * the archive. A
  * `keep` entry over {@link KEEP_MAX_BYTES} rejects it too. `onFile` is awaited for each wanted
  * entry, in archive order (see {@link TarEntry}). Rejects with a {@link TarError} for an archive
  * that is not valid, or with what `chunks` or `onFile` threw. Stops at the archive's end marker.
