@@ -1,4 +1,5 @@
 import { Component, computed, inject, input, resource, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, type Params, RouterLink } from '@angular/router';
 import { Api, ok } from '../../api/api';
@@ -37,7 +38,7 @@ function one(params: Params, key: string): string {
  */
 @Component({
   selector: 'q-vulnerabilities-page',
-  imports: [DateTimePipe, Icon, RouterLink],
+  imports: [DateTimePipe, Icon, NgTemplateOutlet, RouterLink],
   templateUrl: './vulnerabilities.page.html',
   styleUrl: './vulnerabilities.page.css',
 })
@@ -110,8 +111,8 @@ export class VulnerabilitiesPage {
   }
 
   /** What the menu offers on this version. */
-  protected choices(t: Target): Tracking[] {
-    return t.kind === 'version' && t.tracking ? CHOICES[t.tracking] : [];
+  protected choices(tracking: Target['tracking']): Tracking[] {
+    return tracking ? CHOICES[tracking] : [];
   }
 
   protected choiceLabel(tracking: Tracking, from: Target['tracking']): string {
@@ -129,7 +130,7 @@ export class VulnerabilitiesPage {
     menu.style.right = `${Math.max(0, Math.round(document.documentElement.clientWidth - rect.right))}px`;
   }
 
-  protected async change(menu: HTMLElement, t: Target, tracking: Tracking): Promise<void> {
+  protected async change(menu: HTMLElement, versionId: string, tracking: Tracking): Promise<void> {
     // jsdom has no Popover API.
     const popover = menu as Partial<Pick<HTMLElement, 'hidePopover'>>;
     if (popover.hidePopover && menu.matches(':popover-open')) popover.hidePopover.call(menu);
@@ -139,7 +140,7 @@ export class VulnerabilitiesPage {
     try {
       await ok(
         this.api.client.PATCH('/api/v0/projects/{id}/versions/{versionId}', {
-          params: { path: { id: this.projectId(), versionId: t.id } },
+          params: { path: { id: this.projectId(), versionId } },
           body: { tracking },
         }),
       );

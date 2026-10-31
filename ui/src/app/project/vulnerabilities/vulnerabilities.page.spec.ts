@@ -242,6 +242,73 @@ describe('VulnerabilitiesPage', () => {
     });
   });
 
+  describe('the untracked rows of the expanded fold', () => {
+    const UNTRACKED = '0190a6c2-0000-7000-8000-00000000f000';
+
+    async function expand(permissions?: readonly string[], untrackedList = untracked(3)) {
+      const root = await render({ targets: TARGETS, untracked: untrackedList }, { permissions });
+      button(root, 'Show')?.click();
+      await settle();
+      return root;
+    }
+    const foldRow = (root: HTMLElement) =>
+      rows(root).find((r) => text(r)?.includes('Not tracked')) as HTMLElement;
+
+    it('link to their own target', async () => {
+      const root = await expand();
+      const href = decodeURIComponent(
+        foldRow(root).querySelector('th a')?.getAttribute('href') ?? '',
+      );
+      expect(href).toContain(`target=version:${UNTRACKED}`);
+    });
+
+    it('show no menu to a viewer', async () => {
+      const root = await expand();
+      expect(foldRow(root).querySelector('.row-menu')).toBeNull();
+    });
+
+    it('offer Pin and Mark as unsupported, or Track automatically and Pin', async () => {
+      const root = await expand(SETTINGS, [
+        untrackedVersion({ id: UNTRACKED, name: '1.0.0' }),
+        untrackedVersion({ id: 'u-unsupported', name: '0.9.0', tracking: 'unsupported' }),
+      ]);
+      const items = (row: Element | undefined) =>
+        [...(row?.querySelectorAll('.row-menu-panel button') ?? [])].map((b) => text(b));
+      const fold = rows(root).filter((r) => text(r)?.includes('Not tracked'));
+      expect(items(fold[0])).toEqual(['Pin', 'Mark as unsupported']);
+      expect(items(fold[1])).toEqual(['Track automatically', 'Pin']);
+    });
+
+    it('let an admin pin one, which sends pinned and reads the summary again', async () => {
+      const root = await expand(SETTINGS);
+      const pin = foldRow(root).querySelector('.row-menu-panel button') as HTMLButtonElement;
+      expect(text(pin)).toBe('Pin');
+      pin.click();
+      await settle();
+      expect(
+        server
+          .requestsTo('PATCH', `/api/v0/projects/${PROJECT}/versions/${UNTRACKED}`)
+          .map((p) => p.body),
+      ).toEqual([{ tracking: 'pinned' }]);
+      expect(server.requestsTo('GET', TARGETS_URL)).toHaveLength(2);
+    });
+
+    it('show the table again when every tracked target is clean', async () => {
+      const root = await render({
+        targets: [vulnerabilityTarget({ id: MAIN, name: 'main', isMain: true })],
+        untracked: untracked(1),
+      });
+      expect(root.querySelector('table')).toBeNull();
+      button(root, 'Show')?.click();
+      await settle();
+      expect(root.querySelector('.empty-state')).toBeNull();
+      expect(rows(root).map((r) => text(r.querySelector('th')))).toEqual([
+        'main',
+        '1.0.0Not tracked',
+      ]);
+    });
+  });
+
   describe('empty states', () => {
     it('sends an instance admin to Settings → Vulnerability database', async () => {
       const root = await render({ data: null }, { admin: true });
