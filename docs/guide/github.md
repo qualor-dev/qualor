@@ -124,9 +124,8 @@ around it. The `mkdir` step lets the Action's user write the directory.
           key: qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}
 ```
 
-The same steps go around `qualor-dev/scan-action/dotnet`. The
-[Action's README](https://github.com/qualor-dev/scan-action#cache-the-vulnerability-database) shows
-them too. The template in [Without the Action](#without-the-action-your-own-image-or-a-mirror)
+The [Action's README](https://github.com/qualor-dev/scan-action#cache-the-vulnerability-database)
+shows them too. The template in [Without the Action](#without-the-action-your-own-image-or-a-mirror)
 below has them built in.
 
 ### C#
@@ -145,6 +144,9 @@ Action: it runs `qualor dotnet begin`, your build and `qualor dotnet end` in the
 
 It takes the same inputs, plus `build-command` (default `dotnet build --no-incremental`). Keep
 `--no-incremental`. When the build fails, nothing is uploaded.
+
+The `dotnet` Action scans a copy of the checkout and keeps no vulnerability database cache: it
+downloads the database on each run. Leave the cache steps out.
 
 The token goes only to `qualor dotnet end`, but the build runs your repository's code in the same
 container and could read it. If that is not acceptable, use the template
