@@ -172,3 +172,62 @@ describe('parseEpss', () => {
     });
   });
 });
+
+describe('hostile input', () => {
+  const head = '#model_version:v1,score_date:2026-10-31T12:55:00Z\n';
+  const row = 'CVE-2024-0001,0.95,0.999\n';
+
+  it('accepts a BOM on KEV and on EPSS', async () => {
+    const kev = await parseKev(Buffer.concat([Buffer.from('\ufeff'), catalog([entry()])]));
+    expect(kev).toMatchObject({ skipped: 0, entries: [{ vulnerabilityId: 'CVE-2024-0001' }] });
+    const epss = await parseEpss(Buffer.from(`\ufeff${head}cve,epss,percentile\n${row}`));
+    expect(epss).toMatchObject({ ids: ['CVE-2024-0001'], modelVersion: 'v1' });
+    const bare = await parseEpss(Buffer.from(`\ufeffcve,epss,percentile\n${row}`));
+    expect(bare).toMatchObject({ ids: ['CVE-2024-0001'], scoreDate: null });
+  });
+
+  it('accepts a spaced header and spaced cells', async () => {
+    const got = await parseEpss(
+      Buffer.from(`${head}CVE, EPSS , Percentile\n CVE-2024-0001 , 0.95 , 0.999 \n`),
+    );
+    expect(got).toMatchObject({ ids: ['CVE-2024-0001'], scores: [0.95], skipped: 0 });
+  });
+
+  it('refuses other column sets', async () => {
+    const got = await parseEpss(Buffer.from(`cve,percentile,epss\n${row}`));
+    expect(got).toMatchObject({ problem: { code: 'INVALID_DATA' } });
+  });
+
+  it('skips NaN, Infinity and 1e999 cells', async () => {
+    const got = await parseEpss(
+      Buffer.from(
+        `cve,epss,percentile\n${row}CVE-2024-0002,NaN,0.1\nCVE-2024-0003,Infinity,0.1\n` +
+          'CVE-2024-0004,1e999,0.1\nCVE-2024-0005,0.1,-Infinity\n',
+      ),
+    );
+    expect(got).toMatchObject({ ids: ['CVE-2024-0001'], skipped: 4 });
+  });
+
+  it('skips a 100 000-digit cell quickly', async () => {
+    const started = Date.now();
+    const got = await parseEpss(
+      Buffer.from(`cve,epss,percentile\n${row}CVE-2024-0002,${'9'.repeat(100_000)}x,0.1\n`),
+    );
+    expect(got).toMatchObject({ ids: ['CVE-2024-0001'], skipped: 1 });
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('gives INVALID_DATA for a truncated gzip', async () => {
+    const whole = gzipSync(Buffer.from(`cve,epss,percentile\n${row}`.repeat(50)));
+    const half = whole.subarray(0, Math.floor(whole.length / 2));
+    expect(await parseEpss(half)).toMatchObject({ problem: { code: 'INVALID_DATA' } });
+    expect(await parseKev(half)).toMatchObject({ problem: { code: 'INVALID_DATA' } });
+  });
+
+  it('gives TOO_LARGE for a gzip bomb', async () => {
+    const bomb = gzipSync(Buffer.alloc(10 * 1024 * 1024));
+    const limits = { maxDataBytes: 1024 * 1024 };
+    expect(await parseEpss(bomb, limits)).toMatchObject({ problem: { code: 'TOO_LARGE' } });
+    expect(await parseKev(bomb, limits)).toMatchObject({ problem: { code: 'TOO_LARGE' } });
+  });
+});

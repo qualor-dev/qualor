@@ -89,3 +89,28 @@ describe('replaceEpss', () => {
     expect(await countEpss()).toBe(3);
   });
 });
+
+describe('replaceKev at size and on failure', () => {
+  it('stores more than one batch', async () => {
+    const entries = Array.from({ length: 12_000 }, (_, i) => kev(i));
+    expect(await replaceKev(t.db, entries)).toEqual({ count: 12_000, added: 12_000 });
+    const { rows } = await t.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM vulnerability_kev`,
+    );
+    expect(rows[0]?.n).toBe(12_000);
+  });
+
+  it('rolls back when a later batch breaks a check', async () => {
+    await replaceKev(t.db, [kev(1), kev(2)]);
+    const entries = Array.from({ length: 6000 }, (_, i) => kev(100 + i));
+    entries[5500] = { vulnerabilityId: 'not-a-cve', dateAdded: '2026-02-03', ransomware: false };
+    await expect(replaceKev(t.db, entries)).rejects.toThrow();
+    const { rows } = await t.db.execute<{ vulnerability_id: string }>(
+      sql`SELECT vulnerability_id FROM vulnerability_kev ORDER BY 1`,
+    );
+    expect(rows.map((r) => r.vulnerability_id)).toEqual([
+      kev(1).vulnerabilityId,
+      kev(2).vulnerabilityId,
+    ]);
+  });
+});

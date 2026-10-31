@@ -85,7 +85,8 @@ async function readText(body: Buffer, maxBytes: number): Promise<string | Priori
     }
   }
   if (raw.length > maxBytes) return tooLarge(`The file is larger than ${maxBytes} bytes.`);
-  return raw.toString('utf8');
+  const text = raw.toString('utf8');
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
 const kevTop = z.object({
@@ -148,9 +149,9 @@ export async function parseKev(
 
 /** A decimal number in [0, 1], or null. */
 function unit(value: string | undefined): number | null {
-  if (value === undefined || !/^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/.test(value.trim())) {
-    return null;
-  }
+  // A long cell is refused before the regex runs, so a long digit run cannot backtrack.
+  if (value === undefined || value.length > 32) return null;
+  if (!/^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/.test(value)) return null;
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 && n <= 1 ? n : null;
 }
@@ -185,17 +186,22 @@ export async function parseEpss(
           }
           continue;
         }
-        if (line.trim().toLowerCase() !== 'cve,epss,percentile') {
+        const columns = line
+          .split(',')
+          .map((c) => c.trim())
+          .join(',')
+          .toLowerCase();
+        if (columns !== 'cve,epss,percentile') {
           return invalid('The EPSS file does not have the columns cve, epss, percentile.');
         }
         headerSeen = true;
         continue;
       }
       if (++rows > maxRows) return tooLarge(`The EPSS file has more than ${maxRows} rows.`);
-      const cells = line.split(',');
+      const cells = line.split(',').map((c) => c.trim());
       const score = cells.length === 3 ? unit(cells[1]) : null;
       const percentile = cells.length === 3 ? unit(cells[2]) : null;
-      const id = cells[0]?.trim() ?? '';
+      const id = cells[0] ?? '';
       if (score === null || percentile === null || !CVE_ID.test(id) || seen.has(id)) {
         skipped++;
         continue;
