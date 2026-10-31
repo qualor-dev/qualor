@@ -95,7 +95,7 @@ services:
       QUALOR_LOG_LEVEL: ${QUALOR_LOG_LEVEL:-info}
     volumes:
       - data:/var/lib/qualor
-      - vulndb-cache:/var/cache/qualor/vulndb # the vulnerability database (about 1 GiB)
+      - vulndb-cache:/var/cache/qualor/vulndb # the vulnerability database (2 GiB, 4 GiB while one replaces another)
     ports:
       - '${QUALOR_BIND_ADDRESS:-127.0.0.1}:${QUALOR_PORT:-8080}:8080'
     read_only: true
