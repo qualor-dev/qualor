@@ -374,6 +374,61 @@ describe('VulnerabilitiesPage', () => {
       const root = await render({ versionCount: 3, targets: TARGETS });
       expect(root.querySelector('.tag-hint')).toBeNull();
     });
+
+    it('says monitoring is off, with the settings link for project.settings (final review F2)', async () => {
+      const off: Partial<VulnerabilityTargets> = {
+        monitoring: 'off',
+        checkedAt: null,
+        targets: [],
+      };
+      const admin = await render(off, { permissions: SETTINGS });
+      const empty = text(admin.querySelector('.empty-state'));
+      expect(empty).toContain('Vulnerability monitoring is off for this project.');
+      expect(empty).not.toContain('No open vulnerabilities');
+      const link = admin.querySelector('.empty-state a');
+      expect(text(link)).toBe('Project settings');
+      expect(link?.getAttribute('href')).toBe(`/projects/${PROJECT}/settings#vulnerabilities`);
+      expect(admin.querySelector('table')).toBeNull();
+      expect(admin.querySelector('.vuln-header')).toBeNull();
+
+      TestBed.resetTestingModule();
+      server = new FakeServer();
+      TestBed.configureTestingModule({
+        imports: [VulnerabilitiesPage],
+        providers: [provideRouter([]), provideFakeServer(server)],
+      });
+      const viewer = await render(off);
+      expect(text(viewer.querySelector('.empty-state'))).toContain(
+        'Vulnerability monitoring is off for this project.',
+      );
+      expect(viewer.querySelector('.empty-state a')).toBeNull();
+    });
+
+    it('says not checked yet instead of the all-clear before the first check (final review F2)', async () => {
+      const root = await render({
+        checkedAt: null,
+        targets: [vulnerabilityTarget({ id: MAIN, name: 'main', isMain: true, checkedAt: null })],
+      });
+      const empty = text(root.querySelector('.empty-state'));
+      expect(empty).toContain(
+        'Not checked yet. The server checks tracked branches and versions after the next database update or analysis.',
+      );
+      expect(empty).not.toContain('No open vulnerabilities');
+    });
+  });
+
+  it('names an uploaded file without a build date in the header (final review F3)', async () => {
+    const checked = await render({ data: { builtAt: null }, targets: TARGETS });
+    expect(text(checked.querySelector('.vuln-header'))).toBe(
+      'Vulnerability data from an uploaded file · checked Oct 30, 2026, 9:00 AM UTC',
+    );
+  });
+
+  it('names an uploaded file alone before the first check (final review F3)', async () => {
+    const root = await render({ data: { builtAt: null }, checkedAt: null, targets: TARGETS });
+    expect(text(root.querySelector('.vuln-header'))).toBe(
+      'Vulnerability data from an uploaded file',
+    );
   });
 
   it('offers the two views, By version being the current one', async () => {

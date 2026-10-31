@@ -2,8 +2,33 @@
   <p class="alert alert-error" role="alert">{{ message }}</p>
 }
 @if (answer(); as a) {
-  @if (a.data; as data) {
-    @if (a.checkedAt) {
+  @if (a.monitoring === 'off') {
+    <div class="empty-state">
+      <img src="art/empty.webp" alt="" width="900" height="675" />
+      <p i18n="@@vuln.off">Vulnerability monitoring is off for this project.</p>
+      @if (canPin()) {
+        <p>
+          <a
+            [routerLink]="['/projects', projectId(), 'settings']"
+            fragment="vulnerabilities"
+            i18n="@@vuln.off.settings"
+            >Project settings</a
+          >
+        </p>
+      }
+    </div>
+  } @else if (a.data; as data) {
+    @if (!data.builtAt) {
+      @if (a.checkedAt) {
+        <p class="vuln-header" i18n="@@vuln.header.noDate.checked">
+          Vulnerability data from an uploaded file · checked {{ a.checkedAt | dateTime }}
+        </p>
+      } @else {
+        <p class="vuln-header" i18n="@@vuln.header.noDate">
+          Vulnerability data from an uploaded file
+        </p>
+      }
+    } @else if (a.checkedAt) {
       <p class="vuln-header" i18n="@@vuln.header.checked">
         Vulnerability data from {{ data.builtAt | dateTime: 'date' }} · checked
         {{ a.checkedAt | dateTime }}
@@ -63,7 +88,16 @@
       @if (clean() && !expanded()) {
         <div class="empty-state">
           <img src="art/empty.webp" alt="" width="900" height="675" />
-          <p i18n="@@vuln.empty.clean">No open vulnerabilities in tracked branches and versions.</p>
+          @if (a.checkedAt) {
+            <p i18n="@@vuln.empty.clean">
+              No open vulnerabilities in tracked branches and versions.
+            </p>
+          } @else {
+            <p i18n="@@vuln.notChecked">
+              Not checked yet. The server checks tracked branches and versions after the next
+              database update or analysis.
+            </p>
+          }
         </div>
       } @else {
         <section class="card panel">
