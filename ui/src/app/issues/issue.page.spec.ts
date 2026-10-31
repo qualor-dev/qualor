@@ -686,6 +686,35 @@ describe('IssuePage', () => {
       expect(line).toContain('Reason not given');
     });
 
+    it('names no reason for an Open or a Won’t fix decision (final review I2)', async () => {
+      for (const status of ['open', 'wont_fix']) {
+        withVuln(
+          vulnerability({
+            decision: {
+              status,
+              reason: null,
+              comment: 'c',
+              decidedAt: '2026-09-16T10:00:00.000Z',
+              decidedBy: { id: 'u', name: 'Alice' },
+              scope: 'project',
+            },
+          }),
+        );
+        const { root } = await render();
+        const line = root.querySelector('.decision-line')!.textContent!.replace(/\s+/g, ' ');
+        expect(line, status).toContain('Project decision:');
+        expect(line, status).not.toContain('Reason not given');
+        expect(line, status).toMatch(/Project decision: [^·]+ · Alice, /);
+      }
+    });
+
+    it('names the blank reason option for screen readers (final review F10)', async () => {
+      withVuln(vulnerability());
+      const { root } = await render();
+      const blank = root.querySelector<HTMLSelectElement>('#issue-reason')!.options[0]!;
+      expect([blank.value, blank.textContent?.trim()]).toEqual(['', 'Select a reason']);
+    });
+
     it('maps a 422 REASON_REQUIRED to the same field error', async () => {
       withVuln(vulnerability());
       server.on('POST', `/api/v0/issues/${ID}/transition`, {

@@ -367,7 +367,9 @@
                     [value]="reason()"
                     (change)="setReason($event)"
                   >
-                    <option value="" [selected]="reason() === ''"></option>
+                    <option value="" [selected]="reason() === ''" i18n="@@issue.reason.placeholder">
+                      Select a reason
+                    </option>
                     @for (r of reasons; track r) {
                       <option [value]="r" [selected]="r === reason()">
                         {{ r | label: 'vexReason' }}
@@ -387,11 +389,14 @@
               }
               @if (v.decision; as d) {
                 <p class="muted decision-line">
-                  {{ scopeWord(d.scope) }}: {{ d.status | label: 'decisionStatus' }} ·
-                  @if (d.reason; as r) {
-                    {{ r | label: 'vexReason' }}
-                  } @else {
-                    <ng-container i18n="@@issue.decision.noReason">Reason not given</ng-container>
+                  {{ scopeWord(d.scope) }}: {{ d.status | label: 'decisionStatus' }}
+                  @if (d.status === 'false_positive') {
+                    ·
+                    @if (d.reason; as r) {
+                      {{ r | label: 'vexReason' }}
+                    } @else {
+                      <ng-container i18n="@@issue.decision.noReason">Reason not given</ng-container>
+                    }
                   }
                   @if (d.decidedBy; as by) {
                     · {{ by.name }}, {{ d.decidedAt | dateTime }}

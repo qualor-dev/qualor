@@ -525,6 +525,7 @@
     "issue.suggestionNote": "Pressing False positive also records that the AI triage suggestion was shown. The decision and the comment are yours.",
     "issue.suggestionDrop": " Do not record it ",
     "issue.reason": "Reason",
+    "issue.reason.placeholder": " Select a reason ",
     "issue.reason.hint": "Trivy issues on main and tracked branches share one decision for the whole project.",
     "issue.decision.noReason": "Reason not given",
     "issue.closed": " A closed issue cannot change; it reopens if an analysis finds it again. ",
