@@ -288,5 +288,42 @@ describe('/scanner/vulnerability-db (API)', () => {
         downloadTimeouts.stallMs = before;
       }
     }, 60_000);
+
+    it('keeps a reader that is slow but steady, long after the stream read ahead of it', async () => {
+      const big = trivyArchive({ db: randomBytes(48 * 1024 * 1024) });
+      const digest = await store(big, true);
+      const before = downloadTimeouts.stallMs;
+      downloadTimeouts.stallMs = 500;
+      try {
+        const { res } = await open(digest.slice(7));
+        expect(res.statusCode).toBe(200);
+        const hash = createHash('sha256');
+        let received = 0;
+        let sincePause = 0;
+        // About 10 MiB/s: the 48 MiB take several seconds, many times stallMs, and the server has
+        // read every chunk from the database long before the socket sent it.
+        await new Promise<void>((resolve, reject) => {
+          res.on('data', (chunk: Buffer) => {
+            hash.update(chunk);
+            received += chunk.length;
+            sincePause += chunk.length;
+            if (sincePause >= 1024 * 1024) {
+              sincePause = 0;
+              res.pause();
+              setTimeout(() => res.resume(), 100);
+            }
+          });
+          res.on('end', resolve);
+          res.on('error', reject);
+          res.on('close', () => {
+            if (!res.complete) reject(new Error(`cut off after ${received} bytes`));
+          });
+        });
+        expect(received).toBe(big.length);
+        expect(`sha256:${hash.digest('hex')}`).toBe(digest);
+      } finally {
+        downloadTimeouts.stallMs = before;
+      }
+    }, 60_000);
   });
 });

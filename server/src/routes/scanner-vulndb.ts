@@ -20,6 +20,11 @@ const RETRY_AFTER_SECONDS = 5;
 
 /** Seconds-scale knob: a download that takes no bytes for this long is cut off (tests shorten it). */
 export const downloadTimeouts = { stallMs: 60_000 };
+/**
+ * The archive goes to the socket in slices this large, so the socket's byte count moves with every
+ * slice the client takes rather than once per 8 MiB database chunk.
+ */
+const SLICE_BYTES = 256 * 1024;
 
 /**
  * 0.15 plan 3: what a scanner needs to take the Trivy database from this server. Any token may
@@ -153,32 +158,41 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       slots.take();
       const datasetId = dataset.id;
       let released = false;
-      let stall: NodeJS.Timeout | undefined;
       const release = (): void => {
         if (released) return;
         released = true;
-        clearTimeout(stall);
+        clearInterval(watch);
         slots.release();
       };
-      // A reader that takes no bytes for stallMs is cut off, and its slot freed.
-      const arm = (): void => {
-        clearTimeout(stall);
-        stall = setTimeout(() => {
-          stream.destroy();
-          reply.raw.destroy();
-          release();
-        }, downloadTimeouts.stallMs);
-        stall.unref();
-      };
-      // The stream pulls the next chunk only when the socket has taken the last: a pull is progress.
-      async function* paced(): AsyncGenerator<Buffer, void, undefined> {
+      async function* sliced(): AsyncGenerator<Buffer, void, undefined> {
         for await (const chunk of readDatasetChunks(deps.db, datasetId)) {
-          arm();
-          yield chunk;
+          for (let at = 0; at < chunk.length; at += SLICE_BYTES) {
+            yield chunk.subarray(at, at + SLICE_BYTES);
+          }
         }
       }
-      const stream = Readable.from(paced());
-      arm();
+      const stream = Readable.from(sliced());
+      // A reader that takes no bytes for stallMs is cut off, and its slot freed. Progress is what
+      // the socket sent: the stream reads chunks from the database well ahead of it.
+      const socket = reply.raw.socket;
+      const { stallMs } = downloadTimeouts;
+      let sent = socket?.bytesWritten ?? 0;
+      let movedAt = Date.now();
+      const watch = setInterval(
+        () => {
+          const now = socket?.bytesWritten ?? 0;
+          if (now !== sent) {
+            sent = now;
+            movedAt = Date.now();
+          } else if (Date.now() - movedAt >= stallMs) {
+            stream.destroy();
+            reply.raw.destroy();
+            release();
+          }
+        },
+        Math.min(5_000, Math.max(10, Math.floor(stallMs / 6))),
+      );
+      watch.unref();
       stream.on('error', release);
       reply.raw.once('close', () => {
         stream.destroy();
