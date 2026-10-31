@@ -124,7 +124,12 @@ describe('the GitLab CI/CD component (scm.md §10)', () => {
     expect(job).toMatchObject({
       stage: 'test',
       image: { name: 'qualor/scanner:0.3.0', entrypoint: [''] },
-      variables: { GIT_DEPTH: '0' },
+      variables: {
+        GIT_DEPTH: '0',
+        QUALOR_TRIVY_CACHE_DIR: '$CI_PROJECT_DIR/.qualor/trivy',
+      },
+      // The scanner's vulnerability database archive, kept between pipelines (also on failure).
+      cache: { key: 'qualor-trivy-db', paths: ['.qualor/trivy/'], when: 'always' },
       allow_failure: false,
       artifacts: {
         when: 'always',

@@ -3,6 +3,12 @@
 
 /** Pinned like the repository's own templates (integrations/github/qualor.yml). */
 const CHECKOUT = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0';
+/** The cache actions, pinned by commit like the checkout (actions/cache v4.3.0). */
+const CACHE_RESTORE = 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0';
+const CACHE_SAVE = 'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0';
+/** Where the scanner keeps the vulnerability database archive inside the checkout. */
+const TRIVY_CACHE_PATH = '.qualor/trivy';
+const TRIVY_CACHE_DIR = '${{ github.workspace }}/.qualor/trivy';
 const FORK_GUARD =
   "github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository";
 const REF = '${{ github.event.pull_request.head.sha || github.sha }}';
@@ -92,7 +98,14 @@ export function gitlabPlainJob(o: JobOptions): string {
     'qualor:',
     `  stage: ${yamlScalar(o.stage ?? 'test')}`,
     `  image: { name: ${image}:${o.version}, entrypoint: [''] }`,
-    "  variables: { GIT_DEPTH: '0' }",
+    '  variables:',
+    "    GIT_DEPTH: '0'",
+    '    QUALOR_TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.qualor/trivy',
+    // The scanner's vulnerability database archive, kept between pipelines.
+    '  cache:',
+    '    key: qualor-trivy-db',
+    '    paths: [.qualor/trivy/]',
+    '    when: always',
     '  script:',
     ...script,
   ];
@@ -152,6 +165,24 @@ const checkoutStep = (o: WorkflowOptions): string[] => [
   `          ref: ${REF}`,
 ];
 
+/** Restores the scanner's vulnerability database archive before the scan. */
+const cacheRestoreStep = (): string[] => [
+  `      - uses: ${CACHE_RESTORE}`,
+  '        with:',
+  `          path: ${TRIVY_CACHE_PATH}`,
+  '          key: qualor-trivy-db-${{ github.run_id }}',
+  '          restore-keys: qualor-trivy-db-',
+];
+
+/** Saves it again when the scan fetched a new one (server.json changes with the database). */
+const cacheSaveStep = (): string[] => [
+  "      - if: always() && hashFiles('.qualor/trivy/server.json') != ''",
+  `        uses: ${CACHE_SAVE}`,
+  '        with:',
+  `          path: ${TRIVY_CACHE_PATH}`,
+  "          key: qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}",
+];
+
 /**
  * The workflow file `.github/workflows/qualor.yml`. The server address and the project key are
  * written literally.
@@ -171,6 +202,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       ...container('qualor/scanner-dotnet'),
       '    steps:',
       ...checkoutStep(o),
+      ...cacheRestoreStep(),
       '      - run: qualor dotnet begin',
       "      # Check this build command: use the repository's own build (restore, feeds, configuration)",
       '      # and keep --no-incremental, so every project is compiled and writes its analysis log.',
@@ -180,7 +212,9 @@ export function githubWorkflow(o: WorkflowOptions): string {
       '        env:',
       `          QUALOR_URL: ${url}`,
       `          QUALOR_PROJECT_KEY: ${key}`,
+      `          QUALOR_TRIVY_CACHE_DIR: ${TRIVY_CACHE_DIR}`,
       `          QUALOR_TOKEN: ${TOKEN}`,
+      ...cacheSaveStep(),
       '      - if: failure() || cancelled()',
       '        run: qualor dotnet abort',
     ];
@@ -189,12 +223,14 @@ export function githubWorkflow(o: WorkflowOptions): string {
       ...header(o),
       '    steps:',
       ...checkoutStep(o),
+      ...cacheRestoreStep(),
       '      # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.',
       `      - uses: qualor-dev/scan-action@v${o.minor}`,
       '        with:',
       `          server-url: ${url}`,
       `          project-key: ${key}`,
       `          token: ${TOKEN}`,
+      ...cacheSaveStep(),
     ];
   } else {
     lines = [
@@ -202,12 +238,15 @@ export function githubWorkflow(o: WorkflowOptions): string {
       ...container('qualor/scanner'),
       '    steps:',
       ...checkoutStep(o),
+      ...cacheRestoreStep(),
       '      # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.',
       '      - run: qualor scan',
       '        env:',
       `          QUALOR_URL: ${url}`,
       `          QUALOR_PROJECT_KEY: ${key}`,
+      `          QUALOR_TRIVY_CACHE_DIR: ${TRIVY_CACHE_DIR}`,
       `          QUALOR_TOKEN: ${TOKEN}`,
+      ...cacheSaveStep(),
     ];
   }
   return lines.join('\n') + '\n';

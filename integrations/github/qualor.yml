@@ -35,9 +35,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # The scanner's vulnerability database archive, kept between runs.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .qualor/trivy
+          key: qualor-trivy-db-${{ github.run_id }}
+          restore-keys: qualor-trivy-db-
       # Analyzers that load the project's own plugins or classes (ESLint plugins, compiled Java
       # classes for SpotBugs) need its dependencies: install or build them here, before the scan.
       - run: qualor scan
         env:
           QUALOR_URL: ${{ vars.QUALOR_URL }}
+          QUALOR_TRIVY_CACHE_DIR: ${{ github.workspace }}/.qualor/trivy
           QUALOR_TOKEN: ${{ secrets.QUALOR_TOKEN }}
+      - if: always() && hashFiles('.qualor/trivy/server.json') != ''
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .qualor/trivy
+          key: qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}

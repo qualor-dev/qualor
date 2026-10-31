@@ -569,7 +569,16 @@ describe('GitLab self-managed', () => {
     const doc = parse(content);
     expect(doc.qualor.stage).toBe('test');
     expect(doc.qualor.image).toEqual({ name: 'qualor/scanner:0.14.3', entrypoint: [''] });
-    expect(doc.qualor.variables).toEqual({ GIT_DEPTH: '0' });
+    expect(doc.qualor.variables).toEqual({
+      GIT_DEPTH: '0',
+      QUALOR_TRIVY_CACHE_DIR: '$CI_PROJECT_DIR/.qualor/trivy',
+    });
+    expect(doc.qualor.cache).toEqual({
+      key: 'qualor-trivy-db',
+      paths: ['.qualor/trivy/'],
+      when: 'always',
+    });
+    expect(JSON.stringify(doc.qualor)).not.toMatch(/QUALOR_TOKEN/);
     expect(doc.qualor.script).toHaveLength(1);
     expect(doc.qualor.script[0]).toContain(
       'qualor scan --project-key acme/app-2 --gitlab-code-quality gl-code-quality-report.json',
@@ -621,6 +630,35 @@ describe('GitLab self-managed', () => {
   });
 });
 
+const CACHE_PIN = /^actions\/cache\/(restore|save)@[0-9a-f]{40}$/;
+
+/** The restore step comes before the scan, the save step (on always()) after it; neither holds the token. */
+function expectDbCache(
+  steps: { uses?: string; if?: string; with?: unknown; env?: unknown }[],
+  scan: unknown,
+): void {
+  const restore = steps.find((s) => s.uses?.startsWith('actions/cache/restore@'));
+  const save = steps.find((s) => s.uses?.startsWith('actions/cache/save@'));
+  expect(restore?.uses).toMatch(CACHE_PIN);
+  expect(save?.uses).toMatch(CACHE_PIN);
+  expect(restore?.with).toEqual({
+    path: '.qualor/trivy',
+    key: 'qualor-trivy-db-${{ github.run_id }}',
+    'restore-keys': 'qualor-trivy-db-',
+  });
+  expect(save?.with).toEqual({
+    path: '.qualor/trivy',
+    key: "qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}",
+  });
+  expect(save?.if).toBe("always() && hashFiles('.qualor/trivy/server.json') != ''");
+  expect(steps.indexOf(restore!)).toBeLessThan(steps.indexOf(scan as never));
+  expect(steps.indexOf(save!)).toBeGreaterThan(steps.indexOf(scan as never));
+  for (const step of [restore, save]) {
+    expect(step?.env).toBeUndefined();
+    expect(JSON.stringify(step)).not.toMatch(/QUALOR_TOKEN|secrets\./);
+  }
+}
+
 describe('GitHub', () => {
   const gh = { provider: 'github' as const };
   function wf(over: Partial<Omit<CiSetupInput, 'existing'>> = {}) {
@@ -656,7 +694,8 @@ describe('GitHub', () => {
       'persist-credentials': false,
       ref: '${{ github.event.pull_request.head.sha || github.sha }}',
     });
-    expect(job.steps[1]).toEqual({
+    expectDbCache(job.steps, job.steps[2]);
+    expect(job.steps[2]).toEqual({
       uses: 'qualor-dev/scan-action@v0.14',
       with: {
         'server-url': URL_,
@@ -691,28 +730,34 @@ describe('GitHub', () => {
     });
     expect(job.steps.map((s: { run?: string }) => s.run)).toEqual([
       undefined,
+      undefined,
       'qualor dotnet begin',
       'dotnet build --no-incremental',
       'qualor dotnet end',
+      undefined,
       'qualor dotnet abort',
     ]);
-    expect(job.steps[3].env).toEqual({
+    expect(job.steps[4].env).toEqual({
       QUALOR_URL: URL_,
       QUALOR_PROJECT_KEY: KEY,
+      QUALOR_TRIVY_CACHE_DIR: '${{ github.workspace }}/.qualor/trivy',
       QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
     });
-    expect(job.steps[2].env).toBeUndefined();
-    expect(job.steps[4].if).toBe('failure() || cancelled()');
+    expect(job.steps[3].env).toBeUndefined();
+    expectDbCache(job.steps, job.steps[4]);
+    expect(job.steps[6].if).toBe('failure() || cancelled()');
   });
 
   it('GHES non-C#: the container layout', () => {
     const job = wf({ host: 'self-hosted' }).doc.jobs.qualor;
     expect(job.container).toEqual({ image: 'qualor/scanner:0.14.3', options: '--user 1001' });
-    expect(job.steps[1]).toEqual({
+    expectDbCache(job.steps, job.steps[2]);
+    expect(job.steps[2]).toEqual({
       run: 'qualor scan',
       env: {
         QUALOR_URL: URL_,
         QUALOR_PROJECT_KEY: KEY,
+        QUALOR_TRIVY_CACHE_DIR: '${{ github.workspace }}/.qualor/trivy',
         QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
       },
     });
@@ -721,8 +766,9 @@ describe('GitHub', () => {
   it('GHES C#: the dotnet container layout', () => {
     const job = wf({ host: 'self-hosted', csharp: true }).doc.jobs.qualor;
     expect(job.container.image).toBe('qualor/scanner-dotnet:0.14.3');
-    expect(job.steps[3].env.QUALOR_URL).toBe(URL_);
-    expect(job.steps[3].env.QUALOR_PROJECT_KEY).toBe(KEY);
+    expect(job.steps[4].env.QUALOR_URL).toBe(URL_);
+    expect(job.steps[4].env.QUALOR_PROJECT_KEY).toBe(KEY);
+    expectDbCache(job.steps, job.steps[4]);
   });
 
   it('GHES uses a Linux self-hosted runner and the tag-pinned checkout; cloud keeps the SHA pin', () => {
@@ -762,7 +808,9 @@ describe('the project key', () => {
         with?: Record<string, string>;
         env?: Record<string, string>;
       }[];
-      if (v.host === 'cloud' && !v.csharp) return steps[1]?.with?.['project-key'];
+      if (v.host === 'cloud' && !v.csharp) {
+        return steps.find((s) => s.with?.['project-key'] !== undefined)?.with?.['project-key'];
+      }
       const scan = steps.find((s) => s.env?.['QUALOR_TOKEN'] !== undefined);
       return scan?.env?.['QUALOR_PROJECT_KEY'];
     }
@@ -801,11 +849,11 @@ describe('the project key', () => {
   it('is quoted where YAML or the shell would read it otherwise', () => {
     for (const key of ['acme/app:2', 'yes', '2024', 'a.b_c:d']) {
       const gh = change(planCiSetup(input({ provider: 'github', projectKey: key })));
-      expect(parse(gh.files[0]?.content ?? '').jobs.qualor.steps[1].with['project-key']).toBe(key);
+      expect(parse(gh.files[0]?.content ?? '').jobs.qualor.steps[2].with['project-key']).toBe(key);
       const ghes = change(
         planCiSetup(input({ provider: 'github', host: 'self-hosted', projectKey: key })),
       );
-      expect(parse(ghes.files[0]?.content ?? '').jobs.qualor.steps[1].env.QUALOR_PROJECT_KEY).toBe(
+      expect(parse(ghes.files[0]?.content ?? '').jobs.qualor.steps[2].env.QUALOR_PROJECT_KEY).toBe(
         key,
       );
       expect(parse(glFile(null, { projectKey: key })).include[0].inputs.args).toBe(

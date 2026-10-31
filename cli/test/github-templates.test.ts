@@ -13,6 +13,44 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (name: string) =>
   readFileSync(path.join(ROOT, 'integrations', 'github', name), 'utf8');
 
+interface Step {
+  name?: string;
+  if?: string;
+  uses?: string;
+  with?: Record<string, unknown>;
+  run?: string;
+  env?: Record<string, string>;
+}
+
+const CACHE_PIN = /^actions\/cache\/(restore|save)@[0-9a-f]{40}$/;
+
+/** The restore step comes before the scan, the save step (on always()) after it; neither holds the token. */
+function expectDbCache(
+  steps: { uses?: string; if?: string; with?: unknown; env?: unknown }[],
+  scan: unknown,
+): void {
+  const restore = steps.find((s) => s.uses?.startsWith('actions/cache/restore@'));
+  const save = steps.find((s) => s.uses?.startsWith('actions/cache/save@'));
+  expect(restore?.uses).toMatch(CACHE_PIN);
+  expect(save?.uses).toMatch(CACHE_PIN);
+  expect(restore?.with).toEqual({
+    path: '.qualor/trivy',
+    key: 'qualor-trivy-db-${{ github.run_id }}',
+    'restore-keys': 'qualor-trivy-db-',
+  });
+  expect(save?.with).toEqual({
+    path: '.qualor/trivy',
+    key: "qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}",
+  });
+  expect(save?.if).toBe("always() && hashFiles('.qualor/trivy/server.json') != ''");
+  expect(steps.indexOf(restore!)).toBeLessThan(steps.indexOf(scan as never));
+  expect(steps.indexOf(save!)).toBeGreaterThan(steps.indexOf(scan as never));
+  for (const step of [restore, save]) {
+    expect(step?.env).toBeUndefined();
+    expect(JSON.stringify(step)).not.toMatch(/QUALOR_TOKEN|secrets\./);
+  }
+}
+
 describe('integrations/github/qualor.yml', () => {
   const text = read('qualor.yml');
   const workflow = parse(text) as {
@@ -82,8 +120,16 @@ describe('integrations/github/qualor.yml', () => {
     expect(scan?.env).toEqual({
       QUALOR_URL: '${{ vars.QUALOR_URL }}',
       QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
+      QUALOR_TRIVY_CACHE_DIR: '${{ github.workspace }}/.qualor/trivy',
     });
     expect(() => parseCommandLine(scan!.run!.split(/\s+/).slice(1))).not.toThrow();
+  });
+
+  it("caches the scanner's vulnerability database around the scan, pinned by commit", () => {
+    expectDbCache(
+      job.steps,
+      job.steps.find((s) => s.run?.startsWith('qualor scan'))!,
+    );
   });
 
   it('never prints the token, and puts no expression into a command', () => {
@@ -99,15 +145,6 @@ describe('integrations/github/qualor.yml', () => {
     expect(text).toMatch(/# .*install.*dependencies|# .*dependencies.*install/i);
   });
 });
-
-interface Step {
-  name?: string;
-  if?: string;
-  uses?: string;
-  with?: Record<string, unknown>;
-  run?: string;
-  env?: Record<string, string>;
-}
 
 describe('integrations/github/qualor-dotnet.yml (github.md §11, config.md §6.1)', () => {
   const text = read('qualor-dotnet.yml');
@@ -186,7 +223,9 @@ describe('integrations/github/qualor-dotnet.yml (github.md §11, config.md §6.1
     expect(end.env).toEqual({
       QUALOR_URL: '${{ vars.QUALOR_URL }}',
       QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}',
+      QUALOR_TRIVY_CACHE_DIR: '${{ github.workspace }}/.qualor/trivy',
     });
+    expectDbCache(job.steps, end);
     for (const step of job.steps) {
       if (step !== end) expect(step.env ?? {}).not.toHaveProperty('QUALOR_TOKEN');
     }
@@ -247,5 +286,15 @@ describe('integrations/github/app-manifest-ci-setup.json', () => {
     expect(manifest.default_events).toEqual(base.default_events);
     expect(manifest.public).toBe(false);
     expect(manifest.hook_attributes).toEqual(base.hook_attributes);
+  });
+});
+
+describe('the cache actions in the templates', () => {
+  it('are pinned by commit with the tag in a comment', () => {
+    for (const name of ['qualor.yml', 'qualor-dotnet.yml']) {
+      const uses = read(name).match(/uses: actions\/cache\/(restore|save)@\S+.*/g) ?? [];
+      expect(uses).toHaveLength(2);
+      for (const u of uses) expect(u).toMatch(/@[0-9a-f]{40} # v4\.\d+\.\d+$/);
+    }
   });
 });

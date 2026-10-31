@@ -64,6 +64,12 @@ spec:
     entrypoint: ['']
   variables:
     GIT_DEPTH: '0'
+    QUALOR_TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.qualor/trivy
+  # The scanner's vulnerability database archive, kept between pipelines.
+  cache:
+    key: qualor-trivy-db
+    paths: [.qualor/trivy/]
+    when: always
   script:
     - |
       if [ "$[[ inputs.dotnet ]]" = "true" ]; then
