@@ -7,6 +7,7 @@ import {
   type QualorConfig,
   type Report,
 } from '@qualor/shared';
+import { resolveBinary, type ResolveBinaryOptions } from '../analyzers/binary';
 import { loadExternalSarif } from '../analyzers/external';
 import { fileLines, normalizeCaptures } from '../analyzers/normalize';
 import { builtinAnalyzers } from '../analyzers/registry';
@@ -114,11 +115,30 @@ export interface ScanDeps {
    * today's) before the analyzers, when Trivy runs (vuln plan 3); null: do not (tests).
    */
   vulnerabilityDb?: null | typeof resolveVulnerabilityDb;
+  /**
+   * How the vulnerability database step finds the trivy binary (tests fake it); by default the
+   * analyzer's own lookup: PATH or the scanner image, never the checkout.
+   */
+  resolveTrivy?: (o: ResolveBinaryOptions) => string | null;
 }
 
-/** Trivy's vulnerability pass runs in this scan: among the analyzers and not turned off. */
-function trivyRuns(analyzers: readonly Analyzer[], config: QualorConfig): boolean {
-  return analyzers.some((a) => a.id === 'trivy') && config.analyzers.trivy.enabled !== false;
+/**
+ * Trivy's vulnerability pass runs in this scan: among the analyzers, not turned off, and its binary
+ * found the way the analyzer finds it. Without the binary, the database step is skipped silently.
+ */
+function trivyRuns(
+  analyzers: readonly Analyzer[],
+  settings: Settings,
+  env: CliIO['env'],
+  deps: ScanDeps,
+  log: Logger,
+): boolean {
+  if (!analyzers.some((a) => a.id === 'trivy')) return false;
+  if (settings.config.analyzers.trivy.enabled === false) return false;
+  const find = deps.resolveTrivy ?? ((o: ResolveBinaryOptions) => resolveBinary('trivy', o));
+  if (find({ root: settings.root, env }) !== null) return true;
+  log.debug('no trivy binary: the vulnerability database is not fetched');
+  return false;
 }
 
 interface BuiltReport {
@@ -888,7 +908,7 @@ export async function runScan(
   // point in between, like the AI review's snapshot.
   const choose = deps.vulnerabilityDb === undefined ? resolveVulnerabilityDb : deps.vulnerabilityDb;
   const { report, failed, gitlab } =
-    choose !== null && tag === null && trivyRuns(analyzers, settings.config)
+    choose !== null && tag === null && trivyRuns(analyzers, settings, io.env, deps, log)
       ? await withEmergencyCleanup(log, async () => {
           const vulnerabilityDb = await choose({
             endpoint: flags.dryRun ? null : endpoint,

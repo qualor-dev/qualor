@@ -328,6 +328,8 @@ describe('qualor scan: the vulnerability database from the server', () => {
     languages: [],
     prepare: () => Promise.resolve({ skip: 'no database here' }),
   };
+  /** The trivy binary found, as in the scanner image (this machine may have none). */
+  const trivyFound = () => '/opt/qualor/bin/trivy';
   /**
    * The real Trivy adapter, with a fake trivy that writes an empty result: its engine record
    * carries the date of the database the adapter was given.
@@ -356,6 +358,7 @@ describe('qualor scan: the vulnerability database from the server', () => {
       const server = await fakeServer([]);
       const { code, stderr } = await scan(repo(), server, ['--no-wait'], {
         analyzers: [trivyStub],
+        resolveTrivy: trivyFound,
       });
       expect(code, stderr).toBe(0);
       expect(server.paths.filter((p) => p.startsWith(META))).toEqual([META]);
@@ -385,7 +388,7 @@ describe('qualor scan: the vulnerability database from the server', () => {
         repo(),
         server,
         ['--no-wait'],
-        { analyzers: [trivyWithFakeBinary()] },
+        { analyzers: [trivyWithFakeBinary()], resolveTrivy: trivyFound },
         { QUALOR_TRIVY_CACHE_DIR: cache },
       );
       expect(code, stderr).toBe(0);
@@ -418,7 +421,7 @@ describe('qualor scan: the vulnerability database from the server', () => {
         repo(),
         server,
         ['--no-wait'],
-        { analyzers: [trivyStub] },
+        { analyzers: [trivyStub], resolveTrivy: trivyFound },
         { QUALOR_TRIVY_CACHE_DIR: path.join(tmp(), 'trivy-cache') },
       );
       expect(code, stderr).toBe(0);
@@ -458,7 +461,7 @@ describe('qualor scan: the vulnerability database from the server', () => {
         repo(),
         server,
         ['--no-wait', '--sarif', 'missing.sarif'],
-        { analyzers: [trivyStub] },
+        { analyzers: [trivyStub], resolveTrivy: trivyFound },
         { QUALOR_TRIVY_CACHE_DIR: path.join(tmp(), 'trivy-cache') },
       );
       expect(code, stderr).toBe(2);
@@ -477,6 +480,7 @@ describe('qualor scan: the vulnerability database from the server', () => {
         const server = await servingServer(trivyArchive({ metadata: metadataJson(2, UPDATED_AT) }));
         const { code, stderr } = await scan(repo(), server, ['--no-wait'], {
           analyzers: [trivyWithFakeBinary()],
+          resolveTrivy: trivyFound,
         });
         expect(code, stderr).toBe(0);
         expect(server.uploaded[0]?.engines.find((e) => e.id === 'trivy')).toMatchObject({
@@ -496,7 +500,7 @@ describe('qualor scan: the vulnerability database from the server', () => {
       repo('version: 1\nanalyzers:\n  trivy:\n    enabled: false\n'),
       server,
       ['--no-wait'],
-      { analyzers: [trivyStub] },
+      { analyzers: [trivyStub], resolveTrivy: trivyFound },
     );
     expect(code).toBe(0);
     expect(server.paths.filter((p) => p.startsWith(META))).toEqual([]);

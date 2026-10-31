@@ -1433,6 +1433,8 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
   const noDb = { dir: null, warnings: [], repositoryCacheDir: null };
   const dryFlags = (extra: string[] = []) =>
     scanFlags(['--dry-run', '--output', 'out/r.json.gz', '--project-key', 'k', ...extra]);
+  /** The trivy binary found, as in the scanner image (this machine may have none). */
+  const trivyFound = () => '/opt/qualor/bin/trivy';
 
   it('--dry-run makes no request beyond today’s, even with a server configured', async () => {
     // Today a dry run with a trusted URL asks for the version and the baseline (here: an older
@@ -1443,7 +1445,10 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
       cwd: repo,
       env: { ...SCAN_TEST_ENV, QUALOR_URL: server.url, QUALOR_TOKEN: 'qlr_prj_dry_run_token' },
     });
-    const code = await runScan(dryFlags(), c.io, silentLogger, { analyzers: [trivyStub()] });
+    const code = await runScan(dryFlags(), c.io, silentLogger, {
+      analyzers: [trivyStub()],
+      resolveTrivy: trivyFound,
+    });
     expect(code, c.stderr()).toBe(0);
     expect(server.requests.map((r) => r.url.split('?')[0])).toEqual([
       '/api/v0/system/version',
@@ -1468,7 +1473,10 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
       cwd: repo,
       env: { ...SCAN_TEST_ENV, QUALOR_TRIVY_CACHE_DIR: path.join(repo, 'ci-cache', 'trivy') },
     });
-    const code = await runScan(dryFlags(), c.io, silentLogger, { analyzers: [trivyStub(seen)] });
+    const code = await runScan(dryFlags(), c.io, silentLogger, {
+      analyzers: [trivyStub(seen)],
+      resolveTrivy: trivyFound,
+    });
     expect(code, c.stderr()).toBe(0);
     // Today's choice (the image), and the cache directory is one more --skip-dirs for Trivy.
     expect(seen).toEqual([{ dir: null, skip: 'ci-cache/trivy' }]);
@@ -1502,6 +1510,7 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
     const code = await runScan(dryFlags(), c.io, silentLogger, {
       analyzers: [trivy],
+      resolveTrivy: trivyFound,
       vulnerabilityDb: (input) => {
         events.push(`choose:${input.endpoint === null ? 'no-server' : 'server'}`);
         return Promise.resolve({
@@ -1533,6 +1542,7 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     await expect(
       runScan(dryFlags(), c.io, silentLogger, {
         analyzers: [trivyStub()],
+        resolveTrivy: trivyFound,
         vulnerabilityDb: () =>
           Promise.resolve({
             ...noDb,
@@ -1562,6 +1572,7 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     const run = (cwd: string, analyzers: Analyzer[], extra: string[] = []) =>
       runScan(dryFlags(extra), captureIO({ cwd, env: SCAN_TEST_ENV }).io, silentLogger, {
         analyzers,
+        resolveTrivy: trivyFound,
         vulnerabilityDb: spy,
         licensePass: { resolveBinary: () => null },
       });
@@ -1572,6 +1583,35 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     expect(calls).toBe(0);
     expect(await run(repo, [trivyStub()])).toBe(0);
     expect(calls).toBe(1);
+  });
+
+  it('does not run when no trivy binary resolves: no metadata request', async () => {
+    const server = await serve((_req, res) => problem(res, 404, 'NOT_FOUND'));
+    const repo = fixtureRepo('ts-basic');
+    const run = async (found: string | null) => {
+      const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
+      const lookups: unknown[] = [];
+      const code = await runScan(dryFlags(), c.io, silentLogger, {
+        analyzers: [trivyStub()],
+        resolveTrivy: (o) => {
+          lookups.push(o);
+          return found;
+        },
+        // --dry-run sends the step no endpoint; this one asks the test server anyway.
+        vulnerabilityDb: (input) =>
+          resolveVulnerabilityDb({
+            ...input,
+            endpoint: { url: server.url, token: 'qlr_prj_no_trivy_token', timeoutMs: 5000 },
+          }),
+      });
+      expect(code, c.stderr()).toBe(0);
+      // The analyzer's lookup: the scan's root and the CLI's environment (PATH, never the checkout).
+      expect(lookups).toEqual([{ root: repo, env: c.io.env }]);
+    };
+    await run(null);
+    expect(server.requests).toEqual([]);
+    await run('/opt/qualor/bin/trivy');
+    expect(server.requests.map((r) => r.url)).toEqual(['/api/v0/scanner/vulnerability-db']);
   });
 
   it('removes the private copy of the database on a signal between the choice and the analyzers', async () => {
@@ -1624,6 +1664,7 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
     try {
       const code = await runScan(dryFlags(), c.io, silentLogger, {
         analyzers: [trivyStub()],
+        resolveTrivy: trivyFound,
         // --dry-run sends the step no endpoint; this one asks the test server anyway.
         vulnerabilityDb: async (input) => {
           const got = await resolveVulnerabilityDb({
