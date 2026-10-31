@@ -55,7 +55,8 @@ describe('ChangeStatusDialog', () => {
       el.dispatchEvent(new Event('input'));
       await settle(fixture);
     };
-    return { fixture, root, field, save, choose, type, saved };
+    const isOpen = () => root.querySelector('dialog')?.hasAttribute('open') === true;
+    return { fixture, root, field, save, choose, type, saved, isOpen };
   }
 
   it('keeps Save disabled until Not affected has a reason and a comment', async () => {
@@ -94,6 +95,7 @@ describe('ChangeStatusDialog', () => {
     await d.choose('vuln-status', 'false_positive');
     await d.choose('vuln-reason', 'vulnerable_code_not_present');
     await d.type('  Not shipped  ');
+    expect(d.isOpen()).toBe(true);
     d.save().click();
     await settle(d.fixture);
     expect(server.requestsTo('PUT', PUT)[0]?.body).toEqual({
@@ -105,7 +107,7 @@ describe('ChangeStatusDialog', () => {
       comment: 'Not shipped',
     });
     expect(d.saved).toHaveBeenCalledOnce();
-    expect(d.root.querySelector('dialog')?.hasAttribute('open')).toBe(false);
+    expect(d.isOpen()).toBe(false);
     expect(fake.decisions).toHaveLength(1);
   });
 
@@ -170,6 +172,44 @@ describe('ChangeStatusDialog', () => {
       scope: { kind: 'project' },
       replaceOverrideOf: { kind: 'branch', id: MAIN },
     });
+  });
+
+  it('moves focus to the Status field when it opens', async () => {
+    // Returning focus to the Change status button is showModal()'s own job (shared/dialog.ts);
+    // jsdom has no showModal, so only the move into the dialog is asserted here.
+    const d = await open(vulnerabilityCard());
+    expect(d.isOpen()).toBe(true);
+    expect(document.activeElement).toBe(d.field('vuln-status'));
+  });
+
+  it('offers Try again after a 503, re-sends the same body, and closes on success', async () => {
+    let calls = 0;
+    server.on('PUT', PUT, () => {
+      calls++;
+      return calls === 1
+        ? {
+            status: 503,
+            headers: { 'retry-after': '0' },
+            body: problem(503, 'CONCURRENCY_CONFLICT'),
+          }
+        : { body: { decision: {}, appliedIssues: 0 } };
+    });
+    const d = await open(vulnerabilityCard());
+    await d.choose('vuln-status', 'wont_fix');
+    await d.type('Accepted');
+    d.save().click();
+    await settle(d.fixture);
+    expect(d.isOpen()).toBe(true);
+    expect(d.saved).not.toHaveBeenCalled();
+    const retry = [...d.root.querySelectorAll('button')].find((b) => text(b) === 'Try again');
+    expect(retry).toBeDefined();
+    retry!.click();
+    await settle(d.fixture);
+    const bodies = server.requestsTo('PUT', PUT).map((r) => r.body);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toEqual(bodies[0]);
+    expect(d.saved).toHaveBeenCalledOnce();
+    expect(d.isOpen()).toBe(false);
   });
 
   it('maps a 422 REASON_REQUIRED to the Reason field', async () => {

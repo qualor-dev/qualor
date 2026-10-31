@@ -29,7 +29,7 @@
       }
       <div class="field">
         <label for="vuln-status" i18n="@@vulns.dialog.status">Status</label>
-        <select id="vuln-status" [value]="status()" (change)="setStatus($event)">
+        <select #statusField id="vuln-status" [value]="status()" (change)="setStatus($event)">
           @for (s of statuses; track s) {
             <option [value]="s" [selected]="s === status()">{{ statusLabel(s) }}</option>
           }

@@ -1,4 +1,5 @@
 import {
+  afterNextRender,
   Component,
   computed,
   inject,
@@ -63,6 +64,7 @@ export class ChangeStatusDialog {
   readonly saved = output();
 
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('dialog');
+  private readonly statusField = viewChild<ElementRef<HTMLSelectElement>>('statusField');
   private readonly reasonField = viewChild<ElementRef<HTMLSelectElement>>('reasonField');
   private readonly commentField = viewChild<ElementRef<HTMLTextAreaElement>>('commentField');
 
@@ -101,6 +103,8 @@ export class ChangeStatusDialog {
     this.commentError.set(null);
     this.retryOffer.clear();
     openAfterRender(this.injector, () => this.dialog()?.nativeElement);
+    // After the dialog is open: the first field takes focus (showModal alone picks the first control).
+    afterNextRender(() => this.statusField()?.nativeElement.focus(), { injector: this.injector });
   }
 
   protected close(): void {
