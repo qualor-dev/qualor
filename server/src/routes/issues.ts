@@ -518,6 +518,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
             mcpClientId: principal.kind === 'oauth' ? principal.clientId : null,
           },
           reason: request.body.reason ?? null,
+          chargeMirrored: (count) => chargeChanges(principal.user.id, count),
         },
       );
       const [failure] = result.failed;
@@ -589,6 +590,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
             suggestionId: null,
           },
           reason: request.body.reason ?? null,
+          chargeMirrored: (count) => chargeChanges(principal.user.id, count),
         },
       );
       return {

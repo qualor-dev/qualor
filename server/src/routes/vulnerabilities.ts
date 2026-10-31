@@ -343,6 +343,9 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
           },
           { recorder: deps.audit, context: actorOf(request) },
         );
+        // The request paid for one change; each issue the decision changed costs one more, and a
+        // refusal rolls the decision back.
+        if (appliedIssueIds.length > 0) chargeChanges(principal.user.id, appliedIssueIds.length);
         const dto = (await decisionsOf(tx, [decision.id])).get(decision.id);
         if (!dto) throw new Error('The decision just written is missing');
         return { decision: dto, appliedIssues: appliedIssueIds.length };

@@ -178,6 +178,12 @@ export interface TransitionOptions {
   reason?: VexJustification | null;
   /** `import`: the SonarQube status import, whose decisions need no reason (D9). Default `issue`. */
   source?: 'issue' | 'import';
+  /**
+   * Called inside the transaction with the number of other issues the vulnerability decisions
+   * changed (the requested issues are the caller's to charge). It throws to refuse, which rolls
+   * the whole transition back: one decision must not change many issues for one request's cost.
+   */
+  chargeMirrored?: (count: number) => void;
 }
 
 /** The requested issues, split by what the user's roles allow on each one's project. */
@@ -279,6 +285,7 @@ export async function transitionIssues(
       audit: options.audit,
       reason: options.reason,
       source: options.source,
+      chargeMirrored: options.chargeMirrored,
     });
   });
 }
@@ -294,7 +301,10 @@ export async function transitionIssuesIn(
   requested: readonly string[],
   to: UserStatus,
   comment: string | null,
-  options: Pick<TransitionOptions, 'comments' | 'audit' | 'reason' | 'source'> = {},
+  options: Pick<
+    TransitionOptions,
+    'comments' | 'audit' | 'reason' | 'source' | 'chargeMirrored'
+  > = {},
 ): Promise<TransitionResult> {
   const { comments } = options;
   const ids = [...new Set(requested)];
@@ -377,6 +387,8 @@ export async function transitionIssuesIn(
       heldIssueIds: held,
     });
   }
+  const mirrored = result.decisions.reduce((sum, d) => sum + d.result.appliedIssueIds.length, 0);
+  if (mirrored > 0) options.chargeMirrored?.(mirrored);
   await enqueueReevaluations(tx, [
     ...applied.map((a) => a.id),
     ...result.decisions.flatMap((d) => d.result.appliedIssueIds),
