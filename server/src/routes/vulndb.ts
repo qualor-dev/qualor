@@ -266,7 +266,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       schema: {
         tags: ['system'],
         summary:
-          'Check for a new vulnerability database now (instance admins); the check runs in the background, and a check already running is not repeated. After a failed re-check, every tracked target is re-checked too',
+          'Check for a new vulnerability database now (instance admins); the check runs in the background; pressed during a check, it queues one more check after it. After a failed re-check, every tracked target is re-checked too',
         response: { 202: settingsDto },
       },
     },

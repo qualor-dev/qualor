@@ -227,7 +227,7 @@ describe('/system/vulnerability-db (API)', () => {
       expect(await updateJobs()).toEqual([{ status: 'queued', key: VULNDB_UPDATE_QUEUE }]);
     });
 
-    it('moves a waiting run to now, and adds none while an update runs', async () => {
+    it('moves a waiting run to now, and queues one follow-up while an update runs', async () => {
       await parkLater();
       expect((await post()).statusCode).toBe(202);
       expect(await dueNow()).toBe(1);
@@ -238,7 +238,9 @@ describe('/system/vulnerability-db (API)', () => {
       const res = await post();
       expect(res.statusCode).toBe(202);
       expect(res.json().status).toBe('updating');
-      expect(await updateJobs()).toEqual([{ status: 'running', key: VULNDB_UPDATE_QUEUE }]);
+      expect((await updateJobs()).map((j) => j.status).sort()).toEqual(['queued', 'running']);
+      expect((await post()).statusCode).toBe(202);
+      expect(await updateJobs()).toHaveLength(2);
     });
 
     it('switching monitoring on moves the run to now; other changes leave it', async () => {

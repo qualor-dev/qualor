@@ -52,7 +52,7 @@ type ScheduleMode =
   | { kind: 'ensure'; delaySeconds: number; alsoRunning: boolean }
   /** Boot: a queued run due later than `delaySeconds` moves up to it; none queued: insert. */
   | { kind: 'boot'; delaySeconds: number }
-  /** Update now: a queued run moves to now; while one runs (and none is queued) nothing is added. */
+  /** Update now: a queued run moves to now; else one is inserted, after a running one if any. */
   | { kind: 'now' };
 
 /**
@@ -76,7 +76,7 @@ async function schedule(db: Db, mode: ScheduleMode): Promise<boolean> {
          WHERE id = ${queuedId}`);
       return true;
     }
-    if (mode.kind === 'now' || (mode.kind === 'ensure' && mode.alsoRunning)) {
+    if (mode.kind === 'ensure' && mode.alsoRunning) {
       const running = await tx.execute(
         sql`SELECT 1 FROM jobs WHERE queue = ${VULNDB_UPDATE_QUEUE} AND status = 'running' LIMIT 1`,
       );
@@ -109,7 +109,9 @@ export async function ensureVulndbScheduled(db: Db): Promise<boolean> {
 
 /**
  * Update now (POST update, and a PUT that turns monitoring on or changes the source): the queued
- * run moves to now, or one is inserted. While an update runs, nothing is added.
+ * run moves to now, or one is inserted. While an update runs, the one queued run is the follow-up
+ * that picks up the change (a new source, or "Update now" after the download began); the
+ * concurrency key starts it only when the running one has ended.
  */
 export function requestVulndbUpdateNow(db: Db): Promise<boolean> {
   return schedule(db, { kind: 'now' });

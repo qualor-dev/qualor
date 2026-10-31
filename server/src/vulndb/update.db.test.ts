@@ -15,6 +15,7 @@ import type * as Store from './store';
 import {
   ensureVulndbScheduled,
   requestVulndbUpdateNow,
+  runVulndbUpdate,
   scheduleVulndbAtBoot,
   vulndbUpdateHandlers,
   type VulndbUpdateDeps,
@@ -387,19 +388,34 @@ describe('vulnerability database updates', () => {
   });
 
   describe('scheduling', () => {
-    it('two Update now presses leave one queued job; a run in progress gets no second', async () => {
+    it('two Update now presses leave one queued job', async () => {
       expect(await requestVulndbUpdateNow(t.db)).toBe(true);
       expect(await requestVulndbUpdateNow(t.db)).toBe(true);
       const all = await t.db.select().from(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
       expect(all).toHaveLength(1);
       expect(all[0]?.concurrencyKey).toBe(VULNDB_UPDATE_QUEUE);
+    });
+
+    it('Update now during a running update queues one follow-up run, due now', async () => {
+      await requestVulndbUpdateNow(t.db);
       await t.db.update(jobs).set({ status: 'running' }).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
-      expect(await requestVulndbUpdateNow(t.db)).toBe(false);
-      expect(
-        await t.db.select().from(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE)),
-      ).toHaveLength(1);
-      // A scheduled run during the manual one adds none either.
+      expect(await requestVulndbUpdateNow(t.db)).toBe(true);
+      expect(await requestVulndbUpdateNow(t.db)).toBe(true);
+      const all = await t.db.select().from(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      expect(all.map((j) => j.status).sort()).toEqual(['queued', 'running']);
+      expect((await queued()).rows[0]!.secs).toBeLessThanOrEqual(0);
+      // A scheduled run (the reaper's) adds none: one is queued already.
       expect(await ensureVulndbScheduled(t.db)).toBe(false);
+    });
+
+    it('the run that ends while a follow-up waits does not add another', async () => {
+      const registry = fakeRegistry(trivyArchive());
+      await requestVulndbUpdateNow(t.db);
+      await t.db.update(jobs).set({ status: 'running' }).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      await requestVulndbUpdateNow(t.db);
+      await runVulndbUpdate(deps(registry));
+      const all = await t.db.select().from(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      expect(all.filter((j) => j.status === 'queued')).toHaveLength(1);
     });
 
     it('moves a waiting run to now', async () => {
