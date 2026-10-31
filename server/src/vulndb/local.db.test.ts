@@ -6,13 +6,23 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { createTestDatabase, type TestDatabase } from '../../test/db';
 import { metadataJson, tarGz, trivyArchive } from '../../test/trivy-archive';
 import { vulndbChunks, vulndbDatasets } from '../db/schema';
-import { ensureLocalDatabase, withLocalDatabase } from './local';
+import { withLocalDatabase, type LocalResult } from './local';
 import { storeDataset, type DatasetRow } from './store';
 
 async function* once(bytes: Buffer): AsyncGenerator<Buffer> {
   await Promise.resolve();
   yield bytes;
 }
+
+/** The extraction on its own: the cache dir, or the problem. */
+const ensure = async (
+  db: TestDatabase['db'],
+  dir: string,
+  dataset: DatasetRow,
+): Promise<LocalResult> => {
+  const got = await withLocalDatabase(db, dir, dataset, (cacheDir) => Promise.resolve(cacheDir));
+  return 'problem' in got ? got : { cacheDir: got.result };
+};
 
 describe('local database copy', () => {
   let t: TestDatabase;
@@ -47,7 +57,7 @@ describe('local database copy', () => {
 
   it('extracts the first dataset into <dir>/<digest prefix>/db', async () => {
     const d = await store(Buffer.from('first database'));
-    const got = await ensureLocalDatabase(t.db, dir, d);
+    const got = await ensure(t.db, dir, d);
     expect(got).toEqual({ cacheDir: join(dir, prefix(d)) });
     expect(await readFile(join(dir, prefix(d), 'db', 'trivy.db'), 'utf8')).toBe('first database');
     expect(
@@ -61,28 +71,28 @@ describe('local database copy', () => {
 
   it('is a no-op the second time', async () => {
     const d = await store(Buffer.from('same'));
-    await ensureLocalDatabase(t.db, dir, d);
+    await ensure(t.db, dir, d);
     const file = join(dir, prefix(d), 'db', 'trivy.db');
     const before = (await stat(file)).mtimeMs;
     await new Promise((r) => setTimeout(r, 30));
-    const again = await ensureLocalDatabase(t.db, dir, d);
+    const again = await ensure(t.db, dir, d);
     expect(again).toEqual({ cacheDir: join(dir, prefix(d)) });
     expect((await stat(file)).mtimeMs).toBe(before);
   });
 
   it('extracts again when the files of the current copy are gone', async () => {
     const d = await store(Buffer.from('gone'));
-    await ensureLocalDatabase(t.db, dir, d);
+    await ensure(t.db, dir, d);
     await rm(join(dir, prefix(d), 'db', 'trivy.db'));
-    await ensureLocalDatabase(t.db, dir, d);
+    await ensure(t.db, dir, d);
     expect(await readFile(join(dir, prefix(d), 'db', 'trivy.db'), 'utf8')).toBe('gone');
   });
 
   it('swaps in a new dataset and removes the old directory', async () => {
     const a = await store(Buffer.from('database a'));
     const b = await store(Buffer.from('database b'));
-    await ensureLocalDatabase(t.db, dir, a);
-    const got = await ensureLocalDatabase(t.db, dir, b);
+    await ensure(t.db, dir, a);
+    const got = await ensure(t.db, dir, b);
     expect(got).toEqual({ cacheDir: join(dir, prefix(b)) });
     expect((await readdir(dir)).sort()).toEqual(['current.json', prefix(b)].sort());
     expect(JSON.parse(await readFile(join(dir, 'current.json'), 'utf8')).digest).toBe(b.digest);
@@ -92,7 +102,7 @@ describe('local database copy', () => {
     await mkdir(join(dir, 'tmp-deadbeef0123', 'db'), { recursive: true });
     await writeFile(join(dir, 'tmp-deadbeef0123', 'db', 'trivy.db'), 'half');
     const d = await store(Buffer.from('clean'));
-    await ensureLocalDatabase(t.db, dir, d);
+    await ensure(t.db, dir, d);
     expect((await readdir(dir)).sort()).toEqual(['current.json', prefix(d)].sort());
   });
 
@@ -101,8 +111,8 @@ describe('local database copy', () => {
     await writeFile(join(dir, 'keep-me', 'file.txt'), 'mine');
     const a = await store(Buffer.from('own a'));
     const b = await store(Buffer.from('own b'));
-    await ensureLocalDatabase(t.db, dir, a);
-    await ensureLocalDatabase(t.db, dir, b);
+    await ensure(t.db, dir, a);
+    await ensure(t.db, dir, b);
     expect(await readFile(join(dir, 'keep-me', 'file.txt'), 'utf8')).toBe('mine');
     expect((await readdir(dir)).sort()).toEqual(['current.json', 'keep-me', prefix(b)].sort());
   });
@@ -112,7 +122,7 @@ describe('local database copy', () => {
     const blocker = join(dir, 'a-file');
     await writeFile(blocker, 'x');
     const target = join(blocker, 'vulndb');
-    const got = await ensureLocalDatabase(t.db, target, d);
+    const got = await ensure(t.db, target, d);
     expect(got).toMatchObject({ problem: { code: 'DISK' } });
     if (!('problem' in got)) throw new Error('expected a problem');
     expect(got.problem.message).toContain(target);
@@ -121,7 +131,7 @@ describe('local database copy', () => {
   it('answers MISSING when the chunks of the dataset are gone', async () => {
     const d = await store(Buffer.from('pruned'));
     await t.db.delete(vulndbDatasets);
-    const got = await ensureLocalDatabase(t.db, dir, d);
+    const got = await ensure(t.db, dir, d);
     expect(got).toMatchObject({ problem: { code: 'MISSING' } });
     expect((await readdir(dir)).filter((n) => n.startsWith('tmp-'))).toEqual([]);
   });
@@ -133,7 +143,7 @@ describe('local database copy', () => {
       .update(vulndbChunks)
       .set({ data: tarGz([{ name: 'trivy.db', data: 'x' }]) })
       .where(eq(vulndbChunks.datasetId, d.id));
-    const got = await ensureLocalDatabase(t.db, dir, d);
+    const got = await ensure(t.db, dir, d);
     expect(got).toMatchObject({ problem: { code: 'MISSING' } });
   });
 
@@ -151,7 +161,7 @@ describe('local database copy', () => {
     });
     await running;
     let refreshed = false;
-    const second = ensureLocalDatabase(t.db, dir, b).then((r) => {
+    const second = ensure(t.db, dir, b).then((r) => {
       refreshed = true;
       return r;
     });
@@ -196,7 +206,7 @@ describe('local database copy', () => {
 
   it('keeps metadata.json as stored', async () => {
     const d = await store(Buffer.from('m'), metadataJson(2));
-    await ensureLocalDatabase(t.db, dir, d);
+    await ensure(t.db, dir, d);
     expect(await readFile(join(dir, prefix(d), 'db', 'metadata.json'), 'utf8')).toBe(
       metadataJson(2),
     );

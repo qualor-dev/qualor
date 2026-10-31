@@ -17,8 +17,8 @@ import { readTarGz, TarError } from './tar';
  *
  * One in-process lock serialises everything that touches `dir`. {@link withLocalDatabase} holds it
  * while its callback runs, so nothing can swap or delete the directory under a re-check.
- * {@link ensureLocalDatabase} takes the lock itself (do not call it from inside a
- * `withLocalDatabase` callback: the lock is not reentrant). Replicas do not share `dir`.
+ * The lock is not reentrant: do not call {@link withLocalDatabase} from inside its callback.
+ * Replicas do not share `dir`.
  */
 
 export type LocalProblemCode = 'DISK' | 'MISSING';
@@ -177,23 +177,11 @@ async function extract(
 }
 
 /**
- * Makes `dataset` the extracted copy in `dir` and answers its cache dir. Takes the lock itself.
- * `DISK`: the directory cannot be created or written (EACCES, EPERM, EROFS, ENOSPC, EDQUOT, ENOENT,
- * ENOTDIR). `MISSING`: the chunks are gone or the archive lacks a wanted file or is damaged. Other
- * errors (database failures) are thrown.
- */
-export function ensureLocalDatabase(
-  db: Executor,
-  dir: string,
-  dataset: DatasetRow,
-): Promise<LocalResult> {
-  return locked(() => extract(db, dir, dataset));
-}
-
-/**
  * Ensures `dataset` locally, then runs `fn(cacheDir)` while holding the lock: a refresh or another
  * re-check waits, so the directory cannot change under `fn`. A problem is returned without
- * calling `fn`. `signal` (the server is stopping) cuts an extraction: it rejects with the
+ * calling `fn`: `DISK` when the directory cannot be created or written (EACCES, EPERM, EROFS,
+ * ENOSPC, EDQUOT, ENOENT, ENOTDIR), `MISSING` when the chunks are gone or the archive lacks a
+ * wanted file or is damaged; other errors (database failures) are thrown. `signal` (the server is stopping) cuts an extraction: it rejects with the
  * signal's reason, and the partial copy is removed.
  */
 export function withLocalDatabase<T>(
