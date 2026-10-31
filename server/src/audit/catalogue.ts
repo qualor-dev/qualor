@@ -462,6 +462,11 @@ export const AUDIT_CATALOGUE = {
       commented: z.boolean(),
       appliedIssues: z.number().int().min(0),
       source: z.enum(['tab', 'issue', 'import']),
+      /** A project-wide write that deleted the override of the target it was made from. */
+      overrideRemoved: z.literal(true).optional(),
+      removedScope: z.enum(['branch', 'version']).optional(),
+      removedTargetId: id.optional(),
+      mcpClientId: url.nullable().optional(),
     }),
   },
   'project_version.updated': {

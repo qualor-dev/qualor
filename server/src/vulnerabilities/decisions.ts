@@ -63,12 +63,16 @@ export interface DecisionResult {
   decision: DecisionRow;
   previous: DecisionRow | null;
   appliedIssueIds: string[];
+  /** The target whose override `replaceOverrideOf` deleted; null when there was none. */
+  overrideRemoved?: TargetScope | null;
 }
 
 /** Where the event of a decision is recorded (the caller's recorder and the acting person). */
 export interface DecisionAudit {
   recorder: AuditRecorder;
   context: AuditActorContext;
+  /** The OAuth client of an MCP call (Phase 6N, ruling R8), as `issue.status_changed` has it. */
+  mcpClientId?: string | null;
 }
 
 type Candidate = {
@@ -112,8 +116,9 @@ export async function writeDecision(
   if (input.replaceOverrideOf && scope.kind !== 'project') {
     throw new Error('replaceOverrideOf needs a project-wide decision');
   }
+  let overrideRemoved: TargetScope | null = null;
   if (input.replaceOverrideOf) {
-    await tx
+    const deleted = await tx
       .delete(vulnerabilityDecisions)
       .where(
         and(
@@ -124,7 +129,9 @@ export async function writeDecision(
             ? eq(vulnerabilityDecisions.branchId, input.replaceOverrideOf.id)
             : eq(vulnerabilityDecisions.versionId, input.replaceOverrideOf.id),
         ),
-      );
+      )
+      .returning({ id: vulnerabilityDecisions.id });
+    if (deleted.length > 0) overrideRemoved = input.replaceOverrideOf;
   }
 
   const previous = (await rowOfScope(tx, input)) ?? null;
@@ -184,7 +191,7 @@ export async function writeDecision(
   const appliedIssueIds = scope.kind === 'version' ? [] : await applyToIssues(tx, input);
   if (!input.heldIssueIds) await enqueueReevaluations(tx, appliedIssueIds);
 
-  const result = { decision, previous, appliedIssueIds };
+  const result = { decision, previous, appliedIssueIds, overrideRemoved };
   if (audit) await recordDecision(tx, audit, input, result);
   return result;
 }
@@ -192,13 +199,14 @@ export async function writeDecision(
 /**
  * The `vulnerability.decision_changed` event of a decision {@link writeDecision} wrote. A
  * transition records it itself, after it queued its gate re-evaluations, so no re-evaluation lock
- * is ever taken after the audit chain's.
+ * is ever taken after the audit chain's. It names the override the write removed (final review
+ * F8), and the MCP client of an agent's change.
  */
 export async function recordDecision(
   tx: Executor,
   audit: DecisionAudit,
   input: DecisionInput,
-  { decision, previous, appliedIssueIds }: DecisionResult,
+  { decision, previous, appliedIssueIds, overrideRemoved }: DecisionResult,
 ): Promise<void> {
   if (!audit.recorder.active()) return;
   const { scope } = input;
@@ -220,6 +228,12 @@ export async function recordDecision(
         commented: input.comment !== null,
         appliedIssues: appliedIssueIds.length,
         source: input.source,
+        ...(overrideRemoved && {
+          overrideRemoved: true,
+          removedScope: overrideRemoved.kind,
+          removedTargetId: overrideRemoved.id,
+        }),
+        ...(audit.mcpClientId ? { mcpClientId: audit.mcpClientId } : {}),
       },
     },
   ]);

@@ -13,6 +13,7 @@ import {
   issueChanges,
   issues,
   jobs,
+  memberships,
   organizations,
   projects,
   projectVersions,
@@ -21,6 +22,7 @@ import {
   vulnerabilityDecisions,
 } from '../db/schema';
 import { GATE_QUEUE } from '../gates/reevaluate';
+import { transitionIssuesIn } from '../issues/transitions';
 import {
   effectiveDecision,
   lockDecisionPairs,
@@ -403,5 +405,53 @@ describe('the vulnerability decision store', () => {
       appliedIssues: result.appliedIssueIds.length,
       source: 'issue',
     });
+  });
+
+  const decisionEvents = (f: Fixture) =>
+    t.db
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.action, 'vulnerability.decision_changed'),
+          eq(auditEvents.projectId, f.projectId),
+        ),
+      )
+      .orderBy(asc(auditEvents.seq));
+
+  it('records the override a project-wide write removed, and none when there was none (F8)', async () => {
+    const f = await fixture();
+    await write(input(f, 'open', { scope: { kind: 'branch', id: f.ids.release } }));
+    const replace = { replaceOverrideOf: { kind: 'branch', id: f.ids.release } } as const;
+    await write(input(f, 'wont_fix', replace), true);
+    await write(input(f, 'false_positive', replace), true);
+    const [removed, nothing] = await decisionEvents(f);
+    expect(removed?.details).toMatchObject({
+      scope: 'project',
+      overrideRemoved: true,
+      removedScope: 'branch',
+      removedTargetId: f.ids.release,
+    });
+    expect(nothing?.details).not.toHaveProperty('overrideRemoved');
+    expect(nothing?.details).not.toHaveProperty('removedTargetId');
+  });
+
+  it('names the MCP client in the decision event of a transition an agent made (F8)', async () => {
+    const f = await fixture();
+    const [project] = await t.db.select().from(projects).where(eq(projects.id, f.projectId));
+    await t.db
+      .insert(memberships)
+      .values({ organizationId: project!.organizationId, userId, role: 'member' });
+    const [user] = await t.db.select().from(users).where(eq(users.id, userId));
+    const clientId = 'https://agent.example/client';
+    await t.db.transaction(async (tx) => {
+      const result = await transitionIssuesIn(tx, user!, [f.issue.main], 'false_positive', 'no', {
+        reason: 'component_not_present',
+        audit: { ...audit, bulk: false, suggestionId: null, mcpClientId: clientId },
+      });
+      expect(result.succeeded).toEqual([f.issue.main]);
+    });
+    const [event] = await decisionEvents(f);
+    expect(event?.details).toMatchObject({ source: 'issue', mcpClientId: clientId });
   });
 });
