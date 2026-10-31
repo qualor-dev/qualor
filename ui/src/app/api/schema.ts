@@ -11814,6 +11814,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/system/vulnerability-db/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check for a new vulnerability database now (instance admins); the check runs in the background, and a check already running is not repeated */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            enabled: boolean;
+                            source: {
+                                /** @enum {string} */
+                                kind: "official" | "mirror" | "upload";
+                                repository?: string;
+                                username?: string | null;
+                                passwordSet?: boolean;
+                                passwordReadable?: boolean;
+                            };
+                            /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
+                            intervalHours: 1 | 3 | 6 | 12 | 24;
+                            officialRepository: string;
+                            /** @enum {string} */
+                            status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                            current: {
+                                builtAt: string | null;
+                                sizeBytes: number;
+                                /** @enum {string} */
+                                source: "official" | "mirror" | "upload";
+                                digest: string;
+                            } | null;
+                            lastCheckAt: string | null;
+                            nextCheckAt: string | null;
+                            lastError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            lastRecheck: {
+                                at: string;
+                                projects: number;
+                                packages: number;
+                                unchecked: number;
+                                durationMs: number;
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/system/vulnerability-db/file": {
         parameters: {
             query?: never;

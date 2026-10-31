@@ -592,6 +592,9 @@ export async function runAuditScenario(
   // vulndb.settings_updated (0.15): the six-hour default interval moved to a day
   await call('PUT', '/system/vulnerability-db', 200, { intervalHours: 24 });
 
+  // vulndb.update_requested (0.15): Update now
+  await call('POST', '/system/vulnerability-db/update', 202);
+
   // vulndb.file_uploaded (0.15): a tiny valid Trivy archive as a raw upload
   expectStatus(
     await ctx.app.inject({

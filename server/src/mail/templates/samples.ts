@@ -3,6 +3,7 @@ import { accountSamples } from './account-samples';
 import { notifySamples } from './notify-samples';
 import { renderLicenseExpiry, type LicenseAlertVariant } from './license-expiry';
 import { renderTestMail } from './test';
+import { renderVulndbStale } from './vulndb-stale';
 import { renderWebhookFailed } from './webhook-failed';
 
 /** The fixed "now" of the samples. */
@@ -50,6 +51,14 @@ export function sampleMails(
         receiverHost: 'hooks.example.com',
         lastResponse: 503,
         attempts: 7,
+        publicUrl,
+      }),
+    },
+    {
+      name: 'vulndb.stale',
+      mail: renderVulndbStale({
+        dataDate: new Date(SAMPLE_NOW.getTime() - 4 * DAY_MS),
+        lastError: { code: 'UNREACHABLE', message: 'The registry did not answer' },
         publicUrl,
       }),
     },

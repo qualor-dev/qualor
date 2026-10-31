@@ -19,6 +19,7 @@ describe('the E1 messages (E1 spec, Templates)', () => {
       ['license.expiry-grace', 'Your Qualor licence has expired: 7 days of grace left'],
       ['license.expiry-expired', 'Your Qualor licence has expired'],
       ['webhook.failed', 'Webhook to hooks.example.com is failing'],
+      ['vulndb.stale', 'The Qualor vulnerability database is out of date'],
       ['account.password-reset', 'Reset your Qualor password'],
       ['account.invitation', 'Ada Admin invited you to Qualor'],
       ['account.password-changed-self', 'Your Qualor password was changed'],
@@ -51,6 +52,7 @@ describe('the E1 messages (E1 spec, Templates)', () => {
     }
     expect(all).toContain(`${SAMPLE_URL}/settings/license`);
     expect(all).toContain(`${SAMPLE_URL}/settings/webhooks`);
+    expect(all).toContain(`${SAMPLE_URL}/settings/vulnerability-db`);
   });
 
   it('links nowhere into Qualor without a public URL, and says where to go instead', () => {

@@ -55,6 +55,13 @@ import {
   telemetryBootMessage,
   telemetryHandlers,
 } from './telemetry/schedule';
+import {
+  ensureVulndbScheduled,
+  scheduleVulndbAtBoot,
+  VULNDB_LEASE_MS,
+  VULNDB_WORKER_CONCURRENCY,
+  vulndbUpdateHandlers,
+} from './vulndb/update';
 import { updateCheckerFor } from './update-check/checker';
 import { webhookHandlers } from './webhooks/deliver';
 import { digestHandlers, ensureDigestScheduled, scheduleDigestAtBoot } from './webhooks/digest';
@@ -412,6 +419,20 @@ async function main(): Promise<void> {
     leaseMs: MAIL_LEASE_MS,
     logger,
   });
+  // 0.15: the vulnerability database has its own worker (one job at a time, a 30 min lease), so a
+  // download never holds up an analysis. Task 8 adds `vulnerabilities.recheck` to this map.
+  const vulndbWorker = startWorker({
+    db: database.db,
+    handlers: {
+      ...vulndbUpdateHandlers({ db: database.db, config, logger }),
+    },
+    concurrency: VULNDB_WORKER_CONCURRENCY,
+    leaseMs: VULNDB_LEASE_MS,
+    logger,
+    afterReap: async (db) => {
+      await ensureVulndbScheduled(db);
+    },
+  });
   // enterprise.md §10.3: plugin jobs have their own worker, only when a plugin registered jobs;
   // each job checks its feature against the same edition as the API's routes.
   const pluginWorker = startPluginWorker({ db: database.db, plugins, edition, logger });
@@ -442,6 +463,18 @@ async function main(): Promise<void> {
         errorClass: err instanceof Error ? err.constructor.name : typeof err,
       },
       'the licence expiry check could not be scheduled',
+    );
+  }
+  try {
+    await scheduleVulndbAtBoot(database.db);
+  } catch (err) {
+    // Never fatal: the vulndb worker's afterReap re-creates the run within 30 s.
+    logger.warn(
+      {
+        component: 'vulndb',
+        errorClass: err instanceof Error ? err.constructor.name : typeof err,
+      },
+      'the vulnerability database check could not be scheduled',
     );
   }
   try {
@@ -482,6 +515,7 @@ async function main(): Promise<void> {
       await requestsStopped;
       await reviewsStopped;
       await mailWorker.stop();
+      await vulndbWorker.stop();
       await pluginWorker?.stop();
       await database.close();
       await embedded?.stop();

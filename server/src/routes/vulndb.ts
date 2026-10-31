@@ -23,6 +23,7 @@ import {
 } from '../vulndb/settings';
 import { readVulndbState, VULNDB_UPDATE_QUEUE, vulndbStatus } from '../vulndb/state';
 import { enqueueRecheck } from '../vulndb/recheck-queue';
+import { requestVulndbUpdateNow } from '../vulndb/update';
 import { currentDataset, makeDatasetCurrent, pruneDatasets, storeDataset } from '../vulndb/store';
 
 const UPLOAD_TYPES = ['application/gzip', 'application/octet-stream'] as const;
@@ -119,6 +120,25 @@ function changedFields(
   return fields;
 }
 
+/** R5: monitoring switched on, or a download source (official or mirror) newly chosen or changed. */
+function wantsUpdateNow(
+  before: VulndbSettings,
+  after: VulndbSettings,
+  passwordSent: boolean,
+): boolean {
+  if (!after.enabled) return false;
+  if (!before.enabled) return true;
+  if (after.source.kind === 'official') return before.source.kind !== 'official';
+  if (after.source.kind !== 'mirror') return false;
+  if (before.source.kind !== 'mirror') return true;
+  // A corrected repository, user or password retries at once instead of after the interval.
+  return (
+    before.source.repository !== after.source.repository ||
+    before.source.username !== after.source.username ||
+    passwordSent
+  );
+}
+
 export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app, { deps }) => {
   const readDto = async (): Promise<SettingsDto> => {
     const settings = await readVulndbSettings(deps.db);
@@ -196,7 +216,11 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       const principal = requireInstanceAdmin(request);
       const body = request.body;
       const passwordSent = body.source?.kind === 'mirror' && body.source.password !== undefined;
-      const changed = await deps.db.transaction(async (tx) => {
+      const {
+        fields: changed,
+        before,
+        after,
+      } = await deps.db.transaction(async (tx) => {
         const { before, after } = await writeVulndbSettings(
           tx,
           {
@@ -214,12 +238,40 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
             details: { changed: fields },
           },
         ]);
-        return fields;
+        return { fields, before, after };
       });
       request.log.info({ userId: principal.user.id, fields: changed }, 'vulndb settings changed');
+      // R5: switching monitoring on, or pointing it at another source, fetches data now rather
+      // than at the next scheduled check.
+      if (wantsUpdateNow(before, after, passwordSent)) await requestVulndbUpdateNow(deps.db);
       return readDto();
     },
   );
+  app.post(
+    '/system/vulnerability-db/update',
+    {
+      schema: {
+        tags: ['system'],
+        summary:
+          'Check for a new vulnerability database now (instance admins); the check runs in the background, and a check already running is not repeated',
+        response: { 202: settingsDto },
+      },
+    },
+    async (request, reply) => {
+      const principal = requireInstanceAdmin(request);
+      const queued = await requestVulndbUpdateNow(deps.db);
+      await deps.audit.record(deps.db, actorOf(request), [
+        {
+          action: 'vulndb.update_requested',
+          target: { type: 'vulndb_settings', id: 'vulndb' },
+          details: {},
+        },
+      ]);
+      request.log.info({ userId: principal.user.id, queued }, 'vulndb update requested');
+      return reply.code(202).send(await readDto());
+    },
+  );
+
   // The upload is handed to the handler as the raw request stream; storeDataset enforces the
   // limit. Scoped to this plugin: no other route sees these content types.
   for (const type of UPLOAD_TYPES) {

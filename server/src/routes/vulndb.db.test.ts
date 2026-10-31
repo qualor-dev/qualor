@@ -170,6 +170,107 @@ describe('/system/vulnerability-db (API)', () => {
     expect((await get()).json().status).toBe('updating');
   });
 
+  describe('Update now and its triggers (R5)', () => {
+    const post = (session = admin) =>
+      ctx.app.inject({ method: 'POST', url: `${url}/update`, headers: session.headers });
+    const updateJobs = () =>
+      ctx.db
+        .select({ status: jobs.status, key: jobs.concurrencyKey })
+        .from(jobs)
+        .where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+    /** A waiting run a day away, as the schedule leaves it. */
+    const parkLater = async () => {
+      await ctx.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      await ctx.db.insert(jobs).values({
+        id: uuidv7(),
+        queue: VULNDB_UPDATE_QUEUE,
+        payload: {},
+        concurrencyKey: VULNDB_UPDATE_QUEUE,
+        runAt: new Date(Date.now() + 86_400_000),
+      });
+    };
+    const dueNow = async () => {
+      const rows = await ctx.db
+        .select({ runAt: jobs.runAt })
+        .from(jobs)
+        .where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      return rows.filter((r) => r.runAt.getTime() <= Date.now() + 1000).length;
+    };
+
+    it('is for instance admins only', async () => {
+      expect((await post(orgAdmin)).statusCode).toBe(403);
+      expect((await ctx.app.inject({ method: 'POST', url: `${url}/update` })).statusCode).toBe(401);
+      expect(await updateJobs()).toEqual([]);
+    });
+
+    it('answers 202 with the settings and leaves one queued job after two presses', async () => {
+      const first = await post();
+      expect(first.statusCode, first.body).toBe(202);
+      expect(first.json()).toMatchObject({ enabled: true, status: 'no_data' });
+      expect((await post()).statusCode).toBe(202);
+      expect(await updateJobs()).toEqual([{ status: 'queued', key: VULNDB_UPDATE_QUEUE }]);
+    });
+
+    it('moves a waiting run to now, and adds none while an update runs', async () => {
+      await parkLater();
+      expect((await post()).statusCode).toBe(202);
+      expect(await dueNow()).toBe(1);
+      await ctx.db
+        .update(jobs)
+        .set({ status: 'running' })
+        .where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      const res = await post();
+      expect(res.statusCode).toBe(202);
+      expect(res.json().status).toBe('updating');
+      expect(await updateJobs()).toEqual([{ status: 'running', key: VULNDB_UPDATE_QUEUE }]);
+    });
+
+    it('switching monitoring on moves the run to now; other changes leave it', async () => {
+      await put({ enabled: false });
+      await parkLater();
+      expect((await put({ intervalHours: 12 })).statusCode).toBe(200);
+      expect(await dueNow()).toBe(0);
+      await put({ enabled: true });
+      expect(await dueNow()).toBe(1);
+    });
+
+    it('choosing a mirror, changing its repository or credentials, or going back to official runs now', async () => {
+      const a = 'registry.corp:5000/mirror/trivy-db:2';
+      await parkLater();
+      await put({ source: { kind: 'mirror', repository: a, username: 'u', password: 'pw' } });
+      expect(await dueNow()).toBe(1);
+      await parkLater();
+      await put({ source: { kind: 'mirror', repository: a } });
+      expect(await dueNow()).toBe(0);
+      await put({ source: { kind: 'mirror', repository: 'registry.corp:5000/other/trivy-db:2' } });
+      expect(await dueNow()).toBe(1);
+      await parkLater();
+      await put({
+        source: {
+          kind: 'mirror',
+          repository: 'registry.corp:5000/other/trivy-db:2',
+          password: 'new',
+        },
+      });
+      expect(await dueNow()).toBe(1);
+      await parkLater();
+      await put({ source: { kind: 'upload' } });
+      expect(await dueNow()).toBe(0);
+      await put({ source: { kind: 'official' } });
+      expect(await dueNow()).toBe(1);
+      await parkLater();
+      await put({ source: { kind: 'official' } });
+      expect(await dueNow()).toBe(0);
+    });
+
+    it('a source change while monitoring is off waits for the switch', async () => {
+      await put({ enabled: false });
+      await parkLater();
+      await put({ source: { kind: 'mirror', repository: 'registry.corp:5000/m/t:2' } });
+      expect(await dueNow()).toBe(0);
+    });
+  });
+
   describe('PUT /system/vulnerability-db/file', () => {
     const fileUrl = `${url}/file`;
     const upload = (body: Buffer, session = admin, contentType = 'application/gzip') =>

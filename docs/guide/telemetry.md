@@ -67,7 +67,7 @@ The whole report, as an example:
     "email": {
       "sent30d": 40,
       "byKind": {
-        "test": 1, "license.expiry": 0, "webhook.failed": 0,
+        "test": 1, "license.expiry": 0, "webhook.failed": 0, "vulndb.stale": 0,
         "account.password-reset": 2, "account.invitation": 3, "account.password-changed": 1,
         "notify.gate-failed": 25, "notify.gate-recovered": 6, "notify.analysis-failed": 2,
         "other": 0

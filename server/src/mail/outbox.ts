@@ -25,6 +25,8 @@ export const MAIL_KINDS = [
   'test',
   'license.expiry',
   'webhook.failed',
+  // 0.15: the vulnerability database is stale.
+  'vulndb.stale',
   // mail E2: account emails.
   'account.password-reset',
   'account.invitation',

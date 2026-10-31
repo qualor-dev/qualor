@@ -606,6 +606,10 @@ export const AUDIT_CATALOGUE = {
         .max(VULNDB_SETTINGS_CHANGED_FIELDS.length),
     }),
   },
+  'vulndb.update_requested': {
+    target: 'vulndb_settings',
+    details: empty,
+  },
   'vulndb.file_uploaded': {
     target: 'vulndb_settings',
     details: z.strictObject({ sizeBytes: z.number().int(), builtAt: z.string().nullable() }),
