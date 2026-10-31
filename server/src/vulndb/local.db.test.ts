@@ -89,11 +89,22 @@ describe('local database copy', () => {
   });
 
   it('cleans up a partial tmp-* directory left behind', async () => {
-    await mkdir(join(dir, 'tmp-dead', 'db'), { recursive: true });
-    await writeFile(join(dir, 'tmp-dead', 'db', 'trivy.db'), 'half');
+    await mkdir(join(dir, 'tmp-deadbeef0123', 'db'), { recursive: true });
+    await writeFile(join(dir, 'tmp-deadbeef0123', 'db', 'trivy.db'), 'half');
     const d = await store(Buffer.from('clean'));
     await ensureLocalDatabase(t.db, dir, d);
     expect((await readdir(dir)).sort()).toEqual(['current.json', prefix(d)].sort());
+  });
+
+  it('leaves unrelated entries of the directory alone', async () => {
+    await mkdir(join(dir, 'keep-me'));
+    await writeFile(join(dir, 'keep-me', 'file.txt'), 'mine');
+    const a = await store(Buffer.from('own a'));
+    const b = await store(Buffer.from('own b'));
+    await ensureLocalDatabase(t.db, dir, a);
+    await ensureLocalDatabase(t.db, dir, b);
+    expect(await readFile(join(dir, 'keep-me', 'file.txt'), 'utf8')).toBe('mine');
+    expect((await readdir(dir)).sort()).toEqual(['current.json', 'keep-me', prefix(b)].sort());
   });
 
   it('answers DISK, naming the directory, when the directory cannot be created', async () => {

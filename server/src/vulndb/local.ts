@@ -76,10 +76,13 @@ async function isCurrent(dir: string, name: string, digest: string): Promise<boo
   );
 }
 
-/** Removes every directory in `dir` except `keep`: old copies and stale `tmp-*`. */
+/** Names this module creates: a 16-hex digest directory or a `tmp-<12 hex>` extraction directory. */
+const OWN_DIRECTORY = /^([0-9a-f]{16}|tmp-[0-9a-f]{12})$/;
+
+/** Removes our own directories in `dir` except `keep`; every other entry is left alone. */
 async function removeOthers(dir: string, keep: string): Promise<void> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (entry.isDirectory() && entry.name !== keep) {
+    if (entry.isDirectory() && entry.name !== keep && OWN_DIRECTORY.test(entry.name)) {
       await rm(join(dir, entry.name), { recursive: true, force: true });
     }
   }
