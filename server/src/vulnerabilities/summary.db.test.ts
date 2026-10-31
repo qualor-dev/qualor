@@ -146,6 +146,35 @@ describe('the Vulnerabilities tab: target summary', () => {
     expect(byName.get('release/1.x')).toBe(1);
   });
 
+  it('counts a new row on the branch with an Open override only (Review Focus 1)', async () => {
+    const { projectId, branch } = await setup();
+    const main = await branch('main', true);
+    const release = await branch('release/2.x');
+    for (const branchId of [main, release]) {
+      await seedCheck(t.db, { projectId, branchId, baselineAt: T0 });
+      await seedTargetRow(t.db, {
+        projectId,
+        branchId,
+        packageName: 'lodash',
+        vulnerabilityId: 'CVE-1',
+        severity: 'high',
+        firstSeenAt: AFTER,
+      });
+    }
+    await decide(projectId, 'lodash', 'CVE-1', 'false_positive');
+    await decide(projectId, 'lodash', 'CVE-1', 'open', { branchId: release });
+    const byName = new Map(
+      (await readTargetSummary(t.db, projectId)).targets.map((x) => [x.name, x]),
+    );
+    expect(byName.get('main')).toMatchObject({ new: 0, counts: { high: 0 } });
+    expect(byName.get('release/2.x')).toMatchObject({ new: 1, counts: { high: 1 } });
+    expect((await newVulnerabilityMarkers(t.db, [projectId])).get(projectId)).toEqual({
+      main: false,
+      versions: 0,
+      branches: 1,
+    });
+  });
+
   it('counts a row as new only when it was first seen after the baseline', async () => {
     const { projectId, branch } = await setup();
     const main = await branch('main', true);

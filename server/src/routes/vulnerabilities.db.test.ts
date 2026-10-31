@@ -361,6 +361,50 @@ describe('the Vulnerabilities tab read API (0.15)', () => {
     expect(onRelease.decision?.decidedBy).toBeNull();
   });
 
+  it('flags a row new on the branch whose Open override beats the project decision (Review Focus 1)', async () => {
+    const s = await setup();
+    const [release2] = await h.ctx.db
+      .insert(branches)
+      .values({ projectId: s.projectId, kind: 'branch', name: 'release/2.x' })
+      .returning();
+    for (const branchId of [s.main, release2!.id]) {
+      await seedCheck(h.ctx.db, { projectId: s.projectId, branchId, baselineAt: T0 });
+      await seedTargetRow(h.ctx.db, {
+        projectId: s.projectId,
+        branchId,
+        packageName: 'lodash',
+        vulnerabilityId: 'CVE-1',
+        firstSeenAt: AFTER,
+      });
+    }
+    await h.ctx.db.insert(vulnerabilityDecisions).values([
+      {
+        projectId: s.projectId,
+        packageName: 'lodash',
+        vulnerabilityId: 'CVE-1',
+        status: 'false_positive',
+        reason: 'component_not_present',
+      },
+      {
+        projectId: s.projectId,
+        packageName: 'lodash',
+        vulnerabilityId: 'CVE-1',
+        branchId: release2!.id,
+        status: 'open',
+      },
+    ]);
+    const targets = (await get(`/projects/${s.projectId}/vulnerabilities/targets`)).json() as {
+      targets: { name: string; new: number }[];
+    };
+    const newOf = new Map(targets.targets.map((x) => [x.name, x.new]));
+    expect([newOf.get('main'), newOf.get('release/2.x')]).toEqual([0, 1]);
+    const base = `/projects/${s.projectId}/vulnerabilities`;
+    const onRelease = (await items(`${base}?target=branch:${release2!.id}`)).items;
+    expect(onRelease).toMatchObject([{ vulnerabilityId: 'CVE-1', new: true, status: 'open' }]);
+    const onMain = (await items(`${base}?target=branch:${s.main}`)).items;
+    expect(onMain).toMatchObject([{ new: false, status: 'false_positive' }]);
+  });
+
   it('shows the frozen rows of an untracked target and none of its rows without a target', async () => {
     const s = await setup();
     await seedTargetRow(h.ctx.db, {
