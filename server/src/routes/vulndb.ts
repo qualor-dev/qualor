@@ -254,9 +254,19 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
           'Upload a vulnerability database file, db.tar.gz (instance admins); it becomes the current database',
         response: { 200: settingsDto },
       },
+      // Before any body is read (and without a 100 Continue): only an instance admin sending one
+      // of the two raw-stream types gets as far as the parser. Any other type has a buffering
+      // parser, which the route-wide bodyLimit would not stop.
       preParsing: async (request, reply, payload) => {
+        requireInstanceAdmin(request);
         const mime = request.headers['content-type']?.split(';')[0]?.trim().toLowerCase();
-        if (!UPLOAD_TYPES.some((type) => type === mime)) sendContinue(request, reply);
+        if (!UPLOAD_TYPES.some((type) => type === mime)) {
+          throw new ProblemError(
+            415,
+            'UNSUPPORTED_MEDIA_TYPE',
+            'Send the database file as application/gzip or application/octet-stream',
+          );
+        }
         return payload;
       },
       onSend: async (request, reply, payload) => {

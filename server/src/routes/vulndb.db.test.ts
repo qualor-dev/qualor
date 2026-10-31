@@ -211,6 +211,36 @@ describe('/system/vulnerability-db (API)', () => {
       expect((await readVulndbState(ctx.db)).currentDatasetId).toBe(row?.id);
     });
 
+    it('refuses before reading the body: wrong type, non-admin, anonymous', async () => {
+      const big = Buffer.alloc(8 * 1024 * 1024, 1);
+      const json = await ctx.app.inject({
+        method: 'PUT',
+        url: fileUrl,
+        headers: { ...admin.headers, 'content-type': 'application/json' },
+        payload: big,
+      });
+      expect(json.statusCode, json.body).toBe(415);
+      const nonAdmin = await ctx.app.inject({
+        method: 'PUT',
+        url: fileUrl,
+        headers: {
+          ...orgAdmin.headers,
+          'content-type': 'application/octet-stream',
+          expect: '100-continue',
+        },
+        payload: big,
+      });
+      expect(nonAdmin.statusCode).toBe(403);
+      const anonymousJson = await ctx.app.inject({
+        method: 'PUT',
+        url: fileUrl,
+        headers: { 'content-type': 'application/json' },
+        payload: big,
+      });
+      expect(anonymousJson.statusCode).toBe(401);
+      expect(await ctx.db.select().from(vulndbDatasets)).toHaveLength(0);
+    });
+
     it('audits the upload with its size and build time', async () => {
       const licensed = await ssoContext();
       try {
