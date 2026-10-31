@@ -250,7 +250,10 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
           };
         }
       } finally {
-        await rm(work, { recursive: true, force: true }).catch(() => undefined);
+        // Retried: on Windows a killed Trivy holds its working directory for a moment.
+        await rm(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }).catch(
+          () => undefined,
+        );
       }
     },
   };
