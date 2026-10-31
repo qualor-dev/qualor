@@ -211,7 +211,8 @@ describe('the vulnerability database upload (plan 2a, R18)', () => {
     expect(upload.metadata.annotations).toMatchObject({
       'nginx.ingress.kubernetes.io/whitelist-source-range': '10.0.0.0/8',
     });
-    expect(main.spec?.tls?.[0]?.secretName).toBeTruthy();
+    const tls = main.spec?.tls as { secretName?: string }[] | undefined;
+    expect(tls?.[0]?.secretName).toBeTruthy();
     expect(upload.spec?.tls).toEqual(main.spec?.tls);
   });
 
