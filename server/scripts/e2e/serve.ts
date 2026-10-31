@@ -34,6 +34,7 @@ import {
   seedRoles,
   seedSso,
   seedSsoIdentity,
+  seedVulndbOff,
   type SsoSeed,
 } from './seed';
 import { sweepE2eDatabases } from './sweep';
@@ -285,6 +286,8 @@ async function main(): Promise<void> {
   const seeding = start({ PORT: '0' });
   try {
     const seedUrl = await waitForListening(seeding);
+    // Before the first check of the vulnerability database, a minute after the start.
+    await seedVulndbOff(seedUrl, credentials);
     await seedDemo(seedUrl, credentials);
     // Plan 5B (rbac-audit.md §1.3): roles and project grants on the community server too.
     await seedRoles(seedUrl, credentials, roleUsers);
@@ -331,6 +334,7 @@ async function main(): Promise<void> {
   let sso: SsoSeed;
   try {
     const seedUrl = await waitForListening(enterpriseSeeding);
+    await seedVulndbOff(seedUrl, credentials);
     const demo = await seedDemo(seedUrl, credentials);
     // 6M: the Business e2e test ingests this report again once it has set a licence policy.
     writeFileSync(paymentsReportFile, JSON.stringify(demo.paymentsMainReport));
