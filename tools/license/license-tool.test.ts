@@ -731,7 +731,9 @@ describe('the command line never prints or leaks a private key', () => {
 
   it('the usage text names the Business and the Enterprise feature lists (enterprise.md §1.7, §15)', () => {
     const r = run(['frobnicate'], {});
-    expect(r.err).toContain('Business:   --features sso,audit-log,support-bundle,license-policy,vuln.priority,vuln.alerts,sbom');
+    expect(r.err).toContain(
+      'Business:   --features sso,audit-log,support-bundle,license-policy,vuln.priority,vuln.alerts,sbom',
+    );
     expect(r.err).toContain(
       'Enterprise: --features sso,sso.multi,audit-log,audit-log.stream,scim,compliance-export,portfolio,llm.auto-fix,support-bundle,license-policy,vuln.priority,vuln.alerts,sbom',
     );
