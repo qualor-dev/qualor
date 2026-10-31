@@ -16,9 +16,11 @@ describe('the built-in user guide', () => {
       .map((n) => n.slice(0, -3))
       .sort();
     const source = readFileSync(REGISTRY, 'utf8');
+    // Prettier wraps an entry longer than 100 columns after `=>`, so the import may start the
+    // next line.
     const entries = [
       ...source.matchAll(
-        /^ {2}'?([\w-]+)'?: \(\) => import\('\.\.\/\.\.\/\.\.\/\.\.\/docs\/guide\/([\w-]+)\.md'\),$/gm,
+        /^ {2}'?([\w-]+)'?: \(\) =>(?: |\r?\n {4})import\('\.\.\/\.\.\/\.\.\/\.\.\/docs\/guide\/([\w-]+)\.md'\),$/gm,
       ),
     ];
     expect(entries.map((m) => m[1])).toEqual(entries.map((m) => m[2]));
