@@ -434,7 +434,14 @@ async function main(): Promise<void> {
   const vulndbWorker = startWorker({
     db: database.db,
     handlers: {
-      ...vulndbUpdateHandlers({ db: database.db, config, logger, shutdown: vulndbShutdown.signal }),
+      // With `vuln.priority`, the same run downloads KEV and EPSS (vulndb/priority/update.ts).
+      ...vulndbUpdateHandlers({
+        db: database.db,
+        config,
+        logger,
+        shutdown: vulndbShutdown.signal,
+        limits: () => edition.limits(),
+      }),
       ...recheckHandlers({ db: database.db, config, logger, shutdown: vulndbShutdown.signal }),
     },
     concurrency: VULNDB_WORKER_CONCURRENCY,

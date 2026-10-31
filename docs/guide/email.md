@@ -73,9 +73,10 @@ settings](./install-server.md#server-settings)).
 | Licence expiry | every instance administrator with an email address | 30, 7 and 1 day before the licence expires, when its 14-day grace period starts, and when it ends ([When a licence expires](./enterprise.md#when-a-licence-expires)). A trial key gets three: 7 days and 1 day before the end, and on the end day (no 30-day or grace email). Each once per licence key. A step missed while email was off is not sent late |
 | Failing webhook | every instance administrator with an email address, and the organisation's administrators ([below](#failing-webhooks-for-organisation-administrators)) | a delivery of any webhook, Slack and Teams ones too, gives up after its 7 attempts. At most one a day for each webhook, and only for a webhook that is switched on ([Webhooks](./webhooks-and-api.md#webhooks)) |
 | Password reset link, invitation, password changed | the account's email address | see [Account emails](#account-emails) |
+| Stale vulnerability data | every instance administrator with an email address | the [vulnerability database](./vulnerability-database.md#states) is more than 3 days old, in every edition. With Business or Enterprise (`vuln.priority`), the list of exploited vulnerabilities and the exploit probability data each get an email of their own too. One email each time the data goes stale. It has no switch |
 | Project notifications | everyone who watches the project | its quality gate fails or passes again, or an analysis fails ([Project notifications](#project-notifications)) |
 
-The two alerts for administrators each have a switch in **Settings → Email → Alerts for
+The licence and webhook alerts each have a switch in **Settings → Email → Alerts for
 administrators**. Both are on by default. An administrator without an email address gets nothing:
 add one in **Settings → Users**. The panel says how many administrators have none.
 

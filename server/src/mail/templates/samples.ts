@@ -62,6 +62,27 @@ export function sampleMails(
         publicUrl,
       }),
     },
+    {
+      name: 'vulndb.stale-kev',
+      mail: renderVulndbStale({
+        dataset: 'kev',
+        dataDate: new Date(SAMPLE_NOW.getTime() - 5 * DAY_MS),
+        lastError: { code: 'UNREACHABLE', message: 'No connection within 3 s' },
+        publicUrl,
+      }),
+    },
+    {
+      name: 'vulndb.stale-epss',
+      mail: renderVulndbStale({
+        dataset: 'epss',
+        dataDate: new Date(SAMPLE_NOW.getTime() - 4 * DAY_MS),
+        lastError: {
+          code: 'NOT_FOUND',
+          message: 'The file was not found (epss.empiricalsecurity.com answered 404)',
+        },
+        publicUrl,
+      }),
+    },
     ...accountSamples(publicUrl),
     ...notifySamples(publicUrl),
   ];

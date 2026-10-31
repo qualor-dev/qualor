@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestContext, createUser, type TestContext } from '../../test/app';
@@ -11,8 +12,14 @@ import {
 import { instanceSettings, jobs, mailMessages, users, vulndbDatasets } from '../db/schema';
 import { notifyIfVulndbStale } from '../mail/alerts/vulndb-stale';
 import { runUntilIdle } from '../queue/worker';
-import type { fetchLayerDescriptor, openBlob, OciProblem } from './oci';
-import { OFFICIAL_REPOSITORY, writeVulndbSettings } from './settings';
+import type { fetchHttpsFile, fetchLayerDescriptor, HttpsFile, openBlob, OciProblem } from './oci';
+import { PRIORITY_STATE_KEY, readPriorityState, updatePriorityState } from './priority/state';
+import {
+  OFFICIAL_EPSS_URL,
+  OFFICIAL_KEV_URL,
+  OFFICIAL_REPOSITORY,
+  writeVulndbSettings,
+} from './settings';
 import { readVulndbState, updateVulndbState, VULNDB_UPDATE_QUEUE } from './state';
 import { currentDataset } from './store';
 import type * as Store from './store';
@@ -85,7 +92,10 @@ describe('vulnerability database updates', () => {
   let t: TestContext;
   let now: Date;
   let rechecks: unknown[];
-  const deps = (registry: FakeRegistry): VulndbUpdateDeps => ({
+  const deps = (
+    registry: FakeRegistry,
+    more: Partial<VulndbUpdateDeps> = {},
+  ): VulndbUpdateDeps => ({
     db: t.db,
     config: { ...t.config, vulndb: { internalHosts: new Set() } },
     fetchLayerDescriptor: registry.fetchLayerDescriptor,
@@ -96,12 +106,16 @@ describe('vulnerability database updates', () => {
     },
     now: () => now,
     logger: silent,
+    ...more,
   });
   /** Queues one run now and works the queue until it is idle once. */
-  const runOnce = async (registry: FakeRegistry): Promise<void> => {
+  const runOnce = async (
+    registry: FakeRegistry,
+    more: Partial<VulndbUpdateDeps> = {},
+  ): Promise<void> => {
     await t.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
     await requestVulndbUpdateNow(t.db);
-    await runUntilIdle(t.db, vulndbUpdateHandlers(deps(registry)), silent);
+    await runUntilIdle(t.db, vulndbUpdateHandlers(deps(registry, more)), silent);
   };
   const stale = async () =>
     (
@@ -133,6 +147,9 @@ describe('vulnerability database updates', () => {
     await t.db.delete(vulndbDatasets);
     await t.db.delete(instanceSettings).where(eq(instanceSettings.key, 'vulndb'));
     await t.db.delete(instanceSettings).where(eq(instanceSettings.key, 'vulndb_state'));
+    await t.db.delete(instanceSettings).where(eq(instanceSettings.key, PRIORITY_STATE_KEY));
+    await t.db.execute(sql`DELETE FROM vulnerability_kev`);
+    await t.db.execute(sql`DELETE FROM vulnerability_epss`);
     now = new Date(BUILT + DAY_MS);
     rechecks = [];
   });
@@ -545,6 +562,190 @@ describe('vulnerability database updates', () => {
       expect((await readVulndbState(t.db)).staleNotifiedDigest).toBeNull();
       await runOnce(registry);
       expect(await stale()).toHaveLength(2);
+    });
+  });
+
+  describe('KEV and EPSS (vuln.priority)', () => {
+    const PRIORITY = () => ({ vulnerabilities: { priority: true, alerts: false, sbom: false } });
+    const KEV_SUBJECT = 'The Qualor list of exploited vulnerabilities is out of date';
+    const EPSS_SUBJECT = 'The Qualor exploit probability data is out of date';
+    const UNREACHABLE: OciProblem = { code: 'UNREACHABLE', message: 'No connection within 3 s' };
+
+    const kevFile = (ids: string[]): Buffer =>
+      Buffer.from(
+        JSON.stringify({
+          catalogVersion: '2026.10.30',
+          dateReleased: now.toISOString(),
+          vulnerabilities: ids.map((cveID) => ({ cveID, dateAdded: '2026-02-03' })),
+        }),
+      );
+    const epssFile = (ids: string[]): Buffer =>
+      gzipSync(
+        `#model_version:v2025.03.14,score_date:${now.toISOString()}\ncve,epss,percentile\n` +
+          ids.map((id) => `${id},0.5,0.75\n`).join(''),
+      );
+    const file = (body: Buffer): HttpsFile => ({
+      kind: 'file',
+      body,
+      etag: null,
+      lastModified: null,
+    });
+
+    /** A file server whose answer the test changes; it records the URLs it was asked for. */
+    function fakeFiles(initial: (url: string) => Promise<HttpsFile | OciProblem>) {
+      const fake = {
+        urls: [] as string[],
+        answer: initial,
+        fetch: (async (url) => {
+          fake.urls.push(url);
+          return fake.answer(url);
+        }) as typeof fetchHttpsFile,
+      };
+      return fake;
+    }
+    const freshFiles = () =>
+      fakeFiles(async (url) =>
+        file(url === OFFICIAL_KEV_URL ? kevFile(['CVE-2024-0001']) : epssFile(['CVE-2024-0001'])),
+      );
+    const mailsWith = async (subject: string): Promise<string[]> =>
+      (
+        await t.db
+          .select({ to: mailMessages.toAddress })
+          .from(mailMessages)
+          .where(eq(mailMessages.subject, subject))
+      )
+        .map((r) => r.to)
+        .sort();
+    const priorityRow = () =>
+      t.db.select().from(instanceSettings).where(eq(instanceSettings.key, PRIORITY_STATE_KEY));
+
+    it('checks KEV, then EPSS, after the Trivy database', async () => {
+      const files = freshFiles();
+      await runOnce(fakeRegistry(trivyArchive()), {
+        limits: PRIORITY,
+        fetchHttpsFile: files.fetch,
+      });
+      expect(files.urls).toEqual([OFFICIAL_KEV_URL, OFFICIAL_EPSS_URL]);
+      const state = await readPriorityState(t.db);
+      expect(state.kev).toMatchObject({ count: 1, lastError: null });
+      expect(state.epss).toMatchObject({ count: 1, lastError: null });
+      expect((await readVulndbState(t.db)).lastError).toBeNull();
+    });
+
+    it('fetches nothing without the feature, and leaves the priority state alone', async () => {
+      const files = freshFiles();
+      await runOnce(fakeRegistry(trivyArchive()), { fetchHttpsFile: files.fetch });
+      expect(files.urls).toEqual([]);
+      expect(await priorityRow()).toEqual([]);
+    });
+
+    it('fetches nothing for an uploaded source', async () => {
+      await settings({ source: { kind: 'upload' } });
+      const files = freshFiles();
+      await runOnce(fakeRegistry(trivyArchive()), {
+        limits: PRIORITY,
+        fetchHttpsFile: files.fetch,
+      });
+      expect(files.urls).toEqual([]);
+      expect(await priorityRow()).toEqual([]);
+    });
+
+    it('fetches nothing while monitoring is off', async () => {
+      await settings({ enabled: false });
+      const files = freshFiles();
+      await runOnce(fakeRegistry(trivyArchive()), {
+        limits: PRIORITY,
+        fetchHttpsFile: files.fetch,
+      });
+      expect(files.urls).toEqual([]);
+      expect(await priorityRow()).toEqual([]);
+    });
+
+    it('a stop during the KEV download records nothing, skips EPSS and retries in a minute', async () => {
+      const stop = new AbortController();
+      const files = fakeFiles(async () => {
+        await Promise.resolve();
+        stop.abort();
+        return { code: 'UNREACHABLE', message: 'The download was cut' };
+      });
+      await t.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      await requestVulndbUpdateNow(t.db);
+      await runUntilIdle(
+        t.db,
+        vulndbUpdateHandlers(
+          deps(fakeRegistry(trivyArchive()), {
+            limits: PRIORITY,
+            fetchHttpsFile: files.fetch,
+            shutdown: stop.signal,
+          }),
+        ),
+        silent,
+      );
+      expect(files.urls).toEqual([OFFICIAL_KEV_URL]);
+      const state = await readPriorityState(t.db);
+      expect(state.kev).toMatchObject({ lastError: null, lastCheckAt: null });
+      expect(state.epss).toMatchObject({ lastError: null, lastCheckAt: null });
+      const next = (await queued()).rows;
+      expect(next).toHaveLength(1);
+      expect(next[0]!.secs).toBeLessThanOrEqual(60);
+    });
+
+    it('mails each admin once when KEV goes stale, and again after a fresh file', async () => {
+      // No Trivy dataset, so no Trivy stale mail.
+      const registry = fakeRegistry(UNREACHABLE);
+      const files = freshFiles();
+      const run = () => runOnce(registry, { limits: PRIORITY, fetchHttpsFile: files.fetch });
+      await run();
+      expect(await mailsWith(KEV_SUBJECT)).toEqual([]);
+
+      files.answer = async () => UNREACHABLE;
+      const start = now.getTime();
+      now = new Date(start + 4 * DAY_MS);
+      await run();
+      expect(await mailsWith(KEV_SUBJECT)).toEqual(['admin@example.com', 'ops@example.com']);
+      expect(await mailsWith(EPSS_SUBJECT)).toEqual(['admin@example.com', 'ops@example.com']);
+      const { kev } = await readPriorityState(t.db);
+      expect(kev.staleNotifiedDigest).toBe(kev.digest);
+      now = new Date(start + 4 * DAY_MS + 3_600_000);
+      await run();
+      expect(await mailsWith(KEV_SUBJECT)).toHaveLength(2);
+
+      // A fresh file clears the record ...
+      now = new Date(start + 5 * DAY_MS);
+      files.answer = async (url) =>
+        file(url === OFFICIAL_KEV_URL ? kevFile(['CVE-2024-0002']) : epssFile(['CVE-2024-0002']));
+      await run();
+      expect((await readPriorityState(t.db)).kev.staleNotifiedDigest).toBeNull();
+      expect(await mailsWith(KEV_SUBJECT)).toHaveLength(2);
+
+      // ... so the next time it goes stale, administrators hear about it again.
+      files.answer = async () => UNREACHABLE;
+      now = new Date(start + 9 * DAY_MS);
+      await run();
+      expect(await mailsWith(KEV_SUBJECT)).toHaveLength(4);
+    });
+
+    it('mails a stale uploaded file whatever the source, and only with the feature', async () => {
+      await settings({ source: { kind: 'upload' } });
+      const old = new Date(now.getTime() - 4 * DAY_MS).toISOString();
+      await updatePriorityState(t.db, 'kev', (s) => ({
+        ...s,
+        source: 'upload',
+        storedAt: old,
+        refreshedAt: old,
+        digest: `sha256:${'c'.repeat(64)}`,
+      }));
+      const files = freshFiles();
+      await runOnce(fakeRegistry(trivyArchive()), { fetchHttpsFile: files.fetch });
+      expect(await mailsWith(KEV_SUBJECT)).toEqual([]);
+      expect((await readPriorityState(t.db)).kev.staleNotifiedDigest).toBeNull();
+
+      await runOnce(fakeRegistry(trivyArchive()), {
+        limits: PRIORITY,
+        fetchHttpsFile: files.fetch,
+      });
+      expect(await mailsWith(KEV_SUBJECT)).toEqual(['admin@example.com', 'ops@example.com']);
+      expect(files.urls).toEqual([]);
     });
   });
 });

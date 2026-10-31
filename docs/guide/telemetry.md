@@ -161,6 +161,18 @@ that needs them. They carry nothing about your installation, and nothing is sent
 **Settings → Vulnerability database**, or upload the file instead. See
 [The vulnerability database](./vulnerability-database.md).
 
+With the Business or Enterprise feature `vuln.priority`, the same check also fetches two files:
+
+| Data | URL |
+|---|---|
+| Exploited vulnerabilities (CISA KEV) | `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` |
+| Exploit probability (FIRST EPSS) | `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` |
+
+The requests are anonymous `GET`s with only the header `User-Agent: Qualor/<version>`. Once the
+server has a copy, they add its `If-None-Match` and `If-Modified-Since` values, so an unchanged
+file is not sent again. A mirror URL an instance admin sets replaces either one. Without
+`vuln.priority`, the server never calls them.
+
 At every start the server adds the download to the log line above, for example:
 
 ```text

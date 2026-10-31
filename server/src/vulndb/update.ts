@@ -1,12 +1,10 @@
 import { sql } from 'drizzle-orm';
-import type { FastifyBaseLogger } from 'fastify';
-import type { Config } from '../config';
 import { decryptSecret, encryptionKey } from '../crypto/secrets';
 import type { Db } from '../db/client';
 import { uuidv7 } from '../db/ids';
 import { LOCKS } from '../db/locks';
-import { notifyIfVulndbStale } from '../mail/alerts/vulndb-stale';
-import type { MailDeps } from '../mail/outbox';
+import { communityLimits, type Limits } from '../limits';
+import { notifyIfPriorityStale, notifyIfVulndbStale } from '../mail/alerts/vulndb-stale';
 import type { JobHandlers } from '../queue/worker';
 import {
   DOWNLOAD_MAX_BYTES,
@@ -15,6 +13,7 @@ import {
   openBlob as realOpenBlob,
   type OciAuth,
 } from './oci';
+import { checkPriorityDatasets, type PriorityUpdateDeps } from './priority/update';
 import { enqueueRecheck as realEnqueueRecheck } from './recheck-queue';
 import {
   OFFICIAL_REPOSITORY,
@@ -33,18 +32,18 @@ export const VULNDB_LEASE_MS = 30 * 60_000;
 
 type LastError = NonNullable<VulndbState['lastError']>;
 
-export interface VulndbUpdateDeps extends MailDeps {
-  db: Db;
-  config: MailDeps['config'] & { vulndb: Pick<Config['vulndb'], 'internalHosts'> };
+/**
+ * `shutdown`: the server is stopping (main.ts); a download is cut, and the run ends without a
+ * verdict. `fetchHttpsFile`: tests substitute the KEV and EPSS file client.
+ */
+export interface VulndbUpdateDeps extends PriorityUpdateDeps {
   /** Tests substitute the registry client. */
   fetchLayerDescriptor?: typeof realFetchLayerDescriptor;
   openBlob?: typeof realOpenBlob;
   /** Tests substitute the re-check queue. */
   enqueueRecheck?: typeof realEnqueueRecheck;
-  now?: () => Date;
-  logger?: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
-  /** The server is stopping (main.ts): a download is cut, and the run ends without a verdict. */
-  shutdown?: AbortSignal;
+  /** The edition's limits (main.ts): `vulnerabilities.priority` adds KEV and EPSS. */
+  limits?: () => Pick<Limits, 'vulnerabilities'>;
 }
 
 type ScheduleMode =
@@ -235,12 +234,16 @@ async function checkSource(
  * dataset stays. Switched off: only the next run is scheduled. Source `upload`: only staleness is
  * checked. Always ends by scheduling the next run.
  *
+ * With `vuln.priority`, KEV and EPSS follow the Trivy check (priority/update.ts), each with its own
+ * state, and each gets its own stale mail.
+ *
  * A stop of the server (`shutdown`) cuts the download: the run ends at once, writes neither the
  * problem the cut caused nor the check times, and the next run is due in
  * {@link VULNDB_BOOT_DELAY_SECONDS}, for whichever server is up then.
  */
 export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
   const now = deps.now ?? (() => new Date());
+  const limits = deps.limits ?? communityLimits;
   const stopping = (): boolean => deps.shutdown?.aborted === true;
   let stopped = false;
   try {
@@ -282,6 +285,29 @@ export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
         lastError: error === undefined ? state.lastError : error,
       }));
     }
+    // Read once: the licence decides both the downloads and the mails of this run.
+    const priority = limits().vulnerabilities.priority;
+    if (priority && settings.source.kind !== 'upload') {
+      if (!stopping()) {
+        try {
+          await checkPriorityDatasets({ ...deps, now }, settings);
+        } catch (err) {
+          deps.logger?.warn(
+            { component: 'vulndb', errorClass: errorClass(err) },
+            'priority data update failed',
+          );
+        }
+      }
+      // The stop cut KEV or EPSS: they are checked again with the next run, in a minute.
+      if (stopping()) {
+        stopped = true;
+        deps.logger?.info(
+          { component: 'vulndb' },
+          'vulnerability database update stopped: the server is stopping',
+        );
+        return;
+      }
+    }
     try {
       await notifyIfVulndbStale({ ...deps, now });
     } catch (err) {
@@ -289,6 +315,18 @@ export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
         { component: 'vulndb', errorClass: errorClass(err) },
         'vulnerability database stale mail failed',
       );
+    }
+    if (priority) {
+      for (const dataset of ['kev', 'epss'] as const) {
+        try {
+          await notifyIfPriorityStale({ ...deps, now }, dataset);
+        } catch (err) {
+          deps.logger?.warn(
+            { component: 'vulndb', dataset, errorClass: errorClass(err) },
+            'priority data stale mail failed',
+          );
+        }
+      }
     }
   } catch (err) {
     deps.logger?.warn(

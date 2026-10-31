@@ -15,7 +15,7 @@ PostgreSQL 18 on a volume. It needs no Elasticsearch, Redis or message broker. R
 | Disk | a few GiB for the data volume | reports are kept 7 days; analyses and measures are small. The [vulnerability database](./vulnerability-database.md) needs a cache volume of its own ([how big](./vulnerability-database.md#the-vulnerability-database)). PostgreSQL also holds up to two copies of the compressed file, about 131 MiB each |
 | Software | Docker with Compose v2 | or Kubernetes 1.29+ with Helm, or any container platform that runs the image with a volume |
 | Inbound network | HTTPS from CI runners and users | |
-| Outbound network | your GitLab or GitHub, and your webhook receivers | if configured: the AI model provider ([AI assistant](./ai-assistant.md)), the SMTP server ([Email](./email.md)), the identity provider ([Single sign-on](./sso-and-scim.md)), Slack or Teams ([Slack and Microsoft Teams](./chat-notifications.md)). Unless turned off: `qualor.dev` ([Telemetry](./telemetry.md)) and `hub.docker.com` ([Update check](./telemetry.md#update-check)). While [Vulnerability monitoring](./vulnerability-database.md) is on, which it is by default: `ghcr.io` and `pkg-containers.githubusercontent.com`, or your mirror |
+| Outbound network | your GitLab or GitHub, and your webhook receivers | if configured: the AI model provider ([AI assistant](./ai-assistant.md)), the SMTP server ([Email](./email.md)), the identity provider ([Single sign-on](./sso-and-scim.md)), Slack or Teams ([Slack and Microsoft Teams](./chat-notifications.md)). Unless turned off: `qualor.dev` ([Telemetry](./telemetry.md)) and `hub.docker.com` ([Update check](./telemetry.md#update-check)). While [Vulnerability monitoring](./vulnerability-database.md) is on, which it is by default: `ghcr.io` and `pkg-containers.githubusercontent.com`, or your mirror. Business and Enterprise (`vuln.priority`), with **Vulnerability monitoring** on: `www.cisa.gov` and `epss.empiricalsecurity.com`, or your mirror's URLs ([Telemetry](./telemetry.md#vulnerability-database)) |
 
 ## Images
 
@@ -601,4 +601,5 @@ reach the server's copy; a scan warns with `VULNERABILITY_DB_STALE` once the dat
 more than 14 days old. Scanners call only the server you configured, so the egress rules below do
 not change. With Helm, the volume is an `emptyDir` of
 `vulnerabilityDatabase.cacheSizeLimit`; add `ghcr.io` and
-`pkg-containers.githubusercontent.com` to the `egress` rules.
+`pkg-containers.githubusercontent.com` to the `egress` rules. With `vuln.priority`, add
+`www.cisa.gov` and `epss.empiricalsecurity.com` too.
