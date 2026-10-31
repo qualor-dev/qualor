@@ -1,0 +1,13 @@
+.dialog-subject {
+  margin: 0 0 12px;
+}
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+fieldset.field {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}

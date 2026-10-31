@@ -34,7 +34,31 @@
     @if (error(); as message) {
       <p class="alert alert-error" role="alert">{{ message }}</p>
     }
-    <!-- By vulnerability and the one-target view are the next task's. -->
+    @if (target(); as t) {
+      <h2 class="target-heading">
+        {{ targetName() ?? t }}
+        <a routerLink="." [queryParams]="{}" class="back" i18n="@@vulns.target.back"
+          >← By version</a
+        >
+      </h2>
+      <q-vulnerability-list
+        [projectId]="projectId()"
+        [target]="t"
+        [targetName]="targetName()"
+        [status]="status()"
+        [severity]="severity()"
+        [page]="pageNumber()"
+        (changed)="summary.reload()"
+      />
+    } @else if (view() === 'vulnerability') {
+      <q-vulnerability-list
+        [projectId]="projectId()"
+        [status]="status()"
+        [severity]="severity()"
+        [page]="pageNumber()"
+        (changed)="summary.reload()"
+      />
+    }
     @if (view() === 'version' && !target()) {
       @if (clean() && !expanded()) {
         <div class="empty-state">

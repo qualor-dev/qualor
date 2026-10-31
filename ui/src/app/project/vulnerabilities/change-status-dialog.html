@@ -1,0 +1,124 @@
+<dialog #dialog class="dialog" aria-labelledby="vuln-status-title">
+  <form novalidate (submit)="submit($event)">
+    <div class="dialog-head">
+      <h2 id="vuln-status-title" i18n="@@vulns.dialog.title">Change status</h2>
+    </div>
+    <div class="dialog-body">
+      @if (item(); as it) {
+        <p class="dialog-subject">
+          <code>{{ it.vulnerabilityId }}</code> · {{ it.packageName }}
+        </p>
+      }
+      @if (error(); as message) {
+        <div class="stack">
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+          @if (retryOffer.pending()) {
+            <p>
+              <button
+                type="button"
+                class="btn"
+                [disabled]="busy() || retryOffer.waiting()"
+                (click)="retry()"
+                i18n="@@vulns.dialog.retry"
+              >
+                Try again
+              </button>
+            </p>
+          }
+        </div>
+      }
+      <div class="field">
+        <label for="vuln-status" i18n="@@vulns.dialog.status">Status</label>
+        <select id="vuln-status" [value]="status()" (change)="setStatus($event)">
+          @for (s of statuses; track s) {
+            <option [value]="s" [selected]="s === status()">{{ statusLabel(s) }}</option>
+          }
+        </select>
+      </div>
+      @if (needsReason()) {
+        <div class="field">
+          <label for="vuln-reason" i18n="@@vulns.dialog.reason">Reason</label>
+          <select
+            #reasonField
+            id="vuln-reason"
+            required
+            [attr.aria-invalid]="reasonError() ? true : null"
+            [attr.aria-describedby]="reasonError() ? 'vuln-reason-error' : null"
+            [value]="reason()"
+            (change)="setReason($event)"
+          >
+            <option value="" [selected]="reason() === ''"></option>
+            @for (r of reasons; track r) {
+              <option [value]="r" [selected]="r === reason()">{{ r | label: 'vexReason' }}</option>
+            }
+          </select>
+          @if (reasonError(); as message) {
+            <span id="vuln-reason-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+      }
+      <div class="field">
+        <label for="vuln-comment" i18n="@@vulns.dialog.comment">Comment</label>
+        <textarea
+          #commentField
+          id="vuln-comment"
+          rows="3"
+          [required]="needsComment()"
+          [attr.aria-invalid]="commentError() ? true : null"
+          [attr.aria-describedby]="commentError() ? 'vuln-comment-error' : null"
+          [value]="comment()"
+          (input)="setComment($event)"
+        ></textarea>
+        @if (commentError(); as message) {
+          <span id="vuln-comment-error" class="field-error" role="alert">{{ message }}</span>
+        }
+      </div>
+      @if (target(); as t) {
+        <fieldset class="field">
+          <legend i18n="@@vulns.dialog.applies">Applies to</legend>
+          <label class="choice">
+            <input
+              type="radio"
+              name="vuln-applies"
+              [checked]="appliesTo() === 'project'"
+              (change)="setAppliesTo('project')"
+            />
+            <span i18n="@@vulns.dialog.appliesProject"
+              >All branches and versions of this project</span
+            >
+          </label>
+          <label class="choice">
+            <input
+              type="radio"
+              name="vuln-applies"
+              [checked]="appliesTo() === 'target'"
+              (change)="setAppliesTo('target')"
+            />
+            <span i18n="@@vulns.dialog.appliesTarget">Only {{ t.name }}</span>
+          </label>
+        </fieldset>
+      } @else {
+        <p class="field">
+          <span class="field-label" i18n="@@vulns.dialog.applies2">Applies to</span>
+          <span i18n="@@vulns.dialog.appliesProject2"
+            >All branches and versions of this project</span
+          >
+        </p>
+      }
+      <p class="hint" i18n="@@vulns.dialog.note">
+        Goes into VEX and compliance reports with your name and the date.
+      </p>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" (click)="close()" i18n="@@dialog.cancel">Cancel</button>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [disabled]="busy() || !ready()"
+        i18n="@@vulns.dialog.save"
+      >
+        Save
+      </button>
+    </div>
+  </form>
+</dialog>

@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 import {
   FakeServer,
   FakeVulnerabilities,
@@ -9,6 +10,7 @@ import {
   provideFakeServer,
   settle,
   untrackedVersion,
+  vulnerabilityCard,
   VIEWER_PROJECT_PERMISSIONS,
   type VulnerabilityTargets,
   vulnerabilityTarget,
@@ -368,5 +370,51 @@ describe('VulnerabilitiesPage', () => {
       'By vulnerability',
     ]);
     expect(text(root.querySelector('.view-tabs a[aria-current="page"]'))).toBe('By version');
+  });
+});
+
+describe('VulnerabilitiesPage views', () => {
+  async function renderWith(query: Record<string, string>): Promise<HTMLElement> {
+    const server = new FakeServer();
+    TestBed.configureTestingModule({
+      imports: [VulnerabilitiesPage],
+      providers: [
+        provideRouter([]),
+        provideFakeServer(server),
+        { provide: ActivatedRoute, useValue: { queryParams: of(query) } },
+      ],
+    });
+    TestBed.inject(SessionStore).set(me());
+    server.on('GET', `/api/v0/projects/${PROJECT}`, {
+      body: {
+        id: PROJECT,
+        organizationId: ORG_ID,
+        key: 'acme/x',
+        name: 'X',
+        permissions: [...MEMBER_PROJECT_PERMISSIONS],
+        vulnerabilities: { newIn: { main: false, branches: 0, versions: 0 } },
+      },
+    });
+    const fake = FakeVulnerabilities.install(server, PROJECT, { targets: TARGETS });
+    fake.cards = [vulnerabilityCard({ in: [{ kind: 'branch', id: MAIN, name: 'main' }] })];
+    TestBed.inject(CurrentProject).use(PROJECT);
+    const fixture = TestBed.createComponent(VulnerabilitiesPage);
+    fixture.componentRef.setInput('projectId', PROJECT);
+    await settle(fixture);
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('shows the cards in By vulnerability instead of the table', async () => {
+    const root = await renderWith({ view: 'vulnerability' });
+    expect(root.querySelector('table')).toBeNull();
+    expect(root.querySelectorAll('.vuln-card')).toHaveLength(1);
+  });
+
+  it('names the target in the one-target view and links back to By version', async () => {
+    const root = await renderWith({ target: `branch:${MAIN}` });
+    expect(root.querySelector('table')).toBeNull();
+    expect(text(root.querySelector('.target-heading'))).toBe('main ← By version');
+    expect(root.querySelector('.target-heading a')?.getAttribute('href')).not.toContain('target');
+    expect(root.querySelectorAll('.vuln-card')).toHaveLength(1);
   });
 });

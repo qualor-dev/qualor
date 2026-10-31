@@ -973,6 +973,8 @@ export type VulnerabilityTargets = ResponseBody<
   'get'
 >;
 export type VulnerabilityTarget = VulnerabilityTargets['targets'][number];
+export type VulnerabilityList = ResponseBody<'/api/v0/projects/{id}/vulnerabilities', 'get'>;
+export type VulnerabilityCard = VulnerabilityList['items'][number];
 export type UntrackedVersion = VulnerabilityTargets['untracked'][number];
 
 const NO_COUNTS = { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 };
@@ -989,6 +991,29 @@ export function vulnerabilityTarget(given: Partial<VulnerabilityTarget> = {}): V
     counts: NO_COUNTS,
     new: 0,
     checkedAt: '2026-10-30T09:00:00.000Z',
+    ...given,
+  };
+}
+
+/** One card of the by-vulnerability list: an open, unignored High in main, found by a scan. */
+export function vulnerabilityCard(given: Partial<VulnerabilityCard> = {}): VulnerabilityCard {
+  return {
+    vulnerabilityId: 'CVE-2026-0001',
+    packageName: 'lodash',
+    ecosystem: 'npm',
+    severity: 'high',
+    title: 'Prototype pollution in lodash',
+    primaryUrl: 'https://avd.aquasec.com/nvd/cve-2026-0001',
+    installedVersions: ['4.17.20'],
+    fixedVersion: '4.17.21',
+    in: [{ kind: 'branch', id: '0190a6c2-0000-7000-8000-0000000000d1', name: 'main' }],
+    notIn: [],
+    foundAt: '2026-10-20T08:00:00.000Z',
+    withoutScan: false,
+    new: false,
+    ignored: false,
+    status: 'open',
+    decision: null,
     ...given,
   };
 }
@@ -1014,6 +1039,12 @@ export function untrackedVersion(given: Partial<UntrackedVersion> = {}): Untrack
  */
 export class FakeVulnerabilities {
   answer: VulnerabilityTargets;
+  /** The cards of `GET /vulnerabilities`; a card whose `in` names the `target` id belongs to it. */
+  cards: VulnerabilityCard[] = [];
+  /** The query strings the list was asked with. */
+  readonly listQueries: URLSearchParams[] = [];
+  /** The bodies of the decisions saved. */
+  readonly decisions: unknown[] = [];
 
   /** Answers the summary of project `projectId` on `server`. */
   static install(
@@ -1041,6 +1072,26 @@ export class FakeVulnerabilities {
     server.on('GET', `/api/v0/projects/${projectId}/vulnerabilities/targets`, () => ({
       body: this.answer,
     }));
+    server.on('GET', `/api/v0/projects/${projectId}/vulnerabilities`, (r) => {
+      const query = new URLSearchParams(r.query);
+      this.listQueries.push(query);
+      const target = query.get('target')?.split(':')[1];
+      const status = query.get('status') ?? 'all';
+      const severity = query.get('severity');
+      const page = Number(query.get('page') ?? 1);
+      const size = Number(query.get('pageSize') ?? 50);
+      const all = this.cards.filter(
+        (c) =>
+          (!target || c.in.some((t) => t.id === target) || c.notIn.some((t) => t.id === target)) &&
+          (status === 'all' || c.status === status) &&
+          (!severity || c.severity === severity),
+      );
+      return { body: { items: all.slice((page - 1) * size, page * size), total: all.length } };
+    });
+    server.on('PUT', `/api/v0/projects/${projectId}/vulnerability-decisions`, (r) => {
+      this.decisions.push(r.body);
+      return { body: { decision: {}, appliedIssues: 0 } };
+    });
     const version = new RegExp(`^/api/v0/projects/${projectId}/versions/([^/]+)$`);
     server.on('PATCH', version, (r) => {
       const id = version.exec(r.path)?.[1];

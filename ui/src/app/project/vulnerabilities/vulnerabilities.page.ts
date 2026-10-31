@@ -8,6 +8,7 @@ import type { RequestBody, ResponseBody } from '../../api/types';
 import { SessionStore } from '../../auth/session';
 import { DateTimePipe } from '../../shared/date-time.pipe';
 import { Icon } from '../../shared/icon';
+import { type SeverityFilter, type StatusFilter, VulnerabilityList } from './vulnerability-list';
 import { CurrentProject } from '../current-project';
 
 type Summary = ResponseBody<'/api/v0/projects/{id}/vulnerabilities/targets', 'get'>;
@@ -34,11 +35,11 @@ function one(params: Params, key: string): string {
  * versions with their open Critical, High and Medium vulnerabilities and what is new, the
  * versions no rule tracks folded under the table, and, with `project.settings`, a menu on each
  * version to pin it, stop tracking it or track it by the rule again. `view`, `target` and the
- * other filters are held in the URL (By vulnerability and one target follow in the next task).
+ * other filters are held in the URL (By vulnerability and one target are the VulnerabilityList).
  */
 @Component({
   selector: 'q-vulnerabilities-page',
-  imports: [DateTimePipe, Icon, NgTemplateOutlet, RouterLink],
+  imports: [DateTimePipe, Icon, NgTemplateOutlet, RouterLink, VulnerabilityList],
   templateUrl: './vulnerabilities.page.html',
   styleUrl: './vulnerabilities.page.css',
 })
@@ -54,6 +55,24 @@ export class VulnerabilitiesPage {
     one(this.params(), 'view') === 'vulnerability' ? 'vulnerability' : 'version',
   );
   protected readonly target = computed(() => one(this.params(), 'target') || null);
+  protected readonly status = computed<StatusFilter>(() => {
+    const value = one(this.params(), 'status');
+    return value === 'open' || value === 'false_positive' || value === 'wont_fix' ? value : 'all';
+  });
+  protected readonly severity = computed<SeverityFilter>(() => {
+    const value = one(this.params(), 'severity');
+    return value === 'critical' ||
+      value === 'high' ||
+      value === 'medium' ||
+      value === 'low' ||
+      value === 'unknown'
+      ? value
+      : '';
+  });
+  protected readonly pageNumber = computed(() => {
+    const n = Number(one(this.params(), 'page'));
+    return Number.isInteger(n) && n >= 1 ? n : 1;
+  });
 
   protected readonly summary = resource({
     params: () => ({ id: this.projectId() }),
@@ -77,6 +96,12 @@ export class VulnerabilitiesPage {
   protected readonly targets = computed(() => {
     const all = this.answer()?.targets ?? [];
     return [...all.filter((t) => t.isMain), ...all.filter((t) => !t.isMain)];
+  });
+  /** The viewed target's name: tracked or not, as the summary names it; else the URL's id. */
+  protected readonly targetName = computed(() => {
+    const id = (this.target() ?? '').split(':')[1];
+    const all = [...(this.answer()?.targets ?? []), ...(this.answer()?.untracked ?? [])];
+    return all.find((t) => t.id === id)?.name ?? null;
   });
   /** Nothing open anywhere: every tracked target has zero counts. */
   protected readonly clean = computed(() =>
