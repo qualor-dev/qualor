@@ -6,6 +6,12 @@ const CHECKOUT = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 /** The cache actions, pinned by commit like the checkout (actions/cache v4.3.0). */
 const CACHE_RESTORE = 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0';
 const CACHE_SAVE = 'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0';
+/**
+ * GHES takes the cache actions by tag, like its checkout: without GitHub Connect it resolves only
+ * the actions it ships, and no github.com commit.
+ */
+const GHES_CACHE_RESTORE = 'actions/cache/restore@v4';
+const GHES_CACHE_SAVE = 'actions/cache/save@v4';
 /** Set in the scanner step's shell: in a container job `${{ github.workspace }}` can be the host's path. */
 const TRIVY_CACHE_ENV = 'QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy"';
 /** Where the scanner keeps the vulnerability database archive inside the checkout. */
@@ -167,8 +173,8 @@ const checkoutStep = (o: WorkflowOptions): string[] => [
 ];
 
 /** Restores the scanner's vulnerability database archive before the scan. */
-const cacheRestoreStep = (): string[] => [
-  `      - uses: ${CACHE_RESTORE}`,
+const cacheRestoreStep = (o: WorkflowOptions): string[] => [
+  `      - uses: ${o.host === 'self-hosted' ? GHES_CACHE_RESTORE : CACHE_RESTORE}`,
   '        with:',
   `          path: ${TRIVY_CACHE_PATH}`,
   '          key: qualor-trivy-db-${{ github.run_id }}',
@@ -176,9 +182,9 @@ const cacheRestoreStep = (): string[] => [
 ];
 
 /** Saves it again when the scan fetched a new one (server.json changes with the database). */
-const cacheSaveStep = (): string[] => [
+const cacheSaveStep = (o: WorkflowOptions): string[] => [
   "      - if: always() && hashFiles('.qualor/trivy/server.json') != ''",
-  `        uses: ${CACHE_SAVE}`,
+  `        uses: ${o.host === 'self-hosted' ? GHES_CACHE_SAVE : CACHE_SAVE}`,
   '        with:',
   `          path: ${TRIVY_CACHE_PATH}`,
   "          key: qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}",
@@ -203,7 +209,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       ...container('qualor/scanner-dotnet'),
       '    steps:',
       ...checkoutStep(o),
-      ...cacheRestoreStep(),
+      ...cacheRestoreStep(o),
       '      - run: qualor dotnet begin',
       "      # Check this build command: use the repository's own build (restore, feeds, configuration)",
       '      # and keep --no-incremental, so every project is compiled and writes its analysis log.',
@@ -214,7 +220,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       `          QUALOR_URL: ${url}`,
       `          QUALOR_PROJECT_KEY: ${key}`,
       `          QUALOR_TOKEN: ${TOKEN}`,
-      ...cacheSaveStep(),
+      ...cacheSaveStep(o),
       '      - if: failure() || cancelled()',
       '        run: qualor dotnet abort',
     ];
@@ -223,7 +229,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       ...header(o),
       '    steps:',
       ...checkoutStep(o),
-      ...cacheRestoreStep(),
+      ...cacheRestoreStep(o),
       // The action runs as the scanner image's user, not the runner's: the cache directory must be writable.
       '      - name: Make the vulnerability database cache writable',
       '        run: mkdir -p .qualor/trivy && chmod 0777 .qualor/trivy',
@@ -233,7 +239,7 @@ export function githubWorkflow(o: WorkflowOptions): string {
       `          server-url: ${url}`,
       `          project-key: ${key}`,
       `          token: ${TOKEN}`,
-      ...cacheSaveStep(),
+      ...cacheSaveStep(o),
     ];
   } else {
     lines = [
@@ -241,14 +247,14 @@ export function githubWorkflow(o: WorkflowOptions): string {
       ...container('qualor/scanner'),
       '    steps:',
       ...checkoutStep(o),
-      ...cacheRestoreStep(),
+      ...cacheRestoreStep(o),
       '      # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.',
       `      - run: ${TRIVY_CACHE_ENV} qualor scan`,
       '        env:',
       `          QUALOR_URL: ${url}`,
       `          QUALOR_PROJECT_KEY: ${key}`,
       `          QUALOR_TOKEN: ${TOKEN}`,
-      ...cacheSaveStep(),
+      ...cacheSaveStep(o),
     ];
   }
   return lines.join('\n') + '\n';

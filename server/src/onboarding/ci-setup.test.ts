@@ -632,15 +632,25 @@ describe('GitLab self-managed', () => {
 
 const CACHE_PIN = /^actions\/cache\/(restore|save)@[0-9a-f]{40}$/;
 
-/** The restore step comes before the scan, the save step (on always()) after it; neither holds the token. */
+/**
+ * The restore step comes before the scan, the save step (on always()) after it; neither holds the
+ * token. GitHub.com pins actions/cache by commit; GHES takes the tag, like its checkout, since it
+ * may resolve no github.com commit.
+ */
 function expectDbCache(
   steps: { uses?: string; if?: string; with?: unknown; env?: unknown }[],
   scan: unknown,
+  host: 'cloud' | 'self-hosted' = 'cloud',
 ): void {
   const restore = steps.find((s) => s.uses?.startsWith('actions/cache/restore@'));
   const save = steps.find((s) => s.uses?.startsWith('actions/cache/save@'));
-  expect(restore?.uses).toMatch(CACHE_PIN);
-  expect(save?.uses).toMatch(CACHE_PIN);
+  if (host === 'cloud') {
+    expect(restore?.uses).toMatch(CACHE_PIN);
+    expect(save?.uses).toMatch(CACHE_PIN);
+  } else {
+    expect(restore?.uses).toBe('actions/cache/restore@v4');
+    expect(save?.uses).toBe('actions/cache/save@v4');
+  }
   expect(restore?.with).toEqual({
     path: '.qualor/trivy',
     key: 'qualor-trivy-db-${{ github.run_id }}',
@@ -768,7 +778,7 @@ describe('GitHub', () => {
   it('GHES non-C#: the container layout', () => {
     const job = wf({ host: 'self-hosted' }).doc.jobs.qualor;
     expect(job.container).toEqual({ image: 'qualor/scanner:0.14.3', options: '--user 1001' });
-    expectDbCache(job.steps, job.steps[2]);
+    expectDbCache(job.steps, job.steps[2], 'self-hosted');
     expect(job.steps[2]).toEqual({
       run: 'QUALOR_TRIVY_CACHE_DIR="$GITHUB_WORKSPACE/.qualor/trivy" qualor scan',
       env: {
@@ -784,7 +794,7 @@ describe('GitHub', () => {
     expect(job.container.image).toBe('qualor/scanner-dotnet:0.14.3');
     expect(job.steps[4].env.QUALOR_URL).toBe(URL_);
     expect(job.steps[4].env.QUALOR_PROJECT_KEY).toBe(KEY);
-    expectDbCache(job.steps, job.steps[4]);
+    expectDbCache(job.steps, job.steps[4], 'self-hosted');
   });
 
   it('GHES uses a Linux self-hosted runner and the tag-pinned checkout; cloud keeps the SHA pin', () => {
@@ -797,6 +807,23 @@ describe('GitHub', () => {
       const c = wf({ csharp });
       expect(c.doc.jobs.qualor['runs-on']).toBe('ubuntu-latest');
       expect(c.doc.jobs.qualor.steps[0].uses).toBe(CHECKOUT);
+    }
+  });
+
+  it('GHES takes actions/cache by tag, like its checkout; cloud keeps the SHA pin', () => {
+    const uses = (o: Partial<Omit<CiSetupInput, 'existing'>>) =>
+      (wf(o).doc.jobs.qualor.steps as { uses?: string }[])
+        .map((s) => s.uses)
+        .filter((u) => u?.startsWith('actions/cache/'));
+    for (const csharp of [false, true]) {
+      expect(uses({ host: 'self-hosted', csharp })).toEqual([
+        'actions/cache/restore@v4',
+        'actions/cache/save@v4',
+      ]);
+      expect(uses({ host: 'cloud', csharp })).toEqual([
+        'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830',
+        'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830',
+      ]);
     }
   });
 

@@ -418,6 +418,9 @@ plain job that runs `qualor/scanner:<version>` in a container on a runner labell
 `[self-hosted, linux]`. The runner needs Docker and access to Docker Hub or your mirror. To upgrade
 the scanner, edit the version in the file. GitHub.com and GHE.com get the Action.
 
+The job takes `actions/checkout@v4` and `actions/cache@v4` by tag. GitHub Enterprise Server
+resolves the actions it ships by tag, but not a github.com commit.
+
 ### Undo CI setup
 
 1. Close the pull request and delete the branch `qualor/setup`.
