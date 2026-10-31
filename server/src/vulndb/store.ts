@@ -282,9 +282,11 @@ export async function* readDatasetChunks(
 }
 
 /**
- * Deletes the `ready` datasets older than the `keep` newest, and the `incomplete` ones older than
- * {@link INCOMPLETE_MAX_AGE_MS} (a store that died). The current dataset is never deleted: the
- * state cannot change meanwhile (LOCKS.vulndbState). Answers how many were deleted.
+ * Keeps `keep` `ready` datasets and deletes the others, and the `incomplete` ones older than
+ * {@link INCOMPLETE_MAX_AGE_MS} (a store that died). The current dataset is always one of those
+ * kept, even when it is old, plus the newest other ready one (so there is something to go back
+ * to); with no current dataset, the `keep` newest stay. The state cannot change meanwhile
+ * (LOCKS.vulndbState). Answers how many were deleted.
  */
 export async function pruneDatasets(db: Db, keep = 2): Promise<number> {
   return db.transaction(async (tx) => {
@@ -295,7 +297,11 @@ export async function pruneDatasets(db: Db, keep = 2): Promise<number> {
       .from(vulndbDatasets)
       .where(eq(vulndbDatasets.status, 'ready'))
       .orderBy(desc(vulndbDatasets.createdAt), asc(vulndbDatasets.id));
-    const doomed = ready.slice(keep).map((row) => row.id);
+    const hasCurrent = ready.some((row) => row.id === currentDatasetId);
+    const others = ready.filter((row) => row.id !== currentDatasetId);
+    const doomed = (hasCurrent ? others.slice(Math.max(1, keep - 1)) : ready.slice(keep)).map(
+      (row) => row.id,
+    );
     const abandoned = await tx
       .select({ id: vulndbDatasets.id })
       .from(vulndbDatasets)

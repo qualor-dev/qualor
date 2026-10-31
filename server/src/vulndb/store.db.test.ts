@@ -223,7 +223,7 @@ describe('dataset storage', () => {
       return row!.id;
     }
 
-    it('keeps the 2 newest ready datasets and the current one', async () => {
+    it('keeps the current dataset and the newest other ready one', async () => {
       const oldest = await dataset('ready', 400);
       const old = await dataset('ready', 300);
       const newer = await dataset('ready', 200);
@@ -232,16 +232,27 @@ describe('dataset storage', () => {
       const freshIncomplete = await dataset('incomplete', 5);
       await updateVulndbState(t.db, (s) => ({ ...s, currentDatasetId: oldest }));
 
-      expect(await pruneDatasets(t.db)).toBe(2);
+      expect(await pruneDatasets(t.db)).toBe(3);
 
       const left = await t.db.select({ id: vulndbDatasets.id }).from(vulndbDatasets);
-      expect(left.map((r) => r.id).sort()).toEqual([oldest, newer, newest, freshIncomplete].sort());
+      expect(left.map((r) => r.id).sort()).toEqual([oldest, newest, freshIncomplete].sort());
       const chunks = await t.db.select({ id: vulndbChunks.datasetId }).from(vulndbChunks);
       expect(chunks.map((r) => r.id)).not.toContain(old);
+      expect(chunks.map((r) => r.id)).not.toContain(newer);
       expect(chunks.map((r) => r.id)).not.toContain(staleIncomplete);
       expect(await currentDataset(t.db, { currentDatasetId: oldest })).toMatchObject({
         id: oldest,
       });
+    });
+
+    it('keeps the 2 newest when no dataset is current', async () => {
+      await dataset('ready', 30);
+      const b = await dataset('ready', 20);
+      const c = await dataset('ready', 10);
+      await updateVulndbState(t.db, (s) => ({ ...s, currentDatasetId: null }));
+      expect(await pruneDatasets(t.db)).toBe(1);
+      const left = await t.db.select({ id: vulndbDatasets.id }).from(vulndbDatasets);
+      expect(left.map((r) => r.id).sort()).toEqual([b, c].sort());
     });
 
     it('keeps as many as asked', async () => {
