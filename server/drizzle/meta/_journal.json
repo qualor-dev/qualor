@@ -162,6 +162,13 @@
       "when": 1793434646660,
       "tag": "0022_vulnerability_decisions",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793480590874,
+      "tag": "0023_vulnerability_priority",
+      "breakpoints": true
     }
   ]
 }

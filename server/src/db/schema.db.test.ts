@@ -75,6 +75,8 @@ const TABLES = [
   'vulndb_chunks',
   'vulndb_datasets',
   'vulnerability_decisions',
+  'vulnerability_epss',
+  'vulnerability_kev',
   'vulnerability_matches',
   'vulnerability_target_checks',
   'webhook_deliveries',

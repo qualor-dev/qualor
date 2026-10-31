@@ -7,12 +7,14 @@ import {
   char,
   check,
   customType,
+  date,
   doublePrecision,
   index,
   integer,
   jsonb,
   pgTable,
   primaryKey,
+  real,
   smallint,
   text,
   timestamp,
@@ -811,6 +813,33 @@ export const targetVulnerabilities = pgTable(
       .where(sql`version_id IS NOT NULL`),
     index('target_vulnerabilities_project_idx').on(t.projectId),
     check('target_vulnerabilities_one_target', sql`(branch_id IS NULL) <> (version_id IS NULL)`),
+  ],
+);
+
+/** The CISA catalog of known exploited vulnerabilities; replaced as a whole by each download. */
+export const vulnerabilityKev = pgTable(
+  'vulnerability_kev',
+  {
+    vulnerabilityId: text('vulnerability_id').primaryKey(),
+    dateAdded: date('date_added', { mode: 'string' }).notNull(),
+    ransomware: boolean('ransomware').notNull().default(false),
+    listedAt: at('listed_at').notNull().defaultNow(),
+  },
+  () => [check('vulnerability_kev_id_check', sql`vulnerability_id ~ '^CVE-[0-9]{4}-[0-9]{4,19}$'`)],
+);
+
+/** The FIRST exploit prediction scores (EPSS); replaced as a whole by each download. */
+export const vulnerabilityEpss = pgTable(
+  'vulnerability_epss',
+  {
+    vulnerabilityId: text('vulnerability_id').primaryKey(),
+    score: real('score').notNull(),
+    percentile: real('percentile').notNull(),
+  },
+  () => [
+    check('vulnerability_epss_id_check', sql`vulnerability_id ~ '^CVE-[0-9]{4}-[0-9]{4,19}$'`),
+    check('vulnerability_epss_score_check', sql`score >= 0 AND score <= 1`),
+    check('vulnerability_epss_percentile_check', sql`percentile >= 0 AND percentile <= 1`),
   ],
 );
 

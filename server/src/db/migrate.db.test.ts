@@ -60,8 +60,9 @@ describe('runMigrations / pendingMigrations', () => {
     // GitLab CI-setup setting), 0020_versions (0.15, the released versions of a project, their
     // dependencies and the vulnerability settings), 0021_vulndb (0.15, the vulnerability database,
     // its matches and the vulnerabilities of branches and versions), 0022_vulnerability_decisions
-    // (0.15, the decisions on vulnerabilities and the checks of their targets).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(23);
+    // (0.15, the decisions on vulnerabilities and the checks of their targets),
+    // 0023_vulnerability_priority (0.15, the KEV and EPSS tables).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(24);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -319,6 +320,8 @@ describe('runMigrations / pendingMigrations', () => {
       'matched_packages', // 0021_vulndb
       'target_vulnerabilities', // 0021_vulndb
       'vulnerability_decisions', // 0022_vulnerability_decisions
+      'vulnerability_epss', // 0023_vulnerability_priority
+      'vulnerability_kev', // 0023_vulnerability_priority
       'vulnerability_target_checks', // 0022_vulnerability_decisions
       'vulndb_chunks', // 0021_vulndb
       'vulndb_datasets', // 0021_vulndb

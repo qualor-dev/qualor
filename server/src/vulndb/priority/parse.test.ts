@@ -1,0 +1,174 @@
+import { gzipSync } from 'node:zlib';
+import { describe, expect, it } from 'vitest';
+import { parseEpss, parseKev, PRIORITY_DATA_MAX_BYTES, PRIORITY_FILE_MAX_BYTES } from './parse';
+
+function entry(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    cveID: 'CVE-2024-0001',
+    vendorProject: 'V',
+    product: 'P',
+    vulnerabilityName: 'N',
+    dateAdded: '2026-02-03',
+    shortDescription: 'd',
+    requiredAction: 'a',
+    dueDate: '2026-03-03',
+    knownRansomwareCampaignUse: 'Unknown',
+    ...over,
+  };
+}
+
+function catalog(entries: unknown[], over: Record<string, unknown> = {}): Buffer {
+  return Buffer.from(
+    JSON.stringify({
+      title: 'CISA KEV',
+      catalogVersion: '2026.10.30',
+      dateReleased: '2026-10-30T14:22:10.123Z',
+      count: entries.length,
+      vulnerabilities: entries,
+      ...over,
+    }),
+  );
+}
+
+describe('constants', () => {
+  it('has the production limits', () => {
+    expect(PRIORITY_DATA_MAX_BYTES).toBe(256 * 1024 * 1024);
+    expect(PRIORITY_FILE_MAX_BYTES).toBe(64 * 1024 * 1024);
+  });
+});
+
+describe('parseKev', () => {
+  const two = catalog([
+    entry(),
+    entry({ cveID: 'CVE-2024-0002', knownRansomwareCampaignUse: 'Known' }),
+  ]);
+
+  it('parses a valid catalog', async () => {
+    const got = await parseKev(two);
+    expect(got).toEqual({
+      catalogVersion: '2026.10.30',
+      releasedAt: new Date('2026-10-30T14:22:10.123Z'),
+      entries: [
+        { vulnerabilityId: 'CVE-2024-0001', dateAdded: '2026-02-03', ransomware: false },
+        { vulnerabilityId: 'CVE-2024-0002', dateAdded: '2026-02-03', ransomware: true },
+      ],
+      skipped: 0,
+    });
+  });
+
+  it('parses the same catalog gzipped', async () => {
+    expect(await parseKev(gzipSync(two))).toEqual(await parseKev(two));
+  });
+
+  it('skips a bad id or date and counts it', async () => {
+    const got = await parseKev(
+      catalog([
+        entry(),
+        entry({ cveID: 'GHSA-xxxx' }),
+        entry({ cveID: 'CVE-2024-0003', dateAdded: '2026-13-01' }),
+        entry({ cveID: 'CVE-2024-0004', dateAdded: '2026-02-30' }),
+      ]),
+    );
+    expect(got).toMatchObject({ skipped: 3 });
+    expect('entries' in got && got.entries).toHaveLength(1);
+  });
+
+  it('keeps the first entry of a duplicate id', async () => {
+    const got = await parseKev(
+      catalog([entry({ dateAdded: '2026-01-01' }), entry({ dateAdded: '2026-02-02' })]),
+    );
+    expect('entries' in got && got.entries).toEqual([
+      { vulnerabilityId: 'CVE-2024-0001', dateAdded: '2026-01-01', ransomware: false },
+    ]);
+  });
+
+  it.each([
+    ['empty object', Buffer.from('{}')],
+    ['vulnerabilities not an array', Buffer.from('{"vulnerabilities":"x"}')],
+    ['bad dateReleased', catalog([entry()], { dateReleased: 'yesterday' })],
+    ['impossible dateReleased', catalog([entry()], { dateReleased: '2026-02-30T00:00:00Z' })],
+    ['every entry invalid', catalog([entry({ cveID: 'x' }), 5, null])],
+    ['invalid JSON', Buffer.from('{nope')],
+    ['array', Buffer.from('[]')],
+    ['empty', Buffer.alloc(0)],
+    ['bad gzip', Buffer.from([0x1f, 0x8b, 1, 2, 3])],
+  ])('gives INVALID_DATA for %s', async (_name, body) => {
+    expect(await parseKev(body)).toMatchObject({ problem: { code: 'INVALID_DATA' } });
+  });
+
+  it('gives TOO_LARGE past the byte limit and the row limit', async () => {
+    expect(await parseKev(gzipSync(two), { maxDataBytes: 50 })).toMatchObject({
+      problem: { code: 'TOO_LARGE' },
+    });
+    expect(await parseKev(two, { maxRows: 1 })).toMatchObject({ problem: { code: 'TOO_LARGE' } });
+  });
+});
+
+describe('parseEpss', () => {
+  const text =
+    '#model_version:v2025.03.14,score_date:2026-10-31T12:55:00Z\n' +
+    'cve,epss,percentile\nCVE-2024-0001,0.95,0.999\n';
+  const expected = {
+    scoreDate: new Date('2026-10-31T12:55:00Z'),
+    modelVersion: 'v2025.03.14',
+    ids: ['CVE-2024-0001'],
+    scores: [0.95],
+    percentiles: [0.999],
+    skipped: 0,
+  };
+
+  it('parses a file', async () => {
+    expect(await parseEpss(Buffer.from(text))).toEqual(expected);
+  });
+
+  it('parses gzip and CRLF the same', async () => {
+    expect(await parseEpss(gzipSync(Buffer.from(text)))).toEqual(expected);
+    expect(await parseEpss(Buffer.from(text.replaceAll('\n', '\r\n')))).toEqual(expected);
+  });
+
+  it('parses a file without the comment line', async () => {
+    const body = text.split('\n').slice(1).join('\n');
+    expect(await parseEpss(Buffer.from(body))).toEqual({
+      ...expected,
+      scoreDate: null,
+      modelVersion: null,
+    });
+  });
+
+  it('skips and counts bad rows, and blank lines', async () => {
+    const got = await parseEpss(
+      Buffer.from(
+        `${text}\nCVE-2024-0002,1.5,0.1\nCVE-2024-0003,abc,0.1\nfoo,0.1,0.1\nCVE-2024-0004,0.1\n\nCVE-2024-0005,-0.1,0.2\nCVE-2024-0006,0.1,0.2,9\n`,
+      ),
+    );
+    expect(got).toMatchObject({ ids: ['CVE-2024-0001'], skipped: 6 });
+  });
+
+  it('keeps the first of a duplicate id', async () => {
+    const got = await parseEpss(Buffer.from(`${text}CVE-2024-0001,0.5,0.5\n`));
+    expect(got).toMatchObject({ ids: ['CVE-2024-0001'], scores: [0.95], skipped: 1 });
+  });
+
+  it.each([
+    ['wrong header', Buffer.from('cve,score\nCVE-2024-0001,0.1\n')],
+    ['no valid row', Buffer.from('cve,epss,percentile\nfoo,2,3\n')],
+    ['empty', Buffer.alloc(0)],
+    ['bad gzip', Buffer.from([0x1f, 0x8b, 1, 2, 3])],
+  ])('gives INVALID_DATA for %s', async (_name, body) => {
+    expect(await parseEpss(body)).toMatchObject({ problem: { code: 'INVALID_DATA' } });
+  });
+
+  it('gives TOO_LARGE past the byte limit and the row limit', async () => {
+    const big = gzipSync(Buffer.from(text + 'CVE-2024-0002,0.1,0.1\n'.repeat(1)));
+    expect(await parseEpss(big, { maxDataBytes: 40 })).toMatchObject({
+      problem: { code: 'TOO_LARGE' },
+    });
+    const rows = `${text}CVE-2024-0002,0.1,0.1\nCVE-2024-0003,0.1,0.1\n`;
+    expect(await parseEpss(Buffer.from(rows), { maxRows: 2 })).toMatchObject({
+      problem: { code: 'TOO_LARGE' },
+    });
+    expect(await parseEpss(Buffer.from(rows), { maxRows: 3 })).toMatchObject({
+      ids: expect.any(Array),
+    });
+  });
+});

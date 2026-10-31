@@ -129,4 +129,11 @@ export const LOCKS = {
    *   rule rows, none of which a writer waits on.
    */
   vulnerabilityDecision: 7_310_032,
+  /**
+   * `pg_advisory_xact_lock(key)`: one replace of the KEV or EPSS table at a time (vuln plan 4a,
+   * vulndb/priority/store.ts).
+   */
+  vulnerabilityPriority: 7_310_033,
+  /** `pg_advisory_xact_lock(key)`: one read-modify-write of the priority datasets' state at a time (4a). */
+  vulndbPriorityState: 7_310_034,
 } as const;
