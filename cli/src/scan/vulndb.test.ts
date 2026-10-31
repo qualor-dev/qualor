@@ -502,6 +502,37 @@ describe('resolveVulnerabilityDb: a new archive that is not usable keeps the cac
   );
 });
 
+describe('resolveVulnerabilityDb: private copies a killed scan left behind', () => {
+  it('removes qualor-vulndb-* directories older than a day from the temporary directory, and nothing else', async () => {
+    const server = await fakeServer({ meta: 404 });
+    const tempRoot = tmp();
+    const dayAgo = new Date(Date.now() - 25 * HOUR);
+    const make = (name: string, old: boolean, kind: 'dir' | 'file' = 'dir') => {
+      const p = path.join(tempRoot, name);
+      if (kind === 'dir') {
+        mkdirSync(path.join(p, 'db'), { recursive: true });
+        writeFileSync(path.join(p, 'db', 'trivy.db'), 'a copy');
+      } else {
+        writeFileSync(p, 'a file');
+      }
+      if (old) utimesSync(p, dayAgo, dayAgo);
+      return p;
+    };
+    const stale = make('qualor-vulndb-AbC123', true);
+    const kept = [
+      make('qualor-vulndb-xYz789', false),
+      make('qualor-review-AbC123', true),
+      make('qualor-vulndb-AbC1234', true),
+      make('qualor-vulndb-Fi1e00', true, 'file'),
+    ];
+    const got = await choose({ endpoint: server.endpoint, cache: path.join(tmp(), 'c'), tempRoot });
+    expect(got).toMatchObject({ dir: null, warnings: [] });
+    expect(existsSync(stale)).toBe(false);
+    for (const p of kept) expect(existsSync(p), p).toBe(true);
+    await got.cleanup();
+  });
+});
+
 describe('resolveVulnerabilityDb: no home directory (R7)', () => {
   it('downloads into a temporary directory when the default cache cannot be named, and never throws', async () => {
     vi.spyOn(os, 'homedir').mockImplementation(() => {

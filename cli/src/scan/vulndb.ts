@@ -104,6 +104,9 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 /** A staging directory this old belongs to no running scan (the longest timeout is a day). */
 const STAGING_MAX_AGE_MS = 48 * HOUR_MS;
+/** The private copy's directory: `createWorkDir` names it `qualor-vulndb-` and six characters. */
+const WORK_ID = 'vulndb';
+const WORK_DIR = /^qualor-vulndb-[A-Za-z0-9]{6}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const READ_CHUNK = 1024 * 1024;
 
@@ -225,6 +228,30 @@ function prune(cache: string, log: Logger): void {
     const target = path.join(cache, name);
     try {
       if (now - lstatSync(target).mtimeMs >= maxAge) removeQuietly(target, log);
+    } catch {
+      // Gone already (another scan removed it).
+    }
+  }
+}
+
+/**
+ * Removes the private copies (over a gigabyte each) that scans killed before their cleanup left in
+ * `tempRoot`: this module's directories only, a day old or more.
+ */
+function sweepWorkDirs(tempRoot: string, log: Logger): void {
+  let names: string[];
+  try {
+    names = readdirSync(tempRoot);
+  } catch {
+    return;
+  }
+  const now = Date.now();
+  for (const name of names) {
+    if (!WORK_DIR.test(name)) continue;
+    const dir = path.join(tempRoot, name);
+    try {
+      const s = lstatSync(dir);
+      if (s.isDirectory() && now - s.mtimeMs >= DAY_MS) removeQuietly(dir, log);
     } catch {
       // Gone already (another scan removed it).
     }
@@ -412,7 +439,7 @@ class Choice {
 
   /** A private temporary directory for this scan, removed by `cleanup` (and on Ctrl+C). */
   workDir(): string {
-    this.work ??= createWorkDir('vulndb', this.input.tempRoot);
+    this.work ??= createWorkDir(WORK_ID, this.input.tempRoot);
     return this.work;
   }
 
@@ -593,6 +620,7 @@ export async function resolveVulnerabilityDb(
 
 async function decide(c: Choice, input: VulnerabilityDbInput): Promise<VulnerabilityDbChoice> {
   if (input.endpoint === null) return c.keep();
+  sweepWorkDirs(input.tempRoot ?? os.tmpdir(), c.log);
   const meta = await fetchServerVulndb(input.endpoint, c.log);
   if (meta === 'unsupported') return c.keep();
   if ('failed' in meta) return metadataFailed(c, meta.failed);
