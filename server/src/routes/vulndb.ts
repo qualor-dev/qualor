@@ -17,6 +17,7 @@ import {
   readVulndbSettings,
   VULNDB_INTERVAL_HOURS,
   VULNDB_PASSWORD_AAD,
+  VULNDB_SCANNER_POLICIES,
   VULNDB_REPOSITORY_PATTERN,
   writeVulndbSettings,
   type VulndbSettings,
@@ -53,10 +54,18 @@ const sourceBody = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('upload') }),
 ]);
 
+const scannerPolicy = z.enum(VULNDB_SCANNER_POLICIES).meta({
+  description: 'daily: scanners refresh their copy once a day; every: before every scan',
+});
+
 const settingsBody = z.strictObject({
   enabled: z.boolean().optional(),
   intervalHours: intervalHours.optional(),
   source: sourceBody.optional(),
+  scanners: z
+    .strictObject({ enabled: z.boolean().optional(), policy: scannerPolicy.optional() })
+    .optional()
+    .meta({ description: 'Whether scanners take the database from this server, and how often' }),
 });
 
 const settingsDto = z.object({
@@ -71,6 +80,7 @@ const settingsDto = z.object({
     passwordReadable: z.boolean().optional(),
   }),
   intervalHours,
+  scanners: z.object({ enabled: z.boolean(), policy: scannerPolicy }),
   officialRepository: z.string(),
   status: z.enum(['off', 'no_data', 'updating', 'up_to_date', 'stale', 'failed']),
   current: z
@@ -124,6 +134,8 @@ function changedFields(
       fields.push('source.password');
     }
   }
+  if (before.scanners.enabled !== after.scanners.enabled) fields.push('scanners.enabled');
+  if (before.scanners.policy !== after.scanners.policy) fields.push('scanners.policy');
   return fields;
 }
 
@@ -174,6 +186,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       enabled: settings.enabled,
       source,
       intervalHours: settings.intervalHours,
+      scanners: settings.scanners,
       officialRepository: OFFICIAL_REPOSITORY,
       status: vulndbStatus(settings, state, current, running !== undefined),
       current:
@@ -235,6 +248,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
             ...(body.enabled === undefined ? {} : { enabled: body.enabled }),
             ...(body.intervalHours === undefined ? {} : { intervalHours: body.intervalHours }),
             ...(body.source === undefined ? {} : { source: body.source }),
+            ...(body.scanners === undefined ? {} : { scanners: body.scanners }),
           },
           deps.config.secretKey,
         );

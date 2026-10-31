@@ -31,6 +31,7 @@ describe('vulnerability database settings and state', () => {
       enabled: true,
       source: { kind: 'official' },
       intervalHours: 6,
+      scanners: { enabled: true, policy: 'daily' },
     });
     expect(DEFAULT_VULNDB_SETTINGS.intervalHours).toBe(6);
   });
@@ -97,7 +98,36 @@ describe('vulnerability database settings and state', () => {
       enabled: false,
       source: { kind: 'official' },
       intervalHours: 6,
+      scanners: { enabled: true, policy: 'daily' },
     });
+  });
+
+  it('reads the scanner defaults from a row without scanners', async () => {
+    await ctx.db.insert(instanceSettings).values({
+      key: 'vulndb',
+      value: { enabled: false, intervalHours: 12, source: { kind: 'upload' } },
+    });
+    expect((await readVulndbSettings(ctx.db)).scanners).toEqual({ enabled: true, policy: 'daily' });
+  });
+
+  it('keeps scanners.enabled when only scanners.policy is damaged', async () => {
+    await ctx.db
+      .insert(instanceSettings)
+      .values({ key: 'vulndb', value: { scanners: { enabled: false, policy: 'weekly' } } });
+    expect((await readVulndbSettings(ctx.db)).scanners).toEqual({
+      enabled: false,
+      policy: 'daily',
+    });
+  });
+
+  it('merges a scanners patch key by key', async () => {
+    await ctx.db.transaction((tx) =>
+      writeVulndbSettings(tx, { scanners: { enabled: false } }, SECRET),
+    );
+    const { after } = await ctx.db.transaction((tx) =>
+      writeVulndbSettings(tx, { scanners: { policy: 'every' } }, SECRET),
+    );
+    expect(after.scanners).toEqual({ enabled: false, policy: 'every' });
   });
 
   it('reads and updates the state under its lock', async () => {

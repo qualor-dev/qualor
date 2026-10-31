@@ -12141,6 +12141,14 @@ export interface paths {
                             };
                             /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
                             intervalHours: 1 | 3 | 6 | 12 | 24;
+                            scanners: {
+                                enabled: boolean;
+                                /**
+                                 * @description daily: scanners refresh their copy once a day; every: before every scan
+                                 * @enum {string}
+                                 */
+                                policy: "daily" | "every";
+                            };
                             officialRepository: string;
                             /** @enum {string} */
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
@@ -12222,6 +12230,15 @@ export interface paths {
                             /** @enum {string} */
                             kind: "upload";
                         };
+                        /** @description Whether scanners take the database from this server, and how often */
+                        scanners?: {
+                            enabled?: boolean;
+                            /**
+                             * @description daily: scanners refresh their copy once a day; every: before every scan
+                             * @enum {string}
+                             */
+                            policy?: "daily" | "every";
+                        };
                     };
                 };
             };
@@ -12244,6 +12261,14 @@ export interface paths {
                             };
                             /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
                             intervalHours: 1 | 3 | 6 | 12 | 24;
+                            scanners: {
+                                enabled: boolean;
+                                /**
+                                 * @description daily: scanners refresh their copy once a day; every: before every scan
+                                 * @enum {string}
+                                 */
+                                policy: "daily" | "every";
+                            };
                             officialRepository: string;
                             /** @enum {string} */
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
@@ -12358,6 +12383,14 @@ export interface paths {
                             };
                             /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
                             intervalHours: 1 | 3 | 6 | 12 | 24;
+                            scanners: {
+                                enabled: boolean;
+                                /**
+                                 * @description daily: scanners refresh their copy once a day; every: before every scan
+                                 * @enum {string}
+                                 */
+                                policy: "daily" | "every";
+                            };
                             officialRepository: string;
                             /** @enum {string} */
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
@@ -12467,6 +12500,14 @@ export interface paths {
                             };
                             /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
                             intervalHours: 1 | 3 | 6 | 12 | 24;
+                            scanners: {
+                                enabled: boolean;
+                                /**
+                                 * @description daily: scanners refresh their copy once a day; every: before every scan
+                                 * @enum {string}
+                                 */
+                                policy: "daily" | "every";
+                            };
                             officialRepository: string;
                             /** @enum {string} */
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";

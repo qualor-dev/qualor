@@ -26362,6 +26362,27 @@
                       ],
                       "description": "Hours between checks for a new database: 1, 3, 6, 12, 24"
                     },
+                    "scanners": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "policy": {
+                          "type": "string",
+                          "enum": [
+                            "daily",
+                            "every"
+                          ],
+                          "description": "daily: scanners refresh their copy once a day; every: before every scan"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "policy"
+                      ],
+                      "additionalProperties": false
+                    },
                     "officialRepository": {
                       "type": "string"
                     },
@@ -26525,6 +26546,7 @@
                     "enabled",
                     "source",
                     "intervalHours",
+                    "scanners",
                     "officialRepository",
                     "status",
                     "current",
@@ -26691,6 +26713,24 @@
                         "additionalProperties": false
                       }
                     ]
+                  },
+                  "scanners": {
+                    "description": "Whether scanners take the database from this server, and how often",
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "policy": {
+                        "type": "string",
+                        "enum": [
+                          "daily",
+                          "every"
+                        ],
+                        "description": "daily: scanners refresh their copy once a day; every: before every scan"
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
@@ -26775,6 +26815,27 @@
                         }
                       ],
                       "description": "Hours between checks for a new database: 1, 3, 6, 12, 24"
+                    },
+                    "scanners": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "policy": {
+                          "type": "string",
+                          "enum": [
+                            "daily",
+                            "every"
+                          ],
+                          "description": "daily: scanners refresh their copy once a day; every: before every scan"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "policy"
+                      ],
+                      "additionalProperties": false
                     },
                     "officialRepository": {
                       "type": "string"
@@ -26939,6 +27000,7 @@
                     "enabled",
                     "source",
                     "intervalHours",
+                    "scanners",
                     "officialRepository",
                     "status",
                     "current",
@@ -27080,6 +27142,27 @@
                       ],
                       "description": "Hours between checks for a new database: 1, 3, 6, 12, 24"
                     },
+                    "scanners": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "policy": {
+                          "type": "string",
+                          "enum": [
+                            "daily",
+                            "every"
+                          ],
+                          "description": "daily: scanners refresh their copy once a day; every: before every scan"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "policy"
+                      ],
+                      "additionalProperties": false
+                    },
                     "officialRepository": {
                       "type": "string"
                     },
@@ -27243,6 +27326,7 @@
                     "enabled",
                     "source",
                     "intervalHours",
+                    "scanners",
                     "officialRepository",
                     "status",
                     "current",
@@ -27374,6 +27458,27 @@
                       ],
                       "description": "Hours between checks for a new database: 1, 3, 6, 12, 24"
                     },
+                    "scanners": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "policy": {
+                          "type": "string",
+                          "enum": [
+                            "daily",
+                            "every"
+                          ],
+                          "description": "daily: scanners refresh their copy once a day; every: before every scan"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "policy"
+                      ],
+                      "additionalProperties": false
+                    },
                     "officialRepository": {
                       "type": "string"
                     },
@@ -27537,6 +27642,7 @@
                     "enabled",
                     "source",
                     "intervalHours",
+                    "scanners",
                     "officialRepository",
                     "status",
                     "current",

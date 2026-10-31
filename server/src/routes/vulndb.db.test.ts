@@ -75,6 +75,7 @@ describe('/system/vulnerability-db (API)', () => {
       enabled: true,
       source: { kind: 'official' },
       intervalHours: 6,
+      scanners: { enabled: true, policy: 'daily' },
       officialRepository: expect.stringMatching(/^ghcr\.io\//),
       status: 'no_data',
       current: null,
@@ -122,6 +123,25 @@ describe('/system/vulnerability-db (API)', () => {
       source: { kind: 'official' },
       status: 'off',
     });
+  });
+
+  it('changes the scanner setting by key, audits it and does not queue an update', async () => {
+    await put({ enabled: false });
+    await ctx.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+    const res = await put({ scanners: { policy: 'every' } });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().scanners).toEqual({ enabled: true, policy: 'every' });
+    expect(lastChanged()).toEqual(['scanners.policy']);
+    const off = await put({ scanners: { enabled: false } });
+    expect(off.json().scanners).toEqual({ enabled: false, policy: 'every' });
+    expect(lastChanged()).toEqual(['scanners.enabled']);
+    expect(await ctx.db.select().from(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE))).toEqual([]);
+  });
+
+  it('answers 422 on an unknown key inside scanners', async () => {
+    const res = await put({ scanners: { extra: true } });
+    expect(res.statusCode).toBe(422);
+    expect((await put({ scanners: { policy: 'weekly' } })).statusCode).toBe(422);
   });
 
   it('drops the password when the registry host changes, keeps it on the same host', async () => {

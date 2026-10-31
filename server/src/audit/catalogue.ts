@@ -126,6 +126,8 @@ export const VULNDB_SETTINGS_CHANGED_FIELDS = [
   'source.repository',
   'source.username',
   'source.password',
+  'scanners.enabled',
+  'scanners.policy',
 ] as const;
 export type VulndbSettingsChangedField = (typeof VULNDB_SETTINGS_CHANGED_FIELDS)[number];
 /** sso-scim.md §7.7: the SSO flow failure codes, reused by `sso.sign_in_failed` and Task 12's errors.ts. */

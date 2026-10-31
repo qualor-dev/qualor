@@ -39,16 +39,27 @@ export type VulndbSource =
     }
   | { kind: 'upload' };
 
+export const VULNDB_SCANNER_POLICIES = ['daily', 'every'] as const;
+export type VulndbScannerPolicy = (typeof VULNDB_SCANNER_POLICIES)[number];
+
+/** Whether scanners take the database from this server, and how often they refresh it. */
+export interface VulndbScannerSettings {
+  enabled: boolean;
+  policy: VulndbScannerPolicy;
+}
+
 export interface VulndbSettings {
   enabled: boolean;
   source: VulndbSource;
   intervalHours: VulndbIntervalHours;
+  scanners: VulndbScannerSettings;
 }
 
 export const DEFAULT_VULNDB_SETTINGS: VulndbSettings = Object.freeze({
   enabled: true,
   source: Object.freeze({ kind: 'official' }) as VulndbSource,
   intervalHours: 6,
+  scanners: Object.freeze({ enabled: true, policy: 'daily' }) as VulndbScannerSettings,
 }) as VulndbSettings;
 
 /** Part by part, so one damaged key never turns into the defaults of the others. */
@@ -58,6 +69,12 @@ const onRead = z.object({
   intervalHours: z
     .union([z.literal(1), z.literal(3), z.literal(6), z.literal(12), z.literal(24)])
     .catch(6),
+  scanners: z
+    .object({
+      enabled: z.boolean().catch(true),
+      policy: z.enum(VULNDB_SCANNER_POLICIES).catch('daily'),
+    })
+    .catch({ enabled: true, policy: 'daily' }),
 });
 
 export async function readVulndbSettings(db: Executor): Promise<VulndbSettings> {
@@ -87,6 +104,7 @@ export interface VulndbSettingsPatch {
   enabled?: boolean;
   intervalHours?: VulndbIntervalHours;
   source?: VulndbSourceInput;
+  scanners?: { enabled?: boolean; policy?: VulndbScannerPolicy };
 }
 
 /** The host[:port] of a repository: the part before the first slash, lowercased. */
@@ -136,6 +154,10 @@ export async function writeVulndbSettings(
       patch.source === undefined
         ? before.source
         : nextSource(patch.source, before.source, secretKey),
+    scanners: {
+      enabled: patch.scanners?.enabled ?? before.scanners.enabled,
+      policy: patch.scanners?.policy ?? before.scanners.policy,
+    },
   };
   await tx
     .insert(instanceSettings)
