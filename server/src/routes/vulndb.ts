@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
@@ -13,6 +14,8 @@ import { closeAfterRefusal } from '../http/lingering-close';
 import { ProblemError } from '../http/problem';
 import { isoOrNull } from '../http/schemas';
 import {
+  OFFICIAL_EPSS_URL,
+  OFFICIAL_KEV_URL,
   OFFICIAL_REPOSITORY,
   readVulndbSettings,
   VULNDB_INTERVAL_HOURS,
@@ -20,8 +23,12 @@ import {
   VULNDB_SCANNER_POLICIES,
   VULNDB_REPOSITORY_PATTERN,
   writeVulndbSettings,
+  type PriorityDataset,
   type VulndbSettings,
 } from '../vulndb/settings';
+import { PRIORITY_FILE_MAX_BYTES } from '../vulndb/priority/parse';
+import { readPriorityState, priorityStatus } from '../vulndb/priority/state';
+import { storePriorityFile } from '../vulndb/priority/update';
 import { readVulndbState, VULNDB_UPDATE_QUEUE, vulndbStatus } from '../vulndb/state';
 import { enqueueRecheck } from '../vulndb/recheck-queue';
 import { requestVulndbUpdateNow, rescheduleVulndbUpdate } from '../vulndb/update';
@@ -41,6 +48,22 @@ const repository = z
   .regex(VULNDB_REPOSITORY_PATTERN, 'A registry repository with a tag or a sha256 digest')
   .meta({ description: 'host[:port]/path:tag or host[:port]/path@sha256:digest' });
 
+const FEATURE = 'vuln.priority';
+
+const mirrorUrl = z
+  .string()
+  .max(2048)
+  .refine((value) => {
+    try {
+      const u = new URL(value);
+      return u.protocol === 'https:' && u.username === '' && u.password === '' && u.hash === '';
+    } catch {
+      return false;
+    }
+  }, 'An https URL without credentials or a fragment')
+  .nullable()
+  .optional();
+
 const sourceBody = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('official') }),
   z.strictObject({
@@ -49,6 +72,12 @@ const sourceBody = z.discriminatedUnion('kind', [
     username: z.string().min(1).max(256).nullable().optional(),
     password: z.string().min(1).max(1_024).nullable().optional().meta({
       description: 'Write-only. A string sets the password, null removes it, absent keeps it',
+    }),
+    kevUrl: mirrorUrl.meta({
+      description: 'Where to download the CISA KEV catalog. Null: the official source',
+    }),
+    epssUrl: mirrorUrl.meta({
+      description: 'Where to download the FIRST EPSS scores. Null: the official source',
     }),
   }),
   z.strictObject({ kind: z.literal('upload') }),
@@ -68,6 +97,18 @@ const settingsBody = z.strictObject({
     .meta({ description: 'Whether scanners take the database from this server, and how often' }),
 });
 
+const priorityDatasetDto = z.object({
+  status: z.enum(['off', 'no_data', 'updating', 'up_to_date', 'stale', 'failed']),
+  officialUrl: z.string(),
+  source: z.enum(['official', 'mirror', 'upload']).nullable(),
+  dataDate: z.string().nullable(),
+  storedAt: z.string().nullable(),
+  lastCheckAt: z.string().nullable(),
+  sizeBytes: z.number().int().nullable(),
+  count: z.number().int().nullable(),
+  lastError: z.object({ code: z.string(), message: z.string() }).nullable(),
+});
+
 const settingsDto = z.object({
   enabled: z.boolean(),
   source: z.object({
@@ -78,6 +119,8 @@ const settingsDto = z.object({
     passwordSet: z.boolean().optional(),
     /** False when the stored password no longer decrypts (QUALOR_SECRET_KEY changed). */
     passwordReadable: z.boolean().optional(),
+    kevUrl: z.string().nullable().optional(),
+    epssUrl: z.string().nullable().optional(),
   }),
   intervalHours,
   scanners: z.object({ enabled: z.boolean(), policy: scannerPolicy }),
@@ -101,6 +144,10 @@ const settingsDto = z.object({
     .object({ code: z.string(), message: z.string() })
     .nullable()
     .meta({ description: "The re-check's last problem: DISK or RECHECK_FAILED" }),
+  priority: z
+    .object({ kev: priorityDatasetDto, epss: priorityDatasetDto })
+    .nullable()
+    .meta({ description: 'CISA KEV and FIRST EPSS; null without the vuln.priority feature' }),
   lastRecheck: z
     .object({
       at: z.string(),
@@ -127,6 +174,8 @@ function changedFields(
     const was = before.source.kind === 'mirror' ? before.source : null;
     if (was?.repository !== after.source.repository) fields.push('source.repository');
     if ((was?.username ?? null) !== after.source.username) fields.push('source.username');
+    if ((was?.kevUrl ?? null) !== after.source.kevUrl) fields.push('source.kevUrl');
+    if ((was?.epssUrl ?? null) !== after.source.epssUrl) fields.push('source.epssUrl');
     // A new password is a change; removing one only when there was one.
     const hadPassword = (was?.passwordEnc ?? null) !== null;
     const dropped = !passwordSent && hadPassword && after.source.passwordEnc === null;
@@ -154,9 +203,23 @@ function wantsUpdateNow(
   return (
     before.source.repository !== after.source.repository ||
     before.source.username !== after.source.username ||
+    before.source.kevUrl !== after.source.kevUrl ||
+    before.source.epssUrl !== after.source.epssUrl ||
     passwordSent
   );
 }
+
+const notLicensed = (): ProblemError =>
+  new ProblemError(
+    403,
+    'FEATURE_NOT_LICENSED',
+    `The enterprise feature "${FEATURE}" is not licensed`,
+  );
+
+const PRIORITY_FILES = {
+  kev: 'known_exploited_vulnerabilities.json',
+  epss: 'epss_scores-current.csv.gz',
+} as const satisfies Record<PriorityDataset, string>;
 
 export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app, { deps }) => {
   const readDto = async (): Promise<SettingsDto> => {
@@ -180,7 +243,33 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
           passwordEnc === null ||
           decryptSecret(encryptionKey(deps.config.secretKey), passwordEnc, VULNDB_PASSWORD_AAD) !==
             null,
+        kevUrl: settings.source.kevUrl,
+        epssUrl: settings.source.epssUrl,
       };
+    }
+    let priority: SettingsDto['priority'] = null;
+    if (deps.edition.limits().vulnerabilities.priority) {
+      const states = await readPriorityState(deps.db);
+      const now = new Date();
+      const one = (dataset: PriorityDataset) => {
+        const s = states[dataset];
+        return {
+          status: priorityStatus(dataset, s, {
+            enabled: settings.enabled,
+            running: running !== undefined,
+            now,
+          }),
+          officialUrl: dataset === 'kev' ? OFFICIAL_KEV_URL : OFFICIAL_EPSS_URL,
+          source: s.source,
+          dataDate: s.dataDate,
+          storedAt: s.storedAt,
+          lastCheckAt: s.lastCheckAt,
+          sizeBytes: s.sizeBytes,
+          count: s.count,
+          lastError: s.lastError,
+        };
+      };
+      priority = { kev: one('kev'), epss: one('epss') };
     }
     return {
       enabled: settings.enabled,
@@ -202,6 +291,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       nextCheckAt: state.nextCheckAt,
       lastError: state.lastError,
       lastRecheckError: state.lastRecheckError,
+      priority,
       lastRecheck: state.lastRecheck,
     };
   };
@@ -415,6 +505,118 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         { userId: principal.user.id, sizeBytes: dataset.sizeBytes },
         'vulndb file uploaded',
       );
+      return readDto();
+    },
+  );
+
+  const priorityTypeMessage = 'Send the file as application/gzip or application/octet-stream';
+  // One factory for both routes. The routes themselves are written out below, so that the route
+  // sweep (test/route-source.ts) finds each with its rule.
+  const priorityUpload = (dataset: PriorityDataset) => {
+    const maxBytes = PRIORITY_FILE_MAX_BYTES;
+    const label = dataset === 'kev' ? 'CISA KEV catalog' : 'FIRST EPSS scores';
+    const tooLarge = () =>
+      new ProblemError(413, 'TOO_LARGE', 'The file is too large', {
+        detail: `The file is larger than ${maxBytes} bytes`,
+      });
+    const options = {
+      bodyLimit: Number.MAX_SAFE_INTEGER,
+      config: {
+        deferContinue: true,
+        openapi: {
+          problems: [403, 413, 415, 422],
+          requestBody: {
+            required: true,
+            description: `The ${label} (${PRIORITY_FILES[dataset]}) as downloaded, gzipped or plain, at most 32 MiB. Needs the vuln.priority feature.`,
+            content: Object.fromEntries(
+              UPLOAD_TYPES.map((type) => [type, { schema: { type: 'string', format: 'binary' } }]),
+            ),
+          },
+        },
+      },
+      schema: {
+        tags: ['system'],
+        summary: `Upload the ${label}, ${PRIORITY_FILES[dataset]} (instance admins); needs vuln.priority`,
+        response: { 200: settingsDto },
+      },
+      // Admin, then the feature, then the type: all before any body is read.
+      preParsing: async (request: FastifyRequest, _reply: FastifyReply, payload: Readable) => {
+        requireInstanceAdmin(request);
+        if (!deps.edition.limits().vulnerabilities.priority) throw notLicensed();
+        const mime = request.headers['content-type']?.split(';')[0]?.trim().toLowerCase();
+        if (!UPLOAD_TYPES.some((type) => type === mime)) {
+          throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', priorityTypeMessage);
+        }
+        return payload;
+      },
+      onSend: async (request: FastifyRequest, reply: FastifyReply, payload: unknown) => {
+        closeAfterRefusal(request, reply, maxBytes);
+        return payload;
+      },
+    };
+    const handle = async (request: FastifyRequest, reply: FastifyReply, userId: string) => {
+      if (!deps.edition.limits().vulnerabilities.priority) throw notLicensed();
+      if (!(request.body instanceof Readable)) {
+        throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', priorityTypeMessage);
+      }
+      const declared = Number(request.headers['content-length']);
+      if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
+      sendContinue(request, reply);
+      const chunks: Buffer[] = [];
+      let total = 0;
+      for await (const chunk of request.body as AsyncIterable<Buffer>) {
+        total += chunk.length;
+        if (total > maxBytes) throw tooLarge();
+        chunks.push(chunk);
+      }
+      const stored = await storePriorityFile(
+        deps.db,
+        dataset,
+        Buffer.concat(chunks),
+        'upload',
+        { etag: null, lastModified: null, url: null },
+        new Date(),
+        request.log,
+      );
+      if ('problem' in stored) {
+        if (stored.problem.code === 'TOO_LARGE') throw tooLarge();
+        throw new ProblemError(422, 'INVALID_DATA', 'The file is not usable', {
+          detail: stored.problem.message,
+        });
+      }
+      request.log.info({ userId, dataset, sizeBytes: total }, 'vulndb priority file uploaded');
+      return { dataset, sizeBytes: stored.sizeBytes ?? total, builtAt: stored.dataDate };
+    };
+    return { options, handle };
+  };
+
+  const audit = (
+    request: FastifyRequest,
+    details: { dataset: PriorityDataset; sizeBytes: number; builtAt: string | null },
+  ) =>
+    deps.audit.record(deps.db, actorOf(request), [
+      {
+        action: 'vulndb.file_uploaded',
+        target: { type: 'vulndb_settings', id: 'vulndb' },
+        details,
+      },
+    ]);
+
+  app.put(
+    '/system/vulnerability-db/file/kev',
+    priorityUpload('kev').options,
+    async (request, reply) => {
+      const principal = requireInstanceAdmin(request);
+      await audit(request, await priorityUpload('kev').handle(request, reply, principal.user.id));
+      return readDto();
+    },
+  );
+  app.put(
+    '/system/vulnerability-db/file/epss',
+    priorityUpload('epss').options,
+    async (request, reply) => {
+      const principal = requireInstanceAdmin(request);
+      await audit(request, await priorityUpload('epss').handle(request, reply, principal.user.id));
       return readDto();
     },
   );

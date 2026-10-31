@@ -12138,6 +12138,8 @@ export interface paths {
                                 username?: string | null;
                                 passwordSet?: boolean;
                                 passwordReadable?: boolean;
+                                kevUrl?: string | null;
+                                epssUrl?: string | null;
                             };
                             /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
                             intervalHours: 1 | 3 | 6 | 12 | 24;
@@ -12170,6 +12172,39 @@ export interface paths {
                             lastRecheckError: {
                                 code: string;
                                 message: string;
+                            } | null;
+                            /** @description CISA KEV and FIRST EPSS; null without the vuln.priority feature */
+                            priority: {
+                                kev: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
+                                epss: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
                             } | null;
                             lastRecheck: {
                                 at: string;
@@ -12226,6 +12261,10 @@ export interface paths {
                             username?: string | null;
                             /** @description Write-only. A string sets the password, null removes it, absent keeps it */
                             password?: string | null;
+                            /** @description Where to download the CISA KEV catalog. Null: the official source */
+                            kevUrl?: string | null;
+                            /** @description Where to download the FIRST EPSS scores. Null: the official source */
+                            epssUrl?: string | null;
                         } | {
                             /** @enum {string} */
                             kind: "upload";
@@ -12258,6 +12297,8 @@ export interface paths {
                                 username?: string | null;
                                 passwordSet?: boolean;
                                 passwordReadable?: boolean;
+                                kevUrl?: string | null;
+                                epssUrl?: string | null;
                             };
                             /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
                             intervalHours: 1 | 3 | 6 | 12 | 24;
@@ -12290,6 +12331,39 @@ export interface paths {
                             lastRecheckError: {
                                 code: string;
                                 message: string;
+                            } | null;
+                            /** @description CISA KEV and FIRST EPSS; null without the vuln.priority feature */
+                            priority: {
+                                kev: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
+                                epss: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
                             } | null;
                             lastRecheck: {
                                 at: string;
@@ -12380,6 +12454,8 @@ export interface paths {
                                 username?: string | null;
                                 passwordSet?: boolean;
                                 passwordReadable?: boolean;
+                                kevUrl?: string | null;
+                                epssUrl?: string | null;
                             };
                             /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
                             intervalHours: 1 | 3 | 6 | 12 | 24;
@@ -12412,6 +12488,39 @@ export interface paths {
                             lastRecheckError: {
                                 code: string;
                                 message: string;
+                            } | null;
+                            /** @description CISA KEV and FIRST EPSS; null without the vuln.priority feature */
+                            priority: {
+                                kev: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
+                                epss: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
                             } | null;
                             lastRecheck: {
                                 at: string;
@@ -12497,6 +12606,8 @@ export interface paths {
                                 username?: string | null;
                                 passwordSet?: boolean;
                                 passwordReadable?: boolean;
+                                kevUrl?: string | null;
+                                epssUrl?: string | null;
                             };
                             /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
                             intervalHours: 1 | 3 | 6 | 12 | 24;
@@ -12529,6 +12640,399 @@ export interface paths {
                             lastRecheckError: {
                                 code: string;
                                 message: string;
+                            } | null;
+                            /** @description CISA KEV and FIRST EPSS; null without the vuln.priority feature */
+                            priority: {
+                                kev: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
+                                epss: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
+                            } | null;
+                            lastRecheck: {
+                                at: string;
+                                projects: number;
+                                packages: number;
+                                unchecked: number;
+                                durationMs: number;
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Too large (REPORT_TOO_LARGE, BODY_TOO_LARGE) */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Unsupported Content-Type or Content-Encoding */
+                415: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/system/vulnerability-db/file/kev": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upload the CISA KEV catalog, known_exploited_vulnerabilities.json (instance admins); needs vuln.priority */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The CISA KEV catalog (known_exploited_vulnerabilities.json) as downloaded, gzipped or plain, at most 32 MiB. Needs the vuln.priority feature. */
+            requestBody: {
+                content: {
+                    "application/gzip": string;
+                    "application/octet-stream": string;
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            enabled: boolean;
+                            source: {
+                                /** @enum {string} */
+                                kind: "official" | "mirror" | "upload";
+                                repository?: string;
+                                username?: string | null;
+                                passwordSet?: boolean;
+                                passwordReadable?: boolean;
+                                kevUrl?: string | null;
+                                epssUrl?: string | null;
+                            };
+                            /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
+                            intervalHours: 1 | 3 | 6 | 12 | 24;
+                            scanners: {
+                                enabled: boolean;
+                                /**
+                                 * @description daily: scanners refresh their copy once a day; every: before every scan
+                                 * @enum {string}
+                                 */
+                                policy: "daily" | "every";
+                            };
+                            officialRepository: string;
+                            /** @enum {string} */
+                            status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                            current: {
+                                builtAt: string | null;
+                                sizeBytes: number;
+                                /** @enum {string} */
+                                source: "official" | "mirror" | "upload";
+                                digest: string;
+                            } | null;
+                            lastCheckAt: string | null;
+                            nextCheckAt: string | null;
+                            /** @description The update's last problem: a download, a store or the source */
+                            lastError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** @description The re-check's last problem: DISK or RECHECK_FAILED */
+                            lastRecheckError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** @description CISA KEV and FIRST EPSS; null without the vuln.priority feature */
+                            priority: {
+                                kev: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
+                                epss: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
+                            } | null;
+                            lastRecheck: {
+                                at: string;
+                                projects: number;
+                                packages: number;
+                                unchecked: number;
+                                durationMs: number;
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Too large (REPORT_TOO_LARGE, BODY_TOO_LARGE) */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Unsupported Content-Type or Content-Encoding */
+                415: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/system/vulnerability-db/file/epss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upload the FIRST EPSS scores, epss_scores-current.csv.gz (instance admins); needs vuln.priority */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The FIRST EPSS scores (epss_scores-current.csv.gz) as downloaded, gzipped or plain, at most 32 MiB. Needs the vuln.priority feature. */
+            requestBody: {
+                content: {
+                    "application/gzip": string;
+                    "application/octet-stream": string;
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            enabled: boolean;
+                            source: {
+                                /** @enum {string} */
+                                kind: "official" | "mirror" | "upload";
+                                repository?: string;
+                                username?: string | null;
+                                passwordSet?: boolean;
+                                passwordReadable?: boolean;
+                                kevUrl?: string | null;
+                                epssUrl?: string | null;
+                            };
+                            /** @description Hours between checks for a new database: 1, 3, 6, 12, 24 */
+                            intervalHours: 1 | 3 | 6 | 12 | 24;
+                            scanners: {
+                                enabled: boolean;
+                                /**
+                                 * @description daily: scanners refresh their copy once a day; every: before every scan
+                                 * @enum {string}
+                                 */
+                                policy: "daily" | "every";
+                            };
+                            officialRepository: string;
+                            /** @enum {string} */
+                            status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                            current: {
+                                builtAt: string | null;
+                                sizeBytes: number;
+                                /** @enum {string} */
+                                source: "official" | "mirror" | "upload";
+                                digest: string;
+                            } | null;
+                            lastCheckAt: string | null;
+                            nextCheckAt: string | null;
+                            /** @description The update's last problem: a download, a store or the source */
+                            lastError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** @description The re-check's last problem: DISK or RECHECK_FAILED */
+                            lastRecheckError: {
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** @description CISA KEV and FIRST EPSS; null without the vuln.priority feature */
+                            priority: {
+                                kev: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
+                                epss: {
+                                    /** @enum {string} */
+                                    status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
+                                    officialUrl: string;
+                                    source: ("official" | "mirror" | "upload") | null;
+                                    dataDate: string | null;
+                                    storedAt: string | null;
+                                    lastCheckAt: string | null;
+                                    sizeBytes: number | null;
+                                    count: number | null;
+                                    lastError: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                };
                             } | null;
                             lastRecheck: {
                                 at: string;

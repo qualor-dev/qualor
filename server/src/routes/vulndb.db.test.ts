@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -14,7 +15,16 @@ import { uuidv7 } from '../db/ids';
 import { adminHeaders, auditRows, ssoContext } from '../../test/sso';
 import { trivyArchive, UPDATED_AT } from '../../../packages/shared/test/trivy-archive';
 import { readVulndbState, updateVulndbState } from '../vulndb/state';
-import { instanceSettings, jobs, vulndbDatasets } from '../db/schema';
+import {
+  instanceSettings,
+  jobs,
+  vulndbDatasets,
+  vulnerabilityEpss,
+  vulnerabilityKev,
+} from '../db/schema';
+import { rbacContext } from '../../test/rbac';
+import { OFFICIAL_EPSS_URL, OFFICIAL_KEV_URL } from '../vulndb/settings';
+import { PRIORITY_FILE_MAX_BYTES } from '../vulndb/priority/parse';
 import { VULNDB_UPDATE_QUEUE } from '../vulndb/state';
 import { RECHECK_QUEUE } from '../vulnerabilities/recheck';
 import type * as Store from '../vulndb/store';
@@ -83,6 +93,7 @@ describe('/system/vulnerability-db (API)', () => {
       nextCheckAt: null,
       lastError: null,
       lastRecheckError: null,
+      priority: null,
       lastRecheck: null,
     });
   });
@@ -100,6 +111,8 @@ describe('/system/vulnerability-db (API)', () => {
       username: 'u',
       passwordSet: true,
       passwordReadable: true,
+      kevUrl: null,
+      epssUrl: null,
     });
     expect(res.json().intervalHours).toBe(12);
     expect(res.body).not.toContain('sekret-pw');
@@ -558,5 +571,246 @@ describe('/system/vulnerability-db (API)', () => {
         await small.close();
       }
     });
+  });
+});
+
+describe('KEV and EPSS on /system/vulnerability-db (API)', () => {
+  const url = '/api/v0/system/vulnerability-db';
+  const T0 = new Date('2027-01-01T00:00:00Z');
+  let licensed: TestContext;
+  let community: TestContext;
+  let admin: Session;
+  let orgAdmin: Session;
+  let communityAdmin: Session;
+  let priority = true;
+
+  const kevFile = (ids: string[], released = '2026-10-30T14:22:10.123Z'): Buffer =>
+    Buffer.from(
+      JSON.stringify({
+        catalogVersion: '2026.10.30',
+        dateReleased: released,
+        vulnerabilities: ids.map((cveID) => ({
+          cveID,
+          dateAdded: '2026-02-03',
+          knownRansomwareCampaignUse: 'Unknown',
+        })),
+      }),
+    );
+  const epssFile = (ids: string[]): Buffer =>
+    gzipSync(
+      Buffer.from(
+        `#model_version:v2025.03.14,score_date:2026-10-31T00:00:00Z\ncve,epss,percentile\n${ids
+          .map((id) => `${id},0.5,0.75`)
+          .join('\n')}\n`,
+      ),
+    );
+  const get = (ctx = licensed, session = admin) =>
+    ctx.app.inject({ method: 'GET', url, headers: session.headers });
+  const put = (payload: object, ctx = licensed, session = admin) =>
+    ctx.app.inject({ method: 'PUT', url, headers: session.headers, payload });
+  const upload = (
+    dataset: 'kev' | 'epss',
+    body: Buffer,
+    options: { ctx?: TestContext; session?: Session; type?: string; extra?: object } = {},
+  ) =>
+    (options.ctx ?? licensed).app.inject({
+      method: 'PUT',
+      url: `${url}/file/${dataset}`,
+      headers: {
+        ...(options.session ?? admin).headers,
+        'content-type': options.type ?? 'application/octet-stream',
+        ...options.extra,
+      },
+      payload: body,
+    });
+
+  beforeAll(async () => {
+    licensed = await rbacContext({
+      now: () => T0,
+      edition: (edition) => ({
+        ...edition,
+        limits: () => ({
+          ...edition.limits(),
+          vulnerabilities: { ...edition.limits().vulnerabilities, priority },
+        }),
+      }),
+    });
+    admin = await login(licensed, 'admin', ADMIN_PASSWORD);
+    const u = await createUser(licensed, { username: 'priority-org-admin' });
+    await addMember(licensed, await organizationId(licensed, 'default'), u.id, 'admin');
+    orgAdmin = await login(licensed, u.username, u.password);
+    community = await createTestContext();
+    communityAdmin = await login(community, 'admin', ADMIN_PASSWORD);
+  });
+  beforeEach(async () => {
+    priority = true;
+    await licensed.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+    await licensed.db.delete(vulnerabilityKev);
+    await licensed.db.delete(vulnerabilityEpss);
+    for (const key of ['vulndb', 'vulndb_state', 'vulndb_priority_state']) {
+      await licensed.db.delete(instanceSettings).where(eq(instanceSettings.key, key));
+    }
+  });
+  afterAll(async () => {
+    await licensed.close();
+    await community.close();
+  });
+
+  describe('reads', () => {
+    it('has priority null without the feature', async () => {
+      const res = await get(community, communityAdmin);
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().priority).toBeNull();
+    });
+
+    it('answers an empty state with the official URLs, then the stored fields', async () => {
+      const empty = (await get()).json().priority;
+      expect(empty.kev).toEqual({
+        status: 'no_data',
+        officialUrl: OFFICIAL_KEV_URL,
+        source: null,
+        dataDate: null,
+        storedAt: null,
+        lastCheckAt: null,
+        sizeBytes: null,
+        count: null,
+        lastError: null,
+      });
+      expect(empty.epss.officialUrl).toBe(OFFICIAL_EPSS_URL);
+      const body = kevFile(['CVE-2024-0001', 'CVE-2024-0002']);
+      expect((await upload('kev', body)).statusCode).toBe(200);
+      const kev = (await get()).json().priority.kev;
+      expect(kev).toMatchObject({
+        status: 'up_to_date',
+        source: 'upload',
+        dataDate: '2026-10-30T14:22:10.123Z',
+        sizeBytes: body.length,
+        count: 2,
+        lastError: null,
+      });
+      expect(kev.storedAt).toEqual(expect.any(String));
+      expect(kev.lastCheckAt).toEqual(expect.any(String));
+    });
+  });
+
+  describe('mirror URLs', () => {
+    const repository = 'registry.corp:5000/mirror/trivy-db:2';
+    it('stores a kevUrl, audits the field and queues an update', async () => {
+      const res = await put({
+        source: { kind: 'mirror', repository, kevUrl: 'https://mirror.example/kev.json' },
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().source).toMatchObject({
+        kind: 'mirror',
+        kevUrl: 'https://mirror.example/kev.json',
+        epssUrl: null,
+      });
+      const events = (await auditRows(licensed)).filter(
+        (e) => e.action === 'vulndb.settings_updated',
+      );
+      expect((events.at(-1)?.details as { changed: string[] }).changed).toContain('source.kevUrl');
+      const queued = await licensed.db
+        .select({ status: jobs.status })
+        .from(jobs)
+        .where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      expect(queued.map((j) => j.status)).toContain('queued');
+      // null clears it.
+      const cleared = await put({ source: { kind: 'mirror', repository, kevUrl: null } });
+      expect(cleared.json().source.kevUrl).toBeNull();
+    });
+
+    it.each([
+      ['kevUrl', 'http://x/kev.json'],
+      ['kevUrl', 'https://u:p@x/kev.json'],
+      ['kevUrl', 'https://x/kev.json#a'],
+      ['kevUrl', `https://x/${'a'.repeat(2049 - 'https://x/'.length)}`],
+      ['epssUrl', 'ftp://x/epss.csv.gz'],
+      ['epssUrl', 'not a url'],
+    ])('answers 422 at body.source.%s for %s', async (field, value) => {
+      const res = await put({ source: { kind: 'mirror', repository, [field]: value } });
+      expect(res.statusCode, res.body).toBe(422);
+      expect(JSON.stringify(res.json())).toContain(`body.source.${field}`);
+    });
+  });
+
+  describe('uploads', () => {
+    it('stores a KEV catalog, fills the table and audits it', async () => {
+      const body = kevFile(['CVE-2024-0001', 'CVE-2024-0002']);
+      const res = await upload('kev', body);
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().priority.kev.source).toBe('upload');
+      expect(await licensed.db.select().from(vulnerabilityKev)).toHaveLength(2);
+      const events = (await auditRows(licensed)).filter((e) => e.action === 'vulndb.file_uploaded');
+      expect(events.at(-1)?.details).toEqual({
+        sizeBytes: body.length,
+        builtAt: '2026-10-30T14:22:10.123Z',
+        dataset: 'kev',
+      });
+    });
+
+    it('stores a gzipped EPSS file', async () => {
+      const body = epssFile(['CVE-2024-0001', 'CVE-2024-0002', 'CVE-2024-0003']);
+      const res = await upload('epss', body, { type: 'application/gzip' });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json().priority.epss).toMatchObject({ source: 'upload', count: 3 });
+      expect(await licensed.db.select().from(vulnerabilityEpss)).toHaveLength(3);
+      const events = (await auditRows(licensed)).filter((e) => e.action === 'vulndb.file_uploaded');
+      expect(events.at(-1)?.details).toMatchObject({ dataset: 'epss' });
+    });
+
+    it('answers 422 INVALID_DATA for a bad file and keeps the old rows', async () => {
+      await upload('kev', kevFile(['CVE-2024-0001']));
+      const bad = await upload('kev', Buffer.from('{"vulnerabilities": 3}'));
+      expect(bad.statusCode, bad.body).toBe(422);
+      expect(bad.json().code).toBe('INVALID_DATA');
+      expect(bad.json().detail).toEqual(expect.any(String));
+      expect(await licensed.db.select().from(vulnerabilityKev)).toHaveLength(1);
+      expect((await get()).json().priority.kev.count).toBe(1);
+    });
+
+    it('answers 413 TOO_LARGE for a declared length over the limit', async () => {
+      const res = await upload('kev', Buffer.from('{}'), {
+        extra: { 'content-length': String(PRIORITY_FILE_MAX_BYTES + 1) },
+      });
+      expect(res.statusCode, res.body).toBe(413);
+      expect(res.json().code).toBe('TOO_LARGE');
+    });
+
+    it('answers 415 for application/json', async () => {
+      const res = await upload('kev', kevFile(['CVE-2024-0001']), { type: 'application/json' });
+      expect(res.statusCode, res.body).toBe(415);
+    });
+
+    it('is for instance admins only', async () => {
+      const denied = await upload('kev', kevFile(['CVE-2024-0001']), { session: orgAdmin });
+      expect(denied.statusCode).toBe(403);
+      const anonymous = await licensed.app.inject({
+        method: 'PUT',
+        url: `${url}/file/epss`,
+        headers: { 'content-type': 'application/octet-stream' },
+        payload: epssFile(['CVE-2024-0001']),
+      });
+      expect(anonymous.statusCode).toBe(401);
+    });
+
+    it.each(['kev', 'epss'] as const)(
+      'answers 403 FEATURE_NOT_LICENSED for %s before reading the body',
+      async (dataset) => {
+        const res = await upload(dataset, Buffer.alloc(1024 * 1024, 1), {
+          ctx: community,
+          session: communityAdmin,
+        });
+        expect(res.statusCode, res.body).toBe(403);
+        expect(res.json().code).toBe('FEATURE_NOT_LICENSED');
+        expect(res.body).toContain('The enterprise feature \\"vuln.priority\\" is not licensed');
+        // The feature is checked before the type: an unlicensed wrong type is a 403, not a 415.
+        const json = await upload(dataset, Buffer.from('{}'), {
+          ctx: community,
+          session: communityAdmin,
+          type: 'application/json',
+        });
+        expect(json.statusCode).toBe(403);
+      },
+    );
   });
 });
