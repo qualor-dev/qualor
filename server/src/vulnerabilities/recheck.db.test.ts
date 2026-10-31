@@ -649,7 +649,7 @@ describe('vulnerability re-checks', () => {
   });
 
   describe('failures (R12, R19: lastRecheckError)', () => {
-    it('a Trivy failure leaves rows and matches alone and is shown until a re-check succeeds', async () => {
+    it('a Trivy failure leaves rows and matches alone and is shown until a full re-check succeeds', async () => {
       const p = await project();
       await onBranch(p, 'main', { dependencies: [A, B] });
       await recheck({ projectIds: [p.id] });
@@ -672,8 +672,11 @@ describe('vulnerability re-checks', () => {
 
       trivy.failure = null;
       expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
-      expect((await readVulndbState(db())).lastRecheckError).toBeNull();
       expect(await described(p)).toEqual([`main ${PA} CVE-2026-0001`]);
+      // R22: a scoped run keeps the error; only a full run clears it.
+      expect((await readVulndbState(db())).lastRecheckError?.code).toBe('RECHECK_FAILED');
+      expect(await recheck({ all: true })).toMatchObject({ kind: 'done' });
+      expect((await readVulndbState(db())).lastRecheckError).toBeNull();
     });
 
     it("never touches the update's lastError, failing or succeeding", async () => {
@@ -688,14 +691,14 @@ describe('vulnerability re-checks', () => {
         lastRecheckError: { code: 'RECHECK_FAILED' },
       });
       trivy.failure = null;
-      expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
+      expect(await recheck({ all: true })).toMatchObject({ kind: 'done' });
       expect(await readVulndbState(db())).toMatchObject({
         lastError: auth,
         lastRecheckError: null,
       });
     });
 
-    it('a directory that cannot be written is a DISK error, cleared by the next good run', async () => {
+    it('a directory that cannot be written is a DISK error, cleared by the next good full run', async () => {
       const p = await project();
       await onBranch(p, 'main', { dependencies: [A] });
       const file = join(dir, 'not-a-directory');
@@ -708,7 +711,7 @@ describe('vulnerability re-checks', () => {
       expect((await readVulndbState(db())).lastRecheckError?.code).toBe('DISK');
       expect(trivy.calls).toEqual([]);
       expect(await rows(p)).toEqual([]);
-      await recheck({ projectIds: [p.id] });
+      await recheck({ all: true });
       expect((await readVulndbState(db())).lastRecheckError).toBeNull();
       expect(await rows(p)).toHaveLength(1);
     });
