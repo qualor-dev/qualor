@@ -537,6 +537,25 @@ describe('runMigrations / pendingMigrations', () => {
         decided_by: user,
       },
     ]);
+    const { rows: indexes } = await db.pool.query(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'issues' AND indexname = 'issues_package_idx'`,
+    );
+    expect(indexes).toHaveLength(1);
+  });
+
+  it('builds the package index of issues after the backfill fills the column (0022, final review F6)', () => {
+    const statements = readFileSync(
+      path.join(MIGRATIONS_DIR, '0022_vulnerability_decisions.sql'),
+      'utf8',
+    )
+      .split('--> statement-breakpoint')
+      .map((statement) => statement.trim());
+    const backfill = statements.findIndex((s) =>
+      s.startsWith('UPDATE "issues" SET "package_name"'),
+    );
+    const index = statements.findIndex((s) => s.startsWith('CREATE INDEX "issues_package_idx"'));
+    expect(backfill).toBeGreaterThan(-1);
+    expect(index).toBeGreaterThan(backfill);
   });
 
   it('adds the replies ledger to a database that holds connections, runs and AI requests, and keeps every row (0017, phase 6I-4)', async () => {
