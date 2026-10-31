@@ -498,6 +498,29 @@ describe('resolveVulnerabilityDb: a poisoned or broken cache (Review Focus 1)', 
     await got.cleanup();
   });
 
+  it('ignores a forged db/ with the current digest’s marker in a cache inside the checkout: the archive is hashed and extracted privately', async () => {
+    const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+    const root = tmp();
+    const tempRoot = tmp();
+    const cache = fillCache(path.join(root, '.qualor', 'trivy'), NEW.archive);
+    // A branch commits an unpacked database of its own, marked as the server's current one.
+    const forged = path.join(cache, 'db');
+    mkdirSync(forged);
+    writeFileSync(path.join(forged, 'trivy.db'), FAKE.db);
+    writeFileSync(path.join(forged, 'metadata.json'), metadataJson(2, FAKE.updatedAt));
+    writeFileSync(path.join(forged, 'qualor-digest'), `${NEW.digest}\n`);
+    const got = await choose({ endpoint: server.endpoint, cache, root, tempRoot });
+    expect(downloads(server.paths)).toEqual([]);
+    expect(got.warnings).toEqual([]);
+    expect(got.dir).not.toBe(cache);
+    expect(path.relative(tempRoot, got.dir ?? '').startsWith('..')).toBe(false);
+    expect(databaseIn(got.dir)).toEqual(holds(NEW));
+    // Left as it was, and never read.
+    expect(readFileSync(path.join(forged, 'trivy.db'), 'utf8')).toBe(FAKE.db);
+    await got.cleanup();
+    expect(readdirSync(tempRoot)).toEqual([]);
+  });
+
   it('never extracts a rejected archive, even when the download fails too', async () => {
     const server = await fakeServer({ meta: meta(NEW), downloadStatus: 500 });
     const tempRoot = tmp();
