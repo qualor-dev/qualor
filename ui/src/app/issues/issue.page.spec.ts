@@ -551,6 +551,158 @@ describe('IssuePage', () => {
     );
   });
 
+  describe('VEX reason on a Trivy issue', () => {
+    const vulnerability = (overrides: Record<string, unknown> = {}) => ({
+      packageName: 'lodash',
+      vulnerabilityId: 'CVE-2024-1',
+      writesDecision: true,
+      decision: null,
+      ...overrides,
+    });
+    const withVuln = (v: ReturnType<typeof vulnerability> | null) =>
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: detail({ vulnerability: v } as Partial<IssueDetail>),
+      });
+    async function comment(
+      fixture: Awaited<ReturnType<typeof render>>['fixture'],
+      root: HTMLElement,
+    ) {
+      const field = root.querySelector<HTMLTextAreaElement>('#issue-comment')!;
+      field.value = 'Not reachable';
+      field.dispatchEvent(new Event('input'));
+      await settle(fixture);
+    }
+    async function choose(
+      fixture: Awaited<ReturnType<typeof render>>['fixture'],
+      root: HTMLElement,
+      reason: string,
+    ) {
+      const select = root.querySelector<HTMLSelectElement>('#issue-reason')!;
+      select.value = reason;
+      select.dispatchEvent(new Event('change'));
+      await settle(fixture);
+    }
+
+    it('shows the Reason select and the hint only when the issue writes the decision', async () => {
+      withVuln(vulnerability());
+      const writes = (await render()).root;
+      const select = writes.querySelector<HTMLSelectElement>('#issue-reason')!;
+      expect(select.options.length).toBe(6);
+      expect(
+        [...select.options].some(
+          (o) =>
+            o.value === 'vulnerable_code_not_in_execute_path' &&
+            o.textContent?.trim() === 'The vulnerable code is never called',
+        ),
+      ).toBe(true);
+      expect(writes.textContent).toContain(
+        'Trivy issues on main and tracked branches share one decision for the whole project.',
+      );
+      withVuln(vulnerability({ writesDecision: false }));
+      expect((await render()).root.querySelector('#issue-reason')).toBeNull();
+      withVuln(null);
+      expect((await render()).root.querySelector('#issue-reason')).toBeNull();
+    });
+
+    it('refuses False positive without a reason and sends nothing', async () => {
+      withVuln(vulnerability());
+      const { fixture, root } = await render();
+      await comment(fixture, root);
+      buttonIn(root, 'False positive')!.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', `/api/v0/issues/${ID}/transition`)).toHaveLength(0);
+      const error = root.querySelector('#issue-reason-error')!;
+      expect(error.textContent?.trim()).toBe('Select a reason.');
+      expect(error.getAttribute('role')).toBe('alert');
+      expect(root.querySelector('#issue-reason')!.getAttribute('aria-describedby')).toContain(
+        'issue-reason-error',
+      );
+    });
+
+    it('sends the chosen reason with False positive', async () => {
+      withVuln(vulnerability());
+      server.on('POST', `/api/v0/issues/${ID}/transition`, {
+        body: detail({ status: 'false_positive' }),
+      });
+      const { fixture, root } = await render();
+      await comment(fixture, root);
+      await choose(fixture, root, 'component_not_present');
+      buttonIn(root, 'False positive')!.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', `/api/v0/issues/${ID}/transition`)[0]?.body).toEqual({
+        to: 'false_positive',
+        comment: 'Not reachable',
+        reason: 'component_not_present',
+      });
+    });
+
+    it('preselects the decision reason and leaves it out of other transitions', async () => {
+      withVuln(
+        vulnerability({
+          decision: {
+            status: 'false_positive',
+            reason: 'inline_mitigations_already_exist',
+            comment: 'c',
+            decidedAt: '2026-09-16T10:00:00.000Z',
+            decidedBy: { id: 'u', name: 'Alice' },
+            scope: 'project',
+          },
+        }),
+      );
+      server.on('POST', `/api/v0/issues/${ID}/transition`, {
+        body: detail({ status: 'resolved' }),
+      });
+      const { fixture, root } = await render();
+      expect(root.querySelector<HTMLSelectElement>('#issue-reason')!.value).toBe(
+        'inline_mitigations_already_exist',
+      );
+      const line = root.querySelector('.decision-line')!.textContent!.replace(/\s+/g, ' ');
+      expect(line).toContain('Project decision: Not affected');
+      expect(line).toContain('Another control already protects it');
+      expect(line).toContain('Alice');
+      buttonIn(root, 'Resolve')!.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', `/api/v0/issues/${ID}/transition`)[0]?.body).toEqual({
+        to: 'resolved',
+      });
+    });
+
+    it('says Branch decision and Reason not given when so', async () => {
+      withVuln(
+        vulnerability({
+          decision: {
+            status: 'false_positive',
+            reason: null,
+            comment: 'c',
+            decidedAt: '2026-09-16T10:00:00.000Z',
+            decidedBy: null,
+            scope: 'branch',
+          },
+        }),
+      );
+      const { root } = await render();
+      const line = root.querySelector('.decision-line')!.textContent!.replace(/\s+/g, ' ');
+      expect(line).toContain('Branch decision: Not affected');
+      expect(line).toContain('Reason not given');
+    });
+
+    it('maps a 422 REASON_REQUIRED to the same field error', async () => {
+      withVuln(vulnerability());
+      server.on('POST', `/api/v0/issues/${ID}/transition`, {
+        body: problem(422, 'REASON_REQUIRED', [{ path: 'body.reason', message: 'Required' }]),
+        status: 422,
+      });
+      const { fixture, root } = await render();
+      await comment(fixture, root);
+      await choose(fixture, root, 'component_not_present');
+      buttonIn(root, 'False positive')!.click();
+      await settle(fixture);
+      expect(root.querySelector('#issue-reason-error')?.textContent?.trim()).toBe(
+        'Select a reason.',
+      );
+    });
+  });
+
   it('sends the suggestion id with the false-positive transition the panel opened', async () => {
     server.on('GET', '/api/v0/projects/p1', { body: PROJECT });
     server.on('GET', `/api/v0/organizations/${ORG_ID}/ai`, {

@@ -19,6 +19,7 @@ import { Distribution, type DistributionItem } from '../charts/distribution';
 import { Lens } from '../charts/lens';
 import { label } from '../i18n/labels';
 import { OrgContext } from '../org/org-context';
+import { newMarkerText } from '../project/vulnerabilities/new-marker';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { closeModal, openAfterRender } from '../shared/dialog';
 import { inputValue } from '../shared/forms';
@@ -48,6 +49,8 @@ const MAX_TEXT = 255;
   host: { class: 'bleed' },
 })
 export class ProjectsPage {
+  protected readonly newMarker = newMarkerText;
+
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
   private readonly router = inject(Router);

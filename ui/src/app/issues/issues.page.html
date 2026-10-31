@@ -177,6 +177,21 @@
                 >Issues with these statuses cannot change status.</span
               >
             }
+            @if (bulkTarget() === 'false_positive') {
+              <label for="bulk-reason" class="visually-hidden" i18n="@@issues.bulk.reason.label"
+                >Reason</label
+              >
+              <select id="bulk-reason" [value]="reason()" (change)="setReason($event)">
+                <option value="" [selected]="reason() === ''" i18n="@@issues.bulk.reason.none">
+                  Reason (optional)
+                </option>
+                @for (r of reasons; track r) {
+                  <option [value]="r" [selected]="r === reason()">
+                    {{ r | label: 'vexReason' }}
+                  </option>
+                }
+              </select>
+            }
             <label for="bulk-comment" class="visually-hidden" i18n="@@issues.bulk.comment"
               >Comment</label
             >

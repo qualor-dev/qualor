@@ -118,6 +118,17 @@
               <tr>
                 <td>
                   <a [routerLink]="['/projects', project.id]">{{ project.name }}</a>
+                  @if (project.vulnerabilities; as v) {
+                    @if (newMarker(v.newIn); as text) {
+                      <div>
+                        <a
+                          class="badge badge-high"
+                          [routerLink]="['/projects', project.id, 'vulnerabilities']"
+                          >{{ text }}</a
+                        >
+                      </div>
+                    }
+                  }
                   <div class="muted">
                     <code>{{ project.key }}</code>
                   </div>

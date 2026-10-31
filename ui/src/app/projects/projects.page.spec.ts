@@ -78,6 +78,28 @@ describe('ProjectsPage', () => {
     input.dispatchEvent(new Event('input'));
   };
 
+  it('links a badge under the name to the vulnerabilities tab when something is new', async () => {
+    server.on('GET', '/api/v0/projects', {
+      body: page([
+        project('payments', 'Payments API', {
+          vulnerabilities: { newIn: { main: true, branches: 0, versions: 2 } },
+        }),
+        project('quiet', 'Quiet', {
+          vulnerabilities: { newIn: { main: false, branches: 0, versions: 0 } },
+        }),
+        project('none', 'None', { vulnerabilities: null }),
+      ]),
+    });
+    const { root } = await render();
+    const rows = [...root.querySelectorAll('tbody tr')];
+    const badge = rows[0]!.querySelector<HTMLAnchorElement>('td:first-child a.badge.badge-high')!;
+    expect(badge.textContent?.trim()).toBe('New vulnerabilities in main and 2 versions');
+    expect(badge.getAttribute('href')).toBe('/projects/payments/vulnerabilities');
+    expect(rows[1]!.querySelector('a.badge')).toBeNull();
+    expect(rows[2]!.querySelector('a.badge')).toBeNull();
+    expect(rows[0]!.querySelectorAll('td')).toHaveLength(rows[2]!.querySelectorAll('td').length);
+  });
+
   it('lists projects of the current organization with gate and formatted measures', async () => {
     server.on('GET', '/api/v0/projects', {
       body: page([

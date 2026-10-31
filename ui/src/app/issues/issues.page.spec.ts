@@ -280,6 +280,62 @@ describe('IssuesPage', () => {
     expect(document.activeElement).toBe(root.querySelector('[role="status"]'));
   });
 
+  it('offers an optional reason for False positive, sends it, and counts the failures that need one', async () => {
+    server.on('POST', '/api/v0/issues/bulk-transition', {
+      body: {
+        succeeded: ['i1'],
+        failed: [{ id: 'i2', code: 'REASON_REQUIRED' }],
+      },
+    });
+    const { fixture, root } = await render();
+    await selectAll(root, fixture);
+    await chooseTarget(root, fixture);
+    expect(root.querySelector('#bulk-reason')).toBeNull();
+    const target = root.querySelector<HTMLSelectElement>('#bulk-target')!;
+    target.value = 'false_positive';
+    target.dispatchEvent(new Event('change'));
+    await settle(fixture);
+    const reason = root.querySelector<HTMLSelectElement>('#bulk-reason')!;
+    expect(reason.options.length).toBe(6);
+    reason.value = 'component_not_present';
+    reason.dispatchEvent(new Event('change'));
+    const comment = root.querySelector<HTMLInputElement>('#bulk-comment')!;
+    comment.value = 'Test data';
+    comment.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    root.querySelector<HTMLButtonElement>('form.bulk button[type="submit"]')!.click();
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/issues/bulk-transition')[0]?.body).toEqual({
+      ids: ['i1', 'i2'],
+      to: 'false_positive',
+      comment: 'Test data',
+      reason: 'component_not_present',
+    });
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(
+      '1 issue changed. 1 issue needs a reason.',
+    );
+  });
+
+  it('pluralises the issues that need a reason', async () => {
+    server.on('POST', '/api/v0/issues/bulk-transition', {
+      body: {
+        succeeded: [],
+        failed: [
+          { id: 'i1', code: 'REASON_REQUIRED' },
+          { id: 'i2', code: 'REASON_REQUIRED' },
+        ],
+      },
+    });
+    const { fixture, root } = await render();
+    await selectAll(root, fixture);
+    await chooseTarget(root, fixture);
+    root.querySelector<HTMLButtonElement>('form.bulk button[type="submit"]')!.click();
+    await settle(fixture);
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe(
+      '0 issues changed. 2 issues need a reason.',
+    );
+  });
+
   it('refuses a selection over the 500 ids a bulk change takes', async () => {
     server.on('GET', '/api/v0/issues', {
       body: {

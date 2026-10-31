@@ -14,7 +14,7 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
-import { isRetryable, problemMessage } from '../api/errors';
+import { fieldErrors, isRetryable, problemMessage } from '../api/errors';
 import type { ResponseBody } from '../api/types';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
@@ -22,6 +22,7 @@ import { can } from '../auth/permissions';
 import { branchView, findBranch, notFound } from '../project/branches';
 import { codeFileLink } from '../project/code-links';
 import { CurrentProject } from '../project/current-project';
+import { type Reason, VEX_REASONS } from '../project/vulnerabilities/change-status-dialog';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
@@ -180,6 +181,17 @@ export class IssuePage {
    * transition only, so the changelog records that it was shown; the decision stays theirs.
    */
   protected readonly suggestionId = signal<string | null>(null);
+  /** The VEX reason for a Trivy issue that writes the project decision (`''` = none chosen). */
+  private readonly pickedReason = signal<Reason | '' | null>(null);
+  /** The picked reason, else the project decision's (`''` = none). */
+  protected readonly reason = computed<Reason | ''>(
+    () => this.pickedReason() ?? this.current()?.vulnerability?.decision?.reason ?? '',
+  );
+  protected readonly reasonError = signal<string | null>(null);
+  protected readonly reasons = VEX_REASONS;
+  protected readonly writesDecision = computed(
+    () => this.current()?.vulnerability?.writesDecision === true,
+  );
   protected readonly severity = signal<Severity | null>(null);
   /** Setting the current severity again logs nothing (api.md), so it is not offered. */
   protected readonly severityChanged = computed(() => {
@@ -195,6 +207,7 @@ export class IssuePage {
   /** Incremented per issue and per change: an answer for an older one is ignored. */
   private generation = 0;
   private readonly actionsHeading = viewChild<ElementRef<HTMLElement>>('actionsHeading');
+  private readonly reasonField = viewChild<ElementRef<HTMLSelectElement>>('reasonField');
   private readonly commentField = viewChild<ElementRef<HTMLTextAreaElement>>('commentField');
 
   protected readonly severities = SEVERITIES;
@@ -224,6 +237,8 @@ export class IssuePage {
         this.comment.set('');
         this.suggestionId.set(null);
         this.severity.set(null);
+        this.pickedReason.set(null);
+        this.reasonError.set(null);
         this.error.set(null);
         this.announcement.set(null);
         this.busy.set(false);
@@ -265,10 +280,28 @@ export class IssuePage {
     this.commentField()?.nativeElement.focus();
   }
 
+  protected scopeWord(scope: 'project' | 'branch'): string {
+    return scope === 'branch'
+      ? $localize`:@@issue.decision.branch:Branch decision`
+      : $localize`:@@issue.decision.project:Project decision`;
+  }
+
+  protected setReason(event: Event): void {
+    const value = inputValue(event);
+    this.pickedReason.set(VEX_REASONS.find((r) => r === value) ?? '');
+    this.reasonError.set(null);
+  }
+
   protected async transition(to: TransitionTarget): Promise<void> {
     const id = this.issueId();
     const comment = this.comment().trim();
     if (this.busy() || (needsComment(to) && !comment)) return;
+    const reason = to === 'false_positive' && this.writesDecision() ? this.reason() : '';
+    if (to === 'false_positive' && this.writesDecision() && reason === '') {
+      this.showReasonRequired();
+      return;
+    }
+    this.reasonError.set(null);
     // The suggestion goes with the false-positive change only. It is dropped once a change
     // succeeds (another status included); a refused change keeps it for the next attempt.
     const suggestionId = to === 'false_positive' ? this.suggestionId() : null;
@@ -282,6 +315,7 @@ export class IssuePage {
               to,
               ...(comment ? { comment } : {}),
               ...(suggestionId ? { suggestionId } : {}),
+              ...(reason ? { reason } : {}),
             },
           }),
         ),
@@ -289,6 +323,11 @@ export class IssuePage {
         $localize`:@@issue.changed.status:Status changed to ${label('status', updated.status)}:status:.`,
       () => this.suggestionId.set(null),
     );
+  }
+
+  private showReasonRequired(): void {
+    this.reasonError.set($localize`:@@issue.reason.required:Select a reason.`);
+    this.reasonField()?.nativeElement.focus();
   }
 
   protected setSeverity(event: Event): void {
@@ -347,6 +386,10 @@ export class IssuePage {
       if (current()) this.actionsHeading()?.nativeElement.focus();
     } catch (err) {
       if (!current()) return;
+      if (fieldErrors(err)['body.reason'] !== undefined) {
+        this.showReasonRequired();
+        return;
+      }
       this.error.set(problemMessage(err));
       if (isRetryable(err)) {
         this.retryOffer.offer(() => this.change(id, request, announce, done), err.retryAfter);

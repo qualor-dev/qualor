@@ -353,6 +353,54 @@
                 </p>
               }
             </div>
+            @if (current()?.vulnerability; as v) {
+              @if (v.writesDecision) {
+                <div class="field">
+                  <label for="issue-reason" i18n="@@issue.reason">Reason</label>
+                  <select
+                    #reasonField
+                    id="issue-reason"
+                    [attr.aria-invalid]="reasonError() ? true : null"
+                    [attr.aria-describedby]="
+                      reasonError() ? 'issue-reason-hint issue-reason-error' : 'issue-reason-hint'
+                    "
+                    [value]="reason()"
+                    (change)="setReason($event)"
+                  >
+                    <option value="" [selected]="reason() === ''"></option>
+                    @for (r of reasons; track r) {
+                      <option [value]="r" [selected]="r === reason()">
+                        {{ r | label: 'vexReason' }}
+                      </option>
+                    }
+                  </select>
+                  <span id="issue-reason-hint" class="hint" i18n="@@issue.reason.hint"
+                    >Trivy issues on main and tracked branches share one decision for the whole
+                    project.</span
+                  >
+                  @if (reasonError(); as message) {
+                    <span id="issue-reason-error" class="field-error" role="alert">{{
+                      message
+                    }}</span>
+                  }
+                </div>
+              }
+              @if (v.decision; as d) {
+                <p class="muted decision-line">
+                  {{ scopeWord(d.scope) }}: {{ d.status | label: 'decisionStatus' }} ·
+                  @if (d.reason; as r) {
+                    {{ r | label: 'vexReason' }}
+                  } @else {
+                    <ng-container i18n="@@issue.decision.noReason">Reason not given</ng-container>
+                  }
+                  @if (d.decidedBy; as by) {
+                    · {{ by.name }}, {{ d.decidedAt | dateTime }}
+                  } @else {
+                    · {{ d.decidedAt | dateTime }}
+                  }
+                </p>
+              }
+            }
             <div class="transitions">
               @for (t of targets(); track t) {
                 <button

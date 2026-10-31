@@ -26,6 +26,7 @@ import { branchTitle, branchView, findBranch, mainBranchView } from '../project/
 import { CurrentProject } from '../project/current-project';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { inputValue, isChecked } from '../shared/forms';
+import { type Reason, VEX_REASONS } from '../project/vulnerabilities/change-status-dialog';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { RetryOffer } from '../shared/retry';
@@ -80,6 +81,7 @@ function bulkSummary(result: BulkResult): string {
   const invalid = result.failed.filter((f) => f.code === 'INVALID_TRANSITION').length;
   const missing = result.failed.filter((f) => f.code === 'NOT_FOUND').length;
   const forbidden = result.failed.filter((f) => f.code === 'FORBIDDEN').length;
+  const needReason = result.failed.filter((f) => f.code === 'REASON_REQUIRED').length;
   const parts = [
     changed === 1
       ? $localize`:@@issues.bulk.changedOne:1 issue changed.`
@@ -93,6 +95,11 @@ function bulkSummary(result: BulkResult): string {
     parts.push(
       $localize`:@@issues.bulk.invalid:${invalid}:count: issues cannot change to this status; they stay selected.`,
     );
+  }
+  if (needReason === 1) {
+    parts.push($localize`:@@issues.bulk.reasonOne:1 issue needs a reason.`);
+  } else if (needReason > 1) {
+    parts.push($localize`:@@issues.bulk.reason:${needReason}:count: issues need a reason.`);
   }
   if (forbidden === 1) {
     parts.push(
@@ -326,6 +333,9 @@ export class IssuesPage {
       !(this.commentRequired() && !this.comment().trim()),
   );
 
+  /** The optional VEX reason sent with a bulk False positive (`''` = none). */
+  protected readonly reason = signal<Reason | ''>('');
+  protected readonly reasons = VEX_REASONS;
   protected readonly commentMax = COMMENT_MAX_LENGTH;
   protected readonly bulkMax = BULK_MAX_IDS;
   protected readonly qMax = Q_MAX_LENGTH;
@@ -436,12 +446,23 @@ export class IssuesPage {
     this.target.set(inputValue(event) as TransitionTarget);
   }
 
+  protected setReason(event: Event): void {
+    const value = inputValue(event);
+    this.reason.set(VEX_REASONS.find((r) => r === value) ?? '');
+  }
+
   protected async applyBulk(event: Event): Promise<void> {
     event.preventDefault();
     const to = this.bulkTarget();
     if (!this.canApply() || to === null) return;
     const comment = this.comment().trim();
-    await this.send({ ids: [...this.selected()], to, ...(comment ? { comment } : {}) });
+    const reason = to === 'false_positive' ? this.reason() : '';
+    await this.send({
+      ids: [...this.selected()],
+      to,
+      ...(comment ? { comment } : {}),
+      ...(reason ? { reason } : {}),
+    });
   }
 
   protected async retry(): Promise<void> {
@@ -465,7 +486,9 @@ export class IssuesPage {
       await this.list.reload();
       // Issues that could not change stay selected (when still listed), to try another status.
       const kept = new Set(
-        result.failed.filter((f) => f.code === 'INVALID_TRANSITION').map((f) => f.id),
+        result.failed
+          .filter((f) => f.code === 'INVALID_TRANSITION' || f.code === 'REASON_REQUIRED')
+          .map((f) => f.id),
       );
       this.selected.set(
         new Set(

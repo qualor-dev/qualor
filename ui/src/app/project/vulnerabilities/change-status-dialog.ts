@@ -24,7 +24,7 @@ export type VulnerabilityItem = ResponseBody<
 >['items'][number];
 type Decision = RequestBody<'/api/v0/projects/{id}/vulnerability-decisions', 'put'>;
 export type DecisionStatus = Decision['status'];
-type Reason = NonNullable<Decision['reason']>;
+export type Reason = NonNullable<Decision['reason']>;
 
 /** The one target a view is about (`kind:id` in the URL), named for the "Only <target>" choice. */
 export interface DialogTarget {
@@ -33,7 +33,7 @@ export interface DialogTarget {
   name: string;
 }
 
-const VEX_REASONS: Reason[] = [
+export const VEX_REASONS: Reason[] = [
   'component_not_present',
   'vulnerable_code_not_present',
   'vulnerable_code_not_in_execute_path',
