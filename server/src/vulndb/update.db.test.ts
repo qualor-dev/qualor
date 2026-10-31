@@ -6,8 +6,7 @@ import { testSmtp } from '../../test/mail';
 import { metadataJson, trivyArchive, UPDATED_AT } from '../../test/trivy-archive';
 import { instanceSettings, jobs, mailMessages, users, vulndbDatasets } from '../db/schema';
 import { runUntilIdle } from '../queue/worker';
-import type { fetchLayerDescriptor, openBlob} from './oci';
-import { type OciProblem } from './oci';
+import type { fetchLayerDescriptor, openBlob, OciProblem } from './oci';
 import { OFFICIAL_REPOSITORY, writeVulndbSettings } from './settings';
 import { readVulndbState, updateVulndbState, VULNDB_UPDATE_QUEUE } from './state';
 import { currentDataset } from './store';
@@ -65,11 +64,16 @@ function fakeRegistry(initial: Buffer | OciProblem): FakeRegistry {
 describe('vulnerability database updates', () => {
   let t: TestContext;
   let now: Date;
+  let rechecks: unknown[];
   const deps = (registry: FakeRegistry): VulndbUpdateDeps => ({
     db: t.db,
     config: { ...t.config, vulndb: { internalHosts: new Set() } },
     fetchLayerDescriptor: registry.fetchLayerDescriptor,
     openBlob: registry.openBlob,
+    enqueueRecheck: (_db, scope) => {
+      rechecks.push(scope);
+      return Promise.resolve();
+    },
     now: () => now,
     logger: silent,
   });
@@ -110,6 +114,7 @@ describe('vulnerability database updates', () => {
     await t.db.delete(instanceSettings).where(eq(instanceSettings.key, 'vulndb'));
     await t.db.delete(instanceSettings).where(eq(instanceSettings.key, 'vulndb_state'));
     now = new Date(BUILT + DAY_MS);
+    rechecks = [];
   });
   afterAll(async () => {
     await t.close();
@@ -119,6 +124,7 @@ describe('vulnerability database updates', () => {
     const registry = fakeRegistry(trivyArchive());
     await runOnce(registry);
     expect(registry.refs).toEqual([OFFICIAL_REPOSITORY]);
+    expect(rechecks).toEqual([{ all: true }]);
     const state = await readVulndbState(t.db);
     const current = await currentDataset(t.db, state);
     expect(current).toMatchObject({ status: 'ready', source: 'official' });
@@ -142,6 +148,7 @@ describe('vulnerability database updates', () => {
     await runOnce(registry);
     expect(registry.descriptors).toBe(2);
     expect(registry.blobs).toBe(1);
+    expect(rechecks).toEqual([{ all: true }]);
     expect(await t.db.select().from(vulndbDatasets)).toHaveLength(1);
     expect(await readVulndbState(t.db)).toMatchObject({
       lastCheckAt: now.toISOString(),
@@ -155,6 +162,7 @@ describe('vulnerability database updates', () => {
     const before = (await readVulndbState(t.db)).currentDatasetId;
     registry.archive = { code: 'UNREACHABLE', message: 'The registry did not answer' };
     await runOnce(registry);
+    expect(rechecks).toHaveLength(1);
     expect(await readVulndbState(t.db)).toMatchObject({
       currentDatasetId: before,
       lastError: { code: 'UNREACHABLE', message: 'The registry did not answer' },
@@ -179,6 +187,7 @@ describe('vulnerability database updates', () => {
       currentDatasetId: before,
       lastError: { code: 'DIGEST_MISMATCH' },
     });
+    expect(rechecks).toHaveLength(1);
   });
 
   it('survives a source that throws', async () => {
@@ -199,15 +208,28 @@ describe('vulnerability database updates', () => {
     const registry = fakeRegistry(trivyArchive());
     await runOnce(registry);
     expect(registry.descriptors).toBe(0);
+    expect(rechecks).toEqual([]);
     expect(await readVulndbState(t.db)).toMatchObject({ lastCheckAt: null, lastError: null });
     expect((await queued()).rows).toHaveLength(1);
   });
 
-  it('only checks staleness for an uploaded file', async () => {
+  it('only checks staleness for an uploaded file, and moves the check times on', async () => {
     await settings({ source: { kind: 'upload' } });
+    await updateVulndbState(t.db, (s) => ({
+      ...s,
+      lastCheckAt: '2026-01-01T00:00:00.000Z',
+      nextCheckAt: '2026-01-01T06:00:00.000Z',
+      lastError: { code: 'KEEP', message: 'kept' },
+    }));
     const registry = fakeRegistry(trivyArchive());
     await runOnce(registry);
     expect(registry.descriptors).toBe(0);
+    expect(rechecks).toEqual([]);
+    expect(await readVulndbState(t.db)).toMatchObject({
+      lastCheckAt: now.toISOString(),
+      nextCheckAt: new Date(now.getTime() + 6 * 3_600_000).toISOString(),
+      lastError: { code: 'KEEP' },
+    });
     expect((await queued()).rows).toHaveLength(1);
   });
 

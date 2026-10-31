@@ -15,7 +15,7 @@ import {
   openBlob as realOpenBlob,
   type OciAuth,
 } from './oci';
-import { enqueueRecheck } from './recheck-queue';
+import { enqueueRecheck as realEnqueueRecheck } from './recheck-queue';
 import {
   OFFICIAL_REPOSITORY,
   readVulndbSettings,
@@ -39,6 +39,8 @@ export interface VulndbUpdateDeps extends MailDeps {
   /** Tests substitute the registry client. */
   fetchLayerDescriptor?: typeof realFetchLayerDescriptor;
   openBlob?: typeof realOpenBlob;
+  /** Tests substitute the re-check queue. */
+  enqueueRecheck?: typeof realEnqueueRecheck;
   now?: () => Date;
   logger?: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
 }
@@ -175,7 +177,7 @@ async function checkSource(
     );
   }
   await pruneDatasets(deps.db);
-  await enqueueRecheck(deps.db, { all: true });
+  await (deps.enqueueRecheck ?? realEnqueueRecheck)(deps.db, { all: true });
   deps.logger?.info(
     { component: 'vulndb', sizeBytes: stored.dataset.sizeBytes },
     'vulnerability database updated',
@@ -196,10 +198,11 @@ export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
   try {
     const settings = await readVulndbSettings(deps.db);
     if (!settings.enabled) return;
-    if (settings.source.kind !== 'upload') {
-      let error: LastError | null;
+    {
+      // undefined: an uploaded file has no source to check, so the last error stays.
+      let error: LastError | null | undefined;
       try {
-        error = await checkSource(deps, settings);
+        error = settings.source.kind === 'upload' ? undefined : await checkSource(deps, settings);
       } catch (err) {
         // Neither the registry's answer nor a classified storage problem: log it, show a fixed text.
         deps.logger?.warn(
@@ -215,7 +218,7 @@ export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
         nextCheckAt: new Date(
           checkedAt.getTime() + settings.intervalHours * 3_600_000,
         ).toISOString(),
-        lastError: error,
+        lastError: error === undefined ? state.lastError : error,
       }));
     }
     try {
