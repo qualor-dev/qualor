@@ -41,7 +41,9 @@ export function parseTrivyOutput(json: string): Map<string, VulnerabilityMatch[]
     const vulns = (result as { Vulnerabilities?: unknown } | null)?.Vulnerabilities;
     if (!Array.isArray(vulns)) continue;
     for (const v of vulns as Record<string, unknown>[]) {
-      const purl = text((v.PkgIdentifier as { PURL?: unknown } | undefined)?.PURL);
+      // Trivy re-serialises the purl; the bom-ref is our own string, unchanged.
+      const ident = v.PkgIdentifier as { PURL?: unknown; BOMRef?: unknown } | undefined;
+      const purl = text(ident?.BOMRef) ?? text(ident?.PURL);
       const id = text(v.VulnerabilityID);
       if (purl === null || id === null) continue;
       const severity = typeof v.Severity === 'string' ? v.Severity.toLowerCase() : '';

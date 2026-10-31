@@ -72,6 +72,33 @@ describe('parseTrivyOutput', () => {
     ]);
   });
 
+  it('keys by the bom-ref and falls back to the purl', () => {
+    const json = JSON.stringify({
+      Results: [
+        {
+          Vulnerabilities: [
+            {
+              VulnerabilityID: 'A',
+              Severity: 'LOW',
+              PkgIdentifier: { PURL: 'pkg:npm/%40a/b@1', BOMRef: 'pkg:npm/@a/b@1' },
+            },
+            { VulnerabilityID: 'B', Severity: 'LOW', PkgIdentifier: { PURL: 'pkg:x/c@1' } },
+            {
+              VulnerabilityID: 'C',
+              Severity: 'LOW',
+              PkgIdentifier: { PURL: 'pkg:x/d@1', BOMRef: '' },
+            },
+          ],
+        },
+      ],
+    });
+    expect([...parseTrivyOutput(json).keys()]).toEqual([
+      'pkg:npm/@a/b@1',
+      'pkg:x/c@1',
+      'pkg:x/d@1',
+    ]);
+  });
+
   it('gives an empty map when there are no results, and throws on garbage', () => {
     expect(parseTrivyOutput('{"SchemaVersion":2}').size).toBe(0);
     expect(() => parseTrivyOutput('not json')).toThrow();
