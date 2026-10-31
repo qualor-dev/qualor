@@ -13,7 +13,7 @@ export const PRIORITY_FILE_MAX_BYTES = 32 * 1024 * 1024;
 export const PRIORITY_DATA_MAX_BYTES = 64 * 1024 * 1024;
 /**
  * A KEV catalog is at most this many bytes inflated (the real one is about 1.5 MB). `JSON.parse`
- * builds every value at once, so this cap bounds its heap: 8 MiB of `{},` is about 180 MB.
+ * builds every value at once, so this cap bounds its heap: 8 MiB of `{},` peaks near 210 MB.
  */
 export const KEV_DATA_MAX_BYTES = 8 * 1024 * 1024;
 /** At most this many entries in a KEV catalog (the real one has about 1 500). */
