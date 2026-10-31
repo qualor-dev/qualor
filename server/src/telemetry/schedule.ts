@@ -22,10 +22,24 @@ export interface TelemetryDeps {
   logger?: { debug: (obj: object, msg: string) => void } | undefined;
 }
 
-export function telemetryBootMessage(enabled: boolean): string {
-  return enabled
+/** Where the vulnerability database comes from while its instance switch is on; null: off. */
+export type VulndbBootSource = 'official' | 'mirror' | 'upload' | null;
+
+/**
+ * The boot line. While the vulnerability database switch is on, it also names the download: the
+ * server calls the official registry or the admin's mirror (an upload needs no network).
+ */
+export function telemetryBootMessage(
+  enabled: boolean,
+  vulndbSource: VulndbBootSource = null,
+): string {
+  const telemetry = enabled
     ? 'Telemetry: enabled — anonymous usage statistics are sent daily to qualor.dev and Docker Hub is checked daily for a new version; set QUALOR_TELEMETRY=false to turn off (see /docs/telemetry)'
     : 'Telemetry: disabled';
+  if (vulndbSource === null || vulndbSource === 'upload') return telemetry;
+  const from =
+    vulndbSource === 'official' ? 'ghcr.io' : 'the mirror set in Settings → Vulnerability database';
+  return `${telemetry}. The Trivy vulnerability database is downloaded from ${from} while Vulnerability monitoring is on (see /docs/vulnerability-database)`;
 }
 
 /** Inserts one run `delaySeconds` from now unless one is queued (`alsoRunning`: or running). */

@@ -11,11 +11,11 @@ PostgreSQL 18 on a volume. It needs no Elasticsearch, Redis or message broker. R
 | | Minimum | Notes |
 |---|---|---|
 | CPU | 1 vCPU | 2 or more for many parallel pipelines |
-| Memory | 1.5 GiB for the server with its database | about 4 GiB for reports near the 500 MiB decompressed limit. With [AI review](./ai-review.md) on, add up to 512 MiB for each AI review or answer to a reply that runs at once (`QUALOR_REVIEW_WORKER_CONCURRENCY`, 2 by default) |
-| Disk | a few GiB for the data volume | reports are kept 7 days; analyses and measures are small |
+| Memory | 1.5 GiB for the server with its database | about 4 GiB for reports near the 500 MiB decompressed limit. A vulnerability re-check added under 20 MiB in our tests. With [AI review](./ai-review.md) on, add up to 512 MiB for each AI review or answer to a reply that runs at once (`QUALOR_REVIEW_WORKER_CONCURRENCY`, 2 by default) |
+| Disk | a few GiB for the data volume | reports are kept 7 days; analyses and measures are small. The [vulnerability database](./vulnerability-database.md) needs a cache volume of its own: 1.68 GB (1.56 GiB) extracted, plus room for one update, so 4 GiB for a replica (6 GiB by default on Helm). PostgreSQL also holds up to two copies of the compressed file, about 131 MiB each |
 | Software | Docker with Compose v2 | or Kubernetes 1.29+ with Helm, or any container platform that runs the image with a volume |
 | Inbound network | HTTPS from CI runners and users | |
-| Outbound network | your GitLab or GitHub, and your webhook receivers | if configured: the AI model provider ([AI assistant](./ai-assistant.md)), the SMTP server ([Email](./email.md)), the identity provider ([Single sign-on](./sso-and-scim.md)), Slack or Teams ([Slack and Microsoft Teams](./chat-notifications.md)). Unless turned off: `qualor.dev` ([Telemetry](./telemetry.md)) and `hub.docker.com` ([Update check](./telemetry.md#update-check)) |
+| Outbound network | your GitLab or GitHub, and your webhook receivers | if configured: the AI model provider ([AI assistant](./ai-assistant.md)), the SMTP server ([Email](./email.md)), the identity provider ([Single sign-on](./sso-and-scim.md)), Slack or Teams ([Slack and Microsoft Teams](./chat-notifications.md)). Unless turned off: `qualor.dev` ([Telemetry](./telemetry.md)) and `hub.docker.com` ([Update check](./telemetry.md#update-check)). While [Vulnerability monitoring](./vulnerability-database.md) is on, which it is by default: `ghcr.io` and `pkg-containers.githubusercontent.com`, or your mirror |
 
 ## Images
 
@@ -95,7 +95,7 @@ services:
       QUALOR_LOG_LEVEL: ${QUALOR_LOG_LEVEL:-info}
     volumes:
       - data:/var/lib/qualor
-      - vulndb-cache:/var/cache/qualor/vulndb # the vulnerability database (2 GiB, 4 GiB while one replaces another)
+      - vulndb-cache:/var/cache/qualor/vulndb # the vulnerability database copy (1.68 GB, twice while one replaces another)
     ports:
       - '${QUALOR_BIND_ADDRESS:-127.0.0.1}:${QUALOR_PORT:-8080}:8080'
     read_only: true
@@ -426,7 +426,11 @@ goes into a `postgres://` URL.
 | `QUALOR_WORKER_CONCURRENCY` | `1` | analysis jobs processed at once. Each slot can use several times one report's size in memory |
 | `QUALOR_REVIEW_WORKER_CONCURRENCY` | `2` | [AI reviews](./ai-review.md) and answers to replies that run at once, 1 to 8. They have a worker of their own, so a review never delays analyses or the AI assistant's answers. The masking worker of each running review or answer can use up to 512 MiB of heap: plan for that times this number |
 | `QUALOR_AI_REVIEW_MAX_MINUTES` | `45` | an [AI review](./ai-review.md)'s time in all, 5 to 240 minutes. Raise it for a slow model. Any other value stops the start |
-| `NODE_EXTRA_CA_CERTS` | none | a PEM bundle, when your GitLab, GitHub Enterprise, webhook receivers or SMTP server use a private CA. Mount the file into the container |
+| `QUALOR_VULNDB_DIR` | `/var/cache/qualor/vulndb` | where the server unpacks the [vulnerability database](./vulnerability-database.md) for Trivy. Mount a writable volume of 4 GiB or more; it holds only a copy, so losing it costs nothing |
+| `QUALOR_TRIVY_PATH` | `/usr/local/bin/trivy` | the Trivy program the server runs for re-checks. The image has it |
+| `QUALOR_VULNDB_INTERNAL_HOSTS` | none | the same for a mirror of the vulnerability database on your internal network, comma-separated, each with an optional port (`registry.corp:5000`). It lifts the check for private addresses only; the registry must still use HTTPS |
+| `QUALOR_VULNDB_UPLOAD_MAX_BYTES` | 1 GiB | the largest `db.tar.gz` the vulnerability database page accepts |
+| `NODE_EXTRA_CA_CERTS` | none | a PEM bundle, when your GitLab, GitHub Enterprise, webhook receivers, SMTP server or vulnerability database mirror use a private CA. Mount the file into the container |
 | `QUALOR_LICENSE` | none | an [enterprise licence](./enterprise.md) key. Not together with `QUALOR_LICENSE_FILE` |
 | `QUALOR_LICENSE_FILE` | none | the path of a file holding the licence key, such as a Docker or Kubernetes secret, read at start: UTF-8, or UTF-16 with a byte-order mark. A file that cannot be read stops the start |
 
@@ -574,3 +578,8 @@ and the scan never downloads one. Reports carry the database date, and a scan wa
 (the minor tag `0.14` follows its patch releases), or fetch a fresh database in the job and point
 `QUALOR_TRIVY_CACHE_DIR` at it: see
 [Languages and analyzers](./languages-and-analyzers.md#dependencies-trivy).
+
+The server keeps a database of its own for re-checking your tracked branches and versions:
+[The vulnerability database](./vulnerability-database.md). With Helm, the volume is an `emptyDir` of
+`vulnerabilityDatabase.cacheSizeLimit` (6Gi by default); add `ghcr.io` and
+`pkg-containers.githubusercontent.com` to the `egress` rules.

@@ -34,6 +34,7 @@ const PAGES: Readonly<Record<string, () => Promise<{ default: string }>>> = {
   telemetry: () => import('../../../../docs/guide/telemetry.md'),
   troubleshooting: () => import('../../../../docs/guide/troubleshooting.md'),
   'users-projects-tokens': () => import('../../../../docs/guide/users-projects-tokens.md'),
+  'vulnerability-database': () => import('../../../../docs/guide/vulnerability-database.md'),
   'webhooks-and-api': () => import('../../../../docs/guide/webhooks-and-api.md'),
 };
 

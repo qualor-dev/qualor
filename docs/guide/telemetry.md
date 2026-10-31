@@ -148,6 +148,22 @@ When a newer release exists, the server:
 
 Behind a firewall or with your own registry mirror, the check fails quietly and nothing is shown.
 
+## Vulnerability database
+
+While **Vulnerability monitoring** is on, which it is by default, the server downloads Trivy's
+vulnerability database every few hours (6 by default). It calls `ghcr.io/aquasecurity/trivy-db:2`
+and the host `ghcr.io` sends the file from, or the mirror an instance admin set. The requests are
+anonymous `GET`s with the header `User-Agent: Qualor/<version>`. They carry nothing about your
+installation, and nothing is sent to qualor.dev. `QUALOR_TELEMETRY=false` does not turn them off:
+turn the switch off in **Settings → Vulnerability database**, or upload the file instead. See
+[The vulnerability database](./vulnerability-database.md).
+
+At every start the server adds the download to the log line above, for example:
+
+```text
+Telemetry: disabled. The Trivy vulnerability database is downloaded from ghcr.io while Vulnerability monitoring is on (see /docs/vulnerability-database)
+```
+
 ## What happens on our side
 
 qualor.dev stores one report per installation id and day, and keeps it for 24 months. The stored

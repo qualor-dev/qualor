@@ -59,6 +59,8 @@ guide of its own release, under **Docs** in the top bar (`/docs`, for signed-in 
     the issues.
 28. [Slack and Microsoft Teams](./chat-notifications.md): gate failures and a weekly security
     digest in a channel.
+29. [The vulnerability database](./vulnerability-database.md): the server's copy of Trivy's
+    database, its source, states and re-checks.
 
 ## How Qualor works
 

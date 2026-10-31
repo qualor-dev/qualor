@@ -55,6 +55,7 @@ import {
   telemetryBootMessage,
   telemetryHandlers,
 } from './telemetry/schedule';
+import { readVulndbSettings } from './vulndb/settings';
 import {
   ensureVulndbScheduled,
   scheduleVulndbAtBoot,
@@ -197,7 +198,11 @@ async function main(): Promise<void> {
     throw err;
   }
   const { edition, plugins, audit } = enterprise;
-  logger.info({ component: 'telemetry' }, telemetryBootMessage(config.telemetry.enabled));
+  const vulndb = await readVulndbSettings(database.db);
+  logger.info(
+    { component: 'telemetry' },
+    telemetryBootMessage(config.telemetry.enabled, vulndb.enabled ? vulndb.source.kind : null),
+  );
   // sso-scim.md §10.4: the emergency switch is loud. One warn line per boot, and the event while
   // audit-log is active; a failure to record (a malformed anchor) is logged and never stops the boot.
   if (config.forcePasswordSignIn) {
