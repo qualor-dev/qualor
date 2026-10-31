@@ -5757,6 +5757,153 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/projects/{id}/vulnerability-decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a vulnerability's status for the whole project or for one branch or version; applied to the matching Trivy issues */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        packageName: string;
+                        vulnerabilityId: string;
+                        scope: {
+                            /** @enum {string} */
+                            kind: "project";
+                        } | {
+                            /** @enum {string} */
+                            kind: "branch" | "version";
+                            /** Format: uuid */
+                            id: string;
+                        };
+                        /** @enum {string} */
+                        status: "open" | "false_positive" | "wont_fix";
+                        /** @enum {string} */
+                        reason?: "component_not_present" | "vulnerable_code_not_present" | "vulnerable_code_not_in_execute_path" | "vulnerable_code_cannot_be_controlled_by_adversary" | "inline_mitigations_already_exist";
+                        comment?: string;
+                        replaceOverrideOf?: {
+                            /** @enum {string} */
+                            kind: "branch" | "version";
+                            /** Format: uuid */
+                            id: string;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            decision: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                scope: "project" | "branch" | "version";
+                                /** @enum {string} */
+                                status: "open" | "false_positive" | "wont_fix";
+                                reason: ("component_not_present" | "vulnerable_code_not_present" | "vulnerable_code_not_in_execute_path" | "vulnerable_code_cannot_be_controlled_by_adversary" | "inline_mitigations_already_exist") | null;
+                                comment: string | null;
+                                /** Format: date-time */
+                                decidedAt: string;
+                                decidedBy: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    name: string;
+                                } | null;
+                            };
+                            appliedIssues: number;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description The project, a scope target or the (package, vulnerability) pair is not found (NOT_FOUND) */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; also a reason with a status other than false_positive, a replaceOverrideOf with a target scope, or a merge-request branch), a required comment is missing (COMMENT_REQUIRED), or a false positive has no reason (REASON_REQUIRED) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Too many issue changes by this user (RATE_LIMITED); see Retry-After */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description The decision stayed locked by a concurrent change (CONCURRENCY_CONFLICT); see Retry-After */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/metrics": {
         parameters: {
             query?: never;

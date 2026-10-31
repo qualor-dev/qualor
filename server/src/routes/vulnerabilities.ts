@@ -1,12 +1,25 @@
+import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
+import { actorOf } from '../audit/recorder';
 import { accessOf, requireUser } from '../auth/access';
-import { idParams } from '../http/schemas';
+import type { Executor } from '../db/client';
+import { branches, projectVersions } from '../db/schema';
+import { notFound, ProblemError, validationFailed } from '../http/problem';
+import { idParams, noNul } from '../http/schemas';
+import { issueChangeCharge, type ChargeIssueChanges } from '../issues/rate-limit';
+import { setLockTimeout, TRANSITION_LOCK_TIMEOUT_MS } from '../issues/transitions';
 import { projectForUser } from '../projects/access';
-import { DECISION_STATUSES, VEX_JUSTIFICATIONS } from '../vulnerabilities/decisions';
-import { listVulnerabilities } from '../vulnerabilities/list';
+import {
+  DECISION_STATUSES,
+  VEX_JUSTIFICATIONS,
+  writeDecision,
+  type TargetScope,
+} from '../vulnerabilities/decisions';
+import { decisionsOf, listVulnerabilities } from '../vulnerabilities/list';
 import { readTargetSummary, SEVERITIES } from '../vulnerabilities/summary';
+import { transitionComment } from './issues';
 
 const TRACKING_REASONS = [
   'pinned',
@@ -124,10 +137,75 @@ const listQuerySchema = z.strictObject({
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
 });
 
-export const vulnerabilityRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
-  app,
-  { deps },
-) => {
+const targetScopeSchema = z.strictObject({ kind: z.enum(['branch', 'version']), id: z.uuid() });
+
+const decisionBodySchema = z.strictObject({
+  packageName: noNul(z.string().min(1).max(512)),
+  vulnerabilityId: noNul(z.string().min(1).max(128)),
+  scope: z.discriminatedUnion('kind', [
+    z.strictObject({ kind: z.literal('project') }),
+    targetScopeSchema,
+  ]),
+  status: decisionStatusSchema,
+  /** Required for Not affected, and only then. */
+  reason: z.enum(VEX_JUSTIFICATIONS).optional(),
+  /** At most 2 000 characters; required for Not affected and Won't fix. */
+  comment: noNul(z.string().max(2_000)).optional(),
+  /** A project-wide write only: the override of this target is removed in the same transaction. */
+  replaceOverrideOf: targetScopeSchema.optional(),
+});
+
+/** 404 for a target that is not the project's, 422 for a merge request (it has no decisions). */
+async function requireTarget(
+  db: Executor,
+  projectId: string,
+  target: TargetScope,
+  path: string,
+): Promise<void> {
+  if (target.kind === 'version') {
+    const [row] = await db
+      .select({ id: projectVersions.id })
+      .from(projectVersions)
+      .where(and(eq(projectVersions.id, target.id), eq(projectVersions.projectId, projectId)));
+    if (!row) throw notFound();
+    return;
+  }
+  const [row] = await db
+    .select({ kind: branches.kind })
+    .from(branches)
+    .where(and(eq(branches.id, target.id), eq(branches.projectId, projectId)));
+  if (!row) throw notFound();
+  if (row.kind === 'merge_request') {
+    throw validationFailed([{ path, message: 'A merge request has no vulnerability decisions' }]);
+  }
+}
+
+/** Whether the project has a vulnerability row, or a Trivy issue, for the pair. */
+async function pairExists(
+  db: Executor,
+  projectId: string,
+  packageName: string,
+  vulnerabilityId: string,
+): Promise<boolean> {
+  const found = await db.execute(sql`
+    SELECT 1 WHERE EXISTS (
+      SELECT 1 FROM target_vulnerabilities
+       WHERE project_id = ${projectId} AND package_name = ${packageName}
+         AND vulnerability_id = ${vulnerabilityId})
+    OR EXISTS (
+      SELECT 1 FROM issues i JOIN rules r ON r.id = i.rule_id
+       WHERE i.project_id = ${projectId} AND i.package_name = ${packageName}
+         AND r.engine_id = 'trivy' AND r.engine_rule_id = ${vulnerabilityId})`);
+  return found.rows.length > 0;
+}
+
+export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
+  deps: RouteDeps;
+  /** The app's G7 bound, shared with the issue routes (routes/index.ts). */
+  chargeIssueChanges?: ChargeIssueChanges;
+}> = async (app, { deps, chargeIssueChanges }) => {
+  const chargeChanges = chargeIssueChanges ?? issueChangeCharge();
+
   app.get(
     '/projects/:id/vulnerabilities/targets',
     {
@@ -178,6 +256,96 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
           id !== undefined && {
             target: { kind: kind as 'branch' | 'version', id: id.toLowerCase() },
           }),
+      });
+    },
+  );
+
+  app.put(
+    '/projects/:id/vulnerability-decisions',
+    {
+      config: {
+        openapi: {
+          problems: [404, 429, 503],
+          problemDescriptions: {
+            404: 'The project, a scope target or the (package, vulnerability) pair is not found (NOT_FOUND)',
+            422: 'Validation failed (VALIDATION_FAILED; also a reason with a status other than false_positive, a replaceOverrideOf with a target scope, or a merge-request branch), a required comment is missing (COMMENT_REQUIRED), or a false positive has no reason (REASON_REQUIRED)',
+            429: 'Too many issue changes by this user (RATE_LIMITED); see Retry-After',
+            503: 'The decision stayed locked by a concurrent change (CONCURRENCY_CONFLICT); see Retry-After',
+          },
+        },
+      },
+      schema: {
+        tags: ['vulnerabilities'],
+        summary:
+          "Change a vulnerability's status for the whole project or for one branch or version; applied to the matching Trivy issues",
+        params: idParams,
+        body: decisionBodySchema,
+        response: {
+          200: z.object({ decision: decisionSchema, appliedIssues: z.number().int() }),
+        },
+      },
+    },
+    async (request) => {
+      const principal = requireUser(request, 'write');
+      const { packageName, vulnerabilityId, scope, status, replaceOverrideOf } = request.body;
+      if (request.body.reason !== undefined && status !== 'false_positive') {
+        throw validationFailed([
+          { path: 'body.reason', message: 'Only a false positive takes a reason' },
+        ]);
+      }
+      if (replaceOverrideOf && scope.kind !== 'project') {
+        throw validationFailed([
+          {
+            path: 'body.replaceOverrideOf',
+            message: 'Only a project-wide decision replaces an override',
+          },
+        ]);
+      }
+      const comment = transitionComment(status, request.body.comment);
+      if (status === 'false_positive' && request.body.reason === undefined) {
+        throw new ProblemError(422, 'REASON_REQUIRED', 'A reason is required for false_positive', {
+          errors: [{ path: 'body.reason', message: 'Required for false_positive' }],
+        });
+      }
+      chargeChanges(principal.user.id, 1);
+      const project = await projectForUser(
+        accessOf(deps),
+        principal,
+        request.params.id,
+        'issue.triage',
+      );
+      if (scope.kind !== 'project') {
+        await requireTarget(deps.db, project.id, scope, 'body.scope');
+      }
+      if (replaceOverrideOf) {
+        await requireTarget(deps.db, project.id, replaceOverrideOf, 'body.replaceOverrideOf');
+      }
+      if (!(await pairExists(deps.db, project.id, packageName, vulnerabilityId))) {
+        throw notFound('Vulnerability');
+      }
+
+      return deps.db.transaction(async (tx) => {
+        await setLockTimeout(tx, TRANSITION_LOCK_TIMEOUT_MS);
+        // writeDecision takes the pair's lock first; nothing above it locks anything.
+        const { decision, appliedIssueIds } = await writeDecision(
+          tx,
+          {
+            projectId: project.id,
+            packageName,
+            vulnerabilityId,
+            scope,
+            status,
+            reason: request.body.reason ?? null,
+            comment,
+            userId: principal.user.id,
+            source: 'tab',
+            ...(replaceOverrideOf && { replaceOverrideOf }),
+          },
+          { recorder: deps.audit, context: actorOf(request) },
+        );
+        const dto = (await decisionsOf(tx, [decision.id])).get(decision.id);
+        if (!dto) throw new Error('The decision just written is missing');
+        return { decision: dto, appliedIssues: appliedIssueIds.length };
       });
     },
   );

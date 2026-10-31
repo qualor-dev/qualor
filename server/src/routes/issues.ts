@@ -180,7 +180,7 @@ const transitionBody = {
 const BULK_TRANSITION_MAX_IDS = 500;
 
 /** A blank comment is no comment; 422 COMMENT_REQUIRED where §6 requires one. */
-function transitionComment(to: UserStatus, raw: string | undefined): string | null {
+export function transitionComment(to: UserStatus, raw: string | undefined): string | null {
   const comment = raw?.trim() ? raw.trim() : null;
   if (comment === null && commentRequired(to)) {
     throw new ProblemError(422, 'COMMENT_REQUIRED', `A comment is required to set ${to}`, {

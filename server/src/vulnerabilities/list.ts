@@ -221,7 +221,7 @@ export async function listVulnerabilities(
   return { items, total };
 }
 
-async function decisionsOf(
+export async function decisionsOf(
   db: Executor,
   ids: readonly string[],
 ): Promise<Map<string, DecisionDto>> {
