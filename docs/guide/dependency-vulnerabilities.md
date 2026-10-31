@@ -16,12 +16,21 @@ The tab shows when both switches are on:
 | **Vulnerability monitoring** | **Settings → Vulnerability database**, for the instance |
 | **Track vulnerabilities in this project** | **Project → Settings → Vulnerability monitoring** |
 
-With either one off, the tab and the badge are hidden. Decisions still work and are kept, so the
-store is complete when you switch monitoring on again.
+With either one off, the tab and the badge are hidden. Decisions still work and are kept, and
+decisions made meanwhile apply when you switch monitoring on again.
 
-Without data, the tab says "No vulnerability data yet." Instance admins get a link to **Settings →
-Vulnerability database**. Everyone else is told to ask an instance admin. A project with no
-released versions shows the CI snippets of
+The header names the date of the data and the time of the last check, such as "Vulnerability data
+from Oct 29, 2026 · checked Oct 30, 2026, 9:00 AM".
+
+Some states replace the table:
+
+| The tab says | When |
+|---|---|
+| "No vulnerability data yet." | the server has no database. Instance admins get a link to **Settings → Vulnerability database**. Everyone else is told to ask an instance admin |
+| "Vulnerability monitoring is off for this project." | a link to the tab is opened while a switch is off. Organization and project admins get a link to the project settings |
+| "Not checked yet." | the server has not checked the tracked targets yet. It checks them after the next database update or analysis |
+
+A project with no released versions shows the CI snippets of
 [Record a version on each tag](./releases.md#record-a-version-on-each-tag).
 
 ## By version
@@ -43,8 +52,9 @@ ones that `.trivyignore` ignores ([The `.trivyignore` file](#the-trivyignore-fil
 
 Select a row to see that target's vulnerabilities as cards.
 
-Versions that are not tracked fold into one line, such as "2.1.9 · 2.0.5 · 14 more — not tracked".
-**Show** lists them with "Not tracked" and the counts they kept. **Hide** folds them again.
+Versions that are not tracked fold into one line, such as
+"2.1.9 · 2.0.5 · 14 more — not tracked". **Show** lists them with "Not tracked" and the counts
+they kept. **Hide** folds them again.
 
 The menu of a version row changes how the version is tracked. It needs the permission to change
 the project's settings (Organization admin and Project admin, [Roles](./roles-and-audit.md#roles)).
@@ -152,11 +162,13 @@ A Trivy vulnerability is also an issue of the Trivy engine. Both places use the 
 
 The other direction:
 
-- A project decision that is not Open sets the matching Trivy issues on `main` and on tracked
-  branches to that status. On other branches and in merge requests, it sets the open Trivy issues to
-  that status.
-- A new Trivy issue takes the decision at ingestion.
-- Resolved and closed issues never change.
+- A project decision sets the matching Trivy issues on `main` and on tracked branches to its
+  status. An Open decision reopens the ones that are False positive or Won't fix.
+- On other branches and in merge requests, a decision that is not Open sets the open Trivy issues
+  to that status.
+- A new Trivy issue takes the decision at ingestion when it is not Open.
+- A decision never changes resolved and closed issues. When an analysis finds such an issue again
+  on `main` or a tracked branch, it reopens with the decision's status, Open included.
 - A branch with its own decision is not changed by a project-wide decision.
 
 The status dialog of the Issues tab asks for a **Reason** when you set False positive on such an
@@ -190,7 +202,7 @@ the API answers 429 `RATE_LIMITED` with a `Retry-After` header, and a decision i
 | Route | Needs | Answers |
 |---|---|---|
 | `GET /api/v0/projects/:id/vulnerabilities/targets` | read access to the project | the tracked targets with their counts and `new`, the untracked versions, the data date and the last check |
-| `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, as cards. Query: `target` (`branch:<id>` or `version:<id>`), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `page`, `pageSize` (50 by default, at most 100) |
+| `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, as cards. Query: `target` (`branch:<id>` or `version:<id>`), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
 | `PUT /api/v0/projects/:id/vulnerability-decisions` | `issue.triage` | the decision and `appliedIssues`, the number of issues it changed |
 
 A decision is a body like this:
@@ -202,8 +214,8 @@ q -X PUT "$QUALOR_URL/api/v0/projects/<project id>/vulnerability-decisions" -d '
   "comment":"Only used in a build script"}'
 ```
 
-- `scope` is `{"kind":"project"}`, or `{"kind":"branch","id":"…"}` or `{"kind":"version","id":"…"}`.
-  A merge request has no decisions.
+- `scope` is `{"kind":"project"}`, `{"kind":"branch","id":"…"}` or
+  `{"kind":"version","id":"…"}`. A merge request has no decisions.
 - `reason` is one of the five OpenVEX values above. It is required for `false_positive` and
   refused for any other status.
 - `replaceOverrideOf` removes a target's decision in the same step. It needs a project-wide scope.

@@ -46,18 +46,20 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - Triage by vulnerability: **Change status** sets Open, Not affected (false positive) or Affected,
   won't fix for a package and vulnerability id, for the whole project or for one branch or version.
   Not affected needs a reason, one of the five VEX justifications, and a comment. A decision applies
-  to the matching Trivy issues and to new ones.
-- A false positive on a Trivy issue of the main branch or a tracked branch asks for a reason, and
-  writes the project's decision. Existing false positive and won't fix Trivy issues on the main
-  branch became decisions with "Reason not given".
+  to the matching Trivy issues and to new ones. On the main branch and tracked branches it also
+  applies to a closed or resolved Trivy issue that an analysis finds again.
 - API: `GET /projects/{id}/vulnerabilities/targets`, `GET /projects/{id}/vulnerabilities` and
-  `PUT /projects/{id}/vulnerability-decisions`. `POST /issues/{id}/transition`,
-  `POST /issues/bulk-transition` and the MCP tool `qualor_transition_issue` accept `reason`; the
-  problem codes are `REASON_REQUIRED` and `COMMENT_REQUIRED`. The audit event is
-  `vulnerability.decision_changed`.
+  `PUT /projects/{id}/vulnerability-decisions`, whose problem codes are `REASON_REQUIRED` and
+  `COMMENT_REQUIRED`. The audit event is `vulnerability.decision_changed`.
 
 ### Changed
 
+- A false positive on a Trivy issue of the main branch or a tracked branch needs a reason, and
+  writes the project's decision. `POST /issues/{id}/transition`, `POST /issues/bulk-transition` and
+  the MCP tool `qualor_transition_issue` take `reason`, and answer 422 `REASON_REQUIRED` without
+  it: API scripts and MCP agents that mark such issues false positive must send one. Existing
+  false positive and won't fix Trivy issues on the main branch became decisions with "Reason not
+  given".
 - The GitLab component, the GitHub workflow templates and the CI that **Add repositories** sets up
   run the Qualor job on tags too.
 
