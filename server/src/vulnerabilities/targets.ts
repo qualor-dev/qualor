@@ -1,7 +1,11 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { branches, projectVersions } from '../db/schema';
-import { isTrackedBranch, vulnerabilitySettingsOf } from '../versions/settings';
+import {
+  isTrackedBranch,
+  vulnerabilitySettings,
+  vulnerabilitySettingsOf,
+} from '../versions/settings';
 import { computeTracking, type TrackingInput } from '../versions/tracking';
 import { readVulndbSettings } from '../vulndb/settings';
 
@@ -15,6 +19,15 @@ export type Target = { kind: 'branch'; branchId: string } | { kind: 'version'; v
 export async function trackedTargets(db: Executor, projectId: string): Promise<Target[]> {
   if (!(await readVulndbSettings(db)).enabled) return [];
   return (await projectTargets(db, [projectId])).get(projectId) ?? [];
+}
+
+/** Whether both the instance switch and the project's switch are on. */
+export async function monitoringOn(db: Executor, projectId: string): Promise<boolean> {
+  const [instance, project] = await Promise.all([
+    readVulndbSettings(db),
+    vulnerabilitySettings(db, projectId),
+  ]);
+  return instance.enabled && project.enabled;
 }
 
 /**

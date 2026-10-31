@@ -459,6 +459,11 @@ describe('the Vulnerabilities tab read API (0.15)', () => {
       versionCount: 2,
     });
     expect((await items(`/projects/${s.projectId}/vulnerabilities`)).total).toBe(0);
+    // Final review F2: one target answers empty too, like the summary.
+    const one = await items(`/projects/${s.projectId}/vulnerabilities?target=branch:${s.main}`);
+    expect([one.items, one.total]).toEqual([[], 0]);
+    const unknown = await get(`/projects/${s.projectId}/vulnerabilities?target=branch:${uuidv7()}`);
+    expect(unknown.statusCode).toBe(404);
   });
 
   it('answers 300 tracked versions with 20 rows each in a few seconds', async () => {

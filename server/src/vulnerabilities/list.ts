@@ -5,7 +5,7 @@ import { branches, projectVersions, users, vulnerabilityDecisions } from '../db/
 import { notFound } from '../http/problem';
 import type { DecisionStatus, VexJustification } from './decisions';
 import { IS_NEW, scopedRows, SEVERITIES, type VulnerabilitySeverity } from './summary';
-import { trackedTargets, type Target } from './targets';
+import { monitoringOn, trackedTargets, type Target } from './targets';
 
 export interface TargetRef {
   kind: 'branch' | 'version';
@@ -162,7 +162,8 @@ function groups(projectId: string, scope: readonly TargetRef[], q: ListQuery): S
  * The vulnerabilities of the tracked targets (or of one target, tracked or not), grouped by
  * package and vulnerability id, open first, then by severity, id and package. The decision of an
  * item is the viewed target's effective one, or the project-wide one without a target. One
- * statement for the page, whatever the number of targets.
+ * statement for the page, whatever the number of targets. Empty while monitoring is off, with or
+ * without a target.
  */
 export async function listVulnerabilities(
   db: Executor,
@@ -173,6 +174,8 @@ export async function listVulnerabilities(
   if (q.target) {
     scope = await refsOf(db, projectId, [q.target]);
     if (scope.length === 0) throw notFound('Target');
+    // Final review F2: while monitoring is off one target is empty too, like the summary.
+    if (!(await monitoringOn(db, projectId))) return { items: [], total: 0 };
   } else {
     scope = await refsOf(db, projectId, (await trackedTargets(db, projectId)).map(targetId));
   }
