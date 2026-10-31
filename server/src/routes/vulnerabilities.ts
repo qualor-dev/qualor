@@ -58,6 +58,8 @@ const targetSchema = z.object({
   hasInventory: z.boolean(),
   /** Open, not ignored rows (a decision that is not Open takes a row out). */
   counts: countsSchema,
+  /** Open, not ignored rows in the KEV catalog; null without the vuln.priority feature. */
+  exploited: z.number().int().nullable(),
   /** Open, not ignored rows first seen after the target's last scan was checked. */
   new: z.number().int(),
   checkedAt: z.iso.datetime().nullable(),
@@ -70,10 +72,13 @@ const untrackedSchema = z.object({
   trackingReason: z.enum(TRACKING_REASONS),
   /** The rows the version kept when it stopped being tracked. */
   counts: countsSchema,
+  exploited: z.number().int().nullable(),
   checkedAt: z.iso.datetime().nullable(),
 });
 
 const targetsAnswerSchema = z.object({
+  /** Whether the vuln.priority feature (KEV and EPSS) is licensed. */
+  priority: z.boolean(),
   /** Off while the instance or the project switch is off; the lists are then empty. */
   monitoring: z.enum(['on', 'off']),
   /** The vulnerability database in use; null when there is none. */
@@ -123,6 +128,10 @@ const itemSchema = z.object({
   /** The decision in force: the viewed target's, or the project-wide one without `target`. */
   status: decisionStatusSchema,
   decision: decisionSchema.nullable(),
+  /** In the CISA KEV catalog. Null without the vuln.priority feature or when not listed. */
+  exploited: z.object({ dateAdded: z.iso.date(), ransomware: z.boolean() }).nullable(),
+  /** The EPSS score. Null without the vuln.priority feature or when not scored. */
+  epss: z.object({ score: z.number(), percentile: z.number() }).nullable(),
 });
 
 const TARGET_PATTERN =
@@ -133,6 +142,8 @@ const listQuerySchema = z.strictObject({
   target: z.string().regex(TARGET_PATTERN).optional(),
   status: z.enum(['all', ...DECISION_STATUSES]).default('all'),
   severity: severitySchema.optional(),
+  /** Only the exploited (KEV) rows; 403 FEATURE_NOT_LICENSED without vuln.priority when true. */
+  exploited: z.enum(['true', 'false']).optional(),
   page: z.coerce.number().int().min(1).max(100_000).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -224,7 +235,9 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
         request.params.id,
         'project.read',
       );
-      return readTargetSummary(deps.db, project.id);
+      return readTargetSummary(deps.db, project.id, {
+        priority: deps.edition.limits().vulnerabilities.priority,
+      });
     },
   );
 
@@ -242,21 +255,35 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
       },
     },
     async (request) => {
-      const { target, ...query } = request.query;
+      const { target, exploited, ...query } = request.query;
+      const priority = deps.edition.limits().vulnerabilities.priority;
       const project = await projectForUser(
         accessOf(deps),
         requireUser(request),
         request.params.id,
         'project.read',
       );
+      if (exploited === 'true' && !priority) {
+        throw new ProblemError(
+          403,
+          'FEATURE_NOT_LICENSED',
+          'The enterprise feature "vuln.priority" is not licensed',
+        );
+      }
       const [kind, id] = target?.split(':') ?? [];
-      return listVulnerabilities(deps.db, project.id, {
-        ...query,
-        ...(kind !== undefined &&
-          id !== undefined && {
-            target: { kind: kind as 'branch' | 'version', id: id.toLowerCase() },
-          }),
-      });
+      return listVulnerabilities(
+        deps.db,
+        project.id,
+        {
+          ...query,
+          ...(exploited === 'true' && { exploited: true }),
+          ...(kind !== undefined &&
+            id !== undefined && {
+              target: { kind: kind as 'branch' | 'version', id: id.toLowerCase() },
+            }),
+        },
+        { priority },
+      );
     },
   );
 

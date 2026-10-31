@@ -4,6 +4,8 @@ import { addMember, createUser, login, type Session } from '../../test/app';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
 import { uuidv7 } from '../db/ids';
+import { fixedEdition } from '../license/edition';
+import { communityLimits } from '../limits';
 import {
   branches,
   projectVersions,
@@ -521,5 +523,53 @@ describe('the Vulnerabilities tab read API (0.15)', () => {
     expect(list.total).toBe(20);
     expect(list.items[0]?.in).toHaveLength(300);
     expect(elapsed).toBeLessThan(2000);
+  });
+});
+
+describe('the Vulnerabilities tab without vuln.priority', () => {
+  let h: IngestHarness;
+  beforeAll(async () => {
+    h = await createIngestHarness();
+  });
+  afterAll(async () => {
+    await h.close();
+  });
+
+  it('answers 403 to exploited=true, accepts exploited=false and reports priority false', async () => {
+    const p = await h.project('acme/vprio-1');
+    const get = (url: string) =>
+      h.ctx.app.inject({ method: 'GET', url: `/api/v0${url}`, headers: h.orgAdmin.headers });
+    const denied = await get(`/projects/${p.id}/vulnerabilities?exploited=true`);
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({
+      code: 'FEATURE_NOT_LICENSED',
+      title: 'The enterprise feature "vuln.priority" is not licensed',
+    });
+    expect((await get(`/projects/${p.id}/vulnerabilities?exploited=false`)).statusCode).toBe(200);
+    const targets = await get(`/projects/${p.id}/vulnerabilities/targets`);
+    expect(targets.json().priority).toBe(false);
+  });
+});
+
+describe('the Vulnerabilities tab with vuln.priority', () => {
+  let h: IngestHarness;
+  beforeAll(async () => {
+    h = await createIngestHarness({
+      edition: fixedEdition({
+        ...communityLimits(),
+        vulnerabilities: { priority: true, alerts: false, sbom: false },
+      }),
+    });
+  });
+  afterAll(async () => {
+    await h.close();
+  });
+
+  it('reports priority true and accepts exploited=true', async () => {
+    const p = await h.project('acme/vprio-2');
+    const get = (url: string) =>
+      h.ctx.app.inject({ method: 'GET', url: `/api/v0${url}`, headers: h.orgAdmin.headers });
+    expect((await get(`/projects/${p.id}/vulnerabilities?exploited=true`)).statusCode).toBe(200);
+    expect((await get(`/projects/${p.id}/vulnerabilities/targets`)).json().priority).toBe(true);
   });
 });

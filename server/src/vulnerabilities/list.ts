@@ -40,6 +40,10 @@ export interface VulnerabilityItem {
   ignored: boolean;
   status: DecisionStatus;
   decision: DecisionDto | null;
+  /** In the CISA KEV catalog; null without `vuln.priority` or when the id is not listed. */
+  exploited: { dateAdded: string; ransomware: boolean } | null;
+  /** The EPSS score; null without `vuln.priority` or when the id has none. */
+  epss: { score: number; percentile: number } | null;
 }
 
 export interface ListQuery {
@@ -47,6 +51,8 @@ export interface ListQuery {
   target?: { kind: 'branch' | 'version'; id: string };
   status: 'all' | DecisionStatus;
   severity?: VulnerabilitySeverity;
+  /** Only the KEV rows; the caller has checked `vuln.priority`. */
+  exploited?: boolean;
   page: number;
   pageSize: number;
 }
@@ -67,6 +73,11 @@ interface GroupRow extends Record<string, unknown> {
   ignored: boolean;
   status: DecisionStatus;
   decision_id: string | null;
+  kev: boolean;
+  kev_date_added: string | null;
+  kev_ransomware: boolean | null;
+  epss_score: number | null;
+  epss_percentile: number | null;
   total: number;
 }
 
@@ -118,7 +129,12 @@ const targetId = (t: Target): { kind: 'branch' | 'version'; id: string } =>
   t.kind === 'branch' ? { kind: 'branch', id: t.branchId } : { kind: 'version', id: t.versionId };
 
 /** The grouped items (one per package and vulnerability) of the scope that pass the filters. */
-function groups(projectId: string, scope: readonly TargetRef[], q: ListQuery): SQL {
+function groups(
+  projectId: string,
+  scope: readonly TargetRef[],
+  q: ListQuery,
+  options: { priority: boolean },
+): SQL {
   const own = q.target !== undefined;
   const decisionId = sql.raw(own ? 'd_id' : 'pd_id');
   const decisionStatus = sql.raw(own ? 'eff_status' : 'pd_status');
@@ -145,6 +161,11 @@ function groups(projectId: string, scope: readonly TargetRef[], q: ListQuery): S
              bool_or(after_baseline) AS without_scan,
              bool_or(${IS_NEW}) AS is_new,
              bool_and(ignored) AS ignored,
+             bool_or(kev) AS kev,
+             max(kev_date_added) AS kev_date_added,
+             bool_or(kev_ransomware) AS kev_ransomware,
+             max(epss_score) AS epss_score,
+             max(epss_percentile) AS epss_percentile,
              ${decisionStatus} AS status,
              ${decisionId} AS decision_id
         FROM r
@@ -154,13 +175,14 @@ function groups(projectId: string, scope: readonly TargetRef[], q: ListQuery): S
       SELECT * FROM g
        WHERE true
          ${q.status === 'all' ? sql`` : sql`AND status = ${q.status}`}
+         ${options.priority && q.exploited === true ? sql`AND kev` : sql``}
          ${q.severity === undefined ? sql`` : sql`AND sev_rank = ${SEVERITIES.indexOf(q.severity)}`}
     )`;
 }
 
 /**
  * The vulnerabilities of the tracked targets (or of one target, tracked or not), grouped by
- * package and vulnerability id, open first, then by severity, id and package. The decision of an
+ * package and vulnerability id, open first, then (with `vuln.priority`) exploited first, then by severity, id and package. The decision of an
  * item is the viewed target's effective one, or the project-wide one without a target. One
  * statement for the page, whatever the number of targets. Empty while monitoring is off, with or
  * without a target.
@@ -169,6 +191,7 @@ export async function listVulnerabilities(
   db: Executor,
   projectId: string,
   q: ListQuery,
+  options: { priority: boolean },
 ): Promise<{ items: VulnerabilityItem[]; total: number }> {
   let scope: TargetRef[];
   if (q.target) {
@@ -181,12 +204,15 @@ export async function listVulnerabilities(
   }
   if (scope.length === 0) return { items: [], total: 0 };
 
-  const base = groups(projectId, scope, q);
+  const base = groups(projectId, scope, q, options);
+  const order = options.priority
+    ? sql`(status = 'open') DESC, kev DESC, sev_rank, vulnerability_id, package_name`
+    : sql`(status = 'open') DESC, sev_rank, vulnerability_id, package_name`;
   const page = await db.execute<GroupRow>(sql`
     ${base}
     SELECT f.*, count(*) OVER ()::int AS total
       FROM f
-     ORDER BY (status = 'open') DESC, sev_rank, vulnerability_id, package_name
+     ORDER BY ${order}
      LIMIT ${q.pageSize} OFFSET ${(q.page - 1) * q.pageSize}`);
   let total = page.rows[0]?.total ?? 0;
   if (page.rows.length === 0 && q.page > 1) {
@@ -219,6 +245,14 @@ export async function listVulnerabilities(
       ignored: row.ignored,
       status: row.status,
       decision: row.decision_id === null ? null : (decisions.get(row.decision_id) ?? null),
+      exploited:
+        options.priority && row.kev
+          ? { dateAdded: row.kev_date_added ?? '', ransomware: row.kev_ransomware === true }
+          : null,
+      epss:
+        options.priority && row.epss_score !== null && row.epss_percentile !== null
+          ? { score: row.epss_score, percentile: row.epss_percentile }
+          : null,
     };
   });
   return { items, total };

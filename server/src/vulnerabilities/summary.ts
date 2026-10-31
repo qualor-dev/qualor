@@ -28,6 +28,8 @@ export interface TargetSummary {
   tracking: 'auto' | 'pinned' | 'unsupported' | null;
   hasInventory: boolean;
   counts: SeverityCounts;
+  /** Open, not ignored rows in the KEV catalog; null without `vuln.priority`. */
+  exploited: number | null;
   new: number;
   checkedAt: string | null;
 }
@@ -39,10 +41,13 @@ export interface UntrackedVersion {
   trackingReason: TrackingReason;
   /** From the rows the version kept when it stopped being tracked. */
   counts: SeverityCounts;
+  exploited: number | null;
   checkedAt: string | null;
 }
 
 export interface TargetsAnswer {
+  /** Whether `vuln.priority` (KEV and EPSS) is licensed. */
+  priority: boolean;
   monitoring: 'on' | 'off';
   data: { builtAt: string | null } | null;
   checkedAt: string | null;
@@ -57,6 +62,8 @@ export interface TargetsAnswer {
  *
  * - `eff_status`, `d_id`: the effective decision of the row's own target (D6);
  * - `pd_id`, `pd_status`: the project-wide decision, else open;
+ * - `kev`, `kev_date_added`, `kev_ransomware`, `epss_score`, `epss_percentile`: the CISA KEV and
+ *   FIRST EPSS facts of the vulnerability id; the callers decide whether they may show them;
  * - `after_baseline`: first seen after its target's baseline, strictly (D3); false without a
  *   check row.
  *
@@ -68,6 +75,11 @@ export function scopedRows(where: SQL): SQL {
            tv.package_version, tv.ecosystem, tv.ignored, tv.first_seen_at,
            m.severity, m.title, m.fixed_version, m.primary_url,
            COALESCE(d.status, 'open') AS eff_status,
+           k.vulnerability_id IS NOT NULL AS kev,
+           k.date_added::text AS kev_date_added,
+           k.ransomware AS kev_ransomware,
+           e.score AS epss_score,
+           e.percentile AS epss_percentile,
            d.id AS d_id,
            pd.id AS pd_id,
            COALESCE(pd.status, 'open') AS pd_status,
@@ -77,6 +89,8 @@ export function scopedRows(where: SQL): SQL {
       JOIN vulnerability_matches m ON m.purl = tv.purl AND m.vulnerability_id = tv.vulnerability_id
       LEFT JOIN vulnerability_target_checks cb ON cb.branch_id = tv.branch_id
       LEFT JOIN vulnerability_target_checks cv ON cv.version_id = tv.version_id
+      LEFT JOIN vulnerability_kev k ON k.vulnerability_id = tv.vulnerability_id
+      LEFT JOIN vulnerability_epss e ON e.vulnerability_id = tv.vulnerability_id
       ${effectiveDecisionJoin('tv', 'd')}
       LEFT JOIN vulnerability_decisions pd
         ON pd.project_id = tv.project_id AND pd.package_name = tv.package_name
@@ -100,6 +114,7 @@ interface CountRow extends Record<string, unknown> {
   medium: number;
   low: number;
   unknown: number;
+  exploited: number;
   new: number;
 }
 
@@ -109,7 +124,7 @@ async function countsOf(
   projectId: string,
   branchIds: readonly string[],
   versionIds: readonly string[],
-): Promise<Map<string, { counts: SeverityCounts; new: number }>> {
+): Promise<Map<string, { counts: SeverityCounts; exploited: number; new: number }>> {
   const open = (severity: VulnerabilitySeverity) =>
     sql.raw(
       `count(*) FILTER (WHERE severity = '${severity}' AND eff_status = 'open' AND NOT ignored)::int AS ${severity}`,
@@ -121,6 +136,7 @@ async function countsOf(
     )})
     SELECT branch_id, version_id,
            ${open('critical')}, ${open('high')}, ${open('medium')}, ${open('low')}, ${open('unknown')},
+           count(*) FILTER (WHERE kev AND eff_status = 'open' AND NOT ignored)::int AS exploited,
            count(*) FILTER (WHERE ${IS_NEW})::int AS new
       FROM r
      GROUP BY branch_id, version_id`);
@@ -137,6 +153,7 @@ async function countsOf(
           low: row.low,
           unknown: row.unknown,
         },
+        exploited: row.exploited,
         new: row.new,
       },
     ]),
@@ -148,7 +165,11 @@ async function countsOf(
  * their counts and new rows, the versions that are not tracked with the counts they froze, and the
  * header facts. While the instance or project switch is off, only the header and `versionCount`.
  */
-export async function readTargetSummary(db: Executor, projectId: string): Promise<TargetsAnswer> {
+export async function readTargetSummary(
+  db: Executor,
+  projectId: string,
+  options: { priority: boolean },
+): Promise<TargetsAnswer> {
   const [dataset, instance, settings, versions] = await Promise.all([
     readVulndbState(db).then((state) => currentDataset(db, state)),
     readVulndbSettings(db),
@@ -165,6 +186,7 @@ export async function readTargetSummary(db: Executor, projectId: string): Promis
       .where(eq(projectVersions.projectId, projectId)),
   ]);
   const base = {
+    priority: options.priority,
     data: dataset ? { builtAt: dataset.builtAt?.toISOString() ?? null } : null,
     versionCount: versions.length,
   };
@@ -212,6 +234,7 @@ export async function readTargetSummary(db: Executor, projectId: string): Promis
   const versionById = new Map(versions.map((v) => [v.id, v]));
   const factsOf = (key: string) => ({
     counts: counts.get(key)?.counts ?? emptyCounts(),
+    exploited: options.priority ? (counts.get(key)?.exploited ?? 0) : null,
     checkedAt: checkedAt.get(key)?.toISOString() ?? null,
   });
 

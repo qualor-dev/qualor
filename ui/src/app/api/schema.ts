@@ -5569,6 +5569,7 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            priority: boolean;
                             /** @enum {string} */
                             monitoring: "on" | "off";
                             data: {
@@ -5592,6 +5593,7 @@ export interface paths {
                                     low: number;
                                     unknown: number;
                                 };
+                                exploited: number | null;
                                 new: number;
                                 checkedAt: string | null;
                             }[];
@@ -5610,6 +5612,7 @@ export interface paths {
                                     low: number;
                                     unknown: number;
                                 };
+                                exploited: number | null;
                                 checkedAt: string | null;
                             }[];
                         };
@@ -5675,6 +5678,7 @@ export interface paths {
                     target?: string;
                     status?: "all" | "open" | "false_positive" | "wont_fix";
                     severity?: "critical" | "high" | "medium" | "low" | "unknown";
+                    exploited?: "true" | "false";
                     page?: number;
                     pageSize?: number;
                 };
@@ -5740,6 +5744,15 @@ export interface paths {
                                         id: string;
                                         name: string;
                                     } | null;
+                                } | null;
+                                exploited: {
+                                    /** Format: date */
+                                    dateAdded: string;
+                                    ransomware: boolean;
+                                } | null;
+                                epss: {
+                                    score: number;
+                                    percentile: number;
                                 } | null;
                             }[];
                             total: number;

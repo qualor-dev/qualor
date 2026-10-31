@@ -989,6 +989,7 @@ export function vulnerabilityTarget(given: Partial<VulnerabilityTarget> = {}): V
     tracking: null,
     hasInventory: true,
     counts: NO_COUNTS,
+    exploited: null,
     new: 0,
     checkedAt: '2026-10-30T09:00:00.000Z',
     ...given,
@@ -1014,6 +1015,8 @@ export function vulnerabilityCard(given: Partial<VulnerabilityCard> = {}): Vulne
     ignored: false,
     status: 'open',
     decision: null,
+    exploited: null,
+    epss: null,
     ...given,
   };
 }
@@ -1026,6 +1029,7 @@ export function untrackedVersion(given: Partial<UntrackedVersion> = {}): Untrack
     tracking: 'auto',
     trackingReason: 'older',
     counts: NO_COUNTS,
+    exploited: null,
     checkedAt: null,
     ...given,
   };
@@ -1061,6 +1065,7 @@ export class FakeVulnerabilities {
     answer: Partial<VulnerabilityTargets>,
   ) {
     this.answer = {
+      priority: false,
       monitoring: 'on',
       data: { builtAt: '2026-10-29T03:00:00.000Z' },
       checkedAt: '2026-10-30T09:00:00.000Z',

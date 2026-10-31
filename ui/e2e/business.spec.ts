@@ -309,3 +309,16 @@ test('a Business admin forbids strong copyleft, and the next analysis reports it
   await expect(details).toContainText('Licensing');
   await expect(details.getByRole('link', { name: 'package-lock.json:40' })).toBeVisible();
 });
+
+test('a Business server answers the Vulnerabilities tab with priority on', async ({ page }) => {
+  const projects = (await (await page.request.get('/api/v0/projects?limit=100')).json()) as {
+    items: { id: string; key: string }[];
+  };
+  const payments = projects.items.find((p) => p.key === PAYMENTS.key);
+  expect(payments).toBeDefined();
+  const targets = await page.request.get(
+    `/api/v0/projects/${payments!.id}/vulnerabilities/targets`,
+  );
+  expect(targets.status()).toBe(200);
+  expect(((await targets.json()) as { priority: boolean }).priority).toBe(true);
+});

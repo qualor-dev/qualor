@@ -118,3 +118,15 @@ test('an admin pins a version from the fold', async ({ page }) => {
   await expect(row.getByText('Pinned')).toBeVisible();
   await expect(page.getByText('Not tracked')).toHaveCount(0);
 });
+
+test('a community server shows no KEV or EPSS: priority is off and there is no Exploited column', async ({
+  page,
+}) => {
+  const payments = await projectId(page.request, PAYMENTS.key);
+  const targets = await page.request.get(`/api/v0/projects/${payments}/vulnerabilities/targets`);
+  expect(((await targets.json()) as { priority: boolean }).priority).toBe(false);
+
+  await page.goto(`/projects/${payments}/vulnerabilities`);
+  await expect(page.getByRole('columnheader', { name: 'Critical' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Exploited' })).toHaveCount(0);
+});
