@@ -271,6 +271,8 @@ async function matchPackages(
 interface Inventory {
   projectId: string;
   target: Target;
+  /** What the target's check records (see {@link writeChecks}), read before its packages. */
+  basis: string;
   packages: Map<string, Package>;
   ignored: Set<string>;
 }
@@ -301,6 +303,31 @@ function ignoredIds(value: unknown, now: Date): Set<string> {
 }
 
 /**
+ * The basis of each branch and version: a branch's last analysis (empty when it has none), a
+ * version's analysis time (UTC, to the millisecond, the same text every run).
+ */
+async function basesOf(
+  db: Db,
+  branchIds: readonly string[],
+  versionIds: readonly string[],
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  for (const part of slices(branchIds, LIST_CHUNK)) {
+    const got = await db.execute<{ id: string; basis: string }>(sql`
+      SELECT id, coalesce(last_analysis_id::text, '') AS basis
+        FROM branches WHERE id IN ${uuidList(part)}`);
+    for (const row of got.rows) result.set(row.id, row.basis);
+  }
+  for (const part of slices(versionIds, LIST_CHUNK)) {
+    const got = await db.execute<{ id: string; basis: string }>(sql`
+      SELECT id, coalesce(to_char(analyzed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), '') AS basis
+        FROM project_versions WHERE id IN ${uuidList(part)}`);
+    for (const row of got.rows) result.set(row.id, row.basis);
+  }
+  return result;
+}
+
+/**
  * The inventories of `targetsOf`. A branch's ignore ids are those of the analysis its inventory
  * came from (`branch_dependencies.analysis_id`); a version's are its own. Counts every package
  * into `counts`: with a purl, or as unchecked.
@@ -314,11 +341,21 @@ async function inventories(
   const ofVersion = new Map<string, Inventory>();
   for (const [projectId, targets] of targetsOf) {
     for (const target of targets) {
-      const inventory = { projectId, target, packages: new Map(), ignored: new Set<string>() };
+      const inventory = {
+        projectId,
+        target,
+        basis: '',
+        packages: new Map(),
+        ignored: new Set<string>(),
+      };
       if (target.kind === 'branch') ofBranch.set(target.branchId, inventory);
       else ofVersion.set(target.versionId, inventory);
     }
   }
+  // Before the packages: an analysis that lands in between leaves an older basis, never a newer one.
+  const bases = await basesOf(run.db, [...ofBranch.keys()], [...ofVersion.keys()]);
+  for (const [id, inventory] of ofBranch) inventory.basis = bases.get(id) ?? '';
+  for (const [id, inventory] of ofVersion) inventory.basis = bases.get(id) ?? '';
   const add = (inventory: Inventory | undefined, p: Package): void => {
     const purl = purlOf(p.ecosystem, p.name, p.version);
     if (purl === null) {
@@ -423,6 +460,7 @@ async function writeTargets(
   db: Db,
   targetsOf: ReadonlyMap<string, Target[]>,
   wanted: ReadonlyMap<string, Wanted>,
+  bases: ReadonlyMap<string, string>,
 ): Promise<void> {
   const projectIds = new Set<string>();
   const branchIds = new Set<string>();
@@ -520,40 +558,44 @@ async function writeTargets(
         ON CONFLICT DO NOTHING`);
     }
     // After the inserts: a target's new rows and its baseline share the transaction's now().
-    await writeChecks(tx, [...liveBranches], [...liveVersions]);
+    await writeChecks(
+      tx,
+      [...liveBranches].map((id) => ({ id, basis: bases.get(id) ?? '' })),
+      [...liveVersions].map((id) => ({ id, basis: bases.get(id) ?? '' })),
+    );
   });
 }
 
 /**
- * Records that the targets were checked now. A target's `basis` is its branch's last analysis
- * (empty when it has none) or its version's analysis time (UTC, to the millisecond, the same text
- * every run); a changed basis moves `baseline_at`, which is what the rows first seen in this run
- * (`first_seen_at` = now()) count as new from. Every target given is written, rows or none.
+ * Records that the targets were checked now, each against the `basis` its inventory was read with
+ * (see {@link basesOf}), not the one current now. A changed basis moves `baseline_at`, which is
+ * what the rows first seen in this run (`first_seen_at` = now()) count as new from. Every target
+ * given is written, rows or none.
  */
 async function writeChecks(
   tx: Executor,
-  branchIds: readonly string[],
-  versionIds: readonly string[],
+  branches: readonly { id: string; basis: string }[],
+  versions: readonly { id: string; basis: string }[],
 ): Promise<void> {
   const moved = sql`
     checked_at = now(),
     basis = EXCLUDED.basis,
     baseline_at = CASE WHEN vulnerability_target_checks.basis IS DISTINCT FROM EXCLUDED.basis
                        THEN now() ELSE vulnerability_target_checks.baseline_at END`;
-  for (const part of slices(branchIds, LIST_CHUNK)) {
+  for (const chunk of jsonChunks(branches)) {
     await tx.execute(sql`
       INSERT INTO vulnerability_target_checks (project_id, branch_id, basis, baseline_at, checked_at)
-      SELECT b.project_id, b.id, coalesce(b.last_analysis_id::text, ''), now(), now()
-        FROM branches b WHERE b.id IN ${uuidList(part)}
+      SELECT b.project_id, b.id, r.basis, now(), now()
+        FROM jsonb_to_recordset(${chunk}::jsonb) AS r(id uuid, basis text)
+        JOIN branches b ON b.id = r.id
       ON CONFLICT (branch_id) WHERE branch_id IS NOT NULL DO UPDATE SET ${moved}`);
   }
-  for (const part of slices(versionIds, LIST_CHUNK)) {
+  for (const chunk of jsonChunks(versions)) {
     await tx.execute(sql`
       INSERT INTO vulnerability_target_checks (project_id, version_id, basis, baseline_at, checked_at)
-      SELECT v.project_id, v.id,
-             coalesce(to_char(v.analyzed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), ''),
-             now(), now()
-        FROM project_versions v WHERE v.id IN ${uuidList(part)}
+      SELECT v.project_id, v.id, r.basis, now(), now()
+        FROM jsonb_to_recordset(${chunk}::jsonb) AS r(id uuid, basis text)
+        JOIN project_versions v ON v.id = r.id
       ON CONFLICT (version_id) WHERE version_id IS NOT NULL DO UPDATE SET ${moved}`);
   }
 }
@@ -624,7 +666,17 @@ async function recheckAll(
         }
       }
     }
-    await writeTargets(run.db, targetsOf, wanted);
+    await writeTargets(
+      run.db,
+      targetsOf,
+      wanted,
+      new Map(
+        batchInventories.map((i) => [
+          i.target.kind === 'branch' ? i.target.branchId : i.target.versionId,
+          i.basis,
+        ]),
+      ),
+    );
     for (const targets of targetsOf.values()) if (targets.length > 0) counts.projects += 1;
   }
   return counts;

@@ -441,6 +441,33 @@ describe('vulnerability re-checks', () => {
       });
     });
 
+    it('records the analysis the inventory was read at, not one that landed during the run', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      const seenByDiff: string[] = [];
+      // Pass one matches A. A new analysis then adds D, which pass two reads and matches late;
+      // a third analysis lands during that late match, after the inventory was read.
+      trivy.onRun = async () => {
+        await onBranch(p, 'main', { dependencies: [A, D] });
+        trivy.onRun = async () => {
+          seenByDiff.push(await lastAnalysis(p, 'main'));
+          await onBranch(p, 'main', { dependencies: [A, D] });
+        };
+      };
+      await recheck({ projectIds: [p.id] });
+      expect(trivy.calls).toHaveLength(2);
+      const landed = await lastAnalysis(p, 'main');
+      expect(landed).not.toBe(seenByDiff[0]);
+      const first = (await checks(p)).get('main')!;
+      expect(first.basis).toBe(seenByDiff[0]);
+
+      // The next re-check sees the newer analysis as a changed basis and moves the baseline.
+      await recheck({ projectIds: [p.id] });
+      const second = (await checks(p)).get('main')!;
+      expect(second.basis).toBe(landed);
+      expect(second.baselineAt.getTime()).toBeGreaterThan(first.baselineAt.getTime());
+    });
+
     it('leaves the check of an untracked target as it is (R17)', async () => {
       const p = await project({ versionRule: 'lines', versionLines: 1 });
       await tagScan(p, '1.0.0', { dependencies: [A] });
