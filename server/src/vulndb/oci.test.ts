@@ -4,14 +4,18 @@ import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM, trustTestCa } from '../../test/tls';
+import type { Resolver } from '../http/outbound';
+import { VERSION } from '../index';
 import { parseInternalHosts } from '../scm/url';
 import {
   DOCKER_MANIFEST_TYPE,
+  fetchHttpsFile,
   fetchLayerDescriptor,
   OCI_MANIFEST_TYPE,
   openBlob,
   parseReference,
   TRIVY_LAYER_MEDIA_TYPE,
+  type HttpsFileOptions,
   type OciOptions,
   type OciProblem,
 } from './oci';
@@ -522,5 +526,177 @@ describe('the OCI client', () => {
         code: 'AUTH',
       });
     });
+  });
+});
+
+describe('fetchHttpsFile', () => {
+  const FILE = Buffer.from('{"catalogVersion":"2026.10.31"}');
+  const GZ = randomBytes(5_000);
+  const ETAG = '"kev-2026.10.31"';
+  const LAST_MODIFIED = 'Fri, 31 Oct 2026 08:00:00 GMT';
+  /** The file host: plain http, which only the test-only `scheme: 'http'` reaches. */
+  let files: Host;
+  /** An https host on 127.0.0.1 and localhost. */
+  let tls: Host;
+  /** Another origin over plain http: nothing may ever reach it. */
+  let elsewhere: Host;
+  let requests: IncomingMessage['headers'][];
+  let lookups: string[];
+  let untrust: () => void;
+  const resolve: Resolver = async (hostname) => {
+    await Promise.resolve();
+    lookups.push(hostname);
+    return [{ address: '127.0.0.1', family: 4 }];
+  };
+  const portOf = (host: Host): string => host.host.split(':')[1] ?? '';
+  const options = (more: Partial<HttpsFileOptions> = {}): HttpsFileOptions => ({
+    internalHosts: parseInternalHosts(`${files.host},${elsewhere.host}`),
+    maxBytes: 1024 * 1024,
+    scheme: 'http',
+    resolve,
+    ...more,
+  });
+
+  beforeAll(async () => {
+    untrust = trustTestCa();
+    files = await serve((req, res) => {
+      requests.push(req.headers);
+      switch (req.url) {
+        case '/kev.json':
+          if (req.headers['if-none-match'] === ETAG) res.writeHead(304, { etag: ETAG }).end();
+          else res.writeHead(200, { etag: ETAG, 'last-modified': LAST_MODIFIED }).end(FILE);
+          return;
+        case '/epss/epss_scores-current.csv.gz':
+          res.writeHead(302, { location: 'epss_scores-2026-10-31.csv.gz' }).end();
+          return;
+        case '/epss/epss_scores-2026-10-31.csv.gz':
+          res.writeHead(200).end(GZ);
+          return;
+        case '/to-plain':
+          res.writeHead(302, { location: `http://${elsewhere.host}/file` }).end();
+          return;
+        case '/to-localhost':
+          res.writeHead(302, { location: `https://localhost:${portOf(tls)}/file` }).end();
+          return;
+        case '/forbidden':
+          res.writeHead(403).end();
+          return;
+        default:
+          res.writeHead(404).end();
+      }
+    });
+    tls = await serve((req, res) => {
+      requests.push(req.headers);
+      res.writeHead(200).end(FILE);
+    }, 'https');
+    elsewhere = await serve((_req, res) => {
+      res.writeHead(200).end('plain');
+    });
+  });
+
+  afterAll(async () => {
+    untrust();
+    await files.close();
+    await tls.close();
+    await elsewhere.close();
+  });
+
+  beforeEach(() => {
+    files.seen.length = 0;
+    tls.seen.length = 0;
+    elsewhere.seen.length = 0;
+    requests = [];
+    lookups = [];
+  });
+
+  it('answers the file of a 200 with its etag and last-modified', async () => {
+    expect(await fetchHttpsFile(`http://${files.host}/kev.json`, options())).toEqual({
+      kind: 'file',
+      body: FILE,
+      etag: ETAG,
+      lastModified: LAST_MODIFIED,
+    });
+  });
+
+  it('sends the stored validators, and answers not_modified for a 304', async () => {
+    const got = await fetchHttpsFile(
+      `http://${files.host}/kev.json`,
+      options({ etag: ETAG, lastModified: LAST_MODIFIED }),
+    );
+    expect(got).toEqual({ kind: 'not_modified' });
+    expect(requests[0]?.['if-none-match']).toBe(ETAG);
+    expect(requests[0]?.['if-modified-since']).toBe(LAST_MODIFIED);
+  });
+
+  it('follows a relative redirect on the same origin', async () => {
+    const got = await fetchHttpsFile(
+      `http://${files.host}/epss/epss_scores-current.csv.gz`,
+      options(),
+    );
+    expect(got).toMatchObject({ kind: 'file', etag: null, lastModified: null });
+    expect((got as { body: Buffer }).body.equals(GZ)).toBe(true);
+    expect(files.seen.map((s) => s.path)).toEqual([
+      '/epss/epss_scores-current.csv.gz',
+      '/epss/epss_scores-2026-10-31.csv.gz',
+    ]);
+  });
+
+  it('answers BLOCKED for a redirect to plain http on another origin', async () => {
+    const got = await fetchHttpsFile(`http://${files.host}/to-plain`, options());
+    expect(got).toMatchObject({ code: 'BLOCKED' });
+    expect((got as OciProblem).message).toMatch(/plain http/);
+    expect(elsewhere.seen).toEqual([]);
+  });
+
+  it('refuses a redirect to a host on a private address unless that host is listed', async () => {
+    const got = await fetchHttpsFile(`http://${files.host}/to-localhost`, options());
+    expect(got).toMatchObject({ code: 'BLOCKED' });
+    expect((got as OciProblem).message).toMatch(/QUALOR_VULNDB_INTERNAL_HOSTS/);
+    expect(lookups).toEqual(['localhost']);
+    expect(tls.seen).toEqual([]);
+
+    const listed = parseInternalHosts(`${files.host},localhost:${portOf(tls)}`);
+    const allowed = await fetchHttpsFile(
+      `http://${files.host}/to-localhost`,
+      options({ internalHosts: listed }),
+    );
+    expect(allowed).toMatchObject({ kind: 'file', body: FILE });
+    expect(tls.seen.map((s) => s.path)).toEqual(['/file']);
+  });
+
+  it('reaches a file over https only: no plain http without the test scheme', async () => {
+    const got = await fetchHttpsFile(`http://${files.host}/kev.json`, {
+      internalHosts: options().internalHosts,
+      maxBytes: 1024,
+    });
+    expect(got).toMatchObject({ code: 'BLOCKED' });
+    expect(files.seen).toEqual([]);
+  });
+
+  it('answers NOT_FOUND for a 404 and AUTH for a 403', async () => {
+    const missing = await fetchHttpsFile(`http://${files.host}/missing`, options());
+    expect(missing).toMatchObject({ code: 'NOT_FOUND' });
+    expect((missing as OciProblem).message).toMatch(/^The file was not found \(.*404\)$/);
+    expect(await fetchHttpsFile(`http://${files.host}/forbidden`, options())).toMatchObject({
+      code: 'AUTH',
+    });
+  });
+
+  it('answers TOO_LARGE for a body over maxBytes', async () => {
+    const got = await fetchHttpsFile(
+      `http://${files.host}/epss/epss_scores-current.csv.gz`,
+      options({ maxBytes: 1_000 }),
+    );
+    expect(got).toMatchObject({ code: 'TOO_LARGE' });
+  });
+
+  it('identifies itself with the user agent only', async () => {
+    await fetchHttpsFile(`http://${files.host}/kev.json`, options());
+    expect(requests).toHaveLength(1);
+    const sent = Object.entries(requests[0] ?? {}).filter(
+      ([name]) => name !== 'host' && name !== 'connection',
+    );
+    expect(sent).toEqual([['user-agent', `Qualor/${VERSION}`]]);
+    expect(files.seen[0]?.authorization).toBeUndefined();
   });
 });

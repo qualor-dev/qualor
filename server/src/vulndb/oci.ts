@@ -104,17 +104,23 @@ export function parseReference(ref: string): OciReference {
   };
 }
 
-/** One call: the reference, the credentials, and what the registry handed out so far. */
-interface Session {
-  ref: OciReference;
-  auth: OciAuth;
+/** Where one call's requests may go, and until when. */
+interface Reach {
   opts: OciOptions;
-  /** The registry's origin: `https://registry` (`http://` only under a test's `scheme`). */
+  /** The first request's origin: `https://host` (`http://` only under a test's `scheme`). */
   origin: string;
-  /** The registry's `authorization` header, once the handshake gave one. */
-  authorization: string | null;
   /** When the whole call must be over (epoch ms). */
   deadline: number;
+  /** How failure texts name the other side: "The registry host could not be resolved". */
+  noun: string;
+}
+
+/** One registry call: the reference, the credentials, and what the registry handed out so far. */
+interface Session extends Reach {
+  ref: OciReference;
+  auth: OciAuth;
+  /** The registry's `authorization` header, once the handshake gave one. */
+  authorization: string | null;
 }
 
 type Mode = 'buffer' | 'stream';
@@ -162,10 +168,10 @@ function statusProblem(got: { url: URL; status: number }, missing: string): OciP
 }
 
 /**
- * Ruling R8: every URL is https. Plain http only for the registry origin itself when a test set
+ * Ruling R8: every URL is https. Plain http only for the call's own origin when a test set
  * `scheme: 'http'` (its own redirects and a token realm on that same origin); never in production.
  */
-function schemeProblem(session: Session, url: URL): OciProblem | null {
+function schemeProblem(session: Reach, url: URL): OciProblem | null {
   if (url.protocol === 'https:') return null;
   if (url.protocol === 'http:' && url.origin === session.origin) return null;
   if (url.protocol === 'http:') {
@@ -180,7 +186,7 @@ function schemeProblem(session: Session, url: URL): OciProblem | null {
  * metadata addresses are never reached, and loopback only for a loopback host.
  */
 async function exchange(
-  session: Session,
+  session: Reach,
   url: URL,
   headers: Record<string, string>,
   mode: Mode,
@@ -200,7 +206,7 @@ async function exchange(
   const reach = {
     allowInternalHosts: internal,
     refuseAddress: scmRefusedAddress(url),
-    names: { noun: 'registry', target: url.host },
+    names: { noun: session.noun, target: url.host },
     ...(session.opts.resolve ? { resolve: session.opts.resolve } : {}),
     ...(session.opts.signal ? { signal: session.opts.signal } : {}),
   };
@@ -233,19 +239,20 @@ async function exchange(
  * A request to `start` and the redirects it answers with, by hand, at most {@link MAX_REDIRECTS}.
  * Every hop is checked again ({@link exchange}): a redirect to http is BLOCKED. `authorization`
  * goes only to `start`'s origin (the registry, or the token realm), so credentials never reach the
- * host a blob redirects to (ruling R9).
+ * host a blob redirects to (ruling R9). `extra` goes to every hop.
  */
 async function follow(
-  session: Session,
+  session: Reach,
   start: URL,
   authorization: string | null,
   accept: string | null,
   mode: Mode,
   maxBytes: number,
+  extra: Record<string, string>,
 ): Promise<Got | OciProblem> {
   let url = start;
   for (let redirects = 0; ; redirects++) {
-    const headers: Record<string, string> = { 'user-agent': `Qualor/${VERSION}` };
+    const headers: Record<string, string> = { ...extra, 'user-agent': `Qualor/${VERSION}` };
     if (accept !== null) headers.accept = accept;
     if (authorization !== null && url.origin === start.origin) {
       headers.authorization = authorization;
@@ -278,7 +285,7 @@ function reach(
   maxBytes: number,
 ): Promise<Got | OciProblem> {
   const url = new URL(path, session.origin);
-  return follow(session, url, session.authorization, accept, mode, maxBytes);
+  return follow(session, url, session.authorization, accept, mode, maxBytes, {});
 }
 
 interface Challenge {
@@ -342,7 +349,7 @@ async function authorize(
   const service = challenge?.params.service;
   if (service !== undefined && service !== '') url.searchParams.set('service', service);
   url.searchParams.set('scope', `repository:${session.ref.repository}:pull`);
-  const got = await follow(session, url, basic, 'application/json', 'buffer', TOKEN_MAX_BYTES);
+  const got = await follow(session, url, basic, 'application/json', 'buffer', TOKEN_MAX_BYTES, {});
   if (isOciProblem(got)) return got;
   if (got.kind === 'failed') return problemOf(got.failed, got.url);
   if (got.kind !== 'response') {
@@ -401,6 +408,7 @@ function sessionOf(ref: string, auth: OciAuth, opts: OciOptions): Session {
     origin: new URL(`${opts.scheme ?? 'https'}://${parsed.registry}`).origin,
     authorization: null,
     deadline: Date.now() + DOWNLOAD_TOTAL_MS,
+    noun: 'registry',
   };
 }
 
@@ -513,4 +521,63 @@ export async function openBlob(
   if (got.kind === 'failed') return problemOf(got.failed, got.url);
   if (got.kind === 'stream') return got.chunks;
   return statusProblem(got, `The registry has no blob ${digest}`);
+}
+
+export interface HttpsFileOptions {
+  /** `config.vulndb.internalHosts`: only a request to one of these may reach a private address. */
+  internalHosts: ReadonlySet<string>;
+  /** The largest body accepted; a larger one is TOO_LARGE. */
+  maxBytes: number;
+  /** The validators of the stored copy: sent as `if-none-match` and `if-modified-since`. */
+  etag?: string | null;
+  lastModified?: string | null;
+  /** The caller gives up: the exchange is cut. */
+  signal?: AbortSignal;
+  /** Tests substitute DNS; the default is the system resolver. */
+  resolve?: Resolver;
+  /** Tests only, as in {@link OciOptions}: the URL's own origin may be plain http. */
+  scheme?: 'http';
+}
+
+export type HttpsFile =
+  | { kind: 'not_modified' }
+  | { kind: 'file'; body: Buffer; etag: string | null; lastModified: string | null };
+
+/**
+ * One file over https (the KEV and EPSS downloads): a conditional `GET` with the stored
+ * validators, and the redirects it answers with, each checked as the first request was. It sends
+ * no authorization and no header but the user agent and the validators. A 304 is `not_modified`;
+ * a body over `maxBytes` is TOO_LARGE. Throws only for a `url` that is not a URL.
+ */
+export async function fetchHttpsFile(
+  url: string,
+  options: HttpsFileOptions,
+): Promise<HttpsFile | OciProblem> {
+  const start = new URL(url);
+  const session: Reach = {
+    opts: {
+      internalHosts: options.internalHosts,
+      ...(options.scheme ? { scheme: options.scheme } : {}),
+      ...(options.resolve ? { resolve: options.resolve } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    },
+    origin: new URL(`${options.scheme ?? 'https'}://${start.host}`).origin,
+    deadline: Date.now() + DOWNLOAD_TOTAL_MS,
+    noun: 'download',
+  };
+  const validators: Record<string, string> = {};
+  if (options.etag) validators['if-none-match'] = options.etag;
+  if (options.lastModified) validators['if-modified-since'] = options.lastModified;
+  const got = await follow(session, start, null, null, 'buffer', options.maxBytes, validators);
+  if (isOciProblem(got)) return got;
+  if (got.kind === 'failed') return problemOf(got.failed, got.url);
+  if (got.kind !== 'response') return problem('BAD_ANSWER', 'The file was streamed');
+  if (got.status === 304) return { kind: 'not_modified' };
+  if (got.status < 200 || got.status > 299) return statusProblem(got, 'The file was not found');
+  return {
+    kind: 'file',
+    body: got.body,
+    etag: single(got.headers.etag) ?? null,
+    lastModified: single(got.headers['last-modified']) ?? null,
+  };
 }
