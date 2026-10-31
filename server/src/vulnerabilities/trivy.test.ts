@@ -1,24 +1,29 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { buildSbom } from './sbom';
-import { createTrivyRunner, parseTrivyOutput } from './trivy';
+import { createTrivyRunner, parseTrivyOutput, removeStaleWorkDirs } from './trivy';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fake = path.resolve(here, '../../test/fake-trivy.mjs');
 const fixture = readFileSync(path.join(here, '__fixtures__/trivy-sbom-output.json'), 'utf8');
 const sbom = buildSbom([{ purl: 'pkg:npm/lodash@4.17.20', name: 'lodash', version: '4.17.20' }]);
 
+/** This file's own QUALOR_VULNDB_DIR: the runs' work directories go below it. */
+const base = mkdtempSync(path.join(os.tmpdir(), 'qualor-trivy-test-'));
+afterAll(() => rmSync(base, { recursive: true, force: true }));
+
 const runner = (mode: string, timeoutMs = 20_000) =>
   createTrivyRunner({
     command: [process.execPath, fake, mode],
+    workDir: base,
     timeoutMs,
     maxOutputBytes: 1024 * 1024,
   });
 
-const workdirs = () => readdirSync(os.tmpdir()).filter((n) => n.startsWith('qualor-trivy-'));
+const workdirs = () => readdirSync(base).filter((n) => n.startsWith('work-'));
 
 describe('parseTrivyOutput', () => {
   it('keys vulnerabilities by purl', () => {
@@ -138,11 +143,30 @@ describe('createTrivyRunner', () => {
       expect(keys).toEqual(expect.arrayContaining(['HOME', 'PATH', 'TMPDIR']));
     else expect(keys.sort()).toEqual(['HOME', 'PATH', 'TMPDIR']);
     expect(seen.env.HOME).toBe(seen.env.TMPDIR);
+    // The run's work directory: work-<12 hex> below the base directory, gone after the run.
+    expect(path.dirname(seen.env.HOME)).toBe(base);
+    expect(path.basename(seen.env.HOME)).toMatch(/^work-[0-9a-f]{12}$/);
+    expect(workdirs()).toEqual([]);
+  });
+
+  it('reports FAILED when its work directory cannot be created', async () => {
+    const file = path.join(base, 'a-file');
+    writeFileSync(file, 'x');
+    const r = await createTrivyRunner({
+      command: [process.execPath, fake, 'ok'],
+      workDir: path.join(file, 'sub'),
+      timeoutMs: 20_000,
+      maxOutputBytes: 1024 * 1024,
+    }).run(sbom, os.tmpdir());
+    expect(r).toMatchObject({ ok: false, code: 'FAILED' });
+    if (!r.ok) expect(r.message).toMatch(/work directory/);
+    rmSync(file);
   });
 
   it('reports NOT_INSTALLED for a missing binary', async () => {
     const r = await createTrivyRunner({
       command: [path.join(os.tmpdir(), 'no-such-trivy-binary')],
+      workDir: base,
       timeoutMs: 5000,
       maxOutputBytes: 1000,
     }).run(sbom, os.tmpdir());
@@ -186,9 +210,28 @@ describe('createTrivyRunner', () => {
   it('reports BAD_OUTPUT when the output exceeds the cap', async () => {
     const r = await createTrivyRunner({
       command: [process.execPath, fake, 'ok'],
+      workDir: base,
       timeoutMs: 20_000,
       maxOutputBytes: 10,
     }).run(sbom, os.tmpdir());
     expect(r).toMatchObject({ ok: false, code: 'BAD_OUTPUT' });
+  });
+});
+
+describe('removeStaleWorkDirs', () => {
+  it('removes only work-<12 hex> directories', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'qualor-trivy-stale-'));
+    try {
+      for (const name of ['work-0123456789ab', 'work-ffffffffffff', 'work-xyz', 'other']) {
+        mkdirSync(path.join(dir, name, 'nested'), { recursive: true });
+      }
+      writeFileSync(path.join(dir, 'work-aaaaaaaaaaaa'), 'a file, not ours');
+      await removeStaleWorkDirs(dir);
+      expect(readdirSync(dir).sort()).toEqual(['other', 'work-aaaaaaaaaaaa', 'work-xyz']);
+      // A directory that does not exist is no problem.
+      await removeStaleWorkDirs(path.join(dir, 'missing'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, asc, eq, sql } from 'drizzle-orm';
@@ -723,6 +723,17 @@ describe('vulnerability re-checks', () => {
       expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
       expect((await readVulndbState(db())).lastRecheckError?.code).toBe('RECHECK_FAILED');
       expect(trivy.calls).toEqual([]);
+    });
+  });
+
+  describe("Trivy's work directories", () => {
+    it('a re-check starts by removing the stale ones a killed run left', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      const stale = join(dir, 'work-0123456789ab');
+      await mkdir(join(stale, 'nested'), { recursive: true });
+      expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
+      await expect(stat(stale)).rejects.toMatchObject({ code: 'ENOENT' });
     });
   });
 

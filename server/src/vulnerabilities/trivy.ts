@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { randomBytes } from 'node:crypto';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export interface VulnerabilityMatch {
@@ -28,8 +28,36 @@ export interface TrivyRunner {
 export interface TrivyRunnerOptions {
   /** Program and leading arguments: `[config.vulndb.trivyPath]` in production. */
   command: string[];
+  /**
+   * Where each run's `work-<12 hex>` directory goes (the SBOM, Trivy's output and its HOME and
+   * TMPDIR): `config.vulndb.dir` in production, the cache volume, never a small `/tmp`.
+   */
+  workDir: string;
   timeoutMs: number;
   maxOutputBytes: number;
+}
+
+/** A run's work directory below {@link TrivyRunnerOptions.workDir}. */
+const WORK_DIRECTORY = /^work-[0-9a-f]{12}$/;
+
+/**
+ * Removes the work directories that runs left in `dir` (a run killed with its server cannot
+ * remove its own). Only `work-<12 hex>` directories; every other entry stays. Never throws: a
+ * directory that cannot be read or removed is left for the next time. Call it while no run uses
+ * `dir`: the re-check does, inside the local copy's lock.
+ */
+export async function removeStaleWorkDirs(dir: string): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory() && WORK_DIRECTORY.test(entry.name)) {
+      await rm(path.join(dir, entry.name), { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
 }
 
 const SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
@@ -96,7 +124,16 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
         message: 'Trivy was stopped: the server is stopping',
       };
       if (signal?.aborted === true) return aborted;
-      const work = await mkdtemp(path.join(os.tmpdir(), 'qualor-trivy-'));
+      const work = path.join(options.workDir, `work-${randomBytes(6).toString('hex')}`);
+      try {
+        await mkdir(work, { recursive: true });
+      } catch (e) {
+        return {
+          ok: false,
+          code: 'FAILED',
+          message: `cannot create Trivy's work directory in ${options.workDir}: ${(e as Error).message}`,
+        };
+      }
       try {
         const input = path.join(work, 'sbom.json');
         const output = path.join(work, 'out.json');

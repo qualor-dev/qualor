@@ -13,6 +13,7 @@ import { readTarGz, TarError } from './tar';
  *
  *   current.json          { digest }, written atomically (temp file, rename)
  *   <16 hex of digest>/   the cache dir: db/trivy.db and db/metadata.json
+ *   work-<12 hex>/        a Trivy run's work directory (vulnerabilities/trivy.ts), not this module's
  *
  * One in-process lock serialises everything that touches `dir`. {@link withLocalDatabase} holds it
  * while its callback runs, so nothing can swap or delete the directory under a re-check.
@@ -76,7 +77,11 @@ async function isCurrent(dir: string, name: string, digest: string): Promise<boo
   );
 }
 
-/** Names this module creates: a 16-hex digest directory or a `tmp-<12 hex>` extraction directory. */
+/**
+ * Names this module creates: a 16-hex digest directory or a `tmp-<12 hex>` extraction directory.
+ * The Trivy runner's `work-<12 hex>` directories in `dir` (vulnerabilities/trivy.ts) are not ours:
+ * a run may be using one, and the re-check removes the stale ones itself.
+ */
 const OWN_DIRECTORY = /^([0-9a-f]{16}|tmp-[0-9a-f]{12})$/;
 
 /** Removes our own directories in `dir` except `keep`; every other entry is left alone. */

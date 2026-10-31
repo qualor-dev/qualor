@@ -17,7 +17,12 @@ import { currentDataset } from '../vulndb/store';
 import { purlOf } from './purl';
 import { buildSbom, type SbomPackage } from './sbom';
 import { projectTargets, type Target } from './targets';
-import { createTrivyRunner, type TrivyRunner, type VulnerabilityMatch } from './trivy';
+import {
+  createTrivyRunner,
+  removeStaleWorkDirs,
+  type TrivyRunner,
+  type VulnerabilityMatch,
+} from './trivy';
 
 /** The re-check job's queue, and its concurrency key: one re-check at a time, across replicas. */
 export const RECHECK_QUEUE = 'vulnerabilities.recheck';
@@ -612,7 +617,8 @@ async function stoppedRun(deps: RecheckDeps, scope: RecheckScope): Promise<Reche
  *
  * 1. The instance switch off, or no dataset: nothing is touched. The dataset is read once and used
  *    to the end, even when another becomes current meanwhile (its digest tags what it matched).
- * 2. The local copy of that dataset is held for the run; DISK (or MISSING, as RECHECK_FAILED)
+ * 2. The local copy of that dataset is held for the run, and the Trivy work directories a killed
+ *    run left in its directory are removed; DISK (or MISSING, as RECHECK_FAILED)
  *    goes to `lastRecheckError` (ruling R19), as does a failed Trivy run (R12).
  * 3–5. The packages not yet matched against it run through Trivy, 20 000 per SBOM.
  * 6–7. Each tracked target's rows follow its inventory ({@link writeTargets}).
@@ -639,6 +645,7 @@ export async function recheckProjects(
     deps.runner ??
     createTrivyRunner({
       command: [deps.config.vulndb.trivyPath],
+      workDir: deps.config.vulndb.dir,
       timeoutMs: TRIVY_TIMEOUT_MS,
       maxOutputBytes: TRIVY_MAX_OUTPUT_BYTES,
     });
@@ -648,8 +655,10 @@ export async function recheckProjects(
       deps.db,
       deps.config.vulndb.dir,
       dataset,
-      (cacheDir) =>
-        recheckAll(
+      async (cacheDir) => {
+        // Under the lock, so no run of this server uses them: what a killed run left goes.
+        await removeStaleWorkDirs(deps.config.vulndb.dir);
+        return recheckAll(
           {
             db: deps.db,
             runner,
@@ -659,7 +668,8 @@ export async function recheckProjects(
             shutdown: deps.shutdown,
           },
           projectIds,
-        ),
+        );
+      },
       { signal: deps.shutdown },
     );
   } catch (err) {
