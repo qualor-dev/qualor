@@ -27,19 +27,22 @@ export interface DatabaseOptions {
 
 /** What `readOnly` runs on each new connection, before the pool hands it out. */
 export const READ_ONLY_SESSION = 'SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY';
+/**
+ * What every new connection runs first: drizzle reads dates and timestamps as ISO text, which a
+ * server DateStyle such as `SQL, DMY` would break. A `SET`, not the `options` startup parameter,
+ * which PgBouncer and hosted poolers refuse.
+ */
+export const SESSION_DATESTYLE = "SET DateStyle = 'ISO, MDY'";
 
 export function createDatabase(url: string, options: DatabaseOptions = {}): Database {
   const pool = new pg.Pool({
     connectionString: url,
     max: options.max ?? 10,
     // pg-pool awaits the hook; a failure ends the connection and fails the query (fails closed).
-    ...(options.readOnly
-      ? {
-          onConnect: async (client: pg.ClientBase) => {
-            await client.query(READ_ONLY_SESSION);
-          },
-        }
-      : {}),
+    onConnect: async (client: pg.ClientBase) => {
+      await client.query(SESSION_DATESTYLE);
+      if (options.readOnly) await client.query(READ_ONLY_SESSION);
+    },
   });
   // An idle client that loses its connection emits 'error' on the pool; with no listener the
   // process would crash.
