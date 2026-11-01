@@ -18,7 +18,7 @@ import {
   vulnerabilityTargetChecks,
 } from '../../db/schema';
 import { COMMUNITY_VULNERABILITY_LIMITS, type Limits } from '../../limits';
-import { observeAlerts } from './observe';
+import { observeAlerts, type ObservedAlerts } from './observe';
 import { alertScope } from './scope';
 
 const ALERTS: Pick<Limits, 'vulnerabilities'> = {
@@ -27,12 +27,30 @@ const ALERTS: Pick<Limits, 'vulnerabilities'> = {
 const NO_ALERTS: Pick<Limits, 'vulnerabilities'> = {
   vulnerabilities: { ...COMMUNITY_VULNERABILITY_LIMITS },
 };
-const T0 = new Date('2026-11-01T05:00:00Z');
-const T1 = new Date('2026-11-01T06:00:00Z');
-const T2 = new Date('2026-11-01T07:00:00Z');
-const T3 = new Date('2026-11-01T08:00:00Z');
+const at = (hhmm: string) => new Date(`2026-11-01T${hhmm}:00Z`);
+// Passes on the hour (T), re-checks on the half hour (R).
+const T0 = at('05:00');
+const T1 = at('06:00');
+const R1 = at('06:30');
+const T2 = at('07:00');
+const T3 = at('08:00');
+const R3 = at('08:30');
+const T4 = at('09:00');
+const R4 = at('09:30');
+const T5 = at('10:00');
+const R5 = at('10:30');
+const T6 = at('11:00');
 
 type TargetKey = { branchId: string } | { versionId: string };
+
+const counts = (c: Partial<ObservedAlerts> = {}): ObservedAlerts => ({
+  targetsAdded: 0,
+  targetsSeeded: 0,
+  itemsAdded: 0,
+  targetsRemoved: 0,
+  recheckProjectIds: [],
+  ...c,
+});
 
 describe('vulnerability alerts: the scope and the observe step', () => {
   let t: TestDatabase;
@@ -57,9 +75,24 @@ describe('vulnerability alerts: the scope and the observe step', () => {
       return observeAlerts(tx, await alertScope(tx, limits), now, targetSlice);
     });
 
-  /** The check row a re-check writes with the target's rows; `basis` is '' for a branch never analysed. */
-  const checked = (projectId: string, key: TargetKey, basis = 'analysis-1') =>
-    seedCheck(t.db, { projectId, ...key, baselineAt: T0, basis });
+  /**
+   * The check row a re-check writes with the target's rows, checked at T0 unless given. `basis` is
+   * '' for a branch never analysed.
+   */
+  const checked = (projectId: string, key: TargetKey, basis = 'analysis-1', checkedAt = T0) =>
+    seedCheck(t.db, { projectId, ...key, baselineAt: T0, checkedAt, basis });
+
+  const whereTarget = (key: TargetKey) =>
+    'branchId' in key
+      ? eq(vulnerabilityTargetChecks.branchId, key.branchId)
+      : eq(vulnerabilityTargetChecks.versionId, key.versionId);
+
+  /** A later re-check of the targets: their check rows move to `checkedAt`. */
+  const rechecked = async (checkedAt: Date, ...keys: TargetKey[]) => {
+    for (const key of keys) {
+      await t.db.update(vulnerabilityTargetChecks).set({ checkedAt }).where(whereTarget(key));
+    }
+  };
 
   const newProject = async () => {
     n += 1;
@@ -93,35 +126,29 @@ describe('vulnerability alerts: the scope and the observe step', () => {
           })
           .returning(),
       ).id;
-    return { projectId, branch, version };
+    const vulnerable = (key: TargetKey, vulnerabilityId: string, packageName = 'lodash') =>
+      seedTargetRow(t.db, { projectId, ...key, packageName, vulnerabilityId });
+    return { projectId, branch, version, vulnerable };
   };
 
-  /** Project P, re-checked: main with CVE-1 and version 2.3.4 with CVE-2, before any alert pass. */
+  /** Project P, re-checked at T0: main with CVE-1 and version 2.3.4 with CVE-2. */
   const projectP = async () => {
     const p = await newProject();
     const main = await p.branch('main', true);
     const v234 = await p.version('2.3.4', 0);
-    await seedTargetRow(t.db, {
-      projectId: p.projectId,
-      branchId: main,
-      packageName: 'lodash',
-      vulnerabilityId: 'CVE-1',
-    });
-    await seedTargetRow(t.db, {
-      projectId: p.projectId,
-      versionId: v234,
-      packageName: 'lodash',
-      vulnerabilityId: 'CVE-2',
-    });
+    await p.vulnerable({ branchId: main }, 'CVE-1');
+    await p.vulnerable({ versionId: v234 }, 'CVE-2');
     await checked(p.projectId, { branchId: main });
     await checked(p.projectId, { versionId: v234 });
     return { ...p, main, v234 };
   };
 
-  /** Project P after its first alert pass, at T1. */
-  const observedP = async () => {
+  /** Project P recorded at T1, re-checked at R1 and seeded at T2. */
+  const seededP = async () => {
     const p = await projectP();
     await pass(T1);
+    await rechecked(R1, { branchId: p.main }, { versionId: p.v234 });
+    await pass(T2);
     return p;
   };
 
@@ -129,9 +156,9 @@ describe('vulnerability alerts: the scope and the observe step', () => {
     (
       await t.db
         .select({
-          id: vulnerabilityAlertTargets.id,
           dayOne: vulnerabilityAlertTargets.dayOne,
           observedAt: vulnerabilityAlertTargets.observedAt,
+          seededAt: vulnerabilityAlertTargets.seededAt,
         })
         .from(vulnerabilityAlertTargets)
         .where(
@@ -174,33 +201,37 @@ describe('vulnerability alerts: the scope and the observe step', () => {
     table: typeof vulnerabilityAlertTargets | typeof vulnerabilityAlertItems,
   ) => (await t.db.select({ id: table.id }).from(table)).length;
 
-  it('records the first observation as day one, every pair a baseline', async () => {
+  it('records the first observation as day one, unseeded, and seeds it after a re-check', async () => {
     const p = await projectP();
-    expect(await pass(T1)).toEqual({ targetsAdded: 2, itemsAdded: 2, targetsRemoved: 0 });
-    expect(await targetRow({ branchId: p.main })).toMatchObject({ dayOne: true, observedAt: T1 });
-    expect(await targetRow({ versionId: p.v234 })).toMatchObject({ dayOne: true, observedAt: T1 });
-    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T1)]);
-    expect(await itemsOf({ versionId: p.v234 })).toEqual([item('CVE-2', true, T1)]);
+    expect(await pass(T1)).toEqual(counts({ targetsAdded: 2, recheckProjectIds: [p.projectId] }));
+    const unseeded = { dayOne: true, observedAt: T1, seededAt: null };
+    expect(await targetRow({ branchId: p.main })).toEqual(unseeded);
+    expect(await targetRow({ versionId: p.v234 })).toEqual(unseeded);
+    expect(await countOf(vulnerabilityAlertItems)).toBe(0);
+    // No re-check since T1: the T0 rows are not taken for the baseline.
+    expect(await pass(T2)).toEqual(counts());
+    await rechecked(R1, { branchId: p.main }, { versionId: p.v234 });
+    expect(await pass(T3)).toEqual(counts({ targetsSeeded: 2, itemsAdded: 2 }));
+    const seeded = { dayOne: true, observedAt: T1, seededAt: T3 };
+    expect(await targetRow({ branchId: p.main })).toEqual(seeded);
+    expect(await targetRow({ versionId: p.v234 })).toEqual(seeded);
+    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T3)]);
+    expect(await itemsOf({ versionId: p.v234 })).toEqual([item('CVE-2', true, T3)]);
+    expect(await pass(T4)).toEqual(counts());
   });
 
-  it('records a new match as a new item, not a baseline', async () => {
-    const p = await observedP();
-    expect(await pass(T2)).toEqual({ targetsAdded: 0, itemsAdded: 0, targetsRemoved: 0 });
-    await seedTargetRow(t.db, {
-      projectId: p.projectId,
-      branchId: p.main,
-      packageName: 'axios',
-      vulnerabilityId: 'CVE-3',
-    });
-    expect(await pass(T3)).toEqual({ targetsAdded: 0, itemsAdded: 1, targetsRemoved: 0 });
+  it('records a new match on a seeded target as a new item, not a baseline', async () => {
+    const p = await seededP();
+    await p.vulnerable({ branchId: p.main }, 'CVE-3', 'axios');
+    expect(await pass(T3)).toEqual(counts({ itemsAdded: 1 }));
     expect(await itemsOf({ branchId: p.main })).toEqual([
-      item('CVE-1', true, T1),
+      item('CVE-1', true, T2),
       item('CVE-3', false, T3),
     ]);
   });
 
   it('adds no item for a package bump that keeps the vulnerability, nor drops one for a gone match', async () => {
-    const p = await observedP();
+    const p = await seededP();
     // A bump, as the re-check writes it: the old purl's row goes, the new purl's row comes.
     await t.db
       .delete(targetVulnerabilities)
@@ -217,45 +248,50 @@ describe('vulnerability alerts: the scope and the observe step', () => {
       packageVersion: '1.0.1',
       vulnerabilityId: 'CVE-1',
     });
-    expect(await pass(T2)).toEqual({ targetsAdded: 0, itemsAdded: 0, targetsRemoved: 0 });
-    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T1)]);
+    expect(await pass(T3)).toEqual(counts());
+    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T2)]);
     // The match goes away: the item stays while its target is in scope (A2).
     await t.db.delete(targetVulnerabilities).where(eq(targetVulnerabilities.branchId, p.main));
-    expect(await pass(T3)).toEqual({ targetsAdded: 0, itemsAdded: 0, targetsRemoved: 0 });
-    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T1)]);
+    expect(await pass(T4)).toEqual(counts());
+    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T2)]);
   });
 
-  it('records a target added later without day one, after its re-check, its pairs as baselines', async () => {
-    const p = await observedP();
+  it('records a target added later without day one, after its re-check, and seeds it after the next', async () => {
+    const p = await seededP();
     const v240 = await p.version('2.4.0', 1);
-    for (const vulnerabilityId of ['CVE-1', 'CVE-4']) {
-      await seedTargetRow(t.db, {
-        projectId: p.projectId,
-        versionId: v240,
-        packageName: 'lodash',
-        vulnerabilityId,
-      });
-    }
+    await p.vulnerable({ versionId: v240 }, 'CVE-1');
+    await p.vulnerable({ versionId: v240 }, 'CVE-4');
     // Tracked, but its re-check is still queued: no check row, so not recorded yet (R3).
-    expect(await pass(T2)).toEqual({ targetsAdded: 0, itemsAdded: 0, targetsRemoved: 0 });
+    expect(await pass(T3)).toEqual(counts());
     expect(await targetRow({ versionId: v240 })).toBeUndefined();
     await checked(p.projectId, { versionId: v240 });
-    expect(await pass(T3)).toEqual({ targetsAdded: 1, itemsAdded: 2, targetsRemoved: 0 });
-    expect(await targetRow({ versionId: v240 })).toMatchObject({ dayOne: false, observedAt: T3 });
+    expect(await pass(T4)).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [p.projectId] }));
+    expect(await targetRow({ versionId: v240 })).toEqual({
+      dayOne: false,
+      observedAt: T4,
+      seededAt: null,
+    });
+    expect(await itemsOf({ versionId: v240 })).toEqual([]);
+    await rechecked(R4, { versionId: v240 });
+    expect(await pass(T5)).toEqual(counts({ targetsSeeded: 1, itemsAdded: 2 }));
     expect(await itemsOf({ versionId: v240 })).toEqual([
-      item('CVE-1', true, T3),
-      item('CVE-4', true, T3),
+      item('CVE-1', true, T5),
+      item('CVE-4', true, T5),
     ]);
-    expect(await targetRow({ branchId: p.main })).toMatchObject({ dayOne: true, observedAt: T1 });
+    expect(await targetRow({ branchId: p.main })).toEqual({
+      dayOne: true,
+      observedAt: T1,
+      seededAt: T2,
+    });
   });
 
   it('forgets a version that is no longer tracked, and keeps its vulnerability rows', async () => {
-    const p = await observedP();
+    const p = await seededP();
     await t.db
       .update(projectVersions)
       .set({ tracking: 'unsupported' })
       .where(eq(projectVersions.id, p.v234));
-    expect(await pass(T2)).toEqual({ targetsAdded: 0, itemsAdded: 0, targetsRemoved: 1 });
+    expect(await pass(T3)).toEqual(counts({ targetsRemoved: 1 }));
     expect(await targetRow({ versionId: p.v234 })).toBeUndefined();
     expect(await itemsOf({ versionId: p.v234 })).toEqual([]);
     expect(await countOf(vulnerabilityAlertItems)).toBe(1);
@@ -265,11 +301,11 @@ describe('vulnerability alerts: the scope and the observe step', () => {
         .from(targetVulnerabilities)
         .where(eq(targetVulnerabilities.versionId, p.v234)),
     ).toHaveLength(1);
-    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T1)]);
+    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T2)]);
   });
 
-  it('forgets a project switched off, and starts a new day one when it is switched on', async () => {
-    const p = await observedP();
+  it('starts a new day one for a project switched off and on, taking no baseline from stale rows', async () => {
+    const p = await seededP();
     const setEnabled = (enabled: boolean) =>
       t.db
         .update(projectVulnerabilitySettings)
@@ -277,36 +313,74 @@ describe('vulnerability alerts: the scope and the observe step', () => {
         .where(eq(projectVulnerabilitySettings.projectId, p.projectId));
     await setEnabled(false);
     expect((await alertScope(t.db, ALERTS)).has(p.projectId)).toBe(false);
-    expect(await pass(T2)).toEqual({ targetsAdded: 0, itemsAdded: 0, targetsRemoved: 2 });
+    expect(await pass(T3)).toEqual(counts({ targetsRemoved: 2 }));
     expect(await countOf(vulnerabilityAlertTargets)).toBe(0);
     expect(await countOf(vulnerabilityAlertItems)).toBe(0);
+    // Back on: the rows and check rows from R1 are stale.
     await setEnabled(true);
-    expect(await pass(T3)).toEqual({ targetsAdded: 2, itemsAdded: 2, targetsRemoved: 0 });
-    expect(await targetRow({ branchId: p.main })).toMatchObject({ dayOne: true, observedAt: T3 });
-    expect(await targetRow({ versionId: p.v234 })).toMatchObject({ dayOne: true, observedAt: T3 });
-    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T3)]);
-    expect(await itemsOf({ versionId: p.v234 })).toEqual([item('CVE-2', true, T3)]);
+    expect(await pass(T4)).toEqual(counts({ targetsAdded: 2, recheckProjectIds: [p.projectId] }));
+    const unseeded = { dayOne: true, observedAt: T4, seededAt: null };
+    expect(await targetRow({ branchId: p.main })).toEqual(unseeded);
+    expect(await targetRow({ versionId: p.v234 })).toEqual(unseeded);
+    expect(await countOf(vulnerabilityAlertItems)).toBe(0);
+    // A pair that appears before the next re-check is not an item yet.
+    await p.vulnerable({ branchId: p.main }, 'CVE-8', 'axios');
+    expect(await pass(T5)).toEqual(counts());
+    expect(await countOf(vulnerabilityAlertItems)).toBe(0);
+    // The re-check after re-entry: whatever is matched then is the baseline, nothing is news.
+    await p.vulnerable({ versionId: p.v234 }, 'CVE-9', 'axios');
+    await rechecked(R5, { branchId: p.main }, { versionId: p.v234 });
+    expect(await pass(T6)).toEqual(counts({ targetsSeeded: 2, itemsAdded: 4 }));
+    expect(await itemsOf({ branchId: p.main })).toEqual([
+      item('CVE-1', true, T6),
+      item('CVE-8', true, T6),
+    ]);
+    expect(await itemsOf({ versionId: p.v234 })).toEqual([
+      item('CVE-2', true, T6),
+      item('CVE-9', true, T6),
+    ]);
+  });
+
+  it('takes no baseline from stale rows for a version tracked again', async () => {
+    const p = await seededP();
+    const setTracking = (tracking: 'auto' | 'unsupported') =>
+      t.db.update(projectVersions).set({ tracking }).where(eq(projectVersions.id, p.v234));
+    await setTracking('unsupported');
+    expect(await pass(T3)).toEqual(counts({ targetsRemoved: 1 }));
+    await setTracking('auto');
+    expect(await pass(T4)).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [p.projectId] }));
+    expect(await targetRow({ versionId: p.v234 })).toEqual({
+      dayOne: false,
+      observedAt: T4,
+      seededAt: null,
+    });
+    await p.vulnerable({ versionId: p.v234 }, 'CVE-10', 'axios');
+    expect(await pass(T5)).toEqual(counts());
+    expect(await itemsOf({ versionId: p.v234 })).toEqual([]);
+    await rechecked(R5, { versionId: p.v234 });
+    expect(await pass(T6)).toEqual(counts({ targetsSeeded: 1, itemsAdded: 2 }));
+    expect(await itemsOf({ versionId: p.v234 })).toEqual([
+      item('CVE-10', true, T6),
+      item('CVE-2', true, T6),
+    ]);
   });
 
   it('has no scope without vuln.alerts, and the pass deletes every row', async () => {
-    const p = await observedP();
+    const p = await seededP();
     expect(await alertScope(t.db, NO_ALERTS)).toEqual(new Map());
-    expect(await pass(T2, NO_ALERTS)).toEqual({
-      targetsAdded: 0,
-      itemsAdded: 0,
-      targetsRemoved: 2,
-    });
+    expect(await pass(T3, NO_ALERTS)).toEqual(counts({ targetsRemoved: 2 }));
     expect(await countOf(vulnerabilityAlertTargets)).toBe(0);
     expect(await countOf(vulnerabilityAlertItems)).toBe(0);
     expect(await targetRow({ branchId: p.main })).toBeUndefined();
   });
 
   it('has no scope while the instance switch is off', async () => {
-    await observedP();
+    await seededP();
     await t.db.insert(instanceSettings).values({ key: 'vulndb', value: { enabled: false } });
     expect(await alertScope(t.db, ALERTS)).toEqual(new Map());
-    expect(await pass(T2)).toEqual({ targetsAdded: 0, itemsAdded: 0, targetsRemoved: 2 });
+    expect(await pass(T3)).toEqual(counts({ targetsRemoved: 2 }));
     expect(await countOf(vulnerabilityAlertTargets)).toBe(0);
+    expect(await countOf(vulnerabilityAlertItems)).toBe(0);
   });
 
   it('maps each project with a tracked target to its targets, and leaves out the others', async () => {
@@ -332,148 +406,126 @@ describe('vulnerability alerts: the scope and the observe step', () => {
   });
 
   it('gives a project its own day one while another is already observed', async () => {
-    const p = await observedP();
+    const p = await seededP();
     const q = await newProject();
     const qMain = await q.branch('main', true);
-    await seedTargetRow(t.db, {
-      projectId: q.projectId,
-      branchId: qMain,
-      packageName: 'lodash',
-      vulnerabilityId: 'CVE-1',
-    });
+    await q.vulnerable({ branchId: qMain }, 'CVE-1');
     await checked(q.projectId, { branchId: qMain });
-    expect(await pass(T2)).toEqual({ targetsAdded: 1, itemsAdded: 1, targetsRemoved: 0 });
-    expect(await targetRow({ branchId: qMain })).toMatchObject({ dayOne: true, observedAt: T2 });
-    expect(await itemsOf({ branchId: qMain })).toEqual([item('CVE-1', true, T2)]);
+    expect(await pass(T3)).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [q.projectId] }));
+    await rechecked(R3, { branchId: qMain });
+    expect(await pass(T4)).toEqual(counts({ targetsSeeded: 1, itemsAdded: 1 }));
+    expect(await targetRow({ branchId: qMain })).toEqual({
+      dayOne: true,
+      observedAt: T3,
+      seededAt: T4,
+    });
+    expect(await itemsOf({ branchId: qMain })).toEqual([item('CVE-1', true, T4)]);
     expect(await targetRow({ branchId: p.main })).toMatchObject({ dayOne: true, observedAt: T1 });
   });
 
   it('keeps one item per vulnerability of a target, however many packages carry it', async () => {
     const p = await projectP();
-    await seedTargetRow(t.db, {
-      projectId: p.projectId,
-      branchId: p.main,
-      packageName: 'lodash-es',
-      vulnerabilityId: 'CVE-1',
-    });
-    expect(await pass(T1)).toEqual({ targetsAdded: 2, itemsAdded: 2, targetsRemoved: 0 });
-    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T1)]);
+    await p.vulnerable({ branchId: p.main }, 'CVE-1', 'lodash-es');
+    await pass(T1);
+    await rechecked(R1, { branchId: p.main }, { versionId: p.v234 });
+    expect(await pass(T2)).toEqual(counts({ targetsSeeded: 2, itemsAdded: 2 }));
+    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T2)]);
   });
 
   it('records a new project only once its first re-check is in, then as day one', async () => {
     const r = await newProject();
     const main = await r.branch('main', true);
-    await seedTargetRow(t.db, {
-      projectId: r.projectId,
-      branchId: main,
-      packageName: 'lodash',
-      vulnerabilityId: 'CVE-1',
-    });
+    await r.vulnerable({ branchId: main }, 'CVE-1');
     expect((await alertScope(t.db, ALERTS)).has(r.projectId)).toBe(true);
-    expect(await pass(T1)).toEqual({ targetsAdded: 0, itemsAdded: 0, targetsRemoved: 0 });
+    expect(await pass(T1)).toEqual(counts());
     expect(await countOf(vulnerabilityAlertTargets)).toBe(0);
-    await checked(r.projectId, { branchId: main });
-    expect(await pass(T2)).toEqual({ targetsAdded: 1, itemsAdded: 1, targetsRemoved: 0 });
-    expect(await targetRow({ branchId: main })).toMatchObject({ dayOne: true, observedAt: T2 });
-    expect(await itemsOf({ branchId: main })).toEqual([item('CVE-1', true, T2)]);
+    await checked(r.projectId, { branchId: main }, 'analysis-1', R1);
+    expect(await pass(T2)).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [r.projectId] }));
+    await rechecked(R3, { branchId: main });
+    expect(await pass(T4)).toEqual(counts({ targetsSeeded: 1, itemsAdded: 1 }));
+    expect(await targetRow({ branchId: main })).toEqual({
+      dayOne: true,
+      observedAt: T2,
+      seededAt: T4,
+    });
+    expect(await itemsOf({ branchId: main })).toEqual([item('CVE-1', true, T4)]);
   });
 
   it('does not record a branch whose check row has no basis (never analysed)', async () => {
     const r = await newProject();
     const main = await r.branch('main', true);
     await checked(r.projectId, { branchId: main }, '');
-    expect(await pass(T1)).toEqual({ targetsAdded: 0, itemsAdded: 0, targetsRemoved: 0 });
+    expect(await pass(T1)).toEqual(counts());
     expect(await targetRow({ branchId: main })).toBeUndefined();
     // Its first analysis, re-checked: the basis is set and the branch is recorded.
     await t.db
       .update(vulnerabilityTargetChecks)
       .set({ basis: 'analysis-1' })
       .where(eq(vulnerabilityTargetChecks.branchId, main));
-    expect(await pass(T2)).toEqual({ targetsAdded: 1, itemsAdded: 0, targetsRemoved: 0 });
-    expect(await targetRow({ branchId: main })).toMatchObject({ dayOne: true, observedAt: T2 });
+    expect(await pass(T2)).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [r.projectId] }));
+    expect(await targetRow({ branchId: main })).toEqual({
+      dayOne: true,
+      observedAt: T2,
+      seededAt: null,
+    });
   });
 
   it('skips a target deleted since the scope was read, without failing the pass', async () => {
     const p = await projectP();
-    const counts = await t.db.transaction(async (tx) => {
+    const result = await t.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulnerabilityAlerts})`);
       const scope = await alertScope(tx, ALERTS);
       await tx.delete(projectVersions).where(eq(projectVersions.id, p.v234));
       scope.get(p.projectId)?.push({ kind: 'branch', branchId: uuidv7() });
       return observeAlerts(tx, scope, T1);
     });
-    expect(counts).toEqual({ targetsAdded: 1, itemsAdded: 1, targetsRemoved: 0 });
+    expect(result).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [p.projectId] }));
     expect(await countOf(vulnerabilityAlertTargets)).toBe(1);
-    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T1)]);
+    expect(await targetRow({ branchId: p.main })).toMatchObject({ observedAt: T1 });
   });
 
-  it('adds every missing pair across slices of the scope', async () => {
+  it('seeds and adds every pair across slices of the scope', async () => {
     const p = await projectP();
-    await seedTargetRow(t.db, {
-      projectId: p.projectId,
-      branchId: p.main,
-      packageName: 'axios',
-      vulnerabilityId: 'CVE-3',
-    });
+    await p.vulnerable({ branchId: p.main }, 'CVE-3', 'axios');
     const v240 = await p.version('2.4.0', 1);
-    for (const vulnerabilityId of ['CVE-1', 'CVE-4']) {
-      await seedTargetRow(t.db, {
-        projectId: p.projectId,
-        versionId: v240,
-        packageName: 'lodash',
-        vulnerabilityId,
-      });
-    }
+    await p.vulnerable({ versionId: v240 }, 'CVE-1');
+    await p.vulnerable({ versionId: v240 }, 'CVE-4');
     await checked(p.projectId, { versionId: v240 });
     const q = await newProject();
     const qMain = await q.branch('main', true);
-    await seedTargetRow(t.db, {
-      projectId: q.projectId,
-      branchId: qMain,
-      packageName: 'lodash',
-      vulnerabilityId: 'CVE-5',
-    });
+    await q.vulnerable({ branchId: qMain }, 'CVE-5');
     await checked(q.projectId, { branchId: qMain });
     // Four targets, two at a time.
-    expect(await pass(T1, ALERTS, 2)).toEqual({
-      targetsAdded: 4,
-      itemsAdded: 6,
-      targetsRemoved: 0,
-    });
+    expect(await pass(T1, ALERTS, 2)).toEqual(
+      counts({ targetsAdded: 4, recheckProjectIds: [p.projectId, q.projectId].sort() }),
+    );
+    await rechecked(R1, { branchId: p.main }, { versionId: p.v234 }, { versionId: v240 });
+    await rechecked(R1, { branchId: qMain });
+    expect(await pass(T2, ALERTS, 2)).toEqual(counts({ targetsSeeded: 4, itemsAdded: 6 }));
     expect(await itemsOf({ branchId: p.main })).toEqual([
-      item('CVE-1', true, T1),
-      item('CVE-3', true, T1),
+      item('CVE-1', true, T2),
+      item('CVE-3', true, T2),
     ]);
     expect(await itemsOf({ versionId: v240 })).toEqual([
-      item('CVE-1', true, T1),
-      item('CVE-4', true, T1),
+      item('CVE-1', true, T2),
+      item('CVE-4', true, T2),
     ]);
-    expect(await itemsOf({ versionId: p.v234 })).toEqual([item('CVE-2', true, T1)]);
-    expect(await itemsOf({ branchId: qMain })).toEqual([item('CVE-5', true, T1)]);
-    // One target at a time: a new target's pairs stay baselines, a new pair elsewhere is news.
+    expect(await itemsOf({ versionId: p.v234 })).toEqual([item('CVE-2', true, T2)]);
+    expect(await itemsOf({ branchId: qMain })).toEqual([item('CVE-5', true, T2)]);
+    // One target at a time: a target seeded in this pass gets baselines, a seeded one gets news.
     const v250 = await p.version('2.5.0', 2);
-    await seedTargetRow(t.db, {
-      projectId: p.projectId,
-      versionId: v250,
-      packageName: 'lodash',
-      vulnerabilityId: 'CVE-7',
-    });
+    await p.vulnerable({ versionId: v250 }, 'CVE-7');
     await checked(p.projectId, { versionId: v250 });
-    await seedTargetRow(t.db, {
-      projectId: p.projectId,
-      versionId: p.v234,
-      packageName: 'axios',
-      vulnerabilityId: 'CVE-6',
-    });
-    expect(await pass(T2, ALERTS, 1)).toEqual({
-      targetsAdded: 1,
-      itemsAdded: 2,
-      targetsRemoved: 0,
-    });
-    expect(await itemsOf({ versionId: v250 })).toEqual([item('CVE-7', true, T2)]);
+    expect(await pass(T3, ALERTS, 1)).toEqual(
+      counts({ targetsAdded: 1, recheckProjectIds: [p.projectId] }),
+    );
+    await rechecked(R3, { versionId: v250 });
+    await p.vulnerable({ versionId: p.v234 }, 'CVE-6', 'axios');
+    expect(await pass(T4, ALERTS, 1)).toEqual(counts({ targetsSeeded: 1, itemsAdded: 2 }));
+    expect(await itemsOf({ versionId: v250 })).toEqual([item('CVE-7', true, T4)]);
     expect(await itemsOf({ versionId: p.v234 })).toEqual([
-      item('CVE-2', true, T1),
-      item('CVE-6', false, T2),
+      item('CVE-2', true, T2),
+      item('CVE-6', false, T4),
     ]);
   });
 });

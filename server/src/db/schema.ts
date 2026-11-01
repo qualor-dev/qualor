@@ -930,8 +930,15 @@ export const vulnerabilityTargetChecks = pgTable(
 );
 
 /**
- * A tracked target the alert job has seen (4b A2, A3). `day_one` is true when the target was
- * first seen already holding vulnerabilities, so what it held then is a baseline, not news.
+ * A tracked target in alert scope, recorded by the alert job (4b A1–A3, R3, R6). The row goes when
+ * the target leaves the scope, so its return is a new first observation.
+ * - `day_one`: its project had no alert target row when this one was recorded. That is the
+ *   project's day one: the upgrade, a switch turned on, the feature activated.
+ * - `observed_at`: when the job recorded the target. The target had a re-check by then, which
+ *   may be stale.
+ * - `seeded_at`: when its baseline was taken. That happens at the first pass after a re-check
+ *   that followed `observed_at`, and every pair present then becomes a baseline item. Null until
+ *   then. Only a seeded target gets new items.
  */
 export const vulnerabilityAlertTargets = pgTable(
   'vulnerability_alert_targets',
@@ -944,6 +951,7 @@ export const vulnerabilityAlertTargets = pgTable(
     versionId: uuid('version_id').references(() => projectVersions.id, { onDelete: 'cascade' }),
     dayOne: boolean('day_one').notNull(),
     observedAt: at('observed_at').notNull().defaultNow(),
+    seededAt: at('seeded_at'),
   },
   (t) => [
     uniqueIndex('vulnerability_alert_targets_branch_uq')

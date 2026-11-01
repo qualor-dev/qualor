@@ -1,5 +1,5 @@
 {
-  "id": "eee7d55e-cc64-4b34-9c15-ad4f93529b30",
+  "id": "6d4d84f7-a0b0-4cf1-afc3-f0e137b2b168",
   "prevId": "140e76c9-ed54-420f-86eb-a4946e10c08f",
   "version": "7",
   "dialect": "postgresql",
@@ -8797,6 +8797,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "seeded_at": {
+          "name": "seeded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
