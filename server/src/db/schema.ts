@@ -816,7 +816,7 @@ export const targetVulnerabilities = pgTable(
   ],
 );
 
-/** The CISA catalog of known exploited vulnerabilities; replaced as a whole by each download. */
+/** The CISA catalog of known exploited vulnerabilities; each download replaces its listing. */
 export const vulnerabilityKev = pgTable(
   'vulnerability_kev',
   {
@@ -824,6 +824,8 @@ export const vulnerabilityKev = pgTable(
     dateAdded: date('date_added', { mode: 'string' }).notNull(),
     ransomware: boolean('ransomware').notNull().default(false),
     listedAt: at('listed_at').notNull().defaultNow(),
+    /** Set when a newer file no longer lists the id; cleared when it lists it again (4b A7). */
+    delistedAt: at('delisted_at'),
   },
   () => [check('vulnerability_kev_id_check', sql`vulnerability_id ~ '^CVE-[0-9]{4}-[0-9]{4,19}$'`)],
 );
@@ -924,6 +926,59 @@ export const vulnerabilityTargetChecks = pgTable(
       'vulnerability_target_checks_one_target',
       sql`(branch_id IS NULL) <> (version_id IS NULL)`,
     ),
+  ],
+);
+
+/**
+ * A tracked target the alert job has seen (4b A2, A3). `day_one` is true when the target was
+ * first seen already holding vulnerabilities, so what it held then is a baseline, not news.
+ */
+export const vulnerabilityAlertTargets = pgTable(
+  'vulnerability_alert_targets',
+  {
+    id: id(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    branchId: uuid('branch_id').references(() => branches.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id').references(() => projectVersions.id, { onDelete: 'cascade' }),
+    dayOne: boolean('day_one').notNull(),
+    observedAt: at('observed_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('vulnerability_alert_targets_branch_uq')
+      .on(t.branchId)
+      .where(sql`branch_id IS NOT NULL`),
+    uniqueIndex('vulnerability_alert_targets_version_uq')
+      .on(t.versionId)
+      .where(sql`version_id IS NOT NULL`),
+    index('vulnerability_alert_targets_project_idx').on(t.projectId),
+    check(
+      'vulnerability_alert_targets_one_target',
+      sql`(branch_id IS NULL) <> (version_id IS NULL)`,
+    ),
+  ],
+);
+
+/** One vulnerability the alert job has reported on a target; deduplicates by (target, id). */
+export const vulnerabilityAlertItems = pgTable(
+  'vulnerability_alert_items',
+  {
+    id: id(),
+    targetId: uuid('target_id')
+      .notNull()
+      .references(() => vulnerabilityAlertTargets.id, { onDelete: 'cascade' }),
+    vulnerabilityId: text('vulnerability_id').notNull(),
+    baseline: boolean('baseline').notNull(),
+    foundAt: at('found_at').notNull().defaultNow(),
+    digestedAt: at('digested_at'),
+    kevNotifiedAt: at('kev_notified_at'),
+  },
+  (t) => [
+    uniqueIndex('vulnerability_alert_items_target_vuln_uq').on(t.targetId, t.vulnerabilityId),
+    index('vulnerability_alert_items_pending_idx')
+      .on(t.foundAt)
+      .where(sql`NOT baseline AND digested_at IS NULL`),
   ],
 );
 
@@ -1834,6 +1889,7 @@ export const projectWatches = pgTable(
     gateFailed: boolean('gate_failed').notNull().default(true),
     gateRecovered: boolean('gate_recovered').notNull().default(true),
     analysisFailed: boolean('analysis_failed').notNull().default(true),
+    newVulnerabilities: boolean('new_vulnerabilities').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

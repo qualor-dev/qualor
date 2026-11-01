@@ -169,6 +169,13 @@
       "when": 1793480590874,
       "tag": "0023_vulnerability_priority",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793560776567,
+      "tag": "0024_vulnerability_alerts",
+      "breakpoints": true
     }
   ]
 }

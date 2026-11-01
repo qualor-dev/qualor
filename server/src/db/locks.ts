@@ -136,4 +136,10 @@ export const LOCKS = {
   vulnerabilityPriority: 7_310_033,
   /** `pg_advisory_xact_lock(key)`: one read-modify-write of the priority datasets' state at a time (4a). */
   vulndbPriorityState: 7_310_034,
+  /** `pg_advisory_xact_lock(key)`: one alert pass over the vulnerability alert memory at a time (4b). */
+  vulnerabilityAlerts: 7_310_035,
+  /** Schedule lock of the vulnerability alert job (4b). */
+  vulnerabilityAlertsSchedule: 7_310_036,
+  /** Schedule lock of the vulnerability digest job (4b). */
+  vulnerabilityDigestSchedule: 7_310_037,
 } as const;

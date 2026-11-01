@@ -89,7 +89,8 @@ export function scopedRows(where: SQL): SQL {
       JOIN vulnerability_matches m ON m.purl = tv.purl AND m.vulnerability_id = tv.vulnerability_id
       LEFT JOIN vulnerability_target_checks cb ON cb.branch_id = tv.branch_id
       LEFT JOIN vulnerability_target_checks cv ON cv.version_id = tv.version_id
-      LEFT JOIN vulnerability_kev k ON k.vulnerability_id = tv.vulnerability_id
+      LEFT JOIN vulnerability_kev k
+        ON k.vulnerability_id = tv.vulnerability_id AND k.delisted_at IS NULL
       LEFT JOIN vulnerability_epss e ON e.vulnerability_id = tv.vulnerability_id
       ${effectiveDecisionJoin('tv', 'd')}
       LEFT JOIN vulnerability_decisions pd

@@ -61,8 +61,9 @@ describe('runMigrations / pendingMigrations', () => {
     // dependencies and the vulnerability settings), 0021_vulndb (0.15, the vulnerability database,
     // its matches and the vulnerabilities of branches and versions), 0022_vulnerability_decisions
     // (0.15, the decisions on vulnerabilities and the checks of their targets),
-    // 0023_vulnerability_priority (0.15, the KEV and EPSS tables).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(24);
+    // 0023_vulnerability_priority (0.15, the KEV and EPSS tables), 0024_vulnerability_alerts (0.15, the watch flag, KEV
+    // delisting and the alert memory).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(25);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -320,6 +321,8 @@ describe('runMigrations / pendingMigrations', () => {
       'matched_packages', // 0021_vulndb
       'target_vulnerabilities', // 0021_vulndb
       'vulnerability_decisions', // 0022_vulnerability_decisions
+      'vulnerability_alert_items', // 0024_vulnerability_alerts
+      'vulnerability_alert_targets', // 0024_vulnerability_alerts
       'vulnerability_epss', // 0023_vulnerability_priority
       'vulnerability_kev', // 0023_vulnerability_priority
       'vulnerability_target_checks', // 0022_vulnerability_decisions
@@ -707,5 +710,43 @@ describe('runMigrations / pendingMigrations', () => {
     await expect(
       db.pool.query(`UPDATE profile_rules SET scope_override = 'tests'`),
     ).rejects.toMatchObject({ code: '23514', constraint: 'profile_rules_scope_check' });
+  });
+
+  it('turns the vulnerability alerts on for every existing watch (0024, 0.15)', async () => {
+    const db = await createTestDatabase({ migrated: false });
+    t = db;
+    const upTo23 = migrationsUpTo(24); // 0000_extensions … 0023_vulnerability_priority
+    try {
+      await runMigrations(db.pool, upTo23.dir);
+    } finally {
+      upTo23.remove();
+    }
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(journalLength() - 24);
+    const org = randomUUID();
+    const project = randomUUID();
+    const user = randomUUID();
+    await db.pool.query(`INSERT INTO organizations (id, key, name) VALUES ($1, 'mig-4b', 'Mig')`, [
+      org,
+    ]);
+    await db.pool.query(
+      `INSERT INTO projects (id, organization_id, key, name) VALUES ($1, $2, 'mig/4b', 'P')`,
+      [project, org],
+    );
+    await db.pool.query(`INSERT INTO users (id, username) VALUES ($1, 'mig-4b-user')`, [user]);
+    await db.pool.query(`INSERT INTO project_watches (user_id, project_id) VALUES ($1, $2)`, [
+      user,
+      project,
+    ]);
+    await db.pool.query(
+      `INSERT INTO vulnerability_kev (vulnerability_id, date_added) VALUES ('CVE-2024-1000', '2026-01-01')`,
+    );
+
+    await runMigrations(db.pool, MIGRATIONS_DIR);
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
+    const { rows } = await db.pool.query(
+      `SELECT w.new_vulnerabilities, (SELECT delisted_at FROM vulnerability_kev) AS delisted
+         FROM project_watches w`,
+    );
+    expect(rows).toEqual([{ new_vulnerabilities: true, delisted: null }]);
   });
 });

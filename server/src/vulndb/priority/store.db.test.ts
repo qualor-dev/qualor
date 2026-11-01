@@ -25,31 +25,67 @@ const kev = (n: number, ransomware = false): KevEntry => ({
 describe('replaceKev', () => {
   it('replaces the catalog, keeping listed_at of the ids that stay', async () => {
     const [a, b, c] = [kev(1), kev(2), kev(3)] as [KevEntry, KevEntry, KevEntry];
-    expect(await replaceKev(t.db, [a, b])).toEqual({ count: 2, added: 2 });
+    expect(await replaceKev(t.db, [a, b])).toEqual({ count: 2, added: 2, relisted: 0 });
     await t.db.execute(
       sql`UPDATE vulnerability_kev SET listed_at = '2020-01-01T00:00:00Z' WHERE vulnerability_id = ${b.vulnerabilityId}`,
     );
     expect(await replaceKev(t.db, [{ ...b, ransomware: true }, c])).toEqual({
       count: 2,
       added: 1,
+      relisted: 0,
     });
     const { rows } = await t.db.execute<{
       vulnerability_id: string;
       ransomware: boolean;
       date_added: string;
       listed: string;
+      delisted: string | null;
     }>(sql`SELECT vulnerability_id, ransomware, date_added::text AS date_added,
-                  listed_at::text AS listed FROM vulnerability_kev ORDER BY 1`);
-    expect(rows.map((r) => [r.vulnerability_id, r.ransomware, r.date_added])).toEqual([
-      [b.vulnerabilityId, true, '2026-02-03'],
-      [c.vulnerabilityId, false, '2026-02-03'],
+                  listed_at::text AS listed, delisted_at::text AS delisted
+             FROM vulnerability_kev ORDER BY 1`);
+    expect(
+      rows.map((r) => [r.vulnerability_id, r.ransomware, r.date_added, r.delisted !== null]),
+    ).toEqual([
+      [a.vulnerabilityId, false, '2026-02-03', true],
+      [b.vulnerabilityId, true, '2026-02-03', false],
+      [c.vulnerabilityId, false, '2026-02-03', false],
     ]);
-    expect(rows[0]?.listed).toMatch(/^2020-01-01/);
+    expect(rows[1]?.listed).toMatch(/^2020-01-01/);
   });
 
-  it('empties the table for an empty list', async () => {
+  it('delists an id the file no longer has and relists it with its first listed_at', async () => {
+    const [a, b] = [kev(1), kev(2)] as [KevEntry, KevEntry];
+    await replaceKev(t.db, [a, b]);
+    await t.db.execute(
+      sql`UPDATE vulnerability_kev SET listed_at = '2020-01-01T00:00:00Z' WHERE vulnerability_id = ${a.vulnerabilityId}`,
+    );
+    expect(await replaceKev(t.db, [b])).toEqual({ count: 1, added: 0, relisted: 0 });
+    const read = async () =>
+      (
+        await t.db.execute<{ listed: string; delisted: string | null }>(
+          sql`SELECT listed_at::text AS listed, delisted_at::text AS delisted
+                FROM vulnerability_kev WHERE vulnerability_id = ${a.vulnerabilityId}`,
+        )
+      ).rows[0];
+    const gone = await read();
+    expect(gone?.delisted).not.toBeNull();
+    expect(gone?.listed).toMatch(/^2020-01-01/);
+    // A second file without it leaves the first delisted_at alone.
+    await replaceKev(t.db, [b]);
+    expect((await read())?.delisted).toBe(gone?.delisted);
+    expect(await replaceKev(t.db, [a, b])).toEqual({ count: 2, added: 0, relisted: 1 });
+    const back = await read();
+    expect(back?.delisted).toBeNull();
+    expect(back?.listed).toMatch(/^2020-01-01/);
+  });
+
+  it('empties the catalog for an empty list', async () => {
     await replaceKev(t.db, [kev(1)]);
-    expect(await replaceKev(t.db, [])).toEqual({ count: 0, added: 0 });
+    expect(await replaceKev(t.db, [])).toEqual({ count: 0, added: 0, relisted: 0 });
+    const { rows } = await t.db.execute<{ live: number }>(
+      sql`SELECT count(*)::int AS live FROM vulnerability_kev WHERE delisted_at IS NULL`,
+    );
+    expect(rows[0]?.live).toBe(0);
   });
 });
 
@@ -102,7 +138,11 @@ describe('replaceEpss', () => {
 describe('replaceKev at size and on failure', () => {
   it('stores more than one batch', async () => {
     const entries = Array.from({ length: 12_000 }, (_, i) => kev(i));
-    expect(await replaceKev(t.db, entries)).toEqual({ count: 12_000, added: 12_000 });
+    expect(await replaceKev(t.db, entries)).toEqual({
+      count: 12_000,
+      added: 12_000,
+      relisted: 0,
+    });
     const { rows } = await t.db.execute<{ n: number }>(
       sql`SELECT count(*)::int AS n FROM vulnerability_kev`,
     );

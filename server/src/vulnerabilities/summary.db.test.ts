@@ -459,7 +459,10 @@ describe('the Vulnerabilities tab: target summary', () => {
             ransomware: vulnerabilityId === 'CVE-2024-0001',
           })),
         )
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: vulnerabilityKev.vulnerabilityId,
+          set: { delistedAt: null },
+        });
       await t.db
         .insert(vulnerabilityEpss)
         .values({ vulnerabilityId: 'CVE-2024-0002', score: 0.42, percentile: 0.9 })
@@ -486,6 +489,18 @@ describe('the Vulnerabilities tab: target summary', () => {
       expect(epss?.score).toBeCloseTo(0.42, 2);
       expect(epss?.percentile).toBeCloseTo(0.9, 2);
       expect(byId.get('GHSA-aaaa-bbbb-cccc')).toMatchObject({ exploited: null, epss: null });
+    });
+
+    it('ignores a delisted KEV id', async () => {
+      const { projectId } = await seed();
+      await t.db.execute(
+        sql`UPDATE vulnerability_kev SET delisted_at = now() WHERE vulnerability_id = 'CVE-2024-0001'`,
+      );
+      const summary = await readTargetSummary(t.db, projectId, { priority: true });
+      expect(summary.targets[0]?.exploited).toBe(0);
+      const list = await listVulnerabilities(t.db, projectId, query, { priority: true });
+      const item = list.items.find((i) => i.vulnerabilityId === 'CVE-2024-0001');
+      expect(item?.exploited).toBeNull();
     });
 
     it('filters by exploited before paging and counting', async () => {
