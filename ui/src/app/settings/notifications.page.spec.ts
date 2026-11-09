@@ -297,6 +297,14 @@ describe('NotificationsPage', () => {
     expect(root.querySelector('tbody .badge')).toBeNull();
   });
 
+  it('says under the table how often vulnerability emails go out', async () => {
+    server.on('GET', '/api/v0/me/notifications', { body: DATA });
+    const { root } = await render();
+    expect(root.querySelector('.panel-scroll + .hint')?.textContent?.trim()).toBe(
+      'One email a day, High and Critical. Exploited ones (KEV) at once.',
+    );
+  });
+
   it('disables the column with a Business pill outside Business, and keeps the stored value', async () => {
     const stored = { ...ALL, newVulnerabilities: false };
     server.on('GET', '/api/v0/me/notifications', {
