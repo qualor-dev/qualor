@@ -6,8 +6,13 @@ import { WatchButton } from './watch-button';
 
 const ID = '0190a6c2-0000-7000-8000-0000000000p1';
 const URL = `/api/v0/projects/${ID}/watch`;
-const READY = { emailReady: true, emailBlocker: null };
-const ALL_EVENTS = { gateFailed: true, gateRecovered: true, analysisFailed: true };
+const READY = { emailReady: true, emailBlocker: null, vulnerabilityAlerts: true };
+const ALL_EVENTS = {
+  gateFailed: true,
+  gateRecovered: true,
+  analysisFailed: true,
+  newVulnerabilities: true,
+};
 const WATCHING = { watching: true, branches: 'main', events: ALL_EVENTS, ...READY };
 
 describe('WatchButton', () => {
@@ -44,14 +49,14 @@ describe('WatchButton', () => {
     await settle(fixture);
     expect(server.requestsTo('PUT', URL)[0]?.body).toEqual({
       branches: 'main',
-      events: { ...ALL_EVENTS, newVulnerabilities: true },
+      events: ALL_EVENTS,
     });
     expect(toggle().textContent?.trim()).toBe('Watching');
     expect(toggle().getAttribute('aria-expanded')).toBe('true');
     const radios = menu()!.querySelectorAll<HTMLInputElement>('input[type=radio]');
     expect([...radios].map((r) => r.checked)).toEqual([true, false]);
     const boxes = menu()!.querySelectorAll<HTMLInputElement>('input[type=checkbox]');
-    expect([...boxes].map((b) => b.checked)).toEqual([true, true, true]);
+    expect([...boxes].map((b) => b.checked)).toEqual([true, true, true, true]);
   });
 
   it('opens the menu of an existing watch without saving, then saves each change', async () => {
@@ -71,7 +76,7 @@ describe('WatchButton', () => {
     await settle(fixture);
     expect(server.requestsTo('PUT', URL).at(-1)?.body).toEqual({
       branches: 'all',
-      events: { gateFailed: true, gateRecovered: false, analysisFailed: true },
+      events: { ...ALL_EVENTS, gateRecovered: false },
     });
     // A click on a box inside the menu keeps it open.
     expect(menu()).not.toBeNull();
@@ -153,7 +158,7 @@ describe('WatchButton', () => {
     await settle(fixture);
     expect(server.requestsTo('PUT', URL)).toHaveLength(1);
     expect(menu()!.querySelector('[role="alert"]')).not.toBeNull();
-    expect(boxes(menu()!).map((b) => b.checked)).toEqual([true, true, true]);
+    expect(boxes(menu()!).map((b) => b.checked)).toEqual([true, true, true, true]);
     radios(menu()!)[1]!.click();
     await settle(fixture);
     expect(radios(menu()!).map((r) => r.checked)).toEqual([true, false]);
@@ -174,20 +179,20 @@ describe('WatchButton', () => {
     // One PUT at a time; the changes made meanwhile wait, and only the latest is sent.
     expect(server.requestsTo('PUT', URL)).toHaveLength(1);
     expect(radios(menu()!).map((r) => r.checked)).toEqual([false, true]);
-    expect(boxes(menu()!).map((b) => b.checked)).toEqual([true, false, false]);
+    expect(boxes(menu()!).map((b) => b.checked)).toEqual([true, false, false, true]);
     put.release();
     await settle(fixture);
     const puts = server.requestsTo('PUT', URL);
     expect(puts).toHaveLength(2);
     expect(puts[1]?.body).toEqual({
       branches: 'all',
-      events: { gateFailed: true, gateRecovered: false, analysisFailed: false },
+      events: { ...ALL_EVENTS, gateRecovered: false, analysisFailed: false },
     });
     put.release();
     await settle(fixture);
     expect(server.requestsTo('PUT', URL)).toHaveLength(2);
     expect(radios(menu()!).map((r) => r.checked)).toEqual([false, true]);
-    expect(boxes(menu()!).map((b) => b.checked)).toEqual([true, false, false]);
+    expect(boxes(menu()!).map((b) => b.checked)).toEqual([true, false, false, true]);
     expect(toggle().getAttribute('aria-disabled')).toBeNull();
   });
 
@@ -285,5 +290,54 @@ describe('WatchButton', () => {
     expect(hint?.querySelector('a')?.getAttribute('href') ?? null).toBe(
       blocker === 'preference_off' ? '/settings/notifications' : null,
     );
+  });
+
+  it('offers New vulnerabilities in tracked versions, with its hint, after the other events', async () => {
+    server.on('GET', URL, { body: WATCHING });
+    const { fixture, toggle, menu } = await render();
+    toggle().click();
+    await settle(fixture);
+    const last = menu()!.querySelectorAll('label')[menu()!.querySelectorAll('label').length - 1]!;
+    expect(last.textContent).toContain('New vulnerabilities in tracked versions');
+    expect(menu()!.textContent).toContain(
+      'One email a day, High and Critical. Exploited ones (KEV) at once.',
+    );
+    expect(boxes(menu()!)[3]!.disabled).toBe(false);
+    expect(menu()!.querySelector('.badge')).toBeNull();
+  });
+
+  it('disables it with a Business pill outside Business, and sends the stored value back', async () => {
+    const stored = { ...ALL_EVENTS, newVulnerabilities: false };
+    server.on('GET', URL, { body: { ...WATCHING, events: stored, vulnerabilityAlerts: false } });
+    server.on('PUT', URL, (r) => ({
+      body: { watching: true, ...(r.body as object), ...READY, vulnerabilityAlerts: false },
+    }));
+    const { fixture, toggle, menu } = await render();
+    toggle().click();
+    await settle(fixture);
+    expect(boxes(menu()!)[3]!.disabled).toBe(true);
+    expect(boxes(menu()!)[3]!.checked).toBe(false);
+    expect(menu()!.querySelector('.badge')?.textContent?.trim()).toBe('Business');
+    boxes(menu()!)[0]!.click();
+    await settle(fixture);
+    expect(server.requestsTo('PUT', URL).at(-1)?.body).toEqual({
+      branches: 'main',
+      events: { ...stored, gateFailed: false },
+    });
+  });
+
+  it('keeps sending a stored false when another event changes', async () => {
+    const stored = { ...ALL_EVENTS, newVulnerabilities: false };
+    server.on('GET', URL, { body: { ...WATCHING, events: stored } });
+    echo();
+    const { fixture, toggle, menu } = await render();
+    toggle().click();
+    await settle(fixture);
+    boxes(menu()!)[1]!.click();
+    await settle(fixture);
+    expect(server.requestsTo('PUT', URL).at(-1)?.body).toEqual({
+      branches: 'main',
+      events: { ...stored, gateRecovered: false },
+    });
   });
 });

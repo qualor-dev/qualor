@@ -133,6 +133,10 @@ export class NotificationsPage {
     return $localize`:@@notifications.analysisFailedOf:Analysis fails: ${w.project.name}:name:`;
   }
 
+  protected newVulnerabilitiesLabel(w: Watched): string {
+    return $localize`:@@notifications.newVulnerabilitiesOf:New vulnerabilities: ${w.project.name}:name:`;
+  }
+
   protected stopLabel(w: Watched): string {
     return $localize`:@@notifications.stopOf:Stop watching ${w.project.name}:name:`;
   }

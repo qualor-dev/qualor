@@ -122,13 +122,17 @@ Anyone who can see a project can **watch** it, and get an email when something n
 
 ### Watching a project
 
-On a project's page, press **Watch** (the bell). Watching starts with the main branch and all three
+On a project's page, press **Watch** (the bell). Watching starts with the main branch and all four
 emails. Press **Watching** to change:
 
 - **Main branch**, or **All branches and merge requests**;
-- each email on or off: **The quality gate fails**, **The quality gate passes again** and **An
-  analysis fails**;
+- each email on or off: **The quality gate fails**, **The quality gate passes again**, **An
+  analysis fails** and **New vulnerabilities in tracked versions**;
 - **Stop watching**.
+
+**New vulnerabilities in tracked versions** is disabled outside Business and Enterprise, and shows
+a **Business** pill. It keeps its value, so it applies again when the licence does
+([Vulnerability emails](#vulnerability-emails)).
 
 **Settings → Notifications** lists every project you watch, with the same choices. It also has the
 switch for all notification email: **Email me at** your address.

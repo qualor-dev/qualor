@@ -7,7 +7,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { ApiError, problemMessage } from '../api/errors';
 import { AuthLayout } from '../shared/auth-layout';
@@ -16,7 +16,8 @@ import { takeLinkToken } from './fragment-token';
 type State = 'ask' | 'busy' | 'done' | 'invalid' | 'missing' | 'error';
 
 /**
- * The "Stop watching this project" link of a notification email (mail E3 N5):
+ * The "Stop watching this project" link of a notification email (mail E3 N5), and with route data
+ * `kind: 'vulnerabilities'` the "Stop vulnerability emails" link of 4b:
  * `/unsubscribe#t=<token>`. The token is in the fragment, so it never reaches a server log; the
  * page removes it from the address bar at once. Opening the page changes nothing (a link scanner
  * must not unsubscribe anyone): one button posts the token. No sign-in needed.
@@ -29,6 +30,9 @@ type State = 'ask' | 'busy' | 'done' | 'invalid' | 'missing' | 'error';
 export class UnsubscribePage {
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
+  /** `vulnerabilities` on /unsubscribe/vulnerabilities (route data); the project link otherwise. */
+  protected readonly vulnerabilities =
+    inject(ActivatedRoute).snapshot.data['kind'] === 'vulnerabilities';
   /** E2's helper: reads `#t=…`, takes it out of the address bar and the router's URL. */
   private readonly token: string | null = ((t) => (t !== null && t.length <= 512 ? t : null))(
     takeLinkToken('t'),
@@ -43,12 +47,13 @@ export class UnsubscribePage {
     this.state.set('busy');
     this.error.set(null);
     try {
-      const result = await ok(
-        this.api.client.POST('/api/v0/notifications/unsubscribe', {
-          params: { query: { t: this.token } },
-        }),
-      );
-      this.projectName.set(result.project?.name ?? null);
+      const query = { params: { query: { t: this.token } } };
+      if (this.vulnerabilities) {
+        await ok(this.api.client.POST('/api/v0/notifications/unsubscribe/vulnerabilities', query));
+      } else {
+        const result = await ok(this.api.client.POST('/api/v0/notifications/unsubscribe', query));
+        this.projectName.set(result.project?.name ?? null);
+      }
       this.showResult('done');
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {

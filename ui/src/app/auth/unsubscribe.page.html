@@ -3,7 +3,9 @@
     @switch (state()) {
       @case ('done') {
         <h1 #result tabindex="-1" i18n="@@unsubscribe.doneTitle">Done</h1>
-        @if (projectName(); as name) {
+        @if (vulnerabilities) {
+          <p i18n="@@unsubscribe.vulnerabilities.done">You no longer get vulnerability emails.</p>
+        } @else if (projectName(); as name) {
           <p i18n="@@unsubscribe.done">You no longer watch {{ name }}.</p>
         } @else {
           <p i18n="@@unsubscribe.doneUnknown">You no longer watch this project.</p>
@@ -22,10 +24,18 @@
         </p>
       }
       @default {
-        <h1 i18n="@@unsubscribe.title">Stop emails about this project?</h1>
-        <p i18n="@@unsubscribe.body">
-          You will no longer get emails about this project. You can watch it again from its page.
-        </p>
+        @if (vulnerabilities) {
+          <h1 i18n="@@unsubscribe.vulnerabilities.title">Stop vulnerability emails?</h1>
+          <p i18n="@@unsubscribe.vulnerabilities.body">
+            You will no longer get emails about new vulnerabilities, in any project. You can turn
+            them back on per project under Settings → Notifications.
+          </p>
+        } @else {
+          <h1 i18n="@@unsubscribe.title">Stop emails about this project?</h1>
+          <p i18n="@@unsubscribe.body">
+            You will no longer get emails about this project. You can watch it again from its page.
+          </p>
+        }
         @if (error(); as message) {
           <p class="alert alert-error" role="alert">{{ message }}</p>
         }

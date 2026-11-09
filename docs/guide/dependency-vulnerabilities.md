@@ -130,6 +130,23 @@ The **badge** "New vulnerabilities in main and 2 versions" shows in the projects
 project page. It names the main branch, the number of branches and the number of versions with new
 vulnerabilities, such as "New vulnerabilities in 3 versions". It links to the tab.
 
+## Alerts (Business and Enterprise)
+
+With the `vuln.alerts` feature Qualor tells you about new vulnerabilities in the branches and
+versions it tracks, without you opening the tab.
+
+| Where | What it does |
+|---|---|
+| **New vulnerabilities in tracked versions** in the project's **Watch** menu, and a column in **Settings → Notifications** | turns the two emails on or off for that watch. A new watch has it on. Without the feature the box is disabled and shows a **Business** pill |
+| Digest email | once a day at 06:00 UTC: the new High and Critical vulnerabilities that are open and not ignored |
+| Exploited email | at once, when a vulnerability is in the CISA KEV catalog |
+| `vulnerabilities.found` webhook event | the same list as the digest, for generic webhooks ([Webhooks](./webhooks-and-api.md#webhooks)) |
+
+Only vulnerabilities found after the baseline count (the rule under [New
+vulnerabilities](#new-vulnerabilities)). The emails, their limits and the baseline in detail are in
+[Vulnerability emails](./email.md#vulnerability-emails). Every email has a link that stops them for
+all your watches.
+
 ## Statuses and reasons
 
 Triage sets a **status** for a vulnerability in a package:

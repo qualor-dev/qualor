@@ -71,6 +71,7 @@
               <th scope="col" i18n="@@notifications.col.gateFailed">Gate fails</th>
               <th scope="col" i18n="@@notifications.col.gateRecovered">Gate passes again</th>
               <th scope="col" i18n="@@notifications.col.analysisFailed">Analysis fails</th>
+              <th scope="col" i18n="@@notifications.col.newVulnerabilities">New vulnerabilities</th>
               <th scope="col" class="actions-col">
                 <span class="visually-hidden" i18n="@@notifications.col.actions">Actions</span>
               </th>
@@ -133,6 +134,21 @@
                     [disabled]="demo() || stopping().has(w.project.id)"
                     (change)="setEvent(w, 'analysisFailed', $event)"
                   />
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    data-event="newVulnerabilities"
+                    [attr.aria-label]="newVulnerabilitiesLabel(w)"
+                    [checked]="w.events.newVulnerabilities"
+                    [disabled]="demo() || stopping().has(w.project.id) || !d.vulnerabilityAlerts"
+                    (change)="setEvent(w, 'newVulnerabilities', $event)"
+                  />
+                  @if (!d.vulnerabilityAlerts) {
+                    <span class="badge badge-tag" i18n="@@notifications.businessPill"
+                      >Business</span
+                    >
+                  }
                 </td>
                 <td class="actions-col">
                   @if (!demo()) {

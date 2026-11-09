@@ -8,6 +8,10 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
+- Business and Enterprise: vulnerability alerts (`vuln.alerts`). The **Watch** menu and **Settings →
+  Notifications** gain **New vulnerabilities in tracked versions**. Watchers get a daily digest of
+  new High and Critical vulnerabilities and an email at once for exploited ones (KEV). Generic
+  webhooks get the `vulnerabilities.found` event. Every email has a stop link.
 - Business and Enterprise: exploited vulnerabilities (CISA KEV) and exploit probability (FIRST EPSS)
   on the Vulnerabilities tab (`vuln.priority`).
 - Versions: a scan in a tag pipeline (GitLab `CI_COMMIT_TAG`, a GitHub tag push), or with

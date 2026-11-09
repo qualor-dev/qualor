@@ -861,4 +861,83 @@ describe('WebhookList: Slack and Teams (6G)', () => {
     await settle(fixture);
     expect(root.querySelector('.webhook-public-url')).toBeNull();
   });
+
+  describe('vulnerabilities.found', () => {
+    const info = (features: string[]) => ({
+      body: {
+        version: '0.15.0',
+        edition: 'business',
+        features,
+        extensions: [],
+        mcp: { enabled: false, reason: null },
+      },
+    });
+    const eventLabels = (root: HTMLElement) =>
+      [...root.querySelectorAll('dialog#create-dialog .webhook-event-choice label')].map((l) =>
+        l.textContent?.trim(),
+      );
+
+    it('offers New vulnerabilities (daily) to generic webhooks with vuln.alerts, chosen', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/webhooks', { body: page([]) });
+      server.on('GET', '/api/v0/system/info', info(['vuln.alerts']));
+      server.on('POST', '/api/v0/webhooks', {
+        status: 201,
+        body: { ...webhook('w9', 'https://ci.example.com/hook'), secret: 'whsec_x' },
+      });
+      const fixture = render();
+      await settle(fixture);
+      const root = fixture.nativeElement as HTMLElement;
+      fixture.componentInstance.openCreate();
+      await settle(fixture);
+      expect(eventLabels(root)).toEqual([
+        'Analysis completed',
+        'Quality gate status changed',
+        'New vulnerabilities (daily)',
+      ]);
+      fillAndSubmit(root, 'https://ci.example.com/hook');
+      await settle(fixture);
+      expect(
+        (server.requestsTo('POST', '/api/v0/webhooks')[0]?.body as { events: string[] }).events,
+      ).toEqual(['analysis.completed', 'gate.status_changed', 'vulnerabilities.found']);
+      // Chat webhooks never offer it.
+      fixture.componentInstance.openCreate();
+      await settle(fixture);
+      chooseKind(root, 'slack');
+      await settle(fixture);
+      expect(eventLabels(root)).not.toContain('New vulnerabilities (daily)');
+    });
+
+    it('hides it without vuln.alerts', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/webhooks', { body: page([]) });
+      server.on('GET', '/api/v0/system/info', info([]));
+      const fixture = render();
+      await settle(fixture);
+      const root = fixture.nativeElement as HTMLElement;
+      fixture.componentInstance.openCreate();
+      await settle(fixture);
+      expect(eventLabels(root)).toEqual(['Analysis completed', 'Quality gate status changed']);
+    });
+
+    it('shows a stored vulnerabilities.found tag and keeps it when the webhook is switched', async () => {
+      const server = setup();
+      const stored = webhook('w1', 'https://a.example.com/', {
+        events: ['analysis.completed', 'vulnerabilities.found'],
+      });
+      server.on('GET', '/api/v0/webhooks', { body: page([stored]) });
+      server.on('GET', '/api/v0/system/info', info([]));
+      server.on('PATCH', '/api/v0/webhooks/w1', { body: { ...stored, active: false } });
+      const fixture = render();
+      await settle(fixture);
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.textContent).toContain('New vulnerabilities (daily)');
+      [...root.querySelectorAll<HTMLButtonElement>('section button')]
+        .find((b) => /switch off/i.test(b.textContent!))
+        ?.click();
+      await settle(fixture);
+      // Only the flag is sent: the stored events are never rewritten.
+      expect(server.requestsTo('PATCH', '/api/v0/webhooks/w1')[0]?.body).toEqual({ active: false });
+    });
+  });
 });

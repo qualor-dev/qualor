@@ -35,6 +35,8 @@ type DeliveryEvent = Delivery['event'];
 export type WebhookKind = Webhook['kind'];
 /** The events each kind may subscribe to (6G spec §4; the test message's `chat.test` never is). */
 const GENERIC_EVENTS: WebhookEvent[] = ['analysis.completed', 'gate.status_changed'];
+/** Offered to generic webhooks only where `vuln.alerts` is licensed (Business and Enterprise). */
+const VULNERABILITY_EVENT: WebhookEvent = 'vulnerabilities.found';
 const CHAT_EVENTS: WebhookEvent[] = ['gate.failed', 'gate.recovered', 'digest.weekly'];
 const KINDS: WebhookKind[] = ['generic', 'slack', 'teams'];
 /** How many deliveries a webhook shows: its strip's 20 (spec §6.8). */
@@ -68,8 +70,9 @@ export function inScope(w: Webhook, projectId: string | null): boolean {
   return projectId === null || w.projectId === projectId;
 }
 
-function eventsOf(kind: WebhookKind): WebhookEvent[] {
-  return kind === 'generic' ? GENERIC_EVENTS : CHAT_EVENTS;
+function eventsOf(kind: WebhookKind, vulnerabilityAlerts: boolean): WebhookEvent[] {
+  if (kind !== 'generic') return CHAT_EVENTS;
+  return vulnerabilityAlerts ? [...GENERIC_EVENTS, VULNERABILITY_EVENT] : GENERIC_EVENTS;
 }
 
 /** The browser's IANA zone, the default of a new chat webhook (6G spec §5). */
@@ -217,7 +220,11 @@ export class WebhookList {
   protected readonly kind = signal<WebhookKind>('generic');
   protected readonly kinds = KINDS;
   protected readonly kindLabel = kindLabel;
-  protected readonly kindEvents = computed(() => eventsOf(this.kind()));
+  /** Whether the dialog offers `vulnerabilities.found` (the dialog only creates; it never rewrites). */
+  private readonly vulnerabilityAlerts = computed(() =>
+    this.system.features().includes('vuln.alerts'),
+  );
+  protected readonly kindEvents = computed(() => eventsOf(this.kind(), this.vulnerabilityAlerts()));
   /** The weekly digest's zone of a new chat webhook. */
   protected readonly timezone = signal(browserTimeZone());
   protected readonly timeZones = TIME_ZONES;
@@ -353,7 +360,7 @@ export class WebhookList {
   /** Another kind: its own events, all chosen, and no error of the previous kind's answer. */
   protected setKind(kind: WebhookKind): void {
     this.kind.set(kind);
-    this.events.set(new Set(eventsOf(kind)));
+    this.events.set(new Set(eventsOf(kind, this.vulnerabilityAlerts())));
     this.urlError.set(null);
     this.eventsError.set(null);
     this.timezoneError.set(null);
@@ -378,7 +385,7 @@ export class WebhookList {
     this.url.set('');
     this.scope.set('');
     this.kind.set('generic');
-    this.events.set(new Set(GENERIC_EVENTS));
+    this.events.set(new Set(eventsOf('generic', this.vulnerabilityAlerts())));
     this.timezone.set(browserTimeZone());
     this.timezoneError.set(null);
     this.urlError.set(null);
@@ -409,7 +416,7 @@ export class WebhookList {
     if (!organizationId || this.busy()) return;
     const url = this.url().trim();
     const kind = this.kind();
-    const events = eventsOf(kind).filter((e) => this.events().has(e));
+    const events = eventsOf(kind, this.vulnerabilityAlerts()).filter((e) => this.events().has(e));
     const timezone = this.timezone().trim();
     if (!url) this.urlError.set(badUrl());
     if (events.length === 0) this.eventsError.set(noEvent());

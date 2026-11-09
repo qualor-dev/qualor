@@ -1,6 +1,6 @@
 import { BrowserPlatformLocation, PlatformLocation } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { FakeServer, problem, provideFakeServer, settle } from '../../testing/fake-server';
 import { UnsubscribePage } from './unsubscribe.page';
@@ -118,5 +118,51 @@ describe('UnsubscribePage opened by the router (as ResetPasswordPage, mail E2 M1
     await settle(harness.fixture);
     expect(server.requestsTo('POST', URL)[0]?.query.get('t')).toBe('abc.def');
     expect(page.textContent).toContain('You no longer watch Payments API.');
+  });
+});
+
+describe('UnsubscribePage for vulnerability emails (route data kind)', () => {
+  const VULN = '/api/v0/notifications/unsubscribe/vulnerabilities';
+  let server: FakeServer;
+  beforeEach(() => {
+    server = new FakeServer();
+    TestBed.configureTestingModule({
+      imports: [UnsubscribePage],
+      providers: [
+        provideRouter([]),
+        provideFakeServer(server),
+        { provide: ActivatedRoute, useValue: { snapshot: { data: { kind: 'vulnerabilities' } } } },
+      ],
+    });
+  });
+  afterEach(() => window.history.replaceState(null, '', '/'));
+
+  it('asks first, posts to the vulnerabilities route and confirms', async () => {
+    server.on('POST', VULN, { body: {} });
+    window.history.replaceState(null, '', '/unsubscribe/vulnerabilities#t=abc.def');
+    const fixture = TestBed.createComponent(UnsubscribePage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe('Stop vulnerability emails?');
+    expect(root.textContent).toContain(
+      'You will no longer get emails about new vulnerabilities, in any project. You can turn them back on per project under Settings → Notifications.',
+    );
+    expect(server.requests).toHaveLength(0);
+    stopButton(root)!.click();
+    await settle(fixture);
+    expect(server.requestsTo('POST', VULN)[0]?.query.get('t')).toBe('abc.def');
+    expect(root.textContent).toContain('You no longer get vulnerability emails.');
+    expect(root.querySelector('a[href="/settings/notifications"]')).not.toBeNull();
+  });
+
+  it('says a refused link is not valid', async () => {
+    server.on('POST', VULN, { status: 400, body: problem(400, 'TOKEN_INVALID') });
+    window.history.replaceState(null, '', '/unsubscribe/vulnerabilities#t=forged');
+    const fixture = TestBed.createComponent(UnsubscribePage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    stopButton(root)!.click();
+    await settle(fixture);
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe("This link doesn't work");
   });
 });

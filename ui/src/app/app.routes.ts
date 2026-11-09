@@ -40,6 +40,13 @@ export const routes: Routes = [
     loadComponent: () => import('./auth/unsubscribe.page').then((m) => m.UnsubscribePage),
   },
   {
+    // 4b: the stop link of a vulnerability email; the same page, the other kind.
+    path: 'unsubscribe/vulnerabilities',
+    title: $localize`:@@title.unsubscribeVulnerabilities:Stop vulnerability emails`,
+    data: { kind: 'vulnerabilities' },
+    loadComponent: () => import('./auth/unsubscribe.page').then((m) => m.UnsubscribePage),
+  },
+  {
     // Spec §6 step 6: where /oauth/authorize sends the browser; outside the shell, signed in.
     path: 'oauth/consent',
     title: $localize`:@@title.consent:Connect an app`,

@@ -103,6 +103,10 @@ export function messageKindText(kind: string): string {
       return $localize`:@@email.kind.gateRecovered:Quality gate passes again`;
     case 'notify.analysis-failed':
       return $localize`:@@email.kind.analysisFailed:Analysis failed`;
+    case 'notify.vulnerabilities-digest':
+      return $localize`:@@email.kind.vulnerabilitiesDigest:Vulnerability digest`;
+    case 'notify.vulnerabilities-exploited':
+      return $localize`:@@email.kind.vulnerabilitiesExploited:Exploited vulnerability`;
     default:
       return kind;
   }
