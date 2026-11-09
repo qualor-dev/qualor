@@ -64,6 +64,7 @@ import {
   VULNDB_WORKER_CONCURRENCY,
   vulndbUpdateHandlers,
 } from './vulndb/update';
+import { alertHandlers } from './vulnerabilities/alerts/jobs';
 import { recheckHandlers } from './vulnerabilities/recheck';
 import { updateCheckerFor } from './update-check/checker';
 import { webhookHandlers } from './webhooks/deliver';
@@ -282,6 +283,8 @@ async function main(): Promise<void> {
         : {}),
       // E1 spec: the daily licence expiry check (it queues email; the mail worker sends it).
       ...licenseAlertHandlers({ db: database.db, edition, config, logger }),
+      // 4b: the exploited (KEV) vulnerability emails (it queues them; the mail worker sends them).
+      ...alertHandlers({ ...notify, db: database.db, limits: () => edition.limits(), logger }),
       // 6G R14: the hourly weekly-digest check (it queues deliveries; the webhook worker sends them).
       ...digestHandlers({ db: database.db, logger }),
     },

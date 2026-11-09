@@ -38,6 +38,7 @@ import {
   type RecheckScope,
 } from './recheck';
 import type { TrivyRun, TrivyRunner, VulnerabilityMatch } from './trivy';
+import { ALERTS_QUEUE } from './alerts/jobs';
 
 const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
 
@@ -949,6 +950,39 @@ describe('vulnerability re-checks', () => {
       await mkdir(join(stale, 'nested'), { recursive: true });
       expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
       await expect(stat(stale)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
+  describe('the vulnerability alert job', () => {
+    const alertJobs = () =>
+      db().select({ status: jobs.status }).from(jobs).where(eq(jobs.queue, ALERTS_QUEUE));
+
+    beforeEach(async () => {
+      await db().delete(jobs).where(eq(jobs.queue, ALERTS_QUEUE));
+    });
+
+    it('is queued when a re-check finishes', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
+      expect(await alertJobs()).toEqual([{ status: 'queued' }]);
+    });
+
+    it('is not queued when a stop ended the run', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      const stop = new AbortController();
+      stop.abort();
+      expect(await recheck({ projectIds: [p.id] }, { shutdown: stop.signal })).toEqual({
+        kind: 'stopped',
+      });
+      expect(await alertJobs()).toEqual([]);
+    });
+
+    it('is not queued while the instance switch is off', async () => {
+      await instanceSwitch(false);
+      expect(await recheck({ all: true })).toEqual({ kind: 'off' });
+      expect(await alertJobs()).toEqual([]);
     });
   });
 

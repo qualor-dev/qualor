@@ -5,6 +5,7 @@ import type { Config } from '../../config';
 import type { Db, Executor } from '../../db/client';
 import { LOCKS } from '../../db/locks';
 import type { MailDeps } from '../../mail/outbox';
+import { enqueueVulnerabilityAlerts } from '../../vulnerabilities/alerts/jobs';
 import { fetchHttpsFile as realFetchHttpsFile, isOciProblem } from '../oci';
 import { priorityUrl, type PriorityDataset, type VulndbSettings } from '../settings';
 import { parseEpss, parseKev, PRIORITY_FILE_MAX_BYTES, type PriorityProblem } from './parse';
@@ -49,7 +50,7 @@ const errorClass = (err: unknown): string =>
 
 /** A parsed file, ready to replace its table. */
 interface ParsedFile {
-  replace: (tx: Executor) => Promise<number>;
+  replace: (tx: Executor) => Promise<{ count: number; added: number; relisted: number }>;
   dataDate: Date | null;
   skipped: number;
 }
@@ -62,7 +63,7 @@ async function parseFile(
     const kev = await parseKev(body);
     if ('problem' in kev) return kev;
     return {
-      replace: async (tx) => (await replaceKev(tx, kev.entries)).count,
+      replace: (tx) => replaceKev(tx, kev.entries),
       dataDate: kev.releasedAt,
       skipped: kev.skipped,
     };
@@ -70,7 +71,7 @@ async function parseFile(
   const epss = await parseEpss(body);
   if ('problem' in epss) return epss;
   return {
-    replace: async (tx) => (await replaceEpss(tx, epss)).count,
+    replace: async (tx) => ({ ...(await replaceEpss(tx, epss)), added: 0, relisted: 0 }),
     dataDate: epss.scoreDate,
     skipped: epss.skipped,
   };
@@ -111,7 +112,7 @@ export async function storePriorityFile(
       }));
       return { state: confirmed, count: null };
     }
-    const replaced = await parsed.replace(tx);
+    const { count: replaced, added, relisted } = await parsed.replace(tx);
     const stored = await updatePriorityStateLocked(tx, dataset, () => ({
       source,
       dataDate: parsed.dataDate === null ? null : parsed.dataDate.toISOString(),
@@ -125,6 +126,8 @@ export async function storePriorityFile(
       lastError: null,
       staleNotifiedDigest: null,
     }));
+    // 4b: inside the transaction, so a queued job cannot be claimed before these rows are visible.
+    if (added + relisted > 0) await enqueueVulnerabilityAlerts(tx);
     return { state: stored, count: replaced };
   });
   if (count !== null) {

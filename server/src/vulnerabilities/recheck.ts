@@ -14,6 +14,7 @@ import { withLocalDatabase, type LocalProblem } from '../vulndb/local';
 import { readVulndbSettings } from '../vulndb/settings';
 import { readVulndbState, updateVulndbState, type VulndbState } from '../vulndb/state';
 import { currentDataset } from '../vulndb/store';
+import { enqueueVulnerabilityAlerts } from './alerts/jobs';
 import { purlOf } from './purl';
 import { buildSbom, type SbomPackage } from './sbom';
 import { projectTargets, type Target } from './targets';
@@ -831,6 +832,8 @@ export async function recheckProjects(
     lastRecheckError: 'all' in scope ? null : state.lastRecheckError,
   }));
   deps.logger?.info({ component: 'vulnerabilities', ...summary }, 'vulnerability re-check done');
+  // 4b: the alert job looks at what this run wrote. A stopped run never gets here (it is queued again).
+  await enqueueVulnerabilityAlerts(deps.db);
   return { kind: 'done', summary };
 }
 

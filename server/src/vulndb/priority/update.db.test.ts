@@ -4,7 +4,8 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { testConfig } from '../../../test/config';
 import { createTestDatabase, type TestDatabase } from '../../../test/db';
-import { instanceSettings } from '../../db/schema';
+import { instanceSettings, jobs } from '../../db/schema';
+import { ALERTS_QUEUE } from '../../vulnerabilities/alerts/jobs';
 import type { fetchHttpsFile, HttpsFile, HttpsFileOptions, OciProblem } from '../oci';
 import {
   DEFAULT_VULNDB_SETTINGS,
@@ -450,6 +451,43 @@ describe('storePriorityFile', () => {
     await updatePriorityState(t.db, 'kev', (s) => ({ ...s, staleNotifiedDigest: s.digest }));
     const got = await storePriorityFile(t.db, 'kev', kevFile([A, B]), 'upload', none, now);
     expect(got).toMatchObject({ staleNotifiedDigest: null, count: 2 });
+  });
+
+  describe('the vulnerability alert job', () => {
+    const alertJobs = () =>
+      t.db.select({ status: jobs.status }).from(jobs).where(eq(jobs.queue, ALERTS_QUEUE));
+    const clearJobs = () => t.db.delete(jobs).where(eq(jobs.queue, ALERTS_QUEUE));
+
+    beforeEach(clearJobs);
+
+    it('is queued by a KEV file that adds an id, and by one that lists an id again', async () => {
+      await storePriorityFile(t.db, 'kev', kevFile([A]), 'upload', none, now);
+      expect(await alertJobs()).toEqual([{ status: 'queued' }]);
+
+      await clearJobs();
+      await storePriorityFile(t.db, 'kev', kevFile([A, B]), 'upload', none, now);
+      expect(await alertJobs()).toEqual([{ status: 'queued' }]);
+
+      await clearJobs();
+      // B goes (delisted): nothing to send.
+      await storePriorityFile(t.db, 'kev', kevFile([A]), 'upload', none, now);
+      expect(await alertJobs()).toEqual([]);
+      // B comes back.
+      await storePriorityFile(t.db, 'kev', kevFile([A, B]), 'upload', none, now);
+      expect(await alertJobs()).toEqual([{ status: 'queued' }]);
+    });
+
+    it('is not queued by a KEV file that changes no listing, nor by EPSS', async () => {
+      await storePriorityFile(t.db, 'kev', kevFile([A]), 'upload', none, now);
+      await clearJobs();
+
+      // The same bytes, then other bytes with the same ids.
+      await storePriorityFile(t.db, 'kev', kevFile([A]), 'upload', none, now);
+      const later = '2026-10-31T14:22:10.123Z';
+      await storePriorityFile(t.db, 'kev', kevFile([A], later), 'upload', none, now);
+      await storePriorityFile(t.db, 'epss', epssFile([A, B]), 'upload', none, now);
+      expect(await alertJobs()).toEqual([]);
+    });
   });
 
   it('logs what it stored, with the entries it skipped', async () => {
