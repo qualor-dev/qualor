@@ -82,6 +82,13 @@ export interface JobOptions {
   projectKey: string;
 }
 
+/** The report flags, one per line, as the plain job's folded script lists them. */
+function reportFlagLines(): string[] {
+  return GITLAB_REPORT_FLAGS.split(' --').map(
+    (flag, i) => '      ' + (i === 0 ? flag : '--' + flag),
+  );
+}
+
 /** The plain `qualor:` job for self-managed GitLab (the guide's "Without the component"). */
 export function gitlabPlainJob(o: JobOptions): string {
   const image = o.csharp ? 'qualor/scanner-dotnet' : 'qualor/scanner';
@@ -93,14 +100,9 @@ export function gitlabPlainJob(o: JobOptions): string {
         '    - >-',
         '      qualor dotnet end',
         key,
-        ...GITLAB_REPORT_FLAGS.split(' --').map((f, i) => `      ${i === 0 ? f : `--${f}`}`),
+        ...reportFlagLines(),
       ]
-    : [
-        '    - >-',
-        '      qualor scan',
-        key,
-        ...GITLAB_REPORT_FLAGS.split(' --').map((f, i) => `      ${i === 0 ? f : `--${f}`}`),
-      ];
+    : ['    - >-', '      qualor scan', key, ...reportFlagLines()];
   const lines = [
     'qualor:',
     `  stage: ${yamlScalar(o.stage ?? 'test')}`,

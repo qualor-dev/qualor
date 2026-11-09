@@ -194,6 +194,9 @@ export class SetupChecklist {
     const count = allSet
       ? ALL_SET
       : $localize`:@@setup.count:${done}:done: of ${total}:total: done`;
+    let value = 0;
+    if (allSet) value = 100;
+    else if (total > 0) value = (100 * done) / total;
     return {
       allSet,
       count,
@@ -201,7 +204,7 @@ export class SetupChecklist {
       name: allSet
         ? $localize`:@@setup.launchAllSet:Set up Qualor, all set`
         : $localize`:@@setup.launchName:Set up Qualor, ${count}:count:`,
-      value: allSet ? 100 : total === 0 ? 0 : (100 * done) / total,
+      value,
       from: revealing ? revealing.from : null,
       steps: list.steps.map((s) => stepView(s, next, revealing?.steps ?? [])),
     };
@@ -447,6 +450,9 @@ export class SetupChecklist {
 /** A step as the list draws it. */
 function stepView(step: ChecklistStep, next: StepId | null, justDone: readonly StepId[]): StepView {
   const waiting = !step.done && step.hint === 'ask_server_admin';
+  let state: StepView['state'] = STATE.todo;
+  if (step.done) state = STATE.done;
+  else if (waiting) state = STATE.notCounted;
   return {
     id: step.id,
     name: NAMES[step.id],
@@ -456,6 +462,6 @@ function stepView(step: ChecklistStep, next: StepId | null, justDone: readonly S
     justDone: step.done && justDone.includes(step.id),
     link: step.done || waiting ? null : LINKS[step.id],
     hint: step.hint,
-    state: step.done ? STATE.done : waiting ? STATE.notCounted : STATE.todo,
+    state,
   };
 }

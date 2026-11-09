@@ -137,14 +137,14 @@ export function tokenCacheKey(parts: {
    */
   permissions?: Readonly<Record<string, string>>;
 }): string {
-  const scope = parts.permissions
-    ? `perm:${Object.entries(parts.permissions)
-        .map(([name, access]) => `${name}=${access}`)
-        .sort()
-        .join(',')}`
-    : parts.contents
-      ? 'contents'
-      : 'base';
+  let scope = parts.contents ? 'contents' : 'base';
+  if (parts.permissions) {
+    const granted = Object.entries(parts.permissions)
+      .map(([name, access]) => `${name}=${access}`)
+      .sort()
+      .join(',');
+    scope = `perm:${granted}`;
+  }
   return `${parts.connectionId}|${parts.credentials}|${parts.installationId}|${parts.repo.toLowerCase()}|${scope}`;
 }
 

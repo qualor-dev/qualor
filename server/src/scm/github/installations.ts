@@ -9,10 +9,10 @@ export type { GitHubInstallationAccess, GitHubRepoSummary };
 /** Installations one listing reads at most (100 to a page): far more than any App has. */
 const MAX_INSTALLATION_PAGES = 10;
 
+type GitHubClientOf = Extract<ReturnType<typeof githubClientFor>, { client: unknown }>['client'];
+
 /** Every installation the App's JWT lists (suspended ones left out): no token, no repository call. */
-async function allInstallations(
-  client: Extract<ReturnType<typeof githubClientFor>, { client: unknown }>['client'],
-): Promise<GitHubInstallationAccess[]> {
+async function allInstallations(client: GitHubClientOf): Promise<GitHubInstallationAccess[]> {
   const installations: GitHubInstallationAccess[] = [];
   for (let page = 1; page <= MAX_INSTALLATION_PAGES; page++) {
     const { items, hasMore } = await client.installations(page);
@@ -35,6 +35,33 @@ export async function listInstallations(
     throw new ScmError('refused', made.problem, { reason: 'invalid_input' });
   }
   return allInstallations(made.client);
+}
+
+/**
+ * The repositories of one installation, read until `want` are known across the installations
+ * (`known` are already). Null when GitHub refuses the installation's token: it is left out.
+ */
+async function readInstallationRepositories(
+  client: GitHubClientOf,
+  installation: GitHubInstallationAccess,
+  known: number,
+  want: number,
+): Promise<GitHubRepoSummary[] | null> {
+  const own: GitHubRepoSummary[] = [];
+  try {
+    for (let page = 1; ; page++) {
+      const { items, hasMore } = await client.installationRepositories(
+        installation.installationId,
+        page,
+      );
+      own.push(...items);
+      if (known + own.length >= want || !hasMore) return own;
+    }
+  } catch (err) {
+    // One broken installation (removed, or without a permission) must not hide the others.
+    if (err instanceof ScmError && (err.kind === 'auth' || err.kind === 'not_found')) return null;
+    throw err;
+  }
 }
 
 /**
@@ -68,27 +95,14 @@ export async function listInstallationRepositories(
   const found: GitHubRepoSummary[] = [];
   /** Installations whose repositories could not be read (a token GitHub refused): left out. */
   const unavailable = new Set<number>();
-  collect: for (const installation of installations) {
-    const own: GitHubRepoSummary[] = [];
-    try {
-      for (let page = 1; ; page++) {
-        const { items, hasMore } = await client.installationRepositories(
-          installation.installationId,
-          page,
-        );
-        own.push(...items);
-        if (found.length + own.length >= want || !hasMore) break;
-      }
-    } catch (err) {
-      // One broken installation (removed, or without a permission) must not hide the others.
-      if (err instanceof ScmError && (err.kind === 'auth' || err.kind === 'not_found')) {
-        unavailable.add(installation.installationId);
-        continue;
-      }
-      throw err;
+  for (const installation of installations) {
+    const own = await readInstallationRepositories(client, installation, found.length, want);
+    if (own === null) {
+      unavailable.add(installation.installationId);
+      continue;
     }
     found.push(...own);
-    if (found.length >= want) break collect;
+    if (found.length >= want) break;
   }
   return {
     repositories: found.slice(start, start + opts.perPage),

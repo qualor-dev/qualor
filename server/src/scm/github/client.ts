@@ -1234,9 +1234,10 @@ export class GitHubClient {
   async findOpenPullRequest(head: string): Promise<{ url: string } | null> {
     this.branchPath(head);
     const { owner } = this.repoRef();
+    const qualifiedHead = encodeURIComponent(`${owner}:${head}`);
     const { json } = await this.repoCall(
       'GET',
-      `${this.repoPath()}/pulls?state=open&head=${encodeURIComponent(`${owner}:${head}`)}&per_page=1`,
+      `${this.repoPath()}/pulls?state=open&head=${qualifiedHead}&per_page=1`,
     );
     const [found] = this.parse(z.array(createdPullRequest), json);
     return found ? { url: found.html_url } : null;

@@ -33,7 +33,7 @@ export class Lens {
   private readonly before = computed(() => {
     const from = this.from();
     const value = this.value();
-    if (from === null || value === null || !(from < value)) return null;
+    if (from === null || value === null || from >= value) return null;
     return lensGeometry(from, this.size());
   });
 

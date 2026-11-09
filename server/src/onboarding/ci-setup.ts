@@ -215,42 +215,58 @@ function addToInclude(text: string, root: YAMLMap, o: ComponentOptions): string 
   const keyCol = pair.key.range[0] - lineStart(text, pair.key.range[0]);
 
   if (isSeq(value)) return addToSeq(text, value, o);
-
-  if (isMap(value)) {
-    if (!value.range) return null;
-    if (value.flow) {
-      return applyEdits(text, [
-        { at: value.range[0], remove: 0, text: '[' },
-        { at: value.range[1], remove: 0, text: `, ${flowEntry(o)}]` },
-      ]);
-    }
-    const first = value.items[0]?.key as { range?: [number, number, number] } | undefined;
-    if (!first?.range) return null;
-    const ls = lineStart(text, first.range[0]);
-    const col = first.range[0] - ls;
-    if (text.slice(ls, first.range[0]).trim() !== '' || col - 2 < keyCol) return null;
-    const { at, prefix } = nextLine(text, value.range[1]);
-    return applyEdits(text, [
-      { at: ls, remove: col, text: `${' '.repeat(col - 2)}- ` },
-      { at, remove: 0, text: prefix + gitlabIncludeEntry(o, col - 2) },
-    ]);
-  }
-
+  if (isMap(value)) return addToIncludeMap(text, value, keyCol, o);
   if (isScalar(value) && typeof value.value === 'string' && value.range) {
-    const [start, end] = value.range;
-    const raw = text.slice(start, end);
-    if (raw.includes('\n') || /^[|>]/.test(raw)) return null;
-    let from = start;
-    while (text[from - 1] === ' ' || text[from - 1] === '\t') from--;
-    if (text[from - 1] !== ':') return null;
-    const pad = keyCol + 2;
-    const { at, prefix } = nextLine(text, end);
-    return applyEdits(text, [
-      { at: from, remove: end - from, text: `\n${' '.repeat(pad)}- ${raw}` },
-      { at, remove: 0, text: prefix + gitlabIncludeEntry(o, pad) },
-    ]);
+    return addToIncludeScalar(text, value.range, keyCol, o);
   }
   return null;
+}
+
+/** `include:` holds a single mapping: turns it into a sequence and appends the component. */
+function addToIncludeMap(
+  text: string,
+  value: YAMLMap,
+  keyCol: number,
+  o: ComponentOptions,
+): string | null {
+  if (!value.range) return null;
+  if (value.flow) {
+    return applyEdits(text, [
+      { at: value.range[0], remove: 0, text: '[' },
+      { at: value.range[1], remove: 0, text: `, ${flowEntry(o)}]` },
+    ]);
+  }
+  const first = value.items[0]?.key as { range?: [number, number, number] } | undefined;
+  if (!first?.range) return null;
+  const ls = lineStart(text, first.range[0]);
+  const col = first.range[0] - ls;
+  if (text.slice(ls, first.range[0]).trim() !== '' || col - 2 < keyCol) return null;
+  const { at, prefix } = nextLine(text, value.range[1]);
+  return applyEdits(text, [
+    { at: ls, remove: col, text: `${' '.repeat(col - 2)}- ` },
+    { at, remove: 0, text: prefix + gitlabIncludeEntry(o, col - 2) },
+  ]);
+}
+
+/** `include:` holds a single string: turns it into a sequence and appends the component. */
+function addToIncludeScalar(
+  text: string,
+  range: [number, number, number],
+  keyCol: number,
+  o: ComponentOptions,
+): string | null {
+  const [start, end] = range;
+  const raw = text.slice(start, end);
+  if (raw.includes('\n') || /^[|>]/.test(raw)) return null;
+  let from = start;
+  while (text[from - 1] === ' ' || text[from - 1] === '\t') from--;
+  if (text[from - 1] !== ':') return null;
+  const pad = keyCol + 2;
+  const { at, prefix } = nextLine(text, end);
+  return applyEdits(text, [
+    { at: from, remove: end - from, text: `\n${' '.repeat(pad)}- ${raw}` },
+    { at, remove: 0, text: prefix + gitlabIncludeEntry(o, pad) },
+  ]);
 }
 
 function addToSeq(text: string, seq: YAMLSeq, o: ComponentOptions): string | null {
@@ -268,30 +284,40 @@ function addToSeq(text: string, seq: YAMLSeq, o: ComponentOptions): string | nul
   return applyEdits(text, [{ at, remove: 0, text: prefix + gitlabIncludeEntry(o, indent) }]);
 }
 
+function scannerImage(i: CiSetupInput): string {
+  return i.csharp ? 'qualor/scanner-dotnet' : 'qualor/scanner';
+}
+
+function githubDescription(i: CiSetupInput): string[] {
+  return [
+    i.host === 'cloud' && !i.csharp
+      ? `The workflow \`${WORKFLOW_FILE}\` runs the Qualor Action pinned at v${minorOf(i.version)}.`
+      : `The workflow \`${WORKFLOW_FILE}\` runs the Qualor scanner image ${scannerImage(i)}:${i.version}.`,
+    'The token is stored as the Actions secret `QUALOR_TOKEN`; it is not in any file. The server address and the project key are in the workflow.',
+    `To remove it, delete \`${WORKFLOW_FILE}\` and the \`QUALOR_TOKEN\` secret.`,
+  ];
+}
+
+function gitlabDescription(i: CiSetupInput): string[] {
+  const cloud = i.host === 'cloud';
+  const removal = cloud ? 'delete the include entry' : 'delete the `qualor` job';
+  return [
+    cloud
+      ? `\`${GITLAB_FILE}\` includes the Qualor CI/CD component pinned at ${minorOf(i.version)}.`
+      : `\`${GITLAB_FILE}\` gets a \`qualor\` job that runs the scanner image ${scannerImage(i)}:${i.version}.`,
+    'The token is stored as the masked CI/CD variable `QUALOR_TOKEN` and the server address as `QUALOR_URL`; neither is in any file.',
+    `To remove it, ${removal} and the two CI/CD variables.`,
+  ];
+}
+
 function descriptionFor(i: CiSetupInput): string {
   const lines = [
     `Qualor analyses every ${i.provider === 'gitlab' ? 'merge request' : 'pull request'} and every push to the default branch, and reports the result there.`,
     "On each tag, it records a version: the release's dependency list.",
     `The analyses go to the Qualor project \`${i.projectKey}\`.`,
     '',
+    ...(i.provider === 'github' ? githubDescription(i) : gitlabDescription(i)),
   ];
-  if (i.provider === 'github') {
-    lines.push(
-      i.host === 'cloud' && !i.csharp
-        ? `The workflow \`${WORKFLOW_FILE}\` runs the Qualor Action pinned at v${minorOf(i.version)}.`
-        : `The workflow \`${WORKFLOW_FILE}\` runs the Qualor scanner image ${i.csharp ? 'qualor/scanner-dotnet' : 'qualor/scanner'}:${i.version}.`,
-      'The token is stored as the Actions secret `QUALOR_TOKEN`; it is not in any file. The server address and the project key are in the workflow.',
-      `To remove it, delete \`${WORKFLOW_FILE}\` and the \`QUALOR_TOKEN\` secret.`,
-    );
-  } else {
-    lines.push(
-      i.host === 'cloud'
-        ? `\`${GITLAB_FILE}\` includes the Qualor CI/CD component pinned at ${minorOf(i.version)}.`
-        : `\`${GITLAB_FILE}\` gets a \`qualor\` job that runs the scanner image ${i.csharp ? 'qualor/scanner-dotnet' : 'qualor/scanner'}:${i.version}.`,
-      'The token is stored as the masked CI/CD variable `QUALOR_TOKEN` and the server address as `QUALOR_URL`; neither is in any file.',
-      `To remove it, ${i.host === 'cloud' ? 'delete the include entry' : 'delete the `qualor` job'} and the two CI/CD variables.`,
-    );
-  }
   if (i.provider === 'github' && i.host === 'self-hosted') {
     lines.push('The job needs a Linux runner with Docker (labels `self-hosted` and `linux`).');
   }
@@ -309,37 +335,51 @@ function descriptionFor(i: CiSetupInput): string {
   return lines.join('\n');
 }
 
-export function planCiSetup(input: CiSetupInput): CiPlan {
-  const minor = minorOf(input.version);
-  const { existing, projectKey } = input;
-  const change = (files: { path: string; content: string; update: boolean }[]): CiPlan => ({
+type ChangeFiles = { path: string; content: string; update: boolean }[];
+
+function changePlan(input: CiSetupInput, files: ChangeFiles): CiPlan {
+  return {
     kind: 'change',
     files,
     secrets: [{ name: 'QUALOR_TOKEN' }],
     variables: input.provider === 'gitlab' ? [{ key: 'QUALOR_URL', value: input.serverUrl }] : [],
     description: descriptionFor(input),
+  };
+}
+
+function planGithub(input: CiSetupInput): CiPlan {
+  const { existing } = input;
+  const content = githubWorkflow({
+    host: input.host,
+    csharp: input.csharp,
+    serverUrl: input.serverUrl,
+    projectKey: input.projectKey,
+    version: input.version,
+    minor: minorOf(input.version),
+    defaultBranch: input.defaultBranch,
   });
-
-  if (input.provider === 'github') {
-    const content = githubWorkflow({
-      host: input.host,
-      csharp: input.csharp,
-      serverUrl: input.serverUrl,
-      projectKey: input.projectKey,
-      version: input.version,
-      minor,
-      defaultBranch: input.defaultBranch,
-    });
-    const hasWorkflow =
-      existing.workflowFiles.some((f) => /^qualor[^/]*$/i.test(f.split('/').pop() ?? '')) ||
-      existing.workflowTexts.some(runsQualor);
-    if (existing.tokenSecretSet || existing.inheritedTokenSet || hasWorkflow) {
-      return { kind: 'snippet', reason: 'already_set_up', snippet: content };
-    }
-    return change([{ path: WORKFLOW_FILE, content, update: false }]);
+  const hasWorkflow =
+    existing.workflowFiles.some((f) => /^qualor[^/]*$/i.test(f.split('/').pop() ?? '')) ||
+    existing.workflowTexts.some(runsQualor);
+  if (existing.tokenSecretSet || existing.inheritedTokenSet || hasWorkflow) {
+    return { kind: 'snippet', reason: 'already_set_up', snippet: content };
   }
+  return changePlan(input, [{ path: WORKFLOW_FILE, content, update: false }]);
+}
 
-  // GitLab
+/** True when the repository already runs Qualor, judged from its `.gitlab-ci.yml`. */
+function gitlabAlreadyRunsQualor(
+  text: string | null,
+  parsed: Parsed | { ok: true; root: null },
+): boolean {
+  if (text !== null && runsQualor(text)) return true;
+  if (parsed.ok) return hasQualorEntry(parsed.root);
+  return text !== null && (/qualor\/qualor/.test(text) || /^qualor:/m.test(text));
+}
+
+function planGitlab(input: CiSetupInput): CiPlan {
+  const minor = minorOf(input.version);
+  const { existing, projectKey } = input;
   const text = existing.gitlabCi;
   const parsed = text === null ? ({ ok: true, root: null } as const) : parseGitlab(text);
   const stage = parsed.ok ? stageFor(parsed.root) : null;
@@ -348,12 +388,11 @@ export function planCiSetup(input: CiSetupInput): CiPlan {
       ? gitlabIncludeSnippet({ minor, stage: st, csharp: input.csharp, projectKey })
       : gitlabPlainJob({ version: input.version, stage: st, csharp: input.csharp, projectKey });
 
-  const already =
-    (text !== null && runsQualor(text)) ||
-    (parsed.ok
-      ? hasQualorEntry(parsed.root)
-      : text !== null && (/qualor\/qualor/.test(text) || /^qualor:/m.test(text)));
-  if (existing.tokenSecretSet || existing.inheritedTokenSet || already) {
+  if (
+    existing.tokenSecretSet ||
+    existing.inheritedTokenSet ||
+    gitlabAlreadyRunsQualor(text, parsed)
+  ) {
     return { kind: 'snippet', reason: 'already_set_up', snippet: snippetFor(stage) };
   }
   if (!parsed.ok) return { kind: 'snippet', reason: 'yaml_unsupported', snippet: snippetFor(null) };
@@ -383,5 +422,9 @@ export function planCiSetup(input: CiSetupInput): CiPlan {
   if (!editIsSound(parsed.root, content, input.host === 'self-hosted' ? 'job' : 'include')) {
     return unsupported();
   }
-  return change([{ path: GITLAB_FILE, content, update: text !== null }]);
+  return changePlan(input, [{ path: GITLAB_FILE, content, update: text !== null }]);
+}
+
+export function planCiSetup(input: CiSetupInput): CiPlan {
+  return input.provider === 'github' ? planGithub(input) : planGitlab(input);
 }
