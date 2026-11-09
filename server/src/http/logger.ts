@@ -96,7 +96,7 @@ function reqSerializer(req: SerializableRequest): Record<string, unknown> {
   const cut =
     url?.startsWith(SSO_PATH_PREFIX) ||
     url?.startsWith(UNSUBSCRIBE_PATH) ||
-    req.routeOptions?.url === UNSUBSCRIBE_PATH
+    req.routeOptions?.url?.startsWith(UNSUBSCRIBE_PATH)
       ? url?.split('?', 1)[0]
       : url;
   return {

@@ -17,7 +17,11 @@ import { ProblemError } from '../http/problem';
 import { idParams, noContent } from '../http/schemas';
 import { mailConfigured } from '../mail/settings';
 import { publicLink } from '../mail/templates/text';
-import { MAX_TOKEN_LENGTH, verifyUnsubscribeToken } from '../notifications/unsubscribe';
+import {
+  MAX_TOKEN_LENGTH,
+  verifyUnsubscribeToken,
+  verifyVulnerabilityUnsubscribeToken,
+} from '../notifications/unsubscribe';
 import { projectForUser } from '../projects/access';
 
 const branches = z.enum(WATCH_BRANCHES);
@@ -370,6 +374,74 @@ export const unsubscribeRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
     },
     async (request, reply) => {
       const path = `/unsubscribe#t=${encodeURIComponent(request.query.t)}`;
+      return reply
+        .code(303)
+        .header('location', publicLink(deps.config.publicUrl, path) ?? path)
+        .send();
+    },
+  );
+
+  app.post(
+    '/notifications/unsubscribe/vulnerabilities',
+    {
+      config: {
+        public: true,
+        rateLimit: { max: 30, timeWindow: 60_000 },
+        openapi: {
+          problems: [400, 429],
+          problemDescriptions: { 400: 'TOKEN_INVALID (the link is not one this server made)' },
+        },
+      },
+      schema: {
+        tags: ['notifications'],
+        summary: 'Stop the vulnerability emails of an email link (one click, no sign-in)',
+        description:
+          'The token of the link in a vulnerability email (`t`). Turns "New vulnerabilities in tracked versions" off on every watch of that user and keeps the watches; idempotent. Any body (RFC 8058 `List-Unsubscribe=One-Click`, urlencoded or multipart, or none) is ignored. A GET only redirects to the page that asks first: link scanners must not unsubscribe people.',
+        security: [],
+        querystring: tokenQuery,
+        response: { 200: z.object({}) },
+      },
+    },
+    async (request) => {
+      const parsed = verifyVulnerabilityUnsubscribeToken(deps.config.secretKey, request.query.t);
+      if (!parsed) {
+        throw new ProblemError(400, 'TOKEN_INVALID', 'This unsubscribe link is not valid');
+      }
+      await deps.db
+        .update(projectWatches)
+        .set({ newVulnerabilities: false, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(projectWatches.userId, parsed.userId),
+            eq(projectWatches.newVulnerabilities, true),
+          ),
+        );
+      return {};
+    },
+  );
+
+  app.get(
+    '/notifications/unsubscribe/vulnerabilities',
+    {
+      config: {
+        public: true,
+        rateLimit: { max: 30, timeWindow: 60_000 },
+        openapi: { problems: [429] },
+      },
+      schema: {
+        tags: ['notifications'],
+        summary: 'Open the stop page of a vulnerability email link (changes nothing)',
+        description:
+          'Redirects to the UI page `/unsubscribe/vulnerabilities#t=…`, which asks before it stops anything: link scanners must not unsubscribe people. The token is not checked here.',
+        security: [],
+        querystring: tokenQuery,
+        response: {
+          303: z.undefined().describe('To /unsubscribe/vulnerabilities#t=<token> (Location)'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const path = `/unsubscribe/vulnerabilities#t=${encodeURIComponent(request.query.t)}`;
       return reply
         .code(303)
         .header('location', publicLink(deps.config.publicUrl, path) ?? path)

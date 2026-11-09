@@ -20,6 +20,7 @@ export const UNAUDITED_MUTATIONS: ReadonlySet<string> = new Set([
   'DELETE /projects/:id/watch',
   'PUT /me/notifications',
   'POST /notifications/unsubscribe',
+  'POST /notifications/unsubscribe/vulnerabilities',
   // GitHub's own deliveries, and GitLab's, which only queue a scan of a merge request's notes.
   'POST /api/v0/github/webhooks/:connectionId',
   'POST /api/v0/gitlab/webhooks/:connectionId',

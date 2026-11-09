@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   addMember,
   createProject,
@@ -22,7 +22,7 @@ import {
   projectWatches,
   users,
 } from '../db/schema';
-import { unsubscribeToken } from '../notifications/unsubscribe';
+import { unsubscribeToken, vulnerabilityUnsubscribeToken } from '../notifications/unsubscribe';
 
 const ON = {
   branches: 'all',
@@ -405,6 +405,104 @@ describe('watch, notification and unsubscribe routes (mail E3)', () => {
     const other = nextIp();
     for (let i = 0; i < 30; i++) expect((await openLink('garbage', other)).statusCode).toBe(303);
     expect((await openLink('garbage', other)).statusCode).toBe(429);
+  });
+
+  describe('the vulnerability emails stop (4b)', () => {
+    const VULN = '/api/v0/notifications/unsubscribe/vulnerabilities';
+    const stop = (t: string, ip = nextIp(), body: Body = 'form') =>
+      ctx.app.inject({
+        method: 'POST',
+        url: `${VULN}?t=${encodeURIComponent(t)}`,
+        remoteAddress: ip,
+        ...bodyOf(body),
+      });
+    beforeEach(async () => {
+      await ctx.db.delete(projectWatches).where(eq(projectWatches.userId, viewerId));
+    });
+    const flags = async () =>
+      (
+        await ctx.db
+          .select({ id: projectWatches.projectId, on: projectWatches.newVulnerabilities })
+          .from(projectWatches)
+          .where(eq(projectWatches.userId, viewerId))
+      )
+        .map((w) => w.on)
+        .sort();
+
+    it('switches the flag off on all the watches, keeps them, and is idempotent', async () => {
+      const second = (
+        await createProject(ctx, owner, { organizationId: org, key: 'nr/vuln-two', name: 'Two' })
+      ).id;
+      await ctx.db.delete(projectWatches).where(eq(projectWatches.userId, viewerId));
+      await watch(ctx.db, viewerId, projectId, { branches: 'main' });
+      await watch(ctx.db, viewerId, second);
+      const token = vulnerabilityUnsubscribeToken(ctx.config.secretKey, viewerId);
+      for (const body of ['form', 'json', 'none'] as const) {
+        const res = await stop(token, nextIp(), body);
+        expect(res.statusCode, `${body}: ${res.body}`).toBe(200);
+        expect(res.json()).toEqual({});
+        expect(await flags(), body).toEqual([false, false]);
+      }
+      expect(await watchesOf(viewerId, projectId)).toHaveLength(1);
+      const [kept] = await watchesOf(viewerId, projectId);
+      expect(kept).toMatchObject({ branches: 'main', gateFailed: true });
+      await ctx.db.delete(projectWatches).where(eq(projectWatches.userId, viewerId));
+    });
+
+    it('refuses a bad token, and a project token, with 400 TOKEN_INVALID', async () => {
+      await watch(ctx.db, viewerId, projectId);
+      for (const bad of [
+        'garbage-token-value',
+        unsubscribeToken(ctx.config.secretKey, viewerId, projectId),
+      ]) {
+        const res = await stop(bad);
+        expect(res.statusCode).toBe(400);
+        expect(res.json()).toMatchObject({ code: 'TOKEN_INVALID' });
+      }
+      expect(await flags()).toEqual([true]);
+      // And the project route refuses a vulnerability token.
+      const vuln = vulnerabilityUnsubscribeToken(ctx.config.secretKey, viewerId);
+      expect((await unsubscribe(vuln)).statusCode).toBe(400);
+      expect(await watchesOf(viewerId, projectId)).toHaveLength(1);
+      await ctx.db.delete(projectWatches).where(eq(projectWatches.userId, viewerId));
+    });
+
+    it('redirects a GET to the page that asks first and changes nothing', async () => {
+      await watch(ctx.db, viewerId, projectId);
+      const token = vulnerabilityUnsubscribeToken(ctx.config.secretKey, viewerId);
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `${VULN}?t=${encodeURIComponent(token)}`,
+        remoteAddress: nextIp(),
+      });
+      expect(res.statusCode).toBe(303);
+      expect(res.headers.location).toBe(`${PUBLIC_URL}/unsubscribe/vulnerabilities#t=${token}`);
+      expect(await flags()).toEqual([true]);
+      await ctx.db.delete(projectWatches).where(eq(projectWatches.userId, viewerId));
+    });
+
+    it('keeps the token out of the request log, including another spelling of the path', async () => {
+      const token = vulnerabilityUnsubscribeToken(ctx.config.secretKey, viewerId);
+      const from = ctx.logs.length;
+      expect((await stop(token)).statusCode).toBe(200);
+      const spelled = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/v0/notifications/unsubscribe/vulnerabilitie%73?t=${encodeURIComponent(token)}`,
+        remoteAddress: nextIp(),
+      });
+      expect(spelled.statusCode).toBe(200);
+      const lines = ctx.logs.slice(from).join('\n');
+      expect(lines).toContain(`"url":"${VULN}"`);
+      for (const secret of [token, encodeURIComponent(token), token.split('.')[1]!]) {
+        expect(lines).not.toContain(secret);
+      }
+    });
+
+    it('allows 30 requests a minute per address', async () => {
+      const ip = nextIp();
+      for (let i = 0; i < 30; i++) expect((await stop('garbage', ip)).statusCode).toBe(400);
+      expect((await stop('garbage', ip)).statusCode).toBe(429);
+    });
   });
 });
 

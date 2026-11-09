@@ -1,5 +1,6 @@
-import { and, asc, eq, isNotNull, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, ne, sql, type SQL } from 'drizzle-orm';
 import { projectVisibleTo } from '../auth/facts';
+import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
 import { notificationPreferences, projects, projectWatches, users } from '../db/schema';
 
@@ -58,5 +59,42 @@ export async function watchersFor(
     .leftJoin(notificationPreferences, eq(notificationPreferences.userId, users.id))
     .where(and(...conditions))
     .orderBy(asc(users.email), asc(users.id));
+  return rows.flatMap((r) => (r.email === null ? [] : [{ ...r, email: r.email }]));
+}
+
+/**
+ * 4b: the watchers of the given projects with `new_vulnerabilities` on, one row per (watcher,
+ * project): active, with an address, notification email on (no preferences row = on), not the demo
+ * user, and able to see the project. The watch's branch scope does not matter: vulnerability mail
+ * is about tracked branches and versions, not about one branch of an analysis.
+ */
+export async function vulnerabilityWatchers(
+  tx: Executor,
+  input: { projectIds: readonly string[]; demoUser: string | null },
+): Promise<Array<Watcher & { projectId: string }>> {
+  if (input.projectIds.length === 0) return [];
+  const conditions: SQL[] = [
+    inArray(projectWatches.projectId, uuidList(input.projectIds)),
+    eq(projectWatches.newVulnerabilities, true),
+    eq(users.active, true),
+    isNotNull(users.email),
+    sql`${notificationPreferences.email} IS NOT FALSE`,
+    projectVisibleTo(users, projects),
+  ];
+  if (input.demoUser !== null) conditions.push(ne(users.username, input.demoUser));
+  const rows = await tx
+    .select({
+      userId: users.id,
+      email: users.email,
+      username: users.username,
+      displayName: users.displayName,
+      projectId: projectWatches.projectId,
+    })
+    .from(projectWatches)
+    .innerJoin(users, eq(users.id, projectWatches.userId))
+    .innerJoin(projects, eq(projects.id, projectWatches.projectId))
+    .leftJoin(notificationPreferences, eq(notificationPreferences.userId, users.id))
+    .where(and(...conditions))
+    .orderBy(asc(users.email), asc(users.id), asc(projectWatches.projectId));
   return rows.flatMap((r) => (r.email === null ? [] : [{ ...r, email: r.email }]));
 }

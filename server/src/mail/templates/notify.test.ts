@@ -3,13 +3,19 @@ import { describe, expect, it } from 'vitest';
 import { renderAnalysisFailed } from './notify-analysis-failed';
 import { metricLabel } from './notify-common';
 import { renderGateFailed } from './notify-gate-failed';
+import { renderExploitedAlert } from './notify-exploited';
 import { renderGateRecovered } from './notify-gate-recovered';
+import { renderVulnerabilityDigest } from './notify-vulnerabilities';
+import { capRows, type VulnerabilityMailProject } from './notify-vulnerability-common';
 import {
   NO_LINKS,
   SAMPLE_ANALYSIS_FAILED,
   SAMPLE_GATE_FAILED,
   SAMPLE_GATE_FAILED_MR,
   SAMPLE_GATE_RECOVERED,
+  SAMPLE_VULNERABILITY_PROJECTS,
+  SAMPLE_VULNERABILITY_LINKS,
+  NO_VULNERABILITY_LINKS,
 } from './notify-samples';
 
 const BRANCH_URL =
@@ -168,5 +174,133 @@ describe('project notification templates (mail E3)', () => {
     for (const key of allMetricKeys()) expect(metricLabel(key), key).not.toBe(key);
     expect(metricLabel('new_coverage')).toBe('Coverage on new code');
     expect(metricLabel('coverage')).toBe('Coverage');
+  });
+});
+
+describe('vulnerability emails (4b)', () => {
+  const PROJECT_URL =
+    'https://qualor.example.com/projects/0190a6c2-0000-7000-8000-0000000000b1/vulnerabilities';
+  const digest = (projects = SAMPLE_VULNERABILITY_PROJECTS, links = SAMPLE_VULNERABILITY_LINKS) =>
+    renderVulnerabilityDigest({ projects, databaseDate: new Date('2026-11-02T03:00:00Z'), links });
+  const project = (n: number, rows = 1): VulnerabilityMailProject => ({
+    id: `0190a6c2-0000-7000-8000-00000000010${n}`,
+    name: `Project ${n}`,
+    rows: Array.from({ length: rows }, (_, i) => ({
+      ...SAMPLE_VULNERABILITY_PROJECTS[0]!.rows[0]!,
+      vulnerabilityId: `CVE-2026-${String(1000 + i)}`,
+    })),
+    more: 0,
+  });
+
+  it('digest: subject for one project and for three', () => {
+    expect(digest().subject).toBe('New vulnerabilities in Payments API');
+    expect(digest([project(1), project(2), project(3)]).subject).toBe(
+      'New vulnerabilities in 3 projects',
+    );
+  });
+
+  it('digest: a table per project with the id, severity, package, fix and targets', () => {
+    const mail = digest();
+    for (const part of [mail.html, mail.text]) {
+      expect(part).toContain('CVE-2026-1111');
+      expect(part).toContain('Critical');
+      expect(part).toContain('Exploited');
+      expect(part).toContain('lodash');
+      expect(part).toContain('4.17.20, 4.17.21');
+      expect(part).toContain('4.17.22');
+      expect(part).toContain('No fix yet');
+      expect(part).toContain('main, 2.3.4');
+      expect(part).toContain('Vulnerability data from 2026-11-02');
+    }
+    for (const heading of ['Vulnerability', 'Package', 'Fixed in', 'In']) {
+      expect(mail.html).toContain(`>${heading}</td>`);
+    }
+    expect(mail.html).toContain(`href="${PROJECT_URL}"`);
+  });
+
+  it('digest: the reason and the two footer links', () => {
+    const mail = digest();
+    for (const part of [mail.html, mail.text]) {
+      expect(flat(part)).toContain(
+        'You get this because you watch these projects with New vulnerabilities in tracked versions on.',
+      );
+    }
+    expect(mail.html).toContain('>Stop vulnerability emails</a> · <a ');
+    expect(mail.text).toContain(
+      'Stop vulnerability emails: https://qualor.example.com/unsubscribe/vulnerabilities#t=sample.token\nNotification settings: https://qualor.example.com/settings/notifications\n',
+    );
+  });
+
+  it('digest: leaves the data date out when it is unknown', () => {
+    const mail = renderVulnerabilityDigest({
+      projects: SAMPLE_VULNERABILITY_PROJECTS,
+      databaseDate: null,
+      links: SAMPLE_VULNERABILITY_LINKS,
+    });
+    expect(mail.text).not.toContain('Vulnerability data from');
+  });
+
+  it('exploited: subject, and each row says when CISA listed it', () => {
+    const mail = renderExploitedAlert({
+      projects: SAMPLE_VULNERABILITY_PROJECTS,
+      links: SAMPLE_VULNERABILITY_LINKS,
+    });
+    expect(mail.subject).toBe('Exploited vulnerabilities in Payments API');
+    expect(
+      renderExploitedAlert({
+        projects: [project(1), project(2), project(3)],
+        links: SAMPLE_VULNERABILITY_LINKS,
+      }).subject,
+    ).toBe('Exploited vulnerabilities in 3 projects');
+    expect(flat(mail.text)).toContain('Added to the CISA KEV catalog on 2026-10-30');
+    expect(mail.html).toContain(`href="${PROJECT_URL}"`);
+  });
+
+  it('without a public URL: no link anywhere', () => {
+    for (const mail of [
+      digest(SAMPLE_VULNERABILITY_PROJECTS, NO_VULNERABILITY_LINKS),
+      renderExploitedAlert({
+        projects: SAMPLE_VULNERABILITY_PROJECTS,
+        links: NO_VULNERABILITY_LINKS,
+      }),
+    ]) {
+      expect(mail.html).not.toContain('qualor.example.com');
+      expect([...mail.html.matchAll(/href="([^"]+)"/g)].map((m) => m[1])).toEqual([
+        'https://qualor.dev',
+      ]);
+      expect(mail.text).not.toMatch(/https?:\/\//);
+      expect(mail.text).not.toContain('Stop vulnerability emails');
+    }
+  });
+
+  it('caps a project at 20 rows with the rest counted, under 90 KB', () => {
+    const big = project(1, 300);
+    for (const mail of [
+      digest([big]),
+      renderExploitedAlert({ projects: [big], links: SAMPLE_VULNERABILITY_LINKS }),
+    ]) {
+      expect(mail.text.match(/CVE-2026-/g)).toHaveLength(20);
+      expect(flat(mail.text)).toContain('And 280 more on the Vulnerabilities tab.');
+      expect(Buffer.byteLength(mail.html)).toBeLessThan(90 * 1024);
+    }
+  });
+
+  it('capRows: 20 per project, 100 per email, later projects stay listed with their count', () => {
+    const capped = capRows([1, 2, 3, 4, 5, 6, 7].map((n) => project(n, 30)));
+    expect(capped.map((p) => p.rows.length)).toEqual([20, 20, 20, 20, 20, 0, 0]);
+    expect(capped.map((p) => p.more)).toEqual([10, 10, 10, 10, 10, 30, 30]);
+    expect(capRows(capped)).toEqual(capped);
+    expect(capRows([project(1, 3)])[0]).toMatchObject({ more: 0 });
+    const mail = digest(capped);
+    expect(mail.text).toContain('Project 7');
+    expect(flat(mail.text)).toContain('30 more on the Vulnerabilities tab.');
+  });
+
+  it('escapes names and titles', () => {
+    const row = { ...SAMPLE_VULNERABILITY_PROJECTS[0]!.rows[0]!, title: '<script>x</script>' };
+    const mail = digest([{ ...project(1), name: '<b>P</b>', rows: [row] }]);
+    expect(mail.html).not.toContain('<script>');
+    expect(mail.html).not.toContain('<b>P</b>');
+    expect(mail.subject).toBe('New vulnerabilities in <b>P</b>');
   });
 });

@@ -8,8 +8,14 @@ import {
   type GateMailInput,
   type NotifyLinks,
 } from './notify-common';
+import { renderExploitedAlert } from './notify-exploited';
 import { renderGateFailed } from './notify-gate-failed';
 import { renderGateRecovered } from './notify-gate-recovered';
+import { renderVulnerabilityDigest } from './notify-vulnerabilities';
+import type {
+  VulnerabilityMailLinks,
+  VulnerabilityMailProject,
+} from './notify-vulnerability-common';
 import { instanceHost, publicLink } from './text';
 import { renderWebhookFailed } from './webhook-failed';
 
@@ -23,8 +29,18 @@ export function sampleLinks(publicUrl: string | null): NotifyLinks {
   };
 }
 
+/** A vulnerability email's sample links: its stop page is its own. */
+export function sampleVulnerabilityLinks(publicUrl: string | null): VulnerabilityMailLinks {
+  return {
+    ...sampleLinks(publicUrl),
+    unsubscribeUrl: publicLink(publicUrl, '/unsubscribe/vulnerabilities#t=sample.token'),
+  };
+}
+
 export const SAMPLE_LINKS: NotifyLinks = sampleLinks('https://qualor.example.com');
 export const NO_LINKS: NotifyLinks = sampleLinks(null);
+export const SAMPLE_VULNERABILITY_LINKS = sampleVulnerabilityLinks('https://qualor.example.com');
+export const NO_VULNERABILITY_LINKS = sampleVulnerabilityLinks(null);
 
 const FAILED_GATE: GateResult = {
   status: 'failed',
@@ -102,6 +118,35 @@ export const SAMPLE_ANALYSIS_FAILED: AnalysisFailedMailInput = {
   links: SAMPLE_LINKS,
 };
 
+export const SAMPLE_VULNERABILITY_PROJECTS: VulnerabilityMailProject[] = [
+  {
+    ...PROJECT,
+    rows: [
+      {
+        vulnerabilityId: 'CVE-2026-1111',
+        severity: 'critical',
+        title: 'Prototype pollution in merge',
+        exploited: { dateAdded: '2026-10-30' },
+        packageName: 'lodash',
+        installedVersions: ['4.17.20', '4.17.21'],
+        fixedVersion: '4.17.22',
+        targets: ['main', '2.3.4'],
+      },
+      {
+        vulnerabilityId: 'GHSA-xxxx-yyyy-zzzz',
+        severity: 'high',
+        title: null,
+        exploited: null,
+        packageName: 'express',
+        installedVersions: ['4.18.0'],
+        fixedVersion: null,
+        targets: ['main'],
+      },
+    ],
+    more: 0,
+  },
+];
+
 /**
  * Mail E3's samples for E1's sampleMails(), named after their kind: the three notifications (and
  * the merge request variant), and E1's failing-webhook alert as organisation administrators get it.
@@ -118,6 +163,21 @@ export function notifySamples(publicUrl: string | null): { name: string; mail: R
     {
       name: 'notify.analysis-failed',
       mail: renderAnalysisFailed({ ...SAMPLE_ANALYSIS_FAILED, links }),
+    },
+    {
+      name: 'notify.vulnerabilities',
+      mail: renderVulnerabilityDigest({
+        projects: SAMPLE_VULNERABILITY_PROJECTS,
+        databaseDate: new Date('2026-11-02T03:00:00Z'),
+        links: sampleVulnerabilityLinks(publicUrl),
+      }),
+    },
+    {
+      name: 'notify.exploited',
+      mail: renderExploitedAlert({
+        projects: SAMPLE_VULNERABILITY_PROJECTS,
+        links: sampleVulnerabilityLinks(publicUrl),
+      }),
     },
     {
       name: 'webhook.failed-organization',

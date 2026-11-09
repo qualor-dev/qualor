@@ -3656,6 +3656,115 @@
         }
       }
     },
+    "/api/v0/notifications/unsubscribe/vulnerabilities": {
+      "post": {
+        "summary": "Stop the vulnerability emails of an email link (one click, no sign-in)",
+        "tags": [
+          "notifications"
+        ],
+        "description": "The token of the link in a vulnerability email (`t`). Turns \"New vulnerabilities in tracked versions\" off on every watch of that user and keeps the watches; idempotent. Any body (RFC 8058 `List-Unsubscribe=One-Click`, urlencoded or multipart, or none) is ignored. A GET only redirects to the page that asks first: link scanners must not unsubscribe people.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 400
+            },
+            "in": "query",
+            "name": "t",
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "TOKEN_INVALID (the link is not one this server made)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (RATE_LIMITED); see Retry-After",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Open the stop page of a vulnerability email link (changes nothing)",
+        "tags": [
+          "notifications"
+        ],
+        "description": "Redirects to the UI page `/unsubscribe/vulnerabilities#t=…`, which asks before it stops anything: link scanners must not unsubscribe people. The token is not checked here.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 400
+            },
+            "in": "query",
+            "name": "t",
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "303": {
+            "description": "To /unsubscribe/vulnerabilities#t=<token> (Location)"
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (RATE_LIMITED); see Retry-After",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v0/organizations": {
       "get": {
         "summary": "Organisations you belong to (all, for instance admins)",

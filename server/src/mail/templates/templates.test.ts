@@ -31,6 +31,8 @@ describe('the E1 messages (E1 spec, Templates)', () => {
       ['notify.gate-failed-mr', 'Payments API: quality gate failed on !42'],
       ['notify.gate-recovered', 'Payments API: quality gate passes again on main'],
       ['notify.analysis-failed', 'Payments API: an analysis of feature/refunds failed'],
+      ['notify.vulnerabilities', 'New vulnerabilities in Payments API'],
+      ['notify.exploited', 'Exploited vulnerabilities in Payments API'],
       ['webhook.failed-organization', 'Webhook to hooks.example.com is failing'],
     ]);
   });

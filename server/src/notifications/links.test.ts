@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { watchLinks, withUnsubscribe } from './links';
-import { unsubscribeToken } from './unsubscribe';
+import { vulnerabilityMailLinks, watchLinks, withUnsubscribe } from './links';
+import { unsubscribeToken, vulnerabilityUnsubscribeToken } from './unsubscribe';
 
 const KEY = 'test-secret-key-that-is-at-least-32-characters';
 const USER = '0190a6c2-0000-7000-8000-00000000000a';
@@ -40,6 +40,40 @@ describe('links in notification email (mail E3)', () => {
     expect(withUnsubscribe(MAIL, null, 'a.b')).toEqual(MAIL);
     expect(withUnsubscribe(MAIL, 'https://q.example.com', 'a.b').headers).toEqual({
       'List-Unsubscribe': '<https://q.example.com/api/v0/notifications/unsubscribe?t=a.b>',
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    });
+  });
+
+  it('builds the vulnerability email links: its own stop page, the same settings page', () => {
+    const token = vulnerabilityUnsubscribeToken(KEY, USER);
+    expect(
+      vulnerabilityMailLinks({ publicUrl: 'https://qualor.example.com/q', secretKey: KEY }, USER),
+    ).toEqual({
+      publicUrl: 'https://qualor.example.com/q',
+      instanceHost: 'qualor.example.com',
+      token,
+      unsubscribeUrl: `https://qualor.example.com/q/unsubscribe/vulnerabilities#t=${token}`,
+      settingsUrl: 'https://qualor.example.com/q/settings/notifications',
+    });
+    expect(vulnerabilityMailLinks({ publicUrl: null, secretKey: KEY }, USER)).toMatchObject({
+      publicUrl: null,
+      instanceHost: null,
+      unsubscribeUrl: null,
+      settingsUrl: null,
+    });
+  });
+
+  it('points the headers of a vulnerability email at its own endpoint', () => {
+    expect(
+      withUnsubscribe(
+        MAIL,
+        'https://q.example.com',
+        'a.b',
+        '/api/v0/notifications/unsubscribe/vulnerabilities',
+      ).headers,
+    ).toEqual({
+      'List-Unsubscribe':
+        '<https://q.example.com/api/v0/notifications/unsubscribe/vulnerabilities?t=a.b>',
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     });
   });

@@ -15,7 +15,7 @@ import {
   projectMemberships,
   projectWatches,
 } from '../db/schema';
-import { watchersFor, type NotifyEvent } from './recipients';
+import { vulnerabilityWatchers, watchersFor, type NotifyEvent } from './recipients';
 
 describe('who gets a project notification (mail E3 N4)', () => {
   let ctx: TestContext;
@@ -132,5 +132,34 @@ describe('who gets a project notification (mail E3 N4)', () => {
     ).toHaveLength(1);
     await addMember(ctx, org, id, 'viewer');
     expect(await who('gate.failed', true)).toContain('main-watcher');
+  });
+
+  it('vulnerabilityWatchers: the new_vulnerabilities watchers, whatever the branch scope', async () => {
+    const names = async (projectIds: string[], demoUser: string | null = 'guest') =>
+      (await vulnerabilityWatchers(ctx.db, { projectIds, demoUser })).map((w) => w.username).sort();
+    // main-watcher lost access in the test above and got it back: it watches 'main' only.
+    expect(await names([projectId])).toEqual([
+      'all-watcher',
+      'grant-only',
+      'instance-admin',
+      'main-watcher',
+      'no-gate-failed',
+    ]);
+    await ctx.db
+      .update(projectWatches)
+      .set({ newVulnerabilities: false })
+      .where(eq(projectWatches.userId, ids['all-watcher']!));
+    expect(await names([projectId])).not.toContain('all-watcher');
+    const [row] = await vulnerabilityWatchers(ctx.db, { projectIds: [projectId], demoUser: null });
+    expect(row).toMatchObject({ projectId });
+    expect(await names([projectId], null)).toContain('guest');
+    expect(await names([])).toEqual([]);
+    const id = ids['main-watcher']!;
+    await ctx.db
+      .delete(memberships)
+      .where(and(eq(memberships.userId, id), eq(memberships.organizationId, org)));
+    expect(await names([projectId])).not.toContain('main-watcher');
+    await addMember(ctx, org, id, 'viewer');
+    expect(await names([projectId])).toContain('main-watcher');
   });
 });

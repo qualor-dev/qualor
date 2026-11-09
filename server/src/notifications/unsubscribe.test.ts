@@ -4,6 +4,8 @@ import {
   unsubscribeHeaders,
   unsubscribeToken,
   verifyUnsubscribeToken,
+  verifyVulnerabilityUnsubscribeToken,
+  vulnerabilityUnsubscribeToken,
 } from './unsubscribe';
 
 const KEY = 'test-secret-key-that-is-at-least-32-characters';
@@ -74,5 +76,42 @@ describe('unsubscribe tokens (mail E3 N5)', () => {
     }
     const headers = unsubscribeHeaders('https://qualor.example.com', token);
     expect(Object.values(headers ?? {}).join('')).not.toMatch(/[\r\n]/);
+  });
+});
+
+describe('vulnerability unsubscribe tokens (4b)', () => {
+  it('round-trips a user, URL-safe and short', () => {
+    const token = vulnerabilityUnsubscribeToken(KEY, USER);
+    expect(token).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
+    expect(token.length).toBeLessThanOrEqual(MAX_TOKEN_LENGTH);
+    expect(verifyVulnerabilityUnsubscribeToken(KEY, token)).toEqual({ userId: USER });
+    expect(vulnerabilityUnsubscribeToken(KEY, USER)).toBe(token);
+  });
+
+  it('is not interchangeable with a project token, in either direction', () => {
+    const project = unsubscribeToken(KEY, USER, PROJECT);
+    const vulnerabilities = vulnerabilityUnsubscribeToken(KEY, USER);
+    expect(verifyVulnerabilityUnsubscribeToken(KEY, project)).toBeNull();
+    expect(verifyUnsubscribeToken(KEY, vulnerabilities)).toBeNull();
+  });
+
+  it('refuses another key, another user in front of a real tag, and malformed tokens', () => {
+    const token = vulnerabilityUnsubscribeToken(KEY, USER);
+    expect(verifyVulnerabilityUnsubscribeToken(OTHER_KEY, token)).toBeNull();
+    const [, tag] = token.split('.') as [string, string];
+    const forged = `${Buffer.from(OTHER_USER).toString('base64url')}.${tag}`;
+    expect(verifyVulnerabilityUnsubscribeToken(KEY, forged)).toBeNull();
+    for (const bad of ['', '.', 'abc', 'a.b.c', `${'a'.repeat(300)}.${'b'.repeat(43)}`]) {
+      expect(verifyVulnerabilityUnsubscribeToken(KEY, bad)).toBeNull();
+    }
+  });
+
+  it('points the one-click header at its own endpoint', () => {
+    const token = vulnerabilityUnsubscribeToken(KEY, USER);
+    const path = '/api/v0/notifications/unsubscribe/vulnerabilities';
+    expect(unsubscribeHeaders('https://q.example.com', token, path)).toEqual({
+      'List-Unsubscribe': `<https://q.example.com${path}?t=${token}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    });
   });
 });

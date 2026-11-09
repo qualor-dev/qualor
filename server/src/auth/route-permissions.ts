@@ -44,6 +44,8 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'PUT /me/notifications': 'self',
   'POST /notifications/unsubscribe': 'public',
   'GET /notifications/unsubscribe': 'public',
+  'POST /notifications/unsubscribe/vulnerabilities': 'public',
+  'GET /notifications/unsubscribe/vulnerabilities': 'public',
   'GET /license': 'instance-admin',
   'PUT /license': 'instance-admin',
   'DELETE /license': 'instance-admin',

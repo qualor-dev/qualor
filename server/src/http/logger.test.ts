@@ -224,9 +224,21 @@ describe('createLogger (api.md §4 redaction)', () => {
       'routed',
     );
     logger.info({ req: { method: 'GET', url: `${UNSUBSCRIBE_PATH}/?t=SLASH-TOKEN` } }, 'slash');
+    // The vulnerability stop route (4b), reached by a spelling of its path.
+    logger.info(
+      {
+        req: {
+          method: 'POST',
+          url: '/api/v0/notifications/unsubscribe/vulnerabilitie%73?t=VULN-TOKEN',
+          routeOptions: { url: `${UNSUBSCRIBE_PATH}/vulnerabilities` },
+        },
+      },
+      'vulnerabilities',
+    );
     const out = lines.join('\n');
     expect(out).not.toContain('ROUTED-TOKEN');
     expect(out).not.toContain('SLASH-TOKEN');
+    expect(out).not.toContain('VULN-TOKEN');
     expect(out).toContain('"url":"/api/v0/notifications/unsubscrib%65"');
     expect(out).toContain(`"url":"${UNSUBSCRIBE_PATH}/"`);
   });
