@@ -13,7 +13,11 @@ import {
 } from '../../test/app';
 import { uuidv7 } from '../db/ids';
 import { adminHeaders, auditRows, ssoContext } from '../../test/sso';
-import { trivyArchive, UPDATED_AT } from '../../../packages/shared/test/trivy-archive';
+import {
+  metadataJson,
+  trivyArchive,
+  UPDATED_AT,
+} from '../../../packages/shared/test/trivy-archive';
 import { readVulndbState, updateVulndbState } from '../vulndb/state';
 import {
   instanceSettings,
@@ -446,14 +450,16 @@ describe('/system/vulnerability-db (API)', () => {
     });
 
     it('makes a valid archive current and audits it', async () => {
-      const archive = trivyArchive();
+      // Built now: a fixed date goes stale three days later and the status stops being up_to_date.
+      const builtAt = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString();
+      const archive = trivyArchive({ metadata: metadataJson(2, builtAt) });
       const res = await upload(archive, admin, 'application/octet-stream');
       expect(res.statusCode, res.body).toBe(200);
       expect(res.json()).toMatchObject({
         status: 'up_to_date',
         lastError: null,
         current: {
-          builtAt: new Date(UPDATED_AT).toISOString(),
+          builtAt,
           sizeBytes: archive.length,
           source: 'upload',
         },
