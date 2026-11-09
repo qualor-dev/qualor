@@ -19,7 +19,7 @@ codes): <https://qualor.dev/docs/configuration>
 
 ### Tags
 
-Every release has its full version tag, such as `0.14.0`, and a minor tag, such as `0.14`, that
+Every release has its full version tag, such as `0.14.1`, and a minor tag, such as `0.14`, that
 follows its patch releases. There is no `latest` tag. For C#, use
 [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet) with the same tag.
 
@@ -151,6 +151,7 @@ The Qualor CLI is MIT-licensed. Qualor's security rules are under PolyForm Shiel
 | detekt                           | Apache-2.0; Trove4J (LGPL-2.1) inside its jar                                                                                   |
 | PHPStan                          | MIT; its Composer packages MIT, BSD-3-Clause and Apache-2.0                                                                     |
 | PHP 8.2 (Debian)                 | PHP License 3.01                                                                                                                |
+| Python 3.11 (Debian)             | Python Software Foundation License                                                                                              |
 | Go                               | BSD-3-Clause with Google's patent grant                                                                                         |
 | staticcheck                      | MIT                                                                                                                             |
 | gosec                            | Apache-2.0                                                                                                                      |

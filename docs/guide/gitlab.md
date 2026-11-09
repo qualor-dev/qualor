@@ -58,7 +58,7 @@ Scanning reports, in the security widget and the security tab, on GitLab Ultimat
 
 | Input | Default | Meaning |
 |---|---|---|
-| `image-tag` | required | the scanner image tag, such as `0.14` or `0.14.0` |
+| `image-tag` | required | the scanner image tag, such as `0.14` or `0.14.1` |
 | `image` | `qualor/scanner` | the scanner image, without the tag |
 | `stage` | `test` | the stage of the job |
 | `job-name` | `qualor` | the job's name |
@@ -68,7 +68,7 @@ Scanning reports, in the security widget and the security tab, on GitLab Ultimat
 | `build-command` | `dotnet build --no-incremental` | the build that runs between `begin` and `end` when `dotnet` is true |
 
 Pin the component and the image to the same release. Where every pipeline must run exactly the same
-analyzers, use a full version (`@0.14.0`, `image-tag: '0.14.0'`).
+analyzers, use a full version (`@0.14.1`, `image-tag: '0.14.1'`).
 
 The component runs `qualor scan` from the repository root. If your project needs its dependencies
 installed (JavaScript, TypeScript) or a build (Java) first, extend the component's job with a
@@ -93,9 +93,9 @@ the component into a project of your instance once, for example `tools/qualor`:
 
 ```yaml
 include:
-  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.14.0
+  - component: $CI_SERVER_FQDN/tools/qualor/qualor@0.14.1
     inputs:
-      image-tag: '0.14.0'
+      image-tag: '0.14.1'
       # image: mirror.acme.internal/qualor/scanner   # your own copy of the image, without the tag
 ```
 
@@ -371,7 +371,7 @@ That includes discussions on issues that pass the gate, and the open discussions
 | Replies and `qualor review` notes are answered only at the next analysis | the connection has no webhook secret (**Settings → GitLab** says so), the GitLab project has no webhook with **Comments** ticked, its secret token differs from Qualor's (**Recent events** shows 401), GitLab cannot reach the URL (**Recent events** shows a failed delivery), or GitLab disabled the webhook after repeated failures ([the webhook](#answers-to-replies-and-commands-webhook)) |
 | A reply or a `qualor review` note gets no answer at all | see [Why a reply or a command was not answered](./ai-review.md#why-a-reply-or-a-command-was-not-answered) |
 | Comments on merge requests, but no commit status on the default branch | the token's role is below Maintainer, and the branch is protected. Give the token the Maintainer role |
-| `@0.14` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.14.0`, or see [On self-managed GitLab](#on-self-managed-gitlab) |
+| `@0.14` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.14.1`, or see [On self-managed GitLab](#on-self-managed-gitlab) |
 | Comments but no links | `QUALOR_PUBLIC_URL` is not set on the server |
 
 More in [Troubleshooting](./troubleshooting.md).

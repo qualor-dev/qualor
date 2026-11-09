@@ -10,7 +10,7 @@
 # /opt/qualor/rubocop (Ruby built from source and RuboCop, at the versions of
 # tools/analyzers/install-rubocop.sh) and what they need to run:
 # Node.js (to run a project's own ESLint), an exact Temurin JRE 17 (PMD, SpotBugs, detekt), git and
-# Debian's PHP 8.2 CLI (PHPStan).
+# Debian's PHP 8.2 CLI (PHPStan) and Python 3 (cppcheck's addons).
 # Also Go 1.27.1 (trimmed, `/opt/qualor/lib/go`, `go` on PATH), staticcheck and gosec, and Qualor's
 # Go runner in /opt/qualor/go (tools/analyzers/install-go.sh, plan 9C).
 # Also Qualor's own security rules (the qualor-rules pack, source-available, in /opt/qualor/rules/qualor).
@@ -147,7 +147,7 @@ FROM eclipse-temurin:17.0.20_8-jre-noble@sha256:39d618b8fda3408cfe792db2b666c0e3
 
 FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates php8.2-cli libyaml-0-2 \
+  && apt-get install -y --no-install-recommends git ca-certificates php8.2-cli libyaml-0-2 python3 \
   && rm -rf /var/lib/apt/lists/* \
   # CI runners check out as another user than the image's; the scanner only reads the checkout.
   && git config --system --add safe.directory '*'

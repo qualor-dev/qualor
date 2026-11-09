@@ -940,6 +940,31 @@
                 }
               ]
             },
+            "addons": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "misra",
+                  "misc",
+                  "threadsafety",
+                  "y2038"
+                ]
+              }
+            },
+            "misraRuleTexts": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "timeoutSeconds": {
               "default": 1800,
               "type": "integer",

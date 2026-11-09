@@ -72,19 +72,19 @@ vulnerabilities:
     statement: libcurl SFTP/SCP; no Debian fix. Qualor makes no SFTP or SCP transfers.
     expired_at: 2026-12-31
   - id: CVE-2025-59375
-    statement: expat (git); Debian will not fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); Debian will not fix. The addons parse only cppcheck's dump, whose DOCTYPE-free structure and names are cppcheck's own, and a repository supplies only escaped attribute values. At worst it costs memory in the scan job, within analyzers.cppcheck.timeoutSeconds.
     expired_at: 2026-12-31
   - id: CVE-2026-25210
-    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); no Debian fix. It needs an enormous element name, and the dump's element names are cppcheck's own.
     expired_at: 2026-12-31
   - id: CVE-2026-45186
-    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); no Debian fix. It needs one element with many colliding attribute names, and the dump's attribute names are cppcheck's own.
     expired_at: 2026-12-31
   - id: CVE-2026-66046
-    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); no Debian fix. It needs ATTLIST defaults, and the dump has no DOCTYPE.
     expired_at: 2026-12-31
   - id: CVE-2026-93990
-    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); no Debian fix. It needs UTF-16 input, and the dump is UTF-8.
     expired_at: 2026-12-31
   - id: CVE-2023-2953
     statement: openldap, a libcurl dependency used for ldap:// URLs only; no Debian fix. The scanner's git fetch never uses LDAP.
@@ -127,6 +127,37 @@ vulnerabilities:
     expired_at: 2026-12-31
   - id: CVE-2026-91765
     statement: PHP's SOAP extension (php8.2-cli and its php8.2-common, -opcache, -readline packages, plan 9A); no Debian fix. The image has no SOAP extension (php8.2-soap is not installed) and Qualor runs no SoapServer or SoapClient.
+    expired_at: 2026-12-31
+
+  # Debian's python3.11, in the image only to run cppcheck's addons (issue #33), and libsqlite3-0,
+  # which only python3.11's standard library depends on. None has a Debian fix. The addons load
+  # xml and pyexpat of the modules below; html, tarfile, http, ftplib and sqlite3 are never imported.
+  - id: CVE-2025-69534
+    statement: python3.11 html.parser; no Debian fix. cppcheck's addons never import it.
+    expired_at: 2026-12-31
+  - id: CVE-2026-15308
+    statement: python3.11 html.parser; no Debian fix. cppcheck's addons never import it.
+    expired_at: 2026-12-31
+  - id: CVE-2026-11940
+    statement: python3.11 tarfile; no Debian fix. cppcheck's addons never import it.
+    expired_at: 2026-12-31
+  - id: CVE-2026-3644
+    statement: python3.11 http.cookies; no Debian fix. cppcheck's addons never import it.
+    expired_at: 2026-12-31
+  - id: CVE-2026-8328
+    statement: python3.11 ftplib; no Debian fix. cppcheck's addons never import it.
+    expired_at: 2026-12-31
+  - id: CVE-2026-7210
+    statement: python3.11 Expat hash flooding in xml.etree; no Debian fix. The addons parse cppcheck's dump of the scanned code, so a crafted repository can only burn CPU, bounded by analyzers.cppcheck.timeoutSeconds.
+    expired_at: 2026-12-31
+  - id: CVE-2025-7458
+    statement: libsqlite3-0, needs attacker-written SQL; no Debian fix. cppcheck's addons never import sqlite3 and nothing else in the image links it.
+    expired_at: 2026-12-31
+  - id: CVE-2026-11822
+    statement: libsqlite3-0 FTS5, needs a crafted database; no Debian fix. cppcheck's addons never import sqlite3 and nothing else in the image links it.
+    expired_at: 2026-12-31
+  - id: CVE-2026-11824
+    statement: libsqlite3-0 FTS5, needs a crafted database; no Debian fix. cppcheck's addons never import sqlite3 and nothing else in the image links it.
     expired_at: 2026-12-31
 
   # npm, bundled with Node.js 22 (npm 10.9.9 in Node 22.23.4, the latest), is in the image only for

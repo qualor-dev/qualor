@@ -84,6 +84,18 @@ All notable changes to Qualor are listed here, newest first. The format follows
   server gives no database and the directory holds one of its own (`db/trivy.db`), the scan uses the
   image's with the warning `VULNERABILITY_DB_CACHE_UNTRUSTED`.
 
+## [0.14.1] - 2026-11-09
+
+### Added
+
+- cppcheck addons: `analyzers.cppcheck.addons` runs `misra`, `misc`, `threadsafety` and `y2038` from
+  the `qualor/scanner` image, and `analyzers.cppcheck.misraRuleTexts` names a repository file with
+  the MISRA rule texts. Qualor never runs an addon file from the repository.
+
+### Changed
+
+- The `qualor/scanner` image includes Python 3, which runs cppcheck's addons.
+
 ## [0.14.0] - 2026-10-30
 
 ### Added

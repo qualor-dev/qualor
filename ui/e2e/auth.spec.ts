@@ -141,11 +141,14 @@ test.describe('signed in', () => {
   test('a page loaded without a valid session asks to sign in again', async ({ page, guard }) => {
     // The session probe of the reload answers 401: the cookie is gone on purpose.
     guard.allowFailedLoad('/api/v0/auth/me', 401);
+    // The setup checklist loads when the browser is idle and then asks for its state.
+    const checklist = page.waitForResponse((r) => r.url().endsWith('/setup-checklist'));
     await page.goto('/gates');
     await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
-    // Wait for the gates list too: a request still in flight when the cookie goes would get the
-    // 401 before the reload does (a race of the test, not of the app).
+    // Wait for the gates list and the checklist too: a request still in flight when the cookie goes
+    // would get the 401 before the reload does (a race of the test, not of the app).
     await expect(page.getByRole('row', { name: /Qualor way/ })).toBeVisible();
+    await checklist;
     await page.context().clearCookies();
     await page.reload();
     await expect(page).toHaveURL(/\/login\?returnUrl=%2Fgates$/);
