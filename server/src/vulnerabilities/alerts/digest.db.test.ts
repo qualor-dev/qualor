@@ -16,7 +16,7 @@ import {
   type OutboxRow,
 } from '../../../test/notify';
 import { recheckTargets, recordThenRecheck } from '../../../test/vulnerability-alerts';
-import { purlFor, seedCheck, seedTargetRow } from '../../../test/vulnerabilities';
+import { purlFor, seedCheck, seedInventory, seedTargetRow } from '../../../test/vulnerabilities';
 import { encryptionKey, encryptSecret } from '../../crypto/secrets';
 import { uuidv7 } from '../../db/ids';
 import { LOCKS } from '../../db/locks';
@@ -121,6 +121,7 @@ describe('the daily vulnerability digest', () => {
       checkedAt: START,
       basis: 'analysis-1',
     });
+    await seedInventory(t.db, { projectId, branchId: main });
     const vulnerable = (
       vulnerabilityId: string,
       options: {

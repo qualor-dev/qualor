@@ -23,12 +23,15 @@ export interface ObservedAlerts {
  * `recheckProjectIds`; this function enqueues nothing.
  * 1. Deletes the target rows out of scope; their items go with them.
  * 2. Records each target in scope without a row, at `now` and unseeded, without items. It needs
- *    a re-check row with a basis (R3) and must still exist (R4). The row is `day_one` when its
+ *    a re-check row with a basis (R3) and a dependency inventory (a `branch_dependencies` row, or
+ *    `has_inventory` for a version; without one, its first inventory would count as all new, spec
+ *    §8.5), and must still exist (R4). The row is `day_one` when its
  *    project had no row left after step 1: the project's first observation, or its return.
  * 3. Seeds each unseeded target re-checked since it was recorded (`checked_at >= observed_at`).
  *    Every pair it holds now becomes a baseline item. Rows written before the target entered the
- *    scope (R17 keeps them) are never taken for its baseline (R6). A target recorded in step 2 is
- *    seeded by a later pass, because its re-check row predates `now`.
+ *    scope (R17 keeps them) are never taken for its baseline (R6). A target recorded in step 2
+ *    is usually seeded by a later pass, because its re-check row predates `now`; if a check landed
+ *    after `now` it is seeded in the same pass, which is harmless.
  * 4. Adds an item, found at `now`, for each (target, vulnerability id) pair of
  *    `target_vulnerabilities` that a seeded target has no item for. Steps 3 and 4 share one read
  *    per `targetSlice` targets. An item is a baseline when step 3 of this call seeded its target.
@@ -86,9 +89,11 @@ export async function observeAlerts(
                   ${sql.param(branchIds)}::uuid[], ${sql.param(versionIds)}::uuid[])
            AS s(id, project_id, branch_id, version_id)
      WHERE (EXISTS (SELECT 1 FROM branches b WHERE b.id = s.branch_id)
+            AND EXISTS (SELECT 1 FROM branch_dependencies d WHERE d.branch_id = s.branch_id)
             AND EXISTS (SELECT 1 FROM vulnerability_target_checks c
                          WHERE c.branch_id = s.branch_id AND c.basis <> ''))
-        OR (EXISTS (SELECT 1 FROM project_versions v WHERE v.id = s.version_id)
+        OR (EXISTS (SELECT 1 FROM project_versions v
+                     WHERE v.id = s.version_id AND v.has_inventory)
             AND EXISTS (SELECT 1 FROM vulnerability_target_checks c
                          WHERE c.version_id = s.version_id AND c.basis <> ''))
     ON CONFLICT DO NOTHING

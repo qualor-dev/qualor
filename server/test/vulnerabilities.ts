@@ -1,5 +1,9 @@
+import { eq } from 'drizzle-orm';
 import type { Executor } from '../src/db/client';
 import {
+  analyses,
+  branchDependencies,
+  projectVersions,
   targetVulnerabilities,
   vulnerabilityMatches,
   vulnerabilityTargetChecks,
@@ -95,5 +99,41 @@ export async function seedCheck(
     basis: check.basis ?? 'seed',
     baselineAt: check.baselineAt,
     checkedAt: check.checkedAt ?? check.baselineAt,
+  });
+}
+
+/**
+ * The target has a dependency inventory: a branch gets an analysis and one `branch_dependencies`
+ * row, a version gets `has_inventory`. A second call changes nothing.
+ */
+export async function seedInventory(
+  db: Executor,
+  target: TargetKey & { projectId: string },
+): Promise<void> {
+  if ('versionId' in target) {
+    await db
+      .update(projectVersions)
+      .set({ hasInventory: true })
+      .where(eq(projectVersions.id, target.versionId));
+    return;
+  }
+  const have = await db
+    .select({ name: branchDependencies.name })
+    .from(branchDependencies)
+    .where(eq(branchDependencies.branchId, target.branchId))
+    .limit(1);
+  if (have.length > 0) return;
+  const analysis = await db
+    .insert(analyses)
+    .values({ projectId: target.projectId, branchId: target.branchId, status: 'queued' })
+    .returning({ id: analyses.id });
+  await db.insert(branchDependencies).values({
+    branchId: target.branchId,
+    path: 'package.json',
+    ecosystem: 'npm',
+    name: 'lodash',
+    version: '1.0.0',
+    licenses: [],
+    analysisId: analysis[0]!.id,
   });
 }

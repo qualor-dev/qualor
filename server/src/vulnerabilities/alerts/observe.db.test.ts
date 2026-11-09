@@ -1,7 +1,7 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../../test/db';
-import { seedCheck, seedTargetRow } from '../../../test/vulnerabilities';
+import { seedCheck, seedInventory, seedTargetRow } from '../../../test/vulnerabilities';
 import { uuidv7 } from '../../db/ids';
 import { LOCKS } from '../../db/locks';
 import { first } from '../../db/rows';
@@ -77,10 +77,19 @@ describe('vulnerability alerts: the scope and the observe step', () => {
 
   /**
    * The check row a re-check writes with the target's rows, checked at T0 unless given. `basis` is
-   * '' for a branch never analysed.
+   * '' for a branch never analysed. The target has its dependency inventory unless the inventory flag is
+   * false.
    */
-  const checked = (projectId: string, key: TargetKey, basis = 'analysis-1', checkedAt = T0) =>
-    seedCheck(t.db, { projectId, ...key, baselineAt: T0, checkedAt, basis });
+  const checked = async (
+    projectId: string,
+    key: TargetKey,
+    basis = 'analysis-1',
+    checkedAt = T0,
+    inventory = true,
+  ) => {
+    await seedCheck(t.db, { projectId, ...key, baselineAt: T0, checkedAt, basis });
+    if (inventory) await seedInventory(t.db, { projectId, ...key });
+  };
 
   const whereTarget = (key: TargetKey) =>
     'branchId' in key
@@ -468,6 +477,49 @@ describe('vulnerability alerts: the scope and the observe step', () => {
       observedAt: T2,
       seededAt: null,
     });
+  });
+
+  it('records a branch only once it has an inventory, and then seeds all its pairs as baseline', async () => {
+    const r = await newProject();
+    const main = await r.branch('main', true);
+    await r.vulnerable({ branchId: main }, 'CVE-1');
+    await checked(r.projectId, { branchId: main }, 'analysis-1', T0, false);
+    expect(await pass(T1)).toEqual(counts());
+    expect(await targetRow({ branchId: main })).toBeUndefined();
+    // The first inventory arrives with its matches; a re-check moves the check row.
+    await seedInventory(t.db, { projectId: r.projectId, branchId: main });
+    await r.vulnerable({ branchId: main }, 'CVE-2', 'express');
+    await rechecked(R3, { branchId: main });
+    expect(await pass(T4)).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [r.projectId] }));
+    await rechecked(at('09:30'), { branchId: main });
+    expect(await pass(T5)).toEqual(counts({ targetsSeeded: 1, itemsAdded: 2 }));
+    expect(await itemsOf({ branchId: main })).toEqual([
+      item('CVE-1', true, T5),
+      item('CVE-2', true, T5),
+    ]);
+  });
+
+  it('does not record a version without an inventory', async () => {
+    const r = await newProject();
+    const v = await r.version('1.0.0', 0);
+    await r.vulnerable({ versionId: v }, 'CVE-1');
+    await checked(r.projectId, { versionId: v }, 'analysis-1', T0, false);
+    expect(await pass(T1)).toEqual(counts());
+    expect(await targetRow({ versionId: v })).toBeUndefined();
+    await seedInventory(t.db, { projectId: r.projectId, versionId: v });
+    expect(await pass(T2)).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [r.projectId] }));
+  });
+
+  it('does not seed a recorded target whose check row lost its basis, however fresh', async () => {
+    const p = await projectP();
+    await pass(T1);
+    await t.db
+      .update(vulnerabilityTargetChecks)
+      .set({ basis: '', checkedAt: R1 })
+      .where(eq(vulnerabilityTargetChecks.branchId, p.main));
+    expect(await pass(T2)).toEqual(counts());
+    expect(await targetRow({ branchId: p.main })).toMatchObject({ seededAt: null });
+    expect(await itemsOf({ branchId: p.main })).toEqual([]);
   });
 
   it('skips a target deleted since the scope was read, without failing the pass', async () => {
