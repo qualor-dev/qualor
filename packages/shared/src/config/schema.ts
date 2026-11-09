@@ -11,6 +11,7 @@ import {
 } from '../rules/rubocop';
 import { GOSEC_DEFAULT_EXCLUDE, GOSEC_RULE_ID, GOSEC_RULES, GOSEC_VERSION } from '../rules/golang';
 import {
+  CPPCHECK_ADDONS,
   CPPCHECK_ENABLE_GROUPS,
   DEFAULT_CPPCHECK_ENABLE,
   DEFAULT_CPPCHECK_SUPPRESSED,
@@ -393,6 +394,9 @@ const analyzers = z
         includePaths: z.array(repoDir).default([]),
         defines: z.array(define).default([]),
         compileCommands,
+        // Issue #33: addons of cppcheck's own install, by name; a repository file for MISRA's texts.
+        addons: z.array(z.enum(CPPCHECK_ADDONS)).default([]),
+        misraRuleTexts: z.string().min(1).nullable().default(null),
         timeoutSeconds: timeout(1800),
       })
       .prefault({}),

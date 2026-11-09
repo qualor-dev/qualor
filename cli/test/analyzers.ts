@@ -602,6 +602,7 @@ export function describeWithClangTidy(): typeof describe {
 /** Plan 9D: a SARIF result of a C/C++ engine, as far as the real-binary tests read it. */
 export interface KeyedResult {
   ruleId: string;
+  message?: { text: string };
   locations: {
     physicalLocation: { artifactLocation: { uri: string }; region: { startLine: number } };
   }[];
@@ -627,8 +628,9 @@ export async function scanRepoWith(
   root: string,
   env: Readonly<Record<string, string | undefined>> = process.env,
   log: Logger = silentLogger,
+  settings: Omit<QualorConfigInput, 'version'> = {},
 ): Promise<{ capture: SarifCapture; out: NormalizedEngines }> {
-  const config = parseConfig({ version: 1 });
+  const config = parseConfig({ version: 1, ...settings });
   const files = discoverFiles({ root, config, warnings: new Warnings(), log: silentLogger });
   const [capture] = await runAnalyzers([analyzer], { root, config, files, log, env });
   if (capture === undefined) throw new Error('no capture');

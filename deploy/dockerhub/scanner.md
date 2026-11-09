@@ -151,6 +151,7 @@ The Qualor CLI is MIT-licensed. Qualor's security rules are under PolyForm Shiel
 | detekt                           | Apache-2.0; Trove4J (LGPL-2.1) inside its jar                                                                                   |
 | PHPStan                          | MIT; its Composer packages MIT, BSD-3-Clause and Apache-2.0                                                                     |
 | PHP 8.2 (Debian)                 | PHP License 3.01                                                                                                                |
+| Python 3.11 (Debian)             | Python Software Foundation License                                                                                              |
 | Go                               | BSD-3-Clause with Google's patent grant                                                                                         |
 | staticcheck                      | MIT                                                                                                                             |
 | gosec                            | Apache-2.0                                                                                                                      |

@@ -185,3 +185,126 @@ describeWithCppcheck()('cppcheck with the real binary (plan 9D)', () => {
     },
   );
 });
+
+describeWithCppcheck()('cppcheck addons with the real binary (issue #33)', () => {
+  const VIOLATIONS =
+    'int f(int x) { goto end; end: return (x + 1); }\nvoid h(void) { int a = 3; { int a = 4; (void)a; } (void)a; }\n';
+  type Addon = 'misra' | 'misc' | 'threadsafety' | 'y2038';
+  const settings = (addons: Addon[], misraRuleTexts?: string) => ({
+    analyzers: { cppcheck: { addons, ...(misraRuleTexts !== undefined && { misraRuleTexts }) } },
+  });
+  const scan = async (root: string, s: ReturnType<typeof settings>) => {
+    const lines: string[] = [];
+    const log = createLogger('debug', (t) => lines.push(t));
+    const r = await scanRepoWith(cppcheckAnalyzer, root, process.env, log, s);
+    expect(r.capture.status, r.capture.reason ?? '').toBe('ok');
+    return { ...r, keys: results(r.capture.sarif).map(key), log: lines.join('\n') };
+  };
+
+  it(
+    'reports MISRA rules with the default groups, without cppcheck style results',
+    TIMEOUT,
+    async () => {
+      const root = tmp();
+      writeTree(root, { 'src/a.c': VIOLATIONS });
+      const { keys, out, log } = await scan(root, settings(['misra']));
+      expect(keys).toContain('src/a.c:1 misra-c2012-15.1');
+      expect(keys.filter((k) => k.includes('shadowVariable'))).toEqual([]);
+      expect(findingKeys(out.findings)).toContain('cppcheck:misra-c2012-15.1 src/a.c:1 [low]');
+      expect(log).not.toContain('addon failed');
+    },
+  );
+
+  it('keeps cppcheck style results when the project enabled style', TIMEOUT, async () => {
+    const root = tmp();
+    writeTree(root, { 'src/a.c': VIOLATIONS });
+    const s = {
+      analyzers: { cppcheck: { addons: ['misra' as const], enable: ['style' as const] } },
+    };
+    const { keys } = await scan(root, s);
+    expect(keys).toContain('src/a.c:1 misra-c2012-15.1');
+    expect(keys.filter((k) => k.includes('shadowVariable'))).toHaveLength(1);
+  });
+
+  it('puts the rule text of a repository file in the message', TIMEOUT, async () => {
+    const root = tmp();
+    writeTree(root, {
+      'src/a.c': VIOLATIONS,
+      'misra/rules.txt':
+        'Appendix A Summary of guidelines\nRule 15.1 Advisory\nThe goto statement should not be used\n',
+    });
+    const { capture } = await scan(root, settings(['misra'], 'misra/rules.txt'));
+    const goto15 = results(capture.sarif).find((r) => r.ruleId === 'misra-c2012-15.1');
+    expect(goto15?.message?.text).toBe('The goto statement should not be used');
+  });
+
+  it('names the rule when there are no rule texts', TIMEOUT, async () => {
+    const root = tmp();
+    writeTree(root, { 'src/a.c': VIOLATIONS });
+    const { capture } = await scan(root, settings(['misra']));
+    const goto15 = results(capture.sarif).find((r) => r.ruleId === 'misra-c2012-15.1');
+    expect(goto15?.message?.text).toContain('MISRA C 2012 rule 15.1');
+  });
+
+  it.runIf(process.platform !== 'win32')(
+    'runs no command a file name spells',
+    TIMEOUT,
+    async () => {
+      const root = tmp();
+      const outside = tmp();
+      const m1 = path.join(outside, 'M1');
+      const m2 = path.join(outside, 'M2');
+      writeTree(root, {
+        'src/a.c': VIOLATIONS,
+        [`src/$(touch ${m1}).c`]: VIOLATIONS,
+        [`src/\`touch ${m2}\`.c`]: VIOLATIONS,
+      });
+      const { keys, log } = await scan(root, settings(['misra']));
+      expect(keys).toContain('src/a.c:1 misra-c2012-15.1');
+      expect(existsSync(m1)).toBe(false);
+      expect(existsSync(m2)).toBe(false);
+      expect(log).toContain('2 C/C++ file(s) left out');
+    },
+  );
+
+  it('analyses a path with a space', TIMEOUT, async () => {
+    const root = tmp();
+    writeTree(root, { 'src dir/a b.c': VIOLATIONS });
+    const { keys, log } = await scan(root, settings(['misra']));
+    expect(keys).toContain('src dir/a b.c:1 misra-c2012-15.1');
+    expect(log).not.toContain('addon failed');
+  });
+
+  it('runs through the rewritten compile database', TIMEOUT, async () => {
+    const root = tmp();
+    writeTree(root, {
+      'src/a.c': VIOLATIONS,
+      'compile_commands.json': JSON.stringify([
+        { directory: '.', file: 'src/a.c', arguments: ['cc', '-c', 'src/a.c'] },
+      ]),
+    });
+    const { keys } = await scan(root, settings(['misra']));
+    expect(keys).toContain('src/a.c:1 misra-c2012-15.1');
+  });
+
+  it.each<Addon>(['misc', 'threadsafety', 'y2038'])(
+    'runs %s to its end',
+    TIMEOUT,
+    async (addon) => {
+      const root = tmp();
+      writeTree(root, { 'src/a.c': VIOLATIONS });
+      const { log } = await scan(root, settings([addon]));
+      expect(log).not.toContain('addon failed');
+      expect(log).not.toContain('internalError');
+    },
+  );
+
+  it('warns when an addon fails on a rule-texts file it cannot decode', TIMEOUT, async () => {
+    const root = tmp();
+    // 0x81 is undefined in windows-1252, the last encoding the addon tries.
+    writeTree(root, { 'src/a.c': VIOLATIONS });
+    writeFileSync(path.join(root, 'rules.txt'), Buffer.from([0x81, 0x8d, 0x8f, 0x90, 0x9d, 0xff]));
+    const { log } = await scan(root, settings(['misra'], 'rules.txt'));
+    expect(log).toContain('addon failed');
+  });
+});

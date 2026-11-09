@@ -70,6 +70,8 @@ analyzers:
     includePaths: []                 # repository directories for -I, used without a compile database
     defines: []                      # NAME or NAME=value for -D, used without a compile database
     compileCommands: null            # null: compile_commands.json, then build/compile_commands.json; false: none; or a repository path
+    addons: []                       # cppcheck addons by name: misra, misc, threadsafety, y2038
+    misraRuleTexts: null             # a repository file with the MISRA rule texts, for the misra addon
     timeoutSeconds: 1800
   clang-tidy:                        # C and C++: the clang-tidy (LLVM 14+) on PATH, never bundled
     enabled: auto

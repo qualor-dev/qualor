@@ -1,9 +1,10 @@
 #!/bin/sh
 # Builds cppcheck (plan 9D, config.md §6.2) from its tag archive into $QUALOR_TOOLS (default
 # /opt/qualor): $PREFIX/bin/cppcheck, and its library files (cfg/, platforms/) in
-# $PREFIX/share/cppcheck, which is compiled in as FILESDIR. Nothing else: no addons (Python), no
-# rules (PCRE), no HTML report script. The archive is checked against CPPCHECK_SHA256 before it is
-# unpacked, and deploy/scanner/sources.json ships it as the corresponding source (GPL-3.0-or-later).
+# $PREFIX/share/cppcheck, which is compiled in as FILESDIR, with the Python scripts of the addons
+# Qualor offers in its addons/ (issue #33). Nothing else: no rules (PCRE), no HTML report script.
+# The archive is checked against CPPCHECK_SHA256 before it is unpacked, and
+# deploy/scanner/sources.json ships it as the corresponding source (GPL-3.0-or-later).
 # There is no Linux release binary (fact F1). The same script runs in deploy/scanner/Dockerfile,
 # tools/analyzers/Dockerfile and every CI job that sets QUALOR_REQUIRE_ANALYZERS=1
 # (tools/ci.test.ts checks). It needs g++, GNU make and python3 (cppcheck's match compiler).
@@ -14,6 +15,8 @@ set -eu
 
 CPPCHECK_VERSION=2.22.0
 CPPCHECK_SHA256=d74945deb2d50393430e07596b766f8a779512c7f60dac2a30ea64e059ece57b
+# CPPCHECK_ADDONS in packages/shared/src/rules/cfamily.ts, and what they import (tools/ci.test.ts).
+ADDON_SCRIPTS="runaddon.py cppcheck.py cppcheckdata.py misra.py misra_9.py misc.py threadsafety.py y2038.py"
 
 PREFIX="${QUALOR_TOOLS:-/opt/qualor}"
 FILESDIR="$PREFIX/share/cppcheck"
@@ -41,6 +44,10 @@ mkdir -p "$FILESDIR"
 install -m 0755 "$TMP/src/cppcheck" "$PREFIX/bin/cppcheck"
 strip "$PREFIX/bin/cppcheck" 2>/dev/null || true
 cp -R "$TMP/src/cfg" "$TMP/src/platforms" "$FILESDIR/"
+mkdir "$FILESDIR/addons"
+for file in $ADDON_SCRIPTS; do
+  cp "$TMP/src/addons/$file" "$FILESDIR/addons/"
+done
 find "$FILESDIR" -type d -exec chmod 0755 {} +
 find "$FILESDIR" -type f -exec chmod 0644 {} +
 

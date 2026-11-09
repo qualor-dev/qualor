@@ -24,6 +24,13 @@ import {
   readCompileCommands,
   type CompileEntry,
 } from './compile-commands';
+import {
+  addonCommand,
+  checkAddonSettings,
+  enabledGroups,
+  projectGroups,
+  withAddonSafePaths,
+} from './cppcheck-addons';
 import { cppcheckXmlToSarif } from './cppcheck-xml';
 import { detailLine, shown } from './reason';
 import type { Analyzer, AnalyzerContext, Preparation } from './types';
@@ -79,7 +86,10 @@ function copyInput(
     ctx.log.warn(`cppcheck: ${lineBreaks} file(s) whose path has a line break were left out`);
   const large = cFiles.filter((f) => f.size > MAX_ANALYZED_BYTES).length;
   if (large > 0) ctx.log.warn(`cppcheck: ${large} C/C++ file(s) larger than 1 MiB were left out`);
-  const candidates = cFiles.filter((f) => !hasLineBreak(f.path) && f.size <= MAX_ANALYZED_BYTES);
+  const candidates = withAddonSafePaths(
+    ctx,
+    cFiles.filter((f) => !hasLineBreak(f.path) && f.size <= MAX_ANALYZED_BYTES),
+  );
   const input = path.join(ctx.workDir, INPUT_DIR);
   if (hasLineBreak(input)) return { skip: 'the work directory path has a line break' };
   mkdirSync(input, { recursive: true });
@@ -127,11 +137,17 @@ function cppcheckTransform(
   input: string,
 ): (output: unknown) => unknown {
   return (output) => {
-    const { log, notAnalysed, outside } = cppcheckXmlToSarif(String(output), {
+    const { log, notAnalysed, outside, addonFailures } = cppcheckXmlToSarif(String(output), {
       version,
       base: input,
+      projectGroups: projectGroups(ctx.config.analyzers.cppcheck),
     });
     logNotAnalysed(ctx, notAnalysed);
+    if (addonFailures > 0) {
+      ctx.log.warn(
+        `cppcheck: an addon failed ${addonFailures} time(s): its results are incomplete`,
+      );
+    }
     // Ruling D9-9: a count only, never the foreign path.
     if (outside > 0) {
       ctx.log.warn(
@@ -156,19 +172,22 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   const jobs = Math.max(1, Math.min(4, availableParallelism()));
   const files = inputArgs(ctx, db, copy);
   if (!Array.isArray(files)) return files;
+  const addons = addonCommand(ctx, cppcheck);
+  if ('skip' in addons) return addons;
   const args = [
     '-q',
     `-j${jobs}`,
-    `--enable=${settings.enable.join(',')}`,
+    `--enable=${enabledGroups(settings).join(',')}`,
     '--inline-suppr',
     // Ruling D9-14: the default-off ids, unless `select` names them.
     ...cppcheckSuppressed(settings.select).map((id) => `--suppress=${id}`),
     '--output-format=xmlv2',
     `--output-file=${out}`,
     `--relative-paths=${input}`,
+    ...addons.args,
     ...files,
   ];
-  const own = cFamilyEnv(ctx.workDir);
+  const own = { ...cFamilyEnv(ctx.workDir), ...addons.env };
   return {
     run: {
       command: cppcheck,
@@ -338,9 +357,9 @@ function writeProject(
 }
 
 function checkConfig(_root: string, config: QualorConfig): string | null {
-  return checkCompileCommandsSetting(
-    config.analyzers.cppcheck.compileCommands,
-    'analyzers.cppcheck',
+  return (
+    checkCompileCommandsSetting(config.analyzers.cppcheck.compileCommands, 'analyzers.cppcheck') ??
+    checkAddonSettings(config)
   );
 }
 

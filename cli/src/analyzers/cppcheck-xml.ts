@@ -1,5 +1,11 @@
 import path from 'node:path';
-import { cppcheckIsFinding, type SarifLog, type SarifResult, type SarifRule } from '@qualor/shared';
+import {
+  cppcheckIsAddonResult,
+  cppcheckIsFinding,
+  type SarifLog,
+  type SarifResult,
+  type SarifRule,
+} from '@qualor/shared';
 import { SaxesParser, type SaxesTagPlain } from 'saxes';
 import { redactForeignPaths } from './cfamily-common';
 
@@ -131,28 +137,53 @@ export interface CppcheckConversion {
    * `#include` reached), and related locations there, dropped with their notes.
    */
   outside: number;
+  /** Issue #33: the addon runs that failed (a crash, or a rule-texts file it cannot read). */
+  addonFailures: number;
+}
+
+const MISRA_WITHOUT_TEXTS = 'misra violation (use --rule-texts=<file> to get proper output)';
+
+/** Issue #33: the misra addon's message without rule texts names an option Qualor does not have. */
+function messageOf(e: XmlError): string {
+  const rule = /^misra-c2012-(\d+\.\d+)$/.exec(e.id)?.[1];
+  if (rule === undefined || e.msg !== MISRA_WITHOUT_TEXTS) return e.msg;
+  return `Violation of MISRA C 2012 rule ${rule}. Set analyzers.cppcheck.misraRuleTexts for its text.`;
+}
+
+/** Addons need groups the project may not have enabled: cppcheck's own results stay within them. */
+function outsideProjectGroups(e: XmlError, groups: ReadonlySet<string> | undefined): boolean {
+  return (
+    groups !== undefined &&
+    e.severity !== 'error' &&
+    !groups.has(e.severity) &&
+    !cppcheckIsAddonResult(e.id)
+  );
 }
 
 /**
  * config.md §6.2: cppcheck's xmlv2 as SARIF 2.1.0. `base` is the directory cppcheck ran in (the
  * checked copy), against which its relative paths resolve. Ids and severities that are no
  * finding (decision 6) are counted in `notAnalysed` instead; a result or related location outside
- * the copy is counted in `outside` and never reaches the log (ruling D9-9).
+ * the copy is counted in `outside` and never reaches the log (ruling D9-9). `projectGroups` is set
+ * when addons ran.
  */
 export function cppcheckXmlToSarif(
   xml: string,
-  o: { version: string; base: string },
+  o: { version: string; base: string; projectGroups?: ReadonlySet<string> | undefined },
 ): CppcheckConversion {
   const base = path.resolve(o.base);
   const rules = new Map<string, SarifRule>();
   const results: SarifResult[] = [];
   const notAnalysed = new Map<string, number>();
   let outside = 0;
+  let addonFailures = 0;
   for (const e of readErrors(xml)) {
     if (!cppcheckIsFinding(e.id, e.severity)) {
       notAnalysed.set(e.id, (notAnalysed.get(e.id) ?? 0) + 1);
+      if (e.id === 'internalError' && e.msg.includes('Failed to execute')) addonFailures++;
       continue;
     }
+    if (outsideProjectGroups(e, o.projectGroups)) continue;
     const [first, ...rest] = e.locations;
     if (first === undefined || e.id === '') continue;
     const primary = location(first, base, false);
@@ -168,7 +199,7 @@ export function cppcheckXmlToSarif(
       ruleId: e.id,
       level: LEVEL.get(e.severity) ?? 'note',
       // Ruling D9-11: no host path in a kept message (paths in the copy become relative to it).
-      message: { text: redactForeignPaths(e.msg, [base]) },
+      message: { text: redactForeignPaths(messageOf(e), [base]) },
       properties: { cppcheckSeverity: e.severity },
       locations: [primary],
       ...(related.length > 0 && { relatedLocations: related }),
@@ -186,5 +217,6 @@ export function cppcheckXmlToSarif(
     },
     notAnalysed,
     outside,
+    addonFailures,
   };
 }

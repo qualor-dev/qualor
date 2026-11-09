@@ -747,6 +747,37 @@ suppressions (`// cppcheck-suppress nullPointer`) work.
 `uninitMemberVar`, `uninitMemberVarPrivate` and `uninitMemberVarNoCtor` are off by default, since
 they mostly flag union members. Turn them on with `select: [uninitMemberVar]` under `cppcheck`.
 
+### cppcheck addons
+
+Addons add rule sets to cppcheck's own checks. Turn them on by name:
+
+```yaml
+analyzers:
+  cppcheck:
+    addons: [misra]
+    misraRuleTexts: misra/rules.txt  # optional
+```
+
+| Addon          | Finds                                                                     |
+| -------------- | ------------------------------------------------------------------------- |
+| `misra`        | violations of MISRA C 2012                                                |
+| `misc`         | missing commas in string arrays, records passed to `...` functions        |
+| `threadsafety` | calls to functions that are not thread-safe                               |
+| `y2038`        | code that breaks when a 32-bit `time_t` overflows in 2038                 |
+
+Rule keys look like `cppcheck:misra-c2012-15.1`. `enable` still decides which of cppcheck's own
+checks report. Addon results do not depend on it.
+
+MISRA's rule texts are licensed, so no tool can ship them. Without `misraRuleTexts`, an issue names
+only the rule number. To show the texts, add a file of at most 1 MiB to your repository. After a
+line that starts with `Appendix A`, it holds `Rule 15.1 Advisory` lines, each followed by the rule's
+text.
+
+Qualor runs only these addons, from the `qualor/scanner` image. It never runs an addon file or
+script from your repository. With addons on, a file is left out when its path has anything but
+letters, digits, spaces and `_ + . / -`, because cppcheck passes the path to a shell. The scan log
+says how many were left out.
+
 **clang-tidy** runs when the job that scans also has `clang-tidy` (LLVM 14 or newer) on the `PATH`
 and a compile database. That is typically the job that built your project:
 

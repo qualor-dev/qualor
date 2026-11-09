@@ -556,6 +556,8 @@ describe('BUILTIN_EXCLUDES', () => {
       includePaths: [],
       defines: [],
       compileCommands: null,
+      addons: [],
+      misraRuleTexts: null,
       timeoutSeconds: 1800,
     });
     expect(c.analyzers['clang-tidy']).toEqual({
@@ -589,6 +591,17 @@ describe('BUILTIN_EXCLUDES', () => {
       parseConfig({ version: 1, analyzers: { cppcheck } } as never);
     expect(bad({ enable: ['all'] })).toThrow();
     expect(bad({ enable: ['information'] })).toThrow();
+    // Issue #33: addons by name only; a JSON file or script would be code from the checkout.
+    expect(
+      parseConfig({
+        version: 1,
+        analyzers: { cppcheck: { addons: ['misra', 'y2038'], misraRuleTexts: 'misra/rules.txt' } },
+      }).analyzers.cppcheck,
+    ).toMatchObject({ addons: ['misra', 'y2038'], misraRuleTexts: 'misra/rules.txt' });
+    expect(bad({ addons: ['misra.json'] })).toThrow();
+    expect(bad({ addons: ['./evil.py'] })).toThrow();
+    expect(bad({ addons: ['naming'] })).toThrow();
+    expect(bad({ misraRuleTexts: '' })).toThrow();
     expect(bad({ includePaths: ['/usr/include'] })).toThrow();
     expect(bad({ includePaths: ['../outside'] })).toThrow();
     expect(bad({ includePaths: ['a\\b'] })).toThrow();

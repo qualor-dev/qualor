@@ -34,10 +34,24 @@ export function cppcheckSuppressed(select: readonly string[]): string[] {
 }
 
 /**
+ * Issue #33: the cppcheck addons a project can run, by name, from cppcheck's own install. An addon
+ * file of the checkout would be code from the checkout. `naming` and `namingng` need a
+ * configuration of their own, and `findcasts` reports only `information`, which is no finding.
+ */
+export const CPPCHECK_ADDONS = ['misra', 'misc', 'threadsafety', 'y2038'] as const;
+export type CppcheckAddon = (typeof CPPCHECK_ADDONS)[number];
+
+/** Whether `id` is a result of an addon: cppcheck prefixes it with the addon's name. */
+export function cppcheckIsAddonResult(id: string): boolean {
+  return CPPCHECK_ADDONS.some((a) => id.startsWith(`${a}-`));
+}
+
+/**
  * Ids that say cppcheck could not analyse (part of) a file, or report on the run itself: never a
  * finding (decision 6), counted in one warn line instead.
  */
 export const CPPCHECK_ANALYSIS_IDS: ReadonlySet<string> = new Set([
+  'misra-config',
   'syntaxError',
   'unknownMacro',
   'internalAstError',

@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
+import { CPPCHECK_ADDONS } from '../packages/shared/src/rules/cfamily';
 import { describe, expect, it } from 'vitest';
 import { qualorRulesPins } from '../cli/test/install-pins';
 import { parseCiYaml as parse } from './ci-yaml';
@@ -738,8 +739,22 @@ describe('install-cppcheck.sh (plan 9D)', () => {
     );
   });
 
-  it('builds only the cppcheck target and installs no addon, rule or report script', () => {
-    // The comments name what the script leaves out ("no addons", "`make install` would …"):
+  it('installs the scripts of the addons Qualor offers, and no other addon (issue #33)', () => {
+    const scripts = /^ADDON_SCRIPTS="(.+)"$/m.exec(script)?.[1]?.split(' ') ?? [];
+    expect(scripts.sort()).toEqual(
+      [
+        ...CPPCHECK_ADDONS.map((a) => `${a}.py`),
+        'cppcheck.py',
+        'cppcheckdata.py',
+        'misra_9.py',
+        'runaddon.py',
+      ].sort(),
+    );
+    expect(script).toContain('cp "$TMP/src/addons/$file" "$FILESDIR/addons/"');
+  });
+
+  it('builds only the cppcheck target and installs no rule or report script', () => {
+    // The comments name what the script leaves out ("no rules", "`make install` would …"):
     // only its commands count here.
     const code = script
       .split('\n')
@@ -747,7 +762,7 @@ describe('install-cppcheck.sh (plan 9D)', () => {
       .join('\n');
     expect(code).toContain('MATCHCOMPILER=yes');
     expect(code).toMatch(/^make -C "\$TMP\/src" [^\n]* cppcheck >\/dev\/null$/m);
-    expect(code).not.toMatch(/HAVE_RULES=yes|addons|htmlreport|make install|curl[^\n]*\| *sh/);
+    expect(code).not.toMatch(/HAVE_RULES=yes|htmlreport|make install|curl[^\n]*\| *sh/);
     expect(code).toContain('cp -R "$TMP/src/cfg" "$TMP/src/platforms" "$FILESDIR/"');
     // cppcheck prints `Cppcheck X.Y` for some .0 releases: the check compares major.minor, the
     // rule of cppcheckVersionSupported.
