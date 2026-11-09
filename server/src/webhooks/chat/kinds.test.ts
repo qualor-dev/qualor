@@ -92,7 +92,11 @@ describe('maskChatUrl (6G R3)', () => {
 
 describe('events per kind (6G R4)', () => {
   it('lists each kind its events', () => {
-    expect(eventsOf('generic')).toEqual(['analysis.completed', 'gate.status_changed']);
+    expect(eventsOf('generic')).toEqual([
+      'analysis.completed',
+      'gate.status_changed',
+      'vulnerabilities.found',
+    ]);
     expect(eventsOf('slack')).toEqual(['gate.failed', 'gate.recovered', 'digest.weekly']);
     expect(eventsOf('teams')).toEqual(['gate.failed', 'gate.recovered', 'digest.weekly']);
   });

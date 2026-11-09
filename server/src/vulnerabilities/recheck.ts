@@ -14,7 +14,7 @@ import { withLocalDatabase, type LocalProblem } from '../vulndb/local';
 import { readVulndbSettings } from '../vulndb/settings';
 import { readVulndbState, updateVulndbState, type VulndbState } from '../vulndb/state';
 import { currentDataset } from '../vulndb/store';
-import { enqueueVulnerabilityAlerts } from './alerts/jobs';
+import { enqueueVulnerabilityAlerts } from './alerts/enqueue';
 import { purlOf } from './purl';
 import { buildSbom, type SbomPackage } from './sbom';
 import { projectTargets, type Target } from './targets';

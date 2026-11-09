@@ -3058,6 +3058,7 @@
     "webhooks.kind.generic": "Generic (signed JSON)",
     "webhooks.event.analysis": "Analysis completed",
     "webhooks.event.gate": "Quality gate status changed",
+    "webhooks.event.vulnerabilitiesFound": "New vulnerabilities (daily)",
     "webhooks.event.gateFailed": "Quality gate failed (main branch)",
     "webhooks.event.gateRecovered": "Quality gate passes again (main branch)",
     "webhooks.event.digest": "Weekly security digest",

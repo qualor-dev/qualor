@@ -107,6 +107,8 @@ function eventLabel(event: DeliveryEvent): string {
       return $localize`:@@webhooks.event.analysis:Analysis completed`;
     case 'gate.status_changed':
       return $localize`:@@webhooks.event.gate:Quality gate status changed`;
+    case 'vulnerabilities.found':
+      return $localize`:@@webhooks.event.vulnerabilitiesFound:New vulnerabilities (daily)`;
     case 'gate.failed':
       return $localize`:@@webhooks.event.gateFailed:Quality gate failed (main branch)`;
     case 'gate.recovered':

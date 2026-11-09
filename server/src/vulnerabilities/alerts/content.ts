@@ -3,8 +3,10 @@ import { uuidList } from '../../db/bulk';
 import type { Executor } from '../../db/client';
 import type {
   MailSeverity,
+  VulnerabilityMailProject,
   VulnerabilityMailRow,
 } from '../../mail/templates/notify-vulnerability-common';
+import type { Watcher } from '../../notifications/recipients';
 import { SEVERITIES, scopedRows } from '../summary';
 
 export {
@@ -30,6 +32,32 @@ interface Row extends Record<string, unknown> {
 }
 
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * One entry per person in `watchers` (one row per watcher and project), with a section for each
+ * of that person's projects that has rows, by name. A person with no such project is left out.
+ * The caller caps the rows of each person's sections, so one person's projects never cut another's.
+ */
+export function watcherSections(
+  watchers: ReadonlyArray<Watcher & { projectId: string }>,
+  names: ReadonlyMap<string, string>,
+  rowsOf: ReadonlyMap<string, VulnerabilityMailRow[]>,
+): Array<{ watcher: Watcher; sections: VulnerabilityMailProject[] }> {
+  const byUser = new Map<string, { watcher: Watcher; projectIds: string[] }>();
+  for (const { projectId, ...watcher } of watchers) {
+    const known = byUser.get(watcher.userId);
+    if (known === undefined) byUser.set(watcher.userId, { watcher, projectIds: [projectId] });
+    else known.projectIds.push(projectId);
+  }
+  return [...byUser.values()].flatMap(({ watcher, projectIds }) => {
+    // A triage committed since the pick can have emptied a project: it gets no section.
+    const sections = projectIds
+      .map((id) => ({ id, name: names.get(id) ?? '', rows: rowsOf.get(id) ?? [], more: 0 }))
+      .filter((project) => project.rows.length > 0)
+      .sort((a, b) => compare(a.name, b.name) || compare(a.id, b.id));
+    return sections.length === 0 ? [] : [{ watcher, sections }];
+  });
+}
 
 /**
  * The rows of an alert email for the given alert items (4b): one per (vulnerability, package) of

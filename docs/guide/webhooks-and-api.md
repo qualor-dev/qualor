@@ -1,7 +1,8 @@
 # Webhooks and REST API
 
-Webhooks tell your own systems when an analysis ends or a quality gate changes, for example to open
-a ticket or feed a dashboard. The REST API lets scripts read and change what Qualor holds.
+Webhooks tell your own systems when an analysis ends, a quality gate changes or new vulnerabilities
+are found, for example to open a ticket or feed a dashboard. The REST API lets scripts read and
+change what Qualor holds.
 
 ## Webhooks
 
@@ -22,12 +23,52 @@ A generic webhook sends the events you choose:
 |---|---|
 | `analysis.completed` | an analysis succeeded |
 | `gate.status_changed` | a branch's gate status differs from its previous analysis. This includes the first analysis, and a change caused by an issue status change |
+| `vulnerabilities.found` | once a day at 06:00 UTC, for each project with new High or Critical vulnerabilities in a tracked branch or version. Business and Enterprise (`vuln.alerts`) |
 
-The payload is the analysis as `GET /api/v0/analyses/{id}` returns it: status, revision, gate status
-and result, engines and warnings. It also carries `project` (`id`, `key`, `name`) and `branch`
-(`id`, `kind`, `name`, `isMain`). For `gate.status_changed` it adds `previousGateStatus`. A tag
-scan sends no webhook, so the payload's `version` is always `null`
-([Releases and versions](./releases.md#the-api)).
+The payload of `analysis.completed` and `gate.status_changed` is the analysis as
+`GET /api/v0/analyses/{id}` returns it: status, revision, gate status and result, engines and
+warnings. It also carries `project` (`id`, `key`, `name`) and `branch` (`id`, `kind`, `name`,
+`isMain`). For `gate.status_changed` it adds `previousGateStatus`. A tag scan sends no webhook, so
+the payload's `version` is always `null` ([Releases and versions](./releases.md#the-api)).
+
+The payload of `vulnerabilities.found` lists what the project's
+[digest](./email.md#vulnerability-emails) lists, worst first:
+
+```json
+{
+  "project": {
+    "id": "0190f6b0-7a4e-7c3a-9b1d-2f6e8a1c4d55",
+    "key": "acme/payments",
+    "name": "Payments",
+    "url": "https://qualor.example.com/projects/0190f6b0-7a4e-7c3a-9b1d-2f6e8a1c4d55/vulnerabilities"
+  },
+  "database": { "builtAt": "2026-11-09T18:12:04.000Z" },
+  "vulnerabilities": [
+    {
+      "vulnerabilityId": "CVE-2026-1001",
+      "severity": "critical",
+      "title": "Remote code execution in axios",
+      "packageName": "axios",
+      "installedVersions": ["1.7.2"],
+      "fixedVersion": "1.7.4",
+      "exploited": { "dateAdded": "2026-10-30" },
+      "targets": ["main", "2.3.4"]
+    }
+  ],
+  "more": 0
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `project.url` | the project's Vulnerabilities tab, or `null` without `QUALOR_PUBLIC_URL` |
+| `database.builtAt` | when the vulnerability database in use was built, or `null` without one |
+| `vulnerabilities[].severity` | `critical` or `high` |
+| `vulnerabilities[].exploited` | the CISA KEV entry, or `null` when it is not in KEV or the licence has no `vuln.priority` |
+| `vulnerabilities[].targets` | the tracked branches and versions it is open on, main first |
+| `more` | how many were left out: a payload lists at most 1 000 vulnerabilities |
+
+A project with nothing new sends no delivery.
 
 Every request is a `POST` with a JSON body and these headers:
 

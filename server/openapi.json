@@ -20264,6 +20264,7 @@
                               "enum": [
                                 "analysis.completed",
                                 "gate.status_changed",
+                                "vulnerabilities.found",
                                 "gate.failed",
                                 "gate.recovered",
                                 "digest.weekly"
@@ -20416,13 +20417,14 @@
                   },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 5,
+                    "maxItems": 6,
                     "type": "array",
                     "items": {
                       "type": "string",
                       "enum": [
                         "analysis.completed",
                         "gate.status_changed",
+                        "vulnerabilities.found",
                         "gate.failed",
                         "gate.recovered",
                         "digest.weekly"
@@ -20495,6 +20497,7 @@
                         "enum": [
                           "analysis.completed",
                           "gate.status_changed",
+                          "vulnerabilities.found",
                           "gate.failed",
                           "gate.recovered",
                           "digest.weekly"
@@ -20663,6 +20666,7 @@
                         "enum": [
                           "analysis.completed",
                           "gate.status_changed",
+                          "vulnerabilities.found",
                           "gate.failed",
                           "gate.recovered",
                           "digest.weekly"
@@ -20771,13 +20775,14 @@
                   },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 5,
+                    "maxItems": 6,
                     "type": "array",
                     "items": {
                       "type": "string",
                       "enum": [
                         "analysis.completed",
                         "gate.status_changed",
+                        "vulnerabilities.found",
                         "gate.failed",
                         "gate.recovered",
                         "digest.weekly"
@@ -20862,6 +20867,7 @@
                         "enum": [
                           "analysis.completed",
                           "gate.status_changed",
+                          "vulnerabilities.found",
                           "gate.failed",
                           "gate.recovered",
                           "digest.weekly"
@@ -21100,6 +21106,7 @@
                         "enum": [
                           "analysis.completed",
                           "gate.status_changed",
+                          "vulnerabilities.found",
                           "gate.failed",
                           "gate.recovered",
                           "digest.weekly"
@@ -21260,6 +21267,7 @@
                             "enum": [
                               "analysis.completed",
                               "gate.status_changed",
+                              "vulnerabilities.found",
                               "gate.failed",
                               "gate.recovered",
                               "digest.weekly",
@@ -21433,6 +21441,7 @@
                       "enum": [
                         "analysis.completed",
                         "gate.status_changed",
+                        "vulnerabilities.found",
                         "gate.failed",
                         "gate.recovered",
                         "digest.weekly",
@@ -21602,6 +21611,7 @@
                       "enum": [
                         "analysis.completed",
                         "gate.status_changed",
+                        "vulnerabilities.found",
                         "gate.failed",
                         "gate.recovered",
                         "digest.weekly",

@@ -5,7 +5,7 @@ import type { Config } from '../../config';
 import type { Db, Executor } from '../../db/client';
 import { LOCKS } from '../../db/locks';
 import type { MailDeps } from '../../mail/outbox';
-import { enqueueVulnerabilityAlerts } from '../../vulnerabilities/alerts/jobs';
+import { enqueueVulnerabilityAlerts } from '../../vulnerabilities/alerts/enqueue';
 import { fetchHttpsFile as realFetchHttpsFile, isOciProblem } from '../oci';
 import { priorityUrl, type PriorityDataset, type VulndbSettings } from '../settings';
 import { parseEpss, parseKev, PRIORITY_FILE_MAX_BYTES, type PriorityProblem } from './parse';

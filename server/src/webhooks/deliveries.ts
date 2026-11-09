@@ -5,7 +5,11 @@ import { webhookDeliveries } from '../db/schema';
 import { enqueueMany } from '../queue/queue';
 
 /** api.md §3: the events of a generic (signed JSON) webhook. */
-export const GENERIC_EVENTS = ['analysis.completed', 'gate.status_changed'] as const;
+export const GENERIC_EVENTS = [
+  'analysis.completed',
+  'gate.status_changed',
+  'vulnerabilities.found',
+] as const;
 /** 6G spec D2: the events of a Slack or Teams webhook. */
 export const CHAT_EVENTS = ['gate.failed', 'gate.recovered', 'digest.weekly'] as const;
 /** Every event a webhook can subscribe to (each kind its own subset, checked by the API). */

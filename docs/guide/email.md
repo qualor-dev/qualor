@@ -75,6 +75,8 @@ settings](./install-server.md#server-settings)).
 | Password reset link, invitation, password changed | the account's email address | see [Account emails](#account-emails) |
 | Stale vulnerability data | every instance administrator with an email address | the [vulnerability database](./vulnerability-database.md#states) is more than 3 days old, in every edition. With Business or Enterprise (`vuln.priority`), the list of exploited vulnerabilities and the exploit probability data each get an email of their own too. One email each time the data goes stale. It has no switch |
 | Project notifications | everyone who watches the project | its quality gate fails or passes again, or an analysis fails ([Project notifications](#project-notifications)) |
+| New vulnerabilities | everyone who watches the project with **New vulnerabilities in tracked versions** on | once a day at 06:00 UTC, when a tracked branch or version has new High or Critical vulnerabilities, with Business or Enterprise ([Vulnerability emails](#vulnerability-emails)) |
+| Exploited vulnerabilities | the same people | at once, when a vulnerability in a tracked branch or version is in the CISA KEV catalog, with Business or Enterprise ([Vulnerability emails](#vulnerability-emails)) |
 
 The licence and webhook alerts each have a switch in **Settings → Email → Alerts for
 administrators**. Both are on by default. An administrator without an email address gets nothing:
@@ -149,11 +151,50 @@ The [read-only demo](./users-projects-tokens.md#a-public-read-only-demo) account
 
 ### Stopping the emails
 
-Every email ends with **Stop watching this project** and **Notification settings**. Stop watching
-works without signing in. In a browser, the link opens a page that asks once, then stops, so a mail
-scanner that opens links stops nothing. Mail apps with a one-click unsubscribe button (Gmail, Apple
-Mail, Outlook) stop watching in one click, without the question. Without `QUALOR_PUBLIC_URL` the
-emails have no links: use **Settings → Notifications** instead.
+Every gate and analysis email ends with **Stop watching this project** and **Notification
+settings**. Stop watching works without signing in. In a browser, the link opens a page that asks
+once, then stops, so a mail scanner that opens links stops nothing. Mail apps with a one-click
+unsubscribe button (Gmail, Apple Mail, Outlook) stop watching in one click, without the question.
+Without `QUALOR_PUBLIC_URL` the emails have no links: use **Settings → Notifications** instead.
+
+### Vulnerability emails
+
+Business and Enterprise (`vuln.alerts`) add two emails about the dependency vulnerabilities of the
+branches and versions Qualor tracks. They go to everyone who watches the project with **New
+vulnerabilities in tracked versions** on. A new watch has it on. It covers every tracked branch and
+version, whatever the watch's branch choice.
+
+| Email | Sent | Lists |
+|---|---|---|
+| **New vulnerabilities in …** | once a day at 06:00 UTC, when there is something to list | your watched projects' new High and Critical vulnerabilities that are open and not ignored. A vulnerability in the CISA KEV catalog is marked **Exploited** |
+| **Exploited vulnerabilities in …** | at once, when a tracked branch or version has a vulnerability in the CISA Known Exploited Vulnerabilities (KEV) catalog | your watched projects' vulnerabilities in KEV that are open and not ignored |
+
+- Each person gets one email across all the projects they watch.
+- An email shows at most 20 vulnerabilities per project and 100 in all. The rest are counted in
+  **And n more on the Vulnerabilities tab**.
+- A vulnerability appears in at most one digest for each branch or version.
+- The exploited email is sent once for each branch or version and vulnerability. It can follow an
+  earlier digest.
+- A vulnerability that is Medium, Low, triaged or ignored on the day it is found is not listed
+  later, even if that changes.
+
+**What counts as new.** Only vulnerabilities Qualor finds after its baseline count:
+
+| Moment | What happens |
+|---|---|
+| A project's day one: the upgrade, the instance or project switch turned on, or the feature activated | Every vulnerability already matched is the baseline: on the project's Vulnerabilities tab, never in a digest. Its watchers get one exploited email for the KEV vulnerabilities already there |
+| A branch or version that starts being tracked later | What is matched then is its baseline. It sends no digest and no exploited email for those |
+| KEV lists a vulnerability that is already matched | The exploited email goes out |
+| The feature or a switch is off, then on again | The alert memory is gone, so this is a new day one |
+
+A project's first digest waits for its baseline. Qualor records the project's branches and versions,
+re-checks them, and then takes the baseline. Only what it finds after that is new.
+
+**Stopping them.** Both emails end with **Stop vulnerability emails** and **Notification settings**.
+Stop vulnerability emails turns **New vulnerabilities in tracked versions** off on all your watches.
+You keep watching, and the gate and analysis emails keep coming. It works without signing in, the
+same way as stopping a watch: a browser asks once, and a mail app's one-click unsubscribe stops at
+once. Turn it back on per project in **Settings → Notifications**.
 
 ### Failing webhooks for organisation administrators
 

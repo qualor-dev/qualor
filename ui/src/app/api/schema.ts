@@ -9513,7 +9513,7 @@ export interface paths {
                                 /** @description For Slack and Teams webhooks, the URL masked (it is a secret) */
                                 url: string;
                                 urlMasked: boolean;
-                                events: ("analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
+                                events: ("analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
                                 active: boolean;
                                 /** @description The IANA time zone of the weekly digest (Slack and Teams) */
                                 timezone: string;
@@ -9584,7 +9584,7 @@ export interface paths {
                         url: string;
                         secret?: string;
                         timezone?: string;
-                        events: ("analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
+                        events: ("analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
                         active?: boolean;
                     };
                 };
@@ -9607,7 +9607,7 @@ export interface paths {
                             /** @description For Slack and Teams webhooks, the URL masked (it is a secret) */
                             url: string;
                             urlMasked: boolean;
-                            events: ("analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
+                            events: ("analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
                             active: boolean;
                             /** @description The IANA time zone of the weekly digest (Slack and Teams) */
                             timezone: string;
@@ -9708,7 +9708,7 @@ export interface paths {
                             /** @description For Slack and Teams webhooks, the URL masked (it is a secret) */
                             url: string;
                             urlMasked: boolean;
-                            events: ("analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
+                            events: ("analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
                             active: boolean;
                             /** @description The IANA time zone of the weekly digest (Slack and Teams) */
                             timezone: string;
@@ -9842,7 +9842,7 @@ export interface paths {
                     "application/json": {
                         url?: string;
                         secret?: string;
-                        events?: ("analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
+                        events?: ("analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
                         active?: boolean;
                         timezone?: string;
                     };
@@ -9866,7 +9866,7 @@ export interface paths {
                             /** @description For Slack and Teams webhooks, the URL masked (it is a secret) */
                             url: string;
                             urlMasked: boolean;
-                            events: ("analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
+                            events: ("analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
                             active: boolean;
                             /** @description The IANA time zone of the weekly digest (Slack and Teams) */
                             timezone: string;
@@ -9964,7 +9964,7 @@ export interface paths {
                             /** @description For Slack and Teams webhooks, the URL masked (it is a secret) */
                             url: string;
                             urlMasked: boolean;
-                            events: ("analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
+                            events: ("analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly")[];
                             active: boolean;
                             /** @description The IANA time zone of the weekly digest (Slack and Teams) */
                             timezone: string;
@@ -10062,7 +10062,7 @@ export interface paths {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                event: "analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly" | "chat.test";
+                                event: "analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly" | "chat.test";
                                 /** @enum {string} */
                                 status: "pending" | "succeeded" | "failed";
                                 attempts: number;
@@ -10154,7 +10154,7 @@ export interface paths {
                             /** Format: uuid */
                             id: string;
                             /** @enum {string} */
-                            event: "analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly" | "chat.test";
+                            event: "analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly" | "chat.test";
                             /** @enum {string} */
                             status: "pending" | "succeeded" | "failed";
                             attempts: number;
@@ -10259,7 +10259,7 @@ export interface paths {
                             /** Format: uuid */
                             id: string;
                             /** @enum {string} */
-                            event: "analysis.completed" | "gate.status_changed" | "gate.failed" | "gate.recovered" | "digest.weekly" | "chat.test";
+                            event: "analysis.completed" | "gate.status_changed" | "vulnerabilities.found" | "gate.failed" | "gate.recovered" | "digest.weekly" | "chat.test";
                             /** @enum {string} */
                             status: "pending" | "succeeded" | "failed";
                             attempts: number;

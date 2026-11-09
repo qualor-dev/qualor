@@ -64,6 +64,10 @@ import {
   VULNDB_WORKER_CONCURRENCY,
   vulndbUpdateHandlers,
 } from './vulndb/update';
+import {
+  ensureVulnerabilityDigestScheduled,
+  scheduleVulnerabilityDigestAtBoot,
+} from './vulnerabilities/alerts/digest';
 import { alertHandlers } from './vulnerabilities/alerts/jobs';
 import { recheckHandlers } from './vulnerabilities/recheck';
 import { updateCheckerFor } from './update-check/checker';
@@ -283,7 +287,8 @@ async function main(): Promise<void> {
         : {}),
       // E1 spec: the daily licence expiry check (it queues email; the mail worker sends it).
       ...licenseAlertHandlers({ db: database.db, edition, config, logger }),
-      // 4b: the exploited (KEV) vulnerability emails (it queues them; the mail worker sends them).
+      // 4b: the exploited (KEV) vulnerability emails and the daily digest (they queue email and
+      // deliveries; the mail and webhook workers send them).
       ...alertHandlers({ ...notify, db: database.db, limits: () => edition.limits(), logger }),
       // 6G R14: the hourly weekly-digest check (it queues deliveries; the webhook worker sends them).
       ...digestHandlers({ db: database.db, logger }),
@@ -297,6 +302,7 @@ async function main(): Promise<void> {
       await notifyAnalysesFailed(db, notify, await reconcileDeadAnalyses(db), logger);
       await ensureHousekeepingScheduled(db);
       await ensureLicenseAlertScheduled(db);
+      await ensureVulnerabilityDigestScheduled(db);
       await ensureDigestScheduled(db);
       if (config.telemetry.enabled) await ensureTelemetryScheduled(db);
     },
@@ -489,6 +495,18 @@ async function main(): Promise<void> {
         errorClass: err instanceof Error ? err.constructor.name : typeof err,
       },
       'the licence expiry check could not be scheduled',
+    );
+  }
+  try {
+    await scheduleVulnerabilityDigestAtBoot(database.db);
+  } catch (err) {
+    // Never fatal: the worker's afterReap re-creates the run within 30 s.
+    logger.warn(
+      {
+        component: 'vulnerabilities',
+        errorClass: err instanceof Error ? err.constructor.name : typeof err,
+      },
+      'the vulnerability digest could not be scheduled',
     );
   }
   try {
