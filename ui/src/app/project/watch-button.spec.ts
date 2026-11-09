@@ -317,6 +317,8 @@ describe('WatchButton', () => {
     await settle(fixture);
     expect(boxes(menu()!)[3]!.disabled).toBe(true);
     expect(boxes(menu()!)[3]!.checked).toBe(false);
+    const hintId = boxes(menu()!)[3]!.getAttribute('aria-describedby')!;
+    expect(menu()!.querySelector('#' + hintId)?.textContent).toContain('One email a day');
     expect(menu()!.querySelector('.badge')?.textContent?.trim()).toBe('Business');
     boxes(menu()!)[0]!.click();
     await settle(fixture);

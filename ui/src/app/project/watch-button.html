@@ -86,6 +86,7 @@
             value="newVulnerabilities"
             [checked]="s.events.newVulnerabilities"
             [disabled]="!state()?.vulnerabilityAlerts"
+            aria-describedby="watch-vuln-hint"
             (change)="setEvent('newVulnerabilities', $event)"
           /><ng-container i18n="@@watch.event.newVulnerabilities"
             >New vulnerabilities in tracked versions</ng-container
@@ -94,7 +95,7 @@
             <span class="badge badge-tag" i18n="@@watch.businessPill">Business</span>
           }
         </label>
-        <p class="event-hint" i18n="@@watch.event.newVulnerabilitiesHint">
+        <p id="watch-vuln-hint" class="event-hint" i18n="@@watch.event.newVulnerabilitiesHint">
           One email a day, High and Critical. Exploited ones (KEV) at once.
         </p>
       </fieldset>

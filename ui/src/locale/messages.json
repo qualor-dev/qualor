@@ -2374,7 +2374,7 @@
     "members.alreadyMember": "{$name} is already a member. Change their role in the table.",
     "members.added": "{$name} added as {$role}.",
     "notifications.title": "Notifications",
-    "notifications.intro": " Qualor emails you when the quality gate of a project you watch fails or passes again, and when one of its analyses fails. ",
+    "notifications.intro": " Qualor emails you when the quality gate of a project you watch fails or passes again, when one of its analyses fails, and, with Business or Enterprise, when it has new vulnerabilities. ",
     "notifications.notConfigured": " Email isn't set up on this server, so Qualor sends no notifications yet. ",
     "notifications.emailTitle": "Email",
     "notifications.email": "Email me at {$INTERPOLATION}",

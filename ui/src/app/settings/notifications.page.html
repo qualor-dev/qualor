@@ -2,8 +2,8 @@
   <div>
     <h2 i18n="@@notifications.title">Notifications</h2>
     <p class="muted" i18n="@@notifications.intro">
-      Qualor emails you when the quality gate of a project you watch fails or passes again, and when
-      one of its analyses fails.
+      Qualor emails you when the quality gate of a project you watch fails or passes again, when one
+      of its analyses fails, and, with Business or Enterprise, when it has new vulnerabilities.
     </p>
   </div>
 </div>
@@ -140,12 +140,18 @@
                     type="checkbox"
                     data-event="newVulnerabilities"
                     [attr.aria-label]="newVulnerabilitiesLabel(w)"
+                    [attr.aria-describedby]="
+                      d.vulnerabilityAlerts ? null : 'business-' + w.project.id
+                    "
                     [checked]="w.events.newVulnerabilities"
                     [disabled]="demo() || stopping().has(w.project.id) || !d.vulnerabilityAlerts"
                     (change)="setEvent(w, 'newVulnerabilities', $event)"
                   />
                   @if (!d.vulnerabilityAlerts) {
-                    <span class="badge badge-tag" i18n="@@notifications.businessPill"
+                    <span
+                      class="badge badge-tag"
+                      [id]="'business-' + w.project.id"
+                      i18n="@@notifications.businessPill"
                       >Business</span
                     >
                   }

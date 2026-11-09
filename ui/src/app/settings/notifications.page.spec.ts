@@ -289,6 +289,10 @@ describe('NotificationsPage', () => {
     const heads = [...root.querySelectorAll('thead th')].map((h) => h.textContent?.trim());
     expect(heads).toContain('New vulnerabilities');
     expect(boxes(rowOf(root, 0))).toHaveLength(4);
+    expect(boxes(rowOf(root, 0))[3]!.hasAttribute('aria-describedby')).toBe(false);
+    expect(root.querySelector('.page-intro, p.muted')?.textContent).toContain(
+      'new vulnerabilities',
+    );
     expect(boxes(rowOf(root, 0))[3]!.getAttribute('aria-label')).toBe('New vulnerabilities: Alpha');
     expect(root.querySelector('tbody .badge')).toBeNull();
   });
@@ -310,6 +314,9 @@ describe('NotificationsPage', () => {
     expect(box.disabled).toBe(true);
     expect(box.checked).toBe(false);
     expect(rowOf(root, 0).querySelector('.badge')?.textContent?.trim()).toBe('Business');
+    const pill = rowOf(root, 0).querySelector('.badge')!;
+    expect(box.getAttribute('aria-describedby')).toBe(pill.id);
+    expect(pill.id).toContain(A);
     boxes(rowOf(root, 0))[0]!.click();
     await settle(fixture);
     expect(server.requestsTo('PUT', WATCH_A).at(-1)?.body).toEqual({
