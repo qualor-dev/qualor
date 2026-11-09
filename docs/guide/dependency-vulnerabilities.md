@@ -142,9 +142,8 @@ versions it tracks, without you opening the tab.
 | Exploited email | at once, when a vulnerability is in the CISA KEV catalog |
 | `vulnerabilities.found` webhook event | the same list as the digest, for generic webhooks ([Webhooks](./webhooks-and-api.md#webhooks)) |
 
-Only vulnerabilities found after the baseline count (the rule under [New
-vulnerabilities](#new-vulnerabilities)). The emails, their limits and the baseline in detail are in
-[Vulnerability emails](./email.md#vulnerability-emails). Every email has a link that stops them for
+Only vulnerabilities found after the alert baseline count. The emails, their limits and the baseline
+in detail are in [Vulnerability emails](./email.md#vulnerability-emails). Every email has a link that stops them for
 all your watches.
 
 ## Statuses and reasons

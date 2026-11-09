@@ -171,8 +171,10 @@ version, whatever the watch's branch choice.
 | Email | Sent | Lists |
 |---|---|---|
 | **New vulnerabilities in …** | once a day at 06:00 UTC, when there is something to list | your watched projects' new High and Critical vulnerabilities that are open and not ignored. A vulnerability in the CISA KEV catalog is marked **Exploited** |
-| **Exploited vulnerabilities in …** | at once, when a tracked branch or version has a vulnerability in the CISA Known Exploited Vulnerabilities (KEV) catalog | your watched projects' vulnerabilities in KEV that are open and not ignored |
+| **Exploited vulnerabilities in …** | at once, when a tracked branch or version has a vulnerability in the CISA Known Exploited Vulnerabilities (KEV) catalog. It follows the re-check or the KEV update that found it, and waits if a database update is running | your watched projects' vulnerabilities in KEV that are open and not ignored |
 
+- The exploited email needs `vuln.priority` as well (Business and Enterprise), because it depends on
+  the KEV catalog. Without it the digest still goes out, and KEV marks are not shown.
 - Each person gets one email across all the projects they watch.
 - An email shows at most 20 vulnerabilities per project and 100 in all. The rest are counted in
   **And n more on the Vulnerabilities tab**.
@@ -186,15 +188,17 @@ version, whatever the watch's branch choice.
 
 | Moment | What happens |
 |---|---|
-| A project's day one: the upgrade, the instance or project switch turned on, or the feature activated | Every vulnerability already matched is the baseline: on the project's Vulnerabilities tab, never in a digest. Its watchers get one exploited email for the KEV vulnerabilities already there |
+| A project's day one: the upgrade, a new project's first analysis, the first KEV download, the instance or project switch turned on, or the feature activated | Every vulnerability already matched is the baseline: on the project's Vulnerabilities tab, never in a digest. Its watchers get one exploited email for the KEV vulnerabilities already there |
 | A branch or version that starts being tracked later | What is matched then is its baseline. It sends no digest and no exploited email for those |
 | KEV lists a vulnerability that is already matched | The exploited email goes out |
 | The feature or a switch is off, then on again | The alert memory is gone, so this is a new day one |
 
 A project's first digest waits for its baseline. Qualor records the project's branches and versions,
-re-checks them, and then takes the baseline. Only what it finds after that is new.
+re-checks them, and then takes the baseline. A branch or version waits until it has a dependency
+inventory. Only what Qualor finds after that is new.
 
-**Stopping them.** Both emails end with **Stop vulnerability emails** and **Notification settings**.
+**Stopping them.** With `QUALOR_PUBLIC_URL` set, both emails end with **Stop vulnerability emails**
+and **Notification settings**. Without it they have no links: use **Settings → Notifications**.
 Stop vulnerability emails turns **New vulnerabilities in tracked versions** off on all your watches.
 You keep watching, and the gate and analysis emails keep coming. It works without signing in, the
 same way as stopping a watch: a browser asks once, and a mail app's one-click unsubscribe stops at
