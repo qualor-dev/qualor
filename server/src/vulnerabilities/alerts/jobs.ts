@@ -16,7 +16,7 @@ export interface AlertDeps extends NotifyDeps {
   logger?: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
 }
 
-/** On the analysis worker (main.ts). An error reaches the queue: the transaction rolled back, so the retry starts clean. */
+/** On the vulndb worker (main.ts), after the re-checks. An error reaches the queue: the transaction rolled back, so the retry starts clean. */
 export function alertHandlers(deps: AlertDeps): JobHandlers {
   return {
     [ALERTS_QUEUE]: async () => {

@@ -287,9 +287,6 @@ async function main(): Promise<void> {
         : {}),
       // E1 spec: the daily licence expiry check (it queues email; the mail worker sends it).
       ...licenseAlertHandlers({ db: database.db, edition, config, logger }),
-      // 4b: the exploited (KEV) vulnerability emails and the daily digest (they queue email and
-      // deliveries; the mail and webhook workers send them).
-      ...alertHandlers({ ...notify, db: database.db, limits: () => edition.limits(), logger }),
       // 6G R14: the hourly weekly-digest check (it queues deliveries; the webhook worker sends them).
       ...digestHandlers({ db: database.db, logger }),
     },
@@ -302,7 +299,6 @@ async function main(): Promise<void> {
       await notifyAnalysesFailed(db, notify, await reconcileDeadAnalyses(db), logger);
       await ensureHousekeepingScheduled(db);
       await ensureLicenseAlertScheduled(db);
-      await ensureVulnerabilityDigestScheduled(db);
       await ensureDigestScheduled(db);
       if (config.telemetry.enabled) await ensureTelemetryScheduled(db);
     },
@@ -457,12 +453,18 @@ async function main(): Promise<void> {
         limits: () => edition.limits(),
       }),
       ...recheckHandlers({ db: database.db, config, logger, shutdown: vulndbShutdown.signal }),
+      // 4b: the exploited (KEV) vulnerability emails and the daily digest queue email and
+      // deliveries (the mail and webhook workers send them). A pass reads the whole instance
+      // (about 7.5 s at 2 000 projects), so it runs here and not on the analysis worker. It follows
+      // the re-checks in the queue order: an alert reads what they and the update just wrote.
+      ...alertHandlers({ ...notify, db: database.db, limits: () => edition.limits(), logger }),
     },
     concurrency: VULNDB_WORKER_CONCURRENCY,
     leaseMs: VULNDB_LEASE_MS,
     logger,
     afterReap: async (db) => {
       await ensureVulndbScheduled(db);
+      await ensureVulnerabilityDigestScheduled(db);
     },
   });
   // enterprise.md §10.3: plugin jobs have their own worker, only when a plugin registered jobs;
