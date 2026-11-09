@@ -162,7 +162,7 @@ export const notificationRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         tags: ['notifications'],
         summary: 'Watch a project, or change what the caller watches',
         description:
-          'Emails when the quality gate fails or passes again and when an analysis fails, on the main branch (`main`) or on every branch and merge request (`all`).',
+          'Emails when the quality gate fails or passes again, when an analysis fails and, with Business or Enterprise, when a tracked branch or version has new vulnerabilities (`newVulnerabilities`), on the main branch (`main`) or on every branch and merge request (`all`).',
         params: idParams,
         body: z.strictObject({ branches, events: eventsBody }),
         response: { 200: watchResponse },
