@@ -296,6 +296,39 @@ describe('vulnerability emails (4b)', () => {
     expect(flat(mail.text)).toContain('30 more on the Vulnerabilities tab.');
   });
 
+  it('clips advisory text: a full digest and KEV mail stay under 90 KB, the subject within its limit', () => {
+    const long = (n: number) => 'x'.repeat(n);
+    const full = [1, 2, 3, 4, 5].map((n) => ({
+      ...project(n, 20),
+      name: long(300),
+      rows: Array.from({ length: 20 }, (_, i) => ({
+        vulnerabilityId: `CVE-2026-${1000 + i}`,
+        severity: 'critical' as const,
+        title: long(1000),
+        exploited: { dateAdded: '2026-10-30' },
+        packageName: long(300),
+        installedVersions: Array.from({ length: 30 }, (_, v) => `1.0.${v}${long(20)}`),
+        fixedVersion: '1.2.3',
+        targets: Array.from({ length: 30 }, (_, v) => `release/${v}${long(30)}`),
+      })),
+    }));
+    for (const mail of [
+      digest(full),
+      renderExploitedAlert({ projects: full, links: SAMPLE_VULNERABILITY_LINKS }),
+    ]) {
+      expect(Buffer.byteLength(mail.html, 'utf8')).toBeLessThan(90 * 1024);
+      expect(mail.html).not.toContain(long(121));
+      expect(mail.text).not.toContain(long(121));
+    }
+    const one = renderExploitedAlert({
+      projects: [{ ...project(1), name: long(300) }],
+      links: SAMPLE_VULNERABILITY_LINKS,
+    });
+    expect(one.subject.length).toBeLessThanOrEqual(300);
+    expect(one.subject).toContain('…');
+    expect(digest([{ ...project(1), name: long(300) }]).subject.length).toBeLessThanOrEqual(300);
+  });
+
   it('escapes names and titles', () => {
     const row = { ...SAMPLE_VULNERABILITY_PROJECTS[0]!.rows[0]!, title: '<script>x</script>' };
     const mail = digest([{ ...project(1), name: '<b>P</b>', rows: [row] }]);

@@ -36,8 +36,8 @@ export const MAIL_KINDS = [
   'notify.gate-recovered',
   'notify.analysis-failed',
   // 0.15: vulnerability alerts.
-  'notify.vulnerabilities',
-  'notify.exploited',
+  'notify.vulnerabilities-digest',
+  'notify.vulnerabilities-exploited',
 ] as const;
 export type MailKind = (typeof MAIL_KINDS)[number];
 
