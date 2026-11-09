@@ -72,19 +72,19 @@ vulnerabilities:
     statement: libcurl SFTP/SCP; no Debian fix. Qualor makes no SFTP or SCP transfers.
     expired_at: 2026-12-31
   - id: CVE-2025-59375
-    statement: expat (git); Debian will not fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); Debian will not fix. The addons parse only cppcheck's dump, whose DOCTYPE-free structure and names are cppcheck's own, and a repository supplies only escaped attribute values. At worst it costs memory in the scan job, within analyzers.cppcheck.timeoutSeconds.
     expired_at: 2026-12-31
   - id: CVE-2026-25210
-    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); no Debian fix. It needs an enormous element name, and the dump's element names are cppcheck's own.
     expired_at: 2026-12-31
   - id: CVE-2026-45186
-    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); no Debian fix. It needs one element with many colliding attribute names, and the dump's attribute names are cppcheck's own.
     expired_at: 2026-12-31
   - id: CVE-2026-66046
-    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); no Debian fix. It needs ATTLIST defaults, and the dump has no DOCTYPE.
     expired_at: 2026-12-31
   - id: CVE-2026-93990
-    statement: expat (git); no Debian fix. Qualor parses no XML with expat.
+    statement: expat (git, and pyexpat for cppcheck's addons); no Debian fix. It needs UTF-16 input, and the dump is UTF-8.
     expired_at: 2026-12-31
   - id: CVE-2023-2953
     statement: openldap, a libcurl dependency used for ldap:// URLs only; no Debian fix. The scanner's git fetch never uses LDAP.
