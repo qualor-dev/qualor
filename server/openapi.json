@@ -2895,12 +2895,16 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "vulnerabilityAlerts": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "watching",
                         "emailReady",
-                        "emailBlocker"
+                        "emailBlocker",
+                        "vulnerabilityAlerts"
                       ],
                       "additionalProperties": false
                     },
@@ -2931,12 +2935,16 @@
                             },
                             "analysisFailed": {
                               "type": "boolean"
+                            },
+                            "newVulnerabilities": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "gateFailed",
                             "gateRecovered",
-                            "analysisFailed"
+                            "analysisFailed",
+                            "newVulnerabilities"
                           ],
                           "additionalProperties": false
                         },
@@ -2957,6 +2965,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "vulnerabilityAlerts": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -2964,7 +2975,8 @@
                         "branches",
                         "events",
                         "emailReady",
-                        "emailBlocker"
+                        "emailBlocker",
+                        "vulnerabilityAlerts"
                       ],
                       "additionalProperties": false
                     }
@@ -3046,6 +3058,9 @@
                       },
                       "analysisFailed": {
                         "type": "boolean"
+                      },
+                      "newVulnerabilities": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -3110,12 +3125,16 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "vulnerabilityAlerts": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "watching",
                         "emailReady",
-                        "emailBlocker"
+                        "emailBlocker",
+                        "vulnerabilityAlerts"
                       ],
                       "additionalProperties": false
                     },
@@ -3146,12 +3165,16 @@
                             },
                             "analysisFailed": {
                               "type": "boolean"
+                            },
+                            "newVulnerabilities": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "gateFailed",
                             "gateRecovered",
-                            "analysisFailed"
+                            "analysisFailed",
+                            "newVulnerabilities"
                           ],
                           "additionalProperties": false
                         },
@@ -3172,6 +3195,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "vulnerabilityAlerts": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -3179,7 +3205,8 @@
                         "branches",
                         "events",
                         "emailReady",
-                        "emailBlocker"
+                        "emailBlocker",
+                        "vulnerabilityAlerts"
                       ],
                       "additionalProperties": false
                     }
@@ -3333,6 +3360,9 @@
                         "null"
                       ]
                     },
+                    "vulnerabilityAlerts": {
+                      "type": "boolean"
+                    },
                     "mailConfigured": {
                       "type": "boolean"
                     },
@@ -3381,12 +3411,16 @@
                               },
                               "analysisFailed": {
                                 "type": "boolean"
+                              },
+                              "newVulnerabilities": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
                               "gateFailed",
                               "gateRecovered",
-                              "analysisFailed"
+                              "analysisFailed",
+                              "newVulnerabilities"
                             ],
                             "additionalProperties": false
                           }
@@ -3404,6 +3438,7 @@
                     "preferences",
                     "isOrgAdmin",
                     "emailAddress",
+                    "vulnerabilityAlerts",
                     "mailConfigured",
                     "watches"
                   ],

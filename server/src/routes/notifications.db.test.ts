@@ -23,6 +23,7 @@ import {
   users,
 } from '../db/schema';
 import { unsubscribeToken, vulnerabilityUnsubscribeToken } from '../notifications/unsubscribe';
+import { communityLimits } from '../limits';
 
 const ON = {
   branches: 'all',
@@ -119,10 +120,18 @@ describe('watch, notification and unsubscribe routes (mail E3)', () => {
       watching: false,
       emailReady: true,
       emailBlocker: null,
+      vulnerabilityAlerts: false,
     });
     const put = await call(viewer, 'PUT', `/projects/${projectId}/watch`, ON);
     expect(put.statusCode, put.body).toBe(200);
-    expect(put.json()).toEqual({ watching: true, ...ON, emailReady: true, emailBlocker: null });
+    expect(put.json()).toEqual({
+      watching: true,
+      ...ON,
+      events: { ...ON.events, newVulnerabilities: true },
+      emailReady: true,
+      emailBlocker: null,
+      vulnerabilityAlerts: false,
+    });
     const changed = await call(viewer, 'PUT', `/projects/${projectId}/watch`, {
       ...ON,
       branches: 'main',
@@ -132,15 +141,56 @@ describe('watch, notification and unsubscribe routes (mail E3)', () => {
     expect((await call(viewer, 'GET', `/projects/${projectId}/watch`)).json()).toEqual({
       watching: true,
       ...ON,
+      events: { ...ON.events, newVulnerabilities: true },
       branches: 'main',
       emailReady: true,
       emailBlocker: null,
+      vulnerabilityAlerts: false,
     });
     expect((await call(viewer, 'DELETE', `/projects/${projectId}/watch`)).statusCode).toBe(204);
     expect((await call(viewer, 'DELETE', `/projects/${projectId}/watch`)).statusCode).toBe(204);
     expect((await call(viewer, 'GET', `/projects/${projectId}/watch`)).json()).toMatchObject({
       watching: false,
     });
+  });
+
+  it('stores the New vulnerabilities flag, and an older client that omits it keeps it (4b)', async () => {
+    const url = `/projects/${projectId}/watch`;
+    const off = await call(viewer, 'PUT', url, {
+      ...ON,
+      events: { ...ON.events, newVulnerabilities: false },
+    });
+    expect(off.statusCode, off.body).toBe(200);
+    expect(off.json()).toMatchObject({ events: { newVulnerabilities: false } });
+    expect((await watchesOf(viewerId, projectId))[0]?.newVulnerabilities).toBe(false);
+    expect((await call(viewer, 'GET', url)).json()).toMatchObject({
+      events: { newVulnerabilities: false },
+    });
+    expect((await call(viewer, 'GET', '/me/notifications')).json().watches[0].events).toMatchObject(
+      { newVulnerabilities: false },
+    );
+    // A PUT without the field keeps the stored value.
+    const kept = await call(viewer, 'PUT', url, { ...ON, branches: 'main' });
+    expect(kept.json()).toMatchObject({ events: { newVulnerabilities: false } });
+    expect((await watchesOf(viewerId, projectId))[0]?.newVulnerabilities).toBe(false);
+    const on = await call(viewer, 'PUT', url, {
+      ...ON,
+      events: { ...ON.events, newVulnerabilities: true },
+    });
+    expect(on.json()).toMatchObject({ events: { newVulnerabilities: true } });
+    // A new watch without the field gets true.
+    await call(viewer, 'DELETE', url);
+    const fresh = await call(viewer, 'PUT', url, ON);
+    expect(fresh.json()).toMatchObject({ events: { newVulnerabilities: true } });
+    expect(
+      (
+        await call(viewer, 'PUT', url, {
+          ...ON,
+          events: { ...ON.events, newVulnerabilities: 'no' },
+        })
+      ).statusCode,
+    ).toBe(422);
+    await call(viewer, 'DELETE', url);
   });
 
   it('answers 404 to someone who cannot read the project, and 422 to a bad body', async () => {
@@ -246,16 +296,27 @@ describe('watch, notification and unsubscribe routes (mail E3)', () => {
       isOrgAdmin: false,
       emailAddress: 'viewer@example.com',
       mailConfigured: true,
+      vulnerabilityAlerts: false,
       watches: [
         {
           project: { id: alpha.id, key: 'nr/alpha', name: 'Alpha' },
           branches: 'main',
-          events: { gateFailed: true, gateRecovered: true, analysisFailed: true },
+          events: {
+            gateFailed: true,
+            gateRecovered: true,
+            analysisFailed: true,
+            newVulnerabilities: true,
+          },
         },
         {
           project: { id: projectId, key: 'nr/zeta', name: 'Zeta' },
           branches: 'all',
-          events: { gateFailed: true, gateRecovered: true, analysisFailed: true },
+          events: {
+            gateFailed: true,
+            gateRecovered: true,
+            analysisFailed: true,
+            newVulnerabilities: true,
+          },
         },
       ],
     });
@@ -560,7 +621,12 @@ describe('the whole chain (mail E3 acceptance 1 and 4)', () => {
         headers: h.orgAdmin.headers,
         payload: {
           branches: 'main',
-          events: { gateFailed: true, gateRecovered: true, analysisFailed: true },
+          events: {
+            gateFailed: true,
+            gateRecovered: true,
+            analysisFailed: true,
+            newVulnerabilities: true,
+          },
         },
       });
       expect(put.statusCode, put.body).toBe(200);
@@ -589,5 +655,52 @@ describe('the whole chain (mail E3 acceptance 1 and 4)', () => {
     } finally {
       await h.close();
     }
+  });
+});
+
+describe('the vulnerability alerts feature state (4b)', () => {
+  let ctx: TestContext;
+  let user: Session;
+  let projectId: string;
+
+  beforeAll(async () => {
+    const limits = communityLimits();
+    ctx = await createTestContext({
+      config: { ...MAIL_ON },
+      limits: { ...limits, vulnerabilities: { ...limits.vulnerabilities, alerts: true } },
+    });
+    const org = await organizationId(ctx, 'default');
+    const u = await createUser(ctx, { username: 'va-user', email: 'va@example.com' });
+    await addMember(ctx, org, u.id, 'admin');
+    user = await login(ctx, u.username, u.password);
+    projectId = (
+      await createProject(ctx, user, { organizationId: org, key: 'va/one', name: 'One' })
+    ).id;
+  });
+  afterAll(async () => {
+    await ctx.close();
+  });
+
+  it('is true on both answers with the licensed limit, watching or not', async () => {
+    const get = (url: string) =>
+      ctx.app.inject({ method: 'GET', url: `/api/v0${url}`, headers: user.headers });
+    expect((await get(`/projects/${projectId}/watch`)).json()).toMatchObject({
+      watching: false,
+      vulnerabilityAlerts: true,
+    });
+    await ctx.app.inject({
+      method: 'PUT',
+      url: `/api/v0/projects/${projectId}/watch`,
+      headers: user.headers,
+      payload: {
+        branches: 'main',
+        events: { gateFailed: true, gateRecovered: true, analysisFailed: true },
+      },
+    });
+    expect((await get(`/projects/${projectId}/watch`)).json()).toMatchObject({
+      watching: true,
+      vulnerabilityAlerts: true,
+    });
+    expect((await get('/me/notifications')).json()).toMatchObject({ vulnerabilityAlerts: true });
   });
 });

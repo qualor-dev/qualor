@@ -1851,6 +1851,7 @@ export interface paths {
                             watching: false;
                             emailReady: boolean;
                             emailBlocker: ("no_address" | "not_configured" | "preference_off") | null;
+                            vulnerabilityAlerts: boolean;
                         } | {
                             /** @enum {boolean} */
                             watching: true;
@@ -1860,9 +1861,11 @@ export interface paths {
                                 gateFailed: boolean;
                                 gateRecovered: boolean;
                                 analysisFailed: boolean;
+                                newVulnerabilities: boolean;
                             };
                             emailReady: boolean;
                             emailBlocker: ("no_address" | "not_configured" | "preference_off") | null;
+                            vulnerabilityAlerts: boolean;
                         };
                     };
                 };
@@ -1926,6 +1929,7 @@ export interface paths {
                             gateFailed: boolean;
                             gateRecovered: boolean;
                             analysisFailed: boolean;
+                            newVulnerabilities?: boolean;
                         };
                     };
                 };
@@ -1942,6 +1946,7 @@ export interface paths {
                             watching: false;
                             emailReady: boolean;
                             emailBlocker: ("no_address" | "not_configured" | "preference_off") | null;
+                            vulnerabilityAlerts: boolean;
                         } | {
                             /** @enum {boolean} */
                             watching: true;
@@ -1951,9 +1956,11 @@ export interface paths {
                                 gateFailed: boolean;
                                 gateRecovered: boolean;
                                 analysisFailed: boolean;
+                                newVulnerabilities: boolean;
                             };
                             emailReady: boolean;
                             emailBlocker: ("no_address" | "not_configured" | "preference_off") | null;
+                            vulnerabilityAlerts: boolean;
                         };
                     };
                 };
@@ -2088,6 +2095,7 @@ export interface paths {
                             };
                             isOrgAdmin: boolean;
                             emailAddress: string | null;
+                            vulnerabilityAlerts: boolean;
                             mailConfigured: boolean;
                             watches: {
                                 project: {
@@ -2102,6 +2110,7 @@ export interface paths {
                                     gateFailed: boolean;
                                     gateRecovered: boolean;
                                     analysisFailed: boolean;
+                                    newVulnerabilities: boolean;
                                 };
                             }[];
                         };

@@ -29,12 +29,17 @@ const events = z.strictObject({
   gateFailed: z.boolean(),
   gateRecovered: z.boolean(),
   analysisFailed: z.boolean(),
+  newVulnerabilities: z.boolean(),
 });
+/** The PUT body: older clients do not send the flag, so it is optional there (4b). */
+const eventsBody = events.extend({ newVulnerabilities: z.boolean().optional() });
 const emailFields = {
   /** The caller has an address, the server has SMTP, and the caller's notification email is on. */
   emailReady: z.boolean(),
   /** Why not (the UI's hint), in this order; null when ready. */
   emailBlocker: z.enum(['no_address', 'not_configured', 'preference_off']).nullable(),
+  /** The edition has vulnerability alerts (`vuln.alerts`); without it the flag does nothing. */
+  vulnerabilityAlerts: z.boolean(),
 };
 const watchResponse = z.discriminatedUnion('watching', [
   z.object({ watching: z.literal(false), ...emailFields }),
@@ -46,6 +51,7 @@ const notificationsResponse = z.object({
   /** The caller administers an organisation (the failing-webhook switch applies). */
   isOrgAdmin: z.boolean(),
   emailAddress: z.string().nullable(),
+  vulnerabilityAlerts: z.boolean(),
   mailConfigured: z.boolean(),
   /** The caller's watches of projects it can still see, by project name. */
   watches: z.array(
@@ -71,6 +77,7 @@ function eventsOf(row: WatchRow): z.infer<typeof events> {
     gateFailed: row.gateFailed,
     gateRecovered: row.gateRecovered,
     analysisFailed: row.analysisFailed,
+    newVulnerabilities: row.newVulnerabilities,
   };
 }
 
@@ -96,7 +103,11 @@ async function emailBlocker(
 
 async function emailState(deps: RouteDeps, user: UserRow) {
   const blocker = await emailBlocker(deps, user);
-  return { emailReady: blocker === null, emailBlocker: blocker };
+  return {
+    emailReady: blocker === null,
+    emailBlocker: blocker,
+    vulnerabilityAlerts: deps.edition.limits().vulnerabilities.alerts,
+  };
 }
 
 async function watchState(
@@ -153,7 +164,7 @@ export const notificationRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         description:
           'Emails when the quality gate fails or passes again and when an analysis fails, on the main branch (`main`) or on every branch and merge request (`all`).',
         params: idParams,
-        body: z.strictObject({ branches, events }),
+        body: z.strictObject({ branches, events: eventsBody }),
         response: { 200: watchResponse },
       },
     },
@@ -171,6 +182,10 @@ export const notificationRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         gateFailed: chosen.gateFailed,
         gateRecovered: chosen.gateRecovered,
         analysisFailed: chosen.analysisFailed,
+        // Absent: an existing watch keeps its value and a new one gets the column default (true).
+        ...(chosen.newVulnerabilities === undefined
+          ? {}
+          : { newVulnerabilities: chosen.newVulnerabilities }),
       };
       await deps.db
         .insert(projectWatches)
@@ -245,6 +260,7 @@ export const notificationRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         preferences: await preferencesOf(deps.db, user.id),
         isOrgAdmin: administers !== undefined,
         emailAddress: user.email,
+        vulnerabilityAlerts: deps.edition.limits().vulnerabilities.alerts,
         mailConfigured: await mailConfigured(deps.db, deps.config),
         watches: rows.map((r) => ({
           project: r.project,

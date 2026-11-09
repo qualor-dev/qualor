@@ -169,7 +169,11 @@ export class NotificationsPage {
   private show(projectId: string, settings: WatchSettings): void {
     this.update((d) => ({
       ...d,
-      watches: d.watches.map((x) => (x.project.id === projectId ? { ...x, ...settings } : x)),
+      watches: d.watches.map((x) =>
+        x.project.id === projectId
+          ? { ...x, branches: settings.branches, events: { ...x.events, ...settings.events } }
+          : x,
+      ),
     }));
   }
 

@@ -23,7 +23,7 @@ export type EventKey = keyof WatchSettings['events'];
 /** What "Watch" starts with (mail E3 N2, N3): the main branch and every event. */
 export const DEFAULT_WATCH: WatchSettings = {
   branches: 'main',
-  events: { gateFailed: true, gateRecovered: true, analysisFailed: true },
+  events: { gateFailed: true, gateRecovered: true, analysisFailed: true, newVulnerabilities: true },
 };
 
 /** The settings of a watch the server confirmed; `null` when not watching. */
@@ -262,6 +262,7 @@ export class WatchButton {
         watching: false,
         emailReady: state?.emailReady ?? false,
         emailBlocker: state?.emailBlocker ?? null,
+        vulnerabilityAlerts: state?.vulnerabilityAlerts ?? false,
       });
       this.close();
     } catch (err) {

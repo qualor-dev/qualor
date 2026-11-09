@@ -44,7 +44,7 @@ describe('WatchButton', () => {
     await settle(fixture);
     expect(server.requestsTo('PUT', URL)[0]?.body).toEqual({
       branches: 'main',
-      events: ALL_EVENTS,
+      events: { ...ALL_EVENTS, newVulnerabilities: true },
     });
     expect(toggle().textContent?.trim()).toBe('Watching');
     expect(toggle().getAttribute('aria-expanded')).toBe('true');
