@@ -134,6 +134,9 @@ export class LicensePage {
       };
     }
     const left = clamp(Math.ceil((expires - now) / DAY), 0, total);
+    const renewNote = l.trial
+      ? licenseTexts.trialEndsOn(formatDate(l.expires))
+      : $localize`:@@license.renewSoon:Renew soon: the licence expires on ${formatDate(l.expires)}:date:`;
     return {
       value: left,
       max: total,
@@ -141,11 +144,7 @@ export class LicensePage {
         left === 1
           ? $localize`:@@license.dayLeft:1 day left`
           : $localize`:@@license.daysLeft:${left}:days: days left`,
-      note: s.expiresSoon
-        ? l.trial
-          ? licenseTexts.trialEndsOn(formatDate(l.expires))
-          : $localize`:@@license.renewSoon:Renew soon: the licence expires on ${formatDate(l.expires)}:date:`
-        : null,
+      note: s.expiresSoon ? renewNote : null,
       alert: s.expiresSoon ? ('attention' as const) : null,
     };
   });

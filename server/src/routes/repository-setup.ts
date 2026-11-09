@@ -227,18 +227,13 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
       // Keys are case-sensitive: an unmapped project is adoptable only by the exact name.
       const adoptable = new Map(unmappedRows.map((p) => [p.key, p]));
 
-      const items = listed.map((r) => {
+      const projectOf = (r: (typeof listed)[number]) => {
         const found = mapped.get(r.ref.toLowerCase()) ?? mapped.get(r.name.toLowerCase());
+        if (found) return { id: found.id, key: found.key, state: 'mapped' as const };
         const free = adoptable.get(r.name);
-        return {
-          ...r,
-          project: found
-            ? { id: found.id, key: found.key, state: 'mapped' as const }
-            : free
-              ? { id: free.id, key: free.key, state: 'adoptable' as const }
-              : null,
-        };
-      });
+        return free ? { id: free.id, key: free.key, state: 'adoptable' as const } : null;
+      };
+      const items = listed.map((r) => ({ ...r, project: projectOf(r) }));
       return { items, hasMore };
     },
   );

@@ -343,28 +343,42 @@ export class AddRepositoriesPage {
       if (!response.ok || !data) {
         throw new ApiError(response.status, isProblem(error) ? error : null, retryAfter);
       }
-      this.failures = 0;
-      this.run.set(data);
-      if (data.status !== 'done') {
-        this.plan(runId, generation, waitFor(retryAfter) ?? POLL_MS);
-      } else if (!this.sawDone) {
-        this.sawDone = true;
-        this.focusHeading();
-      }
+      this.readSucceeded(runId, generation, data, retryAfter);
     } catch (err) {
       if (generation !== this.runGeneration) return;
-      if (err instanceof ApiError && err.status === 404) {
-        this.runError.set(problemMessage(err));
-        return;
-      }
-      this.failures++;
-      if (this.failures >= POLL_FAILURES) {
-        this.pollStopped.set(true);
-        return;
-      }
-      const asked = err instanceof ApiError ? waitFor(err.retryAfter?.toString() ?? null) : null;
-      this.plan(runId, generation, asked ?? POLL_MS * 2 ** this.failures);
+      this.readFailed(runId, generation, err);
     }
+  }
+
+  private readSucceeded(
+    runId: string,
+    generation: number,
+    data: SetupRun,
+    retryAfter: string | null,
+  ): void {
+    this.failures = 0;
+    this.run.set(data);
+    if (data.status !== 'done') {
+      this.plan(runId, generation, waitFor(retryAfter) ?? POLL_MS);
+    } else if (!this.sawDone) {
+      this.sawDone = true;
+      this.focusHeading();
+    }
+  }
+
+  /** A run that is gone ends the polling; any other failure backs off, then gives up. */
+  private readFailed(runId: string, generation: number, err: unknown): void {
+    if (err instanceof ApiError && err.status === 404) {
+      this.runError.set(problemMessage(err));
+      return;
+    }
+    this.failures++;
+    if (this.failures >= POLL_FAILURES) {
+      this.pollStopped.set(true);
+      return;
+    }
+    const asked = err instanceof ApiError ? waitFor(err.retryAfter?.toString() ?? null) : null;
+    this.plan(runId, generation, asked ?? POLL_MS * 2 ** this.failures);
   }
 
   private plan(runId: string, generation: number, ms: number): void {

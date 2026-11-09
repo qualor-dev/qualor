@@ -761,89 +761,56 @@ async function finishWithSnippet(
   });
 }
 
-/**
- * CI setup for one repository: the plan, then for a change the branch, the files, the token in
- * the CI secrets and the merge request, in that order (the pipeline the merge request starts
- * finds the token). A token whose write failed is revoked; one that may be stored stays.
- */
-async function setUpCi(
+/** Whether the repository is C#; a failed read gives false, a snippet is still worth giving. */
+async function detectCsharp(repo: OpenedRepository): Promise<boolean> {
+  try {
+    return await repo.ci.csharp();
+  } catch (err) {
+    if (!(err instanceof ScmError)) throw err;
+    return false;
+  }
+}
+
+/** The repository already runs Qualor: points at its open merge request, or finishes an earlier run. */
+async function settleAlreadySetUp(
   ctx: ItemContext,
   repo: OpenedRepository,
-  project: SetupProject,
+  input: CiSetupInput,
+  snippet: string,
 ): Promise<void> {
-  const { deps, run, connection, status, item } = ctx;
-  const projectId = project.id;
-  const base = {
-    provider: connection.provider,
-    host: (deps.host ?? ciHostOf)(connection),
-    serverUrl: deps.publicUrl ?? URL_PLACEHOLDER,
-    // Always written: the key may differ from the repository's path, which the scanner would use.
-    projectKey: project.key,
-    version: VERSION,
-    defaultBranch: repo.defaultBranch ?? 'main',
-  };
-  const snippet = async (
-    outcome: 'snippet' | 'skipped',
-    reason: SetupCiReason | null,
-    csharp?: boolean,
-  ) => {
-    let isCsharp = csharp ?? false;
-    if (csharp === undefined) {
-      try {
-        isCsharp = await repo.ci.csharp();
-      } catch (err) {
-        // The snippet is still worth giving without the language.
-        if (!(err instanceof ScmError)) throw err;
-      }
-    }
-    await finishWithSnippet(
-      ctx,
-      projectId,
-      outcome,
-      reason,
-      freshSnippet({ ...base, csharp: isCsharp }),
-    );
-  };
-  if (!run.ciSetup) return snippet('skipped', null);
-  if (status === null || !status.available) {
-    return snippet('snippet', status?.reason ?? 'not_allowed');
+  const { deps, item } = ctx;
+  const open = await repo.ci.findMergeRequest();
+  if (open !== null) {
+    return updateItem(deps.db, item, { ciOutcome: 'merge_request', ciUrl: open });
   }
-  if (!repo.mayChange) return snippet('snippet', 'missing_permissions');
-  if (repo.defaultBranch === null) return snippet('snippet', 'empty_repository');
-
-  const read = await repo.ci.read();
-  if (read.empty) return snippet('snippet', 'empty_repository', read.csharp);
-  if (read.customCiPath) return snippet('snippet', 'custom_ci_path', read.csharp);
-  const input: CiSetupInput = { ...base, csharp: read.csharp, existing: read.existing };
-  const plan: CiPlan = planCiSetup(input);
-  if (plan.kind === 'snippet') {
-    if (plan.reason !== 'already_set_up') {
-      return finishWithSnippet(ctx, projectId, 'snippet', plan.reason, plan.snippet);
-    }
-    const open = await repo.ci.findMergeRequest();
-    if (open !== null) {
-      return updateItem(deps.db, item, { ciOutcome: 'merge_request', ciUrl: open });
-    }
-    // A run that stored the token and then could not open the merge request: open it now.
-    if (read.existing.tokenSecretSet) {
-      const resumed = planCiSetup({
-        ...input,
-        existing: { ...input.existing, tokenSecretSet: false },
-      });
-      if (resumed.kind === 'change' && (await repo.ci.branchExists())) {
-        // What failed after the token may be a variable: set them again (an upsert) first.
-        await repo.ci.setVariables(resumed.variables);
-        const url = await repo.ci.openMergeRequest(resumed.description);
-        return updateItem(deps.db, item, { ciOutcome: 'merge_request', ciUrl: url });
-      }
-    }
-    return updateItem(deps.db, item, {
-      ciOutcome: 'already',
-      ciReason: 'already_set_up' satisfies CiSnippetReason,
-      snippet: plan.snippet,
+  // A run that stored the token and then could not open the merge request: open it now.
+  if (input.existing.tokenSecretSet) {
+    const resumed = planCiSetup({
+      ...input,
+      existing: { ...input.existing, tokenSecretSet: false },
     });
+    if (resumed.kind === 'change' && (await repo.ci.branchExists())) {
+      // What failed after the token may be a variable: set them again (an upsert) first.
+      await repo.ci.setVariables(resumed.variables);
+      const url = await repo.ci.openMergeRequest(resumed.description);
+      return updateItem(deps.db, item, { ciOutcome: 'merge_request', ciUrl: url });
+    }
   }
+  return updateItem(deps.db, item, {
+    ciOutcome: 'already',
+    ciReason: 'already_set_up' satisfies CiSnippetReason,
+    snippet,
+  });
+}
 
+/** Writes the plan: the branch, the files, the token and variables, the merge request. */
+async function applyCiChange(
+  ctx: ItemContext,
+  repo: OpenedRepository,
+  projectId: string,
+  plan: Extract<CiPlan, { kind: 'change' }>,
+): Promise<void> {
+  const { deps, run, item } = ctx;
   const reused = await repo.ci.branchExists();
   if (!reused) await repo.ci.createBranch();
   await repo.ci.writeFiles(plan.files, reused);
@@ -875,60 +842,152 @@ async function setUpCi(
   }
 }
 
+/**
+ * CI setup for one repository: the plan, then for a change the branch, the files, the token in
+ * the CI secrets and the merge request, in that order (the pipeline the merge request starts
+ * finds the token). A token whose write failed is revoked; one that may be stored stays.
+ */
+async function setUpCi(
+  ctx: ItemContext,
+  repo: OpenedRepository,
+  project: SetupProject,
+): Promise<void> {
+  const { deps, run, connection, status } = ctx;
+  const projectId = project.id;
+  const base = {
+    provider: connection.provider,
+    host: (deps.host ?? ciHostOf)(connection),
+    serverUrl: deps.publicUrl ?? URL_PLACEHOLDER,
+    // Always written: the key may differ from the repository's path, which the scanner would use.
+    projectKey: project.key,
+    version: VERSION,
+    defaultBranch: repo.defaultBranch ?? 'main',
+  };
+  const snippet = async (
+    outcome: 'snippet' | 'skipped',
+    reason: SetupCiReason | null,
+    csharp?: boolean,
+  ) => {
+    const isCsharp = csharp ?? (await detectCsharp(repo));
+    await finishWithSnippet(
+      ctx,
+      projectId,
+      outcome,
+      reason,
+      freshSnippet({ ...base, csharp: isCsharp }),
+    );
+  };
+  if (!run.ciSetup) return snippet('skipped', null);
+  if (status === null || !status.available) {
+    return snippet('snippet', status?.reason ?? 'not_allowed');
+  }
+  if (!repo.mayChange) return snippet('snippet', 'missing_permissions');
+  if (repo.defaultBranch === null) return snippet('snippet', 'empty_repository');
+
+  const read = await repo.ci.read();
+  if (read.empty) return snippet('snippet', 'empty_repository', read.csharp);
+  if (read.customCiPath) return snippet('snippet', 'custom_ci_path', read.csharp);
+  const input: CiSetupInput = { ...base, csharp: read.csharp, existing: read.existing };
+  const plan: CiPlan = planCiSetup(input);
+  if (plan.kind === 'snippet') {
+    if (plan.reason !== 'already_set_up') {
+      return finishWithSnippet(ctx, projectId, 'snippet', plan.reason, plan.snippet);
+    }
+    return settleAlreadySetUp(ctx, repo, input, plan.snippet);
+  }
+  return applyCiChange(ctx, repo, projectId, plan);
+}
+
 // ─── The run ───────────────────────────────────────────────────────────────────────────────
 
 function pauseFor(err: ScmError): RateLimitPause {
   return new RateLimitPause(err.retryAfterSeconds ?? DEFAULT_PAUSE_SECONDS);
 }
 
+type ItemLog = { runId: string; position: number };
+
+/** A repository that could not be opened: the item fails, or only its CI setup does. */
+async function recordOpenFailure(ctx: ItemContext, err: unknown, log: ItemLog): Promise<void> {
+  const { deps, connection, item } = ctx;
+  let error: ItemError;
+  if (err instanceof UnusableConnection) {
+    error = errorOf('connection_unusable');
+  } else if (err instanceof ScmError) {
+    if (err.kind === 'rate_limited' && ctx.mayPause) throw pauseFor(err);
+    deps.logger?.warn(
+      { ...log, kind: err.kind, reason: err.reason, status: err.status },
+      'repository setup could not read the repository',
+    );
+    error = scmErrorOf(err, connection.provider, 'read');
+  } else {
+    throw err;
+  }
+  if (item.projectOutcome === 'pending') return failItem(deps.db, item, error);
+  return updateItem(deps.db, item, {
+    ciOutcome: 'failed',
+    errorCode: error.code,
+    errorMessage: error.message,
+  });
+}
+
+/**
+ * The item's project: settled now, or as it is now for a resumed item. Null: nothing more to do,
+ * the item is already recorded (settled as finished, or failed with project_gone).
+ */
+async function projectOfItem(
+  ctx: ItemContext,
+  repo: OpenedRepository,
+): Promise<SetupProject | null> {
+  const { deps, run, connection, item } = ctx;
+  if (item.projectOutcome === 'pending') {
+    return settleProject(deps, run, item, connection.id, repo, ctx.by);
+  }
+  // A resumed item: its project as it is now (deleted since: none).
+  const project = item.projectId === null ? null : await setupProjectOf(deps.db, item.projectId);
+  if (project === null) {
+    await updateItem(deps.db, item, {
+      ciOutcome: 'failed',
+      errorCode: 'project_gone',
+      errorMessage: ERROR_TEXT.project_gone,
+    });
+  }
+  return project;
+}
+
+/** The CI setup of a repository failed with a provider error: the item stays pending or fails. */
+async function recordCiFailure(ctx: ItemContext, err: unknown, log: ItemLog): Promise<void> {
+  const { deps, connection, item } = ctx;
+  if (!(err instanceof ScmError)) throw err;
+  // The item stays pending: the next job resumes it (the branch is reused, the files kept).
+  if (err.kind === 'rate_limited' && ctx.mayPause) throw pauseFor(err);
+  deps.logger?.warn(
+    { ...log, kind: err.kind, reason: err.reason, status: err.status },
+    'repository setup could not set up CI',
+  );
+  const error = scmErrorOf(err, connection.provider, 'change');
+  await updateItem(deps.db, item, {
+    ciOutcome: 'failed',
+    errorCode: error.code,
+    errorMessage: error.message,
+  });
+}
+
 async function setUpRepository(ctx: ItemContext): Promise<void> {
   const { deps, run, connection, status, item } = ctx;
-  const provider = connection.provider;
   const changesCi = run.ciSetup && status?.available === true;
   const log = { runId: run.id, position: item.position };
   let repo: OpenedRepository;
   try {
     repo = await openRepository(deps, connection, item.repositoryRef, changesCi);
   } catch (err) {
-    let error: ItemError;
-    if (err instanceof UnusableConnection) {
-      error = errorOf('connection_unusable');
-    } else if (err instanceof ScmError) {
-      if (err.kind === 'rate_limited' && ctx.mayPause) throw pauseFor(err);
-      deps.logger?.warn(
-        { ...log, kind: err.kind, reason: err.reason, status: err.status },
-        'repository setup could not read the repository',
-      );
-      error = scmErrorOf(err, provider, 'read');
-    } else {
-      throw err;
-    }
-    if (item.projectOutcome === 'pending') return failItem(deps.db, item, error);
-    return updateItem(deps.db, item, {
-      ciOutcome: 'failed',
-      errorCode: error.code,
-      errorMessage: error.message,
-    });
+    return recordOpenFailure(ctx, err, log);
   }
 
-  let project: SetupProject | null;
-  if (item.projectOutcome === 'pending') {
-    project = await settleProject(deps, run, item, connection.id, repo, ctx.by);
-    if (project === null) return;
-  } else {
-    // A resumed item: its project as it is now (deleted since: none).
-    project = item.projectId === null ? null : await setupProjectOf(deps.db, item.projectId);
-  }
-  if (project === null) {
-    return updateItem(deps.db, item, {
-      ciOutcome: 'failed',
-      errorCode: 'project_gone',
-      errorMessage: ERROR_TEXT.project_gone,
-    });
-  }
+  const project = await projectOfItem(ctx, repo);
+  if (project === null) return;
   if (run.ciSetup && ctx.statusFailure !== null) {
     // Never a snippet for want of an answer: the CI setup fails, with why.
-    const error = scmErrorOf(ctx.statusFailure, provider, 'read');
+    const error = scmErrorOf(ctx.statusFailure, connection.provider, 'read');
     return updateItem(deps.db, item, {
       ciOutcome: 'failed',
       errorCode: error.code,
@@ -939,19 +998,7 @@ async function setUpRepository(ctx: ItemContext): Promise<void> {
   try {
     await setUpCi(ctx, repo, project);
   } catch (err) {
-    if (!(err instanceof ScmError)) throw err;
-    // The item stays pending: the next job resumes it (the branch is reused, the files kept).
-    if (err.kind === 'rate_limited' && ctx.mayPause) throw pauseFor(err);
-    deps.logger?.warn(
-      { ...log, kind: err.kind, reason: err.reason, status: err.status },
-      'repository setup could not set up CI',
-    );
-    const error = scmErrorOf(err, provider, 'change');
-    await updateItem(deps.db, item, {
-      ciOutcome: 'failed',
-      errorCode: error.code,
-      errorMessage: error.message,
-    });
+    await recordCiFailure(ctx, err, log);
   }
 }
 
@@ -971,6 +1018,95 @@ async function pauseRun(
   });
 }
 
+async function connectionOfRun(deps: SetupRunDeps, run: RunRow) {
+  if (run.connectionId === null) return undefined;
+  const [connection] = await deps.db
+    .select()
+    .from(scmConnections)
+    .where(
+      and(
+        eq(scmConnections.id, run.connectionId),
+        eq(scmConnections.organizationId, run.organizationId),
+      ),
+    );
+  return connection;
+}
+
+type RunStatus =
+  | { paused: true }
+  | { paused: false; status: CiSetupStatus | null; statusFailure: ScmError | null };
+
+/**
+ * Read once per run, uncached: the GitHub installations' permissions, the GitLab setting, the
+ * URL. Only a definite "not available" turns the repositories' CI into snippets; a failed read
+ * pauses the run and reads again later.
+ */
+async function readRunStatus(
+  deps: SetupRunDeps,
+  run: RunRow,
+  connection: ScmConnectionRow,
+  pauses: number,
+): Promise<RunStatus> {
+  try {
+    const status = await readCiSetupStatus(connection, deps.scm, deps.publicUrl);
+    return { paused: false, status, statusFailure: null };
+  } catch (err) {
+    if (!(err instanceof ScmError)) throw err;
+    deps.logger?.warn(
+      { runId: run.id, kind: err.kind, reason: err.reason, status: err.status },
+      'repository setup could not read the CI-setup status',
+    );
+    // An unusable connection (its key, its address) does not get better: each repository
+    // fails on it at once.
+    if (err.reason === 'invalid_input' || pauses >= MAX_PAUSES) {
+      return { paused: false, status: null, statusFailure: err };
+    }
+    const seconds = err.retryAfterSeconds ?? DEFAULT_PAUSE_SECONDS;
+    await pauseRun(deps, run, connection.id, pauses, seconds);
+    deps.logger?.info(
+      { runId: run.id, retryInSeconds: seconds },
+      'repository setup paused: the CI-setup status could not be read',
+    );
+    return { paused: true };
+  }
+}
+
+/** One item of the run; true when the provider's rate limit paused the whole run. */
+async function runItem(
+  ctx: ItemContext,
+  pauses: number,
+  connection: ScmConnectionRow,
+): Promise<boolean> {
+  const { deps, run, item } = ctx;
+  try {
+    await setUpRepository(ctx);
+    return false;
+  } catch (err) {
+    if (err instanceof RateLimitPause) {
+      await pauseRun(deps, run, connection.id, pauses, err.seconds);
+      deps.logger?.info(
+        { runId: run.id, position: item.position, retryInSeconds: err.seconds },
+        'repository setup paused: the provider is rate limiting',
+      );
+      return true;
+    }
+    // One repository's failure never loses the others (no token is in this error: the clients'
+    // errors are ScmErrors, handled above, and the token never reaches a query).
+    deps.logger?.error({ err, runId: run.id, position: item.position }, 'repository setup failed');
+    const [now] = await deps.db
+      .select()
+      .from(repositorySetupItems)
+      .where(
+        and(
+          eq(repositorySetupItems.runId, item.runId),
+          eq(repositorySetupItems.position, item.position),
+        ),
+      );
+    await failItem(deps.db, now ?? item, errorOf('internal'));
+    return false;
+  }
+}
+
 async function runSetup(deps: SetupRunDeps, payload: z.infer<typeof payloadSchema>): Promise<void> {
   const { runId, pauses } = payload;
   const [run] = await deps.db
@@ -984,46 +1120,14 @@ async function runSetup(deps: SetupRunDeps, payload: z.infer<typeof payloadSchem
       .set({ status: 'running' })
       .where(eq(repositorySetupRuns.id, run.id));
   }
-  const [connection] =
-    run.connectionId === null
-      ? []
-      : await deps.db
-          .select()
-          .from(scmConnections)
-          .where(
-            and(
-              eq(scmConnections.id, run.connectionId),
-              eq(scmConnections.organizationId, run.organizationId),
-            ),
-          );
+  const connection = await connectionOfRun(deps, run);
   const by: AuditedActor = { audit: deps.audit, actor: await actorOf(deps.db, run.createdBy) };
-  // Read once per run, uncached: the GitHub installations' permissions, the GitLab setting, the
-  // URL. Only a definite "not available" turns the repositories' CI into snippets; a failed read
-  // pauses the run and reads again later.
   let status: CiSetupStatus | null = null;
   let statusFailure: ScmError | null = null;
   if (connection && run.ciSetup) {
-    try {
-      status = await readCiSetupStatus(connection, deps.scm, deps.publicUrl);
-    } catch (err) {
-      if (!(err instanceof ScmError)) throw err;
-      deps.logger?.warn(
-        { runId: run.id, kind: err.kind, reason: err.reason, status: err.status },
-        'repository setup could not read the CI-setup status',
-      );
-      // An unusable connection (its key, its address) does not get better: each repository
-      // fails on it at once.
-      if (err.reason !== 'invalid_input' && pauses < MAX_PAUSES) {
-        const seconds = err.retryAfterSeconds ?? DEFAULT_PAUSE_SECONDS;
-        await pauseRun(deps, run, connection.id, pauses, seconds);
-        deps.logger?.info(
-          { runId: run.id, retryInSeconds: seconds },
-          'repository setup paused: the CI-setup status could not be read',
-        );
-        return;
-      }
-      statusFailure = err;
-    }
+    const read = await readRunStatus(deps, run, connection, pauses);
+    if (read.paused) return;
+    ({ status, statusFailure } = read);
   }
   const items = await deps.db
     .select()
@@ -1036,43 +1140,17 @@ async function runSetup(deps: SetupRunDeps, payload: z.infer<typeof payloadSchem
       await failItem(deps.db, item, errorOf('connection_gone'));
       continue;
     }
-    try {
-      await setUpRepository({
-        deps,
-        run,
-        item,
-        connection,
-        status,
-        statusFailure,
-        by,
-        mayPause: pauses < MAX_PAUSES,
-      });
-    } catch (err) {
-      if (err instanceof RateLimitPause) {
-        await pauseRun(deps, run, connection.id, pauses, err.seconds);
-        deps.logger?.info(
-          { runId: run.id, position: item.position, retryInSeconds: err.seconds },
-          'repository setup paused: the provider is rate limiting',
-        );
-        return;
-      }
-      // One repository's failure never loses the others (no token is in this error: the clients'
-      // errors are ScmErrors, handled above, and the token never reaches a query).
-      deps.logger?.error(
-        { err, runId: run.id, position: item.position },
-        'repository setup failed',
-      );
-      const [now] = await deps.db
-        .select()
-        .from(repositorySetupItems)
-        .where(
-          and(
-            eq(repositorySetupItems.runId, item.runId),
-            eq(repositorySetupItems.position, item.position),
-          ),
-        );
-      await failItem(deps.db, now ?? item, errorOf('internal'));
-    }
+    const ctx: ItemContext = {
+      deps,
+      run,
+      item,
+      connection,
+      status,
+      statusFailure,
+      by,
+      mayPause: pauses < MAX_PAUSES,
+    };
+    if (await runItem(ctx, pauses, connection)) return;
   }
   await deps.db
     .update(repositorySetupRuns)
