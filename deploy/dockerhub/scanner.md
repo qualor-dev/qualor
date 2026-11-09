@@ -19,7 +19,7 @@ codes): <https://qualor.dev/docs/configuration>
 
 ### Tags
 
-Every release has its full version tag, such as `0.14.0`, and a minor tag, such as `0.14`, that
+Every release has its full version tag, such as `0.14.1`, and a minor tag, such as `0.14`, that
 follows its patch releases. There is no `latest` tag. For C#, use
 [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet) with the same tag.
 

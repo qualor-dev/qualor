@@ -28,7 +28,7 @@ In the repository or the organisation, open **Settings → Secrets and variables
 | Secret | `QUALOR_TOKEN` | the token |
 
 To run [without the Action](#without-the-action-your-own-image-or-a-mirror), also add the variable
-`QUALOR_SCANNER_IMAGE`, such as `qualor/scanner:0.14` or `qualor/scanner:0.14.0`. For C#, add
+`QUALOR_SCANNER_IMAGE`, such as `qualor/scanner:0.14` or `qualor/scanner:0.14.1`. For C#, add
 `QUALOR_SCANNER_DOTNET_IMAGE` with `qualor/scanner-dotnet:0.14` instead.
 
 ## 2. The workflow
@@ -76,7 +76,7 @@ when the upload is refused because the token is wrong or revoked. It needs a Lin
 Docker (`ubuntu-latest` or self-hosted). The scanner cannot write into the checkout: an option that
 writes a file, such as `--output`, needs a path under `/tmp`.
 
-The Action's version follows Qualor's. `@v0.14.0` runs `qualor/scanner:0.14.0`, `@v0.14` follows the
+The Action's version follows Qualor's. `@v0.14.1` runs `qualor/scanner:0.14.1`, `@v0.14` follows the
 0.14 patch releases, and `@v0` follows the latest release. Use the version of your Qualor server, or
 pin a full version to control every update.
 
