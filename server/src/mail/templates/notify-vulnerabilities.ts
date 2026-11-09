@@ -28,7 +28,7 @@ export function renderVulnerabilityDigest(input: {
     preheader: `New vulnerabilities in ${label}.`,
     title: `New vulnerabilities in ${label}`,
     badge: { text: 'New vulnerabilities', tone: 'bad' },
-    intro: html`Qualor found new vulnerabilities in the branches and versions it tracks. Each is listed once, with every branch and version it is open on.`,
+    intro: html`Qualor found new vulnerabilities in the branches and versions it tracks. Each is listed once, with the branches and versions where it is new.`,
     after: html`${projectSections(projects, input.links, false)}${data}`,
     reason: VULNERABILITY_REASON,
     footerLinks: vulnerabilityFooterLinks(input.links),

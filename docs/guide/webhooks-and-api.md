@@ -65,7 +65,7 @@ The payload of `vulnerabilities.found` lists what the project's
 | `database.builtAt` | when the vulnerability database in use was built, or `null` without one |
 | `vulnerabilities[].severity` | `critical` or `high` |
 | `vulnerabilities[].exploited` | the CISA KEV entry, or `null` when it is not in KEV or the licence has no `vuln.priority` |
-| `vulnerabilities[].targets` | the tracked branches and versions it is open on, main first |
+| `vulnerabilities[].targets` | the tracked branches and versions where it is new, main first |
 | `more` | how many were left out: a payload lists at most 1 000 vulnerabilities |
 
 A project with nothing new sends no delivery.

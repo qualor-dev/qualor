@@ -61,10 +61,12 @@ export function watcherSections(
 
 /**
  * The rows of an alert email for the given alert items (4b): one per (vulnerability, package) of
- * each project, every target the pair is open on named once. It only formats. Who qualifies and
- * what gets marked as sent are the callers' business; a row whose target's effective status is
- * not open, or that is ignored, is left out here too, so a pair with no row left is not listed.
- * `exploited` is the KEV entry and is filled only with `options.priority` (`vuln.priority`).
+ * each project, naming once each target of those items, not every target the pair is open on. In
+ * a digest those are the targets where it is new: baseline pairs never reach one (A3). It only
+ * formats. Who qualifies and what gets marked as sent are the callers' business; a row whose
+ * target's effective status is not open, or that is ignored, is left out here too, so a pair with
+ * no row left is not listed. `exploited` is the KEV entry and is filled only with
+ * `options.priority` (`vuln.priority`).
  *
  * Order: critical, high, medium, low, unknown; then the vulnerability id; then the package.
  * Targets: main, the other branches by name, then the versions by label.
