@@ -47,14 +47,14 @@ A project with no released versions shows the CI snippets of
 
 | Column | Meaning |
 |---|---|
-| **Branch or version** | the name, with **Pinned** for a pinned version and "No dependency list" for a target without one |
-| **Critical**, **High**, **Medium** | the open vulnerabilities of that severity. Low and Unknown show on the cards only |
+| **Branch or version** | the name, with a **main** tag on the main branch, **Pinned** for a pinned version and "No dependency list" for a target without one |
+| **Critical**, **High**, **Medium** | the open vulnerabilities of that severity. Low and Unknown show in the list only |
 | **New** | "N new": see [New vulnerabilities](#new-vulnerabilities) |
 
 A count leaves out the vulnerabilities that a decision closed (Not affected, Won't fix) and the
 ones that `.trivyignore` ignores ([The `.trivyignore` file](#the-trivyignore-file)).
 
-Select a row to see that target's vulnerabilities as cards.
+Select a row to see that target's vulnerabilities. Its counts show beside its name.
 
 Versions that are not tracked fold into one line, such as
 "2.1.9 · 2.0.5 · 14 more — not tracked". **Show** lists them with "Not tracked" and the counts
@@ -74,17 +74,19 @@ The marks are the ones of [Releases and versions](./releases.md#which-versions-a
 
 ## By vulnerability
 
-**By vulnerability** shows one card per vulnerability across all tracked targets. Select a row of
-**By version** to see the cards of one target.
+**By vulnerability** shows one row per vulnerability across all tracked targets. Select a row of
+**By version** to see the rows of one target.
 
-| On the card | Meaning |
+| On a row | Meaning |
 |---|---|
-| id, severity | the vulnerability's id and its severity (Critical, High, Medium, Low or Unknown) |
-| package | the package, and "installed → fixed", or "No fixed version" |
+| severity, id | the severity (Critical, High, Medium, Low or Unknown), also the colour of the row's left edge, and the vulnerability's id |
+| package | the package, its installed versions, and "Fix x.y.z" with the version that fixes it, or "No fix yet" |
+| status | Open, Not affected or Won't fix |
+| title | the advisory's title, on at most two lines |
 | **In** / **Not in** | the targets that have the vulnerability, and the tracked ones that do not |
 | "Found <date>" | when Qualor first saw it. " without a scan" means the server found it after a new database, with no new analysis |
-| "Ignored in .trivyignore" | the card is dimmed and does not count |
-| the decision | a triaged card is dimmed and shows its status and reason, or "Reason not given" |
+| "Ignored in .trivyignore" | the row is dimmed and does not count |
+| the decision | a triaged row is dimmed. Its reason, or "Reason not given", its comment, who decided and when show under the title |
 
 Two filters narrow the list:
 
@@ -102,10 +104,10 @@ Prediction Scoring System (EPSS). Without the feature the tab shows none of it.
 | Where | What it shows |
 |---|---|
 | **Exploited** column of **By version** | the open vulnerabilities of the target that are in KEV. A count leaves out decided and ignored ones, like the other counts. It shows 0 when there are none |
-| **Exploited (KEV)** badge on a card | the vulnerability is in KEV. The tooltip gives the date CISA added it, and says "Known to be used in ransomware" when KEV marks it so |
-| **EPSS** on a card | the probability that the vulnerability is exploited in the next 30 days, such as "EPSS 42.0%". Below 0.1% it reads "<0.1%". The tooltip adds the percentile |
-| **Exploited only** filter | lists only the cards with the badge. It is kept in the URL as `exploited=true` |
-| order of the cards | open cards first, then the others. Within each group, exploited cards come first, and both parts run by severity |
+| **Exploited (KEV)** badge on a row | the vulnerability is in KEV. The tooltip gives the date CISA added it, and says "Known to be used in ransomware" when KEV marks it so |
+| **EPSS** on a row | the probability that the vulnerability is exploited in the next 30 days, such as "EPSS 42.0%". Below 0.1% it reads "<0.1%". The tooltip adds the percentile |
+| **Exploited only** filter | lists only the rows with the badge. It is kept in the URL as `exploited=true` |
+| order of the rows | open rows first, then the others. Within each group, exploited rows come first, and both parts run by severity |
 
 KEV and EPSS cover CVE ids only. A vulnerability with another id, such as a GHSA id without a CVE
 alias, has no badge and no EPSS. [The vulnerability database](./vulnerability-database.md) lists
@@ -133,6 +135,20 @@ untracked show as new.
 The **badge** "New vulnerabilities in main and 2 versions" shows in the projects list and on the
 project page. It names the main branch, the number of branches and the number of versions with new
 vulnerabilities, such as "New vulnerabilities in 3 versions". It links to the tab.
+
+## The projects list
+
+The **Vulnerabilities** column of **Projects** shows each project at a glance.
+
+| It shows | Meaning |
+|---|---|
+| "7 Critical", "23 High" | the open Critical and High vulnerabilities of the main branch. "No critical or high" when there are none |
+| "1 exploited" | the open vulnerabilities in KEV, on the main branch and the tracked versions, each id once. Business and Enterprise only |
+| "5 releases" | the tracked versions with an open vulnerability. It links to the tab |
+| the badge | see [New vulnerabilities](#new-vulnerabilities) |
+| "–" | monitoring is off for the project, or the main branch has no dependency list yet |
+
+Open means without a decision that closes it, and not ignored by `.trivyignore`.
 
 ## Alerts (Business and Enterprise)
 
@@ -174,7 +190,7 @@ plain words:
 | An attacker cannot control the input | `vulnerable_code_cannot_be_controlled_by_adversary` | `requires_environment` |
 | Another control already protects it | `inline_mitigations_already_exist` | `protected_by_mitigating_control` |
 
-**Change status** on a card opens the dialog. It needs the permission to triage issues
+**Change status** on a row opens the dialog. It needs the permission to triage issues
 (Maintainer and above). A Viewer reads the tab and sees no **Change status** button.
 
 ### One decision, a wide scope
@@ -319,7 +335,7 @@ the API answers 429 `RATE_LIMITED` with a `Retry-After` header, and a decision i
 | Route | Needs | Answers |
 |---|---|---|
 | `GET /api/v0/projects/:id/vulnerabilities/targets` | read access to the project | the tracked targets with their counts and `new`, the untracked versions, the data date and the last check |
-| `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, as cards. Query: `target` (`branch:<id>` or `version:<id>`), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `exploited=true` (needs `vuln.priority`, else 403), `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
+| `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, one per package and id. Query: `target` (`branch:<id>` or `version:<id>`), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `exploited=true` (needs `vuln.priority`, else 403), `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
 | `PUT /api/v0/projects/:id/vulnerability-decisions` | `issue.triage` | the decision and `appliedIssues`, the number of issues it changed |
 
 A decision is a body like this:

@@ -117,14 +117,14 @@ or `2.4.0-SNAPSHOT`.
 
 | Rule | Tracked versions |
 |---|---|
-| **The newest version of each line** (the default) | the highest version of each of the newest N lines. `2.3.4` replaces `2.3.0` to `2.3.3`. N is 1 to 20, and 5 by default |
+| **The newest version of each line** (the default) | the highest version of each of the newest N lines. `2.3.4` replaces `2.3.0` to `2.3.3`. N is **Lines to track**: 1 to 20, and 5 by default |
 | **Every version** | every version |
 | **None** | none |
 
 - **The newest version of each line** tracks labels that are not version numbers by date: the N
   scanned most recently.
 - No rule tracks a pre-release.
-- **Now tracked** lists the tracked labels, the most recently scanned first, up to 50.
+- **Now tracked** shows the tracked labels as chips, the most recently scanned first, up to 50.
 - A version that is not tracked keeps its packages.
 
 A version's mark decides whether the rule applies. You set it in the row menu of the
@@ -146,15 +146,18 @@ untracked.
 **Project → Settings → Vulnerability monitoring** holds these settings. Organization admins and
 project admins change them.
 
-| Setting | Meaning |
+The panel has the project's switch, then three sections. **Save** applies the changes.
+
+| Part | Meaning |
 |---|---|
 | **Track vulnerabilities in this project** | on by default. Versions are recorded whether it is on or off |
-| **Branches** | the tracked branches: the main branch, always, and those that match **And branches matching** |
+| **Branches** | the tracked branches: the main branch, always, and those that match **Also track branches matching** |
 | **Released versions** | the rule of [Which versions are tracked](#which-versions-are-tracked) |
-| **Also take versions from branch analyses that carry project.version** | off by default. See [Version labels on branch analyses](#version-labels-on-branch-analyses) |
+| **Version labels** | the switch **Also take versions from branch analyses that carry project.version**, off by default. See [Version labels on branch analyses](#version-labels-on-branch-analyses) |
 
-- **And branches matching** takes up to 10 patterns, such as `release/*`, separated by commas.
-- **Matches now** lists the branches that match them.
+- **Also track branches matching** takes up to 10 patterns, such as `release/*`, separated by
+  commas.
+- **Matches now** shows the branches that match them, as chips.
 
 While the project has no version, the panel shows the two CI snippets of
 [Record a version on each tag](#record-a-version-on-each-tag).
