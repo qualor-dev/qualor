@@ -14,7 +14,17 @@ import {
 import { mainBranchId, seedIssue, seedRule } from '../../test/issues';
 import { grantProject, rbacContext } from '../../test/rbac';
 import { createDatabase } from '../db/client';
-import { analyses, branches, issueChanges, measures, projects } from '../db/schema';
+import { seedTargetRow } from '../../test/vulnerabilities';
+import {
+  analyses,
+  branches,
+  issueChanges,
+  measures,
+  projects,
+  projectVersions,
+  projectVulnerabilitySettings,
+  vulnerabilityKev,
+} from '../db/schema';
 import type {
   PluginPortfolio,
   PortfolioAggregate,
@@ -500,6 +510,8 @@ describe('ctx.portfolio overview (4E-2 §1, §2)', () => {
       newIssues: 2,
       secrets: 2,
       vulnerableDependencies: 3,
+      vulnerableReleases: 0,
+      exploited: 0,
     });
     expect(body.attention.abandoned[1]).toMatchObject({
       lastAnalysisAt: '2026-09-04T12:00:00.000Z',
@@ -534,7 +546,7 @@ describe('ctx.portfolio overview (4E-2 §1, §2)', () => {
     expect(body.trend.map((p) => p.analyses)).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2]);
     expect(body.trend.map((p) => p.triage)).toEqual([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
     for (const list of Object.values(body.attention)) {
-      expect(list.every((r) => r.project.key === 'alpha')).toBe(true);
+      expect((list ?? []).every((r) => r.project.key === 'alpha')).toBe(true);
     }
     expect(body.attention.worstSecurity).toHaveLength(0);
     expect(body.attention.mostSevere).toHaveLength(1);
@@ -559,7 +571,13 @@ describe('ctx.portfolio overview (4E-2 §1, §2)', () => {
     expect(missing.status).toBe(404);
     const { status, body } = await overview(outsider, { scope: 'all' });
     expect(status).toBe(200);
-    expect(body.totals).toEqual({ ...EMPTY, secrets: 0, vulnerableDependencies: 0 });
+    expect(body.totals).toEqual({
+      ...EMPTY,
+      secrets: 0,
+      vulnerableDependencies: 0,
+      vulnerableReleases: null,
+      exploited: null,
+    });
     expect(body.organizations).toEqual([]);
     expect(body.trend).toHaveLength(12);
     for (const point of body.trend) {
@@ -572,6 +590,7 @@ describe('ctx.portfolio overview (4E-2 §1, §2)', () => {
       });
     }
     expect(body.attention).toEqual({
+      exploited: [],
       failingGates: [],
       worstSecurity: [],
       mostSevere: [],
@@ -990,5 +1009,170 @@ describe('ctx.portfolio overview (4E-2 §1, §2)', () => {
     ).rejects.toMatchObject(problem);
     const rows = off.exportRows({} as FastifyRequest, { scope: 'all' });
     await expect(rows[Symbol.asyncIterator]().next()).rejects.toMatchObject(problem);
+  });
+
+  // ─── vulnerable releases and exploited vulnerabilities (plan 5, V1–V3) ───────────────────────
+
+  describe('vulnerability numbers', () => {
+    /** Same service, without `vuln.priority`. */
+    let plain: PluginPortfolio;
+    const rootRequest = () =>
+      ({
+        principal: { kind: 'session', user: { id: ctx.adminId, isInstanceAdmin: true } },
+      }) as unknown as FastifyRequest;
+    const version = async (key: string, label: string, minute: number) =>
+      (
+        await ctx.db
+          .insert(projectVersions)
+          .values({
+            projectId: ids[key]!,
+            label,
+            source: 'tag',
+            tag: label,
+            analyzedAt: new Date(Date.UTC(2026, 9, 1, 0, minute)),
+          })
+          .returning({ id: projectVersions.id })
+      )[0]!.id;
+    const seedRows = async (
+      key: string,
+      target: { branchId: string } | { versionId: string },
+      vulnerabilityIds: string[],
+    ) => {
+      for (const vulnerabilityId of vulnerabilityIds) {
+        await seedTargetRow(ctx.db, {
+          projectId: ids[key]!,
+          ...target,
+          packageName: `pkg-${vulnerabilityId}`,
+          vulnerabilityId,
+        });
+      }
+    };
+    const rowsByKey = async (sort = 'key') =>
+      new Map(
+        (await page(root, { scope: 'all', sort, limit: '100' })).body.items.map((r) => [
+          r.project.key,
+          r,
+        ]),
+      );
+
+    beforeAll(async () => {
+      plain = createPortfolioService({
+        db: ctx.db,
+        isFeatureActive: (feature) => feature === 'portfolio',
+        now: () => NOW,
+      });
+      await ctx.db
+        .insert(vulnerabilityKev)
+        .values(
+          ['1001', '1002', '1003', '1004', '1005', '1006'].map((k) => ({
+            vulnerabilityId: `CVE-2024-${k}`,
+            dateAdded: '2024-03-05',
+          })),
+        )
+        .onConflictDoNothing();
+      // alpha: two tracked versions with rows; K4 is on main and on a version, K5 on the other.
+      await seedRows('alpha', { branchId: await mainBranchId(ctx.db, ids.alpha!) }, [
+        'CVE-2024-1004',
+      ]);
+      await seedRows('alpha', { versionId: await version('alpha', 'v1', 1) }, ['CVE-2024-1004']);
+      await seedRows('alpha', { versionId: await version('alpha', 'v2', 2) }, ['CVE-2024-1005']);
+      await version('alpha', 'v3', 3);
+      // beta and gamma: three exploited ids on main, no version.
+      for (const key of ['beta', 'gamma']) {
+        await seedRows(key, { branchId: await mainBranchId(ctx.db, ids[key]!) }, [
+          'CVE-2024-1001',
+          'CVE-2024-1002',
+          'CVE-2024-1003',
+        ]);
+      }
+      // beta also has one version with a row that is not in KEV.
+      await seedRows('beta', { versionId: await version('beta', 'v1', 1) }, ['CVE-2024-2001']);
+      await seedRows('Zulu', { branchId: await mainBranchId(ctx.db, ids.Zulu!) }, [
+        'CVE-2024-1006',
+      ]);
+      await seedRows('Zulu', { versionId: await version('Zulu', 'v1', 1) }, ['CVE-2024-2002']);
+      // omega is not monitored.
+      await ctx.db.insert(projectVulnerabilitySettings).values({
+        projectId: ids.omega!,
+        enabled: false,
+      });
+    });
+
+    it('carries the numbers on the rows and the totals', async () => {
+      const rows = await rowsByKey();
+      const numbers = (key: string) => {
+        const r = rows.get(key)!;
+        return [r.vulnerableReleases, r.exploited];
+      };
+      expect(numbers('alpha')).toEqual([2, 2]);
+      expect(numbers('beta')).toEqual([1, 3]);
+      expect(numbers('gamma')).toEqual([0, 3]);
+      expect(numbers('delta')).toEqual([0, 0]);
+      expect(numbers('Zulu')).toEqual([1, 1]);
+      expect(numbers('omega')).toEqual([null, null]);
+      const { body } = await overview(root, { scope: 'all' });
+      expect(body.totals).toMatchObject({ vulnerableReleases: 4, exploited: 9 });
+    });
+
+    it('lists the exploited projects most first, then by key', async () => {
+      const { body } = await overview(root, { scope: 'all' });
+      expect(body.attention.exploited?.map((r) => [r.project.key, r.exploited])).toEqual([
+        ['beta', 3],
+        ['gamma', 3],
+        ['alpha', 2],
+        ['Zulu', 1],
+      ]);
+    });
+
+    it('hides the exploited numbers without vuln.priority', async () => {
+      const result = await plain.overview(rootRequest(), { scope: 'all' }, { granularity: 'week' });
+      expect(result.attention.exploited).toBeNull();
+      expect(result.totals).toMatchObject({ vulnerableReleases: 4, exploited: null });
+      const { items } = await plain.projects(
+        rootRequest(),
+        { scope: 'all' },
+        { sort: 'key', limit: 100 },
+      );
+      expect(items.map((r) => r.exploited)).toEqual(Array(6).fill(null));
+      expect(items.find((r) => r.project.key === 'alpha')?.vulnerableReleases).toBe(2);
+      const rows: PortfolioProjectRow[] = [];
+      for await (const row of plain.exportRows(rootRequest(), { scope: 'all' })) rows.push(row);
+      expect(rows.every((r) => r.exploited === null)).toBe(true);
+    });
+
+    it('sorts by vulnerable releases and exploited, a missing value last', async () => {
+      for (const [sort, expected] of [
+        [
+          'vulnerableReleases',
+          ['alpha', ...tie('beta', 'Zulu'), ...tie('gamma', 'delta'), 'omega'],
+        ],
+        ['exploited', [...tie('beta', 'gamma'), 'alpha', 'Zulu', 'delta', 'omega']],
+      ] as const) {
+        const { status, body } = await page(root, { scope: 'all', sort, limit: '100' });
+        expect(status, JSON.stringify(body)).toBe(200);
+        expect(keysOf(body.items), sort).toEqual(expected);
+        for (const limit of [1, 2, 4]) {
+          const { seen } = await pageThrough(root, { scope: 'all', sort }, limit);
+          expect(keysOf(seen), `${sort}, limit ${limit}`).toEqual(expected);
+        }
+      }
+    });
+
+    it('caps the exploited list at 10', async () => {
+      for (let i = 0; i < 11; i++) {
+        const key = `many${String(i).padStart(2, '0')}`;
+        ids[key] = (await createProject(ctx, root, { organizationId: north, key })).id;
+        await seedRows(key, { branchId: await mainBranchId(ctx.db, ids[key]!) }, ['CVE-2024-1001']);
+      }
+      const { body } = await overview(root, { scope: 'all' });
+      const list = body.attention.exploited!;
+      expect(list).toHaveLength(10);
+      expect(list.map((r) => r.project.key).slice(0, 4)).toEqual([
+        'beta',
+        'gamma',
+        'alpha',
+        'Zulu',
+      ]);
+    });
   });
 });

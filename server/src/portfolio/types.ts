@@ -5,7 +5,16 @@ export type PortfolioScopeInput =
   { scope: 'organization'; organizationId: string } | { scope: 'all' };
 
 export type PortfolioSort =
-  'key' | 'gate' | 'security' | 'reliability' | 'issues' | 'ncloc' | 'coverage' | 'lastAnalysis';
+  | 'key'
+  | 'gate'
+  | 'security'
+  | 'reliability'
+  | 'issues'
+  | 'ncloc'
+  | 'coverage'
+  | 'lastAnalysis'
+  | 'vulnerableReleases'
+  | 'exploited';
 
 export type Rating = 'A' | 'B' | 'C' | 'D' | 'E';
 
@@ -52,6 +61,10 @@ export interface PortfolioProjectRow {
   newIssues: number | null;
   secrets: number;
   vulnerableDependencies: number;
+  /** Tracked versions with an open vulnerability; null while monitoring is off. */
+  vulnerableReleases: number | null;
+  /** Open KEV vulnerabilities on main and tracked versions; null while off or without `vuln.priority`. */
+  exploited: number | null;
 }
 
 export interface PortfolioTrendPoint extends PortfolioAggregate {
@@ -68,10 +81,18 @@ export interface PortfolioOverview {
     organization: { id: string; key: string; name: string } | null;
   };
   granularity: Granularity;
-  totals: PortfolioAggregate & { secrets: number; vulnerableDependencies: number };
+  totals: PortfolioAggregate & {
+    secrets: number;
+    vulnerableDependencies: number;
+    /** The sum of the rows' values; null when every row is null. */
+    vulnerableReleases: number | null;
+    exploited: number | null;
+  };
   organizations: (PortfolioAggregate & { id: string; key: string; name: string })[] | null;
   trend: PortfolioTrendPoint[];
   attention: {
+    /** The projects with exploited vulnerabilities, most first; null without `vuln.priority`. */
+    exploited: PortfolioProjectRow[] | null;
     failingGates: PortfolioProjectRow[];
     worstSecurity: PortfolioProjectRow[];
     mostSevere: PortfolioProjectRow[];

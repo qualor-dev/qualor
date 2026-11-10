@@ -9,6 +9,10 @@ import { uuidv7Timestamp } from '../db/ids';
 import { decodeKeyset, encodeKeyset } from '../http/keyset';
 import { notFound, ProblemError, validationFailed } from '../http/problem';
 import type { PluginPortfolio } from '../plugins/contract';
+import {
+  portfolioVulnerabilityFacts,
+  type PortfolioVulnerabilityFacts,
+} from '../vulnerabilities/portfolio';
 import { periods, type Granularity } from './periods';
 import {
   activity,
@@ -33,6 +37,8 @@ import type {
 } from './types';
 
 export const FEATURE = 'portfolio';
+/** Plan 5, V1: the feature that shows the exploited (KEV) numbers. */
+const PRIORITY_FEATURE = 'vuln.priority';
 /** 4E-2 §1: no succeeded main-branch analysis in this long, or never, is abandoned. */
 const ABANDONED_MS = 30 * 86_400_000;
 /** 4E-2 §1: each attention list holds this many projects. */
@@ -101,6 +107,7 @@ function projectState(
   values: MeasureValues | undefined,
   at: Date,
   findings: { secrets: number; vulnerableDependencies: number } | undefined,
+  vulnerabilities: PortfolioVulnerabilityFacts | undefined,
 ): ProjectState {
   const last = branch === undefined ? null : uuidv7Timestamp(branch.analysisId);
   const m = (key: keyof MeasureValues): number | null =>
@@ -135,6 +142,8 @@ function projectState(
     newIssues: m('new_issues'),
     secrets: findings?.secrets ?? 0,
     vulnerableDependencies: findings?.vulnerableDependencies ?? 0,
+    vulnerableReleases: vulnerabilities?.vulnerableReleases ?? null,
+    exploited: vulnerabilities?.exploited ?? null,
     securityIssues: m('security_issues'),
     reliabilityIssues: m('reliability_issues'),
     maintainabilityIssues: m('maintainability_issues'),
@@ -224,6 +233,8 @@ function rowOf(s: ProjectState): PortfolioProjectRow {
     newIssues: s.newIssues,
     secrets: s.secrets,
     vulnerableDependencies: s.vulnerableDependencies,
+    vulnerableReleases: s.vulnerableReleases,
+    exploited: s.exploited,
   };
 }
 
@@ -270,8 +281,19 @@ function top(
 }
 
 /** 4E-2 §1: the four attention lists, ties broken by project key. */
-function attention(rows: readonly ProjectState[]): PortfolioOverview['attention'] {
+function attention(
+  rows: readonly ProjectState[],
+  priority: boolean,
+): PortfolioOverview['attention'] {
   return {
+    // V2: without `vuln.priority` nothing hints at KEV.
+    exploited: priority
+      ? top(
+          rows,
+          (s) => (s.exploited ?? 0) > 0,
+          (a, b) => desc(a.exploited, b.exploited),
+        )
+      : null,
     failingGates: top(
       rows,
       (s) => s.gate === 'failed',
@@ -309,6 +331,19 @@ function attention(rows: readonly ProjectState[]): PortfolioOverview['attention'
 /** The sum of a count over the rows. */
 function total(rows: readonly ProjectState[], key: 'secrets' | 'vulnerableDependencies'): number {
   return rows.reduce((n, r) => n + r[key], 0);
+}
+
+/** The sum of the non-null values of a nullable count; null when every row is null. */
+function nullableTotal(
+  rows: readonly ProjectState[],
+  key: 'vulnerableReleases' | 'exploited',
+): number | null {
+  let sum: number | null = null;
+  for (const r of rows) {
+    const value = r[key];
+    if (value !== null) sum = (sum ?? 0) + value;
+  }
+  return sum;
 }
 
 /** The all scope's organisations: those with a visible project, sorted by key. */
@@ -364,7 +399,7 @@ function sortOrder<V>(
 const ratingSchema = z.number().int().min(1).max(5).nullable();
 const ratingOrder = (rating: (row: PortfolioProjectRow) => Rating | null): SortOrder =>
   sortOrder((r) => ratingValue(rating(r)), desc, ratingSchema);
-const measureOrder = (key: 'issues' | 'ncloc'): SortOrder =>
+const measureOrder = (key: 'issues' | 'ncloc' | 'vulnerableReleases' | 'exploited'): SortOrder =>
   sortOrder((r) => r[key], desc, z.number().nullable());
 
 /** 4E-2 §2: the sorts of the projects table. A missing value sorts last, except where noted. */
@@ -388,6 +423,9 @@ const SORTS: Record<PortfolioSort, SortOrder> = {
   reliability: ratingOrder((r) => r.reliabilityRating),
   issues: measureOrder('issues'),
   ncloc: measureOrder('ncloc'),
+  // Plan 5, V3: the most first, monitoring off (null) last.
+  vulnerableReleases: measureOrder('vulnerableReleases'),
+  exploited: measureOrder('exploited'),
   // R12: the lowest coverage first (the projects that need tests), unmeasured last.
   coverage: sortOrder((r) => r.coverage, ascNullLast, z.number().nullable()),
   // Oldest first, and never analysed before all: those are the most stale. The values are
@@ -480,6 +518,9 @@ export function createPortfolioService(deps: {
     ];
     const values = await measuresOf(tx, analysisIds);
     const findings = await currentFindings(tx, ids);
+    const vulnerabilities = await portfolioVulnerabilityFacts(tx, ids, {
+      priority: deps.isFeatureActive(PRIORITY_FEATURE),
+    });
     return (i: number, existing: 'existing' | 'all' = 'existing'): ProjectState[] => {
       const end = ends[i];
       if (end === undefined) throw new RangeError(`no state time ${i}`);
@@ -493,6 +534,7 @@ export function createPortfolioService(deps: {
             branch === undefined ? undefined : values.get(branch.analysisId),
             end,
             findings.get(p.id),
+            vulnerabilities.get(p.id),
           );
         });
     };
@@ -515,6 +557,7 @@ export function createPortfolioService(deps: {
     }
     const organizationId = await organizationOfScope(principal, input);
 
+    const priority = deps.isFeatureActive(PRIORITY_FEATURE);
     return readSnapshot(db, timeoutMs, async (tx): Promise<PortfolioOverview> => {
       const generatedAt = await clock(tx);
       const organization =
@@ -543,6 +586,8 @@ export function createPortfolioService(deps: {
           ...aggregate(now),
           secrets: total(now, 'secrets'),
           vulnerableDependencies: total(now, 'vulnerableDependencies'),
+          vulnerableReleases: nullableTotal(now, 'vulnerableReleases'),
+          exploited: nullableTotal(now, 'exploited'),
         },
         organizations: organization === null ? byOrganization(now) : null,
         trend: buckets.map((b, i) => ({
@@ -552,7 +597,7 @@ export function createPortfolioService(deps: {
           analyses: counts.analyses[i] ?? 0,
           triage: counts.triage[i] ?? 0,
         })),
-        attention: attention(now),
+        attention: attention(now, priority),
       };
     });
   };

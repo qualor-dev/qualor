@@ -57,6 +57,8 @@ export function sampleRow(
     newIssues: 2,
     secrets: 1,
     vulnerableDependencies: 3,
+    vulnerableReleases: 2,
+    exploited: 1,
     ...overrides,
   };
 }
@@ -71,6 +73,8 @@ const passing = (): PortfolioProjectRow =>
     issues: 3,
     secrets: 0,
     vulnerableDependencies: 0,
+    vulnerableReleases: 0,
+    exploited: 0,
   });
 
 const neverAnalysed = (): PortfolioProjectRow =>
@@ -88,6 +92,8 @@ const neverAnalysed = (): PortfolioProjectRow =>
     newIssues: null,
     secrets: 0,
     vulnerableDependencies: 0,
+    vulnerableReleases: null,
+    exploited: null,
   });
 
 /** Three fresh rows: a failing project, a passing one in another organisation, a never-analysed. */
@@ -142,7 +148,13 @@ export function sampleOverview(kind: 'all' | 'organization' = 'all'): PortfolioO
             },
           },
     granularity: 'week',
-    totals: { ...aggregate(), secrets: 1, vulnerableDependencies: 3 },
+    totals: {
+      ...aggregate(),
+      secrets: 1,
+      vulnerableDependencies: 3,
+      vulnerableReleases: 2,
+      exploited: 1,
+    },
     organizations:
       kind === 'all'
         ? [
@@ -162,6 +174,7 @@ export function sampleOverview(kind: 'all' | 'organization' = 'all'): PortfolioO
         : null,
     trend: trend(),
     attention: {
+      exploited: [sampleRow(0)],
       failingGates: [sampleRow(0)],
       worstSecurity: [sampleRow(0)],
       mostSevere: [sampleRow(0)],

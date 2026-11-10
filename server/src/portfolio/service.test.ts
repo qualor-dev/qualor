@@ -23,6 +23,8 @@ function state(over: Partial<ProjectState> = {}): ProjectState {
     newIssues: 1,
     secrets: 0,
     vulnerableDependencies: 0,
+    vulnerableReleases: null,
+    exploited: null,
     securityIssues: 1,
     reliabilityIssues: 0,
     maintainabilityIssues: 0,

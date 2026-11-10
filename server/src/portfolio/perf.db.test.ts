@@ -12,6 +12,10 @@ const PROJECTS = 2_000;
 const ORGANIZATIONS = 20;
 /** 13 succeeded main-branch analyses per project, one a week over the last 12 weeks. */
 const ANALYSES = 13;
+/** Tracked versions per project, each with this many vulnerability rows (plan 5, V7). */
+const VERSIONS = 5;
+const VULNERABILITIES_PER_VERSION = 20;
+const KEV_IDS = 3;
 const BUDGET_MS = 20_000;
 /** Above this the run is reported as a concern (with the slowest query's plan). */
 const CONCERN_MS = 10_000;
@@ -33,7 +37,7 @@ const OTHER_METRICS = [
 const FIXTURE: QualorPlugin = {
   name: 'portfolio-perf-fixture',
   apiVersion: 1,
-  features: ['portfolio'],
+  features: ['portfolio', 'vuln.priority'],
   register(ctx) {
     ctx.routes('portfolio', async (app) => {
       app.get('/t/perf/overview', async (req) => {
@@ -66,7 +70,11 @@ describe('ctx.portfolio performance: 2 000 projects × 13 analyses (seeded)', ()
   };
 
   beforeAll(async () => {
-    ctx = await rbacContext({ now: () => LICENSED, features: ['portfolio'], plugin: FIXTURE });
+    ctx = await rbacContext({
+      now: () => LICENSED,
+      features: ['portfolio', 'vuln.priority'],
+      plugin: FIXTURE,
+    });
     const start = performance.now();
     await ctx.db.execute(sql`
       INSERT INTO organizations (id, key, name)
@@ -108,8 +116,36 @@ describe('ctx.portfolio performance: 2 000 projects × 13 analyses (seeded)', ()
       SELECT a.id, 'issues', 'new', abs(hashtext(a.id::text)) % 100
         FROM analyses a
         JOIN projects p ON p.id = a.project_id AND p.key LIKE 'perf-%'`);
+    // Vulnerability monitoring: every version tracked, VULNERABILITIES_PER_VERSION rows on each,
+    // the first KEV_IDS of the ids in the KEV catalog.
+    await ctx.db.execute(sql`
+      INSERT INTO project_vulnerability_settings (project_id, version_rule)
+      SELECT id, 'all' FROM projects WHERE key LIKE 'perf-%'`);
+    await ctx.db.execute(sql`
+      INSERT INTO project_versions (id, project_id, label, source, tag, analyzed_at)
+      SELECT gen_random_uuid(), p.id, 'v' || k, 'tag', 'v' || k, now() - make_interval(days => k)
+        FROM projects p
+       CROSS JOIN generate_series(1, ${VERSIONS}) AS k
+       WHERE p.key LIKE 'perf-%'`);
+    await ctx.db.execute(sql`
+      INSERT INTO vulnerability_matches (purl, vulnerability_id, severity)
+      SELECT 'pkg:npm/perf-' || j || '@1.0.0', 'CVE-2024-' || (1000 + j), 'high'
+        FROM generate_series(1, ${VULNERABILITIES_PER_VERSION}) AS j`);
+    await ctx.db.execute(sql`
+      INSERT INTO vulnerability_kev (vulnerability_id, date_added)
+      SELECT 'CVE-2024-' || (1000 + j), '2024-03-05' FROM generate_series(1, ${KEV_IDS}) AS j`);
+    await ctx.db.execute(sql`
+      INSERT INTO target_vulnerabilities (id, project_id, version_id, ecosystem, package_name,
+                                          package_version, purl, vulnerability_id)
+      SELECT gen_random_uuid(), v.project_id, v.id, 'npm', 'perf-' || j, '1.0.0', 'pkg:npm/perf-' || j || '@1.0.0',
+             'CVE-2024-' || (1000 + j)
+        FROM project_versions v
+        JOIN projects p ON p.id = v.project_id AND p.key LIKE 'perf-%'
+       CROSS JOIN generate_series(1, ${VULNERABILITIES_PER_VERSION}) AS j`);
     // A real database has statistics; the planner should not plan on an empty table's guesses.
-    await ctx.db.execute(sql`ANALYZE organizations, projects, branches, analyses, measures`);
+    await ctx.db.execute(sql`
+      ANALYZE organizations, projects, branches, analyses, measures, project_versions,
+              target_vulnerabilities, vulnerability_matches`);
     timings.seed = Math.round(performance.now() - start);
 
     const counts = await ctx.db.execute<{ projects: number; analyses: number; measures: number }>(
@@ -148,6 +184,9 @@ describe('ctx.portfolio performance: 2 000 projects × 13 analyses (seeded)', ()
       expect(body.totals.analysed).toBe(PROJECTS);
       expect(body.organizations).toHaveLength(ORGANIZATIONS);
       expect(body.trend).toHaveLength(12);
+      // Every version is vulnerable, and each project has KEV_IDS distinct exploited ids.
+      expect(body.totals.vulnerableReleases).toBe(PROJECTS * VERSIONS);
+      expect(body.totals.exploited).toBe(PROJECTS * KEV_IDS);
       if (granularity === 'week') {
         // The oldest analysis is 12 weeks old: every point has a state for every project.
         expect(body.trend.every((p) => p.analysed === PROJECTS)).toBe(true);
