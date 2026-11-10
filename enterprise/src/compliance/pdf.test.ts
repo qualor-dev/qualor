@@ -65,9 +65,51 @@ describe('renderPdf (4E-1 §2.5)', () => {
     expect(text).toContain('KEV');
     expect(text).toContain('2026-03-05');
     expect(text).toContain('EPSS');
-    expect(text).toContain('97%');
+    expect(text).toContain('42.0%');
+    expect(text).toContain('2 open dependency findings.');
     expect(text).toContain('left-pad');
   });
+
+  it('prints a dash for the package of a finding without facts', async () => {
+    const report = dependencyReport();
+    report.findings.find((f) => f.id === 'd2')!.vulnerability = null;
+    const text = await textOf(await renderPdf(report));
+    expect(text).not.toContain('left-pad');
+    expect(text).not.toContain('Dependency ');
+  });
+
+  it('prints a tiny EPSS score as below 0.1%', async () => {
+    const report = dependencyReport();
+    report.findings.find((f) => f.id === 'd1')!.vulnerability!.epss = {
+      score: 0.0004,
+      percentile: 0.2,
+    };
+    expect(await textOf(await renderPdf(report))).toContain('<0.1%');
+  });
+
+  it('leaves the build time out of the cover when the dataset has none', async () => {
+    const report = sampleReport();
+    report.datasets.vulnerabilityDatabase = { builtAt: null, digest: 'sha256:x' };
+    expect(await textOf(await renderPdf(report))).not.toContain('Vulnerability database built');
+  });
+
+  it('caps the dependency table and says where the rest is', async () => {
+    const report = dependencyReport();
+    const base = report.findings.find((f) => f.id === 'd1')!;
+    report.findings = Array.from({ length: PDF_FINDINGS_MAX + 5 }, (_, i) => ({
+      ...base,
+      id: `d${i}`,
+      vulnerability: { ...base.vulnerability!, packageName: `pkg-${i}` },
+    }));
+    report.summary.findings.total = report.findings.length;
+    report.summary.dependencies.open = report.findings.length;
+    const text = await textOf(await renderPdf(report));
+    expect(text).toContain(
+      `The first ${PDF_FINDINGS_MAX} of ${PDF_FINDINGS_MAX + 5} open dependency findings.`,
+    );
+    expect(text).toContain(`pkg-${PDF_FINDINGS_MAX - 1} `);
+    expect(text).not.toContain(`pkg-${PDF_FINDINGS_MAX} `);
+  }, 120_000);
 
   it('leaves the KEV and EPSS columns out without priority', async () => {
     const report = dependencyReport();

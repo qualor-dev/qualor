@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   ADMIN_PASSWORD,
@@ -12,11 +12,14 @@ import { seedTargetRow } from '../../test/vulnerabilities';
 import {
   branches,
   complianceReports,
+  projectVulnerabilitySettings,
+  targetVulnerabilities,
   vulnerabilityDecisions,
   vulnerabilityEpss,
   vulnerabilityKev,
   vulndbDatasets,
 } from '../db/schema';
+import { writeVulndbSettings } from '../vulndb/settings';
 import { updatePriorityState } from '../vulndb/priority/state';
 import { updateVulndbState } from '../vulndb/state';
 import { collectCompliance } from './collect';
@@ -121,6 +124,14 @@ describe('collectCompliance: dependency facts, triage reasons, dataset dates (0.
       packageVersion: '3.10.0',
       vulnerabilityId: 'CVE-2026-0001',
       fixedVersion: '3.10.2',
+    });
+    // Rows the branch kept from before it stopped matching the tracking rule (recheck R17).
+    await row({
+      projectId: project.id,
+      branchId: feature,
+      packageName: 'lodash',
+      vulnerabilityId: 'CVE-2026-0003',
+      fixedVersion: '9.9.9',
     });
     await row({
       projectId: project.id,
@@ -274,5 +285,78 @@ describe('collectCompliance: dependency facts, triage reasons, dataset dates (0.
     });
     const without = await collectCompliance(ctx.db, await newReport({}), { limit: 1 });
     expect(without.datasets).toEqual({ vulnerabilityDatabase: database, kev: null, epss: null });
+  });
+
+  it('ignores the rows of a project whose monitoring is switched off', async () => {
+    await ctx.db
+      .insert(projectVulnerabilitySettings)
+      .values({ projectId: project.id, enabled: false });
+    try {
+      const s = await collectCompliance(ctx.db, await newReport({}), {
+        limit: 100,
+        priority: true,
+      });
+      expect(s.findings.find((f) => f.id === lodash)!.vulnerability).toBeNull();
+      expect(s.triage.find((x) => x.id === fpMain)!.vulnerability).toBeNull();
+    } finally {
+      await ctx.db
+        .delete(projectVulnerabilitySettings)
+        .where(eq(projectVulnerabilitySettings.projectId, project.id));
+    }
+  });
+
+  it('ignores every row and names no database while the instance switch is off', async () => {
+    await writeVulndbSettings(ctx.db, { enabled: false }, 'k');
+    try {
+      const s = await collectCompliance(ctx.db, await newReport({}), {
+        limit: 100,
+        priority: true,
+      });
+      expect(s.findings.find((f) => f.id === lodash)!.vulnerability).toBeNull();
+      expect(s.triage.find((x) => x.id === fpMain)!.vulnerability).toBeNull();
+      expect(s.datasets).toEqual({ vulnerabilityDatabase: null, kev: null, epss: null });
+    } finally {
+      await writeVulndbSettings(ctx.db, { enabled: true }, 'k');
+    }
+  });
+
+  it('counts only effective-open, not ignored rows for an open finding', async () => {
+    const lodashRows = (version: string | null) =>
+      ctx.db
+        .update(targetVulnerabilities)
+        .set({ ignored: true })
+        .where(
+          sql`branch_id = ${main} AND package_name = 'lodash'
+            AND vulnerability_id = 'CVE-2026-0001'
+            AND (${version}::text IS NULL OR package_version = ${version})`,
+        );
+    try {
+      await lodashRows('3.10.0');
+      const one = await collectCompliance(ctx.db, await newReport({}), { limit: 100 });
+      expect(one.findings.find((f) => f.id === lodash)!.vulnerability!.fixedVersions).toEqual([
+        '4.17.21',
+      ]);
+      await lodashRows(null);
+      const none = await collectCompliance(ctx.db, await newReport({}), { limit: 100 });
+      expect(none.findings.find((f) => f.id === lodash)!.vulnerability).toBeNull();
+    } finally {
+      await ctx.db
+        .update(targetVulnerabilities)
+        .set({ ignored: false })
+        .where(sql`branch_id = ${main} AND package_name = 'lodash'`);
+    }
+  });
+
+  it('gives a dataset without a build time a null builtAt', async () => {
+    await ctx.db.execute(sql`UPDATE vulndb_datasets SET built_at = NULL`);
+    try {
+      const s = await collectCompliance(ctx.db, await newReport({}), { limit: 1 });
+      expect(s.datasets.vulnerabilityDatabase).toEqual({
+        builtAt: null,
+        digest: `sha256:${'a'.repeat(64)}`,
+      });
+    } finally {
+      await ctx.db.execute(sql`UPDATE vulndb_datasets SET built_at = '2026-11-08T06:00:00Z'`);
+    }
   });
 });

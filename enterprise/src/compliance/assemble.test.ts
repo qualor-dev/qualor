@@ -307,6 +307,23 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
     expect(json.triage[0]!.reason).toBe('component_not_present');
   });
 
+  it('keeps a dataset without a build time as null', () => {
+    const { json } = assembleReport({
+      id: 'r',
+      generatedBy: 'Ann',
+      serverVersion: '0.15.0',
+      source: source({
+        datasets: {
+          vulnerabilityDatabase: { builtAt: null, digest: 'sha256:db' },
+          kev: null,
+          epss: null,
+        },
+      }),
+      standards: [STD],
+    });
+    expect(json.datasets.vulnerabilityDatabase).toEqual({ builtAt: null, digest: 'sha256:db' });
+  });
+
   it('reads schema 1 and 2 and refuses any other', () => {
     const a = assembleReport({
       id: 'r',

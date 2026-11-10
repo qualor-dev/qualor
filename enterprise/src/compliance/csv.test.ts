@@ -38,7 +38,9 @@ describe('csvRows (4E-1 §2.5)', () => {
     const v1 = parseCanonical(Buffer.from(JSON.stringify(sampleReportV1())));
     const lines = [...csvRows(v1)];
     expect(lines).toHaveLength(4);
-    expect(lines[1]!.endsWith(',,,,,,,,\r\n')).toBe(true);
+    expect(lines[1]).toBe(
+      'code,alpha,a.ts,1,semgrep:sqli,SQLi,semgrep,high,issue,89,open,true,2026-01-01T00:00:00.000Z,A;B,,,,,,,,,\r\n',
+    );
   });
   it('quotes and neutralises formulas (Review Focus 3)', () => {
     expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);

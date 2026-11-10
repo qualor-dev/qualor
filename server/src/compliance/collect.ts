@@ -10,7 +10,9 @@ import {
   projects,
 } from '../db/schema';
 import { effectiveDecisionJoin, type VexJustification } from '../vulnerabilities/decisions';
+import { projectTargets } from '../vulnerabilities/targets';
 import { scopedRows } from '../vulnerabilities/summary';
+import { readVulndbSettings } from '../vulndb/settings';
 import { readPriorityState } from '../vulndb/priority/state';
 import { readVulndbState } from '../vulndb/state';
 import { currentDataset } from '../vulndb/store';
@@ -56,48 +58,62 @@ const uuidArray = (ids: string[]) => sql`${sql.param(ids)}::uuid[]`;
 
 /**
  * The server's facts of the dependency issues `ids` (Trivy issues: the rule's `engine_rule_id` is
- * the vulnerability id), in one query. They come from the rows of the issue's own branch
- * (`scopedRows`), whatever the number of installed versions. `openOnly` keeps the effective-open,
- * not ignored rows (an open finding); a triaged finding takes all rows, because the triage row
- * describes the same pair. KEV and EPSS are per vulnerability id and only given with `priority`.
+ * the vulnerability id), in one set-based query. Only the issues on `trackedBranchIds` are
+ * enriched: the rows of a target that is no longer tracked are frozen (recheck R17). The rows of
+ * those branches are grouped by (branch, package, vulnerability) and joined to the issues.
+ * `openOnly` keeps the effective-open, not ignored rows (an open finding); a triaged finding
+ * takes all rows, because the triage row describes the same pair. KEV and EPSS are per
+ * vulnerability id and only given with `priority`.
  */
 async function dependencyFacts(
   tx: Executor,
   ids: string[],
+  trackedBranchIds: string[],
   options: { openOnly: boolean; priority: boolean },
 ): Promise<Map<string, ComplianceVulnerability>> {
   const out = new Map<string, ComplianceVulnerability>();
-  if (ids.length === 0) return out;
-  const open = options.openOnly ? sql`AND r.eff_status = 'open' AND NOT r.ignored` : sql``;
+  if (ids.length === 0 || trackedBranchIds.length === 0) return out;
+  const open = sql`r.eff_status = 'open' AND NOT r.ignored`;
   const rows = (
     await tx.execute<{
       id: string;
       vulnerability_id: string;
       package_name: string;
+      n: number;
       fixed: string[] | null;
       kev: boolean;
       kev_date_added: string | null;
       epss_score: number | null;
       epss_percentile: number | null;
     }>(sql`
-      SELECT i.id, rl.engine_rule_id AS vulnerability_id, i.package_name, v.fixed, v.kev,
-             v.kev_date_added, v.epss_score, v.epss_percentile
-        FROM issues i
-        JOIN rules rl ON rl.id = i.rule_id AND rl.engine_id = 'trivy'
-        JOIN LATERAL (
-          SELECT array_agg(DISTINCT r.fixed_version)
-                   FILTER (WHERE r.fixed_version IS NOT NULL) AS fixed,
-                 bool_or(r.kev) AS kev, max(r.kev_date_added) AS kev_date_added,
-                 max(r.epss_score) AS epss_score, max(r.epss_percentile) AS epss_percentile
-            FROM (${scopedRows(
-              sql`tv.branch_id = i.branch_id AND tv.package_name = i.package_name
-                AND tv.vulnerability_id = rl.engine_rule_id`,
-            )}) r
-           WHERE true ${open}
-          HAVING count(*) > 0) v ON true
-       WHERE i.id = ANY(${uuidArray(ids)}) AND i.package_name IS NOT NULL`)
+      WITH want AS (
+        SELECT i.id, i.branch_id, i.package_name, rl.engine_rule_id AS vulnerability_id
+          FROM issues i
+          JOIN rules rl ON rl.id = i.rule_id AND rl.engine_id = 'trivy'
+         WHERE i.id = ANY(${uuidArray(ids)}) AND i.package_name IS NOT NULL
+           AND i.branch_id = ANY(${uuidArray(trackedBranchIds)})
+      ), g AS (
+        SELECT r.branch_id, r.package_name, r.vulnerability_id,
+               count(*) FILTER (WHERE ${options.openOnly ? open : sql`true`})::int AS n,
+               array_agg(DISTINCT r.fixed_version) FILTER (
+                 WHERE r.fixed_version IS NOT NULL AND ${options.openOnly ? open : sql`true`}
+               ) AS fixed,
+               bool_or(r.kev) AS kev, max(r.kev_date_added) AS kev_date_added,
+               max(r.epss_score) AS epss_score, max(r.epss_percentile) AS epss_percentile
+          FROM (${scopedRows(
+            sql`tv.branch_id = ANY(${uuidArray(trackedBranchIds)})
+              AND tv.vulnerability_id IN (SELECT vulnerability_id FROM want)`,
+          )}) r
+         GROUP BY r.branch_id, r.package_name, r.vulnerability_id
+      )
+      SELECT w.id, w.vulnerability_id, w.package_name, g.n, g.fixed, g.kev, g.kev_date_added,
+             g.epss_score, g.epss_percentile
+        FROM want w
+        JOIN g ON g.branch_id = w.branch_id AND g.package_name = w.package_name
+              AND g.vulnerability_id = w.vulnerability_id`)
   ).rows;
   for (const r of rows) {
+    if (r.n === 0) continue;
     out.set(r.id, {
       id: r.vulnerability_id,
       packageName: r.package_name,
@@ -113,12 +129,18 @@ async function dependencyFacts(
 }
 
 /** The dataset dates; KEV and EPSS only with `vuln.priority`. */
-async function datasetsOf(tx: Executor, priority: boolean): Promise<ComplianceDatasets> {
+async function datasetsOf(
+  tx: Executor,
+  options: { enabled: boolean; priority: boolean },
+): Promise<ComplianceDatasets> {
+  // With monitoring off the report names no database: it used none.
+  if (!options.enabled) return { vulnerabilityDatabase: null, kev: null, epss: null };
+  const { priority } = options;
   const dataset = await currentDataset(tx, await readVulndbState(tx));
   const state = priority ? await readPriorityState(tx) : null;
   return {
     vulnerabilityDatabase: dataset
-      ? { builtAt: isoReq(dataset.builtAt ?? dataset.createdAt), digest: dataset.digest }
+      ? { builtAt: iso(dataset.builtAt), digest: dataset.digest }
       : null,
     kev:
       state?.kev.refreshedAt && state.kev.digest
@@ -186,6 +208,13 @@ export async function collectCompliance(
         throw new ComplianceCollectError('too many projects for one report');
       }
       const projectIds = scopeProjects.map((p) => p.id);
+      // The branches the server still monitors: the rows of any other are frozen (recheck R17).
+      const monitoring = (await readVulndbSettings(tx)).enabled;
+      const trackedBranchIds = monitoring
+        ? [...(await projectTargets(tx, projectIds)).values()].flatMap((targets) =>
+            targets.flatMap((target) => (target.kind === 'branch' ? [target.branchId] : [])),
+          )
+        : [];
       const branchRows = await scopeBranches(tx, projectIds, report.branchId);
       const branchOf = new Map(branchRows.map((b) => [b.projectId, b]));
       const branchIds = branchRows.map((b) => b.id);
@@ -323,6 +352,7 @@ export async function collectCompliance(
       const openFacts = await dependencyFacts(
         tx,
         findings.filter((f) => f.section === 'dependency').map((f) => f.id),
+        trackedBranchIds,
         { openOnly: true, priority },
       );
       for (const f of findings) f.vulnerability = openFacts.get(f.id) ?? null;
@@ -385,10 +415,13 @@ export async function collectCompliance(
       const triageFacts = await dependencyFacts(
         tx,
         triage.filter((t) => t.section === 'dependency').map((t) => t.id),
+        trackedBranchIds,
         { openOnly: false, priority },
       );
       for (const t of triage) t.vulnerability = triageFacts.get(t.id) ?? null;
-      const datasets = await datasetsOf(tx, priority);
+      abortCheck(options.signal);
+      const datasets = await datasetsOf(tx, { enabled: monitoring, priority });
+      abortCheck(options.signal);
 
       const single = report.projectId === null ? null : (scopeProjects[0] ?? null);
       const singleBranch = single ? (branchOf.get(single.id) ?? null) : null;

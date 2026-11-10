@@ -17,9 +17,13 @@ const MESSAGE_MAX = 300;
 const CELL_MAX = 120;
 const dash = (value: string | number | null | undefined): string =>
   value === null || value === undefined || value === '' ? '—' : String(value);
-/** 0.973 as "97%". */
-const percent = (fraction: number | null | undefined): string =>
-  fraction === null || fraction === undefined ? '—' : `${Math.round(fraction * 100)}%`;
+/** An EPSS score as the UI prints it: 0.42 as "42.0%", below 0.1% as "<0.1%". */
+const epssText = (score: number | null | undefined): string =>
+  score === null || score === undefined
+    ? '—'
+    : score < 0.001
+      ? '<0.1%'
+      : `${(score * 100).toFixed(1)}%`;
 const day = (iso: string | null): string => (iso ? iso.slice(0, 10) : '—');
 const time = (iso: string): string => `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
 const rating = (value: number | null): string =>
@@ -58,7 +62,7 @@ function scopeLine(report: ReportJson): string {
 function datasetFields(report: ReportJson): [string, string][] {
   const { vulnerabilityDatabase, kev, epss } = report.datasets;
   const fields: [string, string][] = [];
-  if (vulnerabilityDatabase) {
+  if (vulnerabilityDatabase?.builtAt) {
     fields.push(['Vulnerability database built', day(vulnerabilityDatabase.builtAt)]);
   }
   if (kev) fields.push(['KEV refreshed', day(kev.refreshedAt)]);
@@ -299,8 +303,12 @@ async function dependencyFindings(layout: Layout, report: ReportJson): Promise<v
   const shown = list.slice(0, PDF_FINDINGS_MAX);
   const priority = hasPriority(report);
   const fixed = 90 + 50 + 90 + 60 + (priority ? 100 : 0);
-  if (report.summary.truncated)
-    layout.text('Dependency findings among the listed findings', COLOR.muted);
+  const total = report.summary.dependencies.open;
+  layout.text(
+    shown.length < total
+      ? `The first ${shown.length} of ${total} open dependency findings.`
+      : `${total} open dependency findings.`,
+  );
   await layout.table(
     [
       { header: 'Rule', width: 90 },
@@ -320,10 +328,10 @@ async function dependencyFindings(layout: Layout, report: ReportJson): Promise<v
         const v = f.vulnerability;
         yield [
           cut(f.rule, CELL_MAX),
-          cut(v?.packageName ?? f.ruleName, CELL_MAX),
+          cut(dash(v?.packageName), CELL_MAX),
           capitalised(f.severity),
           cut(dash(v?.fixedVersions.join(', ')), CELL_MAX),
-          ...(priority ? [dash(v?.kev?.dateAdded), percent(v?.epss?.percentile)] : []),
+          ...(priority ? [dash(v?.kev?.dateAdded), epssText(v?.epss?.score)] : []),
           day(f.firstSeenAt),
         ];
       }

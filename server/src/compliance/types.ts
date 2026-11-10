@@ -103,7 +103,7 @@ export interface ComplianceTriageRow {
 
 /** The datasets a report was built from; KEV and EPSS are null without `vuln.priority`. */
 export interface ComplianceDatasets {
-  vulnerabilityDatabase: { builtAt: string; digest: string } | null;
+  vulnerabilityDatabase: { builtAt: string | null; digest: string } | null;
   kev: { refreshedAt: string; digest: string } | null;
   epss: { dataDate: string | null; refreshedAt: string; digest: string } | null;
 }
