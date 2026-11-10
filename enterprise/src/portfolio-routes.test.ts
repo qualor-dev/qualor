@@ -327,12 +327,14 @@ describe('GET /portfolio/export (4E-2 §3)', () => {
       generatedBy: 'Ann Example',
       serverVersion: '0.8.0',
       deadline: expect.any(Number),
+      // R4: every project with a vulnerable release, from the full stream.
+      vulnerable: [sampleRows()[0]],
     });
     // 4E-2 §3: a 60 s budget, as in 4E-1.
     const deadline = options.deadline as number;
     expect(deadline - Date.now()).toBeGreaterThan(50_000);
     expect(deadline - Date.now()).toBeLessThanOrEqual(60_000);
-    expect(h.service.exportRows).not.toHaveBeenCalled();
+    expect(h.service.exportRows).toHaveBeenCalledTimes(1);
   });
 
   it('names the all scope "all", and the author by username when there is no display name', async () => {

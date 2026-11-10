@@ -351,9 +351,15 @@ export function portfolioRoutes(ctx: PluginContext): FastifyPluginAsync {
             sort: 'gate',
             limit: PDF_PROJECTS_MAX,
           });
+          // R4: the vulnerable-projects section needs every such project, not only the first 50.
+          const vulnerable: PortfolioProjectRow[] = [];
+          for await (const row of ctx.portfolio.exportRows(request, input)) {
+            if ((row.vulnerableReleases ?? 0) > 0 || (row.exploited ?? 0) > 0) vulnerable.push(row);
+          }
           let file: Buffer;
           try {
             file = await renderPortfolioPdf(overview, items, {
+              vulnerable,
               generatedBy: user.displayName?.trim() || user.username,
               serverVersion: ctx.serverVersion,
               deadline: Date.now() + RENDER_BUDGET_MS,

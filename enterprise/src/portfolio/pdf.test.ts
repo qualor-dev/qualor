@@ -58,10 +58,100 @@ describe('renderPortfolioPdf (4E-2 §3)', () => {
     const text = await textOf(await renderPortfolioPdf(sampleOverview(), sampleRows(), OPTIONS));
     expect(text).toMatch(/Vulnerable +releases/);
     expect(text).toContain('Exploited vulnerabilities');
-    expect(text.indexOf('Exploited vulnerabilities')).toBeLessThan(
-      text.indexOf('Failing quality gates'),
-    );
-    expect(text).toContain('Exploited');
+    const attention = text.indexOf('Projects that need attention');
+    expect(attention).toBeGreaterThan(-1);
+    const exploited = text.indexOf('Exploited vulnerabilities', attention);
+    expect(exploited).toBeGreaterThan(attention);
+    expect(exploited).toBeLessThan(text.indexOf('Failing quality gates', attention));
+  });
+
+  it('keeps Lines of code and Coverage in the project table', async () => {
+    const text = await textOf(await renderPortfolioPdf(sampleOverview(), sampleRows(), OPTIONS));
+    const start = text.indexOf('3 projects, by quality gate');
+    const head = text.slice(start, text.indexOf('Projects with vulnerable releases', start));
+    expect(head).toMatch(/Lines of code/);
+    expect(head).toMatch(/Coverage/);
+    expect(head).not.toMatch(/Vulnerable/);
+  });
+
+  describe('Projects with vulnerable releases', () => {
+    const OPTS = OPTIONS;
+    const section = async (
+      overview: ReturnType<typeof sampleOverview>,
+      rows: PortfolioProjectRow[],
+      vulnerable?: PortfolioProjectRow[],
+    ): Promise<string> => {
+      const text = await textOf(
+        await renderPortfolioPdf(overview, rows, {
+          ...OPTS,
+          ...(vulnerable ? { vulnerable } : {}),
+        }),
+      );
+      return text.slice(text.lastIndexOf('Projects with vulnerable releases'));
+    };
+
+    it('lists the right projects: exploited, then vulnerable releases, then key', async () => {
+      const rows = [
+        sampleRow(1, { vulnerableReleases: 5, exploited: 0 }),
+        sampleRow(2, { vulnerableReleases: 1, exploited: 3 }),
+        sampleRow(3, { vulnerableReleases: 2, exploited: 3 }),
+        sampleRow(4, { vulnerableReleases: 0, exploited: 0 }),
+        sampleRow(5, { vulnerableReleases: null, exploited: null }),
+        sampleRow(6, { vulnerableReleases: 5, exploited: 0 }),
+        sampleRow(7, { vulnerableReleases: 0, exploited: 1 }),
+      ];
+      const text = await section(sampleOverview(), rows);
+      const order = ['proj-003', 'proj-002', 'proj-007', 'proj-001', 'proj-006'].map((k) =>
+        text.indexOf(`(${k})`),
+      );
+      expect(order.every((i) => i > -1)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      expect(text).not.toContain('(proj-004)');
+      expect(text).not.toContain('(proj-005)');
+    });
+
+    it('orders by vulnerable releases alone, and skips exploited-only rows, without priority', async () => {
+      const overview = sampleOverview();
+      overview.attention.exploited = null;
+      const rows = [
+        sampleRow(1, { vulnerableReleases: 1, exploited: null }),
+        sampleRow(2, { vulnerableReleases: 4, exploited: null }),
+        sampleRow(3, { vulnerableReleases: 0, exploited: 9 }),
+      ];
+      const text = await section(overview, rows);
+      expect(text.indexOf('(proj-002)')).toBeGreaterThan(-1);
+      expect(text.indexOf('(proj-002)')).toBeLessThan(text.indexOf('(proj-001)'));
+      expect(text).not.toContain('(proj-003)');
+      expect(text).not.toContain('Exploited');
+    });
+
+    it('caps the list at 50 and says how many more there are', async () => {
+      const rows = Array.from({ length: 53 }, (_, i) =>
+        sampleRow(i, { vulnerableReleases: 1, exploited: 0 }),
+      );
+      const text = await section(sampleOverview(), rows);
+      expect(text).toContain('(proj-049)');
+      expect(text).not.toContain('(proj-050)');
+      expect(text).toContain('…and 3 more.');
+    });
+
+    it('uses the given candidates rather than the first 50 rows', async () => {
+      const text = await section(sampleOverview(), sampleRows(), [
+        sampleRow(90, { vulnerableReleases: 4, exploited: 0 }),
+      ]);
+      expect(text).toContain('(proj-090)');
+    });
+
+    it('says so when no project has a vulnerable release', async () => {
+      const rows = sampleRows().map((r) => ({ ...r, vulnerableReleases: 0, exploited: 0 }));
+      const text = await section(sampleOverview(), rows);
+      expect(text).toContain('No project has a vulnerable release.');
+    });
+
+    it('has no Organisation column in the organisation scope', async () => {
+      const text = await section(sampleOverview('organization'), [sampleRow(1)]);
+      expect(text).not.toContain('Organisation');
+    });
   });
 
   it('prints nothing about exploited vulnerabilities without vuln.priority', async () => {
@@ -71,6 +161,7 @@ describe('renderPortfolioPdf (4E-2 §3)', () => {
     const rows = sampleRows().map((r) => ({ ...r, exploited: null }));
     const text = await textOf(await renderPortfolioPdf(overview, rows, OPTIONS));
     expect(text).toMatch(/Vulnerable +releases/);
+    expect(text).toContain('Projects with vulnerable releases');
     expect(text).not.toContain('Exploited');
     expect(text).not.toContain('exploited');
     const again = await renderPortfolioPdf(overview, rows, OPTIONS);
@@ -139,9 +230,11 @@ describe('renderPortfolioPdf (4E-2 §3)', () => {
       return { calls: () => ticks };
     }
 
-    /** Fifty project rows, enough for the project table to span pages. */
+    /** Fifty project rows without vulnerabilities, so the project table is the last long table. */
     function fiftyRows(): PortfolioProjectRow[] {
-      return Array.from({ length: 50 }, (_, i) => sampleRow(i));
+      return Array.from({ length: 50 }, (_, i) =>
+        sampleRow(i, { vulnerableReleases: 0, exploited: 0 }),
+      );
     }
 
     it('stops when the deadline passes in the middle of the project table', async () => {

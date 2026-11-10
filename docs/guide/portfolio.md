@@ -187,9 +187,11 @@ the bottom. The sections:
    tables of every point, with the analyses and triage decisions per period;
 4. the organisations (all organisations only);
 5. the attention lists, **Exploited vulnerabilities** first (with `vuln.priority`);
-6. the projects, with their vulnerable releases and exploited vulnerabilities: the first **50** by
-   quality gate (Failed first, then the worst security rating).
-   With more projects, the PDF says that the CSV lists every one.
+6. the projects: the first **50** by quality gate (Failed first, then the worst security rating).
+   With more projects, the PDF says that the CSV lists every one;
+7. the projects with vulnerable releases: up to **50**, with their number of vulnerable releases
+   and, with `vuln.priority`, of exploited vulnerabilities. They run exploited first, then
+   vulnerable releases, then by project key. It says so when no project has one.
 
 The PDF's font, Noto Sans, covers Latin, Cyrillic and Greek. A project name in another script prints
 as a missing-glyph box. The CSV keeps it as it is.

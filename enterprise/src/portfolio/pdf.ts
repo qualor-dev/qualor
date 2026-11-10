@@ -451,16 +451,16 @@ async function projects(
   if (shown > 0) {
     await layout.table(
       columns(layout, 'Project', [
-        ...(all ? [{ header: 'Organisation', width: 56 }] : []),
+        ...(all ? [{ header: 'Organisation', width: 64 }] : []),
         { header: 'Last analysis', width: 50 },
         { header: 'Gate', width: 34 },
         right('Security', 38),
         right('Reliability', 44),
+        right('Lines of code', 40),
+        right('Coverage', 44),
         right('Issues', 34),
         right('Blocker', 38),
         right('High', 30),
-        right('Vulnerable releases', 52),
-        ...(prioritised(overview) ? [right('Exploited', 44)] : []),
       ]),
       rows
         .slice(0, shown)
@@ -471,20 +471,71 @@ async function projects(
           r.gate === null ? '—' : (GATE[r.gate] ?? r.gate),
           r.securityRating ?? '—',
           r.reliabilityRating ?? '—',
+          count(r.ncloc),
+          percent(r.coverage),
           count(r.issues),
           count(r.bySeverity?.blocker),
           count(r.bySeverity?.high),
-          count(r.vulnerableReleases),
-          ...(prioritised(overview) ? [count(r.exploited)] : []),
         ]),
     );
   }
   if (shown < total) layout.text('The CSV export lists every project.');
 }
 
+/** Most first, nulls last. */
+const byCountDesc = (a: number | null, b: number | null): number => (b ?? -1) - (a ?? -1);
+
+/**
+ * Plan 5 R4: the projects with a vulnerable release, or with `vuln.priority` an exploited
+ * vulnerability: exploited first, then vulnerable releases, then project key.
+ */
+async function vulnerableProjects(
+  layout: Layout,
+  overview: PortfolioOverview,
+  candidates: readonly PortfolioProjectRow[],
+): Promise<void> {
+  const all = overview.scope.kind === 'all';
+  const withPriority = prioritised(overview);
+  const listed = candidates
+    .filter((r) => (r.vulnerableReleases ?? 0) > 0 || (withPriority && (r.exploited ?? 0) > 0))
+    .sort(
+      (a, b) =>
+        (withPriority ? byCountDesc(a.exploited, b.exploited) : 0) ||
+        byCountDesc(a.vulnerableReleases, b.vulnerableReleases) ||
+        (a.project.key < b.project.key ? -1 : a.project.key > b.project.key ? 1 : 0),
+    );
+  const shown = listed.slice(0, PDF_PROJECTS_MAX);
+  layout.page();
+  layout.heading('Projects with vulnerable releases');
+  if (shown.length === 0) {
+    layout.text('No project has a vulnerable release.');
+    return;
+  }
+  await layout.table(
+    columns(layout, 'Project', [
+      ...(all ? [{ header: 'Organisation', width: 120 }] : []),
+      right('Vulnerable releases', 80),
+      ...(withPriority ? [right('Exploited', 60)] : []),
+    ]),
+    shown.map((r) => [
+      projectName(r),
+      ...(all ? [cut(r.organization.name, CELL_MAX)] : []),
+      count(r.vulnerableReleases),
+      ...(withPriority ? [count(r.exploited)] : []),
+    ]),
+  );
+  if (listed.length > shown.length) {
+    layout.text(
+      `…and ${grouped(listed.length - shown.length)} more. The CSV export lists every project.`,
+    );
+  }
+}
+
 interface RenderOptions {
   generatedBy: string;
   serverVersion: string;
+  /** Every project with a vulnerable release or an exploited vulnerability; `rows` without it. */
+  vulnerable?: readonly PortfolioProjectRow[];
   deadline?: number;
   fontsDir?: string;
 }
@@ -521,6 +572,7 @@ export async function renderPortfolioPdf(
     () => organizations(layout, overview),
     () => attention(layout, overview),
     () => projects(layout, overview, rows),
+    () => vulnerableProjects(layout, overview, options.vulnerable ?? rows),
   ];
   for (const section of sections) {
     due();
