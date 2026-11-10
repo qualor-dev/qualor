@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: LicenseRef-Qualor-Enterprise
 import { CSV_BOM, csvLine as line } from '../csv';
-import type { ReportJson } from './report';
+import type { ReportJson, ReportVulnerability } from './report';
+
+/** The vulnerability columns, empty when the finding has no facts. */
+const vulnerabilityCells = (v: ReportVulnerability | null): (string | number | null)[] => [
+  v?.id ?? null,
+  v ? v.fixedVersions.join(';') : null,
+  v?.kev?.dateAdded ?? null,
+  v?.epss?.score ?? null,
+  v?.epss?.percentile ?? null,
+];
 
 export function* csvRows(report: ReportJson): Generator<string> {
   const ids = report.standards.map((s) => s.id);
@@ -23,6 +32,12 @@ export function* csvRows(report: ReportJson): Generator<string> {
       'triage_by',
       'triage_at',
       'triage_comment',
+      'triage_reason',
+      'vulnerability_id',
+      'fixed_versions',
+      'kev_date_added',
+      'epss_score',
+      'epss_percentile',
     ]);
   for (const f of report.findings) {
     yield line([
@@ -43,6 +58,8 @@ export function* csvRows(report: ReportJson): Generator<string> {
       null,
       null,
       null,
+      null,
+      ...vulnerabilityCells(f.vulnerability),
     ]);
   }
   for (const t of report.triage) {
@@ -64,6 +81,8 @@ export function* csvRows(report: ReportJson): Generator<string> {
       t.by,
       t.at,
       t.comment,
+      t.reason,
+      ...vulnerabilityCells(t.vulnerability),
     ]);
   }
 }

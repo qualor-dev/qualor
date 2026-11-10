@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: LicenseRef-Qualor-Enterprise
 import type {
+  ComplianceDatasets,
   ComplianceFindingRow,
   ComplianceProjectSource,
   ComplianceTriageRow,
+  ComplianceVulnerability,
 } from '@qualor/server/plugin-contract';
 
 /** 4E-1 §2.3: the canonical report. Field order is the canonical key order. */
@@ -35,6 +37,10 @@ export interface ReportSummary {
   truncated: boolean;
 }
 
+/** The server's facts about the vulnerability of a dependency finding (schema 2). */
+export type ReportVulnerability = ComplianceVulnerability;
+export type ReportDatasets = ComplianceDatasets;
+
 export interface ReportFinding {
   id: string;
   project: string;
@@ -51,6 +57,7 @@ export interface ReportFinding {
   inNewCode: boolean;
   firstSeenAt: string;
   section: ComplianceFindingRow['section'];
+  vulnerability: ReportVulnerability | null;
 }
 
 export interface ReportTriage {
@@ -67,6 +74,8 @@ export interface ReportTriage {
   by: string | null;
   at: string | null;
   comment: string | null;
+  reason: ComplianceTriageRow['reason'];
+  vulnerability: ReportVulnerability | null;
 }
 
 export interface ReportProject {
@@ -80,7 +89,8 @@ export interface ReportProject {
 }
 
 export interface ReportJson {
-  schemaVersion: 1;
+  /** 2 for every new report; a stored version 1 is read with the new fields empty. */
+  schemaVersion: 1 | 2;
   id: string;
   generatedAt: string;
   generatedBy: string;
@@ -99,6 +109,7 @@ export interface ReportJson {
     licence: string;
     sourceSha256: string;
   }[];
+  datasets: ReportDatasets;
   projects: ReportProject[];
   summary: ReportSummary;
   findings: ReportFinding[];

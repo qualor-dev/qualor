@@ -6,6 +6,7 @@ import type {
   CategorySummary,
   ReportJson,
   ReportSummary,
+  ReportVulnerability,
   SeverityCounts,
   StandardSummary,
 } from './report';
@@ -114,6 +115,19 @@ function summarise(
   };
 }
 
+/** The facts in the canonical key order. */
+function vulnerabilityOf(v: ReportVulnerability | null): ReportVulnerability | null {
+  return v
+    ? {
+        id: v.id,
+        packageName: v.packageName,
+        fixedVersions: [...v.fixedVersions],
+        kev: v.kev ? { dateAdded: v.kev.dateAdded } : null,
+        epss: v.epss ? { score: v.epss.score, percentile: v.epss.percentile } : null,
+      }
+    : null;
+}
+
 /** Builds the report from a collected source; every literal is in §2.3 key order. */
 export function assembleReport(input: {
   id: string;
@@ -134,7 +148,7 @@ export function assembleReport(input: {
   };
   const summary = summarise(source.groups, standards, truncated);
   const json: ReportJson = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: input.id,
     generatedAt: source.generatedAt,
     generatedBy: input.generatedBy,
@@ -161,6 +175,24 @@ export function assembleReport(input: {
       licence: s.licence,
       sourceSha256: s.sourceSha256,
     })),
+    datasets: {
+      vulnerabilityDatabase: source.datasets.vulnerabilityDatabase
+        ? {
+            builtAt: source.datasets.vulnerabilityDatabase.builtAt,
+            digest: source.datasets.vulnerabilityDatabase.digest,
+          }
+        : null,
+      kev: source.datasets.kev
+        ? { refreshedAt: source.datasets.kev.refreshedAt, digest: source.datasets.kev.digest }
+        : null,
+      epss: source.datasets.epss
+        ? {
+            dataDate: source.datasets.epss.dataDate,
+            refreshedAt: source.datasets.epss.refreshedAt,
+            digest: source.datasets.epss.digest,
+          }
+        : null,
+    },
     projects: source.projects.map((p) => ({
       id: p.id,
       key: p.key,
@@ -209,6 +241,7 @@ export function assembleReport(input: {
       inNewCode: f.inNewCode,
       firstSeenAt: f.firstSeenAt,
       section: f.section,
+      vulnerability: vulnerabilityOf(f.vulnerability),
     })),
     triage: source.triage.slice(0, limit).map((t) => ({
       id: t.id,
@@ -224,14 +257,26 @@ export function assembleReport(input: {
       by: t.by,
       at: t.at,
       comment: t.comment,
+      reason: t.reason,
+      vulnerability: vulnerabilityOf(t.vulnerability),
     })),
   };
   const canonical = Buffer.from(JSON.stringify(json), 'utf8');
   return { json, canonical, sha256: createHash('sha256').update(canonical).digest('hex'), summary };
 }
 
+/**
+ * The report in the bytes. A stored version 1 has no vulnerability facts, reasons or dataset
+ * dates: it is read with those empty, so every format renders it as before.
+ */
 export function parseCanonical(bytes: Buffer): ReportJson {
   const parsed = JSON.parse(bytes.toString('utf8')) as ReportJson;
+  if (parsed.schemaVersion === 2) return parsed;
   if (parsed.schemaVersion !== 1) throw new Error('unsupported report schema version');
-  return parsed;
+  return {
+    ...parsed,
+    datasets: { vulnerabilityDatabase: null, kev: null, epss: null },
+    findings: parsed.findings.map((f) => ({ ...f, vulnerability: null })),
+    triage: parsed.triage.map((r) => ({ ...r, reason: null, vulnerability: null })),
+  };
 }

@@ -122,6 +122,7 @@ function source(): ComplianceSource {
     groups: [],
     findings: [],
     triage: [],
+    datasets: { vulnerabilityDatabase: null, kev: null, epss: null },
   };
 }
 

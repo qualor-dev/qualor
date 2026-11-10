@@ -9,7 +9,8 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { defaultFontsDir } from '../pdf/fonts';
 import { RenderTimeoutError } from '../pdf/layout';
 import { PDF_FINDINGS_MAX, renderPdf } from './pdf';
-import { sampleReport } from './test-report';
+import { parseCanonical } from './assemble';
+import { dependencyReport, sampleReport, sampleReportV1 } from './test-report';
 
 async function textOf(pdf: Buffer): Promise<string> {
   const doc = await getDocument({ data: new Uint8Array(pdf), useSystemFonts: false }).promise;
@@ -39,6 +40,65 @@ describe('renderPdf (4E-1 §2.5)', () => {
     const raw = pdf.toString('latin1');
     expect(raw).not.toContain('Helvetica');
     expect(raw.match(/\/BaseFont \/[A-Z]{6}\+NotoSans-(Regular|Bold)/g)?.length).toBeGreaterThan(0);
+  });
+
+  it('lists the dataset dates on the cover', async () => {
+    const text = await textOf(await renderPdf(dependencyReport()));
+    expect(text).toContain('Vulnerability database built');
+    expect(text).toContain('2026-05-31');
+    expect(text).toContain('KEV refreshed');
+    expect(text).toContain('2026-06-01');
+    expect(text).toContain('EPSS data of');
+  });
+
+  it('leaves a missing dataset out of the cover', async () => {
+    const text = await textOf(await renderPdf(sampleReport()));
+    expect(text).toContain('Vulnerability database built');
+    expect(text).not.toContain('KEV refreshed');
+    expect(text).not.toContain('EPSS data of');
+  });
+
+  it('shows the fixed versions, KEV date and EPSS percentile of each dependency finding', async () => {
+    const text = await textOf(await renderPdf(dependencyReport()));
+    expect(text).toContain('Fixed in');
+    expect(text).toContain('3.10.2, 4.17.21');
+    expect(text).toContain('KEV');
+    expect(text).toContain('2026-03-05');
+    expect(text).toContain('EPSS');
+    expect(text).toContain('97%');
+    expect(text).toContain('left-pad');
+  });
+
+  it('leaves the KEV and EPSS columns out without priority', async () => {
+    const report = dependencyReport();
+    report.datasets.kev = null;
+    report.datasets.epss = null;
+    for (const f of report.findings) {
+      if (f.vulnerability) f.vulnerability = { ...f.vulnerability, kev: null, epss: null };
+    }
+    const text = await textOf(await renderPdf(report));
+    expect(text).toContain('Fixed in');
+    expect(text).not.toContain('KEV');
+    expect(text).not.toContain('EPSS');
+  });
+
+  it('shows the reason of a triaged dependency finding with the UI label', async () => {
+    const text = await textOf(await renderPdf(dependencyReport()));
+    expect(text).toContain('Reason');
+    expect(text).toContain('The vulnerable code is never called');
+  });
+
+  it('renders a stored version 1 report', async () => {
+    const v1 = parseCanonical(Buffer.from(JSON.stringify(sampleReportV1())));
+    const pdf = await renderPdf(v1);
+    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(await textOf(pdf)).not.toContain('KEV refreshed');
+  });
+
+  it('is byte-identical across renders of a report with dependency facts', async () => {
+    const a = await renderPdf(dependencyReport());
+    const b = await renderPdf(dependencyReport());
+    expect(a.equals(b)).toBe(true);
   });
 
   it('is byte-identical across renders of the same report', async () => {

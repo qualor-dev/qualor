@@ -17,6 +17,9 @@ const MESSAGE_MAX = 300;
 const CELL_MAX = 120;
 const dash = (value: string | number | null | undefined): string =>
   value === null || value === undefined || value === '' ? '—' : String(value);
+/** 0.973 as "97%". */
+const percent = (fraction: number | null | undefined): string =>
+  fraction === null || fraction === undefined ? '—' : `${Math.round(fraction * 100)}%`;
 const day = (iso: string | null): string => (iso ? iso.slice(0, 10) : '—');
 const time = (iso: string): string => `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
 const rating = (value: number | null): string =>
@@ -28,6 +31,14 @@ const GATE: Record<string, string> = {
   failed: 'Failed',
   error: 'Error',
   none: 'No gate',
+};
+/** The English labels of the UI (ui/src/app/i18n/labels.ts, vexReason). */
+const REASON: Record<string, string> = {
+  component_not_present: 'The package is not in the build',
+  vulnerable_code_not_present: 'The vulnerable code is not in the build',
+  vulnerable_code_not_in_execute_path: 'The vulnerable code is never called',
+  vulnerable_code_cannot_be_controlled_by_adversary: 'An attacker cannot control the input',
+  inline_mitigations_already_exist: 'Another control already protects it',
 };
 const TRIAGE: Record<string, string> = { false_positive: 'False positive', wont_fix: "Won't fix" };
 
@@ -41,6 +52,18 @@ function categoryList(categories: Record<string, string[]>): string {
 function scopeLine(report: ReportJson): string {
   const { organization, project, branch } = report.scope;
   return cut([organization.name, project?.key, branch?.name].filter(Boolean).join(' / '), CELL_MAX);
+}
+
+/** The dates of the datasets the report was built from; a missing dataset is left out. */
+function datasetFields(report: ReportJson): [string, string][] {
+  const { vulnerabilityDatabase, kev, epss } = report.datasets;
+  const fields: [string, string][] = [];
+  if (vulnerabilityDatabase) {
+    fields.push(['Vulnerability database built', day(vulnerabilityDatabase.builtAt)]);
+  }
+  if (kev) fields.push(['KEV refreshed', day(kev.refreshedAt)]);
+  if (epss) fields.push(['EPSS data of', day(epss.dataDate ?? epss.refreshedAt)]);
+  return fields;
 }
 
 function cover(layout: Layout, report: ReportJson, sha256: string): Promise<void> {
@@ -62,6 +85,7 @@ function cover(layout: Layout, report: ReportJson, sha256: string): Promise<void
     ['Server version', report.server.version],
     ['Report id', report.id],
     ['SHA-256 of the JSON export', sha256],
+    ...datasetFields(report),
   ]);
   layout.text(
     'The JSON export of this report has the SHA-256 above: compare them to check that this PDF ' +
@@ -235,7 +259,7 @@ async function standards(layout: Layout, report: ReportJson): Promise<void> {
  * One row per rule of a section's listed findings: severity, open count, oldest first seen. In a
  * truncated snapshot the list holds only part of the findings, and so do these rows.
  */
-function byRule(report: ReportJson, section: 'secret' | 'dependency'): string[][] {
+function byRule(report: ReportJson, section: 'secret'): string[][] {
   const rules = new Map<string, { name: string; severity: string; open: number; oldest: string }>();
   for (const f of report.findings) {
     if (f.section !== section) continue;
@@ -254,6 +278,58 @@ function byRule(report: ReportJson, section: 'secret' | 'dependency'): string[][
     `${r.open}`,
     day(r.oldest),
   ]);
+}
+
+/** Whether the report carries KEV or EPSS facts, that is, it was built with `vuln.priority`. */
+function hasPriority(report: ReportJson): boolean {
+  return (
+    report.datasets.kev !== null ||
+    report.datasets.epss !== null ||
+    report.findings.some((f) => f.vulnerability?.kev || f.vulnerability?.epss)
+  );
+}
+
+/**
+ * One row per listed dependency finding: its rule can cover several packages, with their own fixed
+ * versions, so a row per rule could not show them. KEV and EPSS only with priority.
+ */
+async function dependencyFindings(layout: Layout, report: ReportJson): Promise<void> {
+  const list = report.findings.filter((f) => f.section === 'dependency');
+  if (list.length === 0) return;
+  const shown = list.slice(0, PDF_FINDINGS_MAX);
+  const priority = hasPriority(report);
+  const fixed = 90 + 50 + 90 + 60 + (priority ? 100 : 0);
+  if (report.summary.truncated)
+    layout.text('Dependency findings among the listed findings', COLOR.muted);
+  await layout.table(
+    [
+      { header: 'Rule', width: 90 },
+      { header: 'Package', width: layout.width - fixed },
+      { header: 'Severity', width: 50 },
+      { header: 'Fixed in', width: 90 },
+      ...(priority
+        ? [
+            { header: 'KEV', width: 50, align: 'right' as const },
+            { header: 'EPSS', width: 50, align: 'right' as const },
+          ]
+        : []),
+      { header: 'First seen', width: 60, align: 'right' as const },
+    ],
+    (function* () {
+      for (const f of shown) {
+        const v = f.vulnerability;
+        yield [
+          cut(f.rule, CELL_MAX),
+          cut(v?.packageName ?? f.ruleName, CELL_MAX),
+          capitalised(f.severity),
+          cut(dash(v?.fixedVersions.join(', ')), CELL_MAX),
+          ...(priority ? [dash(v?.kev?.dateAdded), percent(v?.epss?.percentile)] : []),
+          day(f.firstSeenAt),
+        ];
+      }
+    })(),
+  );
+  if (shown.length < list.length) layout.text(restNote(report));
 }
 
 async function secretsAndDependencies(layout: Layout, report: ReportJson): Promise<void> {
@@ -275,7 +351,7 @@ async function secretsAndDependencies(layout: Layout, report: ReportJson): Promi
   await rulesTable(byRule(report, 'secret'));
   layout.heading('Dependencies');
   layout.text(`Open dependency findings: ${report.summary.dependencies.open}`);
-  await rulesTable(byRule(report, 'dependency'));
+  await dependencyFindings(layout, report);
 }
 
 /** The note under a list the PDF cuts: where the rest is, or, in a truncated snapshot, is not. */
@@ -297,15 +373,16 @@ async function triage(layout: Layout, report: ReportJson): Promise<void> {
   if (shown < total) layout.text(`The newest ${shown} of ${total} decisions.`);
   await layout.table(
     [
-      { header: 'Project', width: 44 },
-      { header: 'Path', width: 78 },
-      { header: 'Line', width: 26, align: 'right' },
-      { header: 'Rule', width: 64 },
-      { header: 'Status', width: 44 },
-      { header: 'Categories', width: 66 },
-      { header: 'By', width: 46 },
-      { header: 'At', width: 52 },
-      { header: 'Comment', width: layout.width - 420 },
+      { header: 'Project', width: 40 },
+      { header: 'Path', width: 66 },
+      { header: 'Line', width: 22, align: 'right' },
+      { header: 'Rule', width: 60 },
+      { header: 'Status', width: 40 },
+      { header: 'Categories', width: 52 },
+      { header: 'Reason', width: 72 },
+      { header: 'By', width: 40 },
+      { header: 'At', width: 50 },
+      { header: 'Comment', width: layout.width - 442 },
     ],
     (function* () {
       for (const t of report.triage.slice(0, shown)) {
@@ -316,6 +393,7 @@ async function triage(layout: Layout, report: ReportJson): Promise<void> {
           cut(t.rule, CELL_MAX),
           TRIAGE[t.status] ?? t.status,
           cut(dash(categoryList(t.categories)), CELL_MAX),
+          t.reason ? (REASON[t.reason] ?? t.reason) : '—',
           cut(dash(t.by), CELL_MAX),
           day(t.at),
           cut(dash(t.comment), CELL_MAX),

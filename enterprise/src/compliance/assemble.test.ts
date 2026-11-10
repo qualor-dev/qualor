@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { ComplianceSource } from '@qualor/server/plugin-contract';
 import { assembleReport, categoriesOf, parseCanonical } from './assemble';
 import type { StandardData } from './standard';
+import { sampleReportV1 } from './test-report';
 
 const STD: StandardData = {
   id: 's',
@@ -102,6 +103,7 @@ const source = (over: Partial<ComplianceSource> = {}): ComplianceSource => ({
       inNewCode: true,
       firstSeenAt: '2026-01-01T00:00:00.000Z',
       section: 'code',
+      vulnerability: null,
     },
     {
       id: 'f2',
@@ -118,6 +120,30 @@ const source = (over: Partial<ComplianceSource> = {}): ComplianceSource => ({
       inNewCode: true,
       firstSeenAt: '2026-01-02T00:00:00.000Z',
       section: 'code',
+      vulnerability: null,
+    },
+    {
+      id: 'f3',
+      project: 'alpha',
+      path: 'package-lock.json',
+      line: null,
+      rule: 'trivy:CVE-2026-0001',
+      ruleName: 'lodash',
+      engine: 'trivy',
+      severity: 'high',
+      kind: 'issue',
+      cwe: [],
+      message: 'm',
+      inNewCode: false,
+      firstSeenAt: '2026-01-03T00:00:00.000Z',
+      section: 'dependency',
+      vulnerability: {
+        epss: { percentile: 0.97, score: 0.4 },
+        kev: { dateAdded: '2026-03-05' },
+        fixedVersions: ['4.17.21'],
+        packageName: 'lodash',
+        id: 'CVE-2026-0001',
+      },
     },
   ],
   triage: [
@@ -134,8 +160,19 @@ const source = (over: Partial<ComplianceSource> = {}): ComplianceSource => ({
       by: 'Bob',
       at: '2026-02-02T00:00:00.000Z',
       comment: 'ok',
+      reason: 'component_not_present',
+      vulnerability: null,
     },
   ],
+  datasets: {
+    vulnerabilityDatabase: { builtAt: '2026-10-11T06:00:00.000Z', digest: 'sha256:db' },
+    kev: { refreshedAt: '2026-10-12T05:00:00.000Z', digest: 'sha256:kev' },
+    epss: {
+      dataDate: '2026-10-11',
+      refreshedAt: '2026-10-12T05:30:00.000Z',
+      digest: 'sha256:epss',
+    },
+  },
   ...over,
 });
 
@@ -213,6 +250,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
       'server',
       'scope',
       'standards',
+      'datasets',
       'projects',
       'summary',
       'findings',
@@ -237,7 +275,55 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
       'by',
       'at',
       'comment',
+      'reason',
+      'vulnerability',
     ]);
+  });
+
+  it('writes schema 2 with the vulnerability facts, reasons and dataset dates', () => {
+    const { json } = assembleReport({
+      id: 'r',
+      generatedBy: 'Ann',
+      serverVersion: '0.15.0',
+      source: source(),
+      standards: [STD],
+    });
+    expect(json.schemaVersion).toBe(2);
+    expect(json.datasets).toEqual(source().datasets);
+    expect(json.findings[2]!.vulnerability).toEqual({
+      id: 'CVE-2026-0001',
+      packageName: 'lodash',
+      fixedVersions: ['4.17.21'],
+      kev: { dateAdded: '2026-03-05' },
+      epss: { score: 0.4, percentile: 0.97 },
+    });
+    expect(Object.keys(json.findings[2]!.vulnerability!)).toEqual([
+      'id',
+      'packageName',
+      'fixedVersions',
+      'kev',
+      'epss',
+    ]);
+    expect(json.triage[0]!.reason).toBe('component_not_present');
+  });
+
+  it('reads schema 1 and 2 and refuses any other', () => {
+    const a = assembleReport({
+      id: 'r',
+      generatedBy: 'Ann',
+      serverVersion: '0.15.0',
+      source: source(),
+      standards: [STD],
+    });
+    expect(parseCanonical(a.canonical).schemaVersion).toBe(2);
+    const v1 = parseCanonical(Buffer.from(JSON.stringify(sampleReportV1())));
+    expect(v1.schemaVersion).toBe(1);
+    expect(v1.datasets).toEqual({ vulnerabilityDatabase: null, kev: null, epss: null });
+    expect(v1.findings.every((f) => f.vulnerability === null)).toBe(true);
+    expect(v1.triage.every((t) => t.reason === null && t.vulnerability === null)).toBe(true);
+    expect(() => parseCanonical(Buffer.from('{"schemaVersion":3}'))).toThrow(
+      'unsupported report schema version',
+    );
   });
 
   const richProjects = (reversed: boolean): ComplianceSource['projects'] => {
@@ -304,6 +390,11 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
       standards: [
         { id: null, version: null, title: null, source: null, licence: null, sourceSha256: null },
       ],
+      datasets: {
+        vulnerabilityDatabase: { builtAt: null, digest: null },
+        kev: { refreshedAt: null, digest: null },
+        epss: { dataDate: null, refreshedAt: null, digest: null },
+      },
       projects: [
         {
           id: null,
@@ -360,6 +451,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
           inNewCode: null,
           firstSeenAt: null,
           section: null,
+          vulnerability: null,
         },
       ],
       triage: [
@@ -377,6 +469,8 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
           by: null,
           at: null,
           comment: null,
+          reason: null,
+          vulnerability: null,
         },
       ],
     };
