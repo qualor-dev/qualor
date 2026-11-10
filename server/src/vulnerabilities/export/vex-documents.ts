@@ -134,7 +134,11 @@ export function buildCycloneDxVex(doc: ExportDocument, entries: readonly VexEntr
   };
 }
 
-/** An OpenVEX 0.2.0 document of a target, one statement per entry. */
+/**
+ * An OpenVEX 0.2.0 document of a target, one statement per entry. Each package purl is also a
+ * product of its own: Trivy matches an SBOM's findings against the package purls, not against the
+ * project product, which it cannot see in a scanned SBOM file.
+ */
 export function buildOpenVex(doc: ExportDocument, entries: readonly VexEntry[]): object {
   const product = productId(doc.project, doc.target);
   const statements = entries.map((e) => {
@@ -150,6 +154,7 @@ export function buildOpenVex(doc: ExportDocument, entries: readonly VexEntry[]):
           '@id': product,
           ...(e.purls.length === 0 ? {} : { subcomponents: e.purls.map((p) => ({ '@id': p })) }),
         },
+        ...e.purls.map((p) => ({ '@id': p })),
       ],
       status: OPENVEX_STATUS[e.status],
       ...(e.status === 'false_positive' && e.reason !== null ? { justification: e.reason } : {}),

@@ -254,7 +254,7 @@ describe('buildOpenVex', () => {
     expect(out.statements).toHaveLength(ENTRIES.length);
   });
 
-  it('names the vulnerability and the product with its purls', () => {
+  it('names the vulnerability, the product with its purls, and each purl as a product', () => {
     const s = byId(out.statements, 'CVE-2026-0010');
     expect(s.vulnerability).toEqual({ name: 'CVE-2026-0010' });
     expect(s.products).toEqual([
@@ -262,6 +262,8 @@ describe('buildOpenVex', () => {
         '@id': productId(DOC.project, DOC.target),
         subcomponents: [{ '@id': 'pkg:npm/lodash@4.17.20' }, { '@id': 'pkg:npm/lodash@4.17.21' }],
       },
+      { '@id': 'pkg:npm/lodash@4.17.20' },
+      { '@id': 'pkg:npm/lodash@4.17.21' },
     ]);
   });
 
