@@ -1,4 +1,26 @@
 /* The Vulnerabilities tab (vuln 2b §9.3): the data line, the view tabs, the version table. */
+.vuln-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.vuln-top .vuln-header {
+  margin: 0 auto 0 0;
+}
+.export-panel {
+  min-width: 16rem;
+}
+.export-target {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px;
+}
+.export-panel a {
+  display: block;
+  padding: 8px 12px;
+}
 .vuln-header {
   margin: 0 0 12px;
   color: var(--text-muted);

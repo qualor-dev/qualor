@@ -322,3 +322,13 @@ test('a Business server answers the Vulnerabilities tab with priority on', async
   expect(targets.status()).toBe(200);
   expect(((await targets.json()) as { priority: boolean }).priority).toBe(true);
 });
+
+test('a Business server exports the SBOM of a project with an inventory', async ({ page }) => {
+  const key = encodeURIComponent(PAYMENTS.key);
+  const cyclonedx = await page.request.get(`/api/v0/projects/sbom?projectKey=${key}`);
+  expect(cyclonedx.status()).toBe(200);
+  expect(((await cyclonedx.json()) as { bomFormat: string }).bomFormat).toBe('CycloneDX');
+  const spdx = await page.request.get(`/api/v0/projects/sbom?projectKey=${key}&format=spdx`);
+  expect(spdx.status()).toBe(200);
+  expect(((await spdx.json()) as { spdxVersion: string }).spdxVersion).toBe('SPDX-2.3');
+});

@@ -24,6 +24,7 @@ community edition.
 | [A licence policy](./dependency-licenses.md#the-licence-policy-business-and-enterprise): forbidden licences become issues and fail the gate | `license-policy` | no | yes | yes |
 | [Exploited vulnerabilities and exploit probability](./dependency-vulnerabilities.md#exploited-and-exploit-probability-business-and-enterprise) (CISA KEV, FIRST EPSS) on the **Vulnerabilities** tab | `vuln.priority` | no | yes | yes |
 | [Vulnerability alerts](./dependency-vulnerabilities.md#alerts-business-and-enterprise) by email and webhook | `vuln.alerts` | no | yes | yes |
+| [SBOM and VEX export](./dependency-vulnerabilities.md#export-sbom-and-vex-business-and-enterprise) | `sbom` | no | yes | yes |
 
 A key switches on the features it lists, and nothing else. Two features work only with the one
 they extend: `audit-log.stream` needs `audit-log`, and `sso.multi` needs `sso`. A key that lists
@@ -243,6 +244,7 @@ After the grace period, or on the end date of a trial, each feature behaves like
 | [The licence policy](./dependency-licenses.md#when-the-licence-lapses) | kept but no longer applied: analyses neither add nor close licence issues, and changing the policy answers 403 `FEATURE_NOT_LICENSED`. The **Dependencies** tab keeps working |
 | [Exploited vulnerabilities and exploit probability](./dependency-vulnerabilities.md#exploited-and-exploit-probability-business-and-enterprise) | the **Vulnerabilities** tab and the API stop showing KEV and EPSS, and the server stops downloading them. The stored data stays |
 | [Vulnerability alerts](./dependency-vulnerabilities.md#alerts-business-and-enterprise) | the daily digest, the exploited email and the `vulnerabilities.found` webhook event stop, and the **New vulnerabilities in tracked versions** box is disabled. Its stored value stays, and the alerts start again with a new key, from a new baseline |
+| [SBOM and VEX export](./dependency-vulnerabilities.md#export-sbom-and-vex-business-and-enterprise) | the **Export SBOM** and **Export VEX** buttons go, and the two API routes answer 403 `FEATURE_NOT_LICENSED`. Files you downloaded stay valid |
 
 Removing a key, or replacing it with one that lists fewer features, has the same effect at the
 next start, for the features the new key no longer lists.

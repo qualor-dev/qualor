@@ -6,6 +6,7 @@ import { Api, ok } from '../../api/api';
 import { problemMessage } from '../../api/errors';
 import type { RequestBody, ResponseBody } from '../../api/types';
 import { SessionStore } from '../../auth/session';
+import { inputValue } from '../../shared/forms';
 import { DateTimePipe } from '../../shared/date-time.pipe';
 import { Icon } from '../../shared/icon';
 import { type SeverityFilter, type StatusFilter, VulnerabilityList } from './vulnerability-list';
@@ -24,6 +25,15 @@ const CHOICES: Record<'auto' | 'pinned' | 'unsupported', Tracking[]> = {
   auto: ['pinned', 'unsupported'],
   unsupported: ['auto', 'pinned'],
 };
+
+/** The two export menus: what each offers, and which targets the server answers 200 for. */
+type ExportKind = 'sbom' | 'vex';
+
+interface ExportOption {
+  value: string;
+  kind: 'branch' | 'version';
+  name: string;
+}
 
 function one(params: Params, key: string): string {
   const value: unknown = params[key];
@@ -126,11 +136,87 @@ export class VulnerabilitiesPage {
   );
   protected readonly foldMore = computed(() => Math.max(0, this.untracked().length - FOLD_LABELS));
 
+  /** Targets the SBOM is available for: tracked first, then the untracked versions. */
+  private readonly sbomOptions = computed(() => this.exportOptions((t) => t.hasInventory));
+  /** Targets the VEX is available for: checked at least once, while monitoring is on. */
+  private readonly vexOptions = computed(() =>
+    this.answer()?.monitoring === 'on' ? this.exportOptions((t) => t.checkedAt !== null) : [],
+  );
+  private readonly picked = signal<Record<ExportKind, string | null>>({ sbom: null, vex: null });
+
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
 
   protected readonly gitlabSnippet = '- if: $CI_COMMIT_TAG';
   protected readonly githubSnippet = "push: tags: ['**']";
+
+  private exportOptions(
+    offered: (t: { hasInventory: boolean; checkedAt: string | null }) => boolean,
+  ): ExportOption[] {
+    const toOption = (kind: 'branch' | 'version', t: { id: string; name: string }) => ({
+      value: `${kind}:${t.id}`,
+      kind,
+      name: t.name,
+    });
+    return [
+      ...this.targets()
+        .filter(offered)
+        .map((t) => toOption(t.kind, t)),
+      ...this.untracked()
+        .filter(offered)
+        .map((t) => toOption('version', t)),
+    ];
+  }
+
+  /** The kinds of export the tab offers: none without the feature or without a target to export. */
+  protected exports(): ExportKind[] {
+    if (!this.answer()?.sbom) return [];
+    return (['sbom', 'vex'] as const).filter((k) => this.optionsOf(k).length > 0);
+  }
+
+  protected optionsOf(kind: ExportKind): ExportOption[] {
+    return kind === 'sbom' ? this.sbomOptions() : this.vexOptions();
+  }
+
+  /** The chosen target; else the one being viewed when it is offered, else the first. */
+  protected selectedOf(kind: ExportKind): string {
+    const options = this.optionsOf(kind);
+    const wanted = [this.picked()[kind], this.target()];
+    return wanted.find((w) => options.some((o) => o.value === w)) ?? options[0]?.value ?? '';
+  }
+
+  protected pick(kind: ExportKind, event: Event): void {
+    const value = inputValue(event);
+    this.picked.update((p) => ({ ...p, [kind]: value }));
+  }
+
+  protected exportLabel(kind: ExportKind): string {
+    return kind === 'sbom'
+      ? $localize`:@@vuln.export.sbom:Export SBOM`
+      : $localize`:@@vuln.export.vex:Export VEX`;
+  }
+
+  protected exportLinks(kind: ExportKind): { label: string; href: string }[] {
+    const option = this.optionsOf(kind).find((o) => o.value === this.selectedOf(kind));
+    const key = this.project.current()?.key;
+    if (!option || !key) return [];
+    const enc = encodeURIComponent;
+    const base = `/api/v0/projects/${kind}?projectKey=${enc(key)}&${option.kind === 'branch' ? 'branch' : 'version'}=${enc(option.name)}`;
+    const formats =
+      kind === 'sbom'
+        ? [
+            {
+              format: 'cyclonedx',
+              label: $localize`:@@vuln.export.cyclonedx:CycloneDX 1.6 (JSON)`,
+            },
+            { format: 'spdx', label: $localize`:@@vuln.export.spdx:SPDX 2.3 (JSON)` },
+          ]
+        : [
+            { format: 'cyclonedx', label: $localize`:@@vuln.export.cyclonedxVex:CycloneDX VEX` },
+            { format: 'openvex', label: $localize`:@@vuln.export.openvex:OpenVEX` },
+          ];
+    return formats.map((f) => ({ label: f.label, href: `${base}&format=${f.format}` }));
+  }
 
   protected targetParam(t: Target): string {
     return `${t.kind}:${t.id}`;

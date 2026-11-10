@@ -216,10 +216,11 @@ A token has the rights that both its scopes and its user's role allow.
 
 ### Project analysis tokens
 
-A project token can **only upload analyses to its one project** (and read its SBOM and VEX), which makes it the best token for
-CI. Create one in **Project → Settings → Analysis tokens** with **New token**: give it a name and,
-if you like, an **Expires after** period. Press **Done** once you have stored the token. **Revoke**
-stops a token at once.
+A project token can **only upload analyses to its one project**, which makes it the best token for
+CI. It can also download that project's SBOM and VEX
+([how](./webhooks-and-api.md#sbom-and-vex-export-enterprise)). Create one in **Project → Settings →
+Analysis tokens** with **New token**: give it a name and, if you like, an **Expires after** period.
+Press **Done** once you have stored the token. **Revoke** stops a token at once.
 
 Through the API, create one with a personal token that has the **Admin** scope:
 

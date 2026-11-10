@@ -219,6 +219,87 @@ no reason. When several issues share a package and vulnerability, the latest one
 comment becomes the decision's comment. The tab shows "Reason not given" and the Issues tab asks for
 a reason at the next edit.
 
+## Export SBOM and VEX (Business and Enterprise)
+
+With the `sbom` feature the tab downloads a software bill of materials (SBOM) and a vulnerability
+exploitability exchange (VEX) document for one branch or version. **Export SBOM** and **Export VEX**
+sit in the header of the tab. Each opens a menu: choose the **Target**, then a format.
+
+| Button | Formats | Target must have |
+|---|---|---|
+| **Export SBOM** | CycloneDX 1.6 (JSON), SPDX 2.3 (JSON) | a dependency list |
+| **Export VEX** | CycloneDX VEX, OpenVEX | a finished vulnerability check, with monitoring on |
+
+A menu lists only the targets that can be exported: the tracked ones, then the untracked versions.
+A button with no such target is not shown. Without the feature the tab shows neither button.
+
+### What an SBOM holds
+
+An SBOM lists every package of the target's dependency list, sorted by name, version and ecosystem.
+
+- A package is one entry. Packages that share a purl, such as one package in an npm and a yarn
+  lockfile, are one entry.
+- A package without a purl is still listed.
+- The document names the project and the target, and carries the time it was made and Qualor as
+  its tool.
+
+Licences come from the dependency list. A package with several licences has all of them.
+
+| Format | Licences |
+|---|---|
+| CycloneDX | one SPDX expression joined with `AND` when every licence is a valid SPDX id or expression, else one name per licence. No licence, no `licenses` entry |
+| SPDX | `licenseDeclared` is the licences joined with `AND`. Free text becomes a `LicenseRef-…` whose text is in `hasExtractedLicensingInfos`. No licence is `NOASSERTION`. `licenseConcluded` is always `NOASSERTION` |
+
+### What a VEX holds
+
+A VEX has one entry for each vulnerability in each package of the target, with the target's
+[decision](#statuses-and-reasons). A decision that applies to the target alone wins over the
+project-wide one. Vulnerabilities that `.trivyignore` ignores are left out. KEV and EPSS are not in
+the file.
+
+The VEX needs vulnerability monitoring on and the target's first check finished. Before that the
+server answers 404.
+
+A checked target with no findings gives a VEX with no entries. For OpenVEX that is an empty
+`statements` list, which the OpenVEX schema does not accept, because it asks for at least one
+statement. CycloneDX VEX has no such limit.
+
+| Status | CycloneDX `analysis` | OpenVEX `status` |
+|---|---|---|
+| **Open** | `state: in_triage` | `under_investigation` |
+| **Not affected (false positive)** | `state: not_affected` and a `justification` | `not_affected` and a `justification` |
+| **Affected, won't fix** | `state: exploitable` and `response: [will_not_fix]` | `affected` and an `action_statement` |
+
+The reason of a not-affected decision maps to a CycloneDX justification. OpenVEX keeps its own
+name.
+
+| Reason in the UI | OpenVEX `justification` | CycloneDX `justification` |
+|---|---|---|
+| The package is not in the build | `component_not_present` | `code_not_present` |
+| The vulnerable code is not in the build | `vulnerable_code_not_present` | `code_not_present` |
+| The vulnerable code is never called | `vulnerable_code_not_in_execute_path` | `code_not_reachable` |
+| An attacker cannot control the input | `vulnerable_code_cannot_be_controlled_by_adversary` | `requires_environment` |
+| Another control already protects it | `inline_mitigations_already_exist` | `protected_by_mitigating_control` |
+
+The comment and the author of a decision travel with it.
+
+| Part | CycloneDX | OpenVEX |
+|---|---|---|
+| Comment | `analysis.detail` | `impact_statement` for not affected, `action_statement` for won't fix |
+| Who decided | the property `qualor:decided-by` | `status_notes`: "Decided by *name*." |
+| When | `analysis.lastUpdated` | the statement's `timestamp` |
+
+A [migrated decision](#migrated-decisions) has no reason, so it has no `justification`, and its
+comment says why. When OpenVEX needs a statement and the decision has no comment, the file says "No
+reason was recorded." for not affected and "No action is planned." for won't fix. An open entry has
+no decision, so it has no author and no date.
+
+### Download from CI
+
+The same files come from the API. A project analysis token downloads the SBOM and VEX of its own
+project, so a release job needs no personal token. The parameters and an example are in
+[SBOM and VEX export](./webhooks-and-api.md#sbom-and-vex-export-enterprise).
+
 ## The `.trivyignore` file
 
 The scanner sends the ids that the repository's `.trivyignore` ignores, with their `exp:` dates

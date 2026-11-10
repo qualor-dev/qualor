@@ -18,26 +18,31 @@
       }
     </div>
   } @else if (a.data; as data) {
-    @if (!data.builtAt) {
-      @if (a.checkedAt) {
-        <p class="vuln-header" i18n="@@vuln.header.noDate.checked">
-          Vulnerability data from an uploaded file · checked {{ a.checkedAt | dateTime }}
+    <div class="vuln-top">
+      @if (!data.builtAt) {
+        @if (a.checkedAt) {
+          <p class="vuln-header" i18n="@@vuln.header.noDate.checked">
+            Vulnerability data from an uploaded file · checked {{ a.checkedAt | dateTime }}
+          </p>
+        } @else {
+          <p class="vuln-header" i18n="@@vuln.header.noDate">
+            Vulnerability data from an uploaded file
+          </p>
+        }
+      } @else if (a.checkedAt) {
+        <p class="vuln-header" i18n="@@vuln.header.checked">
+          Vulnerability data from {{ data.builtAt | dateTime: 'date' }} · checked
+          {{ a.checkedAt | dateTime }}
         </p>
       } @else {
-        <p class="vuln-header" i18n="@@vuln.header.noDate">
-          Vulnerability data from an uploaded file
+        <p class="vuln-header" i18n="@@vuln.header">
+          Vulnerability data from {{ data.builtAt | dateTime: 'date' }}
         </p>
       }
-    } @else if (a.checkedAt) {
-      <p class="vuln-header" i18n="@@vuln.header.checked">
-        Vulnerability data from {{ data.builtAt | dateTime: 'date' }} · checked
-        {{ a.checkedAt | dateTime }}
-      </p>
-    } @else {
-      <p class="vuln-header" i18n="@@vuln.header">
-        Vulnerability data from {{ data.builtAt | dateTime: 'date' }}
-      </p>
-    }
+      @for (kind of exports(); track kind) {
+        <ng-container *ngTemplateOutlet="exportMenu; context: { $implicit: kind }" />
+      }
+    </div>
     <nav class="view-tabs" aria-label="View" i18n-aria-label="@@vuln.views">
       <a
         routerLink="."
@@ -261,4 +266,41 @@
       </div>
     </span>
   }
+</ng-template>
+
+<!-- Export SBOM and Export VEX (the sbom feature): a native popover with a target and its formats. -->
+<ng-template #exportMenu let-kind>
+  <span class="export-menu">
+    <button
+      #trigger
+      type="button"
+      class="btn"
+      [attr.popovertarget]="'vuln-export-' + kind"
+      (click)="place(trigger, menu)"
+    >
+      {{ exportLabel(kind) }}
+    </button>
+    <div
+      #menu
+      [id]="'vuln-export-' + kind"
+      popover
+      role="group"
+      class="menu-panel export-panel"
+      [attr.aria-label]="exportLabel(kind)"
+    >
+      <label class="export-target">
+        <span i18n="@@vuln.export.target">Target</span>
+        <select [value]="selectedOf(kind)" (change)="pick(kind, $event)">
+          @for (o of optionsOf(kind); track o.value) {
+            <option [value]="o.value" [selected]="o.value === selectedOf(kind)">
+              {{ o.name }}
+            </option>
+          }
+        </select>
+      </label>
+      @for (l of exportLinks(kind); track l.href) {
+        <a [attr.href]="l.href" download>{{ l.label }}</a>
+      }
+    </div>
+  </span>
 </ng-template>

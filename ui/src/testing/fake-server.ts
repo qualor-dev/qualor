@@ -1028,6 +1028,7 @@ export function untrackedVersion(given: Partial<UntrackedVersion> = {}): Untrack
     name: '1.0.0',
     tracking: 'auto',
     trackingReason: 'older',
+    hasInventory: true,
     counts: NO_COUNTS,
     exploited: null,
     checkedAt: null,

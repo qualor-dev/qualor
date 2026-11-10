@@ -130,3 +130,16 @@ test('a community server shows no KEV or EPSS: priority is off and there is no E
   await expect(page.getByRole('columnheader', { name: 'Critical' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Exploited' })).toHaveCount(0);
 });
+
+test('a community server refuses the SBOM and shows no export button', async ({ page }) => {
+  const payments = await projectId(page.request, PAYMENTS.key);
+  const sbom = await page.request.get(
+    `/api/v0/projects/sbom?projectKey=${encodeURIComponent(PAYMENTS.key)}`,
+  );
+  expect(sbom.status()).toBe(403);
+
+  await page.goto(`/projects/${payments}/vulnerabilities`);
+  await expect(page.getByRole('columnheader', { name: 'Critical' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export SBOM' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Export VEX' })).toHaveCount(0);
+});

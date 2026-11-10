@@ -8,6 +8,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
+- Business and Enterprise: export a branch's or version's SBOM (CycloneDX 1.6, SPDX 2.3) and VEX
+  (CycloneDX VEX, OpenVEX) from the Vulnerabilities tab or with `GET /projects/sbom` and
+  `GET /projects/vex` (`sbom`). A project analysis token reads its own project's documents.
 - Business and Enterprise: vulnerability alerts (`vuln.alerts`). The **Watch** menu and **Settings →
   Notifications** gain **New vulnerabilities in tracked versions**. Watchers get a daily digest of
   new High and Critical vulnerabilities and an email at once for exploited ones (KEV). Generic

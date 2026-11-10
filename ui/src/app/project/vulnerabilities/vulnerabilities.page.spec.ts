@@ -530,3 +530,184 @@ describe('VulnerabilitiesPage views', () => {
     expect(root.querySelectorAll('.vuln-card')).toHaveLength(1);
   });
 });
+
+describe('VulnerabilitiesPage export menus', () => {
+  const OLD = '0190a6c2-0000-7000-8000-0000000000e1';
+  const OLDER = '0190a6c2-0000-7000-8000-0000000000e3';
+  const UNCHECKED = '0190a6c2-0000-7000-8000-0000000000e2';
+  const RELEASE = '0190a6c2-0000-7000-8000-0000000000d4';
+  const CHECKED = '2026-10-30T09:00:00.000Z';
+
+  const targets = [
+    vulnerabilityTarget({ id: RELEASE, name: 'release/2.x' }),
+    vulnerabilityTarget({ id: MAIN, name: 'main', isMain: true }),
+    vulnerabilityTarget({ kind: 'version', id: V21, name: '2.3.4+build.1', tracking: 'pinned' }),
+    vulnerabilityTarget({ id: V20, name: 'no-inventory', hasInventory: false }),
+    vulnerabilityTarget({ id: UNCHECKED, name: 'unchecked', checkedAt: null }),
+  ];
+  const old = [
+    untrackedVersion({ id: OLD, name: '1.0.0', checkedAt: CHECKED }),
+    untrackedVersion({ id: OLDER, name: '0.9.0', hasInventory: false, checkedAt: null }),
+  ];
+
+  async function renderExport(
+    answer: Partial<VulnerabilityTargets>,
+    query: Record<string, string> = {},
+  ): Promise<HTMLElement> {
+    const server = new FakeServer();
+    TestBed.configureTestingModule({
+      imports: [VulnerabilitiesPage],
+      providers: [
+        provideRouter([]),
+        provideFakeServer(server),
+        { provide: ActivatedRoute, useValue: { queryParams: of(query) } },
+      ],
+    });
+    TestBed.inject(SessionStore).set(me());
+    server.on('GET', `/api/v0/projects/${PROJECT}`, {
+      body: {
+        id: PROJECT,
+        organizationId: ORG_ID,
+        key: 'acme/x',
+        name: 'X',
+        permissions: [...MEMBER_PROJECT_PERMISSIONS],
+        vulnerabilities: { newIn: { main: false, branches: 0, versions: 0 } },
+      },
+    });
+    FakeVulnerabilities.install(server, PROJECT, answer);
+    TestBed.inject(CurrentProject).use(PROJECT);
+    const fixture = TestBed.createComponent(VulnerabilitiesPage);
+    fixture.componentRef.setInput('projectId', PROJECT);
+    await settle(fixture);
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const menu = (root: HTMLElement, kind: 'sbom' | 'vex') =>
+    root.querySelector<HTMLElement>(`#vuln-export-${kind}`);
+  const options = (root: HTMLElement, kind: 'sbom' | 'vex') =>
+    [...(menu(root, kind)?.querySelectorAll('option') ?? [])].map((o) => text(o));
+  const links = (root: HTMLElement, kind: 'sbom' | 'vex') =>
+    [...(menu(root, kind)?.querySelectorAll('a') ?? [])].map((a) => [
+      text(a),
+      a.getAttribute('href'),
+      a.hasAttribute('download'),
+    ]);
+
+  it('has the Export SBOM and Export VEX buttons with the feature', async () => {
+    const root = await renderExport({ sbom: true, targets, untracked: old });
+    expect(button(root, 'Export SBOM')).toBeDefined();
+    expect(button(root, 'Export VEX')).toBeDefined();
+  });
+
+  it('lists the targets with an inventory in the SBOM menu, tracked first', async () => {
+    const root = await renderExport({ sbom: true, targets, untracked: old });
+    expect(options(root, 'sbom')).toEqual([
+      'main',
+      'release/2.x',
+      '2.3.4+build.1',
+      'unchecked',
+      '1.0.0',
+    ]);
+  });
+
+  it('lists the checked targets in the VEX menu, tracked first', async () => {
+    const root = await renderExport({ sbom: true, targets, untracked: old });
+    expect(options(root, 'vex')).toEqual([
+      'main',
+      'release/2.x',
+      '2.3.4+build.1',
+      'no-inventory',
+      '1.0.0',
+    ]);
+  });
+
+  it('shows no button whose list would be empty', async () => {
+    const none = await renderExport({
+      sbom: true,
+      targets: [vulnerabilityTarget({ id: MAIN, name: 'main', isMain: true, checkedAt: null })],
+    });
+    expect(button(none, 'Export VEX')).toBeUndefined();
+    expect(button(none, 'Export SBOM')).toBeDefined();
+
+    TestBed.resetTestingModule();
+    const noInventory = await renderExport({
+      sbom: true,
+      targets: [vulnerabilityTarget({ id: MAIN, name: 'main', isMain: true, hasInventory: false })],
+    });
+    expect(button(noInventory, 'Export SBOM')).toBeUndefined();
+    expect(button(noInventory, 'Export VEX')).toBeDefined();
+
+    TestBed.resetTestingModule();
+    const off = await renderExport({ sbom: true, monitoring: 'off', targets: [] });
+    expect(button(off, 'Export VEX')).toBeUndefined();
+    expect(button(off, 'Export SBOM')).toBeUndefined();
+  });
+
+  it('defaults to the first target and links the formats of the SBOM', async () => {
+    const root = await renderExport({ sbom: true, targets, untracked: old });
+    expect(links(root, 'sbom')).toEqual([
+      [
+        'CycloneDX 1.6 (JSON)',
+        '/api/v0/projects/sbom?projectKey=acme%2Fx&branch=main&format=cyclonedx',
+        true,
+      ],
+      [
+        'SPDX 2.3 (JSON)',
+        '/api/v0/projects/sbom?projectKey=acme%2Fx&branch=main&format=spdx',
+        true,
+      ],
+    ]);
+  });
+
+  it('links the formats of the VEX', async () => {
+    const root = await renderExport({ sbom: true, targets, untracked: old });
+    expect(links(root, 'vex')).toEqual([
+      [
+        'CycloneDX VEX',
+        '/api/v0/projects/vex?projectKey=acme%2Fx&branch=main&format=cyclonedx',
+        true,
+      ],
+      ['OpenVEX', '/api/v0/projects/vex?projectKey=acme%2Fx&branch=main&format=openvex', true],
+    ]);
+  });
+
+  it('defaults to the target being viewed, a version by its label', async () => {
+    const root = await renderExport(
+      { sbom: true, targets, untracked: old },
+      { target: `version:${V21}` },
+    );
+    expect(menu(root, 'sbom')?.querySelector('select')?.value).toBe(`version:${V21}`);
+    expect(links(root, 'sbom')[0]?.[1]).toBe(
+      '/api/v0/projects/sbom?projectKey=acme%2Fx&version=2.3.4%2Bbuild.1&format=cyclonedx',
+    );
+  });
+
+  it('falls back to the first target when the viewed one is not in the list', async () => {
+    const root = await renderExport(
+      { sbom: true, targets, untracked: old },
+      { target: `branch:${V20}` },
+    );
+    expect(menu(root, 'sbom')?.querySelector('select')?.value).toBe(`branch:${MAIN}`);
+    expect(menu(root, 'vex')?.querySelector('select')?.value).toBe(`branch:${V20}`);
+  });
+
+  it('changes the links with the select, a branch name URL-encoded', async () => {
+    const root = await renderExport({ sbom: true, targets, untracked: old });
+    const select = menu(root, 'sbom')?.querySelector('select');
+    if (!select) throw new Error('no select');
+    select.value = `branch:${RELEASE}`;
+    select.dispatchEvent(new Event('change'));
+    await settle();
+    expect(links(root, 'sbom')[1]?.[1]).toBe(
+      '/api/v0/projects/sbom?projectKey=acme%2Fx&branch=release%2F2.x&format=spdx',
+    );
+    expect(links(root, 'vex')[0]?.[1]).toContain('branch=main');
+  });
+
+  it('shows neither button, nor any mention of SBOM or VEX, without the feature', async () => {
+    const root = await renderExport({ sbom: false, targets, untracked: old });
+    expect(button(root, 'Export SBOM')).toBeUndefined();
+    expect(button(root, 'Export VEX')).toBeUndefined();
+    expect(text(root)).not.toMatch(/SBOM|VEX/);
+  });
+});
