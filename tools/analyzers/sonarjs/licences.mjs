@@ -63,7 +63,13 @@ function packageDirs(dir) {
     visit(path.join(pkgDir, 'node_modules'));
   };
   visit(dir);
-  return out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return out.sort(compareText);
+}
+
+/** Code-unit order of two strings, as `<` compares them. */
+function compareText(x, y) {
+  if (x < y) return -1;
+  return x > y ? 1 : 0;
 }
 
 /** The text of SONARJS-DEPENDENCIES.txt for the tree at `dir`; throws on a disallowed licence. */

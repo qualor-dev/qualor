@@ -37,14 +37,16 @@ const ENTITIES: Record<string, string> = {
 /** The five named entities and numeric references (decimal and hex); anything else is kept. */
 export function decodeEntities(text: string): string {
   return text.replace(/&(#[xX][0-9a-fA-F]{1,6}|#\d{1,7}|[a-z]+);/g, (whole, ref: string) => {
-    const code = ref.startsWith('#')
-      ? /^#[xX]/.test(ref)
-        ? Number.parseInt(ref.slice(2), 16)
-        : Number(ref.slice(1))
-      : null;
+    const code = codePointOf(ref);
     if (code === null) return ENTITIES[ref] ?? whole;
     return code <= 0x10ffff ? String.fromCodePoint(code) : whole;
   });
+}
+
+/** The code point of a numeric reference (`#x` hex or `#` decimal); null for a named one. */
+function codePointOf(ref: string): number | null {
+  if (!ref.startsWith('#')) return null;
+  return /^#[xX]/.test(ref) ? Number.parseInt(ref.slice(2), 16) : Number(ref.slice(1));
 }
 
 function attribute(tag: string, name: string): string | null {
@@ -151,19 +153,31 @@ export class TinyBrowser {
       if (eq <= 0) continue;
       const name = pair.slice(0, eq).trim();
       const value = pair.slice(eq + 1).trim();
-      let path = defaultPath(target.pathname);
-      let expired = false;
-      for (const attr of attributes) {
-        const [key = '', ...rest] = attr.split('=');
-        const k = key.trim().toLowerCase();
-        const v = rest.join('=').trim();
-        if (k === 'path' && v.startsWith('/')) path = v;
-        if (k === 'max-age' && Number(v) <= 0) expired = true;
-        if (k === 'expires' && Date.parse(v) <= Date.now()) expired = true;
-      }
+      const { path, expired } = cookieAttributes(attributes, target.pathname);
       const key = `${name} ${path}`;
       if (expired || value === '') jar.delete(key);
       else jar.set(key, { name, value, path });
     }
   }
+}
+
+/**
+ * A Set-Cookie header's attributes: its path (its own when it starts with `/`, else the default
+ * for `requestPath`) and whether `Max-Age` or `Expires` removes the cookie.
+ */
+function cookieAttributes(
+  attributes: readonly string[],
+  requestPath: string,
+): { path: string; expired: boolean } {
+  let path = defaultPath(requestPath);
+  let expired = false;
+  for (const attr of attributes) {
+    const [key = '', ...rest] = attr.split('=');
+    const k = key.trim().toLowerCase();
+    const v = rest.join('=').trim();
+    if (k === 'path' && v.startsWith('/')) path = v;
+    if (k === 'max-age' && Number(v) <= 0) expired = true;
+    if (k === 'expires' && Date.parse(v) <= Date.now()) expired = true;
+  }
+  return { path, expired };
 }

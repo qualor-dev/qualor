@@ -72,21 +72,7 @@ function main(): void {
         `add to PRODUCTION_KEYS in server/src/license/public-keys.ts:\n${line}\n`,
     );
   } else if (command === 'sign') {
-    // enterprise.md §3.1, §15: keys no longer carry an organisation limit. Refused before any
-    // key file is read, so a leftover --organizations never silently signs a key without it.
-    if (values.organizations !== undefined) {
-      throw new Error(
-        `--organizations is no longer used: licence keys carry no organisation limit (enterprise.md §3.1)\n${USAGE}`,
-      );
-    }
-    const features = (values.features ?? '')
-      .split(',')
-      .map((f) => f.trim())
-      .filter((f) => f !== '');
-    // enterprise.md §1.4, §3.1, §15: refused before any key file is read, beside --organizations.
-    refuseRetiredFeatures(features);
-    // enterprise.md §7.1, §15: refused the same way, before any key file is read.
-    refuseMissingPrerequisites(features);
+    const features = signFeatures(values);
     const key = signKey({
       keyFile: need('key'),
       passphrase,
@@ -100,12 +86,40 @@ function main(): void {
     });
     process.stdout.write(`${key}\n`);
   } else if (command === 'inspect') {
-    const arg = positionals[0];
-    if (!arg || positionals.length > 1) throw new Error(USAGE);
-    process.stdout.write(`${inspectKey(arg === '-' ? readStdin() : arg)}\n`);
+    process.stdout.write(`${inspectKey(inspectInput(positionals))}\n`);
   } else {
     throw new Error(USAGE);
   }
+}
+
+/** The --features of `sign`, refusing what is no longer signed before any key file is read. */
+function signFeatures(values: {
+  organizations?: string | undefined;
+  features?: string | undefined;
+}): string[] {
+  // enterprise.md §3.1, §15: keys no longer carry an organisation limit. Refused before any
+  // key file is read, so a leftover --organizations never silently signs a key without it.
+  if (values.organizations !== undefined) {
+    throw new Error(
+      `--organizations is no longer used: licence keys carry no organisation limit (enterprise.md §3.1)\n${USAGE}`,
+    );
+  }
+  const features = (values.features ?? '')
+    .split(',')
+    .map((f) => f.trim())
+    .filter((f) => f !== '');
+  // enterprise.md §1.4, §3.1, §15: refused before any key file is read, beside --organizations.
+  refuseRetiredFeatures(features);
+  // enterprise.md §7.1, §15: refused the same way, before any key file is read.
+  refuseMissingPrerequisites(features);
+  return features;
+}
+
+/** The key `inspect` decodes: its one argument, or standard input for `-`. */
+function inspectInput(positionals: readonly string[]): string {
+  const arg = positionals[0];
+  if (!arg || positionals.length > 1) throw new Error(USAGE);
+  return arg === '-' ? readStdin() : arg;
 }
 
 try {

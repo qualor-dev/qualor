@@ -190,9 +190,10 @@ async function main(): Promise<void> {
     const index = await get(`${stack.url}/projects`);
     const body = await index.text();
     const problems = indexProblems(index.headers, body);
+    const indexDetail = problems.length > 0 ? `: ${problems.join('; ')}` : '';
     check(
       index.status === 200 && problems.length === 0,
-      `the UI index is served with its CSP nonce${problems.length > 0 ? `: ${problems.join('; ')}` : ''}`,
+      `the UI index is served with its CSP nonce${indexDetail}`,
     );
     const script = mainScript(body);
     const asset = script ? await get(`${stack.url}/${script}`) : null;

@@ -124,11 +124,7 @@ function compute(report: Report): Computed[] {
         snippet: f.snippet ?? null,
       }),
     );
-    // The fields as server/src/llm/input.ts names them.
-    const fields = ['rule', 'message'];
-    if (input.path !== null) fields.push('path');
-    if (input.language !== null) fields.push('language');
-    if (input.snippet !== null) fields.push('snippet');
+    const fields = inputFields(input);
     const data = Object.fromEntries(LLM_FEATURES.map((ft) => [ft, promptData(ft, input)])) as Record<
       LlmFeature,
       string
@@ -141,6 +137,15 @@ function compute(report: Report): Computed[] {
     out.push({ ...base, input, redactions, fields, data });
   }
   return out;
+}
+
+/** The fields of an input, as server/src/llm/input.ts names them. */
+function inputFields(input: LlmIssueInput): string[] {
+  const fields = ['rule', 'message'];
+  if (input.path !== null) fields.push('path');
+  if (input.language !== null) fields.push('language');
+  if (input.snippet !== null) fields.push('snippet');
+  return fields;
 }
 
 const forgedNonces = (data: string): string[] =>
@@ -171,9 +176,15 @@ export function llmFixtureActual(report: Report): LlmExpected {
 function canonical(value: unknown): string {
   return JSON.stringify(value, (_key, v: unknown) =>
     v !== null && typeof v === 'object' && !Array.isArray(v)
-      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => compareText(a, b)))
       : v,
   );
+}
+
+/** Code-unit order of two strings, as `<` compares them. */
+function compareText(x: string, y: string): number {
+  if (x < y) return -1;
+  return x > y ? 1 : 0;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
@@ -261,21 +272,36 @@ function judge(a: LlmAnswerCase, input: LlmIssueInput | null): string {
 
 /** The differences between a fixture's `llm/` expectations and its report; empty when it matches. */
 export function checkLlmFixture(fixtureDir: string, report: Report): string[] {
+  const loaded = readExpectations(fixtureDir);
+  if (typeof loaded === 'string') return [loaded];
+  const { expected, answers } = loaded;
+  const computed = compute(report);
+  return [
+    ...expectationDifferences(expected, computed),
+    ...secretDifferences(fixtureDir, report, computed),
+    ...answerDifferences(expected, computed, answers),
+  ];
+}
+
+/** The fixture's `llm/expected.json` and its `llm/answers.json` (none without one), or why not. */
+function readExpectations(
+  fixtureDir: string,
+): { expected: LlmExpected; answers: LlmAnswerCase[] } | string {
   const expectedRaw = readJson(path.join(fixtureDir, 'llm', 'expected.json'));
-  if (!expectedRaw.ok) return [`llm/expected.json is not valid JSON: ${expectedRaw.error}`];
-  if (!validExpected(expectedRaw.value)) return ['llm/expected.json is invalid'];
+  if (!expectedRaw.ok) return `llm/expected.json is not valid JSON: ${expectedRaw.error}`;
+  if (!validExpected(expectedRaw.value)) return 'llm/expected.json is invalid';
   const expected = expectedRaw.value;
   const answersFile = path.join(fixtureDir, 'llm', 'answers.json');
-  let answers: LlmAnswerCase[] = [];
-  if (existsSync(answersFile)) {
-    const raw = readJson(answersFile);
-    if (!raw.ok) return [`llm/answers.json is not valid JSON: ${raw.error}`];
-    if (!validAnswers(raw.value)) return ['llm/answers.json is invalid'];
-    answers = raw.value;
-  }
+  if (!existsSync(answersFile)) return { expected, answers: [] };
+  const raw = readJson(answersFile);
+  if (!raw.ok) return `llm/answers.json is not valid JSON: ${raw.error}`;
+  if (!validAnswers(raw.value)) return 'llm/answers.json is invalid';
+  return { expected, answers: raw.value };
+}
 
+/** The expected findings against the computed ones: what differs, then what was not expected. */
+function expectationDifferences(expected: LlmExpected, computed: Computed[]): string[] {
   const differences: string[] = [];
-  const computed = compute(report);
   const unmatched = new Set(computed);
   const take = (ruleKey: string, line: number): Computed | undefined => {
     const c = [...unmatched].find((x) => x.ruleKey === ruleKey && x.line === line);
@@ -288,67 +314,88 @@ export function checkLlmFixture(fixtureDir: string, report: Report): string[] {
   ];
   const found = expectations.map(({ e, reason }) => ({ e, reason, c: take(e.ruleKey, e.line) }));
   for (const { e, reason, c } of found) {
-    if (!c) {
-      // Another line of the same rule: name the move rather than a missing and an extra finding.
-      const moved = [...unmatched].find((x) => x.ruleKey === e.ruleKey);
-      if (moved) {
-        unmatched.delete(moved);
-        differences.push(`${e.ruleKey}: expected line ${e.line}, got ${moved.line}`);
-      } else differences.push(`${e.ruleKey}: expected on line ${e.line}, not in the report`);
-      continue;
-    }
-    const at = `${e.ruleKey} line ${e.line}`;
-    if (reason !== null) {
-      if (c.reason !== reason) {
-        differences.push(`${at}: expected ineligible (${reason}), got ${c.reason ?? 'eligible'}`);
-      }
-      continue;
-    }
-    if (c.reason !== null || c.data === null || c.input === null) {
-      differences.push(`${at}: expected eligible, got ineligible (${c.reason ?? 'unknown'})`);
-      continue;
-    }
-    const want = e as LlmEligible;
-    if (c.redactions !== want.redactions) {
-      differences.push(`${at}: expected ${want.redactions} redactions, got ${c.redactions}`);
-    }
-    if (c.fields.join(',') !== want.fields.join(',')) {
-      differences.push(`${at}: expected the fields ${want.fields.join(',')}, got ${c.fields.join(',')}`);
-    }
-    const explain = JSON.parse(c.data.explain) as unknown;
-    if (canonical(explain) !== canonical(want.data.explain)) {
-      differences.push(
-        `${at}: the explain data differs: expected ${canonical(want.data.explain)}, got ${canonical(explain)}`,
-      );
-    }
-    for (const ft of LLM_FEATURES) {
-      const object = JSON.parse(c.data[ft]) as { task: unknown };
-      if (object.task !== ft || canonical({ ...object, task: 'explain' }) !== canonical(explain)) {
-        differences.push(`${at}: the ${ft} data is not the explain data with task "${ft}"`);
-      }
-      differences.push(...promptProblems(at, ft, c.input, c.data[ft]));
-    }
-    const nonces = forgedNonces(c.data.explain);
-    const wanted = [...want.nonceInData].map((n) => n.toLowerCase()).sort();
-    if (nonces.join(',') !== wanted.join(',')) {
-      differences.push(
-        `${at}: expected the data to hold the nonces ${wanted.join(',') || 'none'}, got ${nonces.join(',') || 'none'}`,
-      );
-    }
+    if (c) differences.push(...foundDifferences(e, reason, c));
+    else differences.push(missingDifference(e, unmatched));
   }
   for (const c of unmatched) {
+    const state = c.reason === null ? 'eligible' : `ineligible: ${c.reason}`;
+    differences.push(`${c.ruleKey} line ${c.line}: not expected (${state})`);
+  }
+  return differences;
+}
+
+/** An expected finding not on its line: moved to another line of its rule (taken), or missing. */
+function missingDifference(e: LlmEligible | LlmIneligible, unmatched: Set<Computed>): string {
+  // Another line of the same rule: name the move rather than a missing and an extra finding.
+  const moved = [...unmatched].find((x) => x.ruleKey === e.ruleKey);
+  if (!moved) return `${e.ruleKey}: expected on line ${e.line}, not in the report`;
+  unmatched.delete(moved);
+  return `${e.ruleKey}: expected line ${e.line}, got ${moved.line}`;
+}
+
+/** The differences between an expected finding (ineligible with `reason`) and the computed one. */
+function foundDifferences(
+  e: LlmEligible | LlmIneligible,
+  reason: string | null,
+  c: Computed,
+): string[] {
+  const at = `${e.ruleKey} line ${e.line}`;
+  if (reason !== null) {
+    if (c.reason === reason) return [];
+    return [`${at}: expected ineligible (${reason}), got ${c.reason ?? 'eligible'}`];
+  }
+  if (c.reason !== null || c.data === null || c.input === null) {
+    return [`${at}: expected eligible, got ineligible (${c.reason ?? 'unknown'})`];
+  }
+  return eligibleDifferences(at, e as LlmEligible, c, c.data, c.input);
+}
+
+/** The differences between an expected eligible finding and the computed data and prompts. */
+function eligibleDifferences(
+  at: string,
+  want: LlmEligible,
+  c: Computed,
+  data: Record<LlmFeature, string>,
+  input: LlmIssueInput,
+): string[] {
+  const differences: string[] = [];
+  if (c.redactions !== want.redactions) {
+    differences.push(`${at}: expected ${want.redactions} redactions, got ${c.redactions}`);
+  }
+  if (c.fields.join(',') !== want.fields.join(',')) {
+    differences.push(`${at}: expected the fields ${want.fields.join(',')}, got ${c.fields.join(',')}`);
+  }
+  const explain = JSON.parse(data.explain) as unknown;
+  if (canonical(explain) !== canonical(want.data.explain)) {
     differences.push(
-      `${c.ruleKey} line ${c.line}: not expected (${c.reason === null ? 'eligible' : `ineligible: ${c.reason}`})`,
+      `${at}: the explain data differs: expected ${canonical(want.data.explain)}, got ${canonical(explain)}`,
     );
   }
+  for (const ft of LLM_FEATURES) {
+    const object = JSON.parse(data[ft]) as { task: unknown };
+    if (object.task !== ft || canonical({ ...object, task: 'explain' }) !== canonical(explain)) {
+      differences.push(`${at}: the ${ft} data is not the explain data with task "${ft}"`);
+    }
+    differences.push(...promptProblems(at, ft, input, data[ft]));
+  }
+  const nonces = forgedNonces(data.explain);
+  const wanted = [...want.nonceInData].map((n) => n.toLowerCase()).sort();
+  if (nonces.join(',') !== wanted.join(',')) {
+    differences.push(
+      `${at}: expected the data to hold the nonces ${wanted.join(',') || 'none'}, got ${nonces.join(',') || 'none'}`,
+    );
+  }
+  return differences;
+}
 
-  // No fragment of a secret Gitleaks found in the fixture reaches any prompt (llm.md §5.2).
+/** No fragment of a secret Gitleaks found in the fixture reaches any prompt (llm.md §5.2). */
+function secretDifferences(fixtureDir: string, report: Report, computed: Computed[]): string[] {
   const { fragments, problems } = secretFragments(fixtureDir, report);
-  differences.push(...problems);
+  const differences = [...problems];
   for (const c of computed) {
     if (c.data === null || c.input === null) continue;
     const input = c.input;
-    // The data as sent, decoded (an escape such as `\u002d` must not hide a fragment), and the
+    // The data as sent, decoded (an escape such as `-` must not hide a fragment), and the
     // whole user message.
     const texts = LLM_FEATURES.flatMap((ft) => {
       const data = c.data?.[ft] ?? 'null';
@@ -358,9 +405,19 @@ export function checkLlmFixture(fixtureDir: string, report: Report): string[] {
       differences.push(`secret in the prompt of ${c.ruleKey}`);
     }
   }
+  return differences;
+}
 
-  // Canned answers, judged against the first expected eligible finding's input. When it is not in
-  // the report (a difference above already), a fix answer cannot be judged.
+/**
+ * Canned answers, judged against the first expected eligible finding's input. When it is not in
+ * the report (a difference already), a fix answer cannot be judged.
+ */
+function answerDifferences(
+  expected: LlmExpected,
+  computed: Computed[],
+  answers: LlmAnswerCase[],
+): string[] {
+  const differences: string[] = [];
   const target = expected.eligible[0];
   const input =
     (target && computed.find((c) => c.ruleKey === target.ruleKey && c.line === target.line)?.input) ??

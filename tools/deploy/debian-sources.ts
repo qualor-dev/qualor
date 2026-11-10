@@ -110,7 +110,13 @@ export function installedSources(
     const key = `${m?.[1] ?? pkg} ${m?.[2] ?? version}`;
     out.set(key, [...(out.get(key) ?? []), pkg].sort());
   }
-  return new Map([...out.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return new Map([...out.entries()].sort(([a], [b]) => compareText(a, b)));
+}
+
+/** Code-unit order of two strings, as `<` compares them. */
+function compareText(x: string, y: string): number {
+  if (x < y) return -1;
+  return x > y ? 1 : 0;
 }
 
 /** The base image and the apt-installed packages of the last stage of a Dockerfile. */
@@ -141,31 +147,42 @@ export function parseDebianManifest(json: string): DebManifest {
   if (!Array.isArray(doc.packages) || doc.packages.length === 0) problems.push('no packages');
   for (const p of doc.packages ?? []) {
     const where = `${p.source} ${p.version}`;
-    if (!NAME.test(p.source ?? '') || !/^[\w.+~:-]+$/.test(p.version ?? '')) {
-      problems.push(`${where}: bad source or version`);
-    }
-    if (p.archive !== 'debian' && p.archive !== 'debian-security') {
-      problems.push(`${where}: archive must be debian or debian-security`);
-    }
-    if (!DIRECTORY.test(p.directory ?? '')) problems.push(`${where}: bad directory`);
-    if (!Array.isArray(p.binaries) || p.binaries.length === 0) {
-      problems.push(`${where}: no binaries`);
-    }
-    if (!Array.isArray(p.files) || !p.files[0]?.name.endsWith('.dsc')) {
-      problems.push(`${where}: the .dsc must come first`);
-    }
-    for (const f of p.files ?? []) {
-      if (!NAME.test(f.name)) problems.push(`${where}: bad file name ${f.name}`);
-      if (!/^[0-9a-f]{64}$/.test(f.sha256)) problems.push(`${where}: bad sha256 of ${f.name}`);
-      if (!/^[0-9a-f]{40}$/.test(f.sha1)) problems.push(`${where}: bad sha1 of ${f.name}`);
-      if (!Number.isInteger(f.size) || f.size <= 0)
-        problems.push(`${where}: bad size of ${f.name}`);
-      if (names.has(f.name)) problems.push(`${where}: duplicate file ${f.name}`);
-      names.add(f.name);
-    }
+    problems.push(...entryProblems(p, where));
+    for (const f of p.files ?? []) problems.push(...fileProblems(f, where, names));
   }
   if (problems.length > 0) throw new Error(`Debian source manifest:\n  ${problems.join('\n  ')}`);
   return doc;
+}
+
+/** The problems of one manifest entry's own fields; its files are checked by fileProblems. */
+function entryProblems(p: DebSource, where: string): string[] {
+  const problems: string[] = [];
+  if (!NAME.test(p.source ?? '') || !/^[\w.+~:-]+$/.test(p.version ?? '')) {
+    problems.push(`${where}: bad source or version`);
+  }
+  if (p.archive !== 'debian' && p.archive !== 'debian-security') {
+    problems.push(`${where}: archive must be debian or debian-security`);
+  }
+  if (!DIRECTORY.test(p.directory ?? '')) problems.push(`${where}: bad directory`);
+  if (!Array.isArray(p.binaries) || p.binaries.length === 0) {
+    problems.push(`${where}: no binaries`);
+  }
+  if (!Array.isArray(p.files) || !p.files[0]?.name.endsWith('.dsc')) {
+    problems.push(`${where}: the .dsc must come first`);
+  }
+  return problems;
+}
+
+/** The problems of one listed file; adds its name to `names`, the names seen so far. */
+function fileProblems(f: DebFile, where: string, names: Set<string>): string[] {
+  const problems: string[] = [];
+  if (!NAME.test(f.name)) problems.push(`${where}: bad file name ${f.name}`);
+  if (!/^[0-9a-f]{64}$/.test(f.sha256)) problems.push(`${where}: bad sha256 of ${f.name}`);
+  if (!/^[0-9a-f]{40}$/.test(f.sha1)) problems.push(`${where}: bad sha1 of ${f.name}`);
+  if (!Number.isInteger(f.size) || f.size <= 0) problems.push(`${where}: bad size of ${f.name}`);
+  if (names.has(f.name)) problems.push(`${where}: duplicate file ${f.name}`);
+  names.add(f.name);
+  return problems;
 }
 
 /** The URLs of one file: the archive, then snapshot.debian.org by content hash. */

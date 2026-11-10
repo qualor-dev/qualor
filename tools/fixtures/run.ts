@@ -428,7 +428,8 @@ export function prepareDotnet(repo: string, env: Record<string, string | undefin
     timeout: 900_000,
   });
   if (build.status !== 0) {
-    return `dotnet build exited ${build.status ?? build.signal}: ${tail(`${build.stdout ?? ''}\n${build.stderr ?? ''}`)}`;
+    const output = `${build.stdout ?? ''}\n${build.stderr ?? ''}`;
+    return `dotnet build exited ${build.status ?? build.signal}: ${tail(output)}`;
   }
   return null;
 }
@@ -485,114 +486,154 @@ export function checkGitLabReports(
   readSource: (path: string) => string,
   dependencyText?: string | null,
 ): Problem[] {
-  const problems: Problem[] = [];
-  const fail = (detail: string) => problems.push({ kind: 'scan', detail: `gitlab: ${detail}` });
-  const parse = (what: string, text: string): unknown => {
-    try {
-      return JSON.parse(text) as unknown;
-    } catch {
-      fail(`${what} is not JSON`);
-      return undefined;
-    }
-  };
   const fingerprints = reportFingerprints(report.findings);
-  const sastProblems: string[] = [];
-  let sast: unknown;
-  if (sastText === null) sastProblems.push('the SAST file was not written');
-  else {
-    try {
-      sast = JSON.parse(sastText) as unknown;
-      const validate = sastValidator();
-      if (!validate(sast)) {
-        sastProblems.push(`SAST is not valid: ${JSON.stringify(validate.errors).slice(0, 400)}`);
-      }
-    } catch {
-      sastProblems.push('SAST is not JSON');
-    }
-  }
+  const { sast, problems: sastProblems } = parseSast(sastText);
   const { scan, vulnerabilities } = (sast ?? {}) as {
     scan?: { status?: unknown };
     vulnerabilities?: unknown[];
   };
   const failed = scan?.status === 'failure';
   const incomplete = report.engines.some(incompleteEngine);
-  if (codeQualityText === null) {
-    if (!failed) fail('the Code Quality file is missing, but the SAST scan did not fail (ruling G6)');
-    if (!incomplete) {
-      fail('the Code Quality file is missing, but no engine failed, timed out or was unavailable (ruling G6)');
-    }
-  } else {
-    if (failed) fail('the SAST scan failed, but the Code Quality file was written (ruling G6)');
-    if (incomplete) {
-      fail('the Code Quality file was written, but an engine failed, timed out or was unavailable (ruling G6)');
-    }
-    const entries = parse('Code Quality', codeQualityText);
-    if (entries !== undefined) {
-      const validateCodeQuality = codeQualityValidator();
-      if (!validateCodeQuality(entries)) {
-        fail(`Code Quality is not valid: ${JSON.stringify(validateCodeQuality.errors).slice(0, 400)}`);
-      }
-      const located = report.findings.flatMap((f, i) => (f.location ? [fingerprints[i] ?? ''] : []));
-      const written = Array.isArray(entries)
-        ? entries.map((e) => String((e as { fingerprint?: unknown }).fingerprint))
-        : [];
-      if (JSON.stringify([...written].sort()) !== JSON.stringify([...located].sort())) {
-        fail(`Code Quality has ${written.length} entries, the report ${located.length} located findings`);
-      }
-    }
-  }
-  for (const problem of sastProblems) fail(problem);
-  if (Array.isArray(vulnerabilities)) {
-    const quality = new Map(
-      report.engines.flatMap((e) => e.rules.map((r) => [`${e.id}:${r.id}`, r.quality] as const)),
-    );
-    const security = report.findings.filter(
-      (f) =>
-        f.location &&
-        !DEPENDENCY_ENGINES.has(f.engineId) &&
-        (quality.get(`${f.engineId}:${f.ruleId}`) ?? engineRuleDefaults(f.engineId).quality) === 'security',
-    ).length;
-    if (vulnerabilities.length !== security) {
-      fail(`SAST has ${vulnerabilities.length} vulnerabilities, the report ${security} security findings`);
-    }
-  }
-  if (dependencyText !== undefined) {
-    if (dependencyText === null) fail('the Dependency Scanning file was not written');
-    else {
-      const ds = parse('Dependency Scanning', dependencyText) as
-        | { scan?: { status?: unknown }; vulnerabilities?: unknown[] }
-        | undefined;
-      if (ds !== undefined) {
-        const validate = dependencyScanningValidator();
-        if (!validate(ds)) {
-          fail(`Dependency Scanning is not valid: ${JSON.stringify(validate.errors).slice(0, 400)}`);
-        }
-        if ((ds.scan?.status === 'failure') !== incomplete) {
-          fail('the Dependency Scanning scan status does not follow the engines (ruling G6)');
-        }
-        const dependencies = report.findings.filter((f) => f.location && DEPENDENCY_ENGINES.has(f.engineId)).length;
-        if (!Array.isArray(ds.vulnerabilities) || ds.vulnerabilities.length !== dependencies) {
-          fail(
-            `Dependency Scanning has ${Array.isArray(ds.vulnerabilities) ? ds.vulnerabilities.length : 'no'} vulnerabilities, the report ${dependencies} dependency findings`,
-          );
-        }
-      }
-    }
-  }
   const texts = [codeQualityText ?? '', sastText ?? '', dependencyText ?? ''];
+  const details = [
+    ...codeQualityProblems(report, fingerprints, codeQualityText, failed, incomplete),
+    ...sastProblems,
+    ...sastCountProblems(report, vulnerabilities),
+    ...(dependencyText === undefined ? [] : dependencyScanningProblems(report, dependencyText, incomplete)),
+    ...sourceLineProblems(report, texts, readSource),
+  ];
+  return details.map((detail) => ({ kind: 'scan' as const, detail: `gitlab: ${detail}` }));
+}
+
+/** A GitLab file's JSON value, or undefined after adding `<what> is not JSON` to `problems`. */
+function parseGitLabFile(what: string, text: string, problems: string[]): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    problems.push(`${what} is not JSON`);
+    return undefined;
+  }
+}
+
+/** The SAST file's JSON value, if it parses, and its problems: not written, not JSON or not valid. */
+function parseSast(sastText: string | null): { sast: unknown; problems: string[] } {
+  const problems: string[] = [];
+  let sast: unknown;
+  if (sastText === null) problems.push('the SAST file was not written');
+  else {
+    try {
+      sast = JSON.parse(sastText) as unknown;
+      const validate = sastValidator();
+      if (!validate(sast)) {
+        problems.push(`SAST is not valid: ${JSON.stringify(validate.errors).slice(0, 400)}`);
+      }
+    } catch {
+      problems.push('SAST is not JSON');
+    }
+  }
+  return { sast, problems };
+}
+
+/**
+ * Ruling G6 for the Code Quality file (missing exactly when the SAST scan `failed`, which is
+ * exactly when an engine was `incomplete`), then its contents.
+ */
+function codeQualityProblems(
+  report: Report,
+  fingerprints: readonly string[],
+  codeQualityText: string | null,
+  failed: boolean,
+  incomplete: boolean,
+): string[] {
+  const problems: string[] = [];
+  if (codeQualityText === null) {
+    if (!failed) problems.push('the Code Quality file is missing, but the SAST scan did not fail (ruling G6)');
+    if (!incomplete) {
+      problems.push('the Code Quality file is missing, but no engine failed, timed out or was unavailable (ruling G6)');
+    }
+    return problems;
+  }
+  if (failed) problems.push('the SAST scan failed, but the Code Quality file was written (ruling G6)');
+  if (incomplete) {
+    problems.push('the Code Quality file was written, but an engine failed, timed out or was unavailable (ruling G6)');
+  }
+  const entries = parseGitLabFile('Code Quality', codeQualityText, problems);
+  if (entries !== undefined) problems.push(...codeQualityEntryProblems(report, fingerprints, entries));
+  return problems;
+}
+
+/** Code Quality has GitLab's documented fields and one entry per located finding. */
+function codeQualityEntryProblems(report: Report, fingerprints: readonly string[], entries: unknown): string[] {
+  const problems: string[] = [];
+  const validateCodeQuality = codeQualityValidator();
+  if (!validateCodeQuality(entries)) {
+    problems.push(`Code Quality is not valid: ${JSON.stringify(validateCodeQuality.errors).slice(0, 400)}`);
+  }
+  const located = report.findings.flatMap((f, i) => (f.location ? [fingerprints[i] ?? ''] : []));
+  const written = Array.isArray(entries)
+    ? entries.map((e) => String((e as { fingerprint?: unknown }).fingerprint))
+    : [];
+  if (JSON.stringify([...written].sort()) !== JSON.stringify([...located].sort())) {
+    problems.push(`Code Quality has ${written.length} entries, the report ${located.length} located findings`);
+  }
+  return problems;
+}
+
+/** SAST has one vulnerability per located security finding (nothing to check without its list). */
+function sastCountProblems(report: Report, vulnerabilities: unknown[] | undefined): string[] {
+  if (!Array.isArray(vulnerabilities)) return [];
+  const quality = new Map(
+    report.engines.flatMap((e) => e.rules.map((r) => [`${e.id}:${r.id}`, r.quality] as const)),
+  );
+  const security = report.findings.filter(
+    (f) =>
+      f.location &&
+      !DEPENDENCY_ENGINES.has(f.engineId) &&
+      (quality.get(`${f.engineId}:${f.ruleId}`) ?? engineRuleDefaults(f.engineId).quality) === 'security',
+  ).length;
+  if (vulnerabilities.length === security) return [];
+  return [`SAST has ${vulnerabilities.length} vulnerabilities, the report ${security} security findings`];
+}
+
+/** Plan 2B: the Dependency Scanning file validates, follows the engines (ruling G6) and counts. */
+function dependencyScanningProblems(report: Report, dependencyText: string | null, incomplete: boolean): string[] {
+  if (dependencyText === null) return ['the Dependency Scanning file was not written'];
+  const problems: string[] = [];
+  const ds = parseGitLabFile('Dependency Scanning', dependencyText, problems) as
+    | { scan?: { status?: unknown }; vulnerabilities?: unknown[] }
+    | undefined;
+  if (ds === undefined) return problems;
+  const validate = dependencyScanningValidator();
+  if (!validate(ds)) {
+    problems.push(`Dependency Scanning is not valid: ${JSON.stringify(validate.errors).slice(0, 400)}`);
+  }
+  if ((ds.scan?.status === 'failure') !== incomplete) {
+    problems.push('the Dependency Scanning scan status does not follow the engines (ruling G6)');
+  }
+  const dependencies = report.findings.filter((f) => f.location && DEPENDENCY_ENGINES.has(f.engineId)).length;
+  if (!Array.isArray(ds.vulnerabilities) || ds.vulnerabilities.length !== dependencies) {
+    const written = Array.isArray(ds.vulnerabilities) ? ds.vulnerabilities.length : 'no';
+    problems.push(`Dependency Scanning has ${written} vulnerabilities, the report ${dependencies} dependency findings`);
+  }
+  return problems;
+}
+
+/** No source line of the fixture (so no secret) appears in any of the GitLab files' `texts`. */
+function sourceLineProblems(report: Report, texts: string[], readSource: (path: string) => string): string[] {
+  const problems: string[] = [];
   for (const file of report.files) {
     let source: string;
     try {
       source = readSource(file.path);
     } catch {
-      fail(`the source of ${file.path} cannot be read to check the GitLab files`);
+      problems.push(`the source of ${file.path} cannot be read to check the GitLab files`);
       continue;
     }
     for (const line of splitSourceLines(source)) {
       const probe = line.trim();
       if (probe.length < SOURCE_LINE_PROBE_CHARS) continue;
       if (texts.some((t) => t.includes(probe))) {
-        fail(`a source line of ${file.path} is in a GitLab report file`);
+        problems.push(`a source line of ${file.path} is in a GitLab report file`);
       }
     }
   }
@@ -643,6 +684,23 @@ export function checkLlmProblems(fixtureDir: string, report: Report): Problem[] 
   );
 }
 
+/** Makes the copy at `repo` a one-commit git repository; a problem when a git step fails. */
+function commitCopy(repo: string, env: Record<string, string | undefined>): string | null {
+  for (const args of [
+    ['init', '-q', '-b', 'main'],
+    ['add', '-A'],
+    ['commit', '-q', '--no-verify', '-m', 'fixture'],
+  ]) {
+    const r = spawnSync('git', ['-c', 'core.autocrlf=false', '-c', 'commit.gpgsign=false', ...args], {
+      cwd: repo,
+      env,
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) return `git ${args[0]} failed: ${r.stderr.trim()}`;
+  }
+  return null;
+}
+
 /**
  * Copies the fixture into a fresh one-commit git repo and runs `qualor scan --dry-run` on it (for a
  * .NET fixture where dotnet runs: `qualor dotnet begin`, the build, `qualor dotnet end --dry-run`).
@@ -655,18 +713,8 @@ function scanFixture(fixtureDir: string, name: string, expected: Expected): Prob
     const emptyGitConfig = path.join(work, 'empty.gitconfig');
     writeFileSync(emptyGitConfig, '');
     const env = scanEnv(process.env, emptyGitConfig);
-    for (const args of [
-      ['init', '-q', '-b', 'main'],
-      ['add', '-A'],
-      ['commit', '-q', '--no-verify', '-m', 'fixture'],
-    ]) {
-      const r = spawnSync('git', ['-c', 'core.autocrlf=false', '-c', 'commit.gpgsign=false', ...args], {
-        cwd: repo,
-        env,
-        encoding: 'utf8',
-      });
-      if (r.status !== 0) return [{ kind: 'scan', detail: `git ${args[0]} failed: ${r.stderr.trim()}` }];
-    }
+    const committed = commitCopy(repo, env);
+    if (committed !== null) return [{ kind: 'scan', detail: committed }];
     const prepared = prepareCopy(repo);
     if (prepared !== null) return [{ kind: 'scan', detail: prepared }];
     // Plan 2D: on Linux (ruling R8), a real build between begin and end; otherwise a plain scan,
@@ -778,33 +826,9 @@ export function verdict(
   const lines: string[] = [];
   let ok = true;
   for (const outcome of outcomes) {
-    const entry = pending[outcome.name];
-    const unavailable = outcome.unavailable ?? [];
-    // 6M: the inventory comes from the licence pass alone, so without it nothing of it is checked.
-    const skippedHere = (p: Problem) =>
-      ((p.kind === 'engine' || p.kind === 'missing-finding') && unavailable.some((id) => p.detail.startsWith(`${id}:`))) ||
-      (p.kind === 'dependency' && unavailable.includes('trivy-licenses'));
-    const o = { ...outcome, problems: outcome.problems.filter((p) => !skippedHere(p)) };
-    if (o.problems.length === 0 && unavailable.length > 0) {
-      // Ruling T4: without the tool its findings cannot be checked here; CI installs every tool.
-      lines.push(`~ ${o.name}: not checked here for ${unavailable.join(', ')} (not installed; CI checks them)`);
-      continue;
-    }
-    if (o.problems.length === 0) {
-      if (entry !== undefined) {
-        ok = false;
-        lines.push(`✗ ${o.name}: passes but is listed in known-pending.json; remove it`);
-      } else lines.push(`✓ ${o.name}`);
-      continue;
-    }
-    const tolerated = (p: Problem) => entry !== undefined && (entry.kinds as ProblemKind[]).includes(p.kind);
-    if (o.problems.every(tolerated)) {
-      const kinds = [...new Set(o.problems.map((p) => p.kind))].join(', ');
-      lines.push(`… ${o.name}: pending (${entry?.reason}); ${o.problems.length} expected mismatches (${kinds})`);
-    } else {
-      ok = false;
-      lines.push(`✗ ${o.name}:`, ...o.problems.filter((p) => !tolerated(p)).map((p) => `    ${p.kind}: ${p.detail}`));
-    }
+    const one = outcomeVerdict(outcome, pending[outcome.name]);
+    if (!one.ok) ok = false;
+    lines.push(...one.lines);
   }
   for (const name of Object.keys(pending)) {
     if (!outcomes.some((o) => o.name === name)) {
@@ -813,6 +837,44 @@ export function verdict(
     }
   }
   return { ok, lines };
+}
+
+/** The verdict on one fixture's outcome, given its known-pending.json entry. */
+function outcomeVerdict(
+  outcome: FixtureOutcome,
+  entry: PendingEntry | undefined,
+): { ok: boolean; lines: string[] } {
+  const unavailable = outcome.unavailable ?? [];
+  // 6M: the inventory comes from the licence pass alone, so without it nothing of it is checked.
+  const skippedHere = (p: Problem) =>
+    ((p.kind === 'engine' || p.kind === 'missing-finding') && unavailable.some((id) => p.detail.startsWith(`${id}:`))) ||
+    (p.kind === 'dependency' && unavailable.includes('trivy-licenses'));
+  const o = { ...outcome, problems: outcome.problems.filter((p) => !skippedHere(p)) };
+  if (o.problems.length === 0 && unavailable.length > 0) {
+    // Ruling T4: without the tool its findings cannot be checked here; CI installs every tool.
+    return {
+      ok: true,
+      lines: [`~ ${o.name}: not checked here for ${unavailable.join(', ')} (not installed; CI checks them)`],
+    };
+  }
+  if (o.problems.length === 0) {
+    if (entry !== undefined) {
+      return { ok: false, lines: [`✗ ${o.name}: passes but is listed in known-pending.json; remove it`] };
+    }
+    return { ok: true, lines: [`✓ ${o.name}`] };
+  }
+  const tolerated = (p: Problem) => entry !== undefined && (entry.kinds as ProblemKind[]).includes(p.kind);
+  if (o.problems.every(tolerated)) {
+    const kinds = [...new Set(o.problems.map((p) => p.kind))].join(', ');
+    return {
+      ok: true,
+      lines: [`… ${o.name}: pending (${entry?.reason}); ${o.problems.length} expected mismatches (${kinds})`],
+    };
+  }
+  return {
+    ok: false,
+    lines: [`✗ ${o.name}:`, ...o.problems.filter((p) => !tolerated(p)).map((p) => `    ${p.kind}: ${p.detail}`)],
+  };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

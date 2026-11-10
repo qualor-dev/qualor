@@ -171,7 +171,8 @@ async function dogfood(o: DogfoodOptions): Promise<number> {
         workspaceWrite(t.ws, 'coverage/lcov.info', portableLcov(readFileSync(o.coverage, 'utf8')));
       }
       const mrArgs = o.mr === undefined ? [] : ['--mr', o.mr, '--mr-target', mainBranch];
-      const label = `${o.mr === undefined ? mainBranch : `MR !${o.mr}`} at ${head.slice(0, 12)}`;
+      const target = o.mr === undefined ? mainBranch : `MR !${o.mr}`;
+      const label = `${target} at ${head.slice(0, 12)}`;
       const r = scanAs(t, label, ['--branch', branch, ...mrArgs]);
       if (r.code !== 0) process.stderr.write(r.stderr);
       return r.code;

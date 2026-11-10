@@ -424,37 +424,7 @@ const MIN_NORMALISED_PEM_BODY = 64;
 function pemKeys(text: string, minBody: number): FoundKey[] {
   const found: FoundKey[] = [];
   for (const match of text.matchAll(PEM_BEGIN)) {
-    let at = match.index + match[0].length;
-    let body = '';
-    let inHeaders = true;
-    while (at < text.length) {
-      const eol = text.indexOf('\n', at);
-      const next = eol === -1 ? text.length : eol + 1;
-      const line = text
-        .slice(at, eol === -1 ? text.length : eol)
-        .replace(/\r$/, '')
-        .trim();
-      if (inHeaders && PEM_HEADER_LINE.test(line)) {
-        at = next;
-        continue;
-      }
-      if (inHeaders && line === '' && body === '') {
-        inHeaders = false;
-        at = next;
-        continue;
-      }
-      inHeaders = false;
-      // A line may end in something else ("MC4C..." in a document): its base64 start counts.
-      const run = BASE64_RUN.exec(line)?.[0] ?? '';
-      if (run !== '') {
-        body += run;
-        at = next;
-        if (run.length === line.length) continue;
-        break;
-      }
-      if (PEM_END.test(line)) at = next;
-      break;
-    }
+    const { body, at } = pemBody(text, match.index + match[0].length);
     if (body.length >= minBody) {
       found.push({
         kind: 'pem',
@@ -464,6 +434,51 @@ function pemKeys(text: string, minBody: number): FoundKey[] {
     }
   }
   return found;
+}
+
+/**
+ * The base64 body of the PEM block whose BEGIN line ends at `start`, after its headers, and the
+ * offset where the block ends (after its END line, when it has one).
+ */
+function pemBody(text: string, start: number): { body: string; at: number } {
+  let at = start;
+  let body = '';
+  let inHeaders = true;
+  while (at < text.length) {
+    const { line, next } = lineAt(text, at);
+    if (inHeaders && PEM_HEADER_LINE.test(line)) {
+      at = next;
+      continue;
+    }
+    if (inHeaders && line === '' && body === '') {
+      inHeaders = false;
+      at = next;
+      continue;
+    }
+    inHeaders = false;
+    // A line may end in something else ("MC4C..." in a document): its base64 start counts.
+    const run = BASE64_RUN.exec(line)?.[0] ?? '';
+    if (run !== '') {
+      body += run;
+      at = next;
+      if (run.length === line.length) continue;
+      break;
+    }
+    if (PEM_END.test(line)) at = next;
+    break;
+  }
+  return { body, at };
+}
+
+/** The trimmed line of `text` that starts at `at`, and the offset of the line after it. */
+function lineAt(text: string, at: number): { line: string; next: number } {
+  const eol = text.indexOf('\n', at);
+  const next = eol === -1 ? text.length : eol + 1;
+  const line = text
+    .slice(at, eol === -1 ? text.length : eol)
+    .replace(/\r$/, '')
+    .trim();
+  return { line, next };
 }
 
 /**

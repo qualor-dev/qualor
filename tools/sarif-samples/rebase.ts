@@ -40,21 +40,7 @@ export function rebaseSarif(
 ): unknown {
   const roots = prefixes.map(canonical);
   const visit = (v: unknown): unknown => {
-    if (typeof v === 'string') {
-      const p = toPath(v);
-      if (p === null) return v;
-      const base = o.plain === true && !v.startsWith('file:') ? PLAIN_ROOT : ROOT;
-      // canonical() strips trailing slashes to compare paths; preserve one on the output
-      // when the source URI had it (it usually marks a directory-style base URI).
-      const trailingSlash = p.length > 1 && p.endsWith('/');
-      const c = canonical(p);
-      for (const r of roots) {
-        if (c === r) return `${base}/`;
-        if (c.startsWith(`${r}/`))
-          return `${base}/${c.slice(r.length + 1)}${trailingSlash ? '/' : ''}`;
-      }
-      return v;
-    }
+    if (typeof v === 'string') return rebaseString(v, roots, o.plain === true);
     if (Array.isArray(v)) return v.map(visit);
     if (v !== null && typeof v === 'object') {
       return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, visit(x)]));
@@ -62,6 +48,22 @@ export function rebaseSarif(
     return v;
   };
   return visit(log);
+}
+
+/** A string rebased when it is an absolute path or `file:` URI under one of `roots`, else itself. */
+function rebaseString(v: string, roots: readonly string[], plain: boolean): string {
+  const p = toPath(v);
+  if (p === null) return v;
+  const base = plain && !v.startsWith('file:') ? PLAIN_ROOT : ROOT;
+  // canonical() strips trailing slashes to compare paths; preserve one on the output
+  // when the source URI had it (it usually marks a directory-style base URI).
+  const trailingSlash = p.length > 1 && p.endsWith('/');
+  const c = canonical(p);
+  for (const r of roots) {
+    if (c === r) return `${base}/`;
+    if (c.startsWith(`${r}/`)) return `${base}/${c.slice(r.length + 1)}${trailingSlash ? '/' : ''}`;
+  }
+  return v;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

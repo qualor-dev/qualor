@@ -22,6 +22,12 @@ import { binaryFormat, EXPECTED_FORMAT, hostTarget } from './binary';
 import { bunRuntime } from './runtimes';
 import type { Version } from './version';
 
+/** Code-unit order of two strings, as `<` compares them. */
+function compareText(x: string, y: string): number {
+  if (x < y) return -1;
+  return x > y ? 1 : 0;
+}
+
 function header(file: string): Uint8Array {
   const fd = openSync(file, 'r');
   try {
@@ -78,7 +84,7 @@ export async function copyCliSources(
 ): Promise<string[]> {
   const entries = load(root)
     .filter((e) => e.component === 'bun')
-    .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0)); // byte order, as sha256sum lists
+    .sort((a, b) => compareText(a.file, b.file)); // byte order, as sha256sum lists
   const dir = path.join(releaseDir, 'cli-sources');
   mkdirSync(dir, { recursive: true });
   const lines: string[] = [];

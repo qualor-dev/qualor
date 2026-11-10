@@ -274,6 +274,75 @@ export function rspecKeys() {
   return keyOf;
 }
 
+/** A rule's setting in the config: off when `off`, else its level, with its OPTIONS when on. */
+function ruleSetting(id, level, off) {
+  if (off) return 'off';
+  return level !== 'off' && OPTIONS[id] ? [level, ...OPTIONS[id]] : level;
+}
+
+/**
+ * The type-aware pass over `files` (`lint(types, files)`), and its mode: `on`, or `fallback` when
+ * a file only parsed without types. Results are undefined when the pass failed as a whole.
+ */
+async function typeAwareLint(lint, files) {
+  try {
+    let results = await lint(true, files);
+    let mode = 'on';
+    // Every file with a fatal message in the type-aware parse is linted again without type
+    // information: a tsconfig that does not parse, or a file outside the project it describes,
+    // fails the type-aware parse with a message that differs by platform and TypeScript version
+    // ("Expression expected." for a truncated tsconfig on Linux), so it is not matched by text.
+    // A file that parses without types was a type-aware failure (mode `fallback`); one that
+    // still does not parse keeps its parse error.
+    const failed = results.filter((r) => r.messages.some((m) => m.fatal));
+    if (failed.length > 0) {
+      const again = new Map(
+        (
+          await lint(
+            false,
+            failed.map((r) => r.filePath),
+          )
+        ).map((r) => [r.filePath, r]),
+      );
+      if ([...again.values()].some((r) => !r.messages.some((m) => m.fatal))) mode = 'fallback';
+      results = results.map((r) => again.get(r.filePath) ?? r);
+    }
+    return { mode, results };
+  } catch (err) {
+    stderr(
+      `sonarjs: the type-aware pass failed, linting without type information: ${String(err?.message).split('\n')[0]}\n`,
+    );
+    return { mode: 'fallback', results: undefined };
+  }
+}
+
+/** ESLint's results as SARIF results keyed by RSPEC id; adds each reporting rule's name to `used`. */
+function sarifResultsOf(results, root, keyOf, used) {
+  const sarifResults = [];
+  for (const file of results) {
+    const uri = path.relative(root, file.filePath).split(path.sep).join('/');
+    for (const m of file.messages) {
+      const name = m.ruleId?.replace(/^sonarjs\//, '');
+      const key = name && keyOf.get(name);
+      if (!key) continue;
+      used.add(name);
+      const region = {
+        startLine: m.line ?? 1,
+        ...(m.column && { startColumn: m.column }),
+        ...(m.endLine && { endLine: m.endLine }),
+        ...(m.endColumn && { endColumn: m.endColumn }),
+      };
+      sarifResults.push({
+        ruleId: key,
+        level: 'warning',
+        message: { text: m.message },
+        locations: [{ physicalLocation: { artifactLocation: { uri }, region } }],
+      });
+    }
+  }
+  return sarifResults;
+}
+
 async function main(args) {
   const opt = (name) => {
     const i = args.indexOf(name);
@@ -310,11 +379,7 @@ async function main(args) {
     const rules = Object.fromEntries(
       Object.entries(recommended.rules).map(([id, level]) => [
         id,
-        disabled.has(id) || (!types && typeAware.has(id))
-          ? 'off'
-          : level !== 'off' && OPTIONS[id]
-            ? [level, ...OPTIONS[id]]
-            : level,
+        ruleSetting(id, level, disabled.has(id) || (!types && typeAware.has(id))),
       ]),
     );
     return [
@@ -368,61 +433,11 @@ async function main(args) {
   const files = listed ? listedFiles(root, listed) : sourceFiles(root);
   let mode = wantTypes ? 'on' : 'off';
   let results;
-  if (wantTypes) {
-    try {
-      results = await lint(true, files);
-      // Every file with a fatal message in the type-aware parse is linted again without type
-      // information: a tsconfig that does not parse, or a file outside the project it describes,
-      // fails the type-aware parse with a message that differs by platform and TypeScript version
-      // ("Expression expected." for a truncated tsconfig on Linux), so it is not matched by text.
-      // A file that parses without types was a type-aware failure (mode `fallback`); one that
-      // still does not parse keeps its parse error.
-      const failed = results.filter((r) => r.messages.some((m) => m.fatal));
-      if (failed.length > 0) {
-        const again = new Map(
-          (
-            await lint(
-              false,
-              failed.map((r) => r.filePath),
-            )
-          ).map((r) => [r.filePath, r]),
-        );
-        if ([...again.values()].some((r) => !r.messages.some((m) => m.fatal))) mode = 'fallback';
-        results = results.map((r) => again.get(r.filePath) ?? r);
-      }
-    } catch (err) {
-      stderr(
-        `sonarjs: the type-aware pass failed, linting without type information: ${String(err?.message).split('\n')[0]}\n`,
-      );
-      mode = 'fallback';
-      results = undefined;
-    }
-  }
+  if (wantTypes) ({ mode, results } = await typeAwareLint(lint, files));
   results ??= await lint(false, files);
 
   const used = new Set();
-  const sarifResults = [];
-  for (const file of results) {
-    const uri = path.relative(root, file.filePath).split(path.sep).join('/');
-    for (const m of file.messages) {
-      const name = m.ruleId?.replace(/^sonarjs\//, '');
-      const key = name && keyOf.get(name);
-      if (!key) continue;
-      used.add(name);
-      const region = {
-        startLine: m.line ?? 1,
-        ...(m.column && { startColumn: m.column }),
-        ...(m.endLine && { endLine: m.endLine }),
-        ...(m.endColumn && { endColumn: m.endColumn }),
-      };
-      sarifResults.push({
-        ruleId: key,
-        level: 'warning',
-        message: { text: m.message },
-        locations: [{ physicalLocation: { artifactLocation: { uri }, region } }],
-      });
-    }
-  }
+  const sarifResults = sarifResultsOf(results, root, keyOf, used);
   const rules = [...used].sort().map((name) => {
     const key = keyOf.get(name);
     return {

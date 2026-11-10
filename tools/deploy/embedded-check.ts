@@ -174,10 +174,8 @@ async function main(): Promise<void> {
     ],
     dump.stdout,
   );
-  check(
-    restore.code === 0,
-    `restore into a fresh volume succeeds${restore.code === 0 ? '' : `:\n${restore.stderr.slice(-2000)}`}`,
-  );
+  const restoreError = restore.code === 0 ? '' : `:\n${restore.stderr.slice(-2000)}`;
+  check(restore.code === 0, `restore into a fresh volume succeeds${restoreError}`);
   // A file that is not a dump (an empty, truncated or wrong backup) must leave the data as it was.
   const broken = docker(
     [

@@ -11,6 +11,7 @@ import path from 'node:path';
 import { parse, parseDocument } from 'yaml';
 import { BUN_VERSION, RELEASE_TARGETS, type ReleaseTarget } from '../../cli/scripts/targets';
 import { VENDORED_GRAMMARS } from '../../cli/src/parse/vendored';
+import type { Flavour } from '../deploy/release';
 import { freePort, must, REPO_ROOT, run } from '../deploy/stack';
 import { releaseNotes } from './changelog';
 import { releaseFiles, sha256sums, SUMS, SUMS_BUNDLE } from './checksums';
@@ -211,6 +212,86 @@ async function waitForRegistry(port: number): Promise<void> {
   throw new Error('the dry-run registry did not start in 30 s');
 }
 
+/**
+ * 4. One image in the loopback registry: its tags pushed (one digest), its SBOM where it ships
+ * software, then 7. signed and attested by digest (registry.ts) and each verified.
+ */
+function releaseImage(
+  registry: DryRunRegistry,
+  k: Keys,
+  dir: string,
+  image: Flavour,
+  refs: string[],
+): ImageRecord {
+  const net = { network: registry.network };
+  const digest = pushImageTags(registry, image, refs);
+  const inRegistry = internalRef(`qualor/${image}`, digest);
+  const sbom = (SBOM_IMAGES as readonly string[]).includes(image)
+    ? imageSbom(dir, image, inRegistry, net)
+    : null;
+  signInDryRun(registry, k, inRegistry, sbom === null ? null : toWork(path.join(dir, sbom)));
+  must(
+    runTool('cosign', verifyImageArgs(k.pub, inRegistry, DRY_RUN_OPTIONS), net),
+    `cosign verify ${image}`,
+  );
+  if (sbom) {
+    must(
+      runTool('cosign', verifyAttestationArgs(k.pub, inRegistry, DRY_RUN_OPTIONS), net),
+      `cosign verify-attestation ${image}`,
+    );
+  }
+  return { image, refs, digest, sbom };
+}
+
+/** Pushes each tag of an image to the loopback registry; returns the one digest they all push. */
+function pushImageTags(registry: DryRunRegistry, image: Flavour, refs: readonly string[]): string {
+  const digests = new Set<string>();
+  for (const ref of refs) {
+    const tag = ref.slice(ref.lastIndexOf(':') + 1);
+    const local = hostRef(registry, `qualor/${image}`, tag);
+    must(run('docker', ['tag', ref, local]), `docker tag ${ref} ${local}`);
+    try {
+      digests.add(pushToDryRun(local));
+    } finally {
+      run('docker', ['image', 'rm', local]);
+    }
+  }
+  const [digest, ...other] = [...digests];
+  if (digest === undefined || other.length > 0) {
+    throw new Error(
+      `qualor/${image}: its tags pushed different digests: ${[...digests].join(', ')}`,
+    );
+  }
+  return digest;
+}
+
+/** Syft's SBOM of the image in the registry, checked; returns its path in the release directory. */
+function imageSbom(
+  dir: string,
+  image: Flavour,
+  inRegistry: string,
+  net: { network: string },
+): string {
+  const sbom = `sbom/${image}.spdx.json`;
+  const syftTmp = path.join(REPO_ROOT, SYFT_IMAGE_TMP);
+  mkdirSync(syftTmp, { recursive: true });
+  try {
+    must(
+      runTool('syft', syftArgs(`registry:${inRegistry}`, toWork(path.join(dir, sbom))), {
+        ...net,
+        env: REGISTRY_SOURCE_ENV,
+        plainEnv: SYFT_IMAGE_ENV,
+      }),
+      `syft ${image}`,
+    );
+  } finally {
+    rmSync(syftTmp, { recursive: true, force: true });
+  }
+  const problems = spdxProblems(readFileSync(path.join(dir, sbom), 'utf8'));
+  if (problems.length > 0) throw new Error(`${sbom}: ${problems.join(', ')}`);
+  return sbom;
+}
+
 export async function dryRun(o: DryRunOptions, root = DEFAULT_OUTPUT_ROOT): Promise<string> {
   const v = o.version;
   const dir = releaseDir(v, root);
@@ -285,59 +366,8 @@ export async function dryRun(o: DryRunOptions, root = DEFAULT_OUTPUT_ROOT): Prom
       registry = newRegistry(await freePort());
       startRegistry(registry);
       await waitForRegistry(registry.port);
-      const net = { network: registry.network };
       for (const { image, refs } of releaseRefs('qualor', v, released)) {
-        const digests = new Set<string>();
-        for (const ref of refs) {
-          const tag = ref.slice(ref.lastIndexOf(':') + 1);
-          const local = hostRef(registry, `qualor/${image}`, tag);
-          must(run('docker', ['tag', ref, local]), `docker tag ${ref} ${local}`);
-          try {
-            digests.add(pushToDryRun(local));
-          } finally {
-            run('docker', ['image', 'rm', local]);
-          }
-        }
-        const [digest, ...other] = [...digests];
-        if (digest === undefined || other.length > 0) {
-          throw new Error(
-            `qualor/${image}: its tags pushed different digests: ${[...digests].join(', ')}`,
-          );
-        }
-        const inRegistry = internalRef(`qualor/${image}`, digest);
-        let sbom: string | null = null;
-        if ((SBOM_IMAGES as readonly string[]).includes(image)) {
-          sbom = `sbom/${image}.spdx.json`;
-          const syftTmp = path.join(REPO_ROOT, SYFT_IMAGE_TMP);
-          mkdirSync(syftTmp, { recursive: true });
-          try {
-            must(
-              runTool('syft', syftArgs(`registry:${inRegistry}`, toWork(path.join(dir, sbom))), {
-                ...net,
-                env: REGISTRY_SOURCE_ENV,
-                plainEnv: SYFT_IMAGE_ENV,
-              }),
-              `syft ${image}`,
-            );
-          } finally {
-            rmSync(syftTmp, { recursive: true, force: true });
-          }
-          const problems = spdxProblems(readFileSync(path.join(dir, sbom), 'utf8'));
-          if (problems.length > 0) throw new Error(`${sbom}: ${problems.join(', ')}`);
-        }
-        // 7. Sign and attest by digest (registry.ts); verify each.
-        signInDryRun(registry, k, inRegistry, sbom === null ? null : toWork(path.join(dir, sbom)));
-        must(
-          runTool('cosign', verifyImageArgs(k.pub, inRegistry, DRY_RUN_OPTIONS), net),
-          `cosign verify ${image}`,
-        );
-        if (sbom) {
-          must(
-            runTool('cosign', verifyAttestationArgs(k.pub, inRegistry, DRY_RUN_OPTIONS), net),
-            `cosign verify-attestation ${image}`,
-          );
-        }
-        images.push({ image, refs, digest, sbom });
+        images.push(releaseImage(registry, k, dir, image, refs));
       }
     }
 

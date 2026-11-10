@@ -54,9 +54,8 @@ export function parseVerifyArgs(argv: readonly string[]): VerifyArgs {
     const a = args[i] ?? '';
     i += 1;
     if (a === '--key' && key === undefined) {
-      key = args[i];
+      key = keyArgument(args[i]);
       i += 1;
-      if (key === undefined || key === '' || key.startsWith('--')) throw new Error(VERIFY_USAGE);
     } else if (a === '--self-check' && !selfCheck) selfCheck = true;
     else if (!a.startsWith('-') && a !== '' && dir === undefined) dir = a;
     else throw new Error(`${VERIFY_USAGE}\n(refused: ${JSON.stringify(a)})`);
@@ -66,6 +65,12 @@ export function parseVerifyArgs(argv: readonly string[]): VerifyArgs {
     throw new Error(`${VERIFY_USAGE}\n(--key and --self-check exclude each other)`);
   }
   return { dir, key, selfCheck };
+}
+
+/** The argument after `--key`: a file name, never missing, empty or another option. */
+function keyArgument(key: string | undefined): string {
+  if (key === undefined || key === '' || key.startsWith('--')) throw new Error(VERIFY_USAGE);
+  return key;
 }
 
 export interface VerifyKey {

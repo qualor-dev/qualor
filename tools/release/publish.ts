@@ -24,7 +24,7 @@ import {
   type RegistryOptions,
 } from './cosign';
 import { releaseRefs } from './images';
-import { readManifest, type ReleaseManifest } from './manifest';
+import { readManifest, type ImageRecord, type ReleaseManifest } from './manifest';
 import { parsePushDigest } from './registry';
 import { runTool, toWork, TOOLBOX_IMAGE } from './toolbox';
 import { gitTracks, verifyRelease } from './verify';
@@ -172,29 +172,11 @@ async function publishableProblems(
       `the dry run was made at ${m.gitCommit}, not at HEAD ${head} (a dirty tree never publishes)`,
     );
   }
-  if (!Array.isArray(m.files)) problems.push('release-manifest.json has no files list');
-  else for (const f of m.files) problems.push(...insideProblems(dir, 'files:', f));
-  problems.push(...insideProblems(dir, 'chart.file:', m.chart.file));
-  for (const img of m.images) {
-    if (img.sbom !== null) problems.push(...insideProblems(dir, `${img.image} sbom:`, img.sbom));
-  }
+  problems.push(...containedProblems(m, dir));
   const sums = path.join(dir, SUMS);
   if (!existsSync(sums)) problems.push(`${SUMS} is missing from the release directory`);
   else problems.push(...(await sumsProblems(dir, readFileSync(sums, 'utf8'))));
-  const want = releaseRefs(NAMESPACE, v, released);
-  const have = m.images.map((i) => ({ image: i.image, refs: i.refs }));
-  if (JSON.stringify(have) !== JSON.stringify(want)) {
-    problems.push(
-      `the dry run's image tags are not the release's tags (releaseRefs with the released versions): ` +
-        `expected ${JSON.stringify(want)}, found ${JSON.stringify(have)}`,
-    );
-  }
-  for (const ref of m.images.flatMap((i) => i.refs)) {
-    const tag = ref.slice(ref.lastIndexOf(':') + 1);
-    if ((NEVER_PUBLISHED as readonly string[]).includes(tag)) {
-      problems.push(`${ref}: the tag "${tag}" is never published`);
-    }
-  }
+  problems.push(...tagProblems(m, v, released));
   for (const image of IMAGE_SOURCES) {
     if (!existsSync(path.join(root, '.tmp', `${image}-sources`))) {
       problems.push(`.tmp/${image}-sources is missing: run pnpm deploy:sources`);
@@ -212,7 +194,73 @@ async function publishableProblems(
   return problems;
 }
 
+/** The manifest's files, its chart and the images' SBOMs: each a file in the release directory. */
+function containedProblems(m: ReleaseManifest, dir: string): string[] {
+  const problems: string[] = [];
+  if (!Array.isArray(m.files)) problems.push('release-manifest.json has no files list');
+  else for (const f of m.files) problems.push(...insideProblems(dir, 'files:', f));
+  problems.push(...insideProblems(dir, 'chart.file:', m.chart.file));
+  for (const img of m.images) {
+    if (img.sbom !== null) problems.push(...insideProblems(dir, `${img.image} sbom:`, img.sbom));
+  }
+  return problems;
+}
+
+/** Exactly the tags of releaseRefs(v, released), and none that is never published. */
+function tagProblems(m: ReleaseManifest, v: Version, released: readonly Version[]): string[] {
+  const problems: string[] = [];
+  const want = releaseRefs(NAMESPACE, v, released);
+  const have = m.images.map((i) => ({ image: i.image, refs: i.refs }));
+  if (JSON.stringify(have) !== JSON.stringify(want)) {
+    problems.push(
+      `the dry run's image tags are not the release's tags (releaseRefs with the released versions): ` +
+        `expected ${JSON.stringify(want)}, found ${JSON.stringify(have)}`,
+    );
+  }
+  for (const ref of m.images.flatMap((i) => i.refs)) {
+    const tag = ref.slice(ref.lastIndexOf(':') + 1);
+    if ((NEVER_PUBLISHED as readonly string[]).includes(tag)) {
+      problems.push(`${ref}: the tag "${tag}" is never published`);
+    }
+  }
+  return problems;
+}
+
 const normalizeKey = (pem: string): string => pem.replace(/\r\n/g, '\n').trim();
+
+/** A tool run of publish(): its arguments and what it does, for the error when it fails. */
+type ToolRun = (args: string[], what: string) => RunResult;
+
+/**
+ * Step 4 of publish(): signs and attests every image by digest with `key`, then verifies each
+ * with the tracked cosign.pub (`pub`), `verifyListed` waiting for Docker Hub to list them.
+ */
+function signImages(
+  images: readonly ImageRecord[],
+  o: { dir: string; key: string; pub: string; cosign: ToolRun; verifyListed: ToolRun },
+): void {
+  for (const img of images) {
+    const signed = `docker.io/${NAMESPACE}/${img.image}@${img.digest}`;
+    o.cosign(signImageArgs(o.key, signed, PUBLISH_OPTIONS), `cosign sign ${img.image}`);
+    if (img.sbom) {
+      const sbom = toWork(path.join(o.dir, img.sbom));
+      o.cosign(attestArgs(o.key, signed, sbom, PUBLISH_OPTIONS), `cosign attest ${img.image}`);
+    }
+  }
+  for (const img of images) {
+    const signed = `docker.io/${NAMESPACE}/${img.image}@${img.digest}`;
+    o.verifyListed(
+      verifyImageArgs(toWork(o.pub), signed, PUBLISH_OPTIONS),
+      `cosign verify ${img.image}`,
+    );
+    if (img.sbom) {
+      o.verifyListed(
+        verifyAttestationArgs(toWork(o.pub), signed, PUBLISH_OPTIONS),
+        `cosign verify-attestation ${img.image}`,
+      );
+    }
+  }
+}
 
 export async function publish(
   env: Record<string, string | undefined>,
@@ -323,27 +371,7 @@ export async function publish(
     }
 
     // 4. Sign and attest by digest, then verify each with the tracked cosign.pub.
-    for (const img of m.images) {
-      const signed = `docker.io/${NAMESPACE}/${img.image}@${img.digest}`;
-      cosign(signImageArgs(key, signed, PUBLISH_OPTIONS), `cosign sign ${img.image}`);
-      if (img.sbom) {
-        const sbom = toWork(path.join(dir, img.sbom));
-        cosign(attestArgs(key, signed, sbom, PUBLISH_OPTIONS), `cosign attest ${img.image}`);
-      }
-    }
-    for (const img of m.images) {
-      const signed = `docker.io/${NAMESPACE}/${img.image}@${img.digest}`;
-      verifyListed(
-        verifyImageArgs(toWork(pub), signed, PUBLISH_OPTIONS),
-        `cosign verify ${img.image}`,
-      );
-      if (img.sbom) {
-        verifyListed(
-          verifyAttestationArgs(toWork(pub), signed, PUBLISH_OPTIONS),
-          `cosign verify-attestation ${img.image}`,
-        );
-      }
-    }
+    signImages(m.images, { dir, key, pub, cosign, verifyListed });
 
     // 5. Only now the version and moving tags, each compared with the signed digest again.
     for (const img of m.images) {

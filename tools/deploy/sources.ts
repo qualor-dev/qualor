@@ -122,27 +122,41 @@ function entryProblems(e: Record<string, unknown>, where: string): string[] {
   const ref = typeof e['ref'] === 'string' ? e['ref'] : '';
   const fetch = (e['fetch'] ?? {}) as Record<string, unknown>;
   if (fetch['type'] === 'https') {
-    const url = typeof fetch['url'] === 'string' ? fetch['url'] : '';
-    if (!url.startsWith('https://')) problems.push(`${where}: the url must be https`);
-    else if (!ALLOWED_HOSTS.includes(new URL(url).hostname)) {
-      problems.push(`${where}: the url must be on github.com or an allowed upstream host`);
-    }
-    if (ref !== '' && !decodeURIComponent(url).includes(ref)) {
-      problems.push(`${where}: the url does not fetch ${ref}`);
-    }
+    problems.push(...httpsFetchProblems(fetch, ref, where));
   } else if (fetch['type'] === 'git-archive') {
-    if (!text(fetch['repository']) || !GITHUB_REPO.test(fetch['repository'])) {
-      problems.push(`${where}: the repository must be an https://github.com/…/….git URL`);
-    }
-    if (!text(fetch['commit']) || !COMMIT.test(fetch['commit']) || fetch['commit'] !== ref) {
-      problems.push(`${where}: a git archive needs the full commit, equal to ref`);
-    }
-    const exclude = fetch['exclude'];
-    if (!Array.isArray(exclude) || !exclude.every((d) => text(d) && TOP_LEVEL.test(d))) {
-      problems.push(`${where}: exclude must list top-level directory names`);
-    }
+    problems.push(...gitArchiveProblems(fetch, ref, where));
   } else {
     problems.push(`${where}: fetch.type must be https or git-archive`);
+  }
+  return problems;
+}
+
+/** The problems of an entry's `https` fetch of `ref`. */
+function httpsFetchProblems(fetch: Record<string, unknown>, ref: string, where: string): string[] {
+  const problems: string[] = [];
+  const url = typeof fetch['url'] === 'string' ? fetch['url'] : '';
+  if (!url.startsWith('https://')) problems.push(`${where}: the url must be https`);
+  else if (!ALLOWED_HOSTS.includes(new URL(url).hostname)) {
+    problems.push(`${where}: the url must be on github.com or an allowed upstream host`);
+  }
+  if (ref !== '' && !decodeURIComponent(url).includes(ref)) {
+    problems.push(`${where}: the url does not fetch ${ref}`);
+  }
+  return problems;
+}
+
+/** The problems of an entry's `git-archive` fetch of `ref`. */
+function gitArchiveProblems(fetch: Record<string, unknown>, ref: string, where: string): string[] {
+  const problems: string[] = [];
+  if (!text(fetch['repository']) || !GITHUB_REPO.test(fetch['repository'])) {
+    problems.push(`${where}: the repository must be an https://github.com/…/….git URL`);
+  }
+  if (!text(fetch['commit']) || !COMMIT.test(fetch['commit']) || fetch['commit'] !== ref) {
+    problems.push(`${where}: a git archive needs the full commit, equal to ref`);
+  }
+  const exclude = fetch['exclude'];
+  if (!Array.isArray(exclude) || !exclude.every((d) => text(d) && TOP_LEVEL.test(d))) {
+    problems.push(`${where}: exclude must list top-level directory names`);
   }
   return problems;
 }
@@ -353,9 +367,10 @@ export function sourcesIndex(
   for (const e of entries) {
     const version =
       e.ref === e.componentVersion ? e.ref : `${e.ref} (${e.component} ${e.componentVersion})`;
+    const why = `${e.why} Pinned by ${e.pinnedAt}.`;
     lines.push(
       `| \`${e.file}\` | ${cell(e.name)} | ${cell(version)} | ${cell(e.licence)} | \`${e.sha256}\` | ` +
-        `${cell(upstreamOf(e))} | ${cell(`${e.why} Pinned by ${e.pinnedAt}.`)} |`,
+        `${cell(upstreamOf(e))} | ${cell(why)} |`,
     );
   }
   lines.push(...debianIndex(debian), '');

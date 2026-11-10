@@ -77,19 +77,27 @@ export function extractFromTgz(tgz: Uint8Array, name: string): Buffer {
     offset += 512 + Math.ceil(size / 512) * 512;
     if (type === 'x' || type === 'L') {
       // pax extended header (`<len> path=<name>\n`) or GNU long name: applies to the next entry.
-      const text = body.toString('utf8');
-      longName =
-        type === 'L' ? text.replace(/\0+$/, '') : /(?:^|\n)\d+ path=([^\n]*)\n/.exec(text)?.[1];
+      longName = longNameOf(type, body);
       continue;
     }
     if (type === 'g') continue;
-    const prefix = field(header, 345, 155);
-    const entry =
-      longName ?? (prefix ? `${prefix}/${field(header, 0, 100)}` : field(header, 0, 100));
+    const entry = entryName(header, longName);
     longName = undefined;
     if (entry === name && (type === '0' || type === '\0')) return Buffer.from(body);
   }
   throw new Error(`${name} is not in the tarball`);
+}
+
+/** The name a GNU long name (`L`) or a pax extended header (`x`) gives the next entry. */
+function longNameOf(type: string, body: Buffer): string | undefined {
+  const text = body.toString('utf8');
+  return type === 'L' ? text.replace(/\0+$/, '') : /(?:^|\n)\d+ path=([^\n]*)\n/.exec(text)?.[1];
+}
+
+/** An entry's path: the long name before it, else its header's prefix and name. */
+function entryName(header: Uint8Array, longName: string | undefined): string {
+  const prefix = field(header, 345, 155);
+  return longName ?? (prefix ? `${prefix}/${field(header, 0, 100)}` : field(header, 0, 100));
 }
 
 export type Download = (url: string) => Promise<Uint8Array>;

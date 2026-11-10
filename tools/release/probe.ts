@@ -28,7 +28,8 @@ async function main(): Promise<void> {
     ['cosign', ['version']],
     ['syft', ['version']],
   ] as const) {
-    process.stdout.write(`${must(runTool(tool, args), `${tool} version`).stdout.split('\n')[0]}\n`);
+    const what = `${tool} version`;
+    process.stdout.write(`${must(runTool(tool, args), what).stdout.split('\n')[0]}\n`);
   }
   const dir = path.join(REPO_ROOT, '.tmp', 'release-probe');
   rmSync(dir, { recursive: true, force: true });

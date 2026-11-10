@@ -19,7 +19,9 @@ import {
   callProvider,
   LlmError,
   REASONING_ALLOWANCE_TOKENS,
+  type LlmAnswer,
   type ProviderConfig,
+  type ProviderHttpOptions,
 } from '../../server/src/llm/providers';
 import {
   isInternalHostAllowed,
@@ -208,58 +210,7 @@ export async function runLiveCheck(
   const answers: string[] = [];
   const features = {} as Record<LlmFeature, FeatureSummary>;
   for (const feature of LLM_FEATURES) {
-    const s: FeatureSummary = {
-      calls: 0,
-      answered: 0,
-      jsonValid: 0,
-      thinkBlock: 0,
-      finishReasons: {},
-      outcomes: {},
-      latencyMs: null,
-      outputTokens: 0,
-    };
-    const latencies: number[] = [];
-    for (const input of cases) {
-      const prompt = buildPrompt(feature, input, NONCE);
-      for (let i = 0; i < o.runs; i += 1) {
-        s.calls += 1;
-        const started = performance.now();
-        try {
-          const answer = await callProvider(
-            config,
-            null,
-            {
-              system: prompt.system,
-              user: prompt.user,
-              // As the llm job asks: the answer's tokens, and room for a model that thinks first.
-              maxOutputTokens: MAX_OUTPUT_TOKENS[feature],
-              reasoningAllowance: REASONING_ALLOWANCE_TOKENS.singleShot,
-            },
-            http,
-          );
-          latencies.push(Math.round(performance.now() - started));
-          answers.push(answer.text);
-          s.answered += 1;
-          s.outputTokens += answer.usage.outputTokens ?? 0;
-          bump(s.finishReasons, answer.finishReason);
-          if (answer.text.trim().startsWith('<think>')) s.thinkBlock += 1;
-          if (parseModelJson(answer.text) !== undefined) s.jsonValid += 1;
-          const parsed = parseAnswer(feature, answer);
-          if (!parsed.ok) bump(s.outcomes, parsed.code);
-          else if (feature === 'fix') {
-            const checked = checkFix(parsed.value as FixAnswer, input);
-            bump(
-              s.outcomes,
-              checked.ok ? `ok:${checked.value.status}` : `OUTPUT_REFUSED:${checked.problem}`,
-            );
-          } else bump(s.outcomes, 'ok');
-        } catch (err) {
-          bump(s.outcomes, err instanceof LlmError ? `error:${err.failure}` : 'error:other');
-        }
-      }
-    }
-    s.latencyMs = spread(latencies);
-    features[feature] = s;
+    features[feature] = await runFeature(feature, cases, { runs: o.runs, config, http }, answers);
   }
   const summary: LiveSummary = {
     model: o.model,
@@ -278,4 +229,76 @@ export async function runLiveCheck(
     throw new Error('The live summary would hold model or fixture text; not printed');
   }
   return { summary, text };
+}
+
+/** `call.runs` calls of one feature per case, in order; each answer's text goes to `answers`. */
+async function runFeature(
+  feature: LlmFeature,
+  cases: readonly LlmIssueInput[],
+  call: { runs: number; config: ProviderConfig; http: ProviderHttpOptions },
+  answers: string[],
+): Promise<FeatureSummary> {
+  const s: FeatureSummary = {
+    calls: 0,
+    answered: 0,
+    jsonValid: 0,
+    thinkBlock: 0,
+    finishReasons: {},
+    outcomes: {},
+    latencyMs: null,
+    outputTokens: 0,
+  };
+  const latencies: number[] = [];
+  for (const input of cases) {
+    const prompt = buildPrompt(feature, input, NONCE);
+    for (let i = 0; i < call.runs; i += 1) {
+      s.calls += 1;
+      const started = performance.now();
+      try {
+        const answer = await callProvider(
+          call.config,
+          null,
+          {
+            system: prompt.system,
+            user: prompt.user,
+            // As the llm job asks: the answer's tokens, and room for a model that thinks first.
+            maxOutputTokens: MAX_OUTPUT_TOKENS[feature],
+            reasoningAllowance: REASONING_ALLOWANCE_TOKENS.singleShot,
+          },
+          call.http,
+        );
+        latencies.push(Math.round(performance.now() - started));
+        answers.push(answer.text);
+        countAnswer(s, feature, input, answer);
+      } catch (err) {
+        bump(s.outcomes, err instanceof LlmError ? `error:${err.failure}` : 'error:other');
+      }
+    }
+  }
+  s.latencyMs = spread(latencies);
+  return s;
+}
+
+/** Counts one answer in the feature's summary `s`. */
+function countAnswer(
+  s: FeatureSummary,
+  feature: LlmFeature,
+  input: LlmIssueInput,
+  answer: LlmAnswer,
+): void {
+  s.answered += 1;
+  s.outputTokens += answer.usage.outputTokens ?? 0;
+  bump(s.finishReasons, answer.finishReason);
+  if (answer.text.trim().startsWith('<think>')) s.thinkBlock += 1;
+  if (parseModelJson(answer.text) !== undefined) s.jsonValid += 1;
+  bump(s.outcomes, answerOutcome(feature, input, answer));
+}
+
+/** An answer's outcome as the llm job judges it: `ok`, `ok:<fix status>` or why it is refused. */
+function answerOutcome(feature: LlmFeature, input: LlmIssueInput, answer: LlmAnswer): string {
+  const parsed = parseAnswer(feature, answer);
+  if (!parsed.ok) return parsed.code;
+  if (feature !== 'fix') return 'ok';
+  const checked = checkFix(parsed.value as FixAnswer, input);
+  return checked.ok ? `ok:${checked.value.status}` : `OUTPUT_REFUSED:${checked.problem}`;
 }

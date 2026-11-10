@@ -11,10 +11,12 @@ import {
   snippetLineHash,
   statusMatchItem,
   type PlannedRow,
+  type Report,
   type StatusCandidate,
+  type StatusMatch,
 } from '@qualor/shared';
 import { buildWithCompetitors } from '../../cli/src/import/issues';
-import { connectSonar } from '../../cli/src/import/sonarqube/client';
+import { connectSonar, type SonarConnection } from '../../cli/src/import/sonarqube/client';
 import {
   fetchGates,
   fetchProfiles,
@@ -62,9 +64,15 @@ export interface SonarExpected {
 function canonical(value: unknown): string {
   return JSON.stringify(value, (_key, v: unknown) =>
     v !== null && typeof v === 'object' && !Array.isArray(v)
-      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => compareText(a, b)))
       : v,
   );
+}
+
+/** Code-unit order of two strings, as `<` compares them. */
+function compareText(x: string, y: string): number {
+  if (x < y) return -1;
+  return x > y ? 1 : 0;
 }
 
 /** Every difference between two plans, one line each, in a stable order. */
@@ -126,40 +134,7 @@ export async function checkSonarImport(fixtureDir: string, reportFile: string): 
       };
     }
     for (const project of data.projects) {
-      const fetched = await fetchResolvedIssues(conn.client, conn, project.key, 100_000);
-      const built = await buildWithCompetitors(conn.client, conn, project.key, fetched.issues, {
-        pathPrefix: null,
-        maxIssues: 100_000,
-        unreadResolved: fetched.unread,
-        probe: fetched.probe,
-      });
-      for (const i of fetched.issues) {
-        if (built.unmappedRules.has(i.rule)) actual.statuses[i.key] = 'unmappedRule';
-      }
-      for (const i of built.changed) actual.statuses[i.ref] = 'changed';
-      const candidates: StatusCandidate[] = report.findings.map((f, n) => ({
-        id: String(n),
-        ruleKey: `${f.engineId}:${f.ruleId}`,
-        path: f.location?.path ?? null,
-        line: f.location?.startLine ?? null,
-        message: f.message,
-        sonarLineHash: snippetLineHash(f.snippet ?? null, f.location?.startLine ?? null),
-      }));
-      const items = [...built.items, ...built.competitors];
-      const marked = new Set(built.items.filter((i) => i.competitorsUnknown === true).map((i) => i.ref));
-      const resolved = new Set(built.items.map((i) => i.ref));
-      for (const m of matchStatuses(items.map(statusMatchItem), candidates)) {
-        if (!resolved.has(m.ref)) continue;
-        const c = m.candidateId === null ? undefined : candidates[Number(m.candidateId)];
-        actual.statuses[m.ref] =
-          m.competitorsUnknown || marked.has(m.ref)
-            ? 'competitorsUnknown'
-            : m.ambiguous
-              ? 'ambiguous'
-              : c === undefined
-                ? 'unmatched'
-                : { ruleKey: c.ruleKey, line: c.line };
-      }
+      await addProjectStatuses(conn, project.key, report, actual.statuses);
     }
     const writes = fake.requests.filter((r) => r.method !== 'GET');
     if (writes.length > 0) {
@@ -169,6 +144,54 @@ export async function checkSonarImport(fixtureDir: string, reportFile: string): 
   } finally {
     await fake.close();
   }
+}
+
+/** Fetches one project's resolved issues and sets where each one's status goes in `statuses`. */
+async function addProjectStatuses(
+  conn: SonarConnection,
+  projectKey: string,
+  report: Report,
+  statuses: SonarExpected['statuses'],
+): Promise<void> {
+  const fetched = await fetchResolvedIssues(conn.client, conn, projectKey, 100_000);
+  const built = await buildWithCompetitors(conn.client, conn, projectKey, fetched.issues, {
+    pathPrefix: null,
+    maxIssues: 100_000,
+    unreadResolved: fetched.unread,
+    probe: fetched.probe,
+  });
+  for (const i of fetched.issues) {
+    if (built.unmappedRules.has(i.rule)) statuses[i.key] = 'unmappedRule';
+  }
+  for (const i of built.changed) statuses[i.ref] = 'changed';
+  const candidates: StatusCandidate[] = report.findings.map((f, n) => ({
+    id: String(n),
+    ruleKey: `${f.engineId}:${f.ruleId}`,
+    path: f.location?.path ?? null,
+    line: f.location?.startLine ?? null,
+    message: f.message,
+    sonarLineHash: snippetLineHash(f.snippet ?? null, f.location?.startLine ?? null),
+  }));
+  const items = [...built.items, ...built.competitors];
+  const marked = new Set(built.items.filter((i) => i.competitorsUnknown === true).map((i) => i.ref));
+  const resolved = new Set(built.items.map((i) => i.ref));
+  for (const m of matchStatuses(items.map(statusMatchItem), candidates)) {
+    if (!resolved.has(m.ref)) continue;
+    const c = m.candidateId === null ? undefined : candidates[Number(m.candidateId)];
+    statuses[m.ref] = matchedStatus(m, marked.has(m.ref), c);
+  }
+}
+
+/** Where a resolved issue's status goes: to its candidate finding, or why to none. */
+function matchedStatus(
+  m: StatusMatch,
+  marked: boolean,
+  c: StatusCandidate | undefined,
+): SonarExpected['statuses'][string] {
+  if (m.competitorsUnknown || marked) return 'competitorsUnknown';
+  if (m.ambiguous) return 'ambiguous';
+  if (c === undefined) return 'unmatched';
+  return { ruleKey: c.ruleKey, line: c.line };
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
