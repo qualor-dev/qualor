@@ -216,7 +216,7 @@ A token has the rights that both its scopes and its user's role allow.
 
 ### Project analysis tokens
 
-A project token can **only upload analyses to its one project**, which makes it the best token for
+A project token can **only upload analyses to its one project** (and read its SBOM and VEX), which makes it the best token for
 CI. Create one in **Project → Settings → Analysis tokens** with **New token**: give it a name and,
 if you like, an **Expires after** period. Press **Done** once you have stored the token. **Revoke**
 stops a token at once.

@@ -216,17 +216,21 @@ q -X POST "$QUALOR_URL/api/v0/issues/bulk-transition" \
 |---|---|
 | 200 | The file, as an attachment named `<key>-<target><suffix>` (`.cdx.json`, `.spdx.json`, `.vex.cdx.json` or `.openvex.json`). Never cached |
 | 404 `PROJECT_NOT_FOUND` | No such project, or the caller cannot see it. The project token of another project gets it too |
-| 404 `NOT_FOUND` | No such branch or version. For the SBOM, the target has no dependency inventory yet. For the VEX, vulnerability monitoring is off |
+| 404 `NOT_FOUND` | No such branch or version. For the SBOM, the target has no dependency inventory yet. For the VEX, vulnerability monitoring is off, or the target has not been checked yet |
 | 403 | `FEATURE_NOT_LICENSED`, or `INSUFFICIENT_SCOPE` for a personal token without the `read` scope |
+
+The VEX is available once the target's first vulnerability check has finished.
 
 A project analysis token reads the SBOM and VEX of its own project and nothing else, so a release job
 needs no personal token. A person needs read access to the project.
 
 ```sh
-curl -fsS -H "Authorization: Bearer $QUALOR_PROJECT_TOKEN" -OJ \
-  "$QUALOR_URL/api/v0/projects/sbom?projectKey=acme/payments-api&version=$RELEASE_TAG&format=spdx"
-curl -fsS -H "Authorization: Bearer $QUALOR_PROJECT_TOKEN" -OJ \
-  "$QUALOR_URL/api/v0/projects/vex?projectKey=acme/payments-api&version=$RELEASE_TAG&format=openvex"
+curl -fsS -G -H "Authorization: Bearer $QUALOR_PROJECT_TOKEN" -OJ \
+  --data-urlencode "projectKey=acme/payments-api" --data-urlencode "version=$RELEASE_TAG" \
+  --data-urlencode "format=spdx" "$QUALOR_URL/api/v0/projects/sbom"
+curl -fsS -G -H "Authorization: Bearer $QUALOR_PROJECT_TOKEN" -OJ \
+  --data-urlencode "projectKey=acme/payments-api" --data-urlencode "version=$RELEASE_TAG" \
+  --data-urlencode "format=openvex" "$QUALOR_URL/api/v0/projects/vex"
 ```
 
 ### Searching users

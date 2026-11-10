@@ -5689,7 +5689,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/vnd.cyclonedx+json": string;
+                        "application/vnd.cyclonedx+json; version=1.6": string;
                         "application/spdx+json": string;
                     };
                 };
@@ -5702,7 +5702,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) or TOKEN_NOT_ALLOWED */
+                /** @description FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -5711,7 +5711,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off) */
+                /** @description PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off or the target has not been checked yet) */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -5767,7 +5767,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/vnd.cyclonedx+json": string;
+                        "application/vnd.cyclonedx+json; version=1.6": string;
                         "application/json": string;
                     };
                 };
@@ -5780,7 +5780,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) or TOKEN_NOT_ALLOWED */
+                /** @description FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -5789,7 +5789,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off) */
+                /** @description PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off or the target has not been checked yet) */
                 404: {
                     headers: {
                         [name: string]: unknown;

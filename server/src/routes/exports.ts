@@ -6,17 +6,22 @@ import type { RouteDeps } from '../app';
 import { accessOf, requirePrincipal } from '../auth/access';
 import { organizations } from '../db/schema';
 import { ProblemError, validationFailed } from '../http/problem';
+import { text } from '../http/schemas';
 import { VERSION } from '../index';
 import { PROJECT_KEY_PATTERN } from '../patterns';
 import { projectForExport, type ProjectRow } from '../projects/access';
-import { vulnerabilitySettings } from '../versions/settings';
+import { monitoringOn } from '../vulnerabilities/targets';
 import { sbomNotLicensed, SBOM_FEATURE } from '../vulnerabilities/export/feature';
-import { exportPackages, exportTarget, vexEntries } from '../vulnerabilities/export/query';
+import {
+  exportPackages,
+  exportTarget,
+  targetChecked,
+  vexEntries,
+} from '../vulnerabilities/export/query';
 import { buildCycloneDxSbom, buildSpdxSbom } from '../vulnerabilities/export/sbom-documents';
 import type { ExportDocument } from '../vulnerabilities/export/types';
 import { buildCycloneDxVex, buildOpenVex } from '../vulnerabilities/export/vex-documents';
 import { hasInventory } from '../dependencies/query';
-import { readVulndbSettings } from '../vulndb/settings';
 
 const CYCLONEDX = 'application/vnd.cyclonedx+json; version=1.6';
 const SPDX = 'application/spdx+json';
@@ -28,9 +33,9 @@ const fileSafe = (text: string): string => text.replace(/[^A-Za-z0-9._-]/g, '-')
 const targetQuery = {
   projectKey: z.string().regex(PROJECT_KEY_PATTERN),
   /** A branch name; neither `branch` nor `version` means the main branch. */
-  branch: z.string().min(1).max(255).optional(),
+  branch: text(255).optional(),
   /** A version label. */
-  version: z.string().min(1).max(100).optional(),
+  version: text(100).optional(),
 };
 
 const file = (description: string, types: readonly string[]) => ({
@@ -39,8 +44,8 @@ const file = (description: string, types: readonly string[]) => ({
 });
 
 const problemDescriptions = {
-  403: `FEATURE_NOT_LICENSED (the enterprise feature ${SBOM_FEATURE} is not licensed), INSUFFICIENT_SCOPE (a personal token needs the \`read\` scope) or TOKEN_NOT_ALLOWED`,
-  404: 'PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off)',
+  403: `FEATURE_NOT_LICENSED (the enterprise feature ${SBOM_FEATURE} is not licensed), INSUFFICIENT_SCOPE (a personal token needs the \`read\` scope)`,
+  404: 'PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off or the target has not been checked yet)',
   422: 'Validation failed (VALIDATION_FAILED; also `branch` together with `version`)',
 };
 
@@ -98,7 +103,7 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
           format: z.enum(['cyclonedx', 'spdx']).default('cyclonedx'),
         }),
         response: {
-          200: file('The SBOM, as an attachment', ['application/vnd.cyclonedx+json', SPDX]),
+          200: file('The SBOM, as an attachment', [CYCLONEDX, SPDX]),
         },
       },
     },
@@ -111,7 +116,7 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       );
       const { resolved, doc } = await resolve(project, query);
       const packages = await exportPackages(deps.db, resolved.target);
-      if (packages.length === 0 && !(await hasInventory(deps.db, resolved.target, 0))) {
+      if (!(await hasInventory(deps.db, resolved.target, packages.length))) {
         throw new ProblemError(
           404,
           'NOT_FOUND',
@@ -142,10 +147,7 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
           format: z.enum(['cyclonedx', 'openvex']).default('cyclonedx'),
         }),
         response: {
-          200: file('The VEX document, as an attachment', [
-            'application/vnd.cyclonedx+json',
-            OPENVEX,
-          ]),
+          200: file('The VEX document, as an attachment', [CYCLONEDX, OPENVEX]),
         },
       },
     },
@@ -157,15 +159,18 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         query.projectKey,
       );
       const { resolved, doc } = await resolve(project, query);
-      const [instance, settings] = await Promise.all([
-        readVulndbSettings(deps.db),
-        vulnerabilitySettings(deps.db, project.id),
-      ]);
-      if (!instance.enabled || !settings.enabled) {
+      if (!(await monitoringOn(deps.db, project.id))) {
         throw new ProblemError(
           404,
           'NOT_FOUND',
           'Vulnerability monitoring is off for this project',
+        );
+      }
+      if (!(await targetChecked(deps.db, resolved.target))) {
+        throw new ProblemError(
+          404,
+          'NOT_FOUND',
+          `This ${resolved.kind} has not been checked for vulnerabilities yet`,
         );
       }
       const entries = await vexEntries(deps.db, project.id, resolved.target);

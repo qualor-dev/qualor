@@ -3,9 +3,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateAgainst } from '../../test/export-schemas';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
-import { seedTargetRow } from '../../test/vulnerabilities';
+import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
 import {
   analyses,
+  instanceSettings,
   branchDependencies,
   branches,
   organizations,
@@ -105,6 +106,10 @@ async function seed(h: IngestHarness, key: string): Promise<Seeded> {
   await db
     .insert(projectVulnerabilitySettings)
     .values({ projectId: p.id, branchPatterns: ['release/*'] });
+  const checked = new Date('2026-10-20T10:00:00Z');
+  for (const target of [{ branchId: mainRow!.id }, { branchId: release }, { versionId: version }]) {
+    await seedCheck(db, { projectId: p.id, baselineAt: checked, ...target });
+  }
   return { id: p.id, key, token: p.token, main: mainRow!.id, release, mr, version, empty };
 }
 
@@ -190,6 +195,7 @@ describe('the SBOM and VEX export routes (4c)', () => {
       for (const route of [sbom, vex]) {
         expect((await route(`projectKey=${p.key}`, bearer(p.token))).statusCode).toBe(200);
         const denied = await route(`projectKey=${q.key}`, bearer(p.token));
+        expect(denied.json().code).toBe('PROJECT_NOT_FOUND');
         expect(denied.statusCode).toBe(404);
         expect(denied.json().code).toBe('PROJECT_NOT_FOUND');
       }
@@ -276,6 +282,119 @@ describe('the SBOM and VEX export routes (4c)', () => {
       expect((await vex(`projectKey=${p.key}&format=spdx`)).statusCode).toBe(422);
       expect((await sbom(`projectKey=${p.key}&extra=1`)).statusCode).toBe(422);
       expect((await sbom('')).statusCode).toBe(422);
+    });
+  });
+
+  describe('more checks', () => {
+    it('answers 422 for a NUL in branch or version, whoever asks', async () => {
+      const p = await fresh();
+      for (const query of ['branch=%00', 'version=%00', 'branch=a%00b']) {
+        for (const route of [sbom, vex]) {
+          expect((await route(`projectKey=${p.key}&${query}`)).statusCode, query).toBe(422);
+          expect((await route(`projectKey=${p.key}&${query}`, outsider.headers)).statusCode).toBe(
+            422,
+          );
+        }
+      }
+    });
+
+    it('needs a vulnerability check for the VEX, not for the SBOM', async () => {
+      const p = await fresh();
+      const none = await vex(`projectKey=${p.key}&branch=no-inventory`);
+      expect(none.statusCode).toBe(404);
+      expect(none.json()).toMatchObject({
+        code: 'NOT_FOUND',
+        title: 'This branch has not been checked for vulnerabilities yet',
+      });
+      await h.ctx.db.insert(branchDependencies).values({
+        branchId: p.empty,
+        path: 'package.json',
+        ecosystem: 'npm',
+        name: 'x',
+        version: '1.0.0',
+        licenses: [],
+        analysisId: (
+          await h.ctx.db.select().from(analyses).where(eq(analyses.branchId, p.main))
+        )[0]!.id,
+      });
+      expect((await sbom(`projectKey=${p.key}&branch=no-inventory`)).statusCode).toBe(200);
+      const version = await h.ctx.db
+        .insert(projectVersions)
+        .values({
+          projectId: p.id,
+          label: '0.1.0',
+          source: 'tag',
+          tag: '0.1.0',
+          analyzedAt: new Date('2026-09-01T00:00:00Z'),
+        })
+        .returning();
+      const unchecked = await vex(`projectKey=${p.key}&version=0.1.0`);
+      expect(unchecked.json().title).toBe(
+        'This version has not been checked for vulnerabilities yet',
+      );
+      expect(version).toHaveLength(1);
+    });
+
+    it('keeps the VEX of an untracked version that kept its check row', async () => {
+      const p = await fresh();
+      await h.ctx.db
+        .update(projectVersions)
+        .set({ tracking: 'unsupported' })
+        .where(eq(projectVersions.id, p.version));
+      expect((await vex(`projectKey=${p.key}&version=2.3.4%2Bbuild.1`)).statusCode).toBe(200);
+    });
+
+    it('turns the VEX off with the instance switch', async () => {
+      const p = await fresh();
+      await h.ctx.db
+        .insert(instanceSettings)
+        .values({ key: 'vulndb', value: { enabled: false } })
+        .onConflictDoUpdate({ target: instanceSettings.key, set: { value: { enabled: false } } });
+      try {
+        const res = await vex(`projectKey=${p.key}`);
+        expect(res.statusCode).toBe(404);
+        expect(res.json().title).toBe('Vulnerability monitoring is off for this project');
+        expect((await sbom(`projectKey=${p.key}`)).statusCode).toBe(200);
+      } finally {
+        await h.ctx.db.delete(instanceSettings).where(eq(instanceSettings.key, 'vulndb'));
+      }
+    });
+
+    it('sorts packages by name, version, then ecosystem', async () => {
+      const p = await fresh();
+      const [known] = await h.ctx.db
+        .select({ analysisId: branchDependencies.analysisId })
+        .from(branchDependencies)
+        .where(eq(branchDependencies.branchId, p.main));
+      const dep = (ecosystem: string, name: string, version: string) => ({
+        branchId: p.release,
+        path: `${ecosystem}.lock`,
+        ecosystem,
+        name,
+        version,
+        licenses: ['MIT'],
+        analysisId: known!.analysisId,
+      });
+      await h.ctx.db
+        .insert(branchDependencies)
+        .values([
+          dep('npm', 'zeta', '1.0.0'),
+          dep('pip', 'alpha', '2.0.0'),
+          dep('cargo', 'alpha', '10.0.0'),
+          dep('npm', 'alpha', '2.0.0'),
+        ]);
+      const comps = (await sbom(`projectKey=${p.key}&branch=release%2F2.x`)).json().components as {
+        name: string;
+        version: string;
+        purl: string;
+      }[];
+      expect(comps.map((c) => c.purl)).toEqual([
+        'pkg:cargo/alpha@10.0.0',
+        'pkg:npm/alpha@2.0.0',
+        'pkg:pypi/alpha@2.0.0',
+        'pkg:npm/only-release@2.0.0',
+        'pkg:npm/zeta@1.0.0',
+      ]);
     });
   });
 
@@ -465,6 +584,37 @@ describe('the export routes without the sbom feature', () => {
         bearer(p.token),
       );
       expect(otherProject.statusCode).toBe(404);
+    }
+  });
+
+  it('refuses the viewer, the read token and a both-targets query alike, and keeps a second project hidden', async () => {
+    const p = await seed(h, 'acme/nofeat-3');
+    const q = await seed(h, 'acme/nofeat-4');
+    const member = await createUser(h.ctx, { username: 'nofeat-viewer' });
+    await addMember(h.ctx, h.organizationId, member.id, 'viewer');
+    const viewer = await login(h.ctx, member.username, member.password);
+    const tokenRes = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/tokens',
+      headers: h.orgAdmin.headers,
+      payload: { name: 'nofeat', scopes: ['read'] },
+    });
+    const read = bearer((tokenRes.json() as { token: string }).token);
+    for (const path of ['sbom', 'vex']) {
+      for (const headers of [viewer.headers, read]) {
+        const res = await getWith(h, `/projects/${path}?projectKey=${p.key}`, headers);
+        expect(res.statusCode).toBe(403);
+        expect(res.json().code).toBe('FEATURE_NOT_LICENSED');
+      }
+      const both = await getWith(
+        h,
+        `/projects/${path}?projectKey=${p.key}&branch=main&version=1`,
+        h.orgAdmin.headers,
+      );
+      expect(both.statusCode).toBe(403);
+      const second = await getWith(h, `/projects/${path}?projectKey=${q.key}`, bearer(p.token));
+      expect(second.statusCode).toBe(404);
+      expect(second.json().code).toBe('PROJECT_NOT_FOUND');
     }
   });
 

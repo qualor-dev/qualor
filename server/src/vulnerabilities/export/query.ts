@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { listAllDependencies, type DependencyTarget } from '../../dependencies/query';
 import type { Executor } from '../../db/client';
-import { branches, projectVersions } from '../../db/schema';
+import { branches, projectVersions, vulnerabilityTargetChecks } from '../../db/schema';
 import { notFound } from '../../http/problem';
 import { decisionsOf } from '../list';
 import { purlOf } from '../purl';
@@ -161,4 +161,18 @@ export async function vexEntries(
     (a, b) =>
       compare(a.vulnerabilityId, b.vulnerabilityId) || compare(a.packageName, b.packageName),
   );
+}
+
+/** Whether the target has had a vulnerability check (an untracked version keeps its row). */
+export async function targetChecked(db: Executor, target: DependencyTarget): Promise<boolean> {
+  const [row] = await db
+    .select({ projectId: vulnerabilityTargetChecks.projectId })
+    .from(vulnerabilityTargetChecks)
+    .where(
+      target.kind === 'branch'
+        ? eq(vulnerabilityTargetChecks.branchId, target.branchId)
+        : eq(vulnerabilityTargetChecks.versionId, target.versionId),
+    )
+    .limit(1);
+  return row !== undefined;
 }
