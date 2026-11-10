@@ -19,6 +19,8 @@ import {
   complianceReports,
   organizations,
   projects,
+  projectVersions,
+  vulnerabilityTargetChecks,
   type ComplianceReportScope,
 } from '../db/schema';
 import { conflict, notFound, ProblemError, validationFailed } from '../http/problem';
@@ -28,6 +30,7 @@ import type {
   PluginCompliance,
 } from '../plugins/contract';
 import { projectForUser } from '../projects/access';
+import { monitoringOn } from '../vulnerabilities/targets';
 import { collectCompliance, ComplianceCollectError } from './collect';
 import { cut } from './text';
 
@@ -59,6 +62,8 @@ const REPORT = {
   projectName: projects.name,
   branchId: branches.id,
   branchName: branches.name,
+  versionId: projectVersions.id,
+  versionLabel: projectVersions.label,
   createdByName: complianceReports.createdByName,
   createdAt: complianceReports.createdAt,
   completedAt: complianceReports.completedAt,
@@ -81,6 +86,8 @@ type ReportRow = {
   projectName: string | null;
   branchId: string | null;
   branchName: string | null;
+  versionId: string | null;
+  versionLabel: string | null;
   createdByName: string;
   createdAt: Date;
   completedAt: Date | null;
@@ -101,6 +108,7 @@ function rowView(row: ReportRow, canDelete: boolean): ComplianceReportView {
         ? null
         : { id: row.projectId, key: row.projectKey ?? '', name: row.projectName ?? '' },
     branch: row.branchId === null ? null : { id: row.branchId, name: row.branchName ?? '' },
+    version: row.versionId === null ? null : { id: row.versionId, label: row.versionLabel ?? '' },
     status: row.status,
     createdBy: row.createdByName,
     createdAt: row.createdAt.toISOString(),
@@ -164,6 +172,7 @@ export function createComplianceService(deps: {
       .innerJoin(organizations, eq(organizations.id, complianceReports.organizationId))
       .leftJoin(projects, eq(projects.id, complianceReports.projectId))
       .leftJoin(branches, eq(branches.id, complianceReports.branchId))
+      .leftJoin(projectVersions, eq(projectVersions.id, complianceReports.versionId))
       .where(where);
 
   /** Whether the caller holds org.compliance.manage (and the token scope) on the organisation. */
@@ -233,6 +242,34 @@ export function createComplianceService(deps: {
     return branch;
   };
 
+  /**
+   * The version a project report is built for (plan 5, V12), checked in order: it belongs to the
+   * project (404), monitoring is on for the project and the instance (409 MONITORING_OFF), and it
+   * has been checked for vulnerabilities (409 NOT_CHECKED).
+   */
+  const reportVersion = async (
+    projectId: string,
+    versionId: unknown,
+  ): Promise<{ id: string; label: string }> => {
+    if (typeof versionId !== 'string' || !UUID.test(versionId)) throw notFound('Version');
+    const [version] = await db
+      .select({ id: projectVersions.id, label: projectVersions.label })
+      .from(projectVersions)
+      .where(and(eq(projectVersions.id, versionId), eq(projectVersions.projectId, projectId)));
+    if (!version) throw notFound('Version');
+    if (!(await monitoringOn(db, projectId))) {
+      throw conflict('MONITORING_OFF', 'Vulnerability monitoring is off for this project');
+    }
+    const [checked] = await db
+      .select({ projectId: vulnerabilityTargetChecks.projectId })
+      .from(vulnerabilityTargetChecks)
+      .where(eq(vulnerabilityTargetChecks.versionId, version.id));
+    if (!checked) {
+      throw conflict('NOT_CHECKED', 'This version has not been checked for vulnerabilities yet');
+    }
+    return version;
+  };
+
   const create: PluginCompliance['create'] = async (request, input, standards) => {
     gate();
     const principal = requireUser(request);
@@ -240,10 +277,12 @@ export function createComplianceService(deps: {
       organizationId: string;
       projectId: string;
       branchId: string;
+      versionId: string;
     }>;
     let organizationId: string;
     let projectId: string | null = null;
     let branch: { id: string; name: string } | null = null;
+    let version: { id: string; label: string } | null = null;
     if (typeof target.projectId === 'string') {
       const project = await projectForUser(
         access,
@@ -253,7 +292,16 @@ export function createComplianceService(deps: {
       );
       organizationId = project.organizationId;
       projectId = project.id;
-      branch = await reportBranch(project.id, target.branchId);
+      if (target.branchId !== undefined && target.versionId !== undefined) {
+        throw validationFailed([
+          { path: 'body.versionId', message: 'Give a branch or a version, not both' },
+        ]);
+      }
+      if (target.versionId !== undefined) {
+        version = await reportVersion(project.id, target.versionId);
+      } else {
+        branch = await reportBranch(project.id, target.branchId);
+      }
     } else {
       if (typeof target.organizationId !== 'string') throw notFound('Organization');
       const org = await requireOrganizationAccess(
@@ -277,6 +325,7 @@ export function createComplianceService(deps: {
           organizationId,
           projectId,
           branchId: branch?.id ?? null,
+          versionId: version?.id ?? null,
           scope,
           status: 'pending',
           createdBy: user.id,
@@ -293,7 +342,11 @@ export function createComplianceService(deps: {
           {
             action: 'compliance.report.created',
             ...references(created),
-            details: { scope, branch: branch?.name ?? null },
+            details: {
+              scope,
+              branch: branch?.name ?? null,
+              ...(version === null ? {} : { version: { id: version.id, label: version.label } }),
+            },
           },
         ]);
         return created;

@@ -31,6 +31,12 @@ export interface ComplianceBranch {
   isMain: boolean;
 }
 
+/** A version a project report can be made of (its dependencies only). */
+export interface ComplianceVersion {
+  id: string;
+  label: string;
+}
+
 const REPORTS = '/api/v0/ee/compliance/reports';
 /** 4E-1 §4: a pending report is read again every 3 s until it is ready or failed. */
 const POLL_MS = 3_000;
@@ -54,7 +60,7 @@ const STANDARD_TITLES: Readonly<Record<string, string>> = {
 /**
  * Compliance reports (4E-1 §4), of a project (its Compliance tab) or of an organisation (Settings →
  * Compliance reports): the list, newest first, polled every 3 s while a report is being built;
- * **Create report** for those who may (a branch to choose for a project); a ready report's JSON,
+ * **Create report** for those who may (a branch or a version to choose for a project); a ready report's JSON,
  * CSV and PDF as plain download links, as the audit log exports; its sha256 to copy; Delete when
  * the server says the caller may; and a ready report's summary, by standard. The pages around it
  * check the licence; the server decides every action.
@@ -73,6 +79,7 @@ export class ComplianceReportsComponent {
   readonly scope = input.required<ComplianceScope>();
   readonly canCreate = input(false);
   readonly branches = input<ComplianceBranch[]>([]);
+  readonly versions = input<ComplianceVersion[]>([]);
 
   protected readonly list = resource({
     params: () => this.scope(),
@@ -98,10 +105,14 @@ export class ComplianceReportsComponent {
   });
   protected readonly projectScope = computed(() => 'projectId' in this.scope());
 
-  /** The branch a new project report is made of: the main branch until another is chosen. */
-  protected readonly branchId = linkedSignal(() => {
+  /**
+   * What a new project report is made of, as `branch:<id>` or `version:<id>`: the main branch
+   * until another target is chosen.
+   */
+  protected readonly target = linkedSignal(() => {
     const all = this.branches();
-    return (all.find((b) => b.isMain) ?? all[0])?.id ?? '';
+    const branch = all.find((b) => b.isMain) ?? all[0];
+    return branch ? `branch:${branch.id}` : '';
   });
   protected readonly creating = signal(false);
   protected readonly createError = signal<string | null>(null);
@@ -208,17 +219,21 @@ export class ComplianceReportsComponent {
     );
   }
 
-  protected setBranch(event: Event): void {
-    this.branchId.set(inputValue(event));
+  protected setTarget(event: Event): void {
+    this.target.set(inputValue(event));
   }
 
   protected async create(): Promise<void> {
     if (this.creating()) return;
     const scope = this.scope();
-    const branchId = this.branchId();
+    const [kind, targetId] = this.target().split(':');
     const body =
       'projectId' in scope
-        ? { projectId: scope.projectId, ...(branchId ? { branchId } : {}) }
+        ? {
+            projectId: scope.projectId,
+            ...(targetId && kind === 'branch' ? { branchId: targetId } : {}),
+            ...(targetId && kind === 'version' ? { versionId: targetId } : {}),
+          }
         : { organizationId: scope.organizationId };
     this.creating.set(true);
     this.createError.set(null);
@@ -247,6 +262,12 @@ export class ComplianceReportsComponent {
     }
     if (err instanceof ApiError && err.code === 'NO_ANALYSIS') {
       return $localize`:@@compliance.noAnalysis:This branch has no successful analysis yet. Analyze it first, then create the report.`;
+    }
+    if (err instanceof ApiError && err.code === 'MONITORING_OFF') {
+      return $localize`:@@compliance.monitoringOff:Vulnerability monitoring is off for this project`;
+    }
+    if (err instanceof ApiError && err.code === 'NOT_CHECKED') {
+      return $localize`:@@compliance.notChecked:This version has not been checked for vulnerabilities yet`;
     }
     return problemMessage(err);
   }

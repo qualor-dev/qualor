@@ -5,10 +5,23 @@
     <div class="compliance-create">
       @if (projectScope()) {
         <div class="field">
-          <label for="compliance-branch" i18n="@@compliance.branch">Branch</label>
-          <select id="compliance-branch" (change)="setBranch($event)">
-            @for (b of branches(); track b.id) {
-              <option [value]="b.id" [selected]="branchId() === b.id">{{ b.name }}</option>
+          <label for="compliance-target" i18n="@@compliance.target">Target</label>
+          <select id="compliance-target" (change)="setTarget($event)">
+            <optgroup label="Branches" i18n-label="@@compliance.target.branches">
+              @for (b of branches(); track b.id) {
+                <option [value]="'branch:' + b.id" [selected]="target() === 'branch:' + b.id">
+                  {{ b.name }}
+                </option>
+              }
+            </optgroup>
+            @if (versions().length > 0) {
+              <optgroup label="Versions" i18n-label="@@compliance.target.versions">
+                @for (v of versions(); track v.id) {
+                  <option [value]="'version:' + v.id" [selected]="target() === 'version:' + v.id">
+                    {{ v.label }}
+                  </option>
+                }
+              </optgroup>
             }
           </select>
         </div>
@@ -64,7 +77,7 @@
               <th scope="col" i18n="@@compliance.col.created">Created</th>
               <th scope="col" i18n="@@compliance.col.by">By</th>
               @if (projectScope()) {
-                <th scope="col" i18n="@@compliance.col.branch">Branch</th>
+                <th scope="col" i18n="@@compliance.col.target">Target</th>
               }
               <th scope="col" i18n="@@compliance.col.status">Status</th>
               <th scope="col" class="num" i18n="@@compliance.col.findings">Findings</th>
@@ -81,7 +94,7 @@
                 <td class="nowrap">{{ r.createdAt | dateTime }}</td>
                 <td>{{ r.createdBy }}</td>
                 @if (projectScope()) {
-                  <td>{{ r.branch?.name }}</td>
+                  <td>{{ r.branch?.name ?? r.version?.label }}</td>
                 }
                 <td>
                   @switch (r.status) {

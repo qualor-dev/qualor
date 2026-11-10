@@ -8,6 +8,7 @@ import {
   measures,
   organizations,
   projects,
+  projectVersions,
 } from '../db/schema';
 import { effectiveDecisionJoin, type VexJustification } from '../vulnerabilities/decisions';
 import { projectTargets } from '../vulnerabilities/targets';
@@ -176,6 +177,7 @@ export async function collectCompliance(
           organizationId: complianceReports.organizationId,
           projectId: complianceReports.projectId,
           branchId: complianceReports.branchId,
+          versionId: complianceReports.versionId,
           createdByName: complianceReports.createdByName,
           now: sql<Date>`now()`,
         })
@@ -210,6 +212,23 @@ export async function collectCompliance(
       const projectIds = scopeProjects.map((p) => p.id);
       // The branches the server still monitors: the rows of any other are frozen (recheck R17).
       const monitoring = (await readVulndbSettings(tx)).enabled;
+      if (report.versionId !== null) {
+        const project = scopeProjects[0];
+        if (!project) throw new ComplianceCollectError('the report no longer exists');
+        if (!monitoring) {
+          throw new ComplianceCollectError('vulnerability monitoring is off on this server');
+        }
+        return versionSource(tx, {
+          versionId: report.versionId,
+          org,
+          project,
+          generatedAt: isoReq(report.now),
+          createdBy: report.createdByName,
+          limit: options.limit,
+          priority,
+          signal: options.signal,
+        });
+      }
       const trackedBranchIds = monitoring
         ? [...(await projectTargets(tx, projectIds)).values()].flatMap((targets) =>
             targets.flatMap((target) => (target.kind === 'branch' ? [target.branchId] : [])),
@@ -433,6 +452,7 @@ export async function collectCompliance(
           organization: org,
           project: single,
           branch: singleBranch ? { id: singleBranch.id, name: singleBranch.name } : null,
+          version: null,
         },
         projects: projectsOut,
         groups,
@@ -544,5 +564,279 @@ async function projectSource(
       security_issues: valueOf(a.id, 'security_issues'),
       security_rating: valueOf(a.id, 'security_rating'),
     })),
+  };
+}
+
+/** A vulnerability severity as the report's: critical is a blocker, unknown is medium. */
+const REPORT_SEVERITY: Record<string, ComplianceFindingRow['severity']> = {
+  critical: 'blocker',
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+  unknown: 'medium',
+};
+const severityOf = (s: string): ComplianceFindingRow['severity'] => REPORT_SEVERITY[s] ?? 'medium';
+
+/** The facts of a vulnerability row as the report shows them; KEV and EPSS only with priority. */
+function rowVulnerability(
+  row: {
+    vulnerability_id: string;
+    package_name: string;
+    fixed_version: string | null;
+    kev: boolean;
+    kev_date_added: string | null;
+    epss_score: number | null;
+    epss_percentile: number | null;
+  },
+  priority: boolean,
+): ComplianceVulnerability {
+  return {
+    id: row.vulnerability_id,
+    packageName: row.package_name,
+    fixedVersions: row.fixed_version === null ? [] : [row.fixed_version],
+    kev: priority && row.kev && row.kev_date_added ? { dateAdded: row.kev_date_added } : null,
+    epss:
+      priority && row.epss_score !== null && row.epss_percentile !== null
+        ? { score: row.epss_score, percentile: row.epss_percentile }
+        : null,
+  };
+}
+
+/**
+ * The source of the report of a version (plan 5, V12): it holds the version's dependencies only. A
+ * version has no code analysis, so the project entry has its analysis and no branch, gate or
+ * trend, and the findings, the triage and the group counts come from the version's rows
+ * (`scopedRows`): a finding is a row, and its status is the effective decision's. Ignored rows are
+ * left out. A vulnerability that has a Trivy rule takes its key and its CWE; any other takes the
+ * vulnerability id as the key, with no CWE.
+ */
+async function versionSource(
+  tx: Executor,
+  input: {
+    versionId: string;
+    org: { id: string; key: string; name: string };
+    project: { id: string; key: string; name: string };
+    generatedAt: string;
+    createdBy: string;
+    limit: number;
+    priority: boolean;
+    signal: AbortSignal | undefined;
+  },
+): Promise<ComplianceSource> {
+  const { project, priority, signal } = input;
+  const [version] = await tx
+    .select({
+      id: projectVersions.id,
+      label: projectVersions.label,
+      analysisId: projectVersions.analysisId,
+    })
+    .from(projectVersions)
+    .where(and(eq(projectVersions.id, input.versionId), eq(projectVersions.projectId, project.id)));
+  if (!version) throw new ComplianceCollectError('the version no longer exists');
+  const [analysis] =
+    version.analysisId === null
+      ? []
+      : await tx
+          .select({
+            id: analyses.id,
+            date: analyses.analysisDate,
+            revision: analyses.revision,
+            versionLabel: analyses.versionLabel,
+          })
+          .from(analyses)
+          .where(eq(analyses.id, version.analysisId));
+  abortCheck(signal);
+
+  const rows = scopedRows(sql`tv.version_id = ${version.id}`);
+  const groupRows = (
+    await tx.execute<{
+      status: string;
+      vulnerability_id: string;
+      severity: string;
+      count: number;
+      oldest: Date;
+    }>(sql`
+      SELECT r.eff_status AS status, r.vulnerability_id, r.severity, count(*)::int AS count,
+             min(r.first_seen_at) AS oldest
+        FROM (${rows}) r
+       WHERE NOT r.ignored AND r.eff_status IN ('open','false_positive','wont_fix')
+       GROUP BY r.eff_status, r.vulnerability_id, r.severity`)
+  ).rows;
+  abortCheck(signal);
+
+  // The Trivy rule of each vulnerability id, in one query (the rule's engine rule id is the id).
+  const ids = [...new Set(groupRows.map((g) => g.vulnerability_id))];
+  const ruleRows =
+    ids.length === 0
+      ? []
+      : (
+          await tx.execute<{ key: string; engine_rule_id: string; cwe: number[] | null }>(sql`
+            SELECT key, engine_rule_id, cwe FROM rules
+             WHERE engine_id = 'trivy' AND engine_rule_id = ANY(${sql.param(ids)}::text[])`)
+        ).rows;
+  const ruleOf = new Map(
+    ruleRows.map((r) => [
+      r.engine_rule_id,
+      {
+        key: r.key,
+        cwe: [...effectiveCwe({ key: r.key, engineId: 'trivy', cwe: r.cwe ?? [] })].sort(
+          (a, b) => a - b,
+        ),
+      },
+    ]),
+  );
+  const keyOf = (id: string) => ruleOf.get(id)?.key ?? id;
+  const cweOf = (id: string) => ruleOf.get(id)?.cwe ?? [];
+
+  // Unknown counts as medium, so two severities can share a group.
+  const merged = new Map<string, ComplianceFindingGroup>();
+  for (const g of groupRows) {
+    const severity = severityOf(g.severity);
+    const rule = keyOf(g.vulnerability_id);
+    const key = [g.status, rule, severity].join('\u0000');
+    const oldest = isoReq(g.oldest);
+    const have = merged.get(key);
+    if (have) {
+      have.count += g.count;
+      if (oldest < have.oldestFirstSeenAt) have.oldestFirstSeenAt = oldest;
+    } else {
+      merged.set(key, {
+        status: g.status as ComplianceFindingGroup['status'],
+        section: 'dependency',
+        rule,
+        severity,
+        kind: 'issue',
+        inNewCode: false,
+        cwe: cweOf(g.vulnerability_id),
+        count: g.count,
+        oldestFirstSeenAt: oldest,
+      });
+    }
+  }
+  const groups = [...merged.values()].sort((a, b) =>
+    (a.status + a.rule + a.severity).localeCompare(b.status + b.rule + b.severity),
+  );
+  abortCheck(signal);
+
+  const rank = sql`CASE r.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2
+    WHEN 'unknown' THEN 2 ELSE 3 END`;
+  const findingRows = (
+    await tx.execute<{
+      row_id: string;
+      package_name: string;
+      package_version: string;
+      vulnerability_id: string;
+      severity: string;
+      title: string | null;
+      fixed_version: string | null;
+      first_seen_at: Date;
+      kev: boolean;
+      kev_date_added: string | null;
+      epss_score: number | null;
+      epss_percentile: number | null;
+    }>(sql`
+      SELECT r.row_id, r.package_name, r.package_version, r.vulnerability_id, r.severity, r.title,
+             r.fixed_version, r.first_seen_at, r.kev, r.kev_date_added, r.epss_score,
+             r.epss_percentile
+        FROM (${rows}) r
+       WHERE NOT r.ignored AND r.eff_status = 'open'
+       ORDER BY ${rank}, r.vulnerability_id, r.package_name, r.package_version, r.row_id
+       LIMIT ${input.limit + 1}`)
+  ).rows;
+  const findings: ComplianceFindingRow[] = findingRows.map((f) => ({
+    id: f.row_id,
+    project: project.key,
+    path: null,
+    line: null,
+    rule: keyOf(f.vulnerability_id),
+    ruleName: f.title ?? f.vulnerability_id,
+    engine: 'trivy',
+    severity: severityOf(f.severity),
+    kind: 'issue',
+    cwe: cweOf(f.vulnerability_id),
+    message: `${f.package_name} ${f.package_version}: ${f.title ?? f.vulnerability_id}`,
+    inNewCode: false,
+    firstSeenAt: isoReq(f.first_seen_at),
+    section: 'dependency',
+    vulnerability: rowVulnerability(f, priority),
+  }));
+  abortCheck(signal);
+
+  const triageRows = (
+    await tx.execute<{
+      row_id: string;
+      package_name: string;
+      vulnerability_id: string;
+      severity: string;
+      status: string;
+      fixed_version: string | null;
+      kev: boolean;
+      kev_date_added: string | null;
+      epss_score: number | null;
+      epss_percentile: number | null;
+      reason: string | null;
+      comment: string | null;
+      decided_at: Date | null;
+      by: string | null;
+    }>(sql`
+      SELECT r.row_id, r.package_name, r.vulnerability_id, r.severity, r.eff_status AS status,
+             r.fixed_version, r.kev, r.kev_date_added, r.epss_score, r.epss_percentile,
+             d.reason, d.comment, d.decided_at, coalesce(u.display_name, u.username) AS by
+        FROM (${rows}) r
+        LEFT JOIN vulnerability_decisions d ON d.id = r.d_id
+        LEFT JOIN users u ON u.id = d.decided_by
+       WHERE NOT r.ignored AND r.eff_status IN ('false_positive','wont_fix')
+       ORDER BY d.decided_at DESC NULLS LAST, r.vulnerability_id, r.package_name, r.row_id
+       LIMIT ${input.limit + 1}`)
+  ).rows;
+  const triage: ComplianceTriageRow[] = triageRows.map((t) => ({
+    id: t.row_id,
+    project: project.key,
+    path: null,
+    line: null,
+    rule: keyOf(t.vulnerability_id),
+    severity: severityOf(t.severity),
+    cwe: cweOf(t.vulnerability_id),
+    status: t.status as ComplianceTriageRow['status'],
+    section: 'dependency',
+    by: t.by,
+    at: iso(t.decided_at),
+    comment: cut(t.comment, TRIAGE_COMMENT_MAX),
+    reason: t.reason as VexJustification | null,
+    vulnerability: rowVulnerability(t, priority),
+  }));
+  abortCheck(signal);
+  const datasets = await datasetsOf(tx, { enabled: true, priority });
+
+  return {
+    generatedAt: input.generatedAt,
+    createdBy: input.createdBy,
+    scope: {
+      kind: 'project',
+      organization: input.org,
+      project,
+      branch: null,
+      version: { id: version.id, label: version.label },
+    },
+    projects: [
+      {
+        ...project,
+        branch: null,
+        analysis: analysis
+          ? {
+              id: analysis.id,
+              date: iso(analysis.date),
+              revision: analysis.revision,
+              versionLabel: analysis.versionLabel,
+            }
+          : null,
+        gate: null,
+        trend: [],
+      },
+    ],
+    groups,
+    findings,
+    triage,
+    datasets,
   };
 }

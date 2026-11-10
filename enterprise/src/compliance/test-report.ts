@@ -50,6 +50,7 @@ export function sampleReport(): ReportJson {
       organization: { id: 'org-1', name: 'Acme' },
       project: { id: 'p-1', key: 'alpha', name: 'Alpha' },
       branch: { id: 'b-1', name: 'main' },
+      version: null,
     },
     standards: [
       {
@@ -222,4 +223,13 @@ export function sampleReportV1(): unknown {
     findings: report.findings.map((f) => strip(f, ['vulnerability'])),
     triage: report.triage.map((t) => strip(t, ['reason', 'vulnerability'])),
   };
+}
+
+/** A report of the version 2.0.0: no branch, no code analysis, dependencies only. */
+export function versionReport(): ReportJson {
+  const report = dependencyReport();
+  report.scope.branch = null;
+  report.scope.version = { id: 'v-1', label: '2.0.0' };
+  report.projects = report.projects.map((p) => ({ ...p, branch: null, gate: null, trend: [] }));
+  return report;
 }

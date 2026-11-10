@@ -10,7 +10,7 @@ import { defaultFontsDir } from '../pdf/fonts';
 import { RenderTimeoutError } from '../pdf/layout';
 import { PDF_FINDINGS_MAX, renderPdf } from './pdf';
 import { parseCanonical } from './assemble';
-import { dependencyReport, sampleReport, sampleReportV1 } from './test-report';
+import { dependencyReport, sampleReport, sampleReportV1, versionReport } from './test-report';
 
 async function textOf(pdf: Buffer): Promise<string> {
   const doc = await getDocument({ data: new Uint8Array(pdf), useSystemFonts: false }).promise;
@@ -40,6 +40,15 @@ describe('renderPdf (4E-1 §2.5)', () => {
     const raw = pdf.toString('latin1');
     expect(raw).not.toContain('Helvetica');
     expect(raw.match(/\/BaseFont \/[A-Z]{6}\+NotoSans-(Regular|Bold)/g)?.length).toBeGreaterThan(0);
+  });
+
+  it('says on the cover that a version report holds its dependencies only', async () => {
+    const text = (await textOf(await renderPdf(versionReport()))).replace(/\s+/g, ' ');
+    expect(text).toContain(
+      'Version 2.0.0. A version has no code analysis, so this report holds its dependencies only.',
+    );
+    expect(text).not.toContain('branch main');
+    expect(await textOf(await renderPdf(sampleReport()))).not.toContain('A version has no code');
   });
 
   it('lists the dataset dates on the cover', async () => {

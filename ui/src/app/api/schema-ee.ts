@@ -2944,6 +2944,10 @@ export interface paths {
                                     id: string;
                                     name: string;
                                 } | null;
+                                version: {
+                                    id: string;
+                                    label: string;
+                                } | null;
                                 /** @enum {string} */
                                 status: "pending" | "ready" | "failed";
                                 createdBy: string;
@@ -3064,7 +3068,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** Create a compliance report of an organisation (org.compliance.manage) or of a project branch (project.compliance.create); it is built in the background */
+        /** Create a compliance report of an organisation (org.compliance.manage) or of a project branch or version (project.compliance.create); it is built in the background */
         post: {
             parameters: {
                 query?: never;
@@ -3082,6 +3086,11 @@ export interface paths {
                         projectId: string;
                         /** Format: uuid */
                         branchId?: string;
+                    } | {
+                        /** Format: uuid */
+                        projectId: string;
+                        /** Format: uuid */
+                        versionId: string;
                     };
                 };
             };
@@ -3109,6 +3118,10 @@ export interface paths {
                             branch: {
                                 id: string;
                                 name: string;
+                            } | null;
+                            version: {
+                                id: string;
+                                label: string;
                             } | null;
                             /** @enum {string} */
                             status: "pending" | "ready" | "failed";
@@ -3207,7 +3220,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description The organisation, the project or the branch is not visible to the caller */
+                /** @description The organisation, the project, the branch or the version is not visible to the caller */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -3216,7 +3229,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description REPORT_PENDING (a report for this scope is being built); NO_ANALYSIS (the branch has no successful analysis); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed; an administrator must restore it */
+                /** @description REPORT_PENDING (a report for this scope is being built); NO_ANALYSIS (the branch has no successful analysis); MONITORING_OFF (vulnerability monitoring is off for the project); NOT_CHECKED (the version has not been checked for vulnerabilities yet); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed; an administrator must restore it */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -3284,6 +3297,10 @@ export interface paths {
                             branch: {
                                 id: string;
                                 name: string;
+                            } | null;
+                            version: {
+                                id: string;
+                                label: string;
                             } | null;
                             /** @enum {string} */
                             status: "pending" | "ready" | "failed";

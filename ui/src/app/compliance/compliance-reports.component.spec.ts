@@ -23,6 +23,11 @@ const BRANCHES = [
   { id: '0190a6c2-0000-7000-8000-0000000000b1', name: 'main', isMain: true },
 ];
 
+const VERSIONS = [
+  { id: '0190a6c2-0000-7000-8000-0000000000a2', label: '2.0.0' },
+  { id: '0190a6c2-0000-7000-8000-0000000000a1', label: '1.0.0' },
+];
+
 /** The name `aria-labelledby` gives `el`: the texts of the elements it names, in order. */
 function labelOf(root: HTMLElement, el: Element | null | undefined): string {
   const ids = el?.getAttribute('aria-labelledby')?.split(/\s+/) ?? [];
@@ -74,6 +79,7 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
     fixture.componentRef.setInput('scope', options.scope ?? { projectId: PROJECT });
     fixture.componentRef.setInput('canCreate', options.canCreate ?? false);
     fixture.componentRef.setInput('branches', BRANCHES);
+    fixture.componentRef.setInput('versions', VERSIONS);
     await flush();
     return { fixture, root: fixture.nativeElement as HTMLElement };
   }
@@ -169,12 +175,21 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
     });
     TestBed.inject(SessionStore).set(me());
     ({ root } = await render({ canCreate: true }));
-    const select = root.querySelector<HTMLSelectElement>('#compliance-branch');
+    const select = root.querySelector<HTMLSelectElement>('#compliance-target');
+    expect(root.querySelector('label[for="compliance-target"]')?.textContent?.trim()).toBe(
+      'Target',
+    );
     expect([...(select?.options ?? [])].map((o) => o.textContent?.trim())).toEqual([
       'develop',
       'main',
+      '2.0.0',
+      '1.0.0',
     ]);
-    expect(select?.value).toBe(BRANCHES[1]!.id);
+    expect([...(select?.querySelectorAll('optgroup') ?? [])].map((g) => g.label)).toEqual([
+      'Branches',
+      'Versions',
+    ]);
+    expect(select?.selectedOptions[0]?.textContent?.trim()).toBe('main');
 
     button(root, 'Create report').click();
     await flush();
@@ -193,6 +208,43 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
       'This branch has no successful analysis yet. Analyze it first, then create the report.',
     );
     expect(rows(root)).toHaveLength(2);
+  });
+
+  it('creates the report of a chosen version, and shows its label in the list', async () => {
+    FakeCompliance.install(server, [complianceReport({ id: OLD })]);
+    const { fixture, root } = await render({ canCreate: true });
+    const select = root.querySelector<HTMLSelectElement>('#compliance-target')!;
+    select.selectedIndex = [...select.options].findIndex((o) => o.textContent?.trim() === '1.0.0');
+    select.dispatchEvent(new Event('change'));
+    await flush();
+    button(root, 'Create report').click();
+    await flush();
+    expect(server.requestsTo('POST', REPORTS).map((r) => r.body)).toEqual([
+      { projectId: PROJECT, versionId: VERSIONS[1]!.id },
+    ]);
+    const [created, old] = rows(root);
+    expect(created?.textContent).toContain('1.0.0');
+    expect(old?.textContent).toContain('main');
+    expect(fixture.componentInstance).toBeTruthy();
+  });
+
+  it('says why a version cannot be reported', async () => {
+    FakeCompliance.install(server, []);
+    const { root } = await render({ canCreate: true });
+    const select = root.querySelector<HTMLSelectElement>('#compliance-target')!;
+    select.selectedIndex = [...select.options].findIndex((o) => o.textContent?.trim() === '2.0.0');
+    select.dispatchEvent(new Event('change'));
+    await flush();
+    const alert = () =>
+      root.querySelector('.compliance-create [role="alert"]')?.textContent?.trim();
+    server.on('POST', REPORTS, { status: 409, body: problem(409, 'MONITORING_OFF') });
+    button(root, 'Create report').click();
+    await flush();
+    expect(alert()).toBe('Vulnerability monitoring is off for this project');
+    server.on('POST', REPORTS, { status: 409, body: problem(409, 'NOT_CHECKED') });
+    button(root, 'Create report').click();
+    await flush();
+    expect(alert()).toBe('This version has not been checked for vulnerabilities yet');
   });
 
   it('creates an organisation report with a single button', async () => {

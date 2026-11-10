@@ -310,6 +310,8 @@ export interface ComplianceReportView {
   organization: { id: string; key: string; name: string };
   project: { id: string; key: string; name: string } | null;
   branch: { id: string; name: string } | null;
+  /** The version a project report is of (its dependencies only); null for a branch report. */
+  version: { id: string; label: string } | null;
   status: ComplianceReportStatus;
   createdBy: string;
   createdAt: string;
@@ -324,7 +326,9 @@ export interface ComplianceReportView {
 }
 
 export type ComplianceCreateInput =
-  { organizationId: string } | { projectId: string; branchId?: string };
+  | { organizationId: string }
+  | { projectId: string; branchId?: string }
+  | { projectId: string; versionId: string };
 export type ComplianceListFilter = { organizationId: string } | { projectId: string };
 
 /**

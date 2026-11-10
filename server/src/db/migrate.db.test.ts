@@ -62,8 +62,9 @@ describe('runMigrations / pendingMigrations', () => {
     // its matches and the vulnerabilities of branches and versions), 0022_vulnerability_decisions
     // (0.15, the decisions on vulnerabilities and the checks of their targets),
     // 0023_vulnerability_priority (0.15, the KEV and EPSS tables), 0024_vulnerability_alerts (0.15, the watch flag, KEV
-    // delisting and the alert memory).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(25);
+    // delisting and the alert memory), 0025_compliance_versions (0.15, a version and an SBOM on a
+    // compliance report).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(26);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);

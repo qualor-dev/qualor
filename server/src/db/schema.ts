@@ -1511,6 +1511,7 @@ export const complianceReports = pgTable(
       .references(() => organizations.id, { onDelete: 'cascade' }),
     projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     branchId: uuid('branch_id').references(() => branches.id, { onDelete: 'set null' }),
+    versionId: uuid('version_id').references(() => projectVersions.id, { onDelete: 'set null' }),
     scope: text('scope').notNull().$type<ComplianceReportScope>(),
     status: text('status').notNull().default('pending').$type<ComplianceReportStatus>(),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -1523,6 +1524,9 @@ export const complianceReports = pgTable(
     sha256: char('sha256', { length: 64 }),
     sizeBytes: integer('size_bytes'),
     error: text('error'),
+    /** The CycloneDX SBOM of the target, gzipped (plan 5, V13); its hash is of the plain bytes. */
+    sbom: bytea('sbom'),
+    sbomSha256: char('sbom_sha256', { length: 64 }),
   },
   (t) => [
     index('compliance_reports_organization_idx').on(t.organizationId, t.id),
@@ -1532,6 +1536,9 @@ export const complianceReports = pgTable(
     index('compliance_reports_branch_idx')
       .on(t.branchId)
       .where(sql`branch_id IS NOT NULL`),
+    index('compliance_reports_version_idx')
+      .on(t.versionId)
+      .where(sql`version_id IS NOT NULL`),
     index('compliance_reports_created_by_idx')
       .on(t.createdBy)
       .where(sql`created_by IS NOT NULL`),
@@ -1542,6 +1549,8 @@ export const complianceReports = pgTable(
       'compliance_reports_scope_check',
       sql`(scope = 'project' AND project_id IS NOT NULL) OR (scope = 'organization' AND project_id IS NULL)`,
     ),
+    check('compliance_reports_target_check', sql`branch_id IS NULL OR version_id IS NULL`),
+    check('compliance_reports_sbom_check', sql`(sbom IS NULL) = (sbom_sha256 IS NULL)`),
     check('compliance_reports_status_check', sql`status IN ('pending','ready','failed')`),
     check(
       'compliance_reports_ready_check',

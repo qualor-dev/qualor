@@ -6,5 +6,10 @@
     Compliance reports need an enterprise licence with the compliance-export feature.
   </p>
 } @else if (licensed()) {
-  <q-compliance-reports [scope]="scope()" [canCreate]="canCreate()" [branches]="branches()" />
+  <q-compliance-reports
+    [scope]="scope()"
+    [canCreate]="canCreate()"
+    [branches]="branches()"
+    [versions]="versions()"
+  />
 }

@@ -29,6 +29,7 @@ const source = (over: Partial<ComplianceSource> = {}): ComplianceSource => ({
     organization: { id: 'o', key: 'acme', name: 'Acme' },
     project: { id: 'p', key: 'alpha', name: 'Alpha' },
     branch: { id: 'b', name: 'main' },
+    version: null,
   },
   projects: [
     {
@@ -324,6 +325,28 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
     expect(json.datasets.vulnerabilityDatabase).toEqual({ builtAt: null, digest: 'sha256:db' });
   });
 
+  it('writes the version after the branch, and null for a branch report', () => {
+    const version = { id: 'v', label: '2.0.0' };
+    const make = (scope: Partial<ComplianceSource['scope']>) =>
+      assembleReport({
+        id: 'r',
+        generatedBy: 'Ann',
+        serverVersion: '0.15.0',
+        source: source({ scope: { ...source().scope, ...scope } }),
+        standards: [STD],
+      }).json.scope;
+    const forVersion = make({ branch: null, version });
+    expect(Object.keys(forVersion)).toEqual([
+      'kind',
+      'organization',
+      'project',
+      'branch',
+      'version',
+    ]);
+    expect(forVersion).toMatchObject({ branch: null, version });
+    expect(make({}).version).toBeNull();
+  });
+
   it('reads schema 1 and 2 and refuses any other', () => {
     const a = assembleReport({
       id: 'r',
@@ -336,6 +359,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
     const v1 = parseCanonical(Buffer.from(JSON.stringify(sampleReportV1())));
     expect(v1.schemaVersion).toBe(1);
     expect(v1.datasets).toEqual({ vulnerabilityDatabase: null, kev: null, epss: null });
+    expect(v1.scope.version).toBeNull();
     expect(v1.findings.every((f) => f.vulnerability === null)).toBe(true);
     expect(v1.triage.every((t) => t.reason === null && t.vulnerability === null)).toBe(true);
     expect(() => parseCanonical(Buffer.from('{"schemaVersion":3}'))).toThrow(
@@ -376,7 +400,10 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
       id: 'r',
       generatedBy: 'Ann',
       serverVersion: '0.8.0',
-      source: source({ projects: richProjects(reversed) }),
+      source: source({
+        projects: richProjects(reversed),
+        scope: { ...source().scope, version: { label: '1.0', id: 'v' } },
+      }),
       standards: [STD],
     });
 
@@ -403,6 +430,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
         organization: { id: null, name: null },
         project: { id: null, key: null, name: null },
         branch: { id: null, name: null },
+        version: { id: null, label: null },
       },
       standards: [
         { id: null, version: null, title: null, source: null, licence: null, sourceSha256: null },

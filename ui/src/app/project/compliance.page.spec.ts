@@ -15,6 +15,7 @@ import { ProjectCompliancePage } from './compliance.page';
 const ID = '0190a6c2-0000-7000-8000-0000000000f1';
 const MAIN = '0190a6c2-0000-7000-8000-0000000000b1';
 const DEV = '0190a6c2-0000-7000-8000-0000000000b2';
+const VERSION = '0190a6c2-0000-7000-8000-0000000000a1';
 
 function branch(id: string, name: string, isMain: boolean) {
   return {
@@ -54,6 +55,9 @@ function setup(permissions: string[], features = ['compliance-export']): FakeSer
   server.on('GET', `/api/v0/projects/${ID}/branches`, {
     body: page([branch(DEV, 'develop', false), branch(MAIN, 'main', true)]),
   });
+  server.on('GET', `/api/v0/projects/${ID}/versions`, {
+    body: page([{ id: VERSION, label: '1.2.0', tracked: true }]),
+  });
   server.on('GET', '/api/v0/system/info', {
     body: { version: '0.8.0', edition: 'enterprise', features, extensions: [] },
   });
@@ -78,12 +82,15 @@ describe('ProjectCompliancePage (4E-1 §4)', () => {
     const root = await render();
     const branches = server.requestsTo('GET', `/api/v0/projects/${ID}/branches`);
     expect(branches[0]?.query.get('kind')).toBe('branch');
-    const select = root.querySelector<HTMLSelectElement>('#compliance-branch');
+    const versions = server.requestsTo('GET', `/api/v0/projects/${ID}/versions`);
+    expect(versions[0]?.query.get('limit')).toBe('100');
+    const select = root.querySelector<HTMLSelectElement>('#compliance-target');
     expect([...(select?.options ?? [])].map((o) => o.textContent?.trim())).toEqual([
       'develop',
       'main',
+      '1.2.0',
     ]);
-    expect(select?.value).toBe(MAIN);
+    expect(select?.selectedOptions[0]?.textContent?.trim()).toBe('main');
     expect(
       server.requestsTo('GET', '/api/v0/ee/compliance/reports')[0]?.query.get('projectId'),
     ).toBe(ID);

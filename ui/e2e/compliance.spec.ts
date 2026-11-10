@@ -21,7 +21,7 @@ test('a project admin creates a compliance report and downloads it in three form
     .getByRole('link', { name: 'Compliance' })
     .click();
   await expect(page).toHaveURL(/\/projects\/[^/]+\/compliance$/);
-  await expect(page.getByLabel('Branch')).toHaveValue(/.+/);
+  await expect(page.getByLabel('Target')).toHaveValue(/.+/);
   await page.getByRole('button', { name: 'Create report' }).click();
   // The badge, not the announcement ("… appears here as ready …").
   await expect(page.getByText('Ready', { exact: true })).toBeVisible({ timeout: 30_000 });

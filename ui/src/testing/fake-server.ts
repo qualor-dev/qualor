@@ -266,6 +266,7 @@ export function complianceReport(overrides: Partial<ComplianceReport> = {}): Com
     organization: { id: ORG_ID, key: 'default', name: 'Default' },
     project: { id: '0190a6c2-0000-7000-8000-0000000000f1', key: 'acme/x', name: 'X' },
     branch: { id: '0190a6c2-0000-7000-8000-0000000000b1', name: 'main' },
+    version: null,
     status: 'ready',
     createdBy: 'Alice',
     createdAt: '2026-10-12T10:00:00.000Z',
@@ -341,13 +342,19 @@ export class FakeCompliance {
       return { body: page(items) };
     });
     server.on('POST', COMPLIANCE, (r) => {
-      const body = r.body as { organizationId?: string; projectId?: string; branchId?: string };
+      const body = r.body as {
+        organizationId?: string;
+        projectId?: string;
+        branchId?: string;
+        versionId?: string;
+      };
       this.created++;
       const report = complianceReport({
         id: `0190a6c2-0000-7000-8000-${String(900 + this.created).padStart(12, '0')}`,
         scope: body.projectId ? 'project' : 'organization',
         project: body.projectId ? { id: body.projectId, key: 'acme/x', name: 'X' } : null,
         branch: body.branchId ? { id: body.branchId, name: 'main' } : null,
+        version: body.versionId ? { id: body.versionId, label: '1.0.0' } : null,
         status: 'pending',
         createdAt: new Date(Date.UTC(2026, 9, 13, 0, this.created)).toISOString(),
         completedAt: null,

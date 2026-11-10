@@ -27,7 +27,13 @@ import {
 } from '../../server/test/license';
 import { AFTER_GRACE, grantProject, LICENSE_EXPIRES } from '../../server/test/rbac';
 import { createAuditRecorder } from '../../server/src/audit/recorder';
-import { analyses, auditEvents, complianceReports } from '../../server/src/db/schema';
+import {
+  analyses,
+  auditEvents,
+  complianceReports,
+  projectVersions,
+} from '../../server/src/db/schema';
+import { seedCheck, seedTargetRow } from '../../server/test/vulnerabilities';
 import { createEdition, type Edition } from '../../server/src/license/edition';
 import { licenseState } from '../../server/src/license/state';
 import { verifyLicenseKey } from '../../server/src/license/verify';
@@ -108,10 +114,13 @@ type View = {
   sha256: string | null;
   error: string | null;
   canDelete: boolean;
-  summary: { findings: { total: number } } | null;
+  summary: { findings: { total: number }; dependencies: { open: number } } | null;
+  branch: unknown;
+  version: unknown;
 };
 type Report = {
   id: string;
+  scope: { branch: unknown; version: unknown };
   projects: { key: string; analysis: unknown }[];
   findings: unknown[];
   triage: unknown[];
@@ -343,6 +352,12 @@ describe('Qualor Enterprise: compliance exports through the built plugin (4E-1 Â
       { organizationId: orgA, projectId: alpha.id },
       { organizationId: 'not-a-uuid' },
       { projectId: alpha.id, branchId: 'main' },
+      { projectId: alpha.id, versionId: 'v1' },
+      {
+        projectId: alpha.id,
+        branchId: '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f',
+        versionId: '3c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f',
+      },
     ]) {
       const res = await create(admin, body);
       expect(res.statusCode, JSON.stringify(body)).toBe(422);
@@ -402,6 +417,52 @@ describe('Qualor Enterprise: compliance exports through the built plugin (4E-1 Â
     expect(refused.statusCode).toBe(403);
     expect(refused.json()).toMatchObject({ code: 'INSUFFICIENT_SCOPE' });
     expect((await call(token, 'GET', `${REPORTS}/${orgReport}`)).statusCode).toBe(200);
+  });
+
+  it('builds the report of a version end to end, with its dependencies only', async () => {
+    const root = sessions['root']!;
+    const [version] = await ctx.db
+      .insert(projectVersions)
+      .values({ projectId: alpha.id, label: '3.1.0', source: 'label', analyzedAt: new Date() })
+      .returning({ id: projectVersions.id });
+    const versionId = version!.id;
+    const unchecked = await create(root, { projectId: alpha.id, versionId });
+    expect(unchecked.statusCode).toBe(409);
+    expect(unchecked.json()).toMatchObject({ code: 'NOT_CHECKED' });
+    await seedCheck(ctx.db, { projectId: alpha.id, versionId, baselineAt: new Date() });
+    await seedTargetRow(ctx.db, {
+      projectId: alpha.id,
+      versionId,
+      packageName: 'lodash',
+      packageVersion: '4.17.20',
+      vulnerabilityId: 'CVE-2026-0101',
+      severity: 'critical',
+      title: 'Prototype pollution',
+      fixedVersion: '4.17.21',
+    });
+    const view = await ready(root, { projectId: alpha.id, versionId });
+    expect(view).toMatchObject({ branch: null, version: { id: versionId, label: '3.1.0' } });
+    expect(view.summary?.findings.total).toBe(1);
+    expect(view.summary?.dependencies.open).toBe(1);
+    const report = JSON.parse((await download(root, view.id, 'json')).body) as Report;
+    expect(report.scope).toMatchObject({
+      branch: null,
+      version: { id: versionId, label: '3.1.0' },
+    });
+    expect(report.findings).toEqual([
+      expect.objectContaining({
+        section: 'dependency',
+        path: null,
+        severity: 'blocker',
+        message: 'lodash 4.17.20: Prototype pollution',
+        vulnerability: expect.objectContaining({ fixedVersions: ['4.17.21'] }),
+      }),
+    ]);
+    expect((await download(root, view.id, 'csv')).statusCode).toBe(200);
+    expect((await download(root, view.id, 'pdf')).statusCode).toBe(200);
+    expect(await auditOf('compliance.report.created', view.id)).toEqual([
+      { details: { scope: 'project', branch: null, version: { id: versionId, label: '3.1.0' } } },
+    ]);
   });
 
   it('builds an organisation without projects, and lists a never-analysed project (Review Focus 1)', async () => {

@@ -4,16 +4,19 @@ import { problemMessage } from '../api/errors';
 import {
   type ComplianceBranch,
   ComplianceReportsComponent,
+  type ComplianceVersion,
 } from '../compliance/compliance-reports.component';
 import { SystemInfo } from '../shell/system-info';
 import { CurrentProject } from './current-project';
 
 /** The branches offered for a report: the first 500 (the API's largest page). */
 const BRANCH_LIMIT = 500;
+/** The versions offered: the first page (the API's largest). */
+const VERSION_LIMIT = 100;
 
 /**
  * A project's Compliance tab (4E-1 §4, feature `compliance-export`): its compliance reports, and
- * **Create report** of one of its branches for a holder of `project.compliance.create`. The tab
+ * **Create report** of one of its branches or versions for a holder of `project.compliance.create`. The tab
  * is listed only while the feature is active; a direct address after a lapse says so instead of
  * asking the enterprise API.
  */
@@ -53,6 +56,22 @@ export class ProjectCompliancePage {
   protected readonly branches = computed<ComplianceBranch[]>(() =>
     this.branchList.hasValue()
       ? this.branchList.value().items.map((b) => ({ id: b.id, name: b.name, isMain: b.isMain }))
+      : [],
+  );
+
+  /** The project's versions, which a report can be made of (dependencies only). */
+  private readonly versionList = resource({
+    params: () => (this.licensed() && this.canCreate() ? this.projectId() : undefined),
+    loader: ({ params: id }) =>
+      ok(
+        this.api.client.GET('/api/v0/projects/{id}/versions', {
+          params: { path: { id }, query: { limit: VERSION_LIMIT } },
+        }),
+      ),
+  });
+  protected readonly versions = computed<ComplianceVersion[]>(() =>
+    this.versionList.hasValue()
+      ? this.versionList.value().items.map((v) => ({ id: v.id, label: v.label }))
       : [],
   );
 

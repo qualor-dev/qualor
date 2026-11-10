@@ -86,6 +86,7 @@ function view(over: Partial<ComplianceReportView> = {}): ComplianceReportView {
     organization: { id: ORG_ID, key: 'acme', name: 'Acme' },
     project: { id: PROJECT_ID, key: 'alpha', name: 'Alpha' },
     branch: { id: '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f', name: 'main' },
+    version: null,
     status: 'ready',
     createdBy: 'Ann',
     createdAt: '2026-10-12T10:00:00.000Z',
@@ -117,6 +118,7 @@ function source(): ComplianceSource {
       organization: { id: ORG_ID, key: 'acme', name: 'Acme' },
       project: { id: PROJECT_ID, key: 'alpha', name: 'Alpha' },
       branch: null,
+      version: null,
     },
     projects: [],
     groups: [],
@@ -199,6 +201,29 @@ describe('POST /compliance/reports (4E-1 §3)', () => {
       payload: { organizationId: ORG_ID, projectId: PROJECT_ID },
     });
     expect(res.statusCode).toBe(400);
+    expect(h.service.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts a project and a version, and refuses a branch together with a version', async () => {
+    const h = harness();
+    app = h.app;
+    const versionId = '3c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f';
+    const created = await app.inject({
+      method: 'POST',
+      url: '/compliance/reports',
+      payload: { projectId: PROJECT_ID, versionId },
+    });
+    expect(created.statusCode).toBe(202);
+    expect(h.service.create.mock.calls[0]?.[1]).toEqual({ projectId: PROJECT_ID, versionId });
+    h.service.create.mockClear();
+    for (const payload of [
+      { projectId: PROJECT_ID, branchId: '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f', versionId },
+      { organizationId: ORG_ID, versionId },
+      { projectId: PROJECT_ID, versionId: 'nope' },
+    ]) {
+      const res = await app.inject({ method: 'POST', url: '/compliance/reports', payload });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+    }
     expect(h.service.create).not.toHaveBeenCalled();
   });
 

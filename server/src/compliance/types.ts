@@ -118,6 +118,8 @@ export interface ComplianceSource {
     organization: { id: string; key: string; name: string };
     project: { id: string; key: string; name: string } | null;
     branch: { id: string; name: string } | null;
+    /** Set for the report of a version, which holds its dependencies only (plan 5, V12). */
+    version: { id: string; label: string } | null;
   };
   projects: ComplianceProjectSource[];
   groups: ComplianceFindingGroup[];

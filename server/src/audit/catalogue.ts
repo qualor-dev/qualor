@@ -692,7 +692,12 @@ export const AUDIT_CATALOGUE = {
   'audit.stream_secret_regenerated': { target: 'audit_settings', details: empty },
   'compliance.report.created': {
     target: 'compliance_report',
-    details: z.strictObject({ scope: z.enum(['project', 'organization']), branch: str.nullable() }),
+    details: z.strictObject({
+      scope: z.enum(['project', 'organization']),
+      branch: str.nullable(),
+      // Present for the report of a version (0.15).
+      version: z.strictObject({ id, label: str }).optional(),
+    }),
   },
   'compliance.report.downloaded': {
     target: 'compliance_report',

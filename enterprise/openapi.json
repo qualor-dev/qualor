@@ -5485,7 +5485,7 @@
     },
     "/api/v0/ee/compliance/reports": {
       "post": {
-        "summary": "Create a compliance report of an organisation (org.compliance.manage) or of a project branch (project.compliance.create); it is built in the background",
+        "summary": "Create a compliance report of an organisation (org.compliance.manage) or of a project branch or version (project.compliance.create); it is built in the background",
         "tags": [
           "enterprise"
         ],
@@ -5525,6 +5525,26 @@
                     },
                     "required": [
                       "projectId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "projectId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "versionId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "projectId",
+                      "versionId"
                     ],
                     "additionalProperties": false
                   }
@@ -5613,6 +5633,29 @@
                           "required": [
                             "id",
                             "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "version": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
                           ],
                           "additionalProperties": false
                         },
@@ -6039,6 +6082,7 @@
                     "organization",
                     "project",
                     "branch",
+                    "version",
                     "status",
                     "createdBy",
                     "createdAt",
@@ -6076,7 +6120,7 @@
             }
           },
           "404": {
-            "description": "The organisation, the project or the branch is not visible to the caller",
+            "description": "The organisation, the project, the branch or the version is not visible to the caller",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6086,7 +6130,7 @@
             }
           },
           "409": {
-            "description": "REPORT_PENDING (a report for this scope is being built); NO_ANALYSIS (the branch has no successful analysis); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed; an administrator must restore it",
+            "description": "REPORT_PENDING (a report for this scope is being built); NO_ANALYSIS (the branch has no successful analysis); MONITORING_OFF (vulnerability monitoring is off for the project); NOT_CHECKED (the version has not been checked for vulnerabilities yet); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed; an administrator must restore it",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6240,6 +6284,29 @@
                                 "required": [
                                   "id",
                                   "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "version": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "label"
                                 ],
                                 "additionalProperties": false
                               },
@@ -6666,6 +6733,7 @@
                           "organization",
                           "project",
                           "branch",
+                          "version",
                           "status",
                           "createdBy",
                           "createdAt",
@@ -6837,6 +6905,29 @@
                           "required": [
                             "id",
                             "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "version": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
                           ],
                           "additionalProperties": false
                         },
@@ -7263,6 +7354,7 @@
                     "organization",
                     "project",
                     "branch",
+                    "version",
                     "status",
                     "createdBy",
                     "createdAt",

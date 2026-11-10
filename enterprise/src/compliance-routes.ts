@@ -23,10 +23,14 @@ const LIST_DEFAULT = 20;
 const LIST_MAX = 100;
 const BUILD_FAILED = 'the report could not be built';
 
-/** 4E-1 §2.4 step 1: one row; `{ projectId, branchId? }` or `{ organizationId }`, never both. */
+/**
+ * 4E-1 §2.4 step 1: one row; `{ projectId, branchId? }`, `{ projectId, versionId }` (0.15: a
+ * version holds its dependencies only) or `{ organizationId }`, never a mix.
+ */
 const createBody = z.union([
   z.strictObject({ organizationId: z.uuid() }),
   z.strictObject({ projectId: z.uuid(), branchId: z.uuid().optional() }),
+  z.strictObject({ projectId: z.uuid(), versionId: z.uuid() }),
 ]);
 
 const listQuery = z
@@ -102,6 +106,7 @@ const reportView = z.object({
   organization: named,
   project: named.nullable(),
   branch: z.object({ id: z.string(), name: z.string() }).nullable(),
+  version: z.object({ id: z.string(), label: z.string() }).nullable(),
   status: z.enum(['pending', 'ready', 'failed']),
   createdBy: z.string(),
   createdAt: z.string(),
@@ -189,15 +194,15 @@ export function complianceRoutes(ctx: PluginContext): FastifyPluginAsync {
           openapi: {
             problems: [404, 409],
             problemDescriptions: {
-              404: 'The organisation, the project or the branch is not visible to the caller',
-              409: `REPORT_PENDING (a report for this scope is being built); NO_ANALYSIS (the branch has no successful analysis); ${AUDIT_ANCHOR}`,
+              404: 'The organisation, the project, the branch or the version is not visible to the caller',
+              409: `REPORT_PENDING (a report for this scope is being built); NO_ANALYSIS (the branch has no successful analysis); MONITORING_OFF (vulnerability monitoring is off for the project); NOT_CHECKED (the version has not been checked for vulnerabilities yet); ${AUDIT_ANCHOR}`,
             },
           },
         },
         schema: {
           tags: ['enterprise'],
           summary:
-            'Create a compliance report of an organisation (org.compliance.manage) or of a project branch (project.compliance.create); it is built in the background',
+            'Create a compliance report of an organisation (org.compliance.manage) or of a project branch or version (project.compliance.create); it is built in the background',
           body: createBody,
           response: { 202: reportView },
         },

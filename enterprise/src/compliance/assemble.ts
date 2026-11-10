@@ -166,6 +166,9 @@ export function assembleReport(input: {
       branch: source.scope.branch
         ? { id: source.scope.branch.id, name: source.scope.branch.name }
         : null,
+      version: source.scope.version
+        ? { id: source.scope.version.id, label: source.scope.version.label }
+        : null,
     },
     standards: standards.map((s) => ({
       id: s.id,
@@ -275,6 +278,7 @@ export function parseCanonical(bytes: Buffer): ReportJson {
   if (parsed.schemaVersion !== 1) throw new Error('unsupported report schema version');
   return {
     ...parsed,
+    scope: { ...parsed.scope, version: null },
     datasets: { vulnerabilityDatabase: null, kev: null, epss: null },
     findings: parsed.findings.map((f) => ({ ...f, vulnerability: null })),
     triage: parsed.triage.map((r) => ({ ...r, reason: null, vulnerability: null })),

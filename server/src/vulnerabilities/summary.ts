@@ -63,6 +63,7 @@ export interface TargetsAnswer {
  * The vulnerability rows of `where` (a condition on `tv`, `target_vulnerabilities`), each with
  * its match and the facts the tab computes from, for use as a CTE:
  *
+ * - `row_id`: the id of the `target_vulnerabilities` row;
  * - `eff_status`, `d_id`: the effective decision of the row's own target (D6);
  * - `pd_id`, `pd_status`: the project-wide decision, else open;
  * - `kev`, `kev_date_added`, `kev_ransomware`, `epss_score`, `epss_percentile`: the CISA KEV and
@@ -74,7 +75,7 @@ export interface TargetsAnswer {
  */
 export function scopedRows(where: SQL): SQL {
   return sql`
-    SELECT tv.project_id, tv.branch_id, tv.version_id, tv.package_name, tv.vulnerability_id,
+    SELECT tv.id AS row_id, tv.project_id, tv.branch_id, tv.version_id, tv.package_name, tv.vulnerability_id,
            tv.package_version, tv.purl, tv.ecosystem, tv.ignored, tv.first_seen_at,
            m.severity, m.title, m.fixed_version, m.primary_url,
            COALESCE(d.status, 'open') AS eff_status,

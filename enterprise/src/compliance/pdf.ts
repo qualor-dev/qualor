@@ -54,8 +54,9 @@ function categoryList(categories: Record<string, string[]>): string {
 }
 
 function scopeLine(report: ReportJson): string {
-  const { organization, project, branch } = report.scope;
-  return cut([organization.name, project?.key, branch?.name].filter(Boolean).join(' / '), CELL_MAX);
+  const { organization, project, branch, version } = report.scope;
+  const target = branch?.name ?? (version ? `version ${version.label}` : undefined);
+  return cut([organization.name, project?.key, target].filter(Boolean).join(' / '), CELL_MAX);
 }
 
 /** The dates of the datasets the report was built from; a missing dataset is left out. */
@@ -76,12 +77,20 @@ function cover(layout: Layout, report: ReportJson, sha256: string): Promise<void
   layout.doc.moveDown(4);
   layout.heading('Qualor compliance report', SIZE.title);
   layout.text(
-    scope.kind === 'project' && scope.project
-      ? `Project ${scope.project.name} (${scope.project.key}), branch ${dash(scope.branch?.name)}, ` +
+    scope.kind === 'project' && scope.project && scope.version
+      ? `Project ${scope.project.name} (${scope.project.key}), organisation ${scope.organization.name}`
+      : scope.kind === 'project' && scope.project
+        ? `Project ${scope.project.name} (${scope.project.key}), branch ${dash(scope.branch?.name)}, ` +
           `organisation ${scope.organization.name}`
-      : `Organisation ${scope.organization.name}: the main branch of each of its ` +
+        : `Organisation ${scope.organization.name}: the main branch of each of its ` +
           `${report.projects.length} projects`,
   );
+  if (scope.version) {
+    layout.text(
+      `Version ${scope.version.label}. A version has no code analysis, so this report holds its ` +
+        'dependencies only.',
+    );
+  }
   layout.doc.moveDown(1);
   layout.fields([
     ['Generated', time(report.generatedAt)],
