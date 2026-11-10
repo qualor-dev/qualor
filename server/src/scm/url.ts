@@ -24,9 +24,10 @@ function canonicalHost(host: string): string | null {
   if (!/^[a-z0-9.:_-]{1,253}$/.test(host) || host.includes('..') || host.startsWith('.')) {
     return null;
   }
+  const literal = host.includes(':') ? `[${host}]` : host;
   let url: URL;
   try {
-    url = new URL(`http://${host.includes(':') ? `[${host}]` : host}/`);
+    url = new URL(`http://${literal}/`);
   } catch {
     return null;
   }
@@ -46,33 +47,35 @@ function hostKey(host: string, port: string | null): string {
   return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
 }
 
-/** One entry: `host`, `host:port`, an IPv6 literal (`::1`) or `[v6]:port`. Null when invalid. */
-function parseEntry(entry: string): string | null {
-  const text = entry.trim().toLowerCase();
-  let host: string;
-  let port: string | null = null;
+/**
+ * An entry's host and port as written (lower case), split by its form: `[v6]` or `[v6]:port`, a
+ * bare IPv6 literal, `host` or `host:port`. Null when it has none of those forms.
+ */
+function splitEntry(text: string): { host: string; port: string | null } | null {
   const bracketed = /^\[([^\]]*)\](?::([0-9]{1,5}))?$/.exec(text);
   if (bracketed) {
-    host = bracketed[1] ?? '';
+    const host = bracketed[1] ?? '';
     if (isIP(host) !== 6) return null;
-    port = bracketed[2] ?? null;
-  } else if ((text.match(/:/g) ?? []).length >= 2) {
-    host = text;
-    if (isIP(host) !== 6) return null;
-  } else {
-    const withPort = /^([^:]*):([0-9]{1,5})$/.exec(text);
-    if (text.includes(':') && !withPort) return null;
-    host = withPort ? (withPort[1] ?? '') : text;
-    port = withPort ? (withPort[2] ?? null) : null;
+    return { host, port: bracketed[2] ?? null };
   }
-  const canonical = canonicalHost(host.replace(/\.$/, ''));
+  if ((text.match(/:/g) ?? []).length >= 2) {
+    return isIP(text) === 6 ? { host: text, port: null } : null;
+  }
+  const withPort = /^([^:]*):([0-9]{1,5})$/.exec(text);
+  if (withPort) return { host: withPort[1] ?? '', port: withPort[2] ?? null };
+  return text.includes(':') ? null : { host: text, port: null };
+}
+
+/** One entry: `host`, `host:port`, an IPv6 literal (`::1`) or `[v6]:port`. Null when invalid. */
+function parseEntry(entry: string): string | null {
+  const parts = splitEntry(entry.trim().toLowerCase());
+  if (parts === null) return null;
+  const canonical = canonicalHost(parts.host.replace(/\.$/, ''));
   if (canonical === null) return null;
-  if (port !== null) {
-    const n = Number(port);
-    if (!Number.isInteger(n) || n < 1 || n > 65_535) return null;
-    port = String(n);
-  }
-  return hostKey(canonical, port);
+  if (parts.port === null) return hostKey(canonical, null);
+  const n = Number(parts.port);
+  if (!Number.isInteger(n) || n < 1 || n > 65_535) return null;
+  return hostKey(canonical, String(n));
 }
 
 /**

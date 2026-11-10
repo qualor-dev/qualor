@@ -484,6 +484,11 @@ async function projects(
 
 /** Most first, nulls last. */
 const byCountDesc = (a: number | null, b: number | null): number => (b ?? -1) - (a ?? -1);
+/** Code-unit order, as `<` compares strings (not locale-aware). */
+function byCodeUnits(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
 
 /**
  * Plan 5 R4: the projects with a vulnerable release, or with `vuln.priority` an exploited
@@ -502,7 +507,7 @@ async function vulnerableProjects(
       (a, b) =>
         (withPriority ? byCountDesc(a.exploited, b.exploited) : 0) ||
         byCountDesc(a.vulnerableReleases, b.vulnerableReleases) ||
-        (a.project.key < b.project.key ? -1 : a.project.key > b.project.key ? 1 : 0),
+        byCodeUnits(a.project.key, b.project.key),
     );
   const shown = listed.slice(0, PDF_PROJECTS_MAX);
   layout.page();

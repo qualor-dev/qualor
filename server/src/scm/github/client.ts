@@ -619,6 +619,66 @@ interface CallOptions {
   mutation?: boolean;
 }
 
+/** A 2xx answer's JSON, null for an empty body; a body that is not JSON is a bad answer. */
+function answerJson(body: Buffer, status: number): unknown {
+  if (body.length === 0) return null;
+  try {
+    return JSON.parse(body.toString('utf8'));
+  } catch {
+    throw new ScmError('bad_answer', GITHUB_TEXT.badAnswer, { status });
+  }
+}
+
+/**
+ * The error of an answer that is not a 2xx: a redirect, a rate limit (§5.3, read at `now()`), the
+ * credential or a permission refused, a missing resource, or another status.
+ */
+function httpError(
+  status: number,
+  headers: IncomingHttpHeaders,
+  message: string | null,
+  auth: Auth,
+  now: () => number,
+): ScmError {
+  if (status >= 300 && status < 400) {
+    return new ScmError('not_found', GITHUB_TEXT.notFound, { status, reason: 'http' });
+  }
+  const limit = githubRateLimit(status, headers, message, now());
+  if (limit) {
+    return new ScmError('rate_limited', `GitHub answered HTTP ${status}`, {
+      status,
+      reason: 'http',
+      retryAfterSeconds: limit.retryAfterSeconds,
+      providerMessage: message,
+    });
+  }
+  if (status === 401) {
+    return new ScmError(
+      'auth',
+      auth === 'app' ? GITHUB_TEXT.appRefused : GITHUB_TEXT.tokenRefused,
+      {
+        status,
+        reason: 'http',
+      },
+    );
+  }
+  if (status === 403) {
+    return new ScmError('auth', GITHUB_TEXT.permission, { status, reason: 'permission_missing' });
+  }
+  if (status === 404) {
+    return new ScmError('not_found', GITHUB_TEXT.notFound, {
+      status,
+      reason: 'http',
+      providerMessage: message,
+    });
+  }
+  return new ScmError(status >= 500 ? 'transient' : 'refused', `GitHub answered HTTP ${status}`, {
+    status,
+    reason: 'http',
+    providerMessage: message,
+  });
+}
+
 /**
  * The GitHub REST API (github.md §4–§6), through {@link outboundRequest}: the connection's base
  * URL only, no redirect, 10 s per request, bounded answers, pages built by number, a budget of
@@ -722,27 +782,25 @@ export class GitHubClient {
     return parsed.data;
   }
 
-  private async call(
-    method: Method,
-    target: Target,
-    auth: Auth,
-    body?: unknown,
-    options: CallOptions = {},
-  ): Promise<{ headers: IncomingHttpHeaders; json: unknown }> {
-    if (this.requestCount >= this.maxRequests) {
-      throw new ScmError('budget', GITHUB_TEXT.budget, { reason: 'budget' });
-    }
-    this.requestCount += 1;
+  /** The bearer of a call: a fresh app JWT (kept, so a message never shows it), or the token. */
+  private credentialFor(auth: Auth): string {
     const credential =
       auth === 'app'
         ? appJwt(this.#connection.appId, this.#connection.privateKey, Math.floor(this.now() / 1000))
         : this.#token;
     if (credential === null) throw new Error('no installation token');
     if (auth === 'app') this.#jwt = credential;
-    if (options.mutation ?? method !== 'GET') {
-      await this.pacer.wait(`${this.#connection.baseUrl}|${this.#installationId ?? 'app'}`);
-    }
-    const result = await outboundRequest(
+    return credential;
+  }
+
+  /** One request to GitHub through the outbound guard (addresses, timeouts, response size). */
+  private send(
+    method: Method,
+    target: Target,
+    credential: string,
+    body: unknown,
+  ): Promise<OutboundResult> {
+    return outboundRequest(
       {
         url: typeof target === 'string' ? `${this.#connection.baseUrl}${target}` : target.href,
         method,
@@ -768,54 +826,29 @@ export class GitHubClient {
         names: { noun: 'GitHub', target: 'GitHub' },
       },
     );
+  }
+
+  private async call(
+    method: Method,
+    target: Target,
+    auth: Auth,
+    body?: unknown,
+    options: CallOptions = {},
+  ): Promise<{ headers: IncomingHttpHeaders; json: unknown }> {
+    if (this.requestCount >= this.maxRequests) {
+      throw new ScmError('budget', GITHUB_TEXT.budget, { reason: 'budget' });
+    }
+    this.requestCount += 1;
+    const credential = this.credentialFor(auth);
+    if (options.mutation ?? method !== 'GET') {
+      await this.pacer.wait(`${this.#connection.baseUrl}|${this.#installationId ?? 'app'}`);
+    }
+    const result = await this.send(method, target, credential, body);
     if (result.kind === 'failed') throw transportError(result);
     const { status, headers } = result;
-    if (status >= 200 && status < 300) {
-      if (result.body.length === 0) return { headers, json: null };
-      try {
-        return { headers, json: JSON.parse(result.body.toString('utf8')) };
-      } catch {
-        throw new ScmError('bad_answer', GITHUB_TEXT.badAnswer, { status });
-      }
-    }
+    if (status >= 200 && status < 300) return { headers, json: answerJson(result.body, status) };
     const message = githubMessage(result.body, [credential, this.#token ?? '', this.#jwt ?? '']);
-    if (status >= 300 && status < 400) {
-      throw new ScmError('not_found', GITHUB_TEXT.notFound, { status, reason: 'http' });
-    }
-    const limit = githubRateLimit(status, headers, message, this.now());
-    if (limit) {
-      throw new ScmError('rate_limited', `GitHub answered HTTP ${status}`, {
-        status,
-        reason: 'http',
-        retryAfterSeconds: limit.retryAfterSeconds,
-        providerMessage: message,
-      });
-    }
-    if (status === 401) {
-      throw new ScmError(
-        'auth',
-        auth === 'app' ? GITHUB_TEXT.appRefused : GITHUB_TEXT.tokenRefused,
-        {
-          status,
-          reason: 'http',
-        },
-      );
-    }
-    if (status === 403) {
-      throw new ScmError('auth', GITHUB_TEXT.permission, { status, reason: 'permission_missing' });
-    }
-    if (status === 404) {
-      throw new ScmError('not_found', GITHUB_TEXT.notFound, {
-        status,
-        reason: 'http',
-        providerMessage: message,
-      });
-    }
-    throw new ScmError(status >= 500 ? 'transient' : 'refused', `GitHub answered HTTP ${status}`, {
-      status,
-      reason: 'http',
-      providerMessage: message,
-    });
+    throw httpError(status, headers, message, auth, () => this.now());
   }
 
   /** A repository call; after a 401, one fresh installation token and one more try (§4). */

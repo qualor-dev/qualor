@@ -5,6 +5,7 @@ import type { Executor } from '../db/client';
 import { uuidv7 } from '../db/ids';
 import { branches, issues, rules } from '../db/schema';
 import type { AcceptedFinding } from '../ingest/state';
+import { compareCodeUnits } from './dedupe';
 import { matchFindings, renamer } from './match';
 import {
   candidateTrackable,
@@ -17,6 +18,13 @@ import {
 
 type BranchRow = typeof branches.$inferSelect;
 
+/** Selects a branch's reference branch; undefined for a merge request without a target branch. */
+function referenceCondition(branch: BranchRow): SQL | undefined {
+  if (branch.kind !== 'merge_request') return eq(branches.isMain, true);
+  if (branch.mrTargetBranch === null) return undefined;
+  return and(eq(branches.kind, 'branch'), eq(branches.name, branch.mrTargetBranch));
+}
+
 /**
  * data-model.md §5.4: the branch a first analysis inherits from — a merge request's target
  * branch, or the project's main branch for any other non-main branch. Null for the main branch
@@ -24,12 +32,7 @@ type BranchRow = typeof branches.$inferSelect;
  */
 export async function referenceBranchId(tx: Executor, branch: BranchRow): Promise<string | null> {
   if (branch.isMain) return null;
-  const condition =
-    branch.kind === 'merge_request'
-      ? branch.mrTargetBranch === null
-        ? undefined
-        : and(eq(branches.kind, 'branch'), eq(branches.name, branch.mrTargetBranch))
-      : eq(branches.isMain, true);
+  const condition = referenceCondition(branch);
   if (!condition) return null;
   const [ref] = await tx
     .select({ id: branches.id })
@@ -165,7 +168,7 @@ type ChangeRow = {
   at: string;
 };
 
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const compare = compareCodeUnits;
 const byTime = (a: ChangeRow, b: ChangeRow): number =>
   compare(a.issue_id, b.issue_id) || compare(a.at, b.at) || compare(a.id, b.id);
 

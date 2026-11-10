@@ -251,6 +251,18 @@ const toLogin = z
     'To returnTo once signed in, or to /login?sso_error=<code> (for example unavailable, flow_expired or rate_limited)',
   );
 
+/** The schema fields every public browser flow shares: no security, the enterprise tag. */
+interface PublicFlowSchema {
+  security: never[];
+  tags: string[];
+}
+/** The OpenAPI config the public browser flows share: only the problems they list (§7.7). */
+interface FlowOpenApi {
+  derived: false;
+  problems: number[];
+  problemDescriptions: Record<number, string>;
+}
+
 const FEATURE_TEXT =
   'FEATURE_NOT_LICENSED: the licence does not list sso, or it lapsed (a problem+json answer)';
 const AUDIT_ANCHOR_TEXT =
@@ -697,56 +709,67 @@ export function ssoRoutes(ctx: PluginContext): FastifyPluginAsync {
         (request, reply) => ctx.sso.finish(request, reply),
       );
 
-      // §6: the ACS takes only its form (urlencoded, 512 KiB, 415 for anything else), parsed
-      // here without a dependency; every other parser is removed from its scope.
-      await flows.register(async (acs) => {
-        acs.removeAllContentTypeParsers();
-        acs.addContentTypeParser(
-          'application/x-www-form-urlencoded',
-          { parseAs: 'string', bodyLimit: ACS_BODY_LIMIT },
-          (_request, body, done) => {
-            done(null, samlForm(typeof body === 'string' ? body : body.toString('utf8')));
-          },
-        );
-        acs.withTypeProvider<ZodTypeProvider>().post(
-          '/sso/saml/:id/acs',
-          {
-            bodyLimit: ACS_BODY_LIMIT,
-            config: {
-              public: true,
-              rateLimit: { max: FINISHES_PER_MINUTE, timeWindow: MINUTE_MS },
-              openapi: {
-                ...flowOpenApi,
-                requestBody: {
-                  required: true,
-                  content: {
-                    'application/x-www-form-urlencoded': {
-                      schema: {
-                        type: 'object',
-                        properties: {
-                          SAMLResponse: { type: 'string' },
-                          RelayState: { type: 'string' },
-                        },
-                        required: ['SAMLResponse'],
-                      },
+      // §6: the ACS, in a scope with only its own form parser.
+      await flows.register(acsScope(ctx, publicFlow, flowOpenApi));
+    });
+  };
+}
+
+/**
+ * §6: the ACS route, in a scope of its own: it takes only its form (urlencoded, 512 KiB, 415 for
+ * anything else), parsed by `samlForm` without a dependency; every other parser is removed.
+ */
+function acsScope(
+  ctx: PluginContext,
+  publicFlow: PublicFlowSchema,
+  flowOpenApi: FlowOpenApi,
+): FastifyPluginAsync {
+  return async (acs) => {
+    acs.removeAllContentTypeParsers();
+    acs.addContentTypeParser(
+      'application/x-www-form-urlencoded',
+      { parseAs: 'string', bodyLimit: ACS_BODY_LIMIT },
+      (_request, body, done) => {
+        done(null, samlForm(typeof body === 'string' ? body : body.toString('utf8')));
+      },
+    );
+    acs.withTypeProvider<ZodTypeProvider>().post(
+      '/sso/saml/:id/acs',
+      {
+        bodyLimit: ACS_BODY_LIMIT,
+        config: {
+          public: true,
+          rateLimit: { max: FINISHES_PER_MINUTE, timeWindow: MINUTE_MS },
+          openapi: {
+            ...flowOpenApi,
+            requestBody: {
+              required: true,
+              content: {
+                'application/x-www-form-urlencoded': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      SAMLResponse: { type: 'string' },
+                      RelayState: { type: 'string' },
                     },
+                    required: ['SAMLResponse'],
                   },
                 },
               },
             },
-            schema: {
-              ...publicFlow,
-              summary: "The SAML Assertion Consumer Service: the identity provider's POST",
-              description:
-                'Public, 60 a minute per address, at most 512 KiB. A valid response redirects to /api/v0/ee/sso/finish.',
-              params: flowParams,
-              response: { 303: toLogin },
-            },
           },
-          (request, reply) => ctx.sso.samlAcs(request, reply, request.params.id),
-        );
-      });
-    });
+        },
+        schema: {
+          ...publicFlow,
+          summary: "The SAML Assertion Consumer Service: the identity provider's POST",
+          description:
+            'Public, 60 a minute per address, at most 512 KiB. A valid response redirects to /api/v0/ee/sso/finish.',
+          params: flowParams,
+          response: { 303: toLogin },
+        },
+      },
+      (request, reply) => ctx.sso.samlAcs(request, reply, request.params.id),
+    );
   };
 }
 

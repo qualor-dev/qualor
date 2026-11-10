@@ -4,7 +4,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import { analysisDto } from '../analyses/dto';
 import { uuidList } from '../db/bulk';
-import type { Db, Executor } from '../db/client';
+import type { Db, Executor, Tx } from '../db/client';
 import { LOCKS } from '../db/locks';
 import { analyses, branches, jobs, measures, projects, scmConnections } from '../db/schema';
 import { analysisConcurrencyKey } from '../ingest/service';
@@ -122,6 +122,191 @@ function sameResult(a: GateResult, b: GateResult): boolean {
 
 export type ReevaluationResult = 'nothing' | 'unchanged' | 'measures' | 'gate' | 'status';
 
+type BranchRow = typeof branches.$inferSelect;
+type AnalysisRow = typeof analyses.$inferSelect;
+type ProjectRow = typeof projects.$inferSelect;
+
+/** What a re-evaluation reads and judges again. */
+interface Reevaluable {
+  branch: BranchRow;
+  analysis: AnalysisRow;
+  project: ProjectRow;
+  previous: GateResult;
+}
+
+/** The branch's latest analysis, when it succeeded and holds a gate result to judge again. */
+async function reevaluable(tx: Tx, branchId: string): Promise<Reevaluable | null> {
+  const [row] = await tx
+    .select({ branch: branches, analysis: analyses, project: projects })
+    .from(branches)
+    .innerJoin(analyses, eq(analyses.id, branches.lastAnalysisId))
+    .innerJoin(projects, eq(projects.id, branches.projectId))
+    .where(eq(branches.id, branchId));
+  if (!row || row.analysis.status !== 'succeeded') return null;
+  const previous = row.analysis.gateResult as GateResult | null;
+  if (!previous || typeof previous !== 'object' || !Array.isArray(previous.conditions)) {
+    return null;
+  }
+  return { ...row, previous };
+}
+
+/** Writes the recomputed measures (keyed like gate metrics) over the analysis's stored ones. */
+async function updateMeasures(
+  tx: Tx,
+  analysisId: string,
+  changed: readonly [string, number | null][],
+): Promise<void> {
+  for (const [key, value] of changed) {
+    const isNew = key.startsWith('new_');
+    await tx
+      .update(measures)
+      .set({ value })
+      .where(
+        and(
+          eq(measures.analysisId, analysisId),
+          eq(measures.metricKey, isNew ? key.slice(4) : key),
+          eq(measures.scope, isNew ? 'new' : 'overall'),
+        ),
+      );
+  }
+}
+
+/**
+ * A changed gate status: `gate.status_changed` deliveries for the generic and the chat webhooks,
+ * and the mail to the branch's watchers (E3), in the caller's transaction.
+ */
+async function recordStatusChange(
+  tx: Tx,
+  change: Reevaluable & { next: GateResult; stored: MeasureValues; fresh: MeasureValues },
+  notify: NotifyDeps | null,
+  logger: Logger | undefined,
+): Promise<void> {
+  const { branch, analysis, project, previous, next, stored, fresh } = change;
+  const subscriptions = await subscriptionsToNotify(tx, project);
+  const payload = {
+    ...analysisDto({ ...analysis, gateStatus: next.status, gateResult: next }, branch),
+    project: { id: project.id, key: project.key, name: project.name },
+    branch: { id: branch.id, kind: branch.kind, name: branch.name, isMain: branch.isMain },
+    previousGateStatus: previous.status,
+  };
+  await createDeliveries(tx, [
+    ...subscriptions
+      .filter((s) => s.kind === 'generic' && s.events.includes('gate.status_changed'))
+      .map((s): NewDelivery => ({
+        subscriptionId: s.id,
+        event: 'gate.status_changed',
+        payload,
+      })),
+    // 6G: the same transition for Slack and Teams webhooks, main branch only.
+    ...chatGateDeliveries(subscriptions, {
+      project: { id: project.id, key: project.key, name: project.name },
+      branch: { id: branch.id, name: branch.name, isMain: branch.isMain },
+      analysisId: analysis.id,
+      revision: analysis.revision,
+      at: new Date(),
+      previous: previous.status,
+      next,
+      measures: { ...stored, ...fresh },
+      cause: 'reevaluation',
+    }),
+  ]);
+  // mail E3: the same change mailed to the branch's watchers, in this transaction.
+  await notifyGateChangeSafely(
+    tx,
+    notify,
+    {
+      project,
+      branch,
+      analysis: { id: analysis.id, revision: analysis.revision },
+      previous: previous.status,
+      next,
+      measures: { ...stored, ...fresh },
+      cause: 'reevaluation',
+    },
+    logger,
+  );
+}
+
+/** Why an analysis whose stored SCM context cannot be read is not decorated again, per provider. */
+const UNREADABLE_CONTEXT: Record<'missing' | 'invalid', Record<'gitlab' | 'github', string>> = {
+  missing: {
+    gitlab:
+      'quality gate re-evaluated but not decorated again on GitLab: the analysis has no stored SCM context (ingested before it was recorded), so whether it came from GitLab CI is unknown',
+    github:
+      'quality gate re-evaluated but not decorated again on GitHub: the analysis has no stored SCM context (ingested before it was recorded), so whether it came from GitHub Actions is unknown',
+  },
+  invalid: {
+    gitlab:
+      'quality gate re-evaluated but not decorated again on GitLab: the stored SCM context of the analysis is not valid',
+    github:
+      'quality gate re-evaluated but not decorated again on GitHub: the stored SCM context of the analysis is not valid',
+  },
+};
+
+/**
+ * Decorates the merge request again, only for a project mapped to an SCM connection and an
+ * analysis whose stored SCM context says it came from that provider's CI (see `reevaluateBranch`).
+ */
+async function decorateAgain(
+  tx: Tx,
+  { project, analysis, branch }: Reevaluable,
+  logger: Logger | undefined,
+): Promise<void> {
+  if (project.scmConnectionId === null || project.scmProjectRef === null) return;
+  const [connection] = await tx
+    .select({ provider: scmConnections.provider })
+    .from(scmConnections)
+    .where(eq(scmConnections.id, project.scmConnectionId));
+  const stored = readScmContext(analysis.scmContext);
+  const where = { analysisId: analysis.id, branchId: branch.id };
+  // No connection: nothing to decorate.
+  if (!connection) return;
+  if (stored.kind !== 'ok') {
+    logger?.warn(where, UNREADABLE_CONTEXT[stored.kind][connection.provider]);
+    return;
+  }
+  // github.md §5.1: an analysis decorates only through a connection of its own provider.
+  if (stored.context.provider !== connection.provider) return;
+  if (stored.context.provider === 'gitlab') {
+    await enqueueDecoration(tx, {
+      analysisId: analysis.id,
+      branchId: branch.id,
+      gitlab: stored.context.gitlab,
+      reevaluation: true,
+    });
+    return;
+  }
+  // Stored only when the report had one (D2): an older CLI's GitHub analysis has none.
+  const github = stored.context.github ?? null;
+  if (github === null) {
+    // Ruling C1: without the GitHub context, which revision was checked out (and so which
+    // lines a review thread may be on) is unknown; fail closed.
+    logger?.warn(
+      where,
+      'quality gate re-evaluated but not decorated again on GitHub: the analysis has no stored GitHub Actions context (sent by an older CLI)',
+    );
+    return;
+  }
+  await enqueueDecoration(tx, {
+    analysisId: analysis.id,
+    branchId: branch.id,
+    gitlab: null,
+    github,
+    reevaluation: true,
+  });
+}
+
+/** What a re-evaluation changed: the status over the gate result over the measures alone. */
+function reevaluationResult(
+  measuresChanged: boolean,
+  gateChanged: boolean,
+  statusChanged: boolean,
+): ReevaluationResult {
+  if (!measuresChanged && !gateChanged) return 'unchanged';
+  if (statusChanged) return 'status';
+  return gateChanged ? 'gate' : 'measures';
+}
+
 /**
  * scm.md §7: the branch's latest analysis, with its issue measures recomputed from the branch's
  * current issues and its stored gate result judged again. Writes only what changed; a changed
@@ -145,18 +330,9 @@ export async function reevaluateBranch(
 ): Promise<ReevaluationResult> {
   const { logger } = options;
   return db.transaction(async (tx) => {
-    const [row] = await tx
-      .select({ branch: branches, analysis: analyses, project: projects })
-      .from(branches)
-      .innerJoin(analyses, eq(analyses.id, branches.lastAnalysisId))
-      .innerJoin(projects, eq(projects.id, branches.projectId))
-      .where(eq(branches.id, branchId));
-    if (!row || row.analysis.status !== 'succeeded') return 'nothing';
-    const previous = row.analysis.gateResult as GateResult | null;
-    if (!previous || typeof previous !== 'object' || !Array.isArray(previous.conditions)) {
-      return 'nothing';
-    }
-    const { branch, analysis, project } = row;
+    const state = await reevaluable(tx, branchId);
+    if (!state) return 'nothing';
+    const { branch, analysis, previous } = state;
 
     const stored = await storedMeasures(tx, analysis.id);
     const { accepted, falsePositives } = await resolvedIssueCounts(tx, branch.id);
@@ -167,19 +343,7 @@ export async function reevaluateBranch(
       analysis.baselineStatus === 'unavailable',
     );
     const changed = Object.entries(fresh).filter(([key, value]) => stored[key] !== value);
-    for (const [key, value] of changed) {
-      const isNew = key.startsWith('new_');
-      await tx
-        .update(measures)
-        .set({ value })
-        .where(
-          and(
-            eq(measures.analysisId, analysis.id),
-            eq(measures.metricKey, isNew ? key.slice(4) : key),
-            eq(measures.scope, isNew ? 'new' : 'overall'),
-          ),
-        );
-    }
+    await updateMeasures(tx, analysis.id, changed);
     const next = reevaluateGate(previous, { ...stored, ...fresh });
     const gateChanged = !sameResult(previous, next);
     if (gateChanged) {
@@ -190,112 +354,20 @@ export async function reevaluateBranch(
     }
     const statusChanged = previous.status !== next.status;
     if (statusChanged) {
-      const subscriptions = await subscriptionsToNotify(tx, project);
-      const payload = {
-        ...analysisDto({ ...analysis, gateStatus: next.status, gateResult: next }, branch),
-        project: { id: project.id, key: project.key, name: project.name },
-        branch: { id: branch.id, kind: branch.kind, name: branch.name, isMain: branch.isMain },
-        previousGateStatus: previous.status,
-      };
-      await createDeliveries(tx, [
-        ...subscriptions
-          .filter((s) => s.kind === 'generic' && s.events.includes('gate.status_changed'))
-          .map((s): NewDelivery => ({
-            subscriptionId: s.id,
-            event: 'gate.status_changed',
-            payload,
-          })),
-        // 6G: the same transition for Slack and Teams webhooks, main branch only.
-        ...chatGateDeliveries(subscriptions, {
-          project: { id: project.id, key: project.key, name: project.name },
-          branch: { id: branch.id, name: branch.name, isMain: branch.isMain },
-          analysisId: analysis.id,
-          revision: analysis.revision,
-          at: new Date(),
-          previous: previous.status,
-          next,
-          measures: { ...stored, ...fresh },
-          cause: 'reevaluation',
-        }),
-      ]);
-      // mail E3: the same change mailed to the branch's watchers, in this transaction.
-      await notifyGateChangeSafely(
+      await recordStatusChange(
         tx,
+        { ...state, next, stored, fresh },
         options.notify ?? null,
-        {
-          project,
-          branch,
-          analysis: { id: analysis.id, revision: analysis.revision },
-          previous: previous.status,
-          next,
-          measures: { ...stored, ...fresh },
-          cause: 'reevaluation',
-        },
         logger,
       );
     }
     // A changed verdict moves the commit status and the summary; a changed issue that may have a
     // thread (G5, `redecorate`) moves its thread, whatever the gate says. Anything else is not
     // worth SCM requests.
-    if (
-      (gateChanged || options.redecorate === true) &&
-      project.scmConnectionId !== null &&
-      project.scmProjectRef !== null
-    ) {
-      const [connection] = await tx
-        .select({ provider: scmConnections.provider })
-        .from(scmConnections)
-        .where(eq(scmConnections.id, project.scmConnectionId));
-      const stored = readScmContext(analysis.scmContext);
-      const where = { analysisId: analysis.id, branchId: branch.id };
-      if (!connection) {
-        // No connection: nothing to decorate.
-      } else if (stored.kind === 'missing') {
-        logger?.warn(
-          where,
-          connection.provider === 'gitlab'
-            ? 'quality gate re-evaluated but not decorated again on GitLab: the analysis has no stored SCM context (ingested before it was recorded), so whether it came from GitLab CI is unknown'
-            : 'quality gate re-evaluated but not decorated again on GitHub: the analysis has no stored SCM context (ingested before it was recorded), so whether it came from GitHub Actions is unknown',
-        );
-      } else if (stored.kind === 'invalid') {
-        logger?.warn(
-          where,
-          connection.provider === 'gitlab'
-            ? 'quality gate re-evaluated but not decorated again on GitLab: the stored SCM context of the analysis is not valid'
-            : 'quality gate re-evaluated but not decorated again on GitHub: the stored SCM context of the analysis is not valid',
-        );
-      } else if (stored.context.provider !== connection.provider) {
-        // github.md §5.1: an analysis decorates only through a connection of its own provider.
-      } else if (stored.context.provider === 'gitlab') {
-        await enqueueDecoration(tx, {
-          analysisId: analysis.id,
-          branchId: branch.id,
-          gitlab: stored.context.gitlab,
-          reevaluation: true,
-        });
-      } else {
-        // Stored only when the report had one (D2): an older CLI's GitHub analysis has none.
-        const github = stored.context.github ?? null;
-        if (github === null) {
-          // Ruling C1: without the GitHub context, which revision was checked out (and so which
-          // lines a review thread may be on) is unknown; fail closed.
-          logger?.warn(
-            where,
-            'quality gate re-evaluated but not decorated again on GitHub: the analysis has no stored GitHub Actions context (sent by an older CLI)',
-          );
-        } else {
-          await enqueueDecoration(tx, {
-            analysisId: analysis.id,
-            branchId: branch.id,
-            gitlab: null,
-            github,
-            reevaluation: true,
-          });
-        }
-      }
+    if (gateChanged || options.redecorate === true) {
+      await decorateAgain(tx, state, logger);
     }
-    if (changed.length === 0 && !gateChanged) return 'unchanged';
-    return statusChanged ? 'status' : gateChanged ? 'gate' : 'measures';
+    return reevaluationResult(changed.length > 0, gateChanged, statusChanged);
   });
 }
 

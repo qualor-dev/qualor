@@ -104,8 +104,10 @@ export function ruleRowsFromReport(report: Report): {
   // Sorted by key: two concurrent ingestions upserting an overlapping set of rules then lock
   // those rows in the same relative order, so they wait on each other instead of deadlocking
   // (Postgres 40P01) when their row sets overlap but were built in different (report) orders.
-  const byKey = (a: ReportedRuleRow, b: ReportedRuleRow): number =>
-    a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+  const byKey = (a: ReportedRuleRow, b: ReportedRuleRow): number => {
+    if (a.key < b.key) return -1;
+    return a.key > b.key ? 1 : 0;
+  };
   return {
     withMetadata: [...withMetadata.values()].sort(byKey),
     bare: [...bare.values()].sort(byKey),
@@ -149,7 +151,8 @@ const LITERAL_COLUMNS = [
   { name: 'origin', value: `'reported'` },
 ];
 
-const RECORD = sql.raw(`r(${RULE_COLUMNS.map((c) => `${c.name} ${c.type}`).join(', ')})`);
+const RECORD_COLUMNS = RULE_COLUMNS.map((c) => `${c.name} ${c.type}`).join(', ');
+const RECORD = sql.raw(`r(${RECORD_COLUMNS})`);
 
 /** One record column as the INSERT reads it: a JSON array unpacked, a null given its default. */
 function insertValue(c: RuleColumn): string {
@@ -168,14 +171,15 @@ const COLUMNS = sql.raw(
   `(${[...RULE_COLUMNS.map((c) => c.name), ...LITERAL_COLUMNS.map((c) => c.name)].join(', ')})`,
 );
 
+/** One record column under its own name, a JSON array unpacked into a Postgres array. */
+function namedValue(c: RuleColumn): string {
+  if (!c.arrayOf) return `r.${c.name} AS ${c.name}`;
+  const cast = c.arrayOf === 'integer' ? '::integer' : '';
+  return `ARRAY(SELECT jsonb_array_elements_text(r.${c.name})${cast}) AS ${c.name}`;
+}
+
 /** The record as named columns (`n.<name>`), for the UPDATE of changed metadata. */
-const NAMED_VALUES = sql.raw(
-  RULE_COLUMNS.map((c) =>
-    c.arrayOf
-      ? `ARRAY(SELECT jsonb_array_elements_text(r.${c.name})${c.arrayOf === 'integer' ? '::integer' : ''}) AS ${c.name}`
-      : `r.${c.name} AS ${c.name}`,
-  ).join(', '),
-);
+const NAMED_VALUES = sql.raw(RULE_COLUMNS.map(namedValue).join(', '));
 
 /** Re-inserts of rules a concurrent cleanup deleted between insert and lookup, at most. */
 const RULE_LOOKUP_RETRIES = 3;
@@ -195,8 +199,10 @@ const METADATA = [
   'tags',
   'cwe',
 ] as const;
-const METADATA_OF = (table: string) =>
-  sql.raw(`(${METADATA.map((c) => `${table}.${c}`).join(', ')})`);
+const METADATA_OF = (table: string) => {
+  const columns = METADATA.map((c) => `${table}.${c}`).join(', ');
+  return sql.raw(`(${columns})`);
+};
 const METADATA_SET = sql.raw(METADATA.map((c) => `${c} = n.${c}`).join(', '));
 
 /**

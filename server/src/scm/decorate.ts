@@ -165,6 +165,20 @@ async function reconcileCommitStatus(
 }
 
 /**
+ * Why the analyzers' inline threads are skipped (§5.4): a merged-results pipeline, whose line
+ * numbers are not the merge request's, or a report of another commit than its head.
+ */
+function skippedInline(
+  payload: DecorationPayload,
+  head: string | null,
+  revision: string,
+): SummaryInput['inline']['skipped'] {
+  const eventType = payload.gitlab?.mergeRequestEventType;
+  if (eventType === 'merged_result' || eventType === 'merge_train') return 'merged_result';
+  return head !== revision ? 'stale' : null;
+}
+
+/**
  * The merge request part of a decoration (scm.md §5.2–§5.5): inline discussions, then the
  * summary, then the answers to the people's notes (6I-4). A merge request that is merged or closed
  * gets none of them, and loses the copies of its repository the AI review kept (R16).
@@ -194,13 +208,7 @@ async function decorateMergeRequest(
   const head = mr.diff_refs?.head_sha ?? mr.sha;
   const me = await client.currentUser();
   const listed = await client.discussions(ref, iid, MAX_DISCUSSION_PAGES);
-  const skipped: SummaryInput['inline']['skipped'] =
-    payload.gitlab?.mergeRequestEventType === 'merged_result' ||
-    payload.gitlab?.mergeRequestEventType === 'merge_train'
-      ? 'merged_result'
-      : head !== revision
-        ? 'stale'
-        : null;
+  const skipped = skippedInline(payload, head, revision);
   // §5.4: the analyzers' threads only when the report's line numbers are the merge request's
   // (merged results win over stale: a merge commit is never the head). The AI review's follow the
   // head it read, also in a merged-results pipeline.
@@ -391,6 +399,32 @@ async function decorateThroughCircuit(
 }
 
 /**
+ * The merge request part of a GitLab decoration, only on a merge request branch whose latest
+ * analysis is this one: its `ScmError`, if any, for the caller to weigh with the others.
+ */
+async function decorateMergeRequestOf(
+  deps: DecorationDeps,
+  client: GitLabClient,
+  ref: string,
+  loaded: Loaded,
+  payload: DecorationPayload,
+): Promise<ScmError | null> {
+  const { branch } = loaded;
+  const latestOfMergeRequest =
+    branch.kind === 'merge_request' &&
+    GITLAB_MR_IID.test(branch.name) &&
+    branch.lastAnalysisId === loaded.analysis.id;
+  if (!latestOfMergeRequest) return null;
+  try {
+    await decorateMergeRequest(deps, client, ref, loaded, payload);
+    return null;
+  } catch (err) {
+    if (!(err instanceof ScmError)) throw err;
+    return err;
+  }
+}
+
+/**
  * One GitLab decoration (scm.md §4.2): the project, the commit status, then the merge request
  * part.
  */
@@ -400,7 +434,7 @@ async function decorateGitLab(
   loaded: Loaded,
   failed: (error: ScmError) => DecorationOutcome,
 ): Promise<DecorationOutcome> {
-  const { connection, branch, project } = loaded;
+  const { connection, project } = loaded;
   try {
     const found = gitlabClientFor(connection, deps.scm);
     if ('problem' in found) return failed(new GitLabError('refused', found.problem));
@@ -426,18 +460,8 @@ async function decorateGitLab(
       if (err.kind === 'budget' || err.kind === 'rate_limited') return failed(err);
       errors.push(err);
     }
-    if (
-      branch.kind === 'merge_request' &&
-      GITLAB_MR_IID.test(branch.name) &&
-      branch.lastAnalysisId === loaded.analysis.id
-    ) {
-      try {
-        await decorateMergeRequest(deps, client, ref, loaded, payload);
-      } catch (err) {
-        if (!(err instanceof ScmError)) throw err;
-        errors.push(err);
-      }
-    }
+    const mergeRequestError = await decorateMergeRequestOf(deps, client, ref, loaded, payload);
+    if (mergeRequestError !== null) errors.push(mergeRequestError);
     const error = decisiveError(errors);
     return error === null ? { kind: 'done', connectionId: connection.id } : failed(error);
   } catch (err) {

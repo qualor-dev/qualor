@@ -13,7 +13,8 @@ import type { IssueStatus, LiveIssue } from './plan';
 
 /** Code-unit order, the same as `sortedBy` in writes.ts (not locale-dependent). */
 export function compareCodeUnits(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
 }
 
 export interface DuplicateChange {
@@ -55,8 +56,12 @@ function earliestOtherEngine<K>(
   return at.first.engineId !== engineId ? at.first : at.second;
 }
 
-const earlier = (a: Root | null, b: Root | null): Root | null =>
-  !a ? b : !b ? a : a.order <= b.order ? a : b;
+/** The root of higher priority (the lower `order`) of two, either of which may be missing. */
+const earlier = (a: Root | null, b: Root | null): Root | null => {
+  if (!a) return b;
+  if (!b) return a;
+  return a.order <= b.order ? a : b;
+};
 
 /**
  * data-model.md §5.3: among the branch's issues that are not closed, two on the same path and

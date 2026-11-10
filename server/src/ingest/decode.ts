@@ -174,74 +174,98 @@ export function stripNulDeep(root: unknown): unknown {
     if (pendingChild) {
       const { value: child } = pendingChild;
       pendingChild = null;
-      const i = frame.index - 1;
-      if (frame.kind === 'array') {
-        if (child !== frame.source[i]) ensureArrayResult(frame, i);
-        frame.result?.push(child);
-      } else {
-        const key = frame.keys[i];
-        const cleanKey = frame.pendingKey;
-        if (key === undefined || cleanKey === null) {
-          throw new StripNulInvariantError('stripNulDeep: missing key for a pending child');
-        }
-        frame.pendingKey = null;
-        if (cleanKey !== key || child !== frame.source[key]) ensureObjectResult(frame, i);
-        if (frame.result) setOwn(frame.result, cleanKey, child);
-      }
+      fileChild(frame, child);
       continue;
     }
 
-    if (frame.kind === 'array') {
-      if (frame.index >= frame.source.length) {
-        const finished = frame.result ?? frame.source;
-        stack.pop();
-        if (stack.length === 0) return finished;
-        pendingChild = { value: finished };
-        continue;
-      }
-      const i = frame.index;
-      frame.index += 1;
-      const value = frame.source[i];
-      if (typeof value === 'string') {
-        const cleaned = stripNulString(value);
-        if (cleaned !== value) ensureArrayResult(frame, i);
-        frame.result?.push(cleaned);
-      } else if (value !== null && typeof value === 'object') {
-        if (stack.length >= MAX_JSON_DEPTH) throw new JsonTooDeepError();
-        stack.push(frameFor(value));
-      } else {
-        frame.result?.push(value);
-      }
+    if (frame.index < entryCount(frame)) {
+      advance(stack, frame);
       continue;
     }
-
-    // Object frame.
-    if (frame.index >= frame.keys.length) {
-      const finished = frame.result ?? frame.source;
-      stack.pop();
-      if (stack.length === 0) return finished;
-      pendingChild = { value: finished };
-      continue;
-    }
-    const i = frame.index;
-    frame.index += 1;
-    const key = frame.keys[i];
-    if (key === undefined) continue; // Unreachable: i < frame.keys.length, just checked above.
-    const cleanKey = stripNulString(key);
-    const value = frame.source[key];
-    if (typeof value === 'string') {
-      const cleanedValue = stripNulString(value);
-      if (cleanKey !== key || cleanedValue !== value) ensureObjectResult(frame, i);
-      if (frame.result) setOwn(frame.result, cleanKey, cleanedValue);
-    } else if (value !== null && typeof value === 'object') {
-      if (stack.length >= MAX_JSON_DEPTH) throw new JsonTooDeepError();
-      frame.pendingKey = cleanKey;
-      stack.push(frameFor(value));
-    } else {
-      if (cleanKey !== key) ensureObjectResult(frame, i);
-      if (frame.result) setOwn(frame.result, cleanKey, value);
-    }
+    const finished = frame.result ?? frame.source;
+    stack.pop();
+    if (stack.length === 0) return finished;
+    pendingChild = { value: finished };
   }
+}
+
+/** How many entries a frame walks: an array's items, or an object's own keys. */
+function entryCount(frame: Frame): number {
+  return frame.kind === 'array' ? frame.source.length : frame.keys.length;
+}
+
+/**
+ * Files the finished value of the entry a frame last advanced to (`index - 1`), a container walked
+ * in a frame of its own; the frame is cloned first when that value, or its key, changed.
+ */
+function fileChild(frame: Frame, child: unknown): void {
+  const i = frame.index - 1;
+  if (frame.kind === 'array') {
+    if (child !== frame.source[i]) ensureArrayResult(frame, i);
+    frame.result?.push(child);
+    return;
+  }
+  const key = frame.keys[i];
+  const cleanKey = frame.pendingKey;
+  if (key === undefined || cleanKey === null) {
+    throw new StripNulInvariantError('stripNulDeep: missing key for a pending child');
+  }
+  frame.pendingKey = null;
+  if (cleanKey !== key || child !== frame.source[key]) ensureObjectResult(frame, i);
+  if (frame.result) setOwn(frame.result, cleanKey, child);
+}
+
+/**
+ * Takes the top frame's next entry: a string or a primitive is filed at once, a container gets a
+ * frame of its own on the stack (refused past {@link MAX_JSON_DEPTH}).
+ */
+function advance(stack: Frame[], frame: Frame): void {
+  const child =
+    frame.kind === 'array' ? advanceArray(frame, stack.length) : advanceObject(frame, stack.length);
+  if (child) stack.push(frameFor(child));
+}
+
+/** {@link advance} for an array frame: the container to walk next, or null once filed. */
+function advanceArray(frame: ArrayFrame, depth: number): object | null {
+  const i = frame.index;
+  frame.index += 1;
+  const value = frame.source[i];
+  if (typeof value === 'string') {
+    const cleaned = stripNulString(value);
+    if (cleaned !== value) ensureArrayResult(frame, i);
+    frame.result?.push(cleaned);
+    return null;
+  }
+  if (value !== null && typeof value === 'object') {
+    if (depth >= MAX_JSON_DEPTH) throw new JsonTooDeepError();
+    return value;
+  }
+  frame.result?.push(value);
+  return null;
+}
+
+/** {@link advance} for an object frame: the container to walk next, or null once filed. */
+function advanceObject(frame: ObjectFrame, depth: number): object | null {
+  const i = frame.index;
+  frame.index += 1;
+  const key = frame.keys[i];
+  if (key === undefined) return null; // Unreachable: i < frame.keys.length, checked by the caller.
+  const cleanKey = stripNulString(key);
+  const value = frame.source[key];
+  if (typeof value === 'string') {
+    const cleanedValue = stripNulString(value);
+    if (cleanKey !== key || cleanedValue !== value) ensureObjectResult(frame, i);
+    if (frame.result) setOwn(frame.result, cleanKey, cleanedValue);
+    return null;
+  }
+  if (value !== null && typeof value === 'object') {
+    if (depth >= MAX_JSON_DEPTH) throw new JsonTooDeepError();
+    frame.pendingKey = cleanKey;
+    return value;
+  }
+  if (cleanKey !== key) ensureObjectResult(frame, i);
+  if (frame.result) setOwn(frame.result, cleanKey, value);
+  return null;
 }
 
 /**

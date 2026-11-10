@@ -246,6 +246,21 @@ function reopenedStatus(candidate: CandidateIssue): IssueStatus {
   return candidate.status;
 }
 
+/**
+ * F1: on a mirrored branch a reopening issue mirrors the decision in force, Open included; none
+ * when that is the status it reopens to anyway.
+ */
+function reopeningDecision(
+  input: PlanInput,
+  findingIndex: number,
+  candidate: CandidateIssue,
+  reopened: IssueStatus,
+): FindingDecision | undefined {
+  const reopening = candidate.status === 'closed' || candidate.status === 'resolved';
+  const decision = input.mirrored && reopening ? input.decisions?.get(findingIndex) : undefined;
+  return decision?.status === reopened ? undefined : decision;
+}
+
 function write(
   f: AcceptedFinding,
   id: string,
@@ -326,10 +341,7 @@ export function planTracking(input: PlanInput): TrackingPlan {
     if (candidateIndex !== undefined && candidate) {
       matchedCandidates.add(candidateIndex);
       const reopened = reopenedStatus(candidate);
-      // F1: on a mirrored branch a reopening issue mirrors the decision in force, Open included.
-      const reopening = candidate.status === 'closed' || candidate.status === 'resolved';
-      const decision = input.mirrored && reopening ? input.decisions?.get(i) : undefined;
-      const decided = decision?.status === reopened ? undefined : decision;
+      const decided = reopeningDecision(input, i, candidate, reopened);
       const status: IssueStatus = decided?.status ?? reopened;
       const inNewCode = classifier.inNewCode(
         location?.path ?? null,

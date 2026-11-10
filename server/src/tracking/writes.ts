@@ -5,6 +5,7 @@ import type { Executor } from '../db/client';
 import { uuidv7 } from '../db/ids';
 import { issues, rules } from '../db/schema';
 import { AI_ENGINE } from '../rules/server-engines';
+import { compareCodeUnits } from './dedupe';
 import {
   REOPEN_WINDOW_DAYS,
   type CandidateIssue,
@@ -94,11 +95,7 @@ const UPDATE_RECORD = `${WRITE_RECORD}, from_status text, decided boolean, decid
  *  site below explains, on its own, whether that reproducibility is also deadlock avoidance for
  *  that particular statement (it depends on what kind of lock the statement takes). */
 function sortedBy<T>(rows: readonly T[], key: (row: T) => string): T[] {
-  return [...rows].sort((a, b) => {
-    const ka = key(a);
-    const kb = key(b);
-    return ka < kb ? -1 : ka > kb ? 1 : 0;
-  });
+  return [...rows].sort((a, b) => compareCodeUnits(key(a), key(b)));
 }
 
 /**
@@ -307,7 +304,7 @@ export interface WrittenPlan {
  */
 async function lockPlannedRows(tx: Executor, plan: TrackingPlan): Promise<void> {
   const ids = [...new Set([...plan.updates.map((r) => r.id), ...plan.closes.map((r) => r.id)])];
-  ids.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  ids.sort(compareCodeUnits);
   for (const chunk of jsonChunks(ids)) {
     await tx.execute(sql`
       SELECT i.id FROM issues i

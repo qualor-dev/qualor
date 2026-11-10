@@ -141,14 +141,15 @@ const settingsBody = z.strictObject({
 
 type FilterQuery = { [K in keyof typeof filterQuery]?: z.output<(typeof filterQuery)[K]> };
 
+/** The `action` query parameter as a list: it may repeat or appear once. */
+function actionsOf(action: FilterQuery['action']): string[] | undefined {
+  if (action === undefined) return undefined;
+  return Array.isArray(action) ? action : [action];
+}
+
 /** The filter of a query, without the caller's scope. */
 function filterOf(query: FilterQuery): AuditFilter {
-  const actions =
-    query.action === undefined
-      ? undefined
-      : Array.isArray(query.action)
-        ? query.action
-        : [query.action];
+  const actions = actionsOf(query.action);
   return {
     ...(actions ? { actions } : {}),
     ...(query.outcome ? { outcome: query.outcome } : {}),

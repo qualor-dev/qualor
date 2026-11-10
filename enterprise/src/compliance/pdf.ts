@@ -18,12 +18,10 @@ const CELL_MAX = 120;
 const dash = (value: string | number | null | undefined): string =>
   value === null || value === undefined || value === '' ? '—' : String(value);
 /** An EPSS score as the UI prints it: 0.42 as "42.0%", below 0.1% as "<0.1%". */
-const epssText = (score: number | null | undefined): string =>
-  score === null || score === undefined
-    ? '—'
-    : score < 0.001
-      ? '<0.1%'
-      : `${(score * 100).toFixed(1)}%`;
+const epssText = (score: number | null | undefined): string => {
+  if (score === null || score === undefined) return '—';
+  return score < 0.001 ? '<0.1%' : `${(score * 100).toFixed(1)}%`;
+};
 const day = (iso: string | null): string => (iso ? iso.slice(0, 10) : '—');
 const time = (iso: string): string => `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
 const rating = (value: number | null): string =>
@@ -71,20 +69,30 @@ function datasetFields(report: ReportJson): [string, string][] {
   return fields;
 }
 
+/** The cover's line naming what the report covers: a version, a branch or an organisation. */
+function coverScopeLine(report: ReportJson): string {
+  const { scope } = report;
+  if (scope.kind === 'project' && scope.project && scope.version) {
+    return `Project ${scope.project.name} (${scope.project.key}), organisation ${scope.organization.name}`;
+  }
+  if (scope.kind === 'project' && scope.project) {
+    return (
+      `Project ${scope.project.name} (${scope.project.key}), branch ${dash(scope.branch?.name)}, ` +
+      `organisation ${scope.organization.name}`
+    );
+  }
+  return (
+    `Organisation ${scope.organization.name}: the main branch of each of its ` +
+    `${report.projects.length} projects`
+  );
+}
+
 function cover(layout: Layout, report: ReportJson, sha256: string): Promise<void> {
   const { scope } = report;
   layout.page();
   layout.doc.moveDown(4);
   layout.heading('Qualor compliance report', SIZE.title);
-  layout.text(
-    scope.kind === 'project' && scope.project && scope.version
-      ? `Project ${scope.project.name} (${scope.project.key}), organisation ${scope.organization.name}`
-      : scope.kind === 'project' && scope.project
-        ? `Project ${scope.project.name} (${scope.project.key}), branch ${dash(scope.branch?.name)}, ` +
-          `organisation ${scope.organization.name}`
-        : `Organisation ${scope.organization.name}: the main branch of each of its ` +
-          `${report.projects.length} projects`,
-  );
+  layout.text(coverScopeLine(report));
   if (scope.version) {
     layout.text(
       `Version ${scope.version.label}. A version has no code analysis, so this report holds its ` +

@@ -104,7 +104,10 @@ interface Item {
   rest: string;
 }
 
-const compareStrings = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const compareStrings = (a: string, b: string): number => {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+};
 
 const compareItems = (a: Item, b: Item): number =>
   a.column - b.column ||
@@ -151,90 +154,154 @@ function alignLine(f: readonly Item[], c: readonly Item[]): [number, number][] {
       ? (a[i] as Item).column - (b[j] as Item).column
       : (b[j] as Item).column - (a[i] as Item).column;
   if (a.length === 1) {
-    // Every shift fits a single item exactly, so the shift search reduces to: the item of `b`
-    // with the same message if any, then the smallest |Δcolumn|, then the negative Δcolumn (the
-    // candidate to the finding's right, as the full search of fix round 4 chose), then the
-    // leftmost. O(m).
-    const ai = a[0] as Item;
-    let bestJ = 0;
-    let bestKey: [number, number, number] | null = null;
-    for (let j = 0; j < b.length; j++) {
-      const d = delta(0, j);
-      const key: [number, number, number] = [
-        ai.message === (b[j] as Item).message ? 0 : 1,
-        Math.abs(d),
-        d,
-      ];
-      if (
-        !bestKey ||
-        key[0] < bestKey[0] ||
-        (key[0] === bestKey[0] &&
-          (key[1] < bestKey[1] || (key[1] === bestKey[1] && key[2] < bestKey[2])))
-      ) {
-        bestKey = key;
-        bestJ = j;
-      }
-    }
+    const bestJ = closestItem(a[0] as Item, b, delta);
     return [findingsShorter ? [0, bestJ] : [bestJ, 0]];
   }
-  const shifts = new Set<number>([0]);
-  if (a.length * b.length <= SHIFT_SEARCH_LIMIT) {
-    for (let i = 0; i < a.length; i++) for (let j = 0; j < b.length; j++) shifts.add(delta(i, j));
-  } else {
-    // Too many items for every shift: also try the shifts that align the first items and the
-    // last items, so a uniformly re-indented line whose count changed away from either end still
-    // aligns exactly. Three alignments, still O(n·m).
-    shifts.add(delta(0, 0));
-    shifts.add(delta(a.length - 1, b.length - 1));
-  }
-  const ordered = [...shifts].sort((x, y) => Math.abs(x) - Math.abs(y) || x - y);
+  const ordered = shiftsToTry(a.length, b.length, delta);
 
   const n = a.length;
   const m = b.length;
   const width = m + 1;
   // mis/cost at [i * width + j]: the best alignment of a[0..i) into b[0..j); row 0 stays 0.
-  const mis = new Int32Array((n + 1) * width);
-  const cost = new Float64Array((n + 1) * width);
-  const took = new Uint8Array((n + 1) * width);
+  const table: AlignTable = {
+    width,
+    mis: new Int32Array((n + 1) * width),
+    cost: new Float64Array((n + 1) * width),
+    took: new Uint8Array((n + 1) * width),
+  };
   let best: { mismatches: number; cost: number; pairs: [number, number][] } | null = null;
   for (const s of ordered) {
-    for (let i = 1; i <= n; i++) {
-      const ai = a[i - 1] as Item;
-      for (let j = i; j <= m; j++) {
-        const at = i * width + j;
-        const diag = at - width - 1;
-        const takeMis = (mis[diag] as number) + (ai.message === (b[j - 1] as Item).message ? 0 : 1);
-        const takeCost = (cost[diag] as number) + Math.abs(delta(i - 1, j - 1) - s);
-        // Skipping b[j-1] is only possible while a[0..i) still fits into b[0..j-1).
-        const skipMis = j > i ? (mis[at - 1] as number) : Infinity;
-        const skipCost = j > i ? (cost[at - 1] as number) : Infinity;
-        const skip = skipMis < takeMis || (skipMis === takeMis && skipCost <= takeCost);
-        mis[at] = skip ? skipMis : takeMis;
-        cost[at] = skip ? skipCost : takeCost;
-        took[at] = skip ? 0 : 1;
-      }
-    }
-    const mismatches = mis[n * width + m] as number;
-    const total = cost[n * width + m] as number;
+    fillAlignment(a, b, s, delta, table);
+    const mismatches = table.mis[n * width + m] as number;
+    const total = table.cost[n * width + m] as number;
     if (
       best &&
       (best.mismatches < mismatches || (best.mismatches === mismatches && best.cost <= total))
     ) {
       continue;
     }
-    const pairs: [number, number][] = [];
-    let i = n;
-    let j = m;
-    while (i > 0) {
-      if (took[i * width + j]) {
-        pairs.push(findingsShorter ? [i - 1, j - 1] : [j - 1, i - 1]);
-        i--;
-      }
-      j--;
-    }
-    best = { mismatches, cost: total, pairs };
+    best = { mismatches, cost: total, pairs: alignedPairs(table, n, m, findingsShorter) };
   }
   return best?.pairs ?? [];
+}
+
+/**
+ * {@link alignLine} with a single item on the short side: every shift fits a single item exactly,
+ * so the shift search reduces to: the item of `b` with the same message if any, then the smallest
+ * |Δcolumn|, then the negative Δcolumn (the candidate to the finding's right, as the full search
+ * of fix round 4 chose), then the leftmost. O(m). Returns that item's position in `b`.
+ */
+function closestItem(
+  ai: Item,
+  b: readonly Item[],
+  delta: (i: number, j: number) => number,
+): number {
+  let bestJ = 0;
+  let bestKey: [number, number, number] | null = null;
+  for (let j = 0; j < b.length; j++) {
+    const d = delta(0, j);
+    const key: [number, number, number] = [
+      ai.message === (b[j] as Item).message ? 0 : 1,
+      Math.abs(d),
+      d,
+    ];
+    if (
+      !bestKey ||
+      key[0] < bestKey[0] ||
+      (key[0] === bestKey[0] &&
+        (key[1] < bestKey[1] || (key[1] === bestKey[1] && key[2] < bestKey[2])))
+    ) {
+      bestKey = key;
+      bestJ = j;
+    }
+  }
+  return bestJ;
+}
+
+/**
+ * The column shifts {@link alignLine} tries, smallest |shift| first and the negative one of a
+ * pair first: every shift between two items within {@link SHIFT_SEARCH_LIMIT}, else three.
+ */
+function shiftsToTry(n: number, m: number, delta: (i: number, j: number) => number): number[] {
+  const shifts = new Set<number>([0]);
+  if (n * m <= SHIFT_SEARCH_LIMIT) {
+    for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) shifts.add(delta(i, j));
+  } else {
+    // Too many items for every shift: also try the shifts that align the first items and the
+    // last items, so a uniformly re-indented line whose count changed away from either end still
+    // aligns exactly. Three alignments, still O(n·m).
+    shifts.add(delta(0, 0));
+    shifts.add(delta(n - 1, m - 1));
+  }
+  return [...shifts].sort((x, y) => Math.abs(x) - Math.abs(y) || x - y);
+}
+
+/** {@link alignLine}'s tables, one cell per (i, j) at `i * width + j`, reused for every shift. */
+interface AlignTable {
+  width: number;
+  /** The fewest pairs whose message differs. */
+  mis: Int32Array;
+  /** Then the least Σ|Δcolumn − s|. */
+  cost: Float64Array;
+  /** 1 when the cell's best alignment pairs a[i-1] with b[j-1], 0 when it leaves b[j-1] over. */
+  took: Uint8Array;
+}
+
+/** Fills the tables for the shift `s`: the best alignment of each a[0..i) into each b[0..j). */
+function fillAlignment(
+  a: readonly Item[],
+  b: readonly Item[],
+  s: number,
+  delta: (i: number, j: number) => number,
+  table: AlignTable,
+): void {
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = i; j <= b.length; j++) fillCell(a, b, i, j, s, delta, table);
+  }
+}
+
+/** One cell of {@link fillAlignment}: pair a[i-1] with b[j-1], or leave b[j-1] over. */
+function fillCell(
+  a: readonly Item[],
+  b: readonly Item[],
+  i: number,
+  j: number,
+  s: number,
+  delta: (i: number, j: number) => number,
+  { width, mis, cost, took }: AlignTable,
+): void {
+  const at = i * width + j;
+  const diag = at - width - 1;
+  const takeMis =
+    (mis[diag] as number) + ((a[i - 1] as Item).message === (b[j - 1] as Item).message ? 0 : 1);
+  const takeCost = (cost[diag] as number) + Math.abs(delta(i - 1, j - 1) - s);
+  // Skipping b[j-1] is only possible while a[0..i) still fits into b[0..j-1).
+  const skipMis = j > i ? (mis[at - 1] as number) : Infinity;
+  const skipCost = j > i ? (cost[at - 1] as number) : Infinity;
+  const skip = skipMis < takeMis || (skipMis === takeMis && skipCost <= takeCost);
+  mis[at] = skip ? skipMis : takeMis;
+  cost[at] = skip ? skipCost : takeCost;
+  took[at] = skip ? 0 : 1;
+}
+
+/** The pairs of the alignment the tables hold, read back from the last cell, as `[f, c]`. */
+function alignedPairs(
+  { width, took }: AlignTable,
+  n: number,
+  m: number,
+  findingsShorter: boolean,
+): [number, number][] {
+  const pairs: [number, number][] = [];
+  let i = n;
+  let j = m;
+  while (i > 0) {
+    if (took[i * width + j]) {
+      pairs.push(findingsShorter ? [i - 1, j - 1] : [j - 1, i - 1]);
+      i--;
+    }
+    j--;
+  }
+  return pairs;
 }
 
 /**
@@ -275,14 +342,12 @@ interface GroupPair {
 
 /** Cheapest first; equal costs go to the pair further up the file (a total order on distinct
  *  pairs, so the result never depends on insertion order). */
-const groupLess = (a: GroupPair, b: GroupPair): boolean =>
-  a.cost !== b.cost
-    ? a.cost < b.cost
-    : a.left.line !== b.left.line
-      ? a.left.line < b.left.line
-      : a.right.line !== b.right.line
-        ? a.right.line < b.right.line
-        : a.left.side < b.left.side;
+const groupLess = (a: GroupPair, b: GroupPair): boolean => {
+  if (a.cost !== b.cost) return a.cost < b.cost;
+  if (a.left.line !== b.left.line) return a.left.line < b.left.line;
+  if (a.right.line !== b.right.line) return a.right.line < b.right.line;
+  return a.left.side < b.left.side;
+};
 
 const pairCost = (left: Group, right: Group): number =>
   right.line -
@@ -395,18 +460,7 @@ function pairWithinBucket(
     ...groupsOf(1, candidates, candidateOf, layouts.candidates),
   ];
   groups.sort((x, y) => x.line - y.line || x.side - y.side);
-  const lastByLayout = new Map<string, Group>();
-  for (let i = 0; i < groups.length; i++) {
-    const group = groups[i] as Group;
-    group.prev = groups[i - 1] ?? null;
-    group.next = groups[i + 1] ?? null;
-    const last = lastByLayout.get(group.layout);
-    if (last) {
-      last.layoutNext = group;
-      group.layoutPrev = last;
-    }
-    lastByLayout.set(group.layout, group);
-  }
+  linkGroups(groups);
   const heap = new Heap<GroupPair>(groupLess);
   const consider = (left: Group | null, right: Group | null, viaLayout: boolean): void => {
     if (!left || !right || left.side === right.side) return;
@@ -427,52 +481,95 @@ function pairWithinBucket(
   while (heap.size > 0) {
     const pair = heap.pop();
     if (!pair) break;
-    const { left, right, viaLayout } = pair;
-    if (left.removed || right.removed) continue;
-    if (viaLayout ? !left.inLayout || left.layoutNext !== right : left.next !== right) continue;
+    if (!stillAdjacent(pair)) continue;
+    const { left, right } = pair;
     const cost = pairCost(left, right);
     if (cost !== pair.cost) {
       heap.push({ ...pair, cost });
       continue;
     }
-    const f = left.side === 0 ? left : right;
-    const c = left.side === 0 ? right : left;
-    const fCount = f.items.length - f.head;
-    const cCount = c.items.length - c.head;
-    if (fCount === cCount || Math.max(fCount, cCount) > ALIGN_MAX_ITEMS) {
-      // Positional: pairs the first min(fCount, cCount) of each, so only a head moves — O(pairs).
-      const k = Math.min(fCount, cCount);
-      for (let i = 0; i < k; i++) {
-        onPair((f.items[f.head + i] as Item).index, (c.items[c.head + i] as Item).index);
-      }
-      f.head += k;
-      c.head += k;
-    } else {
-      // Both lines hold at most ALIGN_MAX_ITEMS items here, so compacting them is bounded too.
-      const fItems = f.items.slice(f.head);
-      const cItems = c.items.slice(c.head);
-      const usedF = new Set<number>();
-      const usedC = new Set<number>();
-      for (const [fi, ci] of alignLine(fItems, cItems)) {
-        usedF.add(fi);
-        usedC.add(ci);
-        onPair((fItems[fi] as Item).index, (cItems[ci] as Item).index);
-      }
-      f.items = fItems.filter((_, i) => !usedF.has(i));
-      c.items = cItems.filter((_, i) => !usedC.has(i));
-      f.head = 0;
-      c.head = 0;
-    }
+    pairGroupItems(left, right, onPair);
     for (const group of [left, right]) {
       leaveLayout(group);
       if (group.items.length > group.head) continue;
-      group.removed = true;
-      const { prev: before, next: after } = group;
-      if (before) before.next = after;
-      if (after) after.prev = before;
+      const [before, after] = removeGroup(group);
       consider(before, after, false);
     }
   }
+}
+
+/**
+ * Links the groups, sorted by line, into the list of all groups and into one list per layout
+ * ({@link pairWithinBucket}).
+ */
+function linkGroups(groups: readonly Group[]): void {
+  const lastByLayout = new Map<string, Group>();
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i] as Group;
+    group.prev = groups[i - 1] ?? null;
+    group.next = groups[i + 1] ?? null;
+    const last = lastByLayout.get(group.layout);
+    if (last) {
+      last.layoutNext = group;
+      group.layoutPrev = last;
+    }
+    lastByLayout.set(group.layout, group);
+  }
+}
+
+/** Whether a popped pair still holds: both groups left, and still adjacent in their list. */
+function stillAdjacent({ left, right, viaLayout }: GroupPair): boolean {
+  if (left.removed || right.removed) return false;
+  return viaLayout ? left.inLayout && left.layoutNext === right : left.next === right;
+}
+
+/**
+ * Pairs the items left on two paired lines: positionally when their counts are equal or either
+ * line holds more than {@link ALIGN_MAX_ITEMS} items, else by {@link alignLine}, which leaves
+ * the items it did not pair on their line.
+ */
+function pairGroupItems(
+  left: Group,
+  right: Group,
+  onPair: (finding: number, candidate: number) => void,
+): void {
+  const f = left.side === 0 ? left : right;
+  const c = left.side === 0 ? right : left;
+  const fCount = f.items.length - f.head;
+  const cCount = c.items.length - c.head;
+  if (fCount === cCount || Math.max(fCount, cCount) > ALIGN_MAX_ITEMS) {
+    // Positional: pairs the first min(fCount, cCount) of each, so only a head moves — O(pairs).
+    const k = Math.min(fCount, cCount);
+    for (let i = 0; i < k; i++) {
+      onPair((f.items[f.head + i] as Item).index, (c.items[c.head + i] as Item).index);
+    }
+    f.head += k;
+    c.head += k;
+    return;
+  }
+  // Both lines hold at most ALIGN_MAX_ITEMS items here, so compacting them is bounded too.
+  const fItems = f.items.slice(f.head);
+  const cItems = c.items.slice(c.head);
+  const usedF = new Set<number>();
+  const usedC = new Set<number>();
+  for (const [fi, ci] of alignLine(fItems, cItems)) {
+    usedF.add(fi);
+    usedC.add(ci);
+    onPair((fItems[fi] as Item).index, (cItems[ci] as Item).index);
+  }
+  f.items = fItems.filter((_, i) => !usedF.has(i));
+  c.items = cItems.filter((_, i) => !usedC.has(i));
+  f.head = 0;
+  c.head = 0;
+}
+
+/** Marks a group with nothing left to pair removed and unlinks it; returns its old neighbours. */
+function removeGroup(group: Group): [Group | null, Group | null] {
+  group.removed = true;
+  const { prev: before, next: after } = group;
+  if (before) before.next = after;
+  if (after) after.prev = before;
+  return [before, after];
 }
 
 /**

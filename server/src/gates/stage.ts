@@ -60,6 +60,12 @@ export async function effectiveGate(tx: Executor, project: ProjectRow): Promise<
   return gate ? { id: gate.id, name: gate.name, conditions: gate.conditions } : null;
 }
 
+/** The branch as the gate judges it: the main branch, a merge request or another branch. */
+function gateBranchKind(branch: { isMain: boolean; kind: string }): BranchKind {
+  if (branch.isMain) return 'main';
+  return branch.kind === 'merge_request' ? 'merge_request' : 'branch';
+}
+
 /**
  * Server step 11: evaluates the quality gate with the pure `evaluateGate` of @qualor/shared on
  * the measures the measures stage computed, stores `gate_status`/`gate_result` on the analysis,
@@ -88,13 +94,8 @@ export const gateStage: IngestionStage = {
         warnings.push('GATE_CONDITION_UNKNOWN_METRIC');
       }
     }
-    const branchKind: BranchKind = ctx.branch.isMain
-      ? 'main'
-      : ctx.branch.kind === 'merge_request'
-        ? 'merge_request'
-        : 'branch';
     const result = evaluateGate(known, measures, {
-      branchKind,
+      branchKind: gateBranchKind(ctx.branch),
       baselineStatus: ctx.report.scm.baseline.status,
       smallChangesetLines: await instanceSetting(
         ctx.tx,

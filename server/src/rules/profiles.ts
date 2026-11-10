@@ -154,20 +154,36 @@ export async function loadProfileSet(
     const leafId = chosen.get(language);
     const leaf = leafId === undefined ? undefined : byId.get(leafId);
     if (!leaf) continue;
-    const profileIds: string[] = [];
-    for (
-      let p: typeof leaf | undefined = leaf;
-      p && profileIds.length < MAX_PROFILE_DEPTH && !profileIds.includes(p.id);
-      p = p.parentId === null ? undefined : byId.get(p.parentId)
-    ) {
-      profileIds.push(p.id);
-    }
-    chains.set(language, { profileIds, unknownRules: leaf.unknownRules });
+    chains.set(language, { profileIds: chainOf(leaf, byId), unknownRules: leaf.unknownRules });
   }
 
-  const settings = new Map<string, Map<string, RuleSetting>>();
   const inChains = new Set([...chains.values()].flatMap((c) => c.profileIds));
-  for (const row of loaded?.settings ?? []) {
+  return { chains, settings: settingsOf(loaded?.settings ?? [], inChains) };
+}
+
+/**
+ * A profile's chain: its id, then its ancestors' up to the root, at most MAX_PROFILE_DEPTH of
+ * them; a parent already in the chain (a cycle) ends it.
+ */
+function chainOf(leaf: ProfileRow, byId: ReadonlyMap<string, ProfileRow>): string[] {
+  const profileIds: string[] = [];
+  for (
+    let p: ProfileRow | undefined = leaf;
+    p && profileIds.length < MAX_PROFILE_DEPTH && !profileIds.includes(p.id);
+    p = p.parentId === null ? undefined : byId.get(p.parentId)
+  ) {
+    profileIds.push(p.id);
+  }
+  return profileIds;
+}
+
+/** The `profile_rules` rows of the profiles in a chain, by profile and then by rule. */
+function settingsOf(
+  rows: readonly SettingRow[],
+  inChains: ReadonlySet<string>,
+): Map<string, Map<string, RuleSetting>> {
+  const settings = new Map<string, Map<string, RuleSetting>>();
+  for (const row of rows) {
     if (!inChains.has(row.profileId)) continue;
     let forProfile = settings.get(row.profileId);
     if (!forProfile) {
@@ -180,5 +196,5 @@ export async function loadProfileSet(
       scopeOverride: (row.scopeOverride as RuleScope | null) ?? null,
     });
   }
-  return { chains, settings };
+  return settings;
 }

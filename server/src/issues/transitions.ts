@@ -59,7 +59,8 @@ export const TRANSITION_LOCK_TIMEOUT_MS = 5_000;
  */
 export async function setLockTimeout(tx: Executor, ms: number): Promise<void> {
   if (!Number.isSafeInteger(ms) || ms <= 0) throw new RangeError(`Invalid lock timeout: ${ms}`);
-  await tx.execute(sql`SELECT set_config('lock_timeout', ${`${ms}ms`}, true)`);
+  const timeout = `${ms}ms`;
+  await tx.execute(sql`SELECT set_config('lock_timeout', ${timeout}, true)`);
 }
 
 export interface TransitionFailure {
@@ -291,6 +292,77 @@ export async function transitionIssues(
   });
 }
 
+/** What a requested issue is checked against (step 3 of {@link transitionIssues}). */
+interface TransitionCheck {
+  to: UserStatus;
+  access: IssueAccess;
+  byId: ReadonlyMap<string, LockedIssue>;
+  /** A false positive that writes a vulnerability decision without the reason it needs. */
+  reasonMissing: (id: string) => boolean;
+}
+
+/**
+ * A requested issue's refusal, or its locked row when it may change. An issue already changed
+ * (as the duplicate of an earlier one) is not refused for its status or a missing reason.
+ */
+function checkRequested(
+  id: string,
+  check: TransitionCheck,
+  changes: ReadonlyMap<string, IssueStatus>,
+): { row: LockedIssue } | { failure: TransitionFailure } {
+  if (check.access.forbidden.has(id)) return { failure: { id, code: 'FORBIDDEN' } };
+  const row = check.byId.get(id);
+  if (!row || !check.access.allowed.has(id)) return { failure: { id, code: 'NOT_FOUND' } };
+  if (!changes.has(id) && !transitionAllowed(row.status, check.to)) {
+    return { failure: { id, code: 'INVALID_TRANSITION', from: row.status } };
+  }
+  if (!changes.has(id) && check.reasonMissing(id)) {
+    return { failure: { id, code: 'REASON_REQUIRED' } };
+  }
+  return { row };
+}
+
+/**
+ * The status changes of a transition, in request order: each allowed requested issue, then its
+ * duplicates that may take the transition too, with its comment. Refusals go to `failed`.
+ */
+function selectChanges(
+  ids: readonly string[],
+  check: TransitionCheck,
+  duplicatesOf: ReadonlyMap<string, LockedIssue[]>,
+  commentFor: (id: string) => string | null,
+  comment: string | null,
+): {
+  changes: Map<string, IssueStatus>;
+  commentOf: Map<string, string | null>;
+  result: TransitionResult;
+} {
+  const changes = new Map<string, IssueStatus>();
+  const commentOf = new Map<string, string | null>();
+  const result: TransitionResult = { succeeded: [], failed: [], decisions: [] };
+  for (const id of ids) {
+    const checked = checkRequested(id, check, changes);
+    if ('failure' in checked) {
+      result.failed.push(checked.failure);
+      continue;
+    }
+    changes.set(id, checked.row.status);
+    commentOf.set(id, commentFor(id));
+    result.succeeded.push(id);
+    for (const duplicate of duplicatesOf.get(id) ?? []) {
+      if (
+        !changes.has(duplicate.id) &&
+        transitionAllowed(duplicate.status, check.to) &&
+        !check.reasonMissing(duplicate.id)
+      ) {
+        changes.set(duplicate.id, duplicate.status);
+        commentOf.set(duplicate.id, commentOf.get(id) ?? comment);
+      }
+    }
+  }
+  return { changes, commentOf, result };
+}
+
 /**
  * {@link transitionIssues} inside the caller's transaction, whose lock timeout the caller has set
  * ({@link setLockTimeout}). import-sonarqube.md §11.2 applies both of its statuses in one
@@ -309,10 +381,10 @@ export async function transitionIssuesIn(
 ): Promise<TransitionResult> {
   const { comments } = options;
   const ids = [...new Set(requested)];
-  const { allowed, forbidden } = await issueAccess(tx, user, ids);
+  const access = await issueAccess(tx, user, ids);
   const { locked, deciding, held } = await lockForTransition(
     tx,
-    [...allowed.keys()],
+    [...access.allowed.keys()],
     to !== 'resolved',
   );
   const byId = new Map(locked.map((r) => [r.id, r]));
@@ -326,41 +398,13 @@ export async function transitionIssuesIn(
     duplicatesOf.set(row.duplicate_of_issue_id, list);
   }
 
-  const changes = new Map<string, IssueStatus>();
-  const commentOf = new Map<string, string | null>();
-  const result: TransitionResult = { succeeded: [], failed: [], decisions: [] };
-  for (const id of ids) {
-    if (forbidden.has(id)) {
-      result.failed.push({ id, code: 'FORBIDDEN' });
-      continue;
-    }
-    const row = byId.get(id);
-    if (!row || !allowed.has(id)) {
-      result.failed.push({ id, code: 'NOT_FOUND' });
-      continue;
-    }
-    if (!changes.has(id) && !transitionAllowed(row.status, to)) {
-      result.failed.push({ id, code: 'INVALID_TRANSITION', from: row.status });
-      continue;
-    }
-    if (!changes.has(id) && reasonMissing(id)) {
-      result.failed.push({ id, code: 'REASON_REQUIRED' });
-      continue;
-    }
-    changes.set(id, row.status);
-    commentOf.set(id, comments?.get(id) ?? comment);
-    result.succeeded.push(id);
-    for (const duplicate of duplicatesOf.get(id) ?? []) {
-      if (
-        !changes.has(duplicate.id) &&
-        transitionAllowed(duplicate.status, to) &&
-        !reasonMissing(duplicate.id)
-      ) {
-        changes.set(duplicate.id, duplicate.status);
-        commentOf.set(duplicate.id, commentOf.get(id) ?? comment);
-      }
-    }
-  }
+  const { changes, commentOf, result } = selectChanges(
+    ids,
+    { to, access, byId, reasonMissing },
+    duplicatesOf,
+    (id) => comments?.get(id) ?? comment,
+    comment,
+  );
 
   const rows = [...changes].map(([id, from]) => ({ id, from_status: from }));
   const applied = await writeStatus(tx, rows, to, user.id);

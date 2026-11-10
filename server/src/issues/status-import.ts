@@ -27,6 +27,7 @@ import {
   setLockTimeout,
   TRANSITION_LOCK_TIMEOUT_MS,
   transitionIssuesIn,
+  type TransitionFailure,
   type TransitionResult,
 } from './transitions';
 
@@ -49,6 +50,21 @@ export type ImportRequestItem = StatusImportRequestItem;
 
 /** A result, with `status` (the issue's status after the request) typed as Qualor's. */
 export type ImportResult = Omit<StatusImportResult, 'status'> & { status: IssueStatus | null };
+
+/** The result of an item whose transition to `to` failed. */
+function failedResult(ref: string, failure: TransitionFailure, to: ImportStatus): ImportResult {
+  // The route required project.issues.import, which includes issue.triage, so FORBIDDEN
+  // cannot happen here; were it to, the item is not applied, like an unmatched one.
+  if (failure.code !== 'INVALID_TRANSITION') {
+    return { ref, outcome: 'unmatched', issueId: null, status: null };
+  }
+  return {
+    ref,
+    outcome: failure.from === to ? 'already_set' : 'conflict',
+    issueId: failure.id,
+    status: failure.from ?? null,
+  };
+}
 
 export interface StatusImportResponse {
   branchId: string;
@@ -260,20 +276,7 @@ export async function importIssueStatuses(
       }
       for (const f of outcome.failed) {
         const ref = refOf.get(f.id);
-        if (ref === undefined) continue;
-        // The route required project.issues.import, which includes issue.triage, so FORBIDDEN
-        // cannot happen here; were it to, the item is not applied, like an unmatched one.
-        results.set(
-          ref,
-          f.code !== 'INVALID_TRANSITION'
-            ? { ref, outcome: 'unmatched', issueId: null, status: null }
-            : {
-                ref,
-                outcome: f.from === to ? 'already_set' : 'conflict',
-                issueId: f.id,
-                status: f.from ?? null,
-              },
-        );
+        if (ref !== undefined) results.set(ref, failedResult(ref, f, to));
       }
     }
   };

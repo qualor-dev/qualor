@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app';
-import { SYSTEM_ACTOR } from './audit/recorder';
+import { SYSTEM_ACTOR, type AuditRecorder } from './audit/recorder';
 import { bootstrap, BootstrapError } from './auth/bootstrap';
 import { ConfigError, loadConfig, type Config } from './config';
-import { createDatabase } from './db/client';
+import { createDatabase, type Db } from './db/client';
 import { EmbeddedPostgresError, startEmbeddedPostgres, type EmbeddedPostgres } from './db/embedded';
 import { restoreEmbedded } from './db/restore';
 import { readinessCheck, runMigrations } from './db/migrate';
@@ -37,11 +37,12 @@ import { notifyDeps } from './notifications/deps';
 import { reconcileStuckSetupRuns, repositorySetupHandlers } from './onboarding/setup-run';
 import { bootEnterprise, type EnterpriseBoot } from './plugins/boot';
 import { ensurePluginSchedules, startPluginWorker } from './plugins/mount';
-import { startWorker } from './queue/worker';
+import { startWorker, type JobHandlers } from './queue/worker';
 import { REVIEW_LEASE_MS, reviewHandlers } from './review/job';
 import { reviewSnapshotHandlers } from './review/jobs';
 import { replyHandlers } from './review/reply-job';
 import { reconcileStuckReplies } from './review/reply-queue';
+import { errorClass } from './review/run-ends';
 import { reconcileStuckReviewRuns } from './review/runs';
 import { scmHandlers } from './scm/decorate';
 import { createScmRuntime } from './scm/runtime';
@@ -94,14 +95,159 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-async function main(): Promise<void> {
-  let config: Config;
+type BootLogger = ReturnType<typeof createLogger>;
+
+/** The configuration from the environment; an invalid one stops the boot with its message. */
+function loadConfigOrFail(): Config {
   try {
-    config = loadConfig(process.env);
+    return loadConfig(process.env);
   } catch (err) {
     if (err instanceof ConfigError) fail(err.message);
     throw err;
   }
+}
+
+/** Plan 1F ruling Y2: a UI directory that is missing or wrong stops the boot, before migrations. */
+async function loadUiOrFail(uiDir: string): Promise<UiAssets> {
+  try {
+    return await loadUiAssets(uiDir);
+  } catch (err) {
+    if (err instanceof UiAssetsError) fail(err.message);
+    throw err;
+  }
+}
+
+/**
+ * embedded-postgres.md §2: the PostgreSQL of the image, for a server without DATABASE_URL; a
+ * failure to start it stops the boot. `stopping` tells a stop's exit from PostgreSQL's own.
+ */
+async function startEmbedded(
+  config: Config,
+  logger: BootLogger,
+  stopping: () => boolean,
+): Promise<EmbeddedPostgres> {
+  let embedded: EmbeddedPostgres;
+  try {
+    embedded = await startEmbeddedPostgres({
+      ...config.embedded,
+      logger,
+      // §5 step 1: another container took the volume over; two servers must never share it.
+      lease: {
+        onLost: () => {
+          logger.error({ component: 'postgres' }, 'another server took over the data directory');
+          process.exit(1);
+        },
+      },
+    });
+  } catch (err) {
+    if (err instanceof EmbeddedPostgresError) fail(err.message);
+    throw err;
+  }
+  // §5: PostgreSQL exiting on its own is fatal; the container's restart policy restarts both.
+  void embedded.exited.then((how) => {
+    if (stopping()) return;
+    logger.error({ component: 'postgres', how }, 'the embedded PostgreSQL exited');
+    process.exit(1);
+  });
+  return embedded;
+}
+
+/** The default organization and the first instance admin; a `BootstrapError` aborts the boot. */
+async function bootstrapOrAbort(
+  db: Db,
+  config: Config,
+  logger: BootLogger,
+  abort: (message: string) => Promise<never>,
+): Promise<void> {
+  try {
+    const result = await bootstrap(db, config.bootstrapAdmin);
+    if (result.createdOrganization) logger.info('created the default organization');
+    if (result.createdAdmin) {
+      logger.info({ username: config.bootstrapAdmin.username }, 'created the first instance admin');
+    }
+  } catch (err) {
+    if (err instanceof BootstrapError) await abort(err.message);
+    throw err;
+  }
+}
+
+/** {@link bootEnterprise}; an unreadable licence file aborts the boot. */
+async function bootEnterpriseOrAbort(
+  options: Parameters<typeof bootEnterprise>[0],
+  abort: (message: string) => Promise<never>,
+): Promise<EnterpriseBoot> {
+  try {
+    return await bootEnterprise(options);
+  } catch (err) {
+    // The message names the variable and the path, never the file's content.
+    if (err instanceof LicenseFileError) await abort(err.message);
+    throw err;
+  }
+}
+
+/**
+ * sso-scim.md §10.4: the emergency switch is loud. One warn line per boot, and the event while
+ * audit-log is active; a failure to record (a malformed anchor) is logged and never stops the boot.
+ */
+async function announceForcedPasswordSignIn(
+  db: Db,
+  audit: AuditRecorder,
+  logger: BootLogger,
+): Promise<void> {
+  logger.warn({ component: 'sign-in' }, 'password sign-in forced by QUALOR_FORCE_PASSWORD_SIGN_IN');
+  try {
+    const stored = await readSignInSettings(db, logger);
+    await audit.record(db, SYSTEM_ACTOR, [
+      {
+        action: 'auth.password_sign_in_forced',
+        details: { storedPolicy: stored.passwordSignIn },
+      },
+    ]);
+  } catch (err) {
+    logger.error(
+      { component: 'sign-in', errorClass: errorClass(err) },
+      'could not record auth.password_sign_in_forced',
+    );
+  }
+}
+
+/** telemetry.md: only when enabled; the queue has no handler (and no job) otherwise. */
+function telemetryHandlersIfEnabled(
+  config: Config,
+  db: Db,
+  edition: EnterpriseBoot['edition'],
+  logger: BootLogger,
+): JobHandlers {
+  if (!config.telemetry.enabled) return {};
+  return telemetryHandlers({
+    db,
+    edition,
+    url: config.telemetry.url,
+    database: config.databaseUrl === null ? 'embedded' : 'external',
+    smtpConfigured: config.smtp !== null,
+    logger,
+  });
+}
+
+/**
+ * A scheduling step of the boot, never fatal: a failure is logged with its error's class only (a
+ * worker's afterReap re-creates the run within 30 s).
+ */
+async function scheduleAtBoot(
+  logger: BootLogger,
+  component: string,
+  failure: string,
+  schedule: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await schedule();
+  } catch (err) {
+    logger.warn({ component, errorClass: errorClass(err) }, failure);
+  }
+}
+
+async function main(): Promise<void> {
+  const config = loadConfigOrFail();
   // 4E-3b §4: the bundle for when the UI is unreachable. No UI, HTTP, workers or migrations; it
   // logs to standard error, because standard output may carry the zip.
   if (process.argv[2] === 'support-bundle') {
@@ -114,16 +260,7 @@ async function main(): Promise<void> {
       }),
     );
   }
-  // Plan 1F ruling Y2: a UI directory that is missing or wrong stops the boot, before migrations.
-  let ui: UiAssets | undefined;
-  if (config.uiDir !== null) {
-    try {
-      ui = await loadUiAssets(config.uiDir);
-    } catch (err) {
-      if (err instanceof UiAssetsError) fail(err.message);
-      throw err;
-    }
-  }
+  const ui = config.uiDir === null ? undefined : await loadUiOrFail(config.uiDir);
   const logBuffer = new LogBuffer();
   const logger = createLogger(config.logLevel, undefined, logBuffer);
   if (process.argv[2] === 'restore') {
@@ -135,29 +272,8 @@ async function main(): Promise<void> {
   let stopping = false;
   let databaseUrl = config.databaseUrl;
   if (databaseUrl === null) {
-    try {
-      embedded = await startEmbeddedPostgres({
-        ...config.embedded,
-        logger,
-        // §5 step 1: another container took the volume over; two servers must never share it.
-        lease: {
-          onLost: () => {
-            logger.error({ component: 'postgres' }, 'another server took over the data directory');
-            process.exit(1);
-          },
-        },
-      });
-    } catch (err) {
-      if (err instanceof EmbeddedPostgresError) fail(err.message);
-      throw err;
-    }
+    embedded = await startEmbedded(config, logger, () => stopping);
     databaseUrl = embedded.url;
-    // §5: PostgreSQL exiting on its own is fatal; the container's restart policy restarts both.
-    void embedded.exited.then((how) => {
-      if (stopping) return;
-      logger.error({ component: 'postgres', how }, 'the embedded PostgreSQL exited');
-      process.exit(1);
-    });
   }
   /** A failure after the embedded PostgreSQL started stops it first, so it is never orphaned. */
   const abort = async (message: string): Promise<never> => {
@@ -174,36 +290,22 @@ async function main(): Promise<void> {
   } catch (err) {
     await abort(databaseStartupError(err, embedded !== undefined));
   }
-  try {
-    const result = await bootstrap(database.db, config.bootstrapAdmin);
-    if (result.createdOrganization) logger.info('created the default organization');
-    if (result.createdAdmin) {
-      logger.info({ username: config.bootstrapAdmin.username }, 'created the first instance admin');
-    }
-  } catch (err) {
-    if (err instanceof BootstrapError) await abort(err.message);
-    throw err;
-  }
+  await bootstrapOrAbort(database.db, config, logger, abort);
   // The SCM worker's per-process state; the support bundle reads its circuits (4E-3b §1).
   const scmRuntime = createScmRuntime();
   // enterprise.md §6, §12: the key is read once; plugins load only while it is active or in grace.
   // The API and the workers share the one frozen registry and the one edition.
-  let enterprise: EnterpriseBoot;
-  try {
-    enterprise = await bootEnterprise({
+  const { edition, plugins, audit } = await bootEnterpriseOrAbort(
+    {
       config,
       db: database.db,
       logger,
       serverVersion: VERSION,
       // 4E-3b §4: the support bundle reads this replica's log tail and SCM circuits.
       support: { migrationsDir: MIGRATIONS_DIR, logBuffer, scmRuntime },
-    });
-  } catch (err) {
-    // The message names the variable and the path, never the file's content.
-    if (err instanceof LicenseFileError) await abort(err.message);
-    throw err;
-  }
-  const { edition, plugins, audit } = enterprise;
+    },
+    abort,
+  );
   const vulndb = await readVulndbSettings(database.db);
   logger.info(
     { component: 'telemetry' },
@@ -213,31 +315,7 @@ async function main(): Promise<void> {
       edition.limits().vulnerabilities.priority ? priorityBootHosts(vulndb.source) : null,
     ),
   );
-  // sso-scim.md §10.4: the emergency switch is loud. One warn line per boot, and the event while
-  // audit-log is active; a failure to record (a malformed anchor) is logged and never stops the boot.
-  if (config.forcePasswordSignIn) {
-    logger.warn(
-      { component: 'sign-in' },
-      'password sign-in forced by QUALOR_FORCE_PASSWORD_SIGN_IN',
-    );
-    try {
-      const stored = await readSignInSettings(database.db, logger);
-      await audit.record(database.db, SYSTEM_ACTOR, [
-        {
-          action: 'auth.password_sign_in_forced',
-          details: { storedPolicy: stored.passwordSignIn },
-        },
-      ]);
-    } catch (err) {
-      logger.error(
-        {
-          component: 'sign-in',
-          errorClass: err instanceof Error ? err.constructor.name : typeof err,
-        },
-        'could not record auth.password_sign_in_forced',
-      );
-    }
-  }
+  if (config.forcePasswordSignIn) await announceForcedPasswordSignIn(database.db, audit, logger);
   // telemetry.md "Update check": only while telemetry is on; never fatal, never above info.
   const updates = updateCheckerFor(config, { currentVersion: VERSION, logger });
   const app = await buildApp({
@@ -274,17 +352,7 @@ async function main(): Promise<void> {
       // 6I-2: merge requests' review snapshots are unpacked here; the worker tries the queues in
       // this order, so a waiting analysis is taken first.
       ...reviewSnapshotHandlers({ db: database.db, logger, limits: config.reviewSnapshot }),
-      // telemetry.md: only when enabled; the queue has no handler (and no job) otherwise.
-      ...(config.telemetry.enabled
-        ? telemetryHandlers({
-            db: database.db,
-            edition,
-            url: config.telemetry.url,
-            database: config.databaseUrl === null ? 'embedded' : 'external',
-            smtpConfigured: config.smtp !== null,
-            logger,
-          })
-        : {}),
+      ...telemetryHandlersIfEnabled(config, database.db, edition, logger),
       // E1 spec: the daily licence expiry check (it queues email; the mail worker sends it).
       ...licenseAlertHandlers({ db: database.db, edition, config, logger }),
       // 6G R14: the hourly weekly-digest check (it queues deliveries; the webhook worker sends them).
@@ -474,67 +542,30 @@ async function main(): Promise<void> {
   await ensurePluginSchedules(database.db, plugins, 'now');
   await app.listen({ host: config.host, port: config.port });
   updates?.start();
-  try {
+  // Never fatal: the worker's afterReap re-creates each run within 30 s (the vulndb worker's, the
+  // vulnerability database check's).
+  await scheduleAtBoot(logger, 'telemetry', 'telemetry could not be scheduled', async () => {
     if (config.telemetry.enabled) await scheduleTelemetryAtBoot(database.db);
     else await cancelTelemetry(database.db);
-  } catch (err) {
-    // Never fatal: the worker's afterReap re-creates the run within 30 s.
-    logger.warn(
-      {
-        component: 'telemetry',
-        errorClass: err instanceof Error ? err.constructor.name : typeof err,
-      },
-      'telemetry could not be scheduled',
-    );
-  }
-  try {
-    await scheduleLicenseAlertAtBoot(database.db);
-  } catch (err) {
-    // Never fatal: the worker's afterReap re-creates the run within 30 s.
-    logger.warn(
-      {
-        component: 'licence',
-        errorClass: err instanceof Error ? err.constructor.name : typeof err,
-      },
-      'the licence expiry check could not be scheduled',
-    );
-  }
-  try {
-    await scheduleVulnerabilityDigestAtBoot(database.db);
-  } catch (err) {
-    // Never fatal: the worker's afterReap re-creates the run within 30 s.
-    logger.warn(
-      {
-        component: 'vulnerabilities',
-        errorClass: err instanceof Error ? err.constructor.name : typeof err,
-      },
-      'the vulnerability digest could not be scheduled',
-    );
-  }
-  try {
-    await scheduleVulndbAtBoot(database.db);
-  } catch (err) {
-    // Never fatal: the vulndb worker's afterReap re-creates the run within 30 s.
-    logger.warn(
-      {
-        component: 'vulndb',
-        errorClass: err instanceof Error ? err.constructor.name : typeof err,
-      },
-      'the vulnerability database check could not be scheduled',
-    );
-  }
-  try {
-    await scheduleDigestAtBoot(database.db);
-  } catch (err) {
-    // Never fatal: the worker's afterReap re-creates the run within 30 s.
-    logger.warn(
-      {
-        component: 'digest',
-        errorClass: err instanceof Error ? err.constructor.name : typeof err,
-      },
-      'the weekly digest could not be scheduled',
-    );
-  }
+  });
+  await scheduleAtBoot(logger, 'licence', 'the licence expiry check could not be scheduled', () =>
+    scheduleLicenseAlertAtBoot(database.db),
+  );
+  await scheduleAtBoot(
+    logger,
+    'vulnerabilities',
+    'the vulnerability digest could not be scheduled',
+    () => scheduleVulnerabilityDigestAtBoot(database.db),
+  );
+  await scheduleAtBoot(
+    logger,
+    'vulndb',
+    'the vulnerability database check could not be scheduled',
+    () => scheduleVulndbAtBoot(database.db),
+  );
+  await scheduleAtBoot(logger, 'digest', 'the weekly digest could not be scheduled', () =>
+    scheduleDigestAtBoot(database.db),
+  );
 
   const shutdown = async (signal: string): Promise<void> => {
     if (stopping) return;
