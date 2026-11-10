@@ -293,15 +293,17 @@ describe('/scanner/vulnerability-db (API)', () => {
       const big = trivyArchive({ db: randomBytes(48 * 1024 * 1024) });
       const digest = await store(big, true);
       const before = downloadTimeouts.stallMs;
-      downloadTimeouts.stallMs = 500;
+      // 1.5 s, not less: a loaded test host (the full suite in parallel) delays timers by hundreds
+      // of milliseconds, and the stall check must not mistake that for a stalled reader.
+      downloadTimeouts.stallMs = 1500;
       try {
         const { res } = await open(digest.slice(7));
         expect(res.statusCode).toBe(200);
         const hash = createHash('sha256');
         let received = 0;
         let sincePause = 0;
-        // About 10 MiB/s: the 48 MiB take several seconds, many times stallMs, and the server has
-        // read every chunk from the database long before the socket sent it.
+        // About 5 MiB/s: the 48 MiB take about 10 s, many times stallMs, and the server has read
+        // every chunk from the database long before the socket sent it.
         await new Promise<void>((resolve, reject) => {
           res.on('data', (chunk: Buffer) => {
             hash.update(chunk);
@@ -310,7 +312,7 @@ describe('/scanner/vulnerability-db (API)', () => {
             if (sincePause >= 1024 * 1024) {
               sincePause = 0;
               res.pause();
-              setTimeout(() => res.resume(), 100);
+              setTimeout(() => res.resume(), 200);
             }
           });
           res.on('end', resolve);
