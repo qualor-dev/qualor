@@ -150,24 +150,29 @@ function quietText(count: number, more: boolean): string {
   return `${count} ${more ? 'more ' : ''}${noun}: no new security issues, gate passed`;
 }
 
+/** The bytes the project lines of the digest's vulnerability section may use. */
+const VULNERABILITY_BYTES = 5_000;
+
 /** C8: the digest's vulnerability section, in the words of the Slack one. */
 function vulnerabilitiesBlocks(v: DigestVulnerabilities, links: ChatLinks): Element[] {
-  const lines = v.projects.map((p) => {
+  // Escaped text is up to 7 bytes a character, and the card shares its 28 KB with the digest's
+  // other parts: lines are added while they fit a byte budget, the rest join the tail.
+  let budget = VULNERABILITY_BYTES;
+  const lines: string[] = [];
+  for (const p of v.projects) {
     const name = link(vulnerabilitiesUrl(links, p.projectId), teamsText(p.name, 50));
-    return `- ${name} — ${vulnerabilityProjectCounts(p, teamsInline)}`;
-  });
+    const line = `- ${name} — ${vulnerabilityProjectCounts(p, teamsInline)}`;
+    const size = Buffer.byteLength(line, 'utf8') + 1;
+    if (size > budget) break;
+    budget -= size;
+    lines.push(line);
+  }
+  const more = v.moreProjects + (v.projects.length - lines.length);
   return [
     heading('Vulnerabilities in tracked versions'),
     block(vulnerabilitySummary(v, (s) => s)),
-    ...(lines.length + v.moreProjects > 0
-      ? [
-          block(
-            [
-              ...lines,
-              ...(v.moreProjects > 0 ? [`- …and ${v.moreProjects} more projects`] : []),
-            ].join('\n'),
-          ),
-        ]
+    ...(lines.length + more > 0
+      ? [block([...lines, ...(more > 0 ? [`- …and ${more} more projects`] : [])].join('\n'))]
       : []),
   ];
 }

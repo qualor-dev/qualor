@@ -628,6 +628,58 @@ describe('exploited messages', () => {
     expect(teams).toContain('"url":"https://qualor.example.com/projects"');
   });
 
+  it('Teams golden: three projects, the third with only its count', () => {
+    const line = (i: number, fix: string) =>
+      `- CVE-2026-${1000 + i} (Critical) in lodash 4.17.20, 4.17.19 — ${fix} · main, release/2.x · in KEV since 2026-11-03`;
+    const h = (id: string, name: string) => ({
+      type: 'TextBlock',
+      text: `[${name}](${VULN_URL(id)})`,
+      weight: 'Bolder',
+      spacing: 'Medium',
+      wrap: true,
+    });
+    const t = (text: string) => ({ type: 'TextBlock', text, wrap: true });
+    expect(formatChat('teams', exploitedThree, LINKS)).toEqual({
+      type: 'message',
+      attachments: [
+        {
+          contentType: 'application/vnd.microsoft.card.adaptive',
+          contentUrl: null,
+          content: {
+            $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+            type: 'AdaptiveCard',
+            version: '1.4',
+            msteams: { width: 'Full' },
+            body: [
+              {
+                type: 'TextBlock',
+                text: 'Exploited vulnerabilities in 7 projects',
+                weight: 'Bolder',
+                size: 'Medium',
+                color: 'Attention',
+                wrap: true,
+              },
+              h(P, 'Payments'),
+              t([1, 2, 3, 4, 5, 6].map((i) => line(i, 'fixed in 4.17.21')).join('\n')),
+              h(PB, 'Billing'),
+              t([...[7, 8, 9, 10].map((i) => line(i, 'no fix yet')), '- …and 2 more'].join('\n')),
+              h(PC, 'Checkout'),
+              t('- …and 3 more'),
+              t('…and 4 more projects'),
+            ],
+            actions: [
+              {
+                type: 'Action.OpenUrl',
+                title: 'Open in Qualor',
+                url: 'https://qualor.example.com/projects',
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
   it('has no URL, link or button without a public URL', () => {
     for (const kind of ['slack', 'teams'] as const) {
       const json = JSON.stringify(formatChat(kind, exploitedOne, NO_LINKS));
@@ -833,5 +885,62 @@ describe('digest vulnerability section', () => {
     expect(shown + more).toBe(17);
     const teams = JSON.stringify(formatChat('teams', m, LINKS));
     expect(Buffer.byteLength(teams, 'utf8')).toBeLessThan(28_000);
+  });
+});
+
+describe('combined worst case', () => {
+  const hostileVulns = (): ChatDigestMessage['vulnerabilities'] => ({
+    critical: 99,
+    high: 99,
+    exploited: 99,
+    projects: Array.from({ length: 10 }, (_, i) => ({
+      projectId: `0190a6c2-0000-7000-8000-${String(i).padStart(12, '0')}`,
+      name: '[*_`'.repeat(125),
+      critical: 9,
+      high: 9,
+      exploited: 9 as number | null,
+      targets: Array.from({ length: 5 }, () => '[*_`'.repeat(50)),
+      moreTargets: 99,
+    })),
+    moreProjects: 7,
+  });
+  const full = (): ChatDigestMessage => ({
+    ...digest,
+    scope: { ...digest.scope, organization: { id: O, name: '*'.repeat(500) } },
+    rows: Array.from({ length: 20 }, (_, i) => row(i + 1, { name: '[*_`'.repeat(125) })),
+    moreProjects: 7,
+    top: Array.from({ length: 3 }, () => ({
+      ...digest.top[0]!,
+      projectName: '*'.repeat(500),
+      ruleName: '_'.repeat(500),
+      path: '[]'.repeat(250),
+    })),
+    vulnerabilities: hostileVulns(),
+  });
+
+  it('Teams: a full digest plus a maximal section stays under 28 KB, and counts every project', () => {
+    const card = formatChat('teams', full(), LINKS) as {
+      attachments: { content: { body: { text?: string }[] } }[];
+    };
+    expect(Buffer.byteLength(JSON.stringify(card), 'utf8')).toBeLessThan(28_000);
+    const body = card.attachments[0]!.content.body;
+    const i = body.findIndex((b) => b.text === 'Vulnerabilities in tracked versions');
+    const lines = body[i + 2]!.text!.split('\n');
+    const shown = lines.filter((l) => !l.startsWith('- …and')).length;
+    const more = Number(/…and (\d+) more projects/.exec(lines[lines.length - 1]!)?.[1]);
+    expect(shown).toBeLessThan(10);
+    expect(shown + more).toBe(17);
+  });
+
+  it('Slack: every section of the same digest is within 3000 characters', () => {
+    const slack = formatChat('slack', full(), LINKS) as SlackOut;
+    expect(slack.blocks.length).toBeLessThanOrEqual(50);
+    for (const b of slack.blocks) {
+      expect([...(b.text?.text ?? '')].length).toBeLessThanOrEqual(3000);
+    }
+    const text = slack.blocks.map((b) => b.text?.text ?? '').find((t) => t.includes('tracked'))!;
+    const shown = text.split('\n').filter((l) => l.startsWith('• ')).length;
+    const more = Number(/…and (\d+) more projects/.exec(text)?.[1]);
+    expect(shown + more).toBe(17);
   });
 });
