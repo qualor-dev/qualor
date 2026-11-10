@@ -23,7 +23,7 @@ The images are on Docker Hub, for `linux/amd64`, with the Helm chart next to the
 
 | Image | What it is | Size |
 |---|---|---|
-| [`qualor/server`](https://hub.docker.com/r/qualor/server) | API, web UI and worker in one Node process, plus PostgreSQL 18; distroless, user 65532 | ~340 MB |
+| [`qualor/server`](https://hub.docker.com/r/qualor/server) | API, web UI and worker in one Node process, plus PostgreSQL 18 and Trivy; distroless, user 65532 | ~640 MB |
 | [`qualor/scanner`](https://hub.docker.com/r/qualor/scanner) | the `qualor` CLI (its entrypoint), Node.js, a JRE 17, git and the pinned analyzers, with Trivy's database | ~4.1 GB |
 | [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet) | `qualor/scanner` plus the .NET 8 and .NET 10 SDKs and Roslynator, for C# | ~5.8 GB |
 

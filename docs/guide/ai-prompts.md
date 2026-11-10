@@ -34,9 +34,10 @@ Read the documentation before you act. It is Markdown at
 https://qualor.dev/docs/<page>.md: README, quick-start,
 install-server, users-projects-tokens, gitlab, github, other-ci,
 languages-and-analyzers, configuration, quality-gates, cli,
-migrate-from-sonarqube, webhooks-and-api, troubleshooting. Fetch the
-pages as you need them, and trust them over your memory: Qualor
-changes quickly.
+migrate-from-sonarqube, webhooks-and-api, releases,
+dependency-vulnerabilities, vulnerability-database, troubleshooting.
+Fetch the pages as you need them, and trust them over your memory:
+Qualor changes quickly.
 
 Company context (ask me for anything missing before phase 2):
 - SCM: <GitLab self-managed at https://gitlab.example.com |
@@ -75,8 +76,11 @@ qualor/scanner-dotnet for C#) into our registry, as install-server.md
 shows. Use the same release tag for the server and the scanner. Set
 up a daily pg_dump backup, and store .env (it holds
 QUALOR_SECRET_KEY) separately. Verify /readyz, sign-in and a changed
-admin password. Tell me where each secret is stored, without
-printing it.
+admin password. In Settings → Vulnerability database, check that
+Vulnerability monitoring is on and the state reaches Up to date; the
+server needs the hosts, mirror or uploaded file of
+vulnerability-database.md. Tell me where each secret is stored,
+without printing it.
 
 Phase 3, pilot. For each pilot repository: create the Qualor project
 (its key is the CI project path), with its main branch name matching
@@ -85,7 +89,11 @@ the masked, not protected, CI variable QUALOR_TOKEN, next to
 QUALOR_URL. Add the CI job from the docs: full git history,
 dependencies installed or the build run before the scan, the
 coverage report produced before the scan, and the GitLab component
-or GitHub workflow where it applies. Add a minimal qualor.yml only
+or GitHub workflow where it applies. Make the job run on tags too,
+so each release records a version (releases.md). In the project's
+Settings → Vulnerability monitoring, check that Track
+vulnerabilities in this project is on and that the tracked branches
+and versions are the ones we support. Add a minimal qualor.yml only
 when the defaults are not enough. Start with the gate as a soft
 check (allow-failure / not required). Open one merge request per
 repository, and check that the pipeline is green and the analysis
@@ -98,7 +106,9 @@ App with Checks, Contents and Pull requests write and Issues read
 (Qualor uses Contents only to resolve and reopen its own review
 conversations). Map each pilot project, run the connection test,
 and show me a merge request with Qualor's summary comment and inline
-findings.
+findings. If our licence is Business or Enterprise, have each pilot
+team Watch its project with New vulnerabilities in tracked versions
+on, for the vulnerability alerts (dependency-vulnerabilities.md).
 
 Phase 5, tuning. From the pilot results, propose the organisation's
 gate and profile changes, each with a reason: which noisy rules to
