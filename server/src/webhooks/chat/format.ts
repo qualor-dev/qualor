@@ -20,6 +20,12 @@ export function projectUrl(links: ChatLinks, projectId: string): string | null {
   return links.publicUrl === null ? null : `${links.publicUrl}/projects/${projectId}`;
 }
 
+/** The project's Vulnerabilities tab. */
+export function vulnerabilitiesUrl(links: ChatLinks, projectId: string): string | null {
+  const project = projectUrl(links, projectId);
+  return project === null ? null : `${project}/vulnerabilities`;
+}
+
 /** The branch page, as the gate emails link it (mail notify-common `branchLinks`). */
 export function branchUrl(links: ChatLinks, projectId: string, branchId: string): string | null {
   const project = projectUrl(links, projectId);

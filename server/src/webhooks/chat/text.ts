@@ -1,7 +1,20 @@
 import { SEVERITIES, type Severity } from '@qualor/shared';
 import { clip, failsWhen, metricLabel, metricValue } from '../../mail/templates/notify-common';
+import {
+  MAX_INSTALLED_VERSIONS,
+  MAX_PACKAGE_NAME,
+  MAX_PROJECT_NAME,
+  MAX_TARGETS,
+} from '../../mail/templates/notify-vulnerability-common';
 import { oneLine } from '../../mail/text';
-import type { ChatGateMessage, DigestGate } from './messages';
+import type {
+  ChatExploitedMessage,
+  ChatGateMessage,
+  DigestGate,
+  DigestVulnerabilities,
+  ExploitedRow,
+  VulnerabilitySeverity,
+} from './messages';
 
 const Z = '\u200B';
 /** Names longer than this are clipped in every message (fits Slack's and Teams' limits). */
@@ -32,8 +45,13 @@ export function slackText(s: string, max = MAX_NAME): string {
  * ignores HTML, so `<`, `>` stay.
  */
 export function teamsText(s: string, max = MAX_NAME): string {
-  const text = plainText(s, max).replace(/[*_~`[\]]/g, (c) => `${Z}${c}${Z}`);
+  const text = teamsInline(s, max);
   return /^([-+#>]|\d+\.)/.test(text) ? `${Z}${text}` : text;
+}
+
+/** `teamsText` for text that never starts a line (after a bullet, a label or other text). */
+export function teamsInline(s: string, max = MAX_NAME): string {
+  return plainText(s, max).replace(/[*_~`[\]]/g, (c) => `${Z}${c}${Z}`);
 }
 
 /** `Quality gate failed — <project> · <branch>` (spec §4), raw: each formatter escapes it. */
@@ -123,6 +141,69 @@ const SEVERITY_LABELS: Record<Severity, string> = {
 
 export function severityLabel(s: Severity): string {
   return SEVERITY_LABELS[s];
+}
+
+const VULNERABILITY_SEVERITY_LABELS: Record<VulnerabilitySeverity, string> = {
+  critical: 'Critical',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  unknown: 'Unknown',
+};
+
+/** A vulnerability's severity (not an issue severity). */
+export function vulnerabilitySeverityLabel(s: VulnerabilitySeverity): string {
+  return VULNERABILITY_SEVERITY_LABELS[s];
+}
+
+/** `YYYY-MM-DD` of a stored date (the schema already guarantees the shape). */
+export function kevDate(s: string): string {
+  return s.slice(0, 10);
+}
+
+type Esc = (s: string, max?: number) => string;
+
+/** C5 title, raw: each formatter escapes the project name. `more` rows count too. */
+export function exploitedTitle(m: ChatExploitedMessage, esc: Esc): string {
+  const [first] = m.projects;
+  if (m.projects.length === 1 && first !== undefined && m.moreProjects === 0) {
+    const n = first.rows.length + first.more;
+    const where = esc(first.name, MAX_PROJECT_NAME);
+    return n === 1
+      ? `Exploited vulnerability in ${where}`
+      : `${n} exploited vulnerabilities in ${where}`;
+  }
+  return `Exploited vulnerabilities in ${m.projects.length + m.moreProjects} projects`;
+}
+
+/** C8 exploited row, without its bullet. `bold` wraps the id (Slack); `esc` escapes the parts. */
+export function exploitedRowText(r: ExploitedRow, esc: Esc, bold: (s: string) => string): string {
+  const fix = r.fixedVersion === null ? 'no fix yet' : `fixed in ${esc(r.fixedVersion, 40)}`;
+  return (
+    `${bold(esc(r.vulnerabilityId, 60))} (${vulnerabilitySeverityLabel(r.severity)}) in ` +
+    `${esc(r.packageName, MAX_PACKAGE_NAME)} ${esc(r.installedVersions.join(', '), MAX_INSTALLED_VERSIONS)}` +
+    ` — ${fix} · ${esc(r.targets.join(', '), MAX_TARGETS)} · in KEV since ${kevDate(r.kevDateAdded)}`
+  );
+}
+
+/** C8 digest summary: counts, with the exploited one only when it is known. */
+export function vulnerabilitySummary(
+  v: DigestVulnerabilities,
+  bold: (s: string) => string,
+): string {
+  const x = v.exploited === null ? '' : ` · ${bold(String(v.exploited))} exploited`;
+  return `${bold(String(v.critical))} critical · ${bold(String(v.high))} high new vulnerabilities${x}`;
+}
+
+/** C8 digest project line, without bullet and name. */
+export function vulnerabilityProjectCounts(
+  p: DigestVulnerabilities['projects'][number],
+  esc: Esc,
+): string {
+  const x = p.exploited === null ? '' : `, ${p.exploited} exploited`;
+  const more = p.moreTargets > 0 ? ` +${p.moreTargets} more` : '';
+  const targets = p.targets.map((t) => esc(t, 40)).join(', ');
+  return `${p.critical} critical, ${p.high} high${x} · ${targets}${more}`;
 }
 
 /** "High 2 · Medium 1": only the severities that have issues; "none" when none has. */

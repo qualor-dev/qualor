@@ -118,6 +118,8 @@ function eventLabel(event: DeliveryEvent): string {
       return $localize`:@@webhooks.event.gateRecovered:Quality gate passes again (main branch)`;
     case 'digest.weekly':
       return $localize`:@@webhooks.event.digest:Weekly security digest`;
+    case 'vulnerabilities.exploited':
+      return $localize`:@@webhooks.event.vulnerabilitiesExploited:Exploited vulnerabilities (at once)`;
     case 'chat.test':
       return $localize`:@@webhooks.event.test:Test message`;
   }

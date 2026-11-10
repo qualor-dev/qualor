@@ -3092,6 +3092,7 @@
     "webhooks.event.gateFailed": "Quality gate failed (main branch)",
     "webhooks.event.gateRecovered": "Quality gate passes again (main branch)",
     "webhooks.event.digest": "Weekly security digest",
+    "webhooks.event.vulnerabilitiesExploited": "Exploited vulnerabilities (at once)",
     "webhooks.event.test": "Test message",
     "webhooks.createdDone": "Webhook added.",
     "webhooks.createdChat": "Webhook added.",

@@ -1,9 +1,28 @@
-import { branchUrl, issueUrl, projectsUrl, projectUrl, type ChatLinks } from './format';
-import type { ChatDigestMessage, ChatGateMessage, ChatMessage, ChatTestMessage } from './messages';
+import {
+  branchUrl,
+  issueUrl,
+  projectsUrl,
+  projectUrl,
+  vulnerabilitiesUrl,
+  type ChatLinks,
+} from './format';
+import { MAX_PROJECT_NAME } from '../../mail/templates/notify-vulnerability-common';
+import type {
+  ChatDigestMessage,
+  ChatExploitedMessage,
+  ChatGateMessage,
+  ChatMessage,
+  ChatTestMessage,
+  DigestVulnerabilities,
+} from './messages';
 import {
   conditionText,
   digestGateLabel,
+  exploitedRowText,
+  exploitedTitle,
   gateTitle,
+  vulnerabilityProjectCounts,
+  vulnerabilitySummary,
   localDate,
   newCodeText,
   plainText,
@@ -135,6 +154,45 @@ function quietLine(count: number, more: boolean): string {
   return `${count} ${more ? 'more ' : ''}${noun}: no new security issues, gate passed`;
 }
 
+/** C8: the digest's vulnerability section; project lines that do not fit fold into the tail. */
+function vulnerabilitiesSection(v: DigestVulnerabilities, links: ChatLinks): SlackBlock {
+  const head = `*Vulnerabilities in tracked versions*\n${vulnerabilitySummary(v, (s) => `*${s}*`)}`;
+  const all = v.projects.map((p) => {
+    const name = link(vulnerabilitiesUrl(links, p.projectId), slackText(p.name, 50));
+    return `• ${name} — ${vulnerabilityProjectCounts(p, slackText)}`;
+  });
+  const lines = packLines(all, [...head].length + 200);
+  const more = v.moreProjects + (all.length - lines.length);
+  return section([head, ...lines, ...(more > 0 ? [`…and ${more} more projects`] : [])].join('\n'));
+}
+
+/** C5: the exploited vulnerabilities of one run, a section per project. */
+function exploited(m: ChatExploitedMessage, links: ChatLinks): SlackBody {
+  const raw = exploitedTitle(m, (s, max) => plainText(s, max ?? 80));
+  const [only] = m.projects;
+  const url =
+    m.projects.length === 1 && m.moreProjects === 0 && only !== undefined
+      ? vulnerabilitiesUrl(links, only.id)
+      : projectsUrl(links);
+  const sections = m.projects.map((p) => {
+    const head = `*${link(vulnerabilitiesUrl(links, p.id), slackText(p.name, MAX_PROJECT_NAME))}*`;
+    const all = p.rows.map((r) => `• ${exploitedRowText(r, slackText, (s) => `*${s}*`)}`);
+    // 100 is room for the "…and N more" line.
+    const rows = packLines(all, [...head].length + 100);
+    const more = p.more + (all.length - rows.length);
+    return section([head, ...rows, ...(more > 0 ? [`…and ${more} more`] : [])].join('\n'));
+  });
+  return {
+    text: exploitedTitle(m, slackText),
+    blocks: [
+      header(raw),
+      ...sections,
+      ...(m.moreProjects > 0 ? [section(`…and ${m.moreProjects} more projects`)] : []),
+      ...button(url, 'danger'),
+    ],
+  };
+}
+
 function digest(m: ChatDigestMessage, links: ChatLinks): SlackBody {
   const scopeName = m.scope.project?.name ?? m.scope.organization.name;
   const title = `Weekly security digest — ${plainText(scopeName, 80)}`;
@@ -175,6 +233,9 @@ function digest(m: ChatDigestMessage, links: ChatLinks): SlackBody {
       ...(rows.length + tail.length > 0
         ? [section(['*Projects*', ...rows, ...tail].join('\n'))]
         : []),
+      ...(m.vulnerabilities === undefined
+        ? []
+        : [vulnerabilitiesSection(m.vulnerabilities, links)]),
       ...(top.length > 0 ? [section(['*Top new issues*', ...top].join('\n'))] : []),
       context(`Sent every Monday at 09:00 ${zone}`),
       ...button(scopeUrl),
@@ -204,6 +265,8 @@ export function formatSlack(message: ChatMessage, links: ChatLinks): SlackBody {
       return gate(message, links);
     case 'digest':
       return digest(message, links);
+    case 'exploited':
+      return exploited(message, links);
     case 'test':
       return test(message);
   }

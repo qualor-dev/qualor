@@ -6,6 +6,10 @@ import type { DeliveryEvent } from '../deliveries';
 export const MAX_FAILED_CONDITIONS = 5;
 export const MAX_DIGEST_ROWS = 20;
 export const MAX_TOP_ISSUES = 3;
+export const MAX_EXPLOITED_ROWS = 10;
+export const MAX_EXPLOITED_PROJECTS = 20;
+export const MAX_VULNERABILITY_PROJECTS = 10;
+export const MAX_TARGET_NAMES = 5;
 
 const gateStatus = z.enum(['passed', 'failed', 'error', 'none']);
 const count = z.number().int().min(0);
@@ -64,6 +68,65 @@ const topIssue = z.strictObject({
   line: z.number().int().nullable(),
 });
 
+const vulnerabilitySeverity = z.enum(['critical', 'high', 'medium', 'low', 'unknown']);
+export type VulnerabilitySeverity = z.infer<typeof vulnerabilitySeverity>;
+
+/** One exploited (CISA KEV) vulnerability of one package, as the `exploited` message lists it. */
+const exploitedRow = z.strictObject({
+  vulnerabilityId: z.string().max(200),
+  severity: vulnerabilitySeverity,
+  title: z.string().max(2000).nullable(),
+  packageName: z.string().max(500),
+  installedVersions: z.array(z.string().max(200)).max(50),
+  fixedVersion: z.string().max(200).nullable(),
+  /** `YYYY-MM-DD`. */
+  kevDateAdded: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  targets: z.array(name).max(200),
+});
+
+/** 0.15 plan 6 C5: the new exploited vulnerabilities of one job run, posted at once. */
+const exploitedMessage = z
+  .strictObject({
+    type: z.literal('exploited'),
+    projects: z
+      .array(
+        z.strictObject({
+          id: z.uuid(),
+          key: name,
+          name,
+          rows: z.array(exploitedRow).max(MAX_EXPLOITED_ROWS),
+          more: count,
+        }),
+      )
+      .max(MAX_EXPLOITED_PROJECTS),
+    moreProjects: count,
+  })
+  .refine((m) => m.projects.reduce((n, p) => n + p.rows.length, 0) <= MAX_EXPLOITED_ROWS, {
+    message: `at most ${MAX_EXPLOITED_ROWS} rows in all`,
+  });
+
+/** 0.15 plan 6 C6: the digest's new High and Critical vulnerabilities; absent without the licence. */
+const digestVulnerabilities = z.strictObject({
+  critical: count,
+  high: count,
+  /** Null without `vuln.priority`. */
+  exploited: count.nullable(),
+  projects: z
+    .array(
+      z.strictObject({
+        projectId: z.uuid(),
+        name,
+        critical: count,
+        high: count,
+        exploited: count.nullable(),
+        targets: z.array(name).max(MAX_TARGET_NAMES),
+        moreTargets: count,
+      }),
+    )
+    .max(MAX_VULNERABILITY_PROJECTS),
+  moreProjects: count,
+});
+
 /** 6G spec §4: the weekly security digest of one webhook's scope. */
 const digestMessage = z.strictObject({
   type: z.literal('digest'),
@@ -86,6 +149,8 @@ const digestMessage = z.strictObject({
   moreProjects: count,
   quietProjects: count,
   top: z.array(topIssue).max(MAX_TOP_ISSUES),
+  /** Optional: a digest queued before 0.15, or without `vuln.alerts`, has none. */
+  vulnerabilities: digestVulnerabilities.optional(),
 });
 
 /** R2: the message of `POST /webhooks/:id/test`. */
@@ -98,10 +163,14 @@ const testMessage = z.strictObject({
 export const chatMessageSchema = z.discriminatedUnion('type', [
   gateMessage,
   digestMessage,
+  exploitedMessage,
   testMessage,
 ]);
 export type ChatGateMessage = z.infer<typeof gateMessage>;
 export type ChatDigestMessage = z.infer<typeof digestMessage>;
+export type ChatExploitedMessage = z.infer<typeof exploitedMessage>;
+export type ExploitedRow = z.infer<typeof exploitedRow>;
+export type DigestVulnerabilities = z.infer<typeof digestVulnerabilities>;
 export type ChatTestMessage = z.infer<typeof testMessage>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type DigestRow = z.infer<typeof digestRow>;
@@ -113,6 +182,7 @@ const TYPE_OF: Record<string, ChatMessage['type']> = {
   'gate.failed': 'gate',
   'gate.recovered': 'gate',
   'digest.weekly': 'digest',
+  'vulnerabilities.exploited': 'exploited',
   'chat.test': 'test',
 };
 

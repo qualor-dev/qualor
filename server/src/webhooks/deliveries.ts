@@ -11,7 +11,12 @@ export const GENERIC_EVENTS = [
   'vulnerabilities.found',
 ] as const;
 /** 6G spec D2: the events of a Slack or Teams webhook. */
-export const CHAT_EVENTS = ['gate.failed', 'gate.recovered', 'digest.weekly'] as const;
+export const CHAT_EVENTS = [
+  'gate.failed',
+  'gate.recovered',
+  'digest.weekly',
+  'vulnerabilities.exploited',
+] as const;
 /** Every event a webhook can subscribe to (each kind its own subset, checked by the API). */
 export const WEBHOOK_EVENTS = [...GENERIC_EVENTS, ...CHAT_EVENTS] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];

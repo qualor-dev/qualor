@@ -97,8 +97,18 @@ describe('events per kind (6G R4)', () => {
       'gate.status_changed',
       'vulnerabilities.found',
     ]);
-    expect(eventsOf('slack')).toEqual(['gate.failed', 'gate.recovered', 'digest.weekly']);
-    expect(eventsOf('teams')).toEqual(['gate.failed', 'gate.recovered', 'digest.weekly']);
+    expect(eventsOf('slack')).toEqual([
+      'gate.failed',
+      'gate.recovered',
+      'digest.weekly',
+      'vulnerabilities.exploited',
+    ]);
+    expect(eventsOf('teams')).toEqual([
+      'gate.failed',
+      'gate.recovered',
+      'digest.weekly',
+      'vulnerabilities.exploited',
+    ]);
   });
 
   it('refuses the other kind events', () => {

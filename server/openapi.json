@@ -20528,7 +20528,8 @@
                                 "vulnerabilities.found",
                                 "gate.failed",
                                 "gate.recovered",
-                                "digest.weekly"
+                                "digest.weekly",
+                                "vulnerabilities.exploited"
                               ]
                             }
                           },
@@ -20678,7 +20679,7 @@
                   },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 6,
+                    "maxItems": 7,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -20688,7 +20689,8 @@
                         "vulnerabilities.found",
                         "gate.failed",
                         "gate.recovered",
-                        "digest.weekly"
+                        "digest.weekly",
+                        "vulnerabilities.exploited"
                       ]
                     }
                   },
@@ -20761,7 +20763,8 @@
                           "vulnerabilities.found",
                           "gate.failed",
                           "gate.recovered",
-                          "digest.weekly"
+                          "digest.weekly",
+                          "vulnerabilities.exploited"
                         ]
                       }
                     },
@@ -20930,7 +20933,8 @@
                           "vulnerabilities.found",
                           "gate.failed",
                           "gate.recovered",
-                          "digest.weekly"
+                          "digest.weekly",
+                          "vulnerabilities.exploited"
                         ]
                       }
                     },
@@ -21036,7 +21040,7 @@
                   },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 6,
+                    "maxItems": 7,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -21046,7 +21050,8 @@
                         "vulnerabilities.found",
                         "gate.failed",
                         "gate.recovered",
-                        "digest.weekly"
+                        "digest.weekly",
+                        "vulnerabilities.exploited"
                       ]
                     }
                   },
@@ -21131,7 +21136,8 @@
                           "vulnerabilities.found",
                           "gate.failed",
                           "gate.recovered",
-                          "digest.weekly"
+                          "digest.weekly",
+                          "vulnerabilities.exploited"
                         ]
                       }
                     },
@@ -21370,7 +21376,8 @@
                           "vulnerabilities.found",
                           "gate.failed",
                           "gate.recovered",
-                          "digest.weekly"
+                          "digest.weekly",
+                          "vulnerabilities.exploited"
                         ]
                       }
                     },
@@ -21532,6 +21539,7 @@
                               "gate.failed",
                               "gate.recovered",
                               "digest.weekly",
+                              "vulnerabilities.exploited",
                               "chat.test"
                             ]
                           },
@@ -21706,6 +21714,7 @@
                         "gate.failed",
                         "gate.recovered",
                         "digest.weekly",
+                        "vulnerabilities.exploited",
                         "chat.test"
                       ]
                     },
@@ -21876,6 +21885,7 @@
                         "gate.failed",
                         "gate.recovered",
                         "digest.weekly",
+                        "vulnerabilities.exploited",
                         "chat.test"
                       ]
                     },

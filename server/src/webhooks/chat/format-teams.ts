@@ -1,15 +1,34 @@
-import { branchUrl, issueUrl, projectsUrl, projectUrl, type ChatLinks } from './format';
-import type { ChatDigestMessage, ChatGateMessage, ChatMessage, ChatTestMessage } from './messages';
+import {
+  branchUrl,
+  issueUrl,
+  projectsUrl,
+  projectUrl,
+  vulnerabilitiesUrl,
+  type ChatLinks,
+} from './format';
+import type {
+  ChatDigestMessage,
+  ChatExploitedMessage,
+  ChatGateMessage,
+  ChatMessage,
+  ChatTestMessage,
+  DigestVulnerabilities,
+} from './messages';
 import {
   conditionText,
   digestGateLabel,
+  exploitedRowText,
+  exploitedTitle,
   gateTitle,
+  vulnerabilityProjectCounts,
+  vulnerabilitySummary,
   localDate,
   newCodeText,
   severityCounts,
   severityLabel,
   shortRevision,
   displayZone,
+  teamsInline,
   teamsText,
   utcTime,
 } from './text';
@@ -131,6 +150,64 @@ function quietText(count: number, more: boolean): string {
   return `${count} ${more ? 'more ' : ''}${noun}: no new security issues, gate passed`;
 }
 
+/** C8: the digest's vulnerability section, in the words of the Slack one. */
+function vulnerabilitiesBlocks(v: DigestVulnerabilities, links: ChatLinks): Element[] {
+  const lines = v.projects.map((p) => {
+    const name = link(vulnerabilitiesUrl(links, p.projectId), teamsText(p.name, 50));
+    return `- ${name} — ${vulnerabilityProjectCounts(p, teamsInline)}`;
+  });
+  return [
+    heading('Vulnerabilities in tracked versions'),
+    block(vulnerabilitySummary(v, (s) => s)),
+    ...(lines.length + v.moreProjects > 0
+      ? [
+          block(
+            [
+              ...lines,
+              ...(v.moreProjects > 0 ? [`- …and ${v.moreProjects} more projects`] : []),
+            ].join('\n'),
+          ),
+        ]
+      : []),
+  ];
+}
+
+/** The bytes the exploited rows of one card may use (the card limit is 28 KB). */
+const ROW_BYTES = 14_000;
+
+/** C5: the exploited vulnerabilities of one run, a heading and a TextBlock per project. */
+function exploited(m: ChatExploitedMessage, links: ChatLinks): TeamsBody {
+  const [only] = m.projects;
+  const url =
+    m.projects.length === 1 && m.moreProjects === 0 && only !== undefined
+      ? vulnerabilitiesUrl(links, only.id)
+      : projectsUrl(links);
+  const body: Element[] = [
+    block(exploitedTitle(m, teamsText), { weight: 'Bolder', size: 'Medium', color: 'Attention' }),
+  ];
+  // Teams rejects a card over 28 KB, and escaped text is up to 7 bytes a character: rows are
+  // added while they fit a byte budget, the rest are counted into the project's "more" line.
+  let budget = ROW_BYTES;
+  for (const p of m.projects) {
+    const rows: string[] = [];
+    for (const r of p.rows) {
+      const line = `- ${exploitedRowText(r, teamsInline, (s) => s)}`;
+      const size = Buffer.byteLength(line, 'utf8') + 1;
+      if (size > budget) break;
+      budget -= size;
+      rows.push(line);
+    }
+    const more = p.more + (p.rows.length - rows.length);
+    const lines = [...rows, ...(more > 0 ? [`- …and ${more} more`] : [])];
+    body.push(
+      heading(link(vulnerabilitiesUrl(links, p.id), teamsText(p.name, 50))),
+      ...(lines.length > 0 ? [block(lines.join('\n'))] : []),
+    );
+  }
+  if (m.moreProjects > 0) body.push(block(`…and ${m.moreProjects} more projects`));
+  return message(body, url);
+}
+
 function digest(m: ChatDigestMessage, links: ChatLinks): TeamsBody {
   const scopeName = m.scope.project?.name ?? m.scope.organization.name;
   const t = m.totals;
@@ -168,6 +245,7 @@ function digest(m: ChatDigestMessage, links: ChatLinks): TeamsBody {
     ...(rows.length + tail.length > 0
       ? [heading('Projects'), block([...rows, ...tail].join('\n'))]
       : []),
+    ...(m.vulnerabilities === undefined ? [] : vulnerabilitiesBlocks(m.vulnerabilities, links)),
     ...(top.length > 0 ? [heading('Top new issues'), block(top.join('\n'))] : []),
     block(`Sent every Monday at 09:00 ${zone}`),
   ];
@@ -197,6 +275,8 @@ export function formatTeams(m: ChatMessage, links: ChatLinks): TeamsBody {
       return gate(m, links);
     case 'digest':
       return digest(m, links);
+    case 'exploited':
+      return exploited(m, links);
     case 'test':
       return test(m);
   }
