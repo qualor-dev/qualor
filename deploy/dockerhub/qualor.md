@@ -1,13 +1,14 @@
 # qualor/qualor
 
-Short description: Helm chart for Qualor, the self-hosted code quality platform and open-source SonarQube alternative
+Short description: Helm chart for Qualor: code quality, AI review, vulnerability tracking. SonarQube alternative
 
 Categories: Developer tools, Integration & delivery, Security
 
 ## Overview
 
-The Helm chart of [Qualor](https://qualor.dev), the open-source, self-hosted SonarQube alternative
-with no lines-of-code licence. It runs the [`qualor/server`](https://hub.docker.com/r/qualor/server)
+The Helm chart of [Qualor](https://qualor.dev): code quality, AI code review and dependency
+vulnerability tracking in one self-hosted server, an open-source SonarQube alternative with no
+lines-of-code licence. It runs the [`qualor/server`](https://hub.docker.com/r/qualor/server)
 image, and its version is the server's version. It needs Kubernetes 1.29 or later and a default
 StorageClass.
 
@@ -52,8 +53,9 @@ kubectl -n qualor get secret qualor-secrets -o jsonpath='{.data.QUALOR_BOOTSTRAP
 
 By default the server runs its own PostgreSQL on a 10 GiB volume, with one replica
 (`database.mode: embedded`). `external` uses your managed database and `bundled` adds a PostgreSQL
-StatefulSet to the release; both run several replicas. The install guide covers the settings,
-backups and upgrades.
+StatefulSet to the release; both run several replicas. Each pod keeps its copy of the
+vulnerability database on an `emptyDir` of its own (`vulnerabilityDatabase.cacheSizeLimit`, 6Gi).
+The install guide covers the settings, backups and upgrades.
 
 ### Licence
 

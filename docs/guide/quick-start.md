@@ -140,4 +140,6 @@ see a summary comment and comments on the changed lines.
 - Tune what "good" means: [Quality gates, profiles and issues](./quality-gates.md).
 - Coming from SonarQube: [Migrating from SonarQube](./migrate-from-sonarqube.md).
 - Let a model review your merge requests: [AI review](./ai-review.md).
+- Track the vulnerabilities in your dependencies and releases:
+  [Dependency vulnerabilities](./dependency-vulnerabilities.md).
 - Let an AI agent do the rollout: [AI prompts](./ai-prompts.md).

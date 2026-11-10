@@ -1,9 +1,8 @@
 # Qualor
 
-**Static analysis and AI code review in one self-hosted server.** Qualor runs proven open-source
-analyzers in your CI, applies a quality gate to new code, and comments on GitLab merge requests and
-GitHub pull requests. A model of your choice can review the same merge requests. It is free, with
-no lines-of-code licence.
+**Code quality, AI code review and dependency vulnerability tracking in one self-hosted server.**
+One install, one UI and one set of users instead of SonarQube, an AI reviewer and Dependency-Track.
+It is free, with no lines-of-code licence.
 
 [Documentation](https://qualor.dev/docs) · [Live demo](https://review.qualor.dev) ·
 [Docker Hub](https://hub.docker.com/u/qualor) ·
@@ -27,6 +26,16 @@ no lines-of-code licence.
   </tr>
   <tr>
     <td width="50%" valign="top">
+      <img src="docs/screenshots/vulnerabilities-by-version.png" alt="A project's Vulnerabilities tab by version: the main branch with one Critical and one High vulnerability, one of them new, and the released version 1.0.0 with none">
+      <br><sub><b>Vulnerabilities</b> of each branch and released version</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/vulnerabilities-by-vulnerability.png" alt="The same tab by vulnerability: a new Critical in handlebars with its fixed version, found without a scan, and a High in lodash, each with the branches and versions it is in and a Change status button">
+      <br><sub><b>By vulnerability</b>, with fixed versions and triage</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
       <img src="docs/screenshots/issues.png" alt="A project's issues: filters by severity and status with counts, the severity distribution, and each issue with its rule, file and line">
       <br><sub><b>Issues</b>, filtered by severity, status, quality and rule</sub>
     </td>
@@ -42,18 +51,13 @@ account needed.
 
 ## What you get
 
-- **A quality gate on new code.** Issues, coverage, duplication and complexity are tracked across
-  commits. The gate judges only what a change adds, and a failed gate fails the CI job.
-- **The analyzers you already know**, pinned in one scanner image (see [Languages](#languages)).
-- **Qualor's own security rules** for JavaScript, TypeScript, Python, Java, Go and C#. They follow
-  request data into SQL, shell commands, file paths, templates, redirects and outgoing requests.
-- **Merge request comments** on GitLab and GitHub: a summary, a thread on each new issue, and a
-  commit status or check run.
-- **AI review** on your own model: threads with suggested changes, answers to replies, and
-  re-reviews after a push. Off by default, in every edition.
-- **An AI assistant** that explains an issue, suggests triage or suggests a fix, on a person's click.
-- **An MCP server**, so agents such as Claude Code and Cursor can read the gate and the issues.
-- **SonarQube import**: quality gates, profiles and issue statuses.
+| Part                                                      | What it does                                                                                                                        | Edition                                                                     |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Code quality and security](#code-quality-and-security)   | open-source analyzers and Qualor's own security rules, a quality gate on new code, coverage and duplication, merge request comments | Community                                                                   |
+| [AI code review](#ai-review)                              | reviews of merge requests on your own model, with suggested changes; an AI assistant and an MCP server                              | Community; automatic fix suggestions: Enterprise                            |
+| [Dependency vulnerabilities](#dependency-vulnerabilities) | main, chosen branches and releases re-checked against a fresh vulnerability database, with no new scan; triage with VEX reasons     | Community; exploited vulnerabilities, alerts, SBOM and VEX export: Business |
+
+What each edition adds: [Editions](#editions).
 
 ## Quick start
 
@@ -120,7 +124,21 @@ and review comments.
 Run the scan from the repository root, in a full clone. An optional `qualor.yml` there configures
 it; see the [configuration reference](docs/guide/configuration.md).
 
-## Languages
+## Code quality and security
+
+- **A quality gate on new code.** Issues, coverage, duplication and complexity are tracked across
+  commits. The gate judges only what a change adds, and a failed gate fails the CI job.
+- **The analyzers you already know**, pinned in one scanner image (see [Languages](#languages)).
+- **Qualor's own security rules** for JavaScript, TypeScript, Python, Java, Go and C#. They follow
+  request data into SQL, shell commands, file paths, templates, redirects and outgoing requests.
+- **Merge request comments** on GitLab and GitHub: a summary, a thread on each new issue, and a
+  commit status or check run.
+- **SonarQube import**: quality gates, profiles and issue statuses
+  ([Migrating from SonarQube](#migrating-from-sonarqube)).
+
+See [Quality gates, profiles and issues](docs/guide/quality-gates.md).
+
+### Languages
 
 | Language               | Analyzers                                                                                    |
 | ---------------------- | -------------------------------------------------------------------------------------------- |
@@ -155,8 +173,34 @@ found.
 
 Use any OpenAI-compatible endpoint, OpenAI's Responses API or the Anthropic Messages API, hosted
 with your key or running locally. Secrets are masked before anything is sent, and with a local
-model nothing leaves your network. See [AI review](docs/guide/ai-review.md) and the
-[AI assistant](docs/guide/ai-assistant.md).
+model nothing leaves your network. See [AI review](docs/guide/ai-review.md).
+
+The same model powers the [AI assistant](docs/guide/ai-assistant.md): it explains an issue,
+suggests triage or suggests a fix, on a person's click. The [MCP server](docs/guide/mcp.md) lets
+agents such as Claude Code and Cursor read the gate and the issues.
+
+## Dependency vulnerabilities
+
+Qualor keeps the dependency list of the main branch, chosen branches and released versions. The
+server keeps its own copy of the Trivy vulnerability database up to date and re-checks those lists
+against it. A vulnerability published after your last scan shows up without a new scan.
+
+- **Releases.** A scan on a tag records a [version](docs/guide/releases.md) with its dependency
+  list. By default the newest version of each of the last 5 major.minor lines is tracked.
+- **The Vulnerabilities tab** shows each branch and version with its Critical, High and Medium
+  counts and what is new, or one row per vulnerability with its fixed version.
+- **Triage once.** **Change status** marks a vulnerability Not affected, with one of the five VEX
+  reasons, or Affected, won't fix. The decision covers every branch and version of the project, and
+  the matching Trivy issues.
+- **Offline too.** The database comes from the official source, your mirror or an uploaded file.
+  Scanners take it from the server.
+- **Licences.** The **Dependencies** tab lists every package with its licences.
+
+Business adds exploited vulnerabilities (CISA KEV) and exploit probability (FIRST EPSS), alerts by
+email, webhook, Slack and Teams, SBOM and VEX export, and a licence policy that fails the gate. See
+[Dependency vulnerabilities](docs/guide/dependency-vulnerabilities.md),
+[The vulnerability database](docs/guide/vulnerability-database.md) and
+[Dependency licences](docs/guide/dependency-licenses.md).
 
 ## Migrating from SonarQube
 
@@ -166,12 +210,17 @@ shows what would change. See [Migrating from SonarQube](docs/guide/migrate-from-
 
 ## Editions
 
-Everything above is free, with no limit on lines of code, users or projects. The code is
-MIT-licensed, and Qualor's security rules are source-available. A Business or Enterprise licence key
-adds single sign-on, SCIM, the audit log, compliance and
-portfolio reports, a dependency licence policy and automatic fix suggestions. That code lives in
-`enterprise/`, under the source-available Qualor Enterprise Licence, and does nothing without a
-key. See [Enterprise](docs/guide/enterprise.md) and [qualor.dev/enterprise](https://qualor.dev/enterprise).
+The community edition is free, with no limit on lines of code, users or projects. The code is
+MIT-licensed, and Qualor's security rules are source-available.
+
+| Plan       | Adds                                                                                                                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Business   | single sign-on, the audit log, the support bundle, exploited vulnerabilities and exploit probability, vulnerability alerts, SBOM and VEX export, a dependency licence policy |
+| Enterprise | everything in Business, plus SCIM, audit log streaming, several identity providers, compliance and portfolio reports, automatic fix suggestions                              |
+
+The code of the paid features lives in `enterprise/`, under the source-available Qualor Enterprise
+Licence, and does nothing without a key. See [Enterprise](docs/guide/enterprise.md) and
+[qualor.dev/enterprise](https://qualor.dev/enterprise).
 
 ## Documentation
 

@@ -5,7 +5,39 @@ enterprise features and never limits organisations, users, projects or lines of 
 checks it offline, so it works in air-gapped networks. Without a key, the server is the MIT
 community edition.
 
+Every edition has the three parts of Qualor: code quality and security, AI code review, and
+dependency vulnerability tracking. A key adds features to each part, and single sign-on, SCIM and
+the audit log for your organisation.
+
 ## What a licence adds
+
+### Code quality and security
+
+| Feature | Feature key | Community | Business | Enterprise |
+|---|---|---|---|---|
+| [Analysis, quality gates and issues](./quality-gates.md), with merge request comments on GitLab and GitHub | none | yes | yes | yes |
+| [Compliance reports](./compliance-reports.md) (OWASP Top 10, CWE Top 25, OWASP ASVS, PCI DSS 6.2.4) as JSON, CSV and PDF, with the project's SBOM attached | `compliance-export` | no | no | yes |
+| [Portfolio reports](./portfolio.md): the quality of every project and organisation, with 12-week or 12-month trends and the projects that need attention, as CSV and PDF | `portfolio` | no | no | yes |
+
+### AI code review
+
+| Feature | Feature key | Community | Business | Enterprise |
+|---|---|---|---|---|
+| [AI review](./ai-review.md) of merge requests: comments and suggested changes on GitLab and GitHub, on your own model | none | yes | yes | yes |
+| [Automatic fix suggestions](./ai-assistant.md#automatic-fix-suggestions-enterprise) for the new findings of merge requests, posted without a click | `llm.auto-fix` | no | no | yes |
+
+### Dependency vulnerability tracking
+
+| Feature | Feature key | Community | Business | Enterprise |
+|---|---|---|---|---|
+| [Dependency vulnerabilities](./dependency-vulnerabilities.md): the **Vulnerabilities** tab, re-checks of tracked branches and versions without a scan, and triage with reasons | none | yes | yes | yes |
+| [Dependency licences](./dependency-licenses.md): every project's dependencies and their licences, on the **Dependencies** tab | none | yes | yes | yes |
+| [Exploited vulnerabilities and exploit probability](./dependency-vulnerabilities.md#exploited-and-exploit-probability-business-and-enterprise) (CISA KEV, FIRST EPSS) on the **Vulnerabilities** tab | `vuln.priority` | no | yes | yes |
+| [Vulnerability alerts](./dependency-vulnerabilities.md#alerts-business-and-enterprise) by email, webhook, Slack and Teams | `vuln.alerts` | no | yes | yes |
+| [SBOM and VEX export](./dependency-vulnerabilities.md#export-sbom-and-vex-business-and-enterprise) | `sbom` | no | yes | yes |
+| [A licence policy](./dependency-licenses.md#the-licence-policy-business-and-enterprise): forbidden licences become issues and fail the gate | `license-policy` | no | yes | yes |
+
+### Users and administration
 
 | Feature | Feature key | Community | Business | Enterprise |
 |---|---|---|---|---|
@@ -15,16 +47,7 @@ community edition.
 | [Single sign-on](./sso-and-scim.md) (OIDC, SAML 2.0) | `sso` | no | one connection at a time | yes |
 | [Several identity providers at once](./sso-and-scim.md#one-connection-or-several), up to 10 connections | `sso.multi` | no | no | yes |
 | [SCIM 2.0 provisioning](./sso-and-scim.md#scim-with-entra-id-and-okta) | `scim` | no | no | yes |
-| [Compliance reports](./compliance-reports.md) (OWASP Top 10, CWE Top 25, OWASP ASVS, PCI DSS 6.2.4) as JSON, CSV and PDF, with the project's SBOM attached | `compliance-export` | no | no | yes |
-| [Portfolio reports](./portfolio.md): the quality of every project and organisation, with 12-week or 12-month trends and the projects that need attention, as CSV and PDF | `portfolio` | no | no | yes |
-| [AI review](./ai-review.md) of merge requests: comments and suggested changes on GitLab and GitHub, on your own model | none | yes | yes | yes |
-| [Automatic fix suggestions](./ai-assistant.md#automatic-fix-suggestions-enterprise) for the new findings of merge requests, posted without a click | `llm.auto-fix` | no | no | yes |
 | [The support bundle](./support-bundle.md): one zip with versions, configuration without secrets, health and recent failures | `support-bundle` | no | yes | yes |
-| [Dependency licences](./dependency-licenses.md): every project's dependencies and their licences, on the **Dependencies** tab | none | yes | yes | yes |
-| [A licence policy](./dependency-licenses.md#the-licence-policy-business-and-enterprise): forbidden licences become issues and fail the gate | `license-policy` | no | yes | yes |
-| [Exploited vulnerabilities and exploit probability](./dependency-vulnerabilities.md#exploited-and-exploit-probability-business-and-enterprise) (CISA KEV, FIRST EPSS) on the **Vulnerabilities** tab | `vuln.priority` | no | yes | yes |
-| [Vulnerability alerts](./dependency-vulnerabilities.md#alerts-business-and-enterprise) by email, webhook, Slack and Teams | `vuln.alerts` | no | yes | yes |
-| [SBOM and VEX export](./dependency-vulnerabilities.md#export-sbom-and-vex-business-and-enterprise) | `sbom` | no | yes | yes |
 
 A key switches on the features it lists, and nothing else. Two features work only with the one
 they extend: `audit-log.stream` needs `audit-log`, and `sso.multi` needs `sso`. A key that lists
@@ -55,7 +78,7 @@ Everything outside `enterprise/` is MIT.
 | Plan | Price | What you get | Support |
 |---|---|---|---|
 | Community | free, no key | the community edition (MIT), including all four roles and project access, with no limit on lines of code, users, projects or organisations | the community |
-| Business | $4,900 a year | single sign-on (OIDC, SAML 2.0) with one enabled connection at a time, the audit log with its JSON Lines export, the support bundle and the dependency licence policy | email |
+| Business | $4,900 a year | single sign-on (OIDC, SAML 2.0) with one enabled connection at a time, the audit log with its JSON Lines export, the support bundle, the dependency licence policy, exploited vulnerabilities and exploit probability, vulnerability alerts, and SBOM and VEX export | email |
 | Enterprise | $12,000 a year | everything in Business, plus SCIM 2.0 provisioning, streaming the audit log to a SIEM, several identity providers at once (up to 10 connections), compliance reports, portfolio reports and automatic fix suggestions | SLA: email only, first reply within 1 business day for critical issues; no phone, no 24x7 |
 
 Prices are per server instance and year, in US dollars. They never depend on lines of code or on

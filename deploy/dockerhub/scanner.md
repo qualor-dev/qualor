@@ -13,6 +13,12 @@ out which lines the merge request changed, and sends one report to your Qualor s
 the job when the quality gate fails. When AI review is switched on for the project, it also sends
 the repository snapshot that the review reads.
 
+The report carries the project's dependency list. The server keeps checking the lists of the main
+branch, chosen branches and released versions for new vulnerabilities. A scan on a tag records a
+version of the release instead of analysing the code. By default the scanner takes its
+vulnerability database from the server, so every scan checks against the data the server checks
+against.
+
 Website: <https://qualor.dev> · Documentation: <https://qualor.dev/docs> · Source and issues:
 <https://github.com/qualor-dev/qualor> · Configuration reference (`qualor.yml`, environment, exit
 codes): <https://qualor.dev/docs/configuration>
@@ -96,7 +102,8 @@ image is pinned by digest.
 
 The project's own ESLint runs on the bundled Node.js 22.23.4 (with npm and corepack). PMD, SpotBugs
 and detekt run on the Eclipse Temurin JRE 17.0.20+8. git is configured with `safe.directory '*'`,
-since CI runners check out as another user. The scan never downloads Trivy's database. Not
+since CI runners check out as another user. Trivy never downloads its database itself: the scan
+takes it from a Qualor server 0.15 or later, and uses the snapshot in the image otherwise. Not
 included: clang-tidy (scan in the job that built your project to use your own), the C#
 analyzers (use [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet)), and
 Semgrep or OpenGrep rules of your own (name your rule files in `qualor.yml`).
@@ -110,15 +117,16 @@ unsafe tar extraction and XML parsers that load DTDs are reported as security ho
 
 ### Environment
 
-| Variable                                | Meaning                                                                       |
-| --------------------------------------- | ----------------------------------------------------------------------------- |
-| `QUALOR_URL`                            | the Qualor server's base URL                                                  |
-| `QUALOR_TOKEN`                          | a project analysis token or a personal access token (keep it a masked secret) |
-| `QUALOR_CA_FILE`                        | a PEM file with the CA of a server whose certificate a private CA issued      |
-| `QUALOR_PROJECT_KEY`                    | overrides `project.key` of `qualor.yml`                                       |
-| `QUALOR_CONFIG`                         | the path of the config file (default `qualor.yml` at the repository root)     |
-| `QUALOR_LOG_LEVEL`                      | `error`, `warn`, `info` (default) or `debug`                                  |
-| `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | the proxy for the upload (`http://` proxy URLs only)                          |
+| Variable                                | Meaning                                                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `QUALOR_URL`                            | the Qualor server's base URL                                                                                  |
+| `QUALOR_TOKEN`                          | a project analysis token or a personal access token (keep it a masked secret)                                 |
+| `QUALOR_CA_FILE`                        | a PEM file with the CA of a server whose certificate a private CA issued                                      |
+| `QUALOR_PROJECT_KEY`                    | overrides `project.key` of `qualor.yml`                                                                       |
+| `QUALOR_CONFIG`                         | the path of the config file (default `qualor.yml` at the repository root)                                     |
+| `QUALOR_LOG_LEVEL`                      | `error`, `warn`, `info` (default) or `debug`                                                                  |
+| `QUALOR_TRIVY_CACHE_DIR`                | where the scanner keeps the vulnerability database it takes from the server (default `~/.cache/qualor/trivy`) |
+| `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | the proxy for the upload (`http://` proxy URLs only)                                                          |
 
 The token is only ever sent to a server URL that came from `QUALOR_URL` or `--server-url`, never
 to one that only the repository's `qualor.yml` names. TLS certificates are always verified.

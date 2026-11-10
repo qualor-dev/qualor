@@ -100,6 +100,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
   there only after the server confirms its checksum, and never a database unpacked there. When the
   server gives no database and the directory holds one of its own (`db/trivy.db`), the scan uses the
   image's with the warning `VULNERABILITY_DB_CACHE_UNTRUSTED`.
+- The built-in guide's overview and the Docker Hub descriptions present Qualor as three parts: code
+  quality, AI code review and dependency vulnerability tracking. The guide lists Dependency
+  vulnerabilities and The vulnerability database after Releases and versions.
 
 ## [0.14.1] - 2026-11-09
 

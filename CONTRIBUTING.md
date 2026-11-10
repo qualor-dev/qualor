@@ -1,8 +1,9 @@
 # Contributing to Qualor
 
-Thank you for helping. Qualor is an open-source, self-hosted code quality platform. This page
-covers how to set up the repository, how changes are made, and the terms under which they are
-accepted. The user documentation is in `docs/guide/` and at <https://qualor.dev/docs>.
+Thank you for helping. Qualor is an open-source, self-hosted server for code quality, AI code
+review and dependency vulnerability tracking. This page covers how to set up the repository, how
+changes are made, and the terms under which they are accepted. The user documentation is in
+`docs/guide/` and at <https://qualor.dev/docs>.
 
 ## Setup
 

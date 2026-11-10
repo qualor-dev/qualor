@@ -1,21 +1,27 @@
 # qualor/server
 
-Short description: Self-hosted SAST and AI code review on your own model. Open-source SonarQube alternative.
+Short description: Self-hosted code quality, AI review and dependency vulnerability tracking. SonarQube alternative.
 
 Categories: Developer tools, Integration & delivery, Security
 
 ## Overview
 
-**Static analysis and AI code review in one self-hosted server.**
+**Code quality, AI code review and dependency vulnerability tracking in one self-hosted server.**
 
 Qualor is an open-source, self-hosted SonarQube alternative for GitLab and GitHub. It runs the
 analyzers you already trust, follows every issue across commits, and fails the merge request that
 makes the code worse. An AI reviewer comments on the same merge requests, on a model you choose.
+The server keeps checking the dependencies of your branches and releases for new vulnerabilities.
 MIT licensed, with no limit on lines, users or projects.
 
 - **An AI reviewer on your own model.** It reads the change and the files it needs, and comments in
   threads with suggested changes you apply in one click. It answers replies. Any OpenAI-compatible
   or Anthropic model, hosted with your key or local. Off by default, in every edition.
+- **Vulnerabilities found without a scan.** The main branch, chosen branches and released versions
+  keep their dependency lists. The server keeps its own copy of the Trivy vulnerability database
+  fresh, from the official source, a mirror or an uploaded file, and re-checks the lists against
+  each new copy. Triage once per project, with VEX reasons. A Business key adds exploited
+  vulnerabilities (CISA KEV), alerts, and SBOM and VEX export.
 - **It judges only the code you changed.** A quality gate on new code, a summary and a status on
   every GitLab merge request and GitHub pull request, and new issues marked on the lines that
   caused them.
@@ -59,15 +65,16 @@ own code with [`qualor/scanner`](https://hub.docker.com/r/qualor/scanner).
 ### Run it for your team
 
 For a server you keep, follow the install guide, <https://qualor.dev/docs/install-server>: a
-`compose.yml` with one `server` service and the `data` volume, an `.env` with generated secrets,
-TLS behind a reverse proxy, an external PostgreSQL if you prefer one, backups and upgrades. On
-Kubernetes, use the Helm chart [`qualor/qualor`](https://hub.docker.com/r/qualor/qualor).
+`compose.yml` with one `server` service and the `data` and `vulndb-cache` volumes, an `.env` with
+generated secrets, TLS behind a reverse proxy, an external PostgreSQL if you prefer one, backups
+and upgrades. On Kubernetes, use the Helm chart
+[`qualor/qualor`](https://hub.docker.com/r/qualor/qualor).
 
 ### Business and Enterprise
 
-Single sign-on, SCIM provisioning, a tamper-evident audit log, SIEM streaming and priority support
-come with a licence key for this same image. Priced per server, never by lines of code or by
-seat: <https://qualor.dev/enterprise>.
+Single sign-on, SCIM provisioning, a tamper-evident audit log, SIEM streaming, vulnerability alerts,
+SBOM and VEX export and priority support come with a licence key for this same image. Priced per
+server, never by lines of code or by seat: <https://qualor.dev/enterprise>.
 
 ### The image
 
@@ -86,6 +93,9 @@ process, plus its own PostgreSQL 18, which it starts itself and keeps on the vol
   them once.
 - `GET /healthz` (liveness, the image's `HEALTHCHECK`) and `GET /readyz` (503 until the database
   answers within 2 s and the migrations are applied).
+- Trivy 0.74.0 runs the vulnerability re-checks, offline. The server unpacks its copy of the
+  vulnerability database into the volume `/var/cache/qualor/vulndb` (`QUALOR_VULNDB_DIR`): give it
+  4 GiB.
 - No secret is baked into the image.
 
 ### Configuration

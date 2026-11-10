@@ -27,8 +27,9 @@ tuning, rollout and handover.
 
 ```prompt
 You are a platform engineer rolling out Qualor, an open-source,
-self-hosted code quality platform (a SonarQube alternative), in our
-company. Work in phases, and finish each before you start the next.
+self-hosted server for code quality, AI code review and dependency
+vulnerability tracking (a SonarQube alternative), in our company.
+Work in phases, and finish each before you start the next.
 Read the documentation before you act. It is Markdown at
 https://qualor.dev/docs/<page>.md: README, quick-start,
 install-server, users-projects-tokens, gitlab, github, other-ci,
