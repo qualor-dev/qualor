@@ -78,7 +78,139 @@ describe('ProjectsPage', () => {
     input.dispatchEvent(new Event('input'));
   };
 
-  it('links a badge under the name to the vulnerabilities tab when something is new', async () => {
+  /** The projects list's `vulnerabilities` with nothing new, and the given counts. */
+  const vulns = (
+    over: Partial<NonNullable<Project['vulnerabilities']>> = {},
+  ): NonNullable<Project['vulnerabilities']> => ({
+    newIn: { main: false, branches: 0, versions: 0 },
+    main: { critical: 0, high: 0 },
+    exploited: null,
+    vulnerableReleases: 0,
+    ...over,
+  });
+  const vulnCell = (row: Element | undefined) => row?.querySelectorAll('td')[2];
+  const chipTexts = (cell: Element | undefined) =>
+    [...(cell?.querySelectorAll('q-severity-chips .badge') ?? [])].map((b) => text(b));
+  const hidden = (cell: Element | undefined) =>
+    text(cell?.querySelector(':scope > .visually-hidden'));
+
+  describe('the Vulnerabilities column (brief §A)', () => {
+    it('comes after Quality gate', async () => {
+      server.on('GET', '/api/v0/projects', { body: page([project('payments', 'Payments API')]) });
+      const { root } = await render();
+      expect([...root.querySelectorAll('thead th')].map((th) => text(th)).slice(0, 4)).toEqual([
+        'Project',
+        'Quality gate',
+        'Vulnerabilities',
+        'Issues',
+      ]);
+    });
+
+    it("shows main's non-zero Critical and High chips, the affected releases and a label", async () => {
+      server.on('GET', '/api/v0/projects', {
+        body: page([
+          project('shop', 'Shop', {
+            mainBranchName: 'master',
+            vulnerabilities: vulns({ main: { critical: 7, high: 23 }, vulnerableReleases: 5 }),
+          }),
+          project('high', 'Only high', {
+            vulnerabilities: vulns({ main: { critical: 0, high: 2 }, vulnerableReleases: 1 }),
+          }),
+        ]),
+      });
+      const { root } = await render();
+      const [shop, high] = [...root.querySelectorAll('tbody tr')].map(vulnCell);
+      expect(chipTexts(shop)).toEqual(['7 Critical', '23 High']);
+      expect(shop?.querySelector('.badge-critical')).not.toBeNull();
+      expect(shop?.querySelector('.badge-high')).not.toBeNull();
+      // The chips are hidden from screen readers: the sentence says it once.
+      expect(shop?.querySelector('q-severity-chips')?.getAttribute('aria-hidden')).toBe('true');
+      expect(hidden(shop)).toBe('Open on master: 7 critical, 23 high');
+      const releases = shop?.querySelector<HTMLAnchorElement>('a.vuln-releases');
+      expect(text(releases)).toBe('5 releases');
+      expect(releases?.getAttribute('aria-label')).toBe('5 releases affected');
+      expect(releases?.getAttribute('href')).toBe('/projects/shop/vulnerabilities');
+      expect(chipTexts(high)).toEqual(['2 High']);
+      expect(hidden(high)).toBe('Open on main: 2 high');
+      expect(text(high?.querySelector('a.vuln-releases'))).toBe('1 release');
+      expect(high?.querySelector('a.vuln-releases')?.getAttribute('aria-label')).toBe(
+        '1 release affected',
+      );
+    });
+
+    it('shows the exploited chip only with a number (vuln.priority) above zero', async () => {
+      server.on('GET', '/api/v0/projects', {
+        body: page([
+          project('kev', 'KEV', {
+            vulnerabilities: vulns({ main: { critical: 9, high: 38 }, exploited: 3 }),
+          }),
+          project('nokev', 'No KEV', {
+            vulnerabilities: vulns({ main: { critical: 9, high: 38 }, exploited: 0 }),
+          }),
+          project('community', 'Community', {
+            vulnerabilities: vulns({ main: { critical: 9, high: 38 }, exploited: null }),
+          }),
+        ]),
+      });
+      const { root } = await render();
+      const [kev, nokev, community] = [...root.querySelectorAll('tbody tr')].map(vulnCell);
+      expect(chipTexts(kev)).toEqual(['9 Critical', '38 High', '3 exploited']);
+      expect(text(kev?.querySelector('.badge-exploited'))).toBe('3 exploited');
+      expect(hidden(kev)).toBe('Open on main: 9 critical, 38 high; 3 exploited');
+      expect(nokev?.querySelector('.badge-exploited')).toBeNull();
+      expect(community?.querySelector('.badge-exploited')).toBeNull();
+      expect(hidden(community)).not.toContain('exploited');
+    });
+
+    it('says none is open on main, without chips or a releases link', async () => {
+      server.on('GET', '/api/v0/projects', {
+        body: page([project('clean', 'Clean', { vulnerabilities: vulns() })]),
+      });
+      const { root } = await render();
+      const cell = vulnCell(root.querySelector('tbody tr') ?? undefined);
+      expect(text(cell?.querySelector('.vuln-facts'))).toBe('No critical or high');
+      expect(cell?.querySelector('q-severity-chips')).toBeNull();
+      expect(cell?.querySelector('a.vuln-releases')).toBeNull();
+      expect(hidden(cell)).toBe('No critical or high open on main');
+    });
+
+    it('shows a dash while monitoring is off, or before main has an inventory', async () => {
+      server.on('GET', '/api/v0/projects', {
+        body: page([
+          project('off', 'Off', { vulnerabilities: null }),
+          project('fresh', 'Fresh', { vulnerabilities: vulns({ main: null }) }),
+        ]),
+      });
+      const { root } = await render();
+      const [off, fresh] = [...root.querySelectorAll('tbody tr')].map(vulnCell);
+      expect(text(off?.querySelector('[aria-hidden="true"]'))).toBe('–');
+      expect(text(off?.querySelector('.visually-hidden'))).toBe('Not monitored');
+      expect(off?.querySelector('.badge')).toBeNull();
+      expect(text(fresh?.querySelector('.vuln-facts'))).toBe('–');
+      expect(hidden(fresh)).toBe('No vulnerability counts for main yet');
+    });
+
+    it('shows a dash, and the new marker, for an older server without the counts', async () => {
+      server.on('GET', '/api/v0/projects', {
+        body: page([
+          project('old', 'Old server', {
+            // A server before the counts sends newIn alone.
+            vulnerabilities: {
+              newIn: { main: true, branches: 0, versions: 0 },
+            } as Project['vulnerabilities'],
+          }),
+        ]),
+      });
+      const { root } = await render();
+      const cell = vulnCell(root.querySelector('tbody tr') ?? undefined);
+      expect(text(cell?.querySelector('.vuln-facts'))).toBe('–');
+      expect(cell?.querySelector('q-severity-chips')).toBeNull();
+      expect(cell?.querySelector('a.vuln-releases')).toBeNull();
+      expect(text(cell?.querySelector('.vuln-new a.badge'))).toBe('New vulnerabilities in main');
+    });
+  });
+
+  it('links the new marker under the chips to the vulnerabilities tab when something is new', async () => {
     server.on('GET', '/api/v0/projects', {
       body: page([
         project('payments', 'Payments API', {
@@ -102,7 +234,9 @@ describe('ProjectsPage', () => {
     });
     const { root } = await render();
     const rows = [...root.querySelectorAll('tbody tr')];
-    const badge = rows[0]!.querySelector<HTMLAnchorElement>('td:first-child a.badge.badge-high')!;
+    const badge = vulnCell(rows[0])!.querySelector<HTMLAnchorElement>(
+      '.vuln-new a.badge.badge-high',
+    )!;
     expect(badge.textContent?.trim()).toBe('New vulnerabilities in main and 2 versions');
     expect(badge.getAttribute('href')).toBe('/projects/payments/vulnerabilities');
     expect(rows[1]!.querySelector('a.badge')).toBeNull();
@@ -121,9 +255,10 @@ describe('ProjectsPage', () => {
     const rows = [...root.querySelectorAll('tbody tr')].map((tr) =>
       [...tr.querySelectorAll('td')].map((td) => td.textContent?.replace(/\s+/g, ' ').trim()),
     );
-    expect(rows[0]?.slice(0, 6)).toEqual([
+    expect(rows[0]?.slice(0, 7)).toEqual([
       'Payments APIacme/payments',
       'Failed',
+      '– Not monitored',
       '9',
       '65.7 %',
       '1.3 %',
@@ -132,6 +267,7 @@ describe('ProjectsPage', () => {
     expect(rows[1]).toEqual([
       'Legacy Billingacme/legacy',
       'Not analyzed',
+      '– Not monitored',
       '–',
       '–',
       '–',

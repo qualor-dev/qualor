@@ -142,6 +142,49 @@ describe('VulnerabilitiesPage', () => {
     expect(hrefs[1]).toContain(`target=version:${V21}`);
   });
 
+  it('keeps a zero quiet, tags the main branch and makes the row one link (brief §C)', async () => {
+    const root = await render({
+      targets: [
+        vulnerabilityTarget({
+          id: MAIN,
+          name: 'master',
+          isMain: true,
+          counts: { critical: 0, high: 3, medium: 0, low: 0, unknown: 0 },
+        }),
+        vulnerabilityTarget({ kind: 'version', id: V21, name: '2.1.0', tracking: 'auto' }),
+      ],
+    });
+    const [main, version] = rows(root);
+    const cells = [...(main?.querySelectorAll('td.count') ?? [])];
+    // A zero is muted; a count carries its severity, which colours it and draws its dot.
+    expect(cells.map((c) => c.classList.contains('zero'))).toEqual([true, false, true]);
+    expect(cells.map((c) => c.getAttribute('data-severity'))).toEqual([
+      'critical',
+      'high',
+      'medium',
+    ]);
+    expect(text(main?.querySelector('th .badge-tag'))).toBe('main');
+    expect(version?.querySelector('th .badge-tag')).toBeNull();
+    // One link per row, which the stylesheet stretches over the row.
+    expect(main?.querySelectorAll('a')).toHaveLength(1);
+    expect(main?.querySelector('a.row-link')).not.toBeNull();
+  });
+
+  it('gives a main branch named main no second "main" tag', async () => {
+    const root = await render({ targets: TARGETS });
+    expect(rows(root)[0]?.querySelector('.badge-tag')).toBeNull();
+  });
+
+  it('puts the row menus in a last column of their own', async () => {
+    const root = await render({ targets: TARGETS }, { permissions: SETTINGS });
+    const head = [...root.querySelectorAll('thead th')];
+    expect(text(head.at(-1))).toBe('Actions');
+    const [main, version] = rows(root);
+    expect(main?.querySelector('td:last-child .row-menu')).toBeNull();
+    expect(version?.querySelector('td:last-child .row-menu')).not.toBeNull();
+    expect(version?.querySelector('th .row-menu')).toBeNull();
+  });
+
   describe('the Exploited column', () => {
     const withExploited = [
       vulnerabilityTarget({
@@ -175,6 +218,9 @@ describe('VulnerabilitiesPage', () => {
       expect(cells[0]).toEqual(['1', '3', '4', '2', '2 new']);
       expect(cells[1]?.[3]).toBe('0');
       expect(cells[2]?.[3]).toBe('5');
+      // More than zero takes the exploited badge; zero stays a quiet number.
+      expect(text(rows(root)[0]?.querySelector('td .badge-exploited'))).toBe('2');
+      expect(rows(root)[1]?.querySelector('td .badge-exploited')).toBeNull();
     });
 
     it('is absent without priority', async () => {
@@ -191,6 +237,7 @@ describe('VulnerabilitiesPage', () => {
       const root = await render({ targets: TARGETS, untracked: untracked(16) });
       const fold = root.querySelector('.untracked');
       expect(text(fold)).toContain('1.0.0 · 1.1.0 · 14 more — not tracked');
+      expect(text(fold?.querySelector('.mono'))).toBe('1.0.0 · 1.1.0');
       expect(rows(root)).toHaveLength(3);
       const show = button(root, 'Show');
       expect(show?.getAttribute('aria-expanded')).toBe('false');
@@ -519,15 +566,24 @@ describe('VulnerabilitiesPage views', () => {
   it('shows the cards in By vulnerability instead of the table', async () => {
     const root = await renderWith({ view: 'vulnerability' });
     expect(root.querySelector('table')).toBeNull();
-    expect(root.querySelectorAll('.vuln-card')).toHaveLength(1);
+    expect(root.querySelectorAll('.vuln-row')).toHaveLength(1);
+  });
+
+  it("puts the target's chips beside its name, with the main tag", async () => {
+    const root = await renderWith({ target: `branch:${MAIN}` });
+    const chips = [...root.querySelectorAll('.target-head q-severity-chips .badge')];
+    expect(chips.map((c) => text(c))).toEqual(['1 Critical', '3 High', '4 Medium']);
+    // The main branch here is named main: no second "main".
+    expect(root.querySelector('.target-heading .badge-tag')).toBeNull();
   });
 
   it('names the target in the one-target view and links back to By version', async () => {
     const root = await renderWith({ target: `branch:${MAIN}` });
     expect(root.querySelector('table')).toBeNull();
-    expect(text(root.querySelector('.target-heading'))).toBe('main ← By version');
-    expect(root.querySelector('.target-heading a')?.getAttribute('href')).not.toContain('target');
-    expect(root.querySelectorAll('.vuln-card')).toHaveLength(1);
+    expect(text(root.querySelector('.target-heading'))).toBe('main');
+    expect(text(root.querySelector('.target-head .back'))).toBe('← By version');
+    expect(root.querySelector('.target-head .back')?.getAttribute('href')).not.toContain('target');
+    expect(root.querySelectorAll('.vuln-row')).toHaveLength(1);
   });
 });
 

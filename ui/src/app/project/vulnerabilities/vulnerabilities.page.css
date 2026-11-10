@@ -47,17 +47,106 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.mono {
+  font-family: var(--mono);
+}
 .target {
   font-weight: 500;
 }
-.target .chip,
-.target .hint {
+.target .row-link {
+  font-size: 13px;
+}
+.target :is(.chip, .hint, .badge) {
   margin-left: 8px;
 }
-.row-menu {
-  margin-left: 4px;
+
+/*
+ * A row of the version table is one link (brief §C): the target's link covers the row, which
+ * shows the hover and, from the keyboard, the focus ring; the row menu stays above it.
+ */
+.target-row {
+  position: relative;
+}
+.target-row .row-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.target-row:hover {
+  cursor: pointer;
+}
+.target-row .row-link:focus-visible {
+  outline: none;
+}
+.target-row:has(.row-link:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+/* The counts sit together at the right of the name, not spread over the page. */
+.targets-table th.num {
+  width: 7.5rem;
+}
+.targets-table th.new-col {
+  width: 8rem;
+}
+.menu-col {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+.menu-col .row-menu {
+  position: relative;
+  z-index: 1;
+}
+
+/* A count: muted at zero; otherwise in its severity's colour after a 6px dot. Medium's text takes
+   the warn colour, as its badge does (the ramp's medium is under 4.5:1 on white). */
+.count {
+  white-space: nowrap;
+}
+.count.zero {
+  color: var(--text-muted);
+}
+.count:not(.zero)[data-severity] {
+  font-weight: 650;
+}
+.count:not(.zero)[data-severity]::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--dot);
+  vertical-align: 2px;
+}
+.count[data-severity='critical'] {
+  --dot: var(--sev-blocker);
+}
+.count[data-severity='high'] {
+  --dot: var(--sev-high);
+}
+.count[data-severity='medium'] {
+  --dot: var(--sev-medium);
+}
+.count:not(.zero)[data-severity='critical'] {
+  color: var(--sev-blocker);
+}
+.count:not(.zero)[data-severity='high'] {
+  color: var(--sev-high);
+}
+.count:not(.zero)[data-severity='medium'] {
+  color: var(--warn);
+}
+.count .badge {
+  font-variant-numeric: tabular-nums;
+}
+/* A version no rule tracks reads as secondary. */
+.untracked-row :is(td, .row-link) {
+  color: var(--text-muted);
 }
 .menu-trigger {
+  min-height: 24px;
   padding: 2px 6px;
 }
 /* A manual-position popover in the top layer: place() sets top and right from the button. */
@@ -71,6 +160,10 @@
   gap: 8px;
   margin: 12px 0 0;
   color: var(--text-muted);
+  font-size: 13px;
+}
+.untracked .mono {
+  font-size: 12.5px;
 }
 .tag-hint {
   margin-top: 20px;
@@ -80,14 +173,22 @@
   padding: var(--space-3);
   overflow-x: auto;
 }
+/* One target (brief §C): its name, the main tag, its chips, and the way back at the right. */
+.target-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 0 14px;
+}
 .target-heading {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 18px;
 }
-.target-heading .back {
+.target-head .back {
   margin-left: auto;
   font-size: 14px;
   font-weight: 500;

@@ -19,7 +19,7 @@ import { Distribution, type DistributionItem } from '../charts/distribution';
 import { Lens } from '../charts/lens';
 import { label } from '../i18n/labels';
 import { OrgContext } from '../org/org-context';
-import { newMarkerText } from '../project/vulnerabilities/new-marker';
+import { SeverityChips } from '../project/vulnerabilities/severity-chips';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { closeModal, openAfterRender } from '../shared/dialog';
 import { inputValue } from '../shared/forms';
@@ -28,6 +28,7 @@ import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { MeasurePipe } from '../shared/measure.pipe';
 import { PageHeader } from '../shared/page-header';
+import { vulnerabilityCell, type VulnerabilityCell } from './vulnerability-cell';
 
 export type Project = ItemOf<'/api/v0/projects'>;
 const PAGE_SIZE = 50;
@@ -43,13 +44,29 @@ const MAX_TEXT = 255;
  */
 @Component({
   selector: 'q-projects-page',
-  imports: [DateTimePipe, Distribution, GateBadge, Icon, Lens, MeasurePipe, PageHeader, RouterLink],
+  imports: [
+    DateTimePipe,
+    Distribution,
+    GateBadge,
+    Icon,
+    Lens,
+    MeasurePipe,
+    PageHeader,
+    RouterLink,
+    SeverityChips,
+  ],
   templateUrl: './projects.page.html',
   styleUrl: './projects.page.css',
   host: { class: 'bleed' },
 })
 export class ProjectsPage {
-  protected readonly newMarker = newMarkerText;
+  /**
+   * The Vulnerabilities column (brief §A): the main branch's open Critical and High, the exploited
+   * ids, the affected releases and the new marker; null while monitoring is off for the project.
+   */
+  protected vulnCell(project: Project): VulnerabilityCell | null {
+    return vulnerabilityCell(project.vulnerabilities, project.mainBranchName);
+  }
 
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);

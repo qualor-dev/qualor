@@ -65,12 +65,25 @@
       <p class="alert alert-error" role="alert">{{ message }}</p>
     }
     @if (target(); as t) {
-      <h2 class="target-heading">
-        {{ targetName() ?? t }}
+      <div class="target-head">
+        <h2 class="target-heading">
+          <span class="mono">{{ targetName() ?? t }}</span>
+          @if (mainTag(viewedTarget())) {
+            <span class="badge badge-tag" i18n="@@vulns.target.main">main</span>
+          }
+        </h2>
+        @if (viewedTarget(); as v) {
+          <q-severity-chips
+            [critical]="v.counts.critical"
+            [high]="v.counts.high"
+            [medium]="v.counts.medium"
+            [exploited]="v.exploited"
+          />
+        }
         <a routerLink="." [queryParams]="{}" class="back" i18n="@@vulns.target.back"
           >← By version</a
         >
-      </h2>
+      </div>
       <q-vulnerability-list
         [projectId]="projectId()"
         [target]="t"
@@ -117,7 +130,7 @@
             aria-label="Branches and versions"
             i18n-aria-label="@@vuln.table.label"
           >
-            <table [attr.aria-busy]="summary.isLoading()">
+            <table class="targets-table" [attr.aria-busy]="summary.isLoading()">
               <thead>
                 <tr>
                   <th scope="col" i18n="@@vuln.col.target">Branch or version</th>
@@ -127,46 +140,81 @@
                   @if (a.priority) {
                     <th scope="col" class="num" i18n="@@vuln.col.exploited">Exploited</th>
                   }
-                  <th scope="col" i18n="@@vuln.col.new">New</th>
+                  <th scope="col" class="new-col" i18n="@@vuln.col.new">New</th>
+                  @if (canPin()) {
+                    <th scope="col" class="menu-col">
+                      <span class="visually-hidden" i18n="@@vulns.col.actions">Actions</span>
+                    </th>
+                  }
                 </tr>
               </thead>
               <tbody id="vuln-untracked">
                 @for (t of targets(); track t.kind + t.id) {
-                  <tr>
+                  <tr class="target-row">
                     <th scope="row" class="target">
-                      <a routerLink="." [queryParams]="{ target: targetParam(t) }">{{ t.name }}</a>
+                      <a
+                        class="row-link mono"
+                        routerLink="."
+                        [queryParams]="{ target: targetParam(t) }"
+                        >{{ t.name }}</a
+                      >
+                      @if (mainTag(t)) {
+                        <span class="badge badge-tag" i18n="@@vulns.target.main">main</span>
+                      }
                       @if (t.tracking === 'pinned') {
                         <span class="chip" i18n="@@vuln.pinned">Pinned</span>
                       }
                       @if (!t.hasInventory) {
                         <span class="hint" i18n="@@vuln.noInventory">No dependency list</span>
                       }
-                      @if (t.kind === 'version') {
-                        <ng-container *ngTemplateOutlet="rowMenu; context: { $implicit: t }" />
-                      }
                     </th>
-                    <td class="num">{{ t.counts.critical }}</td>
-                    <td class="num">{{ t.counts.high }}</td>
-                    <td class="num">{{ t.counts.medium }}</td>
+                    <td
+                      class="num count"
+                      data-severity="critical"
+                      [class.zero]="!t.counts.critical"
+                    >
+                      {{ t.counts.critical }}
+                    </td>
+                    <td class="num count" data-severity="high" [class.zero]="!t.counts.high">
+                      {{ t.counts.high }}
+                    </td>
+                    <td class="num count" data-severity="medium" [class.zero]="!t.counts.medium">
+                      {{ t.counts.medium }}
+                    </td>
                     @if (a.priority) {
-                      <td class="num">{{ t.exploited }}</td>
+                      <td class="num count" [class.zero]="!t.exploited">
+                        @if (t.exploited) {
+                          <span class="badge badge-exploited">{{ t.exploited }}</span>
+                        } @else {
+                          {{ t.exploited }}
+                        }
+                      </td>
                     }
                     <td>
                       @if (t.new > 0) {
                         <span class="badge badge-high" i18n="@@vuln.newCount">{{ t.new }} new</span>
                       }
                     </td>
+                    @if (canPin()) {
+                      <td class="menu-col">
+                        @if (t.kind === 'version') {
+                          <ng-container *ngTemplateOutlet="rowMenu; context: { $implicit: t }" />
+                        }
+                      </td>
+                    }
                   </tr>
                 }
                 @if (expanded()) {
                   @for (v of untracked(); track v.id) {
-                    <tr class="untracked-row">
+                    <tr class="target-row untracked-row">
                       <th scope="row" class="target">
-                        <a routerLink="." [queryParams]="{ target: 'version:' + v.id }">{{
-                          v.name
-                        }}</a>
+                        <a
+                          class="row-link mono"
+                          routerLink="."
+                          [queryParams]="{ target: 'version:' + v.id }"
+                          >{{ v.name }}</a
+                        >
                         <span class="hint" i18n="@@vuln.notTracked">Not tracked</span>
-                        <ng-container *ngTemplateOutlet="rowMenu; context: { $implicit: v }" />
                       </th>
                       <td class="num">{{ v.counts.critical }}</td>
                       <td class="num">{{ v.counts.high }}</td>
@@ -175,6 +223,11 @@
                         <td class="num">{{ v.exploited }}</td>
                       }
                       <td></td>
+                      @if (canPin()) {
+                        <td class="menu-col">
+                          <ng-container *ngTemplateOutlet="rowMenu; context: { $implicit: v }" />
+                        </td>
+                      }
                     </tr>
                   }
                 }
@@ -186,11 +239,14 @@
       @if (untracked().length > 0) {
         <p class="untracked">
           @if (foldMore() > 0) {
-            <span i18n="@@vuln.fold.more"
-              >{{ foldLabels() }} · {{ foldMore() }} more — not tracked</span
+            <span i18n="@@vulns.fold.more"
+              ><span class="mono">{{ foldLabels() }}</span> · {{ foldMore() }} more — not
+              tracked</span
             >
           } @else {
-            <span i18n="@@vuln.fold.few">{{ foldLabels() }} — not tracked</span>
+            <span i18n="@@vulns.fold.few"
+              ><span class="mono">{{ foldLabels() }}</span> — not tracked</span
+            >
           }
           <button
             type="button"

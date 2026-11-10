@@ -99,13 +99,14 @@
     <section class="card panel projects-panel">
       <div class="panel-scroll" tabindex="0" role="group" aria-labelledby="projects-caption">
         <table [attr.aria-busy]="list.loading()">
-          <caption id="projects-caption" class="visually-hidden" i18n="@@projects.caption">
-            Projects with their quality gate and main-branch measures
+          <caption id="projects-caption" class="visually-hidden" i18n="@@projects.tableCaption">
+            Projects with their quality gate, vulnerabilities and main-branch measures
           </caption>
           <thead>
             <tr>
               <th scope="col" i18n="@@projects.col.project">Project</th>
               <th scope="col" i18n="@@projects.col.gate">Quality gate</th>
+              <th scope="col" i18n="@@projects.col.vulnerabilities">Vulnerabilities</th>
               <th scope="col" class="num" i18n="@@projects.col.issues">Issues</th>
               <th scope="col" class="num" i18n="@@projects.col.coverage">Coverage</th>
               <th scope="col" class="num" i18n="@@projects.col.duplications">Duplications</th>
@@ -118,9 +119,43 @@
               <tr>
                 <td>
                   <a [routerLink]="['/projects', project.id]">{{ project.name }}</a>
-                  @if (project.vulnerabilities; as v) {
-                    @if (newMarker(v.newIn); as text) {
-                      <div>
+                  <div class="muted">
+                    <code>{{ project.key }}</code>
+                  </div>
+                </td>
+                <td><q-gate-badge [status]="project.mainBranch?.gateStatus" /></td>
+                <td class="vuln-cell">
+                  @if (vulnCell(project); as c) {
+                    <span class="visually-hidden">{{ c.label }}</span>
+                    <div class="vuln-facts">
+                      @if (c.main; as m) {
+                        @if (m.critical === 0 && m.high === 0) {
+                          <span class="muted" aria-hidden="true" i18n="@@vulns.projects.none"
+                            >No critical or high</span
+                          >
+                        }
+                      } @else {
+                        <span class="muted" aria-hidden="true">–</span>
+                      }
+                      @if (c.chips) {
+                        <q-severity-chips
+                          aria-hidden="true"
+                          [critical]="c.main?.critical"
+                          [high]="c.main?.high"
+                          [exploited]="c.exploited"
+                        />
+                      }
+                      @if (c.releases; as r) {
+                        <a
+                          class="vuln-releases"
+                          [routerLink]="['/projects', project.id, 'vulnerabilities']"
+                          [attr.aria-label]="r.label"
+                          >{{ r.text }}</a
+                        >
+                      }
+                    </div>
+                    @if (c.newText; as text) {
+                      <div class="vuln-new">
                         <a
                           class="badge badge-high"
                           [routerLink]="['/projects', project.id, 'vulnerabilities']"
@@ -128,12 +163,11 @@
                         >
                       </div>
                     }
+                  } @else {
+                    <span class="muted" aria-hidden="true">–</span>&ngsp;
+                    <span class="visually-hidden" i18n="@@vulns.projects.off">Not monitored</span>
                   }
-                  <div class="muted">
-                    <code>{{ project.key }}</code>
-                  </div>
                 </td>
-                <td><q-gate-badge [status]="project.mainBranch?.gateStatus" /></td>
                 @for (metric of columns; track metric) {
                   <td class="num">
                     {{ project.mainBranch?.measures?.[metric] | measure: metric }}
@@ -155,7 +189,7 @@
             } @empty {
               @if (list.loaded()) {
                 <tr>
-                  <td colspan="7">
+                  <td colspan="8">
                     <div class="empty-state">
                       <img src="art/empty.webp" alt="" width="900" height="675" />
                       <p i18n="@@projects.empty">No projects match.</p>

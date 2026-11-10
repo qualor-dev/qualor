@@ -1,0 +1,5 @@
+@for (chip of chips(); track chip.kind) {
+  <span class="badge" [class]="'badge-' + chip.kind" [attr.data-chip]="chip.kind">{{
+    chip.text
+  }}</span>
+}

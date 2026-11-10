@@ -44,3 +44,23 @@
     border-bottom: 1px solid var(--hairline);
   }
 }
+/* The Vulnerabilities column (brief §A): the main branch's chips, then the affected releases; the
+   new marker under them. */
+.vuln-cell {
+  min-width: 13rem;
+}
+.vuln-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.vuln-releases {
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.vuln-new {
+  margin-top: 6px;
+}

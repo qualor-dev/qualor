@@ -1,0 +1,10 @@
+/* The chips wrap as a group; the badge classes come from styles.css. */
+:host {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.badge {
+  font-variant-numeric: tabular-nums;
+}

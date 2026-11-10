@@ -9,6 +9,7 @@ import { SessionStore } from '../../auth/session';
 import { inputValue } from '../../shared/forms';
 import { DateTimePipe } from '../../shared/date-time.pipe';
 import { Icon } from '../../shared/icon';
+import { SeverityChips } from './severity-chips';
 import { type SeverityFilter, type StatusFilter, VulnerabilityList } from './vulnerability-list';
 import { CurrentProject } from '../current-project';
 
@@ -49,7 +50,7 @@ function one(params: Params, key: string): string {
  */
 @Component({
   selector: 'q-vulnerabilities-page',
-  imports: [DateTimePipe, Icon, NgTemplateOutlet, RouterLink, VulnerabilityList],
+  imports: [DateTimePipe, Icon, NgTemplateOutlet, RouterLink, SeverityChips, VulnerabilityList],
   templateUrl: './vulnerabilities.page.html',
   styleUrl: './vulnerabilities.page.css',
 })
@@ -108,12 +109,20 @@ export class VulnerabilitiesPage {
     const all = this.answer()?.targets ?? [];
     return [...all.filter((t) => t.isMain), ...all.filter((t) => !t.isMain)];
   });
-  /** The viewed target's name: tracked or not, as the summary names it; else the URL's id. */
-  protected readonly targetName = computed(() => {
+  /**
+   * The viewed target as the summary has it, tracked or not, for its name and the chips beside it
+   * (brief §C); null until the summary is read, or for an id it does not know.
+   */
+  protected readonly viewedTarget = computed(() => {
     const id = (this.target() ?? '').split(':')[1];
-    const all = [...(this.answer()?.targets ?? []), ...(this.answer()?.untracked ?? [])];
-    return all.find((t) => t.id === id)?.name ?? null;
+    const a = this.answer();
+    const tracked = a?.targets.find((t) => t.id === id);
+    if (tracked) return tracked;
+    const untracked = a?.untracked.find((t) => t.id === id);
+    return untracked ? { ...untracked, isMain: false } : null;
   });
+  /** The viewed target's name: tracked or not, as the summary names it; else the URL's id. */
+  protected readonly targetName = computed(() => this.viewedTarget()?.name ?? null);
   /** Nothing open anywhere: every tracked target has zero counts. */
   protected readonly clean = computed(() =>
     this.targets().every((t) => Object.values(t.counts).every((n) => n === 0)),
@@ -216,6 +225,14 @@ export class VulnerabilitiesPage {
             { format: 'openvex', label: $localize`:@@vuln.export.openvex:OpenVEX` },
           ];
     return formats.map((f) => ({ label: f.label, href: `${base}&format=${f.format}` }));
+  }
+
+  /**
+   * Whether a target gets the quiet "main" tag (brief §C): the main branch, unless its name says it
+   * already.
+   */
+  protected mainTag(t: { isMain: boolean; name: string } | null): boolean {
+    return t !== null && t.isMain && t.name !== 'main';
   }
 
   protected targetParam(t: Target): string {
