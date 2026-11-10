@@ -11184,6 +11184,224 @@
         }
       }
     },
+    "/api/v0/projects/sbom": {
+      "get": {
+        "summary": "Download the software bill of materials of a branch or version as CycloneDX or SPDX JSON (enterprise feature sbom)",
+        "tags": [
+          "vulnerabilities"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._/:-]{1,255}$"
+            },
+            "in": "query",
+            "name": "projectKey",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "in": "query",
+            "name": "branch",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "in": "query",
+            "name": "version",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": "cyclonedx",
+              "type": "string",
+              "enum": [
+                "cyclonedx",
+                "spdx"
+              ]
+            },
+            "in": "query",
+            "name": "format",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The SBOM, as an attachment",
+            "content": {
+              "application/vnd.cyclonedx+json": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/spdx+json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) or TOKEN_NOT_ALLOWED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; also `branch` together with `version`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/projects/vex": {
+      "get": {
+        "summary": "Download the triage decisions of a branch or version as a CycloneDX VEX or OpenVEX document (enterprise feature sbom)",
+        "tags": [
+          "vulnerabilities"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._/:-]{1,255}$"
+            },
+            "in": "query",
+            "name": "projectKey",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "in": "query",
+            "name": "branch",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "in": "query",
+            "name": "version",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": "cyclonedx",
+              "type": "string",
+              "enum": [
+                "cyclonedx",
+                "openvex"
+              ]
+            },
+            "in": "query",
+            "name": "format",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The VEX document, as an attachment",
+            "content": {
+              "application/vnd.cyclonedx+json": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) or TOKEN_NOT_ALLOWED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; also `branch` together with `version`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v0/projects/{id}/vulnerabilities/targets": {
       "get": {
         "summary": "The tracked branches and versions with their vulnerability counts",
@@ -11211,6 +11429,9 @@
                   "type": "object",
                   "properties": {
                     "priority": {
+                      "type": "boolean"
+                    },
+                    "sbom": {
                       "type": "boolean"
                     },
                     "monitoring": {
@@ -11503,6 +11724,7 @@
                   },
                   "required": [
                     "priority",
+                    "sbom",
                     "monitoring",
                     "data",
                     "checkedAt",

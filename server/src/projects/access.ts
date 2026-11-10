@@ -55,21 +55,23 @@ export async function projectForUser(
 }
 
 /**
- * The 📤 endpoints (ruling R2): the project named by `?projectKey`. A project token must belong to
- * it; a user needs `project.analyze` on it and a token with `analysis:write` (a session has every
- * scope). An unknown or invisible project is 404 `PROJECT_NOT_FOUND` — distinct from the plain
- * `NOT_FOUND` of a route this server does not have (the CLI relies on that, ruling N3).
+ * The project named by `projectKey` for a caller that can see it, else 404 `PROJECT_NOT_FOUND`
+ * (a project token sees its own project only). `user` is null for a project token.
  */
-export async function projectForUpload(
+async function keyedProject(
   access: AccessContext,
   principal: Principal,
   projectKey: string,
-): Promise<ProjectRow> {
+): Promise<{
+  project: ProjectRow;
+  user: UserPrincipal | null;
+  permissions: ReadonlySet<ProjectPermission>;
+}> {
   const missing = new ProblemError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   if (principal.kind === 'project') {
     const [project] = await access.db.select().from(projects).where(eq(projects.key, projectKey));
     if (!project || project.id !== principal.projectId) throw missing;
-    return project;
+    return { project, user: null, permissions: new Set() };
   }
   const [row] = await access.db
     .select({ project: projects, ...FACTS })
@@ -80,8 +82,38 @@ export async function projectForUpload(
   if (!row) throw missing;
   const permissions = granted(principal.user, row);
   if (!permissions.has('project.read')) throw missing;
-  requirePermission(principal, permissions, 'project.analyze', 'project.read', 'Project');
-  return row.project;
+  return { project: row.project, user: principal, permissions };
+}
+
+/**
+ * The 📤 endpoints (ruling R2): the project named by `?projectKey`. A project token must belong to
+ * it; a user needs `project.analyze` on it and a token with `analysis:write` (a session has every
+ * scope). An unknown or invisible project is 404 `PROJECT_NOT_FOUND` — distinct from the plain
+ * `NOT_FOUND` of a route this server does not have (the CLI relies on that, ruling N3).
+ */
+export async function projectForUpload(
+  access: AccessContext,
+  principal: Principal,
+  projectKey: string,
+): Promise<ProjectRow> {
+  const { project, user, permissions } = await keyedProject(access, principal, projectKey);
+  if (user) requirePermission(user, permissions, 'project.analyze', 'project.read', 'Project');
+  return project;
+}
+
+/**
+ * The SBOM and VEX downloads: the project named by `?projectKey`, read by its own project token,
+ * or by a user with `project.read` and a token of the `read` scope. An unknown project, one the
+ * caller cannot see and another project's token are the same 404 `PROJECT_NOT_FOUND`.
+ */
+export async function projectForExport(
+  access: AccessContext,
+  principal: Principal,
+  projectKey: string,
+): Promise<ProjectRow> {
+  const { project, user, permissions } = await keyedProject(access, principal, projectKey);
+  if (user) requirePermission(user, permissions, 'project.read', 'project.read', 'Project');
+  return project;
 }
 
 export type BranchRow = typeof branches.$inferSelect;

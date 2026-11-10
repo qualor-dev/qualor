@@ -165,6 +165,7 @@ q "$QUALOR_URL/api/v0/issues?branchId=<id>&severity=blocker&severity=high&inNewC
 | Dependencies | `GET /projects/{id}/dependencies` (every edition): the dependencies of a branch or a version, and their licences. Takes `?branch=`, `?mr=` or `?version=`, filters and paging ([Dependency licences](./dependency-licenses.md#the-api)) |
 | Versions | `GET /projects/{id}/versions`, `PATCH /projects/{id}/versions/{versionId}` (a version's `tracking`), `GET/PUT /projects/{id}/vulnerability-monitoring` (which branches and versions are tracked) ([Releases and versions](./releases.md#the-api)) |
 | Vulnerabilities | `GET /projects/{id}/vulnerabilities/targets`, `GET /projects/{id}/vulnerabilities` (read access), `PUT /projects/{id}/vulnerability-decisions` (`issue.triage`; 422 `REASON_REQUIRED` or `COMMENT_REQUIRED`). `POST /issues/{id}/transition` and `POST /issues/bulk-transition` accept `reason` ([Dependency vulnerabilities](./dependency-vulnerabilities.md#the-api)) |
+| SBOM and VEX (enterprise) | `GET /projects/sbom`, `GET /projects/vex`, addressed by `?projectKey=`; a project analysis token reads its own project ([below](#sbom-and-vex-export-enterprise)) |
 | Issues | `GET /issues`, `GET /issues/{id}`, `POST /issues/{id}/transition`, `POST /issues/bulk-transition`, `PATCH /issues/{id}` (severity), `GET /issues/{id}/changelog` |
 | Rules, profiles, gates | `GET /rules`, `/quality-profiles…`, `/quality-gates…` (conditions, copy, set-default), `GET /metrics` |
 | Users and organisations | `GET/POST/PATCH /users` (each user with `hasPassword` and `sso`; `GET /users?signIn=no-password`), `GET /users/lookup?username=`, `GET /users/search?q=` ([below](#searching-users)), `GET /organizations`, `…/members` (each with `managedBy`; `?q=`, trimmed, keeps the active members that match, as `/users/search` does) |
@@ -197,6 +198,35 @@ Example: mark issues as false positives in bulk:
 ```sh
 q -X POST "$QUALOR_URL/api/v0/issues/bulk-transition" \
   -d '{"ids":["<issue id>","<issue id>"],"to":"false_positive","comment":"Generated code, see ADR-12"}'
+```
+
+### SBOM and VEX export (enterprise)
+
+`GET /projects/sbom` and `GET /projects/vex` download a file for a branch or a version. They need the
+`sbom` feature (403 `FEATURE_NOT_LICENSED` without it).
+
+| Parameter | Meaning |
+|---|---|
+| `projectKey` | Required. The project's key, as the scanner uses it |
+| `branch` | A branch name. A merge request is not a target |
+| `version` | A version label. Give `branch` or `version`, not both (422); neither means the main branch |
+| `format` | SBOM: `cyclonedx` (default) or `spdx`. VEX: `cyclonedx` (default) or `openvex` |
+
+| Answer | Meaning |
+|---|---|
+| 200 | The file, as an attachment named `<key>-<target><suffix>` (`.cdx.json`, `.spdx.json`, `.vex.cdx.json` or `.openvex.json`). Never cached |
+| 404 `PROJECT_NOT_FOUND` | No such project, or the caller cannot see it. The project token of another project gets it too |
+| 404 `NOT_FOUND` | No such branch or version. For the SBOM, the target has no dependency inventory yet. For the VEX, vulnerability monitoring is off |
+| 403 | `FEATURE_NOT_LICENSED`, or `INSUFFICIENT_SCOPE` for a personal token without the `read` scope |
+
+A project analysis token reads the SBOM and VEX of its own project and nothing else, so a release job
+needs no personal token. A person needs read access to the project.
+
+```sh
+curl -fsS -H "Authorization: Bearer $QUALOR_PROJECT_TOKEN" -OJ \
+  "$QUALOR_URL/api/v0/projects/sbom?projectKey=acme/payments-api&version=$RELEASE_TAG&format=spdx"
+curl -fsS -H "Authorization: Bearer $QUALOR_PROJECT_TOKEN" -OJ \
+  "$QUALOR_URL/api/v0/projects/vex?projectKey=acme/payments-api&version=$RELEASE_TAG&format=openvex"
 ```
 
 ### Searching users

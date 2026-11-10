@@ -80,6 +80,8 @@ const untrackedSchema = z.object({
 const targetsAnswerSchema = z.object({
   /** Whether the vuln.priority feature (KEV and EPSS) is licensed. */
   priority: z.boolean(),
+  /** Whether the sbom feature (SBOM and VEX export) is licensed. */
+  sbom: z.boolean(),
   /** Off while the instance or the project switch is off; the lists are then empty. */
   monitoring: z.enum(['on', 'off']),
   /** The vulnerability database in use; null when there is none. */
@@ -238,6 +240,7 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
       );
       return readTargetSummary(deps.db, project.id, {
         priority: deps.edition.limits().vulnerabilities.priority,
+        sbom: deps.edition.limits().vulnerabilities.sbom,
       });
     },
   );

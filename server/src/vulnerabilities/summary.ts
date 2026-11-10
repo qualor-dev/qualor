@@ -48,6 +48,8 @@ export interface UntrackedVersion {
 export interface TargetsAnswer {
   /** Whether `vuln.priority` (KEV and EPSS) is licensed. */
   priority: boolean;
+  /** Whether the `sbom` feature (SBOM and VEX export) is licensed. */
+  sbom: boolean;
   monitoring: 'on' | 'off';
   data: { builtAt: string | null } | null;
   checkedAt: string | null;
@@ -72,7 +74,7 @@ export interface TargetsAnswer {
 export function scopedRows(where: SQL): SQL {
   return sql`
     SELECT tv.project_id, tv.branch_id, tv.version_id, tv.package_name, tv.vulnerability_id,
-           tv.package_version, tv.ecosystem, tv.ignored, tv.first_seen_at,
+           tv.package_version, tv.purl, tv.ecosystem, tv.ignored, tv.first_seen_at,
            m.severity, m.title, m.fixed_version, m.primary_url,
            COALESCE(d.status, 'open') AS eff_status,
            k.vulnerability_id IS NOT NULL AS kev,
@@ -169,7 +171,7 @@ async function countsOf(
 export async function readTargetSummary(
   db: Executor,
   projectId: string,
-  options: { priority: boolean },
+  options: { priority: boolean; sbom: boolean },
 ): Promise<TargetsAnswer> {
   const [dataset, instance, settings, versions] = await Promise.all([
     readVulndbState(db).then((state) => currentDataset(db, state)),
@@ -188,6 +190,7 @@ export async function readTargetSummary(
   ]);
   const base = {
     priority: options.priority,
+    sbom: options.sbom,
     data: dataset ? { builtAt: dataset.builtAt?.toISOString() ?? null } : null,
     versionCount: versions.length,
   };

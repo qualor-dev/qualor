@@ -23,6 +23,7 @@ import { vulndbRoutes } from './vulndb';
 import { scannerVulndbRoutes } from './scanner-vulndb';
 import { oauthConsentRoutes } from './oauth';
 import { measureRoutes } from './measures';
+import { exportRoutes } from './exports';
 import { newCodeRoutes } from './newcode';
 import { notificationRoutes, unsubscribeRoutes } from './notifications';
 import { organizationRoutes } from './organizations';
@@ -65,6 +66,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   await app.register(measureRoutes, { prefix: '/api/v0', deps });
   await app.register(dependencyRoutes, { prefix: '/api/v0', deps });
   await app.register(versionRoutes, { prefix: '/api/v0', deps });
+  await app.register(exportRoutes, { prefix: '/api/v0', deps });
   await app.register(vulnerabilityRoutes, { prefix: '/api/v0', deps, chargeIssueChanges });
   await app.register(gateRoutes, { prefix: '/api/v0', deps });
   await app.register(issueRoutes, { prefix: '/api/v0', deps, chargeIssueChanges });

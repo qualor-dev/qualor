@@ -5661,6 +5661,162 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/projects/sbom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the software bill of materials of a branch or version as CycloneDX or SPDX JSON (enterprise feature sbom) */
+        get: {
+            parameters: {
+                query: {
+                    projectKey: string;
+                    branch?: string;
+                    version?: string;
+                    format?: "cyclonedx" | "spdx";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The SBOM, as an attachment */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/vnd.cyclonedx+json": string;
+                        "application/spdx+json": string;
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) or TOKEN_NOT_ALLOWED */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off) */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; also `branch` together with `version`) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/projects/vex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the triage decisions of a branch or version as a CycloneDX VEX or OpenVEX document (enterprise feature sbom) */
+        get: {
+            parameters: {
+                query: {
+                    projectKey: string;
+                    branch?: string;
+                    version?: string;
+                    format?: "cyclonedx" | "openvex";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The VEX document, as an attachment */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/vnd.cyclonedx+json": string;
+                        "application/json": string;
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) or TOKEN_NOT_ALLOWED */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off) */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; also `branch` together with `version`) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/projects/{id}/vulnerabilities/targets": {
         parameters: {
             query?: never;
@@ -5688,6 +5844,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             priority: boolean;
+                            sbom: boolean;
                             /** @enum {string} */
                             monitoring: "on" | "off";
                             data: {

@@ -113,7 +113,7 @@ describe('the Vulnerabilities tab: target summary', () => {
       });
     }
     await decide(projectId, 'g', 'CVE-g', 'false_positive');
-    const summary = await readTargetSummary(t.db, projectId, { priority: false });
+    const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
     expect(summary.targets).toEqual([
       expect.objectContaining({
         kind: 'branch',
@@ -143,10 +143,9 @@ describe('the Vulnerabilities tab: target summary', () => {
     await decide(projectId, 'lodash', 'CVE-1', 'wont_fix');
     await decide(projectId, 'lodash', 'CVE-1', 'open', { branchId: release });
     const byName = new Map(
-      (await readTargetSummary(t.db, projectId, { priority: false })).targets.map((x) => [
-        x.name,
-        x.counts.high,
-      ]),
+      (await readTargetSummary(t.db, projectId, { priority: false, sbom: false })).targets.map(
+        (x) => [x.name, x.counts.high],
+      ),
     );
     expect(byName.get('main')).toBe(0);
     expect(byName.get('release/1.x')).toBe(1);
@@ -170,10 +169,9 @@ describe('the Vulnerabilities tab: target summary', () => {
     await decide(projectId, 'lodash', 'CVE-1', 'false_positive');
     await decide(projectId, 'lodash', 'CVE-1', 'open', { branchId: release });
     const byName = new Map(
-      (await readTargetSummary(t.db, projectId, { priority: false })).targets.map((x) => [
-        x.name,
-        x,
-      ]),
+      (await readTargetSummary(t.db, projectId, { priority: false, sbom: false })).targets.map(
+        (x) => [x.name, x],
+      ),
     );
     expect(byName.get('main')).toMatchObject({ new: 0, counts: { high: 0 } });
     expect(byName.get('release/2.x')).toMatchObject({ new: 1, counts: { high: 1 } });
@@ -204,7 +202,8 @@ describe('the Vulnerabilities tab: target summary', () => {
     await seed('triaged', AFTER);
     await seed('ignored', AFTER, { ignored: true });
     await decide(projectId, 'triaged', 'CVE-triaged', 'wont_fix');
-    const [target] = (await readTargetSummary(t.db, projectId, { priority: false })).targets;
+    const [target] = (await readTargetSummary(t.db, projectId, { priority: false, sbom: false }))
+      .targets;
     expect(target?.new).toBe(2);
     expect(target?.counts.high).toBe(4);
   });
@@ -219,7 +218,7 @@ describe('the Vulnerabilities tab: target summary', () => {
       vulnerabilityId: 'CVE-x',
       firstSeenAt: AFTER,
     });
-    const summary = await readTargetSummary(t.db, projectId, { priority: false });
+    const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
     expect(summary.targets[0]).toMatchObject({ new: 0, checkedAt: null });
     expect(summary.checkedAt).toBeNull();
   });
@@ -230,7 +229,7 @@ describe('the Vulnerabilities tab: target summary', () => {
     const release = await branch('release/1.x');
     await seedCheck(t.db, { projectId, branchId: main, baselineAt: T0, checkedAt: BEFORE });
     await seedCheck(t.db, { projectId, branchId: release, baselineAt: T0, checkedAt: AFTER });
-    const summary = await readTargetSummary(t.db, projectId, { priority: false });
+    const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
     expect(summary.checkedAt).toBe(AFTER.toISOString());
     expect(summary.targets.map((x) => x.checkedAt)).toEqual([
       BEFORE.toISOString(),
@@ -252,7 +251,7 @@ describe('the Vulnerabilities tab: target summary', () => {
       severity: 'critical',
     });
     await seedCheck(t.db, { projectId, versionId: old, baselineAt: T0, checkedAt: BEFORE });
-    const summary = await readTargetSummary(t.db, projectId, { priority: false });
+    const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
     expect(summary.versionCount).toBe(3);
     expect(summary.targets.map((x) => x.id)).toEqual([main, newest]);
     expect(summary.untracked.map((x) => x.id)).toEqual([old, older]);
@@ -273,7 +272,7 @@ describe('the Vulnerabilities tab: target summary', () => {
     const main = await branch('main', true);
     const v1 = await version('1.0.0', 1, 'pinned');
     const v2 = await version('2.0.0', 2);
-    const summary = await readTargetSummary(t.db, projectId, { priority: false });
+    const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
     expect(summary.monitoring).toBe('on');
     expect(summary.targets.map((x) => x.name)).toEqual([
       'main',
@@ -296,7 +295,7 @@ describe('the Vulnerabilities tab: target summary', () => {
     await branch('main', true);
     const v = await version('1.0.0', 1);
     await t.db.update(projectVersions).set({ hasInventory: true }).where(eq(projectVersions.id, v));
-    const summary = await readTargetSummary(t.db, projectId, { priority: false });
+    const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
     expect(summary.targets.map((x) => [x.name, x.hasInventory])).toEqual([
       ['main', false],
       ['1.0.0', true],
@@ -307,7 +306,7 @@ describe('the Vulnerabilities tab: target summary', () => {
     const { projectId, branch, version } = await setup({ enabled: false });
     await branch('main', true);
     await version('1.0.0', 1);
-    const summary = await readTargetSummary(t.db, projectId, { priority: false });
+    const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
     expect(summary).toMatchObject({
       monitoring: 'off',
       checkedAt: null,
@@ -320,7 +319,9 @@ describe('the Vulnerabilities tab: target summary', () => {
   it('answers the dataset build time, or null without a dataset', async () => {
     const { projectId } = await setup();
     await t.db.delete(instanceSettings).where(eq(instanceSettings.key, 'vulndb_state'));
-    expect((await readTargetSummary(t.db, projectId, { priority: false })).data).toBeNull();
+    expect(
+      (await readTargetSummary(t.db, projectId, { priority: false, sbom: false })).data,
+    ).toBeNull();
     const id = uuidv7();
     await t.db.insert(vulndbDatasets).values({
       id,
@@ -335,7 +336,9 @@ describe('the Vulnerabilities tab: target summary', () => {
     await t.db
       .insert(instanceSettings)
       .values({ key: 'vulndb_state', value: { currentDatasetId: id } });
-    expect((await readTargetSummary(t.db, projectId, { priority: false })).data).toEqual({
+    expect(
+      (await readTargetSummary(t.db, projectId, { priority: false, sbom: false })).data,
+    ).toEqual({
       builtAt: BEFORE.toISOString(),
     });
     await t.db.delete(instanceSettings).where(eq(instanceSettings.key, 'vulndb_state'));
@@ -473,7 +476,7 @@ describe('the Vulnerabilities tab: target summary', () => {
 
     it('counts open, not ignored exploited rows and orders and fills the list', async () => {
       const { projectId } = await seed();
-      const summary = await readTargetSummary(t.db, projectId, { priority: true });
+      const summary = await readTargetSummary(t.db, projectId, { priority: true, sbom: false });
       expect(summary.priority).toBe(true);
       expect(summary.targets[0]?.exploited).toBe(1);
 
@@ -496,7 +499,7 @@ describe('the Vulnerabilities tab: target summary', () => {
       await t.db.execute(
         sql`UPDATE vulnerability_kev SET delisted_at = now() WHERE vulnerability_id = 'CVE-2024-0001'`,
       );
-      const summary = await readTargetSummary(t.db, projectId, { priority: true });
+      const summary = await readTargetSummary(t.db, projectId, { priority: true, sbom: false });
       expect(summary.targets[0]?.exploited).toBe(0);
       const list = await listVulnerabilities(t.db, projectId, query, { priority: true });
       const item = list.items.find((i) => i.vulnerabilityId === 'CVE-2024-0001');
@@ -522,7 +525,7 @@ describe('the Vulnerabilities tab: target summary', () => {
 
     it('hides every KEV and EPSS fact and the KEV order without the feature', async () => {
       const { projectId } = await seed();
-      const summary = await readTargetSummary(t.db, projectId, { priority: false });
+      const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
       expect(summary.priority).toBe(false);
       expect(summary.targets[0]?.exploited).toBeNull();
       const list = await listVulnerabilities(t.db, projectId, query, { priority: false });

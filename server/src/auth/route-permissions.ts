@@ -106,6 +106,8 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'GET /branches/:id/analyses': 'project.read',
   'GET /projects/new-code-baseline': 'project.analyze',
   'GET /projects/review-context': 'project.analyze',
+  'GET /projects/sbom': 'project.read',
+  'GET /projects/vex': 'project.read',
   'GET /branches/:id/measures': 'project.read',
   'GET /branches/:id/measures/history': 'project.read',
   'GET /branches/:id/files': 'project.read',
@@ -181,6 +183,7 @@ export const GUARDED_HELPERS = [
   'requireOrganizationAccess',
   'projectForUser',
   'projectForUpload',
+  'projectForExport',
   'branchForUser',
   'issueForUser',
   'analysisForPrincipal',
@@ -198,6 +201,7 @@ export const GUARDED_HELPERS = [
 /** Helpers whose permission is fixed, so a route passes none. */
 export const IMPLICIT_PERMISSIONS: Readonly<Record<string, Permission>> = Object.freeze({
   projectForUpload: 'project.analyze',
+  projectForExport: 'project.read',
   analysisForPrincipal: 'project.read',
   connectionFor: 'org.scm.manage',
   webhookFor: 'org.webhooks.manage',
