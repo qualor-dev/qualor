@@ -320,107 +320,159 @@ async function readIssues(
   const listed = new Set(values.map((v) => v.val));
   const ownSum = values.reduce((sum, v) => sum + v.count, 0);
   const probeTotal = probe.total;
-  const seenProbe: IssueProbe = {
-    total: probeTotal,
-    counts: Object.fromEntries(probe.values.map((v) => [v.val, v.count])),
+  const reading: IssueReading = {
+    c,
+    query,
+    own,
+    window,
+    pageSize,
+    seen: new Set<string>(),
+    issues: [],
   };
-  const seen = new Set<string>();
-  const issues: SonarIssue[] = [];
-  const add = (items: readonly SonarIssue[], rule: string | null) => {
-    for (const i of items) {
-      if (seen.has(i.key)) continue;
-      if (rule !== null ? i.rule !== rule : own !== null && !own.has(i.rule)) continue;
-      seen.add(i.key);
-      issues.push(i);
-    }
+  const facet: Facet = {
+    values,
+    ownSum,
+    probeTotal,
+    unlisted: (own === null ? [] : [...own]).filter((r) => !listed.has(r)),
+    unlistedEmpty: ownSum >= probeTotal,
+    listedRules: [...listed],
+    probe: {
+      total: probeTotal,
+      counts: Object.fromEntries(probe.values.map((v) => [v.val, v.count])),
+    },
   };
-  const read = (q: Record<string, string>, max: number) =>
-    c.pages(
-      'api/issues/search',
-      q,
-      issuesPageSchema,
-      (p) => p.issues,
-      (i) => i.key,
-      'issue page',
-      { maxItems: max, window, pageSize },
-    );
-  const completeRules = new Set<string>();
-  /** Rules of the query the facet does not list: none of them has an issue, or unknown. */
-  const unlisted = (own === null ? [] : [...own]).filter((r) => !listed.has(r));
-  const unlistedEmpty = ownSum >= probeTotal;
-  const listedRules = [...listed];
   if (probeTotal === 0) {
-    for (const r of [...listed, ...unlisted]) completeRules.add(r);
     return {
-      issues,
+      issues: reading.issues,
       total: 0,
-      completeRules,
+      completeRules: new Set([...listed, ...facet.unlisted]),
       complete: true,
-      listedRules,
+      listedRules: facet.listedRules,
       othersComplete: true,
-      probe: seenProbe,
+      probe: facet.probe,
     };
   }
-  if (probeTotal <= window) {
-    if (maxIssues <= 0) {
-      return {
-        issues,
-        total: probeTotal,
-        completeRules,
-        complete: false,
-        listedRules,
-        othersComplete: unlistedEmpty,
-        probe: seenProbe,
-      };
-    }
-    const r = await read(query, maxIssues);
-    add(r.items, null);
-    // The probe's facet counts hold for this read only when nothing changed in between.
-    const counted = r.stable && r.total === probeTotal;
-    const byRule = new Map<string, number>();
-    for (const i of issues) byRule.set(i.rule, (byRule.get(i.rule) ?? 0) + 1);
-    for (const v of values) {
-      if (r.complete || (counted && (byRule.get(v.val) ?? 0) >= v.count)) completeRules.add(v.val);
-    }
-    for (const rule of unlisted) {
-      if (r.complete || (counted && unlistedEmpty && !byRule.has(rule))) completeRules.add(rule);
-    }
+  if (probeTotal <= window) return readWhole(reading, facet, maxIssues);
+  return readSlices(reading, facet, maxIssues);
+}
+
+/** What `readIssues` reads with, and what it has read so far (each issue once). */
+interface IssueReading {
+  c: SonarClient;
+  query: Record<string, string>;
+  /** The query's own rules, or `null` for all rules. */
+  own: Set<string> | null;
+  window: number;
+  pageSize: number;
+  seen: Set<string>;
+  issues: SonarIssue[];
+}
+
+/** What the probe of `readIssues` saw of the query's own rules. */
+interface Facet {
+  /** The facet's values of the query's own rules. */
+  values: { val: string; count: number }[];
+  /** The sum of their counts. */
+  ownSum: number;
+  probeTotal: number;
+  /** Rules of the query the facet does not list: none of them has an issue, or unknown. */
+  unlisted: string[];
+  /** The listed rules add up to the probe's total: an unlisted rule has no issue. */
+  unlistedEmpty: boolean;
+  listedRules: string[];
+  probe: IssueProbe;
+}
+
+/** Adds the issues of `items` not read before: of `rule`, or without one, of the query's rules. */
+function addIssues(reading: IssueReading, items: readonly SonarIssue[], rule: string | null): void {
+  const { own, seen, issues } = reading;
+  for (const i of items) {
+    if (seen.has(i.key)) continue;
+    if (rule !== null ? i.rule !== rule : own !== null && !own.has(i.rule)) continue;
+    seen.add(i.key);
+    issues.push(i);
+  }
+}
+
+/** One paged read of `q` (the whole query or one rule's slice), at most `max` issues. */
+function pageIssues(reading: IssueReading, q: Record<string, string>, max: number) {
+  return reading.c.pages(
+    'api/issues/search',
+    q,
+    issuesPageSchema,
+    (p) => p.issues,
+    (i) => i.key,
+    'issue page',
+    { maxItems: max, window: reading.window, pageSize: reading.pageSize },
+  );
+}
+
+/** `readIssues` of a query whose total fits the window: one read of the whole query. */
+async function readWhole(reading: IssueReading, f: Facet, maxIssues: number): Promise<IssueRead> {
+  const completeRules = new Set<string>();
+  if (maxIssues <= 0) {
     return {
-      issues,
-      total: r.total,
+      issues: reading.issues,
+      total: f.probeTotal,
       completeRules,
-      complete: r.complete,
-      listedRules,
-      othersComplete: r.complete || (counted && unlistedEmpty),
-      probe: seenProbe,
+      complete: false,
+      listedRules: f.listedRules,
+      othersComplete: f.unlistedEmpty,
+      probe: f.probe,
     };
   }
-  let total = unlistedEmpty ? 0 : probeTotal - ownSum;
+  const r = await pageIssues(reading, reading.query, maxIssues);
+  addIssues(reading, r.items, null);
+  // The probe's facet counts hold for this read only when nothing changed in between.
+  const counted = r.stable && r.total === f.probeTotal;
+  const byRule = new Map<string, number>();
+  for (const i of reading.issues) byRule.set(i.rule, (byRule.get(i.rule) ?? 0) + 1);
+  for (const v of f.values) {
+    if (r.complete || (counted && (byRule.get(v.val) ?? 0) >= v.count)) completeRules.add(v.val);
+  }
+  for (const rule of f.unlisted) {
+    if (r.complete || (counted && f.unlistedEmpty && !byRule.has(rule))) completeRules.add(rule);
+  }
+  return {
+    issues: reading.issues,
+    total: r.total,
+    completeRules,
+    complete: r.complete,
+    listedRules: f.listedRules,
+    othersComplete: r.complete || (counted && f.unlistedEmpty),
+    probe: f.probe,
+  };
+}
+
+/** `readIssues` of a query past the window: one read per rule the facet lists. */
+async function readSlices(reading: IssueReading, f: Facet, maxIssues: number): Promise<IssueRead> {
+  const completeRules = new Set<string>();
+  let total = f.unlistedEmpty ? 0 : f.probeTotal - f.ownSum;
   // Past the window, only the rule slices are read: complete when the facet covers the whole
   // query and every slice was complete.
-  let complete = unlistedEmpty;
-  for (const v of values) {
-    const left = maxIssues - issues.length;
+  let complete = f.unlistedEmpty;
+  for (const v of f.values) {
+    const left = maxIssues - reading.issues.length;
     if (left <= 0) {
       total += v.count;
       complete = false;
       continue;
     }
-    const r = await read({ ...query, rules: v.val }, left);
-    add(r.items, v.val);
+    const r = await pageIssues(reading, { ...reading.query, rules: v.val }, left);
+    addIssues(reading, r.items, v.val);
     total += r.total;
     if (r.complete) completeRules.add(v.val);
     else complete = false;
   }
-  if (unlistedEmpty) for (const rule of unlisted) completeRules.add(rule);
+  if (f.unlistedEmpty) for (const rule of f.unlisted) completeRules.add(rule);
   return {
-    issues,
+    issues: reading.issues,
     total,
     completeRules,
     complete,
-    listedRules,
-    othersComplete: unlistedEmpty,
-    probe: seenProbe,
+    listedRules: f.listedRules,
+    othersComplete: f.unlistedEmpty,
+    probe: f.probe,
   };
 }
 
@@ -666,62 +718,92 @@ export async function fetchOpenIssues(
 ): Promise<{ issues: SonarIssue[]; total: number; unreadRules: string[] }> {
   const onServer = await rulesOnServer(c, conn, [...new Set(ruleKeys)].sort(), bounds);
   const rules = onServer.known;
-  const issues: SonarIssue[] = [];
-  const seen = new Set<string>();
-  // A rule the server may have but was not seen in its rule list is not asked: it is unread.
-  const unread = new Set<string>(onServer.unsure);
-  let total = 0;
+  const acc: OpenRead = {
+    issues: [],
+    seen: new Set<string>(),
+    // A rule the server may have but was not seen in its rule list is not asked: it is unread.
+    unread: new Set<string>(onServer.unsure),
+    total: 0,
+  };
   for (let k = 0; k < rules.length; k += MAX_RULES_PER_QUERY) {
     const batch = rules.slice(k, k + MAX_RULES_PER_QUERY);
     for (const filter of openIssueFilters(conn)) {
-      const left = maxIssues - issues.length;
+      const left = maxIssues - acc.issues.length;
       if (left <= 0) {
         // The cap is reached: nothing tells whether these rules have open issues.
-        for (const rule of batch) unread.add(rule);
+        for (const rule of batch) acc.unread.add(rule);
         continue;
       }
-      const query = {
-        projects: projectKey,
-        ...filter,
-        s: 'FILE_LINE',
-        asc: 'true',
-        rules: batch.join(','),
-      };
-      let r: IssueRead;
-      try {
-        r = await readIssues(c, query, batch, left, bounds);
-      } catch (err) {
-        // Only the extra query of issues resolved as fixed (`statuses=RESOLVED&resolutions=FIXED`,
-        // not verified against SonarQube Cloud, spec §17) fails closed: a refusal or an
-        // unexpected answer makes the batch's rules count as not read, so their resolved items
-        // are `competitors_unknown`, instead of costing the project's issues. An unreachable
-        // SonarQube, a refused token and any other query still end as before.
-        const refused =
-          err instanceof CliError &&
-          !(err instanceof UnreachableError) &&
-          err.exitCode !== EXIT.AUTH;
-        if (filter['statuses'] === undefined || !refused) throw err;
-        c.warn(
-          'SONARQUBE_ISSUE_WINDOW',
-          `SonarQube did not answer the query of issues resolved as fixed (${err.message.slice(0, 200)}); the resolved issues they may compete with are not applied`,
-        );
-        for (const rule of batch) unread.add(rule);
-        continue;
-      }
-      total += r.total;
-      for (const i of r.issues) {
-        if (seen.has(i.key)) continue;
-        seen.add(i.key);
-        issues.push(i);
-      }
-      for (const rule of batch) if (!r.completeRules.has(rule)) unread.add(rule);
+      await readOpenBatch(c, projectKey, filter, batch, left, bounds, acc);
     }
   }
-  if (unread.size > 0) {
+  if (acc.unread.size > 0) {
     c.warn(
       'SONARQUBE_ISSUE_WINDOW',
-      `the open issues of ${unread.size} rules of a project were not all read (SonarQube's 10 000-result window, or --max-issues); their resolved issues are not applied`,
+      `the open issues of ${acc.unread.size} rules of a project were not all read (SonarQube's 10 000-result window, or --max-issues); their resolved issues are not applied`,
     );
   }
-  return { issues, total, unreadRules: [...unread] };
+  return { issues: acc.issues, total: acc.total, unreadRules: [...acc.unread] };
+}
+
+/** What `fetchOpenIssues` has read so far: each issue once, and the rules not all read. */
+interface OpenRead {
+  issues: SonarIssue[];
+  seen: Set<string>;
+  unread: Set<string>;
+  total: number;
+}
+
+/**
+ * Only the extra query of issues resolved as fixed (`statuses=RESOLVED&resolutions=FIXED`, not
+ * verified against SonarQube Cloud, spec §17) fails closed: a refusal or an unexpected answer
+ * makes the batch's rules count as not read, so their resolved items are `competitors_unknown`,
+ * instead of costing the project's issues. An unreachable SonarQube, a refused token and any
+ * other query still end as before.
+ */
+function failsClosed(err: unknown, filter: Record<string, string>): err is CliError {
+  const refused =
+    err instanceof CliError && !(err instanceof UnreachableError) && err.exitCode !== EXIT.AUTH;
+  return filter['statuses'] !== undefined && refused;
+}
+
+/**
+ * One open-issue query of `fetchOpenIssues`: the rules of `batch` with one filter of
+ * `openIssueFilters`, at most `left` issues, added to `acc`.
+ */
+async function readOpenBatch(
+  c: SonarClient,
+  projectKey: string,
+  filter: Record<string, string>,
+  batch: string[],
+  left: number,
+  bounds: ReadBounds,
+  acc: OpenRead,
+): Promise<void> {
+  const query = {
+    projects: projectKey,
+    ...filter,
+    s: 'FILE_LINE',
+    asc: 'true',
+    rules: batch.join(','),
+  };
+  let r: IssueRead;
+  try {
+    r = await readIssues(c, query, batch, left, bounds);
+  } catch (err) {
+    if (!failsClosed(err, filter)) throw err;
+    c.warn(
+      'SONARQUBE_ISSUE_WINDOW',
+      `SonarQube did not answer the query of issues resolved as fixed (${err.message.slice(0, 200)}); the resolved issues they may compete with are not applied`,
+    );
+    for (const rule of batch) acc.unread.add(rule);
+    return;
+  }
+  acc.total += r.total;
+  for (const i of r.issues) {
+    if (acc.seen.has(i.key)) continue;
+    acc.seen.add(i.key);
+    acc.issues.push(i);
+  }
+  for (const rule of batch) if (!r.completeRules.has(rule)) acc.unread.add(rule);
 }

@@ -9,6 +9,7 @@ import {
   applyProjects,
   cutName,
   type ApplyOptions,
+  type GateResult,
   type ProfileResult,
   type ProjectResult,
 } from './apply';
@@ -294,6 +295,20 @@ describe('applyProfiles (import-sonarqube.md §7, §13)', () => {
         applyProjects(api, ORG_ID, [sonar], [], [], o({ createProjects: true })),
       ).rejects.toBe(err);
     }
+  });
+
+  it("stops when Qualor's profile or gate list fails with an unreachable Qualor, recording nothing", async () => {
+    const err = new UnreachableError('cannot reach http://127.0.0.1:1 (GET /x): ECONNREFUSED');
+    const api = Object.assign(new MemoryQualor(), {
+      profiles: () => Promise.reject(err),
+      gates: () => Promise.reject(err),
+    });
+    const profiles: ProfileResult[] = [];
+    await expect(applyProfiles(api, ORG_ID, [javaProfile()], o(), profiles)).rejects.toBe(err);
+    expect(profiles).toEqual([]);
+    const gates: GateResult[] = [];
+    await expect(applyGates(api, ORG_ID, [gate()], o(), gates)).rejects.toBe(err);
+    expect(gates).toEqual([]);
   });
 
   it('records the profile a fatal failure interrupted, with the rerun hint, then stops (ruling S13)', async () => {
@@ -637,6 +652,19 @@ describe('applyProjects (import-sonarqube.md §9)', () => {
     ).rejects.toBe(err);
     expect(out).toMatchObject([
       { outcome: 'created', profiles: [{ outcome: 'failed', reason: 'Qualor refused PUT: 401' }] },
+    ]);
+  });
+
+  it('records the gate assignment a fatal failure interrupted, then stops (ruling S13)', async () => {
+    const gates = await applyGates(q, ORG_ID, [gate()], o());
+    const err = new CliError(EXIT.AUTH, 'Qualor refused PATCH: 401');
+    const api = Object.assign(q, { setProjectGate: () => Promise.reject(err) });
+    const out: ProjectResult[] = [];
+    await expect(
+      applyProjects(api, ORG_ID, [sonar], [], gates, o({ createProjects: true }), out),
+    ).rejects.toBe(err);
+    expect(out).toMatchObject([
+      { outcome: 'created', gate: { outcome: 'failed', reason: 'Qualor refused PATCH: 401' } },
     ]);
   });
 

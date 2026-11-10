@@ -81,6 +81,12 @@ export function sonarStatus(i: SonarIssue): ImportStatus | null {
   return null;
 }
 
+/** The status label of the comment's header: `Accepted` for SonarQube's newer accepted status. */
+function commentLabel(i: SonarIssue, status: ImportStatus): ImportCommentLabel {
+  if (status === 'false_positive') return 'False positive';
+  return i.issueStatus === 'ACCEPTED' ? 'Accepted' : "Won't fix";
+}
+
 /**
  * Spec §10.2, rulings S8c and 9c, the header of `importCommentHeader` (the key, the status
  * label and the `YYYY-MM-DD` day of `updateDate`, nothing else in its place), then `: ` and the
@@ -88,12 +94,7 @@ export function sonarStatus(i: SonarIssue): ImportStatus | null {
  * UTF-16 units with `…`. No login, author or other field of SonarQube's comment is copied.
  */
 export function importComment(i: SonarIssue, status: ImportStatus): string {
-  const label: ImportCommentLabel =
-    status === 'false_positive'
-      ? 'False positive'
-      : i.issueStatus === 'ACCEPTED'
-        ? 'Accepted'
-        : "Won't fix";
+  const label = commentLabel(i, status);
   const date = DAY.exec(i.updateDate ?? '')?.[1] ?? null;
   const head = importCommentHeader({ key: i.key, label, date });
   const latest = [...(i.comments ?? [])]
@@ -146,6 +147,17 @@ export function requestItemProblem(item: StatusImportRequestItem): string | null
   const extra = Object.keys(item).find((k) => !ITEM_FIELDS.has(k));
   if (extra !== undefined) return extra;
   if (!REF.test(item.ref)) return 'ref';
+  const field = evidenceProblem(item);
+  if (field !== null) return field;
+  if (item.status === 'open') {
+    if ('competitorsUnknown' in item) return 'competitorsUnknown';
+    if (item.comment === undefined) return null;
+  }
+  return commentRefused(item.comment) ? 'comment' : null;
+}
+
+/** The first of an item's rule keys, path, line, line hash and message the endpoint refuses. */
+function evidenceProblem(item: StatusImportRequestItem): string | null {
   if (
     item.ruleKeys.length < 1 ||
     item.ruleKeys.length > MAX_TARGETS ||
@@ -169,21 +181,18 @@ export function requestItemProblem(item: StatusImportRequestItem): string | null
   ) {
     return 'message';
   }
-  if (item.status === 'open') {
-    if ('competitorsUnknown' in item) return 'competitorsUnknown';
-    if (item.comment === undefined) return null;
-  }
-  const comment = item.comment;
-  if (
+  return null;
+}
+
+/** Whether the endpoint refuses an item's `comment`: missing, too long, with NUL, or blank. */
+function commentRefused(comment: string | undefined): boolean {
+  return (
     comment === undefined ||
     comment.length < 1 ||
     comment.length > MAX_COMMENT ||
     comment.includes('\u0000') ||
     clean(comment) === ''
-  ) {
-    return 'comment';
-  }
-  return null;
+  );
 }
 
 export interface ItemBuild {
@@ -259,115 +268,150 @@ export function buildStatusItems(
     unreadComponents?: readonly string[];
   },
 ): ItemBuild {
-  const mapping = o.mapping ?? SONAR_MAPPING;
-  const out: ItemBuild = {
-    items: [],
-    competitors: [],
-    competitorsUnknownRules: [],
-    changed: [],
-    rules: new Map(),
-    unmappedRules: new Map(),
-    pathInvalid: 0,
-    invalid: 0,
-    ignored: 0,
+  const b: Building = {
+    projectKey,
+    pathPrefix: o.pathPrefix,
+    mapping: o.mapping ?? SONAR_MAPPING,
+    out: {
+      items: [],
+      competitors: [],
+      competitorsUnknownRules: [],
+      changed: [],
+      rules: new Map(),
+      unmappedRules: new Map(),
+      pathInvalid: 0,
+      invalid: 0,
+      ignored: 0,
+    },
+    targetsByRef: new Map<string, string[]>(),
+    unsurePaths: new Set<string>(),
+    unread: new Set(o.unreadRules ?? []),
   };
-  const targetsByRef = new Map<string, string[]>();
+  for (const i of issues) {
+    if (!b.targetsByRef.has(i.key)) addResolved(b, i);
+  }
+  takeReopened(b, o.open ?? []);
+  for (const item of b.out.items) {
+    if (b.unsurePaths.has(pathKey(item.path))) item.competitorsUnknown = true;
+  }
+  addCompetitors(b, o.open ?? []);
+  markUnreadComponents(b, o.unreadComponents ?? []);
+  return b.out;
+}
+
+/** What `buildStatusItems` builds, and what it learns on the way. */
+interface Building {
+  projectKey: string;
+  pathPrefix: string | null;
+  mapping: SonarMapping;
+  out: ItemBuild;
+  targetsByRef: Map<string, string[]>;
   /** Paths of resolved issues dropped as invalid or ignored: their items are unsure. */
-  const unsurePaths = new Set<string>();
+  unsurePaths: Set<string>;
   /**
    * Fix 12c: rules that make their whole mapping component unsure, found while building: a
    * resolved item with more targets than it can carry (the candidates of the others are missing
    * for every rule of the component, not only for it), and a resolved issue reopened between the
    * reads (its own resolved count may hide another change of that rule).
    */
-  const unread = new Set(o.unreadRules ?? []);
-  for (const i of issues) {
-    if (targetsByRef.has(i.key)) continue;
-    const status = sonarStatus(i);
-    if (status === null) {
-      out.ignored += 1;
-      // Ruling S14 (d): its status is not known, so it may compete for its path's Qualor issues.
-      const path = sonarPath(projectKey, i.component, o.pathPrefix);
-      if (path !== 'invalid' && targetsOf(mapping, i.rule).length > 0) {
-        unsurePaths.add(pathKey(path));
-      }
-      continue;
-    }
-    const targets = targetsOf(mapping, i.rule);
-    if (targets.length === 0) {
-      out.unmappedRules.set(i.rule, (out.unmappedRules.get(i.rule) ?? 0) + 1);
-      continue;
-    }
-    const path = sonarPath(projectKey, i.component, o.pathPrefix);
-    if (path === 'invalid') {
-      out.pathInvalid += 1;
-      continue;
-    }
-    const item: StatusImportItem = {
-      ...evidence(i, targets.slice(0, MAX_TARGETS), path),
-      status,
-      comment: importComment(i, status),
-    };
-    // Never truncated silently: the candidates of the targets left out would be missing.
-    if (targets.length > MAX_TARGETS) {
-      item.competitorsUnknown = true;
-      unread.add(i.rule);
-    }
-    const problem = requestItemProblem(item);
-    if (problem !== null) {
-      if (problem === 'path') out.pathInvalid += 1;
-      else {
-        out.invalid += 1;
-        unsurePaths.add(pathKey(item.path));
-      }
-      continue;
-    }
-    targetsByRef.set(i.key, targets);
-    out.rules.set(i.key, i.rule);
-    out.items.push(item);
-  }
+  unread: Set<string>;
+}
 
-  // Ruling S11: resolved when read, open when the open issues were read: it changed in between.
-  const reopened = new Set((o.open ?? []).map((i) => i.key).filter((k) => targetsByRef.has(k)));
-  if (reopened.size > 0) {
-    out.changed = out.items.filter((i) => reopened.has(i.ref));
-    out.items = out.items.filter((i) => !reopened.has(i.ref));
-    // Fix 12c: a reopen and a resolve of one rule between the reads leave its counts unchanged,
-    // so the reopened issue's rule counts as not read in full.
-    for (const i of out.changed) unread.add(out.rules.get(i.ref) ?? '');
+/** One resolved issue: an item, or counted (and its path marked unsure) when it cannot be one. */
+function addResolved(b: Building, i: SonarIssue): void {
+  const { out } = b;
+  const status = sonarStatus(i);
+  if (status === null) {
+    out.ignored += 1;
+    // Ruling S14 (d): its status is not known, so it may compete for its path's Qualor issues.
+    const path = sonarPath(b.projectKey, i.component, b.pathPrefix);
+    if (path !== 'invalid' && targetsOf(b.mapping, i.rule).length > 0) {
+      b.unsurePaths.add(pathKey(path));
+    }
+    return;
   }
-  for (const item of out.items) {
-    if (unsurePaths.has(pathKey(item.path))) item.competitorsUnknown = true;
+  const targets = targetsOf(b.mapping, i.rule);
+  if (targets.length === 0) {
+    out.unmappedRules.set(i.rule, (out.unmappedRules.get(i.rule) ?? 0) + 1);
+    return;
   }
+  const path = sonarPath(b.projectKey, i.component, b.pathPrefix);
+  if (path === 'invalid') {
+    out.pathInvalid += 1;
+    return;
+  }
+  const item: StatusImportItem = {
+    ...evidence(i, targets.slice(0, MAX_TARGETS), path),
+    status,
+    comment: importComment(i, status),
+  };
+  // Never truncated silently: the candidates of the targets left out would be missing.
+  if (targets.length > MAX_TARGETS) {
+    item.competitorsUnknown = true;
+    b.unread.add(i.rule);
+  }
+  const problem = requestItemProblem(item);
+  if (problem !== null) {
+    if (problem === 'path') out.pathInvalid += 1;
+    else {
+      out.invalid += 1;
+      b.unsurePaths.add(pathKey(item.path));
+    }
+    return;
+  }
+  b.targetsByRef.set(i.key, targets);
+  out.rules.set(i.key, i.rule);
+  out.items.push(item);
+}
 
+/** Ruling S11: resolved when read, open when the open issues were read: it changed in between. */
+function takeReopened(b: Building, open: readonly SonarIssue[]): void {
+  const { out } = b;
+  const reopened = new Set(open.map((i) => i.key).filter((k) => b.targetsByRef.has(k)));
+  if (reopened.size === 0) return;
+  out.changed = out.items.filter((i) => reopened.has(i.ref));
+  out.items = out.items.filter((i) => !reopened.has(i.ref));
+  // Fix 12c: a reopen and a resolve of one rule between the reads leave its counts unchanged,
+  // so the reopened issue's rule counts as not read in full.
+  for (const i of out.changed) b.unread.add(out.rules.get(i.ref) ?? '');
+}
+
+/** The open issues on the items' paths, as competitors; one that cannot be sent whole is unread. */
+function addCompetitors(b: Building, open: readonly SonarIssue[]): void {
+  const { out } = b;
   const paths = new Set(out.items.map((i) => pathKey(i.path)));
   const refs = new Set(out.items.map((i) => i.ref));
-  for (const i of o.open ?? []) {
+  for (const i of open) {
     if (refs.has(i.key)) continue;
-    const targets = targetsOf(mapping, i.rule);
+    const targets = targetsOf(b.mapping, i.rule);
     if (targets.length === 0) continue;
-    const path = sonarPath(projectKey, i.component, o.pathPrefix);
+    const path = sonarPath(b.projectKey, i.component, b.pathPrefix);
     if (path === 'invalid' || !paths.has(pathKey(path))) continue;
     const competitor: StatusCompetitorItem = {
       ...evidence(i, targets.slice(0, MAX_TARGETS), path),
       status: 'open',
     };
     if (targets.length > MAX_TARGETS || requestItemProblem(competitor) !== null) {
-      unread.add(i.rule);
+      b.unread.add(i.rule);
       continue;
     }
     refs.add(i.key);
     out.competitors.push(competitor);
   }
+}
 
-  // Ruling S14 (b): closure, not hops. A rule of a mapping component not all read makes every
-  // resolved item of that component unsure, however many shared targets lie between them.
+/**
+ * Ruling S14 (b): closure, not hops. A rule of a mapping component not all read makes every
+ * resolved item of that component unsure, however many shared targets lie between them.
+ */
+function markUnreadComponents(b: Building, unreadComponents: readonly string[]): void {
+  const { out, mapping } = b;
   const unreadByComponent = new Map<string, string[]>();
-  for (const rule of unread) {
+  for (const rule of b.unread) {
     const k = mapping.component(rule);
     if (k !== null) unreadByComponent.set(k, [...(unreadByComponent.get(k) ?? []), rule]);
   }
-  const wholesale = new Set(o.unreadComponents ?? []);
+  const wholesale = new Set(unreadComponents);
   const culprits = new Set<string>();
   for (const item of out.items) {
     const k = mapping.component(out.rules.get(item.ref) ?? '');
@@ -378,7 +422,6 @@ export function buildStatusItems(
     for (const r of rules ?? []) culprits.add(r);
   }
   out.competitorsUnknownRules = [...culprits].sort();
-  return out;
 }
 
 /**
@@ -467,17 +510,7 @@ export function chunkItems(
   maxCount: number = STATUS_IMPORT_MAX_ITEMS,
   maxBytes: number = MAX_JSON_BODY_BYTES,
 ): { chunks: StatusImportRequestItem[][]; unsent: StatusImportItem[] } {
-  const byPath = new Map<string, { resolved: StatusImportItem[]; open: StatusCompetitorItem[] }>();
-  for (const i of items) {
-    const k = pathKey(i.path);
-    const group = byPath.get(k) ?? { resolved: [], open: [] };
-    if (isResolved(i)) group.resolved.push(i);
-    else group.open.push(i);
-    byPath.set(k, group);
-  }
-  /** The bytes of a list of items inside the array: each item, and a comma between two. */
-  const listBytes = (list: readonly StatusImportRequestItem[]) =>
-    list.reduce((n, i) => n + itemBytes(i), Math.max(0, list.length - 1));
+  const byPath = groupByPath(items);
   const fits = (count: number, bytes: number) =>
     count <= maxCount && ENVELOPE_BYTES + bytes <= maxBytes;
 
@@ -486,28 +519,65 @@ export function chunkItems(
   let current: StatusImportRequestItem[] = [];
   let bytes = 0;
   for (const k of [...byPath.keys()].sort()) {
-    const { resolved, open } = byPath.get(k) ?? { resolved: [], open: [] };
-    if (resolved.length === 0) continue;
-    let unit: StatusImportRequestItem[] = [...resolved, ...open];
-    let size = listBytes(unit);
-    if (!fits(unit.length, size)) {
-      unit = resolved.map((i) => ({ ...i, competitorsUnknown: true }));
-      size = listBytes(unit);
-      if (!fits(unit.length, size)) {
-        unsent.push(...resolved);
-        continue;
-      }
+    const group = byPath.get(k) ?? { resolved: [], open: [] };
+    if (group.resolved.length === 0) continue;
+    const unit = pathUnit(group, fits);
+    if (unit === null) {
+      unsent.push(...group.resolved);
+      continue;
     }
-    if (current.length > 0 && !fits(current.length + unit.length, bytes + 1 + size)) {
+    if (current.length > 0 && !fits(current.length + unit.items.length, bytes + 1 + unit.size)) {
       chunks.push(current);
       current = [];
       bytes = 0;
     }
-    bytes = current.length === 0 ? size : bytes + 1 + size;
-    current.push(...unit);
+    bytes = current.length === 0 ? unit.size : bytes + 1 + unit.size;
+    current.push(...unit.items);
   }
   if (current.length > 0) chunks.push(current);
   return { chunks, unsent };
+}
+
+/** One path's items: its resolved items and its competitors. */
+interface PathGroup {
+  resolved: StatusImportItem[];
+  open: StatusCompetitorItem[];
+}
+
+/** The items by path. */
+function groupByPath(items: readonly StatusImportRequestItem[]): Map<string, PathGroup> {
+  const byPath = new Map<string, PathGroup>();
+  for (const i of items) {
+    const k = pathKey(i.path);
+    const group = byPath.get(k) ?? { resolved: [], open: [] };
+    if (isResolved(i)) group.resolved.push(i);
+    else group.open.push(i);
+    byPath.set(k, group);
+  }
+  return byPath;
+}
+
+/** The bytes of a list of items inside the array: each item, and a comma between two. */
+const listBytes = (list: readonly StatusImportRequestItem[]) =>
+  list.reduce((n, i) => n + itemBytes(i), Math.max(0, list.length - 1));
+
+/**
+ * What one path sends, with its size: its resolved items with all of its competitors when they
+ * `fits`, else its resolved items alone, marked `competitorsUnknown`; `null` when even they do not.
+ */
+function pathUnit(
+  group: PathGroup,
+  fits: (count: number, bytes: number) => boolean,
+): { items: StatusImportRequestItem[]; size: number } | null {
+  const whole: StatusImportRequestItem[] = [...group.resolved, ...group.open];
+  const wholeSize = listBytes(whole);
+  if (fits(whole.length, wholeSize)) return { items: whole, size: wholeSize };
+  const alone: StatusImportRequestItem[] = group.resolved.map((i) => ({
+    ...i,
+    competitorsUnknown: true,
+  }));
+  const aloneSize = listBytes(alone);
+  return fits(alone.length, aloneSize) ? { items: alone, size: aloneSize } : null;
 }
 
 /**
@@ -553,70 +623,112 @@ export async function sendStatuses(
   bounds: { maxCount?: number; maxBytes?: number } = {},
 ): Promise<SendResult> {
   const { chunks, unsent } = chunkItems(items, bounds.maxCount, bounds.maxBytes);
-  const results: SendItemResult[] = unsent.map((i) => ({
-    ref: i.ref,
-    outcome: 'not_sent',
-    issueId: null,
-    status: null,
-  }));
-  const failedRefs: string[] = [];
-  const failures: string[] = [];
-  let competitors = 0;
-  let answered = 0;
-  const fail = (chunk: readonly StatusImportRequestItem[], why: string) => {
-    failedRefs.push(...chunk.filter(isResolved).map((i) => i.ref));
-    if (failures.length < 100) failures.push(why.slice(0, 500));
+  const s: Sending = {
+    results: unsent.map((i) => ({
+      ref: i.ref,
+      outcome: 'not_sent',
+      issueId: null,
+      status: null,
+    })),
+    failedRefs: [],
+    failures: [],
+    competitors: 0,
+    answered: 0,
   };
   const queue = [...chunks];
   for (let chunk = queue.shift(); chunk !== undefined; chunk = queue.shift()) {
-    let answer: Awaited<ReturnType<QualorApi['importStatuses']>>;
-    try {
-      answer = await api.importStatuses(projectId, chunk, dryRun);
-    } catch (err) {
-      if (fatal(err)) throw err;
-      fail(chunk, (err as Error).message);
-      continue;
-    }
+    const answer = await ask(api, projectId, chunk, dryRun, s);
+    if (answer === null) continue;
     if (answer.kind === 'not_analysed') {
-      if (answered === 0) return { kind: 'not_analysed' };
+      if (s.answered === 0) return { kind: 'not_analysed' };
       fail(
+        s,
         [chunk, ...queue].flat(),
         'Qualor answered that the project has no analysis any more (409 PROJECT_NOT_ANALYSED)',
       );
       break;
     }
-    if (answer.kind === 'too_large') {
-      const paths = [...new Set(chunk.map((i) => pathKey(i.path)))].sort();
-      if (paths.length > 1) {
-        const half = new Set(paths.slice(0, Math.ceil(paths.length / 2)));
-        queue.unshift(
-          chunk.filter((i) => half.has(pathKey(i.path))),
-          chunk.filter((i) => !half.has(pathKey(i.path))),
-        );
-      } else {
-        fail(chunk, 'the items of one path select too many Qualor issues (413), even alone');
-      }
-      continue;
-    }
-    const byRef = new Map(answer.results.map((r) => [r.ref, r]));
-    const missing: StatusImportItem[] = [];
-    for (const i of chunk.filter(isResolved)) {
-      const r = byRef.get(i.ref);
-      if (r === undefined) missing.push(i);
-      else results.push(r);
-    }
-    if (missing.length > 0) {
-      fail(missing, `Qualor answered no result for ${String(missing.length)} items of a request`);
-    }
-    competitors += answer.competitors;
-    answered += 1;
+    if (answer.kind === 'too_large') splitTooLarge(s, chunk, queue);
+    else takeAnswer(s, chunk, answer);
   }
   return {
     kind: 'done',
-    results,
+    results: s.results,
     unsent: unsent.map((i) => i.ref),
-    failedRefs,
-    failures,
-    competitors,
+    failedRefs: s.failedRefs,
+    failures: s.failures,
+    competitors: s.competitors,
   };
+}
+
+/** What `sendStatuses` gathered so far (see `SendResult`); `answered`: the requests answered. */
+interface Sending {
+  results: SendItemResult[];
+  failedRefs: string[];
+  failures: string[];
+  competitors: number;
+  answered: number;
+}
+
+type ImportAnswer = Awaited<ReturnType<QualorApi['importStatuses']>>;
+
+/** Fails the resolved items of `chunk` for `why` (at most 100 reasons are kept, each bounded). */
+function fail(s: Sending, chunk: readonly StatusImportRequestItem[], why: string): void {
+  s.failedRefs.push(...chunk.filter(isResolved).map((i) => i.ref));
+  if (s.failures.length < 100) s.failures.push(why.slice(0, 500));
+}
+
+/** One request's answer; `null` when it failed and its items were failed (unless fatal: thrown). */
+async function ask(
+  api: QualorApi,
+  projectId: string,
+  chunk: readonly StatusImportRequestItem[],
+  dryRun: boolean,
+  s: Sending,
+): Promise<ImportAnswer | null> {
+  try {
+    return await api.importStatuses(projectId, chunk, dryRun);
+  } catch (err) {
+    if (fatal(err)) throw err;
+    fail(s, chunk, (err as Error).message);
+    return null;
+  }
+}
+
+/** A request refused as too large (413): split by path, both halves sent next; one path fails. */
+function splitTooLarge(
+  s: Sending,
+  chunk: readonly StatusImportRequestItem[],
+  queue: StatusImportRequestItem[][],
+): void {
+  const paths = [...new Set(chunk.map((i) => pathKey(i.path)))].sort();
+  if (paths.length > 1) {
+    const half = new Set(paths.slice(0, Math.ceil(paths.length / 2)));
+    queue.unshift(
+      chunk.filter((i) => half.has(pathKey(i.path))),
+      chunk.filter((i) => !half.has(pathKey(i.path))),
+    );
+  } else {
+    fail(s, chunk, 'the items of one path select too many Qualor issues (413), even alone');
+  }
+}
+
+/** A request's answer: each resolved item's result, and a failure for those it has none for. */
+function takeAnswer(
+  s: Sending,
+  chunk: readonly StatusImportRequestItem[],
+  answer: Extract<ImportAnswer, { kind: 'ok' }>,
+): void {
+  const byRef = new Map(answer.results.map((r) => [r.ref, r]));
+  const missing: StatusImportItem[] = [];
+  for (const i of chunk.filter(isResolved)) {
+    const r = byRef.get(i.ref);
+    if (r === undefined) missing.push(i);
+    else s.results.push(r);
+  }
+  if (missing.length > 0) {
+    fail(s, missing, `Qualor answered no result for ${String(missing.length)} items of a request`);
+  }
+  s.competitors += answer.competitors;
+  s.answered += 1;
 }

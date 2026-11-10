@@ -37,6 +37,68 @@ function response(status: string, body: string, extra = ''): string {
   );
 }
 
+/** One accepted socket of `rawServer`: its request head becomes an `Exchange` for `handle`. */
+function serveRaw(socket: net.Socket, handle: (x: Exchange) => void, exchanges: Exchange[]): void {
+  let buffer = Buffer.alloc(0);
+  let exchange: Exchange | undefined;
+  let bodyBytes = 0;
+  let trickle = { bytes: 0, ms: 0, until: 0 };
+  let waiter: { n: number; resolve: (b: Buffer) => void } | undefined;
+  const bodyChunks: Buffer[] = [];
+  const deliver = () => {
+    if (waiter !== undefined && bodyBytes >= waiter.n) {
+      const w = waiter;
+      waiter = undefined;
+      w.resolve(Buffer.concat(bodyChunks).subarray(0, w.n));
+    }
+  };
+  socket.on('error', () => undefined);
+  socket.on('data', (d: Buffer) => {
+    if (exchange !== undefined) {
+      const before = bodyBytes;
+      bodyBytes += d.length;
+      bodyChunks.push(d);
+      deliver();
+      if (
+        trickle.bytes > 0 &&
+        before < trickle.until &&
+        Math.floor(bodyBytes / trickle.bytes) > Math.floor(before / trickle.bytes)
+      ) {
+        socket.pause();
+        setTimeout(() => socket.resume(), trickle.ms);
+      }
+      return;
+    }
+    buffer = Buffer.concat([buffer, d]);
+    const end = buffer.indexOf('\r\n\r\n');
+    if (end < 0) return;
+    const [line = '', ...rest] = buffer.subarray(0, end).toString('latin1').split('\r\n');
+    const headers = new Map<string, string>();
+    for (const h of rest) {
+      const i = h.indexOf(':');
+      headers.set(h.slice(0, i).trim().toLowerCase(), h.slice(i + 1).trim());
+    }
+    const early = buffer.subarray(end + 4);
+    bodyBytes = early.length;
+    if (early.length > 0) bodyChunks.push(early);
+    exchange = {
+      head: { line, headers },
+      socket,
+      body: () => bodyBytes,
+      readBody: (n) =>
+        new Promise((resolve) => {
+          waiter = { n, resolve };
+          deliver();
+        }),
+      trickle: (bytes, ms, until) => {
+        trickle = { bytes, ms, until };
+      },
+    };
+    exchanges.push(exchange);
+    handle(exchange);
+  });
+}
+
 /**
  * A raw HTTP/1.1 server on 127.0.0.1 (`node:net`, so it behaves the same under Node and Bun,
  * whose `node:http` servers differ): the test decides byte by byte what the client sees.
@@ -45,66 +107,7 @@ async function rawServer(
   handle: (x: Exchange) => void,
 ): Promise<{ url: string; close: () => void; exchanges: Exchange[] }> {
   const exchanges: Exchange[] = [];
-  const server = net.createServer((socket) => {
-    let buffer = Buffer.alloc(0);
-    let exchange: Exchange | undefined;
-    let bodyBytes = 0;
-    let trickle = { bytes: 0, ms: 0, until: 0 };
-    let waiter: { n: number; resolve: (b: Buffer) => void } | undefined;
-    const bodyChunks: Buffer[] = [];
-    const deliver = () => {
-      if (waiter !== undefined && bodyBytes >= waiter.n) {
-        const w = waiter;
-        waiter = undefined;
-        w.resolve(Buffer.concat(bodyChunks).subarray(0, w.n));
-      }
-    };
-    socket.on('error', () => undefined);
-    socket.on('data', (d: Buffer) => {
-      if (exchange !== undefined) {
-        const before = bodyBytes;
-        bodyBytes += d.length;
-        bodyChunks.push(d);
-        deliver();
-        if (
-          trickle.bytes > 0 &&
-          before < trickle.until &&
-          Math.floor(bodyBytes / trickle.bytes) > Math.floor(before / trickle.bytes)
-        ) {
-          socket.pause();
-          setTimeout(() => socket.resume(), trickle.ms);
-        }
-        return;
-      }
-      buffer = Buffer.concat([buffer, d]);
-      const end = buffer.indexOf('\r\n\r\n');
-      if (end < 0) return;
-      const [line = '', ...rest] = buffer.subarray(0, end).toString('latin1').split('\r\n');
-      const headers = new Map<string, string>();
-      for (const h of rest) {
-        const i = h.indexOf(':');
-        headers.set(h.slice(0, i).trim().toLowerCase(), h.slice(i + 1).trim());
-      }
-      const early = buffer.subarray(end + 4);
-      bodyBytes = early.length;
-      if (early.length > 0) bodyChunks.push(early);
-      exchange = {
-        head: { line, headers },
-        socket,
-        body: () => bodyBytes,
-        readBody: (n) =>
-          new Promise((resolve) => {
-            waiter = { n, resolve };
-            deliver();
-          }),
-        trickle: (bytes, ms, until) => {
-          trickle = { bytes, ms, until };
-        },
-      };
-      exchanges.push(exchange);
-      handle(exchange);
-    });
-  });
+  const server = net.createServer((socket) => serveRaw(socket, handle, exchanges));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   return {

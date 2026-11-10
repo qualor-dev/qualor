@@ -370,54 +370,45 @@ export function parseCommandLine(argv: readonly string[]): Command {
     return { name: 'version' };
   }
   if (name === 'validate') {
-    const { values: v } = strict(() =>
-      parseArgs({
-        args: rest,
-        strict: true,
-        allowPositionals: false,
-        options: { config: { type: 'string' } },
-      }),
-    );
-    const config = value('config', v.config);
+    const config = configOnly(rest);
     return config === undefined ? { name: 'validate' } : { name: 'validate', config };
   }
   if (name === 'scan') return parseScan(rest);
   if (name === 'import') return parseImport(rest);
-  if (name === 'dotnet') {
-    const [sub, ...args] = rest;
-    if (sub === 'begin') {
-      const { values: v } = strict(() =>
-        parseArgs({
-          args,
-          strict: true,
-          allowPositionals: false,
-          options: { config: { type: 'string' } },
-        }),
-      );
-      const config = value('config', v.config);
-      return config === undefined ? { name: 'dotnet-begin' } : { name: 'dotnet-begin', config };
-    }
-    if (sub === 'end') {
-      const scan = parseScan(args);
-      if (scan.name !== 'scan')
-        throw new Error('internal error: parseScan returned another command');
-      return { name: 'dotnet-end', flags: scan.flags };
-    }
-    if (sub === 'abort') {
-      // config.md §6.1: abort reads no configuration; --config is accepted so a job can pass
-      // begin's arguments unchanged, and is ignored.
-      const { values: v } = strict(() =>
-        parseArgs({
-          args,
-          strict: true,
-          allowPositionals: false,
-          options: { config: { type: 'string' } },
-        }),
-      );
-      value('config', v.config);
-      return { name: 'dotnet-abort' };
-    }
-    throw usageError('qualor dotnet needs begin, end or abort (see https://qualor.dev/docs/cli)');
-  }
+  if (name === 'dotnet') return parseDotnet(rest);
   throw usageError(`unknown command ${JSON.stringify(name)}`);
+}
+
+/** The `--config` value of a command that takes no other option. */
+function configOnly(args: string[]): string | undefined {
+  const { values: v } = strict(() =>
+    parseArgs({
+      args,
+      strict: true,
+      allowPositionals: false,
+      options: { config: { type: 'string' } },
+    }),
+  );
+  return value('config', v.config);
+}
+
+/** `qualor dotnet begin|end|abort`. */
+function parseDotnet(rest: string[]): Command {
+  const [sub, ...args] = rest;
+  if (sub === 'begin') {
+    const config = configOnly(args);
+    return config === undefined ? { name: 'dotnet-begin' } : { name: 'dotnet-begin', config };
+  }
+  if (sub === 'end') {
+    const scan = parseScan(args);
+    if (scan.name !== 'scan') throw new Error('internal error: parseScan returned another command');
+    return { name: 'dotnet-end', flags: scan.flags };
+  }
+  if (sub === 'abort') {
+    // config.md §6.1: abort reads no configuration; --config is accepted so a job can pass
+    // begin's arguments unchanged, and is ignored.
+    configOnly(args);
+    return { name: 'dotnet-abort' };
+  }
+  throw usageError('qualor dotnet needs begin, end or abort (see https://qualor.dev/docs/cli)');
 }

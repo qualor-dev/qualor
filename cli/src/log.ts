@@ -26,8 +26,11 @@ export function parseLogLevel(value: string | undefined): LogLevel {
 /** Log lines go to stderr: stdout is reserved for command output (`validate`, `version`). */
 export function createLogger(level: LogLevel, write: (text: string) => void): Logger {
   const rank = LOG_LEVELS.indexOf(level);
-  const at = (l: LogLevel) => (message: string) => {
-    if (LOG_LEVELS.indexOf(l) <= rank) write(`${l === 'info' ? '' : `${l}: `}${message}\n`);
+  const at = (l: LogLevel) => {
+    const prefix = l === 'info' ? '' : `${l}: `;
+    return (message: string) => {
+      if (LOG_LEVELS.indexOf(l) <= rank) write(`${prefix}${message}\n`);
+    };
   };
   return { level, error: at('error'), warn: at('warn'), info: at('info'), debug: at('debug') };
 }

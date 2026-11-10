@@ -197,72 +197,42 @@ export function writeReport(file: string, report: ImportReport): void {
 const n = (x: number) => x.toLocaleString('en-US');
 const words = (outcome: string) => outcome.replaceAll('_', ' ');
 const why = (r: string | null) => (r === null ? '' : ` (${clean(r)})`);
-const defaultNote = (d: 'set' | 'would_set' | null) =>
-  d === 'set' ? '; made the default' : d === 'would_set' ? '; would be made the default' : '';
+const DEFAULT_NOTES = { set: '; made the default', would_set: '; would be made the default' };
+const defaultNote = (d: 'set' | 'would_set' | null) => (d === null ? '' : DEFAULT_NOTES[d]);
+
+type ReportProject = ImportReport['projects'][number];
 
 /**
  * Spec §12.1: the summary on stderr at `info`. Warnings were logged when they were recorded;
  * here only their codes and counts are repeated.
  */
 export function printSummary(report: ImportReport, log: Logger): void {
-  for (const p of report.profiles) {
-    const r = p.rules;
-    log.info(
-      `profile ${clean(p.name)} (${clean(p.sonarLanguage)}): ${words(p.outcome)}${why(p.reason)}${defaultNote(p.defaultChange)}; ` +
-        `${n(r.active)} active, ${n(r.mapped)} mapped, ${n(r.deactivated)} turned off, ${n(r.unmappedCount)} unmapped, ` +
-        `${n(r.pendingReview.length)} pending review, ${n(r.parametersNotImported.length)} with parameters not imported, ` +
-        `${n(r.mappedNotRun.length)} mapped but not run by the bundled configuration`,
-    );
-  }
+  for (const p of report.profiles) log.info(profileLine(p));
   for (const g of report.gates) {
     log.info(
       `gate ${clean(g.name)}: ${words(g.outcome)}${why(g.reason)}${defaultNote(g.defaultChange)}`,
     );
-    for (const c of g.conditions) {
-      const sonar = `${clean(c.metric)} ${clean(c.op)} ${clean(c.error)}`;
-      log.info(
-        c.outcome === 'unmapped'
-          ? `  ${sonar}: unmapped (${c.reason}${c.qualorMetric === null ? '' : `: ${c.qualorMetric}`})`
-          : `  ${sonar} -> ${c.qualor.metric} ${c.qualor.operator} ${c.qualor.threshold}${c.approximate ? ' (approximate)' : ''}`,
-      );
-    }
+    for (const c of g.conditions) log.info(conditionLine(c));
   }
   const unmapped = new Map<string, number>();
   for (const p of report.projects) {
-    log.info(`project ${clean(p.key)}: ${words(p.outcome)}${why(p.reason)}`);
-    for (const a of p.profiles) {
-      log.info(`  ${a.language} profile ${clean(a.profile)}: ${words(a.outcome)}${why(a.reason)}`);
+    printProject(p, report.dryRun, log);
+    for (const u of p.issues?.unmappedRules ?? []) {
+      unmapped.set(u.key, (unmapped.get(u.key) ?? 0) + u.issues);
     }
-    if (p.gate !== null) {
-      log.info(`  gate ${clean(p.gate.gate)}: ${words(p.gate.outcome)}${why(p.gate.reason)}`);
-    }
-    const i = p.issues;
-    if (i === null) continue;
-    log.info(
-      `  issues ${words(i.outcome)}: ${n(i.read)} read, ` +
-        `${n(report.dryRun ? i.wouldApply : i.applied)} ${report.dryRun ? 'would apply' : 'applied'}, ` +
-        `${n(i.alreadySet)} already set, ${n(i.conflict)} conflict, ${n(i.unmatched)} unmatched, ` +
-        `${n(i.ambiguous)} ambiguous, ${n(i.competitorsUnknown)} competitors unknown, ${n(i.notSent)} not sent, ${n(i.changed)} changed in SonarQube, ` +
-        `${n(i.failed)} failed, ${n(i.unmappedRule)} unmapped rule, ${n(i.pathInvalid)} path invalid, ${n(i.invalid)} invalid, ` +
-        `${n(i.notRead)} not read, ` +
-        (i.hotspotsNotImported === null
-          ? 'reviewed hotspots not counted'
-          : `${n(i.hotspotsNotImported)} reviewed hotspots not imported`),
-    );
-    for (const u of i.unmappedRules) unmapped.set(u.key, (unmapped.get(u.key) ?? 0) + u.issues);
   }
   const top = [...unmapped].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 20);
   if (top.length > 0) {
+    const list = top.map(([k, c]) => `${clean(k)} (${n(c)})`).join(', ');
     log.info(
-      `unmapped rules with the most resolved issues (the full list is in --output): ${top.map(([k, c]) => `${clean(k)} (${n(c)})`).join(', ')}`,
+      `unmapped rules with the most resolved issues (the full list is in --output): ${list}`,
     );
   }
   if (report.warnings.length > 0) {
     const codes = new Map<string, number>();
     for (const w of report.warnings) codes.set(w.code, (codes.get(w.code) ?? 0) + 1);
-    log.info(
-      `warnings (shown above as they occurred): ${[...codes].map(([code, count]) => `${code} ${n(count)}`).join(', ')}`,
-    );
+    const list = [...codes].map(([code, count]) => `${code} ${n(count)}`).join(', ');
+    log.info(`warnings (shown above as they occurred): ${list}`);
   }
   if (report.dryRun) log.info('dry run: nothing was written to Qualor');
   if (report.aborted !== null) {
@@ -270,4 +240,55 @@ export function printSummary(report: ImportReport, log: Logger): void {
       `the import stopped before it finished (${clean(report.aborted.reason)}); what is listed above is what it did`,
     );
   }
+}
+
+/** A profile's summary line: its outcome and its rules' counts. */
+function profileLine(p: ImportReport['profiles'][number]): string {
+  const r = p.rules;
+  return (
+    `profile ${clean(p.name)} (${clean(p.sonarLanguage)}): ${words(p.outcome)}${why(p.reason)}${defaultNote(p.defaultChange)}; ` +
+    `${n(r.active)} active, ${n(r.mapped)} mapped, ${n(r.deactivated)} turned off, ${n(r.unmappedCount)} unmapped, ` +
+    `${n(r.pendingReview.length)} pending review, ${n(r.parametersNotImported.length)} with parameters not imported, ` +
+    `${n(r.mappedNotRun.length)} mapped but not run by the bundled configuration`
+  );
+}
+
+/** A gate condition's summary line: SonarQube's condition, then Qualor's or why it has none. */
+function conditionLine(c: ImportReport['gates'][number]['conditions'][number]): string {
+  const sonar = `${clean(c.metric)} ${clean(c.op)} ${clean(c.error)}`;
+  if (c.outcome === 'unmapped') {
+    const metric = c.qualorMetric === null ? '' : `: ${c.qualorMetric}`;
+    return `  ${sonar}: unmapped (${c.reason}${metric})`;
+  }
+  const approximate = c.approximate ? ' (approximate)' : '';
+  return `  ${sonar} -> ${c.qualor.metric} ${c.qualor.operator} ${c.qualor.threshold}${approximate}`;
+}
+
+/** A project's summary lines: its outcome, its assignments and its issues' counts. */
+function printProject(p: ReportProject, dryRun: boolean, log: Logger): void {
+  log.info(`project ${clean(p.key)}: ${words(p.outcome)}${why(p.reason)}`);
+  for (const a of p.profiles) {
+    log.info(`  ${a.language} profile ${clean(a.profile)}: ${words(a.outcome)}${why(a.reason)}`);
+  }
+  if (p.gate !== null) {
+    log.info(`  gate ${clean(p.gate.gate)}: ${words(p.gate.outcome)}${why(p.gate.reason)}`);
+  }
+  if (p.issues !== null) log.info(issuesLine(p.issues, dryRun));
+}
+
+/** A project's issues summary line. */
+function issuesLine(i: Issues, dryRun: boolean): string {
+  const hotspots =
+    i.hotspotsNotImported === null
+      ? 'reviewed hotspots not counted'
+      : `${n(i.hotspotsNotImported)} reviewed hotspots not imported`;
+  return (
+    `  issues ${words(i.outcome)}: ${n(i.read)} read, ` +
+    `${n(dryRun ? i.wouldApply : i.applied)} ${dryRun ? 'would apply' : 'applied'}, ` +
+    `${n(i.alreadySet)} already set, ${n(i.conflict)} conflict, ${n(i.unmatched)} unmatched, ` +
+    `${n(i.ambiguous)} ambiguous, ${n(i.competitorsUnknown)} competitors unknown, ${n(i.notSent)} not sent, ${n(i.changed)} changed in SonarQube, ` +
+    `${n(i.failed)} failed, ${n(i.unmappedRule)} unmapped rule, ${n(i.pathInvalid)} path invalid, ${n(i.invalid)} invalid, ` +
+    `${n(i.notRead)} not read, ` +
+    hotspots
+  );
 }

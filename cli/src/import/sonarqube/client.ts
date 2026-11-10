@@ -84,6 +84,17 @@ const sleeper = (ms: number) => new Promise<void>((resolve) => setTimeout(resolv
 const readOnly = (what: string) =>
   new CliError(EXIT.SERVER, `internal error: the SonarQube client is read-only: refusing ${what}`);
 
+/** Spec §4.4: `query`, with `organization` added on Cloud's **org** endpoints. */
+function scopedQuery(
+  o: SonarClientOptions,
+  path: string,
+  query: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return o.kind === 'cloud' && ORG_ENDPOINTS.has(path)
+    ? { ...query, organization: o.organization ?? '' }
+    : query;
+}
+
 /**
  * The one way a request leaves the SonarQube client (spec §4.5): `GET` on a path of
  * `SONAR_READ_ENDPOINTS`, both checked before any I/O; `organization` added on Cloud's **org**
@@ -101,10 +112,7 @@ export async function sonarGet(
   if (!SONAR_READ_ENDPOINTS.has(path)) {
     throw readOnly(`/${path}, which is not a read endpoint it knows`);
   }
-  const q =
-    o.kind === 'cloud' && ORG_ENDPOINTS.has(path)
-      ? { ...query, organization: o.organization ?? '' }
-      : query;
+  const q = scopedQuery(o, path, query);
   const transport = o.transport ?? request;
   const sleep = o.sleep ?? sleeper;
   for (let attempt = 0; ; attempt += 1) {
@@ -141,6 +149,23 @@ export class SonarNotFound extends CliError {
 
 function invalid(what: string, path: string, why: string): CliError {
   return new CliError(EXIT.SERVER, `SonarQube sent an invalid ${what} (GET /${path}: ${why})`);
+}
+
+/** Adds the items of `got` not `seen` before (by `keyOf`) to `items`, up to `limit` items. */
+function keepNew<T>(
+  got: readonly T[],
+  keyOf: (item: T) => string,
+  seen: Set<string>,
+  items: T[],
+  limit: number,
+): void {
+  for (const item of got) {
+    if (items.length >= limit) break;
+    const k = keyOf(item);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    items.push(item);
+  }
 }
 
 /**
@@ -264,13 +289,7 @@ export class SonarClient {
       }
       total = t;
       const got = pick(page);
-      for (const item of got) {
-        if (items.length >= limit) break;
-        const k = keyOf(item);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        items.push(item);
-      }
+      keepNew(got, keyOf, seen, items, limit);
       if (got.length === 0 || items.length >= Math.min(t, limit)) break;
     }
     const final = total ?? 0;
@@ -298,18 +317,61 @@ export interface SonarConnection {
   login: string;
 }
 
-/** Spec §4.3: the version (Server), the token, the organisation (Cloud). */
-export async function connectSonar(o: ConnectOptions): Promise<SonarConnection> {
-  const kind = o.kind === 'auto' ? detectSonarKind(o.url) : o.kind;
-  if (kind === 'cloud' && o.organization === null) {
+/** Spec §4.3: SonarQube Cloud needs `--organization`, SonarQube Server takes none. */
+function checkOrganization(kind: SonarKind, organization: string | null): void {
+  if (kind === 'cloud' && organization === null) {
     throw new CliError(EXIT.USAGE, 'SonarQube Cloud needs --organization (the organisation key)');
   }
-  if (kind === 'server' && o.organization !== null) {
+  if (kind === 'server' && organization !== null) {
     throw new CliError(
       EXIT.USAGE,
       '--organization is only for SonarQube Cloud; SonarQube Server has no organisations',
     );
   }
+}
+
+/** Spec §4.3: SonarQube Server's version, which must be readable and at least 9.9. */
+async function serverVersion(client: SonarClient): Promise<SonarVersion> {
+  const text = await client.version();
+  const version = parseSonarVersion(text);
+  if (version === null) {
+    throw new CliError(
+      EXIT.USAGE,
+      `SonarQube reported a version this command cannot read (${clean(text).slice(0, 64)})`,
+    );
+  }
+  if (!versionAtLeast(version, 9, 9)) {
+    throw new CliError(
+      EXIT.USAGE,
+      `SonarQube ${version.text} is older than 9.9, the oldest version qualor import sonarqube supports`,
+    );
+  }
+  return version;
+}
+
+/** Spec §4.3: the SonarQube Cloud organisation must be visible to the token. */
+async function checkCloudOrganization(
+  client: SonarClient,
+  organization: string | null,
+): Promise<void> {
+  const orgs = await client.get(
+    'api/organizations/search',
+    { organizations: organization ?? '' },
+    organizationsSchema,
+    'organisation list',
+  );
+  if (!orgs.organizations.some((x) => x.key === organization)) {
+    throw new CliError(
+      EXIT.USAGE,
+      `no SonarQube Cloud organisation ${clean(organization ?? '')} is visible to this token`,
+    );
+  }
+}
+
+/** Spec §4.3: the version (Server), the token, the organisation (Cloud). */
+export async function connectSonar(o: ConnectOptions): Promise<SonarConnection> {
+  const kind = o.kind === 'auto' ? detectSonarKind(o.url) : o.kind;
+  checkOrganization(kind, o.organization);
   const endpoint = (auth: ServerEndpoint['auth']): ServerEndpoint => ({
     url: o.url,
     token: o.token,
@@ -329,20 +391,7 @@ export async function connectSonar(o: ConnectOptions): Promise<SonarConnection> 
   let version: SonarVersion | null = null;
   let auth: 'bearer' | 'basic' = o.auth === 'basic' ? 'basic' : 'bearer';
   if (kind === 'server') {
-    const text = await new SonarClient({ ...base, endpoint: endpoint('none') }).version();
-    version = parseSonarVersion(text);
-    if (version === null) {
-      throw new CliError(
-        EXIT.USAGE,
-        `SonarQube reported a version this command cannot read (${clean(text).slice(0, 64)})`,
-      );
-    }
-    if (!versionAtLeast(version, 9, 9)) {
-      throw new CliError(
-        EXIT.USAGE,
-        `SonarQube ${version.text} is older than 9.9, the oldest version qualor import sonarqube supports`,
-      );
-    }
+    version = await serverVersion(new SonarClient({ ...base, endpoint: endpoint('none') }));
     if (o.auth === 'auto') auth = version.major >= 10 ? 'bearer' : 'basic';
   }
   const client = new SonarClient({ ...base, endpoint: endpoint(auth) });
@@ -353,20 +402,7 @@ export async function connectSonar(o: ConnectOptions): Promise<SonarConnection> 
       'SonarQube did not accept the token; use a user token (not an analysis token)',
     );
   }
-  if (kind === 'cloud') {
-    const orgs = await client.get(
-      'api/organizations/search',
-      { organizations: o.organization ?? '' },
-      organizationsSchema,
-      'organisation list',
-    );
-    if (!orgs.organizations.some((x) => x.key === o.organization)) {
-      throw new CliError(
-        EXIT.USAGE,
-        `no SonarQube Cloud organisation ${clean(o.organization ?? '')} is visible to this token`,
-      );
-    }
-  }
+  if (kind === 'cloud') await checkCloudOrganization(client, o.organization);
   o.log.debug(`connected to SonarQube ${kind === 'cloud' ? 'Cloud' : (version?.text ?? '')}`);
   return { client, kind, version, login: user.login ?? '' };
 }
