@@ -3,11 +3,12 @@ import path from 'node:path';
 import { type Browser, type Page, request } from '@playwright/test';
 import { setProvider } from './ai-provider';
 import { expect, test } from './fixtures';
-import { PAYMENTS, STORAGE_STATE } from './seed-data';
+import { PAYMENTS, STORAGE_STATE, VULNERABILITIES } from './seed-data';
 
 /**
- * The qualor.dev site's product screens with the seeded data: overview, issues, issue-ai and gate,
- * as viewport captures in the dark theme at the site's sizes, 1440 wide at DPR 2 (the height of the
+ * The qualor.dev site's product screens with the seeded data: overview, issues, issue-ai, gate and
+ * the Vulnerabilities tab (vulnerabilities-by-version, vulnerabilities-by-vulnerability), as
+ * viewport captures in the dark theme at the site's sizes, 1440 wide at DPR 2 (the height of the
  * screen) and 390×844 at DPR 3. Opt-in, never part of `pnpm ui:e2e`: `pnpm site:screens` runs it
  * (tools/ui/site-screens.ts), which refuses to start without LIVE_OPENAI_API_KEY and writes to
  * SITE_SCREENS_OUT.
@@ -19,19 +20,31 @@ import { PAYMENTS, STORAGE_STATE } from './seed-data';
  *
  * Checking the navigation without the real model (what a test of this file does, never the
  * script): SITE_SCREENS_FAKE=1 without the key keeps the fake provider and expects its answer.
+ *
+ * The test `vulnerability screens` asks no model: run it alone with `-g "vulnerability screens"`.
+ * With README_SCREENS_OUT it also writes the README's copies (docs/screenshots/: 1440×900, DPR 1).
  */
 const KEY = process.env['LIVE_OPENAI_API_KEY'] ?? '';
 const FAKE = KEY === '' && process.env['SITE_SCREENS_FAKE'] === '1';
 const OUT = process.env['SITE_SCREENS_OUT'] ?? '';
+const README_OUT = process.env['README_SCREENS_OUT'] ?? '';
 /** The fake LLM's key (server/test/fake-llm.ts), which the restore stores again. */
 const FAKE_KEY = ['fake', 'llm', 'key', '0123456789'].join('-');
 const FAKE_ANSWER = 'Loose equality compares after type coercion.';
 const MODEL = 'gpt-6.1-terra';
 
-const VIEWS = [
+interface View {
+  suffix: '' | '-phone';
+  width: number;
+  deviceScaleFactor: number;
+}
+
+const VIEWS: readonly View[] = [
   { suffix: '', width: 1440, deviceScaleFactor: 2 },
   { suffix: '-phone', width: 390, deviceScaleFactor: 3 },
-] as const;
+];
+/** The README's screenshots: the desktop view at DPR 1. */
+const README_VIEWS: readonly View[] = [{ suffix: '', width: 1440, deviceScaleFactor: 1 }];
 
 async function inEachView(
   browser: Browser,
@@ -41,8 +54,10 @@ async function inEachView(
   desktopHeight = 900,
   /** The phone view starts this far above the first level-2 heading instead of at the top. */
   phoneAboveTitle?: number,
+  views: readonly View[] = VIEWS,
+  out: string = OUT,
 ): Promise<void> {
-  for (const view of VIEWS) {
+  for (const view of views) {
     const phone = view.suffix !== '';
     const context = await browser.newContext({
       baseURL,
@@ -72,7 +87,7 @@ async function inEachView(
         await page.evaluate(() => window.scrollTo(0, 0));
       }
       await page.waitForTimeout(500);
-      await page.screenshot({ path: path.join(OUT, `${name}${view.suffix}.png`) });
+      await page.screenshot({ path: path.join(out, `${name}${view.suffix}.png`) });
     } finally {
       await context.close();
     }
@@ -187,4 +202,45 @@ test('site screens', async ({ browser, baseURL }) => {
     await page.getByRole('link', { name: 'Strict' }).click();
     await expect(page.getByRole('button', { name: 'Add condition' })).toBeVisible();
   });
+});
+
+/**
+ * 0.15: the Vulnerabilities tab of Payments API on the community server, with the seed's rows
+ * (seedVulnerabilities: a new Critical and a High on main). By version, then By vulnerability.
+ */
+test('vulnerability screens', async ({ browser, baseURL }) => {
+  test.setTimeout(300_000);
+  if (OUT === '' && README_OUT === '') {
+    throw new Error('The vulnerability screens need SITE_SCREENS_OUT or README_SCREENS_OUT.');
+  }
+  for (const dir of [OUT, README_OUT]) if (dir !== '') mkdirSync(dir, { recursive: true });
+
+  const byVersion = async (page: Page): Promise<void> => {
+    await page.goto('/projects');
+    await page.getByRole('link', { name: PAYMENTS.name, exact: true }).click();
+    await page
+      .getByRole('navigation', { name: 'Project' })
+      .getByRole('link', { name: 'Vulnerabilities' })
+      .click();
+    await expect(page.getByRole('row', { name: /^main/ }).getByText('1 new')).toBeVisible();
+  };
+  const byVulnerability = async (page: Page): Promise<void> => {
+    await byVersion(page);
+    await page
+      .getByRole('navigation', { name: 'View' })
+      .getByRole('link', { name: 'By vulnerability' })
+      .click();
+    await expect(
+      page.getByRole('listitem').filter({ hasText: VULNERABILITIES.critical.id }),
+    ).toBeVisible();
+  };
+  for (const [name, open] of [
+    ['vulnerabilities-by-version', byVersion],
+    ['vulnerabilities-by-vulnerability', byVulnerability],
+  ] as const) {
+    if (OUT !== '') await inEachView(browser, baseURL, name, open);
+    if (README_OUT !== '') {
+      await inEachView(browser, baseURL, name, open, 900, undefined, README_VIEWS, README_OUT);
+    }
+  }
 });

@@ -4,10 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * `pnpm site:screens`: the qualor.dev site's four product screens (overview, issues, issue-ai,
- * gate), captured from the seeded e2e server (ui/e2e/site-screens.shot.ts). The issue-ai screen
- * asks the real model, so the key is required before anything starts: no build, no server, no
- * browser. The key is only passed on in the environment, never printed.
+ * `pnpm site:screens`: the qualor.dev site's product screens (overview, issues, issue-ai, gate, and
+ * the Vulnerabilities tab by version and by vulnerability), captured from the seeded e2e server
+ * (ui/e2e/site-screens.shot.ts). The issue-ai screen asks the real model, so the key is required
+ * before anything starts: no build, no server, no browser. The key is only passed on in the
+ * environment, never printed.
  */
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
