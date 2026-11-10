@@ -188,6 +188,11 @@ export async function collectCompliance(
       if (report.status !== 'pending') {
         throw new ComplianceCollectError('the report is no longer pending');
       }
+      // `create` always stores the branch (the main one by default) or the version of a project
+      // report; both null means it was deleted meanwhile (SET NULL). Never fall back to main.
+      if (report.scope === 'project' && report.branchId === null && report.versionId === null) {
+        throw new ComplianceCollectError("the report's branch or version no longer exists");
+      }
       const [org] = await tx
         .select({ id: organizations.id, key: organizations.key, name: organizations.name })
         .from(organizations)

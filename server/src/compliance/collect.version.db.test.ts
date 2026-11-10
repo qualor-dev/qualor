@@ -11,6 +11,7 @@ import { mainBranchId, seedRule } from '../../test/issues';
 import { seedTargetRow } from '../../test/vulnerabilities';
 import {
   analyses,
+  branches,
   complianceReports,
   projectVersions,
   users,
@@ -294,5 +295,35 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
     const branchId = await mainBranchId(ctx.db, project.id);
     const s = await collectCompliance(ctx.db, await newReport({ branchId }), { limit: 10 });
     expect(s.scope.version).toBeNull();
+  });
+
+  describe('a report whose target is gone (R8)', () => {
+    const LOST = /branch or version no longer exists/;
+
+    it('fails a pending version report whose version was deleted', async () => {
+      const [v] = await ctx.db
+        .insert(projectVersions)
+        .values({ projectId: project.id, label: '9.9.9', source: 'label', analyzedAt: new Date() })
+        .returning({ id: projectVersions.id });
+      const id = await newReport({ versionId: v!.id });
+      await ctx.db.delete(projectVersions).where(eq(projectVersions.id, v!.id));
+      await expect(collectCompliance(ctx.db, id, { limit: 10 })).rejects.toThrow(LOST);
+    });
+
+    it('fails a pending branch report whose branch was deleted', async () => {
+      const [b] = await ctx.db
+        .insert(branches)
+        .values({ projectId: project.id, kind: 'branch', name: 'gone' })
+        .returning({ id: branches.id });
+      const id = await newReport({ branchId: b!.id });
+      await ctx.db.delete(branches).where(eq(branches.id, b!.id));
+      await expect(collectCompliance(ctx.db, id, { limit: 10 })).rejects.toThrow(LOST);
+    });
+
+    it('still builds a default report, which stores the main branch', async () => {
+      const branchId = await mainBranchId(ctx.db, project.id);
+      const s = await collectCompliance(ctx.db, await newReport({ branchId }), { limit: 10 });
+      expect(s.scope.branch).toMatchObject({ id: branchId });
+    });
   });
 });
