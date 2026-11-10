@@ -598,7 +598,7 @@ SonarAnalyzer.CSharp 9.32 (SonarQube-compatible rules, LGPL-3.0) to the scanner.
 
 ```yaml
 qualor:
-  image: { name: qualor/scanner-dotnet:0.14, entrypoint: [''] }
+  image: { name: qualor/scanner-dotnet:0.15, entrypoint: [''] }
   variables: { GIT_DEPTH: 0 }
   script:
     - qualor dotnet begin

@@ -25,7 +25,7 @@ codes): <https://qualor.dev/docs/configuration>
 
 ### Tags
 
-Every release has its full version tag, such as `0.14.1`, and a minor tag, such as `0.14`, that
+Every release has its full version tag, such as `0.15.0`, and a minor tag, such as `0.15`, that
 follows its patch releases. There is no `latest` tag. For C#, use
 [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet) with the same tag.
 
@@ -36,16 +36,16 @@ in GitLab's merge request widget:
 
 ```yaml
 include:
-  - component: gitlab.com/qualor/qualor/qualor@0.14
+  - component: gitlab.com/qualor/qualor/qualor@0.15
     inputs:
-      image-tag: '0.14'
+      image-tag: '0.15'
 ```
 
 Or run the image in a job of your own:
 
 ```yaml
 qualor:
-  image: { name: qualor/scanner:0.14, entrypoint: [''] }
+  image: { name: qualor/scanner:0.15, entrypoint: [''] }
   variables: { GIT_DEPTH: 0 }
   script: [qualor scan]
 ```
@@ -58,7 +58,7 @@ that merge request pipelines get the token too). The GitLab guide: <https://qual
 ```yaml
 qualor:
   runs-on: ubuntu-latest
-  container: { image: qualor/scanner:0.14, options: --user 1001 }
+  container: { image: qualor/scanner:0.15, options: --user 1001 }
   steps:
     - uses: actions/checkout@v4 # pin it to a commit SHA
       with: { fetch-depth: 0 }
