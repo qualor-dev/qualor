@@ -546,7 +546,8 @@ describe('ctx.portfolio overview (4E-2 §1, §2)', () => {
     expect(body.trend.map((p) => p.analyses)).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2]);
     expect(body.trend.map((p) => p.triage)).toEqual([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
     for (const list of Object.values(body.attention)) {
-      expect((list ?? []).every((r) => r.project.key === 'alpha')).toBe(true);
+      expect(list).not.toBeNull();
+      expect(list!.every((r) => r.project.key === 'alpha')).toBe(true);
     }
     expect(body.attention.worstSecurity).toHaveLength(0);
     expect(body.attention.mostSevere).toHaveLength(1);

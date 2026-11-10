@@ -148,6 +148,27 @@ describe('renderPortfolioPdf (4E-2 §3)', () => {
       expect(text).toContain('No project has a vulnerable release.');
     });
 
+    it('says monitoring is off, not that no project is vulnerable, when the total is null', async () => {
+      const overview = sampleOverview();
+      overview.totals.vulnerableReleases = null;
+      overview.totals.exploited = null;
+      const rows = sampleRows().map((r) => ({ ...r, vulnerableReleases: null, exploited: null }));
+      const text = await section(overview, rows);
+      expect(text).toContain('Vulnerability monitoring is off.');
+      expect(text).not.toContain('No project has a vulnerable release.');
+    });
+
+    it('names the exploited vulnerabilities in the heading with priority only', async () => {
+      const heading = 'Projects with vulnerable releases or exploited vulnerabilities';
+      const rows = [sampleRow(1, { vulnerableReleases: 1, exploited: 1 })];
+      expect(await section(sampleOverview(), rows)).toContain(heading);
+      const plain = sampleOverview();
+      plain.attention.exploited = null;
+      const text = await section(plain, rows);
+      expect(text).toContain('Projects with vulnerable releases');
+      expect(text).not.toContain('exploited');
+    });
+
     it('has no Organisation column in the organisation scope', async () => {
       const text = await section(sampleOverview('organization'), [sampleRow(1)]);
       expect(text).not.toContain('Organisation');

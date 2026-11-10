@@ -506,9 +506,18 @@ async function vulnerableProjects(
     );
   const shown = listed.slice(0, PDF_PROJECTS_MAX);
   layout.page();
-  layout.heading('Projects with vulnerable releases');
+  layout.heading(
+    withPriority
+      ? 'Projects with vulnerable releases or exploited vulnerabilities'
+      : 'Projects with vulnerable releases',
+  );
   if (shown.length === 0) {
-    layout.text('No project has a vulnerable release.');
+    // A null total means no project is monitored: say so rather than that none is vulnerable.
+    layout.text(
+      overview.totals.vulnerableReleases === null
+        ? 'Vulnerability monitoring is off.'
+        : 'No project has a vulnerable release.',
+    );
     return;
   }
   await layout.table(

@@ -36,7 +36,8 @@ export async function portfolioVulnerabilityFacts(
   const versionIds: string[] = [];
   const branchIds: string[] = [];
   for (const [projectId, targets] of await projectTargets(tx, projectIds)) {
-    // A project with its switch off has no targets; one switched on always tracks its main branch.
+    // A project with its switch off has no targets. One switched on has them too, unless it has
+    // neither a branch the server tracks nor a version: it stays null, like a project switched off.
     if (targets.length === 0) continue;
     result.set(projectId, { vulnerableReleases: 0, exploited: options.priority ? 0 : null });
     for (const target of targets) {

@@ -143,6 +143,28 @@ describe('portfolioVulnerabilityFacts (plan 5, V1)', () => {
     expect(await facts(projectId)).toEqual({ vulnerableReleases: 1, exploited: 1 });
   });
 
+  it('does not count a KEV id of a tracked branch that is not the main one', async () => {
+    const { projectId, branch } = await setup({ branchPatterns: ['feature/*'] });
+    await branch('main', true);
+    const feature = await branch('feature/x');
+    await kev('CVE-2024-2101');
+    await row(projectId, { branchId: feature }, 'CVE-2024-2101');
+    // The branch is tracked (it has rows to show), yet neither number counts it.
+    expect(await facts(projectId)).toEqual({ vulnerableReleases: 0, exploited: 0 });
+  });
+
+  it('counts the versions of a project whose switch is on but that has no main branch', async () => {
+    const { projectId, version } = await setup();
+    const v1 = await version('v1', 1);
+    await row(projectId, { versionId: v1 }, 'CVE-2024-2102');
+    expect(await facts(projectId)).toEqual({ vulnerableReleases: 1, exploited: 0 });
+  });
+
+  it('gives null and null to a project with its switch on that has no target at all', async () => {
+    const { projectId } = await setup();
+    expect(await facts(projectId)).toEqual({ vulnerableReleases: null, exploited: null });
+  });
+
   it('does not count a delisted KEV id', async () => {
     const { projectId, branch } = await setup();
     const main = await branch('main', true);
