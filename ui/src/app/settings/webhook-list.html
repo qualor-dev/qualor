@@ -18,7 +18,7 @@
                 ><q-icon name="chat" />{{ kindLabel(w.kind) }}</span
               >
             }
-            @for (e of w.events; track e) {
+            @for (e of shownEvents(w); track e) {
               <span class="badge badge-tag">{{ eventLabel(e) }}</span>
             }
             @if (projectId() === null) {

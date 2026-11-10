@@ -38,6 +38,8 @@ const GENERIC_EVENTS: WebhookEvent[] = ['analysis.completed', 'gate.status_chang
 /** Offered to generic webhooks only where `vuln.alerts` is licensed (Business and Enterprise). */
 const VULNERABILITY_EVENT: WebhookEvent = 'vulnerabilities.found';
 const CHAT_EVENTS: WebhookEvent[] = ['gate.failed', 'gate.recovered', 'digest.weekly'];
+/** Offered to chat webhooks, and shown on their cards, only where `vuln.alerts` is licensed (C3). */
+const EXPLOITED_EVENT: WebhookEvent = 'vulnerabilities.exploited';
 const KINDS: WebhookKind[] = ['generic', 'slack', 'teams'];
 /** How many deliveries a webhook shows: its strip's 20 (spec §6.8). */
 const DELIVERIES_SHOWN = 20;
@@ -71,7 +73,9 @@ export function inScope(w: Webhook, projectId: string | null): boolean {
 }
 
 function eventsOf(kind: WebhookKind, vulnerabilityAlerts: boolean): WebhookEvent[] {
-  if (kind !== 'generic') return CHAT_EVENTS;
+  if (kind !== 'generic') {
+    return vulnerabilityAlerts ? [...CHAT_EVENTS, EXPLOITED_EVENT] : CHAT_EVENTS;
+  }
   return vulnerabilityAlerts ? [...GENERIC_EVENTS, VULNERABILITY_EVENT] : GENERIC_EVENTS;
 }
 
@@ -226,6 +230,10 @@ export class WebhookList {
   private readonly vulnerabilityAlerts = computed(() =>
     this.system.features().includes('vuln.alerts'),
   );
+  /** A card's events: the exploited post stays hidden while `vuln.alerts` is not licensed. */
+  protected shownEvents(w: Webhook): WebhookEvent[] {
+    return this.vulnerabilityAlerts() ? w.events : w.events.filter((e) => e !== EXPLOITED_EVENT);
+  }
   protected readonly kindEvents = computed(() => eventsOf(this.kind(), this.vulnerabilityAlerts()));
   /** The weekly digest's zone of a new chat webhook. */
   protected readonly timezone = signal(browserTimeZone());

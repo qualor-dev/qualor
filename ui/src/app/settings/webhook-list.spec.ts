@@ -940,4 +940,81 @@ describe('WebhookList: Slack and Teams (6G)', () => {
       expect(server.requestsTo('PATCH', '/api/v0/webhooks/w1')[0]?.body).toEqual({ active: false });
     });
   });
+  describe('vulnerabilities.exploited', () => {
+    const info = (features: string[]) => ({
+      body: {
+        version: '0.15.0',
+        edition: 'business',
+        features,
+        extensions: [],
+        mcp: { enabled: false, reason: null },
+      },
+    });
+    const eventLabels = (root: HTMLElement) =>
+      [...root.querySelectorAll('dialog#create-dialog .webhook-event-choice label')].map((l) =>
+        l.textContent?.trim(),
+      );
+    const stored = () =>
+      webhook('w1', 'https://hooks.slack.com/services/T/B/x', {
+        kind: 'slack',
+        events: ['digest.weekly', 'vulnerabilities.exploited'],
+      });
+
+    it('offers Exploited vulnerabilities (at once) to a new Slack webhook with vuln.alerts, chosen', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/webhooks', { body: page([]) });
+      server.on('GET', '/api/v0/system/info', info(['vuln.alerts']));
+      server.on('POST', '/api/v0/webhooks', {
+        status: 201,
+        body: { ...webhook('w9', 'https://hooks.slack.com/services/T/B/x'), secret: 'whsec_x' },
+      });
+      const fixture = render();
+      await settle(fixture);
+      const root = fixture.nativeElement as HTMLElement;
+      fixture.componentInstance.openCreate();
+      await settle(fixture);
+      chooseKind(root, 'slack');
+      await settle(fixture);
+      expect(eventLabels(root)).toContain('Exploited vulnerabilities (at once)');
+      fillAndSubmit(root, 'https://hooks.slack.com/services/T/B/x');
+      await settle(fixture);
+      const body = server.requestsTo('POST', '/api/v0/webhooks')[0]?.body as { events: string[] };
+      expect(body.events).toContain('vulnerabilities.exploited');
+    });
+
+    it('does not offer it without vuln.alerts', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/webhooks', { body: page([]) });
+      server.on('GET', '/api/v0/system/info', info([]));
+      const fixture = render();
+      await settle(fixture);
+      const root = fixture.nativeElement as HTMLElement;
+      fixture.componentInstance.openCreate();
+      await settle(fixture);
+      chooseKind(root, 'slack');
+      await settle(fixture);
+      expect(eventLabels(root)).not.toContain('Exploited vulnerabilities (at once)');
+    });
+
+    it('hides it on a card without vuln.alerts', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/webhooks', { body: page([stored()]) });
+      server.on('GET', '/api/v0/system/info', info([]));
+      const fixture = render();
+      await settle(fixture);
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.textContent).toContain('Weekly security digest');
+      expect(root.textContent).not.toContain('Exploited vulnerabilities (at once)');
+    });
+
+    it('shows it on a card with vuln.alerts', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/webhooks', { body: page([stored()]) });
+      server.on('GET', '/api/v0/system/info', info(['vuln.alerts']));
+      const fixture = render();
+      await settle(fixture);
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.textContent).toContain('Exploited vulnerabilities (at once)');
+    });
+  });
 });
