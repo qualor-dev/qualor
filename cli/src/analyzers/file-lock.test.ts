@@ -183,14 +183,15 @@ describe('withFileLock (the OpenGrep cache across qualor scan processes)', () =>
     let notices = 0;
     const held = withFileLock(file, () => Promise.resolve(), {
       pollMs: 5,
-      noticeMs: 30,
+      // Ten times the first check: a loaded CI runner delays timers by tens of milliseconds.
+      noticeMs: 200,
       onWait: () => {
         notices += 1;
       },
     });
-    await pause(10);
+    await pause(20);
     expect(notices).toBe(0);
-    await pause(100);
+    await pause(400);
     rmSync(file);
     await held;
     expect(notices).toBe(1);

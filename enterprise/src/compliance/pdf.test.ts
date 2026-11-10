@@ -173,13 +173,14 @@ describe('renderPdf (4E-1 §2.5)', () => {
     }));
     report.summary.findings.total = report.findings.length;
     report.summary.dependencies.open = report.findings.length;
-    const text = await textOf(await renderPdf(report));
+    // The render budget is not under test here: under coverage on CI the full table takes over 60 s.
+    const text = await textOf(await renderPdf(report, { deadline: Number.POSITIVE_INFINITY }));
     const flat = text.replace(/\s+/g, ' ');
     expect(flat).toContain(`Open dependency findings: ${PDF_FINDINGS_MAX + 5}`);
     expect(flat).toContain(`The first ${PDF_FINDINGS_MAX} of ${PDF_FINDINGS_MAX + 5} are listed.`);
     expect(text).toContain(`pkg-${PDF_FINDINGS_MAX - 1} `);
     expect(text).not.toContain(`pkg-${PDF_FINDINGS_MAX} `);
-  }, 120_000);
+  }, 240_000);
 
   it('leaves the KEV and EPSS columns out without priority', async () => {
     const report = dependencyReport();
