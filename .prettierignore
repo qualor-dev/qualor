@@ -36,3 +36,5 @@ deploy/helm/qualor/templates/
 enterprise/scripts/standards/sources/*/
 enterprise/src/compliance/standards/*.json
 !enterprise/src/compliance/standards/freshness.json
+# Byte-for-byte copies of the official CycloneDX, SPDX and OpenVEX schemas (see its README).
+server/test/export-schemas/*.json
