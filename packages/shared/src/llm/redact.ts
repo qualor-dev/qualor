@@ -520,17 +520,26 @@ function markBase64Runs(lines: readonly string[], whole: boolean[]): void {
     let end = i;
     while (end + 1 < lines.length && isStrongBase64(lines[end + 1] ?? '')) end += 1;
     const nearKey = whole[i - 1] === true || whole[end + 1] === true;
-    if (end > i || nearKey) {
-      let lo = i;
-      let hi = end;
-      while (lo - 1 >= 0 && !whole[lo - 1] && isWeakBase64(lines[lo - 1] ?? '')) lo -= 1;
-      while (hi + 1 < lines.length && !whole[hi + 1] && isWeakBase64(lines[hi + 1] ?? '')) hi += 1;
-      for (let k = lo; k <= hi; k++) whole[k] = true;
-      i = hi + 1;
-    } else {
-      i = end + 1;
-    }
+    if (end > i || nearKey) i = markRun(lines, whole, i, end) + 1;
+    else i = end + 1;
   }
+}
+
+/** Marks the strong base64 lines `i..end` and the weak ones right around them; returns the last. */
+function markRun(lines: readonly string[], whole: boolean[], i: number, end: number): number {
+  let lo = i;
+  let hi = end;
+  while (lo - 1 >= 0 && !whole[lo - 1] && isWeakBase64(lines[lo - 1] ?? '')) lo -= 1;
+  while (hi + 1 < lines.length && !whole[hi + 1] && isWeakBase64(lines[hi + 1] ?? '')) hi += 1;
+  for (let k = lo; k <= hi; k++) whole[k] = true;
+  return hi;
+}
+
+/** The piece a position is in (a position in a separator counts for the piece before it). */
+function pieceAt(starts: readonly number[], pos: number): number {
+  let k = 0;
+  while (k + 1 < starts.length && (starts[k + 1] ?? Infinity) <= pos) k += 1;
+  return k;
 }
 
 /**
@@ -545,28 +554,33 @@ function markJoined(pieces: readonly string[], sep: string, first: number, whole
     starts.push(at);
     at += piece.length + sep.length;
   }
-  /** The piece a position is in (a position in a separator counts for the piece before it). */
-  const pieceAt = (pos: number): number => {
-    let k = 0;
-    while (k + 1 < starts.length && (starts[k + 1] ?? Infinity) <= pos) k += 1;
-    return k;
-  };
   for (const p of SPLIT_PATTERNS) {
     for (const m of joined.matchAll(p.pattern)) {
       const end = m.index + m[0].length;
-      if (pieceAt(m.index) === pieceAt(Math.max(m.index, end - 1))) continue;
+      if (pieceAt(starts, m.index) === pieceAt(starts, Math.max(m.index, end - 1))) continue;
       if (!accepted(p, m.slice(1), m[0], joined.charAt(end))) continue;
       const span = (p.group === undefined ? m.indices?.[0] : m.indices?.[p.group]) ?? [
         m.index,
         m.index,
       ];
-      let lo = pieceAt(span[0]);
-      // A secret that starts in a separator does not touch the piece before it.
-      if (span[0] >= (starts[lo] ?? 0) + (pieces[lo] ?? '').length) lo += 1;
-      const hi = pieceAt(Math.max(span[0], span[1] - 1));
-      for (let k = lo; k <= hi; k++) whole[first + k] = true;
+      markSpan(span, pieces, starts, first, whole);
     }
   }
+}
+
+/** Marks the lines (pieces from line `first`) that a secret's span in the joined text touches. */
+function markSpan(
+  span: readonly [number, number],
+  pieces: readonly string[],
+  starts: readonly number[],
+  first: number,
+  whole: boolean[],
+): void {
+  let lo = pieceAt(starts, span[0]);
+  // A secret that starts in a separator does not touch the piece before it.
+  if (span[0] >= (starts[lo] ?? 0) + (pieces[lo] ?? '').length) lo += 1;
+  const hi = pieceAt(starts, Math.max(span[0], span[1] - 1));
+  for (let k = lo; k <= hi; k++) whole[first + k] = true;
 }
 
 /**

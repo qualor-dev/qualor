@@ -10,6 +10,12 @@ import { gosecSeverity, govetRule, staticcheckRule } from '../rules/golang';
 import { findsecbugsPattern, findsecbugsSeverity } from '../rules/findsecbugs';
 import { qualorRuleMeta } from '../rules/qualor';
 
+/** A rule's quality: security first, then reliability, else maintainability. */
+function qualityOf(security: boolean, reliability: boolean): ReportQuality {
+  if (security) return 'security';
+  return reliability ? 'reliability' : 'maintainability';
+}
+
 function tags(rule: SarifRule | undefined): string[] {
   const t = rule?.properties?.['tags'];
   return Array.isArray(t) ? t.filter((x): x is string => typeof x === 'string') : [];
@@ -37,12 +43,10 @@ const ESLINT_RELIABILITY = new Set([
 
 const eslint: EngineMapping = {
   rule: (r) => ({
-    quality:
-      r.id.startsWith('security/') || ESLINT_SECURITY.has(r.id)
-        ? 'security'
-        : ESLINT_RELIABILITY.has(r.id)
-          ? 'reliability'
-          : 'maintainability',
+    quality: qualityOf(
+      r.id.startsWith('security/') || ESLINT_SECURITY.has(r.id),
+      ESLINT_RELIABILITY.has(r.id),
+    ),
   }),
 };
 
@@ -58,12 +62,10 @@ const pmdSeverity = (r: SarifRule | undefined) => PMD_PRIORITY[Number(r?.propert
 const pmd: EngineMapping = {
   rule: (r) => {
     const ruleset = String(r.properties?.['ruleset'] ?? '');
-    const quality: ReportQuality =
-      ruleset === 'Security'
-        ? 'security'
-        : ruleset === 'Error Prone' || ruleset === 'Multithreading'
-          ? 'reliability'
-          : 'maintainability';
+    const quality = qualityOf(
+      ruleset === 'Security',
+      ruleset === 'Error Prone' || ruleset === 'Multithreading',
+    );
     const defaultSeverity = pmdSeverity(r);
     return { quality, ...(defaultSeverity && { defaultSeverity }) };
   },
@@ -109,12 +111,10 @@ const semgrep: EngineMapping = {
   rule: (r) => {
     const t = tags(r);
     const lower = t.map((x) => x.toLowerCase());
-    const quality: ReportQuality =
-      lower.includes('security') || t.some(isCwe)
-        ? 'security'
-        : lower.includes('correctness')
-          ? 'reliability'
-          : 'maintainability';
+    const quality = qualityOf(
+      lower.includes('security') || t.some(isCwe),
+      lower.includes('correctness'),
+    );
     return { quality };
   },
   redactRegion: redactsSecret,
@@ -227,12 +227,7 @@ const roslyn: EngineMapping = {
     const sonar = sonarCategory(raw);
     if (sonar !== null) return sonar;
     const category = raw.toLowerCase();
-    const quality: ReportQuality =
-      category === 'security'
-        ? 'security'
-        : ROSLYN_RELIABILITY.has(category)
-          ? 'reliability'
-          : 'maintainability';
+    const quality = qualityOf(category === 'security', ROSLYN_RELIABILITY.has(category));
     return { quality, kind: 'issue' };
   },
   severity: (_result, rule) =>

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { coverageMeasures } from './metrics';
+import { coverageMeasures, type CoverageCounts } from './metrics';
 import type { Report } from './report/schema';
 import { ISSUE_KINDS, LANGUAGES, REPORT_QUALITIES, SEVERITIES } from './report/taxonomy';
 
@@ -103,9 +103,11 @@ const METRIC_FIELDS = [
   'cognitiveComplexity',
 ] as const;
 
-export function compareFixture(expected: Expected, report: Report): Mismatch[] {
-  const out: Mismatch[] = [];
+type ExpectedFinding = Expected['findings'][number];
+type ReportFile = Report['files'][number];
 
+/** Every expected engine ran with status ok. */
+function compareEngines(expected: Expected, report: Report, out: Mismatch[]): void {
   for (const id of expected.engines) {
     const e = report.engines.find((x) => x.id === id);
     if (!e || e.status !== 'ok') {
@@ -115,7 +117,10 @@ export function compareFixture(expected: Expected, report: Report): Mismatch[] {
       });
     }
   }
+}
 
+/** Each rule's quality and kind, by rule key. */
+function ruleTraits(report: Report): { quality: Map<string, string>; kinds: Map<string, string> } {
   const quality = new Map<string, string>();
   for (const e of report.engines)
     for (const r of e.rules) if (r.quality) quality.set(`${e.id}:${r.id}`, r.quality);
@@ -123,25 +128,46 @@ export function compareFixture(expected: Expected, report: Report): Mismatch[] {
   const kinds = new Map<string, string>();
   for (const e of report.engines)
     for (const r of e.rules) kinds.set(`${e.id}:${r.id}`, r.kind ?? 'issue');
+  return { quality, kinds };
+}
 
-  const actual = report.findings.map((f) => ({
+/** The report's findings as the fixture names them. */
+function actualFindings(report: Report) {
+  return report.findings.map((f) => ({
     ruleKey: `${f.engineId}:${f.ruleId}`,
     path: f.location?.path ?? null,
     line: f.location?.startLine ?? 1,
     severity: f.severity,
     engine: f.engineId,
   }));
+}
+type ActualFinding = ReturnType<typeof actualFindings>[number];
+
+/** The same rule and place, and the severity, quality and kind `e` names, if any. */
+function findingMatches(
+  a: ActualFinding,
+  e: ExpectedFinding,
+  quality: ReadonlyMap<string, string>,
+  kinds: ReadonlyMap<string, string>,
+): boolean {
+  return (
+    a.ruleKey === e.ruleKey &&
+    a.path === e.path &&
+    a.line === e.startLine &&
+    (e.severity === undefined || a.severity === e.severity) &&
+    (e.quality === undefined || quality.get(a.ruleKey) === e.quality) &&
+    (e.kind === undefined || (kinds.get(a.ruleKey) ?? 'issue') === e.kind)
+  );
+}
+
+/** Each expected finding matches an actual one of its own; with `findingsExhaustive`, no more. */
+function compareFindings(expected: Expected, report: Report, out: Mismatch[]): void {
+  const { quality, kinds } = ruleTraits(report);
+  const actual = actualFindings(report);
   const matched = new Set<number>();
   for (const e of expected.findings) {
     const i = actual.findIndex(
-      (a, idx) =>
-        !matched.has(idx) &&
-        a.ruleKey === e.ruleKey &&
-        a.path === e.path &&
-        a.line === e.startLine &&
-        (e.severity === undefined || a.severity === e.severity) &&
-        (e.quality === undefined || quality.get(a.ruleKey) === e.quality) &&
-        (e.kind === undefined || (kinds.get(a.ruleKey) ?? 'issue') === e.kind),
+      (a, idx) => !matched.has(idx) && findingMatches(a, e, quality, kinds),
     );
     if (i === -1)
       out.push({
@@ -150,109 +176,155 @@ export function compareFixture(expected: Expected, report: Report): Mismatch[] {
       });
     else matched.add(i);
   }
-  if (expected.findingsExhaustive) {
-    actual.forEach((a, idx) => {
-      if (!matched.has(idx) && expected.engines.includes(a.engine)) {
-        out.push({
-          kind: 'unexpected-finding',
-          detail: findingKey(a.ruleKey, a.path, a.line, a.severity),
-        });
-      }
-    });
-  }
+  if (!expected.findingsExhaustive) return;
+  actual.forEach((a, idx) => {
+    if (!matched.has(idx) && expected.engines.includes(a.engine)) {
+      out.push({
+        kind: 'unexpected-finding',
+        detail: findingKey(a.ruleKey, a.path, a.line, a.severity),
+      });
+    }
+  });
+}
 
+/** One file's language, kind, lines and the metrics `want` names. */
+function compareFile(
+  path: string,
+  want: Expected['files'][string],
+  f: ReportFile,
+  out: Mismatch[],
+): void {
+  if (f.language !== want.language)
+    out.push({
+      kind: 'file',
+      detail: `${path}: language expected ${want.language}, got ${f.language}`,
+    });
+  if (f.kind !== want.kind)
+    out.push({ kind: 'file', detail: `${path}: kind expected ${want.kind}, got ${f.kind}` });
+  if (want.lines !== undefined && f.lines !== want.lines)
+    out.push({ kind: 'file', detail: `${path}: lines expected ${want.lines}, got ${f.lines}` });
+  for (const field of METRIC_FIELDS) {
+    const w = want[field];
+    const got = f.metrics?.[field];
+    if (w !== undefined && got !== w)
+      out.push({ kind: 'file', detail: `${path}: ${field} expected ${w}, got ${got ?? 'none'}` });
+  }
+}
+
+function compareFiles(expected: Expected, report: Report, out: Mismatch[]): void {
   for (const [path, want] of Object.entries(expected.files)) {
     const f = report.files.find((x) => x.path === path);
     if (!f) {
       out.push({ kind: 'file', detail: `${path}: missing from report` });
       continue;
     }
-    if (f.language !== want.language)
-      out.push({
-        kind: 'file',
-        detail: `${path}: language expected ${want.language}, got ${f.language}`,
-      });
-    if (f.kind !== want.kind)
-      out.push({ kind: 'file', detail: `${path}: kind expected ${want.kind}, got ${f.kind}` });
-    if (want.lines !== undefined && f.lines !== want.lines)
-      out.push({ kind: 'file', detail: `${path}: lines expected ${want.lines}, got ${f.lines}` });
-    for (const field of METRIC_FIELDS) {
-      const w = want[field];
-      const got = f.metrics?.[field];
-      if (w !== undefined && got !== w)
-        out.push({ kind: 'file', detail: `${path}: ${field} expected ${w}, got ${got ?? 'none'}` });
-    }
+    compareFile(path, want, f, out);
   }
+}
 
-  const groupKey = (g: {
-    blocks: readonly { path: string; startLine: number; endLine: number }[];
-  }) =>
-    g.blocks
-      .map((b) => `${b.path}:${b.startLine}-${b.endLine}`)
-      .sort()
-      .join('|');
+/** A duplication group as its sorted blocks. */
+function groupKey(g: {
+  blocks: readonly { path: string; startLine: number; endLine: number }[];
+}): string {
+  return g.blocks
+    .map((b) => `${b.path}:${b.startLine}-${b.endLine}`)
+    .sort()
+    .join('|');
+}
+
+function compareDuplications(expected: Expected, report: Report, out: Mismatch[]): void {
   const actualGroups = new Set(report.duplications.map(groupKey));
   const expectedGroups = new Set(expected.duplications.map(groupKey));
   for (const g of expectedGroups)
     if (!actualGroups.has(g)) out.push({ kind: 'duplication', detail: `missing group ${g}` });
   for (const g of actualGroups)
     if (!expectedGroups.has(g)) out.push({ kind: 'duplication', detail: `unexpected group ${g}` });
+}
 
-  if (expected.dependencies !== undefined) {
-    const depKey = (d: { path: string; ecosystem: string; name: string; version: string }) =>
-      `${d.path} ${d.ecosystem} ${d.name}@${d.version}`;
-    const view = (d: {
-      path: string;
-      ecosystem: string;
-      name: string;
-      version: string;
-      licenses: readonly string[];
-    }) => ({
-      path: d.path,
-      ecosystem: d.ecosystem,
-      name: d.name,
-      version: d.version,
-      licenses: [...d.licenses],
-    });
-    const byKey = (a: ReturnType<typeof view>, b: ReturnType<typeof view>) =>
-      compareText(depKey(a), depKey(b));
-    const want = expected.dependencies.map(view).sort(byKey);
-    const got = (report.dependencies ?? []).map(view).sort(byKey);
-    const wantByKey = new Map(want.map((d) => [depKey(d), d]));
-    const gotByKey = new Map(got.map((d) => [depKey(d), d]));
-    for (const [k, w] of wantByKey) {
-      const g = gotByKey.get(k);
-      if (!g) out.push({ kind: 'dependency', detail: `${k}: missing from report` });
-      else if (JSON.stringify(g.licenses) !== JSON.stringify(w.licenses))
-        out.push({
-          kind: 'dependency',
-          detail: `${k}: licenses expected [${w.licenses.join(', ')}], got [${g.licenses.join(', ')}]`,
-        });
-    }
-    for (const k of gotByKey.keys())
-      if (!wantByKey.has(k)) out.push({ kind: 'dependency', detail: `${k}: unexpected` });
+interface DependencyView {
+  path: string;
+  ecosystem: string;
+  name: string;
+  version: string;
+  licenses: string[];
+}
+
+function depKey(d: { path: string; ecosystem: string; name: string; version: string }): string {
+  return `${d.path} ${d.ecosystem} ${d.name}@${d.version}`;
+}
+
+function dependencyView(d: {
+  path: string;
+  ecosystem: string;
+  name: string;
+  version: string;
+  licenses: readonly string[];
+}): DependencyView {
+  return {
+    path: d.path,
+    ecosystem: d.ecosystem,
+    name: d.name,
+    version: d.version,
+    licenses: [...d.licenses],
+  };
+}
+
+function byDepKey(a: DependencyView, b: DependencyView): number {
+  return compareText(depKey(a), depKey(b));
+}
+
+/** Dependency licences (6M): the report's entries equal the expected list exactly. */
+function compareDependencies(
+  dependencies: NonNullable<Expected['dependencies']>,
+  report: Report,
+  out: Mismatch[],
+): void {
+  const want = dependencies.map(dependencyView).sort(byDepKey);
+  const got = (report.dependencies ?? []).map(dependencyView).sort(byDepKey);
+  const wantByKey = new Map(want.map((d) => [depKey(d), d]));
+  const gotByKey = new Map(got.map((d) => [depKey(d), d]));
+  for (const [k, w] of wantByKey) {
+    const g = gotByKey.get(k);
+    if (!g) out.push({ kind: 'dependency', detail: `${k}: missing from report` });
+    else if (JSON.stringify(g.licenses) !== JSON.stringify(w.licenses))
+      out.push({
+        kind: 'dependency',
+        detail: `${k}: licenses expected [${w.licenses.join(', ')}], got [${g.licenses.join(', ')}]`,
+      });
   }
+  for (const k of gotByKey.keys())
+    if (!wantByKey.has(k)) out.push({ kind: 'dependency', detail: `${k}: unexpected` });
+}
 
+/** Adds one file's coverage to the project's counts. */
+function addFileCoverage(acc: CoverageCounts, f: ReportFile): CoverageCounts {
+  const c = f.coverage;
+  if (!c) return acc;
+  const total = c.branches.reduce((n, [, t]) => n + t, 0);
+  const hit = c.branches.reduce((n, [, , h]) => n + h, 0);
+  acc.uncoveredLines += rangeLength(c.uncovered);
+  acc.linesToCover += rangeLength(c.covered) + rangeLength(c.uncovered);
+  acc.conditionsToCover += total;
+  acc.uncoveredConditions += total - hit;
+  return acc;
+}
+
+/** The project's coverage measures from its main files, or `null` when none has coverage. */
+function reportCoverage(report: Report): ReturnType<typeof coverageMeasures> | null {
   const covered = report.files.filter((f) => f.kind === 'main' && f.coverage);
-  const measures =
-    covered.length === 0
-      ? null
-      : coverageMeasures(
-          covered.reduce(
-            (acc, f) => {
-              const c = f.coverage;
-              if (!c) return acc;
-              const total = c.branches.reduce((n, [, t]) => n + t, 0);
-              const hit = c.branches.reduce((n, [, , h]) => n + h, 0);
-              acc.uncoveredLines += rangeLength(c.uncovered);
-              acc.linesToCover += rangeLength(c.covered) + rangeLength(c.uncovered);
-              acc.conditionsToCover += total;
-              acc.uncoveredConditions += total - hit;
-              return acc;
-            },
-            { linesToCover: 0, uncoveredLines: 0, conditionsToCover: 0, uncoveredConditions: 0 },
-          ),
-        );
+  if (covered.length === 0) return null;
+  return coverageMeasures(
+    covered.reduce(addFileCoverage, {
+      linesToCover: 0,
+      uncoveredLines: 0,
+      conditionsToCover: 0,
+      uncoveredConditions: 0,
+    }),
+  );
+}
+
+function compareCoverage(expected: Expected, report: Report, out: Mismatch[]): void {
+  const measures = reportCoverage(report);
   if (expected.coverage === null) {
     if (measures !== null)
       out.push({ kind: 'coverage', detail: 'no coverage expected, but the report has coverage' });
@@ -265,5 +337,15 @@ export function compareFixture(expected: Expected, report: Report): Mismatch[] {
       if (!ok) out.push({ kind: 'coverage', detail: `${key} expected ${want}, got ${got}` });
     }
   }
+}
+
+export function compareFixture(expected: Expected, report: Report): Mismatch[] {
+  const out: Mismatch[] = [];
+  compareEngines(expected, report, out);
+  compareFindings(expected, report, out);
+  compareFiles(expected, report, out);
+  compareDuplications(expected, report, out);
+  if (expected.dependencies !== undefined) compareDependencies(expected.dependencies, report, out);
+  compareCoverage(expected, report, out);
   return out;
 }

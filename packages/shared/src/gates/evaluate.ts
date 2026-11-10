@@ -76,8 +76,35 @@ function judge(c: GateCondition, measures: Measures): ConditionResult {
     operator: c.operator,
     threshold: c.threshold,
     value,
-    status: value === null ? 'no_value' : failed ? 'failed' : 'passed',
+    status: conditionStatus(value, failed),
   };
+}
+
+function conditionStatus(value: number | null, failed: boolean): ConditionStatus {
+  if (value === null) return 'no_value';
+  return failed ? 'failed' : 'passed';
+}
+
+/** gates.md §6: fewer new lines than the threshold (a threshold of 0 or less never applies). */
+function isSmallChangeset(measures: Measures, ctx: GateContext): boolean {
+  const threshold = ctx.smallChangesetLines ?? DEFAULT_SMALL_CHANGESET_LINES;
+  const newLines = measures['new_lines'];
+  return threshold > 0 && typeof newLines === 'number' && newLines < threshold;
+}
+
+/**
+ * Why a condition is ignored: an overall condition off the main branch, or a coverage or
+ * duplication condition on a small change set with its baseline available. `null` to judge it.
+ */
+function ignoreReason(
+  metric: string,
+  isNew: boolean,
+  branchKind: BranchKind,
+  skipSmall: boolean,
+): IgnoreReason | null {
+  if (!isNew && branchKind !== 'main') return 'overall_on_branch';
+  if (skipSmall && SMALL_CHANGESET_METRICS.includes(metric)) return 'small_changeset';
+  return null;
 }
 
 /**
@@ -103,10 +130,8 @@ export function evaluateGate(gate: Gate | null, measures: Measures, ctx: GateCon
   if (gate === null) {
     return { status: 'none', gate: null, conditions: [], ignoredConditions: [], warnings };
   }
-  const threshold = ctx.smallChangesetLines ?? DEFAULT_SMALL_CHANGESET_LINES;
-  const newLines = measures['new_lines'];
-  const small = threshold > 0 && typeof newLines === 'number' && newLines < threshold;
   const baselineUnavailable = ctx.baselineStatus === 'unavailable';
+  const skipSmall = isSmallChangeset(measures, ctx) && !baselineUnavailable;
 
   const conditions: ConditionResult[] = [];
   const ignoredConditions: GateResult['ignoredConditions'] = [];
@@ -116,12 +141,9 @@ export function evaluateGate(gate: Gate | null, measures: Measures, ctx: GateCon
     const resolved = resolveMetricKey(c.metric);
     if (!resolved) throw new UnknownMetricError(c.metric);
     const isNew = resolved.scope === 'new';
-    if (!isNew && ctx.branchKind !== 'main') {
-      ignoredConditions.push({ metric: c.metric, reason: 'overall_on_branch' });
-      continue;
-    }
-    if (small && !baselineUnavailable && SMALL_CHANGESET_METRICS.includes(c.metric)) {
-      ignoredConditions.push({ metric: c.metric, reason: 'small_changeset' });
+    const reason = ignoreReason(c.metric, isNew, ctx.branchKind, skipSmall);
+    if (reason !== null) {
+      ignoredConditions.push({ metric: c.metric, reason });
       continue;
     }
     if (isNew) hasNewCondition = true;

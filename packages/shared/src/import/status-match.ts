@@ -74,7 +74,8 @@ export function importCommentHeader(o: {
   label: ImportCommentLabel;
   date: string | null;
 }): string {
-  return `Imported from SonarQube issue ${o.key} (${o.label}${o.date === null ? '' : ` on ${o.date}`})`;
+  const on = o.date === null ? '' : ` on ${o.date}`;
+  return `Imported from SonarQube issue ${o.key} (${o.label}${on})`;
 }
 
 /**
@@ -234,10 +235,16 @@ interface Component {
   contested: boolean;
 }
 
-const cmp = (a: string | number, b: string | number) => (a < b ? -1 : a > b ? 1 : 0);
+function cmp(a: string | number, b: string | number): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
 /** `null` (file-less, or no line) sorts first. */
-const cmpNullable = <T extends string | number>(a: T | null, b: T | null) =>
-  a === null ? (b === null ? 0 : -1) : b === null ? 1 : cmp(a, b);
+function cmpNullable<T extends string | number>(a: T | null, b: T | null): number {
+  if (a === null) return b === null ? 0 : -1;
+  if (b === null) return 1;
+  return cmp(a, b);
+}
 /** Ruling S1: a line hash of `""` or `null` is unknown, and unknown never matches. */
 const knownHash = (h: string | null): string | null => (h === null || h === '' ? null : h);
 const key = (...parts: (string | number | null)[]) => JSON.stringify(parts);
@@ -376,6 +383,664 @@ function findLeft(b: LineBucket, i: number): number {
   return root - 1;
 }
 
+/** A settled item, before ruling S12 adds `competitorsUnknown`. */
+type Settled = Omit<StatusMatch, 'competitorsUnknown'>;
+
+const openEntries = (g: Group) => g.entries.filter((e) => !e.done);
+/** Rulings S8 and S8c: every entry carries the same comment (`null` equals absent). */
+const sameComment = (entries: readonly Entry[]): boolean =>
+  entries.every((e) => (e.item.commentKey ?? null) === (entries[0]?.item.commentKey ?? null));
+
+/** Spec §11.2 bounds and unique refs: throws when the request breaks them. */
+function checkItems(items: readonly StatusItem[], candidates: readonly StatusCandidate[]): void {
+  if (items.length > STATUS_IMPORT_MAX_ITEMS) {
+    throw new Error(`matchStatuses: more than ${STATUS_IMPORT_MAX_ITEMS} items`);
+  }
+  if (candidates.length > STATUS_IMPORT_MAX_CANDIDATES) {
+    throw new Error(`matchStatuses: more than ${STATUS_IMPORT_MAX_CANDIDATES} candidates`);
+  }
+  const refs = new Set<string>();
+  for (const i of items) {
+    if (refs.has(i.ref)) throw new Error(`matchStatuses: duplicate ref ${i.ref}`);
+    refs.add(i.ref);
+  }
+}
+
+/** The candidates by `(line, id)`; throws on a duplicate id. */
+function candidateOrder(candidates: readonly StatusCandidate[]): StatusCandidate[] {
+  const cands = [...candidates].sort((a, b) => cmpNullable(a.line, b.line) || cmp(a.id, b.id));
+  for (let k = 1; k < cands.length; k++) {
+    if (cands[k]?.id === cands[k - 1]?.id) {
+      throw new Error(`matchStatuses: duplicate candidate ${cands[k]?.id ?? ''}`);
+    }
+  }
+  return cands;
+}
+
+/** The items by `(path, line, ref)`, as entries. */
+function contentOrder(items: readonly StatusItem[]): Entry[] {
+  return [...items]
+    .sort((a, b) => cmpNullable(a.path, b.path) || cmpNullable(a.line, b.line) || cmp(a.ref, b.ref))
+    .map((item, n) => ({
+      item,
+      n,
+      targets: [...new Set(item.ruleKeys)].sort(cmp),
+      hash: knownHash(item.sonarLineHash),
+      done: false,
+    }));
+}
+
+/** The component of `node`'s root, created empty on first use. */
+function componentAt(components: Map<number, Component>, uf: UnionFind, node: number): Component {
+  const root = uf.find(node);
+  let c = components.get(root);
+  if (!c) {
+    c = { groups: [], runs: [], statuses: new Set(), contested: false };
+    components.set(root, c);
+  }
+  return c;
+}
+
+/** The components the linked groups and visited runs fall in, by union-find root. */
+function componentsOf(
+  uf: UnionFind,
+  linked: readonly Group[],
+  visited: readonly Run[],
+): Map<number, Component> {
+  const components = new Map<number, Component>();
+  for (const g of linked) {
+    const c = componentAt(components, uf, g.node);
+    c.groups.push(g);
+    c.statuses.add(g.status);
+  }
+  for (const run of visited) {
+    const c = componentAt(components, uf, run.cands[0] ?? 0);
+    if (run.contested) {
+      c.contested = true;
+      continue;
+    }
+    c.runs.push(run);
+  }
+  return components;
+}
+
+/** Ruling S6: the entries of a full pairing, or `null` when one is marked `competitorsUnknown`. */
+function fullPairingEntries(groups: readonly Group[]): Entry[] | null {
+  const entries: Entry[] = [];
+  for (const g of groups) {
+    for (const e of openEntries(g)) {
+      if (e.item.competitorsUnknown === true) return null;
+      entries.push(e);
+    }
+  }
+  return entries;
+}
+
+/**
+ * Ruling S6: the component's candidates, ascending, when every group reaches all of them and
+ * they are at most `items` many; else `null`.
+ */
+function fullPairingCandidates(
+  c: Component,
+  reach: ReadonlyMap<Group, readonly Run[]>,
+  items: number,
+): number[] | null {
+  // A group's runs are disjoint, so its size is the sum of their lengths.
+  const sizes: number[] = [];
+  for (const g of c.groups) {
+    let size = 0;
+    for (const run of reach.get(g) ?? []) size += run.cands.length;
+    if (size > items) return null;
+    sizes.push(size);
+  }
+  // The component's runs may overlap (passes 0 and 1: a candidate is in its `*` run and in its
+  // hash run), so its candidates are counted once each.
+  const all = new Set<number>();
+  for (const run of c.runs) for (const ci of run.cands) all.add(ci);
+  if (all.size === 0 || all.size > items) return null;
+  // Every group reaching as many distinct candidates as the component has reaches all of them.
+  if (sizes.some((s) => s !== all.size)) return null;
+  return [...all].sort((a, b) => a - b);
+}
+
+/** The entries, in content order, grouped by the one candidate each is left with. */
+function tiedByCandidate(entries: { e: Entry; ci: number }[]): Map<number, Entry[]> {
+  entries.sort((a, b) => a.e.n - b.e.n);
+  const tied = new Map<number, Entry[]>();
+  for (const { e, ci } of entries) {
+    const list = tied.get(ci);
+    if (list) list.push(e);
+    else tied.set(ci, [e]);
+  }
+  return tied;
+}
+
+/** Passes 0 and 1: adds `ci` to the run of `k`, created on first use. */
+function addToRun(runs: Map<string, Run>, k: string, ci: number): void {
+  const run = runs.get(k);
+  if (run) run.cands.push(ci);
+  else runs.set(k, { cands: [ci], free: 1, stamp: -1, slot: null, contested: false });
+}
+
+/** Passes 0 and 1: an item's evidence (pass 0 needs a message), or `null` to skip it. */
+function sameLineEvidence(e: Entry, p: 0 | 1): string | null {
+  if (p === 0 && e.item.message === null) return null;
+  const message = p === 0 ? e.item.message : null;
+  return key(e.item.path, e.item.line, message, e.hash);
+}
+
+/** Passes 0 and 1: appends to `g.runs` the runs its items reach. */
+function addSameLineRuns(g: Group, runs: ReadonlyMap<string, Run>, p: 0 | 1): void {
+  const i = g.entries[0];
+  if (i === undefined) return;
+  for (const t of i.targets) {
+    const base = [i.item.path, i.item.line, t, p === 0 ? i.item.message : null];
+    // A known hash agrees with an equal or unknown one; an unknown hash agrees with any.
+    const ks =
+      i.hash === null ? [key(...base, '*')] : [key(...base, '?'), key(...base, `#${i.hash}`)];
+    for (const k of ks) {
+      const run = runs.get(k);
+      if (run) g.runs.push(run);
+    }
+  }
+}
+
+/** Passes 2 and 3: an item's evidence (a line, and a known hash or a message), or `null`. */
+function distanceEvidence(e: Entry, p: 2 | 3): string | null {
+  if (e.item.line === null) return null;
+  if (p === 2) return e.hash === null ? null : key(e.item.path, e.item.line, e.hash);
+  return e.item.message === null ? null : key(e.item.path, e.item.line, e.item.message);
+}
+
+/** Passes 2 and 3: the bucket of `k`, created empty on first use. */
+function bucketAt(buckets: Map<string, LineBucket>, k: string): LineBucket {
+  let b = buckets.get(k);
+  if (!b) {
+    b = { lines: [], runs: [], right: new Int32Array(0), left: new Int32Array(0) };
+    buckets.set(k, b);
+  }
+  return b;
+}
+
+/** Passes 2 and 3: the bucket's run of `line`, created when the bucket has none yet. */
+function lineRun(b: LineBucket, line: number): Run {
+  // Candidates come by line, so each line's run is the bucket's last one or a new one.
+  let run = b.lines.at(-1) === line ? b.runs.at(-1) : undefined;
+  if (run === undefined) {
+    const slot = { bucket: b, index: b.lines.length };
+    run = { cands: [], free: 0, stamp: -1, slot, contested: false };
+    b.lines.push(line);
+    b.runs.push(run);
+  }
+  return run;
+}
+
+/** Passes 2 and 3: one cursor per group and bucket of a rule it targets, grouped by bucket. */
+function cursorsOf(
+  groups: readonly Group[],
+  buckets: ReadonlyMap<string, LineBucket>,
+  p: 2 | 3,
+): Map<LineBucket, Cursor[]> {
+  const cursors = new Map<LineBucket, Cursor[]>();
+  for (const g of groups) {
+    const i = g.entries[0];
+    if (i === undefined || i.item.line === null) continue;
+    for (const t of i.targets) {
+      const b = buckets.get(key(i.item.path, t, p === 2 ? i.hash : i.item.message));
+      if (b === undefined) continue;
+      const at = lowerBound(b.lines, i.item.line);
+      const list = cursors.get(b) ?? [];
+      list.push({ group: g, bucket: b, line: i.item.line, r: at, l: at - 1, d: 0 });
+      cursors.set(b, list);
+    }
+  }
+  return cursors;
+}
+
+/** Adds `by` to the count of `s`, dropping it at zero. */
+function bump(count: Map<StatusItemStatus, number>, s: StatusItemStatus, by: number): void {
+  const v = (count.get(s) ?? 0) + by;
+  if (v === 0) count.delete(s);
+  else count.set(s, v);
+}
+
+/** Pass 3: a sliding window of the cursors within `maxDistance` lines of each candidate line. */
+function markContestedWithin(b: LineBucket, list: readonly Cursor[], maxDistance: number): void {
+  const sorted = [...list].sort((x, y) => x.line - y.line);
+  const count = new Map<StatusItemStatus, number>();
+  let lo = 0;
+  let hi = 0;
+  b.lines.forEach((line, index) => {
+    for (let c = sorted[hi]; c !== undefined && c.line <= line + maxDistance; c = sorted[hi]) {
+      bump(count, c.group.status, 1);
+      hi++;
+    }
+    for (
+      let c = sorted[lo];
+      c !== undefined && lo < hi && c.line < line - maxDistance;
+      c = sorted[lo]
+    ) {
+      bump(count, c.group.status, -1);
+      lo++;
+    }
+    const run = b.runs[index];
+    if (run && count.size > 1) run.contested = true;
+  });
+}
+
+/**
+ * Contested candidates: items of different statuses reach them in this pass, at any distance.
+ * They are never paired, make the component they fall in at any level ambiguous, and are held
+ * back once the pass is over.
+ */
+function markContested(cursors: ReadonlyMap<LineBucket, Cursor[]>, p: 2 | 3, maxDistance: number) {
+  for (const [b, list] of cursors) {
+    if (p === 3) markContestedWithin(b, list, maxDistance);
+    else if (new Set(list.map((c) => c.group.status)).size > 1) {
+      for (const run of b.runs) run.contested = true;
+    }
+  }
+}
+
+/** The distance of the cursor's nearest line with free candidates, or `Infinity`. */
+function nearest(c: Cursor): number {
+  const b = c.bucket;
+  const r = findRight(b, c.r);
+  const l = c.l < 0 ? -1 : findLeft(b, c.l);
+  c.r = r;
+  c.l = l;
+  const dr = r < b.lines.length ? (b.lines[r] ?? Infinity) - c.line : Infinity;
+  const dl = l >= 0 ? c.line - (b.lines[l] ?? -Infinity) : Infinity;
+  return Math.min(dr, dl);
+}
+
+/** Queues a cursor with open items at its nearest free line, if that is within `maxDistance`. */
+function enqueue(heap: CursorHeap, c: Cursor, maxDistance: number): void {
+  if (openEntries(c.group).length === 0) return;
+  c.d = nearest(c);
+  if (Number.isFinite(c.d) && c.d <= maxDistance) heap.push(c);
+}
+
+/** Appends the runs of the cursor's lines at distance `d` on either side to `runs`, past them. */
+function advance(c: Cursor, d: number, runs: Run[]): Run[] {
+  const b = c.bucket;
+  if (c.r < b.lines.length && (b.lines[c.r] ?? Infinity) - c.line === d) {
+    const run = b.runs[c.r];
+    if (run) runs.push(run);
+    c.r++;
+  }
+  if (c.l >= 0 && c.line - (b.lines[c.l] ?? -Infinity) === d) {
+    const run = b.runs[c.l];
+    if (run) runs.push(run);
+    c.l--;
+  }
+  return runs;
+}
+
+/** Pops every cursor at distance `d`: the runs each group reaches there, and the cursors moved. */
+function popLevel(
+  heap: CursorHeap,
+  d: number,
+  maxDistance: number,
+): { reach: Map<Group, Run[]>; advanced: Cursor[] } {
+  const reach = new Map<Group, Run[]>();
+  const advanced: Cursor[] = [];
+  while ((heap.peek()?.d ?? NaN) === d) {
+    const c = heap.pop();
+    if (c === undefined || openEntries(c.group).length === 0) continue;
+    // Lines emptied since the cursor was queued are skipped: re-queue it farther.
+    if (nearest(c) > d) {
+      enqueue(heap, c, maxDistance);
+      continue;
+    }
+    reach.set(c.group, advance(c, d, reach.get(c.group) ?? []));
+    advanced.push(c);
+  }
+  return { reach, advanced };
+}
+
+/** Each candidate paired so far → the entry paired to it. */
+function pairedEntries(
+  order: readonly Entry[],
+  result: ReadonlyMap<string, Settled>,
+): Map<string, Entry> {
+  const pairedTo = new Map<string, Entry>();
+  for (const e of order) {
+    const id = result.get(e.item.ref)?.candidateId;
+    if (id !== null && id !== undefined) pairedTo.set(id, e);
+  }
+  return pairedTo;
+}
+
+/**
+ * Spec §10.5: a primary and its duplicate paired to items of different statuses. Mirroring the
+ * primary's status onto the duplicate would give it a status its own counterpart does not have;
+ * both items are ambiguous instead. `result` is updated in place.
+ */
+function splitMirroredStatuses(
+  order: readonly Entry[],
+  cands: readonly StatusCandidate[],
+  result: Map<string, Settled>,
+): void {
+  const pairedTo = pairedEntries(order, result);
+  for (const c of cands) {
+    const primaryId = c.duplicateOf ?? null;
+    if (primaryId === null) continue;
+    const dup = pairedTo.get(c.id);
+    const primary = pairedTo.get(primaryId);
+    if (dup === undefined || primary === undefined) continue;
+    if (dup.item.status === primary.item.status) continue;
+    for (const e of [dup, primary]) {
+      result.set(e.item.ref, { ref: e.item.ref, candidateId: null, pass: null, ambiguous: true });
+    }
+  }
+}
+
+/** The passes of `matchStatuses` over sorted items and candidates, and what they settle. */
+class StatusMatcher {
+  readonly result = new Map<string, Settled>();
+  /** Candidates paired, or held back by an ambiguous component. */
+  readonly taken: Uint8Array;
+  /** The level at which a candidate was last the only option of some group (ruling S5). */
+  private readonly forced: Int32Array;
+  /** Passes 2 and 3: the bucket line each candidate is in. */
+  private runOf: (Run | undefined)[] = [];
+  private level = 0;
+  private pass: Pass = 0;
+  private readonly cands: readonly StatusCandidate[];
+  private readonly order: readonly Entry[];
+
+  constructor(cands: readonly StatusCandidate[], order: readonly Entry[]) {
+    this.cands = cands;
+    this.order = order;
+    this.taken = new Uint8Array(cands.length);
+    this.forced = new Int32Array(cands.length).fill(-1);
+  }
+
+  private settleEntry(e: Entry, candidate: number | null, ambiguous: boolean): void {
+    e.done = true;
+    const ref = e.item.ref;
+    const c = candidate === null ? null : (this.cands[candidate] ?? null);
+    this.result.set(ref, {
+      ref,
+      candidateId: c?.id ?? null,
+      pass: c === null ? null : this.pass,
+      ambiguous,
+    });
+  }
+
+  private markAmbiguous(g: Group): void {
+    for (const e of openEntries(g)) this.settleEntry(e, null, true);
+  }
+
+  private take(ci: number): void {
+    if (this.taken[ci] === 1) return;
+    this.taken[ci] = 1;
+    const run = this.runOf[ci];
+    if (run === undefined) return;
+    run.free--;
+    if (run.free === 0 && run.slot !== null) {
+      const { bucket, index } = run.slot;
+      bucket.right[index] = index + 1;
+      bucket.left[index + 1] = index;
+    }
+  }
+
+  private compact(run: Run): void {
+    if (run.cands.some((ci) => this.taken[ci] === 1))
+      run.cands = run.cands.filter((ci) => this.taken[ci] !== 1);
+  }
+
+  /** Groups of the open items by `evidence`, in content order; `null` evidence skips the item. */
+  private groupsOf(evidence: (e: Entry) => string | null): Group[] {
+    const byKey = new Map<string, Group>();
+    for (const e of this.order) {
+      if (e.done) continue;
+      const k = evidence(e);
+      if (k === null) continue;
+      const full = key(k, e.item.status, ...e.targets);
+      const g = byKey.get(full);
+      if (g) g.entries.push(e);
+      else byKey.set(full, { entries: [e], status: e.item.status, node: 0, runs: [] });
+    }
+    const groups = [...byKey.values()];
+    groups.forEach((g, k) => (g.node = this.cands.length + k));
+    return groups;
+  }
+
+  /** The first time this level meets a run: compacts it and links its candidates. */
+  private visitRun(uf: UnionFind, run: Run, visited: Run[]): void {
+    if (run.stamp === this.level) return;
+    run.stamp = this.level;
+    // A contested run is never paired nor taken during its pass: one node stands for it.
+    if (!run.contested) this.compact(run);
+    const first = run.cands[0];
+    if (first === undefined) return;
+    visited.push(run);
+    if (!run.contested) for (const ci of run.cands) uf.union(first, ci);
+  }
+
+  /** Links every group to the runs it reaches: the runs met, and the groups that reach one. */
+  private link(
+    uf: UnionFind,
+    reach: ReadonlyMap<Group, readonly Run[]>,
+  ): { visited: Run[]; linked: Group[] } {
+    const visited: Run[] = [];
+    const linked: Group[] = [];
+    for (const [g, runs] of reach) {
+      let any = false;
+      for (const run of runs) {
+        this.visitRun(uf, run, visited);
+        const first = run.cands[0];
+        if (first === undefined) continue;
+        uf.union(g.node, first);
+        any = true;
+      }
+      if (any) linked.push(g);
+    }
+    return { visited, linked };
+  }
+
+  /** Settles one level of equally strong evidence: components, ambiguity, pairing. */
+  private settle(uf: UnionFind, reach: ReadonlyMap<Group, readonly Run[]>): void {
+    this.level++;
+    uf.reset();
+    const { visited, linked } = this.link(uf, reach);
+    for (const c of componentsOf(uf, linked, visited).values()) {
+      if (c.contested || c.statuses.size > 1) this.hold(c);
+      else if (!this.pairFully(c, reach)) this.pairEachItem(c, reach);
+    }
+  }
+
+  /** An ambiguous component: its items stay unpaired and its candidates are held back. */
+  private hold(c: Component): void {
+    for (const g of c.groups) this.markAmbiguous(g);
+    for (const run of c.runs) for (const ci of run.cands) this.take(ci);
+  }
+
+  /**
+   * Ruling S6: a component whose items all ask the same resolved status (no `open` competitor,
+   * no item marked `competitorsUnknown`) and carry the same comment (rulings S8 and S8c:
+   * `commentKey`, `null` equals `null`), whose every item reaches every one of its candidates,
+   * with at least as many items as candidates. Every candidate then receives that status
+   * whichever pairing is chosen, so the result does not depend on the pairing: items in content
+   * order pair with candidates by (line, id), and the items left over stay unpaired. Which of the
+   * twins' SonarQube keys (and dates) ends in which issue's changelog is arbitrary, and nothing
+   * else is. Returns
+   * `false`, pairing nothing, when the component does not qualify.
+   */
+  private pairFully(c: Component, reach: ReadonlyMap<Group, readonly Run[]>): boolean {
+    const status = c.groups[0]?.status;
+    if (status === undefined || status === 'open') return false;
+    const entries = fullPairingEntries(c.groups);
+    // Ruling S8: twins whose comments differ are not interchangeable.
+    if (entries === null || !sameComment(entries)) return false;
+    const ordered = fullPairingCandidates(c, reach, entries.length);
+    if (ordered === null) return false;
+    entries.sort((a, b) => a.n - b.n);
+    ordered.forEach((ci, k) => {
+      const e = entries[k];
+      if (e === undefined) return;
+      this.take(ci);
+      this.settleEntry(e, ci, false);
+    });
+    return true;
+  }
+
+  /** Ruling S5: each group's number of candidates; a group's only one is forced at this level. */
+  private markForced(c: Component, reach: ReadonlyMap<Group, readonly Run[]>): Map<Group, number> {
+    const sizes = new Map<Group, number>();
+    for (const g of c.groups) {
+      let size = 0;
+      let only = -1;
+      for (const run of reach.get(g) ?? []) {
+        size += run.cands.length;
+        if (only === -1) only = run.cands[0] ?? -1;
+      }
+      sizes.set(g, size);
+      if (size === 1 && only !== -1) this.forced[only] = this.level;
+    }
+    return sizes;
+  }
+
+  /**
+   * Ruling S5: the one candidate a group is left with once the only options of other groups are
+   * removed (unless it has only that one itself), or -1 for none or several.
+   */
+  private soleCandidate(runs: readonly Run[], alone: boolean): number {
+    let one = -1;
+    for (const run of runs) {
+      for (const ci of run.cands) {
+        if ((!alone && this.forced[ci] === this.level) || ci === one) continue;
+        if (one !== -1) return -1;
+        one = ci;
+      }
+    }
+    return one;
+  }
+
+  /**
+   * Rulings S2 and S5, in a component asking one status: every group (items of identical
+   * evidence) keeps the candidates it reaches minus those that are the only option of another
+   * group, and pairs only when exactly one is left; items left with the same one candidate pair
+   * the first of them only when all carry the same comment (ruling S8b), else all are ambiguous
+   * and the candidate is held back. Decided before anything is taken, so the
+   * result does not depend on the order of the groups. A group's runs are disjoint (distinct
+   * rules, hash classes or lines), so its size is the sum of their lengths.
+   */
+  private pairEachItem(c: Component, reach: ReadonlyMap<Group, readonly Run[]>): void {
+    const sizes = this.markForced(c, reach);
+    const held = new Set<Run>();
+    const entries: { e: Entry; ci: number }[] = [];
+    for (const g of c.groups) {
+      const runs = reach.get(g) ?? [];
+      const one = this.soleCandidate(runs, sizes.get(g) === 1);
+      if (one === -1) {
+        this.markAmbiguous(g);
+        for (const run of runs) held.add(run);
+        continue;
+      }
+      for (const e of openEntries(g)) entries.push({ e, ci: one });
+    }
+    this.pairTied(tiedByCandidate(entries));
+    // An ambiguous item's candidates are held back after the pairs: one may be another's only one.
+    for (const run of held) for (const ci of run.cands) this.take(ci);
+  }
+
+  /**
+   * Items left with the same one candidate ask the same status: the first by content pairs,
+   * provided they say the same (ruling S8b); else none can be told from the others, so all are
+   * ambiguous and the candidate is held back.
+   */
+  private pairTied(tied: ReadonlyMap<number, Entry[]>): void {
+    for (const [ci, list] of tied) {
+      if (this.taken[ci] === 1) continue;
+      this.take(ci);
+      const [first] = list;
+      if (first === undefined) continue;
+      if (sameComment(list)) this.settleEntry(first, ci, false);
+      else for (const e of list) this.settleEntry(e, null, true);
+    }
+  }
+
+  /** Passes 0 and 1: one run per (path, line, rule, message in pass 0) and hash class. */
+  private sameLineRuns(p: 0 | 1): Map<string, Run> {
+    const runs = new Map<string, Run>();
+    this.cands.forEach((c, ci) => {
+      if (this.taken[ci] === 1) return;
+      const base = [c.path, c.line, c.ruleKey, p === 0 ? c.message : null];
+      const h = knownHash(c.sonarLineHash);
+      addToRun(runs, key(...base, '*'), ci);
+      addToRun(runs, key(...base, h === null ? '?' : `#${h}`), ci);
+    });
+    return runs;
+  }
+
+  /** Passes 0 and 1: one level each, same line. */
+  sameLinePass(p: 0 | 1): void {
+    this.pass = p;
+    this.runOf = [];
+    const runs = this.sameLineRuns(p);
+    const groups = this.groupsOf((e) => sameLineEvidence(e, p));
+    const reach = new Map<Group, Run[]>();
+    for (const g of groups) {
+      addSameLineRuns(g, runs, p);
+      if (g.runs.length > 0) reach.set(g, g.runs);
+    }
+    this.settle(new UnionFind(this.cands.length + groups.length), reach);
+  }
+
+  /** Passes 2 and 3: the free candidates with a line, by (path, rule, hash or message). */
+  private lineBuckets(p: 2 | 3): Map<string, LineBucket> {
+    const buckets = new Map<string, LineBucket>();
+    this.cands.forEach((c, ci) => {
+      if (this.taken[ci] === 1 || c.line === null) return;
+      const h = knownHash(c.sonarLineHash);
+      if (p === 2 && h === null) return;
+      const run = lineRun(
+        bucketAt(buckets, key(c.path, c.ruleKey, p === 2 ? h : c.message)),
+        c.line,
+      );
+      run.cands.push(ci);
+      run.free++;
+      this.runOf[ci] = run;
+    });
+    for (const b of buckets.values()) {
+      b.right = Int32Array.from({ length: b.lines.length + 1 }, (_, i) => i);
+      b.left = Int32Array.from({ length: b.lines.length + 1 }, (_, i) => i);
+    }
+    return buckets;
+  }
+
+  /** Passes 2 and 3: settles one level per distance, nearest first, until no cursor is left. */
+  private walk(cursors: ReadonlyMap<LineBucket, Cursor[]>, groups: number, maxDistance: number) {
+    const heap = new CursorHeap();
+    for (const list of cursors.values()) for (const c of list) enqueue(heap, c, maxDistance);
+    const uf = new UnionFind(this.cands.length + groups);
+    while (heap.size > 0) {
+      const d = heap.peek()?.d ?? Infinity;
+      const { reach, advanced } = popLevel(heap, d, maxDistance);
+      this.settle(uf, reach);
+      for (const c of advanced) enqueue(heap, c, maxDistance);
+    }
+  }
+
+  /** Passes 2 (same known hash, any distance) and 3 (same message, at most 20 lines apart). */
+  distancePass(p: 2 | 3): void {
+    this.pass = p;
+    this.runOf = new Array<Run | undefined>(this.cands.length);
+    const maxDistance = p === 3 ? MESSAGE_PASS_MAX_LINES : Infinity;
+    const buckets = this.lineBuckets(p);
+    const groups = this.groupsOf((e) => distanceEvidence(e, p));
+    const cursors = cursorsOf(groups, buckets, p);
+    markContested(cursors, p, maxDistance);
+    this.walk(cursors, groups.length, maxDistance);
+    for (const b of buckets.values()) {
+      for (const run of b.runs) if (run.contested) for (const ci of run.cands) this.take(ci);
+    }
+  }
+}
+
 /**
  * Spec §10.4. The result depends only on the content of items and candidates: items are ordered
  * by `(path, line, ref)` and candidates by `(line, id)` before anything is paired.
@@ -420,478 +1085,23 @@ export function matchStatuses(
   items: readonly StatusItem[],
   candidates: readonly StatusCandidate[],
 ): StatusMatch[] {
-  if (items.length > STATUS_IMPORT_MAX_ITEMS) {
-    throw new Error(`matchStatuses: more than ${STATUS_IMPORT_MAX_ITEMS} items`);
-  }
-  if (candidates.length > STATUS_IMPORT_MAX_CANDIDATES) {
-    throw new Error(`matchStatuses: more than ${STATUS_IMPORT_MAX_CANDIDATES} candidates`);
-  }
-  const refs = new Set<string>();
-  for (const i of items) {
-    if (refs.has(i.ref)) throw new Error(`matchStatuses: duplicate ref ${i.ref}`);
-    refs.add(i.ref);
-  }
-  const cands = [...candidates].sort((a, b) => cmpNullable(a.line, b.line) || cmp(a.id, b.id));
-  for (let k = 1; k < cands.length; k++) {
-    if (cands[k]?.id === cands[k - 1]?.id) {
-      throw new Error(`matchStatuses: duplicate candidate ${cands[k]?.id ?? ''}`);
-    }
-  }
-  const C = cands.length;
-
-  const order: Entry[] = [...items]
-    .sort((a, b) => cmpNullable(a.path, b.path) || cmpNullable(a.line, b.line) || cmp(a.ref, b.ref))
-    .map((item, n) => ({
-      item,
-      n,
-      targets: [...new Set(item.ruleKeys)].sort(cmp),
-      hash: knownHash(item.sonarLineHash),
-      done: false,
-    }));
-
-  const result = new Map<string, Omit<StatusMatch, 'competitorsUnknown'>>();
-  /** Candidates paired, or held back by an ambiguous component. */
-  const taken = new Uint8Array(C);
-  /** The level at which a candidate was last the only option of some group (ruling S5). */
-  const forced = new Int32Array(C).fill(-1);
-  /** Passes 2 and 3: the bucket line each candidate is in. */
-  let runOf: (Run | undefined)[] = [];
-  let level = 0;
-  let pass: Pass = 0;
-
-  const settleEntry = (e: Entry, candidate: number | null, ambiguous: boolean) => {
-    e.done = true;
-    const ref = e.item.ref;
-    const c = candidate === null ? null : (cands[candidate] ?? null);
-    result.set(ref, {
-      ref,
-      candidateId: c?.id ?? null,
-      pass: c === null ? null : pass,
-      ambiguous,
-    });
-  };
-  const openEntries = (g: Group) => g.entries.filter((e) => !e.done);
-  /** Rulings S8 and S8c: every entry carries the same comment (`null` equals absent). */
-  const sameComment = (entries: readonly Entry[]): boolean =>
-    entries.every((e) => (e.item.commentKey ?? null) === (entries[0]?.item.commentKey ?? null));
-  const markAmbiguous = (g: Group) => {
-    for (const e of openEntries(g)) settleEntry(e, null, true);
-  };
-  const take = (ci: number) => {
-    if (taken[ci] === 1) return;
-    taken[ci] = 1;
-    const run = runOf[ci];
-    if (run === undefined) return;
-    run.free--;
-    if (run.free === 0 && run.slot !== null) {
-      const { bucket, index } = run.slot;
-      bucket.right[index] = index + 1;
-      bucket.left[index + 1] = index;
-    }
-  };
-  const compact = (run: Run) => {
-    if (run.cands.some((ci) => taken[ci] === 1))
-      run.cands = run.cands.filter((ci) => taken[ci] !== 1);
-  };
-  /** Groups of the open items by `evidence`, in content order; `null` evidence skips the item. */
-  const groupsOf = (evidence: (e: Entry) => string | null): Group[] => {
-    const byKey = new Map<string, Group>();
-    for (const e of order) {
-      if (e.done) continue;
-      const k = evidence(e);
-      if (k === null) continue;
-      const full = key(k, e.item.status, ...e.targets);
-      const g = byKey.get(full);
-      if (g) g.entries.push(e);
-      else byKey.set(full, { entries: [e], status: e.item.status, node: 0, runs: [] });
-    }
-    const groups = [...byKey.values()];
-    groups.forEach((g, k) => (g.node = C + k));
-    return groups;
-  };
-
-  /** Settles one level of equally strong evidence: components, ambiguity, pairing. */
-  const settle = (uf: UnionFind, reach: ReadonlyMap<Group, readonly Run[]>) => {
-    level++;
-    uf.reset();
-    const visited: Run[] = [];
-    const linked: Group[] = [];
-    for (const [g, runs] of reach) {
-      let any = false;
-      for (const run of runs) {
-        if (run.stamp !== level) {
-          run.stamp = level;
-          // A contested run is never paired nor taken during its pass: one node stands for it.
-          if (!run.contested) compact(run);
-          const first = run.cands[0];
-          if (first === undefined) continue;
-          visited.push(run);
-          if (!run.contested) for (const ci of run.cands) uf.union(first, ci);
-        }
-        const first = run.cands[0];
-        if (first === undefined) continue;
-        uf.union(g.node, first);
-        any = true;
-      }
-      if (any) linked.push(g);
-    }
-    const components = new Map<number, Component>();
-    const componentOf = (node: number): Component => {
-      const root = uf.find(node);
-      let c = components.get(root);
-      if (!c) {
-        c = { groups: [], runs: [], statuses: new Set(), contested: false };
-        components.set(root, c);
-      }
-      return c;
-    };
-    for (const g of linked) {
-      const c = componentOf(g.node);
-      c.groups.push(g);
-      c.statuses.add(g.status);
-    }
-    for (const run of visited) {
-      const c = componentOf(run.cands[0] ?? 0);
-      if (run.contested) {
-        c.contested = true;
-        continue;
-      }
-      c.runs.push(run);
-    }
-    for (const c of components.values()) {
-      if (c.contested || c.statuses.size > 1) {
-        for (const g of c.groups) markAmbiguous(g);
-        for (const run of c.runs) for (const ci of run.cands) take(ci);
-        continue;
-      }
-      if (!pairFully(c, reach)) pairEachItem(c, reach);
-    }
-  };
-
-  /**
-   * Ruling S6: a component whose items all ask the same resolved status (no `open` competitor,
-   * no item marked `competitorsUnknown`) and carry the same comment (rulings S8 and S8c:
-   * `commentKey`, `null` equals `null`), whose every item reaches every one of its candidates,
-   * with at least as many items as candidates. Every candidate then receives that status
-   * whichever pairing is chosen, so the result does not depend on the pairing: items in content
-   * order pair with candidates by (line, id), and the items left over stay unpaired. Which of the
-   * twins' SonarQube keys (and dates) ends in which issue's changelog is arbitrary, and nothing
-   * else is. Returns
-   * `false`, pairing nothing, when the component does not qualify.
-   */
-  const pairFully = (c: Component, reach: ReadonlyMap<Group, readonly Run[]>): boolean => {
-    const status = c.groups[0]?.status;
-    if (status === undefined || status === 'open') return false;
-    const entries: Entry[] = [];
-    for (const g of c.groups) {
-      for (const e of openEntries(g)) {
-        if (e.item.competitorsUnknown === true) return false;
-        entries.push(e);
-      }
-    }
-    // Ruling S8: twins whose comments differ are not interchangeable.
-    if (!sameComment(entries)) return false;
-    // A group's runs are disjoint, so its size is the sum of their lengths.
-    const sizes: number[] = [];
-    for (const g of c.groups) {
-      let size = 0;
-      for (const run of reach.get(g) ?? []) size += run.cands.length;
-      if (size > entries.length) return false;
-      sizes.push(size);
-    }
-    // The component's runs may overlap (passes 0 and 1: a candidate is in its `*` run and in its
-    // hash run), so its candidates are counted once each.
-    const all = new Set<number>();
-    for (const run of c.runs) for (const ci of run.cands) all.add(ci);
-    if (all.size === 0 || all.size > entries.length) return false;
-    // Every group reaching as many distinct candidates as the component has reaches all of them.
-    if (sizes.some((s) => s !== all.size)) return false;
-    entries.sort((a, b) => a.n - b.n);
-    const ordered = [...all].sort((a, b) => a - b);
-    ordered.forEach((ci, k) => {
-      const e = entries[k];
-      if (e === undefined) return;
-      take(ci);
-      settleEntry(e, ci, false);
-    });
-    return true;
-  };
-
-  /**
-   * Rulings S2 and S5, in a component asking one status: every group (items of identical
-   * evidence) keeps the candidates it reaches minus those that are the only option of another
-   * group, and pairs only when exactly one is left; items left with the same one candidate pair
-   * the first of them only when all carry the same comment (ruling S8b), else all are ambiguous
-   * and the candidate is held back. Decided before anything is taken, so the
-   * result does not depend on the order of the groups. A group's runs are disjoint (distinct
-   * rules, hash classes or lines), so its size is the sum of their lengths.
-   */
-  const pairEachItem = (c: Component, reach: ReadonlyMap<Group, readonly Run[]>) => {
-    const sizes = new Map<Group, number>();
-    for (const g of c.groups) {
-      let size = 0;
-      let only = -1;
-      for (const run of reach.get(g) ?? []) {
-        size += run.cands.length;
-        if (only === -1) only = run.cands[0] ?? -1;
-      }
-      sizes.set(g, size);
-      if (size === 1 && only !== -1) forced[only] = level;
-    }
-    const held = new Set<Run>();
-    const entries: { e: Entry; ci: number }[] = [];
-    for (const g of c.groups) {
-      const alone = sizes.get(g) === 1;
-      let one = -1;
-      let many = false;
-      for (const run of reach.get(g) ?? []) {
-        for (const ci of run.cands) {
-          if ((!alone && forced[ci] === level) || ci === one) continue;
-          if (one !== -1) {
-            many = true;
-            break;
-          }
-          one = ci;
-        }
-        if (many) break;
-      }
-      if (one === -1 || many) {
-        markAmbiguous(g);
-        for (const run of reach.get(g) ?? []) held.add(run);
-        continue;
-      }
-      for (const e of openEntries(g)) entries.push({ e, ci: one });
-    }
-    // Items left with the same one candidate ask the same status: the first by content pairs,
-    // provided they say the same (ruling S8b); else none can be told from the others, so all are
-    // ambiguous and the candidate is held back.
-    entries.sort((a, b) => a.e.n - b.e.n);
-    const tied = new Map<number, Entry[]>();
-    for (const { e, ci } of entries) {
-      const list = tied.get(ci);
-      if (list) list.push(e);
-      else tied.set(ci, [e]);
-    }
-    for (const [ci, list] of tied) {
-      if (taken[ci] === 1) continue;
-      take(ci);
-      const [first] = list;
-      if (first === undefined) continue;
-      if (sameComment(list)) settleEntry(first, ci, false);
-      else for (const e of list) settleEntry(e, null, true);
-    }
-    // An ambiguous item's candidates are held back after the pairs: one may be another's only one.
-    for (const run of held) for (const ci of run.cands) take(ci);
-  };
-
-  // Passes 0 and 1: one level each, same line.
-  for (const p of [0, 1] as const) {
-    pass = p;
-    runOf = [];
-    const runs = new Map<string, Run>();
-    const addTo = (k: string, ci: number) => {
-      const run = runs.get(k);
-      if (run) run.cands.push(ci);
-      else runs.set(k, { cands: [ci], free: 1, stamp: -1, slot: null, contested: false });
-    };
-    cands.forEach((c, ci) => {
-      if (taken[ci] === 1) return;
-      const base = [c.path, c.line, c.ruleKey, p === 0 ? c.message : null];
-      const h = knownHash(c.sonarLineHash);
-      addTo(key(...base, '*'), ci);
-      addTo(key(...base, h === null ? '?' : `#${h}`), ci);
-    });
-    const groups = groupsOf((e) =>
-      p === 0 && e.item.message === null
-        ? null
-        : key(e.item.path, e.item.line, p === 0 ? e.item.message : null, e.hash),
-    );
-    const reach = new Map<Group, Run[]>();
-    for (const g of groups) {
-      const i = g.entries[0];
-      if (i === undefined) continue;
-      for (const t of i.targets) {
-        const base = [i.item.path, i.item.line, t, p === 0 ? i.item.message : null];
-        // A known hash agrees with an equal or unknown one; an unknown hash agrees with any.
-        const ks =
-          i.hash === null ? [key(...base, '*')] : [key(...base, '?'), key(...base, `#${i.hash}`)];
-        for (const k of ks) {
-          const run = runs.get(k);
-          if (run) g.runs.push(run);
-        }
-      }
-      if (g.runs.length > 0) reach.set(g, g.runs);
-    }
-    settle(new UnionFind(C + groups.length), reach);
-  }
-
-  // Passes 2 (same known hash, any distance) and 3 (same message, at most 20 lines apart).
-  for (const p of [2, 3] as const) {
-    pass = p;
-    runOf = new Array<Run | undefined>(C);
-    const maxDistance = p === 3 ? MESSAGE_PASS_MAX_LINES : Infinity;
-    const buckets = new Map<string, LineBucket>();
-    cands.forEach((c, ci) => {
-      if (taken[ci] === 1 || c.line === null) return;
-      const h = knownHash(c.sonarLineHash);
-      if (p === 2 && h === null) return;
-      const k = key(c.path, c.ruleKey, p === 2 ? h : c.message);
-      let b = buckets.get(k);
-      if (!b) {
-        b = { lines: [], runs: [], right: new Int32Array(0), left: new Int32Array(0) };
-        buckets.set(k, b);
-      }
-      // Candidates come by line, so each line's run is the bucket's last one or a new one.
-      let run = b.lines.at(-1) === c.line ? b.runs.at(-1) : undefined;
-      if (run === undefined) {
-        const slot = { bucket: b, index: b.lines.length };
-        run = { cands: [], free: 0, stamp: -1, slot, contested: false };
-        b.lines.push(c.line);
-        b.runs.push(run);
-      }
-      run.cands.push(ci);
-      run.free++;
-      runOf[ci] = run;
-    });
-    for (const b of buckets.values()) {
-      b.right = Int32Array.from({ length: b.lines.length + 1 }, (_, i) => i);
-      b.left = Int32Array.from({ length: b.lines.length + 1 }, (_, i) => i);
-    }
-    const groups = groupsOf((e) => {
-      if (e.item.line === null) return null;
-      if (p === 2) return e.hash === null ? null : key(e.item.path, e.item.line, e.hash);
-      return e.item.message === null ? null : key(e.item.path, e.item.line, e.item.message);
-    });
-    const cursors = new Map<LineBucket, Cursor[]>();
-    for (const g of groups) {
-      const i = g.entries[0];
-      if (i === undefined || i.item.line === null) continue;
-      for (const t of i.targets) {
-        const b = buckets.get(key(i.item.path, t, p === 2 ? i.hash : i.item.message));
-        if (b === undefined) continue;
-        const at = lowerBound(b.lines, i.item.line);
-        const list = cursors.get(b) ?? [];
-        list.push({ group: g, bucket: b, line: i.item.line, r: at, l: at - 1, d: 0 });
-        cursors.set(b, list);
-      }
-    }
-
-    // Contested candidates: items of different statuses reach them in this pass, at any
-    // distance. They are never paired, make the component they fall in at any level ambiguous,
-    // and are held back once the pass is over.
-    for (const [b, list] of cursors) {
-      if (p === 2) {
-        if (new Set(list.map((c) => c.group.status)).size > 1)
-          for (const run of b.runs) run.contested = true;
-        continue;
-      }
-      // Pass 3: a sliding window of the cursors within 20 lines of each candidate line.
-      const sorted = [...list].sort((x, y) => x.line - y.line);
-      const count = new Map<StatusItemStatus, number>();
-      const bump = (s: StatusItemStatus, by: number) => {
-        const v = (count.get(s) ?? 0) + by;
-        if (v === 0) count.delete(s);
-        else count.set(s, v);
-      };
-      let lo = 0;
-      let hi = 0;
-      b.lines.forEach((line, index) => {
-        for (let c = sorted[hi]; c !== undefined && c.line <= line + maxDistance; c = sorted[hi]) {
-          bump(c.group.status, 1);
-          hi++;
-        }
-        for (
-          let c = sorted[lo];
-          c !== undefined && lo < hi && c.line < line - maxDistance;
-          c = sorted[lo]
-        ) {
-          bump(c.group.status, -1);
-          lo++;
-        }
-        const run = b.runs[index];
-        if (run && count.size > 1) run.contested = true;
-      });
-    }
-
-    /** The distance of the cursor's nearest line with free candidates, or `Infinity`. */
-    const nearest = (c: Cursor): number => {
-      const b = c.bucket;
-      const r = findRight(b, c.r);
-      const l = c.l < 0 ? -1 : findLeft(b, c.l);
-      c.r = r;
-      c.l = l;
-      const dr = r < b.lines.length ? (b.lines[r] ?? Infinity) - c.line : Infinity;
-      const dl = l >= 0 ? c.line - (b.lines[l] ?? -Infinity) : Infinity;
-      return Math.min(dr, dl);
-    };
-    const heap = new CursorHeap();
-    const enqueue = (c: Cursor) => {
-      if (openEntries(c.group).length === 0) return;
-      c.d = nearest(c);
-      if (Number.isFinite(c.d) && c.d <= maxDistance) heap.push(c);
-    };
-    for (const list of cursors.values()) for (const c of list) enqueue(c);
-
-    const uf = new UnionFind(C + groups.length);
-    while (heap.size > 0) {
-      const d = heap.peek()?.d ?? Infinity;
-      const reach = new Map<Group, Run[]>();
-      const advanced: Cursor[] = [];
-      while ((heap.peek()?.d ?? NaN) === d) {
-        const c = heap.pop();
-        if (c === undefined || openEntries(c.group).length === 0) continue;
-        // Lines emptied since the cursor was queued are skipped: re-queue it farther.
-        if (nearest(c) > d) {
-          enqueue(c);
-          continue;
-        }
-        const runs = reach.get(c.group) ?? [];
-        const b = c.bucket;
-        if (c.r < b.lines.length && (b.lines[c.r] ?? Infinity) - c.line === d) {
-          const run = b.runs[c.r];
-          if (run) runs.push(run);
-          c.r++;
-        }
-        if (c.l >= 0 && c.line - (b.lines[c.l] ?? -Infinity) === d) {
-          const run = b.runs[c.l];
-          if (run) runs.push(run);
-          c.l--;
-        }
-        reach.set(c.group, runs);
-        advanced.push(c);
-      }
-      settle(uf, reach);
-      for (const c of advanced) enqueue(c);
-    }
-    for (const b of buckets.values()) {
-      for (const run of b.runs) if (run.contested) for (const ci of run.cands) take(ci);
-    }
-  }
-
-  // Spec §10.5: a primary and its duplicate paired to items of different statuses. Mirroring
-  // the primary's status onto the duplicate would give it a status its own counterpart does not
-  // have; both items are ambiguous instead.
-  const pairedTo = new Map<string, Entry>();
-  for (const e of order) {
-    const id = result.get(e.item.ref)?.candidateId;
-    if (id !== null && id !== undefined) pairedTo.set(id, e);
-  }
-  for (const c of cands) {
-    const primaryId = c.duplicateOf ?? null;
-    if (primaryId === null) continue;
-    const dup = pairedTo.get(c.id);
-    const primary = pairedTo.get(primaryId);
-    if (dup === undefined || primary === undefined) continue;
-    if (dup.item.status === primary.item.status) continue;
-    for (const e of [dup, primary]) {
-      result.set(e.item.ref, { ref: e.item.ref, candidateId: null, pass: null, ambiguous: true });
-    }
-  }
+  checkItems(items, candidates);
+  const cands = candidateOrder(candidates);
+  const order = contentOrder(items);
+  const matcher = new StatusMatcher(cands, order);
+  for (const p of [0, 1] as const) matcher.sameLinePass(p);
+  for (const p of [2, 3] as const) matcher.distancePass(p);
+  splitMirroredStatuses(order, cands, matcher.result);
 
   const unknown = unknownComponents(order, cands);
-  holdMirroredDuplicates(order, cands, taken, result, unknown);
+  holdMirroredDuplicates(order, cands, matcher.taken, matcher.result, unknown);
   return items.map((i) => ({
-    ...(result.get(i.ref) ?? { ref: i.ref, candidateId: null, pass: null, ambiguous: false }),
+    ...(matcher.result.get(i.ref) ?? {
+      ref: i.ref,
+      candidateId: null,
+      pass: null,
+      ambiguous: false,
+    }),
     competitorsUnknown: unknown.has(i.ref),
   }));
 }

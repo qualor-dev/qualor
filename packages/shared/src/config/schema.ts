@@ -529,9 +529,14 @@ export const configSchema = z
 export type QualorConfigInput = z.input<typeof configSchema>;
 export type QualorConfig = z.output<typeof configSchema>;
 
+/** One indented `path: message` line per issue. */
+function issueLines(issues: readonly { path: string; message: string }[]): string {
+  return issues.map((i) => `  ${i.path}: ${i.message}`).join('\n');
+}
+
 export class ConfigError extends Error {
   constructor(readonly issues: { path: string; message: string }[]) {
-    super(`invalid qualor.yml:\n${issues.map((i) => `  ${i.path}: ${i.message}`).join('\n')}`);
+    super(`invalid qualor.yml:\n${issueLines(issues)}`);
     this.name = 'ConfigError';
   }
 }

@@ -102,6 +102,97 @@ export function engineOf(ruleKey: string): string {
   return colon < 0 ? '' : ruleKey.slice(0, colon);
 }
 
+/** A keys file's rule ids. */
+function keysFile(name: string): ReadonlySet<string> {
+  const list = KEYS_FILES[name];
+  if (list === undefined)
+    throw new Error(`sonarqube.json: unknown keysFile or defaultKeysFile ${name}`);
+  return new Set(list);
+}
+
+type Table = z.infer<typeof tableSchema>;
+
+/** Per engine, the bundled rule ids and those the bundled configuration runs. */
+function bundledKeys(
+  repositories: Table['repositories'],
+): Map<string, { keys: Set<string>; run: Set<string> }> {
+  const bundled = new Map<string, { keys: Set<string>; run: Set<string> }>();
+  for (const r of repositories) {
+    if (r.defaultKeysFile === undefined) continue;
+    if (r.keysFile === undefined)
+      throw new Error(`sonarqube.json: ${r.repository} has a defaultKeysFile without a keysFile`);
+    const entry = bundled.get(r.engine) ?? { keys: new Set<string>(), run: new Set<string>() };
+    for (const k of keysFile(r.keysFile)) entry.keys.add(k);
+    for (const k of keysFile(r.defaultKeysFile)) entry.run.add(k);
+    bundled.set(r.engine, entry);
+  }
+  return bundled;
+}
+
+/** The curated table's targets, by SonarQube key; a key named twice is an error. */
+function tableRules(entries: Table['rules']): Map<string, RuleTarget[]> {
+  const rules = new Map<string, RuleTarget[]>();
+  for (const entry of entries) {
+    for (const key of entry.sonar) {
+      if (rules.has(key)) throw new Error(`sonarqube.json names ${key} twice`);
+      rules.set(
+        key,
+        entry.qualor.map((q) => ({
+          key: q,
+          relation: entry.relation,
+          reviewed: entry.reviewed,
+          source: 'table' as const,
+        })),
+      );
+    }
+  }
+  return rules;
+}
+
+/** Union-find over keys: a union makes the smaller root the parent of the larger. */
+class KeyUnion {
+  readonly #parent = new Map<string, string>();
+
+  /** `x` as a component of its own, unless it is known already. */
+  add(x: string): void {
+    if (!this.#parent.has(x)) this.#parent.set(x, x);
+  }
+
+  find(x: string): string {
+    const parent = this.#parent;
+    let root = x;
+    for (let p = parent.get(root); p !== undefined && p !== root; p = parent.get(root)) root = p;
+    for (let y = x; y !== root;) {
+      const next = parent.get(y) ?? root;
+      parent.set(y, root);
+      y = next;
+    }
+    return root;
+  }
+
+  union(x: string, y: string): void {
+    const a = this.find(x);
+    const b = this.find(y);
+    if (a !== b) this.#parent.set(a < b ? b : a, a < b ? a : b);
+  }
+
+  /** Each key → its component's key (its smallest member), and each component's sorted members. */
+  components(): { componentOf: Map<string, string>; members: Map<string, readonly string[]> } {
+    const members = new Map<string, string[]>();
+    for (const t of this.#parent.keys())
+      members.set(this.find(t), [...(members.get(this.find(t)) ?? []), t]);
+    const componentOf = new Map<string, string>();
+    const keyed = new Map<string, readonly string[]>();
+    for (const list of members.values()) {
+      list.sort();
+      const key = list[0] ?? '';
+      keyed.set(key, list);
+      for (const t of list) componentOf.set(t, key);
+    }
+    return { componentOf, members: keyed };
+  }
+}
+
 export class SonarMapping {
   readonly #languages: ReadonlyMap<string, SonarLanguage>;
   readonly #aliases: ReadonlyMap<string, string>;
@@ -126,88 +217,47 @@ export class SonarMapping {
   constructor(table: z.infer<typeof tableSchema>) {
     this.#languages = new Map(Object.entries(table.languages));
     this.#aliases = new Map(Object.entries(table.aliases));
-    const keysFile = (name: string): ReadonlySet<string> => {
-      const list = KEYS_FILES[name];
-      if (list === undefined)
-        throw new Error(`sonarqube.json: unknown keysFile or defaultKeysFile ${name}`);
-      return new Set(list);
-    };
     this.#repositories = new Map(
       table.repositories.map((r) => {
         const keys = r.keysFile === undefined ? null : keysFile(r.keysFile);
         return [r.repository, { engine: r.engine, keys }] as const;
       }),
     );
-    const bundled = new Map<string, { keys: Set<string>; run: Set<string> }>();
-    for (const r of table.repositories) {
-      if (r.defaultKeysFile === undefined) continue;
-      if (r.keysFile === undefined)
-        throw new Error(`sonarqube.json: ${r.repository} has a defaultKeysFile without a keysFile`);
-      const entry = bundled.get(r.engine) ?? { keys: new Set<string>(), run: new Set<string>() };
-      for (const k of keysFile(r.keysFile)) entry.keys.add(k);
-      for (const k of keysFile(r.defaultKeysFile)) entry.run.add(k);
-      bundled.set(r.engine, entry);
-    }
-    this.#bundled = bundled;
-    const rules = new Map<string, RuleTarget[]>();
-    for (const entry of table.rules) {
-      for (const key of entry.sonar) {
-        if (rules.has(key)) throw new Error(`sonarqube.json names ${key} twice`);
-        rules.set(
-          key,
-          entry.qualor.map((q) => ({
-            key: q,
-            relation: entry.relation,
-            reviewed: entry.reviewed,
-            source: 'table' as const,
-          })),
-        );
-      }
-    }
+    this.#bundled = bundledKeys(table.repositories);
+    const rules = tableRules(table.rules);
     this.#rules = rules;
+    const { componentOf, members, sonarByTarget } = this.#components(rules.keys());
+    this.#componentOf = componentOf;
+    this.#members = members;
+    this.#sonarByTarget = sonarByTarget;
+  }
 
-    // Ruling S14: union-find over the Qualor targets; every target of one SonarQube key (in any
-    // spelling, the repository target included) is joined. A target the table never names is a
-    // component of its own, keyed by itself, so a repository-mapped rule needs no enumeration.
-    const parent = new Map<string, string>();
-    const find = (x: string): string => {
-      let root = x;
-      for (let p = parent.get(root); p !== undefined && p !== root; p = parent.get(root)) root = p;
-      for (let y = x; y !== root;) {
-        const next = parent.get(y) ?? root;
-        parent.set(y, root);
-        y = next;
-      }
-      return root;
-    };
+  /**
+   * Ruling S14: union-find over the Qualor targets; every target of one SonarQube key (in any
+   * spelling, the repository target included) is joined. A target the table never names is a
+   * component of its own, keyed by itself, so a repository-mapped rule needs no enumeration.
+   */
+  #components(canonicals: Iterable<string>): {
+    componentOf: Map<string, string>;
+    members: Map<string, readonly string[]>;
+    sonarByTarget: Map<string, readonly string[]>;
+  } {
+    const union = new KeyUnion();
     const sonarByTarget = new Map<string, string[]>();
-    for (const canonical of rules.keys()) {
+    for (const canonical of canonicals) {
       for (const spelling of this.#spellings(canonical)) {
         const keys = this.targets(spelling).map((t) => t.key);
         for (const k of keys) {
-          if (!parent.has(k)) parent.set(k, k);
+          union.add(k);
           sonarByTarget.set(k, [...(sonarByTarget.get(k) ?? []), spelling]);
         }
-        for (const k of keys.slice(1)) {
-          const a = find(keys[0] ?? k);
-          const b = find(k);
-          if (a !== b) parent.set(a < b ? b : a, a < b ? a : b);
-        }
+        for (const k of keys.slice(1)) union.union(keys[0] ?? k, k);
       }
     }
-    const members = new Map<string, string[]>();
-    for (const t of parent.keys()) members.set(find(t), [...(members.get(find(t)) ?? []), t]);
-    const componentOf = new Map<string, string>();
-    const keyed = new Map<string, readonly string[]>();
-    for (const list of members.values()) {
-      list.sort();
-      const key = list[0] ?? '';
-      keyed.set(key, list);
-      for (const t of list) componentOf.set(t, key);
-    }
-    this.#componentOf = componentOf;
-    this.#members = keyed;
-    this.#sonarByTarget = new Map([...sonarByTarget].map(([t, l]) => [t, [...new Set(l)]]));
+    return {
+      ...union.components(),
+      sonarByTarget: new Map([...sonarByTarget].map(([t, l]) => [t, [...new Set(l)]])),
+    };
   }
 
   /** `canonical` (`java:S1`) and its spellings through every alias (`squid:S1`). */
@@ -281,10 +331,7 @@ export class SonarMapping {
     for (const t of wanted) {
       const e = engineOf(t);
       const id = t.slice(e.length + 1);
-      if (e === '' || id.length === 0) continue;
-      for (const [repository, repo] of this.#repositories) {
-        if (repo.engine === e) out.add(`${repository}:${id}`);
-      }
+      if (e !== '' && id.length > 0) this.#addRepositoryKeys(e, id, out);
     }
     // Every key listed maps to one of the wanted targets (a repository key also through the table).
     return [...out].filter((k) => this.targets(k).some((t) => wanted.has(t.key))).sort();
@@ -327,11 +374,16 @@ export class SonarMapping {
       const e = engineOf(t);
       const id = t.slice(e.length + 1);
       if (e === '' || id.length === 0 || id.length > MAX_RULE_ID) continue;
-      for (const [repository, repo] of this.#repositories) {
-        if (repo.engine === e) out.add(`${repository}:${id}`);
-      }
+      this.#addRepositoryKeys(e, id, out);
     }
     return [...out].filter((k) => this.component(k) === key).sort();
+  }
+
+  /** Adds `<repository>:<id>` to `out` for every repository of the engine `e`. */
+  #addRepositoryKeys(e: string, id: string, out: Set<string>): void {
+    for (const [repository, repo] of this.#repositories) {
+      if (repo.engine === e) out.add(`${repository}:${id}`);
+    }
   }
 }
 

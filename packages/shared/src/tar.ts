@@ -245,6 +245,81 @@ function parseHeader(block: Buffer): Header | null {
   return { name: prefix === '' ? name : `${prefix}/${name}`, size, type };
 }
 
+/** A pax header's records, read and checked ({@link checkPax}). */
+async function readPax(reader: Reader, size: number): Promise<void> {
+  if (size > KEEP_MAX_BYTES) throw new TarError('A pax header is larger than 1 MiB');
+  const data = await reader.exactly(size);
+  if ((data?.length ?? 0) !== size) throw new TarError('The archive ends early');
+  if (data) checkPax(data);
+}
+
+/** A `keep` entry: its whole data, read and handed to `onFile`. */
+async function keepEntry(
+  reader: Reader,
+  name: string,
+  size: number,
+  onFile: OnTarEntry,
+): Promise<void> {
+  if (size > KEEP_MAX_BYTES) throw new TarError(`${name} is larger than 1 MiB`);
+  const data = Buffer.from((await reader.exactly(size)) ?? Buffer.alloc(0));
+  if (data.length !== size) throw new TarError('The archive ends early');
+  await onFile({ want: 'keep', name, size, data });
+}
+
+/**
+ * A `stream` entry: its data, read as `onFile` asks for it until `onFile` settles. Returns the
+ * bytes of the entry `onFile` left unread.
+ */
+async function streamEntry(
+  reader: Reader,
+  name: string,
+  size: number,
+  onFile: OnTarEntry,
+): Promise<number> {
+  let unread = size;
+  let open = true;
+  const body: AsyncIterable<Buffer> = {
+    [Symbol.asyncIterator]: () => ({
+      next: async (): Promise<IteratorResult<Buffer, undefined>> => {
+        if (!open) throw new Error(`${name} was read after its onFile settled`);
+        if (unread === 0) return { done: true, value: undefined };
+        const piece = await reader.upTo(unread);
+        unread -= piece.length;
+        return { done: false, value: piece };
+      },
+      return: (): Promise<IteratorResult<Buffer, undefined>> =>
+        Promise.resolve({ done: true, value: undefined }),
+    }),
+  };
+  try {
+    await onFile({ want: 'stream', name, size, body });
+  } finally {
+    open = false;
+  }
+  return unread;
+}
+
+/** One entry's data, as its type and `want` decide. Returns the bytes of it left to skip. */
+async function readEntry(
+  reader: Reader,
+  header: Header,
+  want: TarWant,
+  onFile: OnTarEntry,
+): Promise<number> {
+  const name = normalName(header.name);
+  const wanted = header.type === 'file' ? want(name) : 'skip';
+  if (header.type === 'pax') {
+    await readPax(reader, header.size);
+    return 0;
+  }
+  if (wanted === 'keep') {
+    await keepEntry(reader, name, header.size, onFile);
+    return 0;
+  }
+  if (wanted === 'stream') return streamEntry(reader, name, header.size, onFile);
+  return header.size;
+}
+
 /**
  * Reads a gzipped tar archive from `chunks`, in one pass, as the bytes arrive. Regular files
  * (ustar and GNU tar) are offered to `want` under their {@link normalName}; directories and pax
@@ -267,42 +342,7 @@ export async function readTarGz(
       const header = parseHeader(block);
       if (header === null) return;
       const padding = (BLOCK - (header.size % BLOCK)) % BLOCK;
-      const name = normalName(header.name);
-      const wanted = header.type === 'file' ? want(name) : 'skip';
-      let unread = header.size;
-      if (header.type === 'pax') {
-        if (header.size > KEEP_MAX_BYTES) throw new TarError('A pax header is larger than 1 MiB');
-        const data = await reader.exactly(header.size);
-        if ((data?.length ?? 0) !== header.size) throw new TarError('The archive ends early');
-        if (data) checkPax(data);
-        unread = 0;
-      } else if (wanted === 'keep') {
-        if (header.size > KEEP_MAX_BYTES) throw new TarError(`${name} is larger than 1 MiB`);
-        const data = Buffer.from((await reader.exactly(header.size)) ?? Buffer.alloc(0));
-        if (data.length !== header.size) throw new TarError('The archive ends early');
-        unread = 0;
-        await onFile({ want: 'keep', name, size: header.size, data });
-      } else if (wanted === 'stream') {
-        let open = true;
-        const body: AsyncIterable<Buffer> = {
-          [Symbol.asyncIterator]: () => ({
-            next: async (): Promise<IteratorResult<Buffer, undefined>> => {
-              if (!open) throw new Error(`${name} was read after its onFile settled`);
-              if (unread === 0) return { done: true, value: undefined };
-              const piece = await reader.upTo(unread);
-              unread -= piece.length;
-              return { done: false, value: piece };
-            },
-            return: (): Promise<IteratorResult<Buffer, undefined>> =>
-              Promise.resolve({ done: true, value: undefined }),
-          }),
-        };
-        try {
-          await onFile({ want: 'stream', name, size: header.size, body });
-        } finally {
-          open = false;
-        }
-      }
+      const unread = await readEntry(reader, header, want, onFile);
       await reader.skip(unread + padding);
     }
   } finally {

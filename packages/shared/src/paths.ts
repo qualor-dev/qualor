@@ -47,21 +47,27 @@ function toSlashes(p: string): string {
 }
 
 /**
+ * An absolute path `p` (slashes, NFC) made relative to `repoRoot`, compared case-insensitively for
+ * a Windows path. Throws PathError without a root, or for a path outside it.
+ */
+function relativeToRoot(p: string, input: string, repoRoot: string | undefined): string {
+  if (repoRoot === undefined) throw new PathError('absolute', input);
+  const root = toSlashes(repoRoot).normalize('NFC').replace(/\/+$/, '');
+  const windows = WINDOWS_ABSOLUTE.test(p);
+  const matches = windows
+    ? p.toLowerCase().startsWith(`${root.toLowerCase()}/`)
+    : p.startsWith(`${root}/`);
+  if (!matches) throw new PathError('outside-root', input);
+  return p.slice(root.length + 1);
+}
+
+/**
  * Turns a path produced by a tool (absolute, Windows-style, "./"-prefixed, ...) into a
  * canonical repo-relative path. Throws PathError when that is impossible.
  */
 export function normalizeRepoPath(input: string, repoRoot?: string): string {
   let p = toSlashes(input).normalize('NFC');
-  if (isAbsolute(p)) {
-    if (repoRoot === undefined) throw new PathError('absolute', input);
-    const root = toSlashes(repoRoot).normalize('NFC').replace(/\/+$/, '');
-    const windows = WINDOWS_ABSOLUTE.test(p);
-    const matches = windows
-      ? p.toLowerCase().startsWith(`${root.toLowerCase()}/`)
-      : p.startsWith(`${root}/`);
-    if (!matches) throw new PathError('outside-root', input);
-    p = p.slice(root.length + 1);
-  }
+  if (isAbsolute(p)) p = relativeToRoot(p, input, repoRoot);
   const out: string[] = [];
   for (const segment of p.split('/')) {
     if (segment === '' || segment === '.') continue;

@@ -1,7 +1,14 @@
 import type { Severity } from '../../report/taxonomy';
 import type { ImpactSeverity, LegacySeverity, SonarImpact } from './api';
 import { mapGateCondition, type ConditionMapping, type SonarCondition } from './metrics';
-import { engineOf, SONAR_MAPPING, type ProfileLanguage, type SonarMapping } from './rules';
+import {
+  engineOf,
+  SONAR_MAPPING,
+  type ProfileLanguage,
+  type RuleTarget,
+  type SonarLanguage,
+  type SonarMapping,
+} from './rules';
 
 export interface SonarActiveRule {
   key: string;
@@ -152,6 +159,63 @@ function nameProblem(name: string): 'name_invalid' | 'name_reserved' | null {
   return isReservedName(trimmed) ? 'name_reserved' : null;
 }
 
+/** The equivalent targets of a SonarQube rule whose engine analyses the profile's language. */
+function usableTargets(mapping: SonarMapping, lang: SonarLanguage, key: string): RuleTarget[] {
+  return mapping
+    .targets(key)
+    .filter(
+      (t) =>
+        t.relation === 'equivalent' &&
+        (lang.engines as readonly string[]).includes(engineOf(t.key)),
+    );
+}
+
+/** Counts an active rule in `stats`, and makes its reviewed targets active rows. */
+function classifyActive(
+  r: SonarActiveRule,
+  mapping: SonarMapping,
+  lang: SonarLanguage,
+  stats: ProfileStats,
+  rows: Map<string, PlannedRow>,
+): void {
+  const targets = mapping.targets(r.key);
+  if (targets.length === 0) {
+    stats.unmapped.push({ key: r.key, name: r.name });
+    return;
+  }
+  const candidates = usableTargets(mapping, lang, r.key);
+  const reviewed = candidates.filter((t) => t.reviewed);
+  if (reviewed.length === 0) {
+    (candidates.length > 0 ? stats.pendingReview : stats.statusOnly).push(r.key);
+    return;
+  }
+  stats.mapped += 1;
+  if (r.paramsCustomised) stats.parametersNotImported.push(r.key);
+  if (reviewed.every((t) => !mapping.runByBundledConfig(t.key))) stats.mappedNotRun.push(r.key);
+  const override = severityOverride(r);
+  for (const t of reviewed) {
+    const prev = rows.get(t.key);
+    rows.set(t.key, {
+      ruleKey: t.key,
+      active: true,
+      severityOverride: prev?.active === true ? worst(prev.severityOverride, override) : override,
+    });
+  }
+}
+
+/** An inactive rule's reviewed targets become inactive rows, unless an active rule has them. */
+function addInactive(
+  key: string,
+  mapping: SonarMapping,
+  lang: SonarLanguage,
+  rows: Map<string, PlannedRow>,
+): void {
+  for (const t of usableTargets(mapping, lang, key).filter((x) => x.reviewed)) {
+    if (!rows.has(t.key))
+      rows.set(t.key, { ruleKey: t.key, active: false, severityOverride: null });
+  }
+}
+
 export function planProfile(
   p: SonarProfileData,
   mapping: SonarMapping = SONAR_MAPPING,
@@ -184,46 +248,9 @@ export function planProfile(
 
   // Every other profile is classified first, skipped or not, so that its counts add up
   // (active = mapped + pending review + status only + unmapped).
-  const usable = (key: string) =>
-    mapping
-      .targets(key)
-      .filter(
-        (t) =>
-          t.relation === 'equivalent' &&
-          (lang.engines as readonly string[]).includes(engineOf(t.key)),
-      );
   const rows = new Map<string, PlannedRow>();
-  for (const r of p.active) {
-    const targets = mapping.targets(r.key);
-    if (targets.length === 0) {
-      stats.unmapped.push({ key: r.key, name: r.name });
-      continue;
-    }
-    const candidates = usable(r.key);
-    const reviewed = candidates.filter((t) => t.reviewed);
-    if (reviewed.length === 0) {
-      (candidates.length > 0 ? stats.pendingReview : stats.statusOnly).push(r.key);
-      continue;
-    }
-    stats.mapped += 1;
-    if (r.paramsCustomised) stats.parametersNotImported.push(r.key);
-    if (reviewed.every((t) => !mapping.runByBundledConfig(t.key))) stats.mappedNotRun.push(r.key);
-    const override = severityOverride(r);
-    for (const t of reviewed) {
-      const prev = rows.get(t.key);
-      rows.set(t.key, {
-        ruleKey: t.key,
-        active: true,
-        severityOverride: prev?.active === true ? worst(prev.severityOverride, override) : override,
-      });
-    }
-  }
-  for (const key of p.inactive) {
-    for (const t of usable(key).filter((x) => x.reviewed)) {
-      if (!rows.has(t.key))
-        rows.set(t.key, { ruleKey: t.key, active: false, severityOverride: null });
-    }
-  }
+  for (const r of p.active) classifyActive(r, mapping, lang, stats, rows);
+  for (const key of p.inactive) addInactive(key, mapping, lang, rows);
   const sorted = [...rows.values()].sort((a, b) => (a.ruleKey < b.ruleKey ? -1 : 1));
   stats.deactivated = sorted.filter((r) => !r.active).length;
   stats.severityOverrides = sorted.filter((r) => r.active && r.severityOverride !== null).length;

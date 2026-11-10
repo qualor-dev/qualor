@@ -216,6 +216,12 @@ function fileUriToPath(uri: string): string | null {
   return p;
 }
 
+/** A relative `uri` (no scheme, not absolute) joined to `base` with one slash; else `uri` itself. */
+function withBase(base: string | undefined, uri: string): string {
+  if (base === undefined || schemeOf(uri) !== null || uri.startsWith('/')) return uri;
+  return base.endsWith('/') ? base + uri : `${base}/${uri}`;
+}
+
 /**
  * Resolves a SARIF artifactLocation URI (optionally against a uriBaseId) to a filesystem
  * path. Returns null when the URI's scheme is neither absent (a relative path) nor `file:`
@@ -223,12 +229,7 @@ function fileUriToPath(uri: string): string | null {
  */
 function resolveUri(run: SarifRun, uri: string, baseId: string | undefined): string | null {
   const base = baseId ? run.originalUriBaseIds?.[baseId]?.uri : undefined;
-  const combined =
-    base !== undefined && schemeOf(uri) === null && !uri.startsWith('/')
-      ? base.endsWith('/')
-        ? base + uri
-        : `${base}/${uri}`
-      : uri;
+  const combined = withBase(base, uri);
   const scheme = schemeOf(combined);
   if (scheme === null) return decodeURIComponent(combined);
   if (scheme !== 'file') return null;
@@ -300,37 +301,43 @@ function redact(lines: readonly string[], regions: readonly Resolved[]): string[
   const spans = new Map<number, [number, number][]>();
   for (const loc of regions) {
     for (let n = loc.startLine; n <= Math.min(loc.endLine, lines.length); n++) {
-      const len = (lines[n - 1] ?? '').length;
-      const from = n === loc.startLine && loc.startColumn !== undefined ? loc.startColumn - 1 : 0;
-      const to = n === loc.endLine && loc.endColumn !== undefined ? loc.endColumn : len;
-      const lo = Math.min(from, len);
       const list = spans.get(n) ?? [];
-      list.push([lo, Math.min(Math.max(to, lo), len)]);
+      list.push(spanOn(loc, n, (lines[n - 1] ?? '').length));
       spans.set(n, list);
     }
   }
   const copy = [...lines];
-  for (const [n, list] of spans) {
-    const text = copy[n - 1] ?? '';
-    list.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    let out = '';
-    let pos = 0;
-    let current: [number, number] | undefined;
-    for (const span of list) {
-      if (current && span[0] <= current[1]) {
-        current[1] = Math.max(current[1], span[1]);
-        continue;
-      }
-      if (current) {
-        out += text.slice(pos, current[0]) + REDACTED;
-        pos = current[1];
-      }
-      current = [span[0], span[1]];
-    }
-    if (current) out += text.slice(pos, current[0]) + REDACTED + text.slice(current[1]);
-    copy[n - 1] = out;
-  }
+  for (const [n, list] of spans) copy[n - 1] = redactSpans(copy[n - 1] ?? '', list);
   return copy;
+}
+
+/** The span `[from, to)` a region covers on its line `n`, of `len` characters. */
+function spanOn(loc: Resolved, n: number, len: number): [number, number] {
+  const from = n === loc.startLine && loc.startColumn !== undefined ? loc.startColumn - 1 : 0;
+  const to = n === loc.endLine && loc.endColumn !== undefined ? loc.endColumn : len;
+  const lo = Math.min(from, len);
+  return [lo, Math.min(Math.max(to, lo), len)];
+}
+
+/** `text` with its spans sorted, overlapping or adjacent ones merged, each replaced by «redacted». */
+function redactSpans(text: string, list: [number, number][]): string {
+  list.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let out = '';
+  let pos = 0;
+  let current: [number, number] | undefined;
+  for (const span of list) {
+    if (current && span[0] <= current[1]) {
+      current[1] = Math.max(current[1], span[1]);
+      continue;
+    }
+    if (current) {
+      out += text.slice(pos, current[0]) + REDACTED;
+      pos = current[1];
+    }
+    current = [span[0], span[1]];
+  }
+  if (current) out += text.slice(pos, current[0]) + REDACTED + text.slice(current[1]);
+  return out;
 }
 
 /** Minimum length of a secret text that is scrubbed wherever it appears. */
@@ -609,174 +616,250 @@ interface Prepared {
   ownSecretText: string | undefined;
 }
 
-function normalizeCore(
-  input: unknown,
-  o: NormalizeOptions,
-): { result: NormalizeResult; texts: string[]; fragmentTexts: string[] } {
-  const parsed = sarifLogSchema.safeParse(input);
-  if (!parsed.success) throw new SarifError(`not a SARIF 2.1.0 log: ${parsed.error.message}`);
-  const warnings = new Warnings();
-  const rulesById = new Map<string, SarifRule>();
-  const findings: ReportFinding[] = [];
-  const firstRun = parsed.data.runs[0];
-  const version = toolVersion(
-    firstRun?.tool.driver.version ?? firstRun?.tool.driver.semanticVersion ?? null,
+/** A result's rule id: its own, its rule reference's, or the driver rule its index points at. */
+function resultRuleId(result: SarifResult, driverRules: readonly SarifRule[]): string | undefined {
+  return (
+    result.ruleId ??
+    result.rule?.id ??
+    (result.ruleIndex !== undefined ? driverRules[result.ruleIndex]?.id : undefined)
   );
-  const cache = new Map<string, readonly string[] | null>();
-  const lines = (p: string) => {
-    if (!cache.has(p)) cache.set(p, o.readLines(p));
-    return cache.get(p) ?? null;
-  };
+}
 
-  // Pass 1: resolve rules and primary locations, and collect every secret region and secret
-  // text in the log so that pass 2 can redact them from all snippets, not only their own.
-  const prepared: Prepared[] = [];
-  const secretRegions: SourceRegion[] = [];
-  const secretTexts = new Set<string>();
-  const fragmentTexts = new Set<string>();
-  for (const run of parsed.data.runs) {
-    const driverRules = run.tool.driver.rules ?? [];
-    for (const c of [run.tool.driver, ...(run.tool.extensions ?? [])]) {
-      for (const r of c.rules ?? []) if (!rulesById.has(r.id)) rulesById.set(r.id, r);
+/**
+ * A finding's message text. A redacting (secret) result's own message is never used: a tool can
+ * interpolate part of the match into it (a Semgrep metavariable bound to the secret alone), which
+ * no text scrub of the whole match can find. The rule's static text stands in for it.
+ */
+function findingText({ result, rule, ruleId, redacts }: Prepared): string {
+  if (redacts) {
+    return (
+      nonBlank(rule?.fullDescription?.text) ?? nonBlank(rule?.shortDescription?.text) ?? ruleId
+    );
+  }
+  return (
+    nonBlank(result.message?.text) ??
+    nonBlank(result.message?.markdown) ??
+    nonBlank(rule?.shortDescription?.text) ??
+    ruleId
+  );
+}
+
+/**
+ * Pass 1 of `normalizeCore`: resolves rules and primary locations, and collects every secret
+ * region and secret text in the log so that pass 2 can redact them from all snippets, not only
+ * their own.
+ */
+class SecretCollector {
+  readonly warnings = new Warnings();
+  readonly rulesById = new Map<string, SarifRule>();
+  readonly secretRegions: SourceRegion[] = [];
+  readonly secretTexts = new Set<string>();
+  readonly fragmentTexts = new Set<string>();
+  private readonly cache = new Map<string, readonly string[] | null>();
+  private readonly o: NormalizeOptions;
+
+  constructor(o: NormalizeOptions) {
+    this.o = o;
+  }
+
+  /** A file's lines, read once. */
+  lines(p: string): readonly string[] | null {
+    if (!this.cache.has(p)) this.cache.set(p, this.o.readLines(p));
+    return this.cache.get(p) ?? null;
+  }
+
+  /** Every result that becomes a finding, with its rule and primary location resolved. */
+  prepare(runs: readonly SarifRun[]): Prepared[] {
+    const prepared: Prepared[] = [];
+    for (const run of runs) {
+      this.addRules(run);
+      for (const result of run.results ?? []) {
+        const p = this.prepareResult(run, result);
+        if (p !== null) prepared.push(p);
+      }
     }
-    const collectSecret = (
-      result: SarifResult,
-    ): { primary: PathOutcome; text: string | undefined } => {
-      const primary = resolveLocation(run, result.locations?.[0], o);
-      if (typeof primary !== 'string') secretRegions.push(primary);
-      const snippetText = result.locations?.[0]?.physicalLocation?.region?.snippet?.text;
-      let text: string | undefined =
-        snippetText !== undefined && snippetText.length >= MIN_SCRUB_CHARS
-          ? snippetText
-          : undefined;
-      if (text === undefined) {
-        // Fix-round-2 finding 4: derive the secret text even when the result's own file sits
-        // outside the scan scope (e.g. a `.env` no engine's findings otherwise reference) — the
-        // region is still resolved (ignoring the scope check) as long as the file is actually
-        // readable and the region is an unambiguous single line with columns.
-        const region =
-          primary === 'out-of-scope'
-            ? resolveRegionUnscoped(run, result.locations?.[0], o)
-            : primary;
-        if (typeof region !== 'string') text = deriveSecretText(lines(region.path), region);
-      }
-      if (text !== undefined) secretTexts.add(text);
-      // Only the tool's own secret text is the secret itself; a region-derived text covers the
-      // match (Gitleaks' columns include `apiKey = "…"`), so it is scrubbed exactly only.
-      if (text !== undefined && text === snippetText && o.mapping?.exactSecretText === true) {
-        fragmentTexts.add(text);
-      } else if (snippetText !== undefined && snippetText.length <= 4096) {
-        // A whole-match snippet (Semgrep): its quoted literals are the secret itself.
-        for (const literal of quotedLiterals(snippetText)) {
-          secretTexts.add(literal);
-          fragmentTexts.add(literal);
-        }
-      }
-      return { primary, text };
-    };
-    for (const result of run.results ?? []) {
-      if (result.kind === 'pass' || result.kind === 'notApplicable') continue;
-      const suppressed = result.suppressions?.some((s) => s.status !== 'rejected') ?? false;
-      const ruleId =
-        result.ruleId ??
-        result.rule?.id ??
-        (result.ruleIndex !== undefined ? driverRules[result.ruleIndex]?.id : undefined);
-      const rule = ruleId !== undefined ? rulesById.get(ruleId) : undefined;
-      const redacts = shouldRedact(o.mapping, rule);
-      if (ruleId === undefined) {
-        // Ruling R18: a result's secret must still be redacted even when it carries no rule id
-        // (e.g. a mapping that redacts unconditionally, regardless of the rule).
-        if (redacts) collectSecret(result);
-        if (!suppressed) {
-          warnings.add('RESULT_WITHOUT_RULE', 'SARIF result without a rule id was dropped');
-        }
-        continue;
-      }
-      if (ruleId.length > REPORT_BOUNDS.ruleIdChars) {
-        // Its rule is dropped too (below): an id over the report bound cannot be reported, and
-        // truncating it could merge two rules. Its secret, if any, is still redacted everywhere.
-        if (redacts) collectSecret(result);
-        if (!suppressed) {
-          warnings.add(
-            'RULE_ID_TOO_LONG',
-            `finding of a rule whose id is over ${REPORT_BOUNDS.ruleIdChars} characters was dropped`,
-          );
-        }
-        continue;
-      }
-      const { primary, text: ownSecretText } = redacts
-        ? collectSecret(result)
-        : { primary: resolveLocation(run, result.locations?.[0], o), text: undefined };
-      if (suppressed) continue;
-      if (primary === 'invalid') {
-        warnings.add(
-          'FINDING_PATH_INVALID',
-          'finding with an invalid or out-of-repo path was dropped',
-        );
-        continue;
-      }
-      if (primary === 'out-of-scope') {
-        warnings.add(
-          'FINDING_OUT_OF_SCOPE',
-          'finding on a file outside the analysis scope was dropped',
-        );
-        continue;
-      }
-      prepared.push({ run, result, ruleId, rule, primary, redacts, ownSecretText });
+    return prepared;
+  }
+
+  /** The rules of a run's driver and extensions; the first rule of an id wins. */
+  private addRules(run: SarifRun): void {
+    for (const c of [run.tool.driver, ...(run.tool.extensions ?? [])]) {
+      for (const r of c.rules ?? []) if (!this.rulesById.has(r.id)) this.rulesById.set(r.id, r);
     }
   }
 
-  // Messages, secondary-location messages and properties are scrubbed by plain text search (they
-  // carry no columns to misalign); snippets are scrubbed by merging text-search spans with the
-  // column-based regions before one redaction pass (ruling R18), so a misaligned column can never
-  // leave a fragment of the secret visible.
-  const allSecretTexts =
-    (o.extraSecretTexts?.length ?? 0) === 0
-      ? secretTexts
-      : new Set([...secretTexts, ...(o.extraSecretTexts ?? [])]);
-  const scrub = scrubber(allSecretTexts);
-  // Under the fragment cap, other engines' texts come first (this log's own secret results never
-  // show their message anyway), then the shortest, so as many texts as possible are indexed.
-  const byLength = (a: string, b: string) => a.length - b.length;
-  const scrubFragments = fragmentScrubber(
-    new Set([
-      ...[...(o.extraFragmentTexts ?? [])].sort(byLength),
-      ...[...fragmentTexts].sort(byLength),
-    ]),
-  );
-  const scrubMessage = (s: string) => scrubFragments(scrub(s));
-  const regionsByPath = new Map<string, Resolved[]>();
-  for (const r of [...secretRegions, ...(o.extraSecretRegions ?? [])])
-    regionsByPath.set(r.path, [...(regionsByPath.get(r.path) ?? []), r]);
-  const displayCache = new Map<string, string[]>();
-  const displayLines = (p: string, raw: readonly string[]) => {
-    let d = displayCache.get(p);
+  /** One result as a finding to build, or `null` when it is dropped (its secret still counts). */
+  private prepareResult(run: SarifRun, result: SarifResult): Prepared | null {
+    if (result.kind === 'pass' || result.kind === 'notApplicable') return null;
+    const suppressed = result.suppressions?.some((s) => s.status !== 'rejected') ?? false;
+    const ruleId = resultRuleId(result, run.tool.driver.rules ?? []);
+    const rule = ruleId !== undefined ? this.rulesById.get(ruleId) : undefined;
+    const redacts = shouldRedact(this.o.mapping, rule);
+    if (ruleId === undefined || ruleId.length > REPORT_BOUNDS.ruleIdChars) {
+      this.drop(run, result, ruleId, redacts, suppressed);
+      return null;
+    }
+    const { primary, text: ownSecretText } = redacts
+      ? this.collectSecret(run, result)
+      : { primary: resolveLocation(run, result.locations?.[0], this.o), text: undefined };
+    if (suppressed) return null;
+    if (primary === 'invalid') {
+      this.warnings.add(
+        'FINDING_PATH_INVALID',
+        'finding with an invalid or out-of-repo path was dropped',
+      );
+      return null;
+    }
+    if (primary === 'out-of-scope') {
+      this.warnings.add(
+        'FINDING_OUT_OF_SCOPE',
+        'finding on a file outside the analysis scope was dropped',
+      );
+      return null;
+    }
+    return { run, result, ruleId, rule, primary, redacts, ownSecretText };
+  }
+
+  /** A result without a rule id, or with one over the report bound, is dropped. */
+  private drop(
+    run: SarifRun,
+    result: SarifResult,
+    ruleId: string | undefined,
+    redacts: boolean,
+    suppressed: boolean,
+  ): void {
+    // Ruling R18: a result's secret must still be redacted even when it carries no rule id
+    // (e.g. a mapping that redacts unconditionally, regardless of the rule), or one too long.
+    if (redacts) this.collectSecret(run, result);
+    if (suppressed) return;
+    if (ruleId === undefined) {
+      this.warnings.add('RESULT_WITHOUT_RULE', 'SARIF result without a rule id was dropped');
+    } else {
+      // Its rule is dropped too (below): an id over the report bound cannot be reported, and
+      // truncating it could merge two rules. Its secret, if any, is still redacted everywhere.
+      this.warnings.add(
+        'RULE_ID_TOO_LONG',
+        `finding of a rule whose id is over ${REPORT_BOUNDS.ruleIdChars} characters was dropped`,
+      );
+    }
+  }
+
+  /** A redacting result's primary location, and its secret region and texts collected. */
+  private collectSecret(
+    run: SarifRun,
+    result: SarifResult,
+  ): { primary: PathOutcome; text: string | undefined } {
+    const primary = resolveLocation(run, result.locations?.[0], this.o);
+    if (typeof primary !== 'string') this.secretRegions.push(primary);
+    const snippetText = result.locations?.[0]?.physicalLocation?.region?.snippet?.text;
+    const text = this.secretText(run, result, primary, snippetText);
+    if (text !== undefined) this.secretTexts.add(text);
+    // Only the tool's own secret text is the secret itself; a region-derived text covers the
+    // match (Gitleaks' columns include `apiKey = "…"`), so it is scrubbed exactly only.
+    if (text !== undefined && text === snippetText && this.o.mapping?.exactSecretText === true) {
+      this.fragmentTexts.add(text);
+    } else if (snippetText !== undefined && snippetText.length <= 4096) {
+      // A whole-match snippet (Semgrep): its quoted literals are the secret itself.
+      for (const literal of quotedLiterals(snippetText)) {
+        this.secretTexts.add(literal);
+        this.fragmentTexts.add(literal);
+      }
+    }
+    return { primary, text };
+  }
+
+  /** The snippet's text when long enough, else the text derived from the result's own region. */
+  private secretText(
+    run: SarifRun,
+    result: SarifResult,
+    primary: PathOutcome,
+    snippetText: string | undefined,
+  ): string | undefined {
+    if (snippetText !== undefined && snippetText.length >= MIN_SCRUB_CHARS) return snippetText;
+    // Fix-round-2 finding 4: derive the secret text even when the result's own file sits
+    // outside the scan scope (e.g. a `.env` no engine's findings otherwise reference) — the
+    // region is still resolved (ignoring the scope check) as long as the file is actually
+    // readable and the region is an unambiguous single line with columns.
+    const region =
+      primary === 'out-of-scope'
+        ? resolveRegionUnscoped(run, result.locations?.[0], this.o)
+        : primary;
+    if (typeof region === 'string') return undefined;
+    return deriveSecretText(this.lines(region.path), region);
+  }
+}
+
+/**
+ * Pass 2's scrubbers. Messages, secondary-location messages and properties are scrubbed by plain
+ * text search (they carry no columns to misalign); snippets are scrubbed by merging text-search
+ * spans with the column-based regions before one redaction pass (ruling R18), so a misaligned
+ * column can never leave a fragment of the secret visible.
+ */
+class Scrubbers {
+  /** This log's secret texts and other engines'. */
+  readonly all: ReadonlySet<string>;
+  readonly scrub: (s: string) => string;
+  /** Exact secret texts, then fragments: for messages and rule texts. */
+  readonly message: (s: string) => string;
+  private readonly regionsByPath = new Map<string, Resolved[]>();
+  private readonly displayCache = new Map<string, string[]>();
+
+  constructor(o: NormalizeOptions, collected: SecretCollector) {
+    const { secretTexts, fragmentTexts, secretRegions } = collected;
+    this.all =
+      (o.extraSecretTexts?.length ?? 0) === 0
+        ? secretTexts
+        : new Set([...secretTexts, ...(o.extraSecretTexts ?? [])]);
+    const scrub = scrubber(this.all);
+    this.scrub = scrub;
+    // Under the fragment cap, other engines' texts come first (this log's own secret results
+    // never show their message anyway), then the shortest, so as many texts as possible are
+    // indexed.
+    const byLength = (a: string, b: string) => a.length - b.length;
+    const scrubFragments = fragmentScrubber(
+      new Set([
+        ...[...(o.extraFragmentTexts ?? [])].sort(byLength),
+        ...[...fragmentTexts].sort(byLength),
+      ]),
+    );
+    this.message = (s: string) => scrubFragments(scrub(s));
+    for (const r of [...secretRegions, ...(o.extraSecretRegions ?? [])])
+      this.regionsByPath.set(r.path, [...(this.regionsByPath.get(r.path) ?? []), r]);
+  }
+
+  /** A file's lines with every secret region and secret text redacted, once per file. */
+  displayLines(p: string, raw: readonly string[]): string[] {
+    let d = this.displayCache.get(p);
     if (!d) {
-      const spans = [...(regionsByPath.get(p) ?? []), ...textSpans(p, raw, allSecretTexts)];
+      const spans = [...(this.regionsByPath.get(p) ?? []), ...textSpans(p, raw, this.all)];
       d = redact(raw, spans);
-      displayCache.set(p, d);
+      this.displayCache.set(p, d);
     }
     return d;
-  };
+  }
+}
 
-  // Pass 2: build findings.
-  for (const { run, result, ruleId, rule, primary, redacts, ownSecretText } of prepared) {
-    const ruleKey = `${o.engineId}:${ruleId}`;
-    // A redacting (secret) result's own message is never used: a tool can interpolate part of
-    // the match into it (a Semgrep metavariable bound to the secret alone), which no text scrub
-    // of the whole match can find. The rule's static text stands in for it.
-    const text = redacts
-      ? (nonBlank(rule?.fullDescription?.text) ?? nonBlank(rule?.shortDescription?.text) ?? ruleId)
-      : (nonBlank(result.message?.text) ??
-        nonBlank(result.message?.markdown) ??
-        nonBlank(rule?.shortDescription?.text) ??
-        ruleId);
-    const message = truncate(scrubMessage(text), REPORT_BOUNDS.messageChars);
+/** Pass 2 of `normalizeCore`: one finding per prepared result. */
+class FindingBuilder {
+  private readonly o: NormalizeOptions;
+  private readonly collected: SecretCollector;
+  private readonly s: Scrubbers;
+
+  constructor(o: NormalizeOptions, collected: SecretCollector, s: Scrubbers) {
+    this.o = o;
+    this.collected = collected;
+    this.s = s;
+  }
+
+  build(p: Prepared): ReportFinding {
+    const { run, result, ruleId, rule, primary, redacts } = p;
+    const ruleKey = `${this.o.engineId}:${ruleId}`;
+    const message = truncate(this.s.message(findingText(p)), REPORT_BOUNDS.messageChars);
     const severity =
-      o.mapping?.severity?.(result, rule) ?? levelToSeverity(resultLevel(result, rule));
+      this.o.mapping?.severity?.(result, rule) ?? levelToSeverity(resultLevel(result, rule));
 
     const finding: ReportFinding = {
-      engineId: o.engineId,
+      engineId: this.o.engineId,
       ruleId,
       message,
       severity,
@@ -785,71 +868,99 @@ function normalizeCore(
       contextHash: filelessHash(ruleKey, message),
     };
 
-    if (primary !== 'none') {
-      finding.location = {
-        path: primary.path,
-        startLine: primary.startLine,
-        ...(primary.startColumn !== undefined && { startColumn: primary.startColumn }),
-        endLine: primary.endLine,
-        ...(primary.endColumn !== undefined && { endColumn: primary.endColumn }),
-      };
-      const raw = lines(primary.path);
-      const identity = o.mapping?.identity?.(result);
-      if (identity !== undefined) {
-        finding.lineHash = filelessHash(ruleKey, identity, primary.path);
-        finding.contextHash = finding.lineHash;
-      }
-      if (raw === null || primary.startLine > raw.length) {
-        if (identity !== undefined) {
-          // Nothing to fall back from: the identity is the hash input (a large lockfile).
-        } else {
-          warnings.add(
-            'HASH_FALLBACK',
-            'source unavailable for a finding; used a message-based hash',
-          );
-          finding.lineHash = filelessHash(ruleKey, message, primary.path);
-          finding.contextHash = finding.lineHash;
-        }
-      } else {
-        // Hashes: a redacting finding hashes its own region (plus, finding 6, any exact match of
-        // its own secret text on that same region's lines, so a misaligned column cannot leave a
-        // fragment of the secret baked into the hash input either); every other finding hashes
-        // the unredacted lines, so its fingerprint does not depend on whether a secret scan ran.
-        // Cross-engine `extraSecretTexts`/`extraSecretRegions` never reach the hash.
-        const ownSpans =
-          redacts && ownSecretText !== undefined
-            ? textSpans(primary.path, raw, new Set([ownSecretText])).filter(
-                (s) => s.startLine >= primary.startLine && s.startLine <= primary.endLine,
-              )
-            : [];
-        const hashed = redacts ? redact(raw, [primary, ...ownSpans]) : raw;
-        const end = Math.min(primary.endLine, raw.length);
-        if (identity === undefined) {
-          finding.lineHash = lineHash(hashed, primary.startLine, end);
-          finding.contextHash = contextHash(hashed, primary.startLine, end);
-        }
-        // Snippets: every secret region and secret text of this log (and, cross-engine, every
-        // other engine's) is redacted.
-        const shown = displayLines(primary.path, raw);
-        const from = Math.max(1, primary.startLine - SNIPPET_CONTEXT);
-        const to = Math.min(
-          shown.length,
-          Math.min(end, primary.startLine + MAX_HASHED_LINES - 1) + SNIPPET_CONTEXT,
-        );
-        finding.snippet = {
-          startLine: from,
-          lines: shown.slice(from - 1, to).map((l) => truncate(l, REPORT_BOUNDS.snippetLineChars)),
-        };
-      }
+    if (primary !== 'none') this.locate(finding, p, primary, ruleKey);
+    const secondary = this.secondaryLocations(run, result);
+    if (secondary.length > 0) finding.secondaryLocations = secondary;
+    // Finding 2: a redacting result's properties/partialFingerprints are dropped entirely
+    // (defense in depth: a secret-detection rule's own metadata may carry other sensitive
+    // material besides the flagged region). A non-redacting result still has its
+    // partialFingerprints values dropped if one happens to contain a secret another result
+    // found, and every string leaf of its properties scrubbed the same way.
+    if (!redacts) {
+      this.copyFingerprints(finding, result);
+      this.copyProperties(finding, result);
     }
+    return finding;
+  }
 
+  /** The finding's location, hashes and snippet from its primary region. */
+  private locate(finding: ReportFinding, p: Prepared, primary: Resolved, ruleKey: string): void {
+    finding.location = {
+      path: primary.path,
+      startLine: primary.startLine,
+      ...(primary.startColumn !== undefined && { startColumn: primary.startColumn }),
+      endLine: primary.endLine,
+      ...(primary.endColumn !== undefined && { endColumn: primary.endColumn }),
+    };
+    const raw = this.collected.lines(primary.path);
+    const identity = this.o.mapping?.identity?.(p.result);
+    if (identity !== undefined) {
+      finding.lineHash = filelessHash(ruleKey, identity, primary.path);
+      finding.contextHash = finding.lineHash;
+    }
+    if (raw !== null && primary.startLine <= raw.length) {
+      this.hashAndSnippet(finding, p, primary, raw, identity);
+    } else if (identity === undefined) {
+      // With an identity there is nothing to fall back from: it is the hash input (a large
+      // lockfile).
+      this.collected.warnings.add(
+        'HASH_FALLBACK',
+        'source unavailable for a finding; used a message-based hash',
+      );
+      finding.lineHash = filelessHash(ruleKey, finding.message, primary.path);
+      finding.contextHash = finding.lineHash;
+    }
+  }
+
+  private hashAndSnippet(
+    finding: ReportFinding,
+    { redacts, ownSecretText }: Prepared,
+    primary: Resolved,
+    raw: readonly string[],
+    identity: string | undefined,
+  ): void {
+    // Hashes: a redacting finding hashes its own region (plus, finding 6, any exact match of
+    // its own secret text on that same region's lines, so a misaligned column cannot leave a
+    // fragment of the secret baked into the hash input either); every other finding hashes
+    // the unredacted lines, so its fingerprint does not depend on whether a secret scan ran.
+    // Cross-engine `extraSecretTexts`/`extraSecretRegions` never reach the hash.
+    const ownSpans =
+      redacts && ownSecretText !== undefined
+        ? textSpans(primary.path, raw, new Set([ownSecretText])).filter(
+            (s) => s.startLine >= primary.startLine && s.startLine <= primary.endLine,
+          )
+        : [];
+    const hashed = redacts ? redact(raw, [primary, ...ownSpans]) : raw;
+    const end = Math.min(primary.endLine, raw.length);
+    if (identity === undefined) {
+      finding.lineHash = lineHash(hashed, primary.startLine, end);
+      finding.contextHash = contextHash(hashed, primary.startLine, end);
+    }
+    // Snippets: every secret region and secret text of this log (and, cross-engine, every
+    // other engine's) is redacted.
+    const shown = this.s.displayLines(primary.path, raw);
+    const from = Math.max(1, primary.startLine - SNIPPET_CONTEXT);
+    const to = Math.min(
+      shown.length,
+      Math.min(end, primary.startLine + MAX_HASHED_LINES - 1) + SNIPPET_CONTEXT,
+    );
+    finding.snippet = {
+      startLine: from,
+      lines: shown.slice(from - 1, to).map((l) => truncate(l, REPORT_BOUNDS.snippetLineChars)),
+    };
+  }
+
+  private secondaryLocations(
+    run: SarifRun,
+    result: SarifResult,
+  ): NonNullable<ReportFinding['secondaryLocations']> {
     const secondary: NonNullable<ReportFinding['secondaryLocations']> = [];
     for (const l of [...(result.locations ?? []).slice(1), ...(result.relatedLocations ?? [])]) {
       if (secondary.length >= REPORT_BOUNDS.secondaryLocations) break;
       const s = resolveLocation(run, l, {
-        repoRoot: o.repoRoot,
-        readLines: o.readLines,
-        sourceRoots: o.sourceRoots,
+        repoRoot: this.o.repoRoot,
+        readLines: this.o.readLines,
+        sourceRoots: this.o.sourceRoots,
       });
       if (typeof s === 'string') continue;
       secondary.push({
@@ -859,52 +970,75 @@ function normalizeCore(
         endLine: s.endLine,
         ...(s.endColumn !== undefined && { endColumn: s.endColumn }),
         ...(l.message?.text !== undefined && {
-          message: truncate(scrubMessage(l.message.text), REPORT_BOUNDS.messageChars),
+          message: truncate(this.s.message(l.message.text), REPORT_BOUNDS.messageChars),
         }),
       });
     }
-    if (secondary.length > 0) finding.secondaryLocations = secondary;
-    // Finding 2: a redacting result's properties/partialFingerprints are dropped entirely
-    // (defense in depth: a secret-detection rule's own metadata may carry other sensitive
-    // material besides the flagged region). A non-redacting result still has its
-    // partialFingerprints values dropped if one happens to contain a secret another result
-    // found, and every string leaf of its properties scrubbed the same way.
-    if (result.partialFingerprints && !redacts && o.mapping?.dropPartialFingerprints !== true) {
-      if (withinFingerprintBounds(result.partialFingerprints)) {
-        const kept = dropSecretFingerprints(result.partialFingerprints, allSecretTexts);
-        if (Object.keys(kept).length > 0) finding.partialFingerprints = kept;
-      } else {
-        warnings.add(
-          'PARTIAL_FINGERPRINTS_DROPPED',
-          'result partialFingerprints over the report bounds were dropped',
-        );
-      }
-    }
-    if (result.properties && !redacts) {
-      if (
-        Buffer.byteLength(JSON.stringify(result.properties), 'utf8') <=
-        REPORT_BOUNDS.propertiesBytes
-      ) {
-        finding.properties = scrubDeep(result.properties, scrub) as Record<string, unknown>;
-      } else {
-        warnings.add('PROPERTIES_TOO_LARGE', 'result properties over 4 KiB were dropped');
-      }
-    }
-    findings.push(finding);
+    return secondary;
   }
+
+  /** A non-redacting result's partialFingerprints, less any value holding a secret. */
+  private copyFingerprints(finding: ReportFinding, result: SarifResult): void {
+    const pf = result.partialFingerprints;
+    if (!pf || this.o.mapping?.dropPartialFingerprints === true) return;
+    if (withinFingerprintBounds(pf)) {
+      const kept = dropSecretFingerprints(pf, this.s.all);
+      if (Object.keys(kept).length > 0) finding.partialFingerprints = kept;
+    } else {
+      this.collected.warnings.add(
+        'PARTIAL_FINGERPRINTS_DROPPED',
+        'result partialFingerprints over the report bounds were dropped',
+      );
+    }
+  }
+
+  /** A non-redacting result's properties, every string leaf scrubbed. */
+  private copyProperties(finding: ReportFinding, result: SarifResult): void {
+    if (!result.properties) return;
+    if (
+      Buffer.byteLength(JSON.stringify(result.properties), 'utf8') <= REPORT_BOUNDS.propertiesBytes
+    ) {
+      finding.properties = scrubDeep(result.properties, this.s.scrub) as Record<string, unknown>;
+    } else {
+      this.collected.warnings.add(
+        'PROPERTIES_TOO_LARGE',
+        'result properties over 4 KiB were dropped',
+      );
+    }
+  }
+}
+
+function normalizeCore(
+  input: unknown,
+  o: NormalizeOptions,
+): { result: NormalizeResult; texts: string[]; fragmentTexts: string[] } {
+  const parsed = sarifLogSchema.safeParse(input);
+  if (!parsed.success) throw new SarifError(`not a SARIF 2.1.0 log: ${parsed.error.message}`);
+  const firstRun = parsed.data.runs[0];
+  const version = toolVersion(
+    firstRun?.tool.driver.version ?? firstRun?.tool.driver.semanticVersion ?? null,
+  );
+  const collected = new SecretCollector(o);
+  const prepared = collected.prepare(parsed.data.runs);
+  const s = new Scrubbers(o, collected);
+  const builder = new FindingBuilder(o, collected, s);
+  const findings = prepared.map((p) => builder.build(p));
 
   const output: NormalizeResult = {
     version,
-    rules: [...rulesById.values()]
+    rules: [...collected.rulesById.values()]
       .filter((r) => r.id.length > 0 && r.id.length <= REPORT_BOUNDS.ruleIdChars)
-      .map((r) => ruleMeta(r, o.mapping, scrubMessage)),
+      .map((r) => ruleMeta(r, o.mapping, s.message)),
     findings,
-    warnings: warnings.list(),
-    secretRegions,
+    warnings: collected.warnings.list(),
+    secretRegions: collected.secretRegions,
   };
-  return { result: output, texts: [...secretTexts], fragmentTexts: [...fragmentTexts] };
+  return {
+    result: output,
+    texts: [...collected.secretTexts],
+    fragmentTexts: [...collected.fragmentTexts],
+  };
 }
-
 export function normalizeSarif(input: unknown, o: NormalizeOptions): NormalizeResult {
   return normalizeCore(input, o).result;
 }

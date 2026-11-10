@@ -67,6 +67,12 @@ export const SONAR_METRIC_TARGETS: Readonly<Record<string, SonarMetricTarget>> =
 
 const NUMBER = /^-?\d{1,16}(?:\.\d{1,16})?$/;
 
+/** SonarQube's condition operators, as Qualor's. */
+const SONAR_OPERATORS: ReadonlyMap<string, 'gt' | 'lt'> = new Map([
+  ['GT', 'gt'],
+  ['LT', 'lt'],
+]);
+
 /** Ruling G3's bounds, which the gates API enforces too (a 422 otherwise). */
 function fits(d: MetricDefinition, t: number): boolean {
   if (d.type === 'rating') return Number.isInteger(t) && t >= 1 && t <= 5;
@@ -83,8 +89,8 @@ export function mapGateCondition(c: SonarCondition): ConditionMapping {
   const metric = isNew ? `new_${target.qualor}` : target.qualor;
   const resolved = resolveMetricKey(metric);
   if (resolved === undefined) return { ok: false, reason: 'metric' };
-  const operator = c.op === 'GT' ? 'gt' : c.op === 'LT' ? 'lt' : null;
-  if (operator === null) return { ok: false, reason: 'operator' };
+  const operator = SONAR_OPERATORS.get(c.op);
+  if (operator === undefined) return { ok: false, reason: 'operator' };
   const text = c.error.trim();
   if (!NUMBER.test(text)) return { ok: false, reason: 'threshold' };
   const threshold = Number(text);
