@@ -11,6 +11,7 @@ import {
   type DigestVulnerabilities,
   type ExploitedRow,
 } from '../../webhooks/chat/messages';
+import { clipUtf16 } from '../../webhooks/chat/text';
 import { createDeliveries, type NewDelivery } from '../../webhooks/deliveries';
 import { subscriptionsToNotify } from '../../webhooks/stage';
 import { alertRows, type VulnerabilityMailRow } from './content';
@@ -27,12 +28,12 @@ function messageRows(rows: readonly VulnerabilityMailRow[]): ExploitedRow[] {
     result.push({
       vulnerabilityId: row.vulnerabilityId,
       severity: row.severity,
-      title: row.title === null ? null : row.title.slice(0, 2000),
-      packageName: row.packageName.slice(0, 500),
-      installedVersions: row.installedVersions.slice(0, 50).map((v) => v.slice(0, 200)),
-      fixedVersion: row.fixedVersion === null ? null : row.fixedVersion.slice(0, 200),
+      title: row.title === null ? null : clipUtf16(row.title, 2000),
+      packageName: clipUtf16(row.packageName, 500),
+      installedVersions: row.installedVersions.slice(0, 50).map((v) => clipUtf16(v, 200)),
+      fixedVersion: row.fixedVersion === null ? null : clipUtf16(row.fixedVersion, 200),
       kevDateAdded: row.exploited.dateAdded,
-      targets: row.targets.slice(0, 200),
+      targets: row.targets.slice(0, 200).map((target) => clipUtf16(target, 500)),
     });
   }
   return result;
@@ -52,8 +53,8 @@ function exploitedMessage(
     left -= keep;
     return {
       id: project.id,
-      key: project.key.slice(0, 500),
-      name: project.name.slice(0, 500),
+      key: clipUtf16(project.key, 500),
+      name: clipUtf16(project.name, 500),
       rows: rows.slice(0, keep),
       more: rows.length - keep,
     };
@@ -67,20 +68,15 @@ function exploitedMessage(
 
 /**
  * One `vulnerabilities.exploited` delivery per active Slack or Teams webhook that lists the event,
- * about the projects of `items` it covers (org-wide, or its own project); the number created.
- * A project with no row left (triaged since the pick) is left out, and a webhook with no project
- * left gets nothing. The caller marks the items.
+ * about the projects of `rowsOf` (the `alertRows` of the run's items, with `priority`) it covers
+ * (org-wide, or its own project); the number created. A project with no KEV row left (triaged
+ * since the pick) is left out, and a webhook with no project left gets nothing. The caller marks
+ * the items.
  */
 export async function exploitedDeliveries(
   tx: Executor,
-  items: readonly { id: string; project_id: string }[],
+  rowsOf: ReadonlyMap<string, VulnerabilityMailRow[]>,
 ): Promise<number> {
-  if (items.length === 0) return 0;
-  const rowsOf = await alertRows(
-    tx,
-    items.map((item) => item.id),
-    { priority: true },
-  );
   const withRows = new Map<string, ExploitedRow[]>();
   for (const [projectId, rows] of rowsOf) {
     const mapped = messageRows(rows);
@@ -203,7 +199,7 @@ export async function digestVulnerabilities(
       critical: p.critical,
       high: p.high,
       exploited: options.priority ? p.exploited : null,
-      targets: p.targets.slice(0, MAX_TARGET_NAMES).map((name) => name.slice(0, 500)),
+      targets: p.targets.slice(0, MAX_TARGET_NAMES).map((name) => clipUtf16(name, 500)),
       moreTargets: Math.max(0, p.targets.length - MAX_TARGET_NAMES),
     })),
     moreProjects: Math.max(0, named.length - MAX_VULNERABILITY_PROJECTS),

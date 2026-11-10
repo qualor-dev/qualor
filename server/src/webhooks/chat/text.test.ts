@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localDate, slackText, teamsText, utcTime } from './text';
+import { clipUtf16, localDate, slackText, teamsText, utcTime } from './text';
 
 const Z = '\u200B';
 
@@ -49,5 +49,27 @@ describe('times', () => {
   it('writes a local date in the zone', () => {
     expect(localDate('2026-10-18T23:30:00Z', 'Asia/Tokyo')).toBe('2026-10-19');
     expect(localDate('2026-10-18T23:30:00Z', 'UTC')).toBe('2026-10-18');
+  });
+});
+
+describe('clipUtf16', () => {
+  it('keeps short text as it is', () => {
+    expect(clipUtf16('abc', 2000)).toBe('abc');
+    expect(clipUtf16('x'.repeat(2000), 2000)).toHaveLength(2000);
+  });
+
+  it('never splits an emoji across the 2000 boundary of a title', () => {
+    const clipped = clipUtf16('x'.repeat(1999) + '😀tail', 2000);
+    expect(clipped).toBe('x'.repeat(1999));
+    // encodeURIComponent throws on a lone surrogate, as PostgreSQL's jsonb does.
+    expect(() => encodeURIComponent(clipped)).not.toThrow();
+    expect(JSON.parse(JSON.stringify(clipped))).toBe(clipped);
+  });
+
+  it('never splits an emoji across the 500 boundary of a package name', () => {
+    const clipped = clipUtf16('p'.repeat(499) + '😀', 500);
+    expect(clipped).toBe('p'.repeat(499));
+    expect(clipUtf16('p'.repeat(498) + '😀', 500)).toHaveLength(500);
+    expect(() => encodeURIComponent(clipUtf16('p'.repeat(499) + '😀z', 500))).not.toThrow();
   });
 });

@@ -20,6 +20,16 @@ const Z = '\u200B';
 /** Names longer than this are clipped in every message (fits Slack's and Teams' limits). */
 export const MAX_NAME = 80;
 
+/**
+ * At most `max` UTF-16 units of `text`, never ending in half an emoji: PostgreSQL's jsonb refuses a
+ * lone surrogate. For stored fields that a zod `.max()` counts in units.
+ */
+export function clipUtf16(text: string, max: number): string {
+  const cut = text.slice(0, max);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
 /** One line, at most `max` characters, as plain text (Slack `plain_text`, never parsed). */
 export function plainText(s: string, max: number): string {
   return clip(oneLine(s), max);

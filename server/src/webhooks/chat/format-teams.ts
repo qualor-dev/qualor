@@ -150,6 +150,14 @@ function quietText(count: number, more: boolean): string {
   return `${count} ${more ? 'more ' : ''}${noun}: no new security issues, gate passed`;
 }
 
+/**
+ * What a line adds to the card: its serialised bytes (a control character is 6, an emoji 4). The
+ * 2 quotes of the JSON string stand for the 2 bytes of the `\n` that joins it to the next line.
+ */
+function jsonBytes(line: string): number {
+  return Buffer.byteLength(JSON.stringify(line), 'utf8');
+}
+
 /** The bytes the project lines of the digest's vulnerability section may use. */
 const VULNERABILITY_BYTES = 5_000;
 
@@ -162,7 +170,7 @@ function vulnerabilitiesBlocks(v: DigestVulnerabilities, links: ChatLinks): Elem
   for (const p of v.projects) {
     const name = link(vulnerabilitiesUrl(links, p.projectId), teamsText(p.name, 50));
     const line = `- ${name} — ${vulnerabilityProjectCounts(p, teamsInline)}`;
-    const size = Buffer.byteLength(line, 'utf8') + 1;
+    const size = jsonBytes(line);
     if (size > budget) break;
     budget -= size;
     lines.push(line);
@@ -197,7 +205,7 @@ function exploited(m: ChatExploitedMessage, links: ChatLinks): TeamsBody {
     const rows: string[] = [];
     for (const r of p.rows) {
       const line = `- ${exploitedRowText(r, teamsInline, (s) => s)}`;
-      const size = Buffer.byteLength(line, 'utf8') + 1;
+      const size = jsonBytes(line);
       if (size > budget) break;
       budget -= size;
       rows.push(line);

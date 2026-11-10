@@ -154,6 +154,11 @@ function quietLine(count: number, more: boolean): string {
   return `${count} ${more ? 'more ' : ''}${noun}: no new security issues, gate passed`;
 }
 
+/** The digest's `text` names the section: " · 3 critical, 5 high new vulnerabilities". */
+function vulnerabilitiesText(v: DigestVulnerabilities | undefined): string {
+  return v === undefined ? '' : ` · ${v.critical} critical, ${v.high} high new vulnerabilities`;
+}
+
 /** C8: the digest's vulnerability section; project lines that do not fit fold into the tail. */
 function vulnerabilitiesSection(v: DigestVulnerabilities, links: ChatLinks): SlackBlock {
   const head = `*Vulnerabilities in tracked versions*\n${vulnerabilitySummary(v, (s) => `*${s}*`)}`;
@@ -226,7 +231,9 @@ function digest(m: ChatDigestMessage, links: ChatLinks): SlackBody {
   const scopeUrl =
     m.scope.project === null ? projectsUrl(links) : projectUrl(links, m.scope.project.id);
   return {
-    text: `Weekly security digest — ${slackText(scopeName)}: ${t.newSecurity} new security issues`,
+    text:
+      `Weekly security digest — ${slackText(scopeName)}: ${t.newSecurity} new security issues` +
+      vulnerabilitiesText(m.vulnerabilities),
     blocks: [
       header(title),
       section(summary),

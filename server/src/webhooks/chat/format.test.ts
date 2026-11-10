@@ -485,6 +485,8 @@ const exploitedThree: ChatExploitedMessage = {
   ],
   moreProjects: 4,
 };
+/** U+0001: one byte as text, six in JSON (`\u0001`), and not whitespace, so it is kept. */
+const CTRL = String.fromCharCode(1);
 const ROW1 =
   'CVE-2026-1001* (Critical) in lodash 4.17.20, 4.17.19 — fixed in 4.17.21 · main, release/2.x · in KEV since 2026-11-03';
 
@@ -726,9 +728,9 @@ describe('exploited messages', () => {
       const rows = Array.from({ length: 10 }, (_, i) =>
         xrow(i, {
           vulnerabilityId: '*'.repeat(200),
-          packageName: '_'.repeat(300),
-          installedVersions: ['*'.repeat(300)],
-          targets: Array.from({ length: 50 }, () => '`'.repeat(50)),
+          packageName: (CTRL + '_').repeat(150),
+          installedVersions: [(CTRL + '*').repeat(150)],
+          targets: Array.from({ length: 50 }, () => (CTRL + '`').repeat(25)),
         }),
       );
       const m: ChatExploitedMessage = {
@@ -802,6 +804,14 @@ describe('digest vulnerability section', () => {
         '…and 2 more projects',
       ].join('\n'),
     );
+  });
+
+  it('Slack: the top-level text names the vulnerability section', () => {
+    const slack = formatChat('slack', digestWithVulns, LINKS) as SlackOut;
+    expect(slack.text).toBe(
+      'Weekly security digest — Acme: 3 new security issues · 3 critical, 5 high new vulnerabilities',
+    );
+    expect((formatChat('slack', digest, LINKS) as SlackOut).text).not.toContain('vulnerabilities');
   });
 
   it('Slack: no exploited count without vuln.priority (null)', () => {
@@ -895,11 +905,11 @@ describe('combined worst case', () => {
     exploited: 99,
     projects: Array.from({ length: 10 }, (_, i) => ({
       projectId: `0190a6c2-0000-7000-8000-${String(i).padStart(12, '0')}`,
-      name: '[*_`'.repeat(125),
+      name: (CTRL + '[*_`').repeat(100),
       critical: 9,
       high: 9,
       exploited: 9 as number | null,
-      targets: Array.from({ length: 5 }, () => '[*_`'.repeat(50)),
+      targets: Array.from({ length: 5 }, () => (CTRL + '[*_`').repeat(40)),
       moreTargets: 99,
     })),
     moreProjects: 7,

@@ -24,7 +24,7 @@ import {
 import { COMMUNITY_VULNERABILITY_LIMITS, type Limits } from '../limits';
 import { runUntilIdle } from '../queue/worker';
 import { WEBHOOK_URL_AAD } from './deliveries';
-import type { ChatDigestMessage } from './chat/messages';
+import { parseChatMessage, type ChatDigestMessage } from './chat/messages';
 import {
   DIGEST_QUEUE,
   buildDigest,
@@ -810,6 +810,9 @@ describe('the vulnerability section of the weekly digest (0.15 plan 6 C6)', () =
     ]);
     expect(section.moreProjects).toBe(1);
     expect(section).toMatchObject({ critical: 2, high: 11, exploited: 1 });
+    // What was stored is what the formatter parses: 10 projects is the cap.
+    const [stored] = await digestsOf(id);
+    expect(parseChatMessage('digest.weekly', stored)).toEqual(stored);
   });
 
   it('caps the targets of a project at 5 and counts the rest', async () => {
@@ -826,5 +829,8 @@ describe('the vulnerability section of the weekly digest (0.15 plan 6 C6)', () =
       targets: ['main', 'v1', 'v2', 'v3', 'v4'],
       moreTargets: 3,
     });
+    // 5 targets is the cap.
+    const [stored] = await digestsOf(id);
+    expect(parseChatMessage('digest.weekly', stored)).toEqual(stored);
   });
 });
