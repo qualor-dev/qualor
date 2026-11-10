@@ -328,7 +328,12 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
   });
 
   it('writes the version after the branch, and null for a branch report', () => {
-    const version = { id: 'v', label: '2.0.0' };
+    const version = {
+      id: 'v',
+      label: '2.0.0',
+      tracked: false,
+      checkedAt: '2026-05-30T08:00:00.000Z',
+    };
     const make = (scope: Partial<ComplianceSource['scope']>) =>
       assembleReport({
         id: 'r',
@@ -345,6 +350,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
       'branch',
       'version',
     ]);
+    expect(Object.keys(forVersion.version!)).toEqual(['id', 'label', 'tracked', 'checkedAt']);
     expect(forVersion).toMatchObject({ branch: null, version });
     expect(make({}).version).toBeNull();
   });
@@ -431,7 +437,10 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
       serverVersion: '0.8.0',
       source: source({
         projects: richProjects(reversed),
-        scope: { ...source().scope, version: { label: '1.0', id: 'v' } },
+        scope: {
+          ...source().scope,
+          version: { label: '1.0', id: 'v', tracked: true, checkedAt: '2026-05-30T08:00:00.000Z' },
+        },
         sbom: { json: '{}', sha256: 'c'.repeat(64), components: 1 },
       }),
       standards: [STD],
@@ -460,7 +469,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
         organization: { id: null, name: null },
         project: { id: null, key: null, name: null },
         branch: { id: null, name: null },
-        version: { id: null, label: null },
+        version: { id: null, label: null, tracked: null, checkedAt: null },
       },
       standards: [
         { id: null, version: null, title: null, source: null, licence: null, sourceSha256: null },

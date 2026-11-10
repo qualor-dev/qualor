@@ -10,6 +10,7 @@ import {
   organizations,
   projects,
   projectVersions,
+  vulnerabilityTargetChecks,
 } from '../db/schema';
 import { hasInventory, type DependencyTarget } from '../dependencies/query';
 import { VERSION } from '../index';
@@ -17,7 +18,8 @@ import { exportPackages } from '../vulnerabilities/export/query';
 import { buildCycloneDxSbom } from '../vulnerabilities/export/sbom-documents';
 import { effectiveDecisionJoin, type VexJustification } from '../vulnerabilities/decisions';
 import { projectTargets } from '../vulnerabilities/targets';
-import { vulnerabilitySettings } from '../versions/settings';
+import { vulnerabilitySettings, type VulnerabilitySettings } from '../versions/settings';
+import { computeTracking } from '../versions/tracking';
 import { scopedRows } from '../vulnerabilities/summary';
 import { readVulndbSettings } from '../vulndb/settings';
 import { readPriorityState } from '../vulndb/priority/state';
@@ -59,6 +61,15 @@ function sectionOf(engineId: string): FindingSection {
 
 function abortCheck(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
+}
+
+/**
+ * A row's `fixed_version` can list several versions ("1.2.3, 2.0.1"): the single versions of
+ * all the rows, once each, sorted.
+ */
+function fixedVersionsOf(values: readonly (string | null)[]): string[] {
+  const versions = values.flatMap((v) => (v === null ? [] : v.split(/,\s*/)));
+  return [...new Set(versions.filter((v) => v !== ''))].sort();
 }
 
 /** A JS array as one bound parameter (a bare array would be spread into a value list). */
@@ -125,7 +136,7 @@ async function dependencyFacts(
     out.set(r.id, {
       id: r.vulnerability_id,
       packageName: r.package_name,
-      fixedVersions: [...(r.fixed ?? [])].sort(),
+      fixedVersions: fixedVersionsOf(r.fixed ?? []),
       kev: options.priority && r.kev && r.kev_date_added ? { dateAdded: r.kev_date_added } : null,
       epss:
         options.priority && r.epss_score !== null && r.epss_percentile !== null
@@ -269,11 +280,13 @@ export async function collectCompliance(
         if (!monitoring) {
           throw new ComplianceCollectError('vulnerability monitoring is off on this server');
         }
-        if (!(await vulnerabilitySettings(tx, project.id)).enabled) {
-          throw new ComplianceCollectError('Vulnerability monitoring is off for this project');
+        const projectSettings = await vulnerabilitySettings(tx, project.id);
+        if (!projectSettings.enabled) {
+          throw new ComplianceCollectError('vulnerability monitoring is off for this project');
         }
         return versionSource(tx, {
           versionId: report.versionId,
+          settings: projectSettings,
           org,
           project,
           generatedAt: isoReq(report.now),
@@ -424,10 +437,12 @@ export async function collectCompliance(
                 vulnerability: null as ComplianceVulnerability | null,
               };
             });
+      // Only the branches of the report are enriched, and only the ones the server monitors.
+      const enrichBranchIds = trackedBranchIds.filter((id) => branchIds.includes(id));
       const openFacts = await dependencyFacts(
         tx,
         findings.filter((f) => f.section === 'dependency').map((f) => f.id),
-        trackedBranchIds,
+        enrichBranchIds,
         { openOnly: true, priority },
       );
       for (const f of findings) f.vulnerability = openFacts.get(f.id) ?? null;
@@ -452,7 +467,8 @@ export async function collectCompliance(
               }>(sql`
                 SELECT i.id, p.key AS project_key, i.path, i.start_line, i.rule_id, i.severity,
                        i.status, coalesce(u.display_name, u.username) AS by,
-                       c.created_at AS at, c.comment, d.reason
+                       c.created_at AS at, c.comment,
+                       CASE WHEN d.status = i.status THEN d.reason END AS reason
                   FROM issues i JOIN projects p ON p.id = i.project_id
                   LEFT JOIN rules rl ON rl.id = i.rule_id AND rl.engine_id = 'trivy'
                   LEFT JOIN LATERAL (
@@ -490,15 +506,21 @@ export async function collectCompliance(
       const triageFacts = await dependencyFacts(
         tx,
         triage.filter((t) => t.section === 'dependency').map((t) => t.id),
-        trackedBranchIds,
+        enrichBranchIds,
         { openOnly: false, priority },
       );
       for (const t of triage) t.vulnerability = triageFacts.get(t.id) ?? null;
       abortCheck(options.signal);
-      const datasets = await datasetsOf(tx, { enabled: monitoring, priority });
+      const single = report.projectId === null ? null : (scopeProjects[0] ?? null);
+      // A project report names a database only while the project's switch is on too: with it off
+      // the report used none. An organisation report keeps the instance switch.
+      const datasets = await datasetsOf(tx, {
+        enabled:
+          monitoring && (single === null || (await vulnerabilitySettings(tx, single.id)).enabled),
+        priority,
+      });
       abortCheck(options.signal);
 
-      const single = report.projectId === null ? null : (scopeProjects[0] ?? null);
       const singleBranch = single ? (branchOf.get(single.id) ?? null) : null;
       const generatedAt = isoReq(report.now);
       const sbom =
@@ -662,7 +684,7 @@ function rowVulnerability(
   return {
     id: row.vulnerability_id,
     packageName: row.package_name,
-    fixedVersions: row.fixed_version === null ? [] : [row.fixed_version],
+    fixedVersions: fixedVersionsOf([row.fixed_version]),
     kev: priority && row.kev && row.kev_date_added ? { dateAdded: row.kev_date_added } : null,
     epss:
       priority && row.epss_score !== null && row.epss_percentile !== null
@@ -683,6 +705,7 @@ async function versionSource(
   tx: Executor,
   input: {
     versionId: string;
+    settings: VulnerabilitySettings;
     org: { id: string; key: string; name: string };
     project: { id: string; key: string; name: string };
     generatedAt: string;
@@ -704,6 +727,22 @@ async function versionSource(
     .from(projectVersions)
     .where(and(eq(projectVersions.id, input.versionId), eq(projectVersions.projectId, project.id)));
   if (!version) throw new ComplianceCollectError('the version no longer exists');
+  // What the Vulnerabilities tab says about the version, and when its rows were last checked.
+  const allVersions = await tx
+    .select({
+      id: projectVersions.id,
+      label: projectVersions.label,
+      analyzedAt: projectVersions.analyzedAt,
+      tracking: projectVersions.tracking,
+    })
+    .from(projectVersions)
+    .where(eq(projectVersions.projectId, project.id));
+  const tracked = computeTracking(allVersions, input.settings.versionRule).get(version.id)?.tracked;
+  const [check] = await tx
+    .select({ checkedAt: vulnerabilityTargetChecks.checkedAt })
+    .from(vulnerabilityTargetChecks)
+    .where(eq(vulnerabilityTargetChecks.versionId, version.id));
+  if (!check) throw new ComplianceCollectError('the version has not been checked yet');
   const [analysis] =
     version.analysisId === null
       ? []
@@ -877,7 +916,10 @@ async function versionSource(
     vulnerability: rowVulnerability(t, priority),
   }));
   abortCheck(signal);
-  const datasets = await datasetsOf(tx, { enabled: true, priority });
+  // The rows of a version that is no longer tracked come from an older database, not today's.
+  // KEV and EPSS are joined live, so they stay.
+  const live = await datasetsOf(tx, { enabled: true, priority });
+  const datasets = tracked === true ? live : { ...live, vulnerabilityDatabase: null };
   const sbom = input.sbom
     ? await sbomOf(tx, {
         reportId: input.reportId,
@@ -897,7 +939,12 @@ async function versionSource(
       organization: input.org,
       project,
       branch: null,
-      version: { id: version.id, label: version.label },
+      version: {
+        id: version.id,
+        label: version.label,
+        tracked: tracked === true,
+        checkedAt: isoReq(check.checkedAt),
+      },
     },
     projects: [
       {

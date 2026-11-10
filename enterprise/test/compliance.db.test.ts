@@ -447,7 +447,12 @@ describe('Qualor Enterprise: compliance exports through the built plugin (4E-1 Â
     const report = JSON.parse((await download(root, view.id, 'json')).body) as Report;
     expect(report.scope).toMatchObject({
       branch: null,
-      version: { id: versionId, label: '3.1.0' },
+      version: {
+        id: versionId,
+        label: '3.1.0',
+        tracked: expect.any(Boolean),
+        checkedAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+      },
     });
     expect(report.findings).toEqual([
       expect.objectContaining({

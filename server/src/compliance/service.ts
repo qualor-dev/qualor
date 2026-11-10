@@ -518,6 +518,18 @@ export function createComplianceService(deps: {
     return changed.length > 0;
   };
 
+  /** The `sbom.sha256` a canonical report names; null when it names none or is no JSON object. */
+  const namedSbomSha256 = (canonical: Buffer): string | null => {
+    try {
+      const sbom = (
+        JSON.parse(canonical.toString('utf8')) as { sbom?: { sha256?: unknown } | null }
+      ).sbom;
+      return typeof sbom?.sha256 === 'string' ? sbom.sha256 : null;
+    } catch {
+      return null;
+    }
+  };
+
   /**
    * A summary over 64 KiB, or a `sha256` that is not the SHA-256 of the canonical bytes, fails the
    * row instead and answers false: nothing was completed. The column's check counts the stored
@@ -540,6 +552,10 @@ export function createComplianceService(deps: {
       createHash('sha256').update(sbom.json, 'utf8').digest('hex') !== sbom.sha256
     ) {
       return refuse('the SBOM hash does not match');
+    }
+    // Defence in depth: the canonical report names the SBOM it attaches, and it is this one.
+    if (namedSbomSha256(result.canonical) !== (sbom?.sha256 ?? null)) {
+      return refuse('the SBOM is not the one the report names');
     }
     if (Buffer.byteLength(JSON.stringify(result.summary) ?? '') > SUMMARY_MAX) return tooLarge();
     try {

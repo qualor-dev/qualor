@@ -107,8 +107,12 @@ export interface ReportJson {
     organization: { id: string; name: string };
     project: { id: string; key: string; name: string } | null;
     branch: { id: string; name: string } | null;
-    /** Set for the report of a version, which holds its dependencies only (schema 2). */
-    version: { id: string; label: string } | null;
+    /**
+     * Set for the report of a version, which holds its dependencies only (schema 2). `tracked` is
+     * whether the server tracks the version when the report is built; `checkedAt` is the time of
+     * its last vulnerability check, as ISO.
+     */
+    version: { id: string; label: string; tracked: boolean; checkedAt: string } | null;
   };
   standards: {
     id: string;

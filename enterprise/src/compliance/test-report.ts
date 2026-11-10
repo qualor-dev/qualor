@@ -230,7 +230,12 @@ export function sampleReportV1(): unknown {
 export function versionReport(): ReportJson {
   const report = dependencyReport();
   report.scope.branch = null;
-  report.scope.version = { id: 'v-1', label: '2.0.0' };
+  report.scope.version = {
+    id: 'v-1',
+    label: '2.0.0',
+    tracked: true,
+    checkedAt: '2026-05-30T08:00:00.000Z',
+  };
   report.projects = report.projects.map((p) => ({ ...p, branch: null, gate: null, trend: [] }));
   return report;
 }

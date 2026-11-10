@@ -8,7 +8,7 @@ import {
   type TestContext,
 } from '../../test/app';
 import { mainBranchId, seedRule } from '../../test/issues';
-import { seedTargetRow } from '../../test/vulnerabilities';
+import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
 import {
   analyses,
   branches,
@@ -19,8 +19,10 @@ import {
   vulnerabilityDecisions,
   vulnerabilityEpss,
   vulnerabilityKev,
+  vulndbDatasets,
 } from '../db/schema';
 import { writeVulndbSettings } from '../vulndb/settings';
+import { updateVulndbState } from '../vulndb/state';
 import { collectCompliance } from './collect';
 
 describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => {
@@ -28,6 +30,7 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
   let org: string;
   let project: { id: string; key: string };
   let version: string;
+  let oldVersion: string;
   let analysis: string;
 
   const newReport = async (
@@ -84,9 +87,40 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
         tag: 'v2.0.0',
         analysisId: analysis,
         analyzedAt: new Date(),
+        tracking: 'pinned',
       })
       .returning({ id: projectVersions.id });
     version = v!.id;
+    await seedCheck(ctx.db, {
+      projectId: project.id,
+      versionId: version,
+      baselineAt: new Date('2026-11-01T00:00:00Z'),
+      checkedAt: new Date('2026-11-09T04:30:00Z'),
+    });
+    // A version that is no longer tracked keeps its check and its rows (recheck R17).
+    const [old] = await ctx.db
+      .insert(projectVersions)
+      .values({
+        projectId: project.id,
+        label: '0.9.0',
+        source: 'label',
+        analyzedAt: new Date(),
+        tracking: 'unsupported',
+      })
+      .returning({ id: projectVersions.id });
+    oldVersion = old!.id;
+    await seedCheck(ctx.db, {
+      projectId: project.id,
+      versionId: oldVersion,
+      baselineAt: new Date('2026-10-01T00:00:00Z'),
+      checkedAt: new Date('2026-10-02T05:00:00Z'),
+    });
+    await seedTargetRow(ctx.db, {
+      projectId: project.id,
+      versionId: oldVersion,
+      packageName: 'old',
+      vulnerabilityId: 'CVE-2026-0010',
+    });
     await seedRule(ctx.db, {
       key: 'trivy:CVE-2026-0001',
       name: 'Prototype pollution',
@@ -111,6 +145,7 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
       vulnerabilityId: 'CVE-2026-0002',
       severity: 'unknown',
       title: null,
+      fixedVersion: '2.0.1, 1.2.3',
     });
     await row({
       ...base,
@@ -172,13 +207,30 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
         decidedAt: new Date('2026-11-02T10:00:00Z'),
       },
     ]);
+    const [ds] = await ctx.db
+      .insert(vulndbDatasets)
+      .values({
+        kind: 'trivy',
+        digest: `sha256:${'a'.repeat(64)}`,
+        sizeBytes: 1,
+        builtAt: new Date('2026-11-08T06:00:00Z'),
+        source: 'official',
+        status: 'ready',
+      })
+      .returning({ id: vulndbDatasets.id });
+    await updateVulndbState(ctx.db, (st) => ({ ...st, currentDatasetId: ds!.id }));
   });
   afterAll(() => ctx.close());
 
   it('has one project entry with the version analysis and no branch, gate or trend', async () => {
     const s = await collectCompliance(ctx.db, await newReport(), { limit: 100 });
     expect(s.scope.branch).toBeNull();
-    expect(s.scope.version).toEqual({ id: version, label: '2.0.0' });
+    expect(s.scope.version).toEqual({
+      id: version,
+      label: '2.0.0',
+      tracked: true,
+      checkedAt: '2026-11-09T04:30:00.000Z',
+    });
     expect(s.projects).toHaveLength(1);
     expect(s.projects[0]).toMatchObject({
       key: 'alpha',
@@ -222,7 +274,7 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
       severity: 'medium',
       cwe: [],
       message: 'left 1.0.0: CVE-2026-0002',
-      vulnerability: { fixedVersions: [], kev: null, epss: null },
+      vulnerability: { fixedVersions: ['1.2.3', '2.0.1'], kev: null, epss: null },
     });
   });
 
@@ -279,6 +331,27 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
 
   it('names the datasets as a branch report does', async () => {
     const s = await collectCompliance(ctx.db, await newReport(), { limit: 1 });
+    expect(s.datasets).toEqual({
+      vulnerabilityDatabase: {
+        builtAt: '2026-11-08T06:00:00.000Z',
+        digest: `sha256:${'a'.repeat(64)}`,
+      },
+      kev: null,
+      epss: null,
+    });
+  });
+
+  it('says a version is no longer tracked, and names no database for it', async () => {
+    const s = await collectCompliance(ctx.db, await newReport({ versionId: oldVersion }), {
+      limit: 10,
+    });
+    expect(s.scope.version).toEqual({
+      id: oldVersion,
+      label: '0.9.0',
+      tracked: false,
+      checkedAt: '2026-10-02T05:00:00.000Z',
+    });
+    expect(s.findings).toHaveLength(1);
     expect(s.datasets).toEqual({ vulnerabilityDatabase: null, kev: null, epss: null });
   });
 
@@ -299,7 +372,7 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
       .values({ projectId: project.id, enabled: false });
     try {
       await expect(collectCompliance(ctx.db, await newReport(), { limit: 10 })).rejects.toThrow(
-        'Vulnerability monitoring is off for this project',
+        'vulnerability monitoring is off for this project',
       );
     } finally {
       await ctx.db

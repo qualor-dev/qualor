@@ -24,8 +24,8 @@ const BRANCHES = [
 ];
 
 const VERSIONS = [
-  { id: '0190a6c2-0000-7000-8000-0000000000a2', label: '2.0.0' },
-  { id: '0190a6c2-0000-7000-8000-0000000000a1', label: '1.0.0' },
+  { id: '0190a6c2-0000-7000-8000-0000000000a2', label: '2.0.0', tracked: true },
+  { id: '0190a6c2-0000-7000-8000-0000000000a1', label: '1.0.0', tracked: false },
 ];
 
 /** The name `aria-labelledby` gives `el`: the texts of the elements it names, in order. */
@@ -202,7 +202,7 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
       'develop',
       'main',
       '2.0.0',
-      '1.0.0',
+      '1.0.0 (not tracked)',
     ]);
     expect([...(select?.querySelectorAll('optgroup') ?? [])].map((g) => g.label)).toEqual([
       'Branches',
@@ -233,7 +233,13 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
     FakeCompliance.install(server, [complianceReport({ id: OLD })]);
     const { root } = await render({ canCreate: true });
     const select = root.querySelector<HTMLSelectElement>('#compliance-target')!;
-    select.selectedIndex = [...select.options].findIndex((o) => o.textContent?.trim() === '1.0.0');
+    expect([...select.options].map((o) => o.textContent?.trim()).slice(-2)).toEqual([
+      '2.0.0',
+      '1.0.0 (not tracked)',
+    ]);
+    select.selectedIndex = [...select.options].findIndex(
+      (o) => o.textContent?.trim() === '1.0.0 (not tracked)',
+    );
     select.dispatchEvent(new Event('change'));
     await flush();
     button(root, 'Create report').click();
@@ -259,7 +265,7 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
     button(root, 'Create report').click();
     await flush();
     expect(alert()).toBe(
-      "Vulnerability monitoring is off for this project. Switch it on in the project's settings, then create the report.",
+      'Vulnerability monitoring is off for this project or this instance. Switch it on, then create the report.',
     );
     server.on('POST', REPORTS, { status: 409, body: problem(409, 'NOT_CHECKED') });
     button(root, 'Create report').click();
@@ -426,6 +432,34 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
     expect(preview.querySelector('.compliance-truncated')?.textContent).toContain(
       'This report holds the first 50 000 findings',
     );
+  });
+
+  it('states no secret or new-code count for a version report', async () => {
+    FakeCompliance.install(server, [
+      complianceReport({
+        id: OLD,
+        branch: null,
+        version: { id: VERSIONS[0]!.id, label: '2.0.0' },
+        summary: complianceSummary({ secrets: { open: 0 } }),
+      }),
+      complianceReport({ id: NEW, createdAt: '2026-10-11T10:00:00.000Z' }),
+    ]);
+    const { root } = await render();
+    const facts = async (id: string): Promise<string> => {
+      button(
+        rows(root).find((r) => r.dataset['key'] === id)!,
+        'Summary',
+      ).click();
+      await flush();
+      return root.querySelector('.compliance-counts')?.textContent ?? '';
+    };
+    const version = await facts(OLD);
+    expect(version).toContain('Vulnerable dependencies');
+    expect(version).not.toContain('Secrets');
+    expect(version).not.toContain('In new code');
+    const branch = await facts(NEW);
+    expect(branch).toContain('Secrets');
+    expect(branch).toContain('In new code');
   });
 
   it('says when there is no report yet', async () => {

@@ -71,7 +71,9 @@ export class ProjectCompliancePage {
   });
   protected readonly versions = computed<ComplianceVersion[]>(() =>
     this.versionList.hasValue()
-      ? this.versionList.value().items.map((v) => ({ id: v.id, label: v.label }))
+      ? this.versionList
+          .value()
+          .items.map((v) => ({ id: v.id, label: v.label, tracked: v.tracked }))
       : [],
   );
 

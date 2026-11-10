@@ -51,6 +51,34 @@ describe('renderPdf (4E-1 §2.5)', () => {
     expect(await textOf(await renderPdf(sampleReport()))).not.toContain('A version has no code');
   });
 
+  it('says how old the facts of a version report are', async () => {
+    const tracked = (await textOf(await renderPdf(versionReport()))).replace(/\s+/g, ' ');
+    expect(tracked).toContain('Vulnerabilities as of its last check on 2026-05-30.');
+    expect(tracked).not.toContain('no longer tracked');
+    const report = versionReport();
+    report.scope.version!.tracked = false;
+    report.datasets.vulnerabilityDatabase = null;
+    const untracked = (await textOf(await renderPdf(report))).replace(/\s+/g, ' ');
+    expect(untracked).toContain(
+      'This version is no longer tracked. Its vulnerabilities are those of its last check on 2026-05-30.',
+    );
+    expect(untracked).not.toContain('Vulnerabilities as of');
+    expect(untracked).not.toContain('Vulnerability database built');
+  });
+
+  it('states no secret count in a version report', async () => {
+    const report = versionReport();
+    // The sample's second category is titled "Secrets"; rename it so only a heading can match.
+    report.summary.standards[0]!.categories[1]!.title = 'Other';
+    const text = (await textOf(await renderPdf(report))).replace(/\s+/g, ' ');
+    expect(text).not.toContain('Open secrets');
+    expect(text).not.toContain('Secrets');
+    expect(text).toContain('Dependencies');
+    const branch = dependencyReport();
+    branch.summary.standards[0]!.categories[1]!.title = 'Other';
+    expect(await textOf(await renderPdf(branch))).toContain('Open secrets: 0');
+  });
+
   it('shows only the dependencies in the executive summary of a version report', async () => {
     const whole = (await textOf(await renderPdf(versionReport()))).replace(/\s+/g, ' ');
     const text = whole.slice(whole.indexOf('Executive summary'), whole.indexOf(' Projects '));
@@ -85,16 +113,29 @@ describe('renderPdf (4E-1 §2.5)', () => {
     expect(text).toContain('2026-03-05');
     expect(text).toContain('EPSS');
     expect(text).toContain('42.0%');
-    expect(text).toContain('2 open dependency findings.');
+    expect(text.replace(/\s+/g, ' ')).toContain('Open dependency findings: 2');
+    expect(text).not.toContain('2 open dependency findings.');
+    expect(text).not.toContain('are listed');
     expect(text).toContain('left-pad');
   });
 
-  it('prints a dash for the package of a finding without facts', async () => {
+  it('prints a dash for the package of a finding without facts, and keeps its rule name', async () => {
     const report = dependencyReport();
-    report.findings.find((f) => f.id === 'd2')!.vulnerability = null;
+    const d2 = report.findings.find((f) => f.id === 'd2')!;
+    d2.vulnerability = null;
+    d2.ruleName = 'Advisory of the left pad';
     const text = await textOf(await renderPdf(report));
     expect(text).not.toContain('left-pad');
-    expect(text).not.toContain('Dependency ');
+    expect(text).toContain('Advisory of the left');
+  });
+
+  it('adds the project to the dependency table of an organisation report only', async () => {
+    const report = dependencyReport();
+    expect(await textOf(await renderPdf(report))).not.toMatch(/Project\s+Rule\s+Name/);
+    report.scope.kind = 'organization';
+    report.scope.project = null;
+    report.scope.branch = null;
+    expect(await textOf(await renderPdf(report))).toMatch(/Project\s+Rule\s+Name/);
   });
 
   it('prints a tiny EPSS score as below 0.1%', async () => {
@@ -111,9 +152,9 @@ describe('renderPdf (4E-1 §2.5)', () => {
     expect(await textOf(await renderPdf(report))).not.toContain('SBOM');
     report.sbom = { format: 'CycloneDX 1.6', sha256: 'c'.repeat(64), components: 42 };
     const text = await textOf(await renderPdf(report));
-    expect(text).toContain('SBOM');
-    expect(text).toContain('CycloneDX 1.6, 42 components');
-    expect(text).toContain('c'.repeat(64));
+    expect(text.replace(/\s+/g, ' ')).toContain(
+      `SBOM: CycloneDX 1.6, 42 components, SHA-256 ${'c'.repeat(64)}`,
+    );
   });
 
   it('leaves the build time out of the cover when the dataset has none', async () => {
@@ -133,9 +174,9 @@ describe('renderPdf (4E-1 §2.5)', () => {
     report.summary.findings.total = report.findings.length;
     report.summary.dependencies.open = report.findings.length;
     const text = await textOf(await renderPdf(report));
-    expect(text).toContain(
-      `The first ${PDF_FINDINGS_MAX} of ${PDF_FINDINGS_MAX + 5} open dependency findings.`,
-    );
+    const flat = text.replace(/\s+/g, ' ');
+    expect(flat).toContain(`Open dependency findings: ${PDF_FINDINGS_MAX + 5}`);
+    expect(flat).toContain(`The first ${PDF_FINDINGS_MAX} of ${PDF_FINDINGS_MAX + 5} are listed.`);
     expect(text).toContain(`pkg-${PDF_FINDINGS_MAX - 1} `);
     expect(text).not.toContain(`pkg-${PDF_FINDINGS_MAX} `);
   }, 120_000);
@@ -170,6 +211,15 @@ describe('renderPdf (4E-1 §2.5)', () => {
     const a = await renderPdf(dependencyReport());
     const b = await renderPdf(dependencyReport());
     expect(a.equals(b)).toBe(true);
+  });
+
+  it('is byte-identical across renders of a report with an SBOM', async () => {
+    const make = () => {
+      const report = versionReport();
+      report.sbom = { format: 'CycloneDX 1.6', sha256: 'c'.repeat(64), components: 42 };
+      return report;
+    };
+    expect((await renderPdf(make())).equals(await renderPdf(make()))).toBe(true);
   });
 
   it('is byte-identical across renders of the same report', async () => {

@@ -35,6 +35,8 @@ export interface ComplianceBranch {
 export interface ComplianceVersion {
   id: string;
   label: string;
+  /** Whether the server tracks the version for vulnerabilities today. */
+  tracked: boolean;
 }
 
 const REPORTS = '/api/v0/ee/compliance/reports';
@@ -132,6 +134,8 @@ export class ComplianceReportsComponent {
     return report?.status === 'ready' && report.summary ? report : null;
   });
   protected readonly summary = computed(() => this.selected()?.summary ?? null);
+  /** A version report holds dependencies only: it states no code or secret count. */
+  protected readonly versionReport = computed(() => (this.selected()?.version ?? null) !== null);
   protected readonly standard = computed(() => {
     const standards = this.summary()?.standards ?? [];
     return standards.find((s) => s.id === this.standardId()) ?? standards[0] ?? null;
@@ -267,7 +271,7 @@ export class ComplianceReportsComponent {
       return $localize`:@@compliance.noAnalysis:This branch has no successful analysis yet. Analyze it first, then create the report.`;
     }
     if (err instanceof ApiError && err.code === 'MONITORING_OFF') {
-      return $localize`:@@compliance.monitoringOff:Vulnerability monitoring is off for this project. Switch it on in the project's settings, then create the report.`;
+      return $localize`:@@compliance.monitoringOff:Vulnerability monitoring is off for this project or this instance. Switch it on, then create the report.`;
     }
     if (err instanceof ApiError && err.code === 'NOT_CHECKED') {
       return $localize`:@@compliance.notChecked:This version has not been checked for vulnerabilities yet. Create the report after its first check.`;
@@ -331,6 +335,13 @@ export class ComplianceReportsComponent {
 
   protected severityLabel(severity: string): string {
     return label('severity', severity);
+  }
+
+  /** A version in the picker; one the server no longer tracks says so. */
+  protected versionName(version: ComplianceVersion): string {
+    return version.tracked
+      ? version.label
+      : $localize`:@@compliance.versionNotTracked:${version.label}:label: (not tracked)`;
   }
 
   protected formatLabel(format: string): string {

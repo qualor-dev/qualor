@@ -56,7 +56,10 @@ function setup(permissions: string[], features = ['compliance-export']): FakeSer
     body: page([branch(DEV, 'develop', false), branch(MAIN, 'main', true)]),
   });
   server.on('GET', `/api/v0/projects/${ID}/versions`, {
-    body: page([{ id: VERSION, label: '1.2.0', tracked: true }]),
+    body: page([
+      { id: VERSION, label: '1.2.0', tracked: true },
+      { id: '0190a6c2-0000-7000-8000-0000000000a9', label: '1.1.0', tracked: false },
+    ]),
   });
   server.on('GET', '/api/v0/system/info', {
     body: { version: '0.8.0', edition: 'enterprise', features, extensions: [] },
@@ -89,6 +92,7 @@ describe('ProjectCompliancePage (4E-1 §4)', () => {
       'develop',
       'main',
       '1.2.0',
+      '1.1.0 (not tracked)',
     ]);
     expect(select?.selectedOptions[0]?.textContent?.trim()).toBe('main');
     expect(

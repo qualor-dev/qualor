@@ -174,7 +174,12 @@ export function assembleReport(input: {
         ? { id: source.scope.branch.id, name: source.scope.branch.name }
         : null,
       version: source.scope.version
-        ? { id: source.scope.version.id, label: source.scope.version.label }
+        ? {
+            id: source.scope.version.id,
+            label: source.scope.version.label,
+            tracked: source.scope.version.tracked,
+            checkedAt: source.scope.version.checkedAt,
+          }
         : null,
     },
     standards: standards.map((s) => ({

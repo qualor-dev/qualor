@@ -10,6 +10,7 @@ import {
   type TestContext,
 } from '../../test/app';
 import { mainBranchId } from '../../test/issues';
+import { seedCheck } from '../../test/vulnerabilities';
 import {
   analyses,
   branchDependencies,
@@ -106,6 +107,7 @@ describe('collectCompliance: the attached SBOM (0.15 plan 5, V13)', () => {
     await ctx.db
       .insert(versionDependencies)
       .values([{ ...row('lodash', '4.17.20'), versionId: version, analysisId: a!.id }]);
+    await seedCheck(ctx.db, { projectId: project.id, versionId: version, baselineAt: new Date() });
   });
   afterAll(() => ctx.close());
 

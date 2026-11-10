@@ -15,10 +15,13 @@ import { analyses, auditEvents, branchDependencies, complianceReports } from '..
 import type { PluginCompliance, QualorPlugin } from '../plugins/contract';
 
 const STANDARDS = [{ id: 'cwe-top25-2025', version: '2025', sourceSha256: 'a'.repeat(64) }];
-const CANONICAL = '{"a":1}';
-const SHA = createHash('sha256').update(CANONICAL).digest('hex');
 const SBOM = '{"bomFormat":"CycloneDX"}';
 const SBOM_SHA = createHash('sha256').update(SBOM).digest('hex');
+// The canonical report names the SBOM it attaches; a report without one has no `sbom` key.
+const CANONICAL = '{"a":1}';
+const SHA = createHash('sha256').update(CANONICAL).digest('hex');
+const WITH_SBOM = JSON.stringify({ a: 1, sbom: { sha256: SBOM_SHA } });
+const WITH_SBOM_SHA = createHash('sha256').update(WITH_SBOM).digest('hex');
 
 let compliance: PluginCompliance;
 
@@ -117,8 +120,8 @@ describe('ctx.compliance and the attached SBOM (0.15 plan 5, V13)', () => {
     const id = await newReport();
     await expect(
       compliance.complete(id, {
-        canonical: Buffer.from(CANONICAL),
-        sha256: SHA,
+        canonical: Buffer.from(WITH_SBOM),
+        sha256: WITH_SBOM_SHA,
         summary: { s: 1 },
         sbom: { json: SBOM, sha256: SBOM_SHA },
       }),
@@ -147,8 +150,8 @@ describe('ctx.compliance and the attached SBOM (0.15 plan 5, V13)', () => {
     const id = await newReport();
     await expect(
       compliance.complete(id, {
-        canonical: Buffer.from(CANONICAL),
-        sha256: SHA,
+        canonical: Buffer.from(WITH_SBOM),
+        sha256: WITH_SBOM_SHA,
         summary: { s: 1 },
         sbom: { json: SBOM, sha256: 'b'.repeat(64) },
       }),
@@ -158,6 +161,34 @@ describe('ctx.compliance and the attached SBOM (0.15 plan 5, V13)', () => {
       .from(complianceReports)
       .where(eq(complianceReports.id, id));
     expect(row).toEqual({ status: 'failed', error: 'the SBOM hash does not match' });
+  });
+
+  it('refuses an SBOM that is not the one the report names, and fails the row', async () => {
+    const id = await newReport();
+    await expect(
+      compliance.complete(id, {
+        canonical: Buffer.from(CANONICAL),
+        sha256: SHA,
+        summary: { s: 1 },
+        sbom: { json: SBOM, sha256: SBOM_SHA },
+      }),
+    ).resolves.toBe(false);
+    const [row] = await ctx.db
+      .select({ status: complianceReports.status, error: complianceReports.error })
+      .from(complianceReports)
+      .where(eq(complianceReports.id, id));
+    expect(row).toEqual({ status: 'failed', error: 'the SBOM is not the one the report names' });
+  });
+
+  it('refuses a report that names an SBOM when none is given', async () => {
+    const id = await newReport();
+    await expect(
+      compliance.complete(id, {
+        canonical: Buffer.from(WITH_SBOM),
+        sha256: WITH_SBOM_SHA,
+        summary: { s: 1 },
+      }),
+    ).resolves.toBe(false);
   });
 
   it('answers 404 NOT_FOUND to the SBOM of a report that has none', async () => {

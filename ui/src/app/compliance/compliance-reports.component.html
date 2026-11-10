@@ -18,7 +18,7 @@
               <optgroup label="Versions" i18n-label="@@compliance.target.versions">
                 @for (v of versions(); track v.id) {
                   <option [value]="'version:' + v.id" [selected]="target() === 'version:' + v.id">
-                    {{ v.label }}
+                    {{ versionName(v) }}
                   </option>
                 }
               </optgroup>
@@ -264,7 +264,10 @@
                   @for (sev of severities; track sev) {
                     <th scope="col" class="num">{{ severityLabel(sev) }}</th>
                   }
-                  <th scope="col" class="num" i18n="@@compliance.preview.col.newCode">New code</th>
+                  @if (!versionReport()) {
+                    <!-- prettier-ignore -->
+                    <th scope="col" class="num" i18n="@@compliance.preview.col.newCode">New code</th>
+                  }
                   <th scope="col" class="num" i18n="@@compliance.preview.col.rules">Rules</th>
                   <th scope="col" i18n="@@compliance.preview.col.oldest">Oldest</th>
                 </tr>
@@ -280,7 +283,9 @@
                     @for (sev of severities; track sev) {
                       <td class="num">{{ c.bySeverity[sev] }}</td>
                     }
-                    <td class="num">{{ c.inNewCode }}</td>
+                    @if (!versionReport()) {
+                      <td class="num">{{ c.inNewCode }}</td>
+                    }
                     <td class="num">{{ c.rules }}</td>
                     <td class="nowrap">{{ c.oldestFirstSeenAt | dateTime: 'date' }}</td>
                   </tr>
@@ -292,7 +297,9 @@
                   @for (sev of severities; track sev) {
                     <td class="num">{{ st.notMapped.bySeverity[sev] }}</td>
                   }
-                  <td class="num">{{ st.notMapped.inNewCode }}</td>
+                  @if (!versionReport()) {
+                    <td class="num">{{ st.notMapped.inNewCode }}</td>
+                  }
                   <td class="num">{{ st.notMapped.rules }}</td>
                   <td></td>
                 </tr>
@@ -304,10 +311,12 @@
           <dl class="facts compliance-counts">
             <dt i18n="@@compliance.preview.findings">Open findings</dt>
             <dd>{{ s.findings.total }}</dd>
-            <dt i18n="@@compliance.preview.inNewCode">In new code</dt>
-            <dd>{{ s.findings.inNewCode }}</dd>
-            <dt i18n="@@compliance.preview.secrets">Secrets</dt>
-            <dd>{{ s.secrets.open }}</dd>
+            @if (!versionReport()) {
+              <dt i18n="@@compliance.preview.inNewCode">In new code</dt>
+              <dd>{{ s.findings.inNewCode }}</dd>
+              <dt i18n="@@compliance.preview.secrets">Secrets</dt>
+              <dd>{{ s.secrets.open }}</dd>
+            }
             <dt i18n="@@compliance.preview.dependencies">Vulnerable dependencies</dt>
             <dd>{{ s.dependencies.open }}</dd>
             <dt i18n="@@compliance.preview.falsePositive">Marked false positive</dt>

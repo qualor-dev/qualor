@@ -31,6 +31,7 @@ describe('collectCompliance: dependency facts, triage reasons, dataset dates (0.
   let main: string;
   let feature: string;
   let lodash: string, other: string, untracked: string, fpMain: string, fpBranch: string;
+  let split: string, decided: string, localWontFix: string;
 
   const newReport = async (values: Partial<typeof complianceReports.$inferInsert>) => {
     await ctx.db.execute(
@@ -104,6 +105,19 @@ describe('collectCompliance: dependency facts, triage reasons, dataset dates (0.
       packageName: 'minimist',
       status: 'false_positive',
     });
+    const r5 = await dep('CVE-2026-0005');
+    const r6 = await dep('CVE-2026-0006');
+    const r7 = await dep('CVE-2026-0007');
+    split = await seedIssue(ctx.db, { ...base, branchId: main, ruleId: r5, packageName: 'split' });
+    decided = await seedIssue(ctx.db, { ...base, branchId: main, ruleId: r6, packageName: 'dec' });
+    // A local "won't fix" on the untracked branch, with a project-wide false positive.
+    localWontFix = await seedIssue(ctx.db, {
+      ...base,
+      branchId: feature,
+      ruleId: r7,
+      packageName: 'wf',
+      status: 'wont_fix',
+    });
     const sqli = await seedRule(ctx.db, { key: 'semgrep:sqli', cwe: [89], quality: 'security' });
     await seedIssue(ctx.db, { ...base, branchId: main, ruleId: sqli });
 
@@ -146,6 +160,20 @@ describe('collectCompliance: dependency facts, triage reasons, dataset dates (0.
       vulnerabilityId: 'CVE-2026-0004',
       fixedVersion: '1.2.6',
     });
+    await row({
+      projectId: project.id,
+      branchId: main,
+      packageName: 'split',
+      vulnerabilityId: 'CVE-2026-0005',
+      fixedVersion: '1.2.3, 2.0.1',
+    });
+    await row({
+      projectId: project.id,
+      branchId: main,
+      packageName: 'dec',
+      vulnerabilityId: 'CVE-2026-0006',
+      fixedVersion: '5.0.0',
+    });
     await ctx.db.insert(vulnerabilityKev).values({
       vulnerabilityId: 'CVE-2026-0001',
       dateAdded: '2026-03-05',
@@ -155,6 +183,20 @@ describe('collectCompliance: dependency facts, triage reasons, dataset dates (0.
       .values({ vulnerabilityId: 'CVE-2026-0001', score: 0.42, percentile: 0.97 });
     // Project-wide reason, and the feature branch's own, different one.
     await ctx.db.insert(vulnerabilityDecisions).values([
+      {
+        projectId: project.id,
+        packageName: 'dec',
+        vulnerabilityId: 'CVE-2026-0006',
+        status: 'wont_fix',
+        reason: null,
+      },
+      {
+        projectId: project.id,
+        packageName: 'wf',
+        vulnerabilityId: 'CVE-2026-0007',
+        status: 'false_positive',
+        reason: 'component_not_present',
+      },
       {
         projectId: project.id,
         packageName: 'minimist',
@@ -252,6 +294,29 @@ describe('collectCompliance: dependency facts, triage reasons, dataset dates (0.
     expect(b.vulnerability).toBeNull();
   });
 
+  it('splits a comma-separated fixed version into single, sorted versions', async () => {
+    const s = await collectCompliance(ctx.db, await newReport({}), { limit: 100 });
+    expect(s.findings.find((f) => f.id === split)!.vulnerability!.fixedVersions).toEqual([
+      '1.2.3',
+      '2.0.1',
+    ]);
+  });
+
+  it('has no vulnerability for an open finding whose every row is decided', async () => {
+    const s = await collectCompliance(ctx.db, await newReport({}), { limit: 100 });
+    expect(s.findings.find((f) => f.id === decided)!.vulnerability).toBeNull();
+  });
+
+  it("gives no reason to a local won't fix that a project-wide false positive does not decide", async () => {
+    const s = await collectCompliance(ctx.db, await newReport({ branchId: feature }), {
+      limit: 100,
+    });
+    expect(s.triage.find((t) => t.id === localWontFix)).toMatchObject({
+      status: 'wont_fix',
+      reason: null,
+    });
+  });
+
   it('gives a code triage row no reason and no vulnerability', async () => {
     const code = await seedRule(ctx.db, { key: 'semgrep:xss', cwe: [79], quality: 'security' });
     const id = await seedIssue(ctx.db, {
@@ -298,6 +363,7 @@ describe('collectCompliance: dependency facts, triage reasons, dataset dates (0.
       });
       expect(s.findings.find((f) => f.id === lodash)!.vulnerability).toBeNull();
       expect(s.triage.find((x) => x.id === fpMain)!.vulnerability).toBeNull();
+      expect(s.datasets).toEqual({ vulnerabilityDatabase: null, kev: null, epss: null });
     } finally {
       await ctx.db
         .delete(projectVulnerabilitySettings)

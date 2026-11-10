@@ -128,8 +128,12 @@ export interface ComplianceSource {
     organization: { id: string; key: string; name: string };
     project: { id: string; key: string; name: string } | null;
     branch: { id: string; name: string } | null;
-    /** Set for the report of a version, which holds its dependencies only (plan 5, V12). */
-    version: { id: string; label: string } | null;
+    /**
+     * Set for the report of a version, which holds its dependencies only (plan 5, V12). `tracked`
+     * is the answer of the tracking rule today; `checkedAt` is the time of the version's last
+     * vulnerability check, which is the age of its facts.
+     */
+    version: { id: string; label: string; tracked: boolean; checkedAt: string } | null;
   };
   projects: ComplianceProjectSource[];
   groups: ComplianceFindingGroup[];

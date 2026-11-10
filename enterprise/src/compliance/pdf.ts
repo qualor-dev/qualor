@@ -90,6 +90,12 @@ function cover(layout: Layout, report: ReportJson, sha256: string): Promise<void
       `Version ${scope.version.label}. A version has no code analysis, so this report holds its ` +
         'dependencies only.',
     );
+    const checked = day(scope.version.checkedAt);
+    layout.text(
+      scope.version.tracked
+        ? `Vulnerabilities as of its last check on ${checked}.`
+        : `This version is no longer tracked. Its vulnerabilities are those of its last check on ${checked}.`,
+    );
   }
   layout.doc.moveDown(1);
   layout.fields([
@@ -180,29 +186,42 @@ async function executiveSummary(layout: Layout, report: ReportJson): Promise<voi
     );
   }
   layout.heading('Projects', SIZE.subheading);
-  await layout.table(
-    [
-      { header: 'Project', width: 130 },
-      { header: 'Branch', width: 60 },
-      { header: 'Last analysis', width: 110 },
-      { header: 'Quality gate', width: 60 },
-      { header: 'Security issues', width: 70, align: 'right' },
-      { header: 'Security rating', width: layout.width - 430, align: 'right' },
-    ],
-    report.projects.map((p) => {
-      const latest = p.trend.at(-1);
-      return [
-        cut(`${p.name} (${p.key})`, CELL_MAX),
-        cut(dash(p.branch), CELL_MAX),
-        p.analysis
-          ? cut(`${day(p.analysis.date)} ${p.analysis.revision ?? ''}`.trim(), CELL_MAX)
-          : 'Never analysed',
-        p.gate ? (GATE[p.gate.status] ?? p.gate.status) : '—',
-        dash(latest?.security_issues),
-        rating(latest?.security_rating ?? null),
-      ];
-    }),
-  );
+  const lastAnalysis = (p: ReportJson['projects'][number]): string =>
+    p.analysis
+      ? cut(`${day(p.analysis.date)} ${p.analysis.revision ?? ''}`.trim(), CELL_MAX)
+      : 'Never analysed';
+  if (report.scope.version) {
+    // A version has no branch, gate or code analysis: no column for them.
+    await layout.table(
+      [
+        { header: 'Project', width: 200 },
+        { header: 'Last analysis', width: layout.width - 200 },
+      ],
+      report.projects.map((p) => [cut(`${p.name} (${p.key})`, CELL_MAX), lastAnalysis(p)]),
+    );
+  } else {
+    await layout.table(
+      [
+        { header: 'Project', width: 130 },
+        { header: 'Branch', width: 60 },
+        { header: 'Last analysis', width: 110 },
+        { header: 'Quality gate', width: 60 },
+        { header: 'Security issues', width: 70, align: 'right' },
+        { header: 'Security rating', width: layout.width - 430, align: 'right' },
+      ],
+      report.projects.map((p) => {
+        const latest = p.trend.at(-1);
+        return [
+          cut(`${p.name} (${p.key})`, CELL_MAX),
+          cut(dash(p.branch), CELL_MAX),
+          lastAnalysis(p),
+          p.gate ? (GATE[p.gate.status] ?? p.gate.status) : '—',
+          dash(latest?.security_issues),
+          rating(latest?.security_rating ?? null),
+        ];
+      }),
+    );
+  }
   const failed = report.projects.flatMap((p) =>
     (p.gate?.failedConditions ?? []).map((c) => [
       cut(p.key, CELL_MAX),
@@ -250,7 +269,10 @@ async function standards(layout: Layout, report: ReportJson): Promise<void> {
       'A finding can count in more than one category; the total counts each finding once.',
       COLOR.muted,
     );
-    const fixed = 44 + 32 + 5 * 38 + 28 + 30 + 52;
+    // A version has no code, so none of its findings is in new code: no column for the count.
+    const newCode = report.scope.version === null;
+    const newCell = (n: number): string[] => (newCode ? [`${n}`] : []);
+    const fixed = 44 + 32 + 5 * 38 + (newCode ? 28 : 0) + 30 + 52;
     await layout.table(
       [
         { header: 'Id', width: 44 },
@@ -261,7 +283,7 @@ async function standards(layout: Layout, report: ReportJson): Promise<void> {
           width: 38,
           align: 'right' as const,
         })),
-        { header: 'New', width: 28, align: 'right' },
+        ...(newCode ? [{ header: 'New', width: 28, align: 'right' as const }] : []),
         { header: 'Rules', width: 30, align: 'right' },
         { header: 'Oldest', width: 52, align: 'right' },
       ],
@@ -271,7 +293,7 @@ async function standards(layout: Layout, report: ReportJson): Promise<void> {
           cut(c.title, CELL_MAX),
           `${c.open}`,
           ...severityCells(c.bySeverity),
-          `${c.inNewCode}`,
+          ...newCell(c.inNewCode),
           `${c.rules}`,
           day(c.oldestFirstSeenAt),
         ]),
@@ -280,7 +302,7 @@ async function standards(layout: Layout, report: ReportJson): Promise<void> {
           'Not mapped',
           `${s.notMapped.open}`,
           ...severityCells(s.notMapped.bySeverity),
-          `${s.notMapped.inNewCode}`,
+          ...newCell(s.notMapped.inNewCode),
           `${s.notMapped.rules}`,
           '—',
         ],
@@ -325,39 +347,42 @@ function hasPriority(report: ReportJson): boolean {
 
 /**
  * One row per listed dependency finding: its rule can cover several packages, with their own fixed
- * versions, so a row per rule could not show them. KEV and EPSS only with priority.
+ * versions, so a row per rule could not show them. The rule's name stays, so a finding without
+ * facts is still identifiable. KEV and EPSS only with priority; the project only in an
+ * organisation report.
  */
 async function dependencyFindings(layout: Layout, report: ReportJson): Promise<void> {
   const list = report.findings.filter((f) => f.section === 'dependency');
   if (list.length === 0) return;
   const shown = list.slice(0, PDF_FINDINGS_MAX);
   const priority = hasPriority(report);
-  const fixed = 90 + 50 + 90 + 60 + (priority ? 100 : 0);
+  const withProject = report.scope.kind === 'organization';
   const total = report.summary.dependencies.open;
-  layout.text(
-    shown.length < total
-      ? `The first ${shown.length} of ${total} open dependency findings.`
-      : `${total} open dependency findings.`,
-  );
+  const fixed = 70 + 70 + 42 + 70 + 54 + (withProject ? 45 : 0) + (priority ? 48 + 40 : 0);
+  if (shown.length < total) layout.text(`The first ${shown.length} of ${total} are listed.`);
   await layout.table(
     [
-      { header: 'Rule', width: 90 },
+      ...(withProject ? [{ header: 'Project', width: 45 }] : []),
+      { header: 'Rule', width: 70 },
+      { header: 'Name', width: 70 },
       { header: 'Package', width: layout.width - fixed },
-      { header: 'Severity', width: 50 },
-      { header: 'Fixed in', width: 90 },
+      { header: 'Severity', width: 42 },
+      { header: 'Fixed in', width: 70 },
       ...(priority
         ? [
-            { header: 'KEV', width: 50, align: 'right' as const },
-            { header: 'EPSS', width: 50, align: 'right' as const },
+            { header: 'KEV', width: 48, align: 'right' as const },
+            { header: 'EPSS', width: 40, align: 'right' as const },
           ]
         : []),
-      { header: 'First seen', width: 60, align: 'right' as const },
+      { header: 'First seen', width: 54, align: 'right' as const },
     ],
     (function* () {
       for (const f of shown) {
         const v = f.vulnerability;
         yield [
+          ...(withProject ? [cut(f.project, CELL_MAX)] : []),
           cut(f.rule, CELL_MAX),
+          cut(f.ruleName, CELL_MAX),
           cut(dash(v?.packageName), CELL_MAX),
           capitalised(f.severity),
           cut(dash(v?.fixedVersions.join(', ')), CELL_MAX),
@@ -384,9 +409,12 @@ async function secretsAndDependencies(layout: Layout, report: ReportJson): Promi
     await layout.table(columns, rows);
   };
   layout.page();
-  layout.heading('Secrets');
-  layout.text(`Open secrets: ${report.summary.secrets.open}`);
-  await rulesTable(byRule(report, 'secret'));
+  // A version has no secrets scan: it states no secret count.
+  if (!report.scope.version) {
+    layout.heading('Secrets');
+    layout.text(`Open secrets: ${report.summary.secrets.open}`);
+    await rulesTable(byRule(report, 'secret'));
+  }
   layout.heading('Dependencies');
   layout.text(`Open dependency findings: ${report.summary.dependencies.open}`);
   await dependencyFindings(layout, report);
