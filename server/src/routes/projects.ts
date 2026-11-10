@@ -63,6 +63,7 @@ import { projectAiReview } from '../review/settings';
 import { forgetForeignMergeRequestUrls } from '../scm/connections';
 import { projectAutoFixSchema } from './auto-fix';
 import { vulnerabilitySettingsOf } from '../versions/settings';
+import { mainOpenCounts, portfolioVulnerabilityFacts } from '../vulnerabilities/portfolio';
 import { newVulnerabilityMarkers, type NewMarker } from '../vulnerabilities/summary';
 import { enqueueRecheck } from '../vulnerabilities/recheck';
 import { readVulndbSettings } from '../vulndb/settings';
@@ -115,7 +116,11 @@ export const projectSchema = z.object({
   aiReview: projectAiReviewSchema,
   /**
    * Dependency vulnerability monitoring: how many tracked targets have new vulnerabilities (main,
-   * branches, versions). Null while the instance or the project switch is off.
+   * branches, versions), the main branch's open Critical and High vulnerabilities (null until it
+   * has a dependency inventory), the distinct exploited (KEV) ids open on main and the tracked
+   * versions (null without `vuln.priority`), and how many tracked versions have an open
+   * vulnerability. Open means effective-open and not ignored. Null while the instance or the
+   * project switch is off.
    */
   vulnerabilities: z
     .object({
@@ -124,6 +129,9 @@ export const projectSchema = z.object({
         branches: z.number().int(),
         versions: z.number().int(),
       }),
+      main: z.object({ critical: z.number().int(), high: z.number().int() }).nullable(),
+      exploited: z.number().int().nullable(),
+      vulnerableReleases: z.number().int().nullable(),
     })
     .nullable(),
 });
@@ -218,6 +226,23 @@ export async function projectDtos(
     ? await vulnerabilitySettingsOf(db, ids)
     : null;
   const markers = monitored ? await newVulnerabilityMarkers(db, ids) : null;
+  // The counts beside the marker: a fixed number of queries for the whole page, never one per
+  // project.
+  const facts = monitored
+    ? await portfolioVulnerabilityFacts(db, ids, {
+        priority: deps.limits.vulnerabilities.priority,
+      })
+    : null;
+  const mainCounts = monitored
+    ? await mainOpenCounts(
+        db,
+        mains.flatMap((m) =>
+          monitored.get(m.branch.projectId)?.enabled === true
+            ? [{ projectId: m.branch.projectId, branchId: m.branch.id }]
+            : [],
+        ),
+      )
+    : null;
   return rows.map((p) => {
     const main = byProject.get(p.id);
     return {
@@ -261,7 +286,12 @@ export async function projectDtos(
       aiReview: projectAiReview(llmSettings, p),
       vulnerabilities:
         monitored?.get(p.id)?.enabled === true && markers?.has(p.id)
-          ? { newIn: markers.get(p.id) as NewMarker }
+          ? {
+              newIn: markers.get(p.id) as NewMarker,
+              main: mainCounts?.get(p.id) ?? null,
+              exploited: facts?.get(p.id)?.exploited ?? null,
+              vulnerableReleases: facts?.get(p.id)?.vulnerableReleases ?? null,
+            }
           : null,
     };
   });

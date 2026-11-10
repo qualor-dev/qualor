@@ -2930,6 +2930,12 @@ export interface paths {
                                         branches: number;
                                         versions: number;
                                     };
+                                    main: {
+                                        critical: number;
+                                        high: number;
+                                    } | null;
+                                    exploited: number | null;
+                                    vulnerableReleases: number | null;
                                 } | null;
                             }[];
                             nextCursor: string | null;
@@ -3051,6 +3057,12 @@ export interface paths {
                                     branches: number;
                                     versions: number;
                                 };
+                                main: {
+                                    critical: number;
+                                    high: number;
+                                } | null;
+                                exploited: number | null;
+                                vulnerableReleases: number | null;
                             } | null;
                         };
                     };
@@ -3192,6 +3204,12 @@ export interface paths {
                                     branches: number;
                                     versions: number;
                                 };
+                                main: {
+                                    critical: number;
+                                    high: number;
+                                } | null;
+                                exploited: number | null;
+                                vulnerableReleases: number | null;
                             } | null;
                         };
                     };
@@ -3326,6 +3344,12 @@ export interface paths {
                                     branches: number;
                                     versions: number;
                                 };
+                                main: {
+                                    critical: number;
+                                    high: number;
+                                } | null;
+                                exploited: number | null;
+                                vulnerableReleases: number | null;
                             } | null;
                         };
                     };
@@ -3540,6 +3564,12 @@ export interface paths {
                                     branches: number;
                                     versions: number;
                                 };
+                                main: {
+                                    critical: number;
+                                    high: number;
+                                } | null;
+                                exploited: number | null;
+                                vulnerableReleases: number | null;
                             } | null;
                         };
                     };

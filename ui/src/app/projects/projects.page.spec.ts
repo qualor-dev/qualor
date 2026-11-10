@@ -82,10 +82,20 @@ describe('ProjectsPage', () => {
     server.on('GET', '/api/v0/projects', {
       body: page([
         project('payments', 'Payments API', {
-          vulnerabilities: { newIn: { main: true, branches: 0, versions: 2 } },
+          vulnerabilities: {
+            newIn: { main: true, branches: 0, versions: 2 },
+            main: null,
+            exploited: null,
+            vulnerableReleases: null,
+          },
         }),
         project('quiet', 'Quiet', {
-          vulnerabilities: { newIn: { main: false, branches: 0, versions: 0 } },
+          vulnerabilities: {
+            newIn: { main: false, branches: 0, versions: 0 },
+            main: null,
+            exploited: null,
+            vulnerableReleases: null,
+          },
         }),
         project('none', 'None', { vulnerabilities: null }),
       ]),

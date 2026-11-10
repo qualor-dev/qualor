@@ -69,3 +69,43 @@ export async function portfolioVulnerabilityFacts(
   }
   return result;
 }
+
+/** The main branch's open Critical and High vulnerabilities; null until it has an inventory. */
+export type MainOpenCounts = { critical: number; high: number } | null;
+
+/**
+ * The open (effective-open, not ignored) Critical and High rows of each main branch, by project,
+ * for the projects list (brief §A). A main branch whose latest analysis carried no dependency
+ * inventory has no counts yet: null. One grouped query over the {@link scopedRows} of the given
+ * branches; the switches are the caller's to check.
+ */
+export async function mainOpenCounts(
+  tx: Executor,
+  mains: readonly { projectId: string; branchId: string }[],
+): Promise<Map<string, MainOpenCounts>> {
+  const result = new Map<string, MainOpenCounts>(mains.map((m) => [m.projectId, null]));
+  if (mains.length === 0) return result;
+  const ids = uuidList(mains.map((m) => m.branchId));
+  const rows = await tx.execute<{
+    project_id: string;
+    has_inventory: boolean;
+    critical: number;
+    high: number;
+  }>(sql`
+    WITH r AS (${scopedRows(sql`tv.branch_id IN ${ids}`)})
+    SELECT b.project_id,
+           EXISTS (SELECT 1 FROM branch_dependencies bd WHERE bd.branch_id = b.id) AS has_inventory,
+           count(r.row_id) FILTER (
+             WHERE r.severity = 'critical' AND r.eff_status = 'open' AND NOT r.ignored)::int AS critical,
+           count(r.row_id) FILTER (
+             WHERE r.severity = 'high' AND r.eff_status = 'open' AND NOT r.ignored)::int AS high
+      FROM branches b
+      LEFT JOIN r ON r.branch_id = b.id
+     WHERE b.id IN ${ids}
+     GROUP BY b.project_id, b.id`);
+  for (const row of rows.rows) {
+    if (!result.has(row.project_id) || !row.has_inventory) continue;
+    result.set(row.project_id, { critical: row.critical, high: row.high });
+  }
+  return result;
+}
