@@ -1,7 +1,8 @@
 # Slack and Microsoft Teams notifications
 
 Qualor posts to a Slack or Microsoft Teams channel when the quality gate of a project's main branch
-fails, when it passes again, and once a week with a security digest. Messages link back to Qualor.
+fails, when it passes again, when a vulnerability in a tracked version is exploited, and once a week
+with a security digest. Messages link back to Qualor.
 For a receiver of your own, use a generic webhook ([Webhooks and REST API](./webhooks-and-api.md)).
 
 Organisation administrators set it up, for every project of the organisation or for one project. A
@@ -13,12 +14,21 @@ Slack or Teams webhook counts toward the organisation's 50 webhooks.
 |---|---|
 | **Quality gate failed** | the main branch's gate becomes failed, after a new analysis or a changed issue status. It lists up to five failing conditions, the new issues on new code by security, reliability and maintainability, the commit, and an **Open in Qualor** button |
 | **Quality gate passes again** | the main branch's gate passed after it had failed |
-| **Weekly security digest** | every Monday from 09:00 in the webhook's time zone (below): new security issues of the last 7 days by severity, open security issues, the gate of every project that needs attention (up to 20, then a count), and the three most severe new issues |
+| **Exploited vulnerability** | at once, when a vulnerability in a tracked version or tracked branch is in the CISA KEV catalog. Each one posts once. Business and Enterprise. It lists the project, the vulnerability, the package and installed versions, the fix, the targets and the KEV date |
+| **Weekly security digest** | every Monday from 09:00 in the webhook's time zone (below): new security issues of the last 7 days by severity, open security issues, the gate of every project that needs attention (up to 20, then a count), and the three most severe new issues. With Business or Enterprise it also has the section **Vulnerabilities in tracked versions**: the new High and Critical vulnerabilities of the week, counted per project (up to 10 projects), with the KEV count |
 
 The webhook's time zone defaults to the browser's when you create the webhook, and can be any IANA
 zone such as `Europe/Berlin` or `UTC`. The digest covers the 7 days that end that Monday at 09:00.
-A week with no new security issue and no failing gate sends nothing. A Monday the server was down
-all day is skipped.
+A week with no new security issue, no new High or Critical vulnerability and no failing gate sends
+nothing. A Monday the server was down all day is skipped.
+
+The first exploited post can list the KEV vulnerabilities already present, once, as the
+[exploited email](./email.md#vulnerability-emails) does.
+
+Webhooks with the weekly digest got the exploited event when the server was upgraded. To stop the
+posts, remove the event with `PATCH /api/v0/webhooks/{id}`
+([Webhooks and REST API](./webhooks-and-api.md#webhooks)), or create the webhook again. The UI
+cannot edit a webhook's events.
 
 Merge requests and other branches never post to the channel. Each person can still watch a project
 by email ([Email](./email.md)).
@@ -36,7 +46,7 @@ Messages link to Qualor only when the server knows its address, `QUALOR_PUBLIC_U
    **Authorize**). For a private channel you must be a member.
 3. Copy the **Webhook URL** (`https://hooks.slack.com/services/…`).
 4. In Qualor, open **Settings → Webhooks → New webhook**, or **Project → Settings → Webhooks** for
-   one project. Choose **Slack**, paste the URL, keep the three events, choose the time zone of the
+   one project. Choose **Slack**, paste the URL, keep the events, choose the time zone of the
    digest, and press **Add webhook**.
 5. Press **Send test** on the new webhook. The channel shows "Qualor is connected".
 

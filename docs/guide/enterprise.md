@@ -23,7 +23,7 @@ community edition.
 | [Dependency licences](./dependency-licenses.md): every project's dependencies and their licences, on the **Dependencies** tab | none | yes | yes | yes |
 | [A licence policy](./dependency-licenses.md#the-licence-policy-business-and-enterprise): forbidden licences become issues and fail the gate | `license-policy` | no | yes | yes |
 | [Exploited vulnerabilities and exploit probability](./dependency-vulnerabilities.md#exploited-and-exploit-probability-business-and-enterprise) (CISA KEV, FIRST EPSS) on the **Vulnerabilities** tab | `vuln.priority` | no | yes | yes |
-| [Vulnerability alerts](./dependency-vulnerabilities.md#alerts-business-and-enterprise) by email and webhook | `vuln.alerts` | no | yes | yes |
+| [Vulnerability alerts](./dependency-vulnerabilities.md#alerts-business-and-enterprise) by email, webhook, Slack and Teams | `vuln.alerts` | no | yes | yes |
 | [SBOM and VEX export](./dependency-vulnerabilities.md#export-sbom-and-vex-business-and-enterprise) | `sbom` | no | yes | yes |
 
 A key switches on the features it lists, and nothing else. Two features work only with the one

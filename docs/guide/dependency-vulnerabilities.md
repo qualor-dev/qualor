@@ -144,6 +144,7 @@ versions it tracks, without you opening the tab.
 | **New vulnerabilities in tracked versions** in the project's **Watch** menu, and a column in **Settings → Notifications** | turns the two emails on or off for that watch. A new watch has it on. Without the feature the box is disabled and shows a **Business** pill |
 | Digest email | once a day at 06:00 UTC: the new High and Critical vulnerabilities that are open and not ignored |
 | Exploited email | at once, when a vulnerability is in the CISA KEV catalog |
+| Slack and Teams | the exploited vulnerabilities at once, and a section in the weekly digest ([Slack and Microsoft Teams notifications](./chat-notifications.md)) |
 | `vulnerabilities.found` webhook event | the same list as the digest, for generic webhooks ([Webhooks](./webhooks-and-api.md#webhooks)) |
 
 Only vulnerabilities found after the alert baseline count. The emails, their limits and the baseline
