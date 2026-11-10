@@ -15,7 +15,7 @@ community edition.
 | [Single sign-on](./sso-and-scim.md) (OIDC, SAML 2.0) | `sso` | no | one connection at a time | yes |
 | [Several identity providers at once](./sso-and-scim.md#one-connection-or-several), up to 10 connections | `sso.multi` | no | no | yes |
 | [SCIM 2.0 provisioning](./sso-and-scim.md#scim-with-entra-id-and-okta) | `scim` | no | no | yes |
-| [Compliance reports](./compliance-reports.md) (OWASP Top 10, CWE Top 25, OWASP ASVS, PCI DSS 6.2.4) as JSON, CSV and PDF | `compliance-export` | no | no | yes |
+| [Compliance reports](./compliance-reports.md) (OWASP Top 10, CWE Top 25, OWASP ASVS, PCI DSS 6.2.4) as JSON, CSV and PDF, with the project's SBOM attached | `compliance-export` | no | no | yes |
 | [Portfolio reports](./portfolio.md): the quality of every project and organisation, with 12-week or 12-month trends and the projects that need attention, as CSV and PDF | `portfolio` | no | no | yes |
 | [AI review](./ai-review.md) of merge requests: comments and suggested changes on GitLab and GitHub, on your own model | none | yes | yes | yes |
 | [Automatic fix suggestions](./ai-assistant.md#automatic-fix-suggestions-enterprise) for the new findings of merge requests, posted without a click | `llm.auto-fix` | no | no | yes |

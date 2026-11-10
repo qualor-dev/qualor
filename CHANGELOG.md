@@ -8,6 +8,13 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
+- Enterprise: compliance reports cover a released version (its dependencies only), name the
+  vulnerability of each dependency finding (fixed versions, KEV, EPSS), give the reason of each
+  dependency triage decision and the dates of the vulnerability data, and attach the SBOM
+  (CycloneDX 1.6) of a branch or version, with its SHA-256, as a fourth download (`format=sbom`).
+  New reports have `schemaVersion` 2 ([Compliance reports](docs/guide/compliance-reports.md)).
+- Enterprise: the portfolio counts vulnerable releases and exploited vulnerabilities per project,
+  in the page, the CSV and the PDF ([Portfolio reports](docs/guide/portfolio.md)).
 - Business and Enterprise: export a branch's or version's SBOM (CycloneDX 1.6, SPDX 2.3) and VEX
   (CycloneDX VEX, OpenVEX) from the Vulnerabilities tab or with `GET /projects/sbom` and
   `GET /projects/vex` (`sbom`). A project analysis token reads its own project's documents.
