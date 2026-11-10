@@ -438,7 +438,8 @@ export async function collectCompliance(
               };
             });
       // Only the branches of the report are enriched, and only the ones the server monitors.
-      const enrichBranchIds = trackedBranchIds.filter((id) => branchIds.includes(id));
+      const reportBranchIds = new Set(branchIds);
+      const enrichBranchIds = trackedBranchIds.filter((id) => reportBranchIds.has(id));
       const openFacts = await dependencyFacts(
         tx,
         findings.filter((f) => f.section === 'dependency').map((f) => f.id),

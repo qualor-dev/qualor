@@ -105,7 +105,7 @@ describe('renderPdf (4E-1 §2.5)', () => {
     expect(text).not.toContain('EPSS data of');
   });
 
-  it('shows the fixed versions, KEV date and EPSS percentile of each dependency finding', async () => {
+  it('shows the fixed versions, KEV date and EPSS score of each dependency finding', async () => {
     const text = await textOf(await renderPdf(dependencyReport()));
     expect(text).toContain('Fixed in');
     expect(text).toContain('3.10.2, 4.17.21');
