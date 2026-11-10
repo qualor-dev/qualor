@@ -229,15 +229,35 @@ describe('projects: the new-vulnerability marker', () => {
       exploited: null,
       vulnerableReleases: 1,
     });
-    expect((await get(`/projects/${id}`)).json().vulnerabilities).toMatchObject({
-      main: { critical: 2, high: 1 },
-      vulnerableReleases: 1,
-    });
     // A main branch without a dependency inventory has no counts yet.
     expect(list.find((p) => p.id === quiet)?.vulnerabilities).toMatchObject({
       main: null,
       exploited: null,
       vulnerableReleases: 0,
+    });
+  });
+
+  it('leaves the counts to the list: one project keeps newIn, with the counts null', async () => {
+    const { id } = await counted();
+    facts.portfolio = 0;
+    facts.main = 0;
+    const one = await get(`/projects/${id}`);
+    expect(one.statusCode, one.body).toBe(200);
+    expect(one.json().vulnerabilities).toEqual({
+      newIn: { main: true, branches: 0, versions: 0 },
+      main: null,
+      exploited: null,
+      vulnerableReleases: null,
+    });
+    // The queries behind the counts do not run for one project.
+    expect(facts).toEqual({ portfolio: 0, main: 0 });
+    const list = (await get('/projects?limit=200')).json().items as {
+      id: string;
+      vulnerabilities: Record<string, unknown> | null;
+    }[];
+    expect(list.find((p) => p.id === id)?.vulnerabilities).toMatchObject({
+      main: { critical: 2, high: 1 },
+      vulnerableReleases: 1,
     });
   });
 

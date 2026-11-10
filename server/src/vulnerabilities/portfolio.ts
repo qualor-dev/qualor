@@ -20,18 +20,23 @@ export interface PortfolioVulnerabilityFacts {
  *   main branch or a tracked version; null without `priority`.
  *
  * Both are null while the instance switch or the project's switch is off. Every id is a key.
- * Never a query per project: the instance switch, the targets (three queries) and one aggregate
- * over all of them.
+ * Never a query per project: the instance switch (unless the caller passes it), the targets (three
+ * queries) and one aggregate over all of them.
  */
 export async function portfolioVulnerabilityFacts(
   tx: Executor,
   projectIds: readonly string[],
-  options: { priority: boolean },
+  options: {
+    priority: boolean;
+    /** The instance switch, when the caller has read it already. */
+    instanceEnabled?: boolean;
+  },
 ): Promise<Map<string, PortfolioVulnerabilityFacts>> {
   const result = new Map<string, PortfolioVulnerabilityFacts>(
     projectIds.map((id) => [id, { vulnerableReleases: null, exploited: null }]),
   );
-  if (projectIds.length === 0 || !(await readVulndbSettings(tx)).enabled) return result;
+  if (projectIds.length === 0) return result;
+  if (!(options.instanceEnabled ?? (await readVulndbSettings(tx)).enabled)) return result;
 
   const versionIds: string[] = [];
   const branchIds: string[] = [];

@@ -208,6 +208,19 @@ describe('portfolioVulnerabilityFacts (plan 5, V1)', () => {
     }
   });
 
+  it('takes the instance switch from the caller when it has read it already', async () => {
+    const { projectId, version } = await setup();
+    const v1 = await version('v1', 1);
+    await row(projectId, { versionId: v1 }, 'CVE-2024-5101');
+    const read = (instanceEnabled: boolean) =>
+      portfolioVulnerabilityFacts(t.db, [projectId], { priority: true, instanceEnabled });
+    expect((await read(false)).get(projectId)).toEqual({
+      vulnerableReleases: null,
+      exploited: null,
+    });
+    expect((await read(true)).get(projectId)).toEqual({ vulnerableReleases: 1, exploited: 0 });
+  });
+
   it('answers an empty list with an empty map', async () => {
     expect((await portfolioVulnerabilityFacts(t.db, [], { priority: true })).size).toBe(0);
   });

@@ -119,8 +119,9 @@ export const projectSchema = z.object({
    * branches, versions), the main branch's open Critical and High vulnerabilities (null until it
    * has a dependency inventory), the distinct exploited (KEV) ids open on main and the tracked
    * versions (null without `vuln.priority`), and how many tracked versions have an open
-   * vulnerability. Open means effective-open and not ignored. Null while the instance or the
-   * project switch is off.
+   * vulnerability. Open means effective-open and not ignored. The three counts are for the
+   * projects list: only `GET /projects` fills them, one project's answers give them as null.
+   * Null while the instance or the project switch is off.
    */
   vulnerabilities: z
     .object({
@@ -150,6 +151,15 @@ export interface ProjectViewer {
 export interface ProjectDtoDeps {
   db: Executor;
   limits: Limits;
+}
+
+/** What only some answers carry. */
+export interface ProjectDtoOptions {
+  /**
+   * The vulnerability counts of the projects list (`main`, `exploited`, `vulnerableReleases`).
+   * Without it they are null, and the queries behind them do not run.
+   */
+  vulnerabilityCounts?: boolean;
 }
 
 /** The viewer's organisation roles and project grants for `rows`: two queries, none for an admin. */
@@ -196,6 +206,7 @@ export async function projectDtos(
   deps: ProjectDtoDeps,
   rows: readonly ProjectRow[],
   viewer: ProjectViewer,
+  options: ProjectDtoOptions = {},
 ): Promise<ProjectDto[]> {
   if (rows.length === 0) return [];
   const { db } = deps;
@@ -222,22 +233,23 @@ export async function projectDtos(
   );
   const ids = rows.map((r) => r.id);
   // Null for every project while the instance switch is off, and for those whose own is off.
-  const monitored = (await readVulndbSettings(db)).enabled
-    ? await vulnerabilitySettingsOf(db, ids)
-    : null;
+  const instanceEnabled = (await readVulndbSettings(db)).enabled;
+  const monitored = instanceEnabled ? await vulnerabilitySettingsOf(db, ids) : null;
   const markers = monitored ? await newVulnerabilityMarkers(db, ids) : null;
-  // The counts beside the marker: a fixed number of queries for the whole page, never one per
-  // project.
-  const facts = monitored
+  // The counts beside the marker, for the projects list only: a fixed number of queries for the
+  // whole page, never one per project.
+  const counted = options.vulnerabilityCounts === true ? monitored : null;
+  const facts = counted
     ? await portfolioVulnerabilityFacts(db, ids, {
         priority: deps.limits.vulnerabilities.priority,
+        instanceEnabled,
       })
     : null;
-  const mainCounts = monitored
+  const mainCounts = counted
     ? await mainOpenCounts(
         db,
         mains.flatMap((m) =>
-          monitored.get(m.branch.projectId)?.enabled === true
+          counted.get(m.branch.projectId)?.enabled === true
             ? [{ projectId: m.branch.projectId, branchId: m.branch.id }]
             : [],
         ),
@@ -341,7 +353,12 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
         .limit(limit + 1);
       const page = toPage(rows, limit);
       return {
-        items: await projectDtos(dtoDeps(), page.items, { access, user: principal.user }),
+        items: await projectDtos(
+          dtoDeps(),
+          page.items,
+          { access, user: principal.user },
+          { vulnerabilityCounts: true },
+        ),
         nextCursor: page.nextCursor,
       };
     },
