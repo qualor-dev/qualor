@@ -47,24 +47,39 @@ const CLOCK_TOLERANCE_S = 60;
 const KEY_DETAILS = new Set(['oidc.key_selection', 'oidc.id_token.signature']);
 
 /**
- * Maps a library error to a fixed detail (spec §7.7): the oauth4webapi code openid-client keeps on
- * its ClientError, and the claim a comparison failed on; a refusal of ssoFetch however deep it was
- * wrapped. Never the message, which may echo the IdP's text.
+ * What `oidcDetail` reads along an error's cause chain (5 levels at most): the first ssoFetch
+ * refusal, else the first `code` and `claim`, and whether a cause is oauth4webapi's failed JWS
+ * check (an OAUTH_INVALID_RESPONSE whose cause holds the signature).
  */
-export function oidcDetail(err: unknown): string {
+function errorTrail(err: unknown): {
+  refused: SsoFetchRefused | null;
+  code: string | undefined;
+  claim: string | undefined;
+  signature: boolean;
+} {
   let code: string | undefined;
   let claim: string | undefined;
-  /** oauth4webapi's failed JWS check: an OAUTH_INVALID_RESPONSE whose cause holds the signature. */
   let signature = false;
   let current: unknown = err;
   for (let depth = 0; depth < 5 && current !== null && typeof current === 'object'; depth++) {
-    if (current instanceof SsoFetchRefused) return `oidc.fetch.${current.reason}`;
+    if (current instanceof SsoFetchRefused) return { refused: current, code, claim, signature };
     const fields = current as { code?: unknown; claim?: unknown; cause?: unknown };
     if (code === undefined && typeof fields.code === 'string') code = fields.code;
     if (claim === undefined && typeof fields.claim === 'string') claim = fields.claim;
     if (Object.hasOwn(fields, 'signature') && Object.hasOwn(fields, 'algorithm')) signature = true;
     current = fields.cause;
   }
+  return { refused: null, code, claim, signature };
+}
+
+/**
+ * Maps a library error to a fixed detail (spec §7.7): the oauth4webapi code openid-client keeps on
+ * its ClientError, and the claim a comparison failed on; a refusal of ssoFetch however deep it was
+ * wrapped. Never the message, which may echo the IdP's text.
+ */
+export function oidcDetail(err: unknown): string {
+  const { refused, code, claim, signature } = errorTrail(err);
+  if (refused) return `oidc.fetch.${refused.reason}`;
   switch (code) {
     case 'OAUTH_JWT_CLAIM_COMPARISON_FAILED':
     case 'OAUTH_JWT_TIMESTAMP_CHECK_FAILED':
@@ -252,6 +267,129 @@ export async function startOidc(
 }
 
 /**
+ * The callback's flow: taken first (SS3: it burns whatever follows), then refused for no `state`,
+ * an unknown or expired flow or one of another connection (`flow_expired`), a binding that does
+ * not match the cookie (`flow_mismatch`), or an IdP `error` (`idp_error`, its code only).
+ */
+async function takeOidcFlow(
+  deps: FlowDeps,
+  request: FastifyRequest,
+  connectionId: string,
+): Promise<{
+  query: Record<string, unknown>;
+  state: string;
+  flow: { connectionId: string; payload: OidcFlowPayload };
+}> {
+  const query = request.query as Record<string, unknown>;
+  const state = typeof query.state === 'string' ? query.state : null;
+  if (!state) throw new SsoFailure('flow_expired', 'oidc.state_missing');
+  const flow = await takeState<OidcFlowPayload>(deps.db, stateKey('oidc', state));
+  if (!flow || flow.connectionId !== connectionId) {
+    throw new SsoFailure('flow_expired', 'oidc.state_unknown');
+  }
+  if (!bindingMatches(request.cookies[SSO_COOKIE], flow.payload.binding)) {
+    throw new SsoFailure('flow_mismatch', 'oidc.binding');
+  }
+  if (query.error !== undefined) {
+    const code =
+      typeof query.error === 'string' && IDP_ERROR.test(query.error) ? query.error : 'other';
+    throw new SsoFailure('idp_error', `oidc.idp.${code}`);
+  }
+  return { query, state, flow };
+}
+
+/**
+ * The mix-up defence (RFC 9207), before the code goes anywhere: an `iss` parameter naming another
+ * issuer, or none while the IdP advertises it. The library checks it too.
+ */
+function checkIssParameter(config: client.Configuration, iss: unknown): void {
+  const issuer = config.serverMetadata().issuer;
+  if (
+    (iss !== undefined && iss !== issuer) ||
+    (iss === undefined && config.serverMetadata().authorization_response_iss_parameter_supported)
+  ) {
+    throw new SsoFailure('invalid_response', 'oidc.iss_param');
+  }
+}
+
+/**
+ * The code redeemed with the verifier, state and nonce; a failure is `invalid_response` with the
+ * library's detail. A key the cached JWKS lacks, or a signature it does not verify: after a
+ * rotation the next flow starts from a fresh discovery and JWKS (this one's code is spent anyway).
+ */
+async function redeemCode(
+  config: client.Configuration,
+  currentUrl: URL,
+  checks: { connectionId: string; state: string; payload: OidcFlowPayload },
+): Promise<Awaited<ReturnType<typeof client.authorizationCodeGrant>>> {
+  try {
+    return await client.authorizationCodeGrant(config, currentUrl, {
+      pkceCodeVerifier: checks.payload.verifier,
+      expectedState: checks.state,
+      expectedNonce: checks.payload.nonce,
+      idTokenExpected: true,
+    });
+  } catch (err) {
+    const detail = oidcDetail(err);
+    if (KEY_DETAILS.has(detail)) forgetOidcConfiguration(checks.connectionId);
+    throw new SsoFailure('invalid_response', detail);
+  }
+}
+
+/**
+ * The ID token's claims, with spec §19.3's checks oauth4webapi leaves out: `iat` no more than
+ * 60 s ahead (it checks only that it is a number), and a present `azp` naming this client even
+ * with a single `aud` (it checks `azp` only for several audiences; OIDC Core 3.1.3.7).
+ */
+function checkedIdClaims(idClaims: client.IDToken | undefined, cfg: OidcConfig): client.IDToken {
+  if (!idClaims) throw new SsoFailure('invalid_response', 'oidc.id_token.missing');
+  if (idClaims.iat > Math.floor(Date.now() / 1000) + CLOCK_TOLERANCE_S) {
+    throw new SsoFailure('invalid_response', 'oidc.id_token.iat');
+  }
+  if (idClaims.azp !== undefined && idClaims.azp !== cfg.clientId) {
+    throw new SsoFailure('invalid_response', 'oidc.id_token.azp');
+  }
+  return idClaims;
+}
+
+/** The userinfo claims when the connection reads them, else null; failing is `invalid_response`. */
+async function userinfoClaims(
+  config: client.Configuration,
+  cfg: OidcConfig,
+  accessToken: string,
+  subject: string,
+): Promise<Record<string, unknown> | null> {
+  if (!cfg.userinfo) return null;
+  try {
+    return { ...(await client.fetchUserInfo(config, accessToken, subject)) };
+  } catch {
+    throw new SsoFailure('invalid_response', 'oidc.userinfo');
+  }
+}
+
+/**
+ * Anything but an `SsoFailure` still ends the flow on the login page, never a 500 with a library's
+ * text: only the error's class name is logged (its message may echo what the IdP sent).
+ */
+function failUnexpectedly(
+  deps: FlowDeps,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  connectionId: string,
+  err: unknown,
+): Promise<FastifyReply> {
+  deps.log.error(
+    { component: 'sso', errorClass: err instanceof Error ? err.constructor.name : typeof err },
+    'single sign-on failed unexpectedly',
+  );
+  return failSsoFlow(deps, request, reply, {
+    connectionId,
+    protocol: 'oidc',
+    failure: new SsoFailure('invalid_response', 'oidc.other'),
+  });
+}
+
+/**
  * sso-scim.md §5 steps 2–5: the callback. The flow is taken first (SS3: it burns whatever follows),
  * then refused, before anything is sent to the IdP, for no `state`, an unknown or expired flow or
  * one of another connection (`flow_expired`), a binding that does not match the cookie
@@ -269,74 +407,23 @@ export async function oidcCallback(
   connectionId: string,
 ): Promise<FastifyReply> {
   try {
-    const query = request.query as Record<string, unknown>;
-    const state = typeof query.state === 'string' ? query.state : null;
-    if (!state) throw new SsoFailure('flow_expired', 'oidc.state_missing');
-    const flow = await takeState<OidcFlowPayload>(deps.db, stateKey('oidc', state));
-    if (!flow || flow.connectionId !== connectionId) {
-      throw new SsoFailure('flow_expired', 'oidc.state_unknown');
-    }
-    if (!bindingMatches(request.cookies[SSO_COOKIE], flow.payload.binding)) {
-      throw new SsoFailure('flow_mismatch', 'oidc.binding');
-    }
-    if (query.error !== undefined) {
-      const code =
-        typeof query.error === 'string' && IDP_ERROR.test(query.error) ? query.error : 'other';
-      throw new SsoFailure('idp_error', `oidc.idp.${code}`);
-    }
+    const { query, state, flow } = await takeOidcFlow(deps, request, connectionId);
     const { connection, cfg, publicUrl } = await usable(
       deps,
       await loadConnection(deps.db, connectionId, deps.config.secretKey),
     );
     const { config } = await discover(deps, connection);
-
-    // The mix-up defence (RFC 9207), before the code goes anywhere: the library checks it too.
-    const issuer = config.serverMetadata().issuer;
-    const iss = query.iss;
-    if (
-      (iss !== undefined && iss !== issuer) ||
-      (iss === undefined && config.serverMetadata().authorization_response_iss_parameter_supported)
-    ) {
-      throw new SsoFailure('invalid_response', 'oidc.iss_param');
-    }
+    checkIssParameter(config, query.iss);
 
     const currentUrl = new URL(ssoUrls(publicUrl, connectionId).redirectUri);
     currentUrl.search = new URL(request.url, 'http://path.invalid').search;
-    let tokens: Awaited<ReturnType<typeof client.authorizationCodeGrant>>;
-    try {
-      tokens = await client.authorizationCodeGrant(config, currentUrl, {
-        pkceCodeVerifier: flow.payload.verifier,
-        expectedState: state,
-        expectedNonce: flow.payload.nonce,
-        idTokenExpected: true,
-      });
-    } catch (err) {
-      const detail = oidcDetail(err);
-      // A key the cached JWKS lacks, or a signature it does not verify: after a rotation the next
-      // flow starts from a fresh discovery and JWKS (this one's code is spent either way).
-      if (KEY_DETAILS.has(detail)) forgetOidcConfiguration(connectionId);
-      throw new SsoFailure('invalid_response', detail);
-    }
-    const idClaims = tokens.claims();
-    if (!idClaims) throw new SsoFailure('invalid_response', 'oidc.id_token.missing');
-    // spec §19.3: what oauth4webapi leaves out. `iat` no more than 60 s ahead (it checks only
-    // that it is a number), and a present `azp` naming this client even with a single `aud`
-    // (it checks `azp` only for several audiences; OIDC Core 3.1.3.7).
-    if (idClaims.iat > Math.floor(Date.now() / 1000) + CLOCK_TOLERANCE_S) {
-      throw new SsoFailure('invalid_response', 'oidc.id_token.iat');
-    }
-    if (idClaims.azp !== undefined && idClaims.azp !== cfg.clientId) {
-      throw new SsoFailure('invalid_response', 'oidc.id_token.azp');
-    }
-
-    let userinfo: Record<string, unknown> | null = null;
-    if (cfg.userinfo) {
-      try {
-        userinfo = { ...(await client.fetchUserInfo(config, tokens.access_token, idClaims.sub)) };
-      } catch {
-        throw new SsoFailure('invalid_response', 'oidc.userinfo');
-      }
-    }
+    const tokens = await redeemCode(config, currentUrl, {
+      connectionId,
+      state,
+      payload: flow.payload,
+    });
+    const idClaims = checkedIdClaims(tokens.claims(), cfg);
+    const userinfo = await userinfoClaims(config, cfg, tokens.access_token, idClaims.sub);
     const idToken: Record<string, unknown> = { ...idClaims };
     const claims = claimsFrom(idToken, userinfo, cfg);
     if (!claims) throw new SsoFailure('invalid_response', 'oidc.claims');
@@ -353,16 +440,6 @@ export async function oidcCallback(
     if (err instanceof SsoFailure) {
       return failSsoFlow(deps, request, reply, { connectionId, protocol: 'oidc', failure: err });
     }
-    // Anything else still ends the flow on the login page, never a 500 with a library's text: only
-    // the error's class name is logged (its message may echo what the IdP sent).
-    deps.log.error(
-      { component: 'sso', errorClass: err instanceof Error ? err.constructor.name : typeof err },
-      'single sign-on failed unexpectedly',
-    );
-    return failSsoFlow(deps, request, reply, {
-      connectionId,
-      protocol: 'oidc',
-      failure: new SsoFailure('invalid_response', 'oidc.other'),
-    });
+    return failUnexpectedly(deps, request, reply, connectionId, err);
   }
 }

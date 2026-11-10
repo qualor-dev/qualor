@@ -65,6 +65,15 @@ function text(v: unknown, what: string): string {
   return v;
 }
 
+/** A PATCH's `externalId`: the current one when absent, cleared by null, else checked text. */
+function patchedExternalId(
+  value: string | null | undefined,
+  current: string | null,
+): string | null {
+  if (value === undefined) return current;
+  return value === null ? null : text(value, 'externalId');
+}
+
 /** A whole Group resource (POST, PUT): absent optional attributes are cleared (RFC 7644 §3.5.1). */
 function groupFromResource(body: unknown): GroupInput {
   if (!isRecord(body)) throw new ScimError(400, 'invalidSyntax', 'The body must be a Group');
@@ -493,12 +502,7 @@ export async function patchGroup(
         patch.displayName === undefined
           ? group.displayName
           : text(patch.displayName, 'displayName'),
-      externalId:
-        patch.externalId === undefined
-          ? group.externalId
-          : patch.externalId === null
-            ? null
-            : text(patch.externalId, 'externalId'),
+      externalId: patchedExternalId(patch.externalId, group.externalId),
       add: [...after].filter((m) => !current.has(m)),
       remove: [...current].filter((m) => !after.has(m)),
       unknownMembers,

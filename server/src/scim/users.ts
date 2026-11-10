@@ -269,12 +269,11 @@ async function loadUser(
     .from(identities)
     .innerJoin(users, eq(users.id, identities.userId))
     .where(and(ofConnection(caller), eq(identities.id, id)));
-  const [row] =
-    lock === 'write'
-      ? await query.for('no key update')
-      : lock === 'delete'
-        ? await query.for('update', { of: identities })
-        : await query;
+  let rows: { identity: IdentityRow; user: UserRow }[];
+  if (lock === 'write') rows = await query.for('no key update');
+  else if (lock === 'delete') rows = await query.for('update', { of: identities });
+  else rows = await query;
+  const [row] = rows;
   if (!row) throw notFoundUser();
   return row;
 }
@@ -514,24 +513,15 @@ const userTarget = (user: UserRow) => ({
   label: user.username,
 });
 
-/**
- * Writes `after` over `before` (PUT and PATCH, spec §12.4–§12.6), in `tx` under the instance-admin
- * lock: uniqueness (409), the deactivation rules (400 `mutability`), then the identity's SCIM
- * record and the user's profile. A deactivation ends sessions and revokes personal tokens; a
- * reactivation syncs groups. Never changes `is_instance_admin`.
- */
-async function applyUserState(
+/** 409 when `after` takes a `userName`, `externalId` or email that someone else has. */
+async function assertUnique(
   tx: Executor,
   caller: ScimCaller,
   identity: IdentityRow,
   user: UserRow,
   before: UserState,
   after: UserState,
-): Promise<{ identity: IdentityRow; user: UserRow }> {
-  checkState(after);
-  const deactivate = before.active && !after.active;
-  const reactivate = !before.active && after.active;
-  if (deactivate) await assertMayDeactivate(tx, user);
+): Promise<void> {
   if (
     lower(after.userName) !== lower(before.userName) &&
     (await userNameTaken(tx, caller, after.userName, identity.id))
@@ -550,7 +540,19 @@ async function applyUserState(
     if (owner && owner.id !== user.id)
       throw uniqueness('The email belongs to another Qualor account');
   }
+}
 
+/**
+ * Writes the identity's SCIM record and the user's profile where `after` changes them, and drops
+ * the account's mail tokens when the email changed; returns the rows as written.
+ */
+async function writeUserState(
+  tx: Executor,
+  identity: IdentityRow,
+  user: UserRow,
+  before: UserState,
+  after: UserState,
+): Promise<{ identity: IdentityRow; user: UserRow }> {
   let nextIdentity = identity;
   if (
     after.userName !== before.userName ||
@@ -589,7 +591,22 @@ async function applyUserState(
   }
   // Mail E2: a pending invitation or reset link went to the address the account had before.
   if (lower(nextUser.email) !== lower(user.email)) await deleteAccountTokens(tx, user.id);
+  return { identity: nextIdentity, user: nextUser };
+}
 
+/**
+ * Records a user's change: `scim.user_updated` with the changed fields, `scim.user_deactivated`
+ * after ending the user's access, `scim.user_reactivated`.
+ */
+async function recordUserChange(
+  tx: Executor,
+  caller: ScimCaller,
+  was: { identity: IdentityRow; user: UserRow },
+  next: { identity: IdentityRow; user: UserRow },
+  change: { deactivate: boolean; reactivate: boolean },
+): Promise<void> {
+  const { identity, user } = was;
+  const { identity: nextIdentity, user: nextUser } = next;
   const events: AuditEventInput[] = [];
   const changes = [
     { field: 'userName' as const, from: identity.scimUserName, to: nextIdentity.scimUserName },
@@ -608,7 +625,7 @@ async function applyUserState(
       details: { ...scimDetails(caller), changes },
     });
   }
-  if (deactivate) {
+  if (change.deactivate) {
     const counts = await endAccess(tx, user.id);
     events.push({
       action: 'scim.user_deactivated',
@@ -616,7 +633,7 @@ async function applyUserState(
       details: { ...scimDetails(caller), ...counts },
     });
   }
-  if (reactivate) {
+  if (change.reactivate) {
     events.push({
       action: 'scim.user_reactivated',
       target: userTarget(nextUser),
@@ -628,17 +645,98 @@ async function applyUserState(
   if (events.length > 0) {
     await caller.deps.audit.recordOrSkipWhenAnchorMalformed(tx, SYSTEM_ACTOR, events);
   }
+}
+
+/**
+ * Writes `after` over `before` (PUT and PATCH, spec §12.4–§12.6), in `tx` under the instance-admin
+ * lock: uniqueness (409), the deactivation rules (400 `mutability`), then the identity's SCIM
+ * record and the user's profile. A deactivation ends sessions and revokes personal tokens; a
+ * reactivation syncs groups. Never changes `is_instance_admin`.
+ */
+async function applyUserState(
+  tx: Executor,
+  caller: ScimCaller,
+  identity: IdentityRow,
+  user: UserRow,
+  before: UserState,
+  after: UserState,
+): Promise<{ identity: IdentityRow; user: UserRow }> {
+  checkState(after);
+  const deactivate = before.active && !after.active;
+  const reactivate = !before.active && after.active;
+  if (deactivate) await assertMayDeactivate(tx, user);
+  await assertUnique(tx, caller, identity, user, before, after);
+  const next = await writeUserState(tx, identity, user, before, after);
+  await recordUserChange(tx, caller, { identity, user }, next, { deactivate, reactivate });
   if (reactivate) {
     await syncIdentity(tx, caller, {
       identityId: identity.id,
       userId: user.id,
-      username: nextUser.username,
+      username: next.user.username,
     });
   }
-  return { identity: nextIdentity, user: nextUser };
+  return next;
 }
 
 // ─── Writing ────────────────────────────────────────────────────────────────
+
+/**
+ * The existing user a new SCIM user's email links to; undefined when no account has the email.
+ * 409 with EMAIL_IN_USE unless `linkByEmail` is on and that user is active, not an instance
+ * admin and without an identity on this connection.
+ */
+async function linkableOwner(
+  tx: Executor,
+  caller: ScimCaller,
+  state: UserState,
+): Promise<UserRow | undefined> {
+  if (state.email === null) return undefined;
+  const owner = await emailOwner(tx, state.email);
+  if (!owner) return undefined;
+  const [here] = await tx
+    .select({ id: identities.id })
+    .from(identities)
+    .where(and(eq(identities.connectionId, caller.connectionId), eq(identities.userId, owner.id)));
+  const may =
+    caller.connection.parsed.config.linkByEmail &&
+    owner.active &&
+    !owner.isInstanceAdmin &&
+    here === undefined;
+  if (!may) throw uniqueness(EMAIL_IN_USE);
+  return owner;
+}
+
+/**
+ * A new user for a SCIM user, as JIT makes one (no password), with the first free username.
+ * 409 when the email was taken meanwhile or no username is free.
+ */
+async function insertScimUser(tx: Executor, state: UserState): Promise<UserRow> {
+  // spec §12.4: the username from userName's local part, as JIT derives it (§8.4).
+  const local = state.userName.split('@', 1)[0] ?? '';
+  const base = deriveUsername({ username: local, email: state.email });
+  let user: UserRow | undefined;
+  for (let n = 1; n <= MAX_SUFFIX && !user; n += 1) {
+    [user] = await tx
+      .insert(users)
+      .values({
+        username: n === 1 ? base : withSuffix(base, n),
+        email: state.email,
+        displayName: storedDisplayName(state),
+        passwordHash: null,
+        passwordChangeRequired: false,
+        isInstanceAdmin: false,
+        active: state.active,
+      })
+      // Any unique conflict: the name (the next suffix) or the email (taken meanwhile).
+      .onConflictDoNothing()
+      .returning();
+    if (!user && state.email !== null && (await emailOwner(tx, state.email))) {
+      throw uniqueness(EMAIL_IN_USE);
+    }
+  }
+  if (!user) throw uniqueness('No free Qualor username could be derived from userName');
+  return user;
+}
 
 /**
  * `POST /Users` (spec §12.4, 201). A `userName` or `externalId` already on the connection is 409.
@@ -657,52 +755,9 @@ export async function createUser(caller: ScimCaller, body: unknown): Promise<Sci
     if (state.externalId !== null && (await externalIdTaken(tx, caller, state.externalId, null))) {
       throw uniqueness('externalId is already in use on this connection');
     }
-    let user: UserRow | undefined;
-    let linkedExisting = false;
-    if (state.email !== null) {
-      const owner = await emailOwner(tx, state.email);
-      if (owner) {
-        const [here] = await tx
-          .select({ id: identities.id })
-          .from(identities)
-          .where(
-            and(eq(identities.connectionId, caller.connectionId), eq(identities.userId, owner.id)),
-          );
-        const may =
-          caller.connection.parsed.config.linkByEmail &&
-          owner.active &&
-          !owner.isInstanceAdmin &&
-          here === undefined;
-        if (!may) throw uniqueness(EMAIL_IN_USE);
-        user = owner;
-        linkedExisting = true;
-      }
-    }
-    if (!user) {
-      // spec §12.4: the username from userName's local part, as JIT derives it (§8.4).
-      const local = state.userName.split('@', 1)[0] ?? '';
-      const base = deriveUsername({ username: local, email: state.email });
-      for (let n = 1; n <= MAX_SUFFIX && !user; n += 1) {
-        [user] = await tx
-          .insert(users)
-          .values({
-            username: n === 1 ? base : withSuffix(base, n),
-            email: state.email,
-            displayName: storedDisplayName(state),
-            passwordHash: null,
-            passwordChangeRequired: false,
-            isInstanceAdmin: false,
-            active: state.active,
-          })
-          // Any unique conflict: the name (the next suffix) or the email (taken meanwhile).
-          .onConflictDoNothing()
-          .returning();
-        if (!user && state.email !== null && (await emailOwner(tx, state.email))) {
-          throw uniqueness(EMAIL_IN_USE);
-        }
-      }
-      if (!user) throw uniqueness('No free Qualor username could be derived from userName');
-    }
+    const owner = await linkableOwner(tx, caller, state);
+    const linkedExisting = owner !== undefined;
+    const user = owner ?? (await insertScimUser(tx, state));
     const identity = first(
       await tx
         .insert(identities)

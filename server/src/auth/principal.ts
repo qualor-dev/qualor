@@ -35,6 +35,22 @@ declare module 'fastify' {
 export const TOUCH_INTERVAL_MS = 60_000;
 
 /**
+ * The principal a token row stands for: a project token's project, or a personal token's user
+ * while active; null for a project token without a project or an orphaned or inactive user.
+ */
+function tokenPrincipal(
+  row: typeof apiTokens.$inferSelect,
+  user: UserRow | null,
+): Principal | null {
+  if (row.kind === 'project') {
+    return row.projectId ? { kind: 'project', tokenId: row.id, projectId: row.projectId } : null;
+  }
+  return user && user.active
+    ? { kind: 'personal', user, tokenId: row.id, scopes: row.scopes }
+    : null;
+}
+
+/**
  * Prefix lookup, then a constant-time SHA-256 comparison against every candidate row sharing that
  * prefix — including revoked ones — with no early exit, so a revoked or expired sibling token can
  * never be distinguished, by timing, from one that was never issued. `revoked_at` / `expires_at` /
@@ -62,14 +78,7 @@ export async function resolveToken(db: Executor, token: string): Promise<Princip
   // before we touch anything: `last_used_at` is evidence the token worked, so a rejected
   // presentation — including one that merely shares a prefix with a live token — must leave it
   // untouched.
-  const principal: Principal | null =
-    row.kind === 'project'
-      ? row.projectId
-        ? { kind: 'project', tokenId: row.id, projectId: row.projectId }
-        : null
-      : user && user.active
-        ? { kind: 'personal', user, tokenId: row.id, scopes: row.scopes }
-        : null;
+  const principal = tokenPrincipal(row, user);
   if (!principal) return null;
   if (!row.lastUsedAt || now - row.lastUsedAt.getTime() >= TOUCH_INTERVAL_MS) {
     await db

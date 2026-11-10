@@ -432,28 +432,47 @@ function checkConfig(
   storedSpKey: string | null | undefined,
   secretRequired: boolean,
 ): { parsed: ConnectionConfig; secrets: SecretChange } {
-  const hosts = deps.config.ssoInternalHosts;
-  const key = encryptionKey(deps.config.secretKey);
-  const problems = new Problems();
-  if (parsed.protocol === 'oidc') {
-    const config: OidcConfig = { ...parsed.config };
-    const problem = issuerProblem(config.issuer, hosts);
-    if (problem) problems.add('body.oidc.issuer', problem);
-    else config.issuer = normalIssuer(config.issuer);
-    const clientSecret = own && 'clientSecret' in own ? own.clientSecret : undefined;
-    if (clientSecret === undefined && secretRequired) {
-      problems.add('body.oidc.clientSecret', 'Give the client secret');
-    }
-    problems.throwIfAny();
-    return {
-      parsed: { protocol: 'oidc', config },
-      secrets:
-        clientSecret === undefined
-          ? {}
-          : { secretEnc: encryptSecret(key, clientSecret, SECRET_AAD) },
-    };
+  const check: ConfigCheck = {
+    hosts: deps.config.ssoInternalHosts,
+    key: encryptionKey(deps.config.secretKey),
+    problems: new Problems(),
+  };
+  if (parsed.protocol === 'oidc') return checkOidcConfig(parsed.config, own, check, secretRequired);
+  return checkSamlConfig(parsed.config, own, check, storedSpKey);
+}
+
+/** What `checkConfig` checks with: the internal hosts allowed, the column key, the problems. */
+interface ConfigCheck {
+  hosts: ConnectionDeps['config']['ssoInternalHosts'];
+  key: Buffer;
+  problems: Problems;
+}
+
+/** `checkConfig` for OIDC: the issuer, and the client secret when one is required. */
+function checkOidcConfig(
+  parsed: OidcConfig,
+  own: ProtocolBody | undefined,
+  { hosts, key, problems }: ConfigCheck,
+  secretRequired: boolean,
+): { parsed: ConnectionConfig; secrets: SecretChange } {
+  const config: OidcConfig = { ...parsed };
+  const problem = issuerProblem(config.issuer, hosts);
+  if (problem) problems.add('body.oidc.issuer', problem);
+  else config.issuer = normalIssuer(config.issuer);
+  const clientSecret = own && 'clientSecret' in own ? own.clientSecret : undefined;
+  if (clientSecret === undefined && secretRequired) {
+    problems.add('body.oidc.clientSecret', 'Give the client secret');
   }
-  const config: SamlConfig = { ...parsed.config };
+  problems.throwIfAny();
+  return {
+    parsed: { protocol: 'oidc', config },
+    secrets:
+      clientSecret === undefined ? {} : { secretEnc: encryptSecret(key, clientSecret, SECRET_AAD) },
+  };
+}
+
+/** The IdP's URLs and certificates of a SAML config, normalised in place, or their problems. */
+function normaliseIdp(config: SamlConfig, { hosts, problems }: ConfigCheck): void {
   for (const [field, value] of [
     ['idpSsoUrl', config.idpSsoUrl],
     ['metadataUrl', config.metadataUrl],
@@ -471,15 +490,69 @@ function checkConfig(
     }
     return r.info.pem;
   });
-  let spCert: X509Certificate | null = null;
-  if (config.spCertificate !== null) {
-    const r = certificateOrProblem(config.spCertificate);
-    if ('problem' in r) problems.add('body.saml.spCertificate', r.problem);
-    else {
-      spCert = r.cert;
-      config.spCertificate = r.info.pem;
-    }
+}
+
+/** The SP certificate of a SAML config (normalised in place), or null when none or invalid. */
+function spCertificateOf(config: SamlConfig, problems: Problems): X509Certificate | null {
+  if (config.spCertificate === null) return null;
+  const r = certificateOrProblem(config.spCertificate);
+  if ('problem' in r) {
+    problems.add('body.saml.spCertificate', r.problem);
+    return null;
   }
+  config.spCertificate = r.info.pem;
+  return r.cert;
+}
+
+/**
+ * The SP key to check the certificate against: a new one (to store, in `secrets`), else the
+ * stored one; null when there is none to check. A key without a certificate any more is dropped.
+ */
+function spSigningKey(
+  config: SamlConfig,
+  newKey: string | undefined,
+  storedSpKey: string | null | undefined,
+  { key, problems }: ConfigCheck,
+  secrets: SecretChange,
+): KeyObject | null {
+  if (newKey !== undefined) {
+    const r = spKeyOrProblem(newKey);
+    if (typeof r === 'string') {
+      problems.add('body.saml.spKey', r);
+      return null;
+    }
+    secrets.spKeyEnc = encryptSecret(
+      key,
+      String(r.export({ type: 'pkcs8', format: 'pem' })),
+      SP_KEY_AAD,
+    );
+    return r;
+  }
+  if (config.spCertificate === null) {
+    // No certificate any more: the key goes with it.
+    if (storedSpKey !== undefined) secrets.spKeyEnc = null;
+    return null;
+  }
+  if (storedSpKey === null) {
+    problems.add('body.saml.spKey', `${UNDECRYPTABLE_SP_KEY}; give it again`);
+    return null;
+  }
+  if (storedSpKey === undefined) return null;
+  const r = spKeyOrProblem(storedSpKey);
+  return typeof r === 'string' ? null : r;
+}
+
+/** `checkConfig` for SAML: the IdP's URLs and certificates, and the SP certificate and key. */
+function checkSamlConfig(
+  parsed: SamlConfig,
+  own: ProtocolBody | undefined,
+  check: ConfigCheck,
+  storedSpKey: string | null | undefined,
+): { parsed: ConnectionConfig; secrets: SecretChange } {
+  const { problems } = check;
+  const config: SamlConfig = { ...parsed };
+  normaliseIdp(config, check);
+  const spCert = spCertificateOf(config, problems);
   const newKey = own && 'spKey' in own ? own.spKey : undefined;
   const secrets: SecretChange = {};
   const signingTouched =
@@ -490,27 +563,7 @@ function checkConfig(
     problems.throwIfAny();
     return { parsed: { protocol: 'saml', config }, secrets };
   }
-  let keyObject: KeyObject | null = null;
-  if (newKey !== undefined) {
-    const r = spKeyOrProblem(newKey);
-    if (typeof r === 'string') problems.add('body.saml.spKey', r);
-    else {
-      keyObject = r;
-      secrets.spKeyEnc = encryptSecret(
-        key,
-        String(r.export({ type: 'pkcs8', format: 'pem' })),
-        SP_KEY_AAD,
-      );
-    }
-  } else if (config.spCertificate === null) {
-    // No certificate any more: the key goes with it.
-    if (storedSpKey !== undefined) secrets.spKeyEnc = null;
-  } else if (storedSpKey === null) {
-    problems.add('body.saml.spKey', `${UNDECRYPTABLE_SP_KEY}; give it again`);
-  } else if (storedSpKey !== undefined) {
-    const r = spKeyOrProblem(storedSpKey);
-    if (typeof r !== 'string') keyObject = r;
-  }
+  const keyObject = spSigningKey(config, newKey, storedSpKey, check, secrets);
   const hasKey = newKey !== undefined || (storedSpKey !== undefined && secrets.spKeyEnc !== null);
   if (hasKey && config.spCertificate === null) {
     problems.add('body.saml.spCertificate', 'Give the certificate of the SP key');
@@ -757,6 +810,28 @@ function changedFields(before: unknown, after: Record<string, unknown>): Set<Cha
   return changed;
 }
 
+/** The config a patch applies over: the stored one; a row that no longer parses can be repaired. */
+function patchBase(current: SsoConnectionRow): Record<string, unknown> {
+  const stored = parseStoredConfig(current.protocol, current.config);
+  if (stored) return { ...stored.config };
+  return isRecord(current.config) ? { ...current.config } : {};
+}
+
+/** An OIDC patch moves the connection to another valid issuer (which needs the client secret). */
+function oidcIssuerChanged(
+  protocol: SsoProtocol,
+  merged: ConnectionConfig,
+  base: Record<string, unknown>,
+  deps: ConnectionDeps,
+): boolean {
+  return (
+    protocol === 'oidc' &&
+    merged.protocol === 'oidc' &&
+    issuerProblem(merged.config.issuer, deps.config.ssoInternalHosts) === null &&
+    normalIssuer(merged.config.issuer) !== base['issuer']
+  );
+}
+
 export async function updateConnection(
   deps: ConnectionDeps,
   actor: AuditActorContext,
@@ -783,22 +858,12 @@ export async function updateConnection(
         ]);
       }
       const own = protocol === 'oidc' ? body.oidc : body.saml;
-      const stored = parseStoredConfig(protocol, current.config);
-      // A row that no longer parses can be repaired: the patch applies over what is stored.
-      const base: Record<string, unknown> = stored
-        ? { ...stored.config }
-        : isRecord(current.config)
-          ? { ...current.config }
-          : {};
+      const base = patchBase(current);
       const merged = parseConfig(protocol, mergeRaw(protocol, base, body, own));
       const key = encryptionKey(deps.config.secretKey);
       const storedSpKey =
         current.spKeyEnc === null ? undefined : decryptSecret(key, current.spKeyEnc, SP_KEY_AAD);
-      const issuerChanged =
-        protocol === 'oidc' &&
-        merged.protocol === 'oidc' &&
-        issuerProblem(merged.config.issuer, deps.config.ssoInternalHosts) === null &&
-        normalIssuer(merged.config.issuer) !== base['issuer'];
+      const issuerChanged = oidcIssuerChanged(protocol, merged, base, deps);
       const { parsed, secrets } = checkConfig(
         merged,
         own,

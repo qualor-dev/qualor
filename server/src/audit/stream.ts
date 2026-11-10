@@ -122,11 +122,11 @@ async function send(
 
 /** `lastError`: the status and the excerpt of api.md §3 (never the URL, a header or the body). */
 function errorOf(result: SendOutcome): string {
-  const text =
-    result.status === null
-      ? (result.excerpt ?? 'The request failed')
-      : `HTTP ${result.status}${result.excerpt ? `: ${result.excerpt}` : ''}`;
-  return text.slice(0, MAX_ERROR_LENGTH);
+  if (result.status === null) {
+    return (result.excerpt ?? 'The request failed').slice(0, MAX_ERROR_LENGTH);
+  }
+  const excerpt = result.excerpt ? `: ${result.excerpt}` : '';
+  return `HTTP ${result.status}${excerpt}`.slice(0, MAX_ERROR_LENGTH);
 }
 
 function failed(state: StreamState, message: string, now: Date): StreamState {

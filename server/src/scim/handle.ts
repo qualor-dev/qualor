@@ -92,6 +92,121 @@ export function listQuery(
   };
 }
 
+/** Sends a SCIM body (`null`: none) with the SCIM content type, never cached. */
+type ScimSend = (status: number, body: unknown) => FastifyReply;
+
+/** A refused authentication: 401, or 429 once the address used up its minute of failures. */
+function refusal(ip: string): ScimError {
+  if (authFailures.exhausted(ip)) {
+    return new ScimError(429, null, 'Too many failed authentications; retry in a minute');
+  }
+  authFailures.hit(ip);
+  return new ScimError(401, null, 'Authentication failed');
+}
+
+/**
+ * The caller of a request: the scim feature (403), the SCIM token and its connection (401, or 429
+ * once the address failed too often), the token's rate limit (429), and a JSON body (400).
+ */
+async function authenticate(deps: ScimDeps, request: FastifyRequest): Promise<ScimCaller> {
+  // SS1: the plugin's route is feature-guarded; this is the core's own check.
+  if (!deps.edition.isFeatureActive('scim')) {
+    throw new ScimError(403, null, 'SCIM needs the scim feature');
+  }
+  // A failed authentication is counted per address; once an address used up its minute, its
+  // failures are answered 429. The token is still resolved first: cloud IdPs share egress
+  // addresses, so a stranger's bad tokens must never hold a valid token at 429.
+  const auth = request.headers.authorization;
+  const match = typeof auth === 'string' ? /^Bearer (\S+)$/.exec(auth) : null;
+  const presented = match?.[1];
+  const token = presented === undefined ? null : await resolveScimToken(deps.db, presented);
+  if (!token) throw refusal(request.ip);
+  if (!throttle.hit(token.tokenId)) {
+    throw new ScimError(429, null, 'Too many requests; retry in a minute');
+  }
+  const connection = await loadConnection(deps.db, token.connectionId, deps.secretKey);
+  if (!connection) throw refusal(request.ip);
+  if (request.body === SCIM_INVALID_JSON) {
+    throw new ScimError(400, 'invalidSyntax', 'The request body is not valid JSON');
+  }
+  return {
+    deps,
+    tokenId: token.tokenId,
+    connectionId: token.connectionId,
+    connection,
+    baseUrl: scimBaseUrl(deps.config.publicUrl),
+  };
+}
+
+/** Routes an authenticated request (`<resource>[/<id>]`) to its handler; 404 for anything else. */
+async function dispatch(
+  caller: ScimCaller,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  send: ScimSend,
+): Promise<FastifyReply> {
+  const noContent = () => reply.code(204).header('cache-control', 'no-store').send();
+  const params = request.params as Record<string, string | undefined>;
+  const path = String(params['*'] ?? '');
+  const [resource, id, extra] = path.split('/');
+  if (extra !== undefined) throw new ScimError(404, null, 'Not found');
+  const q = (request.query ?? {}) as Record<string, string | undefined>;
+  switch (`${request.method} ${resource ?? ''}${id ? '/:id' : ''}`) {
+    case 'GET ServiceProviderConfig':
+      return send(200, SERVICE_PROVIDER_CONFIG(caller.baseUrl));
+    case 'GET ResourceTypes':
+      return send(200, RESOURCE_TYPES(caller.baseUrl));
+    case 'GET Schemas':
+      return send(200, SCHEMAS);
+    case 'GET Users':
+      return send(200, await listUsers(caller, listQuery(q, 'User')));
+    case 'POST Users': {
+      const r = await createUser(caller, request.body);
+      reply.header('location', r.meta.location);
+      return send(201, r);
+    }
+    case 'GET Users/:id':
+      return send(
+        200,
+        await getUser(caller, id ?? '', {
+          attributes: names(q.attributes),
+          excludedAttributes: names(q.excludedAttributes) ?? [],
+        }),
+      );
+    case 'PUT Users/:id':
+      return send(200, await replaceUser(caller, id ?? '', request.body));
+    case 'PATCH Users/:id':
+      return send(200, await patchUser(caller, id ?? '', request.body));
+    case 'DELETE Users/:id':
+      await deleteUser(caller, id ?? '');
+      return noContent();
+    case 'GET Groups':
+      return send(200, await listGroups(caller, listQuery(q, 'Group')));
+    case 'POST Groups': {
+      const r = await createGroup(caller, request.body);
+      reply.header('location', r.meta.location);
+      return send(201, r);
+    }
+    case 'GET Groups/:id':
+      return send(
+        200,
+        await getGroup(caller, id ?? '', {
+          attributes: names(q.attributes),
+          excludedAttributes: names(q.excludedAttributes) ?? [],
+        }),
+      );
+    case 'PUT Groups/:id':
+      return send(200, await replaceGroup(caller, id ?? '', request.body));
+    case 'PATCH Groups/:id':
+      return send(200, await patchGroup(caller, id ?? '', request.body));
+    case 'DELETE Groups/:id':
+      await deleteGroup(caller, id ?? '');
+      return noContent();
+    default:
+      throw new ScimError(404, null, 'Not found');
+  }
+}
+
 /**
  * Every request under `/api/v0/ee/scim/v2/*` (spec §12, ruling SS7): authenticates the SCIM token
  * (401 otherwise, and nothing else said), rate-limits per token, dispatches, and answers in
@@ -108,144 +223,63 @@ export async function handleScim(
       .header('content-type', SCIM_CONTENT_TYPE)
       .header('cache-control', 'no-store')
       .send(body === null ? undefined : JSON.stringify(body));
-  const noContent = () => reply.code(204).header('cache-control', 'no-store').send();
   try {
-    // SS1: the plugin's route is feature-guarded; this is the core's own check.
-    if (!deps.edition.isFeatureActive('scim')) {
-      throw new ScimError(403, null, 'SCIM needs the scim feature');
-    }
-    // A failed authentication is counted per address; once an address used up its minute, its
-    // failures are answered 429. The token is still resolved first: cloud IdPs share egress
-    // addresses, so a stranger's bad tokens must never hold a valid token at 429.
-    const refuse = (): ScimError => {
-      if (authFailures.exhausted(request.ip)) {
-        return new ScimError(429, null, 'Too many failed authentications; retry in a minute');
-      }
-      authFailures.hit(request.ip);
-      return new ScimError(401, null, 'Authentication failed');
-    };
-    const auth = request.headers.authorization;
-    const match = typeof auth === 'string' ? /^Bearer (\S+)$/.exec(auth) : null;
-    const presented = match?.[1];
-    const token = presented === undefined ? null : await resolveScimToken(deps.db, presented);
-    if (!token) throw refuse();
-    if (!throttle.hit(token.tokenId)) {
-      throw new ScimError(429, null, 'Too many requests; retry in a minute');
-    }
-    const connection = await loadConnection(deps.db, token.connectionId, deps.secretKey);
-    if (!connection) throw refuse();
-    if (request.body === SCIM_INVALID_JSON) {
-      throw new ScimError(400, 'invalidSyntax', 'The request body is not valid JSON');
-    }
-    const caller: ScimCaller = {
-      deps,
-      tokenId: token.tokenId,
-      connectionId: token.connectionId,
-      connection,
-      baseUrl: scimBaseUrl(deps.config.publicUrl),
-    };
-    const params = request.params as Record<string, string | undefined>;
-    const path = String(params['*'] ?? '');
-    const [resource, id, extra] = path.split('/');
-    if (extra !== undefined) throw new ScimError(404, null, 'Not found');
-    const q = (request.query ?? {}) as Record<string, string | undefined>;
-    switch (`${request.method} ${resource ?? ''}${id ? '/:id' : ''}`) {
-      case 'GET ServiceProviderConfig':
-        return send(200, SERVICE_PROVIDER_CONFIG(caller.baseUrl));
-      case 'GET ResourceTypes':
-        return send(200, RESOURCE_TYPES(caller.baseUrl));
-      case 'GET Schemas':
-        return send(200, SCHEMAS);
-      case 'GET Users':
-        return send(200, await listUsers(caller, listQuery(q, 'User')));
-      case 'POST Users': {
-        const r = await createUser(caller, request.body);
-        reply.header('location', r.meta.location);
-        return send(201, r);
-      }
-      case 'GET Users/:id':
-        return send(
-          200,
-          await getUser(caller, id ?? '', {
-            attributes: names(q.attributes),
-            excludedAttributes: names(q.excludedAttributes) ?? [],
-          }),
-        );
-      case 'PUT Users/:id':
-        return send(200, await replaceUser(caller, id ?? '', request.body));
-      case 'PATCH Users/:id':
-        return send(200, await patchUser(caller, id ?? '', request.body));
-      case 'DELETE Users/:id':
-        await deleteUser(caller, id ?? '');
-        return noContent();
-      case 'GET Groups':
-        return send(200, await listGroups(caller, listQuery(q, 'Group')));
-      case 'POST Groups': {
-        const r = await createGroup(caller, request.body);
-        reply.header('location', r.meta.location);
-        return send(201, r);
-      }
-      case 'GET Groups/:id':
-        return send(
-          200,
-          await getGroup(caller, id ?? '', {
-            attributes: names(q.attributes),
-            excludedAttributes: names(q.excludedAttributes) ?? [],
-          }),
-        );
-      case 'PUT Groups/:id':
-        return send(200, await replaceGroup(caller, id ?? '', request.body));
-      case 'PATCH Groups/:id':
-        return send(200, await patchGroup(caller, id ?? '', request.body));
-      case 'DELETE Groups/:id':
-        await deleteGroup(caller, id ?? '');
-        return noContent();
-      default:
-        throw new ScimError(404, null, 'Not found');
-    }
+    const caller = await authenticate(deps, request);
+    return await dispatch(caller, request, reply, send);
   } catch (err) {
-    if (err instanceof ScimError) {
-      if (err.status === 429) reply.header('retry-after', '60');
-      // RFC 6750 §3: a refused bearer token names the scheme.
-      if (err.status === 401) reply.header('www-authenticate', 'Bearer');
-      return send(err.status, scimErrorBody(err));
-    }
-    if (
-      err instanceof ProblemError &&
-      err.status === 409 &&
-      err.code === 'AUDIT_CHAIN_ANCHOR_MALFORMED'
-    ) {
-      return send(
-        409,
-        scimErrorBody(
-          new ScimError(
-            409,
-            null,
-            'The audit chain anchor is malformed; an administrator must restore it',
-          ),
-        ),
-      );
-    }
-    const code = pgErrorCode(err);
-    if (code !== undefined && RETRYABLE.has(code)) {
-      deps.log.warn({ component: 'scim', code }, 'scim request conflicted; the client may retry');
-      reply.header('retry-after', RETRY_AFTER_SECONDS);
-      return send(
-        503,
-        scimErrorBody(
-          new ScimError(503, null, 'A concurrent change conflicted; retry the request'),
-        ),
-      );
-    }
-    // The class only: a message may echo request data (A M-4, as the SSO flows log, §7.7).
-    deps.log.error(
-      {
-        component: 'scim',
-        errorClass: err instanceof Error ? err.constructor.name : typeof err,
-        ...(code === undefined ? {} : { code }),
-      },
-      'scim request failed',
-    );
-    return send(500, scimErrorBody(new ScimError(500, null, 'Internal error')));
+    return answerError(deps, reply, send, err);
   }
+}
+
+/**
+ * The SCIM answer to a failed request: a `ScimError` as itself, a malformed audit anchor as 409,
+ * a deadlock or serialization failure as 503 with `retry-after`, anything else as 500.
+ */
+function answerError(
+  deps: ScimDeps,
+  reply: FastifyReply,
+  send: ScimSend,
+  err: unknown,
+): FastifyReply {
+  if (err instanceof ScimError) {
+    if (err.status === 429) reply.header('retry-after', '60');
+    // RFC 6750 §3: a refused bearer token names the scheme.
+    if (err.status === 401) reply.header('www-authenticate', 'Bearer');
+    return send(err.status, scimErrorBody(err));
+  }
+  if (
+    err instanceof ProblemError &&
+    err.status === 409 &&
+    err.code === 'AUDIT_CHAIN_ANCHOR_MALFORMED'
+  ) {
+    return send(
+      409,
+      scimErrorBody(
+        new ScimError(
+          409,
+          null,
+          'The audit chain anchor is malformed; an administrator must restore it',
+        ),
+      ),
+    );
+  }
+  const code = pgErrorCode(err);
+  if (code !== undefined && RETRYABLE.has(code)) {
+    deps.log.warn({ component: 'scim', code }, 'scim request conflicted; the client may retry');
+    reply.header('retry-after', RETRY_AFTER_SECONDS);
+    return send(
+      503,
+      scimErrorBody(new ScimError(503, null, 'A concurrent change conflicted; retry the request')),
+    );
+  }
+  // The class only: a message may echo request data (A M-4, as the SSO flows log, §7.7).
+  deps.log.error(
+    {
+      component: 'scim',
+      errorClass: err instanceof Error ? err.constructor.name : typeof err,
+      ...(code === undefined ? {} : { code }),
+    },
+    'scim request failed',
+  );
+  return send(500, scimErrorBody(new ScimError(500, null, 'Internal error')));
 }

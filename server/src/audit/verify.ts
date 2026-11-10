@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gt, lt, lte, min } from 'drizzle-orm';
 import type { Executor } from '../db/client';
-import { auditEvents } from '../db/schema';
+import { auditEvents, type AuditEventRow } from '../db/schema';
 import { eventHash, GENESIS_HASH, recordOf } from './chain';
 import {
   AuditAnchorMalformedError,
@@ -64,6 +64,78 @@ export async function auditHead(db: Executor): Promise<AuditHead> {
 const PAGE = 1000;
 const DEFAULT_LIMIT = 1_000_000;
 
+/** The seq and `prevHash` the next event must have. */
+interface ChainLink {
+  seq: number;
+  hash: string;
+}
+
+/** Fail closed: a malformed anchor row is a break before the oldest stored event. */
+async function malformedAnchorBreak(db: Executor): Promise<AuditVerification> {
+  const [oldest] = await db.select({ seq: min(auditEvents.seq) }).from(auditEvents);
+  const seq = oldest?.seq;
+  return {
+    ok: false,
+    checked: 0,
+    firstSeq: null,
+    lastSeq: null,
+    anchor: null,
+    break: {
+      seq: seq === null || seq === undefined ? '0' : String(seq),
+      reason: 'anchor_mismatch',
+    },
+  };
+}
+
+/** The link the event at `fromSeq` must continue: the stored event before it, if any. */
+async function linkBefore(db: Executor, fromSeq: number | undefined): Promise<ChainLink | null> {
+  if (fromSeq === undefined) return null;
+  const [before] = await db
+    .select({ seq: auditEvents.seq, hash: auditEvents.hash })
+    .from(auditEvents)
+    .where(lt(auditEvents.seq, fromSeq))
+    .orderBy(desc(auditEvents.seq))
+    .limit(1);
+  return before ? { seq: before.seq + 1, hash: before.hash } : null;
+}
+
+/** One page of events after `after` (up to `toSeq` when given), in seq order. */
+function eventPage(db: Executor, after: number, toSeq: number | undefined) {
+  return db
+    .select()
+    .from(auditEvents)
+    .where(
+      and(
+        gt(auditEvents.seq, after),
+        toSeq === undefined ? undefined : lte(auditEvents.seq, toSeq),
+      ),
+    )
+    .orderBy(asc(auditEvents.seq))
+    .limit(PAGE);
+}
+
+/**
+ * Why `row` breaks the chain, or null when it continues it: it must follow `expected`, or, with
+ * no event before it, the anchor or the genesis; and its hash must match its content.
+ */
+function rowBreak(
+  row: AuditEventRow,
+  expected: ChainLink | null,
+  anchor: AuditAnchor | null,
+): AuditBreakReason | null {
+  if (expected === null) {
+    const start = anchor
+      ? { seq: Number(anchor.throughSeq), hash: anchor.throughHash }
+      : { seq: 0, hash: GENESIS_HASH };
+    if (row.seq !== start.seq + 1 || row.prevHash !== start.hash) return 'anchor_mismatch';
+  } else {
+    if (row.seq !== expected.seq) return 'gap';
+    if (row.prevHash !== expected.hash) return 'prev_mismatch';
+  }
+  if (eventHash(row.prevHash, recordOf(row)) !== row.hash) return 'hash_mismatch';
+  return null;
+}
+
 /**
  * rbac-audit.md §10.3: reads events in seq order, a page at a time, and stops at the first break.
  * The oldest event checked is compared with the event before it when one is stored (a range that
@@ -79,22 +151,9 @@ export async function verifyAuditChain(
     anchor = await currentAnchor(db);
   } catch (err) {
     if (!(err instanceof AuditAnchorMalformedError)) throw err;
-    // Fail closed: a malformed anchor row is a break before the oldest stored event.
-    const [oldest] = await db.select({ seq: min(auditEvents.seq) }).from(auditEvents);
-    const seq = oldest?.seq;
-    return {
-      ok: false,
-      checked: 0,
-      firstSeq: null,
-      lastSeq: null,
-      anchor: null,
-      break: {
-        seq: seq === null || seq === undefined ? '0' : String(seq),
-        reason: 'anchor_mismatch',
-      },
-    };
+    return malformedAnchorBreak(db);
   }
-  let expected: { seq: number; hash: string } | null = null;
+  let expected = await linkBefore(db, range.fromSeq);
   let checked = 0;
   let firstSeq: string | null = null;
   let lastSeq: string | null = null;
@@ -108,42 +167,12 @@ export async function verifyAuditChain(
   });
   const fail = (seq: number, reason: AuditBreakReason) => result({ seq: String(seq), reason });
 
-  if (range.fromSeq !== undefined) {
-    const [before] = await db
-      .select({ seq: auditEvents.seq, hash: auditEvents.hash })
-      .from(auditEvents)
-      .where(lt(auditEvents.seq, range.fromSeq))
-      .orderBy(desc(auditEvents.seq))
-      .limit(1);
-    if (before) expected = { seq: before.seq + 1, hash: before.hash };
-  }
   let after = (range.fromSeq ?? 1) - 1;
   for (;;) {
-    const rows = await db
-      .select()
-      .from(auditEvents)
-      .where(
-        and(
-          gt(auditEvents.seq, after),
-          range.toSeq === undefined ? undefined : lte(auditEvents.seq, range.toSeq),
-        ),
-      )
-      .orderBy(asc(auditEvents.seq))
-      .limit(PAGE);
+    const rows = await eventPage(db, after, range.toSeq);
     for (const row of rows) {
-      if (expected === null) {
-        const start = anchor
-          ? { seq: Number(anchor.throughSeq), hash: anchor.throughHash }
-          : { seq: 0, hash: GENESIS_HASH };
-        if (row.seq !== start.seq + 1 || row.prevHash !== start.hash) {
-          return fail(row.seq, 'anchor_mismatch');
-        }
-      } else {
-        if (row.seq !== expected.seq) return fail(row.seq, 'gap');
-        if (row.prevHash !== expected.hash) return fail(row.seq, 'prev_mismatch');
-      }
-      if (eventHash(row.prevHash, recordOf(row)) !== row.hash)
-        return fail(row.seq, 'hash_mismatch');
+      const reason = rowBreak(row, expected, anchor);
+      if (reason) return fail(row.seq, reason);
       checked += 1;
       firstSeq ??= String(row.seq);
       lastSeq = String(row.seq);

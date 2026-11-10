@@ -167,6 +167,13 @@ const DECLARATION = /^<\?xml(\s[^<>?]*)\?>/;
 const DECLARATION_BODY =
   /^\s+version\s*=\s*(["'])1\.0\1(?:\s+encoding\s*=\s*(["'])([A-Za-z][A-Za-z0-9._-]*)\2)?(?:\s+standalone\s*=\s*(["'])(?:yes|no)\4)?\s*$/;
 
+/** A leading declaration is version 1.0, and UTF-8 when it names an encoding. */
+function declarationOk(decl: RegExpExecArray): boolean {
+  const body = DECLARATION_BODY.exec(decl[1] ?? '');
+  if (!body) return false;
+  return body[3] === undefined || body[3].toLowerCase() === 'utf-8';
+}
+
 /** Comments, removed from the text the raw bounds scan when a metadata document may hold them. */
 const COMMENTS = /<!--[\s\S]*?-->/g;
 
@@ -191,9 +198,7 @@ function rawCheck(
   const decl = DECLARATION.exec(xml);
   let rest = xml;
   if (decl) {
-    const body = DECLARATION_BODY.exec(decl[1] ?? '');
-    if (!body) return 'malformed';
-    if (body[3] !== undefined && body[3].toLowerCase() !== 'utf-8') return 'malformed';
+    if (!declarationOk(decl)) return 'malformed';
     rest = xml.slice(decl[0].length);
   }
   // Before comments are removed: a PI is refused even inside a comment, as DOCTYPE and CDATA are.
@@ -212,6 +217,25 @@ function occurrences(text: string, needle: string): number {
 }
 
 /**
+ * The tag that starts at `start` (a `<`): the index of its closing `>` (the text's length when
+ * it is unterminated) and its number of `=`, outside quotes.
+ */
+function scanTag(text: string, start: number): { end: number; attributes: number } {
+  let j = start + 1;
+  let quote = '';
+  let attributes = 0;
+  for (; j < text.length; j += 1) {
+    const ch = text[j];
+    if (quote) {
+      if (ch === quote) quote = '';
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '=') attributes += 1;
+    else if (ch === '>') break;
+  }
+  return { end: j, attributes };
+}
+
+/**
  * Depth, element count and attributes per element, read from the tag stream in one linear pass
  * (quotes respected, since `>` and `/` are legal in attribute values). Only a bound: the parser
  * still decides whether the tags are well formed. `text` holds no PI, comment, CDATA or DOCTYPE.
@@ -220,24 +244,15 @@ function tagStreamWithinBounds(text: string): boolean {
   let depth = 0;
   let elements = 0;
   for (let i = text.indexOf('<'); i !== -1;) {
-    let j = i + 1;
-    let quote = '';
-    let attributes = 0;
-    for (; j < text.length; j += 1) {
-      const ch = text[j];
-      if (quote) {
-        if (ch === quote) quote = '';
-      } else if (ch === '"' || ch === "'") quote = ch;
-      else if (ch === '=') attributes += 1;
-      else if (ch === '>') break;
-    }
+    const { end: j, attributes } = scanTag(text, i);
     if (j >= text.length) return true; // unterminated: the parser refuses it
     if (text[i + 1] === '/') depth -= 1;
     else {
       elements += 1;
       if (text[j - 1] !== '/') depth += 1;
-      if (depth > MAX_DEPTH || elements > MAX_ELEMENTS) return false;
-      if (attributes > MAX_ATTRIBUTES_PER_ELEMENT) return false;
+      if (depth > MAX_DEPTH || elements > MAX_ELEMENTS || attributes > MAX_ATTRIBUTES_PER_ELEMENT) {
+        return false;
+      }
     }
     i = text.indexOf('<', j);
   }
@@ -281,6 +296,43 @@ function parse(xml: string): XmlDocument | 'malformed' | 'not_response' {
   }
 }
 
+/**
+ * Nothing beside the document element but whitespace, the declaration (a PI node in xmldom 0.8),
+ * and comments when `comments` allows them (metadata).
+ */
+function onlyRootAtTop(
+  doc: XmlDocument,
+  root: XmlElement,
+  declared: boolean,
+  comments: boolean,
+): boolean {
+  for (let n = doc.firstChild; n; n = n.nextSibling) {
+    if (n === root) continue;
+    if (n.nodeType === 3 && /^[\t\n\r ]*$/.test(n.nodeValue ?? '')) continue;
+    if (n.nodeType === 7 && n === doc.firstChild && declared && n.nodeName === 'xml') continue;
+    if (n.nodeType === 8 && comments) continue;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * The structural finding a walked document fails on, in this order; `response` (a Response root)
+ * also needs exactly one assertion, and its refusal by the IdP is `idp_status`.
+ */
+function walkedProblem(walked: Walked, root: XmlElement, response: boolean): PreCheckCode | null {
+  if (walked.misplacedAssertion) return 'assertion_count';
+  if (response && walked.direct.length === 0 && !walked.duplicateId && !walked.badSignature) {
+    // sso-scim.md §6.3: an IdP's refusal (no assertion, a status other than Success) is idp_error.
+    const status = topStatus(root);
+    if (status !== null && status !== SUCCESS) return 'idp_status';
+  }
+  if (response && walked.direct.length !== 1) return 'assertion_count';
+  if (walked.duplicateId) return 'duplicate_id';
+  if (walked.badSignature) return 'signature_shape';
+  return null;
+}
+
 export function samlPreCheck(
   xml: string,
   options: { root: 'Response' | 'EntityDescriptor'; hasSpKey: boolean },
@@ -295,26 +347,12 @@ export function samlPreCheck(
   if (!root || root.localName !== options.root || root.namespaceURI !== (metadata ? MD : P)) {
     return fail('not_response');
   }
-  // Nothing beside the document element but whitespace, and the declaration (a PI node in xmldom 0.8).
-  for (let n = doc.firstChild; n; n = n.nextSibling) {
-    if (n === root) continue;
-    if (n.nodeType === 3 && /^[\t\n\r ]*$/.test(n.nodeValue ?? '')) continue;
-    if (n.nodeType === 7 && n === doc.firstChild && raw.declared && n.nodeName === 'xml') continue;
-    if (n.nodeType === 8 && metadata) continue;
-    return fail('not_response');
-  }
+  if (!onlyRootAtTop(doc, root, raw.declared, metadata)) return fail('not_response');
 
   const walked = walk(root, metadata ? 'metadata' : 'response');
   if (typeof walked === 'string') return fail(walked);
-  if (walked.misplacedAssertion) return fail('assertion_count');
-  if (!metadata && walked.direct.length === 0 && !walked.duplicateId && !walked.badSignature) {
-    // sso-scim.md §6.3: an IdP's refusal (no assertion, a status other than Success) is idp_error.
-    const status = topStatus(root);
-    if (status !== null && status !== SUCCESS) return fail('idp_status');
-  }
-  if (!metadata && walked.direct.length !== 1) return fail('assertion_count');
-  if (walked.duplicateId) return fail('duplicate_id');
-  if (walked.badSignature) return fail('signature_shape');
+  const problem = walkedProblem(walked, root, !metadata);
+  if (problem) return fail(problem);
   if (metadata) return { ok: true, doc, inResponseTo: null, destination: null };
   if (walked.direct[0]?.localName === 'EncryptedAssertion' && !options.hasSpKey) {
     return fail('encrypted_without_key');
@@ -356,17 +394,11 @@ export function samlAssertionCheck(
   if (!root || root.localName !== 'Assertion' || root.namespaceURI !== A) {
     return fail('not_response');
   }
-  for (let n = doc.firstChild; n; n = n.nextSibling) {
-    if (n === root) continue;
-    if (n.nodeType === 3 && /^[\t\n\r ]*$/.test(n.nodeValue ?? '')) continue;
-    if (n.nodeType === 7 && n === doc.firstChild && raw.declared && n.nodeName === 'xml') continue;
-    return fail('not_response');
-  }
+  if (!onlyRootAtTop(doc, root, raw.declared, false)) return fail('not_response');
   const walked = walk(root, 'assertion');
   if (typeof walked === 'string') return fail(walked);
-  if (walked.misplacedAssertion) return fail('assertion_count');
-  if (walked.duplicateId) return fail('duplicate_id');
-  if (walked.badSignature) return fail('signature_shape');
+  const problem = walkedProblem(walked, root, false);
+  if (problem) return fail(problem);
   return { ok: true, doc, assertion: root };
 }
 
@@ -379,15 +411,90 @@ interface Walked {
   badSignature: boolean;
 }
 
+type WalkMode = 'response' | 'metadata' | 'assertion';
+
+/** An element's attribute values: bounded, XML characters only. A repeated ID value is noted. */
+function attributeProblem(node: XmlElement, ids: Set<string>, out: Walked): PreCheckCode | null {
+  for (let i = 0; i < node.attributes.length; i += 1) {
+    const attr = node.attributes.item(i);
+    if (!attr) continue;
+    if (attr.value.length > MAX_ATTRIBUTE) return 'too_complex';
+    // Character references decode here: `&#0;` or `&#xD800;` passed the raw check.
+    if (!xmlCharsOnly(attr.value)) return 'malformed';
+    if (ID_NAMES.has(attr.localName)) {
+      if (ids.has(attr.value)) out.duplicateId = true;
+      ids.add(attr.value);
+    }
+  }
+  return null;
+}
+
+/** An Assertion or EncryptedAssertion: one of a Response's own, or misplaced. */
+function noteAssertion(node: XmlElement, root: XmlElement, mode: WalkMode, out: Walked): void {
+  // The document element of samlAssertionCheck.
+  if (mode === 'assertion' && node === root) return;
+  if (mode === 'response' && node.parentNode === root && node.namespaceURI === A) {
+    out.direct.push(node);
+  } else out.misplacedAssertion = true;
+}
+
+/**
+ * An element xml-crypto looks up by local name outside its place: inside a Signature, not under
+ * its xmldsig parent (SIGNATURE_PLACES); or an xmldsig one of DS_PARENT anywhere but there.
+ */
+function misplacedDsElement(node: XmlElement, inSignature: boolean): boolean {
+  const local = node.localName;
+  const parent = node.parentNode as XmlElement | null;
+  if (
+    inSignature &&
+    Object.hasOwn(SIGNATURE_PLACES, local) &&
+    (node.namespaceURI !== DS ||
+      parent?.namespaceURI !== DS ||
+      parent.localName !== SIGNATURE_PLACES[local])
+  ) {
+    return true;
+  }
+  return (
+    node.namespaceURI === DS &&
+    Object.hasOwn(DS_PARENT, local) &&
+    (parent?.namespaceURI !== DS || parent.localName !== DS_PARENT[local])
+  );
+}
+
+/** The structural findings of one element, noted in `out` (see Walked). */
+function noteStructure(
+  node: XmlElement,
+  root: XmlElement,
+  mode: WalkMode,
+  inSignature: boolean,
+  out: Walked,
+): void {
+  const local = node.localName;
+  if (local === 'Assertion' || local === 'EncryptedAssertion') noteAssertion(node, root, mode, out);
+  if (local === 'Response' && node !== root) out.misplacedAssertion = true;
+  if (local === 'Signature' && !signatureShapeOk(node)) out.badSignature = true;
+  if (misplacedDsElement(node, inSignature)) out.badSignature = true;
+}
+
+/**
+ * A child that is not an element: text holds XML characters only, and only metadata may carry
+ * comments; CDATA, a processing instruction or any other node fails.
+ */
+function childNodeProblem(c: XmlNode, mode: WalkMode): PreCheckCode | null {
+  if (c.nodeType === 3) return xmlCharsOnly(c.nodeValue ?? '') ? null : 'malformed';
+  // IdP metadata may carry comments (Ruling M-3); nothing signed ever does.
+  if (c.nodeType === 8) return mode === 'metadata' ? null : 'comment';
+  if (c.nodeType === 4) return 'cdata';
+  if (c.nodeType === 7) return 'processing_instruction';
+  return 'malformed';
+}
+
 /**
  * One pass over every element. Bounds, forbidden names, namespace well-formedness and node types
  * fail at once; the structural findings are collected so that the result does not depend on the
  * order of the walk (an assertion wrapped in a signature is `assertion_count`, whatever else).
  */
-function walk(
-  root: XmlElement,
-  mode: 'response' | 'metadata' | 'assertion',
-): Walked | PreCheckCode {
+function walk(root: XmlElement, mode: WalkMode): Walked | PreCheckCode {
   const out: Walked = {
     direct: [],
     misplacedAssertion: false,
@@ -403,76 +510,35 @@ function walk(
     const { node, depth, inSignature } = item;
     elements += 1;
     if (depth > MAX_DEPTH || elements > MAX_ELEMENTS) return 'too_complex';
-    const nameProblem = checkNames(node);
-    if (nameProblem) return nameProblem;
-    for (let i = 0; i < node.attributes.length; i += 1) {
-      const attr = node.attributes.item(i);
-      if (!attr) continue;
-      if (attr.value.length > MAX_ATTRIBUTE) return 'too_complex';
-      // Character references decode here: `&#0;` or `&#xD800;` passed the raw check.
-      if (!xmlCharsOnly(attr.value)) return 'malformed';
-      if (ID_NAMES.has(attr.localName)) {
-        if (ids.has(attr.value)) out.duplicateId = true;
-        ids.add(attr.value);
-      }
-    }
-
-    const local = node.localName;
-    if (local === 'Assertion' || local === 'EncryptedAssertion') {
-      if (mode === 'assertion' && node === root) {
-        // The document element of samlAssertionCheck.
-      } else if (mode === 'response' && node.parentNode === root && node.namespaceURI === A) {
-        out.direct.push(node);
-      } else out.misplacedAssertion = true;
-    }
-    if (local === 'Response' && node !== root) out.misplacedAssertion = true;
-    if (local === 'Signature' && !signatureShapeOk(node)) out.badSignature = true;
-    if (inSignature && Object.hasOwn(SIGNATURE_PLACES, local)) {
-      const parent = node.parentNode as XmlElement | null;
-      if (
-        node.namespaceURI !== DS ||
-        parent?.namespaceURI !== DS ||
-        parent.localName !== SIGNATURE_PLACES[local]
-      ) {
-        out.badSignature = true;
-      }
-    }
-    if (node.namespaceURI === DS && Object.hasOwn(DS_PARENT, local)) {
-      const parent = node.parentNode as XmlElement | null;
-      if (parent?.namespaceURI !== DS || parent.localName !== DS_PARENT[local])
-        out.badSignature = true;
-    }
-
+    const problem = checkNames(node) ?? attributeProblem(node, ids, out);
+    if (problem) return problem;
+    noteStructure(node, root, mode, inSignature, out);
+    const childInSignature = inSignature || node.localName === 'Signature';
     for (let c = node.firstChild; c; c = c.nextSibling) {
       if (c.nodeType === 1) {
-        stack.push({
-          node: c as XmlElement,
-          depth: depth + 1,
-          inSignature: inSignature || local === 'Signature',
-        });
-      } else if (c.nodeType === 3) {
-        if (!xmlCharsOnly(c.nodeValue ?? '')) return 'malformed';
-      } else if (c.nodeType === 8) {
-        // IdP metadata may carry comments (Ruling M-3); nothing signed ever does.
-        if (mode !== 'metadata') return 'comment';
-      } else if (c.nodeType === 4) return 'cdata';
-      else if (c.nodeType === 7) return 'processing_instruction';
-      else if (c.nodeType !== 3) return 'malformed';
+        stack.push({ node: c as XmlElement, depth: depth + 1, inSignature: childInSignature });
+        continue;
+      }
+      const childProblem = childNodeProblem(c, mode);
+      if (childProblem) return childProblem;
     }
   }
   return out;
 }
 
+/** A forbidden local name or prefix. */
+function forbiddenName(localName: string, prefix: string | null): boolean {
+  return FORBIDDEN.has(localName) || (prefix !== null && FORBIDDEN.has(prefix));
+}
+
 /** Forbidden local names and prefixes, and namespace well-formedness (no unbound prefix, no `xmlns:p=""`). */
 function checkNames(node: XmlElement): PreCheckCode | null {
-  if (FORBIDDEN.has(node.localName) || (node.prefix !== null && FORBIDDEN.has(node.prefix)))
-    return 'forbidden_name';
+  if (forbiddenName(node.localName, node.prefix)) return 'forbidden_name';
   if (node.prefix && !node.namespaceURI) return 'malformed';
   for (let i = 0; i < node.attributes.length; i += 1) {
     const attr = node.attributes.item(i);
     if (!attr) continue;
-    if (FORBIDDEN.has(attr.localName) || (attr.prefix !== null && FORBIDDEN.has(attr.prefix)))
-      return 'forbidden_name';
+    if (forbiddenName(attr.localName, attr.prefix)) return 'forbidden_name';
     if (attr.prefix === 'xmlns' && attr.value === '') return 'malformed';
     if (attr.prefix && attr.prefix !== 'xmlns' && attr.prefix !== 'xml' && !attr.namespaceURI)
       return 'malformed';
@@ -519,6 +585,18 @@ const onlyInclusiveNamespaces = (e: XmlElement | undefined): e is XmlElement =>
     (c) => c.namespaceURI === EXC_C14N && c.localName === 'InclusiveNamespaces' && isLeaf(c),
   );
 
+/** Transforms = one or two Transform, each holding nothing but InclusiveNamespaces. */
+function transformsOk(transforms: XmlElement): boolean {
+  const list = childElements(transforms);
+  if (list.length < 1 || list.length > 2) return false;
+  for (const t of list) {
+    if (t.namespaceURI !== DS || t.localName !== 'Transform' || !onlyInclusiveNamespaces(t)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * The xmldsig schema's shape, in order: Signature = SignedInfo, SignatureValue, KeyInfo? (no
  * Object: a place to hide a wrapped assertion); SignedInfo = CanonicalizationMethod,
@@ -558,15 +636,7 @@ function signatureShapeOk(signature: XmlElement): boolean {
     ]);
   if (!refParts || !isLeaf(refParts.get('DigestValue'))) return false;
   const transforms = refParts.get('Transforms');
-  if (transforms) {
-    const list = childElements(transforms);
-    if (list.length < 1 || list.length > 2) return false;
-    for (const t of list) {
-      if (t.namespaceURI !== DS || t.localName !== 'Transform' || !onlyInclusiveNamespaces(t)) {
-        return false;
-      }
-    }
-  }
+  if (transforms && !transformsOk(transforms)) return false;
   const digest = refParts.get('DigestMethod');
   return isLeaf(digest) && DIGEST_METHODS.has(digest.getAttribute('Algorithm') ?? '');
 }

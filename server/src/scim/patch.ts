@@ -113,6 +113,12 @@ function email(v: unknown): string | null {
   return value;
 }
 
+/** The value an operation must carry: `invalidValue` when it has none. */
+function needValue(op: Op, value: unknown): unknown {
+  if (value === undefined) throw invalidValue(`An ${op} operation needs a value`);
+  return value;
+}
+
 function readOperations(body: unknown): Operation[] {
   if (!isRecord(body)) throw invalidSyntax('The body must be a PatchOp message');
   const schemas = member(body, 'schemas');
@@ -180,6 +186,20 @@ const FILTER_OPS: ReadonlySet<string> = new Set([
   'le',
 ]);
 
+/** A value filter's comparison; an unknown operator or a malformed value is `invalidPath`. */
+function parseFilter(attr: string, rawOp: string, rawValue: string): NonNullable<Path['filter']> {
+  const op = rawOp.toLowerCase();
+  if (!FILTER_OPS.has(op)) throw invalidPath();
+  let value: unknown;
+  try {
+    value = JSON.parse(rawValue.startsWith('"') ? rawValue : rawValue.toLowerCase());
+  } catch {
+    throw invalidPath();
+  }
+  if (typeof value === 'string' && !isStorableText(value)) throw invalidPath();
+  return { attr: checkName(attr), op, value };
+}
+
 /** The parsed path, or null for a well-formed extension path; malformed is `invalidPath`. */
 function parsePath(path: string, resource: Resource): Path | null {
   if (path.length > MAX_PATH_LENGTH) throw invalidPath();
@@ -196,19 +216,10 @@ function parsePath(path: string, resource: Resource): Path | null {
   const attr = m?.[1];
   if (!m || attr === undefined) throw invalidPath();
   const [, , filterAttr, filterOp, filterValue, sub] = m;
-  let filter: Path['filter'] = null;
-  if (filterAttr !== undefined && filterOp !== undefined && filterValue !== undefined) {
-    const op = filterOp.toLowerCase();
-    if (!FILTER_OPS.has(op)) throw invalidPath();
-    let value: unknown;
-    try {
-      value = JSON.parse(filterValue.startsWith('"') ? filterValue : filterValue.toLowerCase());
-    } catch {
-      throw invalidPath();
-    }
-    if (typeof value === 'string' && !isStorableText(value)) throw invalidPath();
-    filter = { attr: checkName(filterAttr), op, value };
-  }
+  const filter =
+    filterAttr !== undefined && filterOp !== undefined && filterValue !== undefined
+      ? parseFilter(filterAttr, filterOp, filterValue)
+      : null;
   return { attr: checkName(attr), filter, sub: sub === undefined ? null : checkName(sub) };
 }
 
@@ -340,24 +351,41 @@ function withName(name: ScimName, key: NameMember, value: string | null): ScimNa
   return next;
 }
 
+/** A `userName` operation's new value: never removed or null, and not empty. */
+function userNameValue(op: Op, value: unknown): string {
+  if (op === 'remove' || needValue(op, value) === null) throw mutability('userName is required');
+  const userName = text(value, MAX_TEXT, 'userName');
+  if (userName === '') throw invalidValue('userName cannot be empty');
+  return userName;
+}
+
+/** A `name` operation's new name: a remove or null clears it, an object sets the members given. */
+function nameValue(name: ScimName, op: Op, value: unknown): ScimName {
+  if (op === 'remove' || needValue(op, value) === null) return {};
+  if (!isRecord(value)) throw invalidValue('name must be an object');
+  if (Object.keys(value).length > MAX_OBJECT_MEMBERS) {
+    throw tooMany(`At most ${MAX_OBJECT_MEMBERS} attributes in one value`);
+  }
+  // A replace of a complex attribute sets the sub-attributes given (RFC 7644 §3.5.2.3).
+  let next = name;
+  for (const key of Object.values(NAME_MEMBERS)) {
+    const v = member(value, key);
+    if (v !== undefined) next = withName(next, key, optionalText(v, MAX_TEXT, key));
+  }
+  return next;
+}
+
 function applyUserValue(state: UserState, op: Op, target: UserTarget, value: unknown): UserState {
   const remove = op === 'remove';
-  const need = () => {
-    if (value === undefined) throw invalidValue(`An ${op} operation needs a value`);
-    return value;
-  };
+  const need = () => needValue(op, value);
   switch (target.kind) {
     case 'ignored':
       return state;
     case 'active':
       if (remove) throw mutability('active cannot be removed');
       return { ...state, active: scimBoolean(need()) };
-    case 'userName': {
-      if (remove || need() === null) throw mutability('userName is required');
-      const userName = text(value, MAX_TEXT, 'userName');
-      if (userName === '') throw invalidValue('userName cannot be empty');
-      return { ...state, userName };
-    }
+    case 'userName':
+      return { ...state, userName: userNameValue(op, value) };
     case 'displayName':
       return {
         ...state,
@@ -374,20 +402,8 @@ function applyUserValue(state: UserState, op: Op, target: UserTarget, value: unk
           remove ? null : optionalText(need(), MAX_TEXT, target.member),
         ),
       };
-    case 'name': {
-      if (remove || need() === null) return { ...state, name: {} };
-      if (!isRecord(value)) throw invalidValue('name must be an object');
-      if (Object.keys(value).length > MAX_OBJECT_MEMBERS) {
-        throw tooMany(`At most ${MAX_OBJECT_MEMBERS} attributes in one value`);
-      }
-      // A replace of a complex attribute sets the sub-attributes given (RFC 7644 §3.5.2.3).
-      let name = state.name;
-      for (const key of Object.values(NAME_MEMBERS)) {
-        const v = member(value, key);
-        if (v !== undefined) name = withName(name, key, optionalText(v, MAX_TEXT, key));
-      }
-      return { ...state, name };
-    }
+    case 'name':
+      return { ...state, name: nameValue(state.name, op, value) };
     case 'emails':
       return { ...state, email: remove ? null : pickEmail(need()) };
     case 'email':
@@ -492,11 +508,25 @@ export function applyGroupPatch(body: unknown): GroupPatchResult {
     }
   };
 
+  const members = (op: Op, value: unknown) => {
+    if (op === 'add') adds(ids(needValue(op, value)));
+    else if (op === 'remove') {
+      if (value === undefined || value === null) {
+        // Every member goes.
+        replace = new Set();
+        add.clear();
+        remove.clear();
+      } else removes(ids(value));
+    } else {
+      const list = needValue(op, value) === null ? [] : ids(value);
+      replace = new Set(list);
+      add.clear();
+      remove.clear();
+    }
+  };
+
   const apply = (op: Op, target: GroupTarget, value: unknown) => {
-    const need = () => {
-      if (value === undefined) throw invalidValue(`An ${op} operation needs a value`);
-      return value;
-    };
+    const need = () => needValue(op, value);
     switch (target.kind) {
       case 'ignored':
         return;
@@ -515,20 +545,7 @@ export function applyGroupPatch(body: unknown): GroupPatchResult {
         removes([target.id]);
         return;
       case 'members':
-        if (op === 'add') adds(ids(need()));
-        else if (op === 'remove') {
-          if (value === undefined || value === null) {
-            // Every member goes.
-            replace = new Set();
-            add.clear();
-            remove.clear();
-          } else removes(ids(value));
-        } else {
-          const list = need() === null ? [] : ids(value);
-          replace = new Set(list);
-          add.clear();
-          remove.clear();
-        }
+        members(op, value);
         return;
     }
   };

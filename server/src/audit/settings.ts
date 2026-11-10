@@ -289,6 +289,70 @@ async function chainHeadSeq(tx: Executor): Promise<string> {
   return (await readChainAnchor(tx))?.throughSeq ?? '0';
 }
 
+type StreamSetting = AuditSettings['stream'];
+
+/**
+ * The stream a `PUT` leaves: none for `stream: null`, the current one when `stream` is absent,
+ * otherwise the validated `url` with the given secret, the kept one, or a generated one (returned
+ * as `generated`). Appends the fields it changes to `changed`.
+ */
+function nextStream(
+  current: StreamSetting,
+  input: AuditSettingsInput,
+  url: string | undefined,
+  key: Buffer,
+  changed: string[],
+): { stream: StreamSetting; generated: string | null } {
+  if (input.stream === null) {
+    if (current) changed.push('stream');
+    return { stream: null, generated: null };
+  }
+  if (!input.stream || url === undefined) return { stream: current, generated: null };
+  let generated: string | null = null;
+  let secretEnc = current?.secretEnc;
+  if (input.stream.secret !== undefined) {
+    secretEnc = encryptSecret(key, input.stream.secret, AUDIT_STREAM_SECRET_AAD);
+    changed.push('stream.secret');
+  } else if (!secretEnc) {
+    generated = generateStreamSecret();
+    secretEnc = encryptSecret(key, generated, AUDIT_STREAM_SECRET_AAD);
+  }
+  const active = input.stream.active ?? current?.active ?? true;
+  if (!current) changed.push('stream');
+  else {
+    if (current.url !== url) changed.push('stream.url');
+    if (current.active !== active) changed.push('stream.active');
+  }
+  return { stream: { url, active, secretEnc }, generated };
+}
+
+/**
+ * The `audit-stream` row after a `PUT` wrote `stream` over `current`: restarted at the head, or
+ * deleted when the stream was removed.
+ */
+async function resetStreamState(
+  tx: Executor,
+  current: StreamSetting,
+  stream: StreamSetting,
+  input: AuditSettingsInput,
+): Promise<void> {
+  // A new stream, a new URL, or a state row that is missing or malformed (the reset of
+  // readStreamState's error): start at the head.
+  const restart =
+    stream !== null &&
+    (current?.url !== stream.url ||
+      (input.stream !== undefined && !(await readStreamState(tx)).ok));
+  if (restart) {
+    // Waits for a running stream batch (it holds this lock for at most one request), so the
+    // run cannot write its old cursor over the restart.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.auditStream})`);
+    await writeSetting(tx, AUDIT_STREAM_KEY, initialStreamState(await chainHeadSeq(tx)));
+  } else if (!stream && current) {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.auditStream})`);
+    await tx.delete(instanceSettings).where(eq(instanceSettings.key, AUDIT_STREAM_KEY));
+  }
+}
+
 /**
  * `PUT /ee/audit/settings` (rbac-audit.md §13, §14.1): validates (422 on `body.retentionDays`,
  * `body.stream.url` with the webhooks' URL rules, `body.stream.secret`), writes the `audit` row,
@@ -317,44 +381,11 @@ export async function updateAuditSettings(
     const changed: string[] = [];
     const retentionDays = input.retentionDays ?? current.retentionDays;
     if (retentionDays !== current.retentionDays) changed.push('retentionDays');
-    let stream = current.stream;
-    if (input.stream === null) {
-      if (current.stream) changed.push('stream');
-      stream = null;
-    } else if (input.stream && url !== undefined) {
-      const before = current.stream;
-      let secretEnc = before?.secretEnc;
-      if (input.stream.secret !== undefined) {
-        secretEnc = encryptSecret(key, input.stream.secret, AUDIT_STREAM_SECRET_AAD);
-        changed.push('stream.secret');
-      } else if (!secretEnc) {
-        generated = generateStreamSecret();
-        secretEnc = encryptSecret(key, generated, AUDIT_STREAM_SECRET_AAD);
-      }
-      const active = input.stream.active ?? before?.active ?? true;
-      if (!before) changed.push('stream');
-      else {
-        if (before.url !== url) changed.push('stream.url');
-        if (before.active !== active) changed.push('stream.active');
-      }
-      stream = { url, active, secretEnc };
-    }
+    const next = nextStream(current.stream, input, url, key, changed);
+    const stream = next.stream;
+    generated = next.generated;
     await writeSetting(tx, AUDIT_SETTINGS_KEY, { retentionDays, stream });
-    // A new stream, a new URL, or a state row that is missing or malformed (the reset of
-    // readStreamState's error): start at the head.
-    const restart =
-      stream !== null &&
-      (current.stream?.url !== stream.url ||
-        (input.stream !== undefined && !(await readStreamState(tx)).ok));
-    if (restart) {
-      // Waits for a running stream batch (it holds this lock for at most one request), so the
-      // run cannot write its old cursor over the restart.
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.auditStream})`);
-      await writeSetting(tx, AUDIT_STREAM_KEY, initialStreamState(await chainHeadSeq(tx)));
-    } else if (!stream && current.stream) {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.auditStream})`);
-      await tx.delete(instanceSettings).where(eq(instanceSettings.key, AUDIT_STREAM_KEY));
-    }
+    await resetStreamState(tx, current.stream, stream, input);
     await deps.recorder.record(tx, context, [
       {
         action: 'audit.settings_updated',

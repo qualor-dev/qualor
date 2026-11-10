@@ -99,9 +99,8 @@ function scimMatchKey(claims: SignInClaims, config: ConnectionConfig): string | 
 
 /** One IdP subject at a time (LOCKS.ssoSubject): resolution and linking never race each other. */
 async function lockSubject(tx: Executor, connectionId: string, subject: string): Promise<void> {
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(${LOCKS.ssoSubject}, hashtext(${`${connectionId}:${subject}`}))`,
-  );
+  const key = `${connectionId}:${subject}`;
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.ssoSubject}, hashtext(${key}))`);
 }
 
 async function emailTaken(tx: Executor, email: string): Promise<boolean> {
@@ -131,22 +130,193 @@ const userTarget = (user: UserRow) => ({
   label: user.username,
 });
 
+/** An identity and its user. */
+interface AccountRow {
+  identity: IdentityRow;
+  user: UserRow;
+}
+
+type Refusal = Extract<ResolveResult, { ok: false }>;
+
+/** What `resolveAccount` resolves: the sign-in's connection and claims, and who records it. */
+interface ResolveInput {
+  connectionId: string;
+  config: ConnectionConfig;
+  claims: SignInClaims;
+  audit: AuditRecorder;
+  actor: AuditActorContext;
+}
+
+/**
+ * §8.2 step 2: a SCIM record of this connection without a subject, by its userName (the same IdP
+ * made it), now linked to the subject. A refusal for an instance admin's or a deactivated record;
+ * undefined when nothing matches or a concurrent sign-in took the record.
+ */
+async function linkScimRecord(
+  tx: Executor,
+  input: ResolveInput,
+): Promise<AccountRow | Refusal | undefined> {
+  const { connectionId, claims } = input;
+  const match = scimMatchKey(claims, input.config);
+  if (!match) return undefined;
+  const [scim] = await tx
+    .select({ identity: identities, user: users })
+    .from(identities)
+    .innerJoin(users, eq(users.id, identities.userId))
+    .where(
+      and(
+        eq(identities.connectionId, connectionId),
+        isNull(identities.subject),
+        sql`${identities.scimUserName} = ${match}::citext`,
+      ),
+    );
+  if (!scim) return undefined;
+  // An instance admin's record is never matched (§8.3's rule): an admin links with Link.
+  if (scim.user.isInstanceAdmin) return { ok: false, reason: 'no_account', userId: null };
+  if (!scim.user.active) {
+    // Refused before anything is written: a deactivated record keeps no subject.
+    return { ok: false, reason: 'inactive_user', userId: scim.user.id };
+  }
+  // `subject IS NULL` again: a concurrent sign-in of another subject may have taken it.
+  const [identity] = await tx
+    .update(identities)
+    .set({ subject: claims.subject, linkedBy: 'scim_match' })
+    .where(and(eq(identities.id, scim.identity.id), isNull(identities.subject)))
+    .returning();
+  if (!identity) return undefined;
+  await input.audit.record(tx, input.actor, [
+    {
+      action: 'sso.identity_linked',
+      target: userTarget(scim.user),
+      details: { connectionId, method: 'scim_match' },
+    },
+  ]);
+  return { identity, user: scim.user };
+}
+
+/**
+ * §8.2 step 3, §8.3: the one active, non-instance-admin user with the verified email, linked to
+ * the subject unless it already has an identity on this connection; undefined otherwise.
+ */
+async function linkVerifiedEmail(
+  tx: Executor,
+  input: ResolveInput,
+  email: string,
+): Promise<AccountRow | undefined> {
+  const { connectionId, claims } = input;
+  const [target] = await tx
+    .select()
+    .from(users)
+    .where(and(sql`${users.email} = ${email}::citext`, eq(users.active, true)));
+  if (!target || target.isInstanceAdmin) return undefined;
+  const [identity] = await tx
+    .insert(identities)
+    .values({
+      connectionId,
+      userId: target.id,
+      subject: claims.subject,
+      linkedBy: 'verified_email',
+    })
+    // The user already has an identity on this connection (or got one meanwhile): no link.
+    .onConflictDoNothing()
+    .returning();
+  if (!identity) return undefined;
+  await input.audit.record(tx, input.actor, [
+    {
+      action: 'sso.identity_linked',
+      target: userTarget(target),
+      details: { connectionId, method: 'verified_email' },
+    },
+  ]);
+  return { identity, user: target };
+}
+
+/**
+ * §8.2 step 4, JIT (§8.4): a new user, never an existing one of the same name, with the identity.
+ * `email_in_use` when the verified email is taken, `username_unavailable` when no name is free.
+ */
+async function provisionUser(
+  tx: Executor,
+  input: ResolveInput,
+  email: string | null,
+): Promise<AccountRow | Refusal> {
+  const { connectionId, claims } = input;
+  if (email && (await emailTaken(tx, email))) {
+    return { ok: false, reason: 'email_in_use', userId: null };
+  }
+  const base = deriveUsername({ username: claims.username, email: claims.email });
+  let user: UserRow | undefined;
+  for (let n = 1; n <= MAX_SUFFIX && !user; n += 1) {
+    [user] = await tx
+      .insert(users)
+      .values({
+        username: n === 1 ? base : withSuffix(base, n),
+        email,
+        displayName: clean(claims.displayName, DISPLAY_NAME_MAX),
+        passwordHash: null,
+        passwordChangeRequired: false,
+        isInstanceAdmin: false,
+        active: true,
+      })
+      // Any unique conflict: the name (try the next suffix) or the email (taken meanwhile).
+      .onConflictDoNothing()
+      .returning();
+    if (!user && email && (await emailTaken(tx, email))) {
+      return { ok: false, reason: 'email_in_use', userId: null };
+    }
+  }
+  if (!user) return { ok: false, reason: 'username_unavailable', userId: null };
+  const identity = first(
+    await tx
+      .insert(identities)
+      .values({ connectionId, userId: user.id, subject: claims.subject, linkedBy: 'jit' })
+      .returning(),
+  );
+  await input.audit.record(tx, input.actor, [
+    {
+      action: 'sso.user_provisioned',
+      target: userTarget(user),
+      details: { connectionId, emailSet: email !== null },
+    },
+  ]);
+  return { identity, user };
+}
+
+/**
+ * The profile of a user who signed in again: the display name from the claim; a verified email
+ * nobody else has. Not an audited `user.updated`: the IdP changed them, and the chain would fill
+ * with every rename there.
+ */
+async function refreshProfile(
+  tx: Executor,
+  user: UserRow,
+  claims: SignInClaims,
+  email: string | null,
+): Promise<UserRow> {
+  let next = user;
+  const displayName = clean(claims.displayName, DISPLAY_NAME_MAX);
+  if (displayName && displayName !== next.displayName) {
+    next = first(
+      await tx.update(users).set({ displayName }).where(eq(users.id, next.id)).returning(),
+    );
+  }
+  if (
+    email &&
+    email.toLowerCase() !== (next.email ?? '').toLowerCase() &&
+    !(await emailTaken(tx, email))
+  ) {
+    next = await setEmail(tx, next, email);
+  }
+  return next;
+}
+
 /**
  * sso-scim.md §8.2 for `intent: "sign_in"`, in order: the known identity, a SCIM record of this
  * connection, a verified email (`linkByEmail`), JIT (`jit`), else `no_account`. Never by username.
  * Runs in the caller's transaction, after the browser binding matched (SS4). Records
  * `sso.identity_linked` or `sso.user_provisioned`; logs nothing (claims may hold personal data).
  */
-export async function resolveAccount(
-  tx: Executor,
-  input: {
-    connectionId: string;
-    config: ConnectionConfig;
-    claims: SignInClaims;
-    audit: AuditRecorder;
-    actor: AuditActorContext;
-  },
-): Promise<ResolveResult> {
+export async function resolveAccount(tx: Executor, input: ResolveInput): Promise<ResolveResult> {
   const { connectionId, claims } = input;
   const settings = input.config.config;
   const email = verifiedEmail(claims, input.config);
@@ -154,125 +324,24 @@ export async function resolveAccount(
   await lockSubject(tx, connectionId, claims.subject);
 
   // 1. Known identity.
-  let row = await knownIdentity(tx, connectionId, claims.subject);
+  let row: AccountRow | undefined = await knownIdentity(tx, connectionId, claims.subject);
   let created = false;
 
   // 2. A SCIM record of this connection without a subject, by its userName: the same IdP made it.
   if (!row) {
-    const match = scimMatchKey(claims, input.config);
-    if (match) {
-      const [scim] = await tx
-        .select({ identity: identities, user: users })
-        .from(identities)
-        .innerJoin(users, eq(users.id, identities.userId))
-        .where(
-          and(
-            eq(identities.connectionId, connectionId),
-            isNull(identities.subject),
-            sql`${identities.scimUserName} = ${match}::citext`,
-          ),
-        );
-      // An instance admin's record is never matched (§8.3's rule): an admin links with Link.
-      if (scim?.user.isInstanceAdmin) {
-        return { ok: false, reason: 'no_account', userId: null };
-      }
-      if (scim && !scim.user.active) {
-        // Refused before anything is written: a deactivated record keeps no subject.
-        return { ok: false, reason: 'inactive_user', userId: scim.user.id };
-      }
-      if (scim) {
-        // `subject IS NULL` again: a concurrent sign-in of another subject may have taken it.
-        const [identity] = await tx
-          .update(identities)
-          .set({ subject: claims.subject, linkedBy: 'scim_match' })
-          .where(and(eq(identities.id, scim.identity.id), isNull(identities.subject)))
-          .returning();
-        if (identity) {
-          row = { identity, user: scim.user };
-          await input.audit.record(tx, input.actor, [
-            {
-              action: 'sso.identity_linked',
-              target: userTarget(scim.user),
-              details: { connectionId, method: 'scim_match' },
-            },
-          ]);
-        }
-      }
-    }
+    const scim = await linkScimRecord(tx, input);
+    if (scim && 'ok' in scim) return scim;
+    row = scim;
   }
 
   // 3. Verified email (§8.3): the one active, non-instance-admin user with it, not yet linked here.
-  if (!row && settings.linkByEmail && email) {
-    const [target] = await tx
-      .select()
-      .from(users)
-      .where(and(sql`${users.email} = ${email}::citext`, eq(users.active, true)));
-    if (target && !target.isInstanceAdmin) {
-      const [identity] = await tx
-        .insert(identities)
-        .values({
-          connectionId,
-          userId: target.id,
-          subject: claims.subject,
-          linkedBy: 'verified_email',
-        })
-        // The user already has an identity on this connection (or got one meanwhile): no link.
-        .onConflictDoNothing()
-        .returning();
-      if (identity) {
-        row = { identity, user: target };
-        await input.audit.record(tx, input.actor, [
-          {
-            action: 'sso.identity_linked',
-            target: userTarget(target),
-            details: { connectionId, method: 'verified_email' },
-          },
-        ]);
-      }
-    }
-  }
+  if (!row && settings.linkByEmail && email) row = await linkVerifiedEmail(tx, input, email);
 
   // 4. JIT (§8.4): a new user, never an existing one of the same name.
   if (!row && settings.jit) {
-    if (email && (await emailTaken(tx, email))) {
-      return { ok: false, reason: 'email_in_use', userId: null };
-    }
-    const base = deriveUsername({ username: claims.username, email: claims.email });
-    let user: UserRow | undefined;
-    for (let n = 1; n <= MAX_SUFFIX && !user; n += 1) {
-      [user] = await tx
-        .insert(users)
-        .values({
-          username: n === 1 ? base : withSuffix(base, n),
-          email,
-          displayName: clean(claims.displayName, DISPLAY_NAME_MAX),
-          passwordHash: null,
-          passwordChangeRequired: false,
-          isInstanceAdmin: false,
-          active: true,
-        })
-        // Any unique conflict: the name (try the next suffix) or the email (taken meanwhile).
-        .onConflictDoNothing()
-        .returning();
-      if (!user && email && (await emailTaken(tx, email))) {
-        return { ok: false, reason: 'email_in_use', userId: null };
-      }
-    }
-    if (!user) return { ok: false, reason: 'username_unavailable', userId: null };
-    const identity = first(
-      await tx
-        .insert(identities)
-        .values({ connectionId, userId: user.id, subject: claims.subject, linkedBy: 'jit' })
-        .returning(),
-    );
-    await input.audit.record(tx, input.actor, [
-      {
-        action: 'sso.user_provisioned',
-        target: userTarget(user),
-        details: { connectionId, emailSet: email !== null },
-      },
-    ]);
-    row = { identity, user };
+    const provisioned = await provisionUser(tx, input, email);
+    if ('ok' in provisioned) return provisioned;
+    row = provisioned;
     created = true;
   }
 
@@ -287,23 +356,7 @@ export async function resolveAccount(
     .where(eq(identities.id, row.identity.id))
     .for('no key update');
 
-  // The profile: the display name from the claim; a verified email nobody else has. Not an audited
-  // `user.updated`: the IdP changed them, and the chain would fill with every rename there.
-  let user = row.user;
-  const displayName = clean(claims.displayName, DISPLAY_NAME_MAX);
-  if (!created && displayName && displayName !== user.displayName) {
-    user = first(
-      await tx.update(users).set({ displayName }).where(eq(users.id, user.id)).returning(),
-    );
-  }
-  if (
-    !created &&
-    email &&
-    email.toLowerCase() !== (user.email ?? '').toLowerCase() &&
-    !(await emailTaken(tx, email))
-  ) {
-    user = await setEmail(tx, user, email);
-  }
+  const user = created ? row.user : await refreshProfile(tx, row.user, claims, email);
   // `last_sign_in_at` is set with the session (issueSsoSession, §7.5), not here.
   return { ok: true, user, identity: row.identity, created };
 }

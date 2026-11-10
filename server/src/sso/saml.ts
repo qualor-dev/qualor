@@ -461,6 +461,52 @@ const shape = (e: XmlElement): string[] =>
 const named = (ns: string, local: string): string => `${ns} ${local}`;
 
 /**
+ * The elements xml-encryption selects by local name, counted by it; null when one is outside its
+ * own namespace.
+ */
+function encryptionNameCounts(encrypted: XmlElement): Map<string, number> | null {
+  const counts = new Map<string, number>();
+  const stack: XmlElement[] = [encrypted];
+  for (let e = stack.pop(); e; e = stack.pop()) {
+    const expected = Object.hasOwn(ENCRYPTION_NAMES, e.localName)
+      ? ENCRYPTION_NAMES[e.localName]
+      : undefined;
+    if (expected !== undefined) {
+      if (e.namespaceURI !== expected) return null;
+      counts.set(e.localName, (counts.get(e.localName) ?? 0) + 1);
+    }
+    stack.push(...childElements(e));
+  }
+  return counts;
+}
+
+/** The exact counts of `encryptionAllowed`. */
+function encryptionCountsOk(counts: ReadonlyMap<string, number>): boolean {
+  const n = (local: string) => counts.get(local) ?? 0;
+  return (
+    n('EncryptedData') === 1 &&
+    n('EncryptedKey') === 1 &&
+    n('EncryptionMethod') === 2 &&
+    n('CipherData') === 2 &&
+    n('CipherValue') === 2 &&
+    n('RetrievalMethod') === 0 &&
+    n('DigestMethod') <= 1
+  );
+}
+
+/** The key's EncryptionMethod holds at most an xmldsig DigestMethod of an OAEP digest. */
+function keyDigestOk(keyMethod: XmlElement): boolean {
+  const digests = childElements(keyMethod);
+  if (digests.length > 1) return false;
+  const digest = digests[0];
+  return (
+    digest === undefined ||
+    (named(digest.namespaceURI ?? '', digest.localName) === named(DS, 'DigestMethod') &&
+      OAEP_DIGESTS.has(digest.getAttribute('Algorithm') ?? ''))
+  );
+}
+
+/**
  * The shape and algorithms of an `EncryptedAssertion` before anything decrypts it
  * (`saml.encryption`). xml-encryption picks every part by local name and takes the first match,
  * so every element with one of those names must be in its own namespace (a foreign
@@ -471,30 +517,8 @@ const named = (ns: string, local: string): string => `${ns} ${local}`;
  * KeyInfo?, CipherData]], CipherData], so the first CipherValue in document order is the key's.
  */
 function encryptionAllowed(encrypted: XmlElement): boolean {
-  const counts = new Map<string, number>();
-  const stack: XmlElement[] = [encrypted];
-  for (let e = stack.pop(); e; e = stack.pop()) {
-    const expected = Object.hasOwn(ENCRYPTION_NAMES, e.localName)
-      ? ENCRYPTION_NAMES[e.localName]
-      : undefined;
-    if (expected !== undefined) {
-      if (e.namespaceURI !== expected) return false;
-      counts.set(e.localName, (counts.get(e.localName) ?? 0) + 1);
-    }
-    stack.push(...childElements(e));
-  }
-  const n = (local: string) => counts.get(local) ?? 0;
-  if (
-    n('EncryptedData') !== 1 ||
-    n('EncryptedKey') !== 1 ||
-    n('EncryptionMethod') !== 2 ||
-    n('CipherData') !== 2 ||
-    n('CipherValue') !== 2 ||
-    n('RetrievalMethod') !== 0 ||
-    n('DigestMethod') > 1
-  ) {
-    return false;
-  }
+  const counts = encryptionNameCounts(encrypted);
+  if (!counts || !encryptionCountsOk(counts)) return false;
   const [data] = childElements(encrypted);
   if (!data || shape(encrypted).join('|') !== named(XENC, 'EncryptedData')) return false;
   const [dataMethod, outerInfo, dataCipher] = childElements(data);
@@ -521,15 +545,7 @@ function encryptionAllowed(encrypted: XmlElement): boolean {
     if (!cipher || shape(cipher).join('|') !== named(XENC, 'CipherValue')) return false;
   }
   if (childElements(dataMethod).length !== 0) return false;
-  const digests = childElements(keyMethod);
-  if (
-    digests.length > 1 ||
-    (digests[0] !== undefined &&
-      (named(digests[0].namespaceURI ?? '', digests[0].localName) !== named(DS, 'DigestMethod') ||
-        !OAEP_DIGESTS.has(digests[0].getAttribute('Algorithm') ?? '')))
-  ) {
-    return false;
-  }
+  if (!keyDigestOk(keyMethod)) return false;
   return (
     keyMethod.getAttribute('Algorithm') === KEY_TRANSPORT &&
     DATA_ENCRYPTION.has(dataMethod.getAttribute('Algorithm') ?? '')
@@ -539,6 +555,200 @@ function encryptionAllowed(encrypted: XmlElement): boolean {
 /** The class name of a thrown value, never its message. */
 const className = (err: unknown): string =>
   err instanceof Error ? err.constructor.name : typeof err;
+
+type PreChecked = Extract<ReturnType<typeof samlPreCheck>, { ok: true }>;
+
+/** ACS step 1: the form holds one `SAMLResponse` and one `RelayState` (`saml.form`). */
+function acsForm(request: FastifyRequest): { samlResponse: string; relayState: string } {
+  const body = request.body as Record<string, unknown> | null | undefined;
+  const samlResponse = body && typeof body === 'object' ? body.SAMLResponse : undefined;
+  const relayState = body && typeof body === 'object' ? body.RelayState : undefined;
+  if (typeof samlResponse !== 'string' || typeof relayState !== 'string') {
+    throw new SsoFailure('invalid_response', 'saml.form');
+  }
+  return { samlResponse, relayState };
+}
+
+/**
+ * ACS step 3: the decoded response, pre-checked (SS2) before any other parser sees it
+ * (`saml.precheck.<code>`; an IdP refusal without an assertion is `idp_error`); a response
+ * without `InResponseTo` (IdP-initiated) is refused.
+ */
+function preCheckedResponse(
+  samlResponse: string,
+  connection: LoadedConnection,
+): { xml: string; pre: PreChecked; inResponseTo: string } {
+  const decoded = decodeSamlResponse(samlResponse);
+  if (!decoded.ok) throw new SsoFailure('invalid_response', `saml.precheck.${decoded.code}`);
+  const pre = samlPreCheck(decoded.xml, {
+    root: 'Response',
+    hasSpKey: connection.spKey !== null,
+  });
+  if (!pre.ok) {
+    if (pre.code === 'idp_status') throw new SsoFailure('idp_error', 'saml.status');
+    throw new SsoFailure('invalid_response', `saml.precheck.${pre.code}`);
+  }
+  if (pre.inResponseTo === null) throw new SsoFailure('invalid_response', 'saml.in_response_to');
+  return { xml: decoded.xml, pre, inResponseTo: pre.inResponseTo };
+}
+
+/**
+ * ACS step 4: the pending request row is taken (SS3: this burns it, whatever follows): unknown,
+ * expired or another connection's is `flow_expired`; the RelayState must equal the flow's
+ * (constant time, `flow_mismatch`).
+ */
+async function takeSamlRequest(
+  deps: FlowDeps,
+  connectionId: string,
+  inResponseTo: string,
+  relayState: string,
+): Promise<{ issueInstant: string; flowPayload: SamlFlowPayload }> {
+  const flow = await takeState<SamlFlowPayload & { issueInstant?: unknown }>(
+    deps.db,
+    stateKey('saml-request', inResponseTo),
+  );
+  if (!flow || flow.connectionId !== connectionId) {
+    throw new SsoFailure('flow_expired', 'saml.request_unknown');
+  }
+  const { issueInstant, ...flowPayload } = flow.payload;
+  if (
+    !RELAY_PATTERN.test(relayState) ||
+    typeof flowPayload.relay !== 'string' ||
+    !sameText(relayState, flowPayload.relay)
+  ) {
+    throw new SsoFailure('flow_mismatch', 'saml.relay');
+  }
+  if (typeof issueInstant !== 'string') {
+    throw new SsoFailure('flow_expired', 'saml.request_unknown');
+  }
+  return { issueInstant, flowPayload };
+}
+
+/** ACS step 5: the response's status (`idp_error` for an IdP's refusal). */
+function checkResponseStatus(root: XmlElement): void {
+  const status = topStatus(root);
+  if (status !== SUCCESS) {
+    throw new SsoFailure(status === null ? 'invalid_response' : 'idp_error', 'saml.status');
+  }
+}
+
+/**
+ * ACS step 5: an `EncryptedAssertion`'s algorithms and plaintext, pre-checked before node-saml
+ * decrypts the same ciphertext (with an SP key; without one the pre-check refused it).
+ */
+async function checkEncryptedAssertion(root: XmlElement, spKey: string | null): Promise<void> {
+  const encrypted = kids(root, A, 'EncryptedAssertion')[0];
+  if (!encrypted || !spKey) return;
+  if (!encryptionAllowed(encrypted)) throw new SsoFailure('invalid_response', 'saml.encryption');
+  let plaintext: string;
+  try {
+    plaintext = await decryptXml(
+      (encrypted as XmlElement & { toString(): string }).toString(),
+      spKey,
+    );
+  } catch {
+    throw new SsoFailure('invalid_response', 'saml.decrypt');
+  }
+  // One detail for a failed decryption and for a plaintext the pre-check refuses: no padding
+  // or format oracle in the log or the audit chain (AES-CBC).
+  if (!samlAssertionCheck(plaintext).ok) {
+    throw new SsoFailure('invalid_response', 'saml.decrypt');
+  }
+}
+
+/**
+ * ACS step 6: node-saml validates (signatures against the pinned certificates, audience, times,
+ * the request id); its assertion (the signed bytes) is pre-checked again.
+ */
+async function validatedAssertion(
+  saml: SAML,
+  xml: string,
+): Promise<{ profile: Profile; assertion: XmlElement }> {
+  let profile: Profile | null;
+  try {
+    // The bytes the pre-check read, re-encoded canonically: node-saml decodes the same document.
+    ({ profile } = await saml.validatePostResponseAsync({
+      SAMLResponse: Buffer.from(xml, 'utf8').toString('base64'),
+    }));
+  } catch (err) {
+    if (err instanceof SamlStatusError) throw new SsoFailure('idp_error', 'saml.status');
+    throw new SsoFailure('invalid_response', 'saml.validate');
+  }
+  if (!profile) throw new SsoFailure('invalid_response', 'saml.no_profile');
+  const assertionXml = profile.getAssertionXml?.();
+  if (typeof assertionXml !== 'string') throw new SsoFailure('invalid_response', 'saml.no_profile');
+  const signed = samlAssertionCheck(assertionXml);
+  if (!signed.ok) throw new SsoFailure('invalid_response', `saml.precheck.${signed.code}`);
+  return { profile, assertion: signed.assertion };
+}
+
+/**
+ * ACS step 6: the response's own Destination and Issuer, when present (Destination required when
+ * signed).
+ */
+function checkResponseEnvelope(
+  root: XmlElement,
+  destination: string | null,
+  acsUrl: string,
+  cfg: SamlConfig,
+): void {
+  if (
+    (destination !== null && destination !== acsUrl) ||
+    (destination === null && cfg.wantResponseSigned)
+  ) {
+    throw new SsoFailure('invalid_response', 'saml.destination');
+  }
+  const responseIssuers = kids(root, A, 'Issuer');
+  if (
+    responseIssuers.length > 1 ||
+    (responseIssuers[0] !== undefined && responseIssuers[0].textContent !== cfg.idpEntityId)
+  ) {
+    throw new SsoFailure('invalid_response', 'saml.issuer');
+  }
+}
+
+/** The profile's attributes as a record; anything else node-saml gives counts as none. */
+function profileAttributes(profile: Profile): Record<string, unknown> {
+  const rawAttributes = profile.attributes;
+  return rawAttributes !== null &&
+    typeof rawAttributes === 'object' &&
+    !Array.isArray(rawAttributes)
+    ? (rawAttributes as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * ACS step 8: in one transaction, the assertion id is remembered until it expires (`replayed`)
+ * and the finish row written.
+ */
+async function storeFinish(
+  deps: FlowDeps,
+  connectionId: string,
+  assertion: { id: string; ttlMs: number },
+  finish: { code: string; payload: FinishPayload },
+): Promise<void> {
+  await deps.db.transaction(async (tx) => {
+    try {
+      await putState(tx, {
+        key: stateKey('saml-assertion', assertion.id, connectionId),
+        kind: 'saml-assertion',
+        connectionId,
+        payload: {},
+        ttlMs: assertion.ttlMs,
+      });
+    } catch (err) {
+      if (err instanceof StateExists) throw new SsoFailure('replayed', 'saml.replayed');
+      throw err;
+    }
+    await putState(tx, {
+      key: stateKey('finish', finish.code),
+      kind: 'finish',
+      connectionId,
+      payload: finish.payload,
+      ttlMs: FINISH_TTL_MS,
+    });
+  });
+}
 
 /**
  * sso-scim.md §6.2–§6.4: the Assertion Consumer Service. In order:
@@ -570,126 +780,42 @@ export async function samlAcs(
   connectionId: string,
 ): Promise<FastifyReply> {
   try {
-    const body = request.body as Record<string, unknown> | null | undefined;
-    const samlResponse = body && typeof body === 'object' ? body.SAMLResponse : undefined;
-    const relayState = body && typeof body === 'object' ? body.RelayState : undefined;
-    if (typeof samlResponse !== 'string' || typeof relayState !== 'string') {
-      throw new SsoFailure('invalid_response', 'saml.form');
-    }
-
+    const { samlResponse, relayState } = acsForm(request);
     const { connection, cfg, publicUrl } = await usable(
       deps,
       await loadConnection(deps.db, connectionId, deps.config.secretKey),
     );
     const urls = ssoUrls(publicUrl, connection.row.id);
-
-    const decoded = decodeSamlResponse(samlResponse);
-    if (!decoded.ok) throw new SsoFailure('invalid_response', `saml.precheck.${decoded.code}`);
-    const pre = samlPreCheck(decoded.xml, {
-      root: 'Response',
-      hasSpKey: connection.spKey !== null,
-    });
-    if (!pre.ok) {
-      if (pre.code === 'idp_status') throw new SsoFailure('idp_error', 'saml.status');
-      throw new SsoFailure('invalid_response', `saml.precheck.${pre.code}`);
-    }
-    if (pre.inResponseTo === null) throw new SsoFailure('invalid_response', 'saml.in_response_to');
-
-    const flow = await takeState<SamlFlowPayload & { issueInstant?: unknown }>(
-      deps.db,
-      stateKey('saml-request', pre.inResponseTo),
+    const { xml, pre, inResponseTo } = preCheckedResponse(samlResponse, connection);
+    const { issueInstant, flowPayload } = await takeSamlRequest(
+      deps,
+      connection.row.id,
+      inResponseTo,
+      relayState,
     );
-    if (!flow || flow.connectionId !== connection.row.id) {
-      throw new SsoFailure('flow_expired', 'saml.request_unknown');
-    }
-    const { issueInstant, ...flowPayload } = flow.payload;
-    if (
-      !RELAY_PATTERN.test(relayState) ||
-      typeof flowPayload.relay !== 'string' ||
-      !sameText(relayState, flowPayload.relay)
-    ) {
-      throw new SsoFailure('flow_mismatch', 'saml.relay');
-    }
-    if (typeof issueInstant !== 'string') {
-      throw new SsoFailure('flow_expired', 'saml.request_unknown');
-    }
 
     const root = pre.doc.documentElement;
     if (!root) throw new SsoFailure('invalid_response', 'saml.precheck.not_response');
-    const status = topStatus(root);
-    if (status !== SUCCESS) {
-      throw new SsoFailure(status === null ? 'invalid_response' : 'idp_error', 'saml.status');
-    }
-    const encrypted = kids(root, A, 'EncryptedAssertion')[0];
-    if (encrypted && connection.spKey) {
-      if (!encryptionAllowed(encrypted))
-        throw new SsoFailure('invalid_response', 'saml.encryption');
-      let plaintext: string;
-      try {
-        plaintext = await decryptXml(
-          (encrypted as XmlElement & { toString(): string }).toString(),
-          connection.spKey,
-        );
-      } catch {
-        throw new SsoFailure('invalid_response', 'saml.decrypt');
-      }
-      // One detail for a failed decryption and for a plaintext the pre-check refuses: no padding
-      // or format oracle in the log or the audit chain (AES-CBC).
-      if (!samlAssertionCheck(plaintext).ok) {
-        throw new SsoFailure('invalid_response', 'saml.decrypt');
-      }
-    }
+    checkResponseStatus(root);
+    await checkEncryptedAssertion(root, connection.spKey);
 
-    const saml = samlFor(connection, publicUrl, takenRequestCache(pre.inResponseTo, issueInstant));
-    let profile: Profile | null;
-    try {
-      // The bytes the pre-check read, re-encoded canonically: node-saml decodes the same document.
-      ({ profile } = await saml.validatePostResponseAsync({
-        SAMLResponse: Buffer.from(decoded.xml, 'utf8').toString('base64'),
-      }));
-    } catch (err) {
-      if (err instanceof SamlStatusError) throw new SsoFailure('idp_error', 'saml.status');
-      throw new SsoFailure('invalid_response', 'saml.validate');
-    }
-    if (!profile) throw new SsoFailure('invalid_response', 'saml.no_profile');
-    const assertionXml = profile.getAssertionXml?.();
-    if (typeof assertionXml !== 'string')
-      throw new SsoFailure('invalid_response', 'saml.no_profile');
-    const signed = samlAssertionCheck(assertionXml);
-    if (!signed.ok) throw new SsoFailure('invalid_response', `saml.precheck.${signed.code}`);
-
+    const saml = samlFor(connection, publicUrl, takenRequestCache(inResponseTo, issueInstant));
+    const { profile, assertion } = await validatedAssertion(saml, xml);
     const now = Date.now();
     const facts = assertionFacts(
-      signed.assertion,
+      assertion,
       {
         issuer: cfg.idpEntityId,
         acsUrl: urls.acsUrl,
-        inResponseTo: pre.inResponseTo,
+        inResponseTo,
         nameIdFormat: cfg.nameIdFormat,
       },
       profile.nameID,
       now,
     );
-    // The response's own Destination and Issuer, when present (Destination required when signed).
-    if (
-      (pre.destination !== null && pre.destination !== urls.acsUrl) ||
-      (pre.destination === null && cfg.wantResponseSigned)
-    ) {
-      throw new SsoFailure('invalid_response', 'saml.destination');
-    }
-    const responseIssuers = kids(root, A, 'Issuer');
-    if (
-      responseIssuers.length > 1 ||
-      (responseIssuers[0] !== undefined && responseIssuers[0].textContent !== cfg.idpEntityId)
-    ) {
-      throw new SsoFailure('invalid_response', 'saml.issuer');
-    }
+    checkResponseEnvelope(root, pre.destination, urls.acsUrl, cfg);
 
-    const rawAttributes = profile.attributes;
-    const attributes: Record<string, unknown> =
-      rawAttributes !== null && typeof rawAttributes === 'object' && !Array.isArray(rawAttributes)
-        ? (rawAttributes as Record<string, unknown>)
-        : {};
+    const attributes = profileAttributes(profile);
     const claims = samlClaims(attributes, facts.nameId, cfg);
     if (!requiredClaimsMet(cfg.requiredClaims, attributes)) {
       throw new SsoFailure('required_claim', 'saml.required_claim');
@@ -701,27 +827,12 @@ export async function samlAcs(
       throw new SsoFailure('invalid_response', 'saml.claims_too_large');
     }
     const replayTtl = Math.min(Math.max(facts.validUntil + SKEW_MS - now, 1_000), REPLAY_MAX_MS);
-    await deps.db.transaction(async (tx) => {
-      try {
-        await putState(tx, {
-          key: stateKey('saml-assertion', facts.assertionId, connection.row.id),
-          kind: 'saml-assertion',
-          connectionId: connection.row.id,
-          payload: {},
-          ttlMs: replayTtl,
-        });
-      } catch (err) {
-        if (err instanceof StateExists) throw new SsoFailure('replayed', 'saml.replayed');
-        throw err;
-      }
-      await putState(tx, {
-        key: stateKey('finish', code),
-        kind: 'finish',
-        connectionId: connection.row.id,
-        payload: finish,
-        ttlMs: FINISH_TTL_MS,
-      });
-    });
+    await storeFinish(
+      deps,
+      connection.row.id,
+      { id: facts.assertionId, ttlMs: replayTtl },
+      { code, payload: finish },
+    );
     return await reply.code(303).header('location', `/api/v0/ee/sso/finish?code=${code}`).send();
   } catch (err) {
     return failed(deps, request, reply, connectionId, err);
@@ -842,28 +953,24 @@ function hostOf(url: string): string | null {
   }
 }
 
-/**
- * sso-scim.md §4.3: reads the connection's metadata URL (only when an admin asks) through ssoFetch
- * (that URL only, at most 1 MiB), pre-checks it as an `EntityDescriptor` (comments allowed,
- * Ruling M-3), and returns the IdP's entity id, its HTTP-Redirect SingleSignOnService and its
- * signing certificates (`use="signing"` or unspecified, at most 3) for the admin to review.
- * Nothing is saved. Every problem is a 422 on `saml.metadataUrl` whose `reason` says what failed
- * (SAML_METADATA_PROBLEM_CODES), logged as a warning with the host only.
- */
-export async function readSamlMetadata(
-  connection: LoadedConnection,
-  deps: Pick<FlowDeps, 'config' | 'resolve' | 'log'>,
-): Promise<{ idpEntityId: string; idpSsoUrl: string; certificates: SsoCertificateView[] }> {
-  const url = connection.parsed.protocol === 'saml' ? connection.parsed.config.metadataUrl : null;
-  const refuse = (
-    reason: SamlMetadataProblemCode,
-    message: string,
-    more: { status?: number | null; code?: string | null; precheck?: string } = {},
-  ): ProblemError => {
-    deps.log.warn(
+/** A refused **Read metadata**: logged as a warning with the URL's host only; the 422 to throw. */
+type MetadataRefusal = (
+  reason: SamlMetadataProblemCode,
+  message: string,
+  more?: { status?: number | null; code?: string | null; precheck?: string },
+) => ProblemError;
+
+/** The refusals of one connection's metadata URL. */
+function metadataRefusal(
+  connectionId: string,
+  url: string | null,
+  log: FlowDeps['log'],
+): MetadataRefusal {
+  return (reason, message, more = {}) => {
+    log.warn(
       {
         component: 'sso',
-        connectionId: connection.row.id,
+        connectionId,
         host: url ? hostOf(url) : null,
         reason,
         ...more,
@@ -872,16 +979,20 @@ export async function readSamlMetadata(
     );
     return metadataProblem(reason, message);
   };
-  if (connection.parsed.protocol !== 'saml')
-    throw refuse('config_invalid', 'Not a SAML connection');
-  if (!url) throw refuse('metadata.no_url', 'Set a metadata URL first');
+}
+
+/** The metadata URL's answer through ssoFetch (that URL only, at most 1 MiB): a 200's body. */
+async function fetchMetadataBody(
+  url: string,
+  deps: Pick<FlowDeps, 'config' | 'resolve'>,
+  refuse: MetadataRefusal,
+): Promise<ArrayBuffer> {
   const fetchMetadata = createSsoFetch({
     internalHosts: deps.config.ssoInternalHosts,
     allowed: new Set([url]),
     maxResponseBytes: SAML_METADATA_MAX_BYTES,
     ...(deps.resolve ? { resolve: deps.resolve } : {}),
   });
-  let body: ArrayBuffer;
   try {
     const res = await fetchMetadata(url, {
       method: 'GET',
@@ -891,7 +1002,7 @@ export async function readSamlMetadata(
       signal: AbortSignal.timeout(10_000),
     });
     if (res.status !== 200) throw new SsoFetchRefused('status', null, res.status);
-    body = await res.arrayBuffer();
+    return await res.arrayBuffer();
   } catch (err) {
     const refused = ssoFetchRefusal(err) ?? new SsoFetchRefused('request');
     throw refuse(
@@ -900,6 +1011,13 @@ export async function readSamlMetadata(
       { status: refused.status, code: refused.code },
     );
   }
+}
+
+/** The metadata's document element, pre-checked as an `EntityDescriptor`, and its entityID. */
+function metadataDocument(
+  body: ArrayBuffer,
+  refuse: MetadataRefusal,
+): { root: XmlElement; idpEntityId: string } {
   let text: string;
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(body);
@@ -919,8 +1037,15 @@ export async function readSamlMetadata(
   if (!root || idpEntityId === '' || idpEntityId.length > 1_024) {
     throw refuse('metadata.incomplete', 'The metadata has no entityID');
   }
-  const idp = kids(root, MD, 'IDPSSODescriptor')[0];
-  if (!idp) throw refuse('metadata.incomplete', 'The metadata has no IDPSSODescriptor');
+  return { root, idpEntityId };
+}
+
+/** The IdP's HTTP-Redirect SingleSignOnService URL, checked as an IdP URL. */
+function metadataSsoUrl(
+  idp: XmlElement,
+  hosts: FlowDeps['config']['ssoInternalHosts'],
+  refuse: MetadataRefusal,
+): string {
   const sso = kids(idp, MD, 'SingleSignOnService').find(
     (s) => s.getAttribute('Binding') === REDIRECT_BINDING,
   );
@@ -928,22 +1053,60 @@ export async function readSamlMetadata(
   if (idpSsoUrl === '') {
     throw refuse('metadata.incomplete', 'The metadata has no HTTP-Redirect SingleSignOnService');
   }
-  const urlProblem = idpUrlProblem(idpSsoUrl, deps.config.ssoInternalHosts);
+  const urlProblem = idpUrlProblem(idpSsoUrl, hosts);
   if (urlProblem) throw refuse('metadata.sso_url', `The SingleSignOnService URL: ${urlProblem}`);
+  return idpSsoUrl;
+}
 
+/** The base64 bodies of a KeyDescriptor's certificates, whitespace removed, in document order. */
+function keyCertificateBodies(key: XmlElement): string[] {
+  const bodies: string[] = [];
+  for (const info of kids(key, DS, 'KeyInfo')) {
+    for (const data of kids(info, DS, 'X509Data')) {
+      for (const cert of kids(data, DS, 'X509Certificate')) {
+        bodies.push((cert.textContent ?? '').replace(/\s+/g, ''));
+      }
+    }
+  }
+  return bodies;
+}
+
+/** The IdP's distinct signing certificates (`use="signing"` or unspecified), in document order. */
+function signingCertificateBodies(idp: XmlElement): string[] {
   const bodies: string[] = [];
   for (const key of kids(idp, MD, 'KeyDescriptor')) {
     const use = key.getAttribute('use');
     if (use !== null && use !== '' && use !== 'signing') continue;
-    for (const info of kids(key, DS, 'KeyInfo')) {
-      for (const data of kids(info, DS, 'X509Data')) {
-        for (const cert of kids(data, DS, 'X509Certificate')) {
-          const body = (cert.textContent ?? '').replace(/\s+/g, '');
-          if (body !== '' && !bodies.includes(body)) bodies.push(body);
-        }
-      }
+    for (const body of keyCertificateBodies(key)) {
+      if (body !== '' && !bodies.includes(body)) bodies.push(body);
     }
   }
+  return bodies;
+}
+
+/**
+ * sso-scim.md §4.3: reads the connection's metadata URL (only when an admin asks) through ssoFetch
+ * (that URL only, at most 1 MiB), pre-checks it as an `EntityDescriptor` (comments allowed,
+ * Ruling M-3), and returns the IdP's entity id, its HTTP-Redirect SingleSignOnService and its
+ * signing certificates (`use="signing"` or unspecified, at most 3) for the admin to review.
+ * Nothing is saved. Every problem is a 422 on `saml.metadataUrl` whose `reason` says what failed
+ * (SAML_METADATA_PROBLEM_CODES), logged as a warning with the host only.
+ */
+export async function readSamlMetadata(
+  connection: LoadedConnection,
+  deps: Pick<FlowDeps, 'config' | 'resolve' | 'log'>,
+): Promise<{ idpEntityId: string; idpSsoUrl: string; certificates: SsoCertificateView[] }> {
+  const url = connection.parsed.protocol === 'saml' ? connection.parsed.config.metadataUrl : null;
+  const refuse = metadataRefusal(connection.row.id, url, deps.log);
+  if (connection.parsed.protocol !== 'saml')
+    throw refuse('config_invalid', 'Not a SAML connection');
+  if (!url) throw refuse('metadata.no_url', 'Set a metadata URL first');
+  const body = await fetchMetadataBody(url, deps, refuse);
+  const { root, idpEntityId } = metadataDocument(body, refuse);
+  const idp = kids(root, MD, 'IDPSSODescriptor')[0];
+  if (!idp) throw refuse('metadata.incomplete', 'The metadata has no IDPSSODescriptor');
+  const idpSsoUrl = metadataSsoUrl(idp, deps.config.ssoInternalHosts, refuse);
+  const bodies = signingCertificateBodies(idp);
   if (bodies.length === 0)
     throw refuse('metadata.incomplete', 'The metadata lists no signing certificate');
   if (bodies.length > 3)

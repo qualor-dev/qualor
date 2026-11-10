@@ -1,5 +1,11 @@
+import type { IncomingHttpHeaders } from 'node:http';
 import type { CustomFetch } from 'openid-client';
-import { outboundRequest, type OutboundFailure, type Resolver } from '../http/outbound';
+import {
+  outboundRequest,
+  type OutboundFailed,
+  type OutboundFailure,
+  type Resolver,
+} from '../http/outbound';
 import { isInternalHostAllowed, scmRefusedAddress } from '../scm/url';
 
 /** spec §14: 10 s in all (the connection's 3 s is outboundRequest's default). */
@@ -95,6 +101,54 @@ function abortable<T>(request: Promise<T>, signal: AbortSignal | undefined): Pro
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
 /**
+ * spec §14's checks before a request, in order: an allowed URL, GET or POST, not given up yet, a
+ * body openid-client sends, and https (http only for a host QUALOR_SSO_INTERNAL_HOSTS lists).
+ */
+function checkedRequest(
+  url: string,
+  options: Parameters<CustomFetch>[1],
+  policy: SsoFetchPolicy,
+): { method: 'GET' | 'POST'; body: string | undefined; target: URL; internal: boolean } {
+  let key: string;
+  try {
+    key = withoutQuery(url);
+  } catch {
+    throw new SsoFetchRefused('invalid_url');
+  }
+  if (!policy.allowed.has(key)) throw new SsoFetchRefused('not_allowed');
+  const method = options.method;
+  if (method !== 'GET' && method !== 'POST') throw new SsoFetchRefused('method');
+  if (options.signal?.aborted) throw new SsoFetchRefused('timeout');
+  const body = bodyText(options.body);
+  if (body === null) throw new SsoFetchRefused('request');
+  const target = new URL(url);
+  const internal = isInternalHostAllowed(target, policy.internalHosts);
+  // spec §14: https, or http only for a host QUALOR_SSO_INTERNAL_HOSTS lists.
+  if (target.protocol !== 'https:' && !(target.protocol === 'http:' && internal)) {
+    throw new SsoFetchRefused(target.protocol === 'http:' ? 'not_public' : 'invalid_url');
+  }
+  return { method, body, target, internal };
+}
+
+/** The refusal of a failed request: a TLS failure as `tls`, one given up as `timeout`. */
+function failedRefusal(result: OutboundFailed): SsoFetchRefused {
+  const tls = result.cause === 'connection' && isTlsErrorCode(result.code);
+  // A request given up is one that ran out of time, as `abortable` says one is.
+  const cause = result.cause === 'aborted' ? 'timeout' : result.cause;
+  return new SsoFetchRefused(tls ? 'tls' : cause, result.code);
+}
+
+/** An answer's headers for its `Response`, a repeated one once per value. */
+function responseHeaders(raw: IncomingHttpHeaders): Headers {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(raw)) {
+    if (Array.isArray(value)) for (const v of value) headers.append(name, v);
+    else if (value !== undefined) headers.set(name, value);
+  }
+  return headers;
+}
+
+/**
  * spec §14: openid-client's customFetch. Only URLs the configured issuer's discovery named (the
  * discovery URL itself first); GET and POST; the SSRF-guarded pinned client (http/outbound.ts: a
  * fresh connection, no proxy, no redirect followed, every resolved address checked); private
@@ -107,27 +161,11 @@ export function createSsoFetch(policy: SsoFetchPolicy): SsoFetch {
   policy.allowed.clear();
   for (const entry of initial) policy.allowed.add(entry);
   const fetchFn = (async (url, options) => {
-    let key: string;
-    try {
-      key = withoutQuery(url);
-    } catch {
-      throw new SsoFetchRefused('invalid_url');
-    }
-    if (!policy.allowed.has(key)) throw new SsoFetchRefused('not_allowed');
-    if (options.method !== 'GET' && options.method !== 'POST') throw new SsoFetchRefused('method');
-    if (options.signal?.aborted) throw new SsoFetchRefused('timeout');
-    const body = bodyText(options.body);
-    if (body === null) throw new SsoFetchRefused('request');
-    const target = new URL(url);
-    const internal = isInternalHostAllowed(target, policy.internalHosts);
-    // spec §14: https, or http only for a host QUALOR_SSO_INTERNAL_HOSTS lists.
-    if (target.protocol !== 'https:' && !(target.protocol === 'http:' && internal)) {
-      throw new SsoFetchRefused(target.protocol === 'http:' ? 'not_public' : 'invalid_url');
-    }
+    const { method, body, target, internal } = checkedRequest(url, options, policy);
     const request = outboundRequest(
       {
         url,
-        method: options.method,
+        method,
         headers: options.headers,
         ...(body === undefined ? {} : { body }),
       },
@@ -142,24 +180,14 @@ export function createSsoFetch(policy: SsoFetchPolicy): SsoFetch {
       },
     );
     const result = await abortable(request, options.signal);
-    if (result.kind === 'failed') {
-      const tls = result.cause === 'connection' && isTlsErrorCode(result.code);
-      // A request given up is one that ran out of time, as `abortable` says one is.
-      const cause = result.cause === 'aborted' ? 'timeout' : result.cause;
-      throw new SsoFetchRefused(tls ? 'tls' : cause, result.code);
-    }
+    if (result.kind === 'failed') throw failedRefusal(result);
     // A Response carries only 200-599; anything else (a 1xx that ended the exchange, a 999) fails.
     if (result.status < 200 || result.status > 599) {
       throw new SsoFetchRefused('status', null, result.status);
     }
-    const headers = new Headers();
-    for (const [name, value] of Object.entries(result.headers)) {
-      if (Array.isArray(value)) for (const v of value) headers.append(name, v);
-      else if (value !== undefined) headers.set(name, value);
-    }
     return new Response(
       NULL_BODY_STATUSES.has(result.status) ? null : new Uint8Array(result.body),
-      { status: result.status, headers },
+      { status: result.status, headers: responseHeaders(result.headers) },
     );
   }) as SsoFetch;
   fetchFn.allow = (url: string) => {

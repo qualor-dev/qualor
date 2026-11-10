@@ -112,56 +112,47 @@ type PendingEvent =
       event: Omit<AuditEventInput, 'organization' | 'project' | 'target'>;
     };
 
-/**
- * sso-scim.md §9.3, ruling SS5: in the caller's transaction, turns the person's group values into
- * memberships through the connection's mappings. Sync creates, changes and removes only rows it
- * manages (`managed_by_connection_id` = this connection): a membership made by hand or managed by
- * another connection is never touched. An organisation's last admin is never removed or demoted
- * (rbac-audit.md §16). Every role and every project-level mapping applies whatever the licence
- * lists besides `sso` (rbac-audit.md §1.3); only a project at its grant limit is skipped. The
- * events are recorded as the system with `details.managedBy`; removals and demotions go through
- * the anchor exemption (§10.2.1).
- */
-export async function syncGroupMemberships(
-  tx: Executor,
-  input: {
-    connectionId: string;
-    userId: string;
-    username: string;
-    groups: readonly string[];
-    audit: AuditRecorder;
-    log: { warn(obj: object, msg: string): void };
-  },
-): Promise<SyncResult> {
-  if (input.groups.length > MAX_GROUP_VALUES) throw new Error('groups.too_many');
-  const result: SyncResult = { added: 0, changed: 0, removed: 0, skipped: 0, keptLastAdmin: 0 };
-  const values = [...new Set([...input.groups.filter(isMappableGroup), EVERYONE])];
-  const mappings = await tx
-    .select({
-      organizationId: ssoGroupMappings.organizationId,
-      projectId: ssoGroupMappings.projectId,
-      role: ssoGroupMappings.role,
-      projectOrganizationId: projects.organizationId,
-    })
-    .from(ssoGroupMappings)
-    .leftJoin(projects, eq(projects.id, ssoGroupMappings.projectId))
-    .where(
-      and(
-        eq(ssoGroupMappings.connectionId, input.connectionId),
-        inArray(ssoGroupMappings.groupValue, values),
-      ),
-    );
-  const keptLastAdmin = (organizationId: string) => {
-    input.log.warn(
-      { component: 'sso', connectionId: input.connectionId, organizationId },
-      'sync kept the last admin',
-    );
-    result.keptLastAdmin += 1;
-  };
+/** Whom `syncGroupMemberships` syncs: the person on a connection, with their group values. */
+interface SyncInput {
+  connectionId: string;
+  userId: string;
+  username: string;
+  groups: readonly string[];
+  audit: AuditRecorder;
+  log: { warn(obj: object, msg: string): void };
+}
 
-  // 1. Desired roles (§9.3 step 1).
+/** One sync in progress: its transaction and input, its counts, the events it will record. */
+interface SyncRun {
+  tx: Executor;
+  input: SyncInput;
+  result: SyncResult;
+  pending: PendingEvent[];
+}
+
+interface WantedProject {
+  organizationId: string;
+  role: ProjectRole;
+}
+
+type MembershipRow = typeof memberships.$inferSelect;
+type GrantRow = {
+  grant: typeof projectMemberships.$inferSelect;
+  organizationId: string;
+  projectKey: string;
+};
+
+/** §9.3 step 1: the strongest role the matched mappings give, per organisation and per project. */
+function desiredRoles(
+  mappings: readonly {
+    organizationId: string;
+    projectId: string | null;
+    role: OrganizationRole;
+    projectOrganizationId: string | null;
+  }[],
+): { wantOrg: Map<string, OrganizationRole>; wantProject: Map<string, WantedProject> } {
   const wantOrg = new Map<string, OrganizationRole>();
-  const wantProject = new Map<string, { organizationId: string; role: ProjectRole }>();
+  const wantProject = new Map<string, WantedProject>();
   for (const m of mappings) {
     if (m.projectId === null) {
       wantOrg.set(m.organizationId, stronger(wantOrg.get(m.organizationId), m.role));
@@ -174,10 +165,114 @@ export async function syncGroupMemberships(
       });
     }
   }
+  return { wantOrg, wantProject };
+}
 
-  const pending: PendingEvent[] = [];
+/** An organisation's last admin stays (rbac-audit.md §16): logged and counted. */
+function keptLastAdmin(run: SyncRun, organizationId: string): void {
+  run.input.log.warn(
+    { component: 'sso', connectionId: run.input.connectionId, organizationId },
+    'sync kept the last admin',
+  );
+  run.result.keptLastAdmin += 1;
+}
 
-  // 2. Organisation level, under the organisations' row locks (read again once locked).
+/** A managed membership with `role`, unless one was added by hand meanwhile. */
+async function addOrganizationMember(
+  run: SyncRun,
+  organizationId: string,
+  role: OrganizationRole,
+): Promise<void> {
+  const { tx, input } = run;
+  const inserted = await tx
+    .insert(memberships)
+    .values({
+      organizationId,
+      userId: input.userId,
+      role,
+      managedByConnectionId: input.connectionId,
+    })
+    .onConflictDoNothing()
+    .returning({ role: memberships.role });
+  if (inserted.length === 0) return; // added by hand meanwhile: that row is not ours
+  run.pending.push({
+    kind: 'org',
+    organizationId,
+    event: { action: 'member.added', details: { role, managedBy: input.connectionId } },
+  });
+  run.result.added += 1;
+}
+
+/** A managed membership's new role; never the demotion of the organisation's last admin. */
+async function changeOrganizationRole(
+  run: SyncRun,
+  row: MembershipRow,
+  role: OrganizationRole,
+): Promise<void> {
+  const { tx, input } = run;
+  const { organizationId } = row;
+  if (row.role === 'admin' && (await isLastAdmin(tx, organizationId, input.userId))) {
+    keptLastAdmin(run, organizationId);
+    return;
+  }
+  const updated = await tx
+    .update(memberships)
+    .set({ role })
+    .where(
+      and(
+        eq(memberships.organizationId, organizationId),
+        eq(memberships.userId, input.userId),
+        eq(memberships.managedByConnectionId, input.connectionId),
+      ),
+    )
+    .returning({ role: memberships.role });
+  if (updated.length === 0) return; // no longer ours: nothing changed, nothing to record
+  run.pending.push({
+    kind: 'org',
+    organizationId,
+    event: {
+      action: 'member.role_changed',
+      details: { from: row.role, to: role, managedBy: input.connectionId },
+    },
+  });
+  run.result.changed += 1;
+}
+
+/** A managed membership no mapping wants any more goes; never the organisation's last admin. */
+async function removeOrganizationMember(run: SyncRun, row: MembershipRow): Promise<void> {
+  const { tx, input } = run;
+  if (row.role === 'admin' && (await isLastAdmin(tx, row.organizationId, input.userId))) {
+    keptLastAdmin(run, row.organizationId);
+    return;
+  }
+  const deleted = await tx
+    .delete(memberships)
+    .where(
+      and(
+        eq(memberships.organizationId, row.organizationId),
+        eq(memberships.userId, input.userId),
+        eq(memberships.managedByConnectionId, input.connectionId),
+      ),
+    )
+    .returning({ role: memberships.role });
+  if (deleted.length === 0) return;
+  run.pending.push({
+    kind: 'org',
+    organizationId: row.organizationId,
+    event: {
+      action: 'member.removed',
+      details: { role: row.role, managedBy: input.connectionId },
+    },
+  });
+  run.result.removed += 1;
+}
+
+/** §9.3 step 2: the organisation level, under the organisations' row locks (read once locked). */
+async function syncOrganizations(
+  run: SyncRun,
+  wantOrg: ReadonlyMap<string, OrganizationRole>,
+): Promise<void> {
+  const { tx, input } = run;
   const before = await tx
     .select({ organizationId: memberships.organizationId })
     .from(memberships)
@@ -198,83 +293,144 @@ export async function syncGroupMemberships(
 
   for (const [organizationId, role] of wantOrg) {
     const row = current.find((m) => m.organizationId === organizationId);
-    if (!row) {
-      const inserted = await tx
-        .insert(memberships)
-        .values({
-          organizationId,
-          userId: input.userId,
-          role,
-          managedByConnectionId: input.connectionId,
-        })
-        .onConflictDoNothing()
-        .returning({ role: memberships.role });
-      if (inserted.length === 0) continue; // added by hand meanwhile: that row is not ours
-      pending.push({
-        kind: 'org',
-        organizationId,
-        event: { action: 'member.added', details: { role, managedBy: input.connectionId } },
-      });
-      result.added += 1;
-    } else if (row.managedByConnectionId === input.connectionId && row.role !== role) {
-      if (row.role === 'admin' && (await isLastAdmin(tx, organizationId, input.userId))) {
-        keptLastAdmin(organizationId);
-        continue;
-      }
-      const updated = await tx
-        .update(memberships)
-        .set({ role })
-        .where(
-          and(
-            eq(memberships.organizationId, organizationId),
-            eq(memberships.userId, input.userId),
-            eq(memberships.managedByConnectionId, input.connectionId),
-          ),
-        )
-        .returning({ role: memberships.role });
-      if (updated.length === 0) continue; // no longer ours: nothing changed, nothing to record
-      pending.push({
-        kind: 'org',
-        organizationId,
-        event: {
-          action: 'member.role_changed',
-          details: { from: row.role, to: role, managedBy: input.connectionId },
-        },
-      });
-      result.changed += 1;
+    if (!row) await addOrganizationMember(run, organizationId, role);
+    else if (row.managedByConnectionId === input.connectionId && row.role !== role) {
+      await changeOrganizationRole(run, row, role);
     }
   }
   for (const row of current) {
     if (row.managedByConnectionId !== input.connectionId) continue;
     if (wantOrg.has(row.organizationId)) continue;
-    if (row.role === 'admin' && (await isLastAdmin(tx, row.organizationId, input.userId))) {
-      keptLastAdmin(row.organizationId);
-      continue;
-    }
-    const deleted = await tx
-      .delete(memberships)
-      .where(
-        and(
-          eq(memberships.organizationId, row.organizationId),
-          eq(memberships.userId, input.userId),
-          eq(memberships.managedByConnectionId, input.connectionId),
-        ),
-      )
-      .returning({ role: memberships.role });
-    if (deleted.length === 0) continue;
-    pending.push({
-      kind: 'org',
-      organizationId: row.organizationId,
-      event: {
-        action: 'member.removed',
-        details: { role: row.role, managedBy: input.connectionId },
-      },
-    });
-    result.removed += 1;
+    await removeOrganizationMember(run, row);
   }
+}
 
-  // 3. Project level, with no last-admin rule. Under the grants' lock, so the 1 000-grant bound
-  // holds (rbac-audit.md §7.2); a project at that bound is the only thing `skipped` counts.
+/** A managed grant of `want.role`, unless the project is at its grant limit (then `skipped`). */
+async function addProjectMember(
+  run: SyncRun,
+  project: AuditRef,
+  want: WantedProject,
+): Promise<void> {
+  const { tx, input } = run;
+  const projectId = project.id;
+  const [n] = await tx
+    .select({ n: count() })
+    .from(projectMemberships)
+    .where(eq(projectMemberships.projectId, projectId));
+  if ((n?.n ?? 0) >= PROJECT_GRANT_LIMIT) {
+    input.log.warn(
+      { component: 'sso', connectionId: input.connectionId, projectId },
+      'sync skipped a project at its grant limit',
+    );
+    run.result.skipped += 1;
+    return;
+  }
+  const inserted = await tx
+    .insert(projectMemberships)
+    .values({
+      projectId,
+      userId: input.userId,
+      role: want.role,
+      managedByConnectionId: input.connectionId,
+    })
+    .onConflictDoNothing()
+    .returning({ role: projectMemberships.role });
+  if (inserted.length === 0) return;
+  run.pending.push({
+    kind: 'project',
+    organizationId: want.organizationId,
+    project,
+    event: {
+      action: 'project_member.added',
+      details: { role: want.role, managedBy: input.connectionId },
+    },
+  });
+  run.result.added += 1;
+}
+
+/** A managed grant's new role. */
+async function changeProjectRole(
+  run: SyncRun,
+  project: AuditRef,
+  want: WantedProject,
+  row: GrantRow,
+): Promise<void> {
+  const { tx, input } = run;
+  const updated = await tx
+    .update(projectMemberships)
+    .set({ role: want.role, updatedAt: new Date() })
+    .where(
+      and(
+        eq(projectMemberships.projectId, project.id),
+        eq(projectMemberships.userId, input.userId),
+        eq(projectMemberships.managedByConnectionId, input.connectionId),
+      ),
+    )
+    .returning({ role: projectMemberships.role });
+  if (updated.length === 0) return;
+  run.pending.push({
+    kind: 'project',
+    organizationId: want.organizationId,
+    project,
+    event: {
+      action: 'project_member.role_changed',
+      details: { from: row.grant.role, to: want.role, managedBy: input.connectionId },
+    },
+  });
+  run.result.changed += 1;
+}
+
+/** A managed grant no mapping wants any more goes. */
+async function removeProjectMember(run: SyncRun, row: GrantRow): Promise<void> {
+  const { tx, input } = run;
+  const deleted = await tx
+    .delete(projectMemberships)
+    .where(
+      and(
+        eq(projectMemberships.projectId, row.grant.projectId),
+        eq(projectMemberships.userId, input.userId),
+        eq(projectMemberships.managedByConnectionId, input.connectionId),
+      ),
+    )
+    .returning({ role: projectMemberships.role });
+  if (deleted.length === 0) return;
+  run.pending.push({
+    kind: 'project',
+    organizationId: row.organizationId,
+    project: { id: row.grant.projectId, key: row.projectKey },
+    event: {
+      action: 'project_member.removed',
+      details: { role: row.grant.role, managedBy: input.connectionId },
+    },
+  });
+  run.result.removed += 1;
+}
+
+/** The keys of the projects the mappings want, by id; a project deleted meanwhile has none. */
+async function projectKeysOf(
+  tx: Executor,
+  wantProject: ReadonlyMap<string, WantedProject>,
+): Promise<Map<string, string>> {
+  const rows =
+    wantProject.size === 0
+      ? []
+      : await tx
+          .select({ id: projects.id, key: projects.key })
+          .from(projects)
+          .where(inArray(projects.id, [...wantProject.keys()]));
+  return new Map(rows.map((p) => [p.id, p.key]));
+}
+
+/**
+ * §9.3 step 3: the project level, with no last-admin rule. Under the grants' lock, so the
+ * 1 000-grant bound holds (rbac-audit.md §7.2); a project at that bound is the only thing
+ * `skipped` counts.
+ */
+async function syncProjects(
+  run: SyncRun,
+  wantProject: ReadonlyMap<string, WantedProject>,
+): Promise<void> {
+  const { tx, input } = run;
   const managedGrants = await tx
     .select({ projectId: projectMemberships.projectId })
     .from(projectMemberships)
@@ -298,135 +454,97 @@ export async function syncGroupMemberships(
       .innerJoin(projects, eq(projects.id, projectMemberships.projectId))
       .where(eq(projectMemberships.userId, input.userId))
   ).filter((g) => lockedProjects.has(g.grant.projectId));
-  const projectKeys = new Map(
-    (wantProject.size === 0
-      ? []
-      : await tx
-          .select({ id: projects.id, key: projects.key })
-          .from(projects)
-          .where(inArray(projects.id, [...wantProject.keys()]))
-    ).map((p) => [p.id, p.key]),
-  );
+  const projectKeys = await projectKeysOf(tx, wantProject);
   for (const [projectId, want] of wantProject) {
     const row = grants.find((g) => g.grant.projectId === projectId);
     const projectKey = projectKeys.get(projectId);
     // The project was deleted meanwhile: nothing to grant, and no event with an empty key.
     if (projectKey === undefined) continue;
     const project = { id: projectId, key: projectKey };
-    if (!row) {
-      const [n] = await tx
-        .select({ n: count() })
-        .from(projectMemberships)
-        .where(eq(projectMemberships.projectId, projectId));
-      if ((n?.n ?? 0) >= PROJECT_GRANT_LIMIT) {
-        input.log.warn(
-          { component: 'sso', connectionId: input.connectionId, projectId },
-          'sync skipped a project at its grant limit',
-        );
-        result.skipped += 1;
-        continue;
-      }
-      const inserted = await tx
-        .insert(projectMemberships)
-        .values({
-          projectId,
-          userId: input.userId,
-          role: want.role,
-          managedByConnectionId: input.connectionId,
-        })
-        .onConflictDoNothing()
-        .returning({ role: projectMemberships.role });
-      if (inserted.length === 0) continue;
-      pending.push({
-        kind: 'project',
-        organizationId: want.organizationId,
-        project,
-        event: {
-          action: 'project_member.added',
-          details: { role: want.role, managedBy: input.connectionId },
-        },
-      });
-      result.added += 1;
-    } else if (
+    if (!row) await addProjectMember(run, project, want);
+    else if (
       row.grant.managedByConnectionId === input.connectionId &&
       row.grant.role !== want.role
     ) {
-      const updated = await tx
-        .update(projectMemberships)
-        .set({ role: want.role, updatedAt: new Date() })
-        .where(
-          and(
-            eq(projectMemberships.projectId, projectId),
-            eq(projectMemberships.userId, input.userId),
-            eq(projectMemberships.managedByConnectionId, input.connectionId),
-          ),
-        )
-        .returning({ role: projectMemberships.role });
-      if (updated.length === 0) continue;
-      pending.push({
-        kind: 'project',
-        organizationId: want.organizationId,
-        project,
-        event: {
-          action: 'project_member.role_changed',
-          details: { from: row.grant.role, to: want.role, managedBy: input.connectionId },
-        },
-      });
-      result.changed += 1;
+      await changeProjectRole(run, project, want, row);
     }
   }
   for (const row of grants) {
     if (row.grant.managedByConnectionId !== input.connectionId) continue;
     if (wantProject.has(row.grant.projectId)) continue;
-    const deleted = await tx
-      .delete(projectMemberships)
-      .where(
-        and(
-          eq(projectMemberships.projectId, row.grant.projectId),
-          eq(projectMemberships.userId, input.userId),
-          eq(projectMemberships.managedByConnectionId, input.connectionId),
-        ),
-      )
-      .returning({ role: projectMemberships.role });
-    if (deleted.length === 0) continue;
-    pending.push({
-      kind: 'project',
-      organizationId: row.organizationId,
-      project: { id: row.grant.projectId, key: row.projectKey },
-      event: {
-        action: 'project_member.removed',
-        details: { role: row.grant.role, managedBy: input.connectionId },
-      },
-    });
-    result.removed += 1;
+    await removeProjectMember(run, row);
   }
+}
 
-  // 4. Recorded as the system (§9.3 step 4); the refs are audit-only reads (rbac-audit.md §8.1).
-  // Removals and demotions go through the anchor exemption (§10.2.1); the recorder records a
-  // batch holding anything else exactly as `record` does.
-  if (pending.length > 0 && input.audit.active()) {
-    const target = { type: 'user' as const, id: input.userId, label: input.username };
-    const refs = new Map<string, AuditRef>();
-    const ref = async (id: string) => {
-      const known = refs.get(id);
-      if (known) return known;
-      const loaded = await organizationRef(tx, id);
-      refs.set(id, loaded);
-      return loaded;
-    };
-    const events: AuditEventInput[] = [];
-    for (const p of pending) {
-      const organization = await ref(p.organizationId);
-      events.push(
-        p.kind === 'org'
-          ? ({ ...p.event, organization, target } as AuditEventInput)
-          : ({ ...p.event, organization, project: p.project, target } as AuditEventInput),
-      );
-    }
-    // A batch mixing additions or promotions with removals fails closed on a malformed anchor as a
-    // whole (the recorder exempts only a batch where every event removes access, §10.2.1).
-    await input.audit.recordOrSkipWhenAnchorMalformed(tx, SYSTEM_ACTOR, events);
+/**
+ * §9.3 step 4: the pending events, recorded as the system; the refs are audit-only reads
+ * (rbac-audit.md §8.1). Removals and demotions go through the anchor exemption (§10.2.1); the
+ * recorder records a batch holding anything else exactly as `record` does.
+ */
+async function recordPending(run: SyncRun): Promise<void> {
+  const { tx, input, pending } = run;
+  if (pending.length === 0 || !input.audit.active()) return;
+  const target = { type: 'user' as const, id: input.userId, label: input.username };
+  const refs = new Map<string, AuditRef>();
+  const ref = async (id: string) => {
+    const known = refs.get(id);
+    if (known) return known;
+    const loaded = await organizationRef(tx, id);
+    refs.set(id, loaded);
+    return loaded;
+  };
+  const events: AuditEventInput[] = [];
+  for (const p of pending) {
+    const organization = await ref(p.organizationId);
+    events.push(
+      p.kind === 'org'
+        ? ({ ...p.event, organization, target } as AuditEventInput)
+        : ({ ...p.event, organization, project: p.project, target } as AuditEventInput),
+    );
   }
+  // A batch mixing additions or promotions with removals fails closed on a malformed anchor as a
+  // whole (the recorder exempts only a batch where every event removes access, §10.2.1).
+  await input.audit.recordOrSkipWhenAnchorMalformed(tx, SYSTEM_ACTOR, events);
+}
+
+/**
+ * sso-scim.md §9.3, ruling SS5: in the caller's transaction, turns the person's group values into
+ * memberships through the connection's mappings. Sync creates, changes and removes only rows it
+ * manages (`managed_by_connection_id` = this connection): a membership made by hand or managed by
+ * another connection is never touched. An organisation's last admin is never removed or demoted
+ * (rbac-audit.md §16). Every role and every project-level mapping applies whatever the licence
+ * lists besides `sso` (rbac-audit.md §1.3); only a project at its grant limit is skipped. The
+ * events are recorded as the system with `details.managedBy`; removals and demotions go through
+ * the anchor exemption (§10.2.1).
+ */
+export async function syncGroupMemberships(tx: Executor, input: SyncInput): Promise<SyncResult> {
+  if (input.groups.length > MAX_GROUP_VALUES) throw new Error('groups.too_many');
+  const result: SyncResult = { added: 0, changed: 0, removed: 0, skipped: 0, keptLastAdmin: 0 };
+  const values = [...new Set([...input.groups.filter(isMappableGroup), EVERYONE])];
+  const mappings = await tx
+    .select({
+      organizationId: ssoGroupMappings.organizationId,
+      projectId: ssoGroupMappings.projectId,
+      role: ssoGroupMappings.role,
+      projectOrganizationId: projects.organizationId,
+    })
+    .from(ssoGroupMappings)
+    .leftJoin(projects, eq(projects.id, ssoGroupMappings.projectId))
+    .where(
+      and(
+        eq(ssoGroupMappings.connectionId, input.connectionId),
+        inArray(ssoGroupMappings.groupValue, values),
+      ),
+    );
+  const run: SyncRun = { tx, input, result, pending: [] };
+  // 1. Desired roles (§9.3 step 1).
+  const { wantOrg, wantProject } = desiredRoles(mappings);
+  // 2. Organisation level, under the organisations' row locks (read again once locked).
+  await syncOrganizations(run, wantOrg);
+  // 3. Project level, with no last-admin rule, under the grants' lock (rbac-audit.md §7.2).
+  await syncProjects(run, wantProject);
+  // 4. Recorded as the system (§9.3 step 4).
+  await recordPending(run);
   return result;
 }
 

@@ -44,6 +44,16 @@ export function decodeSeqCursor(cursor: string | undefined): number | undefined 
   return Number(text);
 }
 
+/** The `actions` condition: exact names, or prefixes ending in `.*`, any of them matching. */
+function actionsCondition(actions: string[]): SQL | undefined {
+  const exact = actions.filter((a) => !a.endsWith('.*'));
+  const prefixes = actions.filter((a) => a.endsWith('.*')).map((a) => a.slice(0, -1));
+  const any: SQL[] = [];
+  if (exact.length) any.push(inArray(auditEvents.action, exact));
+  for (const p of prefixes) any.push(sql`starts_with(${auditEvents.action}, ${p})`);
+  return or(...any);
+}
+
 /**
  * The WHERE conditions of a filter. Every value is a bound parameter; no SQL text is built from
  * input. A prefix uses `starts_with`, not LIKE: action names contain `_`, a LIKE wildcard.
@@ -53,12 +63,7 @@ function conditions(filter: AuditFilter): SQL[] {
   if (filter.from) where.push(gte(auditEvents.createdAt, filter.from));
   if (filter.to) where.push(lt(auditEvents.createdAt, filter.to));
   if (filter.actions?.length) {
-    const exact = filter.actions.filter((a) => !a.endsWith('.*'));
-    const prefixes = filter.actions.filter((a) => a.endsWith('.*')).map((a) => a.slice(0, -1));
-    const any: SQL[] = [];
-    if (exact.length) any.push(inArray(auditEvents.action, exact));
-    for (const p of prefixes) any.push(sql`starts_with(${auditEvents.action}, ${p})`);
-    const either = or(...any);
+    const either = actionsCondition(filter.actions);
     if (either) where.push(either);
   }
   if (filter.outcome) where.push(eq(auditEvents.outcome, filter.outcome));
