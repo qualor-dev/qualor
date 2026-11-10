@@ -25,6 +25,8 @@ const HEADER = [
   'new_issues',
   'secrets',
   'vulnerable_dependencies',
+  'vulnerable_releases',
+  'exploited_vulnerabilities',
 ] as const;
 
 /**
@@ -60,6 +62,8 @@ export async function* portfolioCsv(
       r.newIssues,
       r.secrets,
       r.vulnerableDependencies,
+      r.vulnerableReleases,
+      r.exploited,
     ]);
   }
 }

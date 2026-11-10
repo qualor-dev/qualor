@@ -3662,6 +3662,8 @@ export interface paths {
                                 newIssues: number;
                                 secrets: number;
                                 vulnerableDependencies: number;
+                                vulnerableReleases: number | null;
+                                exploited: number | null;
                             };
                             organizations: {
                                 id: string;
@@ -3753,6 +3755,38 @@ export interface paths {
                                 triage: number;
                             }[];
                             attention: {
+                                exploited: {
+                                    organization: {
+                                        key: string;
+                                        name: string;
+                                    };
+                                    project: {
+                                        id: string;
+                                        key: string;
+                                        name: string;
+                                    };
+                                    lastAnalysisAt: string | null;
+                                    abandoned: boolean;
+                                    gate: ("passed" | "failed" | "error" | "none") | null;
+                                    securityRating: ("A" | "B" | "C" | "D" | "E") | null;
+                                    reliabilityRating: ("A" | "B" | "C" | "D" | "E") | null;
+                                    ncloc: number | null;
+                                    coverage: number | null;
+                                    duplication: number | null;
+                                    issues: number | null;
+                                    bySeverity: {
+                                        blocker: number;
+                                        high: number;
+                                        medium: number;
+                                        low: number;
+                                        info: number;
+                                    } | null;
+                                    newIssues: number | null;
+                                    secrets: number;
+                                    vulnerableDependencies: number;
+                                    vulnerableReleases: number | null;
+                                    exploited: number | null;
+                                }[] | null;
                                 failingGates: {
                                     organization: {
                                         key: string;
@@ -3782,6 +3816,8 @@ export interface paths {
                                     newIssues: number | null;
                                     secrets: number;
                                     vulnerableDependencies: number;
+                                    vulnerableReleases: number | null;
+                                    exploited: number | null;
                                 }[];
                                 worstSecurity: {
                                     organization: {
@@ -3812,6 +3848,8 @@ export interface paths {
                                     newIssues: number | null;
                                     secrets: number;
                                     vulnerableDependencies: number;
+                                    vulnerableReleases: number | null;
+                                    exploited: number | null;
                                 }[];
                                 mostSevere: {
                                     organization: {
@@ -3842,6 +3880,8 @@ export interface paths {
                                     newIssues: number | null;
                                     secrets: number;
                                     vulnerableDependencies: number;
+                                    vulnerableReleases: number | null;
+                                    exploited: number | null;
                                 }[];
                                 abandoned: {
                                     organization: {
@@ -3872,6 +3912,8 @@ export interface paths {
                                     newIssues: number | null;
                                     secrets: number;
                                     vulnerableDependencies: number;
+                                    vulnerableReleases: number | null;
+                                    exploited: number | null;
                                 }[];
                             };
                         };
@@ -3945,7 +3987,7 @@ export interface paths {
                 query: {
                     scope: "organization" | "all";
                     organizationId?: string;
-                    sort?: "key" | "gate" | "security" | "reliability" | "issues" | "ncloc" | "coverage" | "lastAnalysis";
+                    sort?: "key" | "gate" | "security" | "reliability" | "issues" | "ncloc" | "coverage" | "lastAnalysis" | "vulnerableReleases" | "exploited";
                     limit?: number;
                     cursor?: string;
                 };
@@ -3991,6 +4033,8 @@ export interface paths {
                                 newIssues: number | null;
                                 secrets: number;
                                 vulnerableDependencies: number;
+                                vulnerableReleases: number | null;
+                                exploited: number | null;
                             }[];
                             nextCursor: string | null;
                         };

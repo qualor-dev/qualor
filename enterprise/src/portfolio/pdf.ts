@@ -24,6 +24,8 @@ const RENDER_BUDGET_MS = 60_000;
 const CELL_MAX = 120;
 /** The font size of the chart axis labels. */
 const LABEL = 6.5;
+/** Without `vuln.priority` the overview's exploited list is null and nothing about it shows. */
+const prioritised = (overview: PortfolioOverview): boolean => overview.attention.exploited !== null;
 const RATINGS = ['A', 'B', 'C', 'D', 'E'] as const;
 const GATE: Record<string, string> = {
   passed: 'Passed',
@@ -135,6 +137,8 @@ async function totals(layout: Layout, overview: PortfolioOverview): Promise<void
     ['High', count(t.bySeverity.high)],
     ['Secrets', count(t.secrets)],
     ['Vulnerable dependencies', count(t.vulnerableDependencies)],
+    ['Vulnerable releases', count(t.vulnerableReleases)],
+    ...(prioritised(overview) ? [['Exploited vulnerabilities', count(t.exploited)] as const] : []),
   ]);
   layout.text(
     'Coverage and duplication are weighted by lines of code. The quality gate share is of the ' +
@@ -369,7 +373,17 @@ async function organizations(layout: Layout, overview: PortfolioOverview): Promi
 
 async function attention(layout: Layout, overview: PortfolioOverview): Promise<void> {
   const all = overview.scope.kind === 'all';
+  const exploited = overview.attention.exploited;
   const list = [
+    ...(exploited
+      ? ([
+          [
+            'Exploited vulnerabilities',
+            'Projects with an open vulnerability that is exploited in the wild, most first.',
+            'exploited',
+          ],
+        ] as const)
+      : []),
     ['Failing quality gates', 'Sorted by blocker and high findings.', 'failingGates'],
     ['Worst security ratings', 'Projects rated B to E, worst first.', 'worstSecurity'],
     ['Most blocker and high findings', 'Projects with at least one, most first.', 'mostSevere'],
@@ -384,7 +398,8 @@ async function attention(layout: Layout, overview: PortfolioOverview): Promise<v
   for (const [title, note, key] of list) {
     layout.heading(title, SIZE.subheading);
     layout.text(note, COLOR.muted);
-    const rows = overview.attention[key];
+    const rows = overview.attention[key] ?? [];
+    const exploitedList = key === 'exploited';
     if (rows.length === 0) {
       layout.text('None.');
       continue;
@@ -399,6 +414,7 @@ async function attention(layout: Layout, overview: PortfolioOverview): Promise<v
         right('High', 30),
         right('Issues', 34),
         right('Last analysis', 56),
+        ...(exploitedList ? [right('Exploited', 44)] : []),
       ]),
       rows.map((r) => [
         projectName(r),
@@ -410,6 +426,7 @@ async function attention(layout: Layout, overview: PortfolioOverview): Promise<v
         count(r.bySeverity?.high),
         count(r.issues),
         lastAnalysis(r.lastAnalysisAt),
+        ...(exploitedList ? [count(r.exploited)] : []),
       ]),
     );
   }
@@ -434,16 +451,16 @@ async function projects(
   if (shown > 0) {
     await layout.table(
       columns(layout, 'Project', [
-        ...(all ? [{ header: 'Organisation', width: 64 }] : []),
+        ...(all ? [{ header: 'Organisation', width: 56 }] : []),
         { header: 'Last analysis', width: 50 },
         { header: 'Gate', width: 34 },
         right('Security', 38),
         right('Reliability', 44),
-        right('Lines of code', 40),
-        right('Coverage', 44),
         right('Issues', 34),
         right('Blocker', 38),
         right('High', 30),
+        right('Vulnerable releases', 52),
+        ...(prioritised(overview) ? [right('Exploited', 44)] : []),
       ]),
       rows
         .slice(0, shown)
@@ -454,11 +471,11 @@ async function projects(
           r.gate === null ? '—' : (GATE[r.gate] ?? r.gate),
           r.securityRating ?? '—',
           r.reliabilityRating ?? '—',
-          count(r.ncloc),
-          percent(r.coverage),
           count(r.issues),
           count(r.bySeverity?.blocker),
           count(r.bySeverity?.high),
+          count(r.vulnerableReleases),
+          ...(prioritised(overview) ? [count(r.exploited)] : []),
         ]),
     );
   }

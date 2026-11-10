@@ -98,6 +98,18 @@ const COLUMNS: readonly {
     num: true,
   },
   {
+    sort: 'vulnerableReleases',
+    label: $localize`:@@portfolio.col.vulnerableReleases:Vulnerable releases`,
+    order: 'descending',
+    num: true,
+  },
+  {
+    sort: 'exploited',
+    label: $localize`:@@portfolio.col.exploited:Exploited`,
+    order: 'descending',
+    num: true,
+  },
+  {
     sort: 'lastAnalysis',
     label: $localize`:@@portfolio.col.lastAnalysis:Last analysis`,
     order: 'ascending',
@@ -217,7 +229,13 @@ export class PortfolioPage {
     () => this.noOrganization() || this.data()?.totals.projects === 0,
   );
 
-  protected readonly columns = COLUMNS;
+  /** `attention.exploited` is null without `vuln.priority`: then nothing about KEV shows. */
+  protected readonly prioritised = computed(
+    () => (this.data()?.attention.exploited ?? null) !== null,
+  );
+  protected readonly columns = computed(() =>
+    this.prioritised() ? COLUMNS : COLUMNS.filter((c) => c.sort !== 'exploited'),
+  );
   protected readonly sort = signal<PortfolioSort>('gate');
   protected readonly projects = new KeysetList<
     PortfolioProjectRow,
@@ -360,7 +378,7 @@ export class PortfolioPage {
     ];
   });
 
-  /** The four attention lists (4E-2 §1), each row with the figure it is listed for. */
+  /** The attention lists (4E-2 §1, plan 5 V2), each row with the figure it is listed for. */
   protected readonly attention = computed(() => {
     const lists = this.data()?.attention;
     if (!lists) return [];
@@ -371,7 +389,20 @@ export class PortfolioPage {
         ? NO_VALUE
         : $localize`:@@portfolio.attention.severe:${this.count(count)}:count: blocker and high`;
     };
+    const exploited = lists.exploited;
     return [
+      ...(exploited
+        ? [
+            {
+              id: 'exploited',
+              title: $localize`:@@portfolio.attention.exploited:Exploited vulnerabilities`,
+              rows: exploited.map((row) => ({
+                row,
+                note: $localize`:@@portfolio.attention.exploitedCount:${this.count(row.exploited)}:count: exploited`,
+              })),
+            },
+          ]
+        : []),
       {
         id: 'failingGates',
         title: $localize`:@@portfolio.attention.failingGates:Failing quality gates`,

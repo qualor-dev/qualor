@@ -453,6 +453,8 @@ export function portfolioRow(
     newIssues: 1,
     secrets: 0,
     vulnerableDependencies: 0,
+    vulnerableReleases: 2,
+    exploited: 1,
     ...overrides,
   };
 }
@@ -469,7 +471,13 @@ export function portfolioOverview(overrides: Partial<PortfolioOverview> = {}): P
     generatedAt: '2026-10-13T12:00:00.000Z',
     scope: { kind: 'organization', organization: { id: ORG_ID, key: 'default', name: 'Default' } },
     granularity: 'week',
-    totals: { ...portfolioAggregate(), secrets: 1, vulnerableDependencies: 4 },
+    totals: {
+      ...portfolioAggregate(),
+      secrets: 1,
+      vulnerableDependencies: 4,
+      vulnerableReleases: 3,
+      exploited: 2,
+    },
     organizations: null,
     trend: Array.from({ length: 12 }, (_, i) => ({
       ...portfolioAggregate({
@@ -484,6 +492,7 @@ export function portfolioOverview(overrides: Partial<PortfolioOverview> = {}): P
       triage: i,
     })),
     attention: {
+      exploited: [portfolioRow('kev', { exploited: 2 })],
       failingGates: [portfolioRow('fail')],
       worstSecurity: [portfolioRow('weak', { securityRating: 'E' })],
       mostSevere: [

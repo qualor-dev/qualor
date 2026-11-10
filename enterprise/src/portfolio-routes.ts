@@ -26,6 +26,8 @@ const SORTS = [
   'ncloc',
   'coverage',
   'lastAnalysis',
+  'vulnerableReleases',
+  'exploited',
 ] as const;
 const formats = ['csv', 'pdf'] as const;
 
@@ -104,6 +106,8 @@ const projectRow = z.object({
   newIssues: count.nullable(),
   secrets: count,
   vulnerableDependencies: count,
+  vulnerableReleases: count.nullable(),
+  exploited: count.nullable(),
 });
 
 const named = { id: z.string(), key: z.string(), name: z.string() };
@@ -114,7 +118,13 @@ const overviewView = z.object({
     organization: z.object(named).nullable(),
   }),
   granularity: z.enum(['week', 'month']),
-  totals: z.object({ ...aggregateShape, secrets: count, vulnerableDependencies: count }),
+  totals: z.object({
+    ...aggregateShape,
+    secrets: count,
+    vulnerableDependencies: count,
+    vulnerableReleases: count.nullable(),
+    exploited: count.nullable(),
+  }),
   organizations: z.array(z.object({ ...named, ...aggregateShape })).nullable(),
   trend: z.array(
     z.object({
@@ -126,6 +136,7 @@ const overviewView = z.object({
     }),
   ),
   attention: z.object({
+    exploited: z.array(projectRow).nullable(),
     failingGates: z.array(projectRow),
     worstSecurity: z.array(projectRow),
     mostSevere: z.array(projectRow),

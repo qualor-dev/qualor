@@ -312,7 +312,7 @@ describe('Qualor Enterprise: portfolio reports through the built plugin (4E-2 §
     expect(keysOf(rootAll.attention['failingGates']!)).toContain('org-b/gamma');
     for (const overview of [all, org]) {
       expect(Object.keys(overview.attention).sort()).toEqual(
-        ['abandoned', 'failingGates', 'mostSevere', 'worstSecurity'].sort(),
+        ['abandoned', 'exploited', 'failingGates', 'mostSevere', 'worstSecurity'].sort(),
       );
       for (const [list, rows] of Object.entries(overview.attention)) {
         for (const key of keysOf(rows)) expect(key, list).toBe('org-a/alpha');

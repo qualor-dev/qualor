@@ -17,7 +17,7 @@ async function lines(rows: PortfolioProjectRow[]): Promise<string[]> {
 const HEADER =
   'organization_key,organization,project_key,project,last_analysis_at,abandoned,gate,security_rating,reliability_rating,' +
   'ncloc,coverage,duplication,issues,blocker,high,medium,low,info,new_issues,secrets,' +
-  'vulnerable_dependencies\r\n';
+  'vulnerable_dependencies,vulnerable_releases,exploited_vulnerabilities\r\n';
 
 describe('portfolioCsv (4E-2 §3)', () => {
   it('starts with a BOM and the header of spec §3', async () => {
@@ -29,12 +29,12 @@ describe('portfolioCsv (4E-2 §3)', () => {
     const out = await lines(sampleRows());
     expect(out).toHaveLength(4);
     expect(out[1]).toBe(
-      'platform,Platform team,proj-000,Project 0,2026-10-10T12:00:00.000Z,false,failed,C,A,4000,80.5,2.25,21,1,2,3,10,5,2,1,3\r\n',
+      'platform,Platform team,proj-000,Project 0,2026-10-10T12:00:00.000Z,false,failed,C,A,4000,80.5,2.25,21,1,2,3,10,5,2,1,3,2,1\r\n',
     );
     expect(out[2]).toBe(
-      'mobile,Mobile apps,proj-001,Project 1,2026-10-10T12:00:00.000Z,false,passed,A,B,4001,80.5,2.25,3,0,0,1,2,0,2,0,0\r\n',
+      'mobile,Mobile apps,proj-001,Project 1,2026-10-10T12:00:00.000Z,false,passed,A,B,4001,80.5,2.25,3,0,0,1,2,0,2,0,0,0,0\r\n',
     );
-    expect(out[3]).toBe('platform,Platform team,proj-002,Project 2,,true,,,,,,,,,,,,,,0,0\r\n');
+    expect(out[3]).toBe('platform,Platform team,proj-002,Project 2,,true,,,,,,,,,,,,,,0,0,,\r\n');
   });
 
   it('neutralises formulas and quotes with the shared helper', async () => {

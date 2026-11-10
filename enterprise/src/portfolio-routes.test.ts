@@ -227,6 +227,19 @@ describe('GET /portfolio/projects (4E-2 §3)', () => {
       [{ scope: 'all' }, { sort: 'gate', limit: 100, cursor: 'abc' }],
     ]);
   });
+
+  it('accepts the vulnerable-release and exploited sorts', async () => {
+    const h = harness();
+    app = h.app;
+    for (const sort of ['vulnerableReleases', 'exploited']) {
+      const res = await app.inject({ url: `/portfolio/projects?${ORG}&sort=${sort}` });
+      expect(res.statusCode, res.body).toBe(200);
+    }
+    expect(h.service.projects.mock.calls.map((c) => c[2].sort)).toEqual([
+      'vulnerableReleases',
+      'exploited',
+    ]);
+  });
 });
 
 describe('GET /portfolio/export (4E-2 §3)', () => {

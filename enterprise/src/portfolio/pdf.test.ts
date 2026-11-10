@@ -54,6 +54,29 @@ describe('renderPortfolioPdf (4E-2 §3)', () => {
     expect((await doc.getMetadata()).info).toMatchObject({ CreationDate: 'D:20261013093000Z' });
   });
 
+  it('shows the vulnerable releases and the exploited vulnerabilities, the exploited list first', async () => {
+    const text = await textOf(await renderPortfolioPdf(sampleOverview(), sampleRows(), OPTIONS));
+    expect(text).toMatch(/Vulnerable +releases/);
+    expect(text).toContain('Exploited vulnerabilities');
+    expect(text.indexOf('Exploited vulnerabilities')).toBeLessThan(
+      text.indexOf('Failing quality gates'),
+    );
+    expect(text).toContain('Exploited');
+  });
+
+  it('prints nothing about exploited vulnerabilities without vuln.priority', async () => {
+    const overview = sampleOverview();
+    overview.attention.exploited = null;
+    overview.totals.exploited = null;
+    const rows = sampleRows().map((r) => ({ ...r, exploited: null }));
+    const text = await textOf(await renderPortfolioPdf(overview, rows, OPTIONS));
+    expect(text).toMatch(/Vulnerable +releases/);
+    expect(text).not.toContain('Exploited');
+    expect(text).not.toContain('exploited');
+    const again = await renderPortfolioPdf(overview, rows, OPTIONS);
+    expect(again.equals(await renderPortfolioPdf(overview, rows, OPTIONS))).toBe(true);
+  });
+
   it('is byte-identical across renders of the same input', async () => {
     const a = await renderPortfolioPdf(sampleOverview(), sampleRows(), OPTIONS);
     const b = await renderPortfolioPdf(sampleOverview(), sampleRows(), OPTIONS);

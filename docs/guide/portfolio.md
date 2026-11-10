@@ -60,7 +60,9 @@ Qualor received the upload, not the commit date the scanner reports.
 - lines of code (`ncloc`), coverage and duplication (`duplicated_lines_density`);
 - the open issues, by severity (blocker, high, medium, low, info), by quality (security,
   reliability, maintainability) and in new code;
-- secrets (open Gitleaks findings) and vulnerable dependencies (open Trivy findings).
+- secrets (open Gitleaks findings) and vulnerable dependencies (open Trivy findings);
+- vulnerable releases and exploited vulnerabilities, when [vulnerability
+  monitoring](./dependency-vulnerabilities.md) is on.
 
 The issues of a [licence policy](./dependency-licenses.md) (the **licensing** quality) are left out
 of every count.
@@ -69,6 +71,14 @@ The issue counts and the ratings are the measures recorded with the last analysi
 then shows at the next scan. Secrets and vulnerable dependencies are counted from the main branch's
 open findings as they are now, leaving out those Qualor marks as the duplicate of another. They have
 no trend.
+
+**Vulnerable releases** is the number of the project's tracked versions with at least one open
+vulnerability (not ignored). **Exploited** is the number of distinct vulnerabilities that are open,
+listed in CISA KEV and not delisted, on the main branch or a tracked version. Both are current state
+with no trend. A project whose monitoring is off, or any project while the instance switch is off,
+has neither number: they show as a dash and stay out of the totals. KEV needs Business or
+Enterprise (`vuln.priority`, which Enterprise includes). Without it, **Exploited** is not shown
+anywhere: not on the page, in the CSV values, or in the PDF.
 
 **Adding projects up:**
 
@@ -108,10 +118,12 @@ triage decisions. **Show as a table** under each chart gives the same numbers as
 
 ## Needs attention
 
-Four lists of up to **10 projects** each, every project linked to its page:
+Five lists of up to **10 projects** each, every project linked to its page. The first needs
+`vuln.priority`:
 
 | List | Which projects | Order |
 |---|---|---|
+| **Exploited vulnerabilities** | at least one exploited vulnerability | the most first |
 | **Failing quality gates** | the gate failed | the most blocker and high issues first |
 | **Worst security ratings** | rated B to E (A-rated projects never appear) | the worst rating first, then the most security issues |
 | **Most blocker and high issues** | at least one blocker or high issue | the most first |
@@ -128,7 +140,7 @@ From the top:
 2. The **trend** charts.
 3. **Organisations** (all organisations only): each organisation's projects, gate pass share, lines
    of code, coverage, duplication, open issues and abandoned projects.
-4. **Needs attention**: the four lists.
+4. **Needs attention**: the five lists.
 5. **Projects**: every project you can read in the scope, 50 at a time (**Load more** for the next
    ones), each linked to its page. A column header sorts the table:
 
@@ -139,6 +151,7 @@ From the top:
    | Security, Reliability | E first, then D to A, then unrated |
    | Issues, Lines of code | the highest first, then the projects without a value |
    | Coverage | the lowest first, then the projects without a value |
+   | Vulnerable releases, Exploited | the highest first, then the projects without a value (**Exploited** needs `vuln.priority`) |
    | Last analysis | never analyzed first, then the oldest |
 
 When the scope holds no project, the page says "No projects you can read yet."
@@ -152,11 +165,12 @@ row for every project you can read in the scope, sorted by organisation key, the
 
 - The columns are `organization_key`, `organization`, `project_key`, `project`, `last_analysis_at`,
   `abandoned`, `gate`, `security_rating`, `reliability_rating`, `ncloc`, `coverage`, `duplication`,
-  `issues`, `blocker`, `high`, `medium`, `low`, `info`, `new_issues`, `secrets` and
-  `vulnerable_dependencies`.
+  `issues`, `blocker`, `high`, `medium`, `low`, `info`, `new_issues`, `secrets`,
+  `vulnerable_dependencies`, `vulnerable_releases` and `exploited_vulnerabilities`.
 - `last_analysis_at` is a UTC time such as `2027-10-12T09:30:00.000Z`. `abandoned` is `true` or
   `false`. `gate` is `passed`, `failed`, `error` or `none`. The ratings are `A` to `E`. `coverage`
   and `duplication` are percentages.
+- `exploited_vulnerabilities` is always a column. Without `vuln.priority` its cells are empty.
 - A value the project does not have is an empty cell, and so is every measure of a project never
   analyzed.
 - A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a
@@ -167,12 +181,14 @@ row for every project you can read in the scope, sorted by organisation key, the
 the bottom. The sections:
 
 1. the cover: the scope, when it was made and by whom, the server version and the trend period;
-2. the totals, as cards, with the gate and rating counts;
+2. the totals, as cards, with the gate and rating counts, the vulnerable releases and, with
+   `vuln.priority`, the exploited vulnerabilities;
 3. the trend: line charts of the gate pass share, coverage, lines of code and open issues, and the
    tables of every point, with the analyses and triage decisions per period;
 4. the organisations (all organisations only);
-5. the four attention lists;
-6. the projects: the first **50** by quality gate (Failed first, then the worst security rating).
+5. the attention lists, **Exploited vulnerabilities** first (with `vuln.priority`);
+6. the projects, with their vulnerable releases and exploited vulnerabilities: the first **50** by
+   quality gate (Failed first, then the worst security rating).
    With more projects, the PDF says that the CSV lists every one.
 
 The PDF's font, Noto Sans, covers Latin, Cyrillic and Greek. A project name in another script prints
@@ -217,7 +233,7 @@ with the **Read** scope. A project analysis token is refused. Every route takes 
 | Route | What it does |
 |---|---|
 | `GET /ee/portfolio?scope=…&granularity=week` (or `month`; `week` without it) | the view: `generatedAt`, `totals`, `organizations` (all scope; `null` otherwise), the 12 `trend` points (each with `start`, `end`, the totals at `end`, `analyses` and `triage`) and the four `attention` lists |
-| `GET /ee/portfolio/projects?scope=…&sort=gate&limit=50` | a page of project rows. `sort` is `key` (without it), `gate`, `security`, `reliability`, `issues`, `ncloc`, `coverage` or `lastAnalysis`, in the orders of the projects table; `limit` is 1 to 100, 50 without it; pass `nextCursor` as `cursor` for the next page |
+| `GET /ee/portfolio/projects?scope=…&sort=gate&limit=50` | a page of project rows. `sort` is `key` (without it), `gate`, `security`, `reliability`, `issues`, `ncloc`, `coverage`, `lastAnalysis`, `vulnerableReleases` or `exploited`, in the orders of the projects table; `limit` is 1 to 100, 50 without it; pass `nextCursor` as `cursor` for the next page |
 | `GET /ee/portfolio/export?scope=…&format=csv` (or `pdf`, with `granularity`) | the file, as described in [Downloads](#downloads) |
 
 | Answer | Meaning |

@@ -133,6 +133,20 @@
               {{ d.totals.vulnerableDependencies | measure: 'dependencies' }}
             </dd>
           </div>
+          <div>
+            <dt i18n="@@portfolio.card.vulnerableReleases">Vulnerable releases</dt>
+            <dd [class.bad]="(d.totals.vulnerableReleases ?? 0) > 0">
+              {{ d.totals.vulnerableReleases | measure: 'releases' }}
+            </dd>
+          </div>
+          @if (prioritised()) {
+            <div>
+              <dt i18n="@@portfolio.card.exploited">Exploited</dt>
+              <dd [class.bad]="(d.totals.exploited ?? 0) > 0">
+                {{ d.totals.exploited | measure: 'exploited' }}
+              </dd>
+            </div>
+          }
         </dl>
       </div>
     </section>
@@ -267,7 +281,7 @@
           </caption>
           <thead>
             <tr>
-              @for (c of columns; track c.sort) {
+              @for (c of columns(); track c.sort) {
                 <th scope="col" [class.num]="c.num" [attr.aria-sort]="ariaSort(c)">
                   <button type="button" class="sort" (click)="sortBy(c.sort)">{{ c.label }}</button>
                 </th>
@@ -292,6 +306,10 @@
                 <td class="num">{{ r.issues | measure: 'issues' }}</td>
                 <td class="num">{{ r.ncloc | measure: 'ncloc' }}</td>
                 <td class="num">{{ r.coverage | measure: 'coverage' }}</td>
+                <td class="num">{{ r.vulnerableReleases | measure: 'releases' }}</td>
+                @if (prioritised()) {
+                  <td class="num">{{ r.exploited | measure: 'exploited' }}</td>
+                }
                 <td class="nowrap">
                   @if (r.lastAnalysisAt; as at) {
                     <span [title]="at | dateTime">{{ at | dateTime: 'date' }}</span>

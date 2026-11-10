@@ -101,6 +101,8 @@ describe('PortfolioPage (4E-2 §4)', () => {
     expect(terms).toEqual([
       ['Secrets', '1'],
       ['Vulnerable dependencies', '4'],
+      ['Vulnerable releases', '3'],
+      ['Exploited', '2'],
     ]);
     // The organisation scope has no organisations table.
     expect(root.querySelector('[data-test=organizations]')).toBeNull();
@@ -121,6 +123,8 @@ describe('PortfolioPage (4E-2 §4)', () => {
           }),
           secrets: 0,
           vulnerableDependencies: 0,
+          vulnerableReleases: 0,
+          exploited: 0,
         },
         attention: {
           ...portfolioOverview().attention,
@@ -151,6 +155,8 @@ describe('PortfolioPage (4E-2 §4)', () => {
           ...portfolioAggregate({ analysed: 0, passedShare: null }),
           secrets: 0,
           vulnerableDependencies: 0,
+          vulnerableReleases: 0,
+          exploited: 0,
         },
       }),
     );
@@ -264,17 +270,61 @@ describe('PortfolioPage (4E-2 §4)', () => {
     const root = await open();
     const lists = [...root.querySelectorAll('[data-attention]')];
     expect(lists.map((l) => l.getAttribute('data-attention'))).toEqual([
+      'exploited',
       'failingGates',
       'worstSecurity',
       'mostSevere',
       'abandoned',
     ]);
-    const link = lists[0]?.querySelector('a');
+    expect(text(lists[0])).toContain('Exploited vulnerabilities');
+    expect(text(lists[0])).toContain('2 exploited');
+    const link = lists[1]?.querySelector('a');
     expect(link?.getAttribute('href')).toBe(`/projects/${portfolioRow('fail').project.id}`);
-    expect(text(lists[0])).toContain('3 blocker and high');
-    expect(text(lists[1])).toContain('E');
-    expect(text(lists[2])).toContain('7 blocker and high');
-    expect(text(lists[3])).toContain('Never analyzed');
+    expect(text(lists[1])).toContain('3 blocker and high');
+    expect(text(lists[2])).toContain('E');
+    expect(text(lists[3])).toContain('7 blocker and high');
+    expect(text(lists[4])).toContain('Never analyzed');
+  });
+
+  it('shows no Exploited text without vuln.priority, and a dash for a null count', async () => {
+    await setup();
+    const base = portfolioOverview();
+    FakePortfolio.install(
+      server,
+      portfolioOverview({
+        totals: { ...base.totals, vulnerableReleases: null, exploited: null },
+        attention: { ...base.attention, exploited: null },
+      }),
+      [portfolioRow('a', { vulnerableReleases: null, exploited: null })],
+    );
+    const root = await open();
+    expect(root.textContent).not.toContain('Exploited');
+    expect(root.textContent).not.toContain('exploited');
+    const terms = [...root.querySelectorAll('[data-card=findings] dl > div')].map((d) => [
+      text(d.querySelector('dt')),
+      text(d.querySelector('dd')),
+    ]);
+    expect(terms.at(-1)).toEqual(['Vulnerable releases', '–']);
+    const cells = [...root.querySelectorAll('[data-test=projects] tbody tr td')].map((c) =>
+      text(c),
+    );
+    expect(cells.at(-2)).toBe('–');
+  });
+
+  it('sorts on the new vulnerability columns', async () => {
+    await setup();
+    FakePortfolio.install(server);
+    const root = await open();
+    const header = (name: string) =>
+      [...root.querySelectorAll('[data-test=projects] th')].find(
+        (th) => text(th.querySelector('button')) === name,
+      );
+    header('Vulnerable releases')!.querySelector('button')!.click();
+    await refresh();
+    expect(server.requestsTo('GET', PROJECTS).at(-1)?.query.get('sort')).toBe('vulnerableReleases');
+    header('Exploited')!.querySelector('button')!.click();
+    await refresh();
+    expect(server.requestsTo('GET', PROJECTS).at(-1)?.query.get('sort')).toBe('exploited');
   });
 
   it('shows a dash, not 0 blocker and high, for a listed project with no measures', async () => {
@@ -373,6 +423,8 @@ describe('PortfolioPage (4E-2 §4)', () => {
           ...portfolioAggregate({ projects: 0, analysed: 0, abandoned: 0, passedShare: null }),
           secrets: 0,
           vulnerableDependencies: 0,
+          vulnerableReleases: 0,
+          exploited: 0,
         },
       }),
       [],
