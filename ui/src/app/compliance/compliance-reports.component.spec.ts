@@ -145,11 +145,30 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
       `${REPORTS}/${NEW}/download?format=pdf`,
     ]);
     expect(first?.querySelector('a[download][aria-disabled]')).toBeNull();
+    // No SBOM link for a report that attaches none.
+    expect(first?.textContent).not.toContain('SBOM');
     expect(first?.querySelector('.compliance-total')?.textContent?.trim()).toBe('3');
 
     // Nothing is pending any more: the polling has stopped.
     await vi.advanceTimersByTimeAsync(10_000);
     expect(server.requestsTo('GET', `${REPORTS}/${NEW}`)).toHaveLength(1);
+  });
+
+  it('offers the SBOM download only for a report that attaches one', async () => {
+    FakeCompliance.install(server, [
+      complianceReport({ id: NEW, sbom: { sha256: 'cd'.repeat(32) } }),
+      complianceReport({ id: OLD }),
+    ]);
+    const { root } = await render();
+    const [withSbom, without] = rows(root);
+    expect(downloads(withSbom!)).toEqual([
+      `${REPORTS}/${NEW}/download?format=json`,
+      `${REPORTS}/${NEW}/download?format=csv`,
+      `${REPORTS}/${NEW}/download?format=pdf`,
+      `${REPORTS}/${NEW}/download?format=sbom`,
+    ]);
+    expect(withSbom?.querySelector('a[href$="format=sbom"]')?.textContent?.trim()).toBe('SBOM');
+    expect(downloads(without!)).toHaveLength(3);
   });
 
   it('stops polling when it is destroyed', async () => {

@@ -347,6 +347,7 @@ export const MISSING_COMPLIANCE: PluginCompliance = Object.freeze({
   list: unavailable('compliance'),
   get: unavailable('compliance'),
   download: unavailable('compliance'),
+  downloadSbom: unavailable('compliance'),
   remove: unavailable('compliance'),
   collect: unavailable('compliance'),
   complete: unavailable('compliance'),

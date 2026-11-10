@@ -70,6 +70,7 @@ export function sampleReport(): ReportJson {
       kev: null,
       epss: null,
     },
+    sbom: null,
     projects: [
       {
         id: 'p-1',
@@ -218,7 +219,7 @@ export function sampleReportV1(): unknown {
   const strip = (row: object, keys: string[]): object =>
     Object.fromEntries(Object.entries(row).filter(([key]) => !keys.includes(key)));
   return {
-    ...strip(report, ['datasets']),
+    ...strip(report, ['datasets', 'sbom']),
     schemaVersion: 1,
     findings: report.findings.map((f) => strip(f, ['vulnerability'])),
     triage: report.triage.map((t) => strip(t, ['reason', 'vulnerability'])),

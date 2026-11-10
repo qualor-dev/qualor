@@ -3023,6 +3023,9 @@ export interface paths {
                                     };
                                     truncated: boolean;
                                 } | null;
+                                sbom: {
+                                    sha256: string;
+                                } | null;
                                 canDelete: boolean;
                             }[];
                             nextCursor: string | null;
@@ -3197,6 +3200,9 @@ export interface paths {
                                     wontFix: number;
                                 };
                                 truncated: boolean;
+                            } | null;
+                            sbom: {
+                                sha256: string;
                             } | null;
                             canDelete: boolean;
                         };
@@ -3377,6 +3383,9 @@ export interface paths {
                                 };
                                 truncated: boolean;
                             } | null;
+                            sbom: {
+                                sha256: string;
+                            } | null;
                             canDelete: boolean;
                         };
                     };
@@ -3499,11 +3508,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download a ready report as its canonical JSON, as CSV, or as PDF; the download is recorded */
+        /** Download a ready report as its canonical JSON, as CSV or PDF, or the SBOM it attaches; the download is recorded */
         get: {
             parameters: {
                 query: {
-                    format: "json" | "csv" | "pdf";
+                    format: "json" | "csv" | "pdf" | "sbom";
                 };
                 header?: never;
                 path: {
@@ -3513,12 +3522,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description The file, as an attachment: the canonical JSON (its SHA-256 is the report sha256), the CSV (UTF-8 with a BOM) or the PDF */
+                /** @description The file, as an attachment: the canonical JSON (its SHA-256 is the report sha256), the CSV (UTF-8 with a BOM), the PDF, or the CycloneDX 1.6 SBOM (its SHA-256 is the sbom.sha256 of the report JSON) */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
+                        "application/vnd.cyclonedx+json; version=1.6": string;
                         "application/json": string;
                         "text/csv": string;
                         "application/pdf": string;
@@ -3542,7 +3552,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Not found, or not visible to the caller */
+                /** @description NOT_FOUND (no such report, or for format sbom, a report that attaches no SBOM) */
                 404: {
                     headers: {
                         [name: string]: unknown;

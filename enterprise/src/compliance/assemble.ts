@@ -136,7 +136,14 @@ export function assembleReport(input: {
   source: ComplianceSource;
   standards?: readonly StandardData[];
   limit?: number;
-}): { json: ReportJson; canonical: Buffer; sha256: string; summary: ReportSummary } {
+}): {
+  json: ReportJson;
+  canonical: Buffer;
+  sha256: string;
+  summary: ReportSummary;
+  /** The SBOM file the report names, for core to store beside it. */
+  sbom: { json: string; sha256: string } | null;
+} {
   const { source } = input;
   const standards = input.standards ?? STANDARDS;
   const limit = input.limit ?? DETAIL_LIMIT;
@@ -196,6 +203,9 @@ export function assembleReport(input: {
           }
         : null,
     },
+    sbom: source.sbom
+      ? { format: 'CycloneDX 1.6', sha256: source.sbom.sha256, components: source.sbom.components }
+      : null,
     projects: source.projects.map((p) => ({
       id: p.id,
       key: p.key,
@@ -265,12 +275,18 @@ export function assembleReport(input: {
     })),
   };
   const canonical = Buffer.from(JSON.stringify(json), 'utf8');
-  return { json, canonical, sha256: createHash('sha256').update(canonical).digest('hex'), summary };
+  return {
+    json,
+    canonical,
+    sha256: createHash('sha256').update(canonical).digest('hex'),
+    summary,
+    sbom: source.sbom ? { json: source.sbom.json, sha256: source.sbom.sha256 } : null,
+  };
 }
 
 /**
- * The report in the bytes. A stored version 1 has no vulnerability facts, reasons or dataset
- * dates: it is read with those empty, so every format renders it as before.
+ * The report in the bytes. A stored version 1 has no vulnerability facts, reasons, dataset
+ * dates or SBOM: it is read with those empty, so every format renders it as before.
  */
 export function parseCanonical(bytes: Buffer): ReportJson {
   const parsed = JSON.parse(bytes.toString('utf8')) as ReportJson;
@@ -280,6 +296,7 @@ export function parseCanonical(bytes: Buffer): ReportJson {
     ...parsed,
     scope: { ...parsed.scope, version: null },
     datasets: { vulnerabilityDatabase: null, kev: null, epss: null },
+    sbom: null,
     findings: parsed.findings.map((f) => ({ ...f, vulnerability: null })),
     triage: parsed.triage.map((r) => ({ ...r, reason: null, vulnerability: null })),
   };

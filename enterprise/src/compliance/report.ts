@@ -88,6 +88,13 @@ export interface ReportProject {
   trend: ComplianceProjectSource['trend'];
 }
 
+/** The SBOM a project report attaches (schema 2); the file itself is stored beside the report. */
+export interface ReportSbom {
+  format: 'CycloneDX 1.6';
+  sha256: string;
+  components: number;
+}
+
 export interface ReportJson {
   /** 2 for every new report; a stored version 1 is read with the new fields empty. */
   schemaVersion: 1 | 2;
@@ -112,6 +119,8 @@ export interface ReportJson {
     sourceSha256: string;
   }[];
   datasets: ReportDatasets;
+  /** Null for an organisation report, or a target without an inventory. */
+  sbom: ReportSbom | null;
   projects: ReportProject[];
   summary: ReportSummary;
   findings: ReportFinding[];

@@ -36,6 +36,7 @@ import { cut } from './text';
 
 export const FEATURE = 'compliance-export';
 const PRIORITY_FEATURE = 'vuln.priority';
+const SBOM_FEATURE = 'sbom';
 /** 4E-1 §1: the stored summary is at most 64 KiB of JSON. */
 const SUMMARY_MAX = 65_536;
 /** 4E-1 §1: a failed row's reason, in characters. */
@@ -69,6 +70,7 @@ const REPORT = {
   completedAt: complianceReports.completedAt,
   standards: complianceReports.standards,
   sha256: complianceReports.sha256,
+  sbomSha256: complianceReports.sbomSha256,
   sizeBytes: complianceReports.sizeBytes,
   error: complianceReports.error,
   summary: complianceReports.summary,
@@ -93,6 +95,7 @@ type ReportRow = {
   completedAt: Date | null;
   standards: ComplianceReportView['standards'];
   sha256: string | null;
+  sbomSha256: string | null;
   sizeBytes: number | null;
   error: string | null;
   summary: unknown;
@@ -118,6 +121,7 @@ function rowView(row: ReportRow, canDelete: boolean): ComplianceReportView {
     sizeBytes: row.sizeBytes,
     error: row.error,
     summary: row.summary ?? null,
+    sbom: row.sbomSha256 === null ? null : { sha256: row.sbomSha256 },
     canDelete,
   };
 }
@@ -432,6 +436,31 @@ export function createComplianceService(deps: {
     return { view: rowView(row, await manages(principal, row.organizationId)), canonical };
   };
 
+  const downloadSbom: PluginCompliance['downloadSbom'] = async (request, id) => {
+    gate();
+    const { principal, row } = await readable(request, id);
+    if (row.status !== 'ready') throw conflict('REPORT_NOT_READY', 'The report is not ready');
+    const [stored] = await db
+      .select({ sbom: complianceReports.sbom })
+      .from(complianceReports)
+      .where(and(eq(complianceReports.id, row.id), eq(complianceReports.status, 'ready')));
+    if (!stored?.sbom || row.sbomSha256 === null) {
+      throw new ProblemError(404, 'NOT_FOUND', 'This report has no SBOM');
+    }
+    await deps.recorder.record(db, actorOf(request), [
+      {
+        action: 'compliance.report.downloaded',
+        ...references(row),
+        details: { format: 'sbom', sha256: row.sbomSha256 },
+      },
+    ]);
+    return {
+      view: rowView(row, await manages(principal, row.organizationId)),
+      sbom: gunzipSync(stored.sbom),
+      sha256: row.sbomSha256,
+    };
+  };
+
   const remove: PluginCompliance['remove'] = async (request, id) => {
     gate();
     const { principal, row } = await readable(request, id);
@@ -462,6 +491,7 @@ export function createComplianceService(deps: {
       return await collectCompliance(db, id, {
         ...options,
         priority: deps.isFeatureActive(PRIORITY_FEATURE),
+        sbom: deps.isFeatureActive(SBOM_FEATURE),
       });
     } catch (err) {
       if (err instanceof ComplianceCollectError) {
@@ -504,6 +534,13 @@ export function createComplianceService(deps: {
     const tooLarge = () => refuse('the report summary is too large');
     const sha256 = createHash('sha256').update(result.canonical).digest('hex');
     if (result.sha256 !== sha256) return refuse('the report hash does not match');
+    const sbom = result.sbom ?? null;
+    if (
+      sbom !== null &&
+      createHash('sha256').update(sbom.json, 'utf8').digest('hex') !== sbom.sha256
+    ) {
+      return refuse('the SBOM hash does not match');
+    }
     if (Buffer.byteLength(JSON.stringify(result.summary) ?? '') > SUMMARY_MAX) return tooLarge();
     try {
       const changed = await db
@@ -513,6 +550,8 @@ export function createComplianceService(deps: {
           data: gzipSync(result.canonical),
           sha256,
           sizeBytes: result.canonical.length,
+          sbom: sbom === null ? null : gzipSync(Buffer.from(sbom.json, 'utf8')),
+          sbomSha256: sbom === null ? null : sbom.sha256,
           summary: result.summary,
           // The refs the build used: after a rolling upgrade they can differ from the
           // ones stored at creation, and the row must agree with the JSON.
@@ -567,6 +606,7 @@ export function createComplianceService(deps: {
     list,
     get,
     download,
+    downloadSbom,
     remove,
     collect,
     complete,

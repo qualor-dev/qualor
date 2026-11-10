@@ -106,6 +106,16 @@ describe('renderPdf (4E-1 §2.5)', () => {
     expect(await textOf(await renderPdf(report))).toContain('<0.1%');
   });
 
+  it('lists the attached SBOM on the cover, and nothing without one', async () => {
+    const report = sampleReport();
+    expect(await textOf(await renderPdf(report))).not.toContain('SBOM');
+    report.sbom = { format: 'CycloneDX 1.6', sha256: 'c'.repeat(64), components: 42 };
+    const text = await textOf(await renderPdf(report));
+    expect(text).toContain('SBOM');
+    expect(text).toContain('CycloneDX 1.6, 42 components');
+    expect(text).toContain('c'.repeat(64));
+  });
+
   it('leaves the build time out of the cover when the dataset has none', async () => {
     const report = sampleReport();
     report.datasets.vulnerabilityDatabase = { builtAt: null, digest: 'sha256:x' };

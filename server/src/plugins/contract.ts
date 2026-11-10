@@ -18,6 +18,7 @@ import type {
   ComplianceProjectSource,
   ComplianceReportScope,
   ComplianceReportStatus,
+  ComplianceSbom,
   ComplianceSource,
   ComplianceStandardRef,
   ComplianceTriageRow,
@@ -95,6 +96,7 @@ export type {
   ComplianceProjectSource,
   ComplianceReportScope,
   ComplianceReportStatus,
+  ComplianceSbom,
   ComplianceSource,
   ComplianceStandardRef,
   ComplianceTriageRow,
@@ -321,6 +323,8 @@ export interface ComplianceReportView {
   sizeBytes: number | null;
   error: string | null;
   summary: unknown | null;
+  /** The SHA-256 of the SBOM the report attaches (plan 5, V13); null when it has none. */
+  sbom: { sha256: string } | null;
   /** The caller may delete it (org.compliance.manage on its organisation). */
   canDelete: boolean;
 }
@@ -386,6 +390,14 @@ export interface PluginCompliance {
     id: string,
     format: ComplianceDownloadFormat,
   ): Promise<{ view: ComplianceReportView; canonical: Buffer }>;
+  /**
+   * The SBOM a ready project report attaches, gunzipped, with its SHA-256; 404 NOT_FOUND when it
+   * has none. Same access as `download`; records `compliance.report.downloaded` with format sbom.
+   */
+  downloadSbom(
+    request: FastifyRequest,
+    id: string,
+  ): Promise<{ view: ComplianceReportView; sbom: Buffer; sha256: string }>;
   remove(request: FastifyRequest, id: string): Promise<void>;
   /** A known build failure rejects with a problem of code REPORT_BUILD_FAILED and a `detail`. */
   collect(id: string, options: { limit: number; signal?: AbortSignal }): Promise<ComplianceSource>;
@@ -401,6 +413,8 @@ export interface PluginCompliance {
       sha256: string;
       summary: unknown;
       standards?: readonly ComplianceStandardRef[];
+      /** The SBOM of `collect`'s source, as the plugin built it into the report; core checks its hash. */
+      sbom?: { json: string; sha256: string } | null;
     },
   ): Promise<boolean>;
   fail(id: string, error: string): Promise<boolean>;

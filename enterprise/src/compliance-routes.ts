@@ -51,7 +51,8 @@ const listQuery = z
   });
 
 const idParams = z.strictObject({ id: z.uuid() });
-const formats = ['json', 'csv', 'pdf'] as const;
+const formats = ['json', 'csv', 'pdf', 'sbom'] as const;
+const CYCLONEDX = 'application/vnd.cyclonedx+json; version=1.6';
 type Format = (typeof formats)[number];
 
 const severityCounts = z.object({
@@ -116,6 +117,7 @@ const reportView = z.object({
   sizeBytes: z.number().int().nullable(),
   error: z.string().nullable(),
   summary: summary.nullable(),
+  sbom: z.object({ sha256: z.string() }).nullable(),
   canDelete: z.boolean(),
 });
 
@@ -142,9 +144,13 @@ function scopeKey(view: ComplianceReportView): string {
  * The report's `generatedAt` as yyyymmdd. The canonical JSON writes it third (§2.3), so the head
  * of the bytes holds it; the row's completion date stands in if it does not.
  */
-function reportDay(canonical: Buffer, view: ComplianceReportView): string {
+function reportDay(
+  canonical: Buffer,
+  view: ComplianceReportView,
+  field: 'generatedAt' | 'timestamp' = 'generatedAt',
+): string {
   const head = canonical.subarray(0, 512).toString('utf8');
-  const match = /"generatedAt":"(\d{4})-(\d{2})-(\d{2})T/.exec(head);
+  const match = new RegExp(`"${field}":"(\\d{4})-(\\d{2})-(\\d{2})T`).exec(head);
   if (match) return `${match[1]}${match[2]}${match[3]}`;
   return (view.completedAt ?? view.createdAt).slice(0, 10).replaceAll('-', '');
 }
@@ -278,8 +284,9 @@ export function complianceRoutes(ctx: PluginContext): FastifyPluginAsync {
       {
         config: {
           openapi: {
-            problems: [409, 429, 503],
+            problems: [404, 409, 429, 503],
             problemDescriptions: {
+              404: 'NOT_FOUND (no such report, or for format sbom, a report that attaches no SBOM)',
               409: `REPORT_NOT_READY (the report is pending or failed); ${AUDIT_ANCHOR}`,
               429: 'A download is already running for you (RATE_LIMITED)',
               503: 'REPORT_RENDER_TIMEOUT (the PDF took longer than 60 seconds to render)',
@@ -289,14 +296,15 @@ export function complianceRoutes(ctx: PluginContext): FastifyPluginAsync {
         schema: {
           tags: ['enterprise'],
           summary:
-            'Download a ready report as its canonical JSON, as CSV, or as PDF; the download is recorded',
+            'Download a ready report as its canonical JSON, as CSV or PDF, or the SBOM it attaches; the download is recorded',
           params: idParams,
           querystring: z.strictObject({ format: z.enum(formats) }),
           response: {
             200: {
               description:
-                'The file, as an attachment: the canonical JSON (its SHA-256 is the report sha256), the CSV (UTF-8 with a BOM) or the PDF',
+                'The file, as an attachment: the canonical JSON (its SHA-256 is the report sha256), the CSV (UTF-8 with a BOM), the PDF, or the CycloneDX 1.6 SBOM (its SHA-256 is the sbom.sha256 of the report JSON)',
               content: {
+                [CYCLONEDX]: { schema: z.string() },
                 'application/json': { schema: z.string() },
                 'text/csv': { schema: z.string() },
                 'application/pdf': { schema: z.string() },
@@ -323,6 +331,19 @@ export function complianceRoutes(ctx: PluginContext): FastifyPluginAsync {
         // frees it.
         let streaming = false;
         try {
+          if (format === 'sbom') {
+            const { view, sbom } = await ctx.compliance.downloadSbom(request, id);
+            // The SBOM's timestamp is the report's generatedAt, so the name matches the JSON's.
+            const day = reportDay(sbom, view, 'timestamp');
+            return reply
+              .header('cache-control', 'no-store')
+              .header(
+                'content-disposition',
+                `attachment; filename="qualor-compliance-${scopeKey(view)}-${day}-${view.id.slice(0, 8)}.cdx.json"`,
+              )
+              .header('content-type', CYCLONEDX)
+              .send(sbom as unknown as string);
+          }
           const { view, canonical } = await ctx.compliance.download(request, id, format);
           const filename = `qualor-compliance-${scopeKey(view)}-${reportDay(canonical, view)}-${view.id.slice(0, 8)}.${format}`;
           // Set only on the file itself: a problem (a PDF that outruns its budget) is no attachment.
@@ -438,6 +459,7 @@ export function complianceJobs(ctx: PluginContext): Record<string, PluginJobHand
           canonical: built.canonical,
           sha256: built.sha256,
           summary: built.summary,
+          sbom: built.sbom,
           standards: built.json.standards.map((s) => ({
             id: s.id,
             version: s.version,

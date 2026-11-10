@@ -96,12 +96,16 @@ function view(over: Partial<ComplianceReportView> = {}): ComplianceReportView {
     sizeBytes: 100,
     error: null,
     summary: null,
+    sbom: null,
     canDelete: false,
     ...over,
   };
 }
 
 /** The canonical bytes of the sample report, generated on 2026-10-12. */
+const SBOM_JSON = '{"bomFormat":"CycloneDX","metadata":{"timestamp":"2026-10-11T23:59:59.000Z"}}';
+const SBOM_SHA = createHash('sha256').update(SBOM_JSON).digest('hex');
+
 function canonical(): Buffer {
   return Buffer.from(
     JSON.stringify({ ...sampleReport(), generatedAt: '2026-10-12T10:00:00.000Z' }),
@@ -125,6 +129,7 @@ function source(): ComplianceSource {
     findings: [],
     triage: [],
     datasets: { vulnerabilityDatabase: null, kev: null, epss: null },
+    sbom: null,
   };
 }
 
@@ -140,6 +145,11 @@ function harness(compliance: Partial<FakeCompliance> = {}) {
     list: vi.fn(async () => ({ items: [view()], nextCursor: null })),
     get: vi.fn(async () => view()),
     download: vi.fn(async () => ({ view: view(), canonical: canonical() })),
+    downloadSbom: vi.fn(async () => ({
+      view: view({ sbom: { sha256: SBOM_SHA } }),
+      sbom: Buffer.from(SBOM_JSON),
+      sha256: SBOM_SHA,
+    })),
     remove: vi.fn(async () => undefined),
     collect: vi.fn(async () => source()),
     complete: vi.fn(async () => true),
@@ -341,6 +351,32 @@ describe('GET and DELETE /compliance/reports/:id', () => {
 describe('GET /compliance/reports/:id/download (4E-1 §2.5)', () => {
   const download = (format: string, headers: Record<string, string> = {}) =>
     app!.inject({ url: `/compliance/reports/${REPORT_ID}/download?format=${format}`, headers });
+
+  it('serves the attached SBOM as CycloneDX JSON with its own name and hash', async () => {
+    const h = harness();
+    app = h.app;
+    const res = await download('sbom');
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.headers['content-type']).toBe('application/vnd.cyclonedx+json; version=1.6');
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.headers['content-disposition']).toBe(
+      'attachment; filename="qualor-compliance-alpha-20261011-0b6f1c1e.cdx.json"',
+    );
+    expect(res.rawPayload.toString('utf8')).toBe(SBOM_JSON);
+    expect(createHash('sha256').update(res.rawPayload).digest('hex')).toBe(SBOM_SHA);
+    expect(h.service.downloadSbom.mock.calls[0]?.slice(1)).toEqual([REPORT_ID]);
+    expect(h.service.download).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 to the SBOM of a report that has none', async () => {
+    const h = harness({
+      downloadSbom: vi.fn(async () => {
+        throw Object.assign(new Error('no SBOM'), { statusCode: 404, code: 'NOT_FOUND' });
+      }),
+    });
+    app = h.app;
+    expect((await download('sbom')).statusCode).toBe(404);
+  });
 
   it('sends the canonical JSON as it is stored, not cached', async () => {
     const h = harness();

@@ -146,7 +146,10 @@ export class ComplianceReportsComponent {
   private readonly deleteDialog = viewChild<ElementRef<HTMLDialogElement>>('deleteDialog');
 
   protected readonly severities = SEVERITIES;
-  protected readonly formats = FORMATS;
+  /** JSON, CSV and PDF, and the SBOM when the report attaches one (plan 5, V13). */
+  protected formatsOf(report: ComplianceReport): readonly string[] {
+    return report.sbom ? [...FORMATS, 'sbom'] : FORMATS;
+  }
   private destroyed = false;
 
   constructor() {

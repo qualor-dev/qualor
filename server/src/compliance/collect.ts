@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { effectiveCwe } from '@qualor/shared';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db, Executor } from '../db/client';
@@ -10,6 +11,10 @@ import {
   projects,
   projectVersions,
 } from '../db/schema';
+import { hasInventory, type DependencyTarget } from '../dependencies/query';
+import { VERSION } from '../index';
+import { exportPackages } from '../vulnerabilities/export/query';
+import { buildCycloneDxSbom } from '../vulnerabilities/export/sbom-documents';
 import { effectiveDecisionJoin, type VexJustification } from '../vulnerabilities/decisions';
 import { projectTargets } from '../vulnerabilities/targets';
 import { vulnerabilitySettings } from '../versions/settings';
@@ -27,6 +32,7 @@ import {
   type ComplianceFindingGroup,
   type ComplianceFindingRow,
   type ComplianceProjectSource,
+  type ComplianceSbom,
   type ComplianceSource,
   type ComplianceTriageRow,
   type ComplianceVulnerability,
@@ -130,6 +136,44 @@ async function dependencyFacts(
   return out;
 }
 
+/**
+ * The SBOM a project report attaches (plan 5, V13), read in the report's snapshot: null when the
+ * target has no inventory. The serial is the report id and the time is the report's, so the
+ * document is the same for a given report.
+ */
+async function sbomOf(
+  tx: Executor,
+  input: {
+    reportId: string;
+    org: { name: string };
+    project: { key: string; name: string };
+    target: DependencyTarget;
+    targetName: string;
+    generatedAt: string;
+  },
+): Promise<ComplianceSbom | null> {
+  const packages = await exportPackages(tx, input.target);
+  if (!(await hasInventory(tx, input.target, packages.length))) return null;
+  const json = JSON.stringify(
+    buildCycloneDxSbom(
+      {
+        project: { key: input.project.key, name: input.project.name },
+        organization: input.org.name,
+        target: { kind: input.target.kind, name: input.targetName },
+        generatedAt: new Date(input.generatedAt),
+        serial: input.reportId,
+        toolVersion: VERSION,
+      },
+      packages,
+    ),
+  );
+  return {
+    json,
+    sha256: createHash('sha256').update(json, 'utf8').digest('hex'),
+    components: packages.length,
+  };
+}
+
 /** The dataset dates; KEV and EPSS only with `vuln.priority`. */
 async function datasetsOf(
   tx: Executor,
@@ -166,9 +210,10 @@ async function datasetsOf(
 export async function collectCompliance(
   db: Db,
   reportId: string,
-  options: { limit: number; signal?: AbortSignal; priority?: boolean },
+  options: { limit: number; signal?: AbortSignal; priority?: boolean; sbom?: boolean },
 ): Promise<ComplianceSource> {
   const priority = options.priority === true;
+  const withSbom = options.sbom === true;
   return db.transaction(
     async (tx) => {
       const [report] = await tx
@@ -235,6 +280,8 @@ export async function collectCompliance(
           createdBy: report.createdByName,
           limit: options.limit,
           priority,
+          sbom: withSbom,
+          reportId,
           signal: options.signal,
         });
       }
@@ -453,8 +500,20 @@ export async function collectCompliance(
 
       const single = report.projectId === null ? null : (scopeProjects[0] ?? null);
       const singleBranch = single ? (branchOf.get(single.id) ?? null) : null;
+      const generatedAt = isoReq(report.now);
+      const sbom =
+        withSbom && single !== null && singleBranch !== null
+          ? await sbomOf(tx, {
+              reportId,
+              org,
+              project: single,
+              target: { kind: 'branch', branchId: singleBranch.id },
+              targetName: singleBranch.name,
+              generatedAt,
+            })
+          : null;
       return {
-        generatedAt: isoReq(report.now),
+        generatedAt,
         createdBy: report.createdByName,
         scope: {
           kind: report.scope,
@@ -468,6 +527,7 @@ export async function collectCompliance(
         findings,
         triage,
         datasets,
+        sbom,
       };
     },
     { isolationLevel: 'repeatable read', accessMode: 'read only' },
@@ -629,6 +689,8 @@ async function versionSource(
     createdBy: string;
     limit: number;
     priority: boolean;
+    sbom: boolean;
+    reportId: string;
     signal: AbortSignal | undefined;
   },
 ): Promise<ComplianceSource> {
@@ -816,6 +878,16 @@ async function versionSource(
   }));
   abortCheck(signal);
   const datasets = await datasetsOf(tx, { enabled: true, priority });
+  const sbom = input.sbom
+    ? await sbomOf(tx, {
+        reportId: input.reportId,
+        org: input.org,
+        project,
+        target: { kind: 'version', versionId: version.id },
+        targetName: version.label,
+        generatedAt: input.generatedAt,
+      })
+    : null;
 
   return {
     generatedAt: input.generatedAt,
@@ -847,5 +919,6 @@ async function versionSource(
     findings,
     triage,
     datasets,
+    sbom,
   };
 }

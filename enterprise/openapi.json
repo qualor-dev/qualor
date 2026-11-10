@@ -6072,6 +6072,25 @@
                         }
                       ]
                     },
+                    "sbom": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "sha256": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sha256"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "canDelete": {
                       "type": "boolean"
                     }
@@ -6092,6 +6111,7 @@
                     "sizeBytes",
                     "error",
                     "summary",
+                    "sbom",
                     "canDelete"
                   ],
                   "additionalProperties": false
@@ -6723,6 +6743,25 @@
                               }
                             ]
                           },
+                          "sbom": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "sha256": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "sha256"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "canDelete": {
                             "type": "boolean"
                           }
@@ -6743,6 +6782,7 @@
                           "sizeBytes",
                           "error",
                           "summary",
+                          "sbom",
                           "canDelete"
                         ],
                         "additionalProperties": false
@@ -7344,6 +7384,25 @@
                         }
                       ]
                     },
+                    "sbom": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "sha256": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sha256"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "canDelete": {
                       "type": "boolean"
                     }
@@ -7364,6 +7423,7 @@
                     "sizeBytes",
                     "error",
                     "summary",
+                    "sbom",
                     "canDelete"
                   ],
                   "additionalProperties": false
@@ -7489,7 +7549,7 @@
     },
     "/api/v0/ee/compliance/reports/{id}/download": {
       "get": {
-        "summary": "Download a ready report as its canonical JSON, as CSV, or as PDF; the download is recorded",
+        "summary": "Download a ready report as its canonical JSON, as CSV or PDF, or the SBOM it attaches; the download is recorded",
         "tags": [
           "enterprise"
         ],
@@ -7500,7 +7560,8 @@
               "enum": [
                 "json",
                 "csv",
-                "pdf"
+                "pdf",
+                "sbom"
               ]
             },
             "in": "query",
@@ -7520,8 +7581,13 @@
         ],
         "responses": {
           "200": {
-            "description": "The file, as an attachment: the canonical JSON (its SHA-256 is the report sha256), the CSV (UTF-8 with a BOM) or the PDF",
+            "description": "The file, as an attachment: the canonical JSON (its SHA-256 is the report sha256), the CSV (UTF-8 with a BOM), the PDF, or the CycloneDX 1.6 SBOM (its SHA-256 is the sbom.sha256 of the report JSON)",
             "content": {
+              "application/vnd.cyclonedx+json; version=1.6": {
+                "schema": {
+                  "type": "string"
+                }
+              },
               "application/json": {
                 "schema": {
                   "type": "string"
@@ -7560,7 +7626,7 @@
             }
           },
           "404": {
-            "description": "Not found, or not visible to the caller",
+            "description": "NOT_FOUND (no such report, or for format sbom, a report that attaches no SBOM)",
             "content": {
               "application/problem+json": {
                 "schema": {

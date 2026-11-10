@@ -702,7 +702,7 @@ export const AUDIT_CATALOGUE = {
   'compliance.report.downloaded': {
     target: 'compliance_report',
     details: z.strictObject({
-      format: z.enum(['json', 'csv', 'pdf']),
+      format: z.enum(['json', 'csv', 'pdf', 'sbom']),
       sha256: z.string().regex(/^[0-9a-f]{64}$/),
     }),
   },

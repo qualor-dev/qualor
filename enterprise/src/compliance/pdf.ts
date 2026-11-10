@@ -99,6 +99,14 @@ function cover(layout: Layout, report: ReportJson, sha256: string): Promise<void
     ['Report id', report.id],
     ['SHA-256 of the JSON export', sha256],
     ...datasetFields(report),
+    ...(report.sbom
+      ? ([
+          [
+            'SBOM',
+            `${report.sbom.format}, ${report.sbom.components} components, SHA-256 ${report.sbom.sha256}`,
+          ],
+        ] as [string, string][])
+      : []),
   ]);
   layout.text(
     'The JSON export of this report has the SHA-256 above: compare them to check that this PDF ' +

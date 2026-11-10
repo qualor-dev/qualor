@@ -276,6 +276,7 @@ export function complianceReport(overrides: Partial<ComplianceReport> = {}): Com
     sizeBytes: 1024,
     error: null,
     summary: complianceSummary(),
+    sbom: null,
     canDelete: false,
     ...overrides,
   };

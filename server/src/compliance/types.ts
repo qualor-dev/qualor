@@ -108,6 +108,16 @@ export interface ComplianceDatasets {
   epss: { dataDate: string | null; refreshedAt: string; digest: string } | null;
 }
 
+/**
+ * The CycloneDX 1.6 SBOM a project report attaches (plan 5, V13): the document as one JSON text,
+ * the lowercase hex SHA-256 of its UTF-8 bytes, and its package count.
+ */
+export interface ComplianceSbom {
+  json: string;
+  sha256: string;
+  components: number;
+}
+
 export interface ComplianceSource {
   /** The transaction's now(), ISO with milliseconds. */
   generatedAt: string;
@@ -131,6 +141,8 @@ export interface ComplianceSource {
   /** At most limit + 1 rows, newest decision first. */
   triage: ComplianceTriageRow[];
   datasets: ComplianceDatasets;
+  /** Set for a project report of a target with an inventory, while `sbom` is licensed. */
+  sbom: ComplianceSbom | null;
 }
 
 export const MAX_ORGANIZATION_PROJECTS = 2_000;

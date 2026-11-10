@@ -174,6 +174,7 @@ const source = (over: Partial<ComplianceSource> = {}): ComplianceSource => ({
       digest: 'sha256:epss',
     },
   },
+  sbom: null,
   ...over,
 });
 
@@ -252,6 +253,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
       'scope',
       'standards',
       'datasets',
+      'sbom',
       'projects',
       'summary',
       'findings',
@@ -347,6 +349,32 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
     expect(make({}).version).toBeNull();
   });
 
+  it('writes the SBOM of the source after the datasets, and null without one', () => {
+    const sbom = { json: '{"bomFormat":"CycloneDX"}', sha256: 'c'.repeat(64), components: 3 };
+    const withSbom = assembleReport({
+      id: 'r',
+      generatedBy: 'Ann',
+      serverVersion: '0.15.0',
+      source: source({ sbom }),
+      standards: [STD],
+    });
+    expect(withSbom.json.sbom).toEqual({
+      format: 'CycloneDX 1.6',
+      sha256: 'c'.repeat(64),
+      components: 3,
+    });
+    expect(withSbom.sbom).toEqual({ json: sbom.json, sha256: sbom.sha256 });
+    const none = assembleReport({
+      id: 'r',
+      generatedBy: 'Ann',
+      serverVersion: '0.15.0',
+      source: source(),
+      standards: [STD],
+    });
+    expect(none.json.sbom).toBeNull();
+    expect(none.sbom).toBeNull();
+  });
+
   it('reads schema 1 and 2 and refuses any other', () => {
     const a = assembleReport({
       id: 'r',
@@ -360,6 +388,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
     expect(v1.schemaVersion).toBe(1);
     expect(v1.datasets).toEqual({ vulnerabilityDatabase: null, kev: null, epss: null });
     expect(v1.scope.version).toBeNull();
+    expect(v1.sbom).toBeNull();
     expect(v1.findings.every((f) => f.vulnerability === null)).toBe(true);
     expect(v1.triage.every((t) => t.reason === null && t.vulnerability === null)).toBe(true);
     expect(() => parseCanonical(Buffer.from('{"schemaVersion":3}'))).toThrow(
@@ -403,6 +432,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
       source: source({
         projects: richProjects(reversed),
         scope: { ...source().scope, version: { label: '1.0', id: 'v' } },
+        sbom: { json: '{}', sha256: 'c'.repeat(64), components: 1 },
       }),
       standards: [STD],
     });
@@ -440,6 +470,7 @@ describe('assembleReport (4E-1 §2.2, §2.3)', () => {
         kev: { refreshedAt: null, digest: null },
         epss: { dataDate: null, refreshedAt: null, digest: null },
       },
+      sbom: { format: null, sha256: null, components: null },
       projects: [
         {
           id: null,

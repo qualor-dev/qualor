@@ -9,7 +9,7 @@ import { PAYMENTS } from './seed-data';
  * row is ready. Each download is a plain link the browser saves.
  */
 
-test('a project admin creates a compliance report and downloads it in three formats', async ({
+test('a project admin creates a compliance report and downloads it in four formats', async ({
   page,
 }) => {
   // The build runs in the background; the page polls every 3 s.
@@ -31,17 +31,25 @@ test('a project admin creates a compliance report and downloads it in three form
     ['JSON', 'application/json'],
     ['CSV', 'text/csv'],
     ['PDF', 'application/pdf'],
+    // Payments API's main branch has an inventory, and the Enterprise licence has `sbom`.
+    ['SBOM', 'application/vnd.cyclonedx+json'],
   ] as const) {
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       page.getByRole('link', { name: label }).first().click(),
     ]);
-    expect(download.suggestedFilename()).toMatch(/^qualor-compliance-.+\.(json|csv|pdf)$/);
+    expect(download.suggestedFilename()).toMatch(
+      /^qualor-compliance-.+\.(json|csv|pdf|cdx\.json)$/,
+    );
     // The server serves one download per person at a time: let the browser's finish first.
     await download.path();
     const res = await page.request.get(download.url());
     expect(res.status()).toBe(200);
     expect(res.headers()['content-type']).toContain(type);
+    if (label === 'SBOM') {
+      expect(download.suggestedFilename()).toMatch(/\.cdx\.json$/);
+      expect(await res.json()).toMatchObject({ bomFormat: 'CycloneDX', specVersion: '1.6' });
+    }
   }
 
   // The summary of the ready report, by standard.
