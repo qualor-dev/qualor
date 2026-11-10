@@ -2,14 +2,32 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { finding, reportWith } from '../../test/reports';
+import { createTestContext, organizationId, type TestContext } from '../../test/app';
+import { seedTargetRow } from '../../test/vulnerabilities';
 import { encryptionKey, encryptSecret } from '../crypto/secrets';
 import { createDatabase } from '../db/client';
-import { branches, issues, jobs, webhookDeliveries, webhookSubscriptions } from '../db/schema';
+import { first } from '../db/rows';
+import {
+  branches,
+  issues,
+  jobs,
+  organizations,
+  projects,
+  projectVersions,
+  vulnerabilityAlertItems,
+  vulnerabilityAlertTargets,
+  vulnerabilityDecisions,
+  vulnerabilityKev,
+  webhookDeliveries,
+  webhookSubscriptions,
+} from '../db/schema';
+import { COMMUNITY_VULNERABILITY_LIMITS, type Limits } from '../limits';
 import { runUntilIdle } from '../queue/worker';
 import { WEBHOOK_URL_AAD } from './deliveries';
 import type { ChatDigestMessage } from './chat/messages';
 import {
   DIGEST_QUEUE,
+  buildDigest,
   digestHandlers,
   ensureDigestScheduled,
   runDigests,
@@ -18,6 +36,14 @@ import {
 
 /** Monday 2026-10-19 09:30 in Europe/Berlin (CEST). */
 const MONDAY_BERLIN = new Date('2026-10-19T07:30:00Z');
+/** The digest week of MONDAY_BERLIN: [2026-10-12T07:00Z, 2026-10-19T07:00Z). */
+const SINCE = new Date('2026-10-12T07:00:00Z');
+const UNTIL = new Date('2026-10-19T07:00:00Z');
+const DAY = 86_400_000;
+const limits: Pick<Limits, 'vulnerabilities'> = { vulnerabilities: COMMUNITY_VULNERABILITY_LIMITS };
+const limitsOf = (alerts: boolean, priority: boolean): Pick<Limits, 'vulnerabilities'> => ({
+  vulnerabilities: { ...COMMUNITY_VULNERABILITY_LIMITS, alerts, priority },
+});
 
 describe('weekly security digest (6G spec §4)', () => {
   let h: IngestHarness;
@@ -107,16 +133,30 @@ describe('weekly security digest (6G spec §4)', () => {
   it('is not due before Monday 09:00 local, then sends once per week', async () => {
     await securityIssues(payments, 'high', 2);
     const id = await hook();
-    await runDigests({ db: h.ctx.db, now: () => new Date('2026-10-19T06:59:00Z') });
+    await runDigests({
+      db: h.ctx.db,
+      limits: () => limits,
+      now: () => new Date('2026-10-19T06:59:00Z'),
+    });
     expect(await digestsOf(id)).toHaveLength(0);
     expect(await lastWeekOf(id)).toBeNull();
-    expect(await runDigests({ db: h.ctx.db, now: () => MONDAY_BERLIN })).toEqual({
+    expect(
+      await runDigests({
+        db: h.ctx.db,
+        limits: () => limits,
+        now: () => MONDAY_BERLIN,
+      }),
+    ).toEqual({
       sent: 1,
       quiet: 0,
       failed: 0,
     });
     // The next hourly run of the same Monday sends nothing more.
-    await runDigests({ db: h.ctx.db, now: () => new Date('2026-10-19T08:30:00Z') });
+    await runDigests({
+      db: h.ctx.db,
+      limits: () => limits,
+      now: () => new Date('2026-10-19T08:30:00Z'),
+    });
     const sent = await digestsOf(id);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
@@ -145,14 +185,24 @@ describe('weekly security digest (6G spec §4)', () => {
     });
     expect(await lastWeekOf(id)).toBe('2026-W43');
     // The next Monday is a new week.
-    await runDigests({ db: h.ctx.db, now: () => new Date('2026-10-26T08:00:00Z') });
+    await runDigests({
+      db: h.ctx.db,
+      limits: () => limits,
+      now: () => new Date('2026-10-26T08:00:00Z'),
+    });
     expect(await lastWeekOf(id)).toBe('2026-W44');
   });
 
   it('counts only issues first seen in the last 7 days as new; a quiet week sends nothing', async () => {
     await securityIssues(payments, 'medium', 8);
     const id = await hook();
-    expect(await runDigests({ db: h.ctx.db, now: () => MONDAY_BERLIN })).toEqual({
+    expect(
+      await runDigests({
+        db: h.ctx.db,
+        limits: () => limits,
+        now: () => MONDAY_BERLIN,
+      }),
+    ).toEqual({
       sent: 0,
       quiet: 1,
       failed: 0,
@@ -165,10 +215,18 @@ describe('weekly security digest (6G spec §4)', () => {
   it('a project webhook covers only its project', async () => {
     await securityIssues(payments, 'high', 1);
     const id = await hook({ projectId: billing.id });
-    await runDigests({ db: h.ctx.db, now: () => MONDAY_BERLIN });
+    await runDigests({
+      db: h.ctx.db,
+      limits: () => limits,
+      now: () => MONDAY_BERLIN,
+    });
     expect(await digestsOf(id)).toHaveLength(0); // billing is quiet
     const forPayments = await hook({ projectId: payments.id });
-    await runDigests({ db: h.ctx.db, now: () => MONDAY_BERLIN });
+    await runDigests({
+      db: h.ctx.db,
+      limits: () => limits,
+      now: () => MONDAY_BERLIN,
+    });
     const [digest] = await digestsOf(forPayments);
     expect(digest!.scope.project).toEqual({ id: payments.id, name: 'acme/payments' });
     expect(digest!.totals.projects).toBe(1);
@@ -195,7 +253,11 @@ describe('weekly security digest (6G spec §4)', () => {
       .where(eq(issues.id, paymentsIssues[1]!.id));
     const id = await hook();
     // The server was down until Monday 23:00 Berlin.
-    await runDigests({ db: h.ctx.db, now: () => new Date('2026-10-19T21:00:00Z') });
+    await runDigests({
+      db: h.ctx.db,
+      limits: () => limits,
+      now: () => new Date('2026-10-19T21:00:00Z'),
+    });
     const [digest] = await digestsOf(id);
     expect(digest).toMatchObject({
       until: '2026-10-19T07:00:00.000Z',
@@ -215,7 +277,11 @@ describe('weekly security digest (6G spec §4)', () => {
     );
     try {
       const id = await hook({ projectId: billing.id });
-      await runDigests({ db: h.ctx.db, now: () => MONDAY_BERLIN });
+      await runDigests({
+        db: h.ctx.db,
+        limits: () => limits,
+        now: () => MONDAY_BERLIN,
+      });
       const [digest] = await digestsOf(id);
       expect(digest).toMatchObject({
         totals: { projects: 1, failing: 1, newSecurity: 0 },
@@ -240,7 +306,11 @@ describe('weekly security digest (6G spec §4)', () => {
       urlEnc: null,
       secretEnc: encryptSecret(key, 's'.repeat(32), 'webhook_subscriptions.secret_enc'),
     });
-    const result = await runDigests({ db: h.ctx.db, now: () => MONDAY_BERLIN });
+    const result = await runDigests({
+      db: h.ctx.db,
+      limits: () => limits,
+      now: () => MONDAY_BERLIN,
+    });
     expect(result).toEqual({ sent: 0, quiet: 0, failed: 0 });
     for (const id of [off, noDigest, generic]) {
       expect(await digestsOf(id)).toHaveLength(0);
@@ -252,7 +322,13 @@ describe('weekly security digest (6G spec §4)', () => {
     await securityIssues(payments, 'high', 1);
     const ids = await Promise.all(Array.from({ length: 4 }, () => hook()));
     const results = await Promise.all(
-      Array.from({ length: 4 }, () => runDigests({ db: h.ctx.db, now: () => MONDAY_BERLIN })),
+      Array.from({ length: 4 }, () =>
+        runDigests({
+          db: h.ctx.db,
+          limits: () => limits,
+          now: () => MONDAY_BERLIN,
+        }),
+      ),
     );
     for (const id of ids) expect(await digestsOf(id)).toHaveLength(1);
     expect(results.reduce((n, r) => n + r.sent, 0)).toBe(4);
@@ -272,7 +348,11 @@ describe('weekly security digest (6G spec §4)', () => {
       UPDATE analyses SET gate_status = 'failed'
        WHERE id = (SELECT last_analysis_id FROM branches WHERE project_id = ${last!.id} AND is_main)`);
     const id = await hook();
-    await runDigests({ db: h.ctx.db, now: () => MONDAY_BERLIN });
+    await runDigests({
+      db: h.ctx.db,
+      limits: () => limits,
+      now: () => MONDAY_BERLIN,
+    });
     const [digest] = await digestsOf(id);
     expect(digest!.totals.projects).toBe(24);
     expect(digest!.rows).toHaveLength(20);
@@ -321,6 +401,7 @@ describe('weekly security digest (6G spec §4)', () => {
     try {
       const result = await runDigests({
         db: h.ctx.db,
+        limits: () => limits,
         now: () => MONDAY_BERLIN,
         logger: { info: () => undefined, warn: (o: unknown) => warnings.push(o) },
       });
@@ -338,7 +419,11 @@ describe('weekly security digest (6G spec §4)', () => {
     expect(warnings).toEqual([expect.objectContaining({ webhookId: broken })]);
     // Its week was rolled back with the delivery: the next hourly run sends it.
     expect(await lastWeekOf(broken)).toBeNull();
-    await runDigests({ db: h.ctx.db, now: () => new Date('2026-10-19T08:30:00Z') });
+    await runDigests({
+      db: h.ctx.db,
+      limits: () => limits,
+      now: () => new Date('2026-10-19T08:30:00Z'),
+    });
     expect(await digestsOf(broken)).toHaveLength(1);
     expect(await digestsOf(fine)).toHaveLength(1);
   });
@@ -406,7 +491,11 @@ describe('weekly security digest (6G spec §4)', () => {
         concurrencyKey: DIGEST_QUEUE,
         payload: {},
       });
-      const handlers = digestHandlers({ db: h.ctx.db, now: () => MONDAY_BERLIN });
+      const handlers = digestHandlers({
+        db: h.ctx.db,
+        limits: () => limits,
+        now: () => MONDAY_BERLIN,
+      });
       expect(await runUntilIdle(h.ctx.db, handlers, h.ctx.app.log)).toBe(1);
       expect(await digestsOf(id)).toHaveLength(1);
       const next = await queued();
@@ -419,6 +508,323 @@ describe('weekly security digest (6G spec §4)', () => {
         .where(eq(jobs.id, next[0]!.id));
       expect(await runUntilIdle(h.ctx.db, handlers, h.ctx.app.log)).toBe(1);
       expect(await digestsOf(id)).toHaveLength(1);
+    });
+  });
+});
+
+describe('the vulnerability section of the weekly digest (0.15 plan 6 C6)', () => {
+  let t: TestContext;
+  let org: string;
+  let otherOrg: string;
+  let key: Buffer;
+  let n = 0;
+  let current: Pick<Limits, 'vulnerabilities'>;
+
+  const hook = async (values: Partial<typeof webhookSubscriptions.$inferInsert> = {}) =>
+    first(
+      await t.db
+        .insert(webhookSubscriptions)
+        .values({
+          organizationId: org,
+          kind: 'slack',
+          url: 'https://hooks.slack.com/services/T…/…/abcd',
+          urlEnc: encryptSecret(
+            key,
+            'https://hooks.slack.com/services/T1/B1/abcd',
+            WEBHOOK_URL_AAD,
+          ),
+          secretEnc: null,
+          events: ['digest.weekly'],
+          timezone: 'Europe/Berlin',
+          ...values,
+        })
+        .returning({ id: webhookSubscriptions.id }),
+    ).id;
+  /** One run for MONDAY_BERLIN; every webhook's week is unmarked first, so a test can run twice. */
+  const send = async () => {
+    await t.db.update(webhookSubscriptions).set({ digestLastWeek: null });
+    await t.db.delete(webhookDeliveries);
+    return runDigests({ db: t.db, limits: () => current, now: () => MONDAY_BERLIN });
+  };
+  const digestsOf = async (id: string) =>
+    (await t.db.select().from(webhookDeliveries).where(eq(webhookDeliveries.subscriptionId, id)))
+      .filter((d) => d.event === 'digest.weekly')
+      .map((d) => d.payload as ChatDigestMessage);
+  const sectionOf = async (id: string) => (await digestsOf(id)).at(-1)?.vulnerabilities;
+
+  const project = async (name: string, organizationId = org) => {
+    n += 1;
+    const projectId = first(
+      await t.db
+        .insert(projects)
+        .values({ organizationId, key: `dv${n}/app`, name })
+        .returning(),
+    ).id;
+    const main = first(
+      await t.db
+        .insert(branches)
+        .values({ projectId, kind: 'branch', name: 'main', isMain: true })
+        .returning(),
+    ).id;
+    return { projectId, main };
+  };
+  /** A vulnerability row on a target and its alert item found at `foundAt`. */
+  const found = async (
+    p: { projectId: string; main: string },
+    vulnerabilityId: string,
+    options: {
+      severity?: 'critical' | 'high' | 'medium';
+      foundAt?: Date;
+      baseline?: boolean;
+      ignored?: boolean;
+      on?: string;
+      packageName?: string;
+    } = {},
+  ) => {
+    let target: { branchId: string } | { versionId: string } = { branchId: p.main };
+    if (options.on !== undefined) {
+      const versionId = first(
+        await t.db
+          .insert(projectVersions)
+          .values({
+            projectId: p.projectId,
+            label: options.on,
+            source: 'tag',
+            tag: options.on,
+            analyzedAt: SINCE,
+          })
+          .onConflictDoUpdate({
+            target: [projectVersions.projectId, projectVersions.label],
+            set: { updatedAt: new Date() },
+          })
+          .returning(),
+      ).id;
+      target = { versionId };
+    }
+    await seedTargetRow(t.db, {
+      projectId: p.projectId,
+      ...target,
+      packageName: options.packageName ?? 'lodash',
+      vulnerabilityId,
+      severity: options.severity ?? 'high',
+      ignored: options.ignored ?? false,
+    });
+    const known = await t.db
+      .select()
+      .from(vulnerabilityAlertTargets)
+      .where(
+        'branchId' in target
+          ? eq(vulnerabilityAlertTargets.branchId, target.branchId)
+          : eq(vulnerabilityAlertTargets.versionId, target.versionId),
+      );
+    const alertTarget =
+      known[0] ??
+      first(
+        await t.db
+          .insert(vulnerabilityAlertTargets)
+          .values({ projectId: p.projectId, ...target, dayOne: false })
+          .returning(),
+      );
+    await t.db.insert(vulnerabilityAlertItems).values({
+      targetId: alertTarget.id,
+      vulnerabilityId,
+      baseline: options.baseline ?? false,
+      foundAt: options.foundAt ?? new Date(SINCE.getTime() + 2 * DAY),
+    });
+  };
+  const exploited = (vulnerabilityId: string) =>
+    t.db
+      .insert(vulnerabilityKev)
+      .values({ vulnerabilityId, dateAdded: '2026-10-30', listedAt: SINCE })
+      .onConflictDoNothing();
+
+  beforeAll(async () => {
+    t = await createTestContext();
+    org = await organizationId(t, 'default');
+    otherOrg = first(
+      await t.db.insert(organizations).values({ key: 'other-org', name: 'Other' }).returning(),
+    ).id;
+    key = encryptionKey(t.config.secretKey);
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+  beforeEach(async () => {
+    await t.db.delete(webhookSubscriptions);
+    await t.db.delete(projects);
+    await t.db.delete(vulnerabilityKev);
+    current = limitsOf(true, true);
+  });
+
+  it('lists a High item found inside the window with its project and target', async () => {
+    const p = await project('Api');
+    await found(p, 'CVE-2026-2001');
+    const id = await hook();
+    expect(await send()).toEqual({ sent: 1, quiet: 0, failed: 0 });
+    expect(await sectionOf(id)).toEqual({
+      critical: 0,
+      high: 1,
+      exploited: 0,
+      projects: [
+        {
+          projectId: p.projectId,
+          name: 'Api',
+          critical: 0,
+          high: 1,
+          exploited: 0,
+          targets: ['main'],
+          moreTargets: 0,
+        },
+      ],
+      moreProjects: 0,
+    });
+  });
+
+  it('leaves out baseline items, items outside [since, until), Medium and triaged rows', async () => {
+    const p = await project('Api');
+    await found(p, 'CVE-2026-2001', { baseline: true });
+    await found(p, 'CVE-2026-2002', { foundAt: new Date(SINCE.getTime() - 1) });
+    await found(p, 'CVE-2026-2003', { foundAt: UNTIL });
+    await found(p, 'CVE-2026-2004', { severity: 'medium' });
+    await found(p, 'CVE-2026-2005', { ignored: true });
+    await found(p, 'CVE-2026-2006');
+    await found(p, 'CVE-2026-2007', { severity: 'critical' });
+    await t.db.insert(vulnerabilityDecisions).values({
+      projectId: p.projectId,
+      branchId: p.main,
+      packageName: 'lodash',
+      vulnerabilityId: 'CVE-2026-2006',
+      status: 'wont_fix',
+    });
+    const id = await hook();
+    await send();
+    expect(await sectionOf(id)).toMatchObject({
+      critical: 1,
+      high: 0,
+      projects: [{ critical: 1, high: 0 }],
+    });
+    // The window includes its start.
+    await found(p, 'CVE-2026-2008', { foundAt: SINCE });
+    await send();
+    expect(await sectionOf(id)).toMatchObject({ critical: 1, high: 1 });
+  });
+
+  it('covers the organisation, or the one project of a project webhook', async () => {
+    const mine = await project('Mine');
+    const sibling = await project('Sibling');
+    const foreign = await project('Foreign', otherOrg);
+    await found(mine, 'CVE-2026-2001');
+    await found(sibling, 'CVE-2026-2002');
+    await found(foreign, 'CVE-2026-2003');
+    const orgWide = await hook();
+    const single = await hook({ projectId: mine.projectId });
+    await send();
+    const wide = await sectionOf(orgWide);
+    expect(wide?.projects.map((x) => x.name)).toEqual(['Mine', 'Sibling']);
+    expect(wide?.high).toBe(2);
+    const own = await sectionOf(single);
+    expect(own?.projects.map((x) => x.name)).toEqual(['Mine']);
+    expect(own?.high).toBe(1);
+  });
+
+  it('counts exploited rows with vuln.priority and has null without it', async () => {
+    const p = await project('Api');
+    await found(p, 'CVE-2026-2001');
+    await found(p, 'CVE-2026-2002', { severity: 'critical' });
+    await exploited('CVE-2026-2002');
+    const id = await hook();
+    await send();
+    expect(await sectionOf(id)).toMatchObject({
+      exploited: 1,
+      projects: [{ exploited: 1, critical: 1, high: 1 }],
+    });
+    current = limitsOf(true, false);
+    await send();
+    const section = await sectionOf(id);
+    expect(section?.exploited).toBeNull();
+    expect(section?.projects[0]?.exploited).toBeNull();
+    expect(section).toMatchObject({ critical: 1, high: 1 });
+  });
+
+  it('adds no vulnerabilities key without vuln.alerts', async () => {
+    const p = await project('Api');
+    await found(p, 'CVE-2026-2001', { severity: 'critical' });
+    const id = await hook();
+    current = limitsOf(false, true);
+    // Without the licence the section is not news: a quiet week.
+    expect(await send()).toEqual({ sent: 0, quiet: 1, failed: 0 });
+    expect(await digestsOf(id)).toHaveLength(0);
+  });
+
+  it('omits the key, not null, when no row qualifies', async () => {
+    const p = await project('Api');
+    await found(p, 'CVE-2026-2001', { baseline: true });
+    const message = await buildDigest(
+      t.db,
+      { organizationId: org, projectId: null },
+      { since: SINCE, until: UNTIL, week: '2026-W43', timezone: 'Europe/Berlin' },
+      { vulnerabilities: { alerts: true, priority: true } },
+    );
+    expect('vulnerabilities' in message).toBe(false);
+  });
+
+  it('sends a week whose only news is one Critical item; a week with nothing stays quiet', async () => {
+    const p = await project('Api');
+    const id = await hook();
+    expect(await send()).toEqual({ sent: 0, quiet: 1, failed: 0 });
+    await found(p, 'CVE-2026-2001', { severity: 'critical' });
+    expect(await send()).toEqual({ sent: 1, quiet: 0, failed: 0 });
+    const [digest] = await digestsOf(id);
+    expect(digest).toMatchObject({ totals: { newSecurity: 0, failing: 0 } });
+    expect(digest!.vulnerabilities).toMatchObject({ critical: 1, high: 0 });
+  });
+
+  it('orders projects by exploited, critical, high, name; caps them at 10; totals cover all', async () => {
+    let v = 2100;
+    for (const name of ['Kilo', 'Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf']) {
+      await found(await project(name), `CVE-2026-${v++}`);
+    }
+    const zulu = await project('Zulu');
+    await found(zulu, 'CVE-2026-2200');
+    await exploited('CVE-2026-2200');
+    const yankee = await project('Yankee');
+    await found(yankee, 'CVE-2026-2201', { severity: 'critical' });
+    await found(yankee, 'CVE-2026-2202', { severity: 'critical' });
+    const xray = await project('Xray');
+    await found(xray, 'CVE-2026-2203');
+    await found(xray, 'CVE-2026-2204');
+    const id = await hook();
+    await send();
+    const section = (await sectionOf(id))!;
+    expect(section.projects.map((x) => x.name)).toEqual([
+      'Zulu',
+      'Yankee',
+      'Xray',
+      'Alpha',
+      'Bravo',
+      'Charlie',
+      'Delta',
+      'Echo',
+      'Foxtrot',
+      'Golf',
+    ]);
+    expect(section.moreProjects).toBe(1);
+    expect(section).toMatchObject({ critical: 2, high: 11, exploited: 1 });
+  });
+
+  it('caps the targets of a project at 5 and counts the rest', async () => {
+    const p = await project('Api');
+    await found(p, 'CVE-2026-2001');
+    for (const label of ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']) {
+      await found(p, 'CVE-2026-2001', { on: label });
+    }
+    const id = await hook();
+    await send();
+    const [shown] = (await sectionOf(id))!.projects;
+    expect(shown).toMatchObject({
+      high: 1,
+      targets: ['main', 'v1', 'v2', 'v3', 'v4'],
+      moreTargets: 3,
     });
   });
 });

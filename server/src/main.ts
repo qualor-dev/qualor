@@ -288,7 +288,7 @@ async function main(): Promise<void> {
       // E1 spec: the daily licence expiry check (it queues email; the mail worker sends it).
       ...licenseAlertHandlers({ db: database.db, edition, config, logger }),
       // 6G R14: the hourly weekly-digest check (it queues deliveries; the webhook worker sends them).
-      ...digestHandlers({ db: database.db, logger }),
+      ...digestHandlers({ db: database.db, limits: () => edition.limits(), logger }),
     },
     concurrency: config.workerConcurrency,
     logger,

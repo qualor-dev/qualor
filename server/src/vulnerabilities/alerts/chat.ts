@@ -1,11 +1,14 @@
-import { inArray } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
 import { uuidList } from '../../db/bulk';
 import type { Executor } from '../../db/client';
 import { projects } from '../../db/schema';
 import {
   MAX_EXPLOITED_PROJECTS,
   MAX_EXPLOITED_ROWS,
+  MAX_TARGET_NAMES,
+  MAX_VULNERABILITY_PROJECTS,
   type ChatExploitedMessage,
+  type DigestVulnerabilities,
   type ExploitedRow,
 } from '../../webhooks/chat/messages';
 import { createDeliveries, type NewDelivery } from '../../webhooks/deliveries';
@@ -119,4 +122,90 @@ export async function exploitedDeliveries(
     deliveries.push({ subscriptionId, event: EVENT, payload: exploitedMessage(covered) });
   }
   return (await createDeliveries(tx, deliveries)).length;
+}
+
+const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * The vulnerability section of the weekly digest (0.15 plan 6 C6): the High and Critical rows of
+ * the items found in `[since, until)` on the scope's tracked targets (the organisation's projects,
+ * or the one project), that are not baseline, still open and not ignored. Counts are rows;
+ * `exploited` is null without `options.priority`. Null when no row qualifies. It only reads: the
+ * alert lock is not taken (C7), one statement sees one snapshot and a `found_at` lies in one window.
+ */
+export async function digestVulnerabilities(
+  tx: Executor,
+  scope: { organizationId: string; projectId: string | null },
+  window: { since: Date; until: Date },
+  options: { priority: boolean },
+): Promise<DigestVulnerabilities | null> {
+  const projectFilter = scope.projectId === null ? sql`` : sql`AND p.id = ${scope.projectId}`;
+  const items = await tx.execute<{ id: string }>(sql`
+    SELECT i.id
+      FROM vulnerability_alert_items i
+      JOIN vulnerability_alert_targets t ON t.id = i.target_id
+      JOIN projects p ON p.id = t.project_id
+     WHERE p.organization_id = ${scope.organizationId} ${projectFilter}
+       AND NOT i.baseline AND i.found_at >= ${window.since} AND i.found_at < ${window.until}`);
+  if (items.rows.length === 0) return null;
+  const rowsOf = await alertRows(
+    tx,
+    items.rows.map((item) => item.id),
+    options,
+  );
+  const perProject: {
+    projectId: string;
+    critical: number;
+    high: number;
+    exploited: number;
+    targets: string[];
+  }[] = [];
+  for (const [projectId, rows] of rowsOf) {
+    const kept = rows.filter((r) => r.severity === 'critical' || r.severity === 'high');
+    if (kept.length === 0) continue;
+    const targets = new Set<string>();
+    for (const row of kept) for (const target of row.targets) targets.add(target);
+    perProject.push({
+      projectId,
+      critical: kept.filter((r) => r.severity === 'critical').length,
+      high: kept.filter((r) => r.severity === 'high').length,
+      exploited: kept.filter((r) => r.exploited !== null).length,
+      targets: [...targets],
+    });
+  }
+  if (perProject.length === 0) return null;
+  const names = new Map(
+    (
+      await tx
+        .select({ id: projects.id, name: sql<string>`left(${projects.name}, 500)` })
+        .from(projects)
+        .where(inArray(projects.id, uuidList(perProject.map((p) => p.projectId))))
+    ).map((p) => [p.id, p.name]),
+  );
+  const named = perProject.map((p) => ({ ...p, name: names.get(p.projectId) ?? '' }));
+  named.sort(
+    (a, b) =>
+      b.exploited - a.exploited ||
+      b.critical - a.critical ||
+      b.high - a.high ||
+      a.name.localeCompare(b.name, 'en') ||
+      compare(a.projectId, b.projectId),
+  );
+  const sum = (pick: (p: (typeof named)[number]) => number) =>
+    named.reduce((n, p) => n + pick(p), 0);
+  return {
+    critical: sum((p) => p.critical),
+    high: sum((p) => p.high),
+    exploited: options.priority ? sum((p) => p.exploited) : null,
+    projects: named.slice(0, MAX_VULNERABILITY_PROJECTS).map((p) => ({
+      projectId: p.projectId,
+      name: p.name,
+      critical: p.critical,
+      high: p.high,
+      exploited: options.priority ? p.exploited : null,
+      targets: p.targets.slice(0, MAX_TARGET_NAMES).map((name) => name.slice(0, 500)),
+      moreTargets: Math.max(0, p.targets.length - MAX_TARGET_NAMES),
+    })),
+    moreProjects: Math.max(0, named.length - MAX_VULNERABILITY_PROJECTS),
+  };
 }

@@ -5,6 +5,8 @@ import type { Db, Executor } from '../db/client';
 import { uuidv7 } from '../db/ids';
 import { LOCKS } from '../db/locks';
 import { organizations, webhookSubscriptions } from '../db/schema';
+import type { Limits } from '../limits';
+import { digestVulnerabilities } from '../vulnerabilities/alerts/chat';
 import type { JobHandlers } from '../queue/worker';
 import {
   MAX_DIGEST_ROWS,
@@ -25,6 +27,8 @@ export interface DigestDeps {
   db: Db;
   /** Tests fix the clock. */
   now?: () => Date;
+  /** Read once per run: the vulnerability section needs `vuln.alerts` (and `vuln.priority`). */
+  limits: () => Pick<Limits, 'vulnerabilities'>;
   logger?: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
 }
 
@@ -35,9 +39,17 @@ function needsAttention(r: DigestRow): boolean {
   return r.newSecurity > 0 || isFailing(r);
 }
 
-/** R8: nothing new and every gate passes (none and never analysed count as passing). */
+/**
+ * R8: nothing new and every gate passes (none and never analysed count as passing). New High or
+ * Critical vulnerabilities in the section (0.15 plan 6 C6) are news too.
+ */
 export function isQuiet(m: ChatDigestMessage): boolean {
-  return m.totals.newSecurity === 0 && m.totals.failing === 0;
+  const vulnerabilities = m.vulnerabilities;
+  return (
+    m.totals.newSecurity === 0 &&
+    m.totals.failing === 0 &&
+    (vulnerabilities === undefined || vulnerabilities.critical + vulnerabilities.high === 0)
+  );
 }
 
 /** The result column holding the new issues of one severity (a fixed name, never user input). */
@@ -54,6 +66,7 @@ export async function buildDigest(
   tx: Executor,
   scope: { organizationId: string; projectId: string | null },
   window: { since: Date; until: Date; week: string; timezone: string },
+  options: { vulnerabilities: { alerts: boolean; priority: boolean } },
 ): Promise<ChatDigestMessage> {
   const projectFilter = scope.projectId === null ? sql`` : sql`AND p.id = ${scope.projectId}`;
   const isNew = sql`i.first_seen_at >= ${window.since} AND i.first_seen_at < ${window.until}`;
@@ -132,6 +145,11 @@ export async function buildDigest(
     .where(eq(organizations.id, scope.organizationId));
   const project =
     scope.projectId === null ? null : (all.find((r) => r.projectId === scope.projectId) ?? null);
+  const vulnerabilities = options.vulnerabilities.alerts
+    ? await digestVulnerabilities(tx, scope, window, {
+        priority: options.vulnerabilities.priority,
+      })
+    : null;
   return {
     type: 'digest',
     week: window.week,
@@ -156,6 +174,7 @@ export async function buildDigest(
       path: i.path,
       line: i.start_line,
     })),
+    ...(vulnerabilities !== null && { vulnerabilities }),
   };
 }
 
@@ -170,6 +189,7 @@ export async function runDigests(
   deps: DigestDeps,
 ): Promise<{ sent: number; quiet: number; failed: number }> {
   const now = deps.now?.() ?? new Date();
+  const { vulnerabilities } = deps.limits();
   const candidates = await deps.db
     .select({
       id: webhookSubscriptions.id,
@@ -210,6 +230,7 @@ export async function runDigests(
           tx,
           { organizationId: c.organizationId, projectId: c.projectId },
           { ...digestWindow(now, c.timezone), week, timezone: c.timezone },
+          { vulnerabilities },
         );
         if (isQuiet(message)) return 'quiet' as const;
         await createDeliveries(tx, [
