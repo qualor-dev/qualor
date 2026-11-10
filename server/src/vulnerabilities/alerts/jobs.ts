@@ -20,11 +20,11 @@ export interface AlertDeps extends NotifyDeps {
 export function alertHandlers(deps: AlertDeps): JobHandlers {
   return {
     [ALERTS_QUEUE]: async () => {
-      const { mails, items } = await sendExploitedAlerts(deps);
-      if (mails > 0) {
+      const { mails, posts, items } = await sendExploitedAlerts(deps);
+      if (mails + posts > 0) {
         deps.logger?.info(
-          { component: 'vulnerabilities', mails, items },
-          'exploited vulnerability emails queued',
+          { component: 'vulnerabilities', mails, posts, items },
+          'exploited vulnerability emails and posts queued',
         );
       }
     },

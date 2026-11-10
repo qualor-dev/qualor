@@ -63,8 +63,9 @@ describe('runMigrations / pendingMigrations', () => {
     // (0.15, the decisions on vulnerabilities and the checks of their targets),
     // 0023_vulnerability_priority (0.15, the KEV and EPSS tables), 0024_vulnerability_alerts (0.15, the watch flag, KEV
     // delisting and the alert memory), 0025_compliance_versions (0.15, a version and an SBOM on a
-    // compliance report).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(26);
+    // compliance report), 0026_chat_exploited_event (0.15, the exploited-vulnerability event on the
+    // chat webhooks that have the weekly digest).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(27);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -749,5 +750,64 @@ describe('runMigrations / pendingMigrations', () => {
          FROM project_watches w`,
     );
     expect(rows).toEqual([{ new_vulnerabilities: true, delisted: null }]);
+  });
+
+  it('adds the exploited-vulnerability event to the chat webhooks that have the digest (0026)', async () => {
+    const db = await createTestDatabase({ migrated: false });
+    t = db;
+    const upTo25 = migrationsUpTo(26); // 0000_extensions … 0025_compliance_versions
+    try {
+      await runMigrations(db.pool, upTo25.dir);
+    } finally {
+      upTo25.remove();
+    }
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(journalLength() - 26);
+    const org = randomUUID();
+    await db.pool.query(
+      `INSERT INTO organizations (id, key, name) VALUES ($1, 'mig-0026', 'Mig')`,
+      [org],
+    );
+    const hook = async (kind: string, events: string[]) => {
+      const id = randomUUID();
+      const chat = kind !== 'generic';
+      await db.pool.query(
+        `INSERT INTO webhook_subscriptions (id, organization_id, kind, url, url_enc, secret_enc, events)
+         VALUES ($1, $2, $3, 'https://example.com/hook', $4, $5, $6)`,
+        [id, org, kind, chat ? '{}' : null, chat ? null : '{}', events],
+      );
+      return id;
+    };
+    const withDigest = await hook('slack', ['gate.failed', 'digest.weekly']);
+    const teams = await hook('teams', ['digest.weekly']);
+    const noDigest = await hook('slack', ['gate.failed']);
+    const has = await hook('slack', ['digest.weekly', 'vulnerabilities.exploited']);
+    const generic = await hook('generic', ['digest.weekly', 'analysis.completed']);
+    const events = async () =>
+      Object.fromEntries(
+        (await db.pool.query('SELECT id, events FROM webhook_subscriptions')).rows.map(
+          (r: { id: string; events: string[] }) => [r.id, r.events],
+        ),
+      );
+
+    await runMigrations(db.pool, MIGRATIONS_DIR);
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
+    const after = await events();
+    expect(after).toEqual({
+      [withDigest]: ['gate.failed', 'digest.weekly', 'vulnerabilities.exploited'],
+      [teams]: ['digest.weekly', 'vulnerabilities.exploited'],
+      [noDigest]: ['gate.failed'],
+      [has]: ['digest.weekly', 'vulnerabilities.exploited'],
+      [generic]: ['digest.weekly', 'analysis.completed'],
+    });
+
+    // Running the statement again changes nothing.
+    const statement = readFileSync(
+      path.join(MIGRATIONS_DIR, '0026_chat_exploited_event.sql'),
+      'utf8',
+    )
+      .split('--> statement-breakpoint')
+      .join(' ');
+    await db.pool.query(statement);
+    expect(await events()).toEqual(after);
   });
 });
