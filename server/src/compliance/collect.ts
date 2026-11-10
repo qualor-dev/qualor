@@ -9,16 +9,23 @@ import {
   organizations,
   projects,
 } from '../db/schema';
+import { effectiveDecisionJoin, type VexJustification } from '../vulnerabilities/decisions';
+import { scopedRows } from '../vulnerabilities/summary';
+import { readPriorityState } from '../vulndb/priority/state';
+import { readVulndbState } from '../vulndb/state';
+import { currentDataset } from '../vulndb/store';
 import { cut } from './text';
 import {
   MAX_ORGANIZATION_PROJECTS,
   TREND_POINTS,
   TRIAGE_COMMENT_MAX,
+  type ComplianceDatasets,
   type ComplianceFindingGroup,
   type ComplianceFindingRow,
   type ComplianceProjectSource,
   type ComplianceSource,
   type ComplianceTriageRow,
+  type ComplianceVulnerability,
   type FindingSection,
 } from './types';
 
@@ -48,14 +55,96 @@ function abortCheck(signal: AbortSignal | undefined): void {
 const uuidArray = (ids: string[]) => sql`${sql.param(ids)}::uuid[]`;
 
 /**
+ * The server's facts of the dependency issues `ids` (Trivy issues: the rule's `engine_rule_id` is
+ * the vulnerability id), in one query. They come from the rows of the issue's own branch
+ * (`scopedRows`), whatever the number of installed versions. `openOnly` keeps the effective-open,
+ * not ignored rows (an open finding); a triaged finding takes all rows, because the triage row
+ * describes the same pair. KEV and EPSS are per vulnerability id and only given with `priority`.
+ */
+async function dependencyFacts(
+  tx: Executor,
+  ids: string[],
+  options: { openOnly: boolean; priority: boolean },
+): Promise<Map<string, ComplianceVulnerability>> {
+  const out = new Map<string, ComplianceVulnerability>();
+  if (ids.length === 0) return out;
+  const open = options.openOnly ? sql`AND r.eff_status = 'open' AND NOT r.ignored` : sql``;
+  const rows = (
+    await tx.execute<{
+      id: string;
+      vulnerability_id: string;
+      package_name: string;
+      fixed: string[] | null;
+      kev: boolean;
+      kev_date_added: string | null;
+      epss_score: number | null;
+      epss_percentile: number | null;
+    }>(sql`
+      SELECT i.id, rl.engine_rule_id AS vulnerability_id, i.package_name, v.fixed, v.kev,
+             v.kev_date_added, v.epss_score, v.epss_percentile
+        FROM issues i
+        JOIN rules rl ON rl.id = i.rule_id AND rl.engine_id = 'trivy'
+        JOIN LATERAL (
+          SELECT array_agg(DISTINCT r.fixed_version)
+                   FILTER (WHERE r.fixed_version IS NOT NULL) AS fixed,
+                 bool_or(r.kev) AS kev, max(r.kev_date_added) AS kev_date_added,
+                 max(r.epss_score) AS epss_score, max(r.epss_percentile) AS epss_percentile
+            FROM (${scopedRows(
+              sql`tv.branch_id = i.branch_id AND tv.package_name = i.package_name
+                AND tv.vulnerability_id = rl.engine_rule_id`,
+            )}) r
+           WHERE true ${open}
+          HAVING count(*) > 0) v ON true
+       WHERE i.id = ANY(${uuidArray(ids)}) AND i.package_name IS NOT NULL`)
+  ).rows;
+  for (const r of rows) {
+    out.set(r.id, {
+      id: r.vulnerability_id,
+      packageName: r.package_name,
+      fixedVersions: [...(r.fixed ?? [])].sort(),
+      kev: options.priority && r.kev && r.kev_date_added ? { dateAdded: r.kev_date_added } : null,
+      epss:
+        options.priority && r.epss_score !== null && r.epss_percentile !== null
+          ? { score: r.epss_score, percentile: r.epss_percentile }
+          : null,
+    });
+  }
+  return out;
+}
+
+/** The dataset dates; KEV and EPSS only with `vuln.priority`. */
+async function datasetsOf(tx: Executor, priority: boolean): Promise<ComplianceDatasets> {
+  const dataset = await currentDataset(tx, await readVulndbState(tx));
+  const state = priority ? await readPriorityState(tx) : null;
+  return {
+    vulnerabilityDatabase: dataset
+      ? { builtAt: isoReq(dataset.builtAt ?? dataset.createdAt), digest: dataset.digest }
+      : null,
+    kev:
+      state?.kev.refreshedAt && state.kev.digest
+        ? { refreshedAt: state.kev.refreshedAt, digest: state.kev.digest }
+        : null,
+    epss:
+      state?.epss.refreshedAt && state.epss.digest
+        ? {
+            dataDate: state.epss.dataDate,
+            refreshedAt: state.epss.refreshedAt,
+            digest: state.epss.digest,
+          }
+        : null,
+  };
+}
+
+/**
  * Reads one consistent snapshot of a report's scope (4E-1 §2.1, §2.3): a repeatable-read,
  * read-only transaction, so the counts, the lists and the gate come from the same moment.
  */
 export async function collectCompliance(
   db: Db,
   reportId: string,
-  options: { limit: number; signal?: AbortSignal },
+  options: { limit: number; signal?: AbortSignal; priority?: boolean },
 ): Promise<ComplianceSource> {
+  const priority = options.priority === true;
   return db.transaction(
     async (tx) => {
       const [report] = await tx
@@ -228,8 +317,15 @@ export async function collectCompliance(
                 inNewCode: f.in_new_code,
                 firstSeenAt: isoReq(f.first_seen_at),
                 section: sectionOf(r.engineId),
+                vulnerability: null as ComplianceVulnerability | null,
               };
             });
+      const openFacts = await dependencyFacts(
+        tx,
+        findings.filter((f) => f.section === 'dependency').map((f) => f.id),
+        { openOnly: true, priority },
+      );
+      for (const f of findings) f.vulnerability = openFacts.get(f.id) ?? null;
       abortCheck(options.signal);
 
       const triage: ComplianceTriageRow[] =
@@ -247,11 +343,18 @@ export async function collectCompliance(
                 by: string | null;
                 at: Date | null;
                 comment: string | null;
+                reason: string | null;
               }>(sql`
                 SELECT i.id, p.key AS project_key, i.path, i.start_line, i.rule_id, i.severity,
                        i.status, coalesce(u.display_name, u.username) AS by,
-                       c.created_at AS at, c.comment
+                       c.created_at AS at, c.comment, d.reason
                   FROM issues i JOIN projects p ON p.id = i.project_id
+                  LEFT JOIN rules rl ON rl.id = i.rule_id AND rl.engine_id = 'trivy'
+                  LEFT JOIN LATERAL (
+                    SELECT i.project_id, i.package_name, rl.engine_rule_id AS vulnerability_id,
+                           i.branch_id, NULL::uuid AS version_id
+                     WHERE rl.id IS NOT NULL AND i.package_name IS NOT NULL) tv ON true
+                  ${effectiveDecisionJoin('tv', 'd')}
                   LEFT JOIN LATERAL (
                     SELECT ic.user_id, ic.created_at, ic.comment FROM issue_changes ic
                      WHERE ic.issue_id = i.id AND ic.field = 'status' AND ic.new_value = i.status
@@ -275,8 +378,17 @@ export async function collectCompliance(
                 by: t.by,
                 at: iso(t.at),
                 comment: cut(t.comment, TRIAGE_COMMENT_MAX),
+                reason: t.reason as VexJustification | null,
+                vulnerability: null as ComplianceVulnerability | null,
               };
             });
+      const triageFacts = await dependencyFacts(
+        tx,
+        triage.filter((t) => t.section === 'dependency').map((t) => t.id),
+        { openOnly: false, priority },
+      );
+      for (const t of triage) t.vulnerability = triageFacts.get(t.id) ?? null;
+      const datasets = await datasetsOf(tx, priority);
 
       const single = report.projectId === null ? null : (scopeProjects[0] ?? null);
       const singleBranch = single ? (branchOf.get(single.id) ?? null) : null;
@@ -293,6 +405,7 @@ export async function collectCompliance(
         groups,
         findings,
         triage,
+        datasets,
       };
     },
     { isolationLevel: 'repeatable read', accessMode: 'read only' },

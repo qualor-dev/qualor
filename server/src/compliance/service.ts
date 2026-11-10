@@ -32,6 +32,7 @@ import { collectCompliance, ComplianceCollectError } from './collect';
 import { cut } from './text';
 
 export const FEATURE = 'compliance-export';
+const PRIORITY_FEATURE = 'vuln.priority';
 /** 4E-1 §1: the stored summary is at most 64 KiB of JSON. */
 const SUMMARY_MAX = 65_536;
 /** 4E-1 §1: a failed row's reason, in characters. */
@@ -405,7 +406,10 @@ export function createComplianceService(deps: {
   const collect: PluginCompliance['collect'] = async (id, options) => {
     gate();
     try {
-      return await collectCompliance(db, id, options);
+      return await collectCompliance(db, id, {
+        ...options,
+        priority: deps.isFeatureActive(PRIORITY_FEATURE),
+      });
     } catch (err) {
       if (err instanceof ComplianceCollectError) {
         throw new ProblemError(422, 'REPORT_BUILD_FAILED', 'The report could not be built', {

@@ -1,3 +1,4 @@
+import type { VexJustification } from '../vulnerabilities/decisions';
 import type {
   ComplianceReportScope,
   ComplianceReportStatus,
@@ -51,6 +52,18 @@ export interface ComplianceFindingGroup {
   oldestFirstSeenAt: string;
 }
 
+/**
+ * The server's facts about the vulnerability of a dependency finding. `kev` and `epss` are null
+ * without `vuln.priority`, and when the vulnerability has none.
+ */
+export interface ComplianceVulnerability {
+  id: string;
+  packageName: string;
+  fixedVersions: string[];
+  kev: { dateAdded: string } | null;
+  epss: { score: number; percentile: number } | null;
+}
+
 export interface ComplianceFindingRow {
   id: string;
   project: string;
@@ -66,6 +79,8 @@ export interface ComplianceFindingRow {
   inNewCode: boolean;
   firstSeenAt: string;
   section: FindingSection;
+  /** Null for code and secrets, and when no vulnerability row of the server matches. */
+  vulnerability: ComplianceVulnerability | null;
 }
 
 export interface ComplianceTriageRow {
@@ -81,6 +96,16 @@ export interface ComplianceTriageRow {
   by: string | null;
   at: string | null;
   comment: string | null;
+  /** The reason of the effective decision of a dependency finding; null otherwise. */
+  reason: VexJustification | null;
+  vulnerability: ComplianceVulnerability | null;
+}
+
+/** The datasets a report was built from; KEV and EPSS are null without `vuln.priority`. */
+export interface ComplianceDatasets {
+  vulnerabilityDatabase: { builtAt: string; digest: string } | null;
+  kev: { refreshedAt: string; digest: string } | null;
+  epss: { dataDate: string | null; refreshedAt: string; digest: string } | null;
 }
 
 export interface ComplianceSource {
@@ -100,6 +125,7 @@ export interface ComplianceSource {
   findings: ComplianceFindingRow[];
   /** At most limit + 1 rows, newest decision first. */
   triage: ComplianceTriageRow[];
+  datasets: ComplianceDatasets;
 }
 
 export const MAX_ORGANIZATION_PROJECTS = 2_000;

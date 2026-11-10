@@ -12,6 +12,7 @@ import type { AuditSettingsInput, AuditSettingsView } from '../audit/settings';
 import type { AuditHead, AuditVerification } from '../audit/verify';
 import type { OrganizationAccess } from '../auth/access';
 import type {
+  ComplianceDatasets,
   ComplianceFindingGroup,
   ComplianceFindingRow,
   ComplianceProjectSource,
@@ -20,6 +21,7 @@ import type {
   ComplianceSource,
   ComplianceStandardRef,
   ComplianceTriageRow,
+  ComplianceVulnerability,
   FindingSection,
   Severity,
 } from '../compliance/types';
@@ -87,6 +89,7 @@ export type {
 
 /** The core types the 4E-1 compliance service uses (4E-1 §1.1), for the plugin's `import type`. */
 export type {
+  ComplianceDatasets,
   ComplianceFindingGroup,
   ComplianceFindingRow,
   ComplianceProjectSource,
@@ -95,6 +98,7 @@ export type {
   ComplianceSource,
   ComplianceStandardRef,
   ComplianceTriageRow,
+  ComplianceVulnerability,
   FindingSection,
   Severity,
 };
