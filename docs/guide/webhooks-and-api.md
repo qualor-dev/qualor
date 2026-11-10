@@ -202,8 +202,8 @@ q -X POST "$QUALOR_URL/api/v0/issues/bulk-transition" \
 
 ### SBOM and VEX export (enterprise)
 
-`GET /projects/sbom` and `GET /projects/vex` download a file for a branch or a version. They need the
-`sbom` feature (403 `FEATURE_NOT_LICENSED` without it).
+`GET /projects/sbom` and `GET /projects/vex` download a file for a branch or a version. They need
+the `sbom` feature (403 `FEATURE_NOT_LICENSED` without it).
 
 | Parameter | Meaning |
 |---|---|
@@ -219,10 +219,8 @@ q -X POST "$QUALOR_URL/api/v0/issues/bulk-transition" \
 | 404 `NOT_FOUND` | No such branch or version. For the SBOM, the target has no dependency inventory yet. For the VEX, vulnerability monitoring is off, or the target has not been checked yet |
 | 403 | `FEATURE_NOT_LICENSED`, or `INSUFFICIENT_SCOPE` for a personal token without the `read` scope |
 
-The VEX is available once the target's first vulnerability check has finished.
-
-A project analysis token reads the SBOM and VEX of its own project and nothing else, so a release job
-needs no personal token. A person needs read access to the project.
+A project analysis token reads the SBOM and VEX of its own project and no other project's, so a
+release job needs no personal token. A person needs read access to the project.
 
 ```sh
 curl -fsS -G -H "Authorization: Bearer $QUALOR_PROJECT_TOKEN" -OJ \

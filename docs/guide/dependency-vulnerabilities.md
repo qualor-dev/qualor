@@ -5,7 +5,11 @@ branches and versions, and lets you decide on each one once for the whole projec
 them by matching each target's dependency list with its own copy of the Trivy database
 ([The vulnerability database](./vulnerability-database.md)). A scan does not have to run.
 
-The tab sits between **Issues** and **Dependencies**. Everything on this page is in every edition.
+The tab sits between **Issues** and **Dependencies**. Everything on this page is in every edition
+except three sections, which need Business or Enterprise:
+[exploited](#exploited-and-exploit-probability-business-and-enterprise),
+[alerts](#alerts-business-and-enterprise) and
+[export](#export-sbom-and-vex-business-and-enterprise).
 
 ## When the tab shows
 
@@ -161,13 +165,13 @@ A comment has at most 2000 characters. The decision records who made it and when
 The reason says why the project is not affected. The reasons are the five VEX justifications, in
 plain words:
 
-| Reason in the UI | OpenVEX justification |
-|---|---|
-| The package is not in the build | `component_not_present` |
-| The vulnerable code is not in the build | `vulnerable_code_not_present` |
-| The vulnerable code is never called | `vulnerable_code_not_in_execute_path` |
-| An attacker cannot control the input | `vulnerable_code_cannot_be_controlled_by_adversary` |
-| Another control already protects it | `inline_mitigations_already_exist` |
+| Reason in the UI | OpenVEX `justification` | CycloneDX `justification` (in the [export](#export-sbom-and-vex-business-and-enterprise)) |
+|---|---|---|
+| The package is not in the build | `component_not_present` | `code_not_present` |
+| The vulnerable code is not in the build | `vulnerable_code_not_present` | `code_not_present` |
+| The vulnerable code is never called | `vulnerable_code_not_in_execute_path` | `code_not_reachable` |
+| An attacker cannot control the input | `vulnerable_code_cannot_be_controlled_by_adversary` | `requires_environment` |
+| Another control already protects it | `inline_mitigations_already_exist` | `protected_by_mitigating_control` |
 
 **Change status** on a card opens the dialog. It needs the permission to triage issues
 (Maintainer and above). A Viewer reads the tab and sees no **Change status** button.
@@ -257,9 +261,6 @@ A VEX has one entry for each vulnerability in each package of the target, with t
 project-wide one. Vulnerabilities that `.trivyignore` ignores are left out. KEV and EPSS are not in
 the file.
 
-The VEX needs vulnerability monitoring on and the target's first check finished. Before that the
-server answers 404.
-
 A checked target with no findings gives a VEX with no entries. For OpenVEX that is an empty
 `statements` list, which the OpenVEX schema does not accept, because it asks for at least one
 statement. CycloneDX VEX has no such limit.
@@ -270,16 +271,8 @@ statement. CycloneDX VEX has no such limit.
 | **Not affected (false positive)** | `state: not_affected` and a `justification` | `not_affected` and a `justification` |
 | **Affected, won't fix** | `state: exploitable` and `response: [will_not_fix]` | `affected` and an `action_statement` |
 
-The reason of a not-affected decision maps to a CycloneDX justification. OpenVEX keeps its own
-name.
-
-| Reason in the UI | OpenVEX `justification` | CycloneDX `justification` |
-|---|---|---|
-| The package is not in the build | `component_not_present` | `code_not_present` |
-| The vulnerable code is not in the build | `vulnerable_code_not_present` | `code_not_present` |
-| The vulnerable code is never called | `vulnerable_code_not_in_execute_path` | `code_not_reachable` |
-| An attacker cannot control the input | `vulnerable_code_cannot_be_controlled_by_adversary` | `requires_environment` |
-| Another control already protects it | `inline_mitigations_already_exist` | `protected_by_mitigating_control` |
+The reason of a not-affected decision becomes the `justification` of each format, as the
+[reasons table](#statuses-and-reasons) shows.
 
 The comment and the author of a decision travel with it.
 
@@ -291,8 +284,16 @@ The comment and the author of a decision travel with it.
 
 A [migrated decision](#migrated-decisions) has no reason, so it has no `justification`, and its
 comment says why. When OpenVEX needs a statement and the decision has no comment, the file says "No
-reason was recorded." for not affected and "No action is planned." for won't fix. An open entry has
-no decision, so it has no author and no date.
+reason was recorded." for not affected and "No action is planned." for won't fix. An entry with no
+decision has no author and no date. An Open decision, made by a reopen or as an override for one
+target, carries its author, date and (CycloneDX) comment like any other.
+
+### Which file a tool reads
+
+| Tool | Reads |
+|---|---|
+| Trivy | the OpenVEX file, with either SBOM: `trivy sbom <sbom> --vex <file>` |
+| Dependency-Track | the CycloneDX SBOM, imported first, then the CycloneDX VEX, imported into the same project |
 
 ### Download from CI
 
