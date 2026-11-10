@@ -33,8 +33,7 @@ function entriesOf(licenses: readonly string[]): string[] {
 }
 
 /**
- * The CycloneDX `licenses` of a component (a list read as all applying). All simple ids give id
- * entries; all valid but some compound gives one expression; any unparsable entry gives names.
+ * The CycloneDX `licenses` of a component (a list read as all applying). all valid gives one AND-joined expression (even for a single id, since the CycloneDX id enum is shorter than the SPDX list); any unparsable entry gives names.
  * No licences gives undefined, so the key is left out.
  */
 export function cycloneDxLicenses(licenses: readonly string[]): object[] | undefined {
@@ -45,8 +44,6 @@ export function cycloneDxLicenses(licenses: readonly string[]): object[] | undef
   if (exprs.length !== entries.length) {
     return entries.map((name) => ({ license: { name } }));
   }
-  const ids = exprs.flatMap((e) => (e.kind === 'id' ? [e.id] : []));
-  if (ids.length === exprs.length) return ids.map((id) => ({ license: { id } }));
   return [{ expression: andAll(exprs) }];
 }
 

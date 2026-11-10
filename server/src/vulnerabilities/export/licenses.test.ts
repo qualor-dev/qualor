@@ -6,11 +6,16 @@ const ref = (text: string): string =>
   `LicenseRef-${createHash('sha256').update(text).digest('hex').slice(0, 12)}`;
 
 describe('cycloneDxLicenses', () => {
-  it('lists simple SPDX ids as id entries', () => {
+  it('gives one AND-joined expression for simple ids', () => {
     expect(cycloneDxLicenses(['MIT', 'Apache-2.0'])).toEqual([
-      { license: { id: 'MIT' } },
-      { license: { id: 'Apache-2.0' } },
+      { expression: 'MIT AND Apache-2.0' },
     ]);
+    expect(cycloneDxLicenses(['MIT'])).toEqual([{ expression: 'MIT' }]);
+  });
+
+  it('writes ids in their canonical spelling', () => {
+    expect(cycloneDxLicenses(['mit'])).toEqual([{ expression: 'MIT' }]);
+    expect(spdxLicense(['mit', 'apache-2.0'], new Map())).toBe('MIT AND Apache-2.0');
   });
 
   it('joins a list with a compound entry into one AND expression', () => {

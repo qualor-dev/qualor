@@ -63,6 +63,19 @@ describe('buildCycloneDxSbom', () => {
     expect(validateAgainst('cyclonedx', buildCycloneDxSbom(doc(), []))).toEqual([]);
   });
 
+  it('validates an SPDX id that the CycloneDX id enum lacks', () => {
+    const pkg: ExportPackage = {
+      ecosystem: 'npm',
+      name: 'slicer',
+      version: '1.0.0',
+      purl: 'pkg:npm/slicer@1.0.0',
+      licenses: ['3D-Slicer-1.0'],
+    };
+    const bom = buildCycloneDxSbom(doc(), [pkg]) as Record<string, any>;
+    expect(bom.components[0].licenses).toEqual([{ expression: '3D-Slicer-1.0' }]);
+    expect(validateAgainst('cyclonedx', bom)).toEqual([]);
+  });
+
   it('rejects an invalid document (the validator checks)', () => {
     expect(validateAgainst('cyclonedx', { bomFormat: 'CycloneDX' }).length).toBeGreaterThan(0);
   });
