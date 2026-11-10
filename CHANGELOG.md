@@ -106,6 +106,12 @@ All notable changes to Qualor are listed here, newest first. The format follows
   quality, AI code review and dependency vulnerability tracking. The guide lists Dependency
   vulnerabilities and The vulnerability database after Releases and versions.
 
+### Security
+
+- `qualor/scanner`: the `sonarjs` engine uses minimatch 11.0.3 (was 9.0.9 and 10.2.6), and the
+  HTML and CSS linters use glob 14.0.3 and minimatch 11.0.3 (were 13.0.6 and 10.2.6), which fix
+  GHSA-g3hv-75wg-m249 and GHSA-3g3m-2fjr-6pw4.
+
 ## [0.14.1] - 2026-11-09
 
 ### Added

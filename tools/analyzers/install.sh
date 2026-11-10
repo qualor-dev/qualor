@@ -93,8 +93,8 @@ PHPSTAN_IDENTIFIERS_SHA256=8d1877cd4a6ad738064032f2e61d628a7efa8198e307bd6cf96c5
 # LGPL-3.0 release; never a later one). SONARJS_COMMIT is that release's npm gitHead in
 # SonarSource/SonarJS; its source archive, checked against SONARJS_SOURCE_SHA256, holds the RSPEC
 # metadata that categories.mjs turns into categories.json at image build.
-# Regenerate tools/analyzers/sonarjs/package-lock.json with npm >= 11 only: a lockfile written by
-# npm 10 fails its own `npm ci` with package.json's minimatch override.
+# Regenerate tools/analyzers/sonarjs/package-lock.json with npm >= 11: npm 10 wrote a lockfile
+# that failed its own `npm ci` with the earlier `minimatch@10.0.1` override.
 SONARJS_VERSION=2.0.4
 SONARJS_COMMIT=273825f98b35b29b409fbf4f89efce075c651d96
 SONARJS_SOURCE_SHA256=17af65bcc0c8b631da9f135afb0a9ef1da82eb31049e9ce7d90dc40e04e83dc1

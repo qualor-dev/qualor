@@ -16,8 +16,8 @@
 # read from.
 # node and npm (>= 10) must already be on PATH: the ambient npm installs the committed lockfile
 # (the pinned node base images ship npm 10, which reads it cleanly). Nothing else is fetched to run
-# npm itself. Regenerating the lockfile needs npm >= 11, for the package.json `minimatch@10.0.1`
-# override (a lockfile npm 10 writes fails its own `npm ci` on it); that is a maintainer step on a
+# npm itself. Regenerate the lockfile with npm >= 11 (npm 10 wrote one that failed its own
+# `npm ci` with the earlier `minimatch@10.0.1` override); that is a maintainer step on a
 # workstation, never part of this script.
 set -eu
 
