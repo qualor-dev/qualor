@@ -65,8 +65,8 @@ from the server's own vulnerability data for the same branch or version
   for the project, and for a branch the project does not track, because its vulnerability rows are
   frozen.
 - **`kev` and `epss` are `null`** without `vuln.priority`, which Business and Enterprise include.
-- **`firstSeenAt`** is the date the issue was first found on a branch, and the earliest date of the
-  version's rows on a version.
+- **`firstSeenAt`** is the date the issue was first found on a branch, and the first-seen date of
+  the row itself on a version.
 
 **Reasons.** A dependency triage decision carries `reason`, the reason of the decision that
 applies to it: one of the five VEX justifications of
@@ -78,11 +78,26 @@ decision without one. Other triage decisions have `null`. The CSV has the column
 
 | Field | Meaning | Without |
 |---|---|---|
-| `vulnerabilityDatabase` | when the vulnerability database was built, and its digest | `null` while monitoring is off |
+| `vulnerabilityDatabase` | when the vulnerability database was built, and its digest | `null` while the project's or the instance's monitoring is off, and for a version that is no longer tracked |
 | `kev` | when the KEV list was refreshed, and its digest | `null` without `vuln.priority` |
 | `epss` | the day of the EPSS data, when it was refreshed, and its digest | `null` without `vuln.priority` |
 
 The PDF cover lists the dates.
+
+**How old a version's facts are.** The facts of a version are those of its last vulnerability check.
+`scope.version` says how old they are:
+
+| Field | Holds |
+|---|---|
+| `id`, `label` | the version |
+| `tracked` | `true` while the server still tracks the version, the answer of the Vulnerabilities tab |
+| `checkedAt` | the time of the version's last check, ISO 8601 |
+
+A version that is no longer tracked keeps its last check, and a report of it is allowed. Its
+`vulnerabilityDatabase` is `null`, because its matches did not come from today's database. KEV and
+EPSS are joined when the report is built, so they stay. The PDF cover says "Vulnerabilities as of
+its last check on <date>." for a tracked version, and "This version is no longer tracked. Its
+vulnerabilities are those of its last check on <date>." for any other.
 
 ## The standards
 
@@ -121,13 +136,14 @@ Instance admins can do everything. Someone with a role only on some projects of 
 none in the organisation itself, sees the reports of their projects but not the organisation's.
 **Settings → Compliance reports** tells them that only members of the organisation can see those.
 
-- **A project:** open **Project → Compliance**, choose the **Branch** (the main branch is selected;
-  merge requests have no report) and press **Create report**. The branch needs at least one
-  successful analysis.
-- **A version:** on the same page, choose a version under **Target** and press **Create report**.
+- **A project:** open **Project → Compliance**, choose the **Target** (the main branch is
+  selected; merge requests have no report) and press **Create report**. A branch needs at least
+  one successful analysis.
+- **A version:** on the same page, choose a version under **Target** and press **Create report**. A
+  version that is no longer tracked reads "<label> (not tracked)".
   The report holds the version's dependencies only, because a version has no code analysis: no
   code findings, no secrets, no quality gate and no trend. Two conditions apply:
-  - vulnerability monitoring is on for the project, else 409 `MONITORING_OFF`;
+  - vulnerability monitoring is on for the project and the instance, else 409 `MONITORING_OFF`;
   - the version has been checked for vulnerabilities, else 409 `NOT_CHECKED`. Wait for the next
     check.
 - **An organisation:** open **Settings → Compliance reports** for the organisation chosen in the
@@ -149,7 +165,8 @@ status, the number of open findings, and the start of its SHA-256 with **Copy** 
 
 **Summary** shows the report on the page: the category table of each standard (pick it under
 **Standard**), then the counts of the open findings, the findings in new code, the secrets, the
-vulnerable dependencies and the triage decisions. The lists themselves are in the PDF, the CSV and
+vulnerable dependencies and the triage decisions. A version report states no count of findings in
+new code or secrets. The lists themselves are in the PDF, the CSV and
 the JSON. Each project's gate is in the PDF and the JSON.
 
 A report holds at most **50 000** findings and **50 000** triage decisions. Above that, the lists
@@ -197,17 +214,21 @@ bottom. The sections:
    report holds its dependencies only.";
 2. the executive summary: the open findings by severity, the dependencies, the findings in new code,
    the secrets, the triage counts, each project with its gate, and the failed gate conditions. A
-   report of one project adds its security trend;
+   report of one project adds its security trend. A version report shows the dependencies and the
+   triage counts only;
 3. one page or more per standard: each category with its open findings, by severity, in new code,
    the number of rules and the oldest finding, then **Not mapped**;
-4. secrets and dependencies, rule by rule;
+4. the secrets, rule by rule, and the dependencies, one row per finding: its rule and name, the
+   package, the severity, the fixed versions, the date it was first seen and, with `vuln.priority`,
+   the KEV date and the EPSS score. An organisation report adds the project. A version report has
+   no secrets;
 5. the triage decisions: the **2 000** newest, with their **Reason**;
 6. the findings: the first **2 000**, by severity.
 
 A list cut at 2 000 points to the CSV and JSON exports for the rest. In a report cut at 50 000
 findings or triage decisions, the "first n of m" and "newest n of m" lines give the exact totals,
-and the secrets and dependencies tables cover only the listed findings ("Rules among the listed
-findings").
+and the secrets table covers only the listed findings ("Rules among the listed findings"). The
+dependency table prints "The first n of m are listed." when it is cut.
 
 In the executive summary, a project's **Security issues** is the `security_issues` measure of its
 last analysis. It can differ from the report's findings, which are counted when the report is built
@@ -279,7 +300,7 @@ Read the JSON by `schemaVersion`, and treat a field that version 1 lacks as `nul
 
 When the licence lists `audit-log`, the [audit log](./roles-and-audit.md#what-is-recorded) records
 creating, downloading and deleting reports. Each download is recorded with its format and the
-SHA-256 of the file (the SBOM's own for `sbom`).
+report's SHA-256 (for `sbom`, the SBOM's own).
 
 ## Retention
 
@@ -287,6 +308,9 @@ A report is kept for **one year** from when it was created, then deleted automat
 Organization admin can delete one sooner with **Delete**, in **Settings → Compliance reports** or on
 the project's **Compliance** tab. A pending report cannot be deleted. Deleting a project or an
 organisation deletes its reports.
+
+A stored SBOM stays downloadable while the licence lists `compliance-export`, even after it stops
+listing `sbom`: it is part of a report that was already made.
 
 **When the licence lapses** or no longer lists `compliance-export`:
 

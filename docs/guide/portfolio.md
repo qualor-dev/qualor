@@ -76,9 +76,10 @@ no trend.
 vulnerability (not ignored). **Exploited** is the number of distinct vulnerabilities that are open,
 listed in CISA KEV and not delisted, on the main branch or a tracked version. Both are current state
 with no trend. A project whose monitoring is off, or any project while the instance switch is off,
-has neither number: they show as a dash and stay out of the totals. KEV needs Business or
-Enterprise (`vuln.priority`, which Enterprise includes). Without it, **Exploited** is not shown
-anywhere: not on the page, in the CSV values, or in the PDF.
+has neither number: they show as a dash and stay out of the totals.
+
+**Exploited needs KEV**, which Business and Enterprise include (`vuln.priority`). Without it,
+**Exploited** is not shown anywhere: not on the page, in the CSV values, or in the PDF.
 
 **Adding projects up:**
 
@@ -119,7 +120,7 @@ triage decisions. **Show as a table** under each chart gives the same numbers as
 ## Needs attention
 
 Five lists of up to **10 projects** each, every project linked to its page. The first needs
-`vuln.priority`:
+[`vuln.priority`][kev]:
 
 | List | Which projects | Order |
 |---|---|---|
@@ -151,7 +152,7 @@ From the top:
    | Security, Reliability | E first, then D to A, then unrated |
    | Issues, Lines of code | the highest first, then the projects without a value |
    | Coverage | the lowest first, then the projects without a value |
-   | Vulnerable releases, Exploited | the highest first, then the projects without a value (**Exploited** needs `vuln.priority`) |
+   | Vulnerable releases, Exploited | the highest first, then the projects without a value (**Exploited** needs [`vuln.priority`][kev]) |
    | Last analysis | never analyzed first, then the oldest |
 
 When the scope holds no project, the page says "No projects you can read yet."
@@ -170,7 +171,8 @@ row for every project you can read in the scope, sorted by organisation key, the
 - `last_analysis_at` is a UTC time such as `2027-10-12T09:30:00.000Z`. `abandoned` is `true` or
   `false`. `gate` is `passed`, `failed`, `error` or `none`. The ratings are `A` to `E`. `coverage`
   and `duplication` are percentages.
-- `exploited_vulnerabilities` is always a column. Without `vuln.priority` its cells are empty.
+- `exploited_vulnerabilities` is always a column. Without [`vuln.priority`][kev] its cells are
+  empty.
 - A value the project does not have is an empty cell, and so is every measure of a project never
   analyzed.
 - A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a
@@ -182,16 +184,18 @@ the bottom. The sections:
 
 1. the cover: the scope, when it was made and by whom, the server version and the trend period;
 2. the totals, as cards, with the gate and rating counts, the vulnerable releases and, with
-   `vuln.priority`, the exploited vulnerabilities;
+   [`vuln.priority`][kev], the exploited vulnerabilities;
 3. the trend: line charts of the gate pass share, coverage, lines of code and open issues, and the
    tables of every point, with the analyses and triage decisions per period;
 4. the organisations (all organisations only);
-5. the attention lists, **Exploited vulnerabilities** first (with `vuln.priority`);
+5. the attention lists, **Exploited vulnerabilities** first (with [`vuln.priority`][kev]);
 6. the projects: the first **50** by quality gate (Failed first, then the worst security rating).
    With more projects, the PDF says that the CSV lists every one;
 7. the projects with vulnerable releases: up to **50**, with their number of vulnerable releases
-   and, with `vuln.priority`, of exploited vulnerabilities. They run exploited first, then
-   vulnerable releases, then by project key. It says so when no project has one.
+   and, with [`vuln.priority`][kev], of exploited vulnerabilities. They run exploited first,
+   then vulnerable releases, then by project key. The heading then adds "or exploited
+   vulnerabilities". It says "No project has a vulnerable release." when none has one, and
+   "Vulnerability monitoring is off." when no project is monitored.
 
 The PDF's font, Noto Sans, covers Latin, Cyrillic and Greek. A project name in another script prints
 as a missing-glyph box. The CSV keeps it as it is.
@@ -234,7 +238,7 @@ with the **Read** scope. A project analysis token is refused. Every route takes 
 
 | Route | What it does |
 |---|---|
-| `GET /ee/portfolio?scope=…&granularity=week` (or `month`; `week` without it) | the view: `generatedAt`, `totals`, `organizations` (all scope; `null` otherwise), the 12 `trend` points (each with `start`, `end`, the totals at `end`, `analyses` and `triage`) and the four `attention` lists |
+| `GET /ee/portfolio?scope=…&granularity=week` (or `month`; `week` without it) | the view: `generatedAt`, `totals`, `organizations` (all scope; `null` otherwise), the 12 `trend` points (each with `start`, `end`, the totals at `end`, `analyses` and `triage`) and the five `attention` lists |
 | `GET /ee/portfolio/projects?scope=…&sort=gate&limit=50` | a page of project rows. `sort` is `key` (without it), `gate`, `security`, `reliability`, `issues`, `ncloc`, `coverage`, `lastAnalysis`, `vulnerableReleases` or `exploited`, in the orders of the projects table; `limit` is 1 to 100, 50 without it; pass `nextCursor` as `cursor` for the next page |
 | `GET /ee/portfolio/export?scope=…&format=csv` (or `pdf`, with `granularity`) | the file, as described in [Downloads](#downloads) |
 
@@ -258,3 +262,5 @@ curl -fsS -H "$H" "$P?scope=all&granularity=month"           # the view, by mont
 curl -fsS -H "$H" "$P/projects?scope=all&sort=security"      # the worst security ratings first
 curl -fsS -H "$H" -o portfolio.csv "$P/export?scope=all&format=csv"
 ```
+
+[kev]: #how-the-numbers-are-worked-out
