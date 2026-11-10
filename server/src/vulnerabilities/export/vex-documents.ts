@@ -44,6 +44,18 @@ const NO_REASON = 'No reason was recorded.';
 const NO_ACTION = 'No action is planned.';
 const TOOL = { name: 'Trivy' };
 
+/**
+ * The advisory database a vulnerability id belongs to. Dependency-Track looks a VEX entry up by
+ * (source name, id), so the source follows the id prefix.
+ */
+function vulnerabilitySource(id: string): { name: string; url: string } {
+  const enc = encodeURIComponent(id);
+  if (id.startsWith('CVE-')) return { name: 'NVD', url: `https://nvd.nist.gov/vuln/detail/${enc}` };
+  if (id.startsWith('GHSA-'))
+    return { name: 'GITHUB', url: `https://github.com/advisories/${enc}` };
+  return { name: 'OSV', url: `https://osv.dev/vulnerability/${enc}` };
+}
+
 /** The version of a purl: the part after the last `@`, without qualifiers, decoded. */
 function purlVersion(purl: string): string | undefined {
   const at = purl.lastIndexOf('@');
@@ -90,7 +102,7 @@ export function buildCycloneDxVex(doc: ExportDocument, entries: readonly VexEntr
     return {
       'bom-ref': `${e.vulnerabilityId}:${e.packageName}`,
       id: e.vulnerabilityId,
-      source: TOOL,
+      source: vulnerabilitySource(e.vulnerabilityId),
       ratings: [{ severity: e.severity, source: TOOL }],
       ...(e.primaryUrl === null ? {} : { advisories: [{ url: e.primaryUrl }] }),
       ...(e.fixedVersion === null ? {} : { recommendation: `Upgrade to ${e.fixedVersion}.` }),
@@ -114,6 +126,7 @@ export function buildCycloneDxVex(doc: ExportDocument, entries: readonly VexEntr
         name: doc.project.name,
         version: doc.target.name,
         'bom-ref': root,
+        purl: root,
       },
     },
     components: [...components.values()],

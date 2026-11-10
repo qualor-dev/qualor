@@ -31,6 +31,7 @@ export function buildCycloneDxSbom(
         name: doc.project.name,
         version: doc.target.name,
         'bom-ref': root,
+        purl: root,
       },
     },
     components,
@@ -49,7 +50,7 @@ export function buildSpdxSbom(doc: ExportDocument, packages: readonly ExportPack
   const spdxPackages = [
     {
       SPDXID: rootId,
-      name: doc.project.key,
+      name: doc.project.name,
       versionInfo: doc.target.name,
       downloadLocation: 'NOASSERTION',
       filesAnalyzed: false,
@@ -72,7 +73,11 @@ export function buildSpdxSbom(doc: ExportDocument, packages: readonly ExportPack
   ];
   const infos = [...extracted.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([licenseId, extractedText]) => ({ licenseId, extractedText, name: extractedText }));
+    .map(([licenseId, extractedText]) => ({
+      licenseId,
+      extractedText,
+      name: extractedText.length > 80 ? `${extractedText.slice(0, 79)}…` : extractedText,
+    }));
   const key = encodeURIComponent(doc.project.key);
   const target = encodeURIComponent(doc.target.name);
   return {

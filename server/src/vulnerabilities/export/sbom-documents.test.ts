@@ -92,6 +92,7 @@ describe('buildCycloneDxSbom', () => {
       name: 'Acme Web',
       version: 'release/2.x',
       'bom-ref': 'pkg:generic/acme-web@release%2F2.x',
+      purl: 'pkg:generic/acme-web@release%2F2.x',
     });
   });
 
@@ -146,7 +147,7 @@ describe('buildSpdxSbom', () => {
     const [root, ...rest] = s.packages;
     expect(root).toMatchObject({
       SPDXID: 'SPDXRef-Package-root',
-      name: 'acme-web',
+      name: 'Acme Web',
       versionInfo: 'release/2.x',
       externalRefs: [
         {
@@ -186,10 +187,35 @@ describe('buildSpdxSbom', () => {
     const [info] = s.hasExtractedLicensingInfos;
     expect(info.licenseId).toMatch(/^LicenseRef-[0-9a-f]{12}$/);
     expect(info.extractedText).toBe('Some Custom Licence');
-    expect(info.name).toBeTruthy();
+    expect(info.name).toBe('Some Custom Licence');
     expect(s.packages[4].licenseDeclared).toBe(`MIT AND ${info.licenseId}`);
     const plain = buildSpdxSbom(doc(), [PACKAGES[0] as ExportPackage]) as Record<string, any>;
     expect(plain).not.toHaveProperty('hasExtractedLicensingInfos');
+  });
+
+  it('caps the licence name at 80 characters and keeps the full text', () => {
+    const long = 'Custom licence '.repeat(10).trim();
+    const s = buildSpdxSbom(doc(), [
+      { ecosystem: 'npm', name: 'a', version: '1', purl: null, licenses: [long] },
+    ]) as Record<string, any>;
+    const [info] = s.hasExtractedLicensingInfos;
+    expect(info.extractedText).toBe(long);
+    expect(info.name).toBe(`${long.slice(0, 79)}…`);
+    expect(info.name).toHaveLength(80);
+  });
+
+  it('gives one LicenseRef to the same free-text licence on two packages', () => {
+    const pkg = (name: string): ExportPackage => ({
+      ecosystem: 'npm',
+      name,
+      version: '1',
+      purl: null,
+      licenses: ['Some Custom Licence'],
+    });
+    const s = buildSpdxSbom(doc(), [pkg('a'), pkg('b')]) as Record<string, any>;
+    expect(s.hasExtractedLicensingInfos).toHaveLength(1);
+    expect(s.packages[1].licenseDeclared).toBe(s.hasExtractedLicensingInfos[0].licenseId);
+    expect(s.packages[2].licenseDeclared).toBe(s.hasExtractedLicensingInfos[0].licenseId);
   });
 
   it('relates the document to the root and the root to each package', () => {

@@ -109,6 +109,51 @@ describe('buildCycloneDxVex', () => {
     expect(out.version).toBe(1);
     expect(out.metadata.timestamp).toBe('2026-11-10T08:30:15.123Z');
     expect(out.metadata.component['bom-ref']).toBe(productId(DOC.project, DOC.target));
+    expect(out.metadata.component.purl).toBe(productId(DOC.project, DOC.target));
+  });
+
+  it('names the source after the id prefix, so Dependency-Track can match it', () => {
+    const doc = buildCycloneDxVex(DOC, [
+      entry({ vulnerabilityId: 'CVE-2026-0001' }),
+      entry({ vulnerabilityId: 'GHSA-abcd-1234-wxyz' }),
+      entry({ vulnerabilityId: 'GO-2024-1234' }),
+    ]) as any;
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
+    const [cve, ghsa, go] = doc.vulnerabilities;
+    expect(cve.source).toEqual({
+      name: 'NVD',
+      url: 'https://nvd.nist.gov/vuln/detail/CVE-2026-0001',
+    });
+    expect(ghsa.source).toEqual({
+      name: 'GITHUB',
+      url: 'https://github.com/advisories/GHSA-abcd-1234-wxyz',
+    });
+    expect(go.source).toEqual({ name: 'OSV', url: 'https://osv.dev/vulnerability/GO-2024-1234' });
+    expect(go.ratings[0].source).toEqual({ name: 'Trivy' });
+  });
+
+  it('carries the decision of an open entry: detail, dates and author', () => {
+    const doc = buildCycloneDxVex(DOC, [
+      entry({
+        vulnerabilityId: 'CVE-2026-0040',
+        comment: 'Reopened after the fix regressed.',
+        decidedAt: DECIDED,
+        decidedBy: 'Carol',
+      }),
+    ]) as any;
+    const v = doc.vulnerabilities[0];
+    expect(v.analysis).toEqual({
+      state: 'in_triage',
+      detail: 'Reopened after the fix regressed.',
+      firstIssued: DECIDED.toISOString(),
+      lastUpdated: DECIDED.toISOString(),
+    });
+    expect(v.properties).toEqual([{ name: 'qualor:decided-by', value: 'Carol' }]);
+  });
+
+  it('validates an entry with no purls', () => {
+    const doc = buildCycloneDxVex(DOC, [entry({ vulnerabilityId: 'CVE-2026-0050', purls: [] })]);
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
   });
 
   it('lists one component per distinct purl, with name and version', () => {
@@ -137,7 +182,10 @@ describe('buildCycloneDxVex', () => {
   it('maps an open entry to in_triage with its advisory and recommendation', () => {
     const v = byId(out.vulnerabilities, 'CVE-2026-0001');
     expect(v['bom-ref']).toBe('CVE-2026-0001:left-pad');
-    expect(v.source).toEqual({ name: 'Trivy' });
+    expect(v.source).toEqual({
+      name: 'NVD',
+      url: 'https://nvd.nist.gov/vuln/detail/CVE-2026-0001',
+    });
     expect(v.ratings).toEqual([{ severity: 'critical', source: { name: 'Trivy' } }]);
     expect(v.analysis).toEqual({ state: 'in_triage' });
     expect(v.advisories).toEqual([{ url: 'https://avd.aquasec.com/nvd/cve-2026-0001' }]);
@@ -215,6 +263,26 @@ describe('buildOpenVex', () => {
         subcomponents: [{ '@id': 'pkg:npm/lodash@4.17.20' }, { '@id': 'pkg:npm/lodash@4.17.21' }],
       },
     ]);
+  });
+
+  it('carries the decision of an open entry: timestamp, notes and author', () => {
+    const doc = buildOpenVex(DOC, [
+      entry({
+        vulnerabilityId: 'CVE-2026-0040',
+        comment: 'Reopened after the fix regressed.',
+        decidedAt: DECIDED,
+        decidedBy: 'Carol',
+      }),
+    ]) as any;
+    const s = doc.statements[0];
+    expect(s.status).toBe('under_investigation');
+    expect(s.timestamp).toBe(DECIDED.toISOString());
+    expect(s.status_notes).toBe('Decided by Carol.');
+  });
+
+  it('validates an entry with no purls', () => {
+    const doc = buildOpenVex(DOC, [entry({ vulnerabilityId: 'CVE-2026-0050', purls: [] })]);
+    expect(validateAgainst('openvex', doc)).toEqual([]);
   });
 
   it('maps an open entry to under_investigation with no timestamp', () => {

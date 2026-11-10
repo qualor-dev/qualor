@@ -34,7 +34,7 @@ export function requireUser(request: FastifyRequest, scope: AccessScope = 'read'
   if (principal.kind === 'project') {
     throw forbidden(
       'TOKEN_NOT_ALLOWED',
-      'Project analysis tokens can only upload and read analyses and download their SBOM and VEX',
+      "Project analysis tokens can only upload and read analyses and download their project's SBOM and VEX",
     );
   }
   if (!hasScope(principal, scope))
