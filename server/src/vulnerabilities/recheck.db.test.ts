@@ -819,7 +819,7 @@ describe('vulnerability re-checks', () => {
       expect(trivy.calls).toEqual([]);
     });
 
-    it('matches 50 000 distinct packages in three Trivy runs', async () => {
+    it('matches 50 000 distinct packages in 50 Trivy runs of 1 000', async () => {
       const p = await project();
       const analysisId = await onBranch(p, 'main', { dependencies: [A] });
       const main = await branchId(p, 'main');
@@ -830,7 +830,7 @@ describe('vulnerability re-checks', () => {
           FROM generate_series(1, 49999) AS g`);
       const result = await recheck({ projectIds: [p.id] });
       expect(result).toMatchObject({ kind: 'done', summary: { packages: 50_000 } });
-      expect(trivy.calls.map((c) => c.purls.length)).toEqual([20_000, 20_000, 10_000]);
+      expect(trivy.calls.map((c) => c.purls.length)).toEqual(Array<number>(50).fill(1_000));
       expect(new Set(trivy.calls.flatMap((c) => c.purls)).size).toBe(50_000);
       expect(await described(p)).toEqual([`main ${PA} CVE-2026-0001`]);
       // Its inventory would weigh on every later full re-check of this file.
@@ -939,6 +939,85 @@ describe('vulnerability re-checks', () => {
       expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
       expect((await readVulndbState(db())).lastRecheckError?.code).toBe('RECHECK_FAILED');
       expect(trivy.calls).toEqual([]);
+    });
+  });
+
+  describe('Trivy runs in chunks', () => {
+    it('more packages than one chunk run several Trivy runs and every match is stored', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A, B, C, D] });
+      const result = await recheck({ projectIds: [p.id] }, { chunk: { components: 2 } });
+      expect(result).toMatchObject({ kind: 'done' });
+      expect(trivy.calls.map((c) => c.purls.length)).toEqual([2, 2]);
+      expect(trivy.calls.flatMap((c) => c.purls).sort()).toEqual([PA, PB, PC, PD].sort());
+      expect(await described(p)).toEqual(
+        [
+          `main ${PA} CVE-2026-0001`,
+          `main ${PB} CVE-2026-0002`,
+          `main ${PB} CVE-2026-0003`,
+          `main ${PD} CVE-2026-0004`,
+        ].sort(),
+      );
+    });
+
+    it('an oversized output splits the chunk in half and every match is still stored', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A, B, C, D] });
+      const inner = trivy.run.bind(trivy);
+      // Anything over two components "writes too much output".
+      trivy.run = (sbom, cacheDir, signal) =>
+        (JSON.parse(sbom) as { components: unknown[] }).components.length > 2
+          ? Promise.resolve({ ok: false, code: 'TOO_LARGE', message: 'output over the budget' })
+          : inner(sbom, cacheDir, signal);
+      const result = await recheck({ projectIds: [p.id] }, { chunk: { components: 4, floor: 1 } });
+      expect(result).toMatchObject({ kind: 'done' });
+      expect(await described(p)).toHaveLength(4);
+      expect((await digests([PA, PB, PC, PD]))[PC]).toBeDefined();
+    });
+
+    it('a chunk still too large at the floor fails the re-check and stores nothing of it', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A, B] });
+      trivy.failure = { ok: false, code: 'TOO_LARGE', message: 'output over the budget' };
+      const result = await recheck({ projectIds: [p.id] }, { chunk: { components: 2, floor: 1 } });
+      expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
+      expect((await readVulndbState(db())).lastRecheckError?.message).toContain('TOO_LARGE');
+      expect(await rows(p)).toEqual([]);
+      expect(await digests([PA, PB])).toEqual({});
+    });
+
+    it('a failure mid-way keeps the earlier chunks and leaves the later ones untouched (R12)', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A, B, C, D] });
+      const inner = trivy.run.bind(trivy);
+      let runs = 0;
+      trivy.run = (sbom, cacheDir, signal) =>
+        ++runs === 2
+          ? Promise.resolve({ ok: false, code: 'FAILED', message: 'Trivy exited with 2' })
+          : inner(sbom, cacheDir, signal);
+      const result = await recheck({ projectIds: [p.id] }, { chunk: { components: 1 } });
+      expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
+      // Chunk 1 stored, chunk 2 failed, chunks 3 and 4 never ran.
+      expect(runs).toBe(2);
+      expect(Object.keys(await digests([PA, PB, PC, PD]))).toEqual([trivy.calls[0]!.purls[0]]);
+      expect(await rows(p)).toEqual([]);
+    });
+
+    it('a stop between chunks ends the run and queues the scope again', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A, B, C] });
+      await db().delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      const stop = new AbortController();
+      trivy.onRun = () => {
+        stop.abort();
+        return Promise.resolve();
+      };
+      const result = await recheck(
+        { projectIds: [p.id] },
+        { chunk: { components: 1 }, shutdown: stop.signal },
+      );
+      expect(result).toEqual({ kind: 'stopped' });
+      expect(trivy.calls).toHaveLength(1);
     });
   });
 

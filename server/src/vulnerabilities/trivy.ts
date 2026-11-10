@@ -16,7 +16,7 @@ export type TrivyRun =
   | { ok: true; matches: Map<string, VulnerabilityMatch[]> }
   | {
       ok: false;
-      code: 'NOT_INSTALLED' | 'TIMEOUT' | 'FAILED' | 'BAD_OUTPUT' | 'ABORTED';
+      code: 'NOT_INSTALLED' | 'TIMEOUT' | 'FAILED' | 'BAD_OUTPUT' | 'TOO_LARGE' | 'ABORTED';
       message: string;
     };
 
@@ -34,6 +34,7 @@ export interface TrivyRunnerOptions {
    */
   workDir: string;
   timeoutMs: number;
+  /** A run whose output file is larger answers TOO_LARGE, unread: the caller splits its SBOM. */
   maxOutputBytes: number;
 }
 
@@ -238,7 +239,7 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
         if (size > options.maxOutputBytes) {
           return {
             ok: false,
-            code: 'BAD_OUTPUT',
+            code: 'TOO_LARGE',
             message: `Trivy output is ${size} bytes, over the ${options.maxOutputBytes} byte cap`,
           };
         }

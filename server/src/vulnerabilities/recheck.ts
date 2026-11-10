@@ -27,10 +27,21 @@ import {
 
 /** The re-check job's queue, and its concurrency key: one re-check at a time, across replicas. */
 export const RECHECK_QUEUE = 'vulnerabilities.recheck';
-/** At most this many components in one SBOM, so in one Trivy run. */
-export const SBOM_MAX_COMPONENTS = 20_000;
+/**
+ * At most this many components in one SBOM, so in one Trivy run. Trivy's output grows with the
+ * advisories found, not with the components: the densest inventory measured (old versions of
+ * popular packages, 60% vulnerable, 5 414 distinct purls) wrote 28 KB per package, so 1 000
+ * components write about 28 MB, where 20 000 wrote 570 MB and killed the server's heap.
+ */
+export const SBOM_MAX_COMPONENTS = 1_000;
+/** A chunk whose output is still over the budget is split in half, down to this many components. */
+export const SBOM_MIN_COMPONENTS = 10;
 export const TRIVY_TIMEOUT_MS = 15 * 60_000;
-export const TRIVY_MAX_OUTPUT_BYTES = 512 * 1024 * 1024;
+/**
+ * The most output one run may leave for `JSON.parse` (about 3.5 times that in heap: 154 MB of
+ * output exhausted the 512 MB heap of a 1 GiB server). Over it, the run answers TOO_LARGE unread.
+ */
+export const TRIVY_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 /** Projects read and written together: bounds the memory of a run and the length of a write. */
 const PROJECT_BATCH = 25;
 /** Values in one IN-list. */
@@ -96,6 +107,8 @@ export interface RecheckDeps {
   runner?: TrivyRunner;
   now?: () => Date;
   logger?: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
+  /** Tests make chunks small: components per SBOM, and the size below which a chunk is not split. */
+  chunk?: { components?: number; floor?: number };
   /** The server is stopping (main.ts): Trivy is killed, and the run ends at its next step. */
   shutdown?: AbortSignal;
 }
@@ -129,6 +142,9 @@ interface Run {
   /** When the run started: the time {@link ignoreActive} judges expiry dates against. */
   now: Date;
   shutdown: AbortSignal | undefined;
+  chunk: { components: number; floor: number };
+  /** Trivy runs made so far, splits included. */
+  trivyRuns: number;
 }
 
 /** What a run answers when the server's stop ended it (before a step, or by killing Trivy). */
@@ -241,18 +257,27 @@ async function storeMatches(
 }
 
 /**
- * Runs Trivy on `packages` in SBOMs of at most {@link SBOM_MAX_COMPONENTS}, storing each chunk's
- * matches as it comes. A failed run stops there, its chunk untouched (ruling R12); so does a stop.
+ * Runs Trivy on `packages` in SBOMs of at most `run.chunk.components`, storing each chunk's
+ * matches as it comes. A chunk whose output is over the budget (TOO_LARGE) is split in half and
+ * both halves run, down to `run.chunk.floor`. A failed run stops there, its chunk untouched and
+ * the later ones never started (R12); so does a stop.
  */
 async function matchPackages(
   run: Run,
   packages: readonly SbomPackage[],
 ): Promise<Problem | typeof STOPPED | null> {
-  for (const chunk of slices(packages, SBOM_MAX_COMPONENTS)) {
+  const todo: (readonly SbomPackage[])[] = [...slices(packages, run.chunk.components)].reverse();
+  for (let chunk = todo.pop(); chunk !== undefined; chunk = todo.pop()) {
     if (stopping(run)) return STOPPED;
+    run.trivyRuns += 1;
     const got = await run.runner.run(buildSbom(chunk), run.cacheDir, run.shutdown);
     if (!got.ok) {
       if (stopping(run)) return STOPPED;
+      if (got.code === 'TOO_LARGE' && chunk.length > run.chunk.floor && chunk.length > 1) {
+        const half = Math.ceil(chunk.length / 2);
+        todo.push(chunk.slice(half), chunk.slice(0, half));
+        continue;
+      }
       return {
         code: 'RECHECK_FAILED',
         message: `The vulnerability re-check stopped: Trivy failed (${got.code}): ${got.message}`,
@@ -759,6 +784,23 @@ export async function recheckProjects(
       timeoutMs: TRIVY_TIMEOUT_MS,
       maxOutputBytes: TRIVY_MAX_OUTPUT_BYTES,
     });
+  const trivyRun = (cacheDir: string): Run => {
+    current = {
+      db: deps.db,
+      runner,
+      cacheDir,
+      digest: dataset.digest,
+      now: now(),
+      shutdown: deps.shutdown,
+      chunk: {
+        components: deps.chunk?.components ?? SBOM_MAX_COMPONENTS,
+        floor: deps.chunk?.floor ?? SBOM_MIN_COMPONENTS,
+      },
+      trivyRuns: 0,
+    };
+    return current;
+  };
+  let current: Run | undefined;
   let local: { result: Counts | Problem | typeof STOPPED } | { problem: LocalProblem };
   try {
     local = await withLocalDatabase(
@@ -768,17 +810,7 @@ export async function recheckProjects(
       async (cacheDir) => {
         // Under the lock, so no run of this server uses them: what a killed run left goes.
         await removeStaleWorkDirs(deps.config.vulndb.dir);
-        return recheckAll(
-          {
-            db: deps.db,
-            runner,
-            cacheDir,
-            digest: dataset.digest,
-            now: now(),
-            shutdown: deps.shutdown,
-          },
-          projectIds,
-        );
+        return recheckAll(trivyRun(cacheDir), projectIds);
       },
       { signal: deps.shutdown },
     );
@@ -831,7 +863,10 @@ export async function recheckProjects(
     // R22: one project's good run says nothing about the rest; only a full run clears the error.
     lastRecheckError: 'all' in scope ? null : state.lastRecheckError,
   }));
-  deps.logger?.info({ component: 'vulnerabilities', ...summary }, 'vulnerability re-check done');
+  deps.logger?.info(
+    { component: 'vulnerabilities', ...summary, trivyRuns: current?.trivyRuns ?? 0 },
+    'vulnerability re-check done',
+  );
   // 4b: the alert job looks at what this run wrote. A stopped run never gets here (it is queued again).
   await enqueueVulnerabilityAlerts(deps.db);
   return { kind: 'done', summary };

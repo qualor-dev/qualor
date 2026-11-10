@@ -225,14 +225,14 @@ describe('createTrivyRunner', () => {
     });
   });
 
-  it('reports BAD_OUTPUT when the output exceeds the cap', async () => {
+  it('reports TOO_LARGE, unread, when the output exceeds the cap', async () => {
     const r = await createTrivyRunner({
       command: [process.execPath, fake, 'ok'],
       workDir: base,
       timeoutMs: 20_000,
       maxOutputBytes: 10,
     }).run(sbom, os.tmpdir());
-    expect(r).toMatchObject({ ok: false, code: 'BAD_OUTPUT' });
+    expect(r).toMatchObject({ ok: false, code: 'TOO_LARGE' });
   });
 });
 
