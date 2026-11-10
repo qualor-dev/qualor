@@ -200,9 +200,11 @@ export class MembersPage {
         ? $localize`:@@members.confirmDemoteSelf:Change your own role in ${organization}:organization: to ${to}:role:? You can no longer manage its members, and only another administrator can make you an admin again.`
         : $localize`:@@members.confirmChange:Change the role of ${member.username}:name: in ${organization}:organization: to ${to}:role:?`;
     // sso-scim.md §9.3: a manual change ends group sync's hold on the membership.
-    const question = member.managedBy
-      ? `${asked} ${$localize`:@@members.takeOver:Changing this role takes it over from group sync.`}`
-      : asked;
+    let question = asked;
+    if (member.managedBy) {
+      const takeOver = $localize`:@@members.takeOver:Changing this role takes it over from group sync.`;
+      question = `${asked} ${takeOver}`;
+    }
     this.ask({ kind: 'change', member, role, question });
   }
 

@@ -26,6 +26,8 @@ import { PageHeader } from '../shared/page-header';
 
 export type Profile = ItemOf<'/api/v0/quality-profiles'>;
 type Language = Profile['language'];
+/** The kind of change `run` makes, which decides where its refusal shows. */
+type ChangeKind = 'create' | 'copy' | 'change';
 const LANGUAGES: Language[] = [
   'typescript',
   'javascript',
@@ -290,10 +292,7 @@ export class ProfilesPage {
   }
 
   /** Runs one change; while one runs, the buttons stay enabled (and focusable) but do nothing. */
-  private async run(
-    action: () => Promise<void>,
-    kind: 'create' | 'copy' | 'change' = 'change',
-  ): Promise<void> {
+  private async run(action: () => Promise<void>, kind: ChangeKind = 'change'): Promise<void> {
     if (this.busy()) return;
     this.busy.set(true);
     this.error.set(null);
@@ -304,33 +303,41 @@ export class ProfilesPage {
     try {
       await action();
     } catch (err) {
-      const fields = fieldErrors(err);
-      if (kind === 'copy' && fields['body.name']) {
-        this.error.set(
-          $localize`:@@profiles.copyNameInvalid:The copy could not be named after this profile. Create a new profile instead.`,
-        );
-      } else if (kind === 'create' && (fields['body.name'] || fields['body.parentId'])) {
-        if (fields['body.name']) {
-          this.nameError.set(
-            $localize`:@@profiles.nameInvalid:This name cannot be used. "Qualor way", in any spelling, is kept for the built-in profiles.`,
-          );
-        }
-        if (fields['body.parentId']) {
-          this.parentError.set(
-            $localize`:@@profiles.parentInvalid:This profile cannot be the parent: it must be of the same language, and profiles inherit at most three levels deep.`,
-          );
-        }
-      } else if (kind === 'create') {
-        // The dialog is still open: the reason goes there.
-        this.createError.set(problemMessage(err));
-      } else {
-        this.error.set(problemMessage(err));
-      }
-      if (kind !== 'create') {
-        keepFocus(this.injector, this.document, () => this.heading().nativeElement);
-      }
+      this.failed(err, kind);
     } finally {
       this.busy.set(false);
+    }
+  }
+
+  /**
+   * Shows why a change failed: a refused name or parent on its field of the new-profile dialog,
+   * another reason of a creation in that dialog, anything else on the page.
+   */
+  private failed(err: unknown, kind: ChangeKind): void {
+    const fields = fieldErrors(err);
+    if (kind === 'copy' && fields['body.name']) {
+      this.error.set(
+        $localize`:@@profiles.copyNameInvalid:The copy could not be named after this profile. Create a new profile instead.`,
+      );
+    } else if (kind === 'create' && (fields['body.name'] || fields['body.parentId'])) {
+      if (fields['body.name']) {
+        this.nameError.set(
+          $localize`:@@profiles.nameInvalid:This name cannot be used. "Qualor way", in any spelling, is kept for the built-in profiles.`,
+        );
+      }
+      if (fields['body.parentId']) {
+        this.parentError.set(
+          $localize`:@@profiles.parentInvalid:This profile cannot be the parent: it must be of the same language, and profiles inherit at most three levels deep.`,
+        );
+      }
+    } else if (kind === 'create') {
+      // The dialog is still open: the reason goes there.
+      this.createError.set(problemMessage(err));
+    } else {
+      this.error.set(problemMessage(err));
+    }
+    if (kind !== 'create') {
+      keepFocus(this.injector, this.document, () => this.heading().nativeElement);
     }
   }
 }

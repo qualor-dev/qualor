@@ -87,13 +87,22 @@ export function dependencyFilters(params: Params): DependencyFilters {
   };
 }
 
+/** A branch or a version of the dependency list, as the URL names them. */
+interface DependencyScope {
+  branch?: string | null;
+  version?: string | null;
+}
+
+/** The URL's query for the scope: the version when there is one, else the branch, else none. */
+function scopeParams(scope: DependencyScope): Params {
+  if (scope.version) return { version: scope.version };
+  return scope.branch ? { branch: scope.branch } : {};
+}
+
 /** The URL's query for a branch or a version (never both) and filters; defaults are left out. */
-function filterParams(
-  scope: { branch?: string | null; version?: string | null },
-  f: DependencyFilters,
-): Params {
+function filterParams(scope: DependencyScope, f: DependencyFilters): Params {
   return {
-    ...(scope.version ? { version: scope.version } : scope.branch ? { branch: scope.branch } : {}),
+    ...scopeParams(scope),
     ...(f.q ? { q: f.q } : {}),
     ...(f.ecosystem ? { ecosystem: f.ecosystem } : {}),
     ...(f.license ? { license: f.license } : {}),

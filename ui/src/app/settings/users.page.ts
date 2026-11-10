@@ -532,15 +532,11 @@ export class UsersPage {
   /** Moves focus to the first field of the new-user form with an error. */
   private focusFirstInvalid(): void {
     const errors = this.errors();
-    const field = errors.username
-      ? this.usernameField()
-      : errors.displayName
-        ? this.displayNameField()
-        : errors.email
-          ? this.emailField()
-          : errors.password
-            ? this.passwordField()
-            : undefined;
+    let field: ElementRef<HTMLInputElement> | undefined;
+    if (errors.username) field = this.usernameField();
+    else if (errors.displayName) field = this.displayNameField();
+    else if (errors.email) field = this.emailField();
+    else if (errors.password) field = this.passwordField();
     field?.nativeElement.focus();
   }
 

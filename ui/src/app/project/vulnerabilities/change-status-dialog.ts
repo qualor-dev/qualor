@@ -167,24 +167,7 @@ export class ChangeStatusDialog {
     event.preventDefault();
     const item = this.item();
     if (!item || this.busy() || !this.ready() || this.unchanged()) return;
-    const target = this.target();
-    const own = target && item.decision && item.decision.scope !== 'project';
-    const reason = this.reason();
-    const comment = this.comment().trim();
-    const body: Decision = {
-      packageName: item.packageName,
-      vulnerabilityId: item.vulnerabilityId,
-      scope:
-        target && this.appliesTo() === 'target'
-          ? { kind: target.kind, id: target.id }
-          : { kind: 'project' },
-      status: this.status(),
-      ...(this.needsReason() && reason !== '' ? { reason } : {}),
-      ...(comment !== '' ? { comment } : {}),
-      ...(target && own && this.appliesTo() === 'project'
-        ? { replaceOverrideOf: { kind: target.kind, id: target.id } }
-        : {}),
-    };
+    const body = this.decision(item);
     this.busy.set(true);
     this.error.set(null);
     this.retryOffer.clear();
@@ -198,25 +181,52 @@ export class ChangeStatusDialog {
       this.close();
       this.saved.emit();
     } catch (err) {
-      const fields = fieldErrors(err);
-      if (fields['body.reason'] !== undefined) {
-        this.reasonError.set(
-          $localize`:@@vulns.dialog.reasonRequired:Choose a reason for Not affected.`,
-        );
-      }
-      if (fields['body.comment'] !== undefined) {
-        this.commentError.set(
-          $localize`:@@vulns.dialog.commentRequired:Add a comment to explain the decision.`,
-        );
-      }
-      if (this.reasonError()) this.reasonField()?.nativeElement.focus();
-      else if (this.commentError()) this.commentField()?.nativeElement.focus();
-      else {
-        this.error.set(problemMessage(err));
-        if (isRetryable(err)) this.retryOffer.offer(true, err.retryAfter);
-      }
+      this.submitFailed(err);
     } finally {
       this.busy.set(false);
+    }
+  }
+
+  /** The decision the form asks for on this card, as the body that saves it. */
+  private decision(item: VulnerabilityItem): Decision {
+    const target = this.target();
+    const own = target && item.decision && item.decision.scope !== 'project';
+    const reason = this.reason();
+    const comment = this.comment().trim();
+    return {
+      packageName: item.packageName,
+      vulnerabilityId: item.vulnerabilityId,
+      scope:
+        target && this.appliesTo() === 'target'
+          ? { kind: target.kind, id: target.id }
+          : { kind: 'project' },
+      status: this.status(),
+      ...(this.needsReason() && reason !== '' ? { reason } : {}),
+      ...(comment !== '' ? { comment } : {}),
+      ...(target && own && this.appliesTo() === 'project'
+        ? { replaceOverrideOf: { kind: target.kind, id: target.id } }
+        : {}),
+    };
+  }
+
+  /** A refused reason or comment goes to its field, which takes focus; anything else to the alert. */
+  private submitFailed(err: unknown): void {
+    const fields = fieldErrors(err);
+    if (fields['body.reason'] !== undefined) {
+      this.reasonError.set(
+        $localize`:@@vulns.dialog.reasonRequired:Choose a reason for Not affected.`,
+      );
+    }
+    if (fields['body.comment'] !== undefined) {
+      this.commentError.set(
+        $localize`:@@vulns.dialog.commentRequired:Add a comment to explain the decision.`,
+      );
+    }
+    if (this.reasonError()) this.reasonField()?.nativeElement.focus();
+    else if (this.commentError()) this.commentField()?.nativeElement.focus();
+    else {
+      this.error.set(problemMessage(err));
+      if (isRetryable(err)) this.retryOffer.offer(true, err.retryAfter);
     }
   }
 

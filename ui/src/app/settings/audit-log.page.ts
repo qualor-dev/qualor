@@ -251,18 +251,7 @@ export class AuditLogPage {
       const projectId = await this.projectId();
       if (generation !== this.generation) return;
       if (actorUserId === null || projectId === null) return;
-      const organizationId = this.instanceAdmin()
-        ? this.organizationId() || undefined
-        : (this.org.currentId() ?? undefined);
-      const applied: Applied = {
-        from: new Date(from).toISOString(),
-        to: new Date(to + DAY_MS).toISOString(),
-        ...(actions.length > 0 ? { action: actions } : {}),
-        ...(this.outcome() ? { outcome: this.outcome() as 'success' | 'failure' } : {}),
-        ...(actorUserId ? { actorUserId } : {}),
-        ...(projectId ? { projectId } : {}),
-        ...(organizationId ? { organizationId } : {}),
-      };
+      const applied = this.appliedQuery({ from, to, actions, actorUserId, projectId });
       this.fieldError.set({});
       this.expanded.set(new Set());
       this.applied.set(applied);
@@ -275,6 +264,32 @@ export class AuditLogPage {
       // A search replaced by a scope change leaves `busy` to the one that replaced it.
       if (generation === this.generation) this.busy.set(false);
     }
+  }
+
+  /**
+   * The query of checked filters: the period from the first day's start to the end of the last,
+   * and only the filters that are set ('' for the user or the project is none).
+   */
+  private appliedQuery(checked: {
+    from: number;
+    to: number;
+    actions: string[];
+    actorUserId: string;
+    projectId: string;
+  }): Applied {
+    const { from, to, actions, actorUserId, projectId } = checked;
+    const organizationId = this.instanceAdmin()
+      ? this.organizationId() || undefined
+      : (this.org.currentId() ?? undefined);
+    return {
+      from: new Date(from).toISOString(),
+      to: new Date(to + DAY_MS).toISOString(),
+      ...(actions.length > 0 ? { action: actions } : {}),
+      ...(this.outcome() ? { outcome: this.outcome() as 'success' | 'failure' } : {}),
+      ...(actorUserId ? { actorUserId } : {}),
+      ...(projectId ? { projectId } : {}),
+      ...(organizationId ? { organizationId } : {}),
+    };
   }
 
   /**

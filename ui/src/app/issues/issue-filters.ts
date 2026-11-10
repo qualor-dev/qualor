@@ -47,8 +47,14 @@ const VALUE_LENGTH: Record<'rule' | 'engine' | 'path', number> = {
 };
 export const Q_MAX_LENGTH = 200;
 
+/** A query parameter's values: its array, its one string, or none. */
+function rawValues(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  return typeof value === 'string' ? [value] : [];
+}
+
 function list(value: unknown, allowed?: string[]): string[] {
-  const raw = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  const raw = rawValues(value);
   const strings = raw.filter((v): v is string => typeof v === 'string' && v !== '');
   const kept = allowed ? strings.filter((v) => allowed.includes(v)) : strings;
   return [...new Set(kept)];

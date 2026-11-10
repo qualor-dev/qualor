@@ -174,17 +174,20 @@ export class RepositoriesPage {
         // A mapping edited again while the save was on its way stays as typed.
         if (!this.sameDraft(project, draft)) return;
         this.drafts.update((all) => without(all, project.id));
-        this.results.update((all) => ({
-          ...all,
-          [project.id]: !(updated.scmConnectionId && updated.scmProjectRef)
-            ? $localize`:@@gitlab.unmapped:Not decorated.`
-            : this.providerOf(updated) === 'github'
-              ? $localize`:@@gitlab.mappedGitHub:Decorated in GitHub.`
-              : $localize`:@@gitlab.mapped:Decorated in GitLab.`,
-        }));
+        this.results.update((all) => ({ ...all, [project.id]: this.savedMapping(updated) }));
       },
       (err) => this.projectFieldError(project, err, 'body.scmProjectRef'),
     );
+  }
+
+  /** What a saved mapping says: not decorated without one, else where it decorates. */
+  private savedMapping(project: Project): string {
+    if (!(project.scmConnectionId && project.scmProjectRef)) {
+      return $localize`:@@gitlab.unmapped:Not decorated.`;
+    }
+    return this.providerOf(project) === 'github'
+      ? $localize`:@@gitlab.mappedGitHub:Decorated in GitHub.`
+      : $localize`:@@gitlab.mapped:Decorated in GitLab.`;
   }
 
   protected async check(project: Project): Promise<void> {

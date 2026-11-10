@@ -1,10 +1,16 @@
 import { Component, LOCALE_ID, computed, inject, input } from '@angular/core';
 import { DateTimePipe } from '../shared/date-time.pipe';
-import { direction, isPercentMetric } from './direction';
+import { direction, isPercentMetric, type Direction } from './direction';
 
 export interface DeltaView {
   text: string;
   tone: 'good' | 'bad' | 'neutral';
+}
+
+/** The tone of a non-zero change: good or bad by the metric's direction, neutral without one. */
+function changeTone(change: number, way: Direction): DeltaView['tone'] {
+  if (way === 'none') return 'neutral';
+  return change < 0 === (way === 'lower_is_better') ? 'good' : 'bad';
 }
 
 /**
@@ -21,9 +27,7 @@ export function deltaView(
   if (!Number.isFinite(current) || !Number.isFinite(previous)) return null;
   const change = Math.round((current - previous) * 10) / 10;
   if (change === 0) return { text: $localize`:@@delta.none:No change`, tone: 'neutral' };
-  const way = direction(metric);
-  const tone =
-    way === 'none' ? 'neutral' : change < 0 === (way === 'lower_is_better') ? 'good' : 'bad';
+  const tone = changeTone(change, direction(metric));
   const number = new Intl.NumberFormat(locale, {
     maximumFractionDigits: 1,
     signDisplay: 'always',

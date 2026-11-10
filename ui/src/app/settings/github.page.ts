@@ -332,10 +332,8 @@ export class GitHubPage {
     const keyField = form.querySelector<HTMLTextAreaElement>('textarea');
     const secretField = form.querySelector<HTMLInputElement>('input[type="password"]');
     const dropField = form.querySelector<HTMLInputElement>('input[type="checkbox"]');
-    const privateKey = keyField?.value ?? '';
-    const secret = secretField?.value ?? '';
-    if (keyField) keyField.value = '';
-    if (secretField) secretField.value = '';
+    const privateKey = takeValue(keyField);
+    const secret = takeValue(secretField);
     if (this.busy()) return;
     const typed = (urlField?.value ?? connection.baseUrl).trim();
     const changed = typed !== '' && normalBaseUrl(typed) !== connection.baseUrl;
@@ -349,29 +347,13 @@ export class GitHubPage {
       ];
       target?.focus();
     };
-    const refusal: [RowError['field'], string] | null =
-      typed === '' || normalBaseUrl(typed) === null
-        ? ['url', badUrl()]
-        : privateKey.trim() === ''
-          ? ['key', changed ? keyForNewUrl() : badKey()]
-          : secret !== '' && drop
-            ? ['newSecret', secretAndDrop()]
-            : secret !== '' && !WEBHOOK_SECRET.test(secret)
-              ? ['newSecret', badSecret()]
-              : changed && secretStored && secret === '' && !drop
-                ? ['newSecret', secretForNewUrl()]
-                : null;
+    const refusal = keyFormRefusal({ typed, privateKey, secret, changed, drop, secretStored });
     if (refusal) {
       refuse(...refusal);
       return;
     }
     this.clearRowError(connection);
-    const body: { baseUrl?: string; privateKey: string; webhookSecret?: string | null } = {
-      ...(changed ? { baseUrl: typed } : {}),
-      privateKey,
-    };
-    if (secret !== '') body.webhookSecret = secret;
-    else if (drop) body.webhookSecret = null;
+    const body = keyFormBody({ typed, privateKey, secret, changed, drop });
     const generation = this.orgGeneration;
     await this.run(
       async () => {
@@ -386,13 +368,9 @@ export class GitHubPage {
         );
       },
       (err) => {
-        const fields = fieldErrors(err);
-        if (fields['body.baseUrl'] !== undefined) refuse('url', badUrl());
-        else if (fields['body.privateKey'] !== undefined) refuse('key', badKey());
-        else if (fields['body.webhookSecret'] !== undefined) {
-          refuse('newSecret', changed && secret === '' ? secretForNewUrl() : badSecret());
-        } else return false;
-        return true;
+        const refused = keyFormRefused(err, changed && secret === '');
+        if (refused) refuse(...refused);
+        return refused !== null;
       },
     );
   }
@@ -616,15 +594,11 @@ export class GitHubPage {
 
   private focusFirstInvalid(): void {
     const errors = this.createErrors();
-    const field = errors.url
-      ? this.urlField()
-      : errors.appId
-        ? this.appIdField()
-        : errors.key
-          ? this.keyField()
-          : errors.secret
-            ? this.secretField()
-            : undefined;
+    let field: ElementRef<HTMLInputElement> | ElementRef<HTMLTextAreaElement> | undefined;
+    if (errors.url) field = this.urlField();
+    else if (errors.appId) field = this.appIdField();
+    else if (errors.key) field = this.keyField();
+    else if (errors.secret) field = this.secretField();
     field?.nativeElement.focus();
   }
 
@@ -656,6 +630,72 @@ function without<T>(all: Record<string, T>, id: string): Record<string, T> {
 
 function validAppId(appId: string): boolean {
   return APP_ID.test(appId) && Number(appId) <= Number.MAX_SAFE_INTEGER;
+}
+
+/** A write-only field's value, emptied from the page at once; '' without the field. */
+function takeValue(field: HTMLInputElement | HTMLTextAreaElement | null): string {
+  const value = field?.value ?? '';
+  if (field) field.value = '';
+  return value;
+}
+
+/** What a connection's key form holds: the typed address, the key and the secret. */
+interface KeyForm {
+  typed: string;
+  privateKey: string;
+  secret: string;
+  /** The typed address differs from the stored one. */
+  changed: boolean;
+  /** "Drop the webhook secret" is ticked (while a secret is stored). */
+  drop: boolean;
+}
+
+/** A refused field of a connection's form, with its message. */
+type Refusal = [RowError['field'], string];
+
+/** Why the key form cannot be sent, as the server would refuse it; null when it can. */
+function keyFormRefusal(form: KeyForm & { secretStored: boolean }): Refusal | null {
+  const { typed, privateKey, secret, changed, drop, secretStored } = form;
+  if (typed === '' || normalBaseUrl(typed) === null) return ['url', badUrl()];
+  if (privateKey.trim() === '') return ['key', changed ? keyForNewUrl() : badKey()];
+  if (secret !== '' && drop) return ['newSecret', secretAndDrop()];
+  if (secret !== '' && !WEBHOOK_SECRET.test(secret)) return ['newSecret', badSecret()];
+  if (changed && secretStored && secret === '' && !drop) {
+    return ['newSecret', secretForNewUrl()];
+  }
+  return null;
+}
+
+/** What a key form's save sends. */
+interface KeyFormBody {
+  baseUrl?: string;
+  privateKey: string;
+  webhookSecret?: string | null;
+}
+
+/** The key form's save: the address only when it changed; a typed secret, or null to drop it. */
+function keyFormBody(form: KeyForm): KeyFormBody {
+  const body: KeyFormBody = {
+    ...(form.changed ? { baseUrl: form.typed } : {}),
+    privateKey: form.privateKey,
+  };
+  if (form.secret !== '') body.webhookSecret = form.secret;
+  else if (form.drop) body.webhookSecret = null;
+  return body;
+}
+
+/**
+ * The field the server refused in a key form's save, with its message; a refused secret asks for
+ * it again when `secretForUrl` (a new address without one). Null for any other error.
+ */
+function keyFormRefused(err: unknown, secretForUrl: boolean): Refusal | null {
+  const fields = fieldErrors(err);
+  if (fields['body.baseUrl'] !== undefined) return ['url', badUrl()];
+  if (fields['body.privateKey'] !== undefined) return ['key', badKey()];
+  if (fields['body.webhookSecret'] !== undefined) {
+    return ['newSecret', secretForUrl ? secretForNewUrl() : badSecret()];
+  }
+  return null;
 }
 
 function badUrl(): string {

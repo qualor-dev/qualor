@@ -41,6 +41,87 @@ const MAX_POINTS = 1000;
 const M = { top: 16, right: 24, bottom: 30, left: 48 };
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
+/** An SVG point of column `i` at value `v`. */
+type PointAt = (i: number, v: number) => string;
+
+interface Band {
+  key: string;
+  tone: string;
+  area: string;
+  edge: string;
+}
+
+interface Segment {
+  key: string;
+  tone: string;
+  y: number;
+  height: number;
+}
+
+/** A stack's bands: each series' area from the one below it to its own top, over valued columns. */
+function stackBands(cols: readonly Column[], series: readonly ChartSeries[], at: PointAt): Band[] {
+  const bands: Band[] = [];
+  const valued = cols.flatMap((c, i) => (c.total === null ? [] : [i]));
+  const lower = cols.map(() => 0);
+  series.forEach((s, si) => {
+    const upper = cols.map((c, i) => (lower[i] ?? 0) + (c.values[si] ?? 0));
+    const topEdge = valued.map((i) => at(i, upper[i] ?? 0));
+    const baseEdge = [...valued].reverse().map((i) => at(i, lower[i] ?? 0));
+    if (valued.length > 0) {
+      bands.push({
+        key: s.key,
+        tone: s.tone,
+        area: [...topEdge, ...baseEdge].join(' '),
+        edge: topEdge.join(' '),
+      });
+    }
+    upper.forEach((v, i) => (lower[i] = v));
+  });
+  return bands;
+}
+
+/** The one series' line through its valued columns, with its area down to `bottom`. */
+function seriesLine(
+  cols: readonly Column[],
+  xs: readonly number[],
+  at: PointAt,
+  bottom: number,
+): { points: string; area: string } | null {
+  const valued = cols.flatMap((c, i) => (c.values[0] === null ? [] : [i]));
+  const first = valued[0];
+  const last = valued[valued.length - 1];
+  if (first === undefined || last === undefined) return null;
+  const points = valued.map((i) => at(i, cols[i]?.values[0] ?? 0)).join(' ');
+  return { points, area: `${points} ${xs[last]},${r1(bottom)} ${xs[first]},${r1(bottom)}` };
+}
+
+/** A stack of one analysis as one column of segments at `x0`, bottom up. */
+function stackColumn(
+  only: Column,
+  series: readonly ChartSeries[],
+  y: (value: number) => number,
+  x0: number,
+): { x: number; width: number; segments: Segment[] } {
+  let base = 0;
+  /** The drawn top of the segment below (the baseline at first). */
+  let drawnTop = Infinity;
+  const segments: Segment[] = [];
+  series.forEach((s, si) => {
+    const v = only.values[si] ?? 0;
+    if (v <= 0) return;
+    const top = y(base + v);
+    // A 2px surface gap between touching segments (dataviz: gaps, not strokes). A segment too
+    // thin for a pixel keeps one, standing on its base rather than hanging below it; the next
+    // one stands on what was drawn.
+    const floor = Math.min(y(base) - 1, drawnTop - 2);
+    const height = Math.max(1, floor - (top + 1));
+    drawnTop = floor - height;
+    segments.push({ key: s.key, tone: s.tone, y: r1(drawnTop), height: r1(height) });
+    base += v;
+  });
+  return { x: r1(x0 - 12), width: 24, segments };
+}
+
 /**
  * `q-line-chart` (spec §6.2): a time series with clean y ticks and date ticks, one line with its
  * area wash or a stack of series; a crosshair and tooltip follow the pointer or the arrow keys;
@@ -107,6 +188,38 @@ export class LineChart {
     return this.stacked() ? c.total : (c.values[0] ?? null);
   }
 
+  /** The highest value the columns show, at least 0. */
+  private highest(cols: readonly Column[]): number {
+    let max = 0;
+    for (const c of cols) {
+      const v = this.shown(c);
+      if (v !== null && v > max) max = v;
+    }
+    return max;
+  }
+
+  /** The latest value, marked on a line; on a stack only at zero, where no band shows it. */
+  private latest(
+    cols: readonly Column[],
+    xs: readonly number[],
+    y: (value: number) => number,
+    metric: string,
+  ): { x: number; y: number; text: string; marked: boolean } | null {
+    for (let i = cols.length - 1; i >= 0; i--) {
+      const col = cols[i];
+      const v = col ? this.shown(col) : null;
+      if (v !== null) {
+        return {
+          x: xs[i] ?? 0,
+          y: r1(y(v)),
+          text: formatMeasure(v, metric, this.locale),
+          marked: !this.stacked() || v === 0,
+        };
+      }
+    }
+    return null;
+  }
+
   protected readonly viewBox = computed(() => `0 0 ${this.width()} ${this.height()}`);
 
   protected readonly plot = computed(() => {
@@ -116,11 +229,7 @@ export class LineChart {
     const top = M.top;
     const bottom = this.height() - M.bottom;
     const metric = this.metric();
-    let max = 0;
-    for (const c of cols) {
-      const v = this.shown(c);
-      if (v !== null && v > max) max = v;
-    }
+    const max = this.highest(cols);
     const ticks = niceTicks(max, 4, !isPercentMetric(metric));
     const yTop = ticks[ticks.length - 1] ?? 1;
     const t0 = cols[0]?.at ?? 0;
@@ -128,79 +237,16 @@ export class LineChart {
     const x = linear([t0, t1], [left, right]);
     const y = linear([0, yTop], [bottom, top]);
     const xs = cols.map((c) => r1(x(c.at)));
-    const at = (i: number, v: number) => `${xs[i]},${r1(y(v))}`;
+    const at: PointAt = (i, v) => `${xs[i]},${r1(y(v))}`;
 
-    let line: { points: string; area: string } | null = null;
-    const bands: { key: string; tone: string; area: string; edge: string }[] = [];
-    if (this.stacked()) {
-      const valued = cols.flatMap((c, i) => (c.total === null ? [] : [i]));
-      const lower = cols.map(() => 0);
-      this.series().forEach((s, si) => {
-        const upper = cols.map((c, i) => (lower[i] ?? 0) + (c.values[si] ?? 0));
-        const topEdge = valued.map((i) => at(i, upper[i] ?? 0));
-        const baseEdge = [...valued].reverse().map((i) => at(i, lower[i] ?? 0));
-        if (valued.length > 0) {
-          bands.push({
-            key: s.key,
-            tone: s.tone,
-            area: [...topEdge, ...baseEdge].join(' '),
-            edge: topEdge.join(' '),
-          });
-        }
-        upper.forEach((v, i) => (lower[i] = v));
-      });
-    } else {
-      const valued = cols.flatMap((c, i) => (c.values[0] === null ? [] : [i]));
-      const first = valued[0];
-      const last = valued[valued.length - 1];
-      if (first !== undefined && last !== undefined) {
-        const points = valued.map((i) => at(i, cols[i]?.values[0] ?? 0)).join(' ');
-        line = { points, area: `${points} ${xs[last]},${r1(bottom)} ${xs[first]},${r1(bottom)}` };
-      }
-    }
+    const line = this.stacked() ? null : seriesLine(cols, xs, at, bottom);
+    const bands = this.stacked() ? stackBands(cols, this.series(), at) : [];
 
     // A stack of one analysis has bands without area: it is drawn as one stacked column instead.
-    let column: {
-      x: number;
-      width: number;
-      segments: { key: string; tone: string; y: number; height: number }[];
-    } | null = null;
     const only = cols.length === 1 ? cols[0] : undefined;
-    if (this.stacked() && only) {
-      let base = 0;
-      /** The drawn top of the segment below (the baseline at first). */
-      let drawnTop = Infinity;
-      const segments: { key: string; tone: string; y: number; height: number }[] = [];
-      this.series().forEach((s, si) => {
-        const v = only.values[si] ?? 0;
-        if (v <= 0) return;
-        const top = y(base + v);
-        // A 2px surface gap between touching segments (dataviz: gaps, not strokes). A segment too
-        // thin for a pixel keeps one, standing on its base rather than hanging below it; the next
-        // one stands on what was drawn.
-        const floor = Math.min(y(base) - 1, drawnTop - 2);
-        const height = Math.max(1, floor - (top + 1));
-        drawnTop = floor - height;
-        segments.push({ key: s.key, tone: s.tone, y: r1(drawnTop), height: r1(height) });
-        base += v;
-      });
-      column = { x: r1((xs[0] ?? 0) - 12), width: 24, segments };
-    }
+    const column = this.stacked() && only ? stackColumn(only, this.series(), y, xs[0] ?? 0) : null;
 
-    // The latest value, marked on a line; on a stack only at zero, where no band shows it.
-    let end: { x: number; y: number; text: string; marked: boolean } | null = null;
-    for (let i = cols.length - 1; i >= 0 && end === null; i--) {
-      const col = cols[i];
-      const v = col ? this.shown(col) : null;
-      if (v !== null) {
-        end = {
-          x: xs[i] ?? 0,
-          y: r1(y(v)),
-          text: formatMeasure(v, metric, this.locale),
-          marked: !this.stacked() || v === 0,
-        };
-      }
-    }
+    const end = this.latest(cols, xs, y, metric);
     const xTicks = only
       ? [{ at: only.at, x: xs[0] ?? 0, text: formatDate(only.date, this.locale) }]
       : timeTicks(t0, t1).map((t) => ({

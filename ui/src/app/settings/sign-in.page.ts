@@ -42,6 +42,14 @@ interface Candidate {
   reason: 'no-password' | 'inactive' | 'not-admin' | null;
 }
 
+/** Why a person cannot be picked (no password, inactive, not an admin); null when usable. */
+function unusableReason(u: User): Candidate['reason'] {
+  if (!u.hasPassword) return 'no-password';
+  if (!u.active) return 'inactive';
+  if (!u.isInstanceAdmin) return 'not-admin';
+  return null;
+}
+
 /**
  * Settings → Sign-in (sso-scim.md §10, §18; feature `sso`, instance admins): who may still sign
  * in with a password. `everyone`, or only the break-glass administrators (up to 10 active instance
@@ -150,13 +158,7 @@ export class SignInSettingsPage {
         username: u.username,
         displayName: u.displayName,
         usable: u.active && u.isInstanceAdmin && u.hasPassword,
-        reason: !u.hasPassword
-          ? ('no-password' as const)
-          : !u.active
-            ? ('inactive' as const)
-            : !u.isInstanceAdmin
-              ? ('not-admin' as const)
-              : null,
+        reason: unusableReason(u),
       }));
     candidates.sort((a, b) => a.username.localeCompare(b.username));
     this.candidates.set(candidates);

@@ -22,6 +22,25 @@ export interface LensGeometry {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
+ * The fill's dots, row by row from the level down: each row's dots grow with its depth, and only
+ * those that touch the circle are kept.
+ */
+function fillDots(g: Pick<LensGeometry, 'size' | 'c' | 'r' | 'levelY' | 'step'>): LensDot[] {
+  const { size, c, r, levelY, step } = g;
+  const dots: LensDot[] = [];
+  for (let y = step / 2; y < size; y += step) {
+    if (y < levelY + step * 0.2) continue;
+    const depth = Math.min(1, (y - levelY) / (2 * r * 0.75));
+    const dotR = step * (0.2 + 0.3 * depth);
+    for (let x = step / 2; x < size; x += step) {
+      if (Math.hypot(x - c, y - c) - dotR >= r) continue;
+      dots.push({ x: round2(x), y: round2(y), r: round2(dotR) });
+    }
+  }
+  return dots;
+}
+
+/**
  * The lens (spec §6.1): the brand's halftone circle as a meter. A grid of dots in straight columns
  * (one under another, centred on the circle) fills it from the bottom up to `value` percent; dots
  * grow with depth like the screen prints. Every dot that touches the circle is drawn, and the lens
@@ -33,18 +52,7 @@ export function lensGeometry(value: number | null, size: number): LensGeometry {
   const pct = value === null || !Number.isFinite(value) ? 0 : Math.min(100, Math.max(0, value));
   const levelY = c + r - (2 * r * pct) / 100;
   const step = Math.max(3.2, size / 17);
-  const dots: LensDot[] = [];
-  if (pct > 0) {
-    for (let y = step / 2; y < size; y += step) {
-      if (y < levelY + step * 0.2) continue;
-      const depth = Math.min(1, (y - levelY) / (2 * r * 0.75));
-      const dotR = step * (0.2 + 0.3 * depth);
-      for (let x = step / 2; x < size; x += step) {
-        if (Math.hypot(x - c, y - c) - dotR >= r) continue;
-        dots.push({ x: round2(x), y: round2(y), r: round2(dotR) });
-      }
-    }
-  }
+  const dots = pct > 0 ? fillDots({ size, c, r, levelY, step }) : [];
   const half = Math.sqrt(Math.max(0, r * r - (levelY - c) ** 2));
   const level =
     pct > 0 && pct < 100 ? { x1: round2(c - half), x2: round2(c + half), y: round2(levelY) } : null;

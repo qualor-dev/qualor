@@ -52,7 +52,9 @@ export function gitlabTestText(result: TestResult): string {
   }
   const reachable = $localize`:@@gitlab.testOkProject:Connected as ${result.user.username}:user:; the project ${result.project.pathWithNamespace}:project: is reachable.`;
   const level = result.project.accessLevel;
-  return level !== null && level < MAINTAINER
-    ? `${reachable} ${$localize`:@@gitlab.belowMaintainer:The token is below Maintainer: merge request comments work, but a commit status on a protected branch (such as the default branch) is refused. Give it the Maintainer role.`}`
-    : reachable;
+  if (level !== null && level < MAINTAINER) {
+    const belowMaintainer = $localize`:@@gitlab.belowMaintainer:The token is below Maintainer: merge request comments work, but a commit status on a protected branch (such as the default branch) is refused. Give it the Maintainer role.`;
+    return `${reachable} ${belowMaintainer}`;
+  }
+  return reachable;
 }

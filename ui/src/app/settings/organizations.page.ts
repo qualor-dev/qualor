@@ -191,7 +191,9 @@ export class OrganizationsPage {
 
   private focusFirstInvalid(): void {
     const errors = this.errors();
-    const field = errors.name ? this.nameField() : errors.key ? this.keyField() : undefined;
+    let field: ElementRef<HTMLInputElement> | undefined;
+    if (errors.name) field = this.nameField();
+    else if (errors.key) field = this.keyField();
     field?.nativeElement.focus();
   }
 }
