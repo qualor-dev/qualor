@@ -84,37 +84,52 @@ function checkExtendChain(root: string, top: string): string | null {
     if (visited.size > MAX_EXTENDED_CONFIGS) {
       return `Gitleaks config ${rel(top)} extends more than ${MAX_EXTENDED_CONFIGS} configs`;
     }
-    const name = `Gitleaks config ${rel(file)}`;
-    let bytes: Buffer;
-    try {
-      if (statSync(file).size > MAX_GITLEAKS_CONFIG_BYTES) {
-        return `${name} is larger than ${MAX_GITLEAKS_CONFIG_BYTES / 1024 / 1024} MiB`;
-      }
-      bytes = readFileSync(file);
-    } catch {
-      return `${name} cannot be read`;
-    }
-    const parsed = gitleaksExtends(bytes);
-    if ('error' in parsed) return `${name} ${parsed.error}`;
-    for (const target of parsed.paths) {
-      if (target === '') continue;
-      const bad = (why: string) => `${name}: extend.path "${shown(target)}" ${why}`;
-      if (isUrl(target)) return bad('is a URL (only repository files)');
-      if (
-        path.isAbsolute(target) ||
-        path.posix.isAbsolute(target) ||
-        path.win32.isAbsolute(target)
-      ) {
-        return bad('is an absolute path (only repository files)');
-      }
-      const next = path.resolve(root, target);
-      if (!within(path.resolve(root), next)) return bad('is outside the repository');
-      if (!exists(next)) return bad('does not exist');
-      if (!staysInside(root, next)) return bad('is outside the repository');
-      if (!isRegularFile(next)) return bad('is not a regular file');
-      queue.push(next);
-    }
+    const followed = extendedConfigs(root, file, `Gitleaks config ${rel(file)}`);
+    if ('problem' in followed) return followed.problem;
+    queue.push(...followed.next);
   }
+  return null;
+}
+
+/** One config of the chain (`name` in messages): the configs it extends, or why it is refused. */
+function extendedConfigs(
+  root: string,
+  file: string,
+  name: string,
+): { next: string[] } | { problem: string } {
+  let bytes: Buffer;
+  try {
+    if (statSync(file).size > MAX_GITLEAKS_CONFIG_BYTES) {
+      return { problem: `${name} is larger than ${MAX_GITLEAKS_CONFIG_BYTES / 1024 / 1024} MiB` };
+    }
+    bytes = readFileSync(file);
+  } catch {
+    return { problem: `${name} cannot be read` };
+  }
+  const parsed = gitleaksExtends(bytes);
+  if ('error' in parsed) return { problem: `${name} ${parsed.error}` };
+  const next: string[] = [];
+  for (const target of parsed.paths) {
+    if (target === '') continue;
+    const problem = extendTargetProblem(root, name, target);
+    if (problem !== null) return { problem };
+    next.push(path.resolve(root, target));
+  }
+  return { next };
+}
+
+/** Why an `[extend] path` is refused, or null for a regular file inside the repository. */
+function extendTargetProblem(root: string, name: string, target: string): string | null {
+  const bad = (why: string) => `${name}: extend.path "${shown(target)}" ${why}`;
+  if (isUrl(target)) return bad('is a URL (only repository files)');
+  if (path.isAbsolute(target) || path.posix.isAbsolute(target) || path.win32.isAbsolute(target)) {
+    return bad('is an absolute path (only repository files)');
+  }
+  const next = path.resolve(root, target);
+  if (!within(path.resolve(root), next)) return bad('is outside the repository');
+  if (!exists(next)) return bad('does not exist');
+  if (!staysInside(root, next)) return bad('is outside the repository');
+  if (!isRegularFile(next)) return bad('is not a regular file');
   return null;
 }
 

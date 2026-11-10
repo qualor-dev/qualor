@@ -160,6 +160,29 @@ function outsideProjectGroups(e: XmlError, groups: ReadonlySet<string> | undefin
   );
 }
 
+/** Issue #33: an addon run that failed, as cppcheck reports it (an `internalError`). */
+function isAddonFailure(e: XmlError): boolean {
+  return e.id === 'internalError' && e.msg.includes('Failed to execute');
+}
+
+/** One finding at its primary location, with the related locations that stay inside the copy. */
+function resultOf(
+  e: XmlError,
+  primary: SarifLocation,
+  related: SarifLocation[],
+  base: string,
+): SarifResult {
+  return {
+    ruleId: e.id,
+    level: LEVEL.get(e.severity) ?? 'note',
+    // Ruling D9-11: no host path in a kept message (paths in the copy become relative to it).
+    message: { text: redactForeignPaths(messageOf(e), [base]) },
+    properties: { cppcheckSeverity: e.severity },
+    locations: [primary],
+    ...(related.length > 0 && { relatedLocations: related }),
+  };
+}
+
 /**
  * config.md §6.2: cppcheck's xmlv2 as SARIF 2.1.0. `base` is the directory cppcheck ran in (the
  * checked copy), against which its relative paths resolve. Ids and severities that are no
@@ -180,7 +203,7 @@ export function cppcheckXmlToSarif(
   for (const e of readErrors(xml)) {
     if (!cppcheckIsFinding(e.id, e.severity)) {
       notAnalysed.set(e.id, (notAnalysed.get(e.id) ?? 0) + 1);
-      if (e.id === 'internalError' && e.msg.includes('Failed to execute')) addonFailures++;
+      if (isAddonFailure(e)) addonFailures++;
       continue;
     }
     if (outsideProjectGroups(e, o.projectGroups)) continue;
@@ -195,15 +218,7 @@ export function cppcheckXmlToSarif(
     const related = placed.filter((r): r is SarifLocation => r !== null);
     outside += placed.length - related.length;
     if (!rules.has(e.id)) rules.set(e.id, ruleOf(e));
-    results.push({
-      ruleId: e.id,
-      level: LEVEL.get(e.severity) ?? 'note',
-      // Ruling D9-11: no host path in a kept message (paths in the copy become relative to it).
-      message: { text: redactForeignPaths(messageOf(e), [base]) },
-      properties: { cppcheckSeverity: e.severity },
-      locations: [primary],
-      ...(related.length > 0 && { relatedLocations: related }),
-    });
+    results.push(resultOf(e, primary, related, base));
   }
   return {
     log: {

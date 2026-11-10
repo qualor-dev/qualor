@@ -7,6 +7,11 @@ function count(value: string | undefined): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/** A `sourcefile`'s path below its `package` (just the file name in the default package). */
+function sourcePath(pkg: string, file: string): string {
+  return pkg === '' ? file : `${pkg}/${file}`;
+}
+
 /**
  * JaCoCo XML: `package@name` + `sourcefile@name` form the path (e.g. `com/acme/Calculator.java`,
  * resolved to `src/main/java/…` by suffix). A line is executable when it has instructions
@@ -22,7 +27,7 @@ export async function parseJacoco(absPath: string): Promise<ParsedCoverage> {
         pkg = attrs['name'] ?? '';
       } else if (name === 'sourcefile') {
         const file = attrs['name'];
-        record = file === undefined || file === '' ? null : recordFor(files, pkg === '' ? file : `${pkg}/${file}`);
+        record = file === undefined || file === '' ? null : recordFor(files, sourcePath(pkg, file));
       } else if (name === 'line' && parents.at(-1) === 'sourcefile' && record !== null) {
         const line = Number(attrs['nr']);
         const mi = count(attrs['mi']);

@@ -144,6 +144,28 @@ function relativeUri(root: string, filePath: string): string {
   return rel.split('/').map(encodeURIComponent).join('/');
 }
 
+type EslintMessage = z.infer<typeof eslintMessage>;
+type RulesMeta = NonNullable<NonNullable<z.infer<typeof eslintOutput>['metadata']>['rulesMeta']>;
+
+/** The SARIF region of one message (line 1 when ESLint gave none). */
+function regionOf(m: EslintMessage): Record<string, number> {
+  const region: Record<string, number> = { startLine: m.line ?? 1 };
+  if (m.column !== undefined) region['startColumn'] = m.column;
+  if (m.endLine !== undefined) region['endLine'] = m.endLine;
+  if (m.endColumn !== undefined) region['endColumn'] = m.endColumn;
+  return region;
+}
+
+/** A SARIF rule with the description and documentation URL of ESLint's rule metadata. */
+function ruleOf(id: string, meta: RulesMeta) {
+  const docs = meta[id]?.docs;
+  return {
+    id,
+    ...(docs?.description !== undefined && { shortDescription: { text: docs.description } }),
+    ...(docs?.url !== undefined && { helpUri: docs.url }),
+  };
+}
+
 /**
  * ESLint's built-in `json-with-metadata` formatter output → SARIF 2.1.0. This replaces
  * `@microsoft/eslint-formatter-sarif`, which the project would have to install and which pins
@@ -170,29 +192,18 @@ export function eslintJsonToSarif(
         continue;
       }
       ruleIds.add(m.ruleId);
-      const region: Record<string, number> = { startLine: m.line ?? 1 };
-      if (m.column !== undefined) region['startColumn'] = m.column;
-      if (m.endLine !== undefined) region['endLine'] = m.endLine;
-      if (m.endColumn !== undefined) region['endColumn'] = m.endColumn;
       results.push({
         ruleId: m.ruleId,
         level: m.severity >= 2 ? 'error' : 'warning',
         message: { text: m.message },
-        locations: [{ physicalLocation: { artifactLocation: { uri }, region } }],
+        locations: [{ physicalLocation: { artifactLocation: { uri }, region: regionOf(m) } }],
       });
     }
   }
   if (dropped > 0) {
     log?.debug(`eslint: dropped ${dropped} message(s) without a rule id (fatal parse errors)`);
   }
-  const rules = [...ruleIds].sort().map((id) => {
-    const docs = meta[id]?.docs;
-    return {
-      id,
-      ...(docs?.description !== undefined && { shortDescription: { text: docs.description } }),
-      ...(docs?.url !== undefined && { helpUri: docs.url }),
-    };
-  });
+  const rules = [...ruleIds].sort().map((id) => ruleOf(id, meta));
   return {
     version: '2.1.0',
     runs: [
@@ -221,41 +232,39 @@ function readsEslintrc(major: number | null, env: AnalyzerContext['env']): boole
   return major === 9 && env['ESLINT_USE_FLAT_CONFIG'] === 'false';
 }
 
-async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
-  const settings = ctx.config.analyzers.eslint;
-  const configArgs: string[] = [];
-  let configName: string;
-  if (settings.configFile !== null) {
-    const file = path.resolve(ctx.root, settings.configFile);
-    // ESLint executes its config: one outside the checkout is not the project's to run.
-    if (!staysInside(ctx.root, file)) {
-      return { skip: `configFile ${shown(settings.configFile)} is outside the repository` };
-    }
-    if (!isRepoFile(ctx.root, file)) {
-      return { skip: `configFile ${shown(settings.configFile)} does not exist` };
-    }
-    configArgs.push('--config', file);
-    configName = settings.configFile;
-  } else {
+/**
+ * The configuration ESLint runs with: `configFile` (passed as `--config`) when it is set, else the
+ * one ESLint finds at the root; or why there is none to run.
+ */
+function configOf(ctx: AnalyzerContext): { name: string; args: string[] } | { skip: string } {
+  const configFile = ctx.config.analyzers.eslint.configFile;
+  if (configFile === null) {
     const found = findEslintConfig(ctx.root);
     if (found === null) {
       return { skip: 'the repository has no ESLint configuration (none is bundled)' };
     }
-    configName = found;
+    return { name: found, args: [] };
   }
-  const outFile = path.join(ctx.workDir, 'eslint.json');
-  const args = [
-    '--format',
-    'json-with-metadata',
-    '--output-file',
-    outFile,
-    '--no-color',
-    ...configArgs,
-    ...settings.args,
-    '.',
-  ];
-  let command: string;
-  let version: string | null;
+  const file = path.resolve(ctx.root, configFile);
+  // ESLint executes its config: one outside the checkout is not the project's to run.
+  if (!staysInside(ctx.root, file)) {
+    return { skip: `configFile ${shown(configFile)} is outside the repository` };
+  }
+  if (!isRepoFile(ctx.root, file)) {
+    return { skip: `configFile ${shown(configFile)} does not exist` };
+  }
+  return { name: configFile, args: ['--config', file] };
+}
+
+/**
+ * How ESLint is started: the project's own as `node <script>` (`script` goes first in the
+ * arguments), else an `eslint` binary, whose version is probed; or why neither can run.
+ */
+async function commandOf(
+  ctx: AnalyzerContext,
+): Promise<
+  { command: string; script: string | null; version: string | null } | { unavailable: string }
+> {
   // `node` and a fallback `eslint` come from PATH or the scanner image only, never from the
   // repository (its node_modules/.bin shim or a planted binary), ruling V3.
   const local = findLocalEslint(ctx.root);
@@ -269,23 +278,41 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
             : 'the project ESLint needs node on PATH (a node inside the repository is not used)',
       };
     }
-    command = node;
-    args.unshift(local.script);
-    version = local.version;
-  } else {
-    const global = ctx.resolveBinary('eslint');
-    if (global === null) {
-      return {
-        unavailable:
-          ctx.repoBinary('eslint') === null
-            ? 'ESLint is not installed (node_modules/eslint or PATH)'
-            : 'ESLint is not installed (node_modules/eslint or PATH; an eslint binary inside the repository is not used)',
-      };
-    }
-    command = global;
-    const probe = await ctx.exec(global, ['--version'], { timeoutMs: 30_000 });
-    version = eslintVersion(probe.stdout);
+    return { command: node, script: local.script, version: local.version };
   }
+  const global = ctx.resolveBinary('eslint');
+  if (global === null) {
+    return {
+      unavailable:
+        ctx.repoBinary('eslint') === null
+          ? 'ESLint is not installed (node_modules/eslint or PATH)'
+          : 'ESLint is not installed (node_modules/eslint or PATH; an eslint binary inside the repository is not used)',
+    };
+  }
+  const probe = await ctx.exec(global, ['--version'], { timeoutMs: 30_000 });
+  return { command: global, script: null, version: eslintVersion(probe.stdout) };
+}
+
+async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
+  const settings = ctx.config.analyzers.eslint;
+  const config = configOf(ctx);
+  if ('skip' in config) return config;
+  const configName = config.name;
+  const outFile = path.join(ctx.workDir, 'eslint.json');
+  const args = [
+    '--format',
+    'json-with-metadata',
+    '--output-file',
+    outFile,
+    '--no-color',
+    ...config.args,
+    ...settings.args,
+    '.',
+  ];
+  const started = await commandOf(ctx);
+  if ('unavailable' in started) return started;
+  const { command, version } = started;
+  if (started.script !== null) args.unshift(started.script);
   const major = majorVersion(version);
   if (isLegacyConfig(configName) && !readsEslintrc(major, ctx.env)) {
     return {

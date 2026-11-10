@@ -34,6 +34,12 @@ const ESCAPES: Readonly<Record<string, string>> = {
   '"': '"',
   '\\': '\\',
 };
+/** The hex digits after `\u`, `\U` and `\x`. */
+const HEX_ESCAPE_DIGITS: ReadonlyMap<string, number> = new Map([
+  ['u', 4],
+  ['U', 8],
+  ['x', 2],
+]);
 
 class Reader {
   private pos = 0;
@@ -88,7 +94,7 @@ class Reader {
       this.pos += 1;
       return simple;
     }
-    const digits = c === 'u' ? 4 : c === 'U' ? 8 : c === 'x' ? 2 : 0;
+    const digits = HEX_ESCAPE_DIGITS.get(c) ?? 0;
     if (digits === 0) this.fail();
     const hex = this.text.slice(this.pos + 1, this.pos + 1 + digits);
     if (!new RegExp(`^[0-9A-Fa-f]{${digits}}$`).test(hex)) this.fail();
@@ -133,25 +139,32 @@ class Reader {
     let out = '';
     for (;;) {
       if (this.eof()) this.fail();
-      if (this.peek(delim)) {
-        let extra = 0;
-        while (extra < 2 && this.text[this.pos + 3 + extra] === quote) extra += 1;
-        out += quote.repeat(extra);
-        this.pos += 3 + extra;
-        return out;
-      }
-      const c = this.text[this.pos] as string;
-      if (quote === '"' && c === '\\') {
-        // A backslash at the end of a line trims the line break and the whitespace after it.
-        const rest = /\\[ \t]*\r?\n[\s]*/y;
-        rest.lastIndex = this.pos;
-        if (rest.test(this.text)) this.pos = rest.lastIndex;
-        else out += this.escape();
-      } else {
-        out += c;
-        this.pos += 1;
-      }
+      if (this.peek(delim)) return out + this.closeMultiLine(quote);
+      out += this.multiLineChar(quote);
     }
+  }
+
+  /** The closing delimiter: the up to two quotes directly before it are content, returned. */
+  private closeMultiLine(quote: '"' | "'"): string {
+    let extra = 0;
+    while (extra < 2 && this.text[this.pos + 3 + extra] === quote) extra += 1;
+    this.pos += 3 + extra;
+    return quote.repeat(extra);
+  }
+
+  /** One character or escape of a multi-line string (nothing for a line-ending backslash). */
+  private multiLineChar(quote: '"' | "'"): string {
+    const c = this.text[this.pos] as string;
+    if (quote !== '"' || c !== '\\') {
+      this.pos += 1;
+      return c;
+    }
+    // A backslash at the end of a line trims the line break and the whitespace after it.
+    const rest = /\\[ \t]*\r?\n[\s]*/y;
+    rest.lastIndex = this.pos;
+    if (!rest.test(this.text)) return this.escape();
+    this.pos = rest.lastIndex;
+    return '';
   }
 
   private keySegment(): string {
@@ -180,43 +193,49 @@ class Reader {
     if (this.peek("'''")) return { kind: 'string', value: this.multiLine("'") };
     if (this.peek('"')) return { kind: 'string', value: this.basicString() };
     if (this.peek("'")) return { kind: 'string', value: this.literalString() };
-    if (this.peek('[')) {
-      this.pos += 1;
-      const items: Value[] = [];
-      for (;;) {
-        this.blank();
-        if (this.peek(']')) break;
-        items.push(this.value());
-        this.blank();
-        if (this.peek(',')) this.pos += 1;
-        else if (!this.peek(']')) this.fail();
-      }
-      this.pos += 1;
-      return { kind: 'array', items };
-    }
-    if (this.peek('{')) {
-      this.pos += 1;
-      const entries: Entry[] = [];
-      this.blank();
-      if (this.peek('}')) {
-        this.pos += 1;
-        return { kind: 'table', entries };
-      }
-      for (;;) {
-        this.blank();
-        entries.push(this.keyValue());
-        this.blank();
-        if (this.peek('}')) break;
-        if (!this.peek(',')) this.fail();
-        this.pos += 1;
-      }
-      this.pos += 1;
-      return { kind: 'table', entries };
-    }
+    if (this.peek('[')) return this.array();
+    if (this.peek('{')) return this.inlineTable();
     SCALAR.lastIndex = this.pos;
     if (SCALAR.exec(this.text) === null) this.fail();
     this.pos = SCALAR.lastIndex;
     return { kind: 'other' };
+  }
+
+  /** `[a, b, …]`, over several lines, with a trailing comma allowed. */
+  private array(): Value {
+    this.pos += 1;
+    const items: Value[] = [];
+    for (;;) {
+      this.blank();
+      if (this.peek(']')) break;
+      items.push(this.value());
+      this.blank();
+      if (this.peek(',')) this.pos += 1;
+      else if (!this.peek(']')) this.fail();
+    }
+    this.pos += 1;
+    return { kind: 'array', items };
+  }
+
+  /** `{ k = v, … }` (no trailing comma). */
+  private inlineTable(): Value {
+    this.pos += 1;
+    const entries: Entry[] = [];
+    this.blank();
+    if (this.peek('}')) {
+      this.pos += 1;
+      return { kind: 'table', entries };
+    }
+    for (;;) {
+      this.blank();
+      entries.push(this.keyValue());
+      this.blank();
+      if (this.peek('}')) break;
+      if (!this.peek(',')) this.fail();
+      this.pos += 1;
+    }
+    this.pos += 1;
+    return { kind: 'table', entries };
   }
 
   private keyValue(): Entry {
@@ -236,18 +255,24 @@ class Reader {
       this.blank();
       if (this.eof()) return { entries, arrayTables };
       if (this.peek('[')) {
-        const array = this.peek('[[');
-        this.pos += array ? 2 : 1;
-        table = this.key();
-        if (!this.peek(array ? ']]' : ']')) this.fail();
-        this.pos += array ? 2 : 1;
-        if (array) arrayTables.push(table);
+        table = this.tableHeader(arrayTables);
       } else {
         const kv = this.keyValue();
         entries.push({ key: [...table, ...kv.key], value: kv.value });
       }
       this.endOfLine();
     }
+  }
+
+  /** A `[table]` or `[[array table]]` header: its key (an array table's is also recorded). */
+  private tableHeader(arrayTables: string[][]): string[] {
+    const close = this.peek('[[') ? ']]' : ']';
+    this.pos += close.length;
+    const table = this.key();
+    if (!this.peek(close)) this.fail();
+    this.pos += close.length;
+    if (close === ']]') arrayTables.push(table);
+    return table;
   }
 }
 
@@ -273,33 +298,45 @@ const EXTEND_KEYS = new Set(['path', 'usedefault', 'disabledrules']);
  * so a later Gitleaks cannot start honouring something this check never looked at.
  */
 export function gitleaksExtends(bytes: Buffer): { paths: string[] } | { error: string } {
+  const text = decodeUtf8(bytes);
+  if (text === null) return { error: 'is not UTF-8' };
+  const doc = parseToml(text);
+  if (doc === null) return { error: 'cannot be parsed as TOML' };
+  if (doc.arrayTables.some((t) => normalise(t)[0] === 'extend')) {
+    return { error: 'has an [[extend]] array, which Qualor does not check' };
+  }
+  return extendPaths(doc.entries);
+}
+
+/** The text of a config without its byte order mark, or null when it is not UTF-8. */
+function decodeUtf8(bytes: Buffer): string | null {
   let text: string;
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch {
-    return { error: 'is not UTF-8' };
+    return null;
   }
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/** The document of a config, or null when this reader cannot read it with certainty. */
+function parseToml(text: string): ReturnType<Reader['document']> | null {
   // TOML allows no control character but tab and line breaks, and no CR outside CRLF (Gitleaks
   // rejects them too); a reader that took `# c\r[extend]` for one comment would miss the table.
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]|\r(?!\n)/.test(text)) {
-    return { error: 'cannot be parsed as TOML' };
-  }
-  let doc: ReturnType<Reader['document']>;
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]|\r(?!\n)/.test(text)) return null;
   try {
-    doc = new Reader(text).document();
+    return new Reader(text).document();
   } catch (err) {
-    if (err instanceof TomlError || err instanceof RangeError) {
-      return { error: 'cannot be parsed as TOML' };
-    }
+    if (err instanceof TomlError || err instanceof RangeError) return null;
     throw err;
   }
-  if (doc.arrayTables.some((t) => normalise(t)[0] === 'extend')) {
-    return { error: 'has an [[extend]] array, which Qualor does not check' };
-  }
+}
+
+/** The `extend.path` values among a document's entries, or the first `extend` key not checked. */
+function extendPaths(entries: readonly Entry[]): { paths: string[] } | { error: string } {
   const paths: string[] = [];
-  for (const entry of flatten(doc.entries)) {
+  for (const entry of flatten(entries)) {
     const key = normalise(entry.key);
     if (key[0] !== 'extend') continue;
     if (key.length === 1) return { error: 'has an extend that is not a table' };

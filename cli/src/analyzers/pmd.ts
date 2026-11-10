@@ -83,16 +83,11 @@ function javaOpts(env: AnalyzerContext['env']): string {
   return [...(ci === '' ? [] : [ci]), ...DEAD_PROXY_PROPERTIES].join(' ');
 }
 
-async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
-  const settings = ctx.config.analyzers.pmd;
-  if (settings.rulesets.length === 0) return { skip: 'no PMD rulesets configured' };
-  // `qualor scan` stops with exit 2 on these before any analyzer runs (checkConfig); this is
-  // the same check for any other caller of the runner.
-  const problem = checkPmdConfig(ctx.root, ctx.config);
-  if (problem !== null) return { skip: problem };
+/** The `--rulesets` values of the configured entries, or why one cannot be passed to PMD. */
+function rulesetArgs(root: string, entries: readonly string[]): string[] | { skip: string } {
   const rulesets: string[] = [];
-  for (const entry of settings.rulesets) {
-    const r = resolveRuleset(ctx.root, entry);
+  for (const entry of entries) {
+    const r = resolveRuleset(root, entry);
     if (typeof r !== 'string') return 'skip' in r ? r : { skip: r.error };
     if (LIST_SEPARATOR.test(r)) {
       // A comma in the entry itself is already a schema error (exit 2); a line break in the
@@ -105,6 +100,18 @@ async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
     }
     rulesets.push(r);
   }
+  return rulesets;
+}
+
+async function prepare(ctx: AnalyzerContext): Promise<Preparation> {
+  const settings = ctx.config.analyzers.pmd;
+  if (settings.rulesets.length === 0) return { skip: 'no PMD rulesets configured' };
+  // `qualor scan` stops with exit 2 on these before any analyzer runs (checkConfig); this is
+  // the same check for any other caller of the runner.
+  const problem = checkPmdConfig(ctx.root, ctx.config);
+  if (problem !== null) return { skip: problem };
+  const rulesets = rulesetArgs(ctx.root, settings.rulesets);
+  if (!Array.isArray(rulesets)) return rulesets;
   const java = ctx.files.filter((f) => f.language === 'java');
   if (java.length === 0) return { skip: 'no Java files in scope' };
   // PMD reads the file list split on commas and line breaks: such a path would become two

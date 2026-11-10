@@ -18,6 +18,12 @@ function tidy(p: string): string {
   return p.trim().replaceAll('\\', '/').normalize('NFC');
 }
 
+/** A `file://` URI as a path (`file:///C:/x` → `C:/x`); any other path as it is. */
+function withoutFileScheme(p: string): string {
+  if (!p.startsWith('file://')) return p;
+  return p.slice('file://'.length).replace(/^\/([A-Za-z]:\/)/, '$1');
+}
+
 /** The report's directory relative to the root ('' for the root), or null outside it. */
 export function repoRelativeDir(root: string, absFile: string): string | null {
   const rel = path.relative(root, path.dirname(absFile)).replaceAll('\\', '/');
@@ -75,32 +81,39 @@ export class PathResolver {
   }
 
   private compute(reportPath: string, baseDirs: readonly string[]): Resolution {
-    let p = tidy(reportPath);
-    if (p.startsWith('file://')) p = p.slice('file://'.length).replace(/^\/([A-Za-z]:\/)/, '$1');
+    const p = withoutFileScheme(tidy(reportPath));
     if (p === '') return NOT_FOUND;
     const absolute = p.startsWith('/') || DRIVE.test(p);
-    if (absolute) {
-      const inside = this.lookup(p, true);
-      if (inside !== null) return { path: inside };
-    } else {
-      // Nearest base first; the root ('') is always tried, last.
-      const bases = baseDirs.includes('') ? baseDirs : [...baseDirs, ''];
-      for (const base of bases) {
-        const found = this.lookup(base === '' ? p : `${base}/${p}`, false);
-        if (found !== null) return { path: found };
-      }
+    const direct = absolute ? this.lookup(p, true) : this.inBaseDirs(p, baseDirs);
+    if (direct !== null) return { path: direct };
+    const prefixed = this.withPrefixes(p, absolute);
+    if (prefixed !== null) return { path: prefixed };
+    return this.bySuffix(segmentsOf(p));
+  }
+
+  /** A relative path against each base directory, nearest first; the root ('') always, last. */
+  private inBaseDirs(p: string, baseDirs: readonly string[]): string | null {
+    const bases = baseDirs.includes('') ? baseDirs : [...baseDirs, ''];
+    for (const base of bases) {
+      const found = this.lookup(base === '' ? p : `${base}/${p}`, false);
+      if (found !== null) return found;
     }
+    return null;
+  }
+
+  /** The report path with a configured prefix taken off, or (for a relative one) put in front. */
+  private withPrefixes(p: string, absolute: boolean): string | null {
     for (const prefix of this.prefixes) {
       if (p.startsWith(`${prefix}/`)) {
         const found = this.lookup(p.slice(prefix.length + 1), false);
-        if (found !== null) return { path: found };
+        if (found !== null) return found;
       }
       if (!absolute) {
         const found = this.lookup(`${prefix}/${p}`, false);
-        if (found !== null) return { path: found };
+        if (found !== null) return found;
       }
     }
-    return this.bySuffix(segmentsOf(p));
+    return null;
   }
 
   private bySuffix(segments: readonly string[]): Resolution {

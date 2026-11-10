@@ -220,9 +220,9 @@ const severityOf = (s: string | undefined) =>
 export function trivyMessage(v: TrivyVulnerability): string {
   const title = v.Title?.trim();
   const fixed = v.FixedVersion?.trim();
-  return `${v.PkgName} ${v.InstalledVersion}: ${v.VulnerabilityID}${title ? ` ${title}` : ''} (${
-    fixed ? `fixed in ${fixed}` : 'no fixed version'
-  })`;
+  const titled = title ? ` ${title}` : '';
+  const fix = fixed ? `fixed in ${fixed}` : 'no fixed version';
+  return `${v.PkgName} ${v.InstalledVersion}: ${v.VulnerabilityID}${titled} (${fix})`;
 }
 
 interface SarifRuleOut {
@@ -231,6 +231,82 @@ interface SarifRuleOut {
   shortDescription: { text: string };
   helpUri?: string;
   properties: { tags: string[]; cwe: string[]; trivySeverity: string };
+}
+
+/** A lockfile's lines (`lockfileLines`), read on the first call only. */
+function lazyLockfileLines(root: string, repoPath: string): () => readonly string[] | null {
+  let cached: readonly string[] | null | undefined;
+  return () => {
+    if (cached === undefined) cached = lockfileLines(root, repoPath);
+    return cached;
+  };
+}
+
+/** The rule of a vulnerability id, from the first finding that names it. */
+function trivyRule(
+  v: TrivyVulnerability,
+  type: string | undefined,
+  severity: string,
+): SarifRuleOut {
+  const title = v.Title?.trim();
+  const cwe = (v.CweIDs ?? []).filter((c) => /^CWE-\d{1,7}$/.test(c)).slice(0, MAX_IDS);
+  return {
+    id: v.VulnerabilityID,
+    name: v.VulnerabilityID,
+    shortDescription: { text: title ? title : v.VulnerabilityID },
+    ...(v.PrimaryURL?.startsWith('https://') === true && { helpUri: v.PrimaryURL }),
+    properties: {
+      tags: ['dependency', ...(type !== undefined ? [type] : [])],
+      cwe,
+      trivySeverity: severity,
+    },
+  };
+}
+
+/** `properties.dependency` of a finding: the package as Trivy reported it. */
+function dependencyOf(
+  v: TrivyVulnerability,
+  p: TrivyPackage | undefined,
+  type: string | undefined,
+) {
+  const purl = v.PkgIdentifier?.PURL ?? p?.Identifier?.PURL;
+  return {
+    name: v.PkgName,
+    version: v.InstalledVersion,
+    ...(v.FixedVersion ? { fixedVersion: v.FixedVersion } : {}),
+    ...(purl !== undefined && purl.length <= 512 ? { purl } : {}),
+    ...(type !== undefined ? { type } : {}),
+    ...(p?.Relationship === 'direct' ? { direct: true } : {}),
+  };
+}
+
+/** One SARIF result: a vulnerability of a package in one lockfile (`target`). */
+function trivyResult(
+  v: TrivyVulnerability,
+  p: TrivyPackage | undefined,
+  target: { Target: string; Type?: string | undefined },
+  region: Region | undefined,
+  severity: string,
+): unknown {
+  return {
+    ruleId: v.VulnerabilityID,
+    message: { text: trivyMessage(v) },
+    locations: [
+      {
+        physicalLocation: {
+          artifactLocation: { uri: target.Target },
+          ...(region !== undefined && { region }),
+        },
+      },
+    ],
+    properties: {
+      trivySeverity: severity,
+      dependency: dependencyOf(v, p, target.Type),
+      ...(v.VendorIDs !== undefined && v.VendorIDs.length > 0
+        ? { vendorIds: v.VendorIDs.slice(0, MAX_IDS) }
+        : {}),
+    },
+  };
 }
 
 /**
@@ -247,57 +323,15 @@ export function trivyJsonToSarif(output: unknown, root: string): unknown {
   const results: unknown[] = [];
   for (const target of report.Results ?? []) {
     const packages = target.Packages ?? [];
-    let cached: readonly string[] | null | undefined;
-    const lines = () => {
-      if (cached === undefined) cached = lockfileLines(root, target.Target);
-      return cached;
-    };
+    const lines = lazyLockfileLines(root, target.Target);
     for (const v of target.Vulnerabilities ?? []) {
       const severity = severityOf(v.Severity);
-      const cwe = (v.CweIDs ?? []).filter((c) => /^CWE-\d{1,7}$/.test(c)).slice(0, MAX_IDS);
       if (!rules.has(v.VulnerabilityID)) {
-        const title = v.Title?.trim();
-        rules.set(v.VulnerabilityID, {
-          id: v.VulnerabilityID,
-          name: v.VulnerabilityID,
-          shortDescription: { text: title ? title : v.VulnerabilityID },
-          ...(v.PrimaryURL?.startsWith('https://') === true && { helpUri: v.PrimaryURL }),
-          properties: {
-            tags: ['dependency', ...(target.Type !== undefined ? [target.Type] : [])],
-            cwe,
-            trivySeverity: severity,
-          },
-        });
+        rules.set(v.VulnerabilityID, trivyRule(v, target.Type, severity));
       }
       const p = packageOf(packages, v);
       const region = regionOf(p, v, target.Type, lines);
-      const purl = v.PkgIdentifier?.PURL ?? p?.Identifier?.PURL;
-      results.push({
-        ruleId: v.VulnerabilityID,
-        message: { text: trivyMessage(v) },
-        locations: [
-          {
-            physicalLocation: {
-              artifactLocation: { uri: target.Target },
-              ...(region !== undefined && { region }),
-            },
-          },
-        ],
-        properties: {
-          trivySeverity: severity,
-          dependency: {
-            name: v.PkgName,
-            version: v.InstalledVersion,
-            ...(v.FixedVersion ? { fixedVersion: v.FixedVersion } : {}),
-            ...(purl !== undefined && purl.length <= 512 ? { purl } : {}),
-            ...(target.Type !== undefined ? { type: target.Type } : {}),
-            ...(p?.Relationship === 'direct' ? { direct: true } : {}),
-          },
-          ...(v.VendorIDs !== undefined && v.VendorIDs.length > 0
-            ? { vendorIds: v.VendorIDs.slice(0, MAX_IDS) }
-            : {}),
-        },
-      });
+      results.push(trivyResult(v, p, target, region, severity));
     }
   }
   return {

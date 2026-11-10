@@ -53,44 +53,56 @@ function streamSource(fd: number, chunkBytes: number): SourceText {
   let valid = true;
   const buf = Buffer.alloc(Math.max(1, chunkBytes));
   let total = 0;
-  let newlines = 0;
   let last = -1;
-  const head: number[] = [];
+  const tally: LineTally = { newlines: 0, head: [] };
   for (;;) {
     const n = readSync(fd, buf, 0, buf.length, null);
     if (n === 0) break;
     const chunk = buf.subarray(0, n);
     hash.update(chunk);
-    for (let i = 0; i < n; i++) {
-      const b = chunk[i] ?? 0;
-      if (b === LF) newlines++;
-      if (head.length < UTF8_BOM.length) head.push(b);
-    }
-    if (valid) {
-      try {
-        validator.decode(chunk, { stream: true });
-      } catch {
-        valid = false;
-      }
-    }
+    tallyChunk(chunk, tally);
+    if (valid) valid = decodesAsUtf8(validator, chunk);
     total += n;
     last = chunk[n - 1] ?? -1;
   }
-  if (valid) {
-    try {
-      validator.decode();
-    } catch {
-      valid = false;
-    }
-  }
-  const bom = valid && UTF8_BOM.every((b, i) => head[i] === b);
+  if (valid) valid = decodesAsUtf8(validator);
+  const bom = valid && UTF8_BOM.every((b, i) => tally.head[i] === b);
   const bodyBytes = total - (bom ? UTF8_BOM.length : 0);
+  const unterminated = last === LF ? 0 : 1;
   return {
     sha256: hash.digest('hex'),
     text: null,
-    lines: bodyBytes === 0 ? 0 : newlines + (last === LF ? 0 : 1),
+    lines: bodyBytes === 0 ? 0 : tally.newlines + unterminated,
     encoding: valid ? 'utf-8' : 'latin1',
   };
+}
+
+/** The streaming path's line feeds so far, and the file's first bytes (for the BOM check). */
+interface LineTally {
+  newlines: number;
+  head: number[];
+}
+
+/** Counts a chunk's line feeds and keeps the file's first bytes. */
+function tallyChunk(chunk: Buffer, tally: LineTally): void {
+  for (const b of chunk) {
+    if (b === LF) tally.newlines++;
+    if (tally.head.length < UTF8_BOM.length) tally.head.push(b);
+  }
+}
+
+/**
+ * Feeds the streaming UTF-8 check one chunk, or ends it without one; false once the bytes are
+ * not valid UTF-8.
+ */
+function decodesAsUtf8(validator: InstanceType<typeof TextDecoder>, chunk?: Buffer): boolean {
+  try {
+    if (chunk === undefined) validator.decode();
+    else validator.decode(chunk, { stream: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

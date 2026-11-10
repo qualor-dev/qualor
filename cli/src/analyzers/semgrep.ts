@@ -5,6 +5,8 @@ import {
   readdirSync,
   readFileSync,
   statSync,
+  type Dir,
+  type Dirent,
   type Stats,
 } from 'node:fs';
 import path from 'node:path';
@@ -268,11 +270,6 @@ const isJsonnet = (file: string): boolean =>
  * Jsonnet support resolved `import` of registry packs and URLs, and a later version may again.
  */
 function ruleFiles(root: string, top: string): { files: string[] } | { error: string } {
-  const rel = (p: string) => shown(path.relative(root, p).split(path.sep).join('/'));
-  const jsonnet = (p: string) => ({
-    error: `rule file ${rel(p)} is Jsonnet (not supported: its import could name a registry pack or a URL)`,
-  });
-  const notRegular = (p: string) => ({ error: `rule file ${rel(p)} is not a regular file` });
   let topStat: Stats;
   try {
     topStat = statSync(top);
@@ -280,60 +277,113 @@ function ruleFiles(root: string, top: string): { files: string[] } | { error: st
     return { files: [] };
   }
   if (!topStat.isDirectory()) {
-    if (isJsonnet(top)) return jsonnet(top);
-    return topStat.isFile() ? { files: [top] } : notRegular(top);
+    if (isJsonnet(top)) return jsonnetError(root, top);
+    return topStat.isFile() ? { files: [top] } : notRegularError(root, top);
   }
-  const files: string[] = [];
-  const visited = new Set<string>([real(top)]);
-  const stack = [top];
-  let entries = 0;
-  while (stack.length > 0) {
-    const current = stack.pop() as string;
-    let handle;
+  const walk: RuleWalk = {
+    root,
+    top,
+    files: [],
+    visited: new Set([real(top)]),
+    stack: [top],
+    entries: 0,
+  };
+  while (walk.stack.length > 0) {
+    const current = walk.stack.pop() as string;
+    let handle: Dir;
     try {
       handle = opendirSync(current);
     } catch {
       continue;
     }
     try {
-      for (let entry = handle.readSync(); entry !== null; entry = handle.readSync()) {
-        entries += 1;
-        if (entries > MAX_ENTRIES_CHECKED || files.length > MAX_RULE_FILES) {
-          return { error: `config ${rel(top)} has too many files to check` };
-        }
-        const full = path.join(current, entry.name);
-        let dir = entry.isDirectory();
-        let file = entry.isFile();
-        if (entry.isSymbolicLink()) {
-          if (!staysInside(root, full)) {
-            return { error: `rule file ${rel(full)} links outside the repository` };
-          }
-          try {
-            const target = statSync(full);
-            dir = target.isDirectory();
-            file = target.isFile();
-          } catch {
-            continue;
-          }
-        }
-        if (dir) {
-          const key = real(full);
-          if (!visited.has(key)) {
-            visited.add(key);
-            stack.push(full);
-          }
-        } else if (JSONNET_FILE.test(entry.name) || (file && isJsonnet(full))) {
-          return jsonnet(full);
-        } else if (RULE_FILE.test(entry.name)) {
-          if (!file) return notRegular(full);
-          files.push(full);
-        }
-      }
+      const error = readRuleDir(walk, current, handle);
+      if (error !== null) return error;
     } finally {
       handle.closeSync();
     }
   }
-  return { files: files.sort() };
+  return { files: walk.files.sort() };
+}
+
+/** The walk below one config directory: the rule files found, and the directories still to read. */
+interface RuleWalk {
+  root: string;
+  top: string;
+  files: string[];
+  /** Real paths of the directories queued so far (a linked directory is read once). */
+  visited: Set<string>;
+  stack: string[];
+  /** Directory entries examined so far. */
+  entries: number;
+}
+
+/** Reads one directory of the walk; the first error stops the walk. */
+function readRuleDir(walk: RuleWalk, current: string, handle: Dir): { error: string } | null {
+  for (let entry = handle.readSync(); entry !== null; entry = handle.readSync()) {
+    walk.entries += 1;
+    if (walk.entries > MAX_ENTRIES_CHECKED || walk.files.length > MAX_RULE_FILES) {
+      return { error: `config ${repoRelative(walk.root, walk.top)} has too many files to check` };
+    }
+    const error = visitRuleEntry(walk, path.join(current, entry.name), entry);
+    if (error !== null) return error;
+  }
+  return null;
+}
+
+/** A path as shown in a message: relative to the repository root, `/`-separated. */
+const repoRelative = (root: string, p: string) =>
+  shown(path.relative(root, p).split(path.sep).join('/'));
+
+const jsonnetError = (root: string, p: string) => ({
+  error: `rule file ${repoRelative(root, p)} is Jsonnet (not supported: its import could name a registry pack or a URL)`,
+});
+
+const notRegularError = (root: string, p: string) => ({
+  error: `rule file ${repoRelative(root, p)} is not a regular file`,
+});
+
+/**
+ * Whether an entry is a directory or a regular file, for a link those of its target (null when
+ * the target cannot be read); an error for a link out of the repository.
+ */
+function entryType(
+  root: string,
+  full: string,
+  entry: Dirent,
+): { dir: boolean; file: boolean } | { error: string } | null {
+  if (!entry.isSymbolicLink()) return { dir: entry.isDirectory(), file: entry.isFile() };
+  if (!staysInside(root, full)) {
+    return { error: `rule file ${repoRelative(root, full)} links outside the repository` };
+  }
+  try {
+    const target = statSync(full);
+    return { dir: target.isDirectory(), file: target.isFile() };
+  } catch {
+    return null;
+  }
+}
+
+/** One entry of the walk: a directory is queued once, a rule file collected, Jsonnet refused. */
+function visitRuleEntry(walk: RuleWalk, full: string, entry: Dirent): { error: string } | null {
+  const type = entryType(walk.root, full, entry);
+  if (type === null) return null;
+  if ('error' in type) return type;
+  if (type.dir) {
+    const key = real(full);
+    if (!walk.visited.has(key)) {
+      walk.visited.add(key);
+      walk.stack.push(full);
+    }
+    return null;
+  }
+  if (JSONNET_FILE.test(entry.name) || (type.file && isJsonnet(full))) {
+    return jsonnetError(walk.root, full);
+  }
+  if (!RULE_FILE.test(entry.name)) return null;
+  if (!type.file) return notRegularError(walk.root, full);
+  walk.files.push(full);
+  return null;
 }
 
 /** A JSON object (not null, not an array); the qualor engine reads SARIF with it too. */
@@ -349,36 +399,47 @@ export const isObject = (v: unknown): v is Record<string, unknown> =>
  */
 function checkRuleFile(root: string, file: string): string | null {
   const name = `rule file ${shown(path.relative(root, file).split(path.sep).join('/'))}`;
-  let bytes: Buffer;
+  const read = ruleFileText(file, name);
+  if ('problem' in read) return read.problem;
   try {
-    if (statSync(file).size > MAX_RULE_FILE_BYTES) {
-      return `${name} is larger than ${MAX_RULE_FILE_BYTES / 1024 / 1024} MiB`;
-    }
-    bytes = readFileSync(file);
-  } catch {
-    return `${name} cannot be read`;
-  }
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    return `${name} is not UTF-8`;
-  }
-  try {
-    for (const doc of parseAllDocuments(text, { merge: true, uniqueKeys: true })) {
+    for (const doc of parseAllDocuments(read.text, { merge: true, uniqueKeys: true })) {
       if (doc.errors.length > 0) return `${name} cannot be parsed as YAML`;
-      const value: unknown = doc.toJS({ maxAliasCount: MAX_ALIAS_COUNT });
-      if (!isObject(value) || !Array.isArray(value['rules'])) continue;
-      for (const rule of value['rules'] as unknown[]) {
-        if (!isObject(rule)) continue;
-        if (rule['mode'] === 'join' || Object.hasOwn(rule, 'join')) {
-          const id = typeof rule['id'] === 'string' ? rule['id'] : '(no id)';
-          return `${name}: rule ${shown(id)} is a join rule, which can load rules from a URL or the registry (not supported)`;
-        }
-      }
+      const problem = joinRuleProblem(name, doc.toJS({ maxAliasCount: MAX_ALIAS_COUNT }));
+      if (problem !== null) return problem;
     }
   } catch {
     return `${name} cannot be parsed as YAML`;
+  }
+  return null;
+}
+
+/** A rule file's text (at most MAX_RULE_FILE_BYTES, UTF-8), or why it cannot be checked. */
+function ruleFileText(file: string, name: string): { text: string } | { problem: string } {
+  let bytes: Buffer;
+  try {
+    if (statSync(file).size > MAX_RULE_FILE_BYTES) {
+      return { problem: `${name} is larger than ${MAX_RULE_FILE_BYTES / 1024 / 1024} MiB` };
+    }
+    bytes = readFileSync(file);
+  } catch {
+    return { problem: `${name} cannot be read` };
+  }
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
+  } catch {
+    return { problem: `${name} is not UTF-8` };
+  }
+}
+
+/** The error for the first join rule among one YAML document's `rules`, or null. */
+function joinRuleProblem(name: string, value: unknown): string | null {
+  if (!isObject(value) || !Array.isArray(value['rules'])) return null;
+  for (const rule of value['rules'] as unknown[]) {
+    if (!isObject(rule)) continue;
+    if (rule['mode'] === 'join' || Object.hasOwn(rule, 'join')) {
+      const id = typeof rule['id'] === 'string' ? rule['id'] : '(no id)';
+      return `${name}: rule ${shown(id)} is a join rule, which can load rules from a URL or the registry (not supported)`;
+    }
   }
   return null;
 }
@@ -394,17 +455,21 @@ export function checkSemgrepConfig(root: string, config: QualorConfig): string |
   if (configs.length > MAX_SEMGREP_CONFIGS) return `more than ${MAX_SEMGREP_CONFIGS} configs`;
   for (const entry of configs) {
     if (entry === 'qualor-default') continue;
-    const r = resolveConfig(root, entry, DEFAULT_SEMGREP_RULES_DIR);
-    if (typeof r !== 'string') {
-      if (r !== null && 'error' in r) return r.error;
-      continue;
-    }
-    const found = ruleFiles(root, r);
-    if ('error' in found) return found.error;
-    for (const file of found.files) {
-      const problem = checkRuleFile(root, file);
-      if (problem !== null) return problem;
-    }
+    const problem = configEntryProblem(root, entry);
+    if (problem !== null) return problem;
+  }
+  return null;
+}
+
+/** The configuration error of one repository `configs` entry or a rule file below it, or null. */
+function configEntryProblem(root: string, entry: string): string | null {
+  const r = resolveConfig(root, entry, DEFAULT_SEMGREP_RULES_DIR);
+  if (typeof r !== 'string') return r !== null && 'error' in r ? r.error : null;
+  const found = ruleFiles(root, r);
+  if ('error' in found) return found.error;
+  for (const file of found.files) {
+    const problem = checkRuleFile(root, file);
+    if (problem !== null) return problem;
   }
   return null;
 }

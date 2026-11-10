@@ -1,4 +1,4 @@
-import { lstatSync, opendirSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { lstatSync, opendirSync, readdirSync, realpathSync, statSync, type Dir } from 'node:fs';
 import path from 'node:path';
 import type { ScopeFile } from '../discovery/discover';
 import { staysInside } from './binary';
@@ -14,10 +14,20 @@ export function hasClassFiles(dir: string): boolean {
   return inspectClassDir(dir, dir).hasClasses;
 }
 
+type ClassDirProblem = 'links outside the repository' | 'too large';
+
 interface ClassDirInspection {
   /** At least one `.class` file, or a link to one inside the repository, somewhere below. */
   hasClasses: boolean;
-  problem: 'links outside the repository' | 'too large' | null;
+  problem: ClassDirProblem | null;
+}
+
+/** The walk of one class directory: the directories still to read, and what it found so far. */
+interface ClassDirWalk {
+  root: string;
+  stack: string[];
+  entries: number;
+  hasClasses: boolean;
 }
 
 /**
@@ -33,44 +43,55 @@ function inspectClassDir(root: string, dir: string): ClassDirInspection {
   } catch {
     return result;
   }
-  const stack = [dir];
-  let entries = 0;
-  while (stack.length > 0) {
-    const current = stack.pop() as string;
-    let handle;
+  const walk: ClassDirWalk = { root, stack: [dir], entries: 0, hasClasses: false };
+  while (walk.stack.length > 0) {
+    const current = walk.stack.pop() as string;
+    let handle: Dir;
     try {
       handle = opendirSync(current);
     } catch {
       continue;
     }
     try {
-      for (let entry = handle.readSync(); entry !== null; entry = handle.readSync()) {
-        entries += 1;
-        if (entries > MAX_ENTRIES_CHECKED) return { ...result, problem: 'too large' };
-        const full = path.join(current, entry.name);
-        if (entry.isSymbolicLink()) {
-          let isFile = false;
-          try {
-            isFile = statSync(full).isFile();
-          } catch {
-            continue;
-          }
-          if (!isFile) continue;
-          if (!staysInside(root, full)) {
-            return { ...result, problem: 'links outside the repository' };
-          }
-          if (entry.name.endsWith('.class')) result.hasClasses = true;
-        } else if (entry.isDirectory()) {
-          stack.push(full);
-        } else if (entry.isFile() && entry.name.endsWith('.class')) {
-          result.hasClasses = true;
-        }
-      }
+      const problem = readClassDir(walk, current, handle);
+      if (problem !== null) return { hasClasses: walk.hasClasses, problem };
     } finally {
       handle.closeSync();
     }
   }
-  return result;
+  return { hasClasses: walk.hasClasses, problem: null };
+}
+
+/** Reads one directory of the walk; a problem stops it. */
+function readClassDir(walk: ClassDirWalk, current: string, handle: Dir): ClassDirProblem | null {
+  for (let entry = handle.readSync(); entry !== null; entry = handle.readSync()) {
+    walk.entries += 1;
+    if (walk.entries > MAX_ENTRIES_CHECKED) return 'too large';
+    const full = path.join(current, entry.name);
+    if (entry.isSymbolicLink()) {
+      const problem = visitClassLink(walk, full, entry.name);
+      if (problem !== null) return problem;
+    } else if (entry.isDirectory()) {
+      walk.stack.push(full);
+    } else if (entry.isFile() && entry.name.endsWith('.class')) {
+      walk.hasClasses = true;
+    }
+  }
+  return null;
+}
+
+/** A link SpotBugs would read: one to a file must stay inside the repository. */
+function visitClassLink(walk: ClassDirWalk, full: string, name: string): ClassDirProblem | null {
+  let isFile: boolean;
+  try {
+    isFile = statSync(full).isFile();
+  } catch {
+    return null;
+  }
+  if (!isFile) return null;
+  if (!staysInside(walk.root, full)) return 'links outside the repository';
+  if (name.endsWith('.class')) walk.hasClasses = true;
+  return null;
 }
 
 const SOURCE_ROOT = /^((?:.*\/)?src\/(?:main|test)\/java)\//;
@@ -201,20 +222,27 @@ function prepare(ctx: AnalyzerContext): Promise<Preparation> {
   return Promise.resolve(prepareSync(ctx));
 }
 
-function prepareSync(ctx: AnalyzerContext): Preparation {
-  const settings = ctx.config.analyzers.spotbugs;
+/**
+ * The `classDirs` entries that hold compiled classes (absolute paths), or why SpotBugs cannot run
+ * on them: an entry outside the repository or linking out of it, a tree too large to check, no
+ * classes at all, or paths too long for one command line.
+ */
+function classDirsWithClasses(
+  root: string,
+  classDirs: readonly string[],
+): string[] | { skip: string } {
   const dirs: { entry: string; abs: string }[] = [];
-  for (const entry of settings.classDirs) {
-    const abs = path.resolve(ctx.root, entry);
+  for (const entry of classDirs) {
+    const abs = path.resolve(root, entry);
     // SpotBugs reads everything below a class directory: it must be the repository's own.
-    if (!staysInside(ctx.root, abs)) {
+    if (!staysInside(root, abs)) {
       return { skip: `classDirs entry ${shown(entry)} is outside the repository` };
     }
     dirs.push({ entry, abs });
   }
   const withClasses: string[] = [];
   for (const d of dirs) {
-    const inspected = inspectClassDir(ctx.root, d.abs);
+    const inspected = inspectClassDir(root, d.abs);
     if (inspected.problem === 'links outside the repository') {
       return { skip: `classDirs entry ${shown(d.entry)} links outside the repository` };
     }
@@ -227,24 +255,53 @@ function prepareSync(ctx: AnalyzerContext): Preparation {
   }
   if (withClasses.length === 0) {
     return {
-      skip: `no compiled classes in ${listed(settings.classDirs)} (build the project before qualor scan)`,
+      skip: `no compiled classes in ${listed(classDirs)} (build the project before qualor scan)`,
     };
   }
   if (withClasses.reduce((n, d) => n + d.length + 1, 0) > MAX_CLASS_DIR_CHARS) {
     return { skip: 'the classDirs paths are too long for one command line' };
   }
-  const aux: string[] = [];
-  if (settings.auxClasspathFile !== null) {
-    const name = `auxClasspathFile ${shown(settings.auxClasspathFile)}`;
-    const file = path.resolve(ctx.root, settings.auxClasspathFile);
-    if (!staysInside(ctx.root, file)) return { skip: `${name} is outside the repository` };
-    try {
-      if (!lstatSync(file).isFile()) throw new Error('not a file');
-    } catch {
-      return { skip: `${name} does not exist` };
-    }
-    aux.push('-auxclasspathFromFile', file);
+  return withClasses;
+}
+
+/** `-auxclasspathFromFile <file>` for a set `auxClasspathFile`, or why it cannot be used. */
+function auxClasspathArgs(
+  root: string,
+  auxClasspathFile: string | null,
+): string[] | { skip: string } {
+  if (auxClasspathFile === null) return [];
+  const name = `auxClasspathFile ${shown(auxClasspathFile)}`;
+  const file = path.resolve(root, auxClasspathFile);
+  if (!staysInside(root, file)) return { skip: `${name} is outside the repository` };
+  try {
+    if (!lstatSync(file).isFile()) throw new Error('not a file');
+  } catch {
+    return { skip: `${name} does not exist` };
   }
+  return ['-auxclasspathFromFile', file];
+}
+
+/** The in-scope Java source roots for `-sourcepath` (absolute), up to MAX_SOURCEPATH_CHARS. */
+function sourcepathRoots(root: string, files: readonly ScopeFile[]): string[] {
+  const sourceRoots: string[] = [];
+  let sourceChars = 0;
+  for (const r of javaSourceRoots(files)) {
+    const abs = path.join(root, ...r.split('/'));
+    // Only for source lookup: a root SpotBugs would split is left out, not a reason to skip.
+    if (abs.includes(path.delimiter)) continue;
+    sourceChars += abs.length + 1;
+    if (sourceChars > MAX_SOURCEPATH_CHARS) break;
+    sourceRoots.push(abs);
+  }
+  return sourceRoots;
+}
+
+function prepareSync(ctx: AnalyzerContext): Preparation {
+  const settings = ctx.config.analyzers.spotbugs;
+  const withClasses = classDirsWithClasses(ctx.root, settings.classDirs);
+  if (!Array.isArray(withClasses)) return withClasses;
+  const aux = auxClasspathArgs(ctx.root, settings.auxClasspathFile);
+  if (!Array.isArray(aux)) return aux;
   const launcher = ctx.resolveBinary('spotbugs');
   if (launcher === null) {
     return { unavailable: 'SpotBugs is not installed (spotbugs on PATH or in the scanner image)' };
@@ -261,16 +318,7 @@ function prepareSync(ctx: AnalyzerContext): Preparation {
   // name would become options of their own (such as `-pluginList <jar>`, which loads code).
   const java = javaBinary(ctx);
   if (java === null) return { unavailable: 'SpotBugs needs java (JAVA_HOME or PATH)' };
-  const sourceRoots: string[] = [];
-  let sourceChars = 0;
-  for (const r of javaSourceRoots(ctx.files)) {
-    const abs = path.join(ctx.root, ...r.split('/'));
-    // Only for source lookup: a root SpotBugs would split is left out, not a reason to skip.
-    if (abs.includes(path.delimiter)) continue;
-    sourceChars += abs.length + 1;
-    if (sourceChars > MAX_SOURCEPATH_CHARS) break;
-    sourceRoots.push(abs);
-  }
+  const sourceRoots = sourcepathRoots(ctx.root, ctx.files);
   const sourcepath =
     sourceRoots.length === 0 ? [] : ['-sourcepath', sourceRoots.join(path.delimiter)];
   const out = path.join(ctx.workDir, 'spotbugs.sarif');

@@ -40,7 +40,8 @@ function decodeAttribute(raw: string): string | null {
     const value = named[name];
     if (value !== undefined) return value;
     const code = /^#x([0-9A-Fa-f]{1,6})$/.exec(name)?.[1] ?? /^#(\d{1,7})$/.exec(name)?.[1];
-    const cp = code === undefined ? NaN : Number.parseInt(code, name.startsWith('#x') ? 16 : 10);
+    const radix = name.startsWith('#x') ? 16 : 10;
+    const cp = code === undefined ? NaN : Number.parseInt(code, radix);
     if (!Number.isInteger(cp) || cp > 0x10ffff) {
       bad = true;
       return m;
@@ -58,12 +59,33 @@ function decodeAttribute(raw: string): string | null {
  * never a pass.
  */
 export function rulesetRefs(bytes: Buffer): { refs: string[] } | { error: string } {
-  if (
+  const decoded = rulesetText(bytes);
+  if ('error' in decoded) return decoded;
+  const markup = decoded.text.replace(NON_MARKUP, (m) => ' '.repeat(m.length));
+  if (/<!DOCTYPE|<!ENTITY/i.test(markup)) return { error: 'declares a DOCTYPE' };
+  const refs: string[] = [];
+  for (const m of markup.matchAll(RULE_START)) {
+    START_TAG.lastIndex = m.index;
+    const tag = START_TAG.exec(markup);
+    if (tag === null) return { error: 'has a rule element that cannot be checked' };
+    const found = ruleTagRefs(tag[1] ?? '');
+    if ('error' in found) return found;
+    refs.push(...found.refs);
+  }
+  return { refs };
+}
+
+/** A UTF-16 byte order mark, in either byte order. */
+function hasUtf16Bom(bytes: Buffer): boolean {
+  return (
     bytes.length >= 2 &&
     ((bytes[0] === 0xfe && bytes[1] === 0xff) || (bytes[0] === 0xff && bytes[1] === 0xfe))
-  ) {
-    return { error: 'is not UTF-8 (only UTF-8 rulesets are checked)' };
-  }
+  );
+}
+
+/** A ruleset's text without its byte order mark, or why it is not a UTF-8 ruleset. */
+function rulesetText(bytes: Buffer): { text: string } | { error: string } {
+  if (hasUtf16Bom(bytes)) return { error: 'is not UTF-8 (only UTF-8 rulesets are checked)' };
   if (bytes.includes(0)) return { error: 'is not UTF-8 (only UTF-8 rulesets are checked)' };
   let text = bytes.toString('utf8');
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
@@ -77,23 +99,21 @@ export function rulesetRefs(bytes: Buffer): { refs: string[] } | { error: string
   if (declared !== undefined && !ENCODINGS.test(declared)) {
     return { error: `declares the encoding ${shown(declared)} (only UTF-8 rulesets are checked)` };
   }
-  const markup = text.replace(NON_MARKUP, (m) => ' '.repeat(m.length));
-  if (/<!DOCTYPE|<!ENTITY/i.test(markup)) return { error: 'declares a DOCTYPE' };
+  return { text };
+}
+
+/** The `ref` values among the attributes of one `rule` start tag, or why they cannot be checked. */
+function ruleTagRefs(attributes: string): { refs: string[] } | { error: string } {
   const refs: string[] = [];
-  for (const m of markup.matchAll(RULE_START)) {
-    START_TAG.lastIndex = m.index;
-    const tag = START_TAG.exec(markup);
-    if (tag === null) return { error: 'has a rule element that cannot be checked' };
-    const seen = new Set<string>();
-    for (const a of (tag[1] ?? '').matchAll(ATTRIBUTE)) {
-      const name = a[1] ?? '';
-      if (seen.has(name)) return { error: 'has a rule element with a duplicate attribute' };
-      seen.add(name);
-      if (name !== 'ref') continue;
-      const value = decodeAttribute(a[2] ?? a[3] ?? '');
-      if (value === null) return { error: 'has a rule ref with an entity that cannot be checked' };
-      refs.push(value);
-    }
+  const seen = new Set<string>();
+  for (const a of attributes.matchAll(ATTRIBUTE)) {
+    const name = a[1] ?? '';
+    if (seen.has(name)) return { error: 'has a rule element with a duplicate attribute' };
+    seen.add(name);
+    if (name !== 'ref') continue;
+    const value = decodeAttribute(a[2] ?? a[3] ?? '');
+    if (value === null) return { error: 'has a rule ref with an entity that cannot be checked' };
+    refs.push(value);
   }
   return { refs };
 }
@@ -137,51 +157,83 @@ export function checkRulesetTree(root: string, top: string): string | null {
     if (visited.size > MAX_RULESETS) {
       return `ruleset ${shown(rel(top))} references more than ${MAX_RULESETS} rulesets`;
     }
-    const name = `ruleset ${shown(rel(file))}`;
-    let bytes: Buffer;
-    try {
-      if (statSync(file).size > MAX_RULESET_BYTES) {
-        return `${name} is larger than ${MAX_RULESET_BYTES / 1024 / 1024} MiB`;
-      }
-      bytes = readFileSync(file);
-    } catch {
-      return `${name} cannot be read`;
-    }
-    const parsed = rulesetRefs(bytes);
-    if ('error' in parsed) return `${name} ${parsed.error}`;
-    for (const ref of parsed.refs) {
-      const bad = (why: string) => `${name}: rule ref "${shown(ref)}" ${why}`;
-      const v = ref.trim();
-      if (v === '') return bad('is empty');
-      if (isUrl(v)) return bad('is a URL (PMD would download it)');
-      if (path.isAbsolute(v) || path.posix.isAbsolute(v) || path.win32.isAbsolute(v)) {
-        return bad('is an absolute path (only repository and PMD built-in rulesets)');
-      }
-      if (v.includes('\\')) return bad('has a backslash (use / in rule references)');
-      const part = rulesetPart(v);
-      if (part === null) continue;
-      if (typeof part !== 'string') return bad(part.error);
-      const candidates = [path.resolve(root, part), path.resolve(path.dirname(file), part)];
-      let found = false;
-      let outside = false;
-      for (const candidate of candidates) {
-        if (!within(path.resolve(root), candidate)) {
-          // `../x.xml` from a subdirectory is outside only against the root: a candidate
-          // outside the repository is an error when PMD could actually read it.
-          if (exists(candidate)) return bad('is outside the repository');
-          outside = true;
-          continue;
-        }
-        if (!exists(candidate)) continue;
-        if (!staysInside(root, candidate)) return bad('is outside the repository');
-        found = true;
-        queue.push(candidate);
-      }
-      if (!found && outside) return bad('is outside the repository');
-      if (!found && !isClasspathRuleset(part)) {
-        return bad('is neither a repository file nor a PMD built-in ruleset');
-      }
-    }
+    const followed = referencedRulesets(root, file, `ruleset ${shown(rel(file))}`);
+    if ('problem' in followed) return followed.problem;
+    queue.push(...followed.next);
   }
   return null;
+}
+
+/** Either the files to follow next or why the check stops (a message for the caller). */
+type Followed = { next: string[] } | { problem: string };
+
+/** One ruleset of the tree (`name` in messages): the repository rulesets it references. */
+function referencedRulesets(root: string, file: string, name: string): Followed {
+  let bytes: Buffer;
+  try {
+    if (statSync(file).size > MAX_RULESET_BYTES) {
+      return { problem: `${name} is larger than ${MAX_RULESET_BYTES / 1024 / 1024} MiB` };
+    }
+    bytes = readFileSync(file);
+  } catch {
+    return { problem: `${name} cannot be read` };
+  }
+  const parsed = rulesetRefs(bytes);
+  if ('error' in parsed) return { problem: `${name} ${parsed.error}` };
+  const next: string[] = [];
+  for (const ref of parsed.refs) {
+    const followed = followRef(root, file, name, ref);
+    if ('problem' in followed) return followed;
+    next.push(...followed.next);
+  }
+  return { next };
+}
+
+/** One `ref` of a ruleset: the repository rulesets it names (none for a rule of the same one). */
+function followRef(root: string, file: string, name: string, ref: string): Followed {
+  const bad = (why: string) => ({ problem: `${name}: rule ref "${shown(ref)}" ${why}` });
+  const v = ref.trim();
+  if (v === '') return bad('is empty');
+  if (isUrl(v)) return bad('is a URL (PMD would download it)');
+  if (path.isAbsolute(v) || path.posix.isAbsolute(v) || path.win32.isAbsolute(v)) {
+    return bad('is an absolute path (only repository and PMD built-in rulesets)');
+  }
+  if (v.includes('\\')) return bad('has a backslash (use / in rule references)');
+  const part = rulesetPart(v);
+  if (part === null) return { next: [] };
+  if (typeof part !== 'string') return bad(part.error);
+  return rulesetCandidates(root, file, part, bad);
+}
+
+/**
+ * The existing repository files a ruleset reference names, resolved against the root and against
+ * the referencing ruleset's directory; none for a PMD built-in ruleset.
+ */
+function rulesetCandidates(
+  root: string,
+  file: string,
+  part: string,
+  bad: (why: string) => { problem: string },
+): Followed {
+  const candidates = [path.resolve(root, part), path.resolve(path.dirname(file), part)];
+  const next: string[] = [];
+  let outside = false;
+  for (const candidate of candidates) {
+    if (!within(path.resolve(root), candidate)) {
+      // `../x.xml` from a subdirectory is outside only against the root: a candidate
+      // outside the repository is an error when PMD could actually read it.
+      if (exists(candidate)) return bad('is outside the repository');
+      outside = true;
+      continue;
+    }
+    if (!exists(candidate)) continue;
+    if (!staysInside(root, candidate)) return bad('is outside the repository');
+    next.push(candidate);
+  }
+  if (next.length > 0) return { next };
+  if (outside) return bad('is outside the repository');
+  if (!isClasspathRuleset(part)) {
+    return bad('is neither a repository file nor a PMD built-in ruleset');
+  }
+  return { next };
 }

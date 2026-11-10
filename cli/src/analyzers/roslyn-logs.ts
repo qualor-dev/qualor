@@ -13,8 +13,13 @@ export interface MergedLogs {
   duplicates: number;
 }
 
+interface Driver {
+  semanticVersion?: unknown;
+  version?: unknown;
+  rules?: unknown;
+}
 interface Run {
-  tool?: { driver?: { semanticVersion?: unknown; version?: unknown; rules?: unknown } };
+  tool?: { driver?: Driver };
   results?: unknown;
 }
 interface Result {
@@ -51,6 +56,41 @@ function resultKey(r: Result): string {
   ].join('\u0000');
 }
 
+/** A run's compiler version: its `semanticVersion`, else the first word of its `version`. */
+function driverVersion(driver: Driver | undefined): string | null {
+  const raw =
+    typeof driver?.semanticVersion === 'string'
+      ? driver.semanticVersion
+      : part(driver?.version).split(' ')[0];
+  return toolVersion(raw === '' ? null : raw);
+}
+
+/** Adds a run's rules by id; a rule already seen keeps its first definition. */
+function addRules(rules: Map<string, unknown>, driver: Driver | undefined): void {
+  const runRules = Array.isArray(driver?.rules) ? (driver.rules as { id?: unknown }[]) : [];
+  for (const rule of runRules) {
+    if (typeof rule.id === 'string' && !rules.has(rule.id)) rules.set(rule.id, rule);
+  }
+}
+
+/** Adds a run's results not seen before, in log order; returns how many were duplicates. */
+function addResults(run: Run, seen: Set<string>, results: unknown[]): number {
+  let duplicates = 0;
+  for (const raw of Array.isArray(run.results) ? (run.results as Result[]) : []) {
+    const key = resultKey(raw);
+    if (seen.has(key)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(key);
+    // The merged run lists its rules in another order, so a result names its rule by id.
+    const rest: Result = { ...raw };
+    delete rest.ruleIndex;
+    results.push(rest);
+  }
+  return duplicates;
+}
+
 /** Rulings D4–D6: one run, rules by id (first seen), results deduplicated in log order. */
 export function mergeRoslynLogs(logs: readonly unknown[]): MergedLogs {
   const rules = new Map<string, unknown>();
@@ -61,29 +101,9 @@ export function mergeRoslynLogs(logs: readonly unknown[]): MergedLogs {
   for (const log of logs) {
     for (const run of ((log as { runs?: Run[] }).runs ?? []) as Run[]) {
       const driver = run.tool?.driver;
-      if (version === null) {
-        const raw =
-          typeof driver?.semanticVersion === 'string'
-            ? driver.semanticVersion
-            : part(driver?.version).split(' ')[0];
-        version = toolVersion(raw === '' ? null : raw);
-      }
-      const runRules = Array.isArray(driver?.rules) ? (driver.rules as { id?: unknown }[]) : [];
-      for (const rule of runRules) {
-        if (typeof rule.id === 'string' && !rules.has(rule.id)) rules.set(rule.id, rule);
-      }
-      for (const raw of Array.isArray(run.results) ? (run.results as Result[]) : []) {
-        const key = resultKey(raw);
-        if (seen.has(key)) {
-          duplicates += 1;
-          continue;
-        }
-        seen.add(key);
-        // The merged run lists its rules in another order, so a result names its rule by id.
-        const rest: Result = { ...raw };
-        delete rest.ruleIndex;
-        results.push(rest);
-      }
+      version ??= driverVersion(driver);
+      addRules(rules, driver);
+      duplicates += addResults(run, seen, results);
     }
   }
   return {
