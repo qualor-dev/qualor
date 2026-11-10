@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { REDACTED_VALUE } from '../config/render';
 import { CliError, EXIT } from '../errors';
 import { VERSION } from '../index';
-import { rawRequestWithBody } from './raw-http';
+import { rawRequestWithBody, type RawRequest } from './raw-http';
 
 /** Where and how the CLI talks to the Qualor server (config.md §3 `server`). */
 export interface ServerEndpoint {
@@ -30,6 +30,12 @@ export interface ServerEndpoint {
 }
 
 const MAX_CA_FILE_BYTES = 1024 * 1024;
+
+/** Why `server.caFile` cannot be used: the file system's error code, else the message. */
+function caFileFailure(err: unknown): string {
+  if (err instanceof Error && 'code' in err && typeof err.code === 'string') return err.code;
+  return err instanceof Error ? err.message : String(err);
+}
 
 /**
  * Reads `server.caFile` (config.md §3), already resolved against the repo root. Only a regular
@@ -55,13 +61,7 @@ export function readCaFile(file: string, configured: string): string {
     if (!pem.includes('-----BEGIN CERTIFICATE-----')) throw new Error('no PEM certificate in it');
     return pem;
   } catch (err) {
-    const why =
-      err instanceof Error && 'code' in err && typeof err.code === 'string'
-        ? err.code
-        : err instanceof Error
-          ? err.message
-          : String(err);
-    throw new CliError(EXIT.USAGE, `cannot use server.caFile ${configured}: ${why}`);
+    throw new CliError(EXIT.USAGE, `cannot use server.caFile ${configured}: ${caFileFailure(err)}`);
   } finally {
     if (fd !== undefined) closeSync(fd);
   }
@@ -243,6 +243,44 @@ export function agentFor(isHttps: boolean, ep: ServerEndpoint): http.Agent {
   return agent;
 }
 
+/** A JSON request body as bytes, or why it cannot be sent. */
+function jsonPayload(json: unknown): Buffer | string {
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(json) as string | undefined;
+  } catch {
+    text = undefined;
+  }
+  if (text === undefined) return 'the JSON body cannot be serialised';
+  const payload = Buffer.from(text, 'utf8');
+  if (payload.length > MAX_JSON_BODY_BYTES) return 'the JSON body is larger than 1 MiB';
+  return payload;
+}
+
+/** `request` with a body (ruling E5): the continue wait is at most half of `timeoutMs`. */
+function uploadRequest(
+  ep: ServerEndpoint,
+  o: RequestOptions,
+  body: NonNullable<RequestOptions['body']>,
+  url: URL,
+  headers: Record<string, string>,
+): RawRequest {
+  return {
+    url,
+    method: 'POST',
+    headers,
+    body,
+    ca: url.protocol === 'https:' && ep.ca !== undefined ? caBundle(ep.ca) : undefined,
+    timeoutMs: ep.timeoutMs,
+    continueWaitMs: Math.min(
+      o.continueTimeoutMs ?? DEFAULT_CONTINUE_TIMEOUT_MS,
+      Math.floor(ep.timeoutMs / 2),
+    ),
+    maxResponseBytes: o.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+    env: ep.env,
+  };
+}
+
 /**
  * One HTTP request (ruling E1). Never follows redirects (a 3xx is returned like any other status,
  * so `Authorization` never reaches another URL), never retries, always verifies the TLS
@@ -289,34 +327,15 @@ export function request(ep: ServerEndpoint, o: RequestOptions): Promise<HttpResp
   let payload: Buffer | undefined;
   if (o.json !== undefined) {
     if (o.body !== undefined) return refuse('a request has either a body or JSON');
-    let text: string | undefined;
-    try {
-      text = JSON.stringify(o.json) as string | undefined;
-    } catch {
-      text = undefined;
-    }
-    if (text === undefined) return refuse('the JSON body cannot be serialised');
-    payload = Buffer.from(text, 'utf8');
-    if (payload.length > MAX_JSON_BODY_BYTES) return refuse('the JSON body is larger than 1 MiB');
+    const json = jsonPayload(o.json);
+    if (typeof json === 'string') return refuse(json);
+    payload = json;
     headers['content-type'] = 'application/json';
     headers['content-length'] = String(payload.length);
   }
   if (o.body !== undefined) {
     if (o.method !== 'POST') return refuse('a request body needs POST');
-    return rawRequestWithBody({
-      url,
-      method: o.method,
-      headers,
-      body: o.body,
-      ca: isHttps && ep.ca !== undefined ? caBundle(ep.ca) : undefined,
-      timeoutMs: ep.timeoutMs,
-      continueWaitMs: Math.min(
-        o.continueTimeoutMs ?? DEFAULT_CONTINUE_TIMEOUT_MS,
-        Math.floor(ep.timeoutMs / 2),
-      ),
-      maxResponseBytes: maxBytes,
-      env: ep.env,
-    }).then(
+    return rawRequestWithBody(uploadRequest(ep, o, o.body, url, headers)).then(
       (res) => ({
         status: res.status,
         headers: res.headers,
@@ -476,7 +495,8 @@ export function describeFailure(res: HttpResponse): string {
   // A 422 names the request fields the server refused (the first few, cleaned).
   const paths = (p?.errors ?? []).slice(0, MAX_ERROR_PATHS).map((e) => clean(e.path).slice(0, 100));
   const fields = paths.length === 0 ? '' : ` (${paths.join(', ')})`;
-  return `${res.status}${code}${text === '' ? '' : `: ${text}`}${fields}${redirect}`;
+  const detail = text === '' ? '' : `: ${text}`;
+  return `${res.status}${code}${detail}${fields}${redirect}`;
 }
 
 /** Seconds from a `Retry-After` header (delta-seconds only), clamped to [min, max]. */

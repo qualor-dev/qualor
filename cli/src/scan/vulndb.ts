@@ -15,7 +15,7 @@ import { open, type FileHandle } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { readTarGz, TarError } from '@qualor/shared/tar';
+import { readTarGz, TarError, type TarWant } from '@qualor/shared/tar';
 import { real, within } from '../analyzers/binary';
 import { createWorkDir, releaseWorkDir, trackWorkDir } from '../analyzers/runner';
 import { cacheInRepository, readDatabaseDate } from '../analyzers/trivy';
@@ -286,6 +286,12 @@ type Failure = {
   /** The archive itself is unusable (not a write error). */ bad: boolean;
 };
 
+/** The archive entries `unpack` reads: `trivy.db` streamed, `metadata.json` kept, no other. */
+const wantedEntry: TarWant = (name) => {
+  if (name === 'trivy.db') return 'stream';
+  return name === 'metadata.json' ? 'keep' : 'skip';
+};
+
 /**
  * Extracts the open archive into `db`: `trivy.db` streamed to disk, `metadata.json` checked
  * (schema version 2 and a date) and written; nothing else. Null when done, else why not.
@@ -296,7 +302,7 @@ async function unpack(fh: FileHandle, db: string): Promise<Failure | null> {
   try {
     await readTarGz(
       fh.createReadStream({ start: 0, autoClose: false, highWaterMark: READ_CHUNK }),
-      (name) => (name === 'trivy.db' ? 'stream' : name === 'metadata.json' ? 'keep' : 'skip'),
+      wantedEntry,
       async (entry) => {
         if (entry.want === 'keep') {
           if (found.metadata !== null) throw new TarError('The archive holds metadata.json twice');
@@ -657,6 +663,97 @@ async function metadataFailed(c: Choice, reason: string): Promise<VulnerabilityD
   return c.fallback(reason);
 }
 
+/** What `served` learns from the archives it tries. */
+interface Attempts {
+  /** The digests the server accepts: the current one first. */
+  accepted: Set<string>;
+  /** Digests of archives that are not a Trivy database: never tried again. */
+  bad: Set<string>;
+  /** Why the server's database is not used, once something failed. */
+  reason: string | null;
+}
+
+/** Records why an archive could not be used, and whether it is not a Trivy database at all. */
+function note(attempts: Attempts, used: Used): void {
+  if (used.ok || used.failure === undefined) return;
+  if (used.failure.bad && used.digest !== null) attempts.bad.add(used.digest);
+  attempts.reason = used.failure.reason;
+}
+
+/** An archive the server accepts and that did not prove bad. */
+function usable(attempts: Attempts, digest: string): boolean {
+  return attempts.accepted.has(digest) && !attempts.bad.has(digest);
+}
+
+/** `server.json` dates the cached archive less than 24 h ago (and at most an hour ahead). */
+function fetchedRecently(hint: Hint | null, now: number): boolean {
+  const age = hint === null || hint.fetchedAt === null ? null : now - hint.fetchedAt;
+  return age !== null && age < DAY_MS && age > -HOUR_MS;
+}
+
+/**
+ * Uses a downloaded archive when the server accepts it; when the cache is writable it replaces the
+ * cached one (row 6), with `server.json` only for the current digest. Null when it is not usable.
+ */
+async function useDownload(
+  c: Choice,
+  input: VulnerabilityDbInput,
+  current: Current,
+  attempts: Attempts,
+  incoming: string,
+  writable: boolean,
+): Promise<VulnerabilityDbChoice | null> {
+  const used = await c.use(incoming, (digest) => usable(attempts, digest));
+  if (!used.ok) {
+    note(attempts, used);
+    return null;
+  }
+  if (writable) {
+    c.keepDownload(
+      incoming,
+      used.digest === current.digest
+        ? {
+            digest: current.digest,
+            builtAt: current.builtAt,
+            fetchedAt: input.now().toISOString(),
+          }
+        : null,
+    );
+  }
+  return c.result(used.dir, []);
+}
+
+/**
+ * Downloads the current archive (the cache already holds it when only its extraction failed),
+ * under a new name: the cached archive stays until the new one proved usable (row 6). Null, with
+ * the reason in `attempts`, when the download or the archive failed.
+ */
+async function downloadCurrent(
+  c: Choice,
+  input: VulnerabilityDbInput,
+  endpoint: ServerEndpoint,
+  current: Current,
+  attempts: Attempts,
+  writable: boolean,
+): Promise<VulnerabilityDbChoice | null> {
+  const incoming =
+    writable && c.cache !== null
+      ? path.join(c.cache, `db.${hex6()}.tar.gz`)
+      : path.join(c.workDir(), ARCHIVE);
+  const mib = Math.max(1, Math.round(current.sizeBytes / 1024 / 1024));
+  c.log.info(`downloading the vulnerability database from the server (${mib} MiB)`);
+  const got = await downloadServerVulndb(endpoint, current.digest, current.sizeBytes, incoming);
+  if (got.ok) {
+    const used = await useDownload(c, input, current, attempts, incoming, writable);
+    if (used !== null) return used;
+    attempts.reason ??= 'unexpected response';
+  } else {
+    attempts.reason = got.reason;
+  }
+  removeQuietly(incoming, c.log);
+  return null;
+}
+
 async function served(
   c: Choice,
   input: VulnerabilityDbInput,
@@ -664,78 +761,50 @@ async function served(
   meta: ServerVulndb,
   current: Current,
 ): Promise<VulnerabilityDbChoice> {
-  const accepted = new Set([current.digest, ...meta.accepted]);
+  const attempts: Attempts = {
+    accepted: new Set([current.digest, ...meta.accepted]),
+    bad: new Set<string>(),
+    reason: null,
+  };
   const now = input.now().getTime();
   const hint = c.cache === null ? null : readHint(c.cache);
   const writable = c.cacheWritable();
   if (writable && c.cache !== null) prune(c.cache, c.log);
-  /** Digests of archives that are not a Trivy database: never tried again. */
-  const bad = new Set<string>();
-  /** Why the server's database is not used, once something failed. */
-  const why: { reason: string | null } = { reason: null };
-  const note = (used: Used) => {
-    if (used.ok || used.failure === undefined) return;
-    if (used.failure.bad && used.digest !== null) bad.add(used.digest);
-    why.reason = used.failure.reason;
-  };
-  const age = hint === null || hint.fetchedAt === null ? null : now - hint.fetchedAt;
-  const fresh = age !== null && age < DAY_MS && age > -HOUR_MS;
+  const fresh = fetchedRecently(hint, now);
 
   // The cached archive: the current one, or (daily) an accepted one fetched less than 24 h ago.
   const cached = await c.use(
     c.archive,
     (digest) =>
       digest === current.digest ||
-      (meta.policy === 'daily' && accepted.has(digest) && hint?.digest === digest && fresh),
+      (meta.policy === 'daily' &&
+        attempts.accepted.has(digest) &&
+        hint?.digest === digest &&
+        fresh),
   );
   if (cached.ok) return c.result(cached.dir, []);
-  note(cached);
+  note(attempts, cached);
 
-  // Download the current archive (the cache already holds it when only its extraction failed),
-  // under a new name: the cached archive stays until the new one proved usable (row 6).
   if (cached.digest !== current.digest) {
-    const incoming =
-      writable && c.cache !== null
-        ? path.join(c.cache, `db.${hex6()}.tar.gz`)
-        : path.join(c.workDir(), ARCHIVE);
-    const mib = Math.max(1, Math.round(current.sizeBytes / 1024 / 1024));
-    c.log.info(`downloading the vulnerability database from the server (${mib} MiB)`);
-    const got = await downloadServerVulndb(endpoint, current.digest, current.sizeBytes, incoming);
-    if (got.ok) {
-      const used = await c.use(incoming, (digest) => accepted.has(digest) && !bad.has(digest));
-      if (used.ok) {
-        if (writable) {
-          c.keepDownload(
-            incoming,
-            used.digest === current.digest
-              ? {
-                  digest: current.digest,
-                  builtAt: current.builtAt,
-                  fetchedAt: input.now().toISOString(),
-                }
-              : null,
-          );
-        }
-        return c.result(used.dir, []);
-      }
-      note(used);
-      why.reason ??= 'unexpected response';
-    } else {
-      why.reason = got.reason;
-    }
-    removeQuietly(incoming, c.log);
+    const downloaded = await downloadCurrent(c, input, endpoint, current, attempts, writable);
+    if (downloaded !== null) return downloaded;
   }
 
   // The download failed: a cached archive the server still accepts (another scan may have just
   // fetched the current one).
-  const again = await c.use(c.archive, (digest) => accepted.has(digest) && !bad.has(digest));
+  const again = await c.use(c.archive, (digest) => usable(attempts, digest));
   if (again.ok) {
     return c.result(
       again.dir,
       again.digest === current.digest
         ? []
-        : [failed(shownReason(why.reason ?? 'unexpected response'), cachedTail(again.updatedAt))],
+        : [
+            failed(
+              shownReason(attempts.reason ?? 'unexpected response'),
+              cachedTail(again.updatedAt),
+            ),
+          ],
     );
   }
-  return c.fallback(why.reason ?? 'unexpected response');
+  return c.fallback(attempts.reason ?? 'unexpected response');
 }

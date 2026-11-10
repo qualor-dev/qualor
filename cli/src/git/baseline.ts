@@ -54,6 +54,82 @@ function unavailable(kind: Baseline['kind'], why: string, ctx: BaselineContext):
   return { revision: null, kind, status: 'unavailable' };
 }
 
+/** origin/<target>: the branch name, its remote-tracking ref, and the refspec that fetches it. */
+interface Target {
+  name: string;
+  ref: string;
+  refspec: string;
+}
+
+/**
+ * origin/<target> in the clone, refreshed when `scm.autoFetch` is on: null when it is there, else
+ * the unavailable baseline.
+ */
+async function refreshTarget(
+  git: Git,
+  { name: target, ref, refspec }: Target,
+  policy: FetchPolicy,
+  ctx: BaselineContext,
+): Promise<Baseline | null> {
+  const local = await hasCommit(git, ref);
+  if (!policy.autoFetch) {
+    if (local) return null;
+    return unavailable(
+      'merge_base',
+      `origin/${target} is not in the clone and scm.autoFetch is false`,
+      ctx,
+    );
+  }
+  // Always refreshed when autoFetch is on: a cached workspace's origin/<target> can be stale,
+  // which would move the merge-base back and count the target's newer commits as new code.
+  if (await fetch(git, ['origin', refspec], ctx.log)) return null;
+  if (!local) return unavailable('merge_base', `fetching origin/${target} failed`, ctx);
+  // Not a warning: a checkout without credentials (GitHub's with persist-credentials: false and
+  // fetch-depth: 0, github.md §11) has just fetched the target and cannot fetch it again.
+  ctx.log.info(`could not refresh origin/${target}; using the copy already in the clone`);
+  return null;
+}
+
+/**
+ * Deepens a shallow clone (`deepenSteps`, then `--unshallow`) until `revision` and the target
+ * have a merge-base; null when they never do.
+ */
+async function deepenToMergeBase(
+  git: Git,
+  revision: string,
+  { ref, refspec }: Target,
+  policy: FetchPolicy,
+  log: Logger,
+): Promise<string | null> {
+  for (const depth of policy.deepenSteps) {
+    if (!(await fetch(git, [`--deepen=${depth}`, 'origin', refspec], log))) break;
+    const base = await mergeBase(git, revision, ref);
+    if (base !== null) return base;
+  }
+  if ((await isShallow(git)) && (await fetch(git, ['--unshallow', 'origin', refspec], log))) {
+    return mergeBase(git, revision, ref);
+  }
+  return null;
+}
+
+/** Deepens a shallow clone (`deepenSteps`, then `--unshallow`) until it holds `revision`. */
+async function deepenToCommit(
+  git: Git,
+  revision: string,
+  policy: FetchPolicy,
+  log: Logger,
+): Promise<boolean> {
+  for (const depth of policy.deepenSteps) {
+    if (!(await fetch(git, [`--deepen=${depth}`, 'origin'], log))) break;
+    if (await hasCommit(git, revision)) return true;
+  }
+  return (
+    (await isShallow(git)) &&
+    (await fetch(git, ['--unshallow', 'origin'], log)) &&
+    (await hasCommit(git, revision))
+  );
+}
+
 /**
  * MR and branch analyses: merge-base of `revision` (HEAD, or a merge request's head commit) with
  * origin/<target>, fetching what a shallow clone lacks.
@@ -70,37 +146,12 @@ export async function mergeBaseBaseline(
   }
   const ref = `refs/remotes/origin/${target}`;
   const refspec = `+refs/heads/${target}:${ref}`;
-  const local = await hasCommit(git, ref);
-  if (!policy.autoFetch) {
-    if (!local) {
-      return unavailable(
-        'merge_base',
-        `origin/${target} is not in the clone and scm.autoFetch is false`,
-        ctx,
-      );
-    }
-  } else if (!(await fetch(git, ['origin', refspec], ctx.log))) {
-    // Always refreshed when autoFetch is on: a cached workspace's origin/<target> can be stale,
-    // which would move the merge-base back and count the target's newer commits as new code.
-    if (!local) return unavailable('merge_base', `fetching origin/${target} failed`, ctx);
-    // Not a warning: a checkout without credentials (GitHub's with persist-credentials: false and
-    // fetch-depth: 0, github.md §11) has just fetched the target and cannot fetch it again.
-    ctx.log.info(`could not refresh origin/${target}; using the copy already in the clone`);
-  }
+  const origin: Target = { name: target, ref, refspec };
+  const missing = await refreshTarget(git, origin, policy, ctx);
+  if (missing !== null) return missing;
   let base = await mergeBase(git, revision, ref);
   if (base === null && policy.autoFetch && (await isShallow(git))) {
-    for (const depth of policy.deepenSteps) {
-      if (!(await fetch(git, [`--deepen=${depth}`, 'origin', refspec], ctx.log))) break;
-      base = await mergeBase(git, revision, ref);
-      if (base !== null) break;
-    }
-    if (
-      base === null &&
-      (await isShallow(git)) &&
-      (await fetch(git, ['--unshallow', 'origin', refspec], ctx.log))
-    ) {
-      base = await mergeBase(git, revision, ref);
-    }
+    base = await deepenToMergeBase(git, revision, origin, policy, ctx.log);
   }
   if (base === null) {
     return unavailable(
@@ -156,18 +207,6 @@ export async function serverBaselineCommit(
   }
   if ((await fetch(git, ['origin', revision], ctx.log)) && (await hasCommit(git, revision)))
     return ok;
-  if (await isShallow(git)) {
-    for (const depth of policy.deepenSteps) {
-      if (!(await fetch(git, [`--deepen=${depth}`, 'origin'], ctx.log))) break;
-      if (await hasCommit(git, revision)) return ok;
-    }
-    if (
-      (await isShallow(git)) &&
-      (await fetch(git, ['--unshallow', 'origin'], ctx.log)) &&
-      (await hasCommit(git, revision))
-    ) {
-      return ok;
-    }
-  }
+  if ((await isShallow(git)) && (await deepenToCommit(git, revision, policy, ctx.log))) return ok;
   return unavailable('server_baseline', `${revision} could not be fetched from origin`, ctx);
 }

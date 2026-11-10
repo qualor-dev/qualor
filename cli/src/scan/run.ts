@@ -43,7 +43,7 @@ import { buildReviewSnapshot, type BuiltSnapshot } from '../review/snapshot';
 import { uploadReviewSnapshot } from '../review/upload';
 import { httpBaselineClient, type NewCodeBaselineClient } from '../server/baseline-client';
 import { serverEndpoint } from '../server/endpoint';
-import { describeGate, gateExitCode, waitForAnalysis } from '../server/gate';
+import { describeGate, gateExitCode, waitForAnalysis, type WaitOptions } from '../server/gate';
 import { clean, type ServerEndpoint } from '../server/http';
 import { uploadReport } from '../server/upload';
 import { checkServerVersion } from '../server/version';
@@ -245,6 +245,16 @@ async function buildVersionReport(inputs: {
   };
 }
 
+/** The new-code baseline client: the test's, else an HTTP client when there is a server. */
+function baselineClientFor(
+  deps: ScanDeps,
+  endpoint: ServerEndpoint | null,
+  log: Logger,
+): NewCodeBaselineClient | null {
+  if (deps.baselineClient !== undefined) return deps.baselineClient;
+  return endpoint === null ? null : httpBaselineClient(endpoint, log);
+}
+
 async function buildReport(inputs: {
   settings: Settings;
   flags: ScanFlags;
@@ -277,12 +287,7 @@ async function buildReport(inputs: {
   const external = inputs.external.captures;
   warnings.addAll(inputs.external.warnings.list());
 
-  const baselineClient =
-    deps.baselineClient !== undefined
-      ? deps.baselineClient
-      : endpoint === null
-        ? null
-        : httpBaselineClient(endpoint, log);
+  const baselineClient = baselineClientFor(deps, endpoint, log);
   const scm = await resolveScm({
     git: deps.git ?? createGit(root, io.env),
     settings,
@@ -816,21 +821,18 @@ async function sendReviewSnapshot(o: ReviewSnapshotOptions): Promise<void> {
   }
 }
 
-/**
- * `qualor scan` (config.md §5, §7). With `--dry-run` the report is written to `--output`.
- * Otherwise it is uploaded (ruling E5), and with `gate.wait` the gate verdict becomes the exit
- * code (ruling E6); a required analyzer failure uploads and then exits 3 at once (ruling E3).
- */
-export async function runScan(
-  flags: ScanFlags,
-  io: CliIO,
-  log: Logger,
-  deps: ScanDeps = {},
-): Promise<ExitCode> {
-  log.info(`qualor ${VERSION} (${platformId()})`);
-  const settings = loadSettings({ cwd: io.cwd, env: io.env, flags, log });
-  const analyzers = deps.analyzers ?? builtinAnalyzers();
-  const tag = scanTag(flags, settings.ci);
+/** What `qualor scan` settles before any git, tool or network call. */
+interface PreparedScan {
+  settings: Settings;
+  analyzers: readonly Analyzer[];
+  /** The tag of a tag scan (a version), else null. */
+  tag: string | null;
+  endpoint: ServerEndpoint | null;
+  projectKey: string;
+}
+
+/** A tag scan: the CI tag, Trivy (it records the dependency list) and the version label. */
+function checkTagScan(flags: ScanFlags, settings: Settings, tag: string | null): void {
   // The tag of a tag pipeline is CI's; `--tag` was checked with the arguments.
   if (tag !== null && flags.tag === undefined) checkCiTag(tag);
   if (tag !== null && settings.config.analyzers.trivy.enabled === false) {
@@ -840,25 +842,52 @@ export async function runScan(
     );
   }
   if (tag !== null) checkVersionLabel(versionLabel(settings.config.project.version, tag));
-  // A configuration error of an enabled analyzer stops the scan before any git, tool or network
-  // call (ruling V4: a PMD ruleset that references a URL). A tag scan runs no analyzer but
-  // Trivy's inventory pass, whose `.trivyignore` and cache guards are the trivy analyzer's.
-  for (const analyzer of tag === null ? analyzers : analyzers.filter((a) => a.id === 'trivy')) {
+}
+
+/**
+ * A configuration error of an enabled analyzer stops the scan before any git, tool or network
+ * call (ruling V4: a PMD ruleset that references a URL).
+ */
+function checkAnalyzerConfigs(
+  analyzers: readonly Analyzer[],
+  settings: Settings,
+  env: CliIO['env'],
+): void {
+  for (const analyzer of analyzers) {
     if (settings.config.analyzers[analyzer.id].enabled === false) continue;
-    const problem = analyzer.checkConfig?.(settings.root, settings.config, io.env) ?? null;
+    const problem = analyzer.checkConfig?.(settings.root, settings.config, env) ?? null;
     if (problem !== null) throw new CliError(EXIT.USAGE, `analyzers.${analyzer.id}: ${problem}`);
   }
+}
+
+/** scm.md §9: a report file that cannot be written is a usage error before any work. */
+function checkGitLabReportPaths(flags: ScanFlags, cwd: string): void {
+  if (flags.gitlabCodeQuality !== undefined) {
+    checkReportPath('gitlab-code-quality', cwd, flags.gitlabCodeQuality);
+  }
+  if (flags.gitlabSast !== undefined) checkReportPath('gitlab-sast', cwd, flags.gitlabSast);
+  if (flags.gitlabDependencyScanning !== undefined) {
+    checkReportPath('gitlab-dependency-scanning', cwd, flags.gitlabDependencyScanning);
+  }
+}
+
+/** The settings and every usage check of `qualor scan`, in order, before any work (exit 2). */
+function prepareScan(flags: ScanFlags, io: CliIO, log: Logger, deps: ScanDeps): PreparedScan {
+  const settings = loadSettings({ cwd: io.cwd, env: io.env, flags, log });
+  const analyzers = deps.analyzers ?? builtinAnalyzers();
+  const tag = scanTag(flags, settings.ci);
+  checkTagScan(flags, settings, tag);
+  // A tag scan runs no analyzer but Trivy's inventory pass, whose `.trivyignore` and cache guards
+  // are the trivy analyzer's.
+  checkAnalyzerConfigs(
+    tag === null ? analyzers : analyzers.filter((a) => a.id === 'trivy'),
+    settings,
+    io.env,
+  );
   if (flags.dryRun && flags.output === undefined) {
     throw new CliError(EXIT.USAGE, '--dry-run needs --output FILE');
   }
-  // scm.md §9: a report file that cannot be written is a usage error before any work.
-  if (flags.gitlabCodeQuality !== undefined) {
-    checkReportPath('gitlab-code-quality', io.cwd, flags.gitlabCodeQuality);
-  }
-  if (flags.gitlabSast !== undefined) checkReportPath('gitlab-sast', io.cwd, flags.gitlabSast);
-  if (flags.gitlabDependencyScanning !== undefined) {
-    checkReportPath('gitlab-dependency-scanning', io.cwd, flags.gitlabDependencyScanning);
-  }
+  checkGitLabReportPaths(flags, io.cwd);
   if (!flags.dryRun) requireServer(settings);
   // Ruling V8 and the server settings (URL shape, token, CA file) exit 2 before any request;
   // under --dry-run a repo-chosen URL only warns and nothing is sent.
@@ -872,10 +901,19 @@ export async function runScan(
       'no project key: set project.key, QUALOR_PROJECT_KEY or --project-key (in CI it defaults to the project path)',
     );
   }
-  // Fail fast on a bad --sarif file: a usage error comes before any git or network call, and
-  // before the vulnerability database is downloaded (ruling R6). A tag scan reads none.
+  return { settings, analyzers, tag, endpoint, projectKey };
+}
+
+/**
+ * Fail fast on a bad --sarif file: a usage error comes before any git or network call, and
+ * before the vulnerability database is downloaded (ruling R6). A tag scan reads none.
+ */
+function readExternalSarif(
+  settings: Settings,
+  tag: string | null,
+): { captures: SarifCapture[]; warnings: Warnings } {
   const sarifWarnings = new Warnings();
-  const external = {
+  return {
     captures:
       tag === null
         ? loadExternalSarif(settings.config.sarif, {
@@ -885,10 +923,32 @@ export async function runScan(
         : [],
     warnings: sarifWarnings,
   };
-  const serverVersion =
-    endpoint !== null && deps.serverVersion !== null
-      ? await (deps.serverVersion ?? checkServerVersion)(endpoint, log)
-      : null;
+}
+
+/** The server's version, asked when a scan starts (null without a server, or when tests say so). */
+async function askServerVersion(
+  endpoint: ServerEndpoint | null,
+  deps: ScanDeps,
+  log: Logger,
+): Promise<string | null> {
+  if (endpoint === null || deps.serverVersion === null) return null;
+  return (deps.serverVersion ?? checkServerVersion)(endpoint, log);
+}
+
+/**
+ * Builds the report. Vuln plan 3: the vulnerability pass's database is chosen before it runs. A
+ * tag scan has no vulnerability pass, and --dry-run asks the server for nothing new (Review Focus
+ * 3). Its private copy lives until the analyzers are done: Ctrl+C or a cancelled job removes it at
+ * any point in between, like the AI review's snapshot.
+ */
+async function buildScanReport(
+  flags: ScanFlags,
+  io: CliIO,
+  log: Logger,
+  deps: ScanDeps,
+  scan: PreparedScan & { external: { captures: SarifCapture[]; warnings: Warnings } },
+): Promise<BuiltReport> {
+  const { settings, analyzers, tag, endpoint, projectKey, external } = scan;
   const build = (vulnerabilityDb: VulnerabilityDbChoice | null) =>
     buildReport({
       settings,
@@ -902,29 +962,106 @@ export async function runScan(
       external,
       vulnerabilityDb,
     });
-  // Vuln plan 3: the vulnerability pass's database, chosen before it runs. A tag scan has no
-  // vulnerability pass, and --dry-run asks the server for nothing new (Review Focus 3). Its
-  // private copy lives until the analyzers are done: Ctrl+C or a cancelled job removes it at any
-  // point in between, like the AI review's snapshot.
   const choose = deps.vulnerabilityDb === undefined ? resolveVulnerabilityDb : deps.vulnerabilityDb;
-  const { report, failed, gitlab } =
-    choose !== null && tag === null && trivyRuns(analyzers, settings, io.env, deps, log)
-      ? await withEmergencyCleanup(log, async () => {
-          const vulnerabilityDb = await choose({
-            endpoint: flags.dryRun ? null : endpoint,
-            root: settings.root,
-            env: io.env,
-            log,
-            now: deps.now ?? (() => new Date()),
-          });
-          for (const w of vulnerabilityDb.warnings) log.warn(w.message);
-          try {
-            return await build(vulnerabilityDb);
-          } finally {
-            await vulnerabilityDb.cleanup();
-          }
-        })
-      : await build(null);
+  if (choose === null || tag !== null || !trivyRuns(analyzers, settings, io.env, deps, log)) {
+    return build(null);
+  }
+  return withEmergencyCleanup(log, async () => {
+    const vulnerabilityDb = await choose({
+      endpoint: flags.dryRun ? null : endpoint,
+      root: settings.root,
+      env: io.env,
+      log,
+      now: deps.now ?? (() => new Date()),
+    });
+    for (const w of vulnerabilityDb.warnings) log.warn(w.message);
+    try {
+      return await build(vulnerabilityDb);
+    } finally {
+      await vulnerabilityDb.cleanup();
+    }
+  });
+}
+
+/** The test seams of the gate poll: its pauses and its clock. */
+function pollSeams(deps: ScanDeps): Pick<WaitOptions, 'wait' | 'now'> {
+  return {
+    ...(deps.wait !== undefined && { wait: deps.wait }),
+    ...(deps.clock !== undefined && { now: deps.clock }),
+  };
+}
+
+/** A version has no issues and no gate: the exit code is the upload's and the processing's. */
+async function finishVersion(
+  endpoint: ServerEndpoint,
+  analysisId: string,
+  label: string,
+  settings: Settings,
+  log: Logger,
+  deps: ScanDeps,
+): Promise<ExitCode> {
+  if (!settings.config.gate.wait) {
+    log.info('not waiting for the analysis (gate.wait is false)');
+    return EXIT.OK;
+  }
+  const analysis = await waitForAnalysis(endpoint, analysisId, {
+    timeoutMs: settings.config.gate.timeoutSeconds * 1000,
+    log,
+    version: label,
+    ...pollSeams(deps),
+  });
+  const outcome = versionExitCode(analysis, label);
+  if (outcome.code === EXIT.OK) log.info(outcome.message);
+  else log.error(outcome.message);
+  return outcome.code;
+}
+
+/** With `gate.wait`, the gate verdict, printed, becomes the exit code (ruling E6). */
+async function finishGate(
+  endpoint: ServerEndpoint,
+  analysisId: string,
+  settings: Settings,
+  log: Logger,
+  deps: ScanDeps,
+): Promise<ExitCode> {
+  const { gate } = settings.config;
+  if (!gate.wait) {
+    log.info('not waiting for the quality gate (gate.wait is false)');
+    return EXIT.OK;
+  }
+  const analysis = await waitForAnalysis(endpoint, analysisId, {
+    timeoutMs: gate.timeoutSeconds * 1000,
+    log,
+    ...pollSeams(deps),
+  });
+  const code = gateExitCode(analysis, gate.failOnError);
+  for (const line of describeGate(analysis)) {
+    if (code === EXIT.OK) log.info(line);
+    else log.error(line);
+  }
+  return code;
+}
+
+/**
+ * `qualor scan` (config.md §5, §7). With `--dry-run` the report is written to `--output`.
+ * Otherwise it is uploaded (ruling E5), and with `gate.wait` the gate verdict becomes the exit
+ * code (ruling E6); a required analyzer failure uploads and then exits 3 at once (ruling E3).
+ */
+export async function runScan(
+  flags: ScanFlags,
+  io: CliIO,
+  log: Logger,
+  deps: ScanDeps = {},
+): Promise<ExitCode> {
+  log.info(`qualor ${VERSION} (${platformId()})`);
+  const prepared = prepareScan(flags, io, log, deps);
+  const { settings, analyzers, tag, endpoint, projectKey } = prepared;
+  const external = readExternalSarif(settings, tag);
+  const serverVersion = await askServerVersion(endpoint, deps, log);
+  const { report, failed, gitlab } = await buildScanReport(flags, io, log, deps, {
+    ...prepared,
+    external,
+  });
   const failedRequired = (): ExitCode => {
     log.error(`required analyzers failed: ${failed.join(', ')}`);
     return EXIT.ANALYZER_FAILED;
@@ -960,23 +1097,8 @@ export async function runScan(
   // scan's results, the secrets it masks among them, may be incomplete.
   if (failed.length > 0) return failedRequired();
   if (report.scm.tag !== undefined && report.scm.tag !== null) {
-    // A version has no issues and no gate: the exit code is the upload's and the processing's.
     const label = versionLabel(report.project.version, report.scm.tag);
-    if (!settings.config.gate.wait) {
-      log.info('not waiting for the analysis (gate.wait is false)');
-      return EXIT.OK;
-    }
-    const analysis = await waitForAnalysis(endpoint, analysisId, {
-      timeoutMs: settings.config.gate.timeoutSeconds * 1000,
-      log,
-      version: label,
-      ...(deps.wait !== undefined && { wait: deps.wait }),
-      ...(deps.clock !== undefined && { now: deps.clock }),
-    });
-    const outcome = versionExitCode(analysis, label);
-    if (outcome.code === EXIT.OK) log.info(outcome.message);
-    else log.error(outcome.message);
-    return outcome.code;
+    return finishVersion(endpoint, analysisId, label, settings, log, deps);
   }
   if (settings.ci.mergeRequest !== null) {
     await sendReviewSnapshot({
@@ -993,21 +1115,5 @@ export async function runScan(
       deps,
     });
   }
-  const { gate } = settings.config;
-  if (!gate.wait) {
-    log.info('not waiting for the quality gate (gate.wait is false)');
-    return EXIT.OK;
-  }
-  const analysis = await waitForAnalysis(endpoint, analysisId, {
-    timeoutMs: gate.timeoutSeconds * 1000,
-    log,
-    ...(deps.wait !== undefined && { wait: deps.wait }),
-    ...(deps.clock !== undefined && { now: deps.clock }),
-  });
-  const code = gateExitCode(analysis, gate.failOnError);
-  for (const line of describeGate(analysis)) {
-    if (code === EXIT.OK) log.info(line);
-    else log.error(line);
-  }
-  return code;
+  return finishGate(endpoint, analysisId, settings, log, deps);
 }

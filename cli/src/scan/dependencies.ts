@@ -133,6 +133,25 @@ function finishInventory(parsed: ReturnType<typeof trivyJsonToInventory>): {
   return { entries, warnings };
 }
 
+/** The pass runs: forced (a tag scan) whenever Trivy is enabled, else as `licensePassEnabled`. */
+function passEnabled(o: CollectDependenciesOptions): boolean {
+  return o.force === true
+    ? o.config.analyzers.trivy.enabled !== false
+    : licensePassEnabled(o.config);
+}
+
+/** `readInventory`, or null (the reason logged) when the output cannot be read. */
+function readInventoryOrNull(file: string, o: CollectDependenciesOptions): TrivyInventory | null {
+  try {
+    return readInventory(file, o);
+  } catch (err) {
+    o.log.debug(
+      `${LICENSE_ENGINE_ID}: output not read: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
 /**
  * The Trivy licence pass of a scan (spec §1), after the analyzers: null when it is switched off
  * (`analyzers.trivy.enabled` or `licenses` false). It never fails the scan: a missing Trivy is a
@@ -144,9 +163,7 @@ function finishInventory(parsed: ReturnType<typeof trivyJsonToInventory>): {
 export async function collectDependencies(
   o: CollectDependenciesOptions,
 ): Promise<DependencyPass | null> {
-  const enabled =
-    o.force === true ? o.config.analyzers.trivy.enabled !== false : licensePassEnabled(o.config);
-  if (!enabled) return null;
+  if (!passEnabled(o)) return null;
   const started = performance.now();
   const parentEnv = o.env ?? process.env;
   const settings = o.config.analyzers.trivy;
@@ -249,13 +266,8 @@ export async function collectDependencies(
       if (first !== undefined) o.log.warn(`${LICENSE_ENGINE_ID}: ${scrubLine(detailLine(first))}`);
       return failed(reason, `the Trivy licence pass ${reason}: no dependency inventory`);
     }
-    let read: TrivyInventory;
-    try {
-      read = readInventory(run.sarifPath, o);
-    } catch (err) {
-      o.log.debug(
-        `${LICENSE_ENGINE_ID}: output not read: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    const read = readInventoryOrNull(run.sarifPath, o);
+    if (read === null) {
       return failed('output could not be read', 'the Trivy licence pass output could not be read');
     }
     const { entries, warnings } = finishInventory(read.parsed);

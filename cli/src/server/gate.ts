@@ -9,6 +9,7 @@ import {
   request,
   retryAfterMs,
   UnreachableError,
+  type HttpResponse,
   type ServerEndpoint,
 } from './http';
 
@@ -63,6 +64,54 @@ export interface WaitOptions {
   version?: string;
 }
 
+/** Where the analysis stood when the wait ran out: its last status and the last failure since. */
+function pendingState(analysisId: string, last: string | null, lastError: string | null): string {
+  if (last === null) {
+    return `the state of analysis ${analysisId} is unknown; last error: ${lastError ?? 'none'}`;
+  }
+  const failure = lastError === null ? '' : `; last error: ${lastError}`;
+  return `analysis ${analysisId} is still ${last}${failure}`;
+}
+
+/**
+ * A status poll's answer other than 200: 401/403 throw exit 5 and any other 4xx (the analysis is
+ * gone) exit 4; 5xx, 408 and 429 (ruling V10) are transient, retried until the deadline, and
+ * return the failure's description.
+ */
+function transientFailure(res: HttpResponse, analysisId: string): string {
+  if (res.status === 401 || res.status === 403) {
+    throw new CliError(
+      EXIT.AUTH,
+      `the server rejected the token while waiting for the quality gate (${describeFailure(res)})`,
+    );
+  }
+  if (res.status < 500 && !TRANSIENT_4XX.has(res.status)) {
+    throw new CliError(
+      EXIT.SERVER,
+      `the server answered ${describeFailure(res)} for analysis ${analysisId}`,
+    );
+  }
+  return describeFailure(res);
+}
+
+/** The exit-4 error of a wait that reached `gate.timeoutSeconds`. */
+function gateTimeoutError(
+  analysisId: string,
+  o: WaitOptions,
+  last: string | null,
+  lastError: string | null,
+): CliError {
+  const state = pendingState(analysisId, last, lastError);
+  const what =
+    o.version === undefined
+      ? 'the quality gate was not available'
+      : `version ${clean(o.version)} was uploaded but not confirmed`;
+  return new CliError(
+    EXIT.SERVER,
+    `${what} after ${Math.round(o.timeoutMs / 1000)} s (${state}); raise gate.timeoutSeconds or use --no-wait`,
+  );
+}
+
 /**
  * Polls the analysis until it has succeeded or failed (config.md §3 `gate.wait`, ruling E6).
  * Network errors, 5xx, 408 and 429 (ruling V10) are retried until the deadline, which exits 4
@@ -80,21 +129,7 @@ export async function waitForAnalysis(
   const deadline = now() + o.timeoutMs;
   /** The last status read, and the last failure (cleaned) since then. */
   let last: string | null = null;
-  let lastError: string | null = null;
-  const timedOut = () => {
-    const state =
-      last === null
-        ? `the state of analysis ${analysisId} is unknown; last error: ${lastError ?? 'none'}`
-        : `analysis ${analysisId} is still ${last}${lastError === null ? '' : `; last error: ${lastError}`}`;
-    const what =
-      o.version === undefined
-        ? 'the quality gate was not available'
-        : `version ${clean(o.version)} was uploaded but not confirmed`;
-    return new CliError(
-      EXIT.SERVER,
-      `${what} after ${Math.round(o.timeoutMs / 1000)} s (${state}); raise gate.timeoutSeconds or use --no-wait`,
-    );
-  };
+  let lastError: string | null;
   let delay = POLL_MIN_MS;
   for (;;) {
     let retryAfter: number | null = null;
@@ -113,19 +148,8 @@ export async function waitForAnalysis(
         if (analysis.status === 'succeeded' || analysis.status === 'failed') return analysis;
         last = analysis.status;
         lastError = null;
-      } else if (res.status === 401 || res.status === 403) {
-        throw new CliError(
-          EXIT.AUTH,
-          `the server rejected the token while waiting for the quality gate (${describeFailure(res)})`,
-        );
-      } else if (res.status < 500 && !TRANSIENT_4XX.has(res.status)) {
-        throw new CliError(
-          EXIT.SERVER,
-          `the server answered ${describeFailure(res)} for analysis ${analysisId}`,
-        );
       } else {
-        // 5xx, 408 and 429 (ruling V10): transient, retried until the deadline.
-        lastError = describeFailure(res);
+        lastError = transientFailure(res, analysisId);
         o.log.debug(`analysis status: ${lastError}; retrying`);
       }
       retryAfter = retryAfterMs(res.headers, POLL_MIN_MS, POLL_MAX_MS);
@@ -137,7 +161,7 @@ export async function waitForAnalysis(
     }
     // The last pause is shortened so that one more poll happens at the deadline itself.
     const remaining = deadline - now();
-    if (remaining <= 0) throw timedOut();
+    if (remaining <= 0) throw gateTimeoutError(analysisId, o, last, lastError);
     await wait(Math.min(Math.max(delay, retryAfter ?? 0), remaining));
     delay = Math.min(POLL_MAX_MS, delay * 2);
   }
@@ -172,17 +196,13 @@ export function describeGate(analysis: AnalysisStatus): string[] {
     return [clean(`analysis ${analysis.id} failed on the server: ${code} ${message}`)];
   }
   const name = analysis.gateResult?.gate?.name;
-  const lines = [
-    clean(
-      `quality gate${name === undefined ? '' : ` "${clean(name)}"`}: ${analysis.gateStatus ?? 'none'}`,
-    ),
-  ];
+  const quotedName = name === undefined ? '' : ` "${clean(name)}"`;
+  const lines = [clean(`quality gate${quotedName}: ${analysis.gateStatus ?? 'none'}`)];
   const notPassed = (analysis.gateResult?.conditions ?? []).filter((c) => c.status !== 'passed');
   for (const c of notPassed.slice(0, MAX_PRINTED_CONDITIONS)) {
     const op = OPERATORS[c.operator] ?? c.operator;
-    lines.push(
-      `  ${clean(`${c.metric} ${op} ${c.threshold}: ${c.value ?? 'no value'} (${c.status})`)}`,
-    );
+    const condition = `${c.metric} ${op} ${c.threshold}: ${c.value ?? 'no value'} (${c.status})`;
+    lines.push(`  ${clean(condition)}`);
   }
   if (notPassed.length > MAX_PRINTED_CONDITIONS) {
     lines.push(`  ... and ${notPassed.length - MAX_PRINTED_CONDITIONS} more conditions`);

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Node } from 'web-tree-sitter';
-import { FAMILY_RULES, type SyntaxFamily } from '../metrics/rules';
+import { FAMILY_RULES, type FamilyRules, type SyntaxFamily } from '../metrics/rules';
 
 /** One source line's tokens: the unit the duplication detector compares (ruling C4). */
 export interface LineUnit {
@@ -29,15 +29,36 @@ interface PendingLine {
   delta: number;
 }
 
+/** Comments, and what the family skips, hold no tokens. */
+function noTokens(rules: FamilyRules, node: Node): boolean {
+  const { comments, isComment, skipped } = rules;
+  return comments.has(node.type) || isComment?.(node) === true || skipped?.has(node.type) === true;
+}
+
+/** Adds a token to the line it starts on; a zero-width or blank leaf is none. */
+function addToken(byLine: Map<number, PendingLine>, node: Node): void {
+  if (node.endIndex <= node.startIndex) return;
+  const text = node.text;
+  if (text.trim() === '') return;
+  const line = node.startPosition.row + 1;
+  let pending = byLine.get(line);
+  if (pending === undefined) {
+    pending = { line, endLine: line, texts: [], delta: 0 };
+    byLine.set(line, pending);
+  }
+  pending.texts.push(text);
+  pending.endLine = Math.max(pending.endLine, node.endPosition.row + 1);
+  if (OPENERS.has(node.type)) pending.delta++;
+  else if (CLOSERS.has(node.type)) pending.delta--;
+}
+
 /** report-format §8: tokens are tree-sitter leaves; comments removed; identifiers and literals verbatim. */
 export function lineUnits(root: Node, family: SyntaxFamily): LineUnit[] {
   const rules = FAMILY_RULES[family];
-  const { comments, isComment, skipped } = rules;
   const byLine = new Map<number, PendingLine>();
   const stack: Node[] = [root];
   for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
-    if (comments.has(node.type) || isComment?.(node) === true || skipped?.has(node.type) === true)
-      continue;
+    if (noTokens(rules, node)) continue;
     const count = node.childCount;
     // An atom (tree-sitter-css `#fff`, `1px`) is one token: its children hide part of its text.
     if (count > 0 && rules.atoms?.has(node.type) !== true) {
@@ -47,19 +68,7 @@ export function lineUnits(root: Node, family: SyntaxFamily): LineUnit[] {
       }
       continue;
     }
-    if (node.endIndex <= node.startIndex) continue;
-    const text = node.text;
-    if (text.trim() === '') continue;
-    const line = node.startPosition.row + 1;
-    let pending = byLine.get(line);
-    if (pending === undefined) {
-      pending = { line, endLine: line, texts: [], delta: 0 };
-      byLine.set(line, pending);
-    }
-    pending.texts.push(text);
-    pending.endLine = Math.max(pending.endLine, node.endPosition.row + 1);
-    if (OPENERS.has(node.type)) pending.delta++;
-    else if (CLOSERS.has(node.type)) pending.delta--;
+    addToken(byLine, node);
   }
   return [...byLine.values()]
     .sort((a, b) => a.line - b.line)

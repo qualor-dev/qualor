@@ -56,6 +56,40 @@ export function busyRetryDelay(res: HttpResponse, attempt: number, waited: numbe
   return delay > 0 ? delay : null;
 }
 
+/** The error a refused upload exits with (config.md §7: 401/403 exit 5, anything else 4). */
+function uploadRefusal(res: HttpResponse, input: UploadInput): CliError {
+  const problem = parseProblem(res.body);
+  if (res.status === 401 || res.status === 403) {
+    return new CliError(EXIT.AUTH, `the server rejected the upload (${describeFailure(res)})`);
+  }
+  if (res.status === 404 && problem?.code === 'PROJECT_NOT_FOUND') {
+    return new CliError(
+      EXIT.SERVER,
+      `project ${input.projectKey} does not exist on the server, or the token cannot see it (404 PROJECT_NOT_FOUND)`,
+    );
+  }
+  if (res.status === 404) {
+    return new CliError(
+      EXIT.SERVER,
+      'the server has no report upload endpoint (404); check that server.url is the Qualor server',
+    );
+  }
+  if (res.status === 413) {
+    return new CliError(
+      EXIT.SERVER,
+      `the report (${(input.size / 1024 / 1024).toFixed(1)} MiB gzipped) is larger than the server accepts (${describeFailure(res)})`,
+    );
+  }
+  if (res.status === 422) {
+    // Ruling C2: a new language or engine in the report is refused by an older server.
+    return new CliError(
+      EXIT.SERVER,
+      `the server rejected the upload (${describeFailure(res)}); a server older than this scanner may not accept its report (a new language or engine): upgrade the server first`,
+    );
+  }
+  return new CliError(EXIT.SERVER, `the server rejected the upload (${describeFailure(res)})`);
+}
+
 /**
  * `POST /api/v0/analyses?projectKey=` (api.md §3) with the gzipped report, streamed from disk,
  * `Content-Length` and `Expect: 100-continue`: the server refuses a bad token, an unknown project
@@ -89,35 +123,6 @@ export async function uploadReport(
       await wait(delay);
       continue;
     }
-    const problem = parseProblem(res.body);
-    if (res.status === 401 || res.status === 403) {
-      throw new CliError(EXIT.AUTH, `the server rejected the upload (${describeFailure(res)})`);
-    }
-    if (res.status === 404 && problem?.code === 'PROJECT_NOT_FOUND') {
-      throw new CliError(
-        EXIT.SERVER,
-        `project ${input.projectKey} does not exist on the server, or the token cannot see it (404 PROJECT_NOT_FOUND)`,
-      );
-    }
-    if (res.status === 404) {
-      throw new CliError(
-        EXIT.SERVER,
-        'the server has no report upload endpoint (404); check that server.url is the Qualor server',
-      );
-    }
-    if (res.status === 413) {
-      throw new CliError(
-        EXIT.SERVER,
-        `the report (${(input.size / 1024 / 1024).toFixed(1)} MiB gzipped) is larger than the server accepts (${describeFailure(res)})`,
-      );
-    }
-    if (res.status === 422) {
-      // Ruling C2: a new language or engine in the report is refused by an older server.
-      throw new CliError(
-        EXIT.SERVER,
-        `the server rejected the upload (${describeFailure(res)}); a server older than this scanner may not accept its report (a new language or engine): upgrade the server first`,
-      );
-    }
-    throw new CliError(EXIT.SERVER, `the server rejected the upload (${describeFailure(res)})`);
+    throw uploadRefusal(res, input);
   }
 }

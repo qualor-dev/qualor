@@ -1,6 +1,6 @@
 import { normalizeRepoPath, type LineRange, type Report, type ReportFile } from '@qualor/shared';
 import type { Settings } from '../config/settings';
-import type { CiInfo } from '../config/ci';
+import type { CiInfo, CiMergeRequest } from '../config/ci';
 import { CliError, EXIT } from '../errors';
 import type { Logger } from '../log';
 import { BASELINE_WARNING_MESSAGES, type NewCodeBaselineClient } from '../server/baseline-client';
@@ -203,8 +203,8 @@ export function scanTag(flags: ScmFlags, ci: { tag: string | null }): string | n
   return flags.tag ?? (explicitRef ? null : ci.tag);
 }
 
-export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
-  const { git, settings, flags, warnings, log } = o;
+/** HEAD's commit; the scan root must be inside a git work tree with at least one commit. */
+async function headCommit(git: Git, root: string): Promise<string> {
   const inside = await git(['rev-parse', '--is-inside-work-tree']);
   if (inside.code !== 0 || inside.stdout.trim() !== 'true') {
     // git's stderr carries the real reason (e.g. "detected dubious ownership" and the
@@ -212,7 +212,7 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
     const detail = inside.stderr.trim();
     throw new CliError(
       EXIT.USAGE,
-      `${settings.root} is not inside a git work tree; qualor scan needs git history` +
+      `${root} is not inside a git work tree; qualor scan needs git history` +
         (detail === '' ? '' : `: ${detail}`),
     );
   }
@@ -221,13 +221,82 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
   if (head.code !== 0 || !REVISION.test(headSha)) {
     throw new CliError(EXIT.USAGE, 'the repository has no commits yet');
   }
-  let revision = headSha;
-  const ciRevision = settings.ci.revision;
-  if (ciRevision !== null) {
-    if (REVISION.test(ciRevision)) revision = ciRevision;
-    else
-      warnings.add('CI_REVISION_INVALID', 'the CI commit SHA is not a git revision; HEAD was used');
+  return headSha;
+}
+
+/** The scanned revision: CI's commit SHA when it is a git revision, else HEAD (with a warning). */
+function scanRevision(headSha: string, ciRevision: string | null, warnings: Warnings): string {
+  if (ciRevision === null) return headSha;
+  if (REVISION.test(ciRevision)) return ciRevision;
+  warnings.add('CI_REVISION_INVALID', 'the CI commit SHA is not a git revision; HEAD was used');
+  return headSha;
+}
+
+/** The merge request scanned: `--mr` with `--mr-target`, else CI's; none for a tag scan. */
+function scanMergeRequest(
+  tag: string | null,
+  flags: ScmFlags,
+  ci: CiInfo,
+): Pick<CiMergeRequest, 'id' | 'targetBranch'> | null {
+  if (tag !== null) return null;
+  if (flags.mr !== undefined && flags.mrTarget !== undefined) {
+    return { id: flags.mr, targetBranch: flags.mrTarget };
   }
+  return ci.mergeRequest;
+}
+
+/** The refs a scan names, which choose its new-code baseline. */
+interface ScanRefs {
+  tag: string | null;
+  mergeRequest: { targetBranch: string } | null;
+  branch: string | null;
+  mainBranch: string;
+}
+
+/**
+ * The new-code baseline: none for a tag scan or a detached HEAD; the merge base with the target
+ * of a merge request, or with the reference (else main) branch of another branch; the server's
+ * on the main branch.
+ */
+async function chooseBaseline(
+  o: ResolveScmOptions,
+  refs: ScanRefs,
+  policy: FetchPolicy,
+  ctx: BaselineContext,
+): Promise<Baseline> {
+  const { git, settings, warnings } = o;
+  const { tag, mergeRequest, branch, mainBranch } = refs;
+  if (tag !== null) return { revision: null, kind: 'none', status: 'unavailable' };
+  if (mergeRequest !== null) {
+    return mergeBaseBaseline(git, mergeRequest.targetBranch, policy, ctx);
+  }
+  if (branch === null) {
+    warnings.add(
+      'BASELINE_DETACHED_HEAD',
+      'HEAD is detached and no --branch was given; new code is unavailable',
+    );
+    return { revision: null, kind: 'none', status: 'unavailable' };
+  }
+  if (branch !== mainBranch) {
+    return mergeBaseBaseline(
+      git,
+      settings.config.newCode.referenceBranch ?? mainBranch,
+      policy,
+      ctx,
+    );
+  }
+  return mainBranchBaseline(o, branch, policy, ctx);
+}
+
+/** `scm.gitlab` (scm.md §3): only in GitLab CI, and only with at least one well-formed value. */
+function gitlabContext(ci: CiInfo): { gitlab?: NonNullable<CiInfo['gitlab']> } {
+  return ci.gitlab === null || Object.keys(ci.gitlab).length === 0 ? {} : { gitlab: ci.gitlab };
+}
+
+export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
+  const { git, settings, flags, warnings, log } = o;
+  const headSha = await headCommit(git, settings.root);
+  const revision = scanRevision(headSha, settings.ci.revision, warnings);
   // A tag scan (`--tag`, or a CI tag pipeline when --branch/--mr were not given) is a version:
   // no branch, no merge request, no baseline.
   const tag = scanTag(flags, settings.ci);
@@ -235,12 +304,7 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
     tag !== null ? null : (flags.branch ?? settings.ci.branch ?? (await currentBranch(git)));
   const mainBranch =
     settings.config.scm.mainBranch ?? settings.ci.mainBranch ?? (await originHead(git)) ?? 'main';
-  const mr =
-    tag !== null
-      ? null
-      : flags.mr !== undefined && flags.mrTarget !== undefined
-        ? { id: flags.mr, targetBranch: flags.mrTarget }
-        : settings.ci.mergeRequest;
+  const mr = scanMergeRequest(tag, flags, settings.ci);
   // Field by field: what CI says of the merge request beyond these (its title and description,
   // for the AI review's snapshot) never reaches the report.
   const mergeRequest =
@@ -249,28 +313,7 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
       : { id: mr.id, targetBranch: mr.targetBranch, sourceBranch: branch ?? 'HEAD' };
   const policy = fetchPolicy(settings, o.deepenSteps);
   const ctx: BaselineContext = { log, warnings };
-
-  let baseline: Baseline;
-  if (tag !== null) {
-    baseline = { revision: null, kind: 'none', status: 'unavailable' };
-  } else if (mergeRequest !== null) {
-    baseline = await mergeBaseBaseline(git, mergeRequest.targetBranch, policy, ctx);
-  } else if (branch === null) {
-    warnings.add(
-      'BASELINE_DETACHED_HEAD',
-      'HEAD is detached and no --branch was given; new code is unavailable',
-    );
-    baseline = { revision: null, kind: 'none', status: 'unavailable' };
-  } else if (branch !== mainBranch) {
-    baseline = await mergeBaseBaseline(
-      git,
-      settings.config.newCode.referenceBranch ?? mainBranch,
-      policy,
-      ctx,
-    );
-  } else {
-    baseline = await mainBranchBaseline(o, branch, policy, ctx);
-  }
+  const baseline = await chooseBaseline(o, { tag, mergeRequest, branch, mainBranch }, policy, ctx);
 
   const diff =
     baseline.status === 'ok' && baseline.revision !== null
@@ -286,10 +329,7 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
       mergeRequest,
       baseline,
       renames: diff?.renames ?? [],
-      // scm.md §3: only in GitLab CI, and only with at least one well-formed value.
-      ...(settings.ci.gitlab === null || Object.keys(settings.ci.gitlab).length === 0
-        ? {}
-        : { gitlab: settings.ci.gitlab }),
+      ...gitlabContext(settings.ci),
       // github.md §3: only in GitHub Actions, and only with at least one well-formed value.
       ...githubContext(settings.ci, mergeRequest !== null, headSha),
     },

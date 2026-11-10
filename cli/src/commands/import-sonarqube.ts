@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { planGate, planProfile, type ImportReport, type SonarProjectData } from '@qualor/shared';
-import type { ImportFlags } from '../args';
+import type { ImportFlags, ImportStep } from '../args';
 import { CliError, EXIT, type ExitCode } from '../errors';
 import {
   applyGates,
@@ -12,7 +12,7 @@ import {
   type ProjectResult,
 } from '../import/apply';
 import { buildWithCompetitors, type SendItemResult, sendStatuses } from '../import/issues';
-import { resolveImportSetup } from '../import/options';
+import { resolveImportSetup, type ImportSetup } from '../import/options';
 import { httpQualorApi, type QualorApi } from '../import/qualor-api';
 import {
   buildReport,
@@ -21,7 +21,7 @@ import {
   writeReport,
   type Issues,
 } from '../import/report';
-import { connectSonar, type Transport } from '../import/sonarqube/client';
+import { connectSonar, type SonarConnection, type Transport } from '../import/sonarqube/client';
 import {
   countReviewedHotspots,
   fetchGates,
@@ -52,30 +52,35 @@ const HINT_MIN_ITEMS = 10;
 const HINT_UNMATCHED_SHARE = 0.9;
 const MAX_WARNING = 2000;
 
-/**
- * Spec §4.3 step 4: the Qualor organisation, from `--qualor-organization` or the token user's
- * only admin membership. A user who is not an admin of it (nor an instance admin) is exit 5.
- * The key is only compared with the keys Qualor sends, never put into a request.
- */
-export async function resolveQualorOrganization(
+type QualorMe = Awaited<ReturnType<QualorApi['me']>>;
+type OrganizationRef = { id: string; key: string };
+
+const notAdmin = (k: string) =>
+  new CliError(EXIT.AUTH, `the Qualor token's user is not an admin of the organisation ${k}`);
+
+/** `--qualor-organization`: the user's membership, else (an instance admin) any of that key. */
+async function namedOrganization(
   api: QualorApi,
-  key: string | undefined,
-): Promise<{ id: string; key: string }> {
-  const me = await api.me();
-  const notAdmin = (k: string) =>
-    new CliError(EXIT.AUTH, `the Qualor token's user is not an admin of the organisation ${k}`);
-  if (key !== undefined) {
-    const m = me.memberships.find((x) => x.organizationKey === key);
-    if (m !== undefined) {
-      if (m.role !== 'admin' && !me.isInstanceAdmin) throw notAdmin(key);
-      return { id: m.organizationId, key };
-    }
-    if (me.isInstanceAdmin) {
-      const org = (await api.organizations()).find((o) => o.key === key);
-      if (org !== undefined) return org;
-    }
-    throw new CliError(EXIT.USAGE, `no Qualor organisation ${key} is visible to the Qualor token`);
+  me: QualorMe,
+  key: string,
+): Promise<OrganizationRef> {
+  const m = me.memberships.find((x) => x.organizationKey === key);
+  if (m !== undefined) {
+    if (m.role !== 'admin' && !me.isInstanceAdmin) throw notAdmin(key);
+    return { id: m.organizationId, key };
   }
+  if (me.isInstanceAdmin) {
+    const org = (await api.organizations()).find((o) => o.key === key);
+    if (org !== undefined) return org;
+  }
+  throw new CliError(EXIT.USAGE, `no Qualor organisation ${key} is visible to the Qualor token`);
+}
+
+/**
+ * Without `--qualor-organization`: the user's only admin membership, else an instance admin's
+ * only organisation.
+ */
+async function onlyOrganization(api: QualorApi, me: QualorMe): Promise<OrganizationRef> {
   const admin = me.memberships.filter((m) => m.role === 'admin' || me.isInstanceAdmin);
   const [only] = admin;
   if (admin.length === 1 && only !== undefined) {
@@ -93,6 +98,20 @@ export async function resolveQualorOrganization(
     EXIT.USAGE,
     'the Qualor token can reach several organisations; pass --qualor-organization',
   );
+}
+
+/**
+ * Spec §4.3 step 4: the Qualor organisation, from `--qualor-organization` or the token user's
+ * only admin membership. A user who is not an admin of it (nor an instance admin) is exit 5.
+ * The key is only compared with the keys Qualor sends, never put into a request.
+ */
+export async function resolveQualorOrganization(
+  api: QualorApi,
+  key: string | undefined,
+): Promise<{ id: string; key: string }> {
+  const me = await api.me();
+  if (key !== undefined) return namedOrganization(api, me, key);
+  return onlyOrganization(api, me);
 }
 
 function emptyIssues(outcome: Issues['outcome']): Issues {
@@ -191,6 +210,338 @@ const count = (outcome: ItemOutcome, i: Issues) => {
   }
 };
 
+/** What the steps of one import run share. */
+interface ImportRun {
+  flags: ImportFlags;
+  setup: ImportSetup;
+  qualor: QualorApi;
+  conn: SonarConnection;
+  organization: OrganizationRef;
+  steps: ReadonlySet<ImportStep>;
+  /** The run's warnings for the report, which `warn` adds to. */
+  warnings: Warning[];
+  /** Records a warning for the report and logs it, once, here. */
+  warn: (code: Warning['code'], message: string) => void;
+}
+
+/** What is read from SonarQube and planned before any write (ruling S13). */
+interface ImportPlan {
+  profiles: ReturnType<typeof planProfile>[];
+  gates: ReturnType<typeof planGate>[];
+  /** The projects' settings, or the bare projects when the projects step does not run. */
+  settings: SonarProjectData[];
+  /** Projects no Qualor step can take: settings not read, or not in SonarQube (spec §5.1). */
+  unread: ProjectResult[];
+}
+
+/** What is done, kept for a partial report. */
+interface ImportResults {
+  profiles: ProfileResult[];
+  gates: GateResult[];
+  projects: ProjectResult[];
+  issuesOf: Map<ProjectResult, Issues>;
+}
+
+const bare = (p: { key: string; name: string }): SonarProjectData => ({
+  ...p,
+  mainBranch: 'main',
+  profiles: [],
+  gate: null,
+});
+
+/** The listed projects' settings (read only for the projects step), and the projects not read. */
+async function readProjectSettings(
+  run: ImportRun,
+  listed: Awaited<ReturnType<typeof listProjects>>,
+): Promise<Pick<ImportPlan, 'settings' | 'unread'>> {
+  const settings: SonarProjectData[] = [];
+  const unread: ProjectResult[] = [];
+  for (const p of listed.projects) {
+    if (!run.steps.has('projects')) {
+      settings.push(bare(p));
+      continue;
+    }
+    try {
+      settings.push(await fetchProjectSettings(run.conn.client, p));
+    } catch (err) {
+      unread.push({
+        sonar: bare(p),
+        outcome: 'failed',
+        reason: stepFailure(err),
+        qualorProjectId: null,
+        profiles: [],
+        gate: null,
+      });
+    }
+  }
+  for (const key of listed.missing) {
+    unread.push({
+      sonar: bare({ key, name: key }),
+      outcome: 'missing',
+      reason: 'SonarQube has no project of this key visible to this token',
+      qualorProjectId: null,
+      profiles: [],
+      gate: null,
+    });
+  }
+  return { settings, unread };
+}
+
+/** Read (GET only) and plan: everything but the issues, before any write (ruling S13). */
+async function readAndPlan(run: ImportRun): Promise<ImportPlan> {
+  const { steps, conn, flags } = run;
+  const readsProfiles = steps.has('profiles') || steps.has('projects');
+  const readsGates = steps.has('gates') || steps.has('projects');
+  const profiles = readsProfiles
+    ? (await fetchProfiles(conn.client)).map((p) => planProfile(p))
+    : [];
+  const gates = readsGates ? (await fetchGates(conn.client)).map((g) => planGate(g)) : [];
+  const listed =
+    steps.has('projects') || steps.has('issues')
+      ? await listProjects(conn.client, flags.projects)
+      : { projects: [], missing: [] };
+  return { profiles, gates, ...(await readProjectSettings(run, listed)) };
+}
+
+/** Spec §10, §11.2: one project's resolved issues, sent with their open competitors. */
+async function importIssues(
+  run: ImportRun,
+  key: string,
+  projectId: string,
+  issues: Issues,
+): Promise<void> {
+  const { conn, flags, qualor, warn } = run;
+  try {
+    const fetched = await fetchResolvedIssues(conn.client, conn, key, flags.maxIssues);
+    issues.read = fetched.issues.length;
+    issues.notRead = fetched.notRead;
+    // Never fails the project's issues: an unanswered count is null, with a warning.
+    issues.hotspotsNotImported = await countReviewedHotspots(conn.client, conn, key);
+    const built = await buildWithCompetitors(conn.client, conn, key, fetched.issues, {
+      pathPrefix: flags.pathPrefix ?? null,
+      maxIssues: flags.maxIssues,
+      unreadResolved: fetched.unread,
+      probe: fetched.probe,
+    });
+    issues.unmappedRule = [...built.unmappedRules.values()].reduce((a, b) => a + b, 0);
+    issues.pathInvalid = built.pathInvalid;
+    // Read as resolved but in no status the import takes: not expected either; never sent.
+    issues.invalid = built.invalid + built.ignored;
+    issues.unmappedRules = [...built.unmappedRules]
+      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+      .slice(0, MAX_UNMAPPED_RULES)
+      .map(([rule, n]) => ({ key: rule, issues: n }));
+    const record = (
+      item: (typeof built.items)[number],
+      outcome: ItemOutcome,
+      id: string | null,
+    ) => {
+      count(outcome, issues);
+      if (issues.items.length < MAX_ITEMS_IN_REPORT) {
+        issues.items.push({
+          sonarKey: item.ref,
+          rule: built.rules.get(item.ref) ?? '',
+          path: item.path,
+          line: item.line,
+          outcome,
+          qualorIssueId: id,
+        });
+      }
+    };
+    // Ruling S11: reopened between the two reads; never sent as resolved, never applied.
+    for (const item of built.changed) record(item, 'changed', null);
+    if (built.items.length === 0) return;
+    const sent = await sendStatuses(
+      qualor,
+      projectId,
+      [...built.items, ...built.competitors],
+      flags.dryRun,
+    );
+    if (sent.kind === 'not_analysed') {
+      issues.outcome = 'not_analysed';
+      warn(
+        'ISSUES_NOT_READ',
+        `project ${key} has no analysis in Qualor yet: scan it, then run the import again with --only issues`,
+      );
+      return;
+    }
+    const byRef = new Map<string, SendItemResult>(sent.results.map((x) => [x.ref, x]));
+    const failed = new Set(sent.failedRefs);
+    for (const item of built.items) {
+      const r = byRef.get(item.ref);
+      const outcome: ItemOutcome = failed.has(item.ref) || r === undefined ? 'failed' : r.outcome;
+      record(item, outcome, r?.issueId ?? null);
+    }
+    if (issues.notSent > 0) {
+      warn(
+        'ISSUE_STATUSES_NOT_SENT',
+        `project ${key}: ${issues.notSent} resolved issues were not sent, because their file has more resolved and open issues than one request holds; nothing was applied for them`,
+      );
+    }
+    if (issues.failed > 0) {
+      issues.outcome = 'failed';
+      const [first = 'no answer'] = sent.failures;
+      const more = sent.failures.length > 1 ? ` (and ${sent.failures.length - 1} more)` : '';
+      warn(
+        'ISSUE_STATUSES_FAILED',
+        `project ${key}: ${issues.failed} statuses were not imported: ${first}${more}`,
+      );
+    }
+    const answered = built.items.length - issues.notSent - issues.failed;
+    if (answered >= HINT_MIN_ITEMS && issues.unmatched / answered >= HINT_UNMATCHED_SHARE) {
+      warn(
+        'PATH_PREFIX_HINT',
+        `${issues.unmatched} of ${answered} statuses of project ${key} matched no Qualor issue; if SonarQube analysed a subdirectory of the repository (sonar.projectBaseDir), pass it as --path-prefix`,
+      );
+    }
+  } catch (err) {
+    issues.outcome = 'failed';
+    warn('ISSUES_NOT_READ', `project ${key}: ${stepFailure(err)}`);
+  }
+}
+
+/**
+ * Profiles, gates, then projects and their assignments; a step not run only looks its objects up,
+ * for the assignments.
+ */
+async function applyDefinitions(
+  run: ImportRun,
+  plan: ImportPlan,
+  out: ImportResults,
+): Promise<void> {
+  const { flags, qualor, organization, steps } = run;
+  const o: ApplyOptions = {
+    dryRun: flags.dryRun,
+    overwrite: flags.overwrite,
+    setDefaults: flags.setDefaults,
+    createProjects: flags.createProjects,
+  };
+  const lookup: ApplyOptions = { ...o, dryRun: true, overwrite: false, setDefaults: false };
+  if (steps.has('profiles')) {
+    await applyProfiles(qualor, organization.id, plan.profiles, o, out.profiles);
+  } else {
+    const found = await applyProfiles(qualor, organization.id, plan.profiles, lookup);
+    out.profiles.push(...found.map(lookedUp));
+  }
+  if (steps.has('gates')) {
+    await applyGates(qualor, organization.id, plan.gates, o, out.gates);
+  } else {
+    const found = await applyGates(qualor, organization.id, plan.gates, lookup);
+    out.gates.push(...found.map(lookedUp));
+  }
+  if (steps.has('projects')) {
+    await applyProjects(
+      qualor,
+      organization.id,
+      plan.settings,
+      out.profiles,
+      out.gates,
+      o,
+      out.projects,
+    );
+  } else {
+    const byKey = { ...lookup, createProjects: false };
+    await applyProjects(qualor, organization.id, plan.settings, [], [], byKey, out.projects);
+  }
+}
+
+/** Each project's issues, read and sent one project at a time. */
+async function importAllIssues(run: ImportRun, out: ImportResults): Promise<void> {
+  for (const result of out.projects) {
+    const issues = emptyIssues(result.qualorProjectId === null ? 'skipped' : 'done');
+    out.issuesOf.set(result, issues);
+    if (result.qualorProjectId !== null) {
+      await importIssues(run, result.sonar.key, result.qualorProjectId, issues);
+    }
+  }
+}
+
+/**
+ * Write, in order: profiles, gates, projects and assignments, then each project's issues. The
+ * fatal failure that ended the writes, or null.
+ */
+async function writeAll(run: ImportRun, plan: ImportPlan, out: ImportResults): Promise<unknown> {
+  try {
+    await applyDefinitions(run, plan, out);
+    out.projects.push(...plan.unread);
+    if (run.steps.has('issues')) await importAllIssues(run, out);
+    return null;
+  } catch (err) {
+    // Ruling S13: once writing has begun, a fatal failure still leaves the summary and the report.
+    for (const r of plan.unread) if (!out.projects.includes(r)) out.projects.push(r);
+    return err;
+  }
+}
+
+/** The report of the run (spec §12), whether it finished or a fatal failure ended it. */
+function importReport(
+  run: ImportRun,
+  out: ImportResults,
+  times: { startedAt: Date; now: () => Date },
+  fatal: unknown,
+): ImportReport {
+  const { flags, setup, conn, organization, steps } = run;
+  const origin = new URL(setup.sonar.url);
+  return buildReport({
+    source: {
+      kind: 'sonarqube',
+      edition: conn.kind,
+      origin: `${origin.origin}${origin.pathname.replace(/\/+$/, '')}`,
+      organization: setup.sonar.organization,
+      version: conn.version?.text ?? null,
+    },
+    dryRun: flags.dryRun,
+    startedAt: times.startedAt,
+    finishedAt: times.now(),
+    organization,
+    profiles: steps.has('profiles') ? out.profiles : [],
+    gates: steps.has('gates') ? out.gates : [],
+    projects: out.projects.map((result) => ({
+      result,
+      issues: steps.has('issues') ? (out.issuesOf.get(result) ?? emptyIssues('skipped')) : null,
+    })),
+    warnings: [...run.warnings, ...conn.client.warnings],
+    aborted: fatal === null ? null : { reason: fatalReason(fatal) },
+  });
+}
+
+/** Writes `--output`; the `CliError` it failed with, or null. */
+function writeOutput(output: string | null, report: ImportReport): CliError | null {
+  if (output === null) return null;
+  try {
+    writeReport(output, report);
+    return null;
+  } catch (err) {
+    if (!(err instanceof CliError)) throw err;
+    return err;
+  }
+}
+
+/** The fatal failure goes on to `main`, unless the report's own failure is worse. */
+function throwFatal(fatal: unknown, unwritten: CliError | null, log: Logger): never {
+  if (unwritten !== null && fatal instanceof CliError && unwritten.exitCode > fatal.exitCode) {
+    log.error(fatal.message);
+    throw unwritten;
+  }
+  if (unwritten !== null) log.error(unwritten.message);
+  throw fatal;
+}
+
+/** A step failed: a profile, a gate, a project, its issues or one of its assignments. */
+function stepsFailed(report: ImportReport): boolean {
+  return (
+    report.profiles.some((p) => p.outcome === 'failed') ||
+    report.gates.some((g) => g.outcome === 'failed') ||
+    report.projects.some(
+      (p) =>
+        p.outcome === 'failed' ||
+        p.issues?.outcome === 'failed' ||
+        p.profiles.some((a) => a.outcome === 'failed') ||
+        p.gate?.outcome === 'failed',
+    )
+  );
+}
+
 /**
  * `qualor import sonarqube` (import-sonarqube.md §3, §12): checks both connections (Qualor
  * first, so a user who cannot import never reaches SonarQube), reads SonarQube with `GET` only,
@@ -213,7 +564,6 @@ export async function runImportSonarqube(
   const output = flags.output === undefined ? null : path.resolve(io.cwd, flags.output);
   if (output !== null) checkReportPath(output);
   const warnings: Warning[] = [...setup.warnings];
-  /** Records a warning for the report and logs it, once, here. */
   const warn = (code: Warning['code'], message: string) => {
     const text = message.slice(0, MAX_WARNING);
     warnings.push({ code, message: text });
@@ -228,250 +578,26 @@ export async function runImportSonarqube(
     transport: deps.transport,
     sleep: deps.sleep,
   });
-  const steps = new Set(flags.only);
-  const o: ApplyOptions = {
-    dryRun: flags.dryRun,
-    overwrite: flags.overwrite,
-    setDefaults: flags.setDefaults,
-    createProjects: flags.createProjects,
-  };
-  const lookup: ApplyOptions = { ...o, dryRun: true, overwrite: false, setDefaults: false };
-
-  // Read (GET only) and plan: everything but the issues, before any write (ruling S13).
-  const readsProfiles = steps.has('profiles') || steps.has('projects');
-  const readsGates = steps.has('gates') || steps.has('projects');
-  const plannedProfiles = readsProfiles
-    ? (await fetchProfiles(conn.client)).map((p) => planProfile(p))
-    : [];
-  const plannedGates = readsGates ? (await fetchGates(conn.client)).map((g) => planGate(g)) : [];
-  const listed =
-    steps.has('projects') || steps.has('issues')
-      ? await listProjects(conn.client, flags.projects)
-      : { projects: [], missing: [] };
-  const bare = (p: { key: string; name: string }): SonarProjectData => ({
-    ...p,
-    mainBranch: 'main',
-    profiles: [],
-    gate: null,
-  });
-  const settings: SonarProjectData[] = [];
-  /** Projects no Qualor step can take: settings not read, or not in SonarQube (spec §5.1). */
-  const unread: ProjectResult[] = [];
-  for (const p of listed.projects) {
-    if (!steps.has('projects')) {
-      settings.push(bare(p));
-      continue;
-    }
-    try {
-      settings.push(await fetchProjectSettings(conn.client, p));
-    } catch (err) {
-      unread.push({
-        sonar: bare(p),
-        outcome: 'failed',
-        reason: stepFailure(err),
-        qualorProjectId: null,
-        profiles: [],
-        gate: null,
-      });
-    }
-  }
-  for (const key of listed.missing) {
-    unread.push({
-      sonar: bare({ key, name: key }),
-      outcome: 'missing',
-      reason: 'SonarQube has no project of this key visible to this token',
-      qualorProjectId: null,
-      profiles: [],
-      gate: null,
-    });
-  }
-
-  // Write, in order: profiles, gates, projects and assignments, then each project's issues,
-  // read and sent one project at a time. What is done is kept for a partial report.
-  const profiles: ProfileResult[] = [];
-  const gates: GateResult[] = [];
-  const projects: ProjectResult[] = [];
-  const issuesOf = new Map<ProjectResult, Issues>();
-
-  /** Spec §10, §11.2: one project's resolved issues, sent with their open competitors. */
-  async function importIssues(key: string, projectId: string, issues: Issues): Promise<void> {
-    try {
-      const fetched = await fetchResolvedIssues(conn.client, conn, key, flags.maxIssues);
-      issues.read = fetched.issues.length;
-      issues.notRead = fetched.notRead;
-      // Never fails the project's issues: an unanswered count is null, with a warning.
-      issues.hotspotsNotImported = await countReviewedHotspots(conn.client, conn, key);
-      const built = await buildWithCompetitors(conn.client, conn, key, fetched.issues, {
-        pathPrefix: flags.pathPrefix ?? null,
-        maxIssues: flags.maxIssues,
-        unreadResolved: fetched.unread,
-        probe: fetched.probe,
-      });
-      issues.unmappedRule = [...built.unmappedRules.values()].reduce((a, b) => a + b, 0);
-      issues.pathInvalid = built.pathInvalid;
-      // Read as resolved but in no status the import takes: not expected either; never sent.
-      issues.invalid = built.invalid + built.ignored;
-      issues.unmappedRules = [...built.unmappedRules]
-        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
-        .slice(0, MAX_UNMAPPED_RULES)
-        .map(([rule, n]) => ({ key: rule, issues: n }));
-      const record = (
-        item: (typeof built.items)[number],
-        outcome: ItemOutcome,
-        id: string | null,
-      ) => {
-        count(outcome, issues);
-        if (issues.items.length < MAX_ITEMS_IN_REPORT) {
-          issues.items.push({
-            sonarKey: item.ref,
-            rule: built.rules.get(item.ref) ?? '',
-            path: item.path,
-            line: item.line,
-            outcome,
-            qualorIssueId: id,
-          });
-        }
-      };
-      // Ruling S11: reopened between the two reads; never sent as resolved, never applied.
-      for (const item of built.changed) record(item, 'changed', null);
-      if (built.items.length === 0) return;
-      const sent = await sendStatuses(
-        qualor,
-        projectId,
-        [...built.items, ...built.competitors],
-        flags.dryRun,
-      );
-      if (sent.kind === 'not_analysed') {
-        issues.outcome = 'not_analysed';
-        warn(
-          'ISSUES_NOT_READ',
-          `project ${key} has no analysis in Qualor yet: scan it, then run the import again with --only issues`,
-        );
-        return;
-      }
-      const byRef = new Map<string, SendItemResult>(sent.results.map((x) => [x.ref, x]));
-      const failed = new Set(sent.failedRefs);
-      for (const item of built.items) {
-        const r = byRef.get(item.ref);
-        const outcome: ItemOutcome = failed.has(item.ref) || r === undefined ? 'failed' : r.outcome;
-        record(item, outcome, r?.issueId ?? null);
-      }
-      if (issues.notSent > 0) {
-        warn(
-          'ISSUE_STATUSES_NOT_SENT',
-          `project ${key}: ${issues.notSent} resolved issues were not sent, because their file has more resolved and open issues than one request holds; nothing was applied for them`,
-        );
-      }
-      if (issues.failed > 0) {
-        issues.outcome = 'failed';
-        const [first = 'no answer'] = sent.failures;
-        const more = sent.failures.length > 1 ? ` (and ${sent.failures.length - 1} more)` : '';
-        warn(
-          'ISSUE_STATUSES_FAILED',
-          `project ${key}: ${issues.failed} statuses were not imported: ${first}${more}`,
-        );
-      }
-      const answered = built.items.length - issues.notSent - issues.failed;
-      if (answered >= HINT_MIN_ITEMS && issues.unmatched / answered >= HINT_UNMATCHED_SHARE) {
-        warn(
-          'PATH_PREFIX_HINT',
-          `${issues.unmatched} of ${answered} statuses of project ${key} matched no Qualor issue; if SonarQube analysed a subdirectory of the repository (sonar.projectBaseDir), pass it as --path-prefix`,
-        );
-      }
-    } catch (err) {
-      issues.outcome = 'failed';
-      warn('ISSUES_NOT_READ', `project ${key}: ${stepFailure(err)}`);
-    }
-  }
-
-  let fatal: unknown = null;
-  try {
-    if (steps.has('profiles')) {
-      await applyProfiles(qualor, organization.id, plannedProfiles, o, profiles);
-    } else {
-      const found = await applyProfiles(qualor, organization.id, plannedProfiles, lookup);
-      profiles.push(...found.map(lookedUp));
-    }
-    if (steps.has('gates')) {
-      await applyGates(qualor, organization.id, plannedGates, o, gates);
-    } else {
-      const found = await applyGates(qualor, organization.id, plannedGates, lookup);
-      gates.push(...found.map(lookedUp));
-    }
-    if (steps.has('projects')) {
-      await applyProjects(qualor, organization.id, settings, profiles, gates, o, projects);
-    } else {
-      const byKey = { ...lookup, createProjects: false };
-      await applyProjects(qualor, organization.id, settings, [], [], byKey, projects);
-    }
-    projects.push(...unread);
-    if (steps.has('issues')) {
-      for (const result of projects) {
-        const issues = emptyIssues(result.qualorProjectId === null ? 'skipped' : 'done');
-        issuesOf.set(result, issues);
-        if (result.qualorProjectId !== null) {
-          await importIssues(result.sonar.key, result.qualorProjectId, issues);
-        }
-      }
-    }
-  } catch (err) {
-    // Ruling S13: once writing has begun, a fatal failure still leaves the summary and the report.
-    fatal = err;
-    for (const r of unread) if (!projects.includes(r)) projects.push(r);
-  }
-
-  const origin = new URL(setup.sonar.url);
-  const report = buildReport({
-    source: {
-      kind: 'sonarqube',
-      edition: conn.kind,
-      origin: `${origin.origin}${origin.pathname.replace(/\/+$/, '')}`,
-      organization: setup.sonar.organization,
-      version: conn.version?.text ?? null,
-    },
-    dryRun: flags.dryRun,
-    startedAt,
-    finishedAt: now(),
+  const run: ImportRun = {
+    flags,
+    setup,
+    qualor,
+    conn,
     organization,
-    profiles: steps.has('profiles') ? profiles : [],
-    gates: steps.has('gates') ? gates : [],
-    projects: projects.map((result) => ({
-      result,
-      issues: steps.has('issues') ? (issuesOf.get(result) ?? emptyIssues('skipped')) : null,
-    })),
-    warnings: [...warnings, ...conn.client.warnings],
-    aborted: fatal === null ? null : { reason: fatalReason(fatal) },
-  });
+    steps: new Set(flags.only),
+    warnings,
+    warn,
+  };
+
+  const plan = await readAndPlan(run);
+  const out: ImportResults = { profiles: [], gates: [], projects: [], issuesOf: new Map() };
+  const fatal = await writeAll(run, plan, out);
+
+  const report = importReport(run, out, { startedAt, now }, fatal);
   printSummary(report, log);
-  let unwritten: CliError | null = null;
-  if (output !== null) {
-    try {
-      writeReport(output, report);
-    } catch (err) {
-      if (!(err instanceof CliError)) throw err;
-      unwritten = err;
-    }
-  }
-  if (fatal !== null) {
-    // The fatal failure goes on to `main`, unless the report's own failure is worse.
-    if (unwritten !== null && fatal instanceof CliError && unwritten.exitCode > fatal.exitCode) {
-      log.error(fatal.message);
-      throw unwritten;
-    }
-    if (unwritten !== null) log.error(unwritten.message);
-    throw fatal;
-  }
-  const failed =
-    report.profiles.some((p) => p.outcome === 'failed') ||
-    report.gates.some((g) => g.outcome === 'failed') ||
-    report.projects.some(
-      (p) =>
-        p.outcome === 'failed' ||
-        p.issues?.outcome === 'failed' ||
-        p.profiles.some((a) => a.outcome === 'failed') ||
-        p.gate?.outcome === 'failed',
-    );
-  const code: ExitCode = failed ? EXIT.SERVER : EXIT.OK;
+  const unwritten = writeOutput(output, report);
+  if (fatal !== null) throwFatal(fatal, unwritten, log);
+  const code: ExitCode = stepsFailed(report) ? EXIT.SERVER : EXIT.OK;
   if (unwritten === null) return code;
   log.error(unwritten.message);
   return worse(code, unwritten.exitCode);

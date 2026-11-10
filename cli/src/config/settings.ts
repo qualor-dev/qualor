@@ -120,27 +120,31 @@ function readToken(flags: ConfigFlags, env: Env, cwd: string): string | null {
   return token;
 }
 
-/**
- * Applies flags, env and CI values to the raw file content before validation, so every source
- * goes through the same zod schema. A value of the wrong shape is left alone for the schema to
- * reject with its path.
- */
-function applyOverrides(
+/** `project.key`: `--project-key`, else `QUALOR_PROJECT_KEY`, else the file's, else CI's path. */
+function overrideProject(
+  out: Record<string, unknown>,
   raw: Record<string, unknown>,
   flags: ConfigFlags,
   env: Env,
   ci: CiInfo,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...raw };
+): void {
   const project = raw['project'] ?? {};
-  if (isRecord(project)) {
-    const fileKey = project['key'];
-    const key =
-      flags.projectKey ??
-      nonEmpty(env['QUALOR_PROJECT_KEY']) ??
-      (fileKey === undefined || fileKey === '' ? (ci.projectPath ?? undefined) : fileKey);
-    out['project'] = key === undefined ? project : { ...project, key };
-  }
+  if (!isRecord(project)) return;
+  const fileKey = project['key'];
+  const key =
+    flags.projectKey ??
+    nonEmpty(env['QUALOR_PROJECT_KEY']) ??
+    (fileKey === undefined || fileKey === '' ? (ci.projectPath ?? undefined) : fileKey);
+  out['project'] = key === undefined ? project : { ...project, key };
+}
+
+/** `server.url` and `server.caFile`: the flag, else the environment variable, else the file's. */
+function overrideServer(
+  out: Record<string, unknown>,
+  raw: Record<string, unknown>,
+  flags: ConfigFlags,
+  env: Env,
+): void {
   const url = flags.serverUrl ?? nonEmpty(env['QUALOR_URL']);
   const caFile = flags.caFile ?? nonEmpty(env['QUALOR_CA_FILE']);
   const server = raw['server'] ?? {};
@@ -151,6 +155,14 @@ function applyOverrides(
       ...(caFile !== undefined && { caFile }),
     };
   }
+}
+
+/** `--sarif` and `--coverage` files, after the file's own. */
+function overrideInputs(
+  out: Record<string, unknown>,
+  raw: Record<string, unknown>,
+  flags: ConfigFlags,
+): void {
   if (flags.sarif !== undefined && flags.sarif.length > 0) {
     const list = raw['sarif'] ?? [];
     if (Array.isArray(list)) out['sarif'] = [...list, ...flags.sarif.map((p) => ({ path: p }))];
@@ -167,11 +179,54 @@ function applyOverrides(
       }
     }
   }
+}
+
+/**
+ * Applies flags, env and CI values to the raw file content before validation, so every source
+ * goes through the same zod schema. A value of the wrong shape is left alone for the schema to
+ * reject with its path.
+ */
+function applyOverrides(
+  raw: Record<string, unknown>,
+  flags: ConfigFlags,
+  env: Env,
+  ci: CiInfo,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...raw };
+  overrideProject(out, raw, flags, env, ci);
+  overrideServer(out, raw, flags, env);
+  overrideInputs(out, raw, flags);
   if (flags.wait === false) {
     const gate = raw['gate'] ?? {};
     if (isRecord(gate)) out['gate'] = { ...gate, wait: false };
   }
   return out;
+}
+
+/** The validated configuration; a schema error names the file it came from (exit 2). */
+function validConfig(merged: Record<string, unknown>, configPath: string | null): QualorConfig {
+  try {
+    return parseConfig(merged);
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      throw new CliError(
+        EXIT.USAGE,
+        configPath === null ? err.message : `${configPath}: ${err.message}`,
+      );
+    }
+    throw err;
+  }
+}
+
+/** Where a server setting came from (config.md §2): its flag, else its variable, else the file. */
+function settingSource(
+  flag: string | undefined,
+  envValue: string | undefined,
+  inFile: boolean,
+): Settings['serverUrlSource'] {
+  if (flag !== undefined) return 'flag';
+  if (nonEmpty(envValue) !== undefined) return 'env';
+  return inFile ? 'file' : null;
 }
 
 export function loadSettings(input: LoadSettingsInput): Settings {
@@ -201,35 +256,18 @@ export function loadSettings(input: LoadSettingsInput): Settings {
   );
   const ci = detectCi(env);
   const merged = applyOverrides(isRecord(interpolated) ? interpolated : {}, flags, env, ci);
-  let config: QualorConfig;
-  try {
-    config = parseConfig(merged);
-  } catch (err) {
-    if (err instanceof ConfigError) {
-      throw new CliError(
-        EXIT.USAGE,
-        configPath === null ? err.message : `${configPath}: ${err.message}`,
-      );
-    }
-    throw err;
-  }
-  const serverUrlSource =
-    flags.serverUrl !== undefined
-      ? 'flag'
-      : nonEmpty(env['QUALOR_URL']) !== undefined
-        ? 'env'
-        : config.server.url !== undefined
-          ? 'file'
-          : null;
+  const config = validConfig(merged, configPath);
+  const serverUrlSource = settingSource(
+    flags.serverUrl,
+    env['QUALOR_URL'],
+    config.server.url !== undefined,
+  );
   const fileCaFile = config.server.caFile;
-  const caFileSource =
-    flags.caFile !== undefined
-      ? 'flag'
-      : nonEmpty(env['QUALOR_CA_FILE']) !== undefined
-        ? 'env'
-        : fileCaFile !== null && fileCaFile !== ''
-          ? 'file'
-          : null;
+  const caFileSource = settingSource(
+    flags.caFile,
+    env['QUALOR_CA_FILE'],
+    fileCaFile !== null && fileCaFile !== '',
+  );
   return {
     root: cwd,
     configPath,

@@ -204,6 +204,25 @@ function attempt(
       });
       out = stream;
       stream.on('error', () => fail('cannot write the database file'));
+      const resume = () => r.resume();
+      /** Renames the partial file once its descriptor is closed and every byte reached it. */
+      const commit = () => {
+        if (settled) return;
+        if (stream.bytesWritten !== sizeBytes) {
+          fail('cannot write the database file');
+          return;
+        }
+        try {
+          renameSync(partial, dest);
+        } catch {
+          fail('cannot write the database file');
+          return;
+        }
+        finish({ ok: true });
+      };
+      const ended = (err?: Error | null) => {
+        if (err) fail('cannot write the database file');
+      };
       r.on('data', (chunk: Buffer) => {
         armIdle();
         received += chunk.length;
@@ -214,7 +233,7 @@ function attempt(
         hash.update(chunk);
         if (!stream.write(chunk)) {
           r.pause();
-          stream.once('drain', () => r.resume());
+          stream.once('drain', resume);
         }
       });
       r.on('error', (err: NodeJS.ErrnoException) =>
@@ -231,23 +250,8 @@ function attempt(
         }
         clearTimeout(idle);
         // Rename only once the descriptor is closed and every byte reached the file.
-        stream.once('close', () => {
-          if (settled) return;
-          if (stream.bytesWritten !== sizeBytes) {
-            fail('cannot write the database file');
-            return;
-          }
-          try {
-            renameSync(partial, dest);
-          } catch {
-            fail('cannot write the database file');
-            return;
-          }
-          finish({ ok: true });
-        });
-        stream.end((err?: Error | null) => {
-          if (err) fail('cannot write the database file');
-        });
+        stream.once('close', commit);
+        stream.end(ended);
       });
     });
     req.end();

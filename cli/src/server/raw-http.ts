@@ -81,13 +81,35 @@ function portOf(url: URL): number {
 /** `host:port` of the origin, IPv6 in brackets, for `CONNECT`. */
 function authority(url: URL): string {
   const host = hostOf(url);
-  return `${net.isIP(host) === 6 ? `[${host}]` : host}:${portOf(url)}`;
+  const name = net.isIP(host) === 6 ? `[${host}]` : host;
+  return `${name}:${portOf(url)}`;
 }
 
 const lookup = (env: Readonly<Record<string, string | undefined>>, name: string) => {
   const value = env[name.toLowerCase()] ?? env[name.toUpperCase()];
   return value === undefined || value.trim() === '' ? undefined : value.trim();
 };
+
+/**
+ * One `NO_PROXY` entry, `name[:port]` or `[ipv6][:port]`: the name without a leading `.` or `*.`
+ * or a trailing `.`, and the port when given.
+ */
+function noProxyEntry(raw: string): { entry: string; entryPort: number | undefined } {
+  let entry = raw;
+  let entryPort: number | undefined;
+  const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(entry);
+  if (bracketed !== null) {
+    entry = bracketed[1] ?? '';
+    if (bracketed[2] !== undefined) entryPort = Number(bracketed[2]);
+  } else {
+    const withPort = /^([^:]+):(\d+)$/.exec(entry);
+    if (withPort !== null) {
+      entry = withPort[1] ?? '';
+      entryPort = Number(withPort[2]);
+    }
+  }
+  return { entry: entry.replace(/^\*?\./, '').replace(/\.$/, ''), entryPort };
+}
 
 /**
  * True when `NO_PROXY` exempts the origin: `*`; or an entry `name[:port]` that equals the host or
@@ -101,20 +123,7 @@ export function noProxyMatches(url: URL, noProxy: string | undefined): boolean {
   for (const raw of noProxy.toLowerCase().split(/[\s,]+/)) {
     if (raw === '') continue;
     if (raw === '*') return true;
-    let entry = raw;
-    let entryPort: number | undefined;
-    const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(entry);
-    if (bracketed !== null) {
-      entry = bracketed[1] ?? '';
-      if (bracketed[2] !== undefined) entryPort = Number(bracketed[2]);
-    } else {
-      const withPort = /^([^:]+):(\d+)$/.exec(entry);
-      if (withPort !== null) {
-        entry = withPort[1] ?? '';
-        entryPort = Number(withPort[2]);
-      }
-    }
-    entry = entry.replace(/^\*?\./, '').replace(/\.$/, '');
+    const { entry, entryPort } = noProxyEntry(raw);
     if (entry === '') continue;
     if (entryPort !== undefined && entryPort !== port) continue;
     if (host === entry || host.endsWith(`.${entry}`)) return true;
@@ -177,7 +186,8 @@ function proxyAuthorization(proxy: URL): string | undefined {
   } catch {
     throw new RawHttpError('the proxy credentials are not valid percent-encoding');
   }
-  return `Basic ${Buffer.from(`${user}:${pass}`, 'utf8').toString('base64')}`;
+  const credentials = `${user}:${pass}`;
+  return `Basic ${Buffer.from(credentials, 'utf8').toString('base64')}`;
 }
 
 /** The request head; a header that could split the request is refused (never shown). */
@@ -248,6 +258,53 @@ function framing(head: Head): Framing {
     throw new RawHttpError('the server sent an invalid Content-Length');
   }
   return { kind: 'length', remaining: Number(only) };
+}
+
+/** What an unusable head fails with, by who sent it. */
+interface HeadFailures {
+  tooLarge: string;
+  bareLf: string;
+}
+const SERVER_HEAD: HeadFailures = {
+  tooLarge: 'the response head is too large',
+  bareLf: 'the server answered with bare LF line endings (not HTTP/1.1)',
+};
+const PROXY_HEAD: HeadFailures = {
+  tooLarge: 'the proxy answer is too large',
+  bareLf: 'the proxy answered with bare LF line endings (not HTTP/1.1)',
+};
+
+/**
+ * Where the head at the start of `buffer` ends (the index of its blank line), -1 while more bytes
+ * are needed, or the message it fails with: larger than `MAX_HEAD_BYTES`, or bare LF line endings.
+ */
+function headEnd(buffer: Buffer, failures: HeadFailures): number | string {
+  const end = buffer.indexOf('\r\n\r\n');
+  if (end < 0 ? buffer.length > MAX_HEAD_BYTES : end > MAX_HEAD_BYTES) return failures.tooLarge;
+  if (end < 0 && buffer.indexOf('\n\n') >= 0) return failures.bareLf;
+  return end;
+}
+
+/** Why the proxy's final answer to `CONNECT` does not open the tunnel, or null when it does. */
+function tunnelRefusal(status: number, dataAfterHead: boolean): RawHttpError | null {
+  if (status === 407) {
+    return new RawHttpError(
+      'the proxy requires authentication (407); put the credentials in the proxy URL',
+    );
+  }
+  if (status < 200 || status > 299) {
+    return new RawHttpError(`the proxy refused the tunnel (${status})`);
+  }
+  if (dataAfterHead) return new RawHttpError('the proxy sent data before the tunnel was open');
+  return null;
+}
+
+/** A failure to start connecting, as a RawHttpError: Node's error code, never its message. */
+function connectError(err: unknown): RawHttpError {
+  if (err instanceof RawHttpError) return err;
+  return new RawHttpError(
+    err instanceof Error && 'code' in err ? String(err.code) : 'cannot connect',
+  );
 }
 
 /**
@@ -340,66 +397,51 @@ function open(r: RawRequest, proxy: URL | null): Promise<net.Socket> {
       });
       let buffer: Buffer = Buffer.alloc(0);
       let informational = 0;
+      /** The proxy opened the tunnel: from here the connection is the origin's. */
+      const openTunnel = () => {
+        tunnel.pause();
+        tunnel.off('data', onData);
+        if (isHttps) startTls(tunnel);
+        else done(null, tunnel);
+      };
+      /** Handles the proxy answer at the start of `buffer`; true when it was a 1xx, skipped. */
+      const nextAnswer = (): boolean => {
+        const end = headEnd(buffer, PROXY_HEAD);
+        if (typeof end === 'string') {
+          done(new RawHttpError(end));
+          return false;
+        }
+        if (end < 0) return false;
+        let head: Head;
+        try {
+          head = parseHead(buffer.subarray(0, end).toString('latin1'));
+        } catch {
+          done(new RawHttpError('the proxy did not answer with HTTP/1.1'));
+          return false;
+        }
+        if (head.status >= 100 && head.status < 200 && head.status !== 101) {
+          // An informational answer before the tunnel's own (e.g. 100 or 103): skipped, bounded.
+          informational += 1;
+          if (informational > MAX_INFORMATIONAL) {
+            done(new RawHttpError('the proxy sent too many informational (1xx) answers'));
+            return false;
+          }
+          buffer = buffer.subarray(end + 4);
+          return true;
+        }
+        const refusal = tunnelRefusal(head.status, buffer.length > end + 4);
+        if (refusal === null) openTunnel();
+        else done(refusal);
+        return false;
+      };
       const onData = (d: Buffer) => {
         buffer = buffer.length === 0 ? d : Buffer.concat([buffer, d]);
-        for (;;) {
-          const end = buffer.indexOf('\r\n\r\n');
-          if (end < 0 ? buffer.length > MAX_HEAD_BYTES : end > MAX_HEAD_BYTES) {
-            done(new RawHttpError('the proxy answer is too large'));
-            return;
-          }
-          if (end < 0) {
-            if (buffer.indexOf('\n\n') >= 0) {
-              done(new RawHttpError('the proxy answered with bare LF line endings (not HTTP/1.1)'));
-            }
-            return;
-          }
-          let head: Head;
-          try {
-            head = parseHead(buffer.subarray(0, end).toString('latin1'));
-          } catch {
-            done(new RawHttpError('the proxy did not answer with HTTP/1.1'));
-            return;
-          }
-          if (head.status >= 100 && head.status < 200 && head.status !== 101) {
-            // An informational answer before the tunnel's own (e.g. 100 or 103): skipped, bounded.
-            informational += 1;
-            if (informational > MAX_INFORMATIONAL) {
-              done(new RawHttpError('the proxy sent too many informational (1xx) answers'));
-              return;
-            }
-            buffer = buffer.subarray(end + 4);
-            continue;
-          }
-          if (head.status === 407) {
-            done(
-              new RawHttpError(
-                'the proxy requires authentication (407); put the credentials in the proxy URL',
-              ),
-            );
-          } else if (head.status < 200 || head.status > 299) {
-            done(new RawHttpError(`the proxy refused the tunnel (${head.status})`));
-          } else if (buffer.length > end + 4) {
-            done(new RawHttpError('the proxy sent data before the tunnel was open'));
-          } else {
-            tunnel.pause();
-            tunnel.off('data', onData);
-            if (isHttps) startTls(tunnel);
-            else done(null, tunnel);
-          }
-          return;
-        }
+        for (;;) if (!nextAnswer()) return;
       };
       tunnel.on('data', onData);
       detach.push(() => tunnel.off('data', onData));
     } catch (err) {
-      done(
-        err instanceof RawHttpError
-          ? err
-          : new RawHttpError(
-              err instanceof Error && 'code' in err ? String(err.code) : 'cannot connect',
-            ),
-      );
+      done(connectError(err));
     }
   });
 }
@@ -508,99 +550,114 @@ function exchange(r: RawRequest, socket: net.Socket, head: string): Promise<RawR
       return true;
     };
 
+    /**
+     * A head that has started must be complete within `timeoutMs`: its bytes alone must not keep
+     * the upload alive (a server that stopped reading the body and trickles a head would otherwise
+     * hold it for weeks at one byte per timeout).
+     */
+    const startHeadTimer = () => {
+      if (buffer.length > 0 && headTimer === undefined) {
+        headTimer = setTimeout(
+          () => fail(`no complete response head within ${r.timeoutMs / 1000} s`),
+          r.timeoutMs,
+        );
+      }
+    };
+
+    /** Reads one response head from `buffer`; true to parse on, false when more bytes are needed. */
+    const readHead = (): boolean => {
+      const end = headEnd(buffer, SERVER_HEAD);
+      if (typeof end === 'string') {
+        fail(end);
+        return false;
+      }
+      if (end < 0) {
+        startHeadTimer();
+        return false;
+      }
+      clearTimeout(headTimer);
+      headTimer = undefined;
+      const parsed = parseHead(buffer.subarray(0, end).toString('latin1'));
+      buffer = buffer.subarray(end + 4);
+      if (parsed.status === 101) throw new RawHttpError('the server switched protocols');
+      if (parsed.status < 200) {
+        informational += 1;
+        if (informational > MAX_INFORMATIONAL) {
+          throw new RawHttpError('the server sent too many informational (1xx) answers');
+        }
+        if (parsed.status === 100) sendBody();
+        return true; // 102/103: informational only
+      }
+      final = parsed;
+      clearTimeout(continueTimer);
+      startDeadline();
+      // Transfer-Encoding wins over Content-Length (RFC 9112 §6.3).
+      frame = framing(parsed);
+      if (frame.kind === 'length' && frame.remaining > r.maxResponseBytes) {
+        fail(tooLarge);
+        return false;
+      }
+      return true;
+    };
+
+    /** One chunk of a chunked body: `size[;ext]\r\n data \r\n`, … `0\r\n` trailers `\r\n`. */
+    const readChunk = (): boolean => {
+      const lineEnd = buffer.indexOf('\r\n');
+      if (lineEnd < 0 ? buffer.length > MAX_CHUNK_LINE : lineEnd > MAX_CHUNK_LINE) {
+        fail('the server sent an invalid chunked response');
+        return false;
+      }
+      if (lineEnd < 0) return false;
+      const sizeText = buffer.subarray(0, lineEnd).toString('latin1').split(';')[0]?.trim();
+      if (sizeText === undefined || !/^[0-9a-fA-F]{1,8}$/.test(sizeText)) {
+        fail('the server sent an invalid chunked response');
+        return false;
+      }
+      const size = parseInt(sizeText, 16);
+      if (size === 0) {
+        // The last chunk, then an empty line or trailer lines ending in one (bounded by
+        // `maxReceived`, like every byte of the answer).
+        if (buffer.indexOf('\r\n\r\n', lineEnd) >= 0) finish();
+        return false;
+      }
+      if (bodyBytes + size > r.maxResponseBytes) {
+        fail(tooLarge);
+        return false;
+      }
+      if (buffer.length < lineEnd + 2 + size + 2) return false;
+      if (buffer.subarray(lineEnd + 2 + size, lineEnd + 4 + size).toString('latin1') !== '\r\n') {
+        fail('the server sent an invalid chunked response');
+        return false;
+      }
+      if (!addBody(buffer.subarray(lineEnd + 2, lineEnd + 2 + size))) return false;
+      buffer = buffer.subarray(lineEnd + 4 + size);
+      return true;
+    };
+
+    /** Reads body bytes from `buffer` by the final head's framing; true to parse on. */
+    const readBody = (): boolean => {
+      if (frame === undefined) return false;
+      if (frame.kind === 'length') {
+        const take = buffer.subarray(0, frame.remaining);
+        buffer = buffer.subarray(take.length);
+        frame.remaining -= take.length;
+        if (take.length > 0 && !addBody(take)) return false;
+        if (frame.remaining === 0) finish();
+        return false;
+      }
+      if (frame.kind === 'close') {
+        if (buffer.length > 0 && !addBody(buffer)) return false;
+        buffer = Buffer.alloc(0);
+        return false;
+      }
+      return readChunk();
+    };
+
     /** Consumes `buffer` as far as possible; returns when more bytes are needed. */
     const parse = () => {
       while (!isSettled()) {
-        if (final === undefined) {
-          const end = buffer.indexOf('\r\n\r\n');
-          if (end < 0 ? buffer.length > MAX_HEAD_BYTES : end > MAX_HEAD_BYTES) {
-            fail('the response head is too large');
-            return;
-          }
-          if (end < 0) {
-            if (buffer.indexOf('\n\n') >= 0) {
-              fail('the server answered with bare LF line endings (not HTTP/1.1)');
-              return;
-            }
-            // A head that has started must be complete within `timeoutMs`: its bytes alone must
-            // not keep the upload alive (a server that stopped reading the body and trickles a
-            // head would otherwise hold it for weeks at one byte per timeout).
-            if (buffer.length > 0 && headTimer === undefined) {
-              headTimer = setTimeout(
-                () => fail(`no complete response head within ${r.timeoutMs / 1000} s`),
-                r.timeoutMs,
-              );
-            }
-            return;
-          }
-          clearTimeout(headTimer);
-          headTimer = undefined;
-          const parsed = parseHead(buffer.subarray(0, end).toString('latin1'));
-          buffer = buffer.subarray(end + 4);
-          if (parsed.status === 101) throw new RawHttpError('the server switched protocols');
-          if (parsed.status < 200) {
-            informational += 1;
-            if (informational > MAX_INFORMATIONAL) {
-              throw new RawHttpError('the server sent too many informational (1xx) answers');
-            }
-            if (parsed.status === 100) sendBody();
-            continue; // 102/103: informational only
-          }
-          final = parsed;
-          clearTimeout(continueTimer);
-          startDeadline();
-          // Transfer-Encoding wins over Content-Length (RFC 9112 §6.3).
-          frame = framing(parsed);
-          if (frame.kind === 'length' && frame.remaining > r.maxResponseBytes) {
-            fail(tooLarge);
-            return;
-          }
-          continue;
-        }
-        if (frame === undefined) return;
-        if (frame.kind === 'length') {
-          const take = buffer.subarray(0, frame.remaining);
-          buffer = buffer.subarray(take.length);
-          frame.remaining -= take.length;
-          if (take.length > 0 && !addBody(take)) return;
-          if (frame.remaining === 0) finish();
-          return;
-        }
-        if (frame.kind === 'close') {
-          if (buffer.length > 0 && !addBody(buffer)) return;
-          buffer = Buffer.alloc(0);
-          return;
-        }
-        // chunked: `size[;ext]\r\n data \r\n`, … `0\r\n` trailers `\r\n`
-        const lineEnd = buffer.indexOf('\r\n');
-        if (lineEnd < 0 ? buffer.length > MAX_CHUNK_LINE : lineEnd > MAX_CHUNK_LINE) {
-          fail('the server sent an invalid chunked response');
-          return;
-        }
-        if (lineEnd < 0) return;
-        const sizeText = buffer.subarray(0, lineEnd).toString('latin1').split(';')[0]?.trim();
-        if (sizeText === undefined || !/^[0-9a-fA-F]{1,8}$/.test(sizeText)) {
-          fail('the server sent an invalid chunked response');
-          return;
-        }
-        const size = parseInt(sizeText, 16);
-        if (size === 0) {
-          // The last chunk, then an empty line or trailer lines ending in one (bounded by
-          // `maxReceived`, like every byte of the answer).
-          if (buffer.indexOf('\r\n\r\n', lineEnd) >= 0) finish();
-          return;
-        }
-        if (bodyBytes + size > r.maxResponseBytes) {
-          fail(tooLarge);
-          return;
-        }
-        if (buffer.length < lineEnd + 2 + size + 2) return;
-        if (buffer.subarray(lineEnd + 2 + size, lineEnd + 4 + size).toString('latin1') !== '\r\n') {
-          fail('the server sent an invalid chunked response');
-          return;
-        }
-        if (!addBody(buffer.subarray(lineEnd + 2, lineEnd + 2 + size))) return;
-        buffer = buffer.subarray(lineEnd + 4 + size);
+        const more = final === undefined ? readHead() : readBody();
+        if (!more) return;
       }
     };
 

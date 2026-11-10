@@ -162,7 +162,7 @@ export function createGit(
       };
       const arm = () => setTimeout(kill, timeoutMs, 'timeout');
       let timer = arm();
-      const collect = (into: Buffer[]) => (chunk: Buffer) => {
+      const collect = (into: Buffer[], chunk: Buffer) => {
         if (failure === 'overflow') return;
         size += chunk.length;
         if (size > maxBuffer) {
@@ -191,9 +191,11 @@ export function createGit(
       };
       child.stdout.on(
         'data',
-        stream === undefined ? collect(stdout) : (chunk: Buffer) => take(stream, chunk),
+        stream === undefined
+          ? (chunk: Buffer) => collect(stdout, chunk)
+          : (chunk: Buffer) => take(stream, chunk),
       );
-      child.stderr.on('data', collect(stderr));
+      child.stderr.on('data', (chunk: Buffer) => collect(stderr, chunk));
       if (options?.input !== undefined) {
         // git may stop reading before the end (a call that was stopped): no error of the call.
         child.stdin.on('error', () => undefined);
@@ -239,16 +241,17 @@ export function createGit(
         killTree(child.pid);
         reject(new CliError(EXIT.USAGE, `cannot run git ${label}: ${error.message}`));
       });
+      const dropPipes = () => {
+        if (settled) return;
+        child.stdout.destroy();
+        child.stderr.destroy();
+        finish(child.exitCode);
+      };
       child.on('exit', () => {
         // Normally 'close' follows at once. If something git started still holds the pipes, stop
         // waiting for them after a short grace period. No kill here: git has exited, so its pid
         // may already belong to another process.
-        setTimeout(() => {
-          if (settled) return;
-          child.stdout.destroy();
-          child.stderr.destroy();
-          finish(child.exitCode);
-        }, CLOSE_GRACE_MS).unref();
+        setTimeout(dropPipes, CLOSE_GRACE_MS).unref();
       });
       child.on('close', (code) => {
         finish(code);
@@ -259,10 +262,8 @@ export function createGit(
 export async function gitText(git: Git, args: readonly string[]): Promise<string> {
   const r = await git(args);
   if (r.code !== 0) {
-    throw new CliError(
-      EXIT.USAGE,
-      scrubCredentials(`git ${args.join(' ')} failed: ${r.stderr.trim() || `exit code ${r.code}`}`),
-    );
+    const detail = r.stderr.trim() || `exit code ${r.code}`;
+    throw new CliError(EXIT.USAGE, scrubCredentials(`git ${args.join(' ')} failed: ${detail}`));
   }
   return r.stdout;
 }
