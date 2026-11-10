@@ -659,6 +659,19 @@ describe('VulnerabilitiesPage export menus', () => {
     ]);
   });
 
+  it('closes the menu when a download link is clicked', async () => {
+    const root = await renderExport({ sbom: true, targets, untracked: old });
+    const panel = menu(root, 'sbom') as HTMLElement;
+    const hide = vi.fn();
+    // jsdom has no Popover API.
+    Object.assign(panel, { hidePopover: hide });
+    vi.spyOn(panel, 'matches').mockReturnValue(true);
+    const link = panel.querySelector('a') as HTMLAnchorElement;
+    link.addEventListener('click', (e) => e.preventDefault());
+    link.click();
+    expect(hide).toHaveBeenCalledTimes(1);
+  });
+
   it('links the formats of the VEX', async () => {
     const root = await renderExport({ sbom: true, targets, untracked: old });
     expect(links(root, 'vex')).toEqual([

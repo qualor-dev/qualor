@@ -299,7 +299,7 @@
         </select>
       </label>
       @for (l of exportLinks(kind); track l.href) {
-        <a [attr.href]="l.href" download>{{ l.label }}</a>
+        <a [attr.href]="l.href" download (click)="close(menu)">{{ l.label }}</a>
       }
     </div>
   </span>

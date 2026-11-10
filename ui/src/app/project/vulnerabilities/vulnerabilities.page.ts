@@ -250,10 +250,14 @@ export class VulnerabilitiesPage {
     menu.style.right = `${Math.max(0, Math.round(document.documentElement.clientWidth - rect.right))}px`;
   }
 
-  protected async change(menu: HTMLElement, versionId: string, tracking: Tracking): Promise<void> {
-    // jsdom has no Popover API.
+  /** Closes a popover menu; jsdom has no Popover API. */
+  protected close(menu: HTMLElement): void {
     const popover = menu as Partial<Pick<HTMLElement, 'hidePopover'>>;
     if (popover.hidePopover && menu.matches(':popover-open')) popover.hidePopover.call(menu);
+  }
+
+  protected async change(menu: HTMLElement, versionId: string, tracking: Tracking): Promise<void> {
+    this.close(menu);
     if (this.busy()) return;
     this.busy.set(true);
     this.error.set(null);
