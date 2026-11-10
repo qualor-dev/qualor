@@ -312,6 +312,11 @@ target, carries its author, date and (CycloneDX) comment like any other.
 | Trivy | the OpenVEX file, with either SBOM: `trivy sbom <sbom> --vex <file>` |
 | Dependency-Track | the CycloneDX SBOM, imported first, then the CycloneDX VEX, imported into the same project |
 
+Dependency-Track applies a VEX decision only to a finding it holds under the same source and id.
+The VEX names a vulnerability by its CVE when it has one, with the source NVD. A finding that
+Dependency-Track takes from OSV or GitHub Advisories has a GHSA id instead, so its decision is not
+applied.
+
 ### Download from CI
 
 The same files come from the API. A project analysis token downloads the SBOM and VEX of its own
