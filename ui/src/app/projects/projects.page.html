@@ -134,7 +134,8 @@
                             >No critical or high</span
                           >
                         }
-                      } @else {
+                      } @else if (!c.chips && !c.releases) {
+                        <!-- No counts for main yet: the dash, unless the releases say more. -->
                         <span class="muted" aria-hidden="true">–</span>
                       }
                       @if (c.chips) {
@@ -146,7 +147,7 @@
                         />
                       }
                       @if (c.releases; as r) {
-                        <a
+                        &ngsp;<a
                           class="vuln-releases"
                           [routerLink]="['/projects', project.id, 'vulnerabilities']"
                           [attr.aria-label]="r.label"

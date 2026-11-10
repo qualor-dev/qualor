@@ -190,6 +190,20 @@ describe('ProjectsPage', () => {
       expect(hidden(fresh)).toBe('No vulnerability counts for main yet');
     });
 
+    it('drops the dash when the releases say more than main can', async () => {
+      server.on('GET', '/api/v0/projects', {
+        body: page([
+          project('tags', 'Tags only', {
+            vulnerabilities: vulns({ main: null, exploited: 1, vulnerableReleases: 2 }),
+          }),
+        ]),
+      });
+      const { root } = await render();
+      const cell = vulnCell(root.querySelector('tbody tr') ?? undefined);
+      expect(text(cell?.querySelector('.vuln-facts'))).toBe('1 exploited 2 releases');
+      expect(hidden(cell)).toBe('No vulnerability counts for main yet; 1 exploited');
+    });
+
     it('shows a dash, and the new marker, for an older server without the counts', async () => {
       server.on('GET', '/api/v0/projects', {
         body: page([
