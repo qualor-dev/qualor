@@ -6,6 +6,12 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- `qualor/scanner`: the `gosec` engine is built with golang.org/x/net 0.62.0 (was 0.58.0), which
+  fixes CVE-2026-78659, CVE-2026-78660, CVE-2026-78661, CVE-2026-78663, CVE-2026-78669,
+  CVE-2026-97032 and CVE-2026-97045.
+
 ## [0.15.0] - 2026-11-10
 
 ### Added
