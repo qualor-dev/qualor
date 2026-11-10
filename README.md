@@ -26,12 +26,12 @@ It is free, with no lines-of-code licence.
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/screenshots/vulnerabilities-by-version.png" alt="A project's Vulnerabilities tab by version: the main branch with one Critical and one High vulnerability, one of them new, and the released version 1.0.0 with none">
+      <img src="docs/screenshots/vulnerabilities-by-version.png" alt="A project's Vulnerabilities tab by version: the main branch and three released versions, each with its Critical, High and Medium counts, and the exploited vulnerabilities in v2.1.0 and v2.2.0">
       <br><sub><b>Vulnerabilities</b> of each branch and released version</sub>
     </td>
     <td width="50%" valign="top">
-      <img src="docs/screenshots/vulnerabilities-by-vulnerability.png" alt="The same tab by vulnerability: a new Critical in handlebars with its fixed version, found without a scan, and a High in lodash, each with the branches and versions it is in and a Change status button">
-      <br><sub><b>By vulnerability</b>, with fixed versions and triage</sub>
+      <img src="docs/screenshots/vulnerabilities-by-vulnerability.png" alt="The same tab by vulnerability: Log4Shell and Spring4Shell first, as Critical and exploited, each with its fixed versions, exploit probability, the versions it is in and a Change status button">
+      <br><sub><b>By vulnerability</b>, exploited ones first, with fixed versions</sub>
     </td>
   </tr>
   <tr>
