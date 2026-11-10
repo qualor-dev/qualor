@@ -8,8 +8,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Added
 
-- Business and Enterprise: Slack and Teams post exploited vulnerabilities (CISA KEV) at once, and the
-  weekly security digest lists the new High and Critical vulnerabilities in tracked versions
+- Business and Enterprise: Slack and Teams post exploited vulnerabilities (CISA KEV) at once, and
+  the weekly security digest lists the new High and Critical vulnerabilities in tracked versions
   ([Slack and Teams](docs/guide/chat-notifications.md)).
 - Enterprise: compliance reports cover a released version (its dependencies only), name the
   vulnerability of each dependency finding (fixed versions, KEV, EPSS), give the reason of each

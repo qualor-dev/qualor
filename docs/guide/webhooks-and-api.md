@@ -13,9 +13,10 @@ Settings → Webhooks**, where **New webhook** creates one for that project. Thr
 Slack and Teams webhooks.
 
 The type **Generic (signed JSON)** posts JSON to a receiver of your own, as described below. The
-types **Slack** and **Microsoft Teams** send formatted messages about the main branch's quality gate
-and a weekly security digest ([Slack and Microsoft Teams](./chat-notifications.md)). They have no
-secret and send no `X-Qualor-*` headers.
+types **Slack** and **Microsoft Teams** send formatted messages about the main branch's quality
+gate, exploited vulnerabilities and a weekly security digest
+([Slack and Microsoft Teams](./chat-notifications.md)). They have no secret and send no
+`X-Qualor-*` headers.
 
 A generic webhook sends the events you choose:
 
