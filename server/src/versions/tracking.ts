@@ -41,21 +41,15 @@ function compareNewer(a: Entry, b: Entry): number {
   return a.input.analyzedAt.getTime() - b.input.analyzedAt.getTime();
 }
 
-/**
- * Decides which versions of a project are tracked for vulnerabilities.
- * Overrides (pinned, unsupported) apply first; the rule decides the rest.
- */
-export function computeTracking(
-  versions: readonly TrackingInput[],
-  rule: VersionRule,
-): Map<string, Decision> {
-  const result = new Map<string, Decision>();
-  const entries: Entry[] = versions.map((input) => ({
-    input,
-    parsed: parseVersionLabel(input.label),
-  }));
-  const rest: Entry[] = [];
+/** Code-unit order (not locale-dependent). */
+function compare(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
 
+/** Applies the overrides (pinned, unsupported) to `result`; answers the entries the rule decides. */
+function applyOverrides(entries: readonly Entry[], result: Map<string, Decision>): Entry[] {
+  const rest: Entry[] = [];
   for (const entry of entries) {
     const { input } = entry;
     if (input.tracking === 'pinned') result.set(input.id, { tracked: true, reason: 'pinned' });
@@ -63,33 +57,54 @@ export function computeTracking(
       result.set(input.id, { tracked: false, reason: 'unsupported' });
     } else rest.push(entry);
   }
+  return rest;
+}
 
-  if (rule.kind !== 'lines') {
-    for (const { input, parsed } of rest) {
-      if (parsed?.prerelease) result.set(input.id, { tracked: false, reason: 'prerelease' });
-      else if (rule.kind === 'all') result.set(input.id, { tracked: true, reason: 'rule_all' });
-      else result.set(input.id, { tracked: false, reason: 'rule_none' });
-    }
-    return result;
+/** Rule `all` or `none` for the entries without an override; a prerelease is never tracked. */
+function decideByRule(
+  rest: readonly Entry[],
+  kind: Exclude<VersionRule['kind'], 'lines'>,
+  result: Map<string, Decision>,
+): void {
+  for (const { input, parsed } of rest) {
+    if (parsed?.prerelease) result.set(input.id, { tracked: false, reason: 'prerelease' });
+    else if (kind === 'all') result.set(input.id, { tracked: true, reason: 'rule_all' });
+    else result.set(input.id, { tracked: false, reason: 'rule_none' });
   }
+}
 
-  // Lines are ranked over every release whose label parses, whatever its override.
-  const lineMembers = new Map<string, { major: number; minor: number; entries: Entry[] }>();
-  const addToLine = (entry: Entry): void => {
-    const p = entry.parsed;
-    if (!p || p.prerelease) return;
-    let line = lineMembers.get(p.line);
-    if (!line) {
-      line = { major: p.numbers[0], minor: p.numbers[1], entries: [] };
-      lineMembers.set(p.line, line);
-    }
-    line.entries.push(entry);
-  };
-  entries.forEach(addToLine);
+interface ReleaseLine {
+  major: number;
+  minor: number;
+  entries: Entry[];
+}
+
+/** Adds a parsed release (not a prerelease) to its line in `lineMembers`. */
+function addToLine(lineMembers: Map<string, ReleaseLine>, entry: Entry): void {
+  const p = entry.parsed;
+  if (!p || p.prerelease) return;
+  let line = lineMembers.get(p.line);
+  if (!line) {
+    line = { major: p.numbers[0], minor: p.numbers[1], entries: [] };
+    lineMembers.set(p.line, line);
+  }
+  line.entries.push(entry);
+}
+
+/**
+ * The `lines` newest release lines, and the newest release of each. Lines are ranked over every
+ * release whose label parses, whatever its override.
+ */
+function currentLinesOf(
+  entries: readonly Entry[],
+  lines: number,
+): { currentLines: Set<string>; newestOfLine: Map<string, Entry> } {
+  const lineMembers = new Map<string, ReleaseLine>();
+  for (const entry of entries) addToLine(lineMembers, entry);
   const ranked = [...lineMembers.entries()].sort(
     ([, a], [, b]) => b.major - a.major || b.minor - a.minor,
   );
-  const currentLines = new Set(ranked.slice(0, rule.lines).map(([key]) => key));
+  const currentLines = new Set(ranked.slice(0, lines).map(([key]) => key));
   const newestOfLine = new Map<string, Entry>();
   for (const [key, line] of lineMembers) {
     if (!currentLines.has(key)) continue;
@@ -99,7 +114,21 @@ export function computeTracking(
     }
     if (newest) newestOfLine.set(key, newest);
   }
+  return { currentLines, newestOfLine };
+}
 
+/**
+ * Rule `lines` for the entries without an override: the newest release of each current line is
+ * tracked; releases whose label does not parse are ranked by analysis, the `lines` most recent
+ * tracked.
+ */
+function decideByLines(
+  entries: readonly Entry[],
+  rest: readonly Entry[],
+  lines: number,
+  result: Map<string, Decision>,
+): void {
+  const { currentLines, newestOfLine } = currentLinesOf(entries, lines);
   const unparsed: Entry[] = [];
   for (const entry of rest) {
     const { input, parsed } = entry;
@@ -115,14 +144,31 @@ export function computeTracking(
   unparsed.sort(
     (a, b) =>
       b.input.analyzedAt.getTime() - a.input.analyzedAt.getTime() ||
-      (a.input.id < b.input.id ? -1 : a.input.id > b.input.id ? 1 : 0),
+      compare(a.input.id, b.input.id),
   );
   unparsed.forEach(({ input }, index) => {
     result.set(input.id, {
-      tracked: index < rule.lines,
-      reason: index < rule.lines ? 'recent' : 'older',
+      tracked: index < lines,
+      reason: index < lines ? 'recent' : 'older',
     });
   });
+}
 
+/**
+ * Decides which versions of a project are tracked for vulnerabilities.
+ * Overrides (pinned, unsupported) apply first; the rule decides the rest.
+ */
+export function computeTracking(
+  versions: readonly TrackingInput[],
+  rule: VersionRule,
+): Map<string, Decision> {
+  const result = new Map<string, Decision>();
+  const entries: Entry[] = versions.map((input) => ({
+    input,
+    parsed: parseVersionLabel(input.label),
+  }));
+  const rest = applyOverrides(entries, result);
+  if (rule.kind === 'lines') decideByLines(entries, rest, rule.lines, result);
+  else decideByRule(rest, rule.kind, result);
   return result;
 }

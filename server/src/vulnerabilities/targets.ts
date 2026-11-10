@@ -5,6 +5,7 @@ import {
   isTrackedBranch,
   vulnerabilitySettings,
   vulnerabilitySettingsOf,
+  type VulnerabilitySettings,
 } from '../versions/settings';
 import { computeTracking, type TrackingInput } from '../versions/tracking';
 import { readVulndbSettings } from '../vulndb/settings';
@@ -42,7 +43,23 @@ export async function projectTargets(
   const result = new Map<string, Target[]>(projectIds.map((id) => [id, []]));
   const settings = await vulnerabilitySettingsOf(db, projectIds);
   const on = projectIds.filter((id) => settings.get(id)?.enabled === true);
-  if (on.length === 0) return result;
+  if (on.length > 0) await addTargets(db, on, settings, result);
+  return result;
+}
+
+/** Code-unit order (not locale-dependent). */
+function compare(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/** Appends the tracked branches, then the tracked versions, of the projects `on` to `result`. */
+async function addTargets(
+  db: Executor,
+  on: string[],
+  settings: Map<string, VulnerabilitySettings>,
+  result: Map<string, Target[]>,
+): Promise<void> {
   const [branchRows, versionRows] = await Promise.all([
     db
       .select({
@@ -65,10 +82,7 @@ export async function projectTargets(
       .from(projectVersions)
       .where(inArray(projectVersions.projectId, on)),
   ]);
-  branchRows.sort(
-    (a, b) =>
-      Number(b.isMain) - Number(a.isMain) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
-  );
+  branchRows.sort((a, b) => Number(b.isMain) - Number(a.isMain) || compare(a.name, b.name));
   for (const row of branchRows) {
     const own = settings.get(row.projectId);
     if (own && isTrackedBranch(own, row)) {
@@ -90,5 +104,4 @@ export async function projectTargets(
       .sort((a, b) => b.analyzedAt.getTime() - a.analyzedAt.getTime());
     for (const v of tracked) result.get(projectId)?.push({ kind: 'version', versionId: v.id });
   }
-  return result;
 }

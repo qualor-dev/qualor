@@ -117,6 +117,13 @@ function requireEditable(gate: GateRow): void {
   }
 }
 
+/** A metric type's allowed thresholds: ratings 1–5, percentages 0–100, counts 0 and up. */
+function thresholdRange(type: string): [number, number] {
+  if (type === 'rating') return [1, 5];
+  if (type === 'percent') return [0, 100];
+  return [0, Number.MAX_SAFE_INTEGER];
+}
+
 /**
  * gates.md §4: only catalog metrics; rating thresholds are 1–5, percentages 0–100 (ruling G3),
  * counts 0–MAX_SAFE_INTEGER. Together with `gate_conditions_gate_metric` (one condition per metric
@@ -127,13 +134,7 @@ function validateCondition(metric: string, threshold: number, thresholdSent = tr
   if (!resolved) {
     throw validationFailed([{ path: 'body.metric', message: `Unknown metric: ${metric}` }]);
   }
-  const range =
-    resolved.definition.type === 'rating'
-      ? [1, 5]
-      : resolved.definition.type === 'percent'
-        ? [0, 100]
-        : [0, Number.MAX_SAFE_INTEGER];
-  const [lo = 0, hi = 0] = range;
+  const [lo, hi] = thresholdRange(resolved.definition.type);
   if (threshold < lo || threshold > hi) {
     throw validationFailed([
       {

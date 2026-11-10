@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { effectiveCwe } from '@qualor/shared';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Db, Executor } from '../db/client';
 import {
   analyses,
@@ -214,6 +214,324 @@ async function datasetsOf(
   };
 }
 
+/** The report row a collection starts from, with the database's `now()`; refused when stale. */
+async function pendingReport(tx: Executor, reportId: string) {
+  const [report] = await tx
+    .select({
+      status: complianceReports.status,
+      scope: complianceReports.scope,
+      organizationId: complianceReports.organizationId,
+      projectId: complianceReports.projectId,
+      branchId: complianceReports.branchId,
+      versionId: complianceReports.versionId,
+      createdByName: complianceReports.createdByName,
+      now: sql<Date>`now()`,
+    })
+    .from(complianceReports)
+    .where(eq(complianceReports.id, reportId));
+  if (!report) throw new ComplianceCollectError('the report no longer exists');
+  // A job that starts after housekeeping failed its row does no work.
+  if (report.status !== 'pending') {
+    throw new ComplianceCollectError('the report is no longer pending');
+  }
+  // `create` always stores the branch (the main one by default) or the version of a project
+  // report; both null means it was deleted meanwhile (SET NULL). Never fall back to main.
+  if (report.scope === 'project' && report.branchId === null && report.versionId === null) {
+    throw new ComplianceCollectError("the report's branch or version no longer exists");
+  }
+  return report;
+}
+
+type ScopeOrganization = { id: string; key: string; name: string };
+type ScopeProject = { id: string; key: string; name: string };
+
+/** The report's organisation. */
+async function reportOrganization(
+  tx: Executor,
+  organizationId: string,
+): Promise<ScopeOrganization> {
+  const [org] = await tx
+    .select({ id: organizations.id, key: organizations.key, name: organizations.name })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId));
+  if (!org) throw new ComplianceCollectError('the report no longer exists');
+  return org;
+}
+
+/** The projects in scope (§2.3): the report's project, or every project of the organisation. */
+async function scopeProjectsOf(
+  tx: Executor,
+  projectId: string | null,
+  organizationId: string,
+): Promise<ScopeProject[]> {
+  const scopeProjects = await tx
+    .select({ id: projects.id, key: projects.key, name: projects.name })
+    .from(projects)
+    .where(
+      projectId === null ? eq(projects.organizationId, organizationId) : eq(projects.id, projectId),
+    )
+    .orderBy(asc(projects.key))
+    .limit(MAX_ORGANIZATION_PROJECTS + 1);
+  if (scopeProjects.length > MAX_ORGANIZATION_PROJECTS) {
+    throw new ComplianceCollectError('too many projects for one report');
+  }
+  return scopeProjects;
+}
+
+/** What a collection was asked for, besides its transaction. */
+interface CollectRequest {
+  reportId: string;
+  limit: number;
+  priority: boolean;
+  sbom: boolean;
+  signal: AbortSignal | undefined;
+}
+
+/** A version's report: only while the server and the project monitor vulnerabilities. */
+async function versionReport(
+  tx: Executor,
+  version: { id: string; generatedAt: string; createdBy: string },
+  org: ScopeOrganization,
+  project: ScopeProject | undefined,
+  monitoring: boolean,
+  request: CollectRequest,
+): Promise<ComplianceSource> {
+  if (!project) throw new ComplianceCollectError('the report no longer exists');
+  if (!monitoring) {
+    throw new ComplianceCollectError('vulnerability monitoring is off on this server');
+  }
+  const projectSettings = await vulnerabilitySettings(tx, project.id);
+  if (!projectSettings.enabled) {
+    throw new ComplianceCollectError('vulnerability monitoring is off for this project');
+  }
+  return versionSource(tx, {
+    versionId: version.id,
+    settings: projectSettings,
+    org,
+    project,
+    generatedAt: version.generatedAt,
+    createdBy: version.createdBy,
+    limit: request.limit,
+    priority: request.priority,
+    sbom: request.sbom,
+    reportId: request.reportId,
+    signal: request.signal,
+  });
+}
+
+/** The tracked branches of the projects: the rows of any other are frozen (recheck R17). */
+async function trackedBranchIdsOf(tx: Executor, projectIds: string[]): Promise<string[]> {
+  return [...(await projectTargets(tx, projectIds)).values()].flatMap((targets) =>
+    targets.flatMap((target) => (target.kind === 'branch' ? [target.branchId] : [])),
+  );
+}
+
+/** A rule used in scope, with its effective CWE. */
+interface ScopeRule {
+  key: string;
+  name: string;
+  engineId: string;
+  cwe: number[];
+}
+
+/** Effective CWE per rule used in scope (§2.1), in TS so engineCwe stays the one source. */
+async function scopeRulesOf(tx: Executor, branchIds: string[]): Promise<Map<string, ScopeRule>> {
+  if (branchIds.length === 0) return new Map();
+  const ruleRows = (
+    await tx.execute<{
+      id: string;
+      key: string;
+      engine_id: string;
+      cwe: number[] | null;
+      name: string;
+    }>(sql`
+      SELECT DISTINCT r.id, r.key, r.engine_id, r.cwe, r.name
+        FROM rules r JOIN issues i ON i.rule_id = r.id
+       WHERE i.branch_id = ANY(${uuidArray(branchIds)})`)
+  ).rows;
+  return new Map(
+    ruleRows.map((r) => [
+      r.id,
+      {
+        key: r.key,
+        name: r.name,
+        engineId: r.engine_id,
+        cwe: [...effectiveCwe({ key: r.key, engineId: r.engine_id, cwe: r.cwe ?? [] })].sort(
+          (a, b) => a - b,
+        ),
+      },
+    ]),
+  );
+}
+
+/** A rule of the scope; one that is not there is a bug. */
+function scopeRule(rules: ReadonlyMap<string, ScopeRule>, id: string): ScopeRule {
+  const r = rules.get(id);
+  if (!r) throw new Error(`rule ${id} missing from the scope`);
+  return r;
+}
+
+/** The finding groups of the relevant issues: open, false positive and won't fix. */
+async function findingGroupsOf(
+  tx: Executor,
+  branchIds: string[],
+  relevant: SQL,
+  rules: ReadonlyMap<string, ScopeRule>,
+): Promise<ComplianceFindingGroup[]> {
+  if (branchIds.length === 0) return [];
+  return (
+    await tx.execute<{
+      status: string;
+      rule_id: string;
+      severity: string;
+      kind: string;
+      in_new_code: boolean;
+      count: number;
+      oldest: Date;
+    }>(sql`
+      SELECT i.status, i.rule_id, i.severity, i.kind, i.in_new_code,
+             count(*)::int AS count, min(i.first_seen_at) AS oldest
+        FROM issues i
+       WHERE ${relevant} AND i.status IN ('open','false_positive','wont_fix')
+       GROUP BY i.status, i.rule_id, i.severity, i.kind, i.in_new_code`)
+  ).rows
+    .map((g) => {
+      const r = scopeRule(rules, g.rule_id);
+      return {
+        status: g.status as ComplianceFindingGroup['status'],
+        section: sectionOf(r.engineId),
+        rule: r.key,
+        severity: g.severity as ComplianceFindingGroup['severity'],
+        kind: g.kind as 'issue' | 'hotspot',
+        inNewCode: g.in_new_code,
+        cwe: r.cwe,
+        count: g.count,
+        oldestFirstSeenAt: isoReq(g.oldest),
+      };
+    })
+    .sort((a, b) =>
+      (a.status + a.rule + a.severity + a.kind + String(a.inNewCode)).localeCompare(
+        b.status + b.rule + b.severity + b.kind + String(b.inNewCode),
+      ),
+    );
+}
+
+/** The open relevant issues, most severe first, at most `limit + 1`; no vulnerability yet. */
+async function openFindingsOf(
+  tx: Executor,
+  branchIds: string[],
+  relevant: SQL,
+  rules: ReadonlyMap<string, ScopeRule>,
+  limit: number,
+): Promise<ComplianceFindingRow[]> {
+  if (branchIds.length === 0) return [];
+  return (
+    await tx.execute<{
+      id: string;
+      project_key: string;
+      path: string | null;
+      start_line: number | null;
+      rule_id: string;
+      severity: string;
+      kind: string;
+      message: string;
+      in_new_code: boolean;
+      first_seen_at: Date;
+    }>(sql`
+      SELECT i.id, p.key AS project_key, i.path, i.start_line, i.rule_id, i.severity,
+             i.kind, i.message, i.in_new_code, i.first_seen_at
+        FROM issues i JOIN projects p ON p.id = i.project_id
+       WHERE ${relevant} AND i.status = 'open'
+       ORDER BY i.severity_rank, p.key, i.path NULLS FIRST, i.start_line NULLS FIRST, i.id
+       LIMIT ${limit + 1}`)
+  ).rows.map((f) => {
+    const r = scopeRule(rules, f.rule_id);
+    return {
+      id: f.id,
+      project: f.project_key,
+      path: f.path,
+      line: f.start_line,
+      rule: r.key,
+      ruleName: r.name,
+      engine: r.engineId,
+      severity: f.severity as ComplianceFindingRow['severity'],
+      kind: f.kind as 'issue' | 'hotspot',
+      cwe: r.cwe,
+      message: f.message,
+      inNewCode: f.in_new_code,
+      firstSeenAt: isoReq(f.first_seen_at),
+      section: sectionOf(r.engineId),
+      vulnerability: null as ComplianceVulnerability | null,
+    };
+  });
+}
+
+/**
+ * The triaged relevant issues (false positive, won't fix), the latest triage first, at most
+ * `limit + 1`, with who decided, when and why; no vulnerability yet.
+ */
+async function triageRowsOf(
+  tx: Executor,
+  branchIds: string[],
+  relevant: SQL,
+  rules: ReadonlyMap<string, ScopeRule>,
+  limit: number,
+): Promise<ComplianceTriageRow[]> {
+  if (branchIds.length === 0) return [];
+  return (
+    await tx.execute<{
+      id: string;
+      project_key: string;
+      path: string | null;
+      start_line: number | null;
+      rule_id: string;
+      severity: string;
+      status: string;
+      by: string | null;
+      at: Date | null;
+      comment: string | null;
+      reason: string | null;
+    }>(sql`
+      SELECT i.id, p.key AS project_key, i.path, i.start_line, i.rule_id, i.severity,
+             i.status, coalesce(u.display_name, u.username) AS by,
+             c.created_at AS at, c.comment,
+             CASE WHEN d.status = i.status THEN d.reason END AS reason
+        FROM issues i JOIN projects p ON p.id = i.project_id
+        LEFT JOIN rules rl ON rl.id = i.rule_id AND rl.engine_id = 'trivy'
+        LEFT JOIN LATERAL (
+          SELECT i.project_id, i.package_name, rl.engine_rule_id AS vulnerability_id,
+                 i.branch_id, NULL::uuid AS version_id
+           WHERE rl.id IS NOT NULL AND i.package_name IS NOT NULL) tv ON true
+        ${effectiveDecisionJoin('tv', 'd')}
+        LEFT JOIN LATERAL (
+          SELECT ic.user_id, ic.created_at, ic.comment FROM issue_changes ic
+           WHERE ic.issue_id = i.id AND ic.field = 'status' AND ic.new_value = i.status
+           ORDER BY ic.created_at DESC, ic.id DESC LIMIT 1) c ON true
+        LEFT JOIN users u ON u.id = c.user_id
+       WHERE ${relevant} AND i.status IN ('false_positive','wont_fix')
+       ORDER BY c.created_at DESC NULLS LAST, i.id
+       LIMIT ${limit + 1}`)
+  ).rows.map((t) => {
+    const r = scopeRule(rules, t.rule_id);
+    return {
+      id: t.id,
+      project: t.project_key,
+      path: t.path,
+      line: t.start_line,
+      rule: r.key,
+      severity: t.severity as ComplianceTriageRow['severity'],
+      cwe: r.cwe,
+      status: t.status as ComplianceTriageRow['status'],
+      section: sectionOf(r.engineId),
+      by: t.by,
+      at: iso(t.at),
+      comment: cut(t.comment, TRIAGE_COMMENT_MAX),
+      reason: t.reason as VexJustification | null,
+      vulnerability: null as ComplianceVulnerability | null,
+    };
+  });
+}
+
 /**
  * Reads one consistent snapshot of a report's scope (4E-1 §2.1, §2.3): a repeatable-read,
  * read-only transaction, so the counts, the lists and the gate come from the same moment.
@@ -225,84 +543,33 @@ export async function collectCompliance(
 ): Promise<ComplianceSource> {
   const priority = options.priority === true;
   const withSbom = options.sbom === true;
+  const request: CollectRequest = {
+    reportId,
+    limit: options.limit,
+    priority,
+    sbom: withSbom,
+    signal: options.signal,
+  };
   return db.transaction(
     async (tx) => {
-      const [report] = await tx
-        .select({
-          status: complianceReports.status,
-          scope: complianceReports.scope,
-          organizationId: complianceReports.organizationId,
-          projectId: complianceReports.projectId,
-          branchId: complianceReports.branchId,
-          versionId: complianceReports.versionId,
-          createdByName: complianceReports.createdByName,
-          now: sql<Date>`now()`,
-        })
-        .from(complianceReports)
-        .where(eq(complianceReports.id, reportId));
-      if (!report) throw new ComplianceCollectError('the report no longer exists');
-      // A job that starts after housekeeping failed its row does no work.
-      if (report.status !== 'pending') {
-        throw new ComplianceCollectError('the report is no longer pending');
-      }
-      // `create` always stores the branch (the main one by default) or the version of a project
-      // report; both null means it was deleted meanwhile (SET NULL). Never fall back to main.
-      if (report.scope === 'project' && report.branchId === null && report.versionId === null) {
-        throw new ComplianceCollectError("the report's branch or version no longer exists");
-      }
-      const [org] = await tx
-        .select({ id: organizations.id, key: organizations.key, name: organizations.name })
-        .from(organizations)
-        .where(eq(organizations.id, report.organizationId));
-      if (!org) throw new ComplianceCollectError('the report no longer exists');
+      const report = await pendingReport(tx, reportId);
+      const org = await reportOrganization(tx, report.organizationId);
       abortCheck(options.signal);
 
       // The projects and the branch of each (§2.3: the report's branch, or each main branch).
-      const scopeProjects = await tx
-        .select({ id: projects.id, key: projects.key, name: projects.name })
-        .from(projects)
-        .where(
-          report.projectId === null
-            ? eq(projects.organizationId, org.id)
-            : eq(projects.id, report.projectId),
-        )
-        .orderBy(asc(projects.key))
-        .limit(MAX_ORGANIZATION_PROJECTS + 1);
-      if (scopeProjects.length > MAX_ORGANIZATION_PROJECTS) {
-        throw new ComplianceCollectError('too many projects for one report');
-      }
+      const scopeProjects = await scopeProjectsOf(tx, report.projectId, org.id);
       const projectIds = scopeProjects.map((p) => p.id);
       // The branches the server still monitors: the rows of any other are frozen (recheck R17).
       const monitoring = (await readVulndbSettings(tx)).enabled;
       if (report.versionId !== null) {
-        const project = scopeProjects[0];
-        if (!project) throw new ComplianceCollectError('the report no longer exists');
-        if (!monitoring) {
-          throw new ComplianceCollectError('vulnerability monitoring is off on this server');
-        }
-        const projectSettings = await vulnerabilitySettings(tx, project.id);
-        if (!projectSettings.enabled) {
-          throw new ComplianceCollectError('vulnerability monitoring is off for this project');
-        }
-        return versionSource(tx, {
-          versionId: report.versionId,
-          settings: projectSettings,
-          org,
-          project,
+        const version = {
+          id: report.versionId,
           generatedAt: isoReq(report.now),
           createdBy: report.createdByName,
-          limit: options.limit,
-          priority,
-          sbom: withSbom,
-          reportId,
-          signal: options.signal,
-        });
+        };
+        return versionReport(tx, version, org, scopeProjects[0], monitoring, request);
       }
-      const trackedBranchIds = monitoring
-        ? [...(await projectTargets(tx, projectIds)).values()].flatMap((targets) =>
-            targets.flatMap((target) => (target.kind === 'branch' ? [target.branchId] : [])),
-          )
-        : [];
+      const trackedBranchIds = monitoring ? await trackedBranchIdsOf(tx, projectIds) : [];
       const branchRows = await scopeBranches(tx, projectIds, report.branchId);
       const branchOf = new Map(branchRows.map((b) => [b.projectId, b]));
       const branchIds = branchRows.map((b) => b.id);
@@ -314,129 +581,18 @@ export async function collectCompliance(
         abortCheck(options.signal);
       }
 
-      // Effective CWE per rule used in scope (§2.1), in TS so engineCwe stays the one source.
-      const ruleRows =
-        branchIds.length === 0
-          ? []
-          : (
-              await tx.execute<{
-                id: string;
-                key: string;
-                engine_id: string;
-                cwe: number[] | null;
-                name: string;
-              }>(sql`
-                SELECT DISTINCT r.id, r.key, r.engine_id, r.cwe, r.name
-                  FROM rules r JOIN issues i ON i.rule_id = r.id
-                 WHERE i.branch_id = ANY(${uuidArray(branchIds)})`)
-            ).rows;
-      const ruleInfo = new Map(
-        ruleRows.map((r) => [
-          r.id,
-          {
-            key: r.key,
-            name: r.name,
-            engineId: r.engine_id,
-            cwe: [...effectiveCwe({ key: r.key, engineId: r.engine_id, cwe: r.cwe ?? [] })].sort(
-              (a, b) => a - b,
-            ),
-          },
-        ]),
-      );
-      const ruleOf = (id: string) => {
-        const r = ruleInfo.get(id);
-        if (!r) throw new Error(`rule ${id} missing from the scope`);
-        return r;
-      };
-      const cweRuleIds = [...ruleInfo].filter(([, r]) => r.cwe.length > 0).map(([id]) => id);
+      const rules = await scopeRulesOf(tx, branchIds);
+      const cweRuleIds = [...rules].filter(([, r]) => r.cwe.length > 0).map(([id]) => id);
       abortCheck(options.signal);
 
       const relevant = sql`i.branch_id = ANY(${uuidArray(branchIds)})
         AND i.duplicate_of_issue_id IS NULL
         AND (i.rule_id = ANY(${uuidArray(cweRuleIds)}) OR i.quality = 'security' OR i.kind = 'hotspot')`;
 
-      const groups: ComplianceFindingGroup[] =
-        branchIds.length === 0
-          ? []
-          : (
-              await tx.execute<{
-                status: string;
-                rule_id: string;
-                severity: string;
-                kind: string;
-                in_new_code: boolean;
-                count: number;
-                oldest: Date;
-              }>(sql`
-                SELECT i.status, i.rule_id, i.severity, i.kind, i.in_new_code,
-                       count(*)::int AS count, min(i.first_seen_at) AS oldest
-                  FROM issues i
-                 WHERE ${relevant} AND i.status IN ('open','false_positive','wont_fix')
-                 GROUP BY i.status, i.rule_id, i.severity, i.kind, i.in_new_code`)
-            ).rows
-              .map((g) => {
-                const r = ruleOf(g.rule_id);
-                return {
-                  status: g.status as ComplianceFindingGroup['status'],
-                  section: sectionOf(r.engineId),
-                  rule: r.key,
-                  severity: g.severity as ComplianceFindingGroup['severity'],
-                  kind: g.kind as 'issue' | 'hotspot',
-                  inNewCode: g.in_new_code,
-                  cwe: r.cwe,
-                  count: g.count,
-                  oldestFirstSeenAt: isoReq(g.oldest),
-                };
-              })
-              .sort((a, b) =>
-                (a.status + a.rule + a.severity + a.kind + String(a.inNewCode)).localeCompare(
-                  b.status + b.rule + b.severity + b.kind + String(b.inNewCode),
-                ),
-              );
+      const groups = await findingGroupsOf(tx, branchIds, relevant, rules);
       abortCheck(options.signal);
 
-      const findings: ComplianceFindingRow[] =
-        branchIds.length === 0
-          ? []
-          : (
-              await tx.execute<{
-                id: string;
-                project_key: string;
-                path: string | null;
-                start_line: number | null;
-                rule_id: string;
-                severity: string;
-                kind: string;
-                message: string;
-                in_new_code: boolean;
-                first_seen_at: Date;
-              }>(sql`
-                SELECT i.id, p.key AS project_key, i.path, i.start_line, i.rule_id, i.severity,
-                       i.kind, i.message, i.in_new_code, i.first_seen_at
-                  FROM issues i JOIN projects p ON p.id = i.project_id
-                 WHERE ${relevant} AND i.status = 'open'
-                 ORDER BY i.severity_rank, p.key, i.path NULLS FIRST, i.start_line NULLS FIRST, i.id
-                 LIMIT ${options.limit + 1}`)
-            ).rows.map((f) => {
-              const r = ruleOf(f.rule_id);
-              return {
-                id: f.id,
-                project: f.project_key,
-                path: f.path,
-                line: f.start_line,
-                rule: r.key,
-                ruleName: r.name,
-                engine: r.engineId,
-                severity: f.severity as ComplianceFindingRow['severity'],
-                kind: f.kind as 'issue' | 'hotspot',
-                cwe: r.cwe,
-                message: f.message,
-                inNewCode: f.in_new_code,
-                firstSeenAt: isoReq(f.first_seen_at),
-                section: sectionOf(r.engineId),
-                vulnerability: null as ComplianceVulnerability | null,
-              };
-            });
+      const findings = await openFindingsOf(tx, branchIds, relevant, rules, options.limit);
       // Only the branches of the report are enriched, and only the ones the server monitors.
       const reportBranchIds = new Set(branchIds);
       const enrichBranchIds = trackedBranchIds.filter((id) => reportBranchIds.has(id));
@@ -449,61 +605,7 @@ export async function collectCompliance(
       for (const f of findings) f.vulnerability = openFacts.get(f.id) ?? null;
       abortCheck(options.signal);
 
-      const triage: ComplianceTriageRow[] =
-        branchIds.length === 0
-          ? []
-          : (
-              await tx.execute<{
-                id: string;
-                project_key: string;
-                path: string | null;
-                start_line: number | null;
-                rule_id: string;
-                severity: string;
-                status: string;
-                by: string | null;
-                at: Date | null;
-                comment: string | null;
-                reason: string | null;
-              }>(sql`
-                SELECT i.id, p.key AS project_key, i.path, i.start_line, i.rule_id, i.severity,
-                       i.status, coalesce(u.display_name, u.username) AS by,
-                       c.created_at AS at, c.comment,
-                       CASE WHEN d.status = i.status THEN d.reason END AS reason
-                  FROM issues i JOIN projects p ON p.id = i.project_id
-                  LEFT JOIN rules rl ON rl.id = i.rule_id AND rl.engine_id = 'trivy'
-                  LEFT JOIN LATERAL (
-                    SELECT i.project_id, i.package_name, rl.engine_rule_id AS vulnerability_id,
-                           i.branch_id, NULL::uuid AS version_id
-                     WHERE rl.id IS NOT NULL AND i.package_name IS NOT NULL) tv ON true
-                  ${effectiveDecisionJoin('tv', 'd')}
-                  LEFT JOIN LATERAL (
-                    SELECT ic.user_id, ic.created_at, ic.comment FROM issue_changes ic
-                     WHERE ic.issue_id = i.id AND ic.field = 'status' AND ic.new_value = i.status
-                     ORDER BY ic.created_at DESC, ic.id DESC LIMIT 1) c ON true
-                  LEFT JOIN users u ON u.id = c.user_id
-                 WHERE ${relevant} AND i.status IN ('false_positive','wont_fix')
-                 ORDER BY c.created_at DESC NULLS LAST, i.id
-                 LIMIT ${options.limit + 1}`)
-            ).rows.map((t) => {
-              const r = ruleOf(t.rule_id);
-              return {
-                id: t.id,
-                project: t.project_key,
-                path: t.path,
-                line: t.start_line,
-                rule: r.key,
-                severity: t.severity as ComplianceTriageRow['severity'],
-                cwe: r.cwe,
-                status: t.status as ComplianceTriageRow['status'],
-                section: sectionOf(r.engineId),
-                by: t.by,
-                at: iso(t.at),
-                comment: cut(t.comment, TRIAGE_COMMENT_MAX),
-                reason: t.reason as VexJustification | null,
-                vulnerability: null as ComplianceVulnerability | null,
-              };
-            });
+      const triage = await triageRowsOf(tx, branchIds, relevant, rules, options.limit);
       const triageFacts = await dependencyFacts(
         tx,
         triage.filter((t) => t.section === 'dependency').map((t) => t.id),

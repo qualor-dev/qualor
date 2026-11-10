@@ -158,6 +158,9 @@ interface Counts {
   unchecked: Set<string>;
 }
 
+/** How the steps of a re-check ended: its counts, the problem that stopped it, or a stop. */
+type RecheckOutcome = Counts | Problem | typeof STOPPED;
+
 function* slices<T>(items: readonly T[], size: number): Generator<T[]> {
   for (let at = 0; at < items.length; at += size) yield items.slice(at, at + size);
 }
@@ -353,16 +356,11 @@ async function basesOf(
   return result;
 }
 
-/**
- * The inventories of `targetsOf`. A branch's ignore ids are those of the analysis its inventory
- * came from (`branch_dependencies.analysis_id`); a version's are its own. Counts every package
- * into `counts`: with a purl, or as unchecked.
- */
-async function inventories(
-  run: Run,
-  targetsOf: ReadonlyMap<string, Target[]>,
-  counts: Counts,
-): Promise<Inventory[]> {
+/** An empty inventory of each target in `targetsOf`, by branch id and by version id. */
+function emptyInventories(targetsOf: ReadonlyMap<string, Target[]>): {
+  ofBranch: Map<string, Inventory>;
+  ofVersion: Map<string, Inventory>;
+} {
   const ofBranch = new Map<string, Inventory>();
   const ofVersion = new Map<string, Inventory>();
   for (const [projectId, targets] of targetsOf) {
@@ -378,67 +376,119 @@ async function inventories(
       else ofVersion.set(target.versionId, inventory);
     }
   }
+  return { ofBranch, ofVersion };
+}
+
+/** Counts a package into `counts` (with a purl, or as unchecked) and adds it to `inventory`. */
+function addPackage(counts: Counts, inventory: Inventory | undefined, p: Package): void {
+  const purl = purlOf(p.ecosystem, p.name, p.version);
+  if (purl === null) {
+    counts.unchecked.add(`${p.ecosystem}\u0000${p.name}\u0000${p.version}`);
+    return;
+  }
+  counts.packages.add(purl);
+  if (inventory !== undefined && !inventory.packages.has(purl)) {
+    inventory.packages.set(purl, { ecosystem: p.ecosystem, name: p.name, version: p.version });
+  }
+}
+
+/** A dependency row of a branch's or a version's inventory. */
+type DependencyRow = Package & { owner: string; analysis_id: string | null };
+/** The stored `.trivyignore` list of an analysis or a version. */
+type IgnoresRow = { id: string; ignores: unknown } & Record<string, unknown>;
+
+/**
+ * Reads the packages of the branches in `ofBranch` into their inventories and `counts`; answers
+ * the inventories by the analysis their packages came from.
+ */
+async function readBranchPackages(
+  db: Db,
+  ofBranch: ReadonlyMap<string, Inventory>,
+  counts: Counts,
+): Promise<Map<string, Inventory[]>> {
+  const branchesOf = new Map<string, Inventory[]>();
+  const got = await db.execute<DependencyRow & Record<string, unknown>>(sql`
+    SELECT DISTINCT branch_id AS owner, analysis_id, ecosystem, name, version
+      FROM branch_dependencies
+     WHERE branch_id IN ${uuidList([...ofBranch.keys()])}
+     ORDER BY owner, ecosystem, name, version`);
+  for (const row of got.rows) {
+    const inventory = ofBranch.get(row.owner);
+    addPackage(counts, inventory, row);
+    if (inventory === undefined || row.analysis_id === null) continue;
+    const list = branchesOf.get(row.analysis_id) ?? [];
+    if (!list.includes(inventory)) list.push(inventory);
+    branchesOf.set(row.analysis_id, list);
+  }
+  return branchesOf;
+}
+
+/** Reads the packages of the versions in `ofVersion` into their inventories and `counts`. */
+async function readVersionPackages(
+  db: Db,
+  ofVersion: ReadonlyMap<string, Inventory>,
+  counts: Counts,
+): Promise<void> {
+  const got = await db.execute<DependencyRow & Record<string, unknown>>(sql`
+    SELECT DISTINCT version_id AS owner, NULL::uuid AS analysis_id, ecosystem, name, version
+      FROM version_dependencies
+     WHERE version_id IN ${uuidList([...ofVersion.keys()])}
+     ORDER BY owner, ecosystem, name, version`);
+  for (const row of got.rows) addPackage(counts, ofVersion.get(row.owner), row);
+}
+
+/** Adds the active ignore ids of each analysis in `branchesOf` to its branches' inventories. */
+async function addBranchIgnores(
+  run: Run,
+  branchesOf: ReadonlyMap<string, Inventory[]>,
+): Promise<void> {
+  const got = await run.db.execute<IgnoresRow>(sql`
+    SELECT id, dependency_ignores AS ignores FROM analyses
+     WHERE id IN ${uuidList([...branchesOf.keys()])}`);
+  for (const row of got.rows) {
+    const ids = ignoredIds(row.ignores, run.now);
+    for (const inventory of branchesOf.get(row.id) ?? []) {
+      for (const id of ids) inventory.ignored.add(id);
+    }
+  }
+}
+
+/** Sets each version's active ignore ids from its own stored list. */
+async function setVersionIgnores(
+  run: Run,
+  ofVersion: ReadonlyMap<string, Inventory>,
+): Promise<void> {
+  const got = await run.db.execute<IgnoresRow>(sql`
+    SELECT id, dependency_ignores AS ignores FROM project_versions
+     WHERE id IN ${uuidList([...ofVersion.keys()])}`);
+  for (const row of got.rows) {
+    const inventory = ofVersion.get(row.id);
+    if (inventory !== undefined) inventory.ignored = ignoredIds(row.ignores, run.now);
+  }
+}
+
+/**
+ * The inventories of `targetsOf`. A branch's ignore ids are those of the analysis its inventory
+ * came from (`branch_dependencies.analysis_id`); a version's are its own. Counts every package
+ * into `counts`: with a purl, or as unchecked.
+ */
+async function inventories(
+  run: Run,
+  targetsOf: ReadonlyMap<string, Target[]>,
+  counts: Counts,
+): Promise<Inventory[]> {
+  const { ofBranch, ofVersion } = emptyInventories(targetsOf);
   // Before the packages: an analysis that lands in between leaves an older basis, never a newer one.
   const bases = await basesOf(run.db, [...ofBranch.keys()], [...ofVersion.keys()]);
   for (const [id, inventory] of ofBranch) inventory.basis = bases.get(id) ?? '';
   for (const [id, inventory] of ofVersion) inventory.basis = bases.get(id) ?? '';
-  const add = (inventory: Inventory | undefined, p: Package): void => {
-    const purl = purlOf(p.ecosystem, p.name, p.version);
-    if (purl === null) {
-      counts.unchecked.add(`${p.ecosystem}\u0000${p.name}\u0000${p.version}`);
-      return;
-    }
-    counts.packages.add(purl);
-    if (inventory !== undefined && !inventory.packages.has(purl)) {
-      inventory.packages.set(purl, { ecosystem: p.ecosystem, name: p.name, version: p.version });
-    }
-  };
-  type Row = Package & { owner: string; analysis_id: string | null };
-  const branchesOf = new Map<string, Inventory[]>();
-  if (ofBranch.size > 0) {
-    const got = await run.db.execute<Row & Record<string, unknown>>(sql`
-      SELECT DISTINCT branch_id AS owner, analysis_id, ecosystem, name, version
-        FROM branch_dependencies
-       WHERE branch_id IN ${uuidList([...ofBranch.keys()])}
-       ORDER BY owner, ecosystem, name, version`);
-    for (const row of got.rows) {
-      const inventory = ofBranch.get(row.owner);
-      add(inventory, row);
-      if (inventory === undefined || row.analysis_id === null) continue;
-      const list = branchesOf.get(row.analysis_id) ?? [];
-      if (!list.includes(inventory)) list.push(inventory);
-      branchesOf.set(row.analysis_id, list);
-    }
-  }
-  if (ofVersion.size > 0) {
-    const got = await run.db.execute<Row & Record<string, unknown>>(sql`
-      SELECT DISTINCT version_id AS owner, NULL::uuid AS analysis_id, ecosystem, name, version
-        FROM version_dependencies
-       WHERE version_id IN ${uuidList([...ofVersion.keys()])}
-       ORDER BY owner, ecosystem, name, version`);
-    for (const row of got.rows) add(ofVersion.get(row.owner), row);
-  }
-  type Ignores = { id: string; ignores: unknown } & Record<string, unknown>;
-  if (branchesOf.size > 0) {
-    const got = await run.db.execute<Ignores>(sql`
-      SELECT id, dependency_ignores AS ignores FROM analyses
-       WHERE id IN ${uuidList([...branchesOf.keys()])}`);
-    for (const row of got.rows) {
-      const ids = ignoredIds(row.ignores, run.now);
-      for (const inventory of branchesOf.get(row.id) ?? []) {
-        for (const id of ids) inventory.ignored.add(id);
-      }
-    }
-  }
-  if (ofVersion.size > 0) {
-    const got = await run.db.execute<Ignores>(sql`
-      SELECT id, dependency_ignores AS ignores FROM project_versions
-       WHERE id IN ${uuidList([...ofVersion.keys()])}`);
-    for (const row of got.rows) {
-      const inventory = ofVersion.get(row.id);
-      if (inventory !== undefined) inventory.ignored = ignoredIds(row.ignores, run.now);
-    }
-  }
+  const branchesOf =
+    ofBranch.size > 0
+      ? await readBranchPackages(run.db, ofBranch, counts)
+      : new Map<string, Inventory[]>();
+  if (ofVersion.size > 0) await readVersionPackages(run.db, ofVersion, counts);
+  if (branchesOf.size > 0) await addBranchIgnores(run, branchesOf);
+  if (ofVersion.size > 0) await setVersionIgnores(run, ofVersion);
   return [...ofBranch.values(), ...ofVersion.values()];
 }
 
@@ -472,6 +522,95 @@ const rowKey = (target: string, purl: string, vulnerabilityId: string): string =
   `${target}\u0000${purl}\u0000${vulnerabilityId}`;
 
 /**
+ * Locks the rows of `ids` in `table` FOR KEY SHARE, in id order, until the transaction commits;
+ * answers the ids that still exist.
+ */
+async function lockRows(
+  tx: Executor,
+  table: 'projects' | 'branches' | 'project_versions',
+  ids: Set<string>,
+): Promise<Set<string>> {
+  if (ids.size === 0) return new Set<string>();
+  const got = await tx.execute<{ id: string }>(sql`
+    SELECT id FROM ${sql.identifier(table)} WHERE id IN ${uuidList([...ids])}
+     ORDER BY id FOR KEY SHARE`);
+  return new Set(got.rows.map((r) => r.id));
+}
+
+/**
+ * The stored rows of the tracked targets against `wanted`: the keys kept (`seen`), the ids of the
+ * rows that go (not wanted, or a duplicate), and the kept rows whose `ignored` flips.
+ */
+async function diffExisting(
+  tx: Executor,
+  branchIds: ReadonlySet<string>,
+  versionIds: ReadonlySet<string>,
+  wanted: ReadonlyMap<string, Wanted>,
+): Promise<{ seen: Set<string>; gone: string[]; flips: { id: string; ignored: boolean }[] }> {
+  const ofTracked: SQL[] = [];
+  if (branchIds.size > 0) ofTracked.push(sql`branch_id IN ${uuidList([...branchIds])}`);
+  if (versionIds.size > 0) ofTracked.push(sql`version_id IN ${uuidList([...versionIds])}`);
+  const tracked = sql.join(ofTracked, sql` OR `);
+  const existing = await tx.execute<{
+    id: string;
+    branch_id: string | null;
+    version_id: string | null;
+    purl: string;
+    vulnerability_id: string;
+    ignored: boolean;
+  }>(sql`
+    SELECT id, branch_id, version_id, purl, vulnerability_id, ignored
+      FROM target_vulnerabilities
+     WHERE ${tracked}`);
+  const seen = new Set<string>();
+  const gone: string[] = [];
+  const flips: { id: string; ignored: boolean }[] = [];
+  for (const row of existing.rows) {
+    const target = row.branch_id !== null ? `b:${row.branch_id}` : `v:${row.version_id ?? ''}`;
+    const key = rowKey(target, row.purl, row.vulnerability_id);
+    const want = wanted.get(key);
+    if (want === undefined || seen.has(key)) {
+      gone.push(row.id);
+      continue;
+    }
+    seen.add(key);
+    if (want.ignored !== row.ignored) flips.push({ id: row.id, ignored: want.ignored });
+  }
+  return { seen, gone, flips };
+}
+
+/** The wanted rows not stored yet (not in `seen`) whose target still exists, ready to insert. */
+function freshRows(
+  wanted: ReadonlyMap<string, Wanted>,
+  seen: ReadonlySet<string>,
+  liveBranches: ReadonlySet<string>,
+  liveVersions: ReadonlySet<string>,
+): object[] {
+  const fresh: object[] = [];
+  for (const [key, w] of wanted) {
+    if (seen.has(key)) continue;
+    const live =
+      w.target.kind === 'branch'
+        ? liveBranches.has(w.target.branchId)
+        : liveVersions.has(w.target.versionId);
+    if (!live) continue;
+    fresh.push({
+      id: uuidv7(),
+      project_id: w.projectId,
+      branch_id: w.target.kind === 'branch' ? w.target.branchId : null,
+      version_id: w.target.kind === 'version' ? w.target.versionId : null,
+      ecosystem: w.ecosystem,
+      package_name: w.packageName,
+      package_version: w.packageVersion,
+      purl: w.purl,
+      vulnerability_id: w.vulnerabilityId,
+      ignored: w.ignored,
+    });
+  }
+  return fresh;
+}
+
+/**
  * Makes the rows of the tracked targets in `targetsOf` what `wanted` says: new rows are inserted
  * (first seen now), kept rows keep their id and first_seen_at and follow `ignored`, and a tracked
  * target's other rows go (vulnerabilities no longer found). Rows of untracked targets (a version
@@ -500,69 +639,12 @@ async function writeTargets(
   }
   if (projectIds.size === 0) return;
   await db.transaction(async (tx) => {
-    const ids = async (table: 'projects' | 'branches' | 'project_versions', of: Set<string>) =>
-      of.size === 0
-        ? new Set<string>()
-        : new Set(
-            (
-              await tx.execute<{ id: string }>(sql`
-                SELECT id FROM ${sql.identifier(table)} WHERE id IN ${uuidList([...of])}
-                 ORDER BY id FOR KEY SHARE`)
-            ).rows.map((r) => r.id),
-          );
-    await ids('projects', projectIds);
-    const liveBranches = await ids('branches', branchIds);
-    const liveVersions = await ids('project_versions', versionIds);
+    await lockRows(tx, 'projects', projectIds);
+    const liveBranches = await lockRows(tx, 'branches', branchIds);
+    const liveVersions = await lockRows(tx, 'project_versions', versionIds);
 
-    const ofTracked: SQL[] = [];
-    if (branchIds.size > 0) ofTracked.push(sql`branch_id IN ${uuidList([...branchIds])}`);
-    if (versionIds.size > 0) ofTracked.push(sql`version_id IN ${uuidList([...versionIds])}`);
-    const existing = await tx.execute<{
-      id: string;
-      branch_id: string | null;
-      version_id: string | null;
-      purl: string;
-      vulnerability_id: string;
-      ignored: boolean;
-    }>(sql`
-      SELECT id, branch_id, version_id, purl, vulnerability_id, ignored
-        FROM target_vulnerabilities
-       WHERE ${sql.join(ofTracked, sql` OR `)}`);
-    const seen = new Set<string>();
-    const gone: string[] = [];
-    const flips: { id: string; ignored: boolean }[] = [];
-    for (const row of existing.rows) {
-      const target = row.branch_id !== null ? `b:${row.branch_id}` : `v:${row.version_id ?? ''}`;
-      const key = rowKey(target, row.purl, row.vulnerability_id);
-      const want = wanted.get(key);
-      if (want === undefined || seen.has(key)) {
-        gone.push(row.id);
-        continue;
-      }
-      seen.add(key);
-      if (want.ignored !== row.ignored) flips.push({ id: row.id, ignored: want.ignored });
-    }
-    const fresh: object[] = [];
-    for (const [key, w] of wanted) {
-      if (seen.has(key)) continue;
-      const live =
-        w.target.kind === 'branch'
-          ? liveBranches.has(w.target.branchId)
-          : liveVersions.has(w.target.versionId);
-      if (!live) continue;
-      fresh.push({
-        id: uuidv7(),
-        project_id: w.projectId,
-        branch_id: w.target.kind === 'branch' ? w.target.branchId : null,
-        version_id: w.target.kind === 'version' ? w.target.versionId : null,
-        ecosystem: w.ecosystem,
-        package_name: w.packageName,
-        package_version: w.packageVersion,
-        purl: w.purl,
-        vulnerability_id: w.vulnerabilityId,
-        ignored: w.ignored,
-      });
-    }
+    const { seen, gone, flips } = await diffExisting(tx, branchIds, versionIds, wanted);
+    const fresh = freshRows(wanted, seen, liveBranches, liveVersions);
     for (const part of slices(gone, LIST_CHUNK)) {
       await tx.execute(sql`DELETE FROM target_vulnerabilities WHERE id IN ${uuidList(part)}`);
     }
@@ -633,25 +715,9 @@ async function writeChecks(
  * targets. Only tracked targets are read, matched and written: an untracked one keeps its rows
  * (R17). A package that entered an inventory between the passes is matched in the second.
  */
-async function recheckAll(
-  run: Run,
-  projectIds: readonly string[],
-): Promise<Counts | Problem | typeof STOPPED> {
-  const pending = new Map<string, SbomPackage>();
-  for (const batch of slices(projectIds, PROJECT_BATCH)) {
-    if (stopping(run)) return STOPPED;
-    const targets = [...(await projectTargets(run.db, batch)).values()].flat();
-    const byPurl = new Map<string, SbomPackage>();
-    for (const p of await distinctPackages(run.db, targets)) {
-      const purl = purlOf(p.ecosystem, p.name, p.version);
-      // R13: the SBOM names a package by its stored name.
-      if (purl !== null && !pending.has(purl) && !byPurl.has(purl)) {
-        byPurl.set(purl, { purl, name: p.name, version: p.version });
-      }
-    }
-    await dropFresh(run.db, byPurl, run.digest);
-    for (const [purl, p] of byPurl) pending.set(purl, p);
-  }
+async function recheckAll(run: Run, projectIds: readonly string[]): Promise<RecheckOutcome> {
+  const pending = await pendingPackages(run, projectIds);
+  if (pending === STOPPED) return STOPPED;
   const failed = await matchPackages(run, [...pending.values()]);
   if (failed !== null) return failed;
   pending.clear();
@@ -659,53 +725,117 @@ async function recheckAll(
   const counts: Counts = { projects: 0, packages: new Set(), unchecked: new Set() };
   for (const batch of slices(projectIds, PROJECT_BATCH)) {
     if (stopping(run)) return STOPPED;
-    const targetsOf = await projectTargets(run.db, batch);
-    const batchInventories = await inventories(run, targetsOf, counts);
-    const late = new Map<string, SbomPackage>();
-    for (const inventory of batchInventories) {
-      for (const [purl, p] of inventory.packages) {
-        if (!late.has(purl)) late.set(purl, { purl, name: p.name, version: p.version });
-      }
-    }
-    const purls = [...late.keys()];
-    await dropFresh(run.db, late, run.digest);
-    if (late.size > 0) {
-      const lateFailure = await matchPackages(run, [...late.values()]);
-      if (lateFailure !== null) return lateFailure;
-    }
-    const vulnerabilities = await vulnerabilitiesOf(run.db, purls);
-    const wanted = new Map<string, Wanted>();
-    for (const inventory of batchInventories) {
-      const key = targetKey(inventory.target);
-      for (const [purl, p] of inventory.packages) {
-        for (const vulnerabilityId of vulnerabilities.get(purl) ?? []) {
-          wanted.set(rowKey(key, purl, vulnerabilityId), {
-            projectId: inventory.projectId,
-            target: inventory.target,
-            ecosystem: p.ecosystem,
-            packageName: p.name,
-            packageVersion: p.version,
-            purl,
-            vulnerabilityId,
-            ignored: inventory.ignored.has(vulnerabilityId),
-          });
-        }
-      }
-    }
-    await writeTargets(
-      run.db,
-      targetsOf,
-      wanted,
-      new Map(
-        batchInventories.map((i) => [
-          i.target.kind === 'branch' ? i.target.branchId : i.target.versionId,
-          i.basis,
-        ]),
-      ),
-    );
-    for (const targets of targetsOf.values()) if (targets.length > 0) counts.projects += 1;
+    const failure = await recheckBatch(run, batch, counts);
+    if (failure !== null) return failure;
   }
   return counts;
+}
+
+/**
+ * The first pass of {@link recheckAll}: the distinct packages of the projects' tracked targets
+ * that are not matched against this dataset yet, by purl, a batch of projects at a time.
+ */
+async function pendingPackages(
+  run: Run,
+  projectIds: readonly string[],
+): Promise<Map<string, SbomPackage> | typeof STOPPED> {
+  const pending = new Map<string, SbomPackage>();
+  for (const batch of slices(projectIds, PROJECT_BATCH)) {
+    if (stopping(run)) return STOPPED;
+    const targets = [...(await projectTargets(run.db, batch)).values()].flat();
+    const byPurl = newSbomPackages(await distinctPackages(run.db, targets), pending);
+    await dropFresh(run.db, byPurl, run.digest);
+    for (const [purl, p] of byPurl) pending.set(purl, p);
+  }
+  return pending;
+}
+
+/** The packages with a purl that `pending` does not hold, once each, as SBOM entries. */
+function newSbomPackages(
+  packages: readonly Package[],
+  pending: ReadonlyMap<string, SbomPackage>,
+): Map<string, SbomPackage> {
+  const byPurl = new Map<string, SbomPackage>();
+  for (const p of packages) {
+    const purl = purlOf(p.ecosystem, p.name, p.version);
+    // R13: the SBOM names a package by its stored name.
+    if (purl !== null && !pending.has(purl) && !byPurl.has(purl)) {
+      byPurl.set(purl, { purl, name: p.name, version: p.version });
+    }
+  }
+  return byPurl;
+}
+
+/** The distinct packages of the inventories, by purl, as SBOM entries. */
+function inventoryPackages(batchInventories: readonly Inventory[]): Map<string, SbomPackage> {
+  const late = new Map<string, SbomPackage>();
+  for (const inventory of batchInventories) {
+    for (const [purl, p] of inventory.packages) {
+      if (!late.has(purl)) late.set(purl, { purl, name: p.name, version: p.version });
+    }
+  }
+  return late;
+}
+
+/** The rows the inventories' targets should have: one per package and its stored vulnerability. */
+function wantedRows(
+  batchInventories: readonly Inventory[],
+  vulnerabilities: ReadonlyMap<string, string[]>,
+): Map<string, Wanted> {
+  const wanted = new Map<string, Wanted>();
+  for (const inventory of batchInventories) {
+    const key = targetKey(inventory.target);
+    for (const [purl, p] of inventory.packages) {
+      for (const vulnerabilityId of vulnerabilities.get(purl) ?? []) {
+        wanted.set(rowKey(key, purl, vulnerabilityId), {
+          projectId: inventory.projectId,
+          target: inventory.target,
+          ecosystem: p.ecosystem,
+          packageName: p.name,
+          packageVersion: p.version,
+          purl,
+          vulnerabilityId,
+          ignored: inventory.ignored.has(vulnerabilityId),
+        });
+      }
+    }
+  }
+  return wanted;
+}
+
+/**
+ * The second pass of {@link recheckAll} for one batch of projects: matches the packages that
+ * entered an inventory since the first pass, then diffs the batch's tracked targets. Answers the
+ * failure or stop of a Trivy run, else null.
+ */
+async function recheckBatch(
+  run: Run,
+  batch: readonly string[],
+  counts: Counts,
+): Promise<Problem | typeof STOPPED | null> {
+  const targetsOf = await projectTargets(run.db, batch);
+  const batchInventories = await inventories(run, targetsOf, counts);
+  const late = inventoryPackages(batchInventories);
+  const purls = [...late.keys()];
+  await dropFresh(run.db, late, run.digest);
+  if (late.size > 0) {
+    const lateFailure = await matchPackages(run, [...late.values()]);
+    if (lateFailure !== null) return lateFailure;
+  }
+  const vulnerabilities = await vulnerabilitiesOf(run.db, purls);
+  await writeTargets(
+    run.db,
+    targetsOf,
+    wantedRows(batchInventories, vulnerabilities),
+    new Map(
+      batchInventories.map((i) => [
+        i.target.kind === 'branch' ? i.target.branchId : i.target.versionId,
+        i.basis,
+      ]),
+    ),
+  );
+  for (const targets of targetsOf.values()) if (targets.length > 0) counts.projects += 1;
+  return null;
 }
 
 /**
@@ -727,6 +857,36 @@ async function pruneUnused(db: Db, purls: ReadonlySet<string>): Promise<void> {
        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${inRun}::jsonb) AS p(purl)
                           WHERE p.purl = m.purl)`);
   });
+}
+
+/**
+ * {@link pruneUnused}, for housekeeping of the shared tables: a problem here never fails a
+ * re-check that is done, it is only logged.
+ */
+async function pruneQuietly(deps: RecheckDeps, purls: ReadonlySet<string>): Promise<void> {
+  try {
+    await pruneUnused(deps.db, purls);
+  } catch (err) {
+    deps.logger?.warn(
+      {
+        component: 'vulnerabilities',
+        errorClass: err instanceof Error ? err.constructor.name : typeof err,
+      },
+      'vulnerability matches were not pruned',
+    );
+  }
+}
+
+/** What {@link withLocalDatabase} answers around {@link recheckAll}. */
+type LocalOutcome = { result: RecheckOutcome } | { problem: LocalProblem };
+
+/** The outcome of a run; a problem of the local copy is the re-check's DISK or RECHECK_FAILED. */
+function outcomeOf(local: LocalOutcome): RecheckOutcome {
+  if (!('problem' in local)) return local.result;
+  return {
+    code: local.problem.code === 'DISK' ? 'DISK' : 'RECHECK_FAILED',
+    message: local.problem.message,
+  };
 }
 
 /** R19: the re-check's own field; the update job's `lastError` is never touched here. */
@@ -801,7 +961,7 @@ export async function recheckProjects(
     return current;
   };
   let current: Run | undefined;
-  let local: { result: Counts | Problem | typeof STOPPED } | { problem: LocalProblem };
+  let local: LocalOutcome;
   try {
     local = await withLocalDatabase(
       deps.db,
@@ -819,13 +979,7 @@ export async function recheckProjects(
     if (stopping(deps)) return stoppedRun(deps, scope);
     throw err;
   }
-  const outcome: Counts | Problem | typeof STOPPED =
-    'problem' in local
-      ? {
-          code: local.problem.code === 'DISK' ? 'DISK' : 'RECHECK_FAILED',
-          message: local.problem.message,
-        }
-      : local.result;
+  const outcome = outcomeOf(local);
   if (outcome === STOPPED) return stoppedRun(deps, scope);
   if ('code' in outcome) {
     await setError(deps.db, outcome);
@@ -835,20 +989,7 @@ export async function recheckProjects(
     );
     return { kind: 'failed', error: outcome };
   }
-  if ('all' in scope) {
-    // Housekeeping of the shared tables: a problem here never fails a re-check that is done.
-    try {
-      await pruneUnused(deps.db, outcome.packages);
-    } catch (err) {
-      deps.logger?.warn(
-        {
-          component: 'vulnerabilities',
-          errorClass: err instanceof Error ? err.constructor.name : typeof err,
-        },
-        'vulnerability matches were not pruned',
-      );
-    }
-  }
+  if ('all' in scope) await pruneQuietly(deps, outcome.packages);
   const summary: RecheckSummary = {
     at: now().toISOString(),
     projects: outcome.projects,

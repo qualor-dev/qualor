@@ -193,66 +193,98 @@ export async function parseEpss(
     const text = await readText(body, limits.maxDataBytes ?? PRIORITY_DATA_MAX_BYTES);
     if (typeof text !== 'string') return text;
     const maxLines = limits.maxLines ?? EPSS_MAX_LINES;
-    let scoreDate: Date | null = null;
-    let modelVersion: string | null = null;
-    let headerSeen = false;
-    const ids: string[] = [];
-    const scores: number[] = [];
-    const percentiles: number[] = [];
-    let skipped = 0;
-    const seen = new Set<string>();
+    const read: EpssRead = {
+      scoreDate: null,
+      modelVersion: null,
+      headerSeen: false,
+      ids: [],
+      scores: [],
+      percentiles: [],
+      skipped: 0,
+      seen: new Set<string>(),
+    };
     let lines = 0;
-    // One line at a time, never `split('\n')`: 64 MiB of newlines would be a 67M-element array.
-    // Every split below has a limit for the same reason, so a long line costs no more than its text.
-    for (let start = 0; start < text.length;) {
-      const newline = text.indexOf('\n', start);
-      const end = newline === -1 ? text.length : newline;
-      let line = text.slice(start, end);
-      start = end + 1;
+    for (const line of linesOf(text)) {
       if (++lines > maxLines) return tooLarge(`The EPSS file has more than ${maxLines} lines.`);
-      if (line.endsWith('\r')) line = line.slice(0, -1);
       if (line.trim() === '') continue;
-      if (!headerSeen) {
-        if (line.startsWith('#')) {
-          for (const part of line.slice(1).split(',', 8)) {
-            const colon = part.indexOf(':');
-            if (colon === -1) continue;
-            const key = part.slice(0, colon).trim();
-            const value = part.slice(colon + 1).trim();
-            if (key === 'model_version' && value !== '') modelVersion = value;
-            if (key === 'score_date') scoreDate = parseDateTime(value);
-          }
-          continue;
-        }
-        const columns = line
-          .split(',', 4)
-          .map((c) => c.trim())
-          .join(',')
-          .toLowerCase();
-        if (columns !== 'cve,epss,percentile') {
-          return invalid('The EPSS file does not have the columns cve, epss, percentile.');
-        }
-        headerSeen = true;
+      if (read.headerSeen) {
+        readEpssRow(line, read);
         continue;
       }
-      // A fourth cell makes the row invalid, so nothing past it is split.
-      const cells = line.split(',', 4).map((c) => c.trim());
-      const score = cells.length === 3 ? unit(cells[1]) : null;
-      const percentile = cells.length === 3 ? unit(cells[2]) : null;
-      const id = cells[0] ?? '';
-      if (score === null || percentile === null || !CVE_ID.test(id) || seen.has(id)) {
-        skipped++;
-        continue;
-      }
-      seen.add(id);
-      ids.push(id);
-      scores.push(score);
-      percentiles.push(percentile);
+      const problem = readEpssPreamble(line, read);
+      if (problem !== null) return problem;
     }
-    if (!headerSeen) return invalid('The EPSS file has no header.');
-    if (ids.length === 0) return invalid('The EPSS file has no valid row.');
+    if (!read.headerSeen) return invalid('The EPSS file has no header.');
+    if (read.ids.length === 0) return invalid('The EPSS file has no valid row.');
+    const { scoreDate, modelVersion, ids, scores, percentiles, skipped } = read;
     return { scoreDate, modelVersion, ids, scores, percentiles, skipped };
   } catch {
     return invalid('The EPSS file could not be read.');
   }
+}
+
+/** What {@link parseEpss} has read so far. */
+interface EpssRead extends EpssFile {
+  headerSeen: boolean;
+  seen: Set<string>;
+}
+
+/**
+ * The lines of `text`, without a trailing CR. One line at a time, never `split('\n')`: 64 MiB of
+ * newlines would be a 67M-element array. Every split below has a limit for the same reason, so a
+ * long line costs no more than its text.
+ */
+function* linesOf(text: string): Generator<string> {
+  for (let start = 0; start < text.length;) {
+    const newline = text.indexOf('\n', start);
+    const end = newline === -1 ? text.length : newline;
+    const line = text.slice(start, end);
+    start = end + 1;
+    yield line.endsWith('\r') ? line.slice(0, -1) : line;
+  }
+}
+
+/**
+ * A line before the header row: a `#` comment with the model version and score date, or the
+ * header row itself. Answers the problem when the header row names other columns, else null.
+ */
+function readEpssPreamble(line: string, read: EpssRead): PriorityProblem | null {
+  if (line.startsWith('#')) {
+    for (const part of line.slice(1).split(',', 8)) {
+      const colon = part.indexOf(':');
+      if (colon === -1) continue;
+      const key = part.slice(0, colon).trim();
+      const value = part.slice(colon + 1).trim();
+      if (key === 'model_version' && value !== '') read.modelVersion = value;
+      if (key === 'score_date') read.scoreDate = parseDateTime(value);
+    }
+    return null;
+  }
+  const columns = line
+    .split(',', 4)
+    .map((c) => c.trim())
+    .join(',')
+    .toLowerCase();
+  if (columns !== 'cve,epss,percentile') {
+    return invalid('The EPSS file does not have the columns cve, epss, percentile.');
+  }
+  read.headerSeen = true;
+  return null;
+}
+
+/** A data row: kept, or skipped when it is not valid or repeats an id. */
+function readEpssRow(line: string, read: EpssRead): void {
+  // A fourth cell makes the row invalid, so nothing past it is split.
+  const cells = line.split(',', 4).map((c) => c.trim());
+  const score = cells.length === 3 ? unit(cells[1]) : null;
+  const percentile = cells.length === 3 ? unit(cells[2]) : null;
+  const id = cells[0] ?? '';
+  if (score === null || percentile === null || !CVE_ID.test(id) || read.seen.has(id)) {
+    read.skipped++;
+    return;
+  }
+  read.seen.add(id);
+  read.ids.push(id);
+  read.scores.push(score);
+  read.percentiles.push(percentile);
 }

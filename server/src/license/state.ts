@@ -27,6 +27,12 @@ export function graceEndsAt(license: LicensePayload): Date {
   return new Date(Date.parse(license.expires) + LICENSE_GRACE_DAYS * DAY_MS);
 }
 
+/** A verified key's state at `t` (ms): before `expires`, before the grace end, or after. */
+function stateAt(t: number, expires: number, graceEnd: Date): LicenseStateName {
+  if (t < expires) return 'active';
+  return t < graceEnd.getTime() ? 'grace' : 'expired';
+}
+
 /**
  * enterprise.md §5: computed on every read, so a key lapses on a running server. Both
  * boundaries are half-open: at exactly `expires` the state is `grace`, at exactly the grace end
@@ -61,8 +67,7 @@ export function licenseState(verification: Verification | null, now: Date): Lice
   const t = now.getTime();
   const expires = Date.parse(license.expires);
   const graceEnd = graceEndsAt(license);
-  const state: LicenseStateName =
-    t < expires ? 'active' : t < graceEnd.getTime() ? 'grace' : 'expired';
+  const state = stateAt(t, expires, graceEnd);
   return {
     state,
     reason: null,

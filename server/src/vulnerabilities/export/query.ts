@@ -10,7 +10,10 @@ import type { ExportPackage } from './types';
 import type { VexEntry } from './vex-documents';
 
 /** Code-unit order: the same on every database collation. */
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const compare = (a: string, b: string): number => {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+};
 
 export interface ResolvedExportTarget {
   target: DependencyTarget;

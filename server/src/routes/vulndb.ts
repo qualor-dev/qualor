@@ -159,6 +159,35 @@ const settingsDto = z.object({
 });
 type SettingsDto = z.infer<typeof settingsDto>;
 
+type MirrorSource = Extract<VulndbSettings['source'], { kind: 'mirror' }>;
+
+/** The mirror's fields a write to a mirror source changed; `was` is the mirror before, if any. */
+function mirrorFieldsChanged(
+  was: MirrorSource | null,
+  now: MirrorSource,
+  passwordSent: boolean,
+): VulndbSettingsChangedField[] {
+  const fields: VulndbSettingsChangedField[] = [];
+  if (was?.repository !== now.repository) fields.push('source.repository');
+  if ((was?.username ?? null) !== now.username) fields.push('source.username');
+  if ((was?.kevUrl ?? null) !== now.kevUrl) fields.push('source.kevUrl');
+  if ((was?.epssUrl ?? null) !== now.epssUrl) fields.push('source.epssUrl');
+  // A new password is a change; removing one only when there was one.
+  const hadPassword = (was?.passwordEnc ?? null) !== null;
+  const dropped = !passwordSent && hadPassword && now.passwordEnc === null;
+  if (dropped || (passwordSent && (now.passwordEnc !== null || hadPassword))) {
+    fields.push('source.password');
+  }
+  return fields;
+}
+
+/** 413 TOO_LARGE for a body over `maxBytes`. */
+function tooLargeProblem(maxBytes: number): ProblemError {
+  return new ProblemError(413, 'TOO_LARGE', 'The file is too large', {
+    detail: `The file is larger than ${maxBytes} bytes`,
+  });
+}
+
 /** The names of the fields a write changed (never a value), for the audit event and the log. */
 function changedFields(
   before: VulndbSettings,
@@ -171,16 +200,7 @@ function changedFields(
   if (before.source.kind !== after.source.kind) fields.push('source.kind');
   if (after.source.kind === 'mirror') {
     const was = before.source.kind === 'mirror' ? before.source : null;
-    if (was?.repository !== after.source.repository) fields.push('source.repository');
-    if ((was?.username ?? null) !== after.source.username) fields.push('source.username');
-    if ((was?.kevUrl ?? null) !== after.source.kevUrl) fields.push('source.kevUrl');
-    if ((was?.epssUrl ?? null) !== after.source.epssUrl) fields.push('source.epssUrl');
-    // A new password is a change; removing one only when there was one.
-    const hadPassword = (was?.passwordEnc ?? null) !== null;
-    const dropped = !passwordSent && hadPassword && after.source.passwordEnc === null;
-    if (dropped || (passwordSent && (after.source.passwordEnc !== null || hadPassword))) {
-      fields.push('source.password');
-    }
+    fields.push(...mirrorFieldsChanged(was, after.source, passwordSent));
   }
   if (before.scanners.enabled !== after.scanners.enabled) fields.push('scanners.enabled');
   if (before.scanners.policy !== after.scanners.policy) fields.push('scanners.policy');
@@ -443,10 +463,6 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
     async (request, reply) => {
       const principal = requireInstanceAdmin(request);
       const maxBytes = deps.config.vulndb.uploadMaxBytes;
-      const tooLarge = () =>
-        new ProblemError(413, 'TOO_LARGE', 'The file is too large', {
-          detail: `The file is larger than ${maxBytes} bytes`,
-        });
       if (!(request.body instanceof Readable)) {
         throw new ProblemError(
           415,
@@ -455,7 +471,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         );
       }
       const declared = Number(request.headers['content-length']);
-      if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
+      if (Number.isFinite(declared) && declared > maxBytes) throw tooLargeProblem(maxBytes);
       sendContinue(request, reply);
       const stored = await storeDataset(deps.db, {
         kind: 'trivy',
@@ -464,7 +480,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         maxBytes,
       });
       if ('problem' in stored) {
-        if (stored.problem.code === 'TOO_LARGE') throw tooLarge();
+        if (stored.problem.code === 'TOO_LARGE') throw tooLargeProblem(maxBytes);
         throw new ProblemError(422, 'INVALID_DATABASE', 'The file is not a usable database', {
           detail: stored.problem.message,
         });
@@ -507,10 +523,6 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
   const priorityUpload = (dataset: PriorityDataset) => {
     const maxBytes = PRIORITY_FILE_MAX_BYTES;
     const label = dataset === 'kev' ? 'CISA KEV catalog' : 'FIRST EPSS scores';
-    const tooLarge = () =>
-      new ProblemError(413, 'TOO_LARGE', 'The file is too large', {
-        detail: `The file is larger than ${maxBytes} bytes`,
-      });
     const options = {
       bodyLimit: Number.MAX_SAFE_INTEGER,
       config: {
@@ -557,13 +569,13 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', priorityTypeMessage);
       }
       const declared = Number(request.headers['content-length']);
-      if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
+      if (Number.isFinite(declared) && declared > maxBytes) throw tooLargeProblem(maxBytes);
       sendContinue(request, reply);
       const chunks: Buffer[] = [];
       let total = 0;
       for await (const chunk of request.body as AsyncIterable<Buffer>) {
         total += chunk.length;
-        if (total > maxBytes) throw tooLarge();
+        if (total > maxBytes) throw tooLargeProblem(maxBytes);
         chunks.push(chunk);
       }
       const stored = await storePriorityFile(

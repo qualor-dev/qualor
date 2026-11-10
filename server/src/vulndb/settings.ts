@@ -123,6 +123,17 @@ function registryHost(repository: string): string {
   return repository.split('/')[0]?.toLowerCase() ?? '';
 }
 
+/** The mirror password to store: absent keeps `kept`, null removes it, a string is encrypted. */
+function nextPasswordEnc(
+  password: string | null | undefined,
+  kept: EncryptedValue | null,
+  secretKey: string,
+): EncryptedValue | null {
+  if (password === undefined) return kept;
+  if (password === null) return null;
+  return encryptSecret(encryptionKey(secretKey), password, VULNDB_PASSWORD_AAD);
+}
+
 function nextSource(
   input: VulndbSourceInput,
   current: VulndbSource,
@@ -134,14 +145,8 @@ function nextSource(
   // The stored password never follows the repository to another registry host.
   const sameHost =
     before !== null && registryHost(before.repository) === registryHost(input.repository);
-  const passwordEnc =
-    input.password === undefined
-      ? sameHost
-        ? (before?.passwordEnc ?? null)
-        : null
-      : input.password === null
-        ? null
-        : encryptSecret(encryptionKey(secretKey), input.password, VULNDB_PASSWORD_AAD);
+  const kept = sameHost ? (before?.passwordEnc ?? null) : null;
+  const passwordEnc = nextPasswordEnc(input.password, kept, secretKey);
   return {
     kind: 'mirror',
     repository: input.repository,

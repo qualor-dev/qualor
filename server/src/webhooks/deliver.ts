@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import { decryptSecret, encryptionKey } from '../crypto/secrets';
-import type { Db, Executor } from '../db/client';
+import type { Db, Executor, Tx } from '../db/client';
 import { LOCKS } from '../db/locks';
 import { webhookDeliveries, webhookSubscriptions } from '../db/schema';
 import { VERSION } from '../index';
@@ -28,7 +28,7 @@ import {
   type SendOutcome,
 } from './send';
 import { signatureHeaders } from './sign';
-import { webhookSettings, webhookUrlProblem } from './url';
+import { webhookSettings, webhookUrlProblem, type WebhookSettings } from './url';
 
 /** api.md §3: the first attempt and up to 6 retries. */
 export const MAX_DELIVERY_ATTEMPTS = 7;
@@ -226,166 +226,242 @@ export async function deliverWebhook(
     if (!row) return 'gone';
     if (isStale(row)) return 'settled';
     const { delivery, webhook } = row;
-    // One of the organisation's slots (try-locks, so never a wait; a hash collision between two
-    // organisations only shares their slots).
-    let slot = false;
-    for (let i = 0; i < MAX_IN_FLIGHT_PER_ORGANIZATION && !slot; i++) {
-      const taken = await tx.execute<{ locked: boolean }>(
-        sql`SELECT pg_try_advisory_xact_lock(${LOCKS.webhookOrganizationSlot}, hashtext(${`${webhook.organizationId}:${i}`}::text)) AS locked`,
-      );
-      slot = taken.rows[0]?.locked === true;
-    }
-    if (!slot) return 'busy';
+    if (!(await takeOrganizationSlot(tx, webhook.organizationId))) return 'busy';
 
-    const record = async (outcome: SendOutcome, final: boolean): Promise<DeliveryResult> => {
-      const attempts = delivery.attempts + 1;
-      const status = outcome.ok
-        ? 'succeeded'
-        : final || attempts >= MAX_DELIVERY_ATTEMPTS
-          ? 'failed'
-          : 'pending';
-      const [updated] = await tx
-        .update(webhookDeliveries)
-        .set({
-          status,
-          attempts,
-          responseCode: outcome.status,
-          responseExcerpt: outcome.excerpt,
-          // now() is the start of this transaction, i.e. of the attempt (the circuit reads it back).
-          nextAttemptAt:
-            status === 'pending'
-              ? sql`now() + make_interval(secs => ${retryDelaySeconds(attempts)})`
-              : null,
-        })
-        .where(
-          and(
-            eq(webhookDeliveries.id, delivery.id),
-            eq(webhookDeliveries.status, 'pending'),
-            eq(webhookDeliveries.attempts, delivery.attempts),
-          ),
-        )
-        .returning({ nextAttemptAt: webhookDeliveries.nextAttemptAt });
-      // Deleted meanwhile, or a duplicate run of this attempt recorded it first.
-      if (!updated) return 'settled';
-      if (status === 'pending' && updated.nextAttemptAt) {
-        await enqueue(tx, {
-          queue: WEBHOOK_QUEUE,
-          payload: { deliveryId: delivery.id, attempts },
-          runAt: updated.nextAttemptAt,
-          maxAttempts: DELIVERY_JOB_MAX_ATTEMPTS,
-        });
-      }
-      // E1 spec: a delivery that gave up alerts the instance administrators (24 h per webhook);
-      // an inactive webhook's refusal is its administrator's own doing and alerts nobody. The
-      // alert runs in a savepoint: a mail error rolls back only the alert, never the recording.
-      if (status === 'failed' && webhook.active && deps.mail) {
-        const mail = deps.mail;
-        try {
-          await tx.transaction((sp) =>
-            alertWebhookFailed(sp, mail, {
-              webhookId: webhook.id,
-              organizationId: webhook.organizationId,
-              projectId: webhook.projectId,
-              url: webhook.url,
-              attempts,
-              responseCode: outcome.status,
-            }),
-          );
-        } catch (error) {
-          // The class only: a database error's message carries the query's parameters (the
-          // administrators' addresses, the subject), and an address is never logged above debug.
-          deps.logger?.warn(
-            {
-              webhookId: webhook.id,
-              errorClass: error instanceof Error ? error.constructor.name : typeof error,
-            },
-            'webhook failure alert not queued',
-          );
-        }
-      }
-      deps.logger?.info(
-        {
-          deliveryId: delivery.id,
-          webhookId: webhook.id,
-          attempts,
-          status,
-          responseCode: outcome.status,
-        },
-        'webhook delivery attempt',
-      );
-      return status === 'pending' ? 'retrying' : status;
-    };
+    const attempt: Attempt = { tx, deps, delivery, webhook };
+    const record = (outcome: SendOutcome, final: boolean) => recordAttempt(attempt, outcome, final);
     const refuse = (excerpt: string) => record({ ok: false, status: null, excerpt }, true);
 
     if (!webhook.active) return refuse('The webhook is inactive');
     const settings = await webhookSettings(tx);
-    let request: { url: string; body: string; headers: Record<string, string> };
-    if (isChatKind(webhook.kind)) {
-      const url =
-        webhook.urlEnc === null
-          ? null
-          : decryptSecret(encryptionKey(deps.secretKey), webhook.urlEnc, WEBHOOK_URL_AAD);
-      if (url === null) {
-        return refuse(
-          'The webhook URL cannot be decrypted (QUALOR_SECRET_KEY changed?); enter the URL again',
-        );
-      }
-      const problem = chatUrlProblem(webhook.kind, url, settings, deps.chatTestHosts ?? new Set());
-      if (problem) return refuse(problem);
-      const message = parseChatMessage(delivery.event as DeliveryEvent, delivery.payload);
-      if (message === null) return refuse('The message could not be formatted');
-      request = {
-        url,
-        body: JSON.stringify(formatChat(webhook.kind, message, chatLinks(deps.publicUrl ?? null))),
-        // 6G spec D5: no signature; the receiver is Slack or Teams.
-        headers: { 'content-type': 'application/json', 'user-agent': `Qualor-Webhook/${VERSION}` },
-      };
-    } else {
-      const secret =
-        webhook.secretEnc === null
-          ? null
-          : decryptSecret(encryptionKey(deps.secretKey), webhook.secretEnc, WEBHOOK_SECRET_AAD);
-      if (secret === null) {
-        return refuse(
-          'The webhook secret cannot be decrypted (QUALOR_SECRET_KEY changed?); set a new secret',
-        );
-      }
-      const problem = webhookUrlProblem(webhook.url, settings);
-      if (problem) return refuse(problem);
-      const body = JSON.stringify(delivery.payload);
-      request = {
-        url: webhook.url,
-        body,
-        headers: {
-          'content-type': 'application/json',
-          'user-agent': `Qualor-Webhook/${VERSION}`,
-          'x-qualor-event': delivery.event,
-          'x-qualor-delivery': delivery.id,
-          ...signatureHeaders(secret, body, Math.floor(Date.now() / 1000)),
-        },
-      };
-    }
+    const request = isChatKind(webhook.kind)
+      ? chatRequest(deps, webhook.kind, webhook, delivery, settings)
+      : signedRequest(deps, webhook, delivery, settings);
+    if (typeof request === 'string') return refuse(request);
     const openUntil = await circuitOpenUntil(tx, webhook.id);
     if (openUntil) {
       const excerpt = `${CIRCUIT_OPEN_EXCERPT_PREFIX}${openUntil.toISOString()})`;
       return record({ ok: false, status: null, excerpt }, false);
     }
 
-    const outcome = await sendWebhook(request, {
-      allowInternalHosts: settings.allowInternalHosts,
-      timeoutMs: deps.timeoutMs ?? DELIVERY_TIMEOUT_MS,
-      ...(deps.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: deps.connectTimeoutMs }),
-      ...(deps.resolve ? { resolve: deps.resolve } : {}),
-    });
-    if (isChatKind(webhook.kind)) outcome.excerpt = withoutSecretPath(outcome.excerpt, request.url);
-    // 6G R10: Slack and Teams answer 404/410 for a webhook that was removed; retrying cannot help.
-    if (isChatKind(webhook.kind) && (outcome.status === 404 || outcome.status === 410)) {
-      const answer = outcome.excerpt === null ? '' : `. Answer: ${outcome.excerpt}`;
-      const excerpt = excerptOf(Buffer.from(`${goneExcerpt(webhook.kind)}${answer}`, 'utf8'));
-      return record({ ok: false, status: outcome.status, excerpt }, true);
+    const outcome = await sendWebhook(request, sendOptions(deps, settings.allowInternalHosts));
+    if (isChatKind(webhook.kind)) {
+      outcome.excerpt = withoutSecretPath(outcome.excerpt, request.url);
+      // 6G R10: Slack and Teams answer 404/410 for a webhook that was removed; retrying cannot help.
+      if (outcome.status === 404 || outcome.status === 410) {
+        const excerpt = removedChatExcerpt(webhook.kind, outcome.excerpt);
+        return record({ ok: false, status: outcome.status, excerpt }, true);
+      }
     }
     return record(outcome, false);
   });
+}
+
+type DeliveryRow = typeof webhookDeliveries.$inferSelect;
+type WebhookRow = typeof webhookSubscriptions.$inferSelect;
+type WebhookRequest = { url: string; body: string; headers: Record<string, string> };
+
+/**
+ * One of the organisation's slots (try-locks, so never a wait; a hash collision between two
+ * organisations only shares their slots). Answers whether one was free.
+ */
+async function takeOrganizationSlot(tx: Tx, organizationId: string): Promise<boolean> {
+  let slot = false;
+  for (let i = 0; i < MAX_IN_FLIGHT_PER_ORGANIZATION && !slot; i++) {
+    const slotKey = `${organizationId}:${i}`;
+    const taken = await tx.execute<{ locked: boolean }>(
+      sql`SELECT pg_try_advisory_xact_lock(${LOCKS.webhookOrganizationSlot}, hashtext(${slotKey}::text)) AS locked`,
+    );
+    slot = taken.rows[0]?.locked === true;
+  }
+  return slot;
+}
+
+/** A chat webhook's request (6G spec D5: no signature), or why it is refused. */
+function chatRequest(
+  deps: DeliveryDeps,
+  kind: ChatKind,
+  webhook: WebhookRow,
+  delivery: DeliveryRow,
+  settings: WebhookSettings,
+): WebhookRequest | string {
+  const url =
+    webhook.urlEnc === null
+      ? null
+      : decryptSecret(encryptionKey(deps.secretKey), webhook.urlEnc, WEBHOOK_URL_AAD);
+  if (url === null) {
+    return 'The webhook URL cannot be decrypted (QUALOR_SECRET_KEY changed?); enter the URL again';
+  }
+  const problem = chatUrlProblem(kind, url, settings, deps.chatTestHosts ?? new Set());
+  if (problem) return problem;
+  const message = parseChatMessage(delivery.event as DeliveryEvent, delivery.payload);
+  if (message === null) return 'The message could not be formatted';
+  return {
+    url,
+    body: JSON.stringify(formatChat(kind, message, chatLinks(deps.publicUrl ?? null))),
+    // 6G spec D5: no signature; the receiver is Slack or Teams.
+    headers: { 'content-type': 'application/json', 'user-agent': `Qualor-Webhook/${VERSION}` },
+  };
+}
+
+/** A generic webhook's signed request, or why it is refused. */
+function signedRequest(
+  deps: DeliveryDeps,
+  webhook: WebhookRow,
+  delivery: DeliveryRow,
+  settings: WebhookSettings,
+): WebhookRequest | string {
+  const secret =
+    webhook.secretEnc === null
+      ? null
+      : decryptSecret(encryptionKey(deps.secretKey), webhook.secretEnc, WEBHOOK_SECRET_AAD);
+  if (secret === null) {
+    return 'The webhook secret cannot be decrypted (QUALOR_SECRET_KEY changed?); set a new secret';
+  }
+  const problem = webhookUrlProblem(webhook.url, settings);
+  if (problem) return problem;
+  const body = JSON.stringify(delivery.payload);
+  return {
+    url: webhook.url,
+    body,
+    headers: {
+      'content-type': 'application/json',
+      'user-agent': `Qualor-Webhook/${VERSION}`,
+      'x-qualor-event': delivery.event,
+      'x-qualor-delivery': delivery.id,
+      ...signatureHeaders(secret, body, Math.floor(Date.now() / 1000)),
+    },
+  };
+}
+
+/** The send's timeouts and the tests' DNS. */
+function sendOptions(
+  deps: DeliveryDeps,
+  allowInternalHosts: boolean,
+): Parameters<typeof sendWebhook>[1] {
+  return {
+    allowInternalHosts,
+    timeoutMs: deps.timeoutMs ?? DELIVERY_TIMEOUT_MS,
+    ...(deps.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: deps.connectTimeoutMs }),
+    ...(deps.resolve ? { resolve: deps.resolve } : {}),
+  };
+}
+
+/** The excerpt of a chat webhook that was removed: what it is, and the receiver's answer. */
+function removedChatExcerpt(kind: ChatKind, received: string | null): string | null {
+  const answer = received === null ? '' : `. Answer: ${received}`;
+  const text = `${goneExcerpt(kind)}${answer}`;
+  return excerptOf(Buffer.from(text, 'utf8'));
+}
+
+/** What one attempt of a delivery works with, in its transaction. */
+interface Attempt {
+  tx: Tx;
+  deps: DeliveryDeps;
+  delivery: DeliveryRow;
+  webhook: WebhookRow;
+}
+
+/** The status an attempt leaves: succeeded, failed for good, or pending a retry. */
+function statusAfter(ok: boolean, final: boolean, attempts: number): DeliveryRow['status'] {
+  if (ok) return 'succeeded';
+  return final || attempts >= MAX_DELIVERY_ATTEMPTS ? 'failed' : 'pending';
+}
+
+/**
+ * Records an attempt, fenced on `attempts`: a pending delivery gets its retry job, one that gave
+ * up alerts. `final`: no retry, whatever the count.
+ */
+async function recordAttempt(
+  attempt: Attempt,
+  outcome: SendOutcome,
+  final: boolean,
+): Promise<DeliveryResult> {
+  const { tx, deps, delivery, webhook } = attempt;
+  const attempts = delivery.attempts + 1;
+  const status = statusAfter(outcome.ok, final, attempts);
+  const [updated] = await tx
+    .update(webhookDeliveries)
+    .set({
+      status,
+      attempts,
+      responseCode: outcome.status,
+      responseExcerpt: outcome.excerpt,
+      // now() is the start of this transaction, i.e. of the attempt (the circuit reads it back).
+      nextAttemptAt:
+        status === 'pending'
+          ? sql`now() + make_interval(secs => ${retryDelaySeconds(attempts)})`
+          : null,
+    })
+    .where(
+      and(
+        eq(webhookDeliveries.id, delivery.id),
+        eq(webhookDeliveries.status, 'pending'),
+        eq(webhookDeliveries.attempts, delivery.attempts),
+      ),
+    )
+    .returning({ nextAttemptAt: webhookDeliveries.nextAttemptAt });
+  // Deleted meanwhile, or a duplicate run of this attempt recorded it first.
+  if (!updated) return 'settled';
+  if (status === 'pending' && updated.nextAttemptAt) {
+    await enqueue(tx, {
+      queue: WEBHOOK_QUEUE,
+      payload: { deliveryId: delivery.id, attempts },
+      runAt: updated.nextAttemptAt,
+      maxAttempts: DELIVERY_JOB_MAX_ATTEMPTS,
+    });
+  }
+  // E1 spec: a delivery that gave up alerts the instance administrators (24 h per webhook);
+  // an inactive webhook's refusal is its administrator's own doing and alerts nobody.
+  if (status === 'failed' && webhook.active && deps.mail) {
+    await alertFailure(attempt, deps.mail, attempts, outcome.status);
+  }
+  deps.logger?.info(
+    {
+      deliveryId: delivery.id,
+      webhookId: webhook.id,
+      attempts,
+      status,
+      responseCode: outcome.status,
+    },
+    'webhook delivery attempt',
+  );
+  return status === 'pending' ? 'retrying' : status;
+}
+
+/**
+ * Alerts the instance administrators about a delivery that gave up, in a savepoint: a mail error
+ * rolls back only the alert, never the recording.
+ */
+async function alertFailure(
+  attempt: Attempt,
+  mail: MailDeps,
+  attempts: number,
+  responseCode: number | null,
+): Promise<void> {
+  const { tx, deps, webhook } = attempt;
+  try {
+    await tx.transaction((sp) =>
+      alertWebhookFailed(sp, mail, {
+        webhookId: webhook.id,
+        organizationId: webhook.organizationId,
+        projectId: webhook.projectId,
+        url: webhook.url,
+        attempts,
+        responseCode,
+      }),
+    );
+  } catch (error) {
+    // The class only: a database error's message carries the query's parameters (the
+    // administrators' addresses, the subject), and an address is never logged above debug.
+    deps.logger?.warn(
+      {
+        webhookId: webhook.id,
+        errorClass: error instanceof Error ? error.constructor.name : typeof error,
+      },
+      'webhook failure alert not queued',
+    );
+  }
 }
 
 /** `attempts`: the attempts made before this job's; absent on the first job (createDelivery). */

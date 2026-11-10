@@ -65,6 +65,25 @@ const SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
 
 const text = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 
+/** One Trivy vulnerability entry as a match and its package's key, or null without either. */
+function toMatch(v: Record<string, unknown>): { purl: string; match: VulnerabilityMatch } | null {
+  // Trivy re-serialises the purl; the bom-ref is our own string, unchanged.
+  const ident = v.PkgIdentifier as { PURL?: unknown; BOMRef?: unknown } | undefined;
+  const purl = text(ident?.BOMRef) ?? text(ident?.PURL);
+  const id = text(v.VulnerabilityID);
+  if (purl === null || id === null) return null;
+  const severity = typeof v.Severity === 'string' ? v.Severity.toLowerCase() : '';
+  const match: VulnerabilityMatch = {
+    vulnerabilityId: id,
+    severity: SEVERITIES.has(severity) ? (severity as VulnerabilityMatch['severity']) : 'unknown',
+    title: text(v.Title),
+    fixedVersion: text(v.FixedVersion),
+    primaryUrl: text(v.PrimaryURL),
+    publishedAt: text(v.PublishedDate),
+  };
+  return { purl, match };
+}
+
 /**
  * Reads `trivy sbom --format json` output into matches keyed by each package's BOMRef (the purl
  * our SBOM put there, unchanged), falling back to Trivy's PURL. Throws on bad JSON.
@@ -78,35 +97,26 @@ export function parseTrivyOutput(json: string): Map<string, VulnerabilityMatch[]
     const vulns = (result as { Vulnerabilities?: unknown } | null)?.Vulnerabilities;
     if (!Array.isArray(vulns)) continue;
     for (const v of vulns as Record<string, unknown>[]) {
-      // Trivy re-serialises the purl; the bom-ref is our own string, unchanged.
-      const ident = v.PkgIdentifier as { PURL?: unknown; BOMRef?: unknown } | undefined;
-      const purl = text(ident?.BOMRef) ?? text(ident?.PURL);
-      const id = text(v.VulnerabilityID);
-      if (purl === null || id === null) continue;
-      const severity = typeof v.Severity === 'string' ? v.Severity.toLowerCase() : '';
-      const match: VulnerabilityMatch = {
-        vulnerabilityId: id,
-        severity: SEVERITIES.has(severity)
-          ? (severity as VulnerabilityMatch['severity'])
-          : 'unknown',
-        title: text(v.Title),
-        fixedVersion: text(v.FixedVersion),
-        primaryUrl: text(v.PrimaryURL),
-        publishedAt: text(v.PublishedDate),
-      };
-      const list = matches.get(purl);
-      if (list === undefined) matches.set(purl, [match]);
-      else list.push(match);
+      const entry = toMatch(v);
+      if (entry === null) continue;
+      const list = matches.get(entry.purl);
+      if (list === undefined) matches.set(entry.purl, [entry.match]);
+      else list.push(entry.match);
     }
   }
   return matches;
+}
+
+/** Windows' own taskkill by full path, not whichever one PATH finds first. */
+function taskkillPath(): string {
+  return path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
 }
 
 function killTree(pid: number | undefined): void {
   if (pid === undefined) return;
   try {
     if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore' });
+      spawnSync(taskkillPath(), ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore' });
     } else {
       process.kill(-pid, 'SIGKILL');
     }

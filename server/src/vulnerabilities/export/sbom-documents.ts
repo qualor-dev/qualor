@@ -1,6 +1,12 @@
 import { cycloneDxLicenses, spdxLicense } from './licenses';
 import { productId, type ExportDocument, type ExportPackage } from './types';
 
+/** Code-unit order (not locale-dependent). */
+function compare(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
 /** A CycloneDX 1.6 SBOM of a target. Packages keep the order they are given. */
 export function buildCycloneDxSbom(
   doc: ExportDocument,
@@ -72,7 +78,7 @@ export function buildSpdxSbom(doc: ExportDocument, packages: readonly ExportPack
     })),
   ];
   const infos = [...extracted.entries()]
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .sort(([a], [b]) => compare(a, b))
     .map(([licenseId, extractedText]) => ({
       licenseId,
       extractedText,

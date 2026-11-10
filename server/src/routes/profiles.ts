@@ -382,6 +382,12 @@ interface EffectiveRow {
   chainScope: RuleScope | null;
 }
 
+/** Whose row decides the rule: this profile's, an ancestor's, or none (the default). */
+function ruleSource(profile: ProfileRow, row: EffectiveRow): ProfileRuleDto['source'] {
+  if (row.sourceProfileId === null) return 'default';
+  return row.sourceProfileId === profile.id ? 'profile' : 'inherited';
+}
+
 function profileRuleDto(profile: ProfileRow, row: EffectiveRow): ProfileRuleDto {
   const { rule } = row;
   return {
@@ -399,12 +405,7 @@ function profileRuleDto(profile: ProfileRow, row: EffectiveRow): ProfileRuleDto 
     severityOverride: (row.severityOverride as ProfileRuleDto['severityOverride']) ?? null,
     scope: row.chainScope ?? rule.scope,
     scopeOverride: row.scopeOverride,
-    source:
-      row.sourceProfileId === null
-        ? 'default'
-        : row.sourceProfileId === profile.id
-          ? 'profile'
-          : 'inherited',
+    source: ruleSource(profile, row),
     sourceProfileId: row.sourceProfileId,
   };
 }

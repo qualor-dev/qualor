@@ -309,6 +309,156 @@ export async function projectDtos(
   });
 }
 
+type ScmProvider = 'gitlab' | 'github';
+
+/** The fields a project PATCH may send. */
+interface ProjectPatch {
+  name?: string;
+  mainBranchName?: string;
+  newCodeDefinition?: z.infer<typeof newCodeDefinitionSchema> | null;
+  qualityGateId?: string | null;
+  scmConnectionId?: string | null;
+  scmProjectRef?: string | null;
+}
+
+/**
+ * scm.md §2.2: only a connection of the project's own organisation (a project never changes
+ * organisation). Locked FOR KEY SHARE so a concurrent DELETE waits for this update instead of
+ * racing it, and locked before the project row: a DELETE locks the connection, then (ON DELETE
+ * SET NULL) the projects that reference it, so taking the two in the same order means one waits
+ * for the other instead of a deadlock. Answers the connection's provider.
+ */
+async function lockConnection(
+  tx: Executor,
+  connectionId: string,
+  organizationId: string,
+): Promise<ScmProvider> {
+  const [connection] = await tx
+    .select({ id: scmConnections.id, provider: scmConnections.provider })
+    .from(scmConnections)
+    .where(
+      and(eq(scmConnections.id, connectionId), eq(scmConnections.organizationId, organizationId)),
+    )
+    .for('key share');
+  if (!connection) {
+    throw validationFailed([{ path: 'body.scmConnectionId', message: 'Unknown SCM connection' }]);
+  }
+  return connection.provider;
+}
+
+/**
+ * scm.md §2.2, github.md §2.3: the reference is the mapped connection's own kind (a GitLab
+ * project id or path, a GitHub owner/repo), checked whenever either changes. `provider` is the
+ * sent connection's, when one was sent.
+ */
+async function checkScmProjectRef(
+  tx: Executor,
+  body: ProjectPatch,
+  locked: ProjectRow,
+  provider: ScmProvider | null,
+): Promise<void> {
+  if (body.scmConnectionId === undefined && body.scmProjectRef === undefined) return;
+  const connectionId =
+    body.scmConnectionId !== undefined ? body.scmConnectionId : locked.scmConnectionId;
+  const ref = body.scmProjectRef !== undefined ? body.scmProjectRef : locked.scmProjectRef;
+  let kind = provider;
+  if (kind === null && connectionId !== null && ref !== null) {
+    const [current] = await tx
+      .select({ provider: scmConnections.provider })
+      .from(scmConnections)
+      .where(eq(scmConnections.id, connectionId));
+    kind = current?.provider ?? null;
+  }
+  const problem = kind === null || ref === null ? null : projectRefProblem(kind, ref);
+  if (problem) throw validationFailed([{ path: 'body.scmProjectRef', message: problem }]);
+}
+
+/** The columns a PATCH sets from its body, besides the main branch. */
+function patchedColumns(body: ProjectPatch): Partial<typeof projects.$inferInsert> {
+  const changes: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
+  if (body.name !== undefined) changes.name = body.name;
+  if (body.newCodeDefinition !== undefined) changes.newCodeDefinition = body.newCodeDefinition;
+  if (body.qualityGateId !== undefined) changes.qualityGateId = body.qualityGateId;
+  if (body.scmConnectionId !== undefined) changes.scmConnectionId = body.scmConnectionId;
+  if (body.scmProjectRef !== undefined) changes.scmProjectRef = body.scmProjectRef;
+  return changes;
+}
+
+/** Makes `name` the project's main branch, creating the branch when it does not exist. */
+async function switchMainBranch(tx: Executor, projectId: string, name: string): Promise<void> {
+  await tx
+    .update(branches)
+    .set({ isMain: false })
+    .where(and(eq(branches.projectId, projectId), eq(branches.isMain, true)));
+  await tx
+    .insert(branches)
+    .values({ projectId, kind: 'branch', name, isMain: true })
+    .onConflictDoUpdate({
+      target: [branches.projectId, branches.kind, branches.name],
+      set: { isMain: true },
+    });
+}
+
+/**
+ * gates.md §5: a newCodeDefinition of type 'analysis' is a main-branch baseline. This must run
+ * inside the lock, after any switch of the main branch, against whichever branch is main *after*
+ * the request — never the pre-switch main — so a single PATCH that both moves mainBranchName and
+ * sets newCodeDefinition can't leave the baseline pointing at a branch that is no longer main. If
+ * the (possibly just-promoted) main branch has no matching succeeded analysis yet, this fails,
+ * rolling back the whole request.
+ */
+async function requireMainBranchAnalysis(
+  tx: Executor,
+  projectId: string,
+  analysisId: string,
+): Promise<void> {
+  const [mainBranch] = await tx
+    .select({ id: branches.id })
+    .from(branches)
+    .where(and(eq(branches.projectId, projectId), eq(branches.isMain, true)));
+  const [analysis] = mainBranch
+    ? await tx
+        .select({ id: analyses.id })
+        .from(analyses)
+        .where(
+          and(
+            eq(analyses.id, analysisId),
+            eq(analyses.projectId, projectId),
+            eq(analyses.status, 'succeeded'),
+            eq(analyses.branchId, mainBranch.id),
+          ),
+        )
+    : [];
+  if (!analysis) {
+    throw validationFailed([
+      {
+        path: 'body.newCodeDefinition.analysisId',
+        message: 'Must be a succeeded analysis on the main branch',
+      },
+    ]);
+  }
+}
+
+/** What a change of the project's SCM mapping starts, in the PATCH's transaction. */
+async function purgeAfterMappingChange(
+  tx: Executor,
+  locked: ProjectRow,
+  saved: ProjectRow,
+): Promise<void> {
+  // scm.md §8: merge request links are kept only on the mapped connection's address.
+  if (saved.scmConnectionId !== null && saved.scmConnectionId !== locked.scmConnectionId) {
+    await forgetForeignMergeRequestUrls(tx, { projectId: saved.id });
+  }
+  // AI review needs a mapped project: when the mapping goes, a job deletes the copies of
+  // its merge requests once this commits.
+  if (saved.scmConnectionId === null && locked.scmConnectionId !== null) {
+    await queueSnapshotPurge(tx, saved.organizationId);
+  }
+  // Mapped to another repository or connection, or mapped again after an unmap whose
+  // purge has not run yet: the copies of the old mapping go (R41).
+  await queueRemapPurgeIfCopies(tx, locked, saved);
+}
+
 export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app, { deps }) => {
   const dtoDeps = (): ProjectDtoDeps => ({ db: deps.db, limits: deps.edition.limits() });
   const one = async (row: ProjectRow, viewer: ProjectViewer): Promise<ProjectDto> =>
@@ -514,29 +664,9 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
       let updated: ProjectRow;
       try {
         updated = await deps.db.transaction(async (tx) => {
-          let provider: 'gitlab' | 'github' | null = null;
+          let provider: ScmProvider | null = null;
           if (body.scmConnectionId) {
-            // scm.md §2.2: only a connection of the project's own organisation (a project never
-            // changes organisation). Locked FOR KEY SHARE so a concurrent DELETE waits for this
-            // update instead of racing it, and locked before the project row: a DELETE locks the
-            // connection, then (ON DELETE SET NULL) the projects that reference it, so taking the
-            // two in the same order means one waits for the other instead of a deadlock.
-            const [connection] = await tx
-              .select({ id: scmConnections.id, provider: scmConnections.provider })
-              .from(scmConnections)
-              .where(
-                and(
-                  eq(scmConnections.id, body.scmConnectionId),
-                  eq(scmConnections.organizationId, project.organizationId),
-                ),
-              )
-              .for('key share');
-            if (!connection) {
-              throw validationFailed([
-                { path: 'body.scmConnectionId', message: 'Unknown SCM connection' },
-              ]);
-            }
-            provider = connection.provider;
+            provider = await lockConnection(tx, body.scmConnectionId, project.organizationId);
           }
           // Lock the project row before deciding anything: reading mainBranchName outside a
           // lock (as above) lets two concurrent switches both see the old name, both clear it
@@ -554,100 +684,21 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
               .where(eq(projects.id, project.id))
               .for('no key update'),
           );
-          // scm.md §2.2, github.md §2.3: the reference is the mapped connection's own kind (a
-          // GitLab project id or path, a GitHub owner/repo), checked whenever either changes.
-          if (body.scmConnectionId !== undefined || body.scmProjectRef !== undefined) {
-            const connectionId =
-              body.scmConnectionId !== undefined ? body.scmConnectionId : locked.scmConnectionId;
-            const ref =
-              body.scmProjectRef !== undefined ? body.scmProjectRef : locked.scmProjectRef;
-            if (provider === null && connectionId !== null && ref !== null) {
-              const [current] = await tx
-                .select({ provider: scmConnections.provider })
-                .from(scmConnections)
-                .where(eq(scmConnections.id, connectionId));
-              provider = current?.provider ?? null;
-            }
-            const problem =
-              provider === null || ref === null ? null : projectRefProblem(provider, ref);
-            if (problem) throw validationFailed([{ path: 'body.scmProjectRef', message: problem }]);
-          }
+          await checkScmProjectRef(tx, body, locked, provider);
           let mainSwitched = false;
-          const changes: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
-          if (body.name !== undefined) changes.name = body.name;
-          if (body.newCodeDefinition !== undefined)
-            changes.newCodeDefinition = body.newCodeDefinition;
-          if (body.qualityGateId !== undefined) changes.qualityGateId = body.qualityGateId;
-          if (body.scmConnectionId !== undefined) changes.scmConnectionId = body.scmConnectionId;
-          if (body.scmProjectRef !== undefined) changes.scmProjectRef = body.scmProjectRef;
+          const changes = patchedColumns(body);
           if (body.mainBranchName !== undefined && body.mainBranchName !== locked.mainBranchName) {
             changes.mainBranchName = body.mainBranchName;
-            await tx
-              .update(branches)
-              .set({ isMain: false })
-              .where(and(eq(branches.projectId, locked.id), eq(branches.isMain, true)));
-            await tx
-              .insert(branches)
-              .values({
-                projectId: locked.id,
-                kind: 'branch',
-                name: body.mainBranchName,
-                isMain: true,
-              })
-              .onConflictDoUpdate({
-                target: [branches.projectId, branches.kind, branches.name],
-                set: { isMain: true },
-              });
+            await switchMainBranch(tx, locked.id, body.mainBranchName);
             mainSwitched = true;
           }
           if (body.newCodeDefinition?.type === 'analysis') {
-            // gates.md §5: a newCodeDefinition of type 'analysis' is a main-branch baseline. This
-            // must run inside the lock, after any switch above, against whichever branch is main
-            // *after* this request — never the pre-switch main — so a single PATCH that both
-            // moves mainBranchName and sets newCodeDefinition can't leave the baseline pointing
-            // at a branch that is no longer main. If the (possibly just-promoted) main branch has
-            // no matching succeeded analysis yet, this fails, rolling back the whole request.
-            const [mainBranch] = await tx
-              .select({ id: branches.id })
-              .from(branches)
-              .where(and(eq(branches.projectId, locked.id), eq(branches.isMain, true)));
-            const [analysis] = mainBranch
-              ? await tx
-                  .select({ id: analyses.id })
-                  .from(analyses)
-                  .where(
-                    and(
-                      eq(analyses.id, body.newCodeDefinition.analysisId),
-                      eq(analyses.projectId, locked.id),
-                      eq(analyses.status, 'succeeded'),
-                      eq(analyses.branchId, mainBranch.id),
-                    ),
-                  )
-              : [];
-            if (!analysis) {
-              throw validationFailed([
-                {
-                  path: 'body.newCodeDefinition.analysisId',
-                  message: 'Must be a succeeded analysis on the main branch',
-                },
-              ]);
-            }
+            await requireMainBranchAnalysis(tx, locked.id, body.newCodeDefinition.analysisId);
           }
           const saved = first(
             await tx.update(projects).set(changes).where(eq(projects.id, locked.id)).returning(),
           );
-          // scm.md §8: merge request links are kept only on the mapped connection's address.
-          if (saved.scmConnectionId !== null && saved.scmConnectionId !== locked.scmConnectionId) {
-            await forgetForeignMergeRequestUrls(tx, { projectId: saved.id });
-          }
-          // AI review needs a mapped project: when the mapping goes, a job deletes the copies of
-          // its merge requests once this commits.
-          if (saved.scmConnectionId === null && locked.scmConnectionId !== null) {
-            await queueSnapshotPurge(tx, saved.organizationId);
-          }
-          // Mapped to another repository or connection, or mapped again after an unmap whose
-          // purge has not run yet: the copies of the old mapping go (R41).
-          await queueRemapPurgeIfCopies(tx, locked, saved);
+          await purgeAfterMappingChange(tx, locked, saved);
           // rbac-audit.md §8: only the fields whose value changed.
           const fieldChanges = PROJECT_CHANGE_FIELDS.filter(
             (field) => canonicalJson(locked[field]) !== canonicalJson(saved[field]),

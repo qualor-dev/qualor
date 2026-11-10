@@ -164,7 +164,8 @@ function isDbQueryError(error: unknown): error is Error {
 function errorMessage(error: unknown): string {
   if (isDbQueryError(error)) {
     const code = pgErrorCode(error);
-    return `${error.constructor.name}: database query failed${code ? ` (${code})` : ''}`;
+    const sqlstate = code ? ` (${code})` : '';
+    return `${error.constructor.name}: database query failed${sqlstate}`;
   }
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;

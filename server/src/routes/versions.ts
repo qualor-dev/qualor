@@ -110,6 +110,12 @@ function validGlob(pattern: string): boolean {
   }
 }
 
+/** Code-unit order (not locale-dependent). */
+function compare(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
 interface VersionTrack {
   row: Pick<ProjectVersionRow, 'id' | 'label' | 'source' | 'tag' | 'analyzedAt' | 'tracking'>;
   tracked: boolean;
@@ -135,10 +141,7 @@ async function trackVersions(
     .where(eq(projectVersions.projectId, projectId));
   const decisions = computeTracking(rows, settings.versionRule);
   return rows
-    .sort(
-      (a, b) =>
-        b.analyzedAt.getTime() - a.analyzedAt.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
-    )
+    .sort((a, b) => b.analyzedAt.getTime() - a.analyzedAt.getTime() || compare(b.id, a.id))
     .map((row) => {
       const decision = decisions.get(row.id);
       return { row, tracked: decision?.tracked ?? false, reason: decision?.reason ?? 'older' };
@@ -195,7 +198,7 @@ async function monitoringDto(
   const matching = branchRows
     .map((b) => b.name)
     .filter((name) => branchMatches(name, settings.branchPatterns))
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .sort(compare)
     .slice(0, LIST_LIMIT);
   return {
     ...settings,

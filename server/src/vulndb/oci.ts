@@ -131,8 +131,17 @@ type Got =
   /** No answer from `url`. */
   | { kind: 'failed'; url: URL; failed: OutboundFailed };
 
-function single(value: string | string[] | undefined): string | undefined {
+/** A response header as Node gives it: absent, once, or repeated. */
+type HeaderValue = string | string[] | undefined;
+
+function single(value: HeaderValue): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+/** Every value of a header, in order. */
+function headerValues(header: HeaderValue): string[] {
+  if (Array.isArray(header)) return header;
+  return header === undefined ? [] : [header];
 }
 
 function withHost(reason: string, host: string): string {
@@ -294,9 +303,8 @@ interface Challenge {
 }
 
 /** The first Bearer or Basic challenge of a `www-authenticate` header. */
-function parseChallenge(header: string | string[] | undefined): Challenge | null {
-  const values = Array.isArray(header) ? header : header === undefined ? [] : [header];
-  for (const value of values) {
+function parseChallenge(header: HeaderValue): Challenge | null {
+  for (const value of headerValues(header)) {
     const match = /^\s*(bearer|basic)(?:\s+(.*))?$/i.exec(value);
     if (!match) continue;
     const params: Record<string, string> = {};
@@ -314,25 +322,15 @@ function basicOf(auth: OciAuth): string | null {
   const username = auth.username ?? '';
   const password = auth.password ?? '';
   if (username === '' && password === '') return null;
-  return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+  const pair = `${username}:${password}`;
+  return `Basic ${Buffer.from(pair).toString('base64')}`;
 }
 
 /**
- * The handshake a 401 asks for: a Bearer token from the realm the challenge names (anonymous, or
- * with the credentials as HTTP Basic), or the credentials themselves for a Basic registry. Sets
- * the session's authorization; else the problem.
+ * Where to ask for a Bearer token: the challenge's realm (https, ruling R9), with its service and
+ * a pull scope for the session's repository; else the problem.
  */
-async function authorize(
-  session: Session,
-  header: string | string[] | undefined,
-): Promise<OciProblem | null> {
-  const challenge = parseChallenge(header);
-  const basic = basicOf(session.auth);
-  if (challenge?.scheme === 'basic') {
-    if (basic === null) return problem('AUTH', 'The registry needs a user and password');
-    session.authorization = basic;
-    return null;
-  }
+function tokenUrl(session: Session, challenge: Challenge | null): URL | OciProblem {
   const realm = challenge?.params.realm;
   if (realm === undefined || realm === '') {
     return problem('AUTH', 'The registry answered 401 without naming a token service');
@@ -349,6 +347,37 @@ async function authorize(
   const service = challenge?.params.service;
   if (service !== undefined && service !== '') url.searchParams.set('service', service);
   url.searchParams.set('scope', `repository:${session.ref.repository}:pull`);
+  return url;
+}
+
+/** The `token` (else `access_token`) of a token service's JSON answer; undefined without JSON. */
+function tokenIn(body: Buffer): unknown {
+  try {
+    const json = JSON.parse(body.toString('utf8')) as {
+      token?: unknown;
+      access_token?: unknown;
+    };
+    return json.token ?? json.access_token;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The handshake a 401 asks for: a Bearer token from the realm the challenge names (anonymous, or
+ * with the credentials as HTTP Basic), or the credentials themselves for a Basic registry. Sets
+ * the session's authorization; else the problem.
+ */
+async function authorize(session: Session, header: HeaderValue): Promise<OciProblem | null> {
+  const challenge = parseChallenge(header);
+  const basic = basicOf(session.auth);
+  if (challenge?.scheme === 'basic') {
+    if (basic === null) return problem('AUTH', 'The registry needs a user and password');
+    session.authorization = basic;
+    return null;
+  }
+  const url = tokenUrl(session, challenge);
+  if (isOciProblem(url)) return url;
   const got = await follow(session, url, basic, 'application/json', 'buffer', TOKEN_MAX_BYTES, {});
   if (isOciProblem(got)) return got;
   if (got.kind === 'failed') return problemOf(got.failed, got.url);
@@ -363,16 +392,7 @@ async function authorize(
   if (got.status < 200 || got.status > 299) {
     return problem('BAD_ANSWER', `The token service ${got.url.host} answered ${got.status}`);
   }
-  let token: unknown;
-  try {
-    const json = JSON.parse(got.body.toString('utf8')) as {
-      token?: unknown;
-      access_token?: unknown;
-    };
-    token = json.token ?? json.access_token;
-  } catch {
-    token = undefined;
-  }
+  const token = tokenIn(got.body);
   if (typeof token !== 'string' || !/^[\x21-\x7e]{1,65536}$/.test(token)) {
     return problem('BAD_ANSWER', `The token service ${got.url.host} answered without a token`);
   }

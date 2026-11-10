@@ -149,7 +149,8 @@ export async function storePriorityFile(
 function sourceOf(settings: VulndbSettings, dataset: PriorityDataset): 'official' | 'mirror' {
   const source = settings.source;
   if (source.kind !== 'mirror') return 'official';
-  return (dataset === 'kev' ? source.kevUrl : source.epssUrl) === null ? 'official' : 'mirror';
+  const url = dataset === 'kev' ? source.kevUrl : source.epssUrl;
+  return url === null ? 'official' : 'mirror';
 }
 
 /** One dataset's download: null when it is current or now stored, else the problem. */

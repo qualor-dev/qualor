@@ -83,6 +83,48 @@ type Candidate = {
   kind: string;
 };
 
+/** The unique index a decision of the scope's kind is upserted on: its columns and predicate. */
+function decisionConflict(kind: DecisionScope['kind']) {
+  if (kind === 'project') {
+    return {
+      target: [
+        vulnerabilityDecisions.projectId,
+        vulnerabilityDecisions.packageName,
+        vulnerabilityDecisions.vulnerabilityId,
+      ],
+      targetWhere: sql`branch_id IS NULL AND version_id IS NULL`,
+    };
+  }
+  if (kind === 'branch') {
+    return {
+      target: [
+        vulnerabilityDecisions.branchId,
+        vulnerabilityDecisions.packageName,
+        vulnerabilityDecisions.vulnerabilityId,
+      ],
+      targetWhere: sql`branch_id IS NOT NULL`,
+    };
+  }
+  return {
+    target: [
+      vulnerabilityDecisions.versionId,
+      vulnerabilityDecisions.packageName,
+      vulnerabilityDecisions.vulnerabilityId,
+    ],
+    targetWhere: sql`version_id IS NOT NULL`,
+  };
+}
+
+/** The condition that selects the rows of the scope: project-wide, a branch's or a version's. */
+function scopeCondition(scope: DecisionScope): SQL | undefined {
+  if (scope.kind === 'project') {
+    return and(isNull(vulnerabilityDecisions.branchId), isNull(vulnerabilityDecisions.versionId));
+  }
+  return scope.kind === 'branch'
+    ? eq(vulnerabilityDecisions.branchId, scope.id)
+    : eq(vulnerabilityDecisions.versionId, scope.id);
+}
+
 /**
  * Writes the decision of `input.scope` (one row per scope and pair) and applies it to the Trivy
  * issues of the pair (D4), in the caller's transaction:
@@ -156,36 +198,7 @@ export async function writeDecision(
     decidedAt: sql`now()`,
   };
   const insert = tx.insert(vulnerabilityDecisions).values(values);
-  const upsert =
-    scope.kind === 'project'
-      ? insert.onConflictDoUpdate({
-          target: [
-            vulnerabilityDecisions.projectId,
-            vulnerabilityDecisions.packageName,
-            vulnerabilityDecisions.vulnerabilityId,
-          ],
-          targetWhere: sql`branch_id IS NULL AND version_id IS NULL`,
-          set,
-        })
-      : scope.kind === 'branch'
-        ? insert.onConflictDoUpdate({
-            target: [
-              vulnerabilityDecisions.branchId,
-              vulnerabilityDecisions.packageName,
-              vulnerabilityDecisions.vulnerabilityId,
-            ],
-            targetWhere: sql`branch_id IS NOT NULL`,
-            set,
-          })
-        : insert.onConflictDoUpdate({
-            target: [
-              vulnerabilityDecisions.versionId,
-              vulnerabilityDecisions.packageName,
-              vulnerabilityDecisions.vulnerabilityId,
-            ],
-            targetWhere: sql`version_id IS NOT NULL`,
-            set,
-          });
+  const upsert = insert.onConflictDoUpdate({ ...decisionConflict(scope.kind), set });
   const decision = first(await upsert.returning());
 
   const appliedIssueIds = scope.kind === 'version' ? [] : await applyToIssues(tx, input);
@@ -366,11 +379,7 @@ async function rowOfScope(tx: Executor, input: DecisionInput): Promise<DecisionR
         eq(vulnerabilityDecisions.projectId, input.projectId),
         eq(vulnerabilityDecisions.packageName, input.packageName),
         eq(vulnerabilityDecisions.vulnerabilityId, input.vulnerabilityId),
-        scope.kind === 'project'
-          ? and(isNull(vulnerabilityDecisions.branchId), isNull(vulnerabilityDecisions.versionId))
-          : scope.kind === 'branch'
-            ? eq(vulnerabilityDecisions.branchId, scope.id)
-            : eq(vulnerabilityDecisions.versionId, scope.id),
+        scopeCondition(scope),
       ),
     )
     .for('update');

@@ -120,7 +120,10 @@ export async function exploitedDeliveries(
   return (await createDeliveries(tx, deliveries)).length;
 }
 
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const compare = (a: string, b: string): number => {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+};
 
 /**
  * The vulnerability section of the weekly digest (0.15 plan 6 C6): the High and Critical rows of

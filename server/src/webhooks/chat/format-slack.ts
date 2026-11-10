@@ -148,6 +148,9 @@ function pathAt(path: string, line: number | null): string {
   return line === null ? path : `${path}:${line}`;
 }
 
+/** Slack's bold: `*text*`. */
+const bold = (s: string): string => `*${s}*`;
+
 /** The line for the projects with nothing new; `more` when other projects are listed above it. */
 function quietLine(count: number, more: boolean): string {
   const noun = count === 1 ? 'project' : 'projects';
@@ -161,7 +164,7 @@ function vulnerabilitiesText(v: DigestVulnerabilities | undefined): string {
 
 /** C8: the digest's vulnerability section; project lines that do not fit fold into the tail. */
 function vulnerabilitiesSection(v: DigestVulnerabilities, links: ChatLinks): SlackBlock {
-  const head = `*Vulnerabilities in tracked versions*\n${vulnerabilitySummary(v, (s) => `*${s}*`)}`;
+  const head = `*Vulnerabilities in tracked versions*\n${vulnerabilitySummary(v, bold)}`;
   const all = v.projects.map((p) => {
     const name = link(vulnerabilitiesUrl(links, p.projectId), slackText(p.name, 50));
     return `• ${name} — ${vulnerabilityProjectCounts(p, slackText)}`;
@@ -181,7 +184,7 @@ function exploited(m: ChatExploitedMessage, links: ChatLinks): SlackBody {
       : projectsUrl(links);
   const sections = m.projects.map((p) => {
     const head = `*${link(vulnerabilitiesUrl(links, p.id), slackText(p.name, MAX_PROJECT_NAME))}*`;
-    const all = p.rows.map((r) => `• ${exploitedRowText(r, slackText, (s) => `*${s}*`)}`);
+    const all = p.rows.map((r) => `• ${exploitedRowText(r, slackText, bold)}`);
     // 100 is room for the "…and N more" line.
     const rows = packLines(all, [...head].length + 100);
     const more = p.more + (all.length - rows.length);

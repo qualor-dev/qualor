@@ -134,6 +134,12 @@ export function buildCycloneDxVex(doc: ExportDocument, entries: readonly VexEntr
   };
 }
 
+/** A false positive's OpenVEX impact statement: its comment, else NO_REASON without a reason. */
+function openVexImpact(e: VexEntry): string | undefined {
+  if (e.status !== 'false_positive') return undefined;
+  return e.comment ?? (e.reason === null ? NO_REASON : undefined);
+}
+
 /**
  * An OpenVEX 0.2.0 document of a target, one statement per entry. Each package purl is also a
  * product of its own: Trivy matches an SBOM's findings against the package purls, not against the
@@ -142,10 +148,7 @@ export function buildCycloneDxVex(doc: ExportDocument, entries: readonly VexEntr
 export function buildOpenVex(doc: ExportDocument, entries: readonly VexEntry[]): object {
   const product = productId(doc.project, doc.target);
   const statements = entries.map((e) => {
-    const impact =
-      e.status === 'false_positive'
-        ? (e.comment ?? (e.reason === null ? NO_REASON : undefined))
-        : undefined;
+    const impact = openVexImpact(e);
     return {
       vulnerability: { name: e.vulnerabilityId },
       ...(e.decidedAt === null ? {} : { timestamp: e.decidedAt.toISOString() }),

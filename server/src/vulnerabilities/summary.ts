@@ -6,13 +6,14 @@ import {
   isTrackedBranch,
   vulnerabilitySettings,
   vulnerabilitySettingsOf,
+  type VulnerabilitySettings,
 } from '../versions/settings';
 import { computeTracking, type TrackingReason } from '../versions/tracking';
 import { readVulndbSettings } from '../vulndb/settings';
 import { readVulndbState } from '../vulndb/state';
 import { currentDataset } from '../vulndb/store';
 import { effectiveDecisionJoin } from './decisions';
-import { projectTargets } from './targets';
+import { projectTargets, type Target } from './targets';
 
 export const SEVERITIES = ['critical', 'high', 'medium', 'low', 'unknown'] as const;
 export type VulnerabilitySeverity = (typeof SEVERITIES)[number];
@@ -111,6 +112,20 @@ const emptyCounts = (): SeverityCounts => ({ critical: 0, high: 0, medium: 0, lo
 
 const keyOf = (kind: 'branch' | 'version', id: string): string => `${kind}:${id}`;
 
+/** Code-unit order (not locale-dependent). */
+function compare(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/** A target's branch or version id. */
+const targetIdOf = (t: Target): string => (t.kind === 'branch' ? t.branchId : t.versionId);
+
+/** The later of `newest` and `checked` (absent: never checked). */
+function later(newest: Date | null, checked: Date | undefined): Date | null {
+  return checked && (newest === null || checked > newest) ? checked : newest;
+}
+
 interface CountRow extends Record<string, unknown> {
   branch_id: string | null;
   version_id: string | null;
@@ -205,10 +220,7 @@ export async function readTargetSummary(
   const decisions = computeTracking(versions, settings.versionRule);
   const untrackedVersions = versions
     .filter((v) => decisions.get(v.id)?.tracked !== true)
-    .sort(
-      (a, b) =>
-        b.analyzedAt.getTime() - a.analyzedAt.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
-    );
+    .sort((a, b) => b.analyzedAt.getTime() - a.analyzedAt.getTime() || compare(b.id, a.id));
   const trackedVersionIds = tracked.flatMap((t) => (t.kind === 'version' ? [t.versionId] : []));
   const allVersionIds = [...trackedVersionIds, ...untrackedVersions.map((v) => v.id)];
 
@@ -248,13 +260,12 @@ export async function readTargetSummary(
   let newest: Date | null = null;
   for (const target of tracked) {
     const kind = target.kind;
-    const id = target.kind === 'branch' ? target.branchId : target.versionId;
+    const id = targetIdOf(target);
     const key = keyOf(kind, id);
     const branch = target.kind === 'branch' ? branchById.get(id) : undefined;
     const version = target.kind === 'version' ? versionById.get(id) : undefined;
     if (!branch && !version) continue;
-    const checked = checkedAt.get(key);
-    if (checked && (newest === null || checked > newest)) newest = checked;
+    newest = later(newest, checkedAt.get(key));
     targets.push({
       kind,
       id,
@@ -315,16 +326,27 @@ export async function newVulnerabilityMarkers(
   );
   const settings = await vulnerabilitySettingsOf(db, projectIds);
   const on = projectIds.filter((id) => settings.get(id)?.enabled === true);
-  if (on.length === 0) return result;
+  if (on.length > 0) {
+    const candidates = await newCandidates(db, on);
+    const versionCandidates = markBranches(candidates, settings, result);
+    if (versionCandidates.size > 0) await markVersions(db, versionCandidates, settings, result);
+  }
+  return result;
+}
 
-  const candidates = await db.execute<{
-    project_id: string;
-    branch_id: string | null;
-    version_id: string | null;
-    name: string | null;
-    is_main: boolean | null;
-    kind: string | null;
-  }>(sql`
+/** A target of {@link newCandidates}: a branch (with its row) or a version. */
+type NewCandidate = {
+  project_id: string;
+  branch_id: string | null;
+  version_id: string | null;
+  name: string | null;
+  is_main: boolean | null;
+  kind: string | null;
+};
+
+/** The targets of the projects `on` with an effective-open, not ignored row that is new. */
+async function newCandidates(db: Executor, on: readonly string[]): Promise<NewCandidate[]> {
+  const candidates = await db.execute<NewCandidate>(sql`
     SELECT DISTINCT n.project_id, n.branch_id, n.version_id, b.name, b.is_main, b.kind
       FROM (
         SELECT tv.project_id, tv.branch_id, tv.version_id, tv.package_name, tv.vulnerability_id
@@ -339,9 +361,20 @@ export async function newVulnerabilityMarkers(
       ${effectiveDecisionJoin('n', 'd')}
       LEFT JOIN branches b ON b.id = n.branch_id
      WHERE COALESCE(d.status, 'open') = 'open'`);
+  return candidates.rows;
+}
 
+/**
+ * Marks main and counts the tracked branches among the candidates in `result`; answers the
+ * version candidates by project, which need the tracking rule.
+ */
+function markBranches(
+  candidates: readonly NewCandidate[],
+  settings: Map<string, VulnerabilitySettings>,
+  result: Map<string, NewMarker>,
+): Map<string, Set<string>> {
   const versionCandidates = new Map<string, Set<string>>();
-  for (const row of candidates.rows) {
+  for (const row of candidates) {
     const marker = result.get(row.project_id);
     const own = settings.get(row.project_id);
     if (!marker || !own) continue;
@@ -358,8 +391,16 @@ export async function newVulnerabilityMarkers(
       else marker.branches += 1;
     }
   }
-  if (versionCandidates.size === 0) return result;
+  return versionCandidates;
+}
 
+/** Counts in `result` the version candidates that their project's tracking rule tracks. */
+async function markVersions(
+  db: Executor,
+  versionCandidates: Map<string, Set<string>>,
+  settings: Map<string, VulnerabilitySettings>,
+  result: Map<string, NewMarker>,
+): Promise<void> {
   const versions = await db
     .select({
       id: projectVersions.id,
@@ -383,5 +424,4 @@ export async function newVulnerabilityMarkers(
     const decisions = computeTracking(byProject.get(projectId) ?? [], rule);
     for (const id of wanted) if (decisions.get(id)?.tracked === true) marker.versions += 1;
   }
-  return result;
 }

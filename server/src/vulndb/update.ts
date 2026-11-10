@@ -253,51 +253,18 @@ export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
     }
     const settings = await readVulndbSettings(deps.db);
     if (!settings.enabled) return;
-    {
-      // undefined: an uploaded file has no source to check, so the last error stays.
-      let error: LastError | null | undefined;
-      try {
-        error = settings.source.kind === 'upload' ? undefined : await checkSource(deps, settings);
-      } catch (err) {
-        // Neither the registry's answer nor a classified storage problem: log it, show a fixed text.
-        deps.logger?.warn(
-          { component: 'vulndb', errorClass: errorClass(err) },
-          'vulnerability database update failed',
-        );
-        error = problemOf('UPDATE_FAILED', 'The update failed. See the server log');
-      }
-      // The stop cut the check: what it ran into says nothing about the source.
-      if (stopping() && error !== undefined && error !== null) {
-        stopped = true;
-        deps.logger?.info(
-          { component: 'vulndb' },
-          'vulnerability database update stopped: the server is stopping',
-        );
-        return;
-      }
-      const checkedAt = now();
-      await updateVulndbState(deps.db, (state) => ({
-        ...state,
-        lastCheckAt: checkedAt.toISOString(),
-        nextCheckAt: new Date(
-          checkedAt.getTime() + settings.intervalHours * 3_600_000,
-        ).toISOString(),
-        lastError: error === undefined ? state.lastError : error,
-      }));
+    if (await checkAndRecord(deps, settings, now, stopping)) {
+      stopped = true;
+      deps.logger?.info(
+        { component: 'vulndb' },
+        'vulnerability database update stopped: the server is stopping',
+      );
+      return;
     }
     // Read once: the licence decides both the downloads and the mails of this run.
     const priority = limits().vulnerabilities.priority;
     if (priority && settings.source.kind !== 'upload') {
-      if (!stopping()) {
-        try {
-          await checkPriorityDatasets({ ...deps, now }, settings);
-        } catch (err) {
-          deps.logger?.warn(
-            { component: 'vulndb', errorClass: errorClass(err) },
-            'priority data update failed',
-          );
-        }
-      }
+      await checkPriorityLogged(deps, settings, now, stopping);
       // The stop cut KEV or EPSS: they are checked again with the next run, in a minute.
       if (stopping()) {
         stopped = true;
@@ -308,46 +275,111 @@ export async function runVulndbUpdate(deps: VulndbUpdateDeps): Promise<void> {
         return;
       }
     }
-    try {
-      await notifyIfVulndbStale({ ...deps, now });
-    } catch (err) {
-      deps.logger?.warn(
-        { component: 'vulndb', errorClass: errorClass(err) },
-        'vulnerability database stale mail failed',
-      );
-    }
-    if (priority) {
-      for (const dataset of ['kev', 'epss'] as const) {
-        try {
-          await notifyIfPriorityStale({ ...deps, now }, dataset);
-        } catch (err) {
-          deps.logger?.warn(
-            { component: 'vulndb', dataset, errorClass: errorClass(err) },
-            'priority data stale mail failed',
-          );
-        }
-      }
-    }
+    await sendStaleMails(deps, now, priority);
   } catch (err) {
     deps.logger?.warn(
       { component: 'vulndb', errorClass: errorClass(err) },
       'vulnerability database update run failed',
     );
   } finally {
+    await scheduleNext(deps, stopped);
+  }
+}
+
+/**
+ * The check of the database's source (none for an uploaded file), recorded in the state with the
+ * next check time. Answers true, recording nothing, when the server's stop cut the check.
+ */
+async function checkAndRecord(
+  deps: VulndbUpdateDeps,
+  settings: VulndbSettings,
+  now: () => Date,
+  stopping: () => boolean,
+): Promise<boolean> {
+  // undefined: an uploaded file has no source to check, so the last error stays.
+  let error: LastError | null | undefined;
+  try {
+    error = settings.source.kind === 'upload' ? undefined : await checkSource(deps, settings);
+  } catch (err) {
+    // Neither the registry's answer nor a classified storage problem: log it, show a fixed text.
+    deps.logger?.warn(
+      { component: 'vulndb', errorClass: errorClass(err) },
+      'vulnerability database update failed',
+    );
+    error = problemOf('UPDATE_FAILED', 'The update failed. See the server log');
+  }
+  // The stop cut the check: what it ran into says nothing about the source.
+  if (stopping() && error !== undefined && error !== null) return true;
+  const checkedAt = now();
+  await updateVulndbState(deps.db, (state) => ({
+    ...state,
+    lastCheckAt: checkedAt.toISOString(),
+    nextCheckAt: new Date(checkedAt.getTime() + settings.intervalHours * 3_600_000).toISOString(),
+    lastError: error === undefined ? state.lastError : error,
+  }));
+  return false;
+}
+
+/** Checks KEV and EPSS (priority/update.ts) unless the server is stopping; a failure is logged. */
+async function checkPriorityLogged(
+  deps: VulndbUpdateDeps,
+  settings: VulndbSettings,
+  now: () => Date,
+  stopping: () => boolean,
+): Promise<void> {
+  if (stopping()) return;
+  try {
+    await checkPriorityDatasets({ ...deps, now }, settings);
+  } catch (err) {
+    deps.logger?.warn(
+      { component: 'vulndb', errorClass: errorClass(err) },
+      'priority data update failed',
+    );
+  }
+}
+
+/** The database's stale mail, and with `priority` those of KEV and EPSS; a failure is logged. */
+async function sendStaleMails(
+  deps: VulndbUpdateDeps,
+  now: () => Date,
+  priority: boolean,
+): Promise<void> {
+  try {
+    await notifyIfVulndbStale({ ...deps, now });
+  } catch (err) {
+    deps.logger?.warn(
+      { component: 'vulndb', errorClass: errorClass(err) },
+      'vulnerability database stale mail failed',
+    );
+  }
+  if (!priority) return;
+  for (const dataset of ['kev', 'epss'] as const) {
     try {
-      await schedule(
-        deps.db,
-        stopped
-          ? { kind: 'boot', delaySeconds: VULNDB_BOOT_DELAY_SECONDS }
-          : { kind: 'ensure', delaySeconds: await intervalSeconds(deps.db), alsoRunning: false },
-      );
+      await notifyIfPriorityStale({ ...deps, now }, dataset);
     } catch (err) {
-      // Not retried: afterReap's ensureVulndbScheduled re-creates the run.
       deps.logger?.warn(
-        { component: 'vulndb', errorClass: errorClass(err) },
-        'vulnerability database next run not scheduled',
+        { component: 'vulndb', dataset, errorClass: errorClass(err) },
+        'priority data stale mail failed',
       );
     }
+  }
+}
+
+/** Schedules the next run: soon after a stop, else after the interval. A failure is logged. */
+async function scheduleNext(deps: VulndbUpdateDeps, stopped: boolean): Promise<void> {
+  try {
+    await schedule(
+      deps.db,
+      stopped
+        ? { kind: 'boot', delaySeconds: VULNDB_BOOT_DELAY_SECONDS }
+        : { kind: 'ensure', delaySeconds: await intervalSeconds(deps.db), alsoRunning: false },
+    );
+  } catch (err) {
+    // Not retried: afterReap's ensureVulndbScheduled re-creates the run.
+    deps.logger?.warn(
+      { component: 'vulndb', errorClass: errorClass(err) },
+      'vulnerability database next run not scheduled',
+    );
   }
 }
 

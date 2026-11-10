@@ -611,6 +611,8 @@ export async function seedDemo(base: string, credentials: SeedCredentials): Prom
   // A history from June, so the overview's charts have a shape; it leaves the September state as
   // it was: the same open issues, new code and gate.
   for (const [index, [day, version, scale, fixed, baseCount]] of PAYMENTS_HISTORY.entries()) {
+    const historyHex = hex32(`history:${day}`);
+    const revHex = hex32(`rev:${day}`);
     await upload(
       base,
       payments.token,
@@ -620,7 +622,7 @@ export async function seedDemo(base: string, credentials: SeedCredentials): Prom
         version,
         date: `${day}T09:00:00Z`,
         // A 40-character revision per day (hex32 gives 32).
-        revision: `${hex32(`history:${day}`)}${hex32(`rev:${day}`)}`.slice(0, 40),
+        revision: `${historyHex}${revHex}`.slice(0, 40),
         firstAnalysis: index === 0,
         files: [...paymentsFiles(scale), ...LEGACY_FILES],
         findings: [...PAYMENTS_FIXED.slice(0, fixed), ...PAYMENTS_BASE.slice(0, baseCount)],

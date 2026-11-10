@@ -484,11 +484,16 @@ export interface Config {
   updateCheck: { url: string };
 }
 
+/** The problems as an indented list, one per line. */
+function problemList(problems: string[]): string {
+  return problems.map((p) => `  - ${p}`).join('\n');
+}
+
 export class ConfigError extends Error {
   readonly problems: string[];
 
   constructor(problems: string[]) {
-    super(`invalid configuration:\n${problems.map((p) => `  - ${p}`).join('\n')}`);
+    super(`invalid configuration:\n${problemList(problems)}`);
     this.name = 'ConfigError';
     this.problems = problems;
   }

@@ -81,9 +81,8 @@ interface GroupRow extends Record<string, unknown> {
   total: number;
 }
 
-const SEVERITY_RANK = sql.raw(
-  `CASE severity ${SEVERITIES.map((s, i) => `WHEN '${s}' THEN ${i}`).join(' ')} END`,
-);
+const SEVERITY_WHENS = SEVERITIES.map((s, i) => `WHEN '${s}' THEN ${i}`).join(' ');
+const SEVERITY_RANK = sql.raw(`CASE severity ${SEVERITY_WHENS} END`);
 
 /** The refs of the targets, in the order given, without any that no longer exists. */
 async function refsOf(
@@ -258,6 +257,15 @@ export async function listVulnerabilities(
   return { items, total };
 }
 
+/** A decision row's scope: a branch's, a version's, or project-wide. */
+function decisionScope(d: {
+  branchId: string | null;
+  versionId: string | null;
+}): DecisionDto['scope'] {
+  if (d.branchId !== null) return 'branch';
+  return d.versionId !== null ? 'version' : 'project';
+}
+
 export async function decisionsOf(
   db: Executor,
   ids: readonly string[],
@@ -278,7 +286,7 @@ export async function decisionsOf(
       d.id,
       {
         id: d.id,
-        scope: d.branchId !== null ? 'branch' : d.versionId !== null ? 'version' : 'project',
+        scope: decisionScope(d),
         status: d.status,
         reason: d.reason as VexJustification | null,
         comment: d.comment,

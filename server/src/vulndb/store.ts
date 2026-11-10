@@ -77,6 +77,25 @@ async function writeChunk(db: Db, datasetId: string, seq: number, data: Buffer):
 }
 
 /**
+ * Writes the whole {@link CHUNK_BYTES} chunks of `parts`, numbered from `seq`. Answers what is
+ * left (one part shorter than a chunk, or none), its length, and the next number.
+ */
+async function writeFullChunks(
+  db: Db,
+  datasetId: string,
+  parts: readonly Buffer[],
+  seq: number,
+): Promise<{ parts: Buffer[]; pending: number; seq: number }> {
+  const all = Buffer.concat(parts);
+  let next = seq;
+  let at = 0;
+  for (; all.length - at >= CHUNK_BYTES; at += CHUNK_BYTES) {
+    await writeChunk(db, datasetId, next++, all.subarray(at, at + CHUNK_BYTES));
+  }
+  return { parts: at < all.length ? [all.subarray(at)] : [], pending: all.length - at, seq: next };
+}
+
+/**
  * Writes `chunks` as {@link CHUNK_BYTES} rows of a new `incomplete` dataset, hashing as it goes.
  * Answers the digest and size, or the problem (the caller deletes the dataset).
  */
@@ -114,13 +133,7 @@ async function writeChunks(
       parts.push(piece);
       pending += piece.length;
       if (pending < CHUNK_BYTES) continue;
-      const all = Buffer.concat(parts);
-      let at = 0;
-      for (; all.length - at >= CHUNK_BYTES; at += CHUNK_BYTES) {
-        await writeChunk(db, datasetId, seq++, all.subarray(at, at + CHUNK_BYTES));
-      }
-      parts = at < all.length ? [all.subarray(at)] : [];
-      pending = all.length - at;
+      ({ parts, pending, seq } = await writeFullChunks(db, datasetId, parts, seq));
     }
     if (pending > 0) await writeChunk(db, datasetId, seq++, Buffer.concat(parts));
   } finally {
@@ -129,6 +142,12 @@ async function writeChunks(
   }
   if (size === 0) return problemOf('INVALID_DATABASE', 'The file is empty');
   return { digest: `sha256:${hash.digest('hex')}`, size };
+}
+
+/** A dataset archive's entries: `trivy.db` is streamed, `metadata.json` kept, the rest skipped. */
+export function datasetEntryWant(name: string): 'keep' | 'stream' | 'skip' {
+  if (name === 'trivy.db') return 'stream';
+  return name === 'metadata.json' ? 'keep' : 'skip';
 }
 
 /** Trivy's `metadata.json`: the build time, or what is wrong with it. */
@@ -160,15 +179,11 @@ async function validate(db: Db, datasetId: string): Promise<Date | string> {
   let metadata: string | null = null;
   let dbBytes = 0;
   try {
-    await readTarGz(
-      readDatasetChunks(db, datasetId),
-      (name) => (name === 'metadata.json' ? 'keep' : name === 'trivy.db' ? 'stream' : 'skip'),
-      (entry) => {
-        // trivy.db is not read here: the reader passes over it (decompressed, never kept).
-        if (entry.want === 'stream') dbBytes = entry.size;
-        else metadata = entry.data.toString('utf8');
-      },
-    );
+    await readTarGz(readDatasetChunks(db, datasetId), datasetEntryWant, (entry) => {
+      // trivy.db is not read here: the reader passes over it (decompressed, never kept).
+      if (entry.want === 'stream') dbBytes = entry.size;
+      else metadata = entry.data.toString('utf8');
+    });
   } catch (err) {
     if (err instanceof TarError) return err.message;
     throw err;

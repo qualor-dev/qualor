@@ -528,6 +528,42 @@ async function requeue(
   });
 }
 
+/** A post's outcome, and the SCM's error when it failed on one. */
+interface PostAttempt {
+  outcome: Outcome;
+  error: ScmError | null;
+}
+
+/**
+ * One post through the connection's circuit: an open circuit fails it as unreachable. An error
+ * that is not the SCM's releases the circuit's pass and is thrown.
+ */
+async function attemptPost(
+  circuit: DecorationDeps['runtime']['circuit'],
+  connectionId: string,
+  poster: () => Promise<Outcome>,
+): Promise<PostAttempt> {
+  if (!circuit.tryPass(connectionId)) {
+    return {
+      error: new ScmError('transient', 'The SCM circuit is open'),
+      outcome: failed('unreachable'),
+    };
+  }
+  try {
+    const outcome = await poster();
+    // Any answer, a refusal included: the SCM is up.
+    circuit.success(connectionId);
+    return { outcome, error: null };
+  } catch (err) {
+    if (!(err instanceof ScmError)) {
+      circuit.release(connectionId);
+      throw err;
+    }
+    circuit.reportError(connectionId, err);
+    return { outcome: failed(reasonOf(err)), error: err };
+  }
+}
+
 async function runPost(deps: DecorationDeps, payload: AiFixPayload): Promise<void> {
   const [row] = await deps.db
     .select()
@@ -567,30 +603,13 @@ async function runPost(deps: DecorationDeps, payload: AiFixPayload): Promise<voi
     // The organisation's slots are taken: the same attempt again shortly.
     return requeue(deps, target, payload, BUSY_DEFER_SECONDS);
   }
-  let outcome: Outcome;
-  let error: ScmError | null = null;
+  let attempt: PostAttempt;
   try {
-    if (!circuit.tryPass(connection.id)) {
-      error = new ScmError('transient', 'The SCM circuit is open');
-      outcome = failed('unreachable');
-    } else {
-      try {
-        outcome = await poster();
-        // Any answer, a refusal included: the SCM is up.
-        circuit.success(connection.id);
-      } catch (err) {
-        if (!(err instanceof ScmError)) {
-          circuit.release(connection.id);
-          throw err;
-        }
-        error = err;
-        circuit.reportError(connection.id, err);
-        outcome = failed(reasonOf(err));
-      }
-    }
+    attempt = await attemptPost(circuit, connection.id, poster);
   } finally {
     slots.release(project.organizationId);
   }
+  const { outcome, error } = attempt;
   if (error !== null && retryable(error)) {
     const next = payload.attempt + 1;
     if (next < MAX_DECORATION_ATTEMPTS) {

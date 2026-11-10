@@ -778,13 +778,32 @@ function settingsFieldsChanged(
   return fields;
 }
 
+/** Code-unit order of two object keys (not locale-dependent). */
+function compareKeys(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/**
+ * What an update did to the stored API key, for the audit log (never the key): a string sets it,
+ * null (or no provider) removes a stored one, anything else keeps it.
+ */
+function apiKeyChange(
+  given: string | null | undefined,
+  providerRemoved: boolean,
+  current: StoredLlmSettings,
+): 'set' | 'removed' | 'kept' {
+  if (typeof given === 'string') return 'set';
+  return (given === null || providerRemoved) && current.provider?.apiKeyEnc ? 'removed' : 'kept';
+}
+
 /** The top-level settings keys whose JSON differs (the provider without its key envelope). */
 function changedTopLevelKeys(current: StoredLlmSettings, next: StoredLlmSettings): string[] {
   const provider = (s: StoredLlmSettings) => (s.provider ? changeableProvider(s.provider) : null);
   // Keys sorted at every level: a row read back from jsonb has another key order than a body.
   const sorted = (_key: string, value: unknown): unknown =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
-      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => compareKeys(a, b)))
       : value;
   const differs = (a: unknown, b: unknown) =>
     JSON.stringify(a, sorted) !== JSON.stringify(b, sorted);
@@ -1002,12 +1021,7 @@ export const llmSettingsRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
             target: { type: 'ai_settings', id: 'llm' },
             details: {
               changed: changedTopLevelKeys(current, next),
-              apiKey:
-                typeof given === 'string'
-                  ? 'set'
-                  : (given === null || body.provider === null) && current.provider?.apiKeyEnc
-                    ? 'removed'
-                    : 'kept',
+              apiKey: apiKeyChange(given, body.provider === null, current),
             },
           },
         ]);

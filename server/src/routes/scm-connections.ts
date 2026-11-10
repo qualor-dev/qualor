@@ -237,6 +237,85 @@ function checkedPrivateKey(raw: string): string {
   return parsed.pkcs8;
 }
 
+/** The fields an SCM connection PATCH may send. */
+interface ConnectionPatch {
+  baseUrl?: string;
+  token?: string;
+  appId?: string;
+  privateKey?: string;
+  webhookSecret?: string | null;
+  ciSetupAllowed?: boolean;
+}
+
+/** A 422 for each sent field the connection's provider does not have. */
+function checkProviderFields(body: ConnectionPatch, github: boolean): void {
+  const foreign = github
+    ? (['token', 'ciSetupAllowed'] as const)
+    : (['appId', 'privateKey'] as const);
+  const wrong = foreign.filter((f) => body[f] !== undefined);
+  if (wrong.length > 0) {
+    throw validationFailed(
+      wrong.map((f) => ({
+        path: `body.${f}`,
+        message: `Not a field of a ${github ? 'GitHub' : 'GitLab'} connection`,
+      })),
+    );
+  }
+}
+
+/** The 422 of a move of the address without the provider's credential. */
+function credentialNeeded(github: boolean): FieldError {
+  if (github) {
+    return {
+      path: 'body.privateKey',
+      message: 'Changing the address needs the private key again, in the same request',
+    };
+  }
+  return {
+    path: 'body.token',
+    message: 'Changing the base URL needs the token again, in the same request',
+  };
+}
+
+/**
+ * What a move of the address lacks: the credential (`missingCredential`, when it was not sent)
+ * and, while a webhook secret is stored, the secret again or null.
+ */
+function moveProblems(
+  body: ConnectionPatch,
+  row: ScmConnectionRow,
+  missingCredential: FieldError | null,
+): FieldError[] {
+  const missing: FieldError[] = [];
+  if (missingCredential !== null) missing.push(missingCredential);
+  if (row.webhookSecretEnc !== null && body.webhookSecret === undefined) {
+    missing.push({
+      path: 'body.webhookSecret',
+      message:
+        'Changing the address needs the webhook secret again, or null to drop it, in the same request',
+    });
+  }
+  return missing;
+}
+
+/** Sets in `changes` the stored form of each sent field besides the base URL. */
+function addFieldChanges(
+  changes: Partial<typeof scmConnections.$inferInsert>,
+  body: ConnectionPatch,
+  key: Buffer,
+): void {
+  if (body.token !== undefined) changes.tokenEnc = encryptSecret(key, body.token, SCM_TOKEN_AAD);
+  if (body.appId !== undefined) changes.appId = body.appId;
+  if (body.privateKey !== undefined) {
+    changes.tokenEnc = encryptPrivateKey(key, checkedPrivateKey(body.privateKey));
+  }
+  if (body.ciSetupAllowed !== undefined) changes.ciSetupAllowed = body.ciSetupAllowed;
+  if (body.webhookSecret !== undefined) {
+    changes.webhookSecretEnc =
+      body.webhookSecret === null ? null : encryptWebhookSecret(key, body.webhookSecret);
+  }
+}
+
 /**
  * The connection named in the path. Every route is 🛡 (scm.md §2.1), like webhooks: a missing
  * connection and one of an organisation the caller does not belong to are the same 404; a member
@@ -472,63 +551,26 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       const row = await connectionFor(accessOf(deps), principal, request.params.id);
       const body = request.body;
       const github = row.provider === 'github';
-      const foreign = github
-        ? (['token', 'ciSetupAllowed'] as const)
-        : (['appId', 'privateKey'] as const);
-      const wrong = foreign.filter((f) => body[f] !== undefined);
-      if (wrong.length > 0) {
-        throw validationFailed(
-          wrong.map((f) => ({
-            path: `body.${f}`,
-            message: `Not a field of a ${github ? 'GitHub' : 'GitLab'} connection`,
-          })),
-        );
-      }
+      checkProviderFields(body, github);
       // scm.md §2.1, github.md §2.2: stored credentials only ever serve the address they were
       // saved for. A new origin or path needs them in the same request, so no admin can redirect a
       // token or a key they were never shown (one an instance admin set up, say) to a host of
       // their choosing.
       const credential = github ? ('privateKey' as const) : ('token' as const);
       const bringsCredential = body[credential] !== undefined;
-      const needsCredential: FieldError = github
-        ? {
-            path: 'body.privateKey',
-            message: 'Changing the address needs the private key again, in the same request',
-          }
-        : {
-            path: 'body.token',
-            message: 'Changing the base URL needs the token again, in the same request',
-          };
+      const needsCredential = credentialNeeded(github);
       const changes: Partial<typeof scmConnections.$inferInsert> = {};
       let moves = false;
       if (body.baseUrl !== undefined) {
         const next = checkedBaseUrl(body.baseUrl, row.provider);
         moves = next !== row.baseUrl;
         if (moves) {
-          const missing: FieldError[] = [];
-          if (!bringsCredential) missing.push(needsCredential);
-          if (row.webhookSecretEnc !== null && body.webhookSecret === undefined) {
-            missing.push({
-              path: 'body.webhookSecret',
-              message:
-                'Changing the address needs the webhook secret again, or null to drop it, in the same request',
-            });
-          }
+          const missing = moveProblems(body, row, bringsCredential ? null : needsCredential);
           if (missing.length > 0) throw validationFailed(missing);
         }
         changes.baseUrl = next;
       }
-      if (body.token !== undefined)
-        changes.tokenEnc = encryptSecret(key, body.token, SCM_TOKEN_AAD);
-      if (body.appId !== undefined) changes.appId = body.appId;
-      if (body.privateKey !== undefined) {
-        changes.tokenEnc = encryptPrivateKey(key, checkedPrivateKey(body.privateKey));
-      }
-      if (body.ciSetupAllowed !== undefined) changes.ciSetupAllowed = body.ciSetupAllowed;
-      if (body.webhookSecret !== undefined) {
-        changes.webhookSecretEnc =
-          body.webhookSecret === null ? null : encryptWebhookSecret(key, body.webhookSecret);
-      }
+      addFieldChanges(changes, body, key);
       const updated = await deps.db.transaction(async (tx) => {
         // The checks above hold only for the row they read: the write is conditional on the
         // stored address, so an address changed by a concurrent request (with its own

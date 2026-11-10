@@ -11,6 +11,31 @@ export interface PortfolioVulnerabilityFacts {
 }
 
 /**
+ * The version and branch ids of the projects' tracked targets. Each project with targets starts at
+ * zero in `result`; one without stays null.
+ */
+async function targetIdsOf(
+  tx: Executor,
+  projectIds: readonly string[],
+  priority: boolean,
+  result: Map<string, PortfolioVulnerabilityFacts>,
+): Promise<{ versionIds: string[]; branchIds: string[] }> {
+  const versionIds: string[] = [];
+  const branchIds: string[] = [];
+  for (const [projectId, targets] of await projectTargets(tx, projectIds)) {
+    // A project with its switch off has no targets. One switched on has them too, unless it has
+    // neither a branch the server tracks nor a version: it stays null, like a project switched off.
+    if (targets.length === 0) continue;
+    result.set(projectId, { vulnerableReleases: 0, exploited: priority ? 0 : null });
+    for (const target of targets) {
+      if (target.kind === 'version') versionIds.push(target.versionId);
+      else branchIds.push(target.branchId);
+    }
+  }
+  return { versionIds, branchIds };
+}
+
+/**
  * The portfolio's two vulnerability numbers per project (plan 5, V1), current state only. An
  * open row has the effective status `open` and is not ignored.
  *
@@ -38,18 +63,7 @@ export async function portfolioVulnerabilityFacts(
   if (projectIds.length === 0) return result;
   if (!(options.instanceEnabled ?? (await readVulndbSettings(tx)).enabled)) return result;
 
-  const versionIds: string[] = [];
-  const branchIds: string[] = [];
-  for (const [projectId, targets] of await projectTargets(tx, projectIds)) {
-    // A project with its switch off has no targets. One switched on has them too, unless it has
-    // neither a branch the server tracks nor a version: it stays null, like a project switched off.
-    if (targets.length === 0) continue;
-    result.set(projectId, { vulnerableReleases: 0, exploited: options.priority ? 0 : null });
-    for (const target of targets) {
-      if (target.kind === 'version') versionIds.push(target.versionId);
-      else branchIds.push(target.branchId);
-    }
-  }
+  const { versionIds, branchIds } = await targetIdsOf(tx, projectIds, options.priority, result);
   if (versionIds.length === 0 && branchIds.length === 0) return result;
 
   const rows = await tx.execute<{ project_id: string; releases: number; exploited: number }>(sql`

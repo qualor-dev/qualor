@@ -31,7 +31,10 @@ interface Row extends Record<string, unknown> {
   target_is_version: boolean;
 }
 
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const compare = (a: string, b: string): number => {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+};
 
 /**
  * One entry per person in `watchers` (one row per watcher and project), with a section for each
@@ -57,6 +60,48 @@ export function watcherSections(
       .sort((a, b) => compare(a.name, b.name) || compare(a.id, b.id));
     return sections.length === 0 ? [] : [{ watcher, sections }];
   });
+}
+
+/** One (vulnerability, package) of a project while {@link alertRows} collects its matches. */
+interface AlertPair {
+  projectId: string;
+  row: VulnerabilityMailRow;
+  targets: Map<string, { main: boolean; version: boolean }>;
+  versions: Set<string>;
+}
+
+/** The pair of a first match; `exploited` only with `priority`. */
+function newPair(r: Row, priority: boolean): AlertPair {
+  return {
+    projectId: r.project_id,
+    row: {
+      vulnerabilityId: r.vulnerability_id,
+      severity: r.severity,
+      title: r.title,
+      exploited:
+        priority && r.kev && r.kev_date_added !== null ? { dateAdded: r.kev_date_added } : null,
+      packageName: r.package_name,
+      installedVersions: [],
+      fixedVersion: r.fixed_version,
+      targets: [],
+    },
+    targets: new Map(),
+    versions: new Set(),
+  };
+}
+
+/**
+ * The same pair can carry other matches (one per installed version): the worst severity, the
+ * first title, the highest fixed version, like the Vulnerabilities tab groups them.
+ */
+function mergeMatch(row: VulnerabilityMailRow, r: Row): void {
+  if (SEVERITIES.indexOf(r.severity) < SEVERITIES.indexOf(row.severity)) {
+    row.severity = r.severity;
+  }
+  row.title ??= r.title;
+  if (r.fixed_version !== null && (row.fixedVersion ?? '') < r.fixed_version) {
+    row.fixedVersion = r.fixed_version;
+  }
 }
 
 /**
@@ -101,48 +146,15 @@ export async function alertRows(
       LEFT JOIN project_versions v ON v.id = r.version_id
      WHERE r.eff_status = 'open' AND NOT r.ignored`);
 
-  const pairs = new Map<
-    string,
-    {
-      projectId: string;
-      row: VulnerabilityMailRow;
-      targets: Map<string, { main: boolean; version: boolean }>;
-      versions: Set<string>;
-    }
-  >();
+  const pairs = new Map<string, AlertPair>();
   for (const r of found.rows) {
     const key = `${r.project_id}\u0000${r.package_name}\u0000${r.vulnerability_id}`;
     let pair = pairs.get(key);
     if (pair === undefined) {
-      pair = {
-        projectId: r.project_id,
-        row: {
-          vulnerabilityId: r.vulnerability_id,
-          severity: r.severity,
-          title: r.title,
-          exploited:
-            options.priority && r.kev && r.kev_date_added !== null
-              ? { dateAdded: r.kev_date_added }
-              : null,
-          packageName: r.package_name,
-          installedVersions: [],
-          fixedVersion: r.fixed_version,
-          targets: [],
-        },
-        targets: new Map(),
-        versions: new Set(),
-      };
+      pair = newPair(r, options.priority);
       pairs.set(key, pair);
     } else {
-      // The same pair can carry other matches (one per installed version): the worst severity, the
-      // first title, the highest fixed version, like the Vulnerabilities tab groups them.
-      if (SEVERITIES.indexOf(r.severity) < SEVERITIES.indexOf(pair.row.severity)) {
-        pair.row.severity = r.severity;
-      }
-      pair.row.title ??= r.title;
-      if (r.fixed_version !== null && (pair.row.fixedVersion ?? '') < r.fixed_version) {
-        pair.row.fixedVersion = r.fixed_version;
-      }
+      mergeMatch(pair.row, r);
     }
     pair.versions.add(r.package_version);
     pair.targets.set(r.target_name, { main: r.target_is_main, version: r.target_is_version });

@@ -242,6 +242,13 @@ async function connectOnce(url: string): Promise<void> {
   }
 }
 
+/** Resolves `'timeout'` after `ms`; the timer does not keep the process alive. */
+function timeoutAfter(ms: number): Promise<'timeout'> {
+  return new Promise<'timeout'>((resolve) => {
+    setTimeout(() => resolve('timeout'), ms).unref();
+  });
+}
+
 /** Starts the embedded PostgreSQL and waits until it accepts connections (§5 steps 3 and 4). */
 export async function startEmbeddedPostgres(options: EmbeddedOptions): Promise<EmbeddedPostgres> {
   await mkdir(options.dataDir, { recursive: true });
@@ -325,9 +332,7 @@ async function startCluster(
         return;
       }
       child.kill('SIGINT');
-      const timer = new Promise<'timeout'>((resolve) => {
-        setTimeout(() => resolve('timeout'), stopTimeout).unref();
-      });
+      const timer = timeoutAfter(stopTimeout);
       if ((await Promise.race([exited, timer])) === 'timeout') {
         options.logger.warn(
           { component: 'postgres' },

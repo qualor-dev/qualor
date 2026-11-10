@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/p
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { Executor } from '../db/client';
-import { readDatasetChunks, type DatasetRow } from './store';
+import { datasetEntryWant, readDatasetChunks, type DatasetRow } from './store';
 import { readTarGz, TarError } from '@qualor/shared/tar';
 
 /**
@@ -133,7 +133,7 @@ async function extract(
     // Fixed target paths only: an archive entry name is never joined into a path.
     await readTarGz(
       until(readDatasetChunks(db, dataset.id), signal),
-      (n) => (n === 'trivy.db' ? 'stream' : n === 'metadata.json' ? 'keep' : 'skip'),
+      datasetEntryWant,
       async (entry) => {
         found.add(entry.name);
         if (entry.want === 'stream') {
