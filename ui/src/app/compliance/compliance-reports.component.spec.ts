@@ -212,7 +212,7 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
 
   it('creates the report of a chosen version, and shows its label in the list', async () => {
     FakeCompliance.install(server, [complianceReport({ id: OLD })]);
-    const { fixture, root } = await render({ canCreate: true });
+    const { root } = await render({ canCreate: true });
     const select = root.querySelector<HTMLSelectElement>('#compliance-target')!;
     select.selectedIndex = [...select.options].findIndex((o) => o.textContent?.trim() === '1.0.0');
     select.dispatchEvent(new Event('change'));
@@ -225,7 +225,6 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
     const [created, old] = rows(root);
     expect(created?.textContent).toContain('1.0.0');
     expect(old?.textContent).toContain('main');
-    expect(fixture.componentInstance).toBeTruthy();
   });
 
   it('says why a version cannot be reported', async () => {
@@ -240,11 +239,15 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
     server.on('POST', REPORTS, { status: 409, body: problem(409, 'MONITORING_OFF') });
     button(root, 'Create report').click();
     await flush();
-    expect(alert()).toBe('Vulnerability monitoring is off for this project');
+    expect(alert()).toBe(
+      "Vulnerability monitoring is off for this project. Switch it on in the project's settings, then create the report.",
+    );
     server.on('POST', REPORTS, { status: 409, body: problem(409, 'NOT_CHECKED') });
     button(root, 'Create report').click();
     await flush();
-    expect(alert()).toBe('This version has not been checked for vulnerabilities yet');
+    expect(alert()).toBe(
+      'This version has not been checked for vulnerabilities yet. Create the report after its first check.',
+    );
   });
 
   it('creates an organisation report with a single button', async () => {

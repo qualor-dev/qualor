@@ -112,6 +112,9 @@ describe('compliance_reports (4E-1 §1)', () => {
       tdb.db.insert(complianceReports).values(row({ status: 'failed', ...over }));
     expect(await sqlStateOf(withSbom({ sbom: Buffer.from('x') }))).toBe(PG_CHECK_VIOLATION);
     expect(await sqlStateOf(withSbom({ sbomSha256: 'a'.repeat(64) }))).toBe(PG_CHECK_VIOLATION);
+    expect(await sqlStateOf(withSbom({ sbom: Buffer.from('x'), sbomSha256: 'XYZ' }))).toBe(
+      PG_CHECK_VIOLATION,
+    );
     await withSbom({ sbom: Buffer.from('x'), sbomSha256: 'a'.repeat(64) });
   });
 

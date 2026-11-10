@@ -51,6 +51,16 @@ describe('renderPdf (4E-1 §2.5)', () => {
     expect(await textOf(await renderPdf(sampleReport()))).not.toContain('A version has no code');
   });
 
+  it('shows only the dependencies in the executive summary of a version report', async () => {
+    const whole = (await textOf(await renderPdf(versionReport()))).replace(/\s+/g, ' ');
+    const text = whole.slice(whole.indexOf('Executive summary'), whole.indexOf(' Projects '));
+    expect(text).toContain('Dependencies');
+    expect(text).not.toContain('All findings');
+    expect(text).not.toContain('Open secrets');
+    expect(text).not.toContain('Open findings in new code');
+    expect(await textOf(await renderPdf(sampleReport()))).toContain('All findings');
+  });
+
   it('lists the dataset dates on the cover', async () => {
     const text = await textOf(await renderPdf(dependencyReport()));
     expect(text).toContain('Vulnerability database built');

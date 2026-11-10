@@ -138,7 +138,16 @@ async function executiveSummary(layout: Layout, report: ReportJson): Promise<voi
       ...severityColumns,
     ],
     [
-      ['All findings', `${summary.findings.total}`, ...severityCells(summary.findings.bySeverity)],
+      // A version has no code analysis: only its dependencies count.
+      ...(report.scope.version
+        ? []
+        : [
+            [
+              'All findings',
+              `${summary.findings.total}`,
+              ...severityCells(summary.findings.bySeverity),
+            ],
+          ]),
       [
         'Dependencies',
         `${summary.dependencies.open}`,
@@ -147,8 +156,12 @@ async function executiveSummary(layout: Layout, report: ReportJson): Promise<voi
     ],
   );
   layout.fields([
-    ['Open findings in new code', `${summary.findings.inNewCode}`],
-    ['Open secrets', `${summary.secrets.open}`],
+    ...(report.scope.version
+      ? []
+      : ([
+          ['Open findings in new code', `${summary.findings.inNewCode}`],
+          ['Open secrets', `${summary.secrets.open}`],
+        ] as [string, string][])),
     ['Triaged as false positive', `${summary.triage.falsePositive}`],
     ["Triaged as won't fix", `${summary.triage.wontFix}`],
   ]);

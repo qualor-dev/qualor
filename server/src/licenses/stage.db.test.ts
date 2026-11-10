@@ -8,6 +8,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { engine, file, reportWith, type ReportParts } from '../../test/reports';
+import { mainBranchId } from '../../test/issues';
 import { collectCompliance } from '../compliance/collect';
 import {
   analyses,
@@ -793,12 +794,14 @@ describe('licence policy stage (6M §6)', () => {
       const p = await h.project('licenses/compliance');
       await p.ingestOk(report(p, parts(DEPS)));
       expect(await licenceIssues(p)).toHaveLength(1);
+      const branchId = await mainBranchId(h.ctx.db, p.id);
       const collect = async () => {
         const [row] = await h.ctx.db
           .insert(complianceReports)
           .values({
             organizationId: h.organizationId,
             projectId: p.id,
+            branchId,
             scope: 'project',
             createdByName: 'A',
             standards: [],

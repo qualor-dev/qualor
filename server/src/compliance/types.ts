@@ -123,7 +123,10 @@ export interface ComplianceSource {
   };
   projects: ComplianceProjectSource[];
   groups: ComplianceFindingGroup[];
-  /** At most limit + 1 rows, sorted (severityRank, project key, path, line, id). */
+  /**
+   * At most limit + 1 rows. A branch report sorts by (severityRank, project key, path, line, id);
+   * a version report by (severity rank, vulnerability id, package, version, row id).
+   */
   findings: ComplianceFindingRow[];
   /** At most limit + 1 rows, newest decision first. */
   triage: ComplianceTriageRow[];

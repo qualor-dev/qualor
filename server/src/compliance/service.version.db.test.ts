@@ -2,7 +2,9 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   ADMIN_PASSWORD,
+  addMember,
   createProject,
+  createUser,
   login,
   type Session,
   type TestContext,
@@ -10,6 +12,7 @@ import {
 import { rbacContext } from '../../test/rbac';
 import { seedCheck } from '../../test/vulnerabilities';
 import { auditEvents, projectVersions, projectVulnerabilitySettings } from '../db/schema';
+import { writeVulndbSettings } from '../vulndb/settings';
 import type { ComplianceReportView, QualorPlugin } from '../plugins/contract';
 
 const STANDARDS = [{ id: 'cwe-top25-2025', version: '2025', sourceSha256: 'a'.repeat(64) }];
@@ -94,6 +97,31 @@ describe('ctx.compliance.create for a version (0.15 plan 5, V12)', () => {
     const res = await post({ projectId: app.id, versionId });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toMatchObject({ code: 'NOT_CHECKED' });
+  });
+
+  it('refuses a caller without project.compliance.create with the existing 403', async () => {
+    const user = await createUser(ctx, { username: 'plain-member' });
+    await addMember(ctx, org, user.id, 'member');
+    const member = await login(ctx, user.username, user.password);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/ee/t/reports',
+      headers: member.headers,
+      payload: { projectId: app.id, versionId },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('refuses with 409 MONITORING_OFF while the instance switch is off', async () => {
+    await writeVulndbSettings(ctx.db, { enabled: false }, 'k');
+    try {
+      const res = await post({ projectId: app.id, versionId });
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({ code: 'MONITORING_OFF' });
+    } finally {
+      await writeVulndbSettings(ctx.db, { enabled: true }, 'k');
+    }
   });
 
   it('creates the report of a checked version, once while it is pending', async () => {

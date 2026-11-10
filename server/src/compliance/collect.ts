@@ -12,6 +12,7 @@ import {
 } from '../db/schema';
 import { effectiveDecisionJoin, type VexJustification } from '../vulnerabilities/decisions';
 import { projectTargets } from '../vulnerabilities/targets';
+import { vulnerabilitySettings } from '../versions/settings';
 import { scopedRows } from '../vulnerabilities/summary';
 import { readVulndbSettings } from '../vulndb/settings';
 import { readPriorityState } from '../vulndb/priority/state';
@@ -222,6 +223,9 @@ export async function collectCompliance(
         if (!project) throw new ComplianceCollectError('the report no longer exists');
         if (!monitoring) {
           throw new ComplianceCollectError('vulnerability monitoring is off on this server');
+        }
+        if (!(await vulnerabilitySettings(tx, project.id)).enabled) {
+          throw new ComplianceCollectError('Vulnerability monitoring is off for this project');
         }
         return versionSource(tx, {
           versionId: report.versionId,

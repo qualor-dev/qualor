@@ -1,5 +1,5 @@
 {
-  "id": "7c2fa606-50c5-4aca-a3bf-cbf9824521a8",
+  "id": "2e732ba2-cc8f-47c5-bc72-80bb847a4e80",
   "prevId": "6d4d84f7-a0b0-4cf1-afc3-f0e137b2b168",
   "version": "7",
   "dialect": "postgresql",
@@ -1701,6 +1701,10 @@
         "compliance_reports_target_check": {
           "name": "compliance_reports_target_check",
           "value": "branch_id IS NULL OR version_id IS NULL"
+        },
+        "compliance_reports_sbom_sha256_format": {
+          "name": "compliance_reports_sbom_sha256_format",
+          "value": "sbom_sha256 IS NULL OR sbom_sha256 ~ '^[0-9a-f]{64}$'"
         },
         "compliance_reports_sbom_check": {
           "name": "compliance_reports_sbom_check",

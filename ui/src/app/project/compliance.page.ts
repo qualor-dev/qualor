@@ -16,8 +16,8 @@ const VERSION_LIMIT = 100;
 
 /**
  * A project's Compliance tab (4E-1 §4, feature `compliance-export`): its compliance reports, and
- * **Create report** of one of its branches or versions for a holder of `project.compliance.create`. The tab
- * is listed only while the feature is active; a direct address after a lapse says so instead of
+ * **Create report** of one of its branches or versions for a holder of
+ * `project.compliance.create`. The tab is listed only while the feature is active; a direct address after a lapse says so instead of
  * asking the enterprise API.
  */
 @Component({

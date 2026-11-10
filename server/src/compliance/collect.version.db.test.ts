@@ -14,6 +14,7 @@ import {
   branches,
   complianceReports,
   projectVersions,
+  projectVulnerabilitySettings,
   users,
   vulnerabilityDecisions,
   vulnerabilityEpss,
@@ -268,11 +269,12 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
   });
 
   it('caps the lists at limit + 1', async () => {
-    const s = await collectCompliance(ctx.db, await newReport(), { limit: 1 });
-    expect(s.findings).toHaveLength(2);
-    expect(s.triage).toHaveLength(2);
-    const none = await collectCompliance(ctx.db, await newReport(), { limit: 0 });
-    expect(none.findings).toHaveLength(1);
+    // The version has 2 open rows and 2 triaged ones: a limit of 0 keeps one of each.
+    const s = await collectCompliance(ctx.db, await newReport(), { limit: 0 });
+    expect(s.findings).toHaveLength(1);
+    expect(s.triage).toHaveLength(1);
+    const all = await collectCompliance(ctx.db, await newReport(), { limit: 100 });
+    expect([all.findings.length, all.triage.length]).toEqual([2, 2]);
   });
 
   it('names the datasets as a branch report does', async () => {
@@ -288,6 +290,21 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
       );
     } finally {
       await writeVulndbSettings(ctx.db, { enabled: true }, 'k');
+    }
+  });
+
+  it('refuses to build a version report while monitoring is off for the project', async () => {
+    await ctx.db
+      .insert(projectVulnerabilitySettings)
+      .values({ projectId: project.id, enabled: false });
+    try {
+      await expect(collectCompliance(ctx.db, await newReport(), { limit: 10 })).rejects.toThrow(
+        'Vulnerability monitoring is off for this project',
+      );
+    } finally {
+      await ctx.db
+        .delete(projectVulnerabilitySettings)
+        .where(eq(projectVulnerabilitySettings.projectId, project.id));
     }
   });
 

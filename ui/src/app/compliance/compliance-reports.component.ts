@@ -60,8 +60,8 @@ const STANDARD_TITLES: Readonly<Record<string, string>> = {
 /**
  * Compliance reports (4E-1 §4), of a project (its Compliance tab) or of an organisation (Settings →
  * Compliance reports): the list, newest first, polled every 3 s while a report is being built;
- * **Create report** for those who may (a branch or a version to choose for a project); a ready report's JSON,
- * CSV and PDF as plain download links, as the audit log exports; its sha256 to copy; Delete when
+ * **Create report** for those who may (a branch or a version to choose for a project); a ready
+ * report's JSON, CSV and PDF as plain download links, as the audit log exports; its sha256 to copy; Delete when
  * the server says the caller may; and a ready report's summary, by standard. The pages around it
  * check the licence; the server decides every action.
  */
@@ -264,10 +264,10 @@ export class ComplianceReportsComponent {
       return $localize`:@@compliance.noAnalysis:This branch has no successful analysis yet. Analyze it first, then create the report.`;
     }
     if (err instanceof ApiError && err.code === 'MONITORING_OFF') {
-      return $localize`:@@compliance.monitoringOff:Vulnerability monitoring is off for this project`;
+      return $localize`:@@compliance.monitoringOff:Vulnerability monitoring is off for this project. Switch it on in the project's settings, then create the report.`;
     }
     if (err instanceof ApiError && err.code === 'NOT_CHECKED') {
-      return $localize`:@@compliance.notChecked:This version has not been checked for vulnerabilities yet`;
+      return $localize`:@@compliance.notChecked:This version has not been checked for vulnerabilities yet. Create the report after its first check.`;
     }
     return problemMessage(err);
   }

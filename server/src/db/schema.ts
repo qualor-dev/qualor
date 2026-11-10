@@ -1550,6 +1550,10 @@ export const complianceReports = pgTable(
       sql`(scope = 'project' AND project_id IS NOT NULL) OR (scope = 'organization' AND project_id IS NULL)`,
     ),
     check('compliance_reports_target_check', sql`branch_id IS NULL OR version_id IS NULL`),
+    check(
+      'compliance_reports_sbom_sha256_format',
+      sql`sbom_sha256 IS NULL OR sbom_sha256 ~ '^[0-9a-f]{64}$'`,
+    ),
     check('compliance_reports_sbom_check', sql`(sbom IS NULL) = (sbom_sha256 IS NULL)`),
     check('compliance_reports_status_check', sql`status IN ('pending','ready','failed')`),
     check(
