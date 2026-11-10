@@ -121,6 +121,7 @@ describe('buildSpdxSbom', () => {
     expect(s.spdxVersion).toBe('SPDX-2.3');
     expect(s.dataLicense).toBe('CC0-1.0');
     expect(s.SPDXID).toBe('SPDXRef-DOCUMENT');
+    expect(s.creationInfo.created).toBe('2026-11-10T08:30:15Z');
     expect(s.creationInfo.creators).toEqual(['Tool: Qualor-0.15.0']);
     expect(s.documentNamespace).toBe(`https://qualor.dev/spdx/acme-web/release%2F2.x/${SERIAL}`);
     const other = buildSpdxSbom(doc({ serial: 'b0a8a1de-6c0b-4d8f-9b58-0d1d3f3b4a11' }), PACKAGES);
