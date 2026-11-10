@@ -39,6 +39,7 @@ export interface UntrackedVersion {
   name: string;
   tracking: 'auto' | 'pinned' | 'unsupported';
   trackingReason: TrackingReason;
+  hasInventory: boolean;
   /** From the rows the version kept when it stopped being tracked. */
   counts: SeverityCounts;
   exploited: number | null;
@@ -269,6 +270,7 @@ export async function readTargetSummary(
     name: v.label,
     tracking: v.tracking,
     trackingReason: decisions.get(v.id)?.reason ?? 'older',
+    hasInventory: v.hasInventory,
     ...factsOf(keyOf('version', v.id)),
   }));
   return {

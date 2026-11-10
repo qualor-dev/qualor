@@ -5880,6 +5880,7 @@ export interface paths {
                                 tracking: "auto" | "pinned" | "unsupported";
                                 /** @enum {string} */
                                 trackingReason: "pinned" | "unsupported" | "prerelease" | "newest_in_line" | "replaced" | "older_line" | "recent" | "older" | "rule_all" | "rule_none";
+                                hasInventory: boolean;
                                 counts: {
                                     critical: number;
                                     high: number;

@@ -71,6 +71,7 @@ const untrackedSchema = z.object({
   name: z.string(),
   tracking: trackingSchema,
   trackingReason: z.enum(TRACKING_REASONS),
+  hasInventory: z.boolean(),
   /** The rows the version kept when it stopped being tracked. */
   counts: countsSchema,
   exploited: z.number().int().nullable(),

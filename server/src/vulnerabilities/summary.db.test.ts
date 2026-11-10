@@ -302,6 +302,23 @@ describe('the Vulnerabilities tab: target summary', () => {
     ]);
   });
 
+  it('reports hasInventory for an untracked version', async () => {
+    const { projectId, branch, version } = await setup({ versionRule: 'lines', versionLines: 1 });
+    await branch('main', true);
+    await version('2.0.0', 2);
+    const old = await version('1.0.0', 1);
+    const older = await version('0.9.0', 0);
+    await t.db
+      .update(projectVersions)
+      .set({ hasInventory: true })
+      .where(eq(projectVersions.id, old));
+    const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
+    expect(summary.untracked.map((x) => [x.id, x.hasInventory])).toEqual([
+      [old, true],
+      [older, false],
+    ]);
+  });
+
   it('answers off when the project switch is off, and still counts the versions', async () => {
     const { projectId, branch, version } = await setup({ enabled: false });
     await branch('main', true);

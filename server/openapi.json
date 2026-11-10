@@ -11646,6 +11646,9 @@
                               "rule_none"
                             ]
                           },
+                          "hasInventory": {
+                            "type": "boolean"
+                          },
                           "counts": {
                             "type": "object",
                             "properties": {
@@ -11714,6 +11717,7 @@
                           "name",
                           "tracking",
                           "trackingReason",
+                          "hasInventory",
                           "counts",
                           "exploited",
                           "checkedAt"
