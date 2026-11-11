@@ -1,13 +1,16 @@
 # Qualor
 
-**Code quality, AI code review and dependency vulnerability tracking in one self-hosted server.**
-One install, one UI and one set of users instead of SonarQube, an AI reviewer and Dependency-Track.
-It is free, with no lines-of-code licence.
+**The self-hosted SonarQube alternative: every merge request checked, with no per-line licence.**
+Quality gates, coverage and security rules on GitLab and GitHub, plus an AI reviewer on your own
+model. Open source and free for commercial use. Leaving SonarQube? Your gates, profiles and triage
+decisions come with you: see [Migrating from SonarQube](#migrating-from-sonarqube).
 
 [Documentation](https://qualor.dev/docs) · [Live demo](https://review.qualor.dev) ·
 [Docker Hub](https://hub.docker.com/u/qualor) ·
 [GitLab CI/CD component](https://gitlab.com/qualor/qualor) ·
 [GitHub Action](https://github.com/qualor-dev/scan-action)
+
+Star the repository to find it again.
 
 <p align="center">
   <img src="docs/screenshots/overview.png" width="100%" alt="A project's overview in Qualor's dark theme: the quality gate that failed and the condition that failed it, the new-code measures, coverage, issues, duplication, lines of code and ratings with their trends, the history of open issues by severity, and the open issues by severity and software quality">
