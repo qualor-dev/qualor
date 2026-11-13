@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-11-13
+
 ### Changed
 
 - When **Add repositories** cannot set up CI, the server log line

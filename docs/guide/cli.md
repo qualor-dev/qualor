@@ -39,11 +39,11 @@ as a [version](./releases.md) instead.
 
 The GitLab report paths must be inside the working directory.
 
-**Versions.** The first line is the scanner's version (`qualor 0.15.0 (linux-x64)`). With a server
-configured, it then logs the server's (`server https://qualor.example.com runs Qualor 0.15.0`). If
+**Versions.** The first line is the scanner's version (`qualor 0.15.1 (linux-x64)`). With a server
+configured, it then logs the server's (`server https://qualor.example.com runs Qualor 0.15.1`). If
 the two are different releases (`0.3` against `0.4`), it warns and names the scanner tag that
 matches the server. If the server knows of a newer release (its
-[update check](./telemetry.md#update-check)), the scanner logs `Qualor 0.15.0 is available …` and
+[update check](./telemetry.md#update-check)), the scanner logs `Qualor 0.15.1 is available …` and
 the tag to move to. This check never fails a scan. A server that does not answer it is noted only in
 the debug log.
 

@@ -28,7 +28,7 @@ In the repository or the organisation, open **Settings → Secrets and variables
 | Secret | `QUALOR_TOKEN` | the token |
 
 To run [without the Action](#without-the-action-your-own-image-or-a-mirror), also add the variable
-`QUALOR_SCANNER_IMAGE`, such as `qualor/scanner:0.15` or `qualor/scanner:0.15.0`. For C#, add
+`QUALOR_SCANNER_IMAGE`, such as `qualor/scanner:0.15` or `qualor/scanner:0.15.1`. For C#, add
 `QUALOR_SCANNER_DOTNET_IMAGE` with `qualor/scanner-dotnet:0.15` instead.
 
 ## 2. The workflow
@@ -79,7 +79,7 @@ writes a file, such as `--output`, needs a path under `/tmp`.
 
 On a tag push, the scan records a [version](./releases.md) instead, and applies no quality gate.
 
-The Action's version follows Qualor's. `@v0.15.0` runs `qualor/scanner:0.15.0`, `@v0.15` follows the
+The Action's version follows Qualor's. `@v0.15.1` runs `qualor/scanner:0.15.1`, `@v0.15` follows the
 0.15 patch releases, and `@v0` follows the latest release. Use the version of your Qualor server, or
 pin a full version to control every update.
 
