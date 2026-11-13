@@ -17,6 +17,7 @@ import {
   githubRateLimit,
   GITHUB_SHAPES,
   GITHUB_TEXT,
+  githubRoute,
   hasNextPage,
   MAX_THREAD_PAGES,
   RESOLVE_THREAD_MUTATION,
@@ -1882,5 +1883,69 @@ describe('recorded shapes', () => {
     expect(reply['id']).not.toBe(first['id']);
     expect(reply['node_id']).not.toBe(first['node_id']);
     expect(reply['path']).toBe(first['path']);
+  });
+});
+
+describe('githubRoute: a request as a fixed text for the logs', () => {
+  it('names every value Qualor put in the path, and drops the query', () => {
+    const sha = 'a'.repeat(40);
+    const cases: [string, string, string][] = [
+      ['GET', '/repos/jane/site', 'GET /repos/{owner}/{repo}'],
+      [
+        'GET',
+        '/repos/jane/site/actions/organization-secrets?per_page=100&page=1',
+        'GET /repos/{owner}/{repo}/actions/organization-secrets',
+      ],
+      [
+        'GET',
+        '/repos/jane/site/actions/secrets/public-key',
+        'GET /repos/{owner}/{repo}/actions/secrets/public-key',
+      ],
+      [
+        'PUT',
+        '/repos/jane/site/actions/secrets/QUALOR_TOKEN',
+        'PUT /repos/{owner}/{repo}/actions/secrets/{name}',
+      ],
+      [
+        'GET',
+        '/repos/jane/site/git/ref/heads/qualor/setup',
+        'GET /repos/{owner}/{repo}/git/ref/heads/{branch}',
+      ],
+      ['POST', '/repos/jane/site/git/refs', 'POST /repos/{owner}/{repo}/git/refs'],
+      ['GET', '/repos/jane/site/contents', 'GET /repos/{owner}/{repo}/contents'],
+      [
+        'PUT',
+        '/repos/jane/site/contents/.github/workflows/qualor.yml',
+        'PUT /repos/{owner}/{repo}/contents/{path}',
+      ],
+      [
+        'GET',
+        '/repos/jane/site/pulls?state=open&head=jane%3Aqualor%2Fsetup',
+        'GET /repos/{owner}/{repo}/pulls',
+      ],
+      [
+        'POST',
+        '/repos/jane/site/pulls/12/comments/345/replies',
+        'POST /repos/{owner}/{repo}/pulls/{id}/comments/{id}/replies',
+      ],
+      [
+        'GET',
+        `/repos/jane/site/commits/${sha}/check-runs?check_name=qualor%2Fsite`,
+        'GET /repos/{owner}/{repo}/commits/{sha}/check-runs',
+      ],
+      [
+        'GET',
+        '/repos/jane/site/collaborators/bob/permission',
+        'GET /repos/{owner}/{repo}/collaborators/{login}/permission',
+      ],
+      ['POST', '/app/installations/42/access_tokens', 'POST /app/installations/{id}/access_tokens'],
+      ['GET', '/installation/repositories?per_page=100&page=2', 'GET /installation/repositories'],
+    ];
+    for (const [method, target, route] of cases) {
+      expect(githubRoute(method as 'GET', target)).toBe(route);
+    }
+    expect(githubRoute('POST', new URL('https://ghe.example.com/api/graphql'))).toBe(
+      'POST /api/graphql',
+    );
   });
 });

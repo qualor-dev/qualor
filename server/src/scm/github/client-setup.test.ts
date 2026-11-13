@@ -231,6 +231,11 @@ describe('GitHub client: files, pull requests and Actions secrets (onboarding)',
         }),
       );
       expect(refused.status).toBe(422);
+      // The error names the request, with no name of the repository, the file or the branch.
+      expect(refused.request).toBe('PUT /repos/{owner}/{repo}/contents/{path}');
+      expect(JSON.stringify(refused)).toContain(
+        '"request":"PUT /repos/{owner}/{repo}/contents/{path}"',
+      );
     });
 
     it('sends the sha of the file it replaces', async () => {
@@ -265,7 +270,11 @@ describe('GitHub client: files, pull requests and Actions secrets (onboarding)',
           message: 'm',
         }),
       );
-      expect(refused).toMatchObject({ kind: 'auth', status: 403 });
+      expect(refused).toMatchObject({
+        kind: 'auth',
+        status: 403,
+        request: 'PUT /repos/{owner}/{repo}/contents/{path}',
+      });
     });
   });
 

@@ -1312,6 +1312,7 @@
     "addRepos.error.projectGone": "The project was deleted.",
     "addRepos.error.rateLimited": "{$provider} is rate limiting Qualor. Try again later.",
     "addRepos.error.unavailable": "{$provider} could not be reached. Try again later.",
+    "addRepos.error.refusedRead": "{$provider} refused a request to read the repository.",
     "addRepos.error.refused": "{$provider} refused the change.",
     "addRepos.error.badAnswer": "The answer of {$provider} was not understood.",
     "addRepos.error.budget": "Qualor needed too many requests to {$provider} for this repository.",

@@ -373,5 +373,6 @@ That includes discussions on issues that pass the gate, and the open discussions
 | Comments on merge requests, but no commit status on the default branch | the token's role is below Maintainer, and the branch is protected. Give the token the Maintainer role |
 | `@0.15` component not found on self-managed GitLab | the copy is not a CI/CD catalog project with a release. Use `@0.15.0`, or see [On self-managed GitLab](#on-self-managed-gitlab) |
 | Comments but no links | `QUALOR_PUBLIC_URL` is not set on the server |
+| **Add repositories** says "GitLab refused the change" or "GitLab refused a request to read the repository" | GitLab rejected a request. The server log's `repository setup could not set up CI` line gives the step (`read`, `branch`, `files`, `secret`, `variables` or `merge_request`), the request, such as `POST /projects/{id}/repository/commits`, and GitLab's HTTP status. Fix the cause, then choose **Try again** |
 
 More in [Troubleshooting](./troubleshooting.md).

@@ -104,6 +104,10 @@ export function errorText(item: RunItem, provider: string | null): string {
     case 'unavailable':
       return $localize`:@@addRepos.error.unavailable:${who}:provider: could not be reached. Try again later.`;
     case 'refused':
+      // The server's text tells a refused read (before any change) from a refused change.
+      if (error.message.startsWith('The provider refused a request to read')) {
+        return $localize`:@@addRepos.error.refusedRead:${who}:provider: refused a request to read the repository.`;
+      }
       return $localize`:@@addRepos.error.refused:${who}:provider: refused the change.`;
     case 'bad_answer':
       return $localize`:@@addRepos.error.badAnswer:The answer of ${who}:provider: was not understood.`;

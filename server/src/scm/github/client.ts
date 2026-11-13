@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { outboundRequest, type OutboundResult, type Resolver } from '../../http/outbound';
 import { VERSION } from '../../index';
 import { MAX_RETRY_AFTER_SECONDS } from '../gitlab/client';
-import { ScmError, type Paged } from '../provider';
+import { namedRequest, ScmError, type Paged } from '../provider';
 import { scmRefusedAddress } from '../url';
 import {
   appJwt,
@@ -611,6 +611,25 @@ type Auth = 'app' | 'installation';
 type Method = 'GET' | 'POST' | 'PATCH' | 'PUT';
 /** A path under the connection's base URL (REST), or an absolute URL beside it (GraphQL). */
 type Target = string | URL;
+
+/**
+ * A request as a fixed text for the logs ({@link ScmError.request}): the method and the path
+ * without its query, each value Qualor put in it replaced by its name (the repository, a file's
+ * path, a branch, a secret's name, a login, a sha, an id).
+ */
+export function githubRoute(method: Method, target: Target): string {
+  const [path = ''] = (typeof target === 'string' ? target : target.pathname).split('?');
+  const route = path
+    .replace(/^\/repos\/[^/]+\/[^/]+/, '/repos/{owner}/{repo}')
+    .replace(/\/contents\/.+$/, '/contents/{path}')
+    .replace(/\/git\/ref\/heads\/.+$/, '/git/ref/heads/{branch}')
+    .replace(/\/collaborators\/[^/]+/, '/collaborators/{login}')
+    .replace(/\/actions\/secrets\/(?!public-key$)[^/]+$/, '/actions/secrets/{name}')
+    .replace(/\/(?:[0-9a-f]{64}|[0-9a-f]{40})(?=\/|$)/g, '/{sha}')
+    .replace(/\/\d+(?=\/|$)/g, '/{id}');
+  return `${method} ${route}`;
+}
+
 interface CallOptions {
   /**
    * Paced as a mutation. By default every method but GET is one; a GraphQL query is a POST that
@@ -828,12 +847,27 @@ export class GitHubClient {
     );
   }
 
+  /** One request; its error names it ({@link githubRoute}). */
   private async call(
     method: Method,
     target: Target,
     auth: Auth,
     body?: unknown,
     options: CallOptions = {},
+  ): Promise<{ headers: IncomingHttpHeaders; json: unknown }> {
+    try {
+      return await this.callOnce(method, target, auth, body, options);
+    } catch (err) {
+      throw namedRequest(err, githubRoute(method, target));
+    }
+  }
+
+  private async callOnce(
+    method: Method,
+    target: Target,
+    auth: Auth,
+    body: unknown,
+    options: CallOptions,
   ): Promise<{ headers: IncomingHttpHeaders; json: unknown }> {
     if (this.requestCount >= this.maxRequests) {
       throw new ScmError('budget', GITHUB_TEXT.budget, { reason: 'budget' });
@@ -1026,6 +1060,7 @@ export class GitHubClient {
           {
             status: err.status,
             reason: 'permission_missing',
+            request: err.request,
           },
         );
       }

@@ -528,11 +528,15 @@ describe('the repository-setup run', () => {
         error: { code: 'refused', message: 'The provider refused the change' },
       });
       expect(JSON.stringify(one)).not.toContain('ghp_');
-      // The job logs through the captured logger, with the error's kind and never its words.
+      // The job logs through the captured logger, with the error's kind and never its words: the
+      // step and the request that failed, as fixed texts without the repository's names.
       const lines = h.ctx.logs.filter((l) => l.includes('repository setup could not set up CI'));
       expect(lines).toHaveLength(1);
       expect(lines[0]).toContain('"kind":"refused"');
+      expect(lines[0]).toContain('"step":"files"');
+      expect(lines[0]).toContain('"request":"PUT /repos/{owner}/{repo}/contents/{path}"');
       expect(lines[0]).not.toContain('ghp_');
+      expect(lines[0]).not.toContain('eps/one');
       expect(two).toMatchObject({ projectOutcome: 'created', ciOutcome: 'merge_request' });
       expect(fake.branchSha(1000, BRANCH)).not.toBeNull();
       expect(fake.openedPulls.map((p) => p.repoId)).toEqual([1001]);
@@ -705,6 +709,36 @@ describe('the repository-setup run', () => {
       });
       expect(fake.openedPulls.map((p) => p.repoId)).toEqual([1000]);
       expect([...fake.actionsSecrets.keys()]).toEqual(['1000|QUALOR_TOKEN']);
+    });
+
+    it('says a read was refused when GitHub refuses one before the change, and logs which', async () => {
+      const fake = await github([
+        { owner: 'zeta', name: 'read', installationId: 32, permissions: ALL },
+      ]);
+      const connectionId = await connectGitHub(fake);
+      fake.inject('GET', /^\/repos\/zeta\/read\/actions\/secrets\/QUALOR_TOKEN$/, {
+        status: 422,
+        body: { message: 'Validation Failed' },
+      });
+      const runId = await start({ connectionId, repositories: ['zeta/read'], ciSetup: true });
+      await runSetups();
+      const [item] = (await read(runId)).items;
+      expect(item).toMatchObject({
+        projectOutcome: 'created',
+        ciOutcome: 'failed',
+        error: {
+          code: 'refused',
+          message: 'The provider refused a request to read the repository',
+        },
+      });
+      const lines = h.ctx.logs.filter(
+        (l) => l.includes('repository setup could not set up CI') && l.includes('"status":422'),
+      );
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('"step":"read"');
+      expect(lines[0]).toContain('"request":"GET /repos/{owner}/{repo}/actions/secrets/{name}"');
+      expect(lines[0]).not.toContain('Validation Failed');
+      expect(githubWrites(fake.requests)).toEqual([]);
     });
 
     it('fails a repository the App cannot see, and goes on with the others', async () => {

@@ -125,6 +125,14 @@ const PERMISSION_TEXT = {
   github: 'The GitHub App needs Contents, Workflows and Secrets write',
   gitlab: 'The GitLab token needs the api scope and the Maintainer role',
 } as const;
+/** A refusal (`refused`) of a request that only reads, before CI setup changes anything. */
+const REFUSED_READ_TEXT = 'The provider refused a request to read the repository';
+
+/**
+ * What CI setup was doing when the provider failed, for the log line: reading the repository,
+ * the branch, the files, the token's secret, the variables (GitLab), the merge request.
+ */
+type CiStep = 'read' | 'branch' | 'files' | 'secret' | 'variables' | 'merge_request';
 
 export interface SetupRunDeps {
   db: Db;
@@ -186,11 +194,15 @@ function errorOf(code: Exclude<SetupErrorCode, 'permission'>): ItemError {
   return { code, message: ERROR_TEXT[code] };
 }
 
-/** An SCM failure as an item error: a fixed text per kind. */
+/**
+ * An SCM failure as an item error: a fixed text per kind. `stage`: opening the repository, reading
+ * it for CI setup, or changing it. A refused permission names what CI setup needs once the
+ * repository is open; a refusal says whether a read or the change was refused.
+ */
 function scmErrorOf(
   err: ScmError,
   provider: 'github' | 'gitlab',
-  stage: 'read' | 'change',
+  stage: 'open' | 'ci_read' | 'change',
 ): ItemError {
   switch (err.kind) {
     case 'not_found':
@@ -198,14 +210,16 @@ function scmErrorOf(
     case 'auth':
       return {
         code: 'permission',
-        message: stage === 'read' ? PERMISSION_TEXT.read : PERMISSION_TEXT[provider],
+        message: stage === 'open' ? PERMISSION_TEXT.read : PERMISSION_TEXT[provider],
       };
     case 'rate_limited':
       return errorOf('rate_limited');
     case 'transient':
       return errorOf('unavailable');
     case 'refused':
-      return errorOf('refused');
+      return stage === 'change'
+        ? errorOf('refused')
+        : { code: 'refused', message: REFUSED_READ_TEXT };
     case 'bad_answer':
       return errorOf('bad_answer');
     case 'budget':
@@ -737,6 +751,8 @@ interface ItemContext {
   statusFailure: ScmError | null;
   /** A rate limit pauses the run (rather than failing the repository). */
   mayPause: boolean;
+  /** Where the item's CI setup is: a failure's log line names it, and a read's error says so. */
+  ciStep: CiStep;
 }
 
 /**
@@ -779,6 +795,7 @@ async function settleAlreadySetUp(
   snippet: string,
 ): Promise<void> {
   const { deps, item } = ctx;
+  ctx.ciStep = 'merge_request';
   const open = await repo.ci.findMergeRequest();
   if (open !== null) {
     return updateItem(deps.db, item, { ciOutcome: 'merge_request', ciUrl: open });
@@ -789,9 +806,12 @@ async function settleAlreadySetUp(
       ...input,
       existing: { ...input.existing, tokenSecretSet: false },
     });
+    ctx.ciStep = 'branch';
     if (resumed.kind === 'change' && (await repo.ci.branchExists())) {
       // What failed after the token may be a variable: set them again (an upsert) first.
+      ctx.ciStep = 'variables';
       await repo.ci.setVariables(resumed.variables);
+      ctx.ciStep = 'merge_request';
       const url = await repo.ci.openMergeRequest(resumed.description);
       return updateItem(deps.db, item, { ciOutcome: 'merge_request', ciUrl: url });
     }
@@ -811,8 +831,10 @@ async function applyCiChange(
   plan: Extract<CiPlan, { kind: 'change' }>,
 ): Promise<void> {
   const { deps, run, item } = ctx;
+  ctx.ciStep = 'branch';
   const reused = await repo.ci.branchExists();
   if (!reused) await repo.ci.createBranch();
+  ctx.ciStep = 'files';
   await repo.ci.writeFiles(plan.files, reused);
   // Made only now, committed before it is written: the token is never stored in Qualor.
   const { row, token } = await deps.db.transaction((tx) =>
@@ -820,6 +842,7 @@ async function applyCiChange(
   );
   let stored = false;
   try {
+    ctx.ciStep = 'secret';
     try {
       await repo.ci.storeToken(token);
     } catch (err) {
@@ -828,7 +851,9 @@ async function applyCiChange(
       throw err;
     }
     stored = true;
+    ctx.ciStep = 'variables';
     await repo.ci.setVariables(plan.variables);
+    ctx.ciStep = 'merge_request';
     const url =
       (await repo.ci.findMergeRequest()) ?? (await repo.ci.openMergeRequest(plan.description));
     await updateItem(deps.db, item, { ciOutcome: 'merge_request', ciUrl: url });
@@ -884,6 +909,7 @@ async function setUpCi(
   if (!repo.mayChange) return snippet('snippet', 'missing_permissions');
   if (repo.defaultBranch === null) return snippet('snippet', 'empty_repository');
 
+  ctx.ciStep = 'read';
   const read = await repo.ci.read();
   if (read.empty) return snippet('snippet', 'empty_repository', read.csharp);
   if (read.customCiPath) return snippet('snippet', 'custom_ci_path', read.csharp);
@@ -915,10 +941,10 @@ async function recordOpenFailure(ctx: ItemContext, err: unknown, log: ItemLog): 
   } else if (err instanceof ScmError) {
     if (err.kind === 'rate_limited' && ctx.mayPause) throw pauseFor(err);
     deps.logger?.warn(
-      { ...log, kind: err.kind, reason: err.reason, status: err.status },
+      { ...log, request: err.request, kind: err.kind, reason: err.reason, status: err.status },
       'repository setup could not read the repository',
     );
-    error = scmErrorOf(err, connection.provider, 'read');
+    error = scmErrorOf(err, connection.provider, 'open');
   } else {
     throw err;
   }
@@ -961,10 +987,17 @@ async function recordCiFailure(ctx: ItemContext, err: unknown, log: ItemLog): Pr
   // The item stays pending: the next job resumes it (the branch is reused, the files kept).
   if (err.kind === 'rate_limited' && ctx.mayPause) throw pauseFor(err);
   deps.logger?.warn(
-    { ...log, kind: err.kind, reason: err.reason, status: err.status },
+    {
+      ...log,
+      step: ctx.ciStep,
+      request: err.request,
+      kind: err.kind,
+      reason: err.reason,
+      status: err.status,
+    },
     'repository setup could not set up CI',
   );
-  const error = scmErrorOf(err, connection.provider, 'change');
+  const error = scmErrorOf(err, connection.provider, ctx.ciStep === 'read' ? 'ci_read' : 'change');
   await updateItem(deps.db, item, {
     ciOutcome: 'failed',
     errorCode: error.code,
@@ -987,7 +1020,7 @@ async function setUpRepository(ctx: ItemContext): Promise<void> {
   if (project === null) return;
   if (run.ciSetup && ctx.statusFailure !== null) {
     // Never a snippet for want of an answer: the CI setup fails, with why.
-    const error = scmErrorOf(ctx.statusFailure, connection.provider, 'read');
+    const error = scmErrorOf(ctx.statusFailure, connection.provider, 'open');
     return updateItem(deps.db, item, {
       ciOutcome: 'failed',
       errorCode: error.code,
@@ -1053,7 +1086,13 @@ async function readRunStatus(
   } catch (err) {
     if (!(err instanceof ScmError)) throw err;
     deps.logger?.warn(
-      { runId: run.id, kind: err.kind, reason: err.reason, status: err.status },
+      {
+        runId: run.id,
+        request: err.request,
+        kind: err.kind,
+        reason: err.reason,
+        status: err.status,
+      },
       'repository setup could not read the CI-setup status',
     );
     // An unusable connection (its key, its address) does not get better: each repository
@@ -1149,6 +1188,7 @@ async function runSetup(deps: SetupRunDeps, payload: z.infer<typeof payloadSchem
       statusFailure,
       by,
       mayPause: pauses < MAX_PAUSES,
+      ciStep: 'read',
     };
     if (await runItem(ctx, pauses, connection)) return;
   }

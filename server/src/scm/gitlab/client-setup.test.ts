@@ -182,6 +182,8 @@ describe('GitLab client: projects, files, merge requests and variables', () => {
         }),
       );
       expect(exists.status).toBe(400);
+      // The error names the request, with no project, branch or file in it.
+      expect(exists.request).toBe('POST /projects/{id}/repository/commits');
       const nobranch = await failure(
         client().commitFiles('7', {
           branch: 'ghost',

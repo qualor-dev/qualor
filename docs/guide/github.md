@@ -455,5 +455,6 @@ Read and write**, a person has to resolve each one.
 | A conversation stays open after the issue is fixed or marked | someone else replied in it, so Qualor leaves it to people. For a fixed issue it writes "Fixed in `<sha>`" in it |
 | The summary says "Inline comments could not be updated this time." | GitHub failed or refused a request for the review comments. After an outage or a rate limit, Qualor tries again on its own. After a missing permission, it tries again at the next analysis. The server log's `GitHub decoration retried` or `GitHub decoration stopped` line says why |
 | `The GitHub repository was not found` after a rename | update the mapping to the new `owner/repo` |
+| **Add repositories** says "GitHub refused the change" or "GitHub refused a request to read the repository" | GitHub rejected a request. The server log's `repository setup could not set up CI` line gives the step (`read`, `branch`, `files`, `secret` or `merge_request`), the request, such as `PUT /repos/{owner}/{repo}/contents/{path}`, and GitHub's HTTP status. Fix the cause, then choose **Try again** |
 
 More in [Troubleshooting](./troubleshooting.md).

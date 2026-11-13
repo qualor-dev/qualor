@@ -2,7 +2,13 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { z } from 'zod';
 import { outboundRequest, type OutboundFailed, type Resolver } from '../../http/outbound';
 import { VERSION } from '../../index';
-import { ScmError, type Paged, type ScmErrorKind, type ScmErrorReason } from '../provider';
+import {
+  namedRequest,
+  ScmError,
+  type Paged,
+  type ScmErrorKind,
+  type ScmErrorReason,
+} from '../provider';
 import { scmRefusedAddress } from '../url';
 
 /** scm.md §4.3: every request has 10 s in all ... */
@@ -357,6 +363,24 @@ function gitlabMessage(body: Buffer, token: string): string | null {
 /** The methods the client sends. */
 type GitLabMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
+/**
+ * A request as a fixed text for the logs ({@link ScmError.request}): the method and the path under
+ * `/api/v4` without its query, each value Qualor put in it replaced by its name (the project, a
+ * branch, a file's path, a variable's key, a sha, an id).
+ */
+export function gitlabRoute(method: GitLabMethod, path: string): string {
+  const [bare = ''] = path.split('?');
+  const route = bare
+    .replace(/^\/projects\/[^/]+/, '/projects/{id}')
+    .replace(/\/repository\/branches\/[^/]+/, '/repository/branches/{branch}')
+    .replace(/\/repository\/files\/[^/]+/, '/repository/files/{path}')
+    .replace(/\/variables\/[^/]+/, '/variables/{key}')
+    .replace(/\/discussions\/[^/]+/, '/discussions/{id}')
+    .replace(/\/(?:[0-9a-f]{64}|[0-9a-f]{40})(?=\/|$)/g, '/{sha}')
+    .replace(/\/\d+(?=\/|$)/g, '/{id}');
+  return `${method} ${route}`;
+}
+
 /** The error for a GitLab request that got no answer: refused by the outbound rules, or no reply. */
 function transportError(failed: OutboundFailed): GitLabError {
   switch (failed.cause) {
@@ -507,16 +531,35 @@ export class GitLabClient {
     try {
       return { status, headers, json: JSON.parse(answer.toString('utf8')) };
     } catch {
-      throw new GitLabError('bad_answer', "GitLab's answer was not understood", { status });
+      throw namedRequest(
+        new GitLabError('bad_answer', "GitLab's answer was not understood", { status }),
+        gitlabRoute(method, path),
+      );
     }
   }
 
-  /** The same request with the answer's body as it came (a raw file is not JSON). */
+  /**
+   * The same request with the answer's body as it came (a raw file is not JSON); its error names
+   * it ({@link gitlabRoute}).
+   */
   private async callRaw(
     method: GitLabMethod,
     path: string,
     body?: unknown,
     forbidden: string = GITLAB_FORBIDDEN.request,
+  ): Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }> {
+    try {
+      return await this.callRawOnce(method, path, body, forbidden);
+    } catch (err) {
+      throw namedRequest(err, gitlabRoute(method, path));
+    }
+  }
+
+  private async callRawOnce(
+    method: GitLabMethod,
+    path: string,
+    body: unknown,
+    forbidden: string,
   ): Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }> {
     const result = await this.sendFollowing(method, path, body);
     if (result.kind === 'failed') throw transportError(result);

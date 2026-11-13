@@ -43,6 +43,7 @@ export interface ScmErrorOptions {
   retryAfterSeconds?: number | null;
   providerMessage?: string | null;
   reason?: ScmErrorReason;
+  request?: string | null;
 }
 
 /** A failed SCM request. `message` is one of the specs' fixed texts, never the provider's words. */
@@ -51,6 +52,13 @@ export class ScmError extends Error {
   readonly reason: ScmErrorReason;
   readonly status: number | null;
   readonly retryAfterSeconds: number | null;
+  /**
+   * The request that failed, for the logs: its method and route, with each value Qualor put in
+   * the path replaced by its name (`GET /repos/{owner}/{repo}/actions/organization-secrets`), so
+   * it is a fixed text too. Set by the client that sent it ({@link namedRequest}); null when the
+   * error came before any request.
+   */
+  request: string | null;
   /**
    * The provider's own message, for decisions only (never logged or shown): not enumerable, so a
    * logger or `JSON.stringify` serialising the error never includes it.
@@ -64,12 +72,19 @@ export class ScmError extends Error {
     this.reason = options.reason ?? DEFAULT_REASON[kind];
     this.status = options.status ?? null;
     this.retryAfterSeconds = options.retryAfterSeconds ?? null;
+    this.request = options.request ?? null;
     Object.defineProperty(this, 'providerMessage', {
       value: options.providerMessage ?? null,
       enumerable: false,
       writable: false,
     });
   }
+}
+
+/** `err`, naming the request it came from when it is an {@link ScmError} that names none yet. */
+export function namedRequest(err: unknown, request: string): unknown {
+  if (err instanceof ScmError && err.request === null) err.request = request;
+  return err;
 }
 
 export interface Paged<T> {

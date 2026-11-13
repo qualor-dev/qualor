@@ -6,6 +6,16 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- When **Add repositories** cannot set up CI, the server log line
+  `repository setup could not set up CI` names the step that failed (`read`, `branch`, `files`,
+  `secret`, `variables` or `merge_request`) and the request, such as
+  `PUT /repos/{owner}/{repo}/contents/{path}`. The request never includes the names of the
+  repository, branch or file. A refused read now says "refused a request to read the repository",
+  not "refused the change"
+  ([GitHub](docs/guide/github.md#troubleshooting), [GitLab](docs/guide/gitlab.md#troubleshooting)).
+
 ### Fixed
 
 - **Add repositories** sets up CI in a GitHub repository that a user account owns. Before, CI setup

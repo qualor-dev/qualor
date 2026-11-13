@@ -17,6 +17,7 @@ import {
   GITLAB_SHAPES,
   GitLabClient,
   GitLabError,
+  gitlabRoute,
   MAX_GITLAB_RESPONSE_BYTES,
   retryAfterSeconds,
 } from './client';
@@ -928,5 +929,39 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
     expect(err.message).not.toContain(fake.token);
     expect(String(err.stack)).not.toContain(fake.token);
     expect(JSON.stringify(client())).not.toContain(fake.token);
+  });
+});
+
+describe('gitlabRoute: a request as a fixed text for the logs', () => {
+  it('names every value Qualor put in the path, and drops the query', () => {
+    const sha = 'b'.repeat(40);
+    const cases: [string, string, string][] = [
+      ['GET', '/user', 'GET /user'],
+      ['GET', '/projects?membership=true&per_page=100', 'GET /projects'],
+      ['GET', '/projects/group%2Fapp', 'GET /projects/{id}'],
+      ['GET', '/projects/42/languages', 'GET /projects/{id}/languages'],
+      [
+        'GET',
+        '/projects/group%2Fapp/repository/branches/qualor%2Fsetup',
+        'GET /projects/{id}/repository/branches/{branch}',
+      ],
+      [
+        'GET',
+        '/projects/42/repository/files/.gitlab-ci.yml/raw?ref=main',
+        'GET /projects/{id}/repository/files/{path}/raw',
+      ],
+      ['POST', '/projects/42/repository/commits', 'POST /projects/{id}/repository/commits'],
+      ['PUT', '/projects/42/variables/QUALOR_TOKEN', 'PUT /projects/{id}/variables/{key}'],
+      ['POST', `/projects/42/statuses/${sha}`, 'POST /projects/{id}/statuses/{sha}'],
+      [
+        'PUT',
+        `/projects/42/merge_requests/7/discussions/${sha}?resolved=true`,
+        'PUT /projects/{id}/merge_requests/{id}/discussions/{id}',
+      ],
+      ['GET', '/projects/42/members/all/9', 'GET /projects/{id}/members/all/{id}'],
+    ];
+    for (const [method, target, route] of cases) {
+      expect(gitlabRoute(method as 'GET', target)).toBe(route);
+    }
   });
 });
