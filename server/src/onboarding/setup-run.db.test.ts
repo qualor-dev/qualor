@@ -688,6 +688,25 @@ describe('the repository-setup run', () => {
       expect([...fake.actionsSecrets.keys()]).toEqual(['1002|QUALOR_TOKEN']);
     });
 
+    it('opens the pull request in a user’s repository, which has no organisation secrets (issue #34)', async () => {
+      const fake = await github([
+        { owner: 'jane', ownerType: 'User', name: 'site', installationId: 31, permissions: ALL },
+      ]);
+      const connectionId = await connectGitHub(fake);
+      const existing = await h.project('jane/site');
+      const runId = await start({ connectionId, repositories: ['jane/site'], ciSetup: true });
+      await runSetups();
+      const [item] = (await read(runId)).items;
+      expect(item).toMatchObject({
+        project: { id: existing.id, key: 'jane/site' },
+        projectOutcome: 'adopted',
+        ciOutcome: 'merge_request',
+        error: null,
+      });
+      expect(fake.openedPulls.map((p) => p.repoId)).toEqual([1000]);
+      expect([...fake.actionsSecrets.keys()]).toEqual(['1000|QUALOR_TOKEN']);
+    });
+
     it('fails a repository the App cannot see, and goes on with the others', async () => {
       const fake = await github([{ owner: 'kappa', name: 'here', installationId: 10 }]);
       const connectionId = await connectGitHub(fake);

@@ -76,6 +76,11 @@ type Access = 'read' | 'write';
 export interface FakeRepository {
   id: number;
   owner: string;
+  /**
+   * The kind of account that owns it (`Organization` by default). A user's repository has no
+   * organisation secrets: `GET /actions/organization-secrets` is a 422 there, as on github.com.
+   */
+  ownerType?: 'Organization' | 'User';
   name: string;
   /** Null: the App is not installed on it. */
   installationId: number | null;
@@ -1187,7 +1192,7 @@ export async function createFakeGitHub(
             id,
             app_id: appId,
             app_slug: slug,
-            account: { login: first.owner, id: 9001, type: 'Organization' },
+            account: { login: first.owner, id: 9001, type: first.ownerType ?? 'Organization' },
             suspended_at: [...repos.values()].some((r) => r.installationId === id && r.suspended)
               ? '2026-10-01T00:00:00Z'
               : null,
@@ -1475,6 +1480,8 @@ export async function createFakeGitHub(
     }
     if (method === 'GET' && rest === '/actions/organization-secrets') {
       if (!need('secrets', 'read')) return forbidden();
+      // github.com, 2026-11-13: a repository a user owns answers so.
+      if (repo.ownerType === 'User') return deny(res, 422, 'Validation Failed');
       return page(
         url,
         res,

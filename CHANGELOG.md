@@ -6,6 +6,13 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Add repositories** sets up CI in a GitHub repository that a user account owns. Before, CI setup
+  failed there with "GitHub refused the change" every time: GitHub answers HTTP 422 when Qualor
+  looks for organisation secrets in such a repository, and Qualor took that for a refusal
+  ([#34](https://github.com/qualor-dev/qualor/issues/34)).
+
 ### Security
 
 - `qualor/scanner`: the `gosec` engine is built with golang.org/x/net 0.62.0 (was 0.58.0), which

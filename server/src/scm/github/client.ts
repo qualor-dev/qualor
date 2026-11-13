@@ -1290,7 +1290,8 @@ export class GitHubClient {
   /**
    * Whether the organisation shares an Actions secret called `name` with the repository
    * (`GET /actions/organization-secrets`, Secrets read). GitHub compares secret names without case.
-   * At most {@link MAX_SECRET_PAGES} pages are read; an account that is no organisation has none.
+   * At most {@link MAX_SECRET_PAGES} pages are read. A 404 is none, and so is a 422: github.com
+   * answers `Validation Failed` for a repository a user account owns, which has no organisation.
    */
   async hasOrganizationSecret(name: string): Promise<boolean> {
     const wanted = this.secretName(name).toUpperCase();
@@ -1302,7 +1303,7 @@ export class GitHubClient {
           `${this.repoPath()}/actions/organization-secrets?per_page=${GITHUB_PAGE_SIZE}&page=${page}`,
         );
       } catch (err) {
-        if (err instanceof ScmError && err.status === 404) return false;
+        if (err instanceof ScmError && (err.status === 404 || err.status === 422)) return false;
         throw err;
       }
       const { secrets } = this.parse(secretsList, answer.json);

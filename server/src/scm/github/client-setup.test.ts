@@ -93,6 +93,15 @@ describe('GitHub client: files, pull requests and Actions secrets (onboarding)',
       installationId: 779,
       permissions: WITHOUT_CI,
     });
+    // A user's repository (issue #34): it has no organisation secrets.
+    fake.addRepository({
+      id: 4,
+      owner: 'jane',
+      ownerType: 'User',
+      name: 'site',
+      installationId: 780,
+      permissions: WITH_CI,
+    });
   });
   afterAll(() => fake.close());
   beforeEach(() => fake.clearRequests());
@@ -358,6 +367,16 @@ describe('GitHub client: files, pull requests and Actions secrets (onboarding)',
       } finally {
         fake.organizationSecrets.delete(1);
       }
+    });
+
+    it("finds no organisation secret in a user's repository, where GitHub answers 422", async () => {
+      const client = clientFor();
+      await client.useRepository({ owner: 'jane', repo: 'site' }, { ciSetup: true });
+      fake.clearRequests();
+      expect(await client.hasOrganizationSecret('QUALOR_TOKEN')).toBe(false);
+      expect(requests()).toEqual([
+        'GET /repos/jane/site/actions/organization-secrets?per_page=100&page=1',
+      ]);
     });
   });
 
