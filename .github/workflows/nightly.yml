@@ -13,7 +13,7 @@ jobs:
   # repository is generated from a fixed seed and scanned with --dry-run. Actions are pinned to
   # commit SHAs (the tag each one had is in the comment).
   benchmark:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The scan takes about a minute; a hung run must not hold a runner for six hours.
     timeout-minutes: 30
     steps:

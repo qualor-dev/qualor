@@ -36,7 +36,7 @@ jobs:
   # dry run itself before it pushes anything, so the images are built once per run.
   dry-run:
     if: ${{ !inputs.publish }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
       # Every tag: the moving image tags depend on the versions already released (releasedVersions).
@@ -87,7 +87,7 @@ jobs:
       github.event_name == 'workflow_dispatch' && inputs.publish &&
       github.ref_type == 'tag' && github.ref_name == format('v{0}', inputs.version) &&
       inputs.confirm == format('publish v{0}', inputs.version)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 300
     environment: release
     permissions:

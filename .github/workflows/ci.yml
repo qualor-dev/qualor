@@ -8,9 +8,11 @@ permissions:
   contents: read
 
 # Actions are pinned to commit SHAs (the tag each one had is in the comment), as in nightly.yml.
+# Runners are pinned to ubuntu-24.04: ubuntu-latest became 26.04 on 2026-11-13, where the host
+# installs (install-dotnet.sh: libicu72/libicu74) fail.
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false }
@@ -25,7 +27,7 @@ jobs:
       - run: pnpm --filter @qualor/ui i18n:extract
       - run: git diff --exit-code -- ui/src/locale
   typecheck:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false }
@@ -35,7 +37,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false }
@@ -84,7 +86,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: coverage, path: coverage/lcov.info, retention-days: 7 }
   audit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false }
@@ -94,7 +96,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --audit-level high
   fixtures:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false }
@@ -137,7 +139,7 @@ jobs:
       - run: pnpm fixtures
         env: { QUALOR_REQUIRE_ANALYZERS: '1' }
   cli-binary:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false }
@@ -195,7 +197,7 @@ jobs:
   # GitHub: unverified until the first push.
   dco:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -214,7 +216,7 @@ jobs:
   # dry run without images) in the local toolbox image (tools/release/Dockerfile). No secret: the
   # dry run signs with a throwaway key and pushes nothing.
   helm:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -229,13 +231,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm release:test
   # Plan 4A: the chart on k3s in one privileged container, GitHub-hosted runners only
-  # (GitLab's job containers cannot start one). Sized for a standard ubuntu-latest runner (2 vCPU
+  # (GitLab's job containers cannot start one). Sized for a standard ubuntu-24.04 runner (2 vCPU
   # and 7 GB for a private repository, 14 GB of disk): the toolbox, server, k3s and PostgreSQL
   # images take about 4 GB of disk; one mode runs at a time, and the busiest (bundled: two servers
   # requesting 512 Mi and limited to 2 Gi each, plus PostgreSQL) fits in memory. Locally the smoke
   # takes about 2.5 min once the images are built. It uses no secret.
   helm-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -251,7 +253,7 @@ jobs:
   # Plan 1F: the UI against a real server with seeded data (Playwright 1.63.0, its pinned
   # Chromium), then one PNG per screen.
   ui-e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
@@ -285,7 +287,7 @@ jobs:
   # compose up"). The last step removes whatever a failed or cancelled run left behind.
   dogfood:
     needs: [test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -315,7 +317,7 @@ jobs:
   review:
     needs: [test]
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
       image: qualor/scanner:0.15.0
