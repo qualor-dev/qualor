@@ -77,6 +77,11 @@ const diskProblem = (dir: string, err: NodeJS.ErrnoException): LocalProblem => (
   message: `The vulnerability database cannot be written to ${dir} (${err.code ?? 'error'}). Check that the directory is writable and has free space.`,
 });
 
+const SLOW_VOLUME: LocalProblem = {
+  code: 'DISK',
+  message: `Unpacking the stored vulnerability database took more than ${VULNDB_INFLATE_DEADLINE_MS / 60_000} minutes. Check the speed of the volume behind QUALOR_VULNDB_DIR.`,
+};
+
 const isDiskError = (err: unknown): err is NodeJS.ErrnoException =>
   err instanceof Error &&
   typeof (err as NodeJS.ErrnoException).code === 'string' &&
@@ -186,8 +191,10 @@ async function extract(
 
   const tmp = join(dir, `tmp-${randomBytes(6).toString('hex')}`);
   try {
-    await mkdir(join(tmp, 'db'), { recursive: true });
+    // The marker first: a crash between two steps never leaves an unmarked tmp-* (never removed).
+    await mkdir(tmp);
     await writeFile(join(tmp, OWN_MARKER), '');
+    await mkdir(join(tmp, 'db'));
     const found = new Set<string>();
     // Fixed target paths only: an archive entry name is never joined into a path.
     await readTarGz(
@@ -226,6 +233,9 @@ async function extract(
   } catch (err) {
     await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
     if (isDiskError(err)) return { problem: diskProblem(dir, err) };
+    // Ruling P7: the stored archive passed validation under the same caps, so only the deadline
+    // can trip here, and a slow volume is the likely cause: downloading again would not help.
+    if (err instanceof TarError && err.limit === 'deadline') return { problem: SLOW_VOLUME };
     if (isGone(err) || err instanceof TarError) {
       return {
         problem: {
@@ -242,10 +252,13 @@ async function extract(
 /**
  * Ensures `dataset` locally, then runs `fn(cacheDir)` while holding the lock: a refresh or another
  * re-check waits, so the directory cannot change under `fn`. A problem is returned without
- * calling `fn`: `DISK` when the directory cannot be created or written (EACCES, EPERM, EROFS,
- * ENOSPC, EDQUOT, ENOENT, ENOTDIR), `MISSING` when the chunks are gone or the archive lacks a
- * wanted file or is damaged, `BUSY` when the lock stays taken for `lockWaitMs`; other errors (database failures) are thrown. `signal` (the server is stopping) cuts an extraction: it rejects with the
- * signal's reason, and the partial copy is removed.
+ * calling `fn`:
+ * - `DISK` when the directory cannot be created or written (EACCES, EPERM, EROFS, ENOSPC,
+ *   EDQUOT, ENOENT, ENOTDIR), or unpacking takes longer than the deadline (a slow volume);
+ * - `MISSING` when the chunks are gone or the archive lacks a wanted file or is damaged;
+ * - `BUSY` when the lock stays taken for `lockWaitMs`.
+ * Other errors (database failures) are thrown. `signal` (the server is stopping) cuts an
+ * extraction: it rejects with the signal's reason, and the partial copy is removed.
  */
 export function withLocalDatabase<T>(
   db: Executor,

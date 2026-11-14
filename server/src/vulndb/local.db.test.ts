@@ -157,6 +157,30 @@ describe('local database copy', () => {
     expect((await readdir(dir)).filter((n) => n.startsWith('tmp-'))).toEqual([]);
   });
 
+  it('answers DISK when unpacking takes longer than the deadline: a slow volume (ruling P7)', async () => {
+    const d = await store(Buffer.from('slow volume'));
+    let called = false;
+    const got = await withLocalDatabase(
+      t.db,
+      dir,
+      d,
+      () => {
+        called = true;
+        return Promise.resolve(1);
+      },
+      { limits: { deadlineMs: -1 } },
+    );
+    expect(got).toEqual({
+      problem: {
+        code: 'DISK',
+        message:
+          'Unpacking the stored vulnerability database took more than 10 minutes. Check the speed of the volume behind QUALOR_VULNDB_DIR.',
+      },
+    });
+    expect(called).toBe(false);
+    expect((await readdir(dir)).filter((n) => n.startsWith('tmp-'))).toEqual([]);
+  });
+
   it('withLocalDatabase pins the dataset while fn runs, against a concurrent refresh', async () => {
     const a = await store(Buffer.from('pinned a'));
     const b = await store(Buffer.from('pinned b'));

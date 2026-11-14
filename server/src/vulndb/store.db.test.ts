@@ -156,7 +156,7 @@ describe('dataset storage', () => {
     });
 
     const INVALID: [string, Buffer, RegExp, Partial<StoreDatasetInput>?][] = [
-      ['no metadata.json', trivyArchive({ metadata: null }), /metadata.json/],
+      ['no metadata.json', trivyArchive({ metadata: null }), /metadata\.json/],
       ['Version 1', trivyArchive({ metadata: metadataJson(1) }), /Version 1/],
       ['metadata.json that is not JSON', trivyArchive({ metadata: '{"Version":' }), /JSON/],
       ['no UpdatedAt', trivyArchive({ metadata: metadataJson(2, 'yesterday') }), /UpdatedAt/],
@@ -166,8 +166,8 @@ describe('dataset storage', () => {
         trivyArchive({ metadata: metadataJson(2, '2026-10-30') }),
         /UpdatedAt/,
       ],
-      ['no trivy.db', trivyArchive({ db: null }), /trivy.db/],
-      ['an empty trivy.db', trivyArchive({ db: Buffer.alloc(0) }), /trivy.db/],
+      ['no trivy.db', trivyArchive({ db: null }), /trivy\.db/],
+      ['an empty trivy.db', trivyArchive({ db: Buffer.alloc(0) }), /trivy\.db/],
       ['a symbolic link', tarGz([{ name: 'trivy.db', type: '2' }]), /only plain files/],
       ['bytes that are not gzip', Buffer.from('not an archive'), /gzip/],
       ['nothing at all', Buffer.alloc(0), /empty/],

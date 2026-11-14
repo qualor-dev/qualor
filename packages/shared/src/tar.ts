@@ -5,9 +5,18 @@ const BLOCK = 512;
 /** A `keep` entry is read into memory: at most this big (metadata.json is a few hundred bytes). */
 export const KEEP_MAX_BYTES = 1024 * 1024;
 
-/** What is wrong with an archive: a short fixed text, safe to show to an administrator. */
+/** Which of {@link TarLimits} an archive went past. */
+export type TarLimit = 'bytes' | 'deadline';
+
+/**
+ * What is wrong with an archive: a short fixed text, safe to show to an administrator. `limit`
+ * names the {@link TarLimits} cap it went past; null for an archive that is not valid.
+ */
 export class TarError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly limit: TarLimit | null = null,
+  ) {
     super(message);
     this.name = 'TarError';
   }
@@ -80,7 +89,8 @@ async function* inflate(chunks: AsyncIterable<Buffer>): AsyncGenerator<Buffer, v
 
 /**
  * What an archive may cost to read: `maxBytes` counts every inflated byte (the drained tail
- * included), `deadline` is an epoch-ms time. Past either, the read rejects with a {@link TarError}.
+ * included), `deadline` is an epoch-ms time. Past either, the read rejects with a {@link TarError}
+ * whose `limit` names it.
  */
 export interface TarLimits {
   maxBytes?: number;
@@ -99,12 +109,16 @@ class Reader {
     private readonly limits: TarLimits = {},
   ) {}
 
-  /** Pulls one more piece; false at the end of the data. */
+  /**
+   * Pulls one more piece; false at the end of the data. Both caps are checked per inflated piece,
+   * at the next pull: the deadline before it, the byte count once the piece is in. A source or an
+   * `onFile` that blocks is not cut short; the check comes when the reader pulls again.
+   */
   private async pull(): Promise<boolean> {
     if (this.ended) return false;
     const { maxBytes, deadline } = this.limits;
     if (deadline !== undefined && Date.now() > deadline) {
-      throw new TarError('The archive took too long to unpack');
+      throw new TarError('The archive took too long to unpack', 'deadline');
     }
     const step = await this.source.next();
     if (step.done) {
@@ -113,7 +127,7 @@ class Reader {
     }
     this.inflated += step.value.length;
     if (maxBytes !== undefined && this.inflated > maxBytes) {
-      throw new TarError(`The archive unpacks to more than ${maxBytes} bytes`);
+      throw new TarError(`The archive unpacks to more than ${maxBytes} bytes`, 'bytes');
     }
     if (step.value.length > 0) {
       this.pending.push(step.value);
@@ -364,9 +378,9 @@ async function readEntry(
  * ({@link checkPax}); any other entry (a link, a device, a GNU long name) rejects it too. A
  * `keep` entry over {@link KEEP_MAX_BYTES} rejects it too. `onFile` is awaited for each wanted
  * entry, in archive order (see {@link TarEntry}). Rejects with a {@link TarError} for an archive
- * that is not valid, or with what `chunks` or `onFile` threw. Stops at the archive's end marker, then reads the
- * rest of the gzip data, so a bad checksum or trailing garbage rejects it. `limits` caps the
- * inflated bytes and the time.
+ * that is not valid, or with what `chunks` or `onFile` threw. Stops at the archive's end marker,
+ * then reads the rest of the gzip data, so a bad checksum or trailing garbage rejects it.
+ * `limits` caps the inflated bytes and the time.
  */
 export async function readTarGz(
   chunks: AsyncIterable<Buffer>,

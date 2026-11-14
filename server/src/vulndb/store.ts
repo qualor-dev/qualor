@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import type { Db, Executor } from '../db/client';
 import { isForeignKeyViolation, pgErrorCode } from '../db/errors';
 import { LOCKS } from '../db/locks';
 import { vulndbChunks, vulndbDatasets, type VulndbDatasetRow } from '../db/schema';
 import { OutboundStreamError } from '../http/outbound';
 import { readVulndbState, updateVulndbStateLocked, type VulndbState } from './state';
-import { z } from 'zod';
 import { readTarGz, TarError } from '@qualor/shared/tar';
 
 /** A `vulndb_datasets` row. */

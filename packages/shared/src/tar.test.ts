@@ -259,6 +259,7 @@ describe('readTarGz', () => {
       const error = await rejection(read(bomb(), { maxBytes: 1024 * 1024 }));
       expect(error).toBeInstanceOf(TarError);
       expect((error as Error).message).toContain('more than 1048576 bytes');
+      expect((error as TarError).limit).toBe('bytes');
     });
 
     it('reads an archive that inflates to just under maxBytes', async () => {
@@ -272,6 +273,13 @@ describe('readTarGz', () => {
       const error = await rejection(read(bomb(), { deadline: Date.now() - 1 }));
       expect(error).toBeInstanceOf(TarError);
       expect((error as Error).message).toBe('The archive took too long to unpack');
+      expect((error as TarError).limit).toBe('deadline');
+    });
+
+    it('names no limit for an archive that is not valid', async () => {
+      const error = await rejection(read(Buffer.from('not gzip'), {}));
+      expect(error).toBeInstanceOf(TarError);
+      expect((error as TarError).limit).toBeNull();
     });
   });
 
