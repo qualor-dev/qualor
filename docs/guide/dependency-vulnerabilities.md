@@ -235,9 +235,15 @@ The decisions also change the gate: Won't fix and false positive issues do not c
 
 ### Migrated decisions
 
-On upgrade, each False positive and Won't fix Trivy issue on `main` became a project decision with
-no reason. When several issues share a package and vulnerability, the latest one counts, and its
-comment becomes the decision's comment. The tab shows "Reason not given" and the Issues tab asks for
+On the upgrade to 0.15, each False positive and Won't fix Trivy issue on `main` became a project
+decision with no reason. The upgrade to 0.16 adds the decisions that one missed:
+
+- a Trivy issue on `main` that was closed while False positive or Won't fix, however long ago;
+- a Trivy issue on `main` that is False positive or Won't fix again after it was found again.
+
+A package and vulnerability that already have a project decision keep it. When several issues share
+a package and vulnerability, the latest one counts, and its comment becomes the decision's comment.
+Every migrated decision has no reason: the tab shows "Reason not given" and the Issues tab asks for
 a reason at the next edit.
 
 ## Export SBOM and VEX (Business and Enterprise)
@@ -273,14 +279,21 @@ Licences come from the dependency list. A package with several licences has all 
 
 ### What a VEX holds
 
-A VEX has one entry for each vulnerability in each package of the target, with the target's
+A VEX holds each vulnerability of each package of the target, with the target's
 [decision](#statuses-and-reasons). A decision that applies to the target alone wins over the
 project-wide one. Vulnerabilities that `.trivyignore` ignores are left out. KEV and EPSS are not in
 the file.
 
-In the CycloneDX VEX, the packages that have the same vulnerability and the same decision share one
-entry. That entry carries every author, the date of the first decision as `analysis.firstIssued`
-and of the last one as `analysis.lastUpdated`.
+The OpenVEX file has one statement for each vulnerability in each package. In the CycloneDX VEX,
+the packages that have the same vulnerability and the same decision share one entry. That entry
+carries every author, the date of the first decision as `analysis.firstIssued` and of the last one
+as `analysis.lastUpdated`. A package whose vulnerability nobody decided never shares an entry with a
+decided one.
+
+Trivy reads one CycloneDX entry per vulnerability: the last one. Qualor puts the not-affected entry
+of a vulnerability last, so Trivy applies it. When two packages are both not affected by one
+vulnerability, but with a different reason or comment, they are two entries, and Trivy applies only
+the last one. The other package's finding stays in Trivy's output.
 
 A checked target with no findings gives a VEX with no entries. For OpenVEX that is an empty
 `statements` list, which the OpenVEX schema does not accept, because it asks for at least one
@@ -331,13 +344,18 @@ when all of those CVEs are not affected.
 
 | Format | The CVE | The other ids |
 |---|---|---|
-| CycloneDX VEX | an entry with the source NVD, which lists the other ids in `references` | one more entry per id, with the same decision and packages: the source GITHUB for a GHSA id, OSV for the others |
+| CycloneDX VEX | an entry with the source NVD, which lists the other ids in `references` | one more entry per id and package, with the source GITHUB for a GHSA id and OSV for the others. It has the CVE's decision and packages; an id that several CVEs share has the packages of all of them, and the decision the exceptions above give |
 | OpenVEX | the statement's `vulnerability.name` | its `vulnerability.aliases` |
 
 Some advisories name their GHSA id only in their links, for example some PHP and Node.js
 advisories. Trivy does not report such an id, so a finding that Dependency-Track holds under it
-gets no decision. After the upgrade to 0.16, the other ids are in the VEX once the re-check at the
-server's first start is done.
+gets no decision.
+
+After the upgrade to 0.16, the other ids are in the VEX once the re-check at the server's first
+start is done. That re-check matches the packages of the tracked targets of the projects with
+monitoring on. The VEX of any other target lists the other ids only for the packages a tracked
+target also has. During a rolling upgrade, a replica still on 0.15 can run that re-check. Then the
+other ids appear after the next database update.
 
 ### Download from CI
 
