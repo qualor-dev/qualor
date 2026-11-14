@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -9,11 +9,13 @@ import {
 } from '@qualor/shared';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
 import { QUIET_AUDIT_LOG } from '../../test/audit-log';
-import { expectPgError } from '../../test/db';
+import { expectPgError, waitForLockWaiters } from '../../test/db';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { mainBranchId, seedIssue, seedRule, type IssueSeed } from '../../test/issues';
 import { engine, file, finding, reportWith } from '../../test/reports';
 import { createAuditRecorder, SYSTEM_ACTOR } from '../audit/recorder';
+import type { Db } from '../db/client';
+import { LOCKS } from '../db/locks';
 import {
   auditEvents,
   issueChanges,
@@ -28,9 +30,33 @@ import {
   sanitizeImportComment,
   type ImportRequestItem,
 } from '../issues/status-import';
+import { lockDecisionPairs } from '../vulnerabilities/decisions';
 
 const LINES = ['const a = 1;', 'if (a == 1) {}', 'if (a == 2) {}', 'export {};'];
 const MESSAGE = "Expected '===' and instead saw '=='.";
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+/** Polls until a backend of this file's database waits on a decision pair's lock (no sleep). */
+async function waitForPairWaiter(db: Db, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const result = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM pg_locks
+       WHERE locktype = 'advisory' AND NOT granted
+         AND classid::bigint = ${LOCKS.vulnerabilityDecision}
+         AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`);
+    if (Number(result.rows[0]?.n) > 0) return;
+    if (Date.now() > deadline) throw new Error('Timed out waiting for a pair lock waiter');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 describe('POST /projects/{id}/issue-status-import (import-sonarqube.md §10–§11)', () => {
   let h: IngestHarness;
@@ -300,6 +326,88 @@ describe('POST /projects/{id}/issue-status-import (import-sonarqube.md §10–§
       reason: null,
       source: 'import',
     });
+  });
+
+  it('retries an import whose decision pair appears while it waits for an issue (D2-3)', async () => {
+    const v = await h.project('acme/import-trivy-race');
+    await v.ingestOk(reportWith({ projectKey: v.key }));
+    const vuln = 'CVE-2026-0003';
+    const message = `lodash 4.17.20: ${vuln} Prototype pollution (fixed in 4.17.21)`;
+    const mainId = await mainBranchId(h.ctx.db, v.id);
+    // As an older scan left it: no package name, so the import first finds no pair.
+    const trivyIssue = await seedIssue(h.ctx.db, {
+      projectId: v.id,
+      branchId: mainId,
+      ruleId: await seedRule(h.ctx.db, { key: `trivy:${vuln}`, quality: 'security' }),
+      path: 'package-lock.json',
+      startLine: 12,
+      message,
+      packageName: null,
+    });
+    const other = await seedIssue(h.ctx.db, {
+      projectId: v.id,
+      branchId: mainId,
+      ruleId: await seedRule(h.ctx.db, { key: 'eslint:eqeqeq' }),
+      path: 'src/a.ts',
+      startLine: 2,
+      message: MESSAGE,
+    });
+    const items = [
+      item({
+        ref: 'AYr-1',
+        ruleKeys: [`trivy:${vuln}`],
+        path: 'package-lock.json',
+        line: 12,
+        sonarLineHash: null,
+        message,
+      }),
+      item({ ref: 'AYr-2', sonarLineHash: null, status: 'wont_fix', comment: 'accepted' }),
+    ] as ImportRequestItem[];
+    const [admin] = await h.ctx.db.select().from(users).where(eq(users.username, 'ingest-admin'));
+    // A decision writer of the pair: it holds the pair, then locks the pair's issues.
+    const pairHeld = deferred();
+    const letGo = deferred();
+    const writer = h.ctx.db.transaction(async (tx) => {
+      await lockDecisionPairs(tx, [
+        { projectId: v.id, packageName: 'lodash', vulnerabilityId: vuln },
+      ]);
+      pairHeld.resolve();
+      await letGo.promise;
+      await tx.execute(sql`SELECT 1 FROM issues WHERE id = ${trivyIssue} FOR NO KEY UPDATE`);
+    });
+    await pairHeld.promise;
+    const holder = new pg.Client({ connectionString: h.ctx.database.url });
+    await holder.connect();
+    let importing: ReturnType<typeof importIssueStatuses> | undefined;
+    try {
+      await holder.query('BEGIN');
+      // An ingestion that reads the name now holds the row until it commits.
+      await holder.query(`UPDATE issues SET package_name = 'lodash' WHERE id = $1`, [trivyIssue]);
+      importing = importIssueStatuses({ db: h.ctx.db }, admin!, v.id, items, false);
+      await waitForLockWaiters(h.ctx.db, 1);
+      await holder.query('COMMIT');
+    } finally {
+      await holder.query('ROLLBACK');
+      await holder.end();
+    }
+    // The import now waits for the pair: holding no issue lock, the writer can take its issue.
+    await waitForPairWaiter(h.ctx.db);
+    letGo.resolve();
+    const [written, imported] = await Promise.allSettled([writer, importing!]);
+    expect(written).toEqual({ status: 'fulfilled', value: undefined });
+    expect(
+      imported.status === 'fulfilled' ? imported.value.results : imported.reason,
+    ).toMatchObject([{ outcome: 'applied' }, { outcome: 'applied' }]);
+    expect([await statusOf(trivyIssue), await statusOf(other)]).toEqual([
+      'false_positive',
+      'wont_fix',
+    ]);
+    expect(
+      await h.ctx.db
+        .select()
+        .from(vulnerabilityDecisions)
+        .where(eq(vulnerabilityDecisions.projectId, v.id)),
+    ).toMatchObject([{ branchId: null, packageName: 'lodash', status: 'false_positive' }]);
   });
 
   it('is 409 PROJECT_NOT_ANALYSED before the first analysis', async () => {

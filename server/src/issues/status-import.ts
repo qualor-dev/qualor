@@ -18,6 +18,7 @@ import type { AccessContext } from '../auth/access';
 import type { UserRow } from '../auth/sessions';
 import { textList } from '../db/bulk';
 import type { Db, Executor } from '../db/client';
+import { withConflictRetry } from '../db/retry';
 import { branches } from '../db/schema';
 import { ProblemError, validationFailed } from '../http/problem';
 import type { IssueStatus } from '../tracking/plan';
@@ -103,7 +104,9 @@ type CandidateRow = {
  * through {@link transitionIssuesIn} (visibility, the lost-update guard, mirroring onto
  * duplicates, the changelog with each item's own comment, the gate re-evaluation). A lock held
  * longer than `lockTimeoutMs` fails the whole request (SQLSTATE 55P03, 503 over HTTP) with
- * nothing written. An issue that changed after matching ends `already_set` or `conflict` from the
+ * nothing written. A pair found only once the issues are held, or a deadlock, runs the
+ * transaction again, up to three times (`withConflictRetry`), then fails the same way (503).
+ * An issue that changed after matching ends `already_set` or `conflict` from the
  * status the transition found; a status someone set in Qualor is never overwritten.
  *
  * Comments: each resolved item's `comment` must already be 1–2 000 characters (the route's schema
@@ -287,38 +290,42 @@ export async function importIssueStatuses(
     await recordImport(db, done);
     return done;
   }
-  return db.transaction(async (tx) => {
-    await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
-    // Both statuses write vulnerability decisions: their pairs and issues are locked here too.
-    await lockForTransition(
-      tx,
-      pending.flatMap((to) => [...toApply[to].keys()]),
-      true,
-    );
-    const done: [ImportStatus, TransitionResult][] = [];
-    for (const to of pending) {
-      const own = toApply[to];
-      // No `audit` here: the import is one summary event, not one per issue. Its vulnerability
-      // decisions need no reason (vuln plan 2b, D9), and their events are recorded below.
-      done.push([
-        to,
-        await transitionIssuesIn(tx, user, [...own.keys()], to, null, {
-          comments: own,
-          source: 'import',
-        }),
-      ]);
-    }
-    applyOutcomes(done);
-    // After the last transition queued its re-evaluations, like every audit event of the import.
-    if (options.audit) {
-      for (const [, result] of done) {
-        for (const { input, result: written } of result.decisions) {
-          await recordDecision(tx, options.audit, input, written);
+  // A pair found only after the issue locks (DecisionPairsChanged) or a deadlock runs the whole
+  // transaction again; each attempt sets the outcome of every item it applies anew.
+  return withConflictRetry(() =>
+    db.transaction(async (tx) => {
+      await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
+      // Both statuses write vulnerability decisions: their pairs and issues are locked here too.
+      await lockForTransition(
+        tx,
+        pending.flatMap((to) => [...toApply[to].keys()]),
+        true,
+      );
+      const done: [ImportStatus, TransitionResult][] = [];
+      for (const to of pending) {
+        const own = toApply[to];
+        // No `audit` here: the import is one summary event, not one per issue. Its vulnerability
+        // decisions need no reason (vuln plan 2b, D9), and their events are recorded below.
+        done.push([
+          to,
+          await transitionIssuesIn(tx, user, [...own.keys()], to, null, {
+            comments: own,
+            source: 'import',
+          }),
+        ]);
+      }
+      applyOutcomes(done);
+      // After the last transition queued its re-evaluations, like every audit event of the import.
+      if (options.audit) {
+        for (const [, result] of done) {
+          for (const { input, result: written } of result.decisions) {
+            await recordDecision(tx, options.audit, input, written);
+          }
         }
       }
-    }
-    const final = response();
-    await recordImport(tx, final);
-    return final;
-  });
+      const final = response();
+      await recordImport(tx, final);
+      return final;
+    }),
+  );
 }

@@ -9,6 +9,7 @@ import type { UserRow } from '../auth/sessions';
 import { jsonChunks, uuidList } from '../db/bulk';
 import type { Db, Executor, Tx } from '../db/client';
 import { uuidv7 } from '../db/ids';
+import { withConflictRetry } from '../db/retry';
 import type { OrganizationRole, ProjectRole } from '../db/schema';
 import { enqueueReevaluations } from '../gates/reevaluate';
 import type { IssueStatus } from '../tracking/plan';
@@ -19,6 +20,7 @@ import {
   recordDecision,
   writeDecision,
   type DecisionInput,
+  type DecisionPair,
   type DecisionResult,
   type VexJustification,
 } from '../vulnerabilities/decisions';
@@ -125,6 +127,33 @@ export async function lockIssues(
 }
 
 /**
+ * A pair a transition must lock appeared after it locked its issues: an ingestion committed a
+ * package name (or a new duplicate) between the transition's first read and its issue locks.
+ * SQLSTATE 40001 like a serialisation failure, so {@link withConflictRetry} runs the whole
+ * transaction again (it rolled back; nothing was written or charged), and a request that runs
+ * out of attempts answers 503 `CONCURRENCY_CONFLICT`.
+ */
+export class DecisionPairsChanged extends Error {
+  readonly code = '40001';
+
+  constructor() {
+    super('A vulnerability decision pair appeared after the transition locked its issues');
+    this.name = 'DecisionPairsChanged';
+  }
+}
+
+/** What a transition holds of each pair: the pair itself, project included. */
+const pairKey = (pair: DecisionPair): string =>
+  JSON.stringify([pair.projectId, pair.packageName, pair.vulnerabilityId]);
+
+/** What a transition locked: its issues, the issues whose triage writes a decision, the ids held. */
+export interface TransitionLocks {
+  locked: LockedIssue[];
+  deciding: Map<string, DecidingIssue>;
+  held: string[];
+}
+
+/**
  * Everything a transition of `ids` locks, before it changes anything, in the order every writer
  * of issues and decisions follows (vuln plan 2b):
  *
@@ -135,18 +164,29 @@ export async function lockIssues(
  *    before it reads the decisions.
  * 3. `ids`, their duplicates and every Trivy issue of those pairs, in ONE id-ordered statement
  *    ({@link lockIssues}): the decisions then change only rows already held.
+ * 4. The deciding issues read again, now that their rows are held (D2-3). A pair step 1 did not
+ *    see is never locked now, after the issue locks: {@link DecisionPairsChanged} aborts the
+ *    transaction, and its retry locks that pair in step 2.
  *
- * Answers the locked rows, the deciding issues and the ids held.
+ * Answers the locked rows, the deciding issues of step 4 and the ids held.
  */
 export async function lockForTransition(
   tx: Executor,
   ids: readonly string[],
   decisions: boolean,
-): Promise<{ locked: LockedIssue[]; deciding: Map<string, DecidingIssue>; held: string[] }> {
-  const deciding = decisions ? await decidingIssues(tx, ids) : new Map<string, DecidingIssue>();
-  const pairs = [...deciding.values()];
+): Promise<TransitionLocks> {
+  if (!decisions) {
+    const locked = await lockIssues(tx, ids);
+    return { locked, deciding: new Map(), held: locked.map((row) => row.id) };
+  }
+  const pairs = [...(await decidingIssues(tx, ids)).values()];
   await lockDecisionPairs(tx, pairs);
   const locked = await lockIssues(tx, ids, await pairIssueIds(tx, pairs));
+  const deciding = await decidingIssues(tx, ids);
+  const lockedPairs = new Set(pairs.map(pairKey));
+  if ([...deciding.values()].some((issue) => !lockedPairs.has(pairKey(issue)))) {
+    throw new DecisionPairsChanged();
+  }
   return { locked, deciding, held: locked.map((row) => row.id) };
 }
 
@@ -253,7 +293,10 @@ async function issueAccess(
  *    locks up front in one id-ordered pass (tracking/writes.ts `lockPlannedRows`), so the two
  *    never wait on each other in a cycle: one simply waits for the other to commit. A row an
  *    ingestion holds makes this wait up to `lockTimeoutMs`, then fail with SQLSTATE 55P03 (503
- *    `CONCURRENCY_CONFLICT` with `Retry-After`); nothing is written and a retry is safe.
+ *    `CONCURRENCY_CONFLICT` with `Retry-After`); nothing is written and a retry is safe. A
+ *    transaction that finds a decision pair only once it holds the issues
+ *    ({@link DecisionPairsChanged}), or that a deadlock aborts, runs again from the start, up to
+ *    three times ({@link withConflictRetry}); then it fails the same way.
  * 3. A duplicate follows its primary only when the same transition is valid from its own status
  *    (ruling I3); otherwise it keeps its status.
  * 4. Every change that took effect writes one `issue_changes` row (user, old, new, comment): the
@@ -280,16 +323,18 @@ export async function transitionIssues(
   options: TransitionOptions = {},
 ): Promise<TransitionResult> {
   const user = principal.user;
-  return access.db.transaction(async (tx) => {
-    await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
-    return transitionIssuesIn(tx, user, requested, to, comment, {
-      comments: options.comments,
-      audit: options.audit,
-      reason: options.reason,
-      source: options.source,
-      chargeMirrored: options.chargeMirrored,
-    });
-  });
+  return withConflictRetry(() =>
+    access.db.transaction(async (tx) => {
+      await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
+      return transitionIssuesIn(tx, user, requested, to, comment, {
+        comments: options.comments,
+        audit: options.audit,
+        reason: options.reason,
+        source: options.source,
+        chargeMirrored: options.chargeMirrored,
+      });
+    }),
+  );
 }
 
 /** What a requested issue is checked against (step 3 of {@link transitionIssues}). */

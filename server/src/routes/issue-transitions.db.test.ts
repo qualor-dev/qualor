@@ -3,12 +3,15 @@ import { eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
+import { QUIET_AUDIT_LOG } from '../../test/audit-log';
 import { expectPgError } from '../../test/db';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { mainBranchId, seedIssue, seedRule, type IssueSeed } from '../../test/issues';
 import { finding, reportWith } from '../../test/reports';
+import { createAuditRecorder, SYSTEM_ACTOR } from '../audit/recorder';
 import type { Db } from '../db/client';
 import {
+  auditEvents,
   branches,
   issueChanges,
   issues,
@@ -736,6 +739,67 @@ describe('issue transitions, severity override and changelog (data-model.md §6,
         writesDecision: true,
         decision: { status: 'false_positive', scope: 'project' },
       });
+    });
+
+    it('writes the decision when ingestion names the package mid-transition', async () => {
+      const f = await fixture();
+      // As an older scan left it: no package name, so the transition first finds no pair.
+      await h.ctx.db.update(issues).set({ packageName: null }).where(eq(issues.id, f.issue.main));
+      const [user] = await h.ctx.db.select().from(users).where(eq(users.id, memberId));
+      const recorder = createAuditRecorder({ log: QUIET_AUDIT_LOG, isActive: () => true });
+      const charged: number[] = [];
+      const holder = new pg.Client({ connectionString: h.ctx.database.url });
+      await holder.connect();
+      let pending: ReturnType<typeof transitionIssues> | undefined;
+      try {
+        await holder.query('BEGIN');
+        // An ingestion that reads the name now (D2-1) holds the row until it commits.
+        await holder.query(`UPDATE issues SET package_name = 'lodash' WHERE id = $1`, [
+          f.issue.main,
+        ]);
+        pending = transitionIssues(
+          { db: h.ctx.db },
+          { kind: 'session', user: user!, sessionSecret: 'unused' },
+          [f.issue.main],
+          'false_positive',
+          notAffected.comment,
+          {
+            audit: { recorder, context: SYSTEM_ACTOR, bulk: false, suggestionId: null },
+            reason: 'vulnerable_code_not_in_execute_path',
+            chargeMirrored: (count) => {
+              charged.push(count);
+            },
+          },
+        );
+        await waitForLockWaiters(h.ctx.db, 1);
+        await holder.query('COMMIT');
+      } finally {
+        await holder.query('ROLLBACK');
+        await holder.end();
+      }
+      expect((await pending!).succeeded).toEqual([f.issue.main]);
+      expect(await decisionsOf(f)).toMatchObject([
+        { branchId: null, packageName: 'lodash', status: 'false_positive', decidedBy: memberId },
+      ]);
+      expect(await statuses(f)).toEqual({
+        main: 'false_positive',
+        release: 'false_positive',
+        feature: 'false_positive',
+        mr: 'false_positive',
+      });
+      // Review Focus 3: the attempt that found the pair late wrote nothing and charged nothing.
+      expect((await changesOf(f.issue.main)).map((c) => [c.oldValue, c.newValue])).toEqual([
+        ['open', 'false_positive'],
+      ]);
+      const events = await h.ctx.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.projectId, f.projectId));
+      expect(
+        events.filter((e) => e.action === 'issue.status_changed').map((e) => e.targetId),
+      ).toEqual([f.issue.main]);
+      expect(events.filter((e) => e.action === 'vulnerability.decision_changed')).toHaveLength(1);
+      expect(charged).toEqual([3]);
     });
 
     it('answers 422 REASON_REQUIRED for a decision-writing false positive without a reason, writing nothing', async () => {

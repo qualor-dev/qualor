@@ -71,12 +71,13 @@ export interface DecidingIssue extends DecisionPair {
 
 /**
  * The issues of `issueIds` and their duplicates for which {@link writesDecision} holds, with
- * their pairs. One query reads the issues, one more the settings of their projects. Read without
- * locks, before a transition takes any: the transition locks the pairs found here. An ingestion
- * that commits between this read and the transition's issue lock can change what it read: it
- * sets the package name of a matched issue that had none, and it links new duplicates. The
- * transition then handles such an issue as read here, so an issue read without a package name
- * writes no decision this time.
+ * their pairs. One query reads the issues, one more the settings of their projects. A transition
+ * reads them twice (issues/transitions.ts `lockForTransition`): without locks, to know which
+ * pairs to lock before its issues, and again once it holds the issues. An ingestion that commits
+ * in between can change what the first read saw: it sets the package name of a matched issue that
+ * had none, or links a new duplicate. When the second read names a pair the first did not, the
+ * transition is not run with what it read first: it aborts (`DecisionPairsChanged`, SQLSTATE
+ * 40001) and is retried from the start, which locks that pair before the issues (D2-3).
  */
 export async function decidingIssues(
   db: Executor,
