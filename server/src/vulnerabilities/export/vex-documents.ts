@@ -16,6 +16,11 @@ export interface VexEntry {
   comment: string | null;
   decidedAt: Date | null;
   decidedBy: string | null;
+  /**
+   * D7: the ids the vulnerability has in other databases (Trivy's vendor ids, `GHSA-…`, `GO-…`),
+   * under which Dependency-Track may hold the finding. Sorted, without `vulnerabilityId`.
+   */
+  aliases: string[];
 }
 
 /** E8: the OpenVEX reason names and the CycloneDX justification each one becomes. */
@@ -39,6 +44,12 @@ export const OPENVEX_STATUS: Record<VexEntry['status'], string> = {
   open: 'under_investigation',
   false_positive: 'not_affected',
   wont_fix: 'affected',
+};
+
+/** Code-unit order: the same on every database collation, as the export query sorts. */
+const compare = (a: string, b: string): number => {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 };
 
 const NO_REASON = 'No reason was recorded.';
@@ -93,6 +104,48 @@ function analysisOf(e: VexEntry): {
   };
 }
 
+/** The CycloneDX analysis states that Trivy applies; it ignores a statement in any other. */
+const TRIVY_APPLIES = new Set(['not_affected', 'resolved']);
+
+/** Whether a decision suppresses the finding: Trivy applies it, as Dependency-Track does. */
+const suppresses = (e: VexEntry): boolean => TRIVY_APPLIES.has(analysisOf(e).state);
+
+/**
+ * D7 (A13): the entries, each followed by one entry per alias with the same decision and purls,
+ * and with the id it stands for as its own alias. Dependency-Track holds many findings under a
+ * GHSA or GO id only, and applies a VEX entry by its exact source and id.
+ *
+ * One entry per alias and package: an id that has an entry of its own on the package keeps it.
+ * When two entries of a package share an alias (one advisory for two CVEs), the alias entry lists
+ * the purls of both and takes the first decision that does not suppress, else the first one: one
+ * CVE's not-affected never suppresses an advisory that another CVE keeps open.
+ */
+function withAliases(entries: readonly VexEntry[]): VexEntry[] {
+  const key = (id: string, e: VexEntry): string => JSON.stringify([id, e.packageName]);
+  const own = new Set(entries.map((e) => key(e.vulnerabilityId, e)));
+  const aliases = new Map<string, VexEntry>();
+  const out: VexEntry[] = [];
+  for (const e of entries) {
+    out.push(e);
+    for (const alias of e.aliases) {
+      const k = key(alias, e);
+      if (own.has(k)) continue;
+      const kept = aliases.get(k);
+      if (kept === undefined) {
+        const added = { ...e, vulnerabilityId: alias, aliases: [e.vulnerabilityId] };
+        aliases.set(k, added);
+        out.push(added);
+        continue;
+      }
+      const purls = [...new Set([...kept.purls, ...e.purls])].sort(compare);
+      const stands = [...new Set([...kept.aliases, e.vulnerabilityId])].sort(compare);
+      if (suppresses(kept) && !suppresses(e)) Object.assign(kept, e);
+      Object.assign(kept, { vulnerabilityId: alias, purls, aliases: stands });
+    }
+  }
+  return out;
+}
+
 type EntryGroup = [VexEntry, ...VexEntry[]];
 
 /**
@@ -111,9 +164,6 @@ function sameAnalysis(entries: readonly VexEntry[]): EntryGroup[] {
   return [...groups.values()];
 }
 
-/** The CycloneDX analysis states that Trivy applies; it ignores a statement in any other. */
-const TRIVY_APPLIES = new Set(['not_affected', 'resolved']);
-
 /**
  * The groups with each id's groups that Trivy applies after its others; the order is otherwise
  * kept. Trivy keeps the last statement of an id, so an open or exploitable group of a CVE on one
@@ -124,8 +174,7 @@ function trivyOrder(groups: readonly EntryGroup[]): EntryGroup[] {
   for (const [first] of groups) {
     if (!rank.has(first.vulnerabilityId)) rank.set(first.vulnerabilityId, rank.size);
   }
-  const applies = ([first]: EntryGroup): number =>
-    TRIVY_APPLIES.has(analysisOf(first).state) ? 1 : 0;
+  const applies = ([first]: EntryGroup): number => (suppresses(first) ? 1 : 0);
   const rankOf = ([first]: EntryGroup): number => rank.get(first.vulnerabilityId) ?? 0;
   // A stable sort: groups that tie keep their order.
   return [...groups].sort((a, b) => rankOf(a) - rankOf(b) || applies(a) - applies(b));
@@ -160,10 +209,16 @@ function cycloneDxVulnerability(group: EntryGroup, link: (purl: string) => strin
   const advisories = distinct(group.map((e) => e.primaryUrl));
   const recommendation = recommendationOf(group);
   const authors = distinct(group.map((e) => e.decidedBy));
+  const references = distinct(group.flatMap((e) => e.aliases))
+    .filter((id) => id !== first.vulnerabilityId)
+    .sort(compare);
   return {
     'bom-ref': `${first.vulnerabilityId}:${first.packageName}`,
     id: first.vulnerabilityId,
     source: vulnerabilitySource(first.vulnerabilityId),
+    ...(references.length === 0
+      ? {}
+      : { references: references.map((id) => ({ id, source: vulnerabilitySource(id) })) }),
     ratings: [{ severity, source: TOOL }],
     ...(advisories.length === 0 ? {} : { advisories: advisories.map((url) => ({ url })) }),
     ...(recommendation === undefined ? {} : { recommendation }),
@@ -179,7 +234,8 @@ function cycloneDxVulnerability(group: EntryGroup, link: (purl: string) => strin
 }
 
 /**
- * A CycloneDX 1.6 VEX of a target: its components, and one vulnerability per id and analysis.
+ * A CycloneDX 1.6 VEX of a target: its components, and one vulnerability per id and analysis, the
+ * aliases included ({@link withAliases}).
  * D8-1: every affects ref and component bom-ref is a BOM-Link `urn:cdx:<sbomSerial>/1#<purl>`
  * into the CycloneDX SBOM with that serial, which Trivy needs to apply the VEX to that SBOM. The
  * components carry the same string, so Dependency-Track resolves each ref to its component. The
@@ -206,7 +262,7 @@ export function buildCycloneDxVex(
       });
     }
   }
-  const vulnerabilities = trivyOrder(sameAnalysis(entries)).map((group) =>
+  const vulnerabilities = trivyOrder(sameAnalysis(withAliases(entries))).map((group) =>
     cycloneDxVulnerability(group, link),
   );
   return {
@@ -249,17 +305,22 @@ function openVexNotes(e: VexEntry): string | undefined {
 }
 
 /**
- * An OpenVEX 0.2.0 document of a target, one statement per entry. Each package purl is also a
- * product of its own: Trivy matches an SBOM's findings against the package purls, not against the
- * project product, which it cannot see in a scanned SBOM file.
+ * An OpenVEX 0.2.0 document of a target, one statement per entry, which names the entry's aliases
+ * (Trivy matches a statement by its name or an alias). Each package purl is also a product of its
+ * own: Trivy matches an SBOM's findings against the package purls, not against the project
+ * product, which it cannot see in a scanned SBOM file.
  */
 export function buildOpenVex(doc: ExportDocument, entries: readonly VexEntry[]): object {
   const product = productId(doc.project, doc.target);
   const statements = entries.map((e) => {
     const impact = openVexImpact(e);
     const notes = openVexNotes(e);
+    const aliases = [...new Set(e.aliases)].filter((id) => id !== e.vulnerabilityId);
     return {
-      vulnerability: { name: e.vulnerabilityId },
+      vulnerability: {
+        name: e.vulnerabilityId,
+        ...(aliases.length === 0 ? {} : { aliases }),
+      },
       ...(e.decidedAt === null ? {} : { timestamp: e.decidedAt.toISOString() }),
       products: [
         {

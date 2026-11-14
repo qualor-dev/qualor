@@ -39,9 +39,22 @@ function entry(overrides: Partial<VexEntry> & { vulnerabilityId: string }): VexE
     comment: null,
     decidedAt: null,
     decidedBy: null,
+    aliases: [],
     ...overrides,
   };
 }
+
+/** lodash 4.17.15's CVE-2020-8203, not affected, with the GHSA id Trivy reports for it. */
+const LODASH = entry({
+  vulnerabilityId: 'CVE-2020-8203',
+  packageName: 'lodash',
+  purls: ['pkg:npm/lodash@4.17.15'],
+  status: 'false_positive',
+  reason: 'vulnerable_code_not_present',
+  decidedAt: DECIDED,
+  decidedBy: 'Alice',
+  aliases: ['GHSA-p6mc-m468-83gw'],
+});
 
 const ENTRIES: VexEntry[] = [
   entry({
@@ -352,6 +365,163 @@ describe('buildCycloneDxVex', () => {
     expect(v.properties).toEqual([{ name: 'qualor:decided-by', value: 'Carol' }]);
   });
 
+  it('adds one CycloneDX entry per alias, with the alias source and the same analysis and affects', () => {
+    const net = entry({
+      vulnerabilityId: 'CVE-2021-33194',
+      packageName: 'golang.org/x/net',
+      purls: ['pkg:golang/golang.org/x/net@v0.0.0-20210405180319-a5a99cb37ef4'],
+      aliases: ['GHSA-83g2-8m93-v3w7', 'GO-2021-0238'],
+    });
+    const doc = buildCycloneDxVex(DOC, [LODASH, net], SBOM_SERIAL) as any;
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
+    expect(doc.vulnerabilities.map((v: any) => v.id)).toEqual([
+      'CVE-2020-8203',
+      'GHSA-p6mc-m468-83gw',
+      'CVE-2021-33194',
+      'GHSA-83g2-8m93-v3w7',
+      'GO-2021-0238',
+    ]);
+    const [cve, ghsa, netCve, netGhsa, go] = doc.vulnerabilities;
+    expect(ghsa.source).toEqual({
+      name: 'GITHUB',
+      url: 'https://github.com/advisories/GHSA-p6mc-m468-83gw',
+    });
+    expect(ghsa.analysis).toEqual(cve.analysis);
+    expect(ghsa.analysis).toMatchObject({
+      state: 'not_affected',
+      justification: 'code_not_present',
+    });
+    expect(ghsa.affects).toEqual([{ ref: link('pkg:npm/lodash@4.17.15') }]);
+    expect(ghsa.properties).toEqual(cve.properties);
+    // The alias points back at the entry it stands for.
+    expect(ghsa.references).toEqual([
+      {
+        id: 'CVE-2020-8203',
+        source: { name: 'NVD', url: 'https://nvd.nist.gov/vuln/detail/CVE-2020-8203' },
+      },
+    ]);
+    expect(go.source).toEqual({ name: 'OSV', url: 'https://osv.dev/vulnerability/GO-2021-0238' });
+    expect([netGhsa.affects, go.affects]).toEqual([netCve.affects, netCve.affects]);
+    expect([netGhsa.analysis, go.analysis]).toEqual([
+      { state: 'in_triage' },
+      { state: 'in_triage' },
+    ]);
+    const refs = doc.vulnerabilities.map((v: any) => v['bom-ref']);
+    expect(new Set(refs).size).toBe(refs.length);
+  });
+
+  it('lists the aliases of the main entry in its references', () => {
+    const doc = buildCycloneDxVex(
+      DOC,
+      [
+        entry({
+          vulnerabilityId: 'CVE-2021-33194',
+          aliases: ['GHSA-83g2-8m93-v3w7', 'GO-2021-0238'],
+        }),
+        entry({ vulnerabilityId: 'CVE-2026-0001' }),
+      ],
+      SBOM_SERIAL,
+    ) as any;
+    expect(byId(doc.vulnerabilities, 'CVE-2021-33194').references).toEqual([
+      {
+        id: 'GHSA-83g2-8m93-v3w7',
+        source: { name: 'GITHUB', url: 'https://github.com/advisories/GHSA-83g2-8m93-v3w7' },
+      },
+      {
+        id: 'GO-2021-0238',
+        source: { name: 'OSV', url: 'https://osv.dev/vulnerability/GO-2021-0238' },
+      },
+    ]);
+    expect(byId(doc.vulnerabilities, 'CVE-2026-0001').references).toBeUndefined();
+  });
+
+  it('merges alias entries like any other: one alias on two packages with one analysis', () => {
+    const doc = buildCycloneDxVex(
+      DOC,
+      [LODASH, { ...LODASH, packageName: 'lodash-es', purls: ['pkg:npm/lodash-es@4.17.15'] }],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
+    expect(doc.vulnerabilities.map((v: any) => [v.id, v.affects.map((a: any) => a.ref)])).toEqual([
+      ['CVE-2020-8203', [link('pkg:npm/lodash@4.17.15'), link('pkg:npm/lodash-es@4.17.15')]],
+      ['GHSA-p6mc-m468-83gw', [link('pkg:npm/lodash@4.17.15'), link('pkg:npm/lodash-es@4.17.15')]],
+    ]);
+  });
+
+  it('gives an alias that two entries of one package share one entry, which no decision of one CVE suppresses', () => {
+    const shared = (vulnerabilityId: string, overrides: Partial<VexEntry>) =>
+      entry({
+        vulnerabilityId,
+        packageName: 'lodash',
+        aliases: ['GHSA-aaaa-bbbb-cccc'],
+        ...overrides,
+      });
+    const doc = buildCycloneDxVex(
+      DOC,
+      [
+        shared('CVE-2026-0101', {
+          purls: ['pkg:npm/lodash@4.17.15', 'pkg:npm/lodash@4.17.20'],
+          status: 'false_positive',
+          reason: 'vulnerable_code_not_present',
+          decidedAt: DECIDED,
+          decidedBy: 'Alice',
+        }),
+        shared('CVE-2026-0102', { purls: ['pkg:npm/lodash@4.17.15'], comment: 'Looking.' }),
+      ],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
+    const refs = doc.vulnerabilities.map((v: any) => v['bom-ref']);
+    expect(new Set(refs).size).toBe(refs.length);
+    const aliases = doc.vulnerabilities.filter((v: any) => v.id === 'GHSA-aaaa-bbbb-cccc');
+    expect(aliases).toHaveLength(1);
+    expect(aliases[0].analysis).toEqual({ state: 'in_triage', detail: 'Looking.' });
+    expect(aliases[0].affects).toEqual([
+      { ref: link('pkg:npm/lodash@4.17.15') },
+      { ref: link('pkg:npm/lodash@4.17.20') },
+    ]);
+    expect(aliases[0].references.map((r: any) => r.id)).toEqual(['CVE-2026-0101', 'CVE-2026-0102']);
+
+    // Two not-affected decisions: the alias keeps the first one.
+    const both = buildCycloneDxVex(
+      DOC,
+      [
+        shared('CVE-2026-0101', { status: 'false_positive', comment: 'Not shipped.' }),
+        shared('CVE-2026-0102', { status: 'false_positive', comment: 'Not reachable.' }),
+      ],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', both)).toEqual([]);
+    expect(
+      both.vulnerabilities.map((v: any) => [v['bom-ref'], v.analysis.state, v.analysis.detail]),
+    ).toEqual([
+      ['CVE-2026-0101:lodash', 'not_affected', 'Not shipped.'],
+      ['GHSA-aaaa-bbbb-cccc:lodash', 'not_affected', 'Not shipped.'],
+      ['CVE-2026-0102:lodash', 'not_affected', 'Not reachable.'],
+    ]);
+  });
+
+  it('keeps the entry an id has of its own on a package over an alias of that id', () => {
+    const doc = buildCycloneDxVex(
+      DOC,
+      [
+        LODASH,
+        entry({
+          vulnerabilityId: 'GHSA-p6mc-m468-83gw',
+          packageName: 'lodash',
+          purls: ['pkg:npm/lodash@4.17.15'],
+          status: 'wont_fix',
+        }),
+      ],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
+    expect(doc.vulnerabilities.map((v: any) => [v['bom-ref'], v.analysis.state])).toEqual([
+      ['CVE-2020-8203:lodash', 'not_affected'],
+      ['GHSA-p6mc-m468-83gw:lodash', 'exploitable'],
+    ]);
+  });
+
   it('maps an open entry to in_triage with its advisory and recommendation', () => {
     const v = byId(out.vulnerabilities, 'CVE-2026-0001');
     expect(v['bom-ref']).toBe('CVE-2026-0001:left-pad');
@@ -438,6 +608,17 @@ describe('buildOpenVex', () => {
       { '@id': 'pkg:npm/lodash@4.17.20' },
       { '@id': 'pkg:npm/lodash@4.17.21' },
     ]);
+  });
+
+  it('lists the aliases in OpenVEX', () => {
+    const doc = buildOpenVex(DOC, [LODASH, entry({ vulnerabilityId: 'CVE-2026-0001' })]) as any;
+    expect(validateAgainst('openvex', doc)).toEqual([]);
+    expect(doc.statements).toHaveLength(2);
+    expect(doc.statements[0].vulnerability).toEqual({
+      name: 'CVE-2020-8203',
+      aliases: ['GHSA-p6mc-m468-83gw'],
+    });
+    expect(doc.statements[1].vulnerability).toEqual({ name: 'CVE-2026-0001' });
   });
 
   it('carries the decision of an open entry: timestamp, comment and author in the notes (D8-3)', () => {

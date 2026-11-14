@@ -15,7 +15,10 @@ type TargetKey = { branchId: string } | { versionId: string };
 export const purlFor = (name: string, version: string, ecosystem = 'npm'): string =>
   `pkg:${ecosystem}/${name}@${version}`;
 
-/** A `vulnerability_matches` row for (purl, vulnerability); a second call replaces the first. */
+/**
+ * A `vulnerability_matches` row for (purl, vulnerability), with Trivy's vendor ids (none unless
+ * given); a second call replaces the first.
+ */
 export async function seedMatch(
   db: Executor,
   match: {
@@ -25,6 +28,7 @@ export async function seedMatch(
     title?: string | null;
     fixedVersion?: string | null;
     primaryUrl?: string | null;
+    vendorIds?: string[];
   },
 ): Promise<void> {
   const values = {
@@ -34,6 +38,7 @@ export async function seedMatch(
     title: match.title ?? null,
     fixedVersion: match.fixedVersion ?? null,
     primaryUrl: match.primaryUrl ?? null,
+    vendorIds: match.vendorIds ?? [],
   };
   await db
     .insert(vulnerabilityMatches)

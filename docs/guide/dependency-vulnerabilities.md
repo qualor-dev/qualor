@@ -323,9 +323,19 @@ has the same serial. Trivy skips a CycloneDX VEX whose serial is not the SBOM's,
 the VEX again. The OpenVEX file names packages by purl only, so it works with either SBOM.
 
 Dependency-Track applies a VEX decision only to a finding it holds under the same source and id.
-The VEX names a vulnerability by its CVE when it has one, with the source NVD. A finding that
-Dependency-Track takes from OSV or GitHub Advisories has a GHSA id instead, so its decision is not
-applied.
+It often holds a finding under another id of the advisory than the CVE: a GHSA id, from GitHub
+Advisories or OSV, or an OSV id such as `GO-2021-0238`. So the VEX names each decision under every
+id that Trivy reports for the advisory.
+
+| Format | The CVE | The other ids |
+|---|---|---|
+| CycloneDX VEX | an entry with the source NVD, which lists the other ids in `references` | one more entry per id, with the same decision and packages: the source GITHUB for a GHSA id, OSV for the others |
+| OpenVEX | the statement's `vulnerability.name` | its `vulnerability.aliases` |
+
+Some advisories name their GHSA id only in their links, for example some PHP and Node.js
+advisories. Trivy does not report such an id, so a finding that Dependency-Track holds under it
+gets no decision. After the upgrade to 0.16, the other ids are in the VEX once the re-check at the
+server's first start is done.
 
 ### Download from CI
 

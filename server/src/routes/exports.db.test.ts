@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateAgainst } from '../../test/export-schemas';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
-import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
+import { purlFor, seedCheck, seedMatch, seedTargetRow } from '../../test/vulnerabilities';
 import {
   analyses,
   instanceSettings,
@@ -534,6 +534,62 @@ describe('the SBOM and VEX export routes (4c)', () => {
       const open = (await vex(`projectKey=${p.key}&format=openvex`)).json();
       expect(validateAgainst('openvex', open)).toEqual([]);
       expect(open.statements).toHaveLength(2);
+    });
+
+    it("adds an entry for each of a match's vendor ids, with the decision of its CVE (D7)", async () => {
+      const p = await fresh();
+      for (const packageVersion of ['4.17.20', '4.17.21']) {
+        await seedTargetRow(h.ctx.db, {
+          projectId: p.id,
+          branchId: p.main,
+          packageName: 'lodash',
+          packageVersion,
+          vulnerabilityId: 'CVE-2020-8203',
+        });
+      }
+      // The two versions name the advisory differently: the entry has the vendor ids of both.
+      await seedMatch(h.ctx.db, {
+        purl: purlFor('lodash', '4.17.20'),
+        vulnerabilityId: 'CVE-2020-8203',
+        vendorIds: ['GHSA-p6mc-m468-83gw', 'CVE-2020-8203'],
+      });
+      await seedMatch(h.ctx.db, {
+        purl: purlFor('lodash', '4.17.21'),
+        vulnerabilityId: 'CVE-2020-8203',
+        vendorIds: ['GO-2020-0001', 'GHSA-p6mc-m468-83gw'],
+      });
+      await h.ctx.db.insert(vulnerabilityDecisions).values({
+        projectId: p.id,
+        packageName: 'lodash',
+        vulnerabilityId: 'CVE-2020-8203',
+        status: 'false_positive',
+        reason: 'vulnerable_code_not_present',
+      });
+      const cdx = (await vex(`projectKey=${p.key}`)).json();
+      expect(validateAgainst('cyclonedx', cdx)).toEqual([]);
+      const vulns = cdx.vulnerabilities as {
+        id: string;
+        source: { name: string };
+        references?: { id: string }[];
+        analysis: { state: string };
+        affects: { ref: string }[];
+      }[];
+      expect(vulns.map((v) => [v.id, v.source.name, v.analysis.state])).toEqual([
+        ['CVE-2020-8203', 'NVD', 'not_affected'],
+        ['GHSA-p6mc-m468-83gw', 'GITHUB', 'not_affected'],
+        ['GO-2020-0001', 'OSV', 'not_affected'],
+      ]);
+      expect(vulns[0]!.references?.map((r) => r.id)).toEqual([
+        'GHSA-p6mc-m468-83gw',
+        'GO-2020-0001',
+      ]);
+      for (const v of vulns.slice(1)) expect(v.affects).toEqual(vulns[0]!.affects);
+      expect(vulns[0]!.affects).toHaveLength(2);
+      const open = (await vex(`projectKey=${p.key}&format=openvex`)).json();
+      expect(validateAgainst('openvex', open)).toEqual([]);
+      expect(open.statements.map((s: { vulnerability: unknown }) => s.vulnerability)).toEqual([
+        { name: 'CVE-2020-8203', aliases: ['GHSA-p6mc-m468-83gw', 'GO-2020-0001'] },
+      ]);
     });
 
     it('prefers a version decision to the project-wide one on that version only', async () => {

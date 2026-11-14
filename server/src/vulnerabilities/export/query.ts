@@ -101,6 +101,7 @@ interface VexRow extends Record<string, unknown> {
   fixed_version: string | null;
   eff_status: VexEntry['status'];
   d_id: string | null;
+  vendor_ids: string[];
 }
 
 const RANK = new Map<string, number>(SEVERITIES.map((s, i) => [s, i]));
@@ -109,7 +110,8 @@ const RANK = new Map<string, number>(SEVERITIES.map((s, i) => [s, i]));
  * E6: one entry per (vulnerability id, package name) on the target, with the decision in force on
  * it. Rows ignored by `.trivyignore` are left out. When the versions of a package differ in
  * severity, title or fix, the entry carries the worst severity's (then the lowest purl's) facts.
- * Sorted by vulnerability id, then package name; the purls are distinct and sorted.
+ * Its aliases are the vendor ids of all its versions' matches (D7). Sorted by vulnerability id,
+ * then package name; the purls and the aliases are distinct and sorted.
  */
 export async function vexEntries(
   db: Executor,
@@ -120,10 +122,11 @@ export async function vexEntries(
   const id = target.kind === 'branch' ? target.branchId : target.versionId;
   const result = await db.execute<VexRow>(sql`
     WITH r AS (${scopedRows(sql`tv.project_id = ${projectId} AND ${column} = ${id}`)})
-    SELECT vulnerability_id, package_name, purl, severity, title, primary_url, fixed_version,
-           eff_status, d_id
+    SELECT r.vulnerability_id, r.package_name, r.purl, r.severity, r.title, r.primary_url,
+           r.fixed_version, r.eff_status, r.d_id, m.vendor_ids
       FROM r
-     WHERE NOT ignored`);
+      JOIN vulnerability_matches m ON m.purl = r.purl AND m.vulnerability_id = r.vulnerability_id
+     WHERE NOT r.ignored`);
 
   const groups = new Map<string, VexRow[]>();
   for (const row of result.rows) {
@@ -158,6 +161,9 @@ export async function vexEntries(
       comment: decision?.comment ?? null,
       decidedAt: decision ? new Date(decision.decidedAt) : null,
       decidedBy: decision?.decidedBy?.name ?? null,
+      aliases: [...new Set(group.flatMap((r) => r.vendor_ids))]
+        .filter((alias) => alias !== head.vulnerability_id)
+        .sort(compare),
     });
   }
   return entries.sort(
