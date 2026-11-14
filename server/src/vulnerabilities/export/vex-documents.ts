@@ -111,25 +111,51 @@ const TRIVY_APPLIES = new Set(['not_affected', 'resolved']);
 const suppresses = (e: VexEntry): boolean => TRIVY_APPLIES.has(analysisOf(e).state);
 
 /**
- * D7 (A13): the entries, each followed by one entry per alias with the same decision and purls,
- * and with the id it stands for as its own alias. Dependency-Track holds many findings under a
- * GHSA or GO id only, and applies a VEX entry by its exact source and id.
+ * D7: the entries with only the aliases they may speak for, the rules of both formats. A consumer
+ * matches a decision by an alias as by the id (Dependency-Track through the CycloneDX alias
+ * entries, Trivy and Grype through OpenVEX `aliases`), so per package:
  *
- * One entry per alias and package: an id that has an entry of its own on the package keeps it.
- * When two entries of a package share an alias (one advisory for two CVEs), the alias entry lists
- * the purls of both and takes the first decision that does not suppress, else the first one: one
- * CVE's not-affected never suppresses an advisory that another CVE keeps open.
+ * - an alias that is the id of an entry of its own on the package is left to that entry;
+ * - an alias that entries of the package share (one advisory for two CVEs) stays only on the
+ *   entries that do not suppress, unless all of them suppress: one CVE's not-affected never
+ *   suppresses a finding that another CVE keeps open.
+ *
+ * Fails closed: an alias left out leaves a finding under that id undecided, never suppressed.
+ */
+function speakingAliases(entries: readonly VexEntry[]): VexEntry[] {
+  const key = (id: string, e: VexEntry): string => JSON.stringify([id, e.packageName]);
+  const own = new Set(entries.map((e) => key(e.vulnerabilityId, e)));
+  const candidates = (e: VexEntry): string[] =>
+    [...new Set(e.aliases)].filter((alias) => !own.has(key(alias, e)));
+  const suppressing = new Map<string, boolean[]>();
+  for (const e of entries) {
+    for (const alias of candidates(e)) {
+      const k = key(alias, e);
+      suppressing.set(k, [...(suppressing.get(k) ?? []), suppresses(e)]);
+    }
+  }
+  const mixed = (k: string): boolean => new Set(suppressing.get(k)).size > 1;
+  return entries.map((e) => ({
+    ...e,
+    aliases: candidates(e).filter((alias) => !(suppresses(e) && mixed(key(alias, e)))),
+  }));
+}
+
+/**
+ * D7 (A13): the entries ({@link speakingAliases}), each followed by one entry per alias with the
+ * same decision and purls, and with the id it stands for as its own alias. Dependency-Track holds
+ * many findings under a GHSA or GO id only, and applies a VEX entry by its exact source and id.
+ * One entry per alias and package: entries of a package that share an alias all suppress or none
+ * does, so the alias entry takes the first one's decision, and the purls and ids of all of them.
  */
 function withAliases(entries: readonly VexEntry[]): VexEntry[] {
   const key = (id: string, e: VexEntry): string => JSON.stringify([id, e.packageName]);
-  const own = new Set(entries.map((e) => key(e.vulnerabilityId, e)));
   const aliases = new Map<string, VexEntry>();
   const out: VexEntry[] = [];
-  for (const e of entries) {
+  for (const e of speakingAliases(entries)) {
     out.push(e);
     for (const alias of e.aliases) {
       const k = key(alias, e);
-      if (own.has(k)) continue;
       const kept = aliases.get(k);
       if (kept === undefined) {
         const added = { ...e, vulnerabilityId: alias, aliases: [e.vulnerabilityId] };
@@ -137,10 +163,8 @@ function withAliases(entries: readonly VexEntry[]): VexEntry[] {
         out.push(added);
         continue;
       }
-      const purls = [...new Set([...kept.purls, ...e.purls])].sort(compare);
-      const stands = [...new Set([...kept.aliases, e.vulnerabilityId])].sort(compare);
-      if (suppresses(kept) && !suppresses(e)) Object.assign(kept, e);
-      Object.assign(kept, { vulnerabilityId: alias, purls, aliases: stands });
+      kept.purls = [...new Set([...kept.purls, ...e.purls])].sort(compare);
+      kept.aliases = [...new Set([...kept.aliases, e.vulnerabilityId])].sort(compare);
     }
   }
   return out;
@@ -305,21 +329,21 @@ function openVexNotes(e: VexEntry): string | undefined {
 }
 
 /**
- * An OpenVEX 0.2.0 document of a target, one statement per entry, which names the entry's aliases
- * (Trivy matches a statement by its name or an alias). Each package purl is also a product of its
+ * An OpenVEX 0.2.0 document of a target, one statement per entry, which names the aliases the entry
+ * may speak for ({@link speakingAliases}; Trivy matches a statement by its name or an alias). Each
+ * package purl is also a product of its
  * own: Trivy matches an SBOM's findings against the package purls, not against the project
  * product, which it cannot see in a scanned SBOM file.
  */
 export function buildOpenVex(doc: ExportDocument, entries: readonly VexEntry[]): object {
   const product = productId(doc.project, doc.target);
-  const statements = entries.map((e) => {
+  const statements = speakingAliases(entries).map((e) => {
     const impact = openVexImpact(e);
     const notes = openVexNotes(e);
-    const aliases = [...new Set(e.aliases)].filter((id) => id !== e.vulnerabilityId);
     return {
       vulnerability: {
         name: e.vulnerabilityId,
-        ...(aliases.length === 0 ? {} : { aliases }),
+        ...(e.aliases.length === 0 ? {} : { aliases: e.aliases }),
       },
       ...(e.decidedAt === null ? {} : { timestamp: e.decidedAt.toISOString() }),
       products: [

@@ -325,7 +325,9 @@ the VEX again. The OpenVEX file names packages by purl only, so it works with ei
 Dependency-Track applies a VEX decision only to a finding it holds under the same source and id.
 It often holds a finding under another id of the advisory than the CVE: a GHSA id, from GitHub
 Advisories or OSV, or an OSV id such as `GO-2021-0238`. So the VEX names each decision under every
-id that Trivy reports for the advisory.
+id that Trivy reports for the advisory, with two exceptions per package. An id with a decision of
+its own keeps that decision. An id that several CVEs share carries a not-affected decision only
+when all of those CVEs are not affected.
 
 | Format | The CVE | The other ids |
 |---|---|---|

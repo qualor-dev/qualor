@@ -475,12 +475,15 @@ describe('buildCycloneDxVex', () => {
     expect(new Set(refs).size).toBe(refs.length);
     const aliases = doc.vulnerabilities.filter((v: any) => v.id === 'GHSA-aaaa-bbbb-cccc');
     expect(aliases).toHaveLength(1);
+    // Only the open CVE speaks for the alias: its decision and its purls.
     expect(aliases[0].analysis).toEqual({ state: 'in_triage', detail: 'Looking.' });
-    expect(aliases[0].affects).toEqual([
-      { ref: link('pkg:npm/lodash@4.17.15') },
-      { ref: link('pkg:npm/lodash@4.17.20') },
+    expect(aliases[0].affects).toEqual([{ ref: link('pkg:npm/lodash@4.17.15') }]);
+    expect(aliases[0].references.map((r: any) => r.id)).toEqual(['CVE-2026-0102']);
+    // The not-affected CVE names the alias nowhere, its references included.
+    expect(byId(doc.vulnerabilities, 'CVE-2026-0101').references).toBeUndefined();
+    expect(byId(doc.vulnerabilities, 'CVE-2026-0102').references.map((r: any) => r.id)).toEqual([
+      'GHSA-aaaa-bbbb-cccc',
     ]);
-    expect(aliases[0].references.map((r: any) => r.id)).toEqual(['CVE-2026-0101', 'CVE-2026-0102']);
 
     // Two not-affected decisions: the alias keeps the first one.
     const both = buildCycloneDxVex(
@@ -619,6 +622,51 @@ describe('buildOpenVex', () => {
       aliases: ['GHSA-p6mc-m468-83gw'],
     });
     expect(doc.statements[1].vulnerability).toEqual({ name: 'CVE-2026-0001' });
+  });
+
+  it('leaves out an OpenVEX alias that has its own statement on the package', () => {
+    const doc = buildOpenVex(DOC, [
+      LODASH,
+      entry({
+        vulnerabilityId: 'GHSA-p6mc-m468-83gw',
+        packageName: 'lodash',
+        purls: ['pkg:npm/lodash@4.17.15'],
+      }),
+      // On another package the alias stays.
+      { ...LODASH, packageName: 'lodash-es', purls: ['pkg:npm/lodash-es@4.17.15'] },
+    ]) as any;
+    expect(validateAgainst('openvex', doc)).toEqual([]);
+    expect(doc.statements.map((st: any) => [st.vulnerability, st.status])).toEqual([
+      [{ name: 'CVE-2020-8203' }, 'not_affected'],
+      [{ name: 'GHSA-p6mc-m468-83gw' }, 'under_investigation'],
+      [{ name: 'CVE-2020-8203', aliases: ['GHSA-p6mc-m468-83gw'] }, 'not_affected'],
+    ]);
+  });
+
+  it('leaves out an OpenVEX alias shared with a statement that does not suppress', () => {
+    const shared = (vulnerabilityId: string, status: VexEntry['status']) =>
+      entry({ vulnerabilityId, packageName: 'lodash', status, aliases: ['GHSA-yyyy-yyyy-yyyy'] });
+    const mixed = buildOpenVex(DOC, [
+      shared('CVE-2026-0201', 'false_positive'),
+      shared('CVE-2026-0202', 'open'),
+      shared('CVE-2026-0203', 'false_positive'),
+    ]) as any;
+    expect(validateAgainst('openvex', mixed)).toEqual([]);
+    expect(mixed.statements.map((st: any) => [st.vulnerability, st.status])).toEqual([
+      [{ name: 'CVE-2026-0201' }, 'not_affected'],
+      [{ name: 'CVE-2026-0202', aliases: ['GHSA-yyyy-yyyy-yyyy'] }, 'under_investigation'],
+      [{ name: 'CVE-2026-0203' }, 'not_affected'],
+    ]);
+    // When every CVE that shares it is not affected, each keeps it.
+    const agreed = buildOpenVex(DOC, [
+      shared('CVE-2026-0201', 'false_positive'),
+      shared('CVE-2026-0203', 'false_positive'),
+    ]) as any;
+    expect(validateAgainst('openvex', agreed)).toEqual([]);
+    expect(agreed.statements.map((st: any) => st.vulnerability.aliases)).toEqual([
+      ['GHSA-yyyy-yyyy-yyyy'],
+      ['GHSA-yyyy-yyyy-yyyy'],
+    ]);
   });
 
   it('carries the decision of an open entry: timestamp, comment and author in the notes (D8-3)', () => {
