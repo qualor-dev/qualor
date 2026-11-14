@@ -111,7 +111,7 @@ export const issueStatusImportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }>
         project.id,
         request.body.items,
         request.body.dryRun,
-        { audit: { recorder: deps.audit, context: actorOf(request) } },
+        { audit: { recorder: deps.audit, context: actorOf(request) }, logger: request.log },
       );
     },
   );

@@ -12,6 +12,7 @@ import {
   type StatusImportResult,
 } from '@qualor/shared';
 import { and, eq, sql } from 'drizzle-orm';
+import type { FastifyBaseLogger } from 'fastify';
 import type { AuditActorContext, AuditRecorder } from '../audit/recorder';
 import { projectRefs } from '../audit/refs';
 import type { AccessContext } from '../auth/access';
@@ -127,6 +128,8 @@ export async function importIssueStatuses(
     lockTimeoutMs?: number;
     /** rbac-audit.md §8, one `issue.statuses_imported` per import that is not a dry run. */
     audit?: { recorder: AuditRecorder; context: AuditActorContext };
+    /** Where a transaction run again after a conflict is logged (debug, with its SQLSTATE). */
+    logger?: Pick<FastifyBaseLogger, 'debug'>;
   } = {},
 ): Promise<StatusImportResponse> {
   const db = access.db;
@@ -294,48 +297,56 @@ export async function importIssueStatuses(
   }
   // A pair found only after the issue locks (DecisionPairsChanged) or a deadlock runs the whole
   // transaction again; each attempt sets the outcome of every item it applies anew.
-  return withConflictRetry(() =>
-    db.transaction(async (tx) => {
-      await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
-      // Both statuses write vulnerability decisions: their pairs and issues are locked here, once.
-      // Each status's transition reads its issues again, but locks no pair after them (D2-2).
-      const locked = await lockForTransition(
-        tx,
-        pending.flatMap((to) => [...toApply[to].keys()]),
-        true,
-      );
-      const done: [ImportStatus, TransitionResult][] = [];
-      for (const to of pending) {
-        const own = toApply[to];
-        // No `audit` here: the import is one summary event, not one per issue. Its vulnerability
-        // decisions need no reason (vuln plan 2b, D9), and their events are recorded below.
-        done.push([
-          to,
-          await transitionIssuesIn(tx, user, [...own.keys()], to, null, {
-            comments: own,
-            source: 'import',
-            locked,
-            deferReevaluation: true,
-          }),
-        ]);
-      }
-      // The gates of both statuses' branches in one batch, in one branch-lock order (D2-4).
-      await enqueueReevaluations(
-        tx,
-        done.flatMap(([, result]) => result.reevaluate),
-      );
-      applyOutcomes(done);
-      // After the re-evaluations are queued, like every audit event of the import.
-      if (options.audit) {
-        for (const [, result] of done) {
-          for (const { input, result: written } of result.decisions) {
-            await recordDecision(tx, options.audit, input, written);
+  return withConflictRetry(
+    () =>
+      db.transaction(async (tx) => {
+        await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
+        // Both statuses write vulnerability decisions: their pairs and issues are locked here, once.
+        // Each status's transition reads its issues again, but locks no pair after them (D2-2).
+        const locked = await lockForTransition(
+          tx,
+          pending.flatMap((to) => [...toApply[to].keys()]),
+          true,
+        );
+        const done: [ImportStatus, TransitionResult][] = [];
+        for (const to of pending) {
+          const own = toApply[to];
+          // No `audit` here: the import is one summary event, not one per issue. Its vulnerability
+          // decisions need no reason (vuln plan 2b, D9), and their events are recorded below.
+          done.push([
+            to,
+            await transitionIssuesIn(tx, user, [...own.keys()], to, null, {
+              comments: own,
+              source: 'import',
+              locked,
+              deferReevaluation: true,
+            }),
+          ]);
+        }
+        // The gates of both statuses' branches in one batch, in one branch-lock order (D2-4).
+        await enqueueReevaluations(
+          tx,
+          done.flatMap(([, result]) => result.reevaluate),
+        );
+        applyOutcomes(done);
+        // After the re-evaluations are queued, like every audit event of the import.
+        if (options.audit) {
+          for (const [, result] of done) {
+            for (const { input, result: written } of result.decisions) {
+              await recordDecision(tx, options.audit, input, written);
+            }
           }
         }
-      }
-      const final = response();
-      await recordImport(tx, final);
-      return final;
-    }),
+        const final = response();
+        await recordImport(tx, final);
+        return final;
+      }),
+    {
+      onRetry: (code, attempt) =>
+        options.logger?.debug(
+          { component: 'issues', code, attempt },
+          'an issue status import conflicted with another transaction; running it again',
+        ),
+    },
   );
 }

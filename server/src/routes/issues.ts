@@ -519,6 +519,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
           },
           reason: request.body.reason ?? null,
           chargeMirrored: (count) => chargeChanges(principal.user.id, count),
+          logger: request.log,
         },
       );
       const [failure] = result.failed;
@@ -591,6 +592,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
           },
           reason: request.body.reason ?? null,
           chargeMirrored: (count) => chargeChanges(principal.user.id, count),
+          logger: request.log,
         },
       );
       return {

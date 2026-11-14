@@ -513,7 +513,22 @@ describe('the vulnerability decision store', () => {
     );
     await waitForLockWaiters(t.db, 2);
     letGo.resolve();
-    await Promise.all([holder, writing, transitioning]);
+    const [, , moved] = await Promise.all([holder, writing, transitioning]);
+    // The transition succeeds when it got the pair first; after the decision, main is a false
+    // positive, which only reopens.
+    const [first] = await t.db
+      .select()
+      .from(issueChanges)
+      .where(eq(issueChanges.issueId, f.issue.main))
+      .orderBy(asc(issueChanges.id))
+      .limit(1);
+    const transitionFirst = first?.newValue === 'wont_fix';
+    expect(moved.succeeded).toEqual(transitionFirst ? [f.issue.main] : []);
+    expect(moved.failed).toEqual(
+      transitionFirst
+        ? []
+        : [{ id: f.issue.main, code: 'INVALID_TRANSITION', from: 'false_positive' }],
+    );
     for (const [name, id] of Object.entries(f.issue).filter(([key]) => key !== 'other')) {
       const log = await t.db
         .select()

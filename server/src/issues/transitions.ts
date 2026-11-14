@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type { FastifyBaseLogger } from 'fastify';
 import type { AuditActorContext, AuditEventInput, AuditRecorder } from '../audit/recorder';
 import { projectRefs, type AuditRef } from '../audit/refs';
 import type { AccessContext } from '../auth/access';
@@ -13,6 +14,7 @@ import { withConflictRetry } from '../db/retry';
 import type { OrganizationRole, ProjectRole } from '../db/schema';
 import { enqueueReevaluations } from '../gates/reevaluate';
 import type { IssueStatus } from '../tracking/plan';
+import { vulnerabilitySettingsOf } from '../versions/settings';
 import {
   branchDecisionKeys,
   lockDecisionPairs,
@@ -24,7 +26,6 @@ import {
   type DecisionResult,
   type VexJustification,
 } from '../vulnerabilities/decisions';
-import { vulnerabilitySettingsOf } from '../versions/settings';
 import { decidingIssues, type DecidingIssue } from '../vulnerabilities/trivy-issues';
 import {
   USER_STATUSES,
@@ -236,8 +237,30 @@ export interface TransitionOptions {
    * Called inside the transaction with the number of other issues the vulnerability decisions
    * changed (the requested issues are the caller's to charge). It throws to refuse, which rolls
    * the whole transition back: one decision must not change many issues for one request's cost.
+   * A transaction run again ({@link withConflictRetry}) charges only the excess over the earlier
+   * attempts ({@link chargeAcrossAttempts}).
    */
   chargeMirrored?: (count: number) => void;
+  /** Where a transaction run again after a conflict is logged (debug, with its SQLSTATE). */
+  logger?: Pick<FastifyBaseLogger, 'debug'>;
+}
+
+/**
+ * `charge` across the attempts of one transition: each attempt reports its whole count, and only
+ * the excess over what earlier attempts charged is charged. The limiter lives in memory, so a
+ * charge does not roll back with a deadlocked attempt, and a retry must not charge it twice. A
+ * charge that throws (refuses) charged nothing.
+ */
+export function chargeAcrossAttempts(
+  charge: ((count: number) => void) | undefined,
+): ((count: number) => void) | undefined {
+  if (charge === undefined) return undefined;
+  let charged = 0;
+  return (count) => {
+    if (count <= charged) return;
+    charge(count - charged);
+    charged = count;
+  };
 }
 
 /** The requested issues, split by what the user's roles allow on each one's project. */
@@ -335,17 +358,26 @@ export async function transitionIssues(
   options: TransitionOptions = {},
 ): Promise<TransitionResult> {
   const user = principal.user;
-  return withConflictRetry(() =>
-    access.db.transaction(async (tx) => {
-      await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
-      return transitionIssuesIn(tx, user, requested, to, comment, {
-        comments: options.comments,
-        audit: options.audit,
-        reason: options.reason,
-        source: options.source,
-        chargeMirrored: options.chargeMirrored,
-      });
-    }),
+  const chargeMirrored = chargeAcrossAttempts(options.chargeMirrored);
+  return withConflictRetry(
+    () =>
+      access.db.transaction(async (tx) => {
+        await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
+        return transitionIssuesIn(tx, user, requested, to, comment, {
+          comments: options.comments,
+          audit: options.audit,
+          reason: options.reason,
+          source: options.source,
+          chargeMirrored,
+        });
+      }),
+    {
+      onRetry: (code, attempt) =>
+        options.logger?.debug(
+          { component: 'issues', code, attempt },
+          'an issue transition conflicted with another transaction; running it again',
+        ),
+    },
   );
 }
 
@@ -423,35 +455,50 @@ function selectChanges(
 /** What {@link transitionIssuesIn} takes besides the options of {@link transitionIssues}. */
 export type TransitionInOptions = Pick<
   TransitionOptions,
-  'comments' | 'audit' | 'reason' | 'source' | 'chargeMirrored'
+  'comments' | 'reason' | 'source' | 'chargeMirrored'
 > & {
   /**
    * The caller's {@link lockForTransition} of every issue its transitions change, taken before
    * the first (the status import's two statuses, D2-2): the issues are read again, no pair is.
    */
   locked?: Pick<TransitionLocks, 'deciding' | 'held'>;
-  /**
-   * Queue no gate re-evaluation: `TransitionResult.reevaluate` names the issues, and the caller
-   * queues them once for all of its transitions (the status import, D2-4), so the branch locks
-   * of one batch are taken in one order. Not with `audit`, whose events would precede them.
-   */
-  deferReevaluation?: boolean;
-};
+} & (
+    | { audit?: TransitionAudit; deferReevaluation?: false }
+    | {
+        audit?: never;
+        /**
+         * Queue no gate re-evaluation: `TransitionResult.reevaluate` names the issues, and the
+         * caller queues them once for all of its transitions (the status import, D2-4), so the
+         * branch locks of one batch are taken in one order. Never with `audit`, whose events
+         * would precede them.
+         */
+        deferReevaluation: true;
+      }
+  );
 
 /**
  * The locks of a transition whose caller took them all before (`first`, {@link lockForTransition}
- * of a superset of `ids`). The rows are read again ({@link lockIssues}, free: they are held) for
- * the statuses an earlier transition of the transaction set, and only the held ones count: an
- * issue linked as a duplicate since is left alone, as if linked after the transaction. No pair is
- * read or locked: a pair locked now would follow the issue locks (D2-2).
+ * of a superset of `ids`). The held rows of `ids` and their duplicates are read again for the
+ * statuses an earlier transition of the transaction set, without a lock (ruling P8: they are
+ * held already). Only held rows count: an issue linked as a duplicate since is neither read nor
+ * locked, as if linked after the transaction. No pair is read or locked: a pair locked now would
+ * follow the issue locks (D2-2).
  */
 async function lockedBefore(
   tx: Executor,
   ids: readonly string[],
   first: Pick<TransitionLocks, 'deciding' | 'held'>,
 ): Promise<TransitionLocks> {
-  const held = new Set(first.held);
-  const locked = (await lockIssues(tx, ids)).filter((row) => held.has(row.id));
+  const locked =
+    ids.length === 0
+      ? []
+      : (
+          await tx.execute<LockedIssue>(sql`
+            SELECT id, status, duplicate_of_issue_id FROM issues
+             WHERE (id IN ${uuidList(ids)} OR duplicate_of_issue_id IN ${uuidList(ids)})
+               AND id IN ${uuidList(first.held)}
+             ORDER BY id`)
+        ).rows;
   return { locked, deciding: first.deciding, held: first.held };
 }
 

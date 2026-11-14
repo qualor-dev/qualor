@@ -39,7 +39,23 @@ describe('withConflictRetry', () => {
 
   it('takes another number of attempts', async () => {
     const attempt = failing({ code: '40001' }, { code: '40001' }, { code: '40001' });
-    await expect(withConflictRetry(attempt.fn, 4)).resolves.toBe(4);
+    await expect(withConflictRetry(attempt.fn, { attempts: 4 })).resolves.toBe(4);
+  });
+
+  it('tells onRetry the code and the attempt before each new run, not after the last', async () => {
+    const attempt = failing(
+      { code: '40001' },
+      new Error('query failed', { cause: { code: '40P01' } }),
+      { code: '40P01' },
+    );
+    const retried: [string, number][] = [];
+    await expect(
+      withConflictRetry(attempt.fn, { onRetry: (code, n) => retried.push([code, n]) }),
+    ).rejects.toEqual({ code: '40P01' });
+    expect(retried).toEqual([
+      ['40001', 1],
+      ['40P01', 2],
+    ]);
   });
 
   it.each([
