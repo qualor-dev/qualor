@@ -8,7 +8,7 @@ import { first } from '../db/rows';
 import { uuidv7 } from '../db/ids';
 import { vulnerabilityDecisions } from '../db/schema';
 import { enqueueReevaluations } from '../gates/reevaluate';
-import { writeStatus, writeStatusLog, type StatusLogRow } from '../issues/transitions';
+import { writeStatus, writeStatusLog, type StatusLogRow } from '../issues/status-writes';
 import { isTrackedBranch, vulnerabilitySettings } from '../versions/settings';
 
 /** The CycloneDX VEX justifications a "false positive" decision may name (spec §10). */
