@@ -151,7 +151,8 @@ async function updateMatched(
         status = CASE WHEN i.status = r.from_status THEN r.status ELSE i.status END,
         in_new_code = r.in_new_code,
         snippet = r.snippet, secondary_locations = r.secondary_locations,
-        confidence = r.confidence, package_name = r.package_name,
+        -- A finding whose package name cannot be read (D2-1) keeps the one the issue has.
+        confidence = r.confidence, package_name = coalesce(r.package_name, i.package_name),
         last_seen_analysis_id = ${analysisId},
         -- A matched row is never left 'closed', so once the guard passes closed_at always clears.
         closed_at = CASE WHEN i.status = r.from_status THEN NULL ELSE i.closed_at END,

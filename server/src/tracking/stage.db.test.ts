@@ -671,6 +671,17 @@ describe('issue tracking (server step 8, data-model.md §5.2 and §6)', () => {
       expect(await issuesOf(p)).toMatchObject([{ packageName: 'lodash', status: 'open' }]);
     });
 
+    it('keeps a known package name when a match cannot read it', async () => {
+      const p = await h.project('track/trivy-name-kept');
+      await p.ingestOk(report(p, withTrivy));
+      const [before] = await issuesOf(p);
+      const nameless = { ...trivy, message: 'Prototype pollution', properties: {} };
+      await p.ingestOk(report(p, { ...withTrivy, findings: [nameless] }));
+      expect(await issuesOf(p)).toMatchObject([
+        { id: before!.id, message: 'Prototype pollution', packageName: 'lodash' },
+      ]);
+    });
+
     it('starts a new issue on main and on a merge request with the project decision', async () => {
       const p = await h.project('track/trivy-decided');
       await decide(p.id, 'false_positive');
