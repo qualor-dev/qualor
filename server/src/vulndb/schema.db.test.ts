@@ -151,7 +151,7 @@ describe('migration 0021_vulndb', () => {
       .select()
       .from(vulnerabilityMatches)
       .where(eq(vulnerabilityMatches.purl, PURL));
-    expect(read).toEqual(row);
+    expect(read).toEqual({ ...row, vendorIds: [] });
     await expectRejection(
       t.db.insert(vulnerabilityMatches).values(row),
       /duplicate key|pkey|unique/i,
