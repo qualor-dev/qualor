@@ -68,10 +68,10 @@ function exploitedMessage(
 
 /**
  * One `vulnerabilities.exploited` delivery per active Slack or Teams webhook that lists the event,
- * about the projects of `rowsOf` (the `alertRows` of the run's items, with `priority`) it covers
- * (org-wide, or its own project); the number created. A project with no KEV row left (triaged
- * since the pick) is left out, and a webhook with no project left gets nothing. The caller marks
- * the items.
+ * about the projects of `rowsOf` (`alertRows(…).byProject` of the run's items, with `priority`) it
+ * covers (org-wide, or its own project); the number created. A project with no KEV row left
+ * (triaged since the pick) is left out, and a webhook with no project left gets nothing. The caller
+ * marks the items.
  */
 export async function exploitedDeliveries(
   tx: Executor,
@@ -147,7 +147,7 @@ export async function digestVulnerabilities(
      WHERE p.organization_id = ${scope.organizationId} ${projectFilter}
        AND NOT i.baseline AND i.found_at >= ${window.since} AND i.found_at < ${window.until}`);
   if (items.rows.length === 0) return null;
-  const rowsOf = await alertRows(
+  const { byProject: rowsOf } = await alertRows(
     tx,
     items.rows.map((item) => item.id),
     options,

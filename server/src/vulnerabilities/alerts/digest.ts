@@ -170,7 +170,7 @@ async function processItems(
 ): Promise<{ mails: number; deliveries: number; items: number }> {
   const itemIds = await pendingItems(tx, now);
   if (itemIds.length === 0) return NOTHING;
-  const listed = digestRows(await alertRows(tx, itemIds, { priority }));
+  const listed = digestRows((await alertRows(tx, itemIds, { priority })).byProject);
   let mails = 0;
   let deliveries = 0;
   if (listed.size > 0) {

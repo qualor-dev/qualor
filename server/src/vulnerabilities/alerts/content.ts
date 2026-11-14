@@ -17,6 +17,7 @@ export {
 } from '../../mail/templates/notify-vulnerability-common';
 
 interface Row extends Record<string, unknown> {
+  item_id: string;
   project_id: string;
   vulnerability_id: string;
   package_name: string;
@@ -104,14 +105,21 @@ function mergeMatch(row: VulnerabilityMailRow, r: Row): void {
   }
 }
 
+/** What {@link alertRows} found: the rows per project id, and the items they came from. */
+export interface AlertRows {
+  byProject: Map<string, VulnerabilityMailRow[]>;
+  /** The given items with at least one row: an item whose rows were triaged away is absent. */
+  itemIds: Set<string>;
+}
+
 /**
  * The rows of an alert email for the given alert items (4b): one per (vulnerability, package) of
  * each project, naming once each target of those items, not every target the pair is open on. In
  * a digest those are the targets where it is new: baseline pairs never reach one (A3). It only
  * formats. Who qualifies and what gets marked as sent are the callers' business; a row whose
  * target's effective status is not open, or that is ignored, is left out here too, so a pair with
- * no row left is not listed. `exploited` is the KEV entry and is filled only with
- * `options.priority` (`vuln.priority`).
+ * no row left is not listed, and its item is not in `itemIds`. `exploited` is the KEV entry and is
+ * filled only with `options.priority` (`vuln.priority`).
  *
  * Order: critical, high, medium, low, unknown; then the vulnerability id; then the package.
  * Targets: main, the other branches by name, then the versions by label.
@@ -120,12 +128,13 @@ export async function alertRows(
   tx: Executor,
   itemIds: readonly string[],
   options: { priority: boolean },
-): Promise<Map<string, VulnerabilityMailRow[]>> {
-  const result = new Map<string, VulnerabilityMailRow[]>();
+): Promise<AlertRows> {
+  const result: AlertRows = { byProject: new Map(), itemIds: new Set() };
   if (itemIds.length === 0) return result;
+  // A row matches one item at most: an item is unique per (target, vulnerability id).
   const found = await tx.execute<Row>(sql`
     WITH it AS (
-      SELECT t.branch_id, t.version_id, i.vulnerability_id
+      SELECT i.id, t.branch_id, t.version_id, i.vulnerability_id
         FROM vulnerability_alert_items i
         JOIN vulnerability_alert_targets t ON t.id = i.target_id
        WHERE i.id IN ${uuidList(itemIds)}
@@ -136,18 +145,21 @@ export async function alertRows(
              WHERE it.vulnerability_id = tv.vulnerability_id
                AND (it.branch_id = tv.branch_id OR it.version_id = tv.version_id))`,
     )})
-    SELECT r.project_id, r.vulnerability_id, r.package_name, r.package_version, r.severity,
-           r.title, r.fixed_version, r.kev, r.kev_date_added,
+    SELECT it.id AS item_id, r.project_id, r.vulnerability_id, r.package_name, r.package_version,
+           r.severity, r.title, r.fixed_version, r.kev, r.kev_date_added,
            COALESCE(b.name, v.label) AS target_name,
            COALESCE(b.is_main, false) AS target_is_main,
            r.version_id IS NOT NULL AS target_is_version
       FROM r
+      JOIN it ON it.vulnerability_id = r.vulnerability_id
+             AND (it.branch_id = r.branch_id OR it.version_id = r.version_id)
       LEFT JOIN branches b ON b.id = r.branch_id
       LEFT JOIN project_versions v ON v.id = r.version_id
      WHERE r.eff_status = 'open' AND NOT r.ignored`);
 
   const pairs = new Map<string, AlertPair>();
   for (const r of found.rows) {
+    result.itemIds.add(r.item_id);
     const key = `${r.project_id}\u0000${r.package_name}\u0000${r.vulnerability_id}`;
     let pair = pairs.get(key);
     if (pair === undefined) {
@@ -170,11 +182,11 @@ export async function alertRows(
           compare(an, bn),
       )
       .map(([name]) => name);
-    const rows = result.get(pair.projectId);
-    if (rows === undefined) result.set(pair.projectId, [pair.row]);
+    const rows = result.byProject.get(pair.projectId);
+    if (rows === undefined) result.byProject.set(pair.projectId, [pair.row]);
     else rows.push(pair.row);
   }
-  for (const rows of result.values()) {
+  for (const rows of result.byProject.values()) {
     rows.sort(
       (a, b) =>
         SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) ||

@@ -1001,6 +1001,8 @@ export async function recheckProjects(
       { component: 'vulnerabilities', code: outcome.code, message: outcome.message },
       'vulnerability re-check failed',
     );
+    // The batches written before the failure are final: the alert job looks at them too.
+    await enqueueVulnerabilityAlerts(deps.db);
     return { kind: 'failed', error: outcome };
   }
   if ('all' in scope) await pruneQuietly(deps, outcome.packages);
@@ -1022,7 +1024,8 @@ export async function recheckProjects(
     { component: 'vulnerabilities', ...summary, trivyRuns: current?.trivyRuns ?? 0 },
     'vulnerability re-check done',
   );
-  // 4b: the alert job looks at what this run wrote. A stopped run never gets here (it is queued again).
+  // 4b: the alert job looks at what this run wrote, as after a failure. A stopped run never gets
+  // here (it is queued again).
   await enqueueVulnerabilityAlerts(deps.db);
   return { kind: 'done', summary };
 }

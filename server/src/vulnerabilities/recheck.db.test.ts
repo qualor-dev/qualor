@@ -1054,6 +1054,14 @@ describe('vulnerability re-checks', () => {
       expect(await alertJobs()).toEqual([{ status: 'queued' }]);
     });
 
+    it('is queued when a re-check fails', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      trivy.failure = { ok: false, code: 'TIMEOUT', message: 'Trivy ran longer than 900000 ms' };
+      expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'failed' });
+      expect(await alertJobs()).toEqual([{ status: 'queued' }]);
+    });
+
     it('is not queued when a stop ended the run', async () => {
       const p = await project();
       await onBranch(p, 'main', { dependencies: [A] });

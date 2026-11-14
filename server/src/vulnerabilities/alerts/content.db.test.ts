@@ -113,7 +113,7 @@ describe('alertRows: the rows of an alert email', () => {
       await p.item({ branchId: p.main }, 'CVE-2026-0009', { severity: 'critical' }),
       await p.item({ branchId: p.main }, 'CVE-2026-0004', { severity: 'unknown' }),
     ];
-    const rows = (await alertRows(t.db, ids, { priority: false })).get(p.projectId);
+    const rows = (await alertRows(t.db, ids, { priority: false })).byProject.get(p.projectId);
     expect(rows?.map((r) => [r.vulnerabilityId, r.severity])).toEqual([
       ['CVE-2026-0009', 'critical'],
       ['CVE-2026-0001', 'high'],
@@ -123,7 +123,7 @@ describe('alertRows: the rows of an alert email', () => {
     ]);
   });
 
-  it('leaves out triaged and ignored rows', async () => {
+  it('leaves out triaged and ignored rows, and their items', async () => {
     const p = await setup();
     const ids = [
       await p.item({ branchId: p.main }, 'CVE-2026-0001'),
@@ -137,18 +137,23 @@ describe('alertRows: the rows of an alert email', () => {
       branchId: p.main,
       status: 'false_positive',
     });
-    const rows = (await alertRows(t.db, ids, { priority: false })).get(p.projectId);
-    expect(rows?.map((r) => r.vulnerabilityId)).toEqual(['CVE-2026-0001']);
+    const found = await alertRows(t.db, ids, { priority: false });
+    expect(found.byProject.get(p.projectId)?.map((r) => r.vulnerabilityId)).toEqual([
+      'CVE-2026-0001',
+    ]);
+    expect(found.itemIds).toEqual(new Set([ids[0]]));
   });
 
-  it('gives one row for a vulnerability on main and 2.3.4, main first', async () => {
+  it('gives one row for a vulnerability on main and 2.3.4, main first, from every item', async () => {
     const p = await setup();
     const ids = [
       await p.item({ versionId: p.version }, 'CVE-2026-0001', { packageVersion: '4.17.20' }),
       await p.item({ branchId: p.release }, 'CVE-2026-0001', { packageVersion: '4.17.21' }),
       await p.item({ branchId: p.main }, 'CVE-2026-0001', { packageVersion: '4.17.21' }),
     ];
-    const rows = (await alertRows(t.db, ids, { priority: false })).get(p.projectId);
+    const found = await alertRows(t.db, ids, { priority: false });
+    expect(found.itemIds).toEqual(new Set(ids));
+    const rows = found.byProject.get(p.projectId);
     expect(rows).toHaveLength(1);
     expect(rows?.[0]).toMatchObject({
       vulnerabilityId: 'CVE-2026-0001',
@@ -162,7 +167,7 @@ describe('alertRows: the rows of an alert email', () => {
     const p = await setup();
     const main = await p.item({ branchId: p.main }, 'CVE-2026-0001');
     await p.item({ versionId: p.version }, 'CVE-2026-0001');
-    const rows = (await alertRows(t.db, [main], { priority: false })).get(p.projectId);
+    const rows = (await alertRows(t.db, [main], { priority: false })).byProject.get(p.projectId);
     expect(rows?.[0]?.targets).toEqual(['main']);
   });
 
@@ -179,15 +184,18 @@ describe('alertRows: the rows of an alert email', () => {
       .insert(vulnerabilityKev)
       .values({ vulnerabilityId: 'CVE-2026-0001', dateAdded: '2026-10-30' })
       .onConflictDoNothing();
-    const plain = (await alertRows(t.db, ids, { priority: false })).get(p.projectId);
+    const plain = (await alertRows(t.db, ids, { priority: false })).byProject.get(p.projectId);
     expect(plain?.map((r) => r.exploited)).toEqual([null, null]);
-    const priority = (await alertRows(t.db, ids, { priority: true })).get(p.projectId);
+    const priority = (await alertRows(t.db, ids, { priority: true })).byProject.get(p.projectId);
     expect(priority?.map((r) => r.exploited)).toEqual([{ dateAdded: '2026-10-30' }, null]);
     expect(priority?.[0]).toMatchObject({ title: 'Prototype pollution', fixedVersion: '4.17.22' });
     expect(priority?.[1]).toMatchObject({ title: null, fixedVersion: null });
   });
 
-  it('answers an empty map for no items', async () => {
-    expect((await alertRows(t.db, [], { priority: true })).size).toBe(0);
+  it('answers nothing for no items', async () => {
+    expect(await alertRows(t.db, [], { priority: true })).toEqual({
+      byProject: new Map(),
+      itemIds: new Set(),
+    });
   });
 });
