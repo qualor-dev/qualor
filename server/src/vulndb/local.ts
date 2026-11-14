@@ -4,7 +4,14 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/p
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { Executor } from '../db/client';
-import { datasetEntryWant, readDatasetChunks, type DatasetRow } from './store';
+import {
+  datasetEntryWant,
+  isGone,
+  readDatasetChunks,
+  VULNDB_INFLATE_DEADLINE_MS,
+  VULNDB_MAX_INFLATED_BYTES,
+  type DatasetRow,
+} from './store';
 import { readTarGz, TarError } from '@qualor/shared/tar';
 
 /**
@@ -48,10 +55,6 @@ const isDiskError = (err: unknown): err is NodeJS.ErrnoException =>
   err instanceof Error &&
   typeof (err as NodeJS.ErrnoException).code === 'string' &&
   DISK_CODES.has((err as NodeJS.ErrnoException).code ?? '');
-
-/** readDatasetChunks' errors for a dataset or a chunk that is gone (pruned). */
-const isGone = (err: unknown): boolean =>
-  err instanceof Error && /^(chunk \d+ of )?vulnerability dataset .* not found$/.test(err.message);
 
 const dirName = (dataset: DatasetRow): string =>
   (dataset.digest ?? '').replace(/^sha256:/, '').slice(0, 16);
@@ -104,11 +107,18 @@ async function* until(
   }
 }
 
+/** Tests only: other caps for unpacking the archive than the defaults. */
+export interface LocalLimits {
+  maxBytes?: number;
+  deadlineMs?: number;
+}
+
 async function extract(
   db: Executor,
   dir: string,
   dataset: DatasetRow,
   signal?: AbortSignal,
+  limits: LocalLimits = {},
 ): Promise<LocalResult> {
   const digest = dataset.digest;
   if (digest === null || !/^sha256:[0-9a-f]{64}$/.test(digest)) {
@@ -141,6 +151,10 @@ async function extract(
         } else {
           await writeFile(join(tmp, 'db', 'metadata.json'), entry.data);
         }
+      },
+      {
+        maxBytes: limits.maxBytes ?? VULNDB_MAX_INFLATED_BYTES,
+        deadline: Date.now() + (limits.deadlineMs ?? VULNDB_INFLATE_DEADLINE_MS),
       },
     );
     if (!found.has('trivy.db') || !found.has('metadata.json')) {
@@ -189,10 +203,10 @@ export function withLocalDatabase<T>(
   dir: string,
   dataset: DatasetRow,
   fn: (cacheDir: string) => Promise<T>,
-  options: { signal?: AbortSignal | undefined } = {},
+  options: { signal?: AbortSignal | undefined; limits?: LocalLimits } = {},
 ): Promise<{ result: T } | { problem: LocalProblem }> {
   return locked(async () => {
-    const got = await extract(db, dir, dataset, options.signal);
+    const got = await extract(db, dir, dataset, options.signal, options.limits);
     if ('problem' in got) return got;
     return { result: await fn(got.cacheDir) };
   });

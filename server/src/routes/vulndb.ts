@@ -478,6 +478,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         source: 'upload',
         chunks: request.body as AsyncIterable<Buffer>,
         maxBytes,
+        logger: request.log,
       });
       if ('problem' in stored) {
         if (stored.problem.code === 'TOO_LARGE') throw tooLargeProblem(maxBytes);

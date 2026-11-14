@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto';
+import type { FastifyBaseLogger } from 'fastify';
 import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import type { Db, Executor } from '../db/client';
+import { isForeignKeyViolation, pgErrorCode } from '../db/errors';
 import { LOCKS } from '../db/locks';
 import { vulndbChunks, vulndbDatasets, type VulndbDatasetRow } from '../db/schema';
 import { OutboundStreamError } from '../http/outbound';
 import { readVulndbState, updateVulndbStateLocked, type VulndbState } from './state';
+import { z } from 'zod';
 import { readTarGz, TarError } from '@qualor/shared/tar';
 
 /** A `vulndb_datasets` row. */
@@ -14,6 +17,10 @@ export type DatasetRow = VulndbDatasetRow;
 export const CHUNK_BYTES = 8 * 1024 * 1024;
 /** An `incomplete` dataset older than this is a store that died: pruneDatasets removes it. */
 export const INCOMPLETE_MAX_AGE_MS = 60 * 60 * 1000;
+/** A dataset archive may unpack to this many bytes (`trivy.db` alone is 1.56 GiB; the volume is 6Gi). */
+export const VULNDB_MAX_INFLATED_BYTES = 6 * 1024 ** 3;
+/** Unpacking an archive (validating or extracting it) may take this long. */
+export const VULNDB_INFLATE_DEADLINE_MS = 10 * 60_000;
 /** The digest an `incomplete` dataset carries until its bytes are all in. */
 const PENDING_DIGEST = `sha256:${'0'.repeat(64)}`;
 
@@ -39,6 +46,10 @@ export interface StoreDatasetInput {
   expectedDigest?: string;
   /** More bytes than this stop the store with TOO_LARGE. */
   maxBytes: number;
+  /** Where a failed cleanup is reported. */
+  logger?: Pick<FastifyBaseLogger, 'warn'>;
+  /** Tests only: other caps for unpacking the archive than the defaults. */
+  limits?: { maxBytes?: number; deadlineMs?: number };
 }
 
 /** Ruling R3: the upload route answers TOO_LARGE with 413 and every other code with 422. */
@@ -64,6 +75,16 @@ function streamProblem(err: unknown): { problem: StoreProblem } {
   }
   return problemOf('STREAM_FAILED', 'The data stopped before its end');
 }
+
+/** readDatasetChunks' errors for a dataset or a chunk that is gone (pruned). */
+export const isGone = (err: unknown): boolean =>
+  err instanceof Error && /^(chunk \d+ of )?vulnerability dataset .* not found$/.test(err.message);
+
+const expiredProblem = () =>
+  problemOf(
+    'STREAM_FAILED',
+    'The upload expired before it was stored, because it took too long. Upload the file again',
+  );
 
 /** One chunk, and the dataset's count of them, in one short transaction. */
 async function writeChunk(db: Db, datasetId: string, seq: number, data: Buffer): Promise<void> {
@@ -164,7 +185,8 @@ function builtAtOf(text: string): Date | string {
   if (version !== 2) {
     return `metadata.json says Version ${JSON.stringify(version ?? null)}; Qualor reads Version 2`;
   }
-  const builtAt = typeof updatedAt === 'string' ? new Date(updatedAt) : null;
+  const parsed = z.iso.datetime({ offset: true }).safeParse(updatedAt);
+  const builtAt = parsed.success ? new Date(parsed.data) : null;
   if (builtAt === null || Number.isNaN(builtAt.getTime())) {
     return 'metadata.json has no valid UpdatedAt';
   }
@@ -175,15 +197,27 @@ function builtAtOf(text: string): Date | string {
  * Reads the stored archive back: `metadata.json` must say Version 2 with a valid `UpdatedAt`,
  * and `trivy.db` must be there and not empty. Answers the build time, or what is wrong.
  */
-async function validate(db: Db, datasetId: string): Promise<Date | string> {
+async function validate(
+  db: Db,
+  datasetId: string,
+  limits: StoreDatasetInput['limits'] = {},
+): Promise<Date | string> {
   let metadata: string | null = null;
   let dbBytes = 0;
   try {
-    await readTarGz(readDatasetChunks(db, datasetId), datasetEntryWant, (entry) => {
-      // trivy.db is not read here: the reader passes over it (decompressed, never kept).
-      if (entry.want === 'stream') dbBytes = entry.size;
-      else metadata = entry.data.toString('utf8');
-    });
+    await readTarGz(
+      readDatasetChunks(db, datasetId),
+      datasetEntryWant,
+      (entry) => {
+        // trivy.db is not read here: the reader passes over it (decompressed, never kept).
+        if (entry.want === 'stream') dbBytes = entry.size;
+        else metadata = entry.data.toString('utf8');
+      },
+      {
+        maxBytes: limits.maxBytes ?? VULNDB_MAX_INFLATED_BYTES,
+        deadline: Date.now() + (limits.deadlineMs ?? VULNDB_INFLATE_DEADLINE_MS),
+      },
+    );
   } catch (err) {
     if (err instanceof TarError) return err.message;
     throw err;
@@ -230,22 +264,34 @@ export async function storeDataset(db: Db, input: StoreDatasetInput): Promise<St
         `The data's digest ${written.digest} is not the expected ${input.expectedDigest}`,
       );
     }
-    const builtAt = await validate(db, datasetId);
+    const builtAt = await validate(db, datasetId, input.limits);
     if (typeof builtAt === 'string') return problemOf('INVALID_DATABASE', builtAt);
     const [dataset] = await db
       .update(vulndbDatasets)
       .set({ status: 'ready', digest: written.digest, sizeBytes: written.size, builtAt })
       .where(eq(vulndbDatasets.id, datasetId))
       .returning();
-    if (dataset === undefined) throw new Error(`vulnerability dataset ${datasetId} vanished`);
+    // The row is gone: a prune removed the upload, which took more than an hour.
+    if (dataset === undefined) return expiredProblem();
     kept = true;
     return { dataset };
+  } catch (err) {
+    if (isForeignKeyViolation(pgErrorCode(err)) || isGone(err)) return expiredProblem();
+    throw err;
   } finally {
     if (!kept) {
       await db
         .delete(vulndbDatasets)
         .where(eq(vulndbDatasets.id, datasetId))
-        .catch(() => undefined);
+        .catch((err: unknown) => {
+          input.logger?.warn(
+            {
+              component: 'vulndb',
+              errorClass: err instanceof Error ? err.constructor.name : typeof err,
+            },
+            'a vulnerability dataset that was not kept could not be deleted',
+          );
+        });
     }
   }
 }
@@ -297,13 +343,13 @@ export async function* readDatasetChunks(
 }
 
 /**
- * Keeps `keep` `ready` datasets and deletes the others, and the `incomplete` ones older than
- * {@link INCOMPLETE_MAX_AGE_MS} (a store that died). The current dataset is always one of those
- * kept, even when it is old, plus the newest other ready one (so there is something to go back
- * to); with no current dataset, the `keep` newest stay. The state cannot change meanwhile
- * (LOCKS.vulndbState). Answers how many were deleted.
+ * Keeps the current dataset (even when it is old) and the newest other `ready` one (so there is
+ * something to go back to), and deletes the other `ready` datasets and the `incomplete` ones
+ * older than {@link INCOMPLETE_MAX_AGE_MS} (a store that died). With no current dataset, the two
+ * newest stay. The state cannot change meanwhile (LOCKS.vulndbState). Answers how many were
+ * deleted.
  */
-export async function pruneDatasets(db: Db, keep = 2): Promise<number> {
+export async function pruneDatasets(db: Db): Promise<number> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulndbState})`);
     const { currentDatasetId } = await readVulndbState(tx);
@@ -314,9 +360,7 @@ export async function pruneDatasets(db: Db, keep = 2): Promise<number> {
       .orderBy(desc(vulndbDatasets.createdAt), asc(vulndbDatasets.id));
     const hasCurrent = ready.some((row) => row.id === currentDatasetId);
     const others = ready.filter((row) => row.id !== currentDatasetId);
-    const doomed = (hasCurrent ? others.slice(Math.max(1, keep - 1)) : ready.slice(keep)).map(
-      (row) => row.id,
-    );
+    const doomed = (hasCurrent ? others.slice(1) : ready.slice(2)).map((row) => row.id);
     const abandoned = await tx
       .select({ id: vulndbDatasets.id })
       .from(vulndbDatasets)

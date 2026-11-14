@@ -147,6 +147,15 @@ describe('local database copy', () => {
     expect(got).toMatchObject({ problem: { code: 'MISSING' } });
   });
 
+  it('answers MISSING when the stored archive inflates past the cap', async () => {
+    const d = await store(Buffer.alloc(2 * 1024 * 1024));
+    const got = await withLocalDatabase(t.db, dir, d, (cacheDir) => Promise.resolve(cacheDir), {
+      limits: { maxBytes: 1024 * 1024 },
+    });
+    expect(got).toMatchObject({ problem: { code: 'MISSING' } });
+    expect((await readdir(dir)).filter((n) => n.startsWith('tmp-'))).toEqual([]);
+  });
+
   it('withLocalDatabase pins the dataset while fn runs, against a concurrent refresh', async () => {
     const a = await store(Buffer.from('pinned a'));
     const b = await store(Buffer.from('pinned b'));

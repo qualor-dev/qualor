@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
+import type { Db } from '../db/client';
 import {
   metadataJson,
   tarGz,
@@ -154,21 +155,102 @@ describe('dataset storage', () => {
       expect(await counts()).toEqual({ datasets: 0, chunks: 0 });
     });
 
-    it.each([
-      ['no metadata.json', trivyArchive({ metadata: null }), /metadata\.json/],
+    const INVALID: [string, Buffer, RegExp, Partial<StoreDatasetInput>?][] = [
+      ['no metadata.json', trivyArchive({ metadata: null }), /metadata.json/],
       ['Version 1', trivyArchive({ metadata: metadataJson(1) }), /Version 1/],
       ['metadata.json that is not JSON', trivyArchive({ metadata: '{"Version":' }), /JSON/],
       ['no UpdatedAt', trivyArchive({ metadata: metadataJson(2, 'yesterday') }), /UpdatedAt/],
-      ['no trivy.db', trivyArchive({ db: null }), /trivy\.db/],
-      ['an empty trivy.db', trivyArchive({ db: Buffer.alloc(0) }), /trivy\.db/],
+      ['an UpdatedAt of "1"', trivyArchive({ metadata: metadataJson(2, '1') }), /UpdatedAt/],
+      [
+        'an UpdatedAt without a time',
+        trivyArchive({ metadata: metadataJson(2, '2026-10-30') }),
+        /UpdatedAt/,
+      ],
+      ['no trivy.db', trivyArchive({ db: null }), /trivy.db/],
+      ['an empty trivy.db', trivyArchive({ db: Buffer.alloc(0) }), /trivy.db/],
       ['a symbolic link', tarGz([{ name: 'trivy.db', type: '2' }]), /only plain files/],
       ['bytes that are not gzip', Buffer.from('not an archive'), /gzip/],
       ['nothing at all', Buffer.alloc(0), /empty/],
-    ])('answers INVALID_DATABASE for %s and leaves nothing', async (_what, bytes, message) => {
-      const got = await storeDataset(t.db, input(bytes, { source: 'upload' }));
-      expect(got).toMatchObject({ problem: { code: 'INVALID_DATABASE' } });
-      expect((got as { problem: { message: string } }).problem.message).toMatch(message);
+      [
+        'an archive past the inflate cap',
+        trivyArchive({ db: Buffer.alloc(2 * 1024 * 1024) }),
+        /more than 1048576 bytes/,
+        { limits: { maxBytes: 1024 * 1024 } },
+      ],
+    ];
+    it.each(INVALID)(
+      'answers INVALID_DATABASE for %s and leaves nothing',
+      async (_what, bytes, message, extra = {}) => {
+        const got = await storeDataset(t.db, input(bytes, { source: 'upload', ...extra }));
+        expect(got).toMatchObject({ problem: { code: 'INVALID_DATABASE' } });
+        expect((got as { problem: { message: string } }).problem.message).toMatch(message);
+        expect(await counts()).toEqual({ datasets: 0, chunks: 0 });
+      },
+    );
+
+    it('accepts an UpdatedAt with nine fraction digits', async () => {
+      const bytes = trivyArchive({ metadata: metadataJson(2, '2026-10-30T19:07:50.123456789Z') });
+      const got = await storeDataset(t.db, input(bytes));
+      expect(got).toMatchObject({ dataset: { builtAt: new Date('2026-10-30T19:07:50.123Z') } });
+    });
+
+    const EXPIRED = {
+      problem: {
+        code: 'STREAM_FAILED',
+        message:
+          'The upload expired before it was stored, because it took too long. Upload the file again',
+      },
+    };
+
+    it('answers STREAM_FAILED when the upload expired halfway, and leaves nothing', async () => {
+      async function* expiring(): AsyncGenerator<Buffer> {
+        yield* piecesOf(big.subarray(0, 8 * 1024 * 1024));
+        await t.db.delete(vulndbDatasets);
+        yield* piecesOf(big.subarray(8 * 1024 * 1024));
+      }
+      const got = await storeDataset(t.db, input(big, { chunks: expiring() }));
+      expect(got).toEqual(EXPIRED);
       expect(await counts()).toEqual({ datasets: 0, chunks: 0 });
+    });
+
+    it('answers STREAM_FAILED when the dataset is gone before validation', async () => {
+      // The one transaction of a small archive is its last chunk: the row goes right after it.
+      const gone = new Proxy(t.db, {
+        get(target, prop) {
+          const value: unknown = Reflect.get(target, prop, target);
+          if (prop !== 'transaction')
+            return typeof value === 'function' ? value.bind(target) : value;
+          return async (...args: unknown[]) => {
+            const result = await (value as (...a: unknown[]) => Promise<unknown>).apply(
+              target,
+              args,
+            );
+            await target.delete(vulndbDatasets);
+            return result;
+          };
+        },
+      }) as Db;
+      const got = await storeDataset(gone, input(trivyArchive()));
+      expect(got).toEqual(EXPIRED);
+      expect(await counts()).toEqual({ datasets: 0, chunks: 0 });
+    });
+
+    it('logs a cleanup that fails, and still answers the problem', async () => {
+      const failing = new Proxy(t.db, {
+        get(target, prop) {
+          if (prop === 'delete') return () => ({ where: () => Promise.reject(new Error('x')) });
+          const value: unknown = Reflect.get(target, prop, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      }) as Db;
+      const logger = { warn: vi.fn() };
+      const got = await storeDataset(failing, input(trivyArchive({ metadata: null }), { logger }));
+      expect(got).toMatchObject({ problem: { code: 'INVALID_DATABASE' } });
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        { component: 'vulndb', errorClass: 'Error' },
+        expect.any(String),
+      );
     });
 
     it('leaves the datasets that were there', async () => {
@@ -260,12 +342,12 @@ describe('dataset storage', () => {
       expect(left.map((r) => r.id).sort()).toEqual([b, c].sort());
     });
 
-    it('keeps as many as asked', async () => {
+    it('keeps the current and the newest other dataset', async () => {
       const a = await dataset('ready', 30);
       await dataset('ready', 20);
       const c = await dataset('ready', 10);
       await updateVulndbState(t.db, (s) => ({ ...s, currentDatasetId: a }));
-      expect(await pruneDatasets(t.db, 1)).toBe(1);
+      expect(await pruneDatasets(t.db)).toBe(1);
       const left = await t.db.select({ id: vulndbDatasets.id }).from(vulndbDatasets);
       expect(left.map((r) => r.id).sort()).toEqual([a, c].sort());
     });

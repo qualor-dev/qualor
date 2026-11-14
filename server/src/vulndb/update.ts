@@ -203,6 +203,7 @@ async function checkSource(
     chunks,
     expectedDigest: descriptor.digest,
     maxBytes: DOWNLOAD_MAX_BYTES,
+    ...(deps.logger ? { logger: deps.logger } : {}),
   });
   if ('problem' in stored) return problemOf(stored.problem.code, stored.problem.message);
   if (!(await makeDatasetCurrent(deps.db, stored.dataset.id))) {
