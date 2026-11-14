@@ -502,28 +502,110 @@ describe('runMigrations / pendingMigrations', () => {
         [id, `${engine}:${ruleId}`, engine, ruleId],
       );
     }
-    const issue = async (branch: string, rule: string, text: string, status: string) => {
-      const id = randomUUID();
+    const user2 = randomUUID();
+    await db.pool.query(
+      `INSERT INTO users (id, username, email) VALUES ($1, 'mig0022b', 'b@mig.test')`,
+      [user2],
+    );
+    const issue = async (
+      branch: string,
+      rule: string,
+      text: string,
+      status: string,
+      options: { id?: string; resolvedAt?: string | null; by?: string } = {},
+    ) => {
+      const id = options.id ?? randomUUID();
       await db.pool.query(
         `INSERT INTO issues (id, project_id, branch_id, rule_id, fingerprint, line_hash, context_hash,
            message, severity, quality, kind, status, first_seen_at, resolved_at, resolved_by)
-         VALUES ($1, $2, $3, $4, $5, 'h', 'c', $6, 'high', 'security', 'issue', $7, now(), now(), $8)`,
-        [id, project, branch, rule, id.replaceAll('-', ''), text, status, user],
+         VALUES ($1, $2, $3, $4, $5, 'h', 'c', $6, 'high', 'security', 'issue', $7, now(), $8, $9)`,
+        [
+          id,
+          project,
+          branch,
+          rule,
+          id.replaceAll('-', ''),
+          text,
+          status,
+          options.resolvedAt === undefined ? new Date() : options.resolvedAt,
+          options.by ?? user,
+        ],
       );
       return id;
     };
     const onMain = await issue(main, trivyRule, message, 'false_positive');
     const onRelease = await issue(release, trivyRule, message, 'false_positive');
     const other = await issue(main, otherRule, 'Something: Q-1 else', 'false_positive');
+    const statusChange = (id: string, to: string, comment: string) =>
+      db.pool.query(
+        `INSERT INTO issue_changes (id, issue_id, field, old_value, new_value, comment, created_at)
+         VALUES ($1, $2, 'status', 'open', $3, $4, now())`,
+        [randomUUID(), id, to, comment],
+      );
     await db.pool.query(
       `INSERT INTO issue_changes (id, issue_id, field, old_value, new_value, comment, created_at)
        VALUES ($1, $2, 'status', 'open', 'false_positive', 'Not reachable', now()),
               ($3, $2, 'comment', NULL, NULL, 'Later remark', now() + interval '1 second')`,
       [randomUUID(), onMain, randomUUID()],
     );
+    // Tie-break cases (D8): each pair is a package, named by the first token of the message.
+    const pairMessage = (pkg: string) => `${pkg} 1.0.0: CVE-2026-0001 Something`;
+    const early = '2026-01-01T10:00:00Z';
+    const late = '2026-02-01T10:00:00Z';
+    // The later resolved_at wins, with its status, decider and latest status-change comment.
+    const loser1 = await issue(main, trivyRule, pairMessage('minimist'), 'false_positive', {
+      resolvedAt: early,
+    });
+    const winner1 = await issue(main, trivyRule, pairMessage('minimist'), 'false_positive', {
+      resolvedAt: late,
+      by: user2,
+    });
+    await statusChange(loser1, 'false_positive', 'old');
+    await statusChange(winner1, 'false_positive', 'new');
+    // A set resolved_at beats NULL.
+    const nulled = await issue(main, trivyRule, pairMessage('semver'), 'false_positive', {
+      resolvedAt: null,
+    });
+    const set = await issue(main, trivyRule, pairMessage('semver'), 'false_positive', {
+      resolvedAt: early,
+      by: user2,
+    });
+    await statusChange(nulled, 'false_positive', 'null one');
+    await statusChange(set, 'false_positive', 'set one');
+    // A wont_fix winner.
+    const fp = await issue(main, trivyRule, pairMessage('tar'), 'false_positive', {
+      resolvedAt: early,
+    });
+    const wf = await issue(main, trivyRule, pairMessage('tar'), 'wont_fix', {
+      resolvedAt: late,
+      by: user2,
+    });
+    await statusChange(fp, 'false_positive', 'fp');
+    await statusChange(wf, 'wont_fix', 'wf');
+    // Equal resolved_at: the higher id wins.
+    const low = await issue(main, trivyRule, pairMessage('qs'), 'false_positive', {
+      id: '00000000-0000-4000-8000-000000000001',
+      resolvedAt: early,
+    });
+    const high = await issue(main, trivyRule, pairMessage('qs'), 'wont_fix', {
+      id: '00000000-0000-4000-8000-000000000002',
+      resolvedAt: early,
+      by: user2,
+    });
+    await statusChange(low, 'false_positive', 'low');
+    await statusChange(high, 'wont_fix', 'high');
+    // A winner without any status change has no comment.
+    const old = await issue(main, trivyRule, pairMessage('yaml'), 'false_positive', {
+      resolvedAt: early,
+    });
+    await issue(main, trivyRule, pairMessage('yaml'), 'wont_fix', { resolvedAt: late, by: user2 });
+    await statusChange(old, 'false_positive', 'kept out');
 
     await runMigrations(db.pool, MIGRATIONS_DIR);
-    const { rows: names } = await db.pool.query('SELECT id, package_name FROM issues ORDER BY id');
+    const { rows: names } = await db.pool.query(
+      'SELECT id, package_name FROM issues WHERE id = ANY($1)',
+      [[onMain, onRelease, other]],
+    );
     expect(Object.fromEntries(names.map((r) => [r.id, r.package_name]))).toEqual({
       [onMain]: 'lodash',
       [onRelease]: 'lodash',
@@ -531,20 +613,26 @@ describe('runMigrations / pendingMigrations', () => {
     });
     const { rows } = await db.pool.query(
       `SELECT project_id, package_name, vulnerability_id, branch_id, version_id, status, reason,
-              comment, decided_by FROM vulnerability_decisions`,
+              comment, decided_by FROM vulnerability_decisions ORDER BY package_name`,
     );
+    const decision = (pkg: string, status: string, comment: string | null, by: string) => ({
+      project_id: project,
+      package_name: pkg,
+      vulnerability_id: 'CVE-2026-0001',
+      branch_id: null,
+      version_id: null,
+      status,
+      reason: null,
+      comment,
+      decided_by: by,
+    });
     expect(rows).toEqual([
-      {
-        project_id: project,
-        package_name: 'lodash',
-        vulnerability_id: 'CVE-2026-0001',
-        branch_id: null,
-        version_id: null,
-        status: 'false_positive',
-        reason: null,
-        comment: 'Not reachable',
-        decided_by: user,
-      },
+      decision('lodash', 'false_positive', 'Not reachable', user),
+      decision('minimist', 'false_positive', 'new', user2),
+      decision('qs', 'wont_fix', 'high', user2),
+      decision('semver', 'false_positive', 'set one', user2),
+      decision('tar', 'wont_fix', 'wf', user2),
+      decision('yaml', 'wont_fix', null, user2),
     ]);
     const { rows: indexes } = await db.pool.query(
       `SELECT indexname FROM pg_indexes WHERE tablename = 'issues' AND indexname = 'issues_package_idx'`,
