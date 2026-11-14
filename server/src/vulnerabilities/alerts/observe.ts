@@ -33,8 +33,9 @@ export interface ObservedAlerts {
  *    (`checked_at >= observed_at`). Every pair it holds now becomes a baseline item. Rows written
  *    before the target entered the scope (R17 keeps them) are never taken for its baseline (R6).
  *    A target recorded in step 2 is usually seeded by a later pass, because its re-check row
- *    predates the record; a check committed after this transaction began seeds it in the same
- *    pass, which is harmless.
+ *    predates the record. Both times are a transaction's start (`now()`): a check whose
+ *    transaction began at or after this one's, and committed before step 3 reads, seeds it in the
+ *    same pass, which is harmless.
  * 4. Adds an item, found at `now`, for each (target, vulnerability id) pair of
  *    `target_vulnerabilities` that a seeded target has no item for. Steps 3 and 4 share one read
  *    per `targetSlice` targets. An item is a baseline when step 3 of this call seeded its target.
