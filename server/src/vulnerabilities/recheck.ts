@@ -110,16 +110,23 @@ export async function enqueueRecheck(db: Executor, scope: RecheckScope): Promise
 /**
  * At boot (main.ts), A14: migration 0028 cleared every package's mark, so that each match gets
  * Trivy's vendor ids. While monitoring is on and a mark is cleared, one full re-check is queued (a
- * second replica's request merges into it). A good full re-check marks or prunes every package,
- * so the next boot queues none; after a failed one, the next boot asks again. Answers whether it
- * queued.
+ * second replica's request merges into it), and logged with its reason. A good full re-check
+ * marks or prunes every package, so the next boot queues none; after a failed one, the next boot
+ * asks again. Answers whether it queued.
  */
-export async function queueRematchIfCleared(db: Executor): Promise<boolean> {
+export async function queueRematchIfCleared(
+  db: Executor,
+  logger?: Pick<FastifyBaseLogger, 'info'>,
+): Promise<boolean> {
   if (!(await readVulndbSettings(db)).enabled) return false;
   const cleared = await db.execute<{ cleared: boolean }>(sql`
     SELECT EXISTS (SELECT 1 FROM matched_packages WHERE dataset_digest = '') AS cleared`);
   if (cleared.rows[0]?.cleared !== true) return false;
   await enqueueRecheck(db, { all: true });
+  logger?.info(
+    { component: 'vulnerabilities' },
+    'a full vulnerability re-check is queued: the upgrade cleared the packages’ match marks, so every match gets Trivy’s vendor ids',
+  );
   return true;
 }
 
@@ -130,8 +137,13 @@ export interface RecheckDeps {
   runner?: TrivyRunner;
   now?: () => Date;
   logger?: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
-  /** Tests make chunks small: components per SBOM, and the size below which a chunk is not split. */
+  /**
+   * Tests make chunks small: components per SBOM, and the size below which a chunk is not
+   * split.
+   */
   chunk?: { components?: number; floor?: number };
+  /** Tests only: how long to wait for the local copy's lock (default LOCAL_LOCK_WAIT_MS). */
+  lockWaitMs?: number;
   /** The server is stopping (main.ts): Trivy is killed, and the run ends at its next step. */
   shutdown?: AbortSignal;
 }
@@ -751,8 +763,9 @@ async function writeChecks(
  * them in as few Trivy runs as the SBOM_MAX_COMPONENTS cap allows; the second diffs each
  * batch's tracked targets, and each batch is written as a whole diff. A failure in the second
  * pass leaves the batches before it written: their rows are final, the rest stay as they were,
- * and the next re-check does the remainder (R12). Only tracked targets are read, matched and written: an untracked one keeps its rows
- * (R17). A package that entered an inventory between the passes is matched in the second.
+ * and the next re-check does the remainder (R12). Only tracked targets are read, matched and
+ * written: an untracked one keeps its rows (R17). A package that entered an inventory between
+ * the passes is matched in the second.
  */
 async function recheckAll(run: Run, projectIds: readonly string[]): Promise<RecheckOutcome> {
   const pending = await pendingPackages(run, projectIds);
@@ -919,7 +932,10 @@ async function pruneQuietly(deps: RecheckDeps, purls: ReadonlySet<string>): Prom
 /** What {@link withLocalDatabase} answers around {@link recheckAll}. */
 type LocalOutcome = { result: RecheckOutcome } | { problem: LocalProblem };
 
-/** The outcome of a run; a problem of the local copy is the re-check's DISK or RECHECK_FAILED. */
+/**
+ * The outcome of a run. A DISK problem of the local copy stays DISK; MISSING and BUSY (another
+ * re-check held the copy past the wait) are the re-check's RECHECK_FAILED.
+ */
 function outcomeOf(local: LocalOutcome): RecheckOutcome {
   if (!('problem' in local)) return local.result;
   return {
@@ -952,9 +968,10 @@ async function stoppedRun(deps: RecheckDeps, scope: RecheckScope): Promise<Reche
  * 1. The instance switch off, or no dataset: nothing is touched. The dataset is read once and used
  *    to the end, even when another becomes current meanwhile (its digest tags what it matched).
  * 2. The local copy of that dataset is held for the run, and the Trivy work directories a killed
- *    run left in its directory are removed; DISK (or MISSING, as RECHECK_FAILED)
- *    goes to `lastRecheckError` (ruling R19), as does a failed Trivy run (R12).
- * 3–5. The packages not yet matched against it run through Trivy, at most SBOM_MAX_COMPONENTS (1 000) per SBOM.
+ *    run left in its directory are removed; DISK (or MISSING and BUSY, as RECHECK_FAILED) goes to
+ *    `lastRecheckError` (ruling R19), as does a failed Trivy run (R12).
+ * 3–5. The packages not yet matched against it run through Trivy, at most SBOM_MAX_COMPONENTS
+ *    (1 000) per SBOM.
  * 6–7. Each tracked target's rows follow its inventory ({@link writeTargets}).
  *    Each batch is written as a whole diff, so a failure in the second pass leaves the earlier
  *    batches written (their rows are final) and the rest as they were.
@@ -1013,7 +1030,7 @@ export async function recheckProjects(
         await removeStaleWorkDirs(deps.config.vulndb.dir);
         return recheckAll(trivyRun(cacheDir), projectIds);
       },
-      { signal: deps.shutdown },
+      { signal: deps.shutdown, lockWaitMs: deps.lockWaitMs },
     );
   } catch (err) {
     // The stop cut the extraction (or whatever it was doing): not this run's failure.

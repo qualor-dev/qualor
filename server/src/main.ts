@@ -505,8 +505,9 @@ async function main(): Promise<void> {
   });
   // 0.15: the vulnerability database has its own worker (one job at a time), so a download or a
   // re-check never holds up an analysis. It holds a 5 min lease, extended every 100 s; a crashed
-  // worker blocks the next re-check for at most about 5.5 min. The worker tries the queues in this order:
-  // a waiting update runs before a waiting re-check, which then matches against the new data.
+  // worker blocks the next re-check for at most about 5.5 min. The worker tries the queues in
+  // this order: a waiting update runs before a waiting re-check, which then matches against the
+  // new data.
   // A download or a Trivy run takes up to 15 min: a stop cuts it, and its work is due again for
   // the next server (vulndb/update.ts, vulnerabilities/recheck.ts).
   const vulndbShutdown = new AbortController();
@@ -569,7 +570,7 @@ async function main(): Promise<void> {
     logger,
     'vulnerabilities',
     'the re-check after the upgrade could not be queued',
-    () => queueRematchIfCleared(database.db),
+    () => queueRematchIfCleared(database.db, logger),
   );
   await scheduleAtBoot(logger, 'digest', 'the weekly digest could not be scheduled', () =>
     scheduleDigestAtBoot(database.db),

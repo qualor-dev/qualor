@@ -26,6 +26,7 @@ import {
 import { claimJob } from '../queue/queue';
 import { runUntilIdle } from '../queue/worker';
 import { writeVulndbSettings } from '../vulndb/settings';
+import { withLocalDatabase } from '../vulndb/local';
 import { readVulndbState, updateVulndbState } from '../vulndb/state';
 import { makeDatasetCurrent, storeDataset, type DatasetRow } from '../vulndb/store';
 import { purlOf } from './purl';
@@ -970,6 +971,36 @@ describe('vulnerability re-checks', () => {
       expect((await readVulndbState(db())).lastRecheckError?.code).toBe('RECHECK_FAILED');
       expect(trivy.calls).toEqual([]);
     });
+
+    it('a local copy held past the wait (BUSY) is RECHECK_FAILED, and Trivy never runs', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((r) => (release = r));
+      let started: () => void = () => undefined;
+      const holding = new Promise<void>((r) => (started = r));
+      const holder = withLocalDatabase(db(), dir, primary, async () => {
+        started();
+        await gate;
+      });
+      await holding;
+      try {
+        const result = await recheck({ projectIds: [p.id] }, { lockWaitMs: 50 });
+        expect(result).toEqual({
+          kind: 'failed',
+          error: {
+            code: 'RECHECK_FAILED',
+            message:
+              'Another re-check held the local copy of the vulnerability database for too long. Try the re-check again later.',
+          },
+        });
+        expect((await readVulndbState(db())).lastRecheckError?.code).toBe('RECHECK_FAILED');
+        expect(trivy.calls).toEqual([]);
+      } finally {
+        release();
+        await holder;
+      }
+    });
   });
 
   describe('Trivy runs in chunks', () => {
@@ -1347,7 +1378,15 @@ describe('vulnerability re-checks', () => {
       await db().update(matchedPackages).set({ datasetDigest: '' });
       await db().delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
 
-      expect(await queueRematchIfCleared(db())).toBe(true);
+      const info = vi.fn();
+      expect(await queueRematchIfCleared(db(), { info })).toBe(true);
+      // The log says why a full re-check runs.
+      expect(info.mock.calls).toEqual([
+        [
+          { component: 'vulnerabilities' },
+          'a full vulnerability re-check is queued: the upgrade cleared the packages’ match marks, so every match gets Trivy’s vendor ids',
+        ],
+      ]);
       // A second replica that boots meanwhile merges into the queued job.
       expect(await queueRematchIfCleared(db())).toBe(true);
       expect(await recheckJobs()).toEqual([
@@ -1366,13 +1405,15 @@ describe('vulnerability re-checks', () => {
     });
 
     it('queues none while the instance switch is off, or when no mark is cleared', async () => {
-      expect(await queueRematchIfCleared(db())).toBe(false);
+      const info = vi.fn();
+      expect(await queueRematchIfCleared(db(), { info })).toBe(false);
       await db().insert(matchedPackages).values({ purl: PA, datasetDigest: primary.digest });
-      expect(await queueRematchIfCleared(db())).toBe(false);
+      expect(await queueRematchIfCleared(db(), { info })).toBe(false);
       await db().insert(matchedPackages).values({ purl: PB, datasetDigest: '' });
       await instanceSwitch(false);
-      expect(await queueRematchIfCleared(db())).toBe(false);
+      expect(await queueRematchIfCleared(db(), { info })).toBe(false);
       expect(await recheckJobs()).toEqual([]);
+      expect(info).not.toHaveBeenCalled();
     });
   });
 
