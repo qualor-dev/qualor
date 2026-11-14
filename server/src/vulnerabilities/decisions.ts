@@ -9,7 +9,11 @@ import { uuidv7 } from '../db/ids';
 import { vulnerabilityDecisions } from '../db/schema';
 import { enqueueReevaluations } from '../gates/reevaluate';
 import { writeStatus, writeStatusLog, type StatusLogRow } from '../issues/status-writes';
-import { isTrackedBranch, vulnerabilitySettings } from '../versions/settings';
+import {
+  isTrackedBranch,
+  vulnerabilitySettings,
+  type VulnerabilitySettings,
+} from '../versions/settings';
 
 /** The CycloneDX VEX justifications a "false positive" decision may name (spec §10). */
 export const VEX_JUSTIFICATIONS = [
@@ -48,6 +52,8 @@ export interface DecisionInput {
    * the decision locks the pair's issues itself, in one id-ordered statement, and queues them.
    */
   heldIssueIds?: readonly string[];
+  /** The project's vulnerability settings, when the caller has read them (a bulk reads them once). */
+  settings?: VulnerabilitySettings;
 }
 
 /** A (project, package, vulnerability) whose decisions one writer at a time changes. */
@@ -413,7 +419,7 @@ async function applyToIssues(tx: Executor, input: DecisionInput): Promise<string
        FOR NO KEY UPDATE OF i`);
   if (candidates.rows.length === 0) return [];
 
-  const settings = await vulnerabilitySettings(tx, projectId);
+  const settings = input.settings ?? (await vulnerabilitySettings(tx, projectId));
   const changing = candidates.rows.filter((row) => {
     if (row.status === input.status) return false;
     const mirrored = isTrackedBranch(settings, {

@@ -24,6 +24,7 @@ import {
   type DecisionResult,
   type VexJustification,
 } from '../vulnerabilities/decisions';
+import { vulnerabilitySettingsOf } from '../versions/settings';
 import { decidingIssues, type DecidingIssue } from '../vulnerabilities/trivy-issues';
 import {
   USER_STATUSES,
@@ -556,6 +557,7 @@ async function writeDecisionsOf(
     return issue ? [{ ...issue, comment: change.comment }] : [];
   });
   const ownRow = await branchDecisionKeys(tx, changed);
+  const settings = await vulnerabilitySettingsOf(tx, [...new Set(changed.map((c) => c.projectId))]);
   const inputs = new Map<string, DecisionInput>();
   for (const issue of changed) {
     const atBranch = ownRow.has(
@@ -570,6 +572,7 @@ async function writeDecisionsOf(
     if (inputs.has(key)) continue;
     inputs.set(key, {
       ...shared,
+      settings: settings.get(issue.projectId),
       projectId: issue.projectId,
       packageName: issue.packageName,
       vulnerabilityId: issue.vulnerabilityId,
