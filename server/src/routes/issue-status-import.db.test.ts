@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   type ImportCommentLabel,
   importCommentHeader,
@@ -18,19 +18,38 @@ import type { Db } from '../db/client';
 import { LOCKS } from '../db/locks';
 import {
   auditEvents,
+  branches,
   issueChanges,
   issues,
+  jobs,
   organizations,
   projects,
+  projectVulnerabilitySettings,
   users,
   vulnerabilityDecisions,
 } from '../db/schema';
+import { GATE_QUEUE } from '../gates/reevaluate';
+import type * as Reevaluate from '../gates/reevaluate';
 import {
   importIssueStatuses,
   sanitizeImportComment,
   type ImportRequestItem,
 } from '../issues/status-import';
+import { transitionIssuesIn } from '../issues/transitions';
 import { lockDecisionPairs } from '../vulnerabilities/decisions';
+
+/** The calls of enqueueReevaluations (D2-4: one batch per import), which still does its work. */
+const enqueued = vi.hoisted(() => ({ calls: 0 }));
+vi.mock('../gates/reevaluate', async (importOriginal) => {
+  const actual = await importOriginal<typeof Reevaluate>();
+  return {
+    ...actual,
+    enqueueReevaluations: (...args: Parameters<typeof actual.enqueueReevaluations>) => {
+      enqueued.calls += 1;
+      return actual.enqueueReevaluations(...args);
+    },
+  };
+});
 
 const LINES = ['const a = 1;', 'if (a == 1) {}', 'if (a == 2) {}', 'export {};'];
 const MESSAGE = "Expected '===' and instead saw '=='.";
@@ -43,10 +62,18 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-/** Polls until a backend of this file's database waits on a decision pair's lock (no sleep). */
-async function waitForPairWaiter(db: Db, timeoutMs = 5_000): Promise<void> {
+/**
+ * Polls until a backend of this file's database waits on a decision pair's lock, or until
+ * `done()` (never a fixed sleep).
+ */
+async function waitForPairWaiter(
+  db: Db,
+  done: () => boolean = () => false,
+  timeoutMs = 5_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    if (done()) return;
     const result = await db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM pg_locks
        WHERE locktype = 'advisory' AND NOT granted
@@ -328,13 +355,15 @@ describe('POST /projects/{id}/issue-status-import (import-sonarqube.md §10–§
     });
   });
 
-  it('retries an import whose decision pair appears while it waits for an issue (D2-3)', async () => {
-    const v = await h.project('acme/import-trivy-race');
+  /**
+   * A project analysed on main with an open lodash issue of `vuln` and an open eslint issue, the
+   * items that set them false_positive and wont_fix, and the admin who imports them.
+   */
+  const trivyAndOther = async (key: string, vuln: string, packageName: string | null) => {
+    const v = await h.project(key);
     await v.ingestOk(reportWith({ projectKey: v.key }));
-    const vuln = 'CVE-2026-0003';
     const message = `lodash 4.17.20: ${vuln} Prototype pollution (fixed in 4.17.21)`;
     const mainId = await mainBranchId(h.ctx.db, v.id);
-    // As an older scan left it: no package name, so the import first finds no pair.
     const trivyIssue = await seedIssue(h.ctx.db, {
       projectId: v.id,
       branchId: mainId,
@@ -342,7 +371,7 @@ describe('POST /projects/{id}/issue-status-import (import-sonarqube.md §10–§
       path: 'package-lock.json',
       startLine: 12,
       message,
-      packageName: null,
+      packageName,
     });
     const other = await seedIssue(h.ctx.db, {
       projectId: v.id,
@@ -364,6 +393,22 @@ describe('POST /projects/{id}/issue-status-import (import-sonarqube.md §10–§
       item({ ref: 'AYr-2', sonarLineHash: null, status: 'wont_fix', comment: 'accepted' }),
     ] as ImportRequestItem[];
     const [admin] = await h.ctx.db.select().from(users).where(eq(users.username, 'ingest-admin'));
+    return { v, mainId, trivyIssue, other, items, admin: admin! };
+  };
+  const decisionsOf = (projectId: string) =>
+    h.ctx.db
+      .select()
+      .from(vulnerabilityDecisions)
+      .where(eq(vulnerabilityDecisions.projectId, projectId));
+
+  it('retries an import whose decision pair appears while it waits for an issue (D2-3)', async () => {
+    const vuln = 'CVE-2026-0003';
+    // As an older scan left it: no package name, so the import first finds no pair.
+    const { v, trivyIssue, other, items, admin } = await trivyAndOther(
+      'acme/import-trivy-race',
+      vuln,
+      null,
+    );
     // A decision writer of the pair: it holds the pair, then locks the pair's issues.
     const pairHeld = deferred();
     const letGo = deferred();
@@ -383,7 +428,7 @@ describe('POST /projects/{id}/issue-status-import (import-sonarqube.md §10–§
       await holder.query('BEGIN');
       // An ingestion that reads the name now holds the row until it commits.
       await holder.query(`UPDATE issues SET package_name = 'lodash' WHERE id = $1`, [trivyIssue]);
-      importing = importIssueStatuses({ db: h.ctx.db }, admin!, v.id, items, false);
+      importing = importIssueStatuses({ db: h.ctx.db }, admin, v.id, items, false);
       await waitForLockWaiters(h.ctx.db, 1);
       await holder.query('COMMIT');
     } finally {
@@ -402,12 +447,146 @@ describe('POST /projects/{id}/issue-status-import (import-sonarqube.md §10–§
       'false_positive',
       'wont_fix',
     ]);
+    // Review Focus 3: the aborted attempt left no changelog row behind.
+    expect((await changesOf(trivyIssue)).map((c) => [c.oldValue, c.newValue])).toEqual([
+      ['open', 'false_positive'],
+    ]);
+    expect(await decisionsOf(v.id)).toMatchObject([
+      { branchId: null, packageName: 'lodash', status: 'false_positive' },
+    ]);
+  });
+
+  it('locks no pair after the issue locks when the import applies both statuses', async () => {
+    const [vuln, axiosVuln] = ['CVE-2026-0004', 'CVE-2026-0005'];
+    const { v, mainId, trivyIssue, other, items, admin } = await trivyAndOther(
+      'acme/import-trivy-gap',
+      vuln,
+      'lodash',
+    );
+    const axiosRule = await seedRule(h.ctx.db, { key: `trivy:${axiosVuln}`, quality: 'security' });
+    const [decision] = await h.ctx.db
+      .insert(vulnerabilityDecisions)
+      .values({ projectId: v.id, packageName: 'lodash', vulnerabilityId: vuln, status: 'open' })
+      .returning();
+    // An ingestion of main: it holds the pair of an axios finding shared, then locks the issues
+    // it matched (tracking/stage.ts, tracking/writes.ts lockPlannedRows), the eslint one among them.
+    const pairHeld = deferred();
+    const letGo = deferred();
+    const ingestion = h.ctx.db.transaction(async (tx) => {
+      const axios = { projectId: v.id, packageName: 'axios', vulnerabilityId: axiosVuln };
+      await lockDecisionPairs(tx, [axios], 'shared');
+      pairHeld.resolve();
+      await letGo.promise;
+      await tx.execute(sql`SELECT 1 FROM issues WHERE id = ${other} FOR NO KEY UPDATE`);
+    });
+    await pairHeld.promise;
+    const holder = new pg.Client({ connectionString: h.ctx.database.url });
+    await holder.connect();
+    let importing: ReturnType<typeof importIssueStatuses> | undefined;
+    let settled = false;
+    let linked: string | undefined;
+    try {
+      await holder.query('BEGIN');
+      // Holds the decision row the first status (false_positive) writes, so the import stops
+      // between its two statuses, holding the issues of both.
+      await holder.query('SELECT 1 FROM vulnerability_decisions WHERE id = $1 FOR UPDATE', [
+        decision!.id,
+      ]);
+      importing = importIssueStatuses({ db: h.ctx.db }, admin, v.id, items, false).finally(() => {
+        settled = true;
+      });
+      await waitForLockWaiters(h.ctx.db, 1);
+      // Meanwhile an axios issue is linked as a duplicate of the eslint one (wont_fix next).
+      linked = await seedIssue(h.ctx.db, {
+        projectId: v.id,
+        branchId: mainId,
+        ruleId: axiosRule,
+        path: 'package-lock.json',
+        startLine: 30,
+        message: `axios 1.6.0: ${axiosVuln} Request forgery (fixed in 1.6.1)`,
+        packageName: 'axios',
+        duplicateOfIssueId: other,
+      });
+      await holder.query('COMMIT');
+    } finally {
+      await holder.query('ROLLBACK');
+      await holder.end();
+    }
+    // The import either finishes, or waits for the axios pair while it holds the eslint issue the
+    // ingestion wants next: a deadlock (40P01), which only a retry of the whole import resolves.
+    await waitForPairWaiter(h.ctx.db, () => settled);
+    const waitedForPair = !settled;
+    letGo.resolve();
+    const [ingested, imported] = await Promise.allSettled([ingestion, importing!]);
+    expect(waitedForPair, 'the import waited for a pair while holding issues').toBe(false);
+    expect(ingested).toEqual({ status: 'fulfilled', value: undefined });
     expect(
-      await h.ctx.db
-        .select()
-        .from(vulnerabilityDecisions)
-        .where(eq(vulnerabilityDecisions.projectId, v.id)),
-    ).toMatchObject([{ branchId: null, packageName: 'lodash', status: 'false_positive' }]);
+      imported.status === 'fulfilled' ? imported.value.results : imported.reason,
+    ).toMatchObject([{ outcome: 'applied' }, { outcome: 'applied' }]);
+    // The duplicate linked after the import locked its issues is left alone, as if linked after it.
+    expect([await statusOf(trivyIssue), await statusOf(other), await statusOf(linked!)]).toEqual([
+      'false_positive',
+      'wont_fix',
+      'open',
+    ]);
+    expect(await decisionsOf(v.id)).toMatchObject([
+      { packageName: 'lodash', vulnerabilityId: vuln, status: 'false_positive' },
+    ]);
+  });
+
+  it('queues the gate re-evaluations of both statuses once (D2-4)', async () => {
+    const vuln = 'CVE-2026-0006';
+    const { v, mainId, trivyIssue, other, items, admin } = await trivyAndOther(
+      'acme/import-trivy-gates',
+      vuln,
+      'lodash',
+    );
+    await h.ctx.db
+      .insert(projectVulnerabilitySettings)
+      .values({ projectId: v.id, branchPatterns: ['release/*'] });
+    const [release] = await h.ctx.db
+      .insert(branches)
+      .values({ projectId: v.id, kind: 'branch', name: 'release/1.x' })
+      .returning();
+    const mirrored = await seedIssue(h.ctx.db, {
+      projectId: v.id,
+      branchId: release!.id,
+      ruleId: await seedRule(h.ctx.db, { key: `trivy:${vuln}`, quality: 'security' }),
+      path: 'package-lock.json',
+      startLine: 12,
+      packageName: 'lodash',
+    });
+    const queued = () =>
+      h.ctx.db
+        .select({ branchId: sql<string>`${jobs.payload} ->> 'branchId'` })
+        .from(jobs)
+        .where(
+          and(
+            eq(jobs.queue, GATE_QUEUE),
+            eq(jobs.status, 'queued'),
+            sql`${jobs.payload} ->> 'branchId' IN (${mainId}, ${release!.id})`,
+          ),
+        );
+    enqueued.calls = 0;
+    const done = await importIssueStatuses({ db: h.ctx.db }, admin, v.id, items, false);
+    expect(done.results.map((r) => r.outcome)).toEqual(['applied', 'applied']);
+    expect([await statusOf(trivyIssue), await statusOf(other), await statusOf(mirrored)]).toEqual([
+      'false_positive',
+      'wont_fix',
+      'false_positive',
+    ]);
+    // One batch for both statuses, in branch-lock order: never two (D2-4).
+    expect(enqueued.calls).toBe(1);
+    expect((await queued()).map((j) => j.branchId).sort()).toEqual([mainId, release!.id].sort());
+
+    // A deferred transition answers what it would have queued, the decision's mirror included.
+    enqueued.calls = 0;
+    const reopened = await h.ctx.db.transaction((tx) =>
+      transitionIssuesIn(tx, admin, [trivyIssue], 'open', null, { deferReevaluation: true }),
+    );
+    expect(await statusOf(mirrored)).toBe('open');
+    expect(enqueued.calls).toBe(0);
+    expect([...reopened.reevaluate].sort()).toEqual([trivyIssue, mirrored].sort());
   });
 
   it('is 409 PROJECT_NOT_ANALYSED before the first analysis', async () => {

@@ -94,6 +94,12 @@ export interface TransitionResult {
    * (`recordDecision`), so no re-evaluation lock follows the audit chain's.
    */
   decisions: WrittenDecision[];
+  /**
+   * The issues whose branches' gates are evaluated again: the changed ones and those the
+   * decisions changed. Queued already, unless the transition ran with `deferReevaluation`: then
+   * the caller queues them ({@link enqueueReevaluations}), before any audit event it records.
+   */
+  reevaluate: string[];
 }
 
 export type LockedIssue = {
@@ -384,7 +390,7 @@ function selectChanges(
 } {
   const changes = new Map<string, IssueStatus>();
   const commentOf = new Map<string, string | null>();
-  const result: TransitionResult = { succeeded: [], failed: [], decisions: [] };
+  const result: TransitionResult = { succeeded: [], failed: [], decisions: [], reevaluate: [] };
   for (const id of ids) {
     const checked = checkRequested(id, check, changes);
     if ('failure' in checked) {
@@ -408,10 +414,45 @@ function selectChanges(
   return { changes, commentOf, result };
 }
 
+/** What {@link transitionIssuesIn} takes besides the options of {@link transitionIssues}. */
+export type TransitionInOptions = Pick<
+  TransitionOptions,
+  'comments' | 'audit' | 'reason' | 'source' | 'chargeMirrored'
+> & {
+  /**
+   * The caller's {@link lockForTransition} of every issue its transitions change, taken before
+   * the first (the status import's two statuses, D2-2): the issues are read again, no pair is.
+   */
+  locked?: Pick<TransitionLocks, 'deciding' | 'held'>;
+  /**
+   * Queue no gate re-evaluation: `TransitionResult.reevaluate` names the issues, and the caller
+   * queues them once for all of its transitions (the status import, D2-4), so the branch locks
+   * of one batch are taken in one order. Not with `audit`, whose events would precede them.
+   */
+  deferReevaluation?: boolean;
+};
+
+/**
+ * The locks of a transition whose caller took them all before (`first`, {@link lockForTransition}
+ * of a superset of `ids`). The rows are read again ({@link lockIssues}, free: they are held) for
+ * the statuses an earlier transition of the transaction set, and only the held ones count: an
+ * issue linked as a duplicate since is left alone, as if linked after the transaction. No pair is
+ * read or locked: a pair locked now would follow the issue locks (D2-2).
+ */
+async function lockedBefore(
+  tx: Executor,
+  ids: readonly string[],
+  first: Pick<TransitionLocks, 'deciding' | 'held'>,
+): Promise<TransitionLocks> {
+  const held = new Set(first.held);
+  const locked = (await lockIssues(tx, ids)).filter((row) => held.has(row.id));
+  return { locked, deciding: first.deciding, held: first.held };
+}
+
 /**
  * {@link transitionIssues} inside the caller's transaction, whose lock timeout the caller has set
  * ({@link setLockTimeout}). import-sonarqube.md §11.2 applies both of its statuses in one
- * transaction this way.
+ * transaction this way, with `locked`.
  */
 export async function transitionIssuesIn(
   tx: Tx,
@@ -419,19 +460,15 @@ export async function transitionIssuesIn(
   requested: readonly string[],
   to: UserStatus,
   comment: string | null,
-  options: Pick<
-    TransitionOptions,
-    'comments' | 'audit' | 'reason' | 'source' | 'chargeMirrored'
-  > = {},
+  options: TransitionInOptions = {},
 ): Promise<TransitionResult> {
   const { comments } = options;
   const ids = [...new Set(requested)];
   const access = await issueAccess(tx, user, ids);
-  const { locked, deciding, held } = await lockForTransition(
-    tx,
-    [...access.allowed.keys()],
-    to !== 'resolved',
-  );
+  const allowed = [...access.allowed.keys()];
+  const { locked, deciding, held } = options.locked
+    ? await lockedBefore(tx, allowed, options.locked)
+    : await lockForTransition(tx, allowed, to !== 'resolved');
   const byId = new Map(locked.map((r) => [r.id, r]));
   const reasonMissing = (id: string) =>
     to === 'false_positive' && options.source !== 'import' && !options.reason && deciding.has(id);
@@ -479,10 +516,11 @@ export async function transitionIssuesIn(
   }
   const mirrored = result.decisions.reduce((sum, d) => sum + d.result.appliedIssueIds.length, 0);
   if (mirrored > 0) options.chargeMirrored?.(mirrored);
-  await enqueueReevaluations(tx, [
+  result.reevaluate = [
     ...applied.map((a) => a.id),
     ...result.decisions.flatMap((d) => d.result.appliedIssueIds),
-  ]);
+  ];
+  if (!options.deferReevaluation) await enqueueReevaluations(tx, result.reevaluate);
   if (options.audit) {
     await recordStatusChanges(tx, options.audit, log, to, result.succeeded);
     for (const { input, result: written } of result.decisions) {

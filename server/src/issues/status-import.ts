@@ -20,6 +20,7 @@ import { textList } from '../db/bulk';
 import type { Db, Executor } from '../db/client';
 import { withConflictRetry } from '../db/retry';
 import { branches } from '../db/schema';
+import { enqueueReevaluations } from '../gates/reevaluate';
 import { ProblemError, validationFailed } from '../http/problem';
 import type { IssueStatus } from '../tracking/plan';
 import { recordDecision } from '../vulnerabilities/decisions';
@@ -100,14 +101,15 @@ type CandidateRow = {
  * transaction: every issue to change (and its duplicates, with the Trivy issues of the
  * vulnerability decision pairs they write, after those pairs' advisory locks) is locked first in
  * one id-ordered statement, the lock order of every transition and ingestion
- * (`lockForTransition`), and each status's transition runs
- * through {@link transitionIssuesIn} (visibility, the lost-update guard, mirroring onto
- * duplicates, the changelog with each item's own comment, the gate re-evaluation). A lock held
+ * (`lockForTransition`). Each status's transition runs through {@link transitionIssuesIn} with
+ * those locks (`locked`), so it locks no pair after them (D2-2): visibility, the lost-update
+ * guard, mirroring onto duplicates, the changelog with each item's own comment. The gate
+ * re-evaluations of both statuses are queued once, after the last transition (D2-4). A lock held
  * longer than `lockTimeoutMs` fails the whole request (SQLSTATE 55P03, 503 over HTTP) with
  * nothing written. A pair found only once the issues are held, or a deadlock, runs the
- * transaction again, up to three times (`withConflictRetry`), then fails the same way (503).
- * An issue that changed after matching ends `already_set` or `conflict` from the
- * status the transition found; a status someone set in Qualor is never overwritten.
+ * transaction again, up to three times (`withConflictRetry`), then fails the same way (503). An
+ * issue that changed after matching ends `already_set` or `conflict` from the status the
+ * transition found; a status someone set in Qualor is never overwritten.
  *
  * Comments: each resolved item's `comment` must already be 1–2 000 characters (the route's schema
  * bounds it, spec §11.2); this function does not check the length again. It stores the comment
@@ -295,8 +297,9 @@ export async function importIssueStatuses(
   return withConflictRetry(() =>
     db.transaction(async (tx) => {
       await setLockTimeout(tx, options.lockTimeoutMs ?? TRANSITION_LOCK_TIMEOUT_MS);
-      // Both statuses write vulnerability decisions: their pairs and issues are locked here too.
-      await lockForTransition(
+      // Both statuses write vulnerability decisions: their pairs and issues are locked here, once.
+      // Each status's transition reads its issues again, but locks no pair after them (D2-2).
+      const locked = await lockForTransition(
         tx,
         pending.flatMap((to) => [...toApply[to].keys()]),
         true,
@@ -311,11 +314,18 @@ export async function importIssueStatuses(
           await transitionIssuesIn(tx, user, [...own.keys()], to, null, {
             comments: own,
             source: 'import',
+            locked,
+            deferReevaluation: true,
           }),
         ]);
       }
+      // The gates of both statuses' branches in one batch, in one branch-lock order (D2-4).
+      await enqueueReevaluations(
+        tx,
+        done.flatMap(([, result]) => result.reevaluate),
+      );
       applyOutcomes(done);
-      // After the last transition queued its re-evaluations, like every audit event of the import.
+      // After the re-evaluations are queued, like every audit event of the import.
       if (options.audit) {
         for (const [, result] of done) {
           for (const { input, result: written } of result.decisions) {
