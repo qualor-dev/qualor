@@ -836,7 +836,8 @@ describe('issue tracking (server step 8, data-model.md §5.2 and §6)', () => {
             await h.ctx.db.execute<{ n: number }>(sql`
               SELECT count(*)::int AS n FROM pg_locks
                WHERE locktype = 'advisory' AND NOT granted
-                 AND classid::bigint = ${LOCKS.vulnerabilityDecision}`)
+                 AND classid::bigint = ${LOCKS.vulnerabilityDecision}
+                 AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`)
           ).rows;
           if (row!.n > 0) return;
           await new Promise((resolve) => setTimeout(resolve, 10));

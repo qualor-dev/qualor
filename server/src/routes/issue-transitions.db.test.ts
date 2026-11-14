@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
@@ -15,12 +15,14 @@ import {
   branches,
   issueChanges,
   issues,
+  jobs,
   organizations,
   projects,
   projectVulnerabilitySettings,
   users,
   vulnerabilityDecisions,
 } from '../db/schema';
+import { GATE_QUEUE } from '../gates/reevaluate';
 import type { IngestionStage } from '../ingest/process';
 import { DEFAULT_STAGES } from '../ingest/stages';
 import { transitionIssues } from '../issues/transitions';
@@ -735,6 +737,18 @@ describe('issue transitions, severity override and changelog (data-model.md §6,
           (await changesOf(id)).map((c) => [c.oldValue, c.newValue, c.userId, c.comment]),
         ).toEqual([['open', 'false_positive', memberId, 'never called']]);
       }
+      // scm.md §7: the gate of the branch the decision changed is evaluated again too.
+      const releaseGate = await h.ctx.db
+        .select({ payload: jobs.payload })
+        .from(jobs)
+        .where(
+          and(
+            eq(jobs.queue, GATE_QUEUE),
+            eq(jobs.status, 'queued'),
+            sql`${jobs.payload} ->> 'branchId' = ${f.ids.release}`,
+          ),
+        );
+      expect(releaseGate).toHaveLength(1);
       expect(res.json().vulnerability).toMatchObject({
         writesDecision: true,
         decision: { status: 'false_positive', scope: 'project' },

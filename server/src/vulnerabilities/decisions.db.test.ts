@@ -1,7 +1,7 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { QUIET_AUDIT_LOG } from '../../test/audit-log';
-import { createTestDatabase, type TestDatabase } from '../../test/db';
+import { createTestDatabase, waitForLockWaiters, type TestDatabase } from '../../test/db';
 import { seedIssue, seedRule } from '../../test/issues';
 import { createAuditRecorder, SYSTEM_ACTOR } from '../audit/recorder';
 import type { Executor } from '../db/client';
@@ -33,6 +33,14 @@ import {
 } from './decisions';
 
 const VULN = 'CVE-2026-0001';
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 describe('the vulnerability decision store', () => {
   let t: TestDatabase;
@@ -453,5 +461,46 @@ describe('the vulnerability decision store', () => {
     });
     const [event] = await decisionEvents(f);
     expect(event?.details).toMatchObject({ source: 'issue', mcpClientId: clientId });
+  });
+
+  it('serialises a decision write and a user transition on one pair', async () => {
+    const f = await fixture();
+    const [project] = await t.db.select().from(projects).where(eq(projects.id, f.projectId));
+    await t.db
+      .insert(memberships)
+      .values({ organizationId: project!.organizationId, userId, role: 'member' });
+    const [user] = await t.db.select().from(users).where(eq(users.id, userId));
+    const pairHeld = deferred();
+    const letGo = deferred();
+    const holder = t.db.transaction(async (tx) => {
+      await lockDecisionPairs(tx, [
+        { projectId: f.projectId, packageName: 'lodash', vulnerabilityId: VULN },
+      ]);
+      pairHeld.resolve();
+      await letGo.promise;
+    });
+    await pairHeld.promise;
+    // Both wait for the pair; whichever gets it first, the other sees what it committed.
+    const writing = write(input(f, 'false_positive'));
+    const transitioning = t.db.transaction((tx) =>
+      transitionIssuesIn(tx, user!, [f.issue.main], 'wont_fix', 'mine'),
+    );
+    await waitForLockWaiters(t.db, 2);
+    letGo.resolve();
+    await Promise.all([holder, writing, transitioning]);
+    for (const [name, id] of Object.entries(f.issue).filter(([key]) => key !== 'other')) {
+      const log = await t.db
+        .select()
+        .from(issueChanges)
+        .where(eq(issueChanges.issueId, id))
+        .orderBy(asc(issueChanges.id));
+      expect(log.length, name).toBeGreaterThan(0);
+      log.forEach((change, i) => {
+        expect(change.oldValue, `${name}, change ${i}`).toBe(
+          i === 0 ? 'open' : log[i - 1]!.newValue,
+        );
+      });
+      expect((await statusOf(id)).status, name).toBe(log.at(-1)!.newValue);
+    }
   });
 });
