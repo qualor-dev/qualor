@@ -57,7 +57,18 @@ function digestRows(rows: DigestRows): Map<string, VulnerabilityMailRow[]> {
   return listed;
 }
 
-/** One digest per watcher, about that watcher's projects only; the number queued. */
+/**
+ * The day of the 06:00 UTC slot a run at `now` belongs to: before 06:00 it is the day before. A run
+ * delayed past midnight keeps its slot's day, so the next slot's run has a key of its own.
+ */
+export function digestDay(now: Date): string {
+  return new Date(now.getTime() - 6 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * One digest per watcher, about that watcher's projects only; the number queued. The dedupe key
+ * names the slot's day (`digestDay`), a backstop against a second run in the same slot.
+ */
 async function mailWatchers(
   tx: Executor,
   deps: AlertDeps,
@@ -71,7 +82,7 @@ async function mailWatchers(
     demoUser: deps.config.demoUser,
   });
   const names = new Map([...facts].map(([id, project]) => [id, project.name]));
-  const day = now.toISOString().slice(0, 10);
+  const day = digestDay(now);
   let mails = 0;
   for (const { watcher, sections } of watcherSections(watchers, names, listed)) {
     const links = vulnerabilityMailLinks(deps.config, watcher.userId);
@@ -147,7 +158,10 @@ async function deliverFound(
   return (await createDeliveries(tx, deliveries)).length;
 }
 
-/** Mails and creates the deliveries of what `itemIds` list, then marks every one of the items. */
+/**
+ * Reads the pending items found up to `now` (`pendingItems`), mails and creates the deliveries of
+ * the rows they list, then marks every one of those items, listed or not (A5).
+ */
 async function processItems(
   tx: Executor,
   deps: AlertDeps,

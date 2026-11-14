@@ -48,6 +48,7 @@ import { WEBHOOK_QUEUE, WEBHOOK_SECRET_AAD } from '../../webhooks/deliveries';
 import { RECHECK_QUEUE } from '../recheck';
 import {
   DIGEST_QUEUE,
+  digestDay,
   ensureVulnerabilityDigestScheduled,
   MAX_WEBHOOK_VULNERABILITIES,
   runVulnerabilityDigest,
@@ -451,27 +452,64 @@ describe('the daily vulnerability digest', () => {
       expect(await digested()).toEqual({ [NEW]: now });
     });
 
-    it('refuses a second digest on the same UTC day by its dedupe key, as a backstop', async () => {
+    it('refuses a second digest of the same 06:00 UTC slot by its dedupe key, as a backstop', async () => {
       const p = await newProject();
       await watch(t.db, mira, p.projectId);
       await pastDayOne();
       await p.vulnerable(NEW);
+      // 03:00 UTC: the slot of 2098-12-31 06:00 is still the current one.
       expect(await run()).toEqual({ mails: 1, deliveries: 0, items: 1 });
 
       await p.vulnerable(NEW2, { packageName: 'axios' });
       expect(await run()).toEqual({ mails: 0, deliveries: 0, items: 1 });
       const [mail] = await mails();
-      expect(mail!.dedupeKey).toBe(`vulnerabilities.digest:${mira}:2099-01-01`);
+      expect(mail!.dedupeKey).toBe(`vulnerabilities.digest:${mira}:2098-12-31`);
       expect(await mails()).toHaveLength(1);
 
-      // The next UTC day has its own key.
-      now = new Date('2099-01-02T05:00:00Z');
+      // The next slot has its own key.
+      now = new Date('2099-01-01T05:00:00Z');
       await p.vulnerable(NEW3, { packageName: 'qs' });
       expect(await run()).toEqual({ mails: 1, deliveries: 0, items: 1 });
       expect((await mails()).map((m) => m.dedupeKey)).toEqual([
+        `vulnerabilities.digest:${mira}:2098-12-31`,
+        `vulnerabilities.digest:${mira}:2099-01-01`,
+      ]);
+    });
+
+    it('keeps the slot day of a run delayed past midnight, and mails the next slot', async () => {
+      const p = await newProject();
+      await watch(t.db, mira, p.projectId);
+      await pastDayOne();
+      const runAt = (iso: string) => {
+        now = new Date(iso);
+        return runVulnerabilityDigest(deps());
+      };
+      await p.vulnerable(NEW);
+      // The run of 2099-01-01 06:00, delayed to a minute before the next slot.
+      expect(await runAt('2099-01-02T05:59:00Z')).toEqual({ mails: 1, deliveries: 0, items: 1 });
+
+      await p.vulnerable(NEW2, { packageName: 'axios' });
+      expect(await runAt('2099-01-02T06:00:00Z')).toEqual({ mails: 1, deliveries: 0, items: 1 });
+      const [late, next] = await mails();
+      expect([late!.dedupeKey, next!.dedupeKey]).toEqual([
         `vulnerabilities.digest:${mira}:2099-01-01`,
         `vulnerabilities.digest:${mira}:2099-01-02`,
       ]);
+      expect(textOf(next!)).toContain(NEW2);
+      expect(textOf(next!)).not.toContain(NEW);
+      expect(await digested()).toEqual({
+        [NEW]: new Date('2099-01-02T05:59:00Z'),
+        [NEW2]: new Date('2099-01-02T06:00:00Z'),
+      });
+    });
+  });
+
+  describe('digestDay', () => {
+    it.each([
+      ['2099-01-02T05:59:00Z', '2099-01-01'],
+      ['2099-01-02T06:00:00Z', '2099-01-02'],
+    ])('keys a run at %s to the slot of %s', (at, day) => {
+      expect(digestDay(new Date(at))).toBe(day);
     });
   });
 
