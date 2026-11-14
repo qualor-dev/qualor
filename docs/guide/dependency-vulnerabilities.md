@@ -299,7 +299,7 @@ The comment and the author of a decision travel with it.
 
 | Part | CycloneDX | OpenVEX |
 |---|---|---|
-| Comment | `analysis.detail` | `impact_statement` for not affected, `action_statement` for won't fix |
+| Comment | `analysis.detail` | `impact_statement` for not affected, `action_statement` for won't fix, the start of `status_notes` for Open |
 | Who decided | the property `qualor:decided-by` | `status_notes`: "Decided by *name*." |
 | When | `analysis.lastUpdated` | the statement's `timestamp` |
 
@@ -307,7 +307,7 @@ A [migrated decision](#migrated-decisions) has no reason, so it has no `justific
 comment says why. When OpenVEX needs a statement and the decision has no comment, the file says "No
 reason was recorded." for not affected and "No action is planned." for won't fix. An entry with no
 decision has no author and no date. An Open decision, made by a reopen or as an override for one
-target, carries its author, date and (CycloneDX) comment like any other.
+target, carries its author, date and comment like any other.
 
 ### Which file a tool reads
 

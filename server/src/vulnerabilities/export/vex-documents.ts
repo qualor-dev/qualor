@@ -57,11 +57,15 @@ function vulnerabilitySource(id: string): { name: string; url: string } {
   return { name: 'OSV', url: `https://osv.dev/vulnerability/${enc}` };
 }
 
-/** The version of a purl: the part after the last `@`, without qualifiers, decoded. */
+/**
+ * The version of a purl, decoded: without its qualifiers (`?…`) and subpath (`#…`), which may hold
+ * an `@` themselves, the part after the last `@`.
+ */
 function purlVersion(purl: string): string | undefined {
-  const at = purl.lastIndexOf('@');
+  const base = purl.split(/[?#]/)[0] ?? '';
+  const at = base.lastIndexOf('@');
   if (at < 0) return undefined;
-  const raw = purl.slice(at + 1).split(/[?#]/)[0] ?? '';
+  const raw = base.slice(at + 1);
   if (raw === '') return undefined;
   try {
     return decodeURIComponent(raw);
@@ -211,6 +215,18 @@ function openVexImpact(e: VexEntry): string | undefined {
 }
 
 /**
+ * The OpenVEX `status_notes`: who decided, after the comment of an Open decision (D8-3), which has
+ * no other field to go in.
+ */
+function openVexNotes(e: VexEntry): string | undefined {
+  const notes = [
+    ...(e.status === 'open' && e.comment !== null ? [e.comment] : []),
+    ...(e.decidedBy === null ? [] : [`Decided by ${e.decidedBy}.`]),
+  ];
+  return notes.length === 0 ? undefined : notes.join(' ');
+}
+
+/**
  * An OpenVEX 0.2.0 document of a target, one statement per entry. Each package purl is also a
  * product of its own: Trivy matches an SBOM's findings against the package purls, not against the
  * project product, which it cannot see in a scanned SBOM file.
@@ -219,6 +235,7 @@ export function buildOpenVex(doc: ExportDocument, entries: readonly VexEntry[]):
   const product = productId(doc.project, doc.target);
   const statements = entries.map((e) => {
     const impact = openVexImpact(e);
+    const notes = openVexNotes(e);
     return {
       vulnerability: { name: e.vulnerabilityId },
       ...(e.decidedAt === null ? {} : { timestamp: e.decidedAt.toISOString() }),
@@ -233,7 +250,7 @@ export function buildOpenVex(doc: ExportDocument, entries: readonly VexEntry[]):
       ...(e.status === 'false_positive' && e.reason !== null ? { justification: e.reason } : {}),
       ...(impact === undefined ? {} : { impact_statement: impact }),
       ...(e.status === 'wont_fix' ? { action_statement: e.comment ?? NO_ACTION } : {}),
-      ...(e.decidedBy === null ? {} : { status_notes: `Decided by ${e.decidedBy}.` }),
+      ...(notes === undefined ? {} : { status_notes: notes }),
     };
   });
   return {

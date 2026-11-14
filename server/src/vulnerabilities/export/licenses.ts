@@ -48,9 +48,24 @@ export function cycloneDxLicenses(licenses: readonly string[]): object[] | undef
 }
 
 /**
+ * The `LicenseRef-<hex>` id of a free text, from the start of the sha256 of the text: 12 hex
+ * digits, or 4 more at a time while `extracted` holds another text under the id (D8-4).
+ */
+function licenseRef(text: string, extracted: Map<string, string>): string {
+  const hex = createHash('sha256').update(text).digest('hex');
+  let digits = 12;
+  let id = `LicenseRef-${hex.slice(0, digits)}`;
+  while (digits < hex.length && (extracted.get(id) ?? text) !== text) {
+    digits += 4;
+    id = `LicenseRef-${hex.slice(0, digits)}`;
+  }
+  return id;
+}
+
+/**
  * The SPDX `licenseDeclared` of a package: the AND-joined expression, `NOASSERTION` when empty.
- * An unparsable entry becomes `LicenseRef-<first 12 hex of the sha256 of its text>`, and its text
- * is added to `extracted`, keyed by that id.
+ * An unparsable entry becomes a `LicenseRef-<hex>` of its text (`licenseRef`), and its text is
+ * added to `extracted`, keyed by that id.
  */
 export function spdxLicense(licenses: readonly string[], extracted: Map<string, string>): string {
   const entries = entriesOf(licenses);
@@ -58,7 +73,7 @@ export function spdxLicense(licenses: readonly string[], extracted: Map<string, 
   const exprs = entries.map((entry): LicenseExpr => {
     const expr = parseReal(entry);
     if (expr !== null) return expr;
-    const id = `LicenseRef-${createHash('sha256').update(entry).digest('hex').slice(0, 12)}`;
+    const id = licenseRef(entry, extracted);
     extracted.set(id, entry);
     return { kind: 'id', id };
   });

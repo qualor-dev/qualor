@@ -183,6 +183,22 @@ describe('buildCycloneDxVex', () => {
     expect(bare.version).toBeUndefined();
   });
 
+  it('takes the version of a purl before its qualifiers and subpath (D8-2)', () => {
+    const doc = buildCycloneDxVex(
+      DOC,
+      [
+        entry({
+          vulnerabilityId: 'CVE-2026-0070',
+          packageName: 'x',
+          purls: ['pkg:npm/x@1.0.0?repository_url=https://u@h', 'pkg:npm/x@2.0.0#lib/a@b'],
+        }),
+      ],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
+    expect(doc.components.map((c: any) => c.version)).toEqual(['1.0.0', '2.0.0']);
+  });
+
   it('points every affects ref at a listed component, as a BOM-Link into the SBOM', () => {
     const refs = new Set(out.components.map((c: any) => c['bom-ref']));
     for (const c of out.components) expect(c['bom-ref']).toBe(`urn:cdx:${SBOM_SERIAL}/1#${c.purl}`);
@@ -378,7 +394,7 @@ describe('buildOpenVex', () => {
     ]);
   });
 
-  it('carries the decision of an open entry: timestamp, notes and author', () => {
+  it('carries the decision of an open entry: timestamp, comment and author in the notes (D8-3)', () => {
     const doc = buildOpenVex(DOC, [
       entry({
         vulnerabilityId: 'CVE-2026-0040',
@@ -386,11 +402,14 @@ describe('buildOpenVex', () => {
         decidedAt: DECIDED,
         decidedBy: 'Carol',
       }),
+      entry({ vulnerabilityId: 'CVE-2026-0041', decidedAt: DECIDED, decidedBy: 'Carol' }),
     ]) as any;
-    const s = doc.statements[0];
+    const [s, uncommented] = doc.statements;
     expect(s.status).toBe('under_investigation');
     expect(s.timestamp).toBe(DECIDED.toISOString());
-    expect(s.status_notes).toBe('Decided by Carol.');
+    expect(s.status_notes).toBe('Reopened after the fix regressed. Decided by Carol.');
+    expect(s.impact_statement).toBeUndefined();
+    expect(uncommented.status_notes).toBe('Decided by Carol.');
   });
 
   it('validates an entry with no purls', () => {

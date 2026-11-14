@@ -80,4 +80,20 @@ describe('spdxLicense', () => {
   it('gives NOASSERTION for an empty list', () => {
     expect(spdxLicense([], new Map())).toBe('NOASSERTION');
   });
+
+  it('extends the id of a text whose 12 hex digits clash with another text (D8-4)', () => {
+    // sha256 7992bfc967ebbe25… and 7992bfc967eb4dc9…
+    const m = new Map<string, string>();
+    const first = spdxLicense(['093fd17ac563'], m);
+    const second = spdxLicense(['4312b7a9a9ef'], m);
+    expect(first).toBe('LicenseRef-7992bfc967eb');
+    expect(second).toBe('LicenseRef-7992bfc967eb4dc9');
+    expect([...m]).toEqual([
+      ['LicenseRef-7992bfc967eb', '093fd17ac563'],
+      ['LicenseRef-7992bfc967eb4dc9', '4312b7a9a9ef'],
+    ]);
+    // Each text keeps its id in the same document.
+    expect(spdxLicense(['4312b7a9a9ef', '093fd17ac563'], m)).toBe(`${second} AND ${first}`);
+    expect(m.size).toBe(2);
+  });
 });
