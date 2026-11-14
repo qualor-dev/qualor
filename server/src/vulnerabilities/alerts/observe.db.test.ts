@@ -618,13 +618,20 @@ describe('vulnerability alerts: the scope and the observe step', () => {
     const qMain = await q.branch('main', true);
     await q.vulnerable({ branchId: qMain }, 'CVE-5');
     await checked(q.projectId, { branchId: qMain });
+    let reads = 0;
+    const countReads = (text: string) => {
+      if (text.includes(MISSING_READ)) reads += 1;
+    };
     // Four targets, two at a time.
     expect(await pass(T1, ALERTS, 2)).toEqual(
       counts({ targetsAdded: 4, recheckProjectIds: [p.projectId, q.projectId].sort() }),
     );
     await rechecked({ branchId: p.main }, { versionId: p.v234 }, { versionId: v240 });
     await rechecked({ branchId: qMain });
-    expect(await pass(T2, ALERTS, 2)).toEqual(counts({ targetsSeeded: 4, itemsAdded: 6 }));
+    expect(await pass(T2, ALERTS, 2, countReads)).toEqual(
+      counts({ targetsSeeded: 4, itemsAdded: 6 }),
+    );
+    expect(reads).toBe(2);
     expect(await itemsOf({ branchId: p.main })).toEqual([
       item('CVE-1', true, T2),
       item('CVE-3', true, T2),
@@ -644,7 +651,12 @@ describe('vulnerability alerts: the scope and the observe step', () => {
     );
     await rechecked({ versionId: v250 });
     await p.vulnerable({ versionId: p.v234 }, 'CVE-6', 'axios');
-    expect(await pass(T4, ALERTS, 1)).toEqual(counts({ targetsSeeded: 1, itemsAdded: 2 }));
+    reads = 0;
+    expect(await pass(T4, ALERTS, 1, countReads)).toEqual(
+      counts({ targetsSeeded: 1, itemsAdded: 2 }),
+    );
+    // One read per target: the four of P and q's main.
+    expect(reads).toBe(5);
     expect(await itemsOf({ versionId: v250 })).toEqual([item('CVE-7', true, T4)]);
     expect(await itemsOf({ versionId: p.v234 })).toEqual([
       item('CVE-2', true, T2),

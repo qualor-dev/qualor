@@ -521,9 +521,11 @@ describe('the daily vulnerability digest', () => {
     it('sends one delivery per project and generic subscription that lists the event', async () => {
       const p = await newProject('Payments');
       const q = await newProject('Search');
+      const r = await newProject('Docs');
       const wanted = await subscribe();
       const onlyP = await subscribe({ projectId: p.projectId });
-      await subscribe({ projectId: q.projectId });
+      const onlyQ = await subscribe({ projectId: q.projectId });
+      await subscribe({ projectId: r.projectId });
       await subscribe({ events: ['analysis.completed', 'gate.status_changed'] });
       await subscribe({ active: false });
       await subscribe({ organizationId: otherOrg });
@@ -543,14 +545,17 @@ describe('the daily vulnerability digest', () => {
         fixedVersion: '1.2.0',
       });
       await p.vulnerable(NEW2, { packageName: 'qs', severity: 'high' });
-      // Medium only: no digest row, so this project gets no delivery.
       await q.vulnerable(NEW3, { severity: 'medium' });
+      await q.vulnerable(NEW4, { packageName: 'axios', severity: 'high' });
+      // Medium only: no digest row, so this project gets no delivery.
+      await r.vulnerable(NEW5, { severity: 'medium' });
 
-      expect(await run()).toEqual({ mails: 0, deliveries: 2, items: 3 });
+      // The organisation-wide subscription gets one delivery for each of P and Q.
+      expect(await run()).toEqual({ mails: 0, deliveries: 4, items: 5 });
 
-      const url = `${PUBLIC_URL}/projects/${p.projectId}/vulnerabilities`;
-      const payload = {
-        project: { id: p.projectId, key: p.key, name: 'Payments', url },
+      const urlOf = (projectId: string) => `${PUBLIC_URL}/projects/${projectId}/vulnerabilities`;
+      const ofP = {
+        project: { id: p.projectId, key: p.key, name: 'Payments', url: urlOf(p.projectId) },
         database: { builtAt: BUILT.toISOString() },
         vulnerabilities: [
           {
@@ -576,17 +581,44 @@ describe('the daily vulnerability digest', () => {
         ],
         more: 0,
       };
-      expect(await deliveries()).toEqual(
-        [wanted, onlyP].sort().map((subscriptionId) => ({
-          subscriptionId,
+      const ofQ = {
+        project: { id: q.projectId, key: q.key, name: 'Search', url: urlOf(q.projectId) },
+        database: { builtAt: BUILT.toISOString() },
+        vulnerabilities: [
+          {
+            vulnerabilityId: NEW4,
+            severity: 'high',
+            title: null,
+            packageName: 'axios',
+            installedVersions: ['1.0.0'],
+            fixedVersion: null,
+            exploited: null,
+            targets: ['main'],
+          },
+        ],
+        more: 0,
+      };
+      const sent = await deliveries();
+      const projectOf = (payload: unknown) => (payload as typeof ofP).project.id;
+      expect(sent.map((d) => [d.subscriptionId, projectOf(d.payload)]).sort()).toEqual(
+        [
+          [wanted, p.projectId],
+          [wanted, q.projectId],
+          [onlyP, p.projectId],
+          [onlyQ, q.projectId],
+        ].sort(),
+      );
+      for (const delivery of sent) {
+        expect(delivery).toEqual({
+          subscriptionId: delivery.subscriptionId,
           event: EVENT,
           status: 'pending',
-          payload,
-        })),
-      );
+          payload: projectOf(delivery.payload) === p.projectId ? ofP : ofQ,
+        });
+      }
       expect(
         await t.db.select({ id: jobs.id }).from(jobs).where(eq(jobs.queue, WEBHOOK_QUEUE)),
-      ).toHaveLength(2);
+      ).toHaveLength(4);
     });
 
     it('answers a null url without a public URL and a null date without a database', async () => {
