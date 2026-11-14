@@ -1,9 +1,9 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { QUIET_AUDIT_LOG } from '../../test/audit-log';
 import { createTestDatabase, waitForLockWaiters, type TestDatabase } from '../../test/db';
 import { seedIssue, seedRule } from '../../test/issues';
-import { createAuditRecorder, SYSTEM_ACTOR } from '../audit/recorder';
+import { createAuditRecorder, SYSTEM_ACTOR, type AuditRecorder } from '../audit/recorder';
 import type { Executor } from '../db/client';
 import { LOCKS } from '../db/locks';
 import { first } from '../db/rows';
@@ -175,7 +175,16 @@ describe('the vulnerability decision store', () => {
     ]);
     expect((await statusOf(f.issue.main)).resolvedBy).toBe(userId);
     const queued = await t.db.select().from(jobs).where(eq(jobs.queue, GATE_QUEUE));
-    expect(queued.length).toBeGreaterThanOrEqual(4);
+    const byBranch = (a: { branchId: string }, b: { branchId: string }) =>
+      a.branchId.localeCompare(b.branchId);
+    expect(queued.map((job) => job.payload as { branchId: string }).sort(byBranch)).toEqual(
+      [
+        { branchId: f.ids.main },
+        { branchId: f.ids.release },
+        { branchId: f.ids.feature },
+        { branchId: f.ids.mr },
+      ].sort(byBranch),
+    );
     expect(await statusOf(f.issue.other)).toMatchObject({ resolvedAt: null });
   });
 
@@ -426,6 +435,23 @@ describe('the vulnerability decision store', () => {
         ),
       )
       .orderBy(asc(auditEvents.seq));
+
+  it('records no event for an unaudited write', async () => {
+    const f = await fixture();
+    await write(input(f, 'wont_fix'));
+    expect(await decisionEvents(f)).toEqual([]);
+  });
+
+  it('records nothing while the recorder is inactive', async () => {
+    const f = await fixture();
+    const record = vi.fn();
+    const inactive = { active: () => false, record } as unknown as AuditRecorder;
+    await t.db.transaction((tx) =>
+      writeDecision(tx, input(f, 'wont_fix'), { recorder: inactive, context: SYSTEM_ACTOR }),
+    );
+    expect(record).not.toHaveBeenCalled();
+    expect(await decisionEvents(f)).toEqual([]);
+  });
 
   it('records the override a project-wide write removed, and none when there was none (F8)', async () => {
     const f = await fixture();
