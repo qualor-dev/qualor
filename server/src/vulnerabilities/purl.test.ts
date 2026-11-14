@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { purlOf } from './purl';
 
 describe('purlOf', () => {
+  it('replaces a lone surrogate with U+FFFD instead of throwing', () => {
+    expect(purlOf('npm', 'a\uD800b', '1.0.0')).toContain('%EF%BF%BD');
+    expect(purlOf('npm', 'lodash', '1\uDC00')).toBe('pkg:npm/lodash@1%EF%BF%BD');
+  });
+
   it.each([
     ['npm', 'lodash', '4.17.20', 'pkg:npm/lodash@4.17.20'],
     ['yarn', 'lodash', '4.17.20', 'pkg:npm/lodash@4.17.20'],

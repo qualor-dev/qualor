@@ -1,3 +1,5 @@
+import { LONE_SURROGATE_SOURCE } from '@qualor/shared';
+
 const TYPE_OF: Readonly<Record<string, string>> = {
   npm: 'npm',
   yarn: 'npm',
@@ -31,9 +33,14 @@ const TYPE_OF: Readonly<Record<string, string>> = {
   conan: 'conan',
 };
 
-/** Encodes one path segment: everything but unreserved characters is percent-encoded. */
+const LONE_SURROGATES = new RegExp(LONE_SURROGATE_SOURCE, 'g');
+
+/**
+ * Encodes one path segment: everything but unreserved characters is percent-encoded. A lone
+ * surrogate (which `encodeURIComponent` rejects) becomes U+FFFD.
+ */
 const segment = (s: string): string =>
-  encodeURIComponent(s).replace(
+  encodeURIComponent(s.replace(LONE_SURROGATES, '�')).replace(
     /[!'()*]/g,
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
   );

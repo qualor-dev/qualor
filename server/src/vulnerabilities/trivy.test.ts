@@ -93,6 +93,11 @@ describe('parseTrivyOutput', () => {
               Severity: 'LOW',
               PkgIdentifier: { PURL: 'pkg:x/d@1', BOMRef: '' },
             },
+            {
+              VulnerabilityID: 'D',
+              Severity: 'LOW',
+              PkgIdentifier: { PURL: 'pkg:x/e@1', BOMRef: '   ' },
+            },
           ],
         },
       ],
@@ -101,6 +106,7 @@ describe('parseTrivyOutput', () => {
       'pkg:npm/@a/b@1',
       'pkg:x/c@1',
       'pkg:x/d@1',
+      'pkg:x/e@1',
     ]);
   });
 
@@ -234,6 +240,44 @@ describe('createTrivyRunner', () => {
     }).run(sbom, os.tmpdir());
     expect(r).toMatchObject({ ok: false, code: 'TOO_LARGE' });
   });
+
+  it('kills Trivy as soon as its output passes the cap', async () => {
+    const before = workdirs().length;
+    const started = Date.now();
+    const r = await createTrivyRunner({
+      command: [process.execPath, fake, 'flood'],
+      workDir: base,
+      timeoutMs: 20_000,
+      maxOutputBytes: 1024,
+    }).run(sbom, os.tmpdir());
+    expect(r).toMatchObject({ ok: false, code: 'TOO_LARGE' });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(workdirs().length).toBe(before);
+  });
+
+  it('answers FAILED, not a rejection, when spawn throws', async () => {
+    const before = workdirs().length;
+    // A NUL byte in an argument makes spawn throw synchronously.
+    const r = await runner('ok').run(sbom, 'a\u0000b');
+    expect(r).toMatchObject({ ok: false, code: 'FAILED' });
+    expect(workdirs().length).toBe(before);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'answers FAILED for a Trivy that is not executable',
+    async () => {
+      const file = path.join(base, 'not-executable');
+      writeFileSync(file, '#!/bin/sh\n', { mode: 0o644 });
+      const r = await createTrivyRunner({
+        command: [file],
+        workDir: base,
+        timeoutMs: 5000,
+        maxOutputBytes: 1000,
+      }).run(sbom, os.tmpdir());
+      rmSync(file);
+      expect(r).toMatchObject({ ok: false, code: 'FAILED', message: 'Trivy is not executable' });
+    },
+  );
 });
 
 describe('removeStaleWorkDirs', () => {

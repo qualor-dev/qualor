@@ -1,5 +1,6 @@
 // Fake `trivy` for tests: node fake-trivy.mjs <mode> sbom ... -o <out> <in>
-// Modes: ok (recorded output), echo (reports its arguments and environment), sleep, garbage, fail.
+// Modes: ok (recorded output), echo (reports its arguments and environment), sleep, garbage, fail,
+// flood (writes 2 KiB of output, then keeps running).
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,9 @@ const out = args[args.indexOf('-o') + 1];
 const input = args[args.length - 1];
 
 if (mode === 'sleep') {
+  setTimeout(() => {}, 60_000);
+} else if (mode === 'flood') {
+  writeFileSync(out, 'x'.repeat(2048));
   setTimeout(() => {}, 60_000);
 } else if (mode === 'fail') {
   process.stderr.write('FATAL fake failure\n');

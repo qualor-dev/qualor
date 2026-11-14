@@ -1,7 +1,8 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessByStdio } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 
 export interface VulnerabilityMatch {
   vulnerabilityId: string;
@@ -63,7 +64,8 @@ export async function removeStaleWorkDirs(dir: string): Promise<void> {
 
 const SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
 
-const text = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+const text = (v: unknown): string | null =>
+  typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
 
 /** One Trivy vulnerability entry as a match and its package's key, or null without either. */
 function toMatch(v: Record<string, unknown>): { purl: string; match: VulnerabilityMatch } | null {
@@ -125,6 +127,15 @@ function killTree(pid: number | undefined): void {
   }
 }
 
+/** How often a running Trivy's output file is measured against the cap. */
+const OUTPUT_POLL_MS = 1000;
+
+const tooLarge = (size: number, cap: number): TrivyRun => ({
+  ok: false,
+  code: 'TOO_LARGE',
+  message: `Trivy output is over the ${cap} byte cap (${size} bytes so far)`,
+});
+
 export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
   const [program, ...lead] = options.command;
   return {
@@ -178,28 +189,51 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
           | { kind: 'spawn-error'; error: NodeJS.ErrnoException }
           | { kind: 'timeout' }
           | { kind: 'aborted' }
+          | { kind: 'too-large'; size: number }
         >((resolve) => {
           let stderr = '';
           let done = false;
           let onAbort: (() => void) | undefined;
+          const timers: NodeJS.Timeout[] = [];
           const finish = (r: Parameters<typeof resolve>[0]) => {
             if (done) return;
             done = true;
-            clearTimeout(timer);
+            for (const t of timers) clearTimeout(t);
             if (onAbort !== undefined) signal?.removeEventListener('abort', onAbort);
             resolve(r);
           };
-          const child = spawn(program, args, {
-            env,
-            cwd: work,
-            stdio: ['ignore', 'ignore', 'pipe'],
-            detached: process.platform !== 'win32',
-            windowsHide: true,
-          });
-          const timer = setTimeout(() => {
-            killTree(child.pid);
-            finish({ kind: 'timeout' });
-          }, options.timeoutMs);
+          let child: ChildProcessByStdio<null, null, Readable>;
+          try {
+            child = spawn(program, args, {
+              env,
+              cwd: work,
+              stdio: ['ignore', 'ignore', 'pipe'],
+              detached: process.platform !== 'win32',
+              windowsHide: true,
+            });
+          } catch (e) {
+            // spawn throws synchronously for an argument it cannot pass (a NUL byte).
+            finish({ kind: 'spawn-error', error: e as NodeJS.ErrnoException });
+            return;
+          }
+          timers.push(
+            setTimeout(() => {
+              killTree(child.pid);
+              finish({ kind: 'timeout' });
+            }, options.timeoutMs),
+          );
+          // The cap is checked while Trivy runs: a runaway output is killed, not waited for.
+          const poll = setInterval(() => {
+            stat(output).then(
+              (s) => {
+                if (done || s.size <= options.maxOutputBytes) return;
+                killTree(child.pid);
+                finish({ kind: 'too-large', size: s.size });
+              },
+              () => undefined,
+            );
+          }, OUTPUT_POLL_MS);
+          timers.push(poll);
           if (signal !== undefined) {
             onAbort = () => {
               killTree(child.pid);
@@ -225,11 +259,14 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
             message: `Trivy ran longer than ${options.timeoutMs} ms`,
           };
         }
+        if (exit.kind === 'too-large') return tooLarge(exit.size, options.maxOutputBytes);
         if (exit.kind === 'spawn-error') {
-          const missing = exit.error.code === 'ENOENT' || exit.error.code === 'EACCES';
+          if (exit.error.code === 'EACCES') {
+            return { ok: false, code: 'FAILED', message: 'Trivy is not executable' };
+          }
           return {
             ok: false,
-            code: missing ? 'NOT_INSTALLED' : 'FAILED',
+            code: exit.error.code === 'ENOENT' ? 'NOT_INSTALLED' : 'FAILED',
             message: `cannot start Trivy: ${exit.error.message}`,
           };
         }
@@ -246,13 +283,7 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
         } catch {
           return { ok: false, code: 'BAD_OUTPUT', message: 'Trivy wrote no output file' };
         }
-        if (size > options.maxOutputBytes) {
-          return {
-            ok: false,
-            code: 'TOO_LARGE',
-            message: `Trivy output is ${size} bytes, over the ${options.maxOutputBytes} byte cap`,
-          };
-        }
+        if (size > options.maxOutputBytes) return tooLarge(size, options.maxOutputBytes);
         try {
           return { ok: true, matches: parseTrivyOutput(await readFile(output, 'utf8')) };
         } catch (e) {
