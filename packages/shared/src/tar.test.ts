@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { metadataJson, tar, tarGz, trivyArchive } from '../test/trivy-archive';
 import { normalName, readTarGz, TarError, type TarEntry } from './tar';
@@ -237,6 +237,74 @@ describe('readTarGz', () => {
     );
     expect(error).toBeInstanceOf(TarError);
     expect((error as Error).message).toMatch(/metadata\.json is larger than 1 MiB/);
+  });
+
+  describe('limits', () => {
+    const bomb = () =>
+      tarGz([
+        { name: 'trivy.db', data: Buffer.alloc(2 * 1024 * 1024) },
+        { name: 'metadata.json', data: metadataJson() },
+      ]);
+    const read = (bytes: Buffer, limits: { maxBytes?: number; deadline?: number }) =>
+      readTarGz(
+        piecesOf(bytes),
+        (name) => (name === 'trivy.db' ? 'stream' : 'skip'),
+        async (entry) => {
+          if (entry.want === 'stream') for await (const _ of entry.body) void _;
+        },
+        limits,
+      );
+
+    it('rejects an archive that inflates past maxBytes', async () => {
+      const error = await rejection(read(bomb(), { maxBytes: 1024 * 1024 }));
+      expect(error).toBeInstanceOf(TarError);
+      expect((error as Error).message).toContain('more than 1048576 bytes');
+    });
+
+    it('reads an archive that inflates to just under maxBytes', async () => {
+      const inflated = gunzipSync(bomb()).length;
+      await expect(read(bomb(), { maxBytes: inflated })).resolves.toBeUndefined();
+      const error = await rejection(read(bomb(), { maxBytes: inflated - 1 }));
+      expect(error).toBeInstanceOf(TarError);
+    });
+
+    it('rejects an archive read past its deadline', async () => {
+      const error = await rejection(read(bomb(), { deadline: Date.now() - 1 }));
+      expect(error).toBeInstanceOf(TarError);
+      expect((error as Error).message).toBe('The archive took too long to unpack');
+    });
+  });
+
+  describe('the gzip trailer', () => {
+    const DAMAGED = 'The gzip archive is damaged (checksum or length mismatch)';
+    const readPieces = (bytes: Buffer) =>
+      readTarGz(
+        piecesOf(bytes, 1),
+        (name) => (name === 'metadata.json' ? 'keep' : 'skip'),
+        () => undefined,
+      );
+
+    it.each([
+      ['CRC', 8],
+      ['ISIZE', 1],
+    ])('rejects a bad %s even when read byte by byte', async (_what, fromEnd) => {
+      const bad = trivyArchive({ db: randomBytes(50_000) });
+      bad[bad.length - fromEnd] = (bad[bad.length - fromEnd] ?? 0) ^ 0xff;
+      const error = await rejection(readPieces(bad));
+      expect(error).toBeInstanceOf(TarError);
+      expect((error as Error).message).toBe(DAMAGED);
+    });
+
+    it('reads an archive followed by zero bytes', async () => {
+      const good = trivyArchive({ db: randomBytes(1_000) });
+      await expect(readPieces(Buffer.concat([good, Buffer.alloc(512)]))).resolves.toBeUndefined();
+    });
+
+    it('rejects an archive followed by junk', async () => {
+      const good = trivyArchive({ db: randomBytes(1_000) });
+      const error = await rejection(readPieces(Buffer.concat([good, Buffer.from('junk')])));
+      expect(error).toBeInstanceOf(TarError);
+    });
   });
 
   it('passes on what the chunks throw', async () => {

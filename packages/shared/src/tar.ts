@@ -38,10 +38,17 @@ export function normalName(raw: string): string {
   return parts.join('/');
 }
 
-/** zlib's own errors: the data is not gzip, or it is cut. */
+/** zlib's own errors: the data is not gzip, it is cut, or its checksum or length is wrong. */
 function gzipError(err: unknown): TarError | null {
   const code = (err as { code?: unknown } | null)?.code;
   if (code === 'Z_BUF_ERROR') return new TarError('The archive ends early (the gzip data is cut)');
+  const message = (err as { message?: unknown } | null)?.message;
+  if (
+    code === 'Z_DATA_ERROR' &&
+    (message === 'incorrect data check' || message === 'incorrect length check')
+  ) {
+    return new TarError('The gzip archive is damaged (checksum or length mismatch)');
+  }
   if (typeof code === 'string' && code.startsWith('Z_')) {
     return new TarError('The file is not a gzip archive');
   }
@@ -60,7 +67,10 @@ async function* inflate(chunks: AsyncIterable<Buffer>): AsyncGenerator<Buffer, v
   pumped.catch(() => undefined);
   try {
     for await (const piece of gunzip as AsyncIterable<Buffer>) yield piece;
-    await pumped;
+    // Zero bytes after the gzip member end it for zlib while the source still writes: not an error.
+    await pumped.catch((err: unknown) => {
+      if ((err as { code?: unknown } | null)?.code !== 'ERR_STREAM_PREMATURE_CLOSE') throw err;
+    });
   } catch (err) {
     throw gzipError(err) ?? err;
   } finally {
@@ -68,21 +78,42 @@ async function* inflate(chunks: AsyncIterable<Buffer>): AsyncGenerator<Buffer, v
   }
 }
 
+/**
+ * What an archive may cost to read: `maxBytes` counts every inflated byte (the drained tail
+ * included), `deadline` is an epoch-ms time. Past either, the read rejects with a {@link TarError}.
+ */
+export interface TarLimits {
+  maxBytes?: number;
+  deadline?: number;
+}
+
 /** The decompressed stream, read by the byte. */
 class Reader {
   private readonly pending: Buffer[] = [];
   private pendingBytes = 0;
+  private inflated = 0;
   private ended = false;
 
-  constructor(private readonly source: AsyncIterator<Buffer, void, undefined>) {}
+  constructor(
+    private readonly source: AsyncIterator<Buffer, void, undefined>,
+    private readonly limits: TarLimits = {},
+  ) {}
 
   /** Pulls one more piece; false at the end of the data. */
   private async pull(): Promise<boolean> {
     if (this.ended) return false;
+    const { maxBytes, deadline } = this.limits;
+    if (deadline !== undefined && Date.now() > deadline) {
+      throw new TarError('The archive took too long to unpack');
+    }
     const step = await this.source.next();
     if (step.done) {
       this.ended = true;
       return false;
+    }
+    this.inflated += step.value.length;
+    if (maxBytes !== undefined && this.inflated > maxBytes) {
+      throw new TarError(`The archive unpacks to more than ${maxBytes} bytes`);
     }
     if (step.value.length > 0) {
       this.pending.push(step.value);
@@ -128,6 +159,12 @@ class Reader {
   async skip(n: number): Promise<void> {
     let left = n;
     while (left > 0) left -= (await this.upTo(left)).length;
+  }
+
+  /** Reads to the end of the data, so zlib checks the gzip trailer. */
+  async drain(): Promise<void> {
+    while (await this.pull()) this.pending.length = 0;
+    this.pendingBytes = 0;
   }
 
   async close(): Promise<void> {
@@ -327,20 +364,26 @@ async function readEntry(
  * ({@link checkPax}); any other entry (a link, a device, a GNU long name) rejects it too. A
  * `keep` entry over {@link KEEP_MAX_BYTES} rejects it too. `onFile` is awaited for each wanted
  * entry, in archive order (see {@link TarEntry}). Rejects with a {@link TarError} for an archive
- * that is not valid, or with what `chunks` or `onFile` threw. Stops at the archive's end marker.
+ * that is not valid, or with what `chunks` or `onFile` threw. Stops at the archive's end marker, then reads the
+ * rest of the gzip data, so a bad checksum or trailing garbage rejects it. `limits` caps the
+ * inflated bytes and the time.
  */
 export async function readTarGz(
   chunks: AsyncIterable<Buffer>,
   want: TarWant,
   onFile: OnTarEntry,
+  limits: TarLimits = {},
 ): Promise<void> {
-  const reader = new Reader(inflate(chunks));
+  const reader = new Reader(inflate(chunks), limits);
   try {
     for (;;) {
       const block = await reader.exactly(BLOCK);
       if (block === null) return;
       const header = parseHeader(block);
-      if (header === null) return;
+      if (header === null) {
+        await reader.drain();
+        return;
+      }
       const padding = (BLOCK - (header.size % BLOCK)) % BLOCK;
       const unread = await readEntry(reader, header, want, onFile);
       await reader.skip(unread + padding);
