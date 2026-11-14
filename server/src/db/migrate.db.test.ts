@@ -947,9 +947,9 @@ describe('runMigrations / pendingMigrations', () => {
     const issue = async (
       branch: string,
       cve: string,
-      pkg: string,
+      pkg: string | null,
       status: string,
-      resolvedAt: string,
+      resolvedAt: string | null,
     ) => {
       const id = randomUUID();
       const ruleId = rules.get(cve) ?? (await rule(cve));
@@ -963,7 +963,7 @@ describe('runMigrations / pendingMigrations', () => {
           branch,
           ruleId,
           id.replaceAll('-', ''),
-          `${pkg} 1.0: ${cve} x`,
+          `${pkg ?? 'unnamed'} 1.0: ${cve} x`,
           status,
           resolvedAt,
           user,
@@ -987,7 +987,7 @@ describe('runMigrations / pendingMigrations', () => {
     const closedAfter = async (
       branch: string,
       cve: string,
-      pkg: string,
+      pkg: string | null,
       pre: string,
       resolvedAt: string,
       comment: string | null,
@@ -1046,14 +1046,31 @@ describe('runMigrations / pendingMigrations', () => {
     );
     const newer = await issue(main, 'CVE-2026-0006', 'yaml', 'wont_fix', '2026-03-01T10:00:00Z');
     await change(newer, 'open', 'wont_fix', 'newer', '2026-03-01T10:00:00Z');
+    // No resolved_at (an issue triaged before the column was kept): decided at its updated_at.
+    const undated = await issue(main, 'CVE-2026-0007', 'semver', 'false_positive', null);
+    await db.pool.query(`UPDATE issues SET updated_at = '2026-04-01T10:00:00Z' WHERE id = $1`, [
+      undated,
+    ]);
+    // No package name: no pair, so no decision.
+    await closedAfter(main, 'CVE-2026-0008', null, 'wont_fix', '2026-01-01T10:00:00Z', 'unnamed');
 
     await runMigrations(db.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
-    const { rows } = await db.pool.query(
-      `SELECT package_name, vulnerability_id, branch_id, version_id, status, comment, decided_by
-         FROM vulnerability_decisions ORDER BY package_name`,
-    );
-    const row = (pkg: string, cve: string, status: string, comment: string | null, by: string) => ({
+    const decisions = () =>
+      db.pool.query(
+        `SELECT package_name, vulnerability_id, branch_id, version_id, status, comment, decided_by,
+                decided_at
+           FROM vulnerability_decisions ORDER BY package_name`,
+      );
+    const { rows } = await decisions();
+    const row = (
+      pkg: string,
+      cve: string,
+      status: string,
+      comment: string | null,
+      by: string,
+      at: string,
+    ) => ({
       package_name: pkg,
       vulnerability_id: cve,
       branch_id: null,
@@ -1061,13 +1078,32 @@ describe('runMigrations / pendingMigrations', () => {
       status,
       comment,
       decided_by: by,
+      decided_at: new Date(at),
     });
     expect(rows).toEqual([
-      row('lodash', 'CVE-2026-0001', 'false_positive', 'not reachable', user),
-      row('minimist', 'CVE-2026-0002', 'wont_fix', 'accepted', user),
-      row('qs', 'CVE-2026-0005', 'wont_fix', 'kept', decider),
-      row('yaml', 'CVE-2026-0006', 'wont_fix', 'newer', user),
+      row(
+        'lodash',
+        'CVE-2026-0001',
+        'false_positive',
+        'not reachable',
+        user,
+        '2026-01-01T10:00:00Z',
+      ),
+      row('minimist', 'CVE-2026-0002', 'wont_fix', 'accepted', user, '2026-01-03T10:00:00Z'),
+      row('qs', 'CVE-2026-0005', 'wont_fix', 'kept', decider, '2026-02-01T10:00:00Z'),
+      row('semver', 'CVE-2026-0007', 'false_positive', null, user, '2026-04-01T10:00:00Z'),
+      row('yaml', 'CVE-2026-0006', 'wont_fix', 'newer', user, '2026-03-01T10:00:00Z'),
     ]);
+
+    // Running the statement again changes nothing.
+    const statement = readFileSync(
+      path.join(MIGRATIONS_DIR, '0027_vulnerability_decisions_repair.sql'),
+      'utf8',
+    )
+      .split('--> statement-breakpoint')
+      .join(' ');
+    await db.pool.query(statement);
+    expect((await decisions()).rows).toEqual(rows);
   });
 
   it('adds the vendor ids of a match and clears every match mark (0028)', async () => {
