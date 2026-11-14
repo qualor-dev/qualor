@@ -5,6 +5,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import type { DependencyEntry, DependencyIgnore } from '@qualor/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
+import { waitForLockWaiters } from '../../test/db';
 import { reportWith, type ReportParts } from '../../test/reports';
 import { trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { uuidv7 } from '../db/ids';
@@ -698,19 +699,14 @@ describe('vulnerability re-checks', () => {
     };
 
     it('a good full re-check deletes the matches and marks of packages no inventory has', async () => {
+      // Other tests' projects would be re-matched too: start from none, so the sets are exact.
+      await db().delete(projects);
       await setup();
       expect(await recheck({ all: true })).toMatchObject({ kind: 'done' });
       // The package of the tracked version stays matched; the orphan goes; the package an
       // untracked target still lists keeps its matches (they are that target's) but not its mark.
-      // (Other tests' projects stay in this database, so only these packages are asserted.)
-      const matches = await matchPurls();
-      expect(matches).toContain(PD);
-      expect(matches).toContain(KEPT);
-      expect(matches).not.toContain(ORPHAN);
-      const marked = await markedPurls();
-      expect(marked).toContain(PD);
-      expect(marked).not.toContain(KEPT);
-      expect(marked).not.toContain(ORPHAN);
+      expect(await matchPurls()).toEqual([KEPT, PD].sort());
+      expect(await markedPurls()).toEqual([PD]);
     });
 
     it('a re-check of some projects deletes nothing', async () => {
@@ -777,6 +773,17 @@ describe('vulnerability re-checks', () => {
       expect(ignoreActive({ expiresAt: '2026-11-01' }, at('2026-11-01T00:00:00Z'))).toBe(false);
       expect(ignoreActive({ expiresAt: '2026-11-01' }, at('2026-11-01T18:00:00Z'))).toBe(false);
       expect(ignoreActive({ expiresAt: 'soon' }, at('2026-10-01T00:00:00Z'))).toBe(false);
+    });
+
+    it('drops only the bad entries of an ignore list', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      await db()
+        .update(analyses)
+        .set({ dependencyIgnores: sql`'[{"id":"CVE-2026-0001"},{"id":5},"junk"]'::jsonb` })
+        .where(eq(analyses.projectId, p.id));
+      await recheck({ projectIds: [p.id] });
+      expect(await described(p)).toEqual([`main ${PA} CVE-2026-0001 ignored`]);
     });
 
     it("takes a branch's ids from the analysis its inventory came from", async () => {
@@ -1179,7 +1186,7 @@ describe('vulnerability re-checks', () => {
         await enqueueRecheck(tx, { projectIds: [a] });
         second = enqueueRecheck(db(), { projectIds: [b] });
         // The second request reaches the lock while this transaction is still open.
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        await waitForLockWaiters(db(), 1);
       });
       await second;
       expect(await recheckJobs()).toEqual([
@@ -1202,6 +1209,74 @@ describe('vulnerability re-checks', () => {
       });
       const job = await claimJob(db(), RECHECK_QUEUE, 'test-worker', 60_000);
       expect(job?.payload).toEqual({ projectIds: [a, b].sort() });
+    });
+
+    describe('a request behind a job on retry backoff', () => {
+      const pushBack = () =>
+        db().execute(
+          sql`UPDATE jobs SET run_at = now() + interval '5 minutes' WHERE queue = ${RECHECK_QUEUE}`,
+        );
+      /** On the database's own clock, as the queue tests do. */
+      const isRunAtInFuture = async (): Promise<boolean> => {
+        const result = await db().execute(
+          sql`SELECT run_at > now() AS "inFuture" FROM jobs WHERE queue = ${RECHECK_QUEUE} AND status = 'queued'`,
+        );
+        return Boolean(result.rows[0]?.inFuture);
+      };
+
+      it('runs now when the request adds a scope', async () => {
+        await enqueueRecheck(db(), { projectIds: [uuidv7()] });
+        await pushBack();
+        expect(await isRunAtInFuture()).toBe(true);
+        await enqueueRecheck(db(), { projectIds: [uuidv7()] });
+        expect(await isRunAtInFuture()).toBe(false);
+      });
+
+      it('runs now when the request adds nothing', async () => {
+        await enqueueRecheck(db(), { all: true });
+        await pushBack();
+        expect(await isRunAtInFuture()).toBe(true);
+        await enqueueRecheck(db(), { all: true });
+        expect(await isRunAtInFuture()).toBe(false);
+      });
+    });
+
+    it('two workers run two requests one after the other, each on its own scope', async () => {
+      const p1 = await project();
+      const p2 = await project();
+      await onBranch(p1, 'main', { dependencies: [A] });
+      await onBranch(p2, 'main', { dependencies: [D] });
+      await db().delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      await enqueueRecheck(db(), { projectIds: [p1.id] });
+      // The second request arrives while the first is in Trivy: it queues behind the running job.
+      trivy.onRun = async () => {
+        await enqueueRecheck(db(), { projectIds: [p2.id] });
+      };
+      let active = 0;
+      let overlapped = false;
+      const runner: TrivyRunner = {
+        async run(sbomJson, cacheDir, shutdown) {
+          active += 1;
+          overlapped ||= active > 1;
+          try {
+            return await trivy.run(sbomJson, cacheDir, shutdown);
+          } finally {
+            active -= 1;
+          }
+        },
+      };
+      await Promise.all([
+        runUntilIdle(db(), recheckHandlers(deps({ runner })), silent),
+        runUntilIdle(db(), recheckHandlers(deps({ runner })), silent),
+      ]);
+      expect(await recheckJobs()).toEqual([
+        { status: 'succeeded', payload: { projectIds: [p1.id] }, key: RECHECK_QUEUE },
+        { status: 'succeeded', payload: { projectIds: [p2.id] }, key: RECHECK_QUEUE },
+      ]);
+      expect(overlapped).toBe(false);
+      expect(trivy.calls).toHaveLength(2);
+      expect(await described(p1)).toEqual([`main ${PA} CVE-2026-0001`]);
+      expect(await described(p2)).toEqual([`main ${PD} CVE-2026-0004`]);
     });
 
     it('the handler runs a queued job', async () => {
@@ -1269,6 +1344,39 @@ describe('vulnerability re-checks', () => {
       await instanceSwitch(false);
       await onBranch(p, 'main', { dependencies: [A] });
       await tagScan(p, '1.0.0', { dependencies: [A] });
+      expect(await queued()).toEqual([]);
+    });
+
+    it('none from the two routes while the instance switch is off', async () => {
+      const p = await project();
+      await tagScan(p, '1.0.0', { dependencies: [A] });
+      const version = await versionId(p, '1.0.0');
+      await instanceSwitch(false);
+      await clear();
+      const patch = await api('PATCH', `/projects/${p.id}/versions/${version}`, {
+        tracking: 'pinned',
+      });
+      expect(patch.statusCode, patch.body).toBe(200);
+      const put = await api('PUT', `/projects/${p.id}/vulnerability-monitoring`, {
+        enabled: true,
+        branchPatterns: ['hotfix/*'],
+        versionRule: { kind: 'lines', lines: 3 },
+        labelVersions: false,
+      });
+      expect(put.statusCode, put.body).toBe(200);
+      expect(await queued()).toEqual([]);
+    });
+
+    it('none from a PUT that changes nothing', async () => {
+      const p = await project();
+      await clear();
+      const put = await api('PUT', `/projects/${p.id}/vulnerability-monitoring`, {
+        enabled: true,
+        branchPatterns: [],
+        versionRule: { kind: 'lines', lines: 5 },
+        labelVersions: false,
+      });
+      expect(put.statusCode, put.body).toBe(200);
       expect(await queued()).toEqual([]);
     });
   });

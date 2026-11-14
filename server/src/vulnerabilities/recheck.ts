@@ -81,6 +81,7 @@ export async function enqueueRecheck(db: Executor, scope: RecheckScope): Promise
   const own = mergeScopes(scope, { projectIds: [] });
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulnerabilityRecheck})`);
+    // A merged request runs now: a job on retry backoff (failJob) does not wait it out.
     const queued = await tx.execute<{ id: string; payload: unknown }>(sql`
       SELECT id, payload FROM jobs
        WHERE queue = ${RECHECK_QUEUE} AND status = 'queued'
@@ -93,10 +94,15 @@ export async function enqueueRecheck(db: Executor, scope: RecheckScope): Promise
       return;
     }
     const merged = mergeScopes(scopeOf(job.payload), own);
-    if (JSON.stringify(merged) === JSON.stringify(scopeOf(job.payload))) return;
-    await tx.execute(sql`
-      UPDATE jobs SET payload = ${JSON.stringify(merged)}::jsonb, updated_at = now()
-       WHERE id = ${job.id}`);
+    const unchanged = JSON.stringify(merged) === JSON.stringify(scopeOf(job.payload));
+    await tx.execute(
+      unchanged
+        ? sql`UPDATE jobs SET run_at = least(run_at, now()), updated_at = now() WHERE id = ${job.id}`
+        : sql`
+      UPDATE jobs SET payload = ${JSON.stringify(merged)}::jsonb,
+                      run_at = least(run_at, now()), updated_at = now()
+       WHERE id = ${job.id}`,
+    );
   });
 }
 
@@ -306,14 +312,15 @@ interface Inventory {
   ignored: Set<string>;
 }
 
-const ignoreList = z
-  .array(z.object({ id: z.string(), expiresAt: z.string().optional() }))
-  .catch([]);
+const ignoreEntry = z.object({ id: z.string(), expiresAt: z.string().optional() });
+const ignoreList = z.array(z.unknown()).catch([]);
 
 /**
  * Whether a `.trivyignore` entry still applies at `now`. As Trivy applies `exp:` in a scan, the
  * entry ends at 00:00 UTC of its `expiresAt` day: that day itself is no longer ignored (ruling
- * R16). Without `expiresAt` it never ends; an unreadable date ends it.
+ * R16). Without `expiresAt` it never ends; an unreadable date ends it. Only `YYYY-MM-DD` reads:
+ * this depends on `expiresAt: z.iso.date()` in the report schema (dependencyIgnoreSchema in
+ * packages/shared), which lets nothing else in; a date-time here would count as unreadable.
  */
 export function ignoreActive(entry: { expiresAt?: string | undefined }, now: Date): boolean {
   if (entry.expiresAt === undefined) return true;
@@ -321,14 +328,17 @@ export function ignoreActive(entry: { expiresAt?: string | undefined }, now: Dat
   return !Number.isNaN(end) && now.getTime() < end;
 }
 
-/** The ids of a stored `.trivyignore` list that are active at `now`. */
+/**
+ * The ids of a stored `.trivyignore` list that are active at `now`. An entry that does not read
+ * is dropped alone; a stored value that is not a list is empty.
+ */
 function ignoredIds(value: unknown, now: Date): Set<string> {
-  return new Set(
-    ignoreList
-      .parse(value ?? [])
-      .filter((e) => ignoreActive(e, now))
-      .map((e) => e.id),
-  );
+  const ids = new Set<string>();
+  for (const raw of ignoreList.parse(value ?? [])) {
+    const entry = ignoreEntry.safeParse(raw);
+    if (entry.success && ignoreActive(entry.data, now)) ids.add(entry.data.id);
+  }
+  return ids;
 }
 
 /**
@@ -711,8 +721,10 @@ async function writeChecks(
 /**
  * Steps 3–8 of a re-check, inside the local copy's lock. Two passes over the projects, a batch at a
  * time: the first collects the distinct packages not yet matched against this dataset and matches
- * them in as few Trivy runs as the 20 000 cap allows; the second diffs each batch's tracked
- * targets. Only tracked targets are read, matched and written: an untracked one keeps its rows
+ * them in as few Trivy runs as the SBOM_MAX_COMPONENTS cap allows; the second diffs each
+ * batch's tracked targets, and each batch is written as a whole diff. A failure in the second
+ * pass leaves the batches before it written: their rows are final, the rest stay as they were,
+ * and the next re-check does the remainder (R12). Only tracked targets are read, matched and written: an untracked one keeps its rows
  * (R17). A package that entered an inventory between the passes is matched in the second.
  */
 async function recheckAll(run: Run, projectIds: readonly string[]): Promise<RecheckOutcome> {
@@ -915,8 +927,10 @@ async function stoppedRun(deps: RecheckDeps, scope: RecheckScope): Promise<Reche
  * 2. The local copy of that dataset is held for the run, and the Trivy work directories a killed
  *    run left in its directory are removed; DISK (or MISSING, as RECHECK_FAILED)
  *    goes to `lastRecheckError` (ruling R19), as does a failed Trivy run (R12).
- * 3–5. The packages not yet matched against it run through Trivy, 20 000 per SBOM.
+ * 3–5. The packages not yet matched against it run through Trivy, at most SBOM_MAX_COMPONENTS (1 000) per SBOM.
  * 6–7. Each tracked target's rows follow its inventory ({@link writeTargets}).
+ *    Each batch is written as a whole diff, so a failure in the second pass leaves the earlier
+ *    batches written (their rows are final) and the rest as they were.
  * 8. Untracked targets (a version not tracked, a branch that no longer matches, every target of a
  *    project switched off) are not re-checked and keep their rows (ruling R17, spec §6.2, §8.1).
  * 9. A good full re-check writes `lastRecheck` and clears `lastRecheckError`; a scoped one leaves
