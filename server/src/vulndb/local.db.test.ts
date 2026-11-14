@@ -232,6 +232,22 @@ describe('local database copy', () => {
     expect(await readFile(join(dir, '0123456789abcdef', 'file.txt'), 'utf8')).toBe('mine');
   });
 
+  it('removes an unmarked copy left by an older version', async () => {
+    await mkdir(join(dir, '0123456789abcdef', 'db'), { recursive: true });
+    await writeFile(join(dir, '0123456789abcdef', 'metadata.json'), '{}');
+    await mkdir(join(dir, 'fedcba9876543210', 'db'), { recursive: true });
+    await writeFile(join(dir, 'fedcba9876543210', 'db', 'metadata.json'), '{}');
+    await mkdir(join(dir, 'tmp-0123456789ab'));
+    await writeFile(join(dir, 'tmp-0123456789ab', 'trivy.db'), 'half');
+    await mkdir(join(dir, '1111111111111111'));
+    await writeFile(join(dir, '1111111111111111', 'file.txt'), 'mine');
+    const d = await store(Buffer.from('legacy'));
+    await ensure(t.db, dir, d);
+    expect((await readdir(dir)).sort()).toEqual(
+      ['1111111111111111', 'current.json', prefix(d)].sort(),
+    );
+  });
+
   it('releases the lock when fn throws', async () => {
     const d = await store(Buffer.from('throws'));
     await expect(

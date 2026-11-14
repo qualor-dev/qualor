@@ -115,9 +115,18 @@ async function isCurrent(dir: string, name: string, digest: string): Promise<boo
 const OWN_DIRECTORY = /^([0-9a-f]{16}|tmp-[0-9a-f]{12})$/;
 const OWN_TEMP_FILE = /^current\.json\.tmp-[0-9a-f]{12}$/;
 
+/** A directory an older version made (no marker): a copy holds metadata.json, a crashed extraction a database file. */
+async function isLegacy(path: string, name: string): Promise<boolean> {
+  const files = name.startsWith('tmp-') ? ['trivy.db', 'metadata.json'] : ['metadata.json'];
+  for (const file of files) {
+    if ((await exists(join(path, file))) || (await exists(join(path, 'db', file)))) return true;
+  }
+  return false;
+}
+
 /**
- * Removes our own entries in `dir` except `keep`: marked directories and stale temp files. A
- * directory without the marker is a user's (or a copy of an older version) and stays.
+ * Removes our own entries in `dir` except `keep`: marked directories, stale temp files and the
+ * unmarked copies an older version left. Any other directory is a user's and stays.
  */
 async function removeOthers(dir: string, keep: string): Promise<void> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -128,7 +137,7 @@ async function removeOthers(dir: string, keep: string): Promise<void> {
       entry.isDirectory() &&
       entry.name !== keep &&
       OWN_DIRECTORY.test(entry.name) &&
-      (await exists(join(path, OWN_MARKER)))
+      ((await exists(join(path, OWN_MARKER))) || (await isLegacy(path, entry.name)))
     ) {
       await rm(path, { recursive: true, force: true });
     }
