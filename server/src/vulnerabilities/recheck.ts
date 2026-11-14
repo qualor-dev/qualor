@@ -20,6 +20,7 @@ import { buildSbom, type SbomPackage } from './sbom';
 import { projectTargets, type Target } from './targets';
 import {
   createTrivyRunner,
+  MAX_VENDOR_IDS,
   removeStaleWorkDirs,
   type TrivyRunner,
   type VulnerabilityMatch,
@@ -104,6 +105,22 @@ export async function enqueueRecheck(db: Executor, scope: RecheckScope): Promise
        WHERE id = ${job.id}`,
     );
   });
+}
+
+/**
+ * At boot (main.ts), A14: migration 0028 cleared every package's mark, so that each match gets
+ * Trivy's vendor ids. While monitoring is on and a mark is cleared, one full re-check is queued (a
+ * second replica's request merges into it). A good full re-check marks or prunes every package,
+ * so the next boot queues none; after a failed one, the next boot asks again. Answers whether it
+ * queued.
+ */
+export async function queueRematchIfCleared(db: Executor): Promise<boolean> {
+  if (!(await readVulndbSettings(db)).enabled) return false;
+  const cleared = await db.execute<{ cleared: boolean }>(sql`
+    SELECT EXISTS (SELECT 1 FROM matched_packages WHERE dataset_digest = '') AS cleared`);
+  if (cleared.rows[0]?.cleared !== true) return false;
+  await enqueueRecheck(db, { all: true });
+  return true;
 }
 
 export interface RecheckDeps {
@@ -225,12 +242,19 @@ async function storeMatches(
 ): Promise<void> {
   const rows: object[] = [];
   for (const purl of purls) {
-    // Trivy can report one id twice for a package (one per advisory source): kept once.
-    const seen = new Set<string>();
+    // Trivy 0.74 reports an id once per package. Should one come twice, it is kept once: the first
+    // report, with the vendor ids of both. `vendor_ids` is always sent: a missing key is NULL.
+    const byId = new Map<string, { vendor_ids: string[] }>();
     for (const m of matches.get(purl) ?? []) {
-      if (seen.has(m.vulnerabilityId)) continue;
-      seen.add(m.vulnerabilityId);
-      rows.push({
+      const kept = byId.get(m.vulnerabilityId);
+      if (kept !== undefined) {
+        kept.vendor_ids = [...new Set([...kept.vendor_ids, ...m.vendorIds])].slice(
+          0,
+          MAX_VENDOR_IDS,
+        );
+        continue;
+      }
+      const row = {
         purl,
         vulnerability_id: m.vulnerabilityId,
         severity: m.severity,
@@ -238,7 +262,10 @@ async function storeMatches(
         fixed_version: m.fixedVersion,
         primary_url: m.primaryUrl,
         published_at: timestampOf(m.publishedAt),
-      });
+        vendor_ids: [...new Set(m.vendorIds)],
+      };
+      byId.set(m.vulnerabilityId, row);
+      rows.push(row);
     }
   }
   await db.transaction(async (tx) => {
@@ -248,12 +275,12 @@ async function storeMatches(
     for (const chunk of jsonChunks(rows)) {
       await tx.execute(sql`
         INSERT INTO vulnerability_matches (purl, vulnerability_id, severity, title, fixed_version,
-          primary_url, published_at)
+          primary_url, published_at, vendor_ids)
         SELECT r.purl, r.vulnerability_id, r.severity, r.title, r.fixed_version, r.primary_url,
-               r.published_at
+               r.published_at, r.vendor_ids
           FROM jsonb_to_recordset(${chunk}::jsonb) AS r(purl text, vulnerability_id text,
                severity text, title text, fixed_version text, primary_url text,
-               published_at timestamptz)`);
+               published_at timestamptz, vendor_ids text[])`);
     }
     for (const chunk of jsonChunks(purls)) {
       await tx.execute(sql`

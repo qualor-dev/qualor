@@ -65,8 +65,10 @@ describe('runMigrations / pendingMigrations', () => {
     // delisting and the alert memory), 0025_compliance_versions (0.15, a version and an SBOM on a
     // compliance report), 0026_chat_exploited_event (0.15, the exploited-vulnerability event on the
     // chat webhooks that have the weekly digest), 0027_vulnerability_decisions_repair (0.16, the
-    // decisions of main Trivy issues closed with false positive or won't fix).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(28);
+    // decisions of main Trivy issues closed with false positive or won't fix),
+    // 0028_vulnerability_vendor_ids (0.16, Trivy's vendor ids on a match; every package matched
+    // again, approved 2026-11-14).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(29);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -1066,5 +1068,48 @@ describe('runMigrations / pendingMigrations', () => {
       row('qs', 'CVE-2026-0005', 'wont_fix', 'kept', decider),
       row('yaml', 'CVE-2026-0006', 'wont_fix', 'newer', user),
     ]);
+  });
+
+  it('adds the vendor ids of a match and clears every match mark (0028)', async () => {
+    const db = await createTestDatabase({ migrated: false });
+    t = db;
+    const upTo27 = migrationsUpTo(28); // 0000_extensions … 0027_vulnerability_decisions_repair
+    try {
+      await runMigrations(db.pool, upTo27.dir);
+    } finally {
+      upTo27.remove();
+    }
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(journalLength() - 28);
+    await db.pool.query(
+      `INSERT INTO vulnerability_matches (purl, vulnerability_id, severity)
+       VALUES ('pkg:npm/lodash@4.17.15', 'CVE-2020-8203', 'high')`,
+    );
+    await db.pool.query(
+      `INSERT INTO matched_packages (purl, dataset_digest)
+       VALUES ('pkg:npm/lodash@4.17.15', 'sha256:${'a'.repeat(64)}')`,
+    );
+
+    await runMigrations(db.pool, MIGRATIONS_DIR);
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
+    const { rows: matches } = await db.pool.query(
+      `SELECT purl, vulnerability_id, vendor_ids FROM vulnerability_matches`,
+    );
+    expect(matches).toEqual([
+      { purl: 'pkg:npm/lodash@4.17.15', vulnerability_id: 'CVE-2020-8203', vendor_ids: [] },
+    ]);
+    // Every package is matched again, so its match gets the vendor ids.
+    const { rows: marks } = await db.pool.query(
+      `SELECT purl, dataset_digest FROM matched_packages`,
+    );
+    expect(marks).toEqual([{ purl: 'pkg:npm/lodash@4.17.15', dataset_digest: '' }]);
+    // A new match without the column gets none.
+    await db.pool.query(
+      `INSERT INTO vulnerability_matches (purl, vulnerability_id, severity)
+       VALUES ('pkg:npm/lodash@4.17.15', 'CVE-2021-23337', 'high')`,
+    );
+    const { rows: added } = await db.pool.query(
+      `SELECT vendor_ids FROM vulnerability_matches WHERE vulnerability_id = 'CVE-2021-23337'`,
+    );
+    expect(added).toEqual([{ vendor_ids: [] }]);
   });
 });

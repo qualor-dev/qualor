@@ -70,7 +70,7 @@ import {
   scheduleVulnerabilityDigestAtBoot,
 } from './vulnerabilities/alerts/digest';
 import { alertHandlers } from './vulnerabilities/alerts/jobs';
-import { recheckHandlers } from './vulnerabilities/recheck';
+import { queueRematchIfCleared, recheckHandlers } from './vulnerabilities/recheck';
 import { updateCheckerFor } from './update-check/checker';
 import { webhookHandlers } from './webhooks/deliver';
 import { digestHandlers, ensureDigestScheduled, scheduleDigestAtBoot } from './webhooks/digest';
@@ -563,6 +563,13 @@ async function main(): Promise<void> {
     'vulndb',
     'the vulnerability database check could not be scheduled',
     () => scheduleVulndbAtBoot(database.db),
+  );
+  // A14: the first start after migration 0028 matches every package again (Trivy's vendor ids).
+  await scheduleAtBoot(
+    logger,
+    'vulnerabilities',
+    'the re-check after the upgrade could not be queued',
+    () => queueRematchIfCleared(database.db),
   );
   await scheduleAtBoot(logger, 'digest', 'the weekly digest could not be scheduled', () =>
     scheduleDigestAtBoot(database.db),

@@ -65,6 +65,7 @@ describe('parseTrivyOutput', () => {
         fixedVersion: null,
         primaryUrl: null,
         publishedAt: null,
+        vendorIds: [],
       },
       {
         vulnerabilityId: 'B',
@@ -73,8 +74,50 @@ describe('parseTrivyOutput', () => {
         fixedVersion: '2',
         primaryUrl: null,
         publishedAt: null,
+        vendorIds: [],
       },
     ]);
+  });
+
+  it("reads Trivy's vendor ids, none where the key is missing", () => {
+    const log4j = parseTrivyOutput(fixture).get(
+      'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1',
+    );
+    expect(log4j?.find((m) => m.vulnerabilityId === 'CVE-2021-44228')?.vendorIds).toEqual([
+      'GHSA-jfh8-c2jp-5v3q',
+    ]);
+    const json = JSON.stringify({
+      Results: [
+        {
+          Vulnerabilities: [
+            { VulnerabilityID: 'NSWG-ECO-516', PkgIdentifier: { PURL: 'pkg:npm/lodash@4.17.15' } },
+          ],
+        },
+      ],
+    });
+    expect(parseTrivyOutput(json).get('pkg:npm/lodash@4.17.15')?.[0]?.vendorIds).toEqual([]);
+  });
+
+  it('keeps the first 16 vendor ids, and only ids that are text of at most 4096 characters', () => {
+    const many = Array.from({ length: 20 }, (_, i) => `GHSA-${String(i).padStart(4, '0')}`);
+    const of = (VendorIDs: unknown) =>
+      parseTrivyOutput(
+        JSON.stringify({
+          Results: [
+            {
+              Vulnerabilities: [
+                { VulnerabilityID: 'CVE-1', VendorIDs, PkgIdentifier: { PURL: 'pkg:x/a@1' } },
+              ],
+            },
+          ],
+        }),
+      ).get('pkg:x/a@1')?.[0]?.vendorIds;
+    expect(of(many)).toEqual(many.slice(0, 16));
+    expect(of([' GO-2021-0238 ', '', 7, null, 'x'.repeat(4097), 'GHSA-p6mc-m468-83gw'])).toEqual([
+      'GO-2021-0238',
+      'GHSA-p6mc-m468-83gw',
+    ]);
+    expect(of('GHSA-p6mc-m468-83gw')).toEqual([]);
   });
 
   it('keys by the bom-ref and falls back to the purl', () => {

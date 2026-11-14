@@ -32,6 +32,7 @@ import { purlOf } from './purl';
 import {
   enqueueRecheck,
   ignoreActive,
+  queueRematchIfCleared,
   RECHECK_QUEUE,
   recheckHandlers,
   recheckProjects,
@@ -64,13 +65,17 @@ const FINDS: Record<string, string[]> = {
   [PD]: ['CVE-2026-0004'],
 };
 
-const matchOf = (id: string): VulnerabilityMatch => ({
+/** The GHSA id the fake Trivy gives a CVE as its vendor id. */
+const ghsaOf = (id: string): string => `GHSA-${id.slice(-4)}-xxxx-yyyy`;
+
+const matchOf = (id: string, vendorIds = [ghsaOf(id)]): VulnerabilityMatch => ({
   vulnerabilityId: id,
   severity: 'high',
   title: `Title of ${id}`,
   fixedVersion: '9.9.9',
   primaryUrl: `https://avd.aquasec.com/nvd/${id.toLowerCase()}`,
   publishedAt: '2026-01-02T03:04:05Z',
+  vendorIds,
 });
 
 interface FakeTrivy extends TrivyRunner {
@@ -100,8 +105,14 @@ function fakeTrivy(): FakeTrivy {
       const matches = new Map<string, VulnerabilityMatch[]>();
       for (const { purl: p } of components) {
         const ids = FINDS[p];
-        // Trivy may report one id twice for a package (two advisories): stored once.
-        if (ids !== undefined) matches.set(p, [...ids, ...ids.slice(0, 1)].map(matchOf));
+        // The first id comes twice, the second time with one more vendor id: stored once, with
+        // both reports' vendor ids (Trivy 0.74 reports an id once per package; this is defensive).
+        if (ids !== undefined) {
+          matches.set(p, [
+            ...ids.map((id) => matchOf(id)),
+            ...ids.slice(0, 1).map((id) => matchOf(id, [ghsaOf(id), `GO-2026-${id.slice(-4)}`])),
+          ]);
+        }
       }
       return { ok: true, matches };
     },
@@ -297,8 +308,20 @@ describe('vulnerability re-checks', () => {
         title: 'Title of CVE-2026-0001',
         fixedVersion: '9.9.9',
         primaryUrl: 'https://avd.aquasec.com/nvd/cve-2026-0001',
+        vendorIds: ['GHSA-0001-xxxx-yyyy', 'GO-2026-0001'],
       });
       expect(stored!.publishedAt?.toISOString()).toBe('2026-01-02T03:04:05.000Z');
+      // B's second id came once: its own vendor id.
+      const [second] = await db()
+        .select({ vendorIds: vulnerabilityMatches.vendorIds })
+        .from(vulnerabilityMatches)
+        .where(
+          and(
+            eq(vulnerabilityMatches.purl, PB),
+            eq(vulnerabilityMatches.vulnerabilityId, 'CVE-2026-0003'),
+          ),
+        );
+      expect(second).toEqual({ vendorIds: ['GHSA-0003-xxxx-yyyy'] });
       expect(await digests([PA, PB, PC, PD])).toEqual({
         [PA]: primary.digest,
         [PB]: primary.digest,
@@ -1297,6 +1320,59 @@ describe('vulnerability re-checks', () => {
         { status: 'succeeded', payload: { projectIds: [p.id] }, key: RECHECK_QUEUE },
       ]);
       expect(await described(p)).toEqual([`main ${PA} CVE-2026-0001`]);
+    });
+  });
+
+  describe('the re-match after 0028 cleared the marks (A14)', () => {
+    const vendorIdsOf = async (p: string) =>
+      (
+        await db()
+          .select({
+            id: vulnerabilityMatches.vulnerabilityId,
+            vendorIds: vulnerabilityMatches.vendorIds,
+          })
+          .from(vulnerabilityMatches)
+          .where(eq(vulnerabilityMatches.purl, p))
+      ).map((m) => [m.id, m.vendorIds]);
+
+    it('queues one full re-check at boot, which gives the matches their vendor ids; the next boot queues none', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      await recheck({ projectIds: [p.id] });
+      // What 0028 leaves: matches without vendor ids, every package unmarked, also one that no
+      // inventory lists any more.
+      await db().update(vulnerabilityMatches).set({ vendorIds: [] });
+      const gone = 'pkg:npm/no-inventory-lists-it@1.0.0';
+      await db().insert(matchedPackages).values({ purl: gone, datasetDigest: primary.digest });
+      await db().update(matchedPackages).set({ datasetDigest: '' });
+      await db().delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+
+      expect(await queueRematchIfCleared(db())).toBe(true);
+      // A second replica that boots meanwhile merges into the queued job.
+      expect(await queueRematchIfCleared(db())).toBe(true);
+      expect(await recheckJobs()).toEqual([
+        { status: 'queued', payload: { all: true }, key: RECHECK_QUEUE },
+      ]);
+
+      await runUntilIdle(db(), recheckHandlers(deps()), silent);
+      expect(await vendorIdsOf(PA)).toEqual([
+        ['CVE-2026-0001', ['GHSA-0001-xxxx-yyyy', 'GO-2026-0001']],
+      ]);
+      // Matched again, and the mark no inventory needs is gone: nothing is left cleared.
+      expect(await digests([PA, gone])).toEqual({ [PA]: primary.digest });
+      await db().delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      expect(await queueRematchIfCleared(db())).toBe(false);
+      expect(await recheckJobs()).toEqual([]);
+    });
+
+    it('queues none while the instance switch is off, or when no mark is cleared', async () => {
+      expect(await queueRematchIfCleared(db())).toBe(false);
+      await db().insert(matchedPackages).values({ purl: PA, datasetDigest: primary.digest });
+      expect(await queueRematchIfCleared(db())).toBe(false);
+      await db().insert(matchedPackages).values({ purl: PB, datasetDigest: '' });
+      await instanceSwitch(false);
+      expect(await queueRematchIfCleared(db())).toBe(false);
+      expect(await recheckJobs()).toEqual([]);
     });
   });
 

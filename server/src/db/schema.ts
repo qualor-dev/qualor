@@ -769,6 +769,8 @@ export const vulnerabilityMatches = pgTable(
     fixedVersion: text('fixed_version'),
     primaryUrl: text('primary_url'),
     publishedAt: at('published_at'),
+    /** Trivy's VendorIDs: the advisory's ids in other databases (GHSA-…, GO-…), at most 16. */
+    vendorIds: text('vendor_ids').array().notNull().default(emptyTextArray),
   },
   (t) => [
     primaryKey({ columns: [t.purl, t.vulnerabilityId] }),

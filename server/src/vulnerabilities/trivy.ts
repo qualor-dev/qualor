@@ -11,6 +11,11 @@ export interface VulnerabilityMatch {
   fixedVersion: string | null;
   primaryUrl: string | null;
   publishedAt: string | null;
+  /**
+   * The ids the advisory has in other databases (`GHSA-…`, `GO-…`), Trivy's `VendorIDs`: what
+   * Dependency-Track may hold the finding under. At most {@link MAX_VENDOR_IDS}.
+   */
+  vendorIds: string[];
 }
 
 export type TrivyRun =
@@ -67,6 +72,19 @@ const SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
 const text = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
 
+/** The CLI's bounds on `VendorIDs` (`cli/src/analyzers/trivy-output.ts`): ids kept, characters each. */
+export const MAX_VENDOR_IDS = 16;
+const MAX_VENDOR_ID_CHARS = 4_096;
+
+/** The first {@link MAX_VENDOR_IDS} vendor ids that are text within the bound; none without a list. */
+function vendorIdsOf(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map(text)
+    .filter((id): id is string => id !== null && id.length <= MAX_VENDOR_ID_CHARS)
+    .slice(0, MAX_VENDOR_IDS);
+}
+
 /** One Trivy vulnerability entry as a match and its package's key, or null without either. */
 function toMatch(v: Record<string, unknown>): { purl: string; match: VulnerabilityMatch } | null {
   // Trivy re-serialises the purl; the bom-ref is our own string, unchanged.
@@ -82,6 +100,7 @@ function toMatch(v: Record<string, unknown>): { purl: string; match: Vulnerabili
     fixedVersion: text(v.FixedVersion),
     primaryUrl: text(v.PrimaryURL),
     publishedAt: text(v.PublishedDate),
+    vendorIds: vendorIdsOf(v.VendorIDs),
   };
   return { purl, match };
 }
