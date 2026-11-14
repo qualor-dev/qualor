@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -72,12 +72,12 @@ describe('local database copy', () => {
   it('is a no-op the second time', async () => {
     const d = await store(Buffer.from('same'));
     await ensure(t.db, dir, d);
-    const file = join(dir, prefix(d), 'db', 'trivy.db');
-    const before = (await stat(file)).mtimeMs;
-    await new Promise((r) => setTimeout(r, 30));
+    // A re-extraction replaces the whole directory, so a file added to it would be gone.
+    const survivor = join(dir, prefix(d), 'survivor.txt');
+    await writeFile(survivor, 'still here');
     const again = await ensure(t.db, dir, d);
     expect(again).toEqual({ cacheDir: join(dir, prefix(d)) });
-    expect((await stat(file)).mtimeMs).toBe(before);
+    expect(await readFile(survivor, 'utf8')).toBe('still here');
   });
 
   it('extracts again when the files of the current copy are gone', async () => {
@@ -101,6 +101,7 @@ describe('local database copy', () => {
   it('cleans up a partial tmp-* directory left behind', async () => {
     await mkdir(join(dir, 'tmp-deadbeef0123', 'db'), { recursive: true });
     await writeFile(join(dir, 'tmp-deadbeef0123', 'db', 'trivy.db'), 'half');
+    await writeFile(join(dir, 'tmp-deadbeef0123', '.qualor-vulndb'), '');
     const d = await store(Buffer.from('clean'));
     await ensure(t.db, dir, d);
     expect((await readdir(dir)).sort()).toEqual(['current.json', prefix(d)].sort());
@@ -163,22 +164,80 @@ describe('local database copy', () => {
     const gate = new Promise<void>((r) => (release = r));
     let started: () => void = () => undefined;
     const running = new Promise<void>((r) => (started = r));
+    const order: string[] = [];
     const first = withLocalDatabase(t.db, dir, a, async (cacheDir) => {
       started();
       await gate;
-      return readFile(join(cacheDir, 'db', 'trivy.db'), 'utf8');
+      const text = await readFile(join(cacheDir, 'db', 'trivy.db'), 'utf8');
+      order.push('first ends');
+      return text;
     });
     await running;
-    let refreshed = false;
     const second = ensure(t.db, dir, b).then((r) => {
-      refreshed = true;
+      order.push('second answers');
       return r;
     });
-    await new Promise((r) => setTimeout(r, 100));
-    expect(refreshed).toBe(false);
+    // No event says "not yet": give the second call a bounded number of turns to get ahead.
+    for (let i = 0; i < 50; i++) await new Promise((r) => setImmediate(r));
+    expect(order).toEqual([]);
     release();
     expect(await first).toEqual({ result: 'pinned a' });
     expect(await second).toEqual({ cacheDir: join(dir, prefix(b)) });
+    expect(order).toEqual(['first ends', 'second answers']);
+  });
+
+  it('answers BUSY when the copy stays locked past the wait, and never runs fn later', async () => {
+    const a = await store(Buffer.from('busy a'));
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    let started: () => void = () => undefined;
+    const running = new Promise<void>((r) => (started = r));
+    const first = withLocalDatabase(t.db, dir, a, async () => {
+      started();
+      await gate;
+      return 'first';
+    });
+    await running;
+    let ran = false;
+    const second = await withLocalDatabase(
+      t.db,
+      dir,
+      a,
+      () => {
+        ran = true;
+        return Promise.resolve('second');
+      },
+      { lockWaitMs: 50 },
+    );
+    expect(second).toMatchObject({ problem: { code: 'BUSY' } });
+    release();
+    expect(await first).toEqual({ result: 'first' });
+    // The lock is free again and in order: a later call runs after the one that gave up.
+    expect(await ensure(t.db, dir, a)).toEqual({ cacheDir: join(dir, prefix(a)) });
+    expect(ran).toBe(false);
+  });
+
+  it('removes a stale current.json.tmp file', async () => {
+    await writeFile(join(dir, 'current.json.tmp-0123456789ab'), '{}');
+    const d = await store(Buffer.from('tmp file'));
+    await ensure(t.db, dir, d);
+    expect((await readdir(dir)).sort()).toEqual(['current.json', prefix(d)].sort());
+  });
+
+  it('leaves a user directory named like a copy alone', async () => {
+    await mkdir(join(dir, '0123456789abcdef'));
+    await writeFile(join(dir, '0123456789abcdef', 'file.txt'), 'mine');
+    const d = await store(Buffer.from('user dir'));
+    await ensure(t.db, dir, d);
+    expect(await readFile(join(dir, '0123456789abcdef', 'file.txt'), 'utf8')).toBe('mine');
+  });
+
+  it('releases the lock when fn throws', async () => {
+    const d = await store(Buffer.from('throws'));
+    await expect(
+      withLocalDatabase(t.db, dir, d, () => Promise.reject(new Error('x'))),
+    ).rejects.toThrow('x');
+    expect(await ensure(t.db, dir, d)).toEqual({ cacheDir: join(dir, prefix(d)) });
   });
 
   it('withLocalDatabase passes a problem through without calling fn', async () => {

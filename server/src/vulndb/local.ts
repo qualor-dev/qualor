@@ -25,25 +25,51 @@ import { readTarGz, TarError } from '@qualor/shared/tar';
  * One in-process lock serialises everything that touches `dir`. {@link withLocalDatabase} holds it
  * while its callback runs, so nothing can swap or delete the directory under a re-check.
  * The lock is not reentrant: do not call {@link withLocalDatabase} from inside its callback.
- * Replicas do not share `dir`.
+ * Replicas do not share `dir`. Use a dedicated directory: every copy carries a `.qualor-vulndb`
+ * marker file, and only marked directories are ever removed.
  */
 
-export type LocalProblemCode = 'DISK' | 'MISSING';
+export type LocalProblemCode = 'DISK' | 'MISSING' | 'BUSY';
 export interface LocalProblem {
   code: LocalProblemCode;
   message: string;
 }
 export type LocalResult = { cacheDir: string } | { problem: LocalProblem };
 
+/** How long a caller waits for the lock before it answers `BUSY` (longer than one Trivy run). */
+export const LOCAL_LOCK_WAIT_MS = 20 * 60_000;
+
+/** The marker file every directory this module creates carries; only marked ones are removed. */
+export const OWN_MARKER = '.qualor-vulndb';
+
 const DISK_CODES = new Set(['EACCES', 'EPERM', 'EROFS', 'ENOSPC', 'EDQUOT', 'ENOENT', 'ENOTDIR']);
 
 let tail: Promise<unknown> = Promise.resolve();
 
-/** Runs `fn` after every earlier call of `locked` has settled. */
-function locked<T>(fn: () => Promise<T>): Promise<T> {
-  const run = tail.then(fn, fn);
-  tail = run.catch(() => undefined);
-  return run;
+const BUSY = Symbol('busy');
+
+/**
+ * Runs `fn` after every earlier call of `locked` has settled, or answers `BUSY` when that takes
+ * longer than `waitMs`. A caller that gave up never runs `fn`, and the chain is not broken.
+ *
+ * One lock per process, not per directory: each process uses one `QUALOR_VULNDB_DIR` (see the
+ * module doc: replicas do not share `dir`), so a global chain is enough.
+ */
+function locked<T>(fn: () => Promise<T>, waitMs: number): Promise<T | typeof BUSY> {
+  let gaveUp = false;
+  let timer: NodeJS.Timeout | undefined;
+  const turn = tail.then<T | typeof BUSY>(() => {
+    clearTimeout(timer);
+    return gaveUp ? BUSY : fn();
+  });
+  tail = turn.catch(() => undefined);
+  const timeout = new Promise<typeof BUSY>((resolve) => {
+    timer = setTimeout(() => {
+      gaveUp = true;
+      resolve(BUSY);
+    }, waitMs);
+  });
+  return Promise.race([turn, timeout]);
 }
 
 const diskProblem = (dir: string, err: NodeJS.ErrnoException): LocalProblem => ({
@@ -81,17 +107,30 @@ async function isCurrent(dir: string, name: string, digest: string): Promise<boo
 }
 
 /**
- * Names this module creates: a 16-hex digest directory or a `tmp-<12 hex>` extraction directory.
- * The Trivy runner's `work-<12 hex>` directories in `dir` (vulnerabilities/trivy.ts) are not ours:
- * a run may be using one, and the re-check removes the stale ones itself.
+ * Names this module creates: a 16-hex digest directory or a `tmp-<12 hex>` extraction directory
+ * (both carrying {@link OWN_MARKER}), and a `current.json.tmp-<12 hex>` file. The Trivy runner's
+ * `work-<12 hex>` directories in `dir` (vulnerabilities/trivy.ts) are not ours: a run may be
+ * using one, and the re-check removes the stale ones itself.
  */
 const OWN_DIRECTORY = /^([0-9a-f]{16}|tmp-[0-9a-f]{12})$/;
+const OWN_TEMP_FILE = /^current\.json\.tmp-[0-9a-f]{12}$/;
 
-/** Removes our own directories in `dir` except `keep`; every other entry is left alone. */
+/**
+ * Removes our own entries in `dir` except `keep`: marked directories and stale temp files. A
+ * directory without the marker is a user's (or a copy of an older version) and stays.
+ */
 async function removeOthers(dir: string, keep: string): Promise<void> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (entry.isDirectory() && entry.name !== keep && OWN_DIRECTORY.test(entry.name)) {
-      await rm(join(dir, entry.name), { recursive: true, force: true });
+    const path = join(dir, entry.name);
+    if (entry.isFile() && OWN_TEMP_FILE.test(entry.name)) {
+      await rm(path, { force: true });
+    } else if (
+      entry.isDirectory() &&
+      entry.name !== keep &&
+      OWN_DIRECTORY.test(entry.name) &&
+      (await exists(join(path, OWN_MARKER)))
+    ) {
+      await rm(path, { recursive: true, force: true });
     }
   }
 }
@@ -139,6 +178,7 @@ async function extract(
   const tmp = join(dir, `tmp-${randomBytes(6).toString('hex')}`);
   try {
     await mkdir(join(tmp, 'db'), { recursive: true });
+    await writeFile(join(tmp, OWN_MARKER), '');
     const found = new Set<string>();
     // Fixed target paths only: an archive entry name is never joined into a path.
     await readTarGz(
@@ -195,7 +235,7 @@ async function extract(
  * re-check waits, so the directory cannot change under `fn`. A problem is returned without
  * calling `fn`: `DISK` when the directory cannot be created or written (EACCES, EPERM, EROFS,
  * ENOSPC, EDQUOT, ENOENT, ENOTDIR), `MISSING` when the chunks are gone or the archive lacks a
- * wanted file or is damaged; other errors (database failures) are thrown. `signal` (the server is stopping) cuts an extraction: it rejects with the
+ * wanted file or is damaged, `BUSY` when the lock stays taken for `lockWaitMs`; other errors (database failures) are thrown. `signal` (the server is stopping) cuts an extraction: it rejects with the
  * signal's reason, and the partial copy is removed.
  */
 export function withLocalDatabase<T>(
@@ -203,11 +243,26 @@ export function withLocalDatabase<T>(
   dir: string,
   dataset: DatasetRow,
   fn: (cacheDir: string) => Promise<T>,
-  options: { signal?: AbortSignal | undefined; limits?: LocalLimits } = {},
+  options: {
+    signal?: AbortSignal | undefined;
+    limits?: LocalLimits;
+    /** Tests only: other than {@link LOCAL_LOCK_WAIT_MS}. */
+    lockWaitMs?: number;
+  } = {},
 ): Promise<{ result: T } | { problem: LocalProblem }> {
+  const waitMs = options.lockWaitMs ?? LOCAL_LOCK_WAIT_MS;
   return locked(async () => {
     const got = await extract(db, dir, dataset, options.signal, options.limits);
     if ('problem' in got) return got;
     return { result: await fn(got.cacheDir) };
-  });
+  }, waitMs).then((got) =>
+    got === BUSY
+      ? {
+          problem: {
+            code: 'BUSY' as const,
+            message: `Another re-check held the local copy of the vulnerability database for too long. Try the re-check again later.`,
+          },
+        }
+      : got,
+  );
 }
