@@ -338,7 +338,12 @@ describe('buildCycloneDxVex', () => {
     const doc = buildCycloneDxVex(
       DOC,
       [
-        open('a', { severity: 'medium', primaryUrl: 'https://x.test/1', fixedVersion: '1.0.1' }),
+        open('a', {
+          severity: 'medium',
+          primaryUrl: 'https://x.test/1',
+          fixedVersion: '1.0.1',
+          decidedAt: DECIDED,
+        }),
         open('b', {
           severity: 'critical',
           primaryUrl: 'https://x.test/1',
@@ -363,6 +368,48 @@ describe('buildCycloneDxVex', () => {
       lastUpdated: later.toISOString(),
     });
     expect(v.properties).toEqual([{ name: 'qualor:decided-by', value: 'Carol' }]);
+  });
+
+  it('never merges an entry nobody decided with a decided one of the same analysis (ruling P9)', () => {
+    const open = (packageName: string, overrides: Partial<VexEntry> = {}) =>
+      entry({
+        vulnerabilityId: 'CVE-2026-0062',
+        packageName,
+        purls: [`pkg:npm/${packageName}@1.0.0`],
+        ...overrides,
+      });
+    const doc = buildCycloneDxVex(
+      DOC,
+      [open('a'), open('b', { decidedAt: DECIDED, decidedBy: 'Carol' }), open('c')],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
+    // Open's in_triage is applied by neither Trivy nor Dependency-Track: the split costs nothing.
+    expect(
+      doc.vulnerabilities.map((v: any) => [
+        v['bom-ref'],
+        v.affects.map((a: any) => a.ref),
+        v.analysis,
+        v.properties,
+      ]),
+    ).toEqual([
+      [
+        'CVE-2026-0062:a',
+        [link('pkg:npm/a@1.0.0'), link('pkg:npm/c@1.0.0')],
+        { state: 'in_triage' },
+        undefined,
+      ],
+      [
+        'CVE-2026-0062:b',
+        [link('pkg:npm/b@1.0.0')],
+        {
+          state: 'in_triage',
+          firstIssued: DECIDED.toISOString(),
+          lastUpdated: DECIDED.toISOString(),
+        },
+        [{ name: 'qualor:decided-by', value: 'Carol' }],
+      ],
+    ]);
   });
 
   it('adds one CycloneDX entry per alias, with the alias source and the same analysis and affects', () => {

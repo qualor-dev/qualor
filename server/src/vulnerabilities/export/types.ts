@@ -18,6 +18,12 @@ export interface ExportPackage {
   licenses: string[];
 }
 
+/**
+ * The CycloneDX SBOM's `version`, which a BOM-Link into it names (`urn:cdx:<serial>/<version>#…`):
+ * one constant, so the VEX's links always name the SBOM as it is built.
+ */
+export const SBOM_BOM_VERSION = 1;
+
 /** The product identity of a target: a generic purl, used by every export format. */
 export function productId(project: { key: string }, target: { name: string }): string {
   return `pkg:generic/${encodeURIComponent(project.key)}@${encodeURIComponent(target.name)}`;

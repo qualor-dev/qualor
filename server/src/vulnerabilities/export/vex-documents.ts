@@ -1,11 +1,11 @@
 import type { VexJustification } from '../decisions';
-import { SEVERITIES } from '../summary';
-import { productId, type ExportDocument } from './types';
+import { compare, SEVERITIES, type VulnerabilitySeverity } from '../order';
+import { productId, SBOM_BOM_VERSION, type ExportDocument } from './types';
 
 /** One vulnerability of a target with its effective triage decision. */
 export interface VexEntry {
   vulnerabilityId: string;
-  severity: 'critical' | 'high' | 'medium' | 'low' | 'unknown';
+  severity: VulnerabilitySeverity;
   title: string | null;
   primaryUrl: string | null;
   fixedVersion: string | null;
@@ -44,12 +44,6 @@ export const OPENVEX_STATUS: Record<VexEntry['status'], string> = {
   open: 'under_investigation',
   false_positive: 'not_affected',
   wont_fix: 'affected',
-};
-
-/** Code-unit order: the same on every database collation, as the export query sorts. */
-const compare = (a: string, b: string): number => {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
 };
 
 const NO_REASON = 'No reason was recorded.';
@@ -108,7 +102,7 @@ function analysisOf(e: VexEntry): {
 const TRIVY_APPLIES = new Set(['not_affected', 'resolved']);
 
 /** Whether a decision suppresses the finding: Trivy applies it, as Dependency-Track does. */
-const suppresses = (e: VexEntry): boolean => TRIVY_APPLIES.has(analysisOf(e).state);
+const suppresses = (e: VexEntry): boolean => TRIVY_APPLIES.has(CYCLONEDX_STATE[e.status]);
 
 /**
  * D7: the entries with only the aliases they may speak for, the rules of both formats. A consumer
@@ -175,12 +169,13 @@ type EntryGroup = [VexEntry, ...VexEntry[]];
 /**
  * A16: the entries in groups of one vulnerability id and one analysis, in the order of each
  * group's first entry. Trivy keeps one statement per id, so a vulnerability lists every package
- * its decision covers; Dependency-Track still applies it per affected component.
+ * its decision covers; Dependency-Track still applies it per affected component. Ruling P9: an
+ * entry nobody decided never joins a decided one, whose author and dates would then speak for it.
  */
 function sameAnalysis(entries: readonly VexEntry[]): EntryGroup[] {
   const groups = new Map<string, EntryGroup>();
   for (const e of entries) {
-    const key = JSON.stringify([e.vulnerabilityId, analysisOf(e)]);
+    const key = JSON.stringify([e.vulnerabilityId, analysisOf(e), e.decidedAt !== null]);
     const group = groups.get(key);
     if (group) group.push(e);
     else groups.set(key, [e]);
@@ -261,9 +256,10 @@ function cycloneDxVulnerability(group: EntryGroup, link: (purl: string) => strin
  * A CycloneDX 1.6 VEX of a target: its components, and one vulnerability per id and analysis, the
  * aliases included ({@link withAliases}).
  * D8-1: every affects ref and component bom-ref is a BOM-Link `urn:cdx:<sbomSerial>/1#<purl>`
- * into the CycloneDX SBOM with that serial, which Trivy needs to apply the VEX to that SBOM. The
- * components carry the same string, so Dependency-Track resolves each ref to its component. The
- * VEX keeps its own serial, `doc.serial` (A15).
+ * (1 is the SBOM's {@link SBOM_BOM_VERSION}) into the CycloneDX SBOM with that serial, which
+ * Trivy needs to apply the VEX to that SBOM. The components carry the same string, so
+ * Dependency-Track resolves each ref to its component. The VEX keeps its own serial,
+ * `doc.serial` (A15).
  */
 export function buildCycloneDxVex(
   doc: ExportDocument,
@@ -271,7 +267,7 @@ export function buildCycloneDxVex(
   sbomSerial: string,
 ): object {
   const root = productId(doc.project, doc.target);
-  const link = (purl: string): string => `urn:cdx:${sbomSerial}/1#${purl}`;
+  const link = (purl: string): string => `urn:cdx:${sbomSerial}/${SBOM_BOM_VERSION}#${purl}`;
   const components = new Map<string, object>();
   for (const e of entries) {
     for (const purl of e.purls) {

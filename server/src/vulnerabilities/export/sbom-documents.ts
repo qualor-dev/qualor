@@ -1,11 +1,6 @@
+import { compare } from '../order';
 import { cycloneDxLicenses, spdxLicense } from './licenses';
-import { productId, type ExportDocument, type ExportPackage } from './types';
-
-/** Code-unit order (not locale-dependent). */
-function compare(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
+import { productId, SBOM_BOM_VERSION, type ExportDocument, type ExportPackage } from './types';
 
 /** A CycloneDX 1.6 SBOM of a target. Packages keep the order they are given. */
 export function buildCycloneDxSbom(
@@ -28,7 +23,7 @@ export function buildCycloneDxSbom(
     bomFormat: 'CycloneDX',
     specVersion: '1.6',
     serialNumber: `urn:uuid:${doc.serial}`,
-    version: 1,
+    version: SBOM_BOM_VERSION,
     metadata: {
       timestamp: doc.generatedAt.toISOString(),
       tools: { components: [{ type: 'application', name: 'Qualor', version: doc.toolVersion }] },

@@ -1,11 +1,6 @@
 import { createHash } from 'node:crypto';
+import { compare } from '../order';
 import type { ExportPackage } from './types';
-
-/** Code-unit order (not locale-dependent). */
-function compare(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
 
 /**
  * D8-1: the serial number of a target's CycloneDX SBOM, a uuid that follows from the project, the

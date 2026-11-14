@@ -4,16 +4,11 @@ import type { Executor } from '../../db/client';
 import { branches, projectVersions, vulnerabilityTargetChecks } from '../../db/schema';
 import { notFound } from '../../http/problem';
 import { decisionsOf } from '../list';
+import { compare } from '../order';
 import { purlOf } from '../purl';
 import { SEVERITIES, scopedRows, type VulnerabilitySeverity } from '../summary';
 import type { ExportPackage } from './types';
 import type { VexEntry } from './vex-documents';
-
-/** Code-unit order: the same on every database collation. */
-const compare = (a: string, b: string): number => {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-};
 
 export interface ResolvedExportTarget {
   target: DependencyTarget;

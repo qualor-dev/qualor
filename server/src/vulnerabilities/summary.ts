@@ -13,10 +13,10 @@ import { readVulndbSettings } from '../vulndb/settings';
 import { readVulndbState } from '../vulndb/state';
 import { currentDataset } from '../vulndb/store';
 import { effectiveDecisionJoin } from './decisions';
+import { compare, type VulnerabilitySeverity } from './order';
 import { projectTargets, type Target } from './targets';
 
-export const SEVERITIES = ['critical', 'high', 'medium', 'low', 'unknown'] as const;
-export type VulnerabilitySeverity = (typeof SEVERITIES)[number];
+export { SEVERITIES, type VulnerabilitySeverity } from './order';
 
 export type SeverityCounts = Record<VulnerabilitySeverity, number>;
 
@@ -111,12 +111,6 @@ export const IS_NEW = sql.raw(`after_baseline AND eff_status = 'open' AND NOT ig
 const emptyCounts = (): SeverityCounts => ({ critical: 0, high: 0, medium: 0, low: 0, unknown: 0 });
 
 const keyOf = (kind: 'branch' | 'version', id: string): string => `${kind}:${id}`;
-
-/** Code-unit order (not locale-dependent). */
-function compare(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
 
 /** A target's branch or version id. */
 const targetIdOf = (t: Target): string => (t.kind === 'branch' ? t.branchId : t.versionId);
