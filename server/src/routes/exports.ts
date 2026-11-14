@@ -19,9 +19,10 @@ import {
   vexEntries,
 } from '../vulnerabilities/export/query';
 import { buildCycloneDxSbom, buildSpdxSbom } from '../vulnerabilities/export/sbom-documents';
-import type { ExportDocument } from '../vulnerabilities/export/types';
+import { sbomSerial } from '../vulnerabilities/export/serial';
+import type { ExportDocument, ExportPackage } from '../vulnerabilities/export/types';
 import { buildCycloneDxVex, buildOpenVex } from '../vulnerabilities/export/vex-documents';
-import { hasInventory } from '../dependencies/query';
+import { hasInventory, type DependencyTarget } from '../dependencies/query';
 
 const CYCLONEDX = 'application/vnd.cyclonedx+json; version=1.6';
 const SPDX = 'application/spdx+json';
@@ -29,6 +30,18 @@ const OPENVEX = 'application/json';
 
 /** Every character outside `[A-Za-z0-9._-]` becomes `-` (a file name for every system). */
 const fileSafe = (text: string): string => text.replace(/[^A-Za-z0-9._-]/g, '-');
+
+/** D8-1: the serial of the target's SBOM of these packages, which the CycloneDX VEX links to. */
+const serialOf = (
+  project: { id: string },
+  target: DependencyTarget,
+  packages: readonly ExportPackage[],
+): string =>
+  sbomSerial(
+    project.id,
+    target.kind === 'branch' ? `branch:${target.branchId}` : `version:${target.versionId}`,
+    packages,
+  );
 
 const targetQuery = {
   projectKey: z.string().regex(PROJECT_KEY_PATTERN),
@@ -53,7 +66,7 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
   /**
    * E3, after the principal and the project (404) that each route checks itself: the feature (403),
    * then the target (404). The target is resolved last, so what an outsider is told never depends
-   * on the licence or on the shape of the query.
+   * on the licence or on the shape of the query. Each route gives the document its serial.
    */
   async function resolve(project: ProjectRow, query: { branch?: string; version?: string }) {
     if (!deps.edition.limits().vulnerabilities.sbom) throw sbomNotLicensed();
@@ -68,12 +81,11 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       .select({ name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, project.organizationId));
-    const doc: ExportDocument = {
+    const doc: Omit<ExportDocument, 'serial'> = {
       project: { key: project.key, name: project.name },
       organization: org?.name ?? '',
       target: { kind: resolved.kind, name: resolved.name },
       generatedAt: new Date(),
-      serial: randomUUID(),
       toolVersion: VERSION,
     };
     return { resolved, doc };
@@ -123,8 +135,14 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
           `This ${resolved.kind} has no dependency inventory yet`,
         );
       }
+      const sbomDoc: ExportDocument = {
+        ...doc,
+        serial: serialOf(project, resolved.target, packages),
+      };
       const body =
-        format === 'spdx' ? buildSpdxSbom(doc, packages) : buildCycloneDxSbom(doc, packages);
+        format === 'spdx'
+          ? buildSpdxSbom(sbomDoc, packages)
+          : buildCycloneDxSbom(sbomDoc, packages);
       attachment(
         reply,
         format === 'spdx' ? SPDX : CYCLONEDX,
@@ -174,8 +192,15 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         );
       }
       const entries = await vexEntries(deps.db, project.id, resolved.target);
-      const body =
-        format === 'openvex' ? buildOpenVex(doc, entries) : buildCycloneDxVex(doc, entries);
+      // A15: the VEX itself has a serial of its own, new on every download.
+      const vexDoc: ExportDocument = { ...doc, serial: randomUUID() };
+      let body: object;
+      if (format === 'openvex') body = buildOpenVex(vexDoc, entries);
+      else {
+        // D8-1: the links name the SBOM of the inventory as it is now.
+        const packages = await exportPackages(deps.db, resolved.target);
+        body = buildCycloneDxVex(vexDoc, entries, serialOf(project, resolved.target, packages));
+      }
       attachment(
         reply,
         format === 'openvex' ? OPENVEX : CYCLONEDX,

@@ -278,6 +278,10 @@ A VEX has one entry for each vulnerability in each package of the target, with t
 project-wide one. Vulnerabilities that `.trivyignore` ignores are left out. KEV and EPSS are not in
 the file.
 
+In the CycloneDX VEX, the packages that have the same vulnerability and the same decision share one
+entry. That entry carries every author, the date of the first decision as `analysis.firstIssued`
+and of the last one as `analysis.lastUpdated`.
+
 A checked target with no findings gives a VEX with no entries. For OpenVEX that is an empty
 `statements` list, which the OpenVEX schema does not accept, because it asks for at least one
 statement. CycloneDX VEX has no such limit.
@@ -309,8 +313,14 @@ target, carries its author, date and (CycloneDX) comment like any other.
 
 | Tool | Reads |
 |---|---|
-| Trivy | the OpenVEX file, with either SBOM: `trivy sbom <sbom> --vex <file>` |
+| Trivy | the CycloneDX VEX with the CycloneDX SBOM of the same dependency list, or the OpenVEX file with either SBOM: `trivy sbom <sbom> --vex <file>` |
 | Dependency-Track | the CycloneDX SBOM, imported first, then the CycloneDX VEX, imported into the same project |
+
+The CycloneDX VEX names its SBOM by the SBOM's serial number. That serial follows from the project,
+the target and its dependency list, so every download of the same list has the same serial. Trivy
+skips a CycloneDX VEX whose serial is not the SBOM's, with the warning "URN doesn't match with
+SBOM". When an analysis changes the dependency list, download the SBOM and the VEX again. The
+OpenVEX file names packages by purl only, so it works with either SBOM.
 
 Dependency-Track applies a VEX decision only to a finding it holds under the same source and id.
 The VEX names a vulnerability by its CVE when it has one, with the source NVD. A finding that

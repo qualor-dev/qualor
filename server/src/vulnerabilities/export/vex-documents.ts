@@ -1,4 +1,5 @@
 import type { VexJustification } from '../decisions';
+import { SEVERITIES } from '../summary';
 import { productId, type ExportDocument } from './types';
 
 /** One vulnerability of a target with its effective triage decision. */
@@ -69,9 +70,104 @@ function purlVersion(purl: string): string | undefined {
   }
 }
 
-/** A CycloneDX 1.6 VEX of a target: its components, and one vulnerability per entry. */
-export function buildCycloneDxVex(doc: ExportDocument, entries: readonly VexEntry[]): object {
+/** The CycloneDX `analysis` of an entry without its dates: what the merge (A16) compares. */
+function analysisOf(e: VexEntry): {
+  state: string;
+  justification?: string;
+  response?: string[];
+  detail?: string;
+} {
+  const detail =
+    e.comment ?? (e.status === 'false_positive' && e.reason === null ? NO_REASON : undefined);
+  return {
+    state: CYCLONEDX_STATE[e.status],
+    ...(e.status === 'false_positive' && e.reason !== null
+      ? { justification: CYCLONEDX_JUSTIFICATION[e.reason] }
+      : {}),
+    ...(e.status === 'wont_fix' ? { response: ['will_not_fix'] } : {}),
+    ...(detail === undefined ? {} : { detail }),
+  };
+}
+
+type EntryGroup = [VexEntry, ...VexEntry[]];
+
+/**
+ * A16: the entries in groups of one vulnerability id and one analysis, in the order of each
+ * group's first entry. Trivy keeps one statement per id, so a vulnerability lists every package
+ * its decision covers; Dependency-Track still applies it per affected component.
+ */
+function sameAnalysis(entries: readonly VexEntry[]): EntryGroup[] {
+  const groups = new Map<string, EntryGroup>();
+  for (const e of entries) {
+    const key = JSON.stringify([e.vulnerabilityId, analysisOf(e)]);
+    const group = groups.get(key);
+    if (group) group.push(e);
+    else groups.set(key, [e]);
+  }
+  return [...groups.values()];
+}
+
+/** `Upgrade to <fix>.` when every entry has the same fix, else the fix of each package that has one. */
+function recommendationOf(group: EntryGroup): string | undefined {
+  const fixed = group.filter((e) => e.fixedVersion !== null);
+  const [first] = fixed;
+  if (first === undefined) return undefined;
+  if (fixed.length === group.length && fixed.every((e) => e.fixedVersion === first.fixedVersion)) {
+    return `Upgrade to ${first.fixedVersion}.`;
+  }
+  return fixed.map((e) => `Upgrade ${e.packageName} to ${e.fixedVersion}.`).join(' ');
+}
+
+/**
+ * The CycloneDX vulnerability of a group of entries with one id and one analysis: the worst
+ * severity, every advisory, author and affected purl, and the earliest and latest decision dates.
+ */
+function cycloneDxVulnerability(group: EntryGroup, link: (purl: string) => string): object {
+  const [first] = group;
+  const distinct = <T>(values: (T | null)[]): T[] => [
+    ...new Set(values.filter((v): v is T => v !== null)),
+  ];
+  const severity = group
+    .map((e) => e.severity)
+    .reduce((a, b) => (SEVERITIES.indexOf(b) < SEVERITIES.indexOf(a) ? b : a));
+  const dates = group
+    .flatMap((e) => (e.decidedAt === null ? [] : [e.decidedAt.toISOString()]))
+    .sort();
+  const advisories = distinct(group.map((e) => e.primaryUrl));
+  const recommendation = recommendationOf(group);
+  const authors = distinct(group.map((e) => e.decidedBy));
+  return {
+    'bom-ref': `${first.vulnerabilityId}:${first.packageName}`,
+    id: first.vulnerabilityId,
+    source: vulnerabilitySource(first.vulnerabilityId),
+    ratings: [{ severity, source: TOOL }],
+    ...(advisories.length === 0 ? {} : { advisories: advisories.map((url) => ({ url })) }),
+    ...(recommendation === undefined ? {} : { recommendation }),
+    analysis: {
+      ...analysisOf(first),
+      ...(dates.length === 0 ? {} : { firstIssued: dates[0], lastUpdated: dates.at(-1) }),
+    },
+    affects: distinct(group.flatMap((e) => e.purls)).map((purl) => ({ ref: link(purl) })),
+    ...(authors.length === 0
+      ? {}
+      : { properties: authors.map((value) => ({ name: 'qualor:decided-by', value })) }),
+  };
+}
+
+/**
+ * A CycloneDX 1.6 VEX of a target: its components, and one vulnerability per id and analysis.
+ * D8-1: every affects ref and component bom-ref is a BOM-Link `urn:cdx:<sbomSerial>/1#<purl>`
+ * into the CycloneDX SBOM with that serial, which Trivy needs to apply the VEX to that SBOM. The
+ * components carry the same string, so Dependency-Track resolves each ref to its component. The
+ * VEX keeps its own serial, `doc.serial` (A15).
+ */
+export function buildCycloneDxVex(
+  doc: ExportDocument,
+  entries: readonly VexEntry[],
+  sbomSerial: string,
+): object {
   const root = productId(doc.project, doc.target);
+  const link = (purl: string): string => `urn:cdx:${sbomSerial}/1#${purl}`;
   const components = new Map<string, object>();
   for (const e of entries) {
     for (const purl of e.purls) {
@@ -79,40 +175,14 @@ export function buildCycloneDxVex(doc: ExportDocument, entries: readonly VexEntr
       const version = purlVersion(purl);
       components.set(purl, {
         type: 'library',
-        'bom-ref': purl,
+        'bom-ref': link(purl),
         name: e.packageName,
         ...(version === undefined ? {} : { version }),
         purl,
       });
     }
   }
-  const vulnerabilities = entries.map((e) => {
-    const decided = e.decidedAt?.toISOString();
-    const detail =
-      e.comment ?? (e.status === 'false_positive' && e.reason === null ? NO_REASON : undefined);
-    const analysis = {
-      state: CYCLONEDX_STATE[e.status],
-      ...(e.status === 'false_positive' && e.reason !== null
-        ? { justification: CYCLONEDX_JUSTIFICATION[e.reason] }
-        : {}),
-      ...(e.status === 'wont_fix' ? { response: ['will_not_fix'] } : {}),
-      ...(detail === undefined ? {} : { detail }),
-      ...(decided === undefined ? {} : { firstIssued: decided, lastUpdated: decided }),
-    };
-    return {
-      'bom-ref': `${e.vulnerabilityId}:${e.packageName}`,
-      id: e.vulnerabilityId,
-      source: vulnerabilitySource(e.vulnerabilityId),
-      ratings: [{ severity: e.severity, source: TOOL }],
-      ...(e.primaryUrl === null ? {} : { advisories: [{ url: e.primaryUrl }] }),
-      ...(e.fixedVersion === null ? {} : { recommendation: `Upgrade to ${e.fixedVersion}.` }),
-      analysis,
-      affects: e.purls.map((ref) => ({ ref })),
-      ...(e.decidedBy === null
-        ? {}
-        : { properties: [{ name: 'qualor:decided-by', value: e.decidedBy }] }),
-    };
-  });
+  const vulnerabilities = sameAnalysis(entries).map((group) => cycloneDxVulnerability(group, link));
   return {
     bomFormat: 'CycloneDX',
     specVersion: '1.6',

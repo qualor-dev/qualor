@@ -454,6 +454,38 @@ describe('the SBOM and VEX export routes (4c)', () => {
       expect(named).toHaveLength(1);
     });
 
+    it('derives the SBOM serial from the inventory, and keeps the VEX serial random (D8-1)', async () => {
+      const p = await fresh();
+      const serial = async () => (await sbom(`projectKey=${p.key}`)).json().serialNumber as string;
+      const first = await serial();
+      expect(await serial()).toBe(first);
+      const spdx = async () =>
+        (await sbom(`projectKey=${p.key}&format=spdx`)).json().documentNamespace as string;
+      expect(await spdx()).toBe(await spdx());
+      const vexSerial = async () =>
+        (await vex(`projectKey=${p.key}`)).json().serialNumber as string;
+      const vexFirst = await vexSerial();
+      expect(await vexSerial()).not.toBe(vexFirst);
+      expect(vexFirst).not.toBe(first);
+      expect((await sbom(`projectKey=${p.key}&branch=release%2F2.x`)).json().serialNumber).not.toBe(
+        first,
+      );
+      const [known] = await h.ctx.db
+        .select({ analysisId: branchDependencies.analysisId })
+        .from(branchDependencies)
+        .where(eq(branchDependencies.branchId, p.main));
+      await h.ctx.db.insert(branchDependencies).values({
+        branchId: p.main,
+        path: 'package.json',
+        ecosystem: 'npm',
+        name: 'new-pkg',
+        version: '1.0.0',
+        licenses: ['MIT'],
+        analysisId: known!.analysisId,
+      });
+      expect(await serial()).not.toBe(first);
+    });
+
     it('names the organisation of the project as the author of the OpenVEX', async () => {
       const p = await fresh();
       const [org] = await h.ctx.db
@@ -489,9 +521,14 @@ describe('the SBOM and VEX export routes (4c)', () => {
       const vulns = cdx.vulnerabilities as { id: string; affects: { ref: string }[] }[];
       expect(vulns.map((v) => v.id).sort()).toEqual(['CVE-2026-0001', 'CVE-2026-0003']);
       const lodash = vulns.find((v) => v.id === 'CVE-2026-0001')!;
+      // D8-1: BOM-Links into the CycloneDX SBOM of the same inventory.
+      const serial = ((await sbom(`projectKey=${p.key}`)).json().serialNumber as string).replace(
+        'urn:uuid:',
+        '',
+      );
       expect(lodash.affects.map((a) => a.ref)).toEqual([
-        'pkg:npm/lodash@4.17.20',
-        'pkg:npm/lodash@4.17.21',
+        `urn:cdx:${serial}/1#pkg:npm/lodash@4.17.20`,
+        `urn:cdx:${serial}/1#pkg:npm/lodash@4.17.21`,
       ]);
       const open = (await vex(`projectKey=${p.key}&format=openvex`)).json();
       expect(validateAgainst('openvex', open)).toEqual([]);

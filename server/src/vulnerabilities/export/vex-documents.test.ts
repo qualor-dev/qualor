@@ -11,6 +11,9 @@ import {
 } from './vex-documents';
 
 const SERIAL = '3e671687-395b-41f5-a30f-a58921a69b79';
+/** The serial of the SBOM the CycloneDX VEX links to, not the VEX's own. */
+const SBOM_SERIAL = '9c1f0e2d-4b3a-8c5d-9e6f-7a8b9c0d1e2f';
+const link = (purl: string): string => `urn:cdx:${SBOM_SERIAL}/1#${purl}`;
 
 const DOC: ExportDocument = {
   project: { key: 'acme-web', name: 'Acme Web' },
@@ -96,7 +99,7 @@ const byId = (list: any[], id: string): any =>
   list.find((v) => (v.id ?? v.vulnerability?.name) === id);
 
 describe('buildCycloneDxVex', () => {
-  const out = buildCycloneDxVex(DOC, ENTRIES) as any;
+  const out = buildCycloneDxVex(DOC, ENTRIES, SBOM_SERIAL) as any;
 
   it('validates against the CycloneDX 1.6 schema', () => {
     expect(validateAgainst('cyclonedx', out)).toEqual([]);
@@ -105,6 +108,7 @@ describe('buildCycloneDxVex', () => {
   it('has the BOM envelope', () => {
     expect(out.bomFormat).toBe('CycloneDX');
     expect(out.specVersion).toBe('1.6');
+    // A15: the VEX keeps a serial of its own; only its links name the SBOM's.
     expect(out.serialNumber).toBe(`urn:uuid:${SERIAL}`);
     expect(out.version).toBe(1);
     expect(out.metadata.timestamp).toBe('2026-11-10T08:30:15.123Z');
@@ -113,11 +117,15 @@ describe('buildCycloneDxVex', () => {
   });
 
   it('names the source after the id prefix, so Dependency-Track can match it', () => {
-    const doc = buildCycloneDxVex(DOC, [
-      entry({ vulnerabilityId: 'CVE-2026-0001' }),
-      entry({ vulnerabilityId: 'GHSA-abcd-1234-wxyz' }),
-      entry({ vulnerabilityId: 'GO-2024-1234' }),
-    ]) as any;
+    const doc = buildCycloneDxVex(
+      DOC,
+      [
+        entry({ vulnerabilityId: 'CVE-2026-0001' }),
+        entry({ vulnerabilityId: 'GHSA-abcd-1234-wxyz' }),
+        entry({ vulnerabilityId: 'GO-2024-1234' }),
+      ],
+      SBOM_SERIAL,
+    ) as any;
     expect(validateAgainst('cyclonedx', doc)).toEqual([]);
     const [cve, ghsa, go] = doc.vulnerabilities;
     expect(cve.source).toEqual({
@@ -133,14 +141,18 @@ describe('buildCycloneDxVex', () => {
   });
 
   it('carries the decision of an open entry: detail, dates and author', () => {
-    const doc = buildCycloneDxVex(DOC, [
-      entry({
-        vulnerabilityId: 'CVE-2026-0040',
-        comment: 'Reopened after the fix regressed.',
-        decidedAt: DECIDED,
-        decidedBy: 'Carol',
-      }),
-    ]) as any;
+    const doc = buildCycloneDxVex(
+      DOC,
+      [
+        entry({
+          vulnerabilityId: 'CVE-2026-0040',
+          comment: 'Reopened after the fix regressed.',
+          decidedAt: DECIDED,
+          decidedBy: 'Carol',
+        }),
+      ],
+      SBOM_SERIAL,
+    ) as any;
     const v = doc.vulnerabilities[0];
     expect(v.analysis).toEqual({
       state: 'in_triage',
@@ -152,31 +164,130 @@ describe('buildCycloneDxVex', () => {
   });
 
   it('validates an entry with no purls', () => {
-    const doc = buildCycloneDxVex(DOC, [entry({ vulnerabilityId: 'CVE-2026-0050', purls: [] })]);
+    const doc = buildCycloneDxVex(
+      DOC,
+      [entry({ vulnerabilityId: 'CVE-2026-0050', purls: [] })],
+      SBOM_SERIAL,
+    );
     expect(validateAgainst('cyclonedx', doc)).toEqual([]);
   });
 
   it('lists one component per distinct purl, with name and version', () => {
     const refs = out.components.map((c: any) => c['bom-ref']);
     expect(new Set(refs).size).toBe(refs.length);
-    expect(refs).toContain('pkg:npm/lodash@4.17.20');
-    expect(refs).toContain('pkg:npm/lodash@4.17.21');
+    expect(refs).toContain(link('pkg:npm/lodash@4.17.20'));
+    expect(refs).toContain(link('pkg:npm/lodash@4.17.21'));
     const scoped = out.components.find((c: any) => c.purl === 'pkg:npm/%40scope/pkg@2.0.0');
     expect(scoped).toMatchObject({ type: 'library', name: '@scope/pkg', version: '2.0.0' });
     const bare = out.components.find((c: any) => c.purl === 'pkg:npm/left-pad');
     expect(bare.version).toBeUndefined();
   });
 
-  it('points every affects ref at a listed component', () => {
+  it('points every affects ref at a listed component, as a BOM-Link into the SBOM', () => {
     const refs = new Set(out.components.map((c: any) => c['bom-ref']));
+    for (const c of out.components) expect(c['bom-ref']).toBe(`urn:cdx:${SBOM_SERIAL}/1#${c.purl}`);
     for (const v of out.vulnerabilities) {
       expect(v.affects.length).toBeGreaterThan(0);
       for (const a of v.affects) expect(refs.has(a.ref)).toBe(true);
     }
     expect(byId(out.vulnerabilities, 'CVE-2026-0010').affects).toEqual([
-      { ref: 'pkg:npm/lodash@4.17.20' },
-      { ref: 'pkg:npm/lodash@4.17.21' },
+      { ref: `urn:cdx:${SBOM_SERIAL}/1#pkg:npm/lodash@4.17.20` },
+      { ref: `urn:cdx:${SBOM_SERIAL}/1#pkg:npm/lodash@4.17.21` },
     ]);
+  });
+
+  it('merges entries of one id with the same analysis', () => {
+    const notAffected = (packageName: string, purl: string, decidedBy: string) =>
+      entry({
+        vulnerabilityId: 'CVE-2026-0060',
+        packageName,
+        purls: [purl],
+        status: 'false_positive',
+        reason: 'vulnerable_code_not_present',
+        decidedAt: DECIDED,
+        decidedBy,
+      });
+    const merged = buildCycloneDxVex(
+      DOC,
+      [
+        notAffected('left-pad', 'pkg:npm/left-pad@1.3.0', 'Alice'),
+        notAffected('lodash', 'pkg:npm/lodash@4.17.21', 'Bob'),
+      ],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', merged)).toEqual([]);
+    expect(merged.vulnerabilities).toHaveLength(1);
+    const [v] = merged.vulnerabilities;
+    expect(v.affects).toEqual([
+      { ref: link('pkg:npm/left-pad@1.3.0') },
+      { ref: link('pkg:npm/lodash@4.17.21') },
+    ]);
+    expect(v.analysis).toMatchObject({ state: 'not_affected', justification: 'code_not_present' });
+    expect(v.properties).toEqual([
+      { name: 'qualor:decided-by', value: 'Alice' },
+      { name: 'qualor:decided-by', value: 'Bob' },
+    ]);
+
+    const split = buildCycloneDxVex(
+      DOC,
+      [
+        notAffected('left-pad', 'pkg:npm/left-pad@1.3.0', 'Alice'),
+        entry({
+          vulnerabilityId: 'CVE-2026-0060',
+          packageName: 'lodash',
+          purls: ['pkg:npm/lodash@4.17.21'],
+          status: 'wont_fix',
+        }),
+        notAffected('zod', 'pkg:npm/zod@4.0.0', 'Bob'),
+      ],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', split)).toEqual([]);
+    expect(
+      split.vulnerabilities.map((x: any) => [x.analysis.state, x.affects.map((a: any) => a.ref)]),
+    ).toEqual([
+      ['not_affected', [link('pkg:npm/left-pad@1.3.0'), link('pkg:npm/zod@4.0.0')]],
+      ['exploitable', [link('pkg:npm/lodash@4.17.21')]],
+    ]);
+  });
+
+  it('keeps the facts of every merged entry', () => {
+    const open = (packageName: string, overrides: Partial<VexEntry>) =>
+      entry({
+        vulnerabilityId: 'CVE-2026-0061',
+        packageName,
+        purls: [`pkg:npm/${packageName}@1.0.0`],
+        ...overrides,
+      });
+    const later = new Date('2026-11-05T10:00:00.000Z');
+    const doc = buildCycloneDxVex(
+      DOC,
+      [
+        open('a', { severity: 'medium', primaryUrl: 'https://x.test/1', fixedVersion: '1.0.1' }),
+        open('b', {
+          severity: 'critical',
+          primaryUrl: 'https://x.test/1',
+          fixedVersion: '2.0.0',
+          decidedAt: later,
+          decidedBy: 'Carol',
+        }),
+        open('c', { severity: 'low', primaryUrl: 'https://x.test/2', decidedAt: DECIDED }),
+      ],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
+    expect(doc.vulnerabilities).toHaveLength(1);
+    const [v] = doc.vulnerabilities;
+    expect(v['bom-ref']).toBe('CVE-2026-0061:a');
+    expect(v.ratings).toEqual([{ severity: 'critical', source: { name: 'Trivy' } }]);
+    expect(v.advisories).toEqual([{ url: 'https://x.test/1' }, { url: 'https://x.test/2' }]);
+    expect(v.recommendation).toBe('Upgrade a to 1.0.1. Upgrade b to 2.0.0.');
+    expect(v.analysis).toEqual({
+      state: 'in_triage',
+      firstIssued: DECIDED.toISOString(),
+      lastUpdated: later.toISOString(),
+    });
+    expect(v.properties).toEqual([{ name: 'qualor:decided-by', value: 'Carol' }]);
   });
 
   it('maps an open entry to in_triage with its advisory and recommendation', () => {
