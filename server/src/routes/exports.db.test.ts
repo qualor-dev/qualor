@@ -454,14 +454,15 @@ describe('the SBOM and VEX export routes (4c)', () => {
       expect(named).toHaveLength(1);
     });
 
-    it('derives the SBOM serial from the inventory, and keeps the VEX serial random (D8-1)', async () => {
+    it('derives the CycloneDX SBOM serial from the inventory; the SPDX namespace and the VEX serial stay random (D8-1)', async () => {
       const p = await fresh();
       const serial = async () => (await sbom(`projectKey=${p.key}`)).json().serialNumber as string;
       const first = await serial();
       expect(await serial()).toBe(first);
       const spdx = async () =>
         (await sbom(`projectKey=${p.key}&format=spdx`)).json().documentNamespace as string;
-      expect(await spdx()).toBe(await spdx());
+      // SPDX 2.3 wants a new namespace for each version of a document; `created` differs.
+      expect(await spdx()).not.toBe(await spdx());
       const vexSerial = async () =>
         (await vex(`projectKey=${p.key}`)).json().serialNumber as string;
       const vexFirst = await vexSerial();

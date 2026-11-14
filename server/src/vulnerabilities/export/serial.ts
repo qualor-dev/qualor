@@ -8,12 +8,12 @@ function compare(a: string, b: string): number {
 }
 
 /**
- * D8-1: the serial number of a target's SBOM, a uuid that follows from the project, the target and
- * its packages, so every download of one inventory carries it. The CycloneDX VEX links to it, and
- * Trivy applies a VEX only to the SBOM whose serial its links name. The packages are hashed in
- * (purl, ecosystem, name, version, licences) order, each with its licences sorted. The uuid is the
- * first 16 bytes of the sha256, with the version (8) and variant bits of RFC 9562 set as `uuidv7`
- * sets them (`db/ids.ts`).
+ * D8-1: the serial number of a target's CycloneDX SBOM, a uuid that follows from the project, the
+ * target and its packages, so every download of one inventory carries it. The CycloneDX VEX links
+ * to it, and Trivy applies a VEX only to the SBOM whose serial its links name. The packages are
+ * hashed in (purl, ecosystem, name, version, licences) order, each with its licences sorted. The
+ * uuid is the first 16 bytes of the sha256, with the version (8) and variant bits of RFC 9562 set
+ * as `uuidv7` sets them (`db/ids.ts`).
  */
 export function sbomSerial(
   projectId: string,

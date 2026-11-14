@@ -262,9 +262,55 @@ describe('buildCycloneDxVex', () => {
     expect(
       split.vulnerabilities.map((x: any) => [x.analysis.state, x.affects.map((a: any) => a.ref)]),
     ).toEqual([
-      ['not_affected', [link('pkg:npm/left-pad@1.3.0'), link('pkg:npm/zod@4.0.0')]],
       ['exploitable', [link('pkg:npm/lodash@4.17.21')]],
+      ['not_affected', [link('pkg:npm/left-pad@1.3.0'), link('pkg:npm/zod@4.0.0')]],
     ]);
+  });
+
+  it('puts the entries Trivy applies last for each id', () => {
+    const doc = buildCycloneDxVex(
+      DOC,
+      [
+        entry({ vulnerabilityId: 'CVE-2020-0001', packageName: 'left-pad' }),
+        entry({
+          vulnerabilityId: 'CVE-2020-8203',
+          packageName: 'lodash',
+          purls: ['pkg:npm/lodash@4.17.15'],
+          status: 'false_positive',
+          reason: 'vulnerable_code_not_present',
+          decidedAt: DECIDED,
+          decidedBy: 'Alice',
+        }),
+        entry({
+          vulnerabilityId: 'CVE-2020-8203',
+          packageName: 'lodash-es',
+          purls: ['pkg:npm/lodash-es@4.17.15'],
+        }),
+        entry({
+          vulnerabilityId: 'CVE-2020-8203',
+          packageName: 'lodash.merge',
+          purls: ['pkg:npm/lodash.merge@4.6.1'],
+          status: 'wont_fix',
+        }),
+        entry({
+          vulnerabilityId: 'CVE-2020-9999',
+          packageName: 'zod',
+          purls: ['pkg:npm/zod@4.0.0'],
+        }),
+      ],
+      SBOM_SERIAL,
+    ) as any;
+    expect(validateAgainst('cyclonedx', doc)).toEqual([]);
+    // Trivy keeps the last statement of an id: the not_affected one must not be overridden.
+    expect(doc.vulnerabilities.map((v: any) => [v.id, v.analysis.state])).toEqual([
+      ['CVE-2020-0001', 'in_triage'],
+      ['CVE-2020-8203', 'in_triage'],
+      ['CVE-2020-8203', 'exploitable'],
+      ['CVE-2020-8203', 'not_affected'],
+      ['CVE-2020-9999', 'in_triage'],
+    ]);
+    const last = doc.vulnerabilities.findLast((v: any) => v.id === 'CVE-2020-8203');
+    expect(last.affects).toEqual([{ ref: link('pkg:npm/lodash@4.17.15') }]);
   });
 
   it('keeps the facts of every merged entry', () => {

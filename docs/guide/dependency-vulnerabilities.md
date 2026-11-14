@@ -316,11 +316,11 @@ target, carries its author, date and comment like any other.
 | Trivy | the CycloneDX VEX with the CycloneDX SBOM of the same dependency list, or the OpenVEX file with either SBOM: `trivy sbom <sbom> --vex <file>` |
 | Dependency-Track | the CycloneDX SBOM, imported first, then the CycloneDX VEX, imported into the same project |
 
-The CycloneDX VEX names its SBOM by the SBOM's serial number. That serial follows from the project,
-the target and its dependency list, so every download of the same list has the same serial. Trivy
-skips a CycloneDX VEX whose serial is not the SBOM's, with the warning "URN doesn't match with
-SBOM". When an analysis changes the dependency list, download the SBOM and the VEX again. The
-OpenVEX file names packages by purl only, so it works with either SBOM.
+The CycloneDX VEX names the CycloneDX SBOM it belongs to by that SBOM's serial number. The serial
+follows from the project, the target and its dependency list, so every download of the same list
+has the same serial. Trivy skips a CycloneDX VEX whose serial is not the SBOM's, with the warning
+"URN doesn't match with SBOM". When an analysis changes the dependency list, download the SBOM and
+the VEX again. The OpenVEX file names packages by purl only, so it works with either SBOM.
 
 Dependency-Track applies a VEX decision only to a finding it holds under the same source and id.
 The VEX names a vulnerability by its CVE when it has one, with the source NVD. A finding that

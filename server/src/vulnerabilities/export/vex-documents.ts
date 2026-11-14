@@ -111,7 +111,27 @@ function sameAnalysis(entries: readonly VexEntry[]): EntryGroup[] {
   return [...groups.values()];
 }
 
-/** `Upgrade to <fix>.` when every entry has the same fix, else the fix of each package that has one. */
+/** The CycloneDX analysis states that Trivy applies; it ignores a statement in any other. */
+const TRIVY_APPLIES = new Set(['not_affected', 'resolved']);
+
+/**
+ * The groups with each id's groups that Trivy applies after its others; the order is otherwise
+ * kept. Trivy keeps the last statement of an id, so an open or exploitable group of a CVE on one
+ * package must not come after a not_affected one on another.
+ */
+function trivyOrder(groups: readonly EntryGroup[]): EntryGroup[] {
+  const rank = new Map<string, number>();
+  for (const [first] of groups) {
+    if (!rank.has(first.vulnerabilityId)) rank.set(first.vulnerabilityId, rank.size);
+  }
+  const applies = ([first]: EntryGroup): number =>
+    TRIVY_APPLIES.has(analysisOf(first).state) ? 1 : 0;
+  const rankOf = ([first]: EntryGroup): number => rank.get(first.vulnerabilityId) ?? 0;
+  // A stable sort: groups that tie keep their order.
+  return [...groups].sort((a, b) => rankOf(a) - rankOf(b) || applies(a) - applies(b));
+}
+
+/** `Upgrade to <fix>.` when all entries share one fix, else the fix of each package with one. */
 function recommendationOf(group: EntryGroup): string | undefined {
   const fixed = group.filter((e) => e.fixedVersion !== null);
   const [first] = fixed;
@@ -186,7 +206,9 @@ export function buildCycloneDxVex(
       });
     }
   }
-  const vulnerabilities = sameAnalysis(entries).map((group) => cycloneDxVulnerability(group, link));
+  const vulnerabilities = trivyOrder(sameAnalysis(entries)).map((group) =>
+    cycloneDxVulnerability(group, link),
+  );
   return {
     bomFormat: 'CycloneDX',
     specVersion: '1.6',

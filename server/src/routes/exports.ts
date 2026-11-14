@@ -31,7 +31,7 @@ const OPENVEX = 'application/json';
 /** Every character outside `[A-Za-z0-9._-]` becomes `-` (a file name for every system). */
 const fileSafe = (text: string): string => text.replace(/[^A-Za-z0-9._-]/g, '-');
 
-/** D8-1: the serial of the target's SBOM of these packages, which the CycloneDX VEX links to. */
+/** D8-1: the serial of the target's CycloneDX SBOM of these packages, which its VEX links to. */
 const serialOf = (
   project: { id: string },
   target: DependencyTarget,
@@ -135,14 +135,15 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
           `This ${resolved.kind} has no dependency inventory yet`,
         );
       }
-      const sbomDoc: ExportDocument = {
-        ...doc,
-        serial: serialOf(project, resolved.target, packages),
-      };
+      // The CycloneDX serial follows from the inventory (D8-1). The SPDX namespace is new on every
+      // download: SPDX 2.3 wants a new one for each version of a document, and `created` differs.
       const body =
         format === 'spdx'
-          ? buildSpdxSbom(sbomDoc, packages)
-          : buildCycloneDxSbom(sbomDoc, packages);
+          ? buildSpdxSbom({ ...doc, serial: randomUUID() }, packages)
+          : buildCycloneDxSbom(
+              { ...doc, serial: serialOf(project, resolved.target, packages) },
+              packages,
+            );
       attachment(
         reply,
         format === 'spdx' ? SPDX : CYCLONEDX,
