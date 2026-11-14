@@ -321,7 +321,11 @@ describe('qualor scan: upload, gate polling and exit codes (config.md §7)', () 
 
 describe('qualor scan: the vulnerability database from the server', () => {
   const META = 'GET /api/v0/scanner/vulnerability-db';
-  const UPDATED_AT = '2026-10-31T06:00:00Z';
+  /**
+   * The database's build date, one day before the test runs: a fixed date would grow older than
+   * STALE_DATABASE_DAYS and draw VULNERABILITY_DB_STALE.
+   */
+  const UPDATED_AT = `${new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 19)}Z`;
   /** Present and enabled, so the step runs; it never needs a database. */
   const trivyStub: Analyzer = {
     id: 'trivy',
@@ -378,7 +382,11 @@ describe('qualor scan: the vulnerability database from the server', () => {
         meta: {
           serve: true,
           policy: 'daily',
-          current: { digest, sizeBytes: archive.length, builtAt: '2026-10-31T06:00:00.000Z' },
+          current: {
+            digest,
+            sizeBytes: archive.length,
+            builtAt: `${UPDATED_AT.slice(0, 19)}.000Z`,
+          },
           accepted: [digest],
         },
         archive,
