@@ -28,7 +28,12 @@ import { currentDataset, makeDatasetCurrent, pruneDatasets, storeDataset } from 
 export const VULNDB_BOOT_DELAY_SECONDS = 60;
 /** The `vulndb` worker (main.ts): one job at a time, and a download may take 15 min. */
 export const VULNDB_WORKER_CONCURRENCY = 1;
-export const VULNDB_LEASE_MS = 30 * 60_000;
+/**
+ * A 5 min lease, extended every 100 s while a job runs (downloads are streams and Trivy is a
+ * child process: nothing blocks the event loop for minutes). A crashed worker blocks the next
+ * re-check for at most about 5.5 min.
+ */
+export const VULNDB_LEASE_MS = 5 * 60_000;
 
 type LastError = NonNullable<VulndbState['lastError']>;
 

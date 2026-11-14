@@ -503,8 +503,9 @@ async function main(): Promise<void> {
     leaseMs: MAIL_LEASE_MS,
     logger,
   });
-  // 0.15: the vulnerability database has its own worker (one job at a time, a 30 min lease), so a
-  // download or a re-check never holds up an analysis. The worker tries the queues in this order:
+  // 0.15: the vulnerability database has its own worker (one job at a time), so a download or a
+  // re-check never holds up an analysis. It holds a 5 min lease, extended every 100 s; a crashed
+  // worker blocks the next re-check for at most about 5.5 min. The worker tries the queues in this order:
   // a waiting update runs before a waiting re-check, which then matches against the new data.
   // A download or a Trivy run takes up to 15 min: a stop cuts it, and its work is due again for
   // the next server (vulndb/update.ts, vulnerabilities/recheck.ts).
