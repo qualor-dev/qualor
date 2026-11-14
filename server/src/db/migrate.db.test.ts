@@ -64,8 +64,9 @@ describe('runMigrations / pendingMigrations', () => {
     // 0023_vulnerability_priority (0.15, the KEV and EPSS tables), 0024_vulnerability_alerts (0.15, the watch flag, KEV
     // delisting and the alert memory), 0025_compliance_versions (0.15, a version and an SBOM on a
     // compliance report), 0026_chat_exploited_event (0.15, the exploited-vulnerability event on the
-    // chat webhooks that have the weekly digest).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(27);
+    // chat webhooks that have the weekly digest), 0027_vulnerability_decisions_repair (0.16, the
+    // decisions of main Trivy issues closed with false positive or won't fix).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(28);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -809,5 +810,173 @@ describe('runMigrations / pendingMigrations', () => {
       .join(' ');
     await db.pool.query(statement);
     expect(await events()).toEqual(after);
+  });
+
+  it('writes the project decisions main Trivy issues kept through a close (0027)', async () => {
+    const db = await createTestDatabase({ migrated: false });
+    t = db;
+    const upTo26 = migrationsUpTo(27); // 0000_extensions … 0026_chat_exploited_event
+    try {
+      await runMigrations(db.pool, upTo26.dir);
+    } finally {
+      upTo26.remove();
+    }
+    const org = randomUUID();
+    const project = randomUUID();
+    const main = randomUUID();
+    const release = randomUUID();
+    const user = randomUUID();
+    const decider = randomUUID();
+    await db.pool.query(
+      `INSERT INTO organizations (id, key, name) VALUES ($1, 'mig-0027', 'Mig')`,
+      [org],
+    );
+    await db.pool.query(
+      `INSERT INTO projects (id, organization_id, key, name) VALUES ($1, $2, 'mig/0027', 'P')`,
+      [project, org],
+    );
+    await db.pool.query(
+      `INSERT INTO users (id, username, email) VALUES ($1, 'mig0027', 'u@mig.test'), ($2, 'mig0027b', 'b@mig.test')`,
+      [user, decider],
+    );
+    await db.pool.query(
+      `INSERT INTO branches (id, project_id, kind, name, is_main) VALUES ($1, $3, 'branch', 'main', true), ($2, $3, 'branch', 'release/1.x', false)`,
+      [main, release, project],
+    );
+    const rules = new Map<string, string>();
+    const rule = async (cve: string) => {
+      const id = randomUUID();
+      rules.set(cve, id);
+      await db.pool.query(
+        `INSERT INTO rules (id, key, engine_id, engine_rule_id, name, default_severity, quality, kind, origin)
+         VALUES ($1, $2, 'trivy', $3, $3, 'high', 'security', 'issue', 'reported')`,
+        [id, `trivy:${cve}`, cve],
+      );
+      return id;
+    };
+    const issue = async (
+      branch: string,
+      cve: string,
+      pkg: string,
+      status: string,
+      resolvedAt: string,
+    ) => {
+      const id = randomUUID();
+      const ruleId = rules.get(cve) ?? (await rule(cve));
+      await db.pool.query(
+        `INSERT INTO issues (id, project_id, branch_id, rule_id, fingerprint, line_hash, context_hash,
+           message, severity, quality, kind, status, first_seen_at, resolved_at, resolved_by, package_name)
+         VALUES ($1, $2, $3, $4, $5, 'h', 'c', $6, 'high', 'security', 'issue', $7, now(), $8, $9, $10)`,
+        [
+          id,
+          project,
+          branch,
+          ruleId,
+          id.replaceAll('-', ''),
+          `${pkg} 1.0: ${cve} x`,
+          status,
+          resolvedAt,
+          user,
+          pkg,
+        ],
+      );
+      return id;
+    };
+    const change = (
+      issueId: string,
+      from: string,
+      to: string,
+      comment: string | null,
+      at: string,
+    ) =>
+      db.pool.query(
+        `INSERT INTO issue_changes (id, issue_id, field, old_value, new_value, comment, created_at)
+         VALUES ($1, $2, 'status', $3, $4, $5, $6)`,
+        [randomUUID(), issueId, from, to, comment, at],
+      );
+    const closedAfter = async (
+      branch: string,
+      cve: string,
+      pkg: string,
+      pre: string,
+      resolvedAt: string,
+      comment: string | null,
+    ) => {
+      const id = await issue(branch, cve, pkg, 'closed', resolvedAt);
+      await change(id, 'open', pre, comment, '2026-01-01T10:00:00Z');
+      await change(id, pre, 'closed', null, '2026-01-02T10:00:00Z');
+      return id;
+    };
+
+    await closedAfter(
+      main,
+      'CVE-2026-0001',
+      'lodash',
+      'false_positive',
+      '2026-01-01T10:00:00Z',
+      'not reachable',
+    );
+    const wontFix = await issue(
+      main,
+      'CVE-2026-0002',
+      'minimist',
+      'wont_fix',
+      '2026-01-03T10:00:00Z',
+    );
+    await change(wontFix, 'open', 'wont_fix', 'accepted', '2026-01-03T10:00:00Z');
+    await closedAfter(main, 'CVE-2026-0003', 'ansi', 'resolved', '2026-01-01T10:00:00Z', 'fixed');
+    await closedAfter(
+      release,
+      'CVE-2026-0004',
+      'tar',
+      'false_positive',
+      '2026-01-01T10:00:00Z',
+      'rel',
+    );
+    await closedAfter(
+      main,
+      'CVE-2026-0005',
+      'qs',
+      'false_positive',
+      '2026-01-01T10:00:00Z',
+      'ignored',
+    );
+    await db.pool.query(
+      `INSERT INTO vulnerability_decisions (id, project_id, package_name, vulnerability_id, status, comment, decided_by, decided_at)
+       VALUES ($1, $2, 'qs', 'CVE-2026-0005', 'wont_fix', 'kept', $3, '2026-02-01T10:00:00Z')`,
+      [randomUUID(), project, decider],
+    );
+    await closedAfter(
+      main,
+      'CVE-2026-0006',
+      'yaml',
+      'false_positive',
+      '2026-01-01T10:00:00Z',
+      'older',
+    );
+    const newer = await issue(main, 'CVE-2026-0006', 'yaml', 'wont_fix', '2026-03-01T10:00:00Z');
+    await change(newer, 'open', 'wont_fix', 'newer', '2026-03-01T10:00:00Z');
+
+    await runMigrations(db.pool, MIGRATIONS_DIR);
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
+    const { rows } = await db.pool.query(
+      `SELECT package_name, vulnerability_id, branch_id, version_id, status, comment, decided_by
+         FROM vulnerability_decisions ORDER BY package_name`,
+    );
+    const row = (pkg: string, cve: string, status: string, comment: string | null, by: string) => ({
+      package_name: pkg,
+      vulnerability_id: cve,
+      branch_id: null,
+      version_id: null,
+      status,
+      comment,
+      decided_by: by,
+    });
+    expect(rows).toEqual([
+      row('lodash', 'CVE-2026-0001', 'false_positive', 'not reachable', user),
+      row('minimist', 'CVE-2026-0002', 'wont_fix', 'accepted', user),
+      row('qs', 'CVE-2026-0005', 'wont_fix', 'kept', decider),
+      row('yaml', 'CVE-2026-0006', 'wont_fix', 'newer', user),
+    ]);
   });
 });
