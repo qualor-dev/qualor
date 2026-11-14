@@ -22,20 +22,24 @@ export interface ObservedAlerts {
  * The caller holds LOCKS.vulnerabilityAlerts in `tx`, and queues a re-check of
  * `recheckProjectIds`; this function enqueues nothing.
  * 1. Deletes the target rows out of scope; their items go with them.
- * 2. Records each target in scope without a row, at `now` and unseeded, without items. It needs
- *    a re-check row with a basis (R3) and a dependency inventory (a `branch_dependencies` row, or
- *    `has_inventory` for a version; without one, its first inventory would count as all new, spec
- *    §8.5), and must still exist (R4). The row is `day_one` when its
- *    project had no row left after step 1: the project's first observation, or its return.
- * 3. Seeds each unseeded target re-checked since it was recorded (`checked_at >= observed_at`).
- *    Every pair it holds now becomes a baseline item. Rows written before the target entered the
- *    scope (R17 keeps them) are never taken for its baseline (R6). A target recorded in step 2
- *    is usually seeded by a later pass, because its re-check row predates `now`; if a check landed
- *    after `now` it is seeded in the same pass, which is harmless.
+ * 2. Records each target in scope without a row, unseeded, without items. `observed_at` is the
+ *    database's `now()`, the clock the re-check stamps `checked_at` with (A12), so a job clock
+ *    ahead of the database's never holds back step 3. It needs a re-check row with a basis (R3)
+ *    and a dependency inventory (a `branch_dependencies` row, or `has_inventory` for a version;
+ *    without one, its first inventory would count as all new, spec §8.5), and must still exist
+ *    (R4). The row is `day_one` when its project had no row left after step 1: the project's
+ *    first observation, or its return.
+ * 3. Seeds, at `now`, each unseeded target re-checked since it was recorded
+ *    (`checked_at >= observed_at`). Every pair it holds now becomes a baseline item. Rows written
+ *    before the target entered the scope (R17 keeps them) are never taken for its baseline (R6).
+ *    A target recorded in step 2 is usually seeded by a later pass, because its re-check row
+ *    predates the record; a check committed after this transaction began seeds it in the same
+ *    pass, which is harmless.
  * 4. Adds an item, found at `now`, for each (target, vulnerability id) pair of
  *    `target_vulnerabilities` that a seeded target has no item for. Steps 3 and 4 share one read
  *    per `targetSlice` targets. An item is a baseline when step 3 of this call seeded its target.
- *    A package bump keeps the pair, so it adds nothing.
+ *    A package bump keeps the pair, so it adds nothing. A target deleted since the read is
+ *    skipped.
  *
  * `target_vulnerabilities` is only read: the rows of a target out of scope stay there.
  */
@@ -77,14 +81,15 @@ export async function observeAlerts(
   }
 
   // A statement never sees its own inserts, so `day_one` reads the rows left after the delete.
-  // The two partial unique indexes skip a target that has its row already.
+  // The two partial unique indexes skip a target that has its row already. `observed_at` is on
+  // the database clock, as `checked_at` is: step 3 compares the two (A12).
   const added = await tx.execute<{ projectId: string }>(sql`
     INSERT INTO vulnerability_alert_targets
            (id, project_id, branch_id, version_id, day_one, observed_at)
     SELECT s.id, s.project_id, s.branch_id, s.version_id,
            NOT EXISTS (SELECT 1 FROM vulnerability_alert_targets a
                         WHERE a.project_id = s.project_id),
-           ${at}
+           now()
       FROM unnest(${sql.param(ids)}::uuid[], ${sql.param(projectIds)}::uuid[],
                   ${sql.param(branchIds)}::uuid[], ${sql.param(versionIds)}::uuid[])
            AS s(id, project_id, branch_id, version_id)
@@ -163,6 +168,8 @@ async function addItems(
   let added = 0;
   for (let from = 0; from < missing.rows.length; from += BATCH_ROWS) {
     const part = missing.rows.slice(from, from + BATCH_ROWS);
+    // A target deleted since the read (its branch, version or project went, by cascade) is
+    // skipped, not a foreign key failure of the whole pass.
     const inserted = await tx.execute(sql`
       INSERT INTO vulnerability_alert_items (id, target_id, vulnerability_id, baseline, found_at)
       SELECT u.id, u.target_id, u.vulnerability_id, u.baseline, ${at}
@@ -171,6 +178,7 @@ async function addItems(
                     ${sql.param(part.map((p) => p.vulnerabilityId))}::text[],
                     ${sql.param(part.map((p) => seededNow.has(p.targetId)))}::boolean[])
              AS u(id, target_id, vulnerability_id, baseline)
+       WHERE EXISTS (SELECT 1 FROM vulnerability_alert_targets a WHERE a.id = u.target_id)
       ON CONFLICT (target_id, vulnerability_id) DO NOTHING`);
     added += inserted.rowCount ?? 0;
   }

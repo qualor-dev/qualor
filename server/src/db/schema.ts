@@ -934,8 +934,8 @@ export const vulnerabilityTargetChecks = pgTable(
  * the target leaves the scope, so its return is a new first observation.
  * - `day_one`: its project had no alert target row when this one was recorded. That is the
  *   project's day one: the upgrade, a switch turned on, the feature activated.
- * - `observed_at`: when the job recorded the target. The target had a re-check by then, which
- *   may be stale.
+ * - `observed_at`: when the job recorded the target, on the database clock that `checked_at` uses.
+ *   The target had a re-check by then, which may be stale.
  * - `seeded_at`: when its baseline was taken. That happens at the first pass after a re-check
  *   that followed `observed_at`, and every pair present then becomes a baseline item. Null until
  *   then. Only a seeded target gets new items.

@@ -15,7 +15,11 @@ import {
   watch,
   type OutboxRow,
 } from '../../../test/notify';
-import { recheckTargets, recordThenRecheck } from '../../../test/vulnerability-alerts';
+import {
+  BEFORE_ANY_RECORD,
+  recheckTargets,
+  recordThenRecheck,
+} from '../../../test/vulnerability-alerts';
 import { purlFor, seedCheck, seedInventory, seedTargetRow } from '../../../test/vulnerabilities';
 import { encryptionKey, encryptSecret } from '../../crypto/secrets';
 import { uuidv7 } from '../../db/ids';
@@ -100,7 +104,7 @@ describe('the daily vulnerability digest', () => {
     now = new Date(now.getTime() + HOUR);
     return runVulnerabilityDigest(deps(over));
   };
-  const recordAndRecheck = () => recordThenRecheck(t.db, run, () => now);
+  const recordAndRecheck = () => recordThenRecheck(t.db, run);
 
   const newProject = async (name = 'Api') => {
     n += 1;
@@ -119,7 +123,7 @@ describe('the daily vulnerability digest', () => {
       projectId,
       branchId: main,
       baselineAt: START,
-      checkedAt: START,
+      checkedAt: BEFORE_ANY_RECORD,
       basis: 'analysis-1',
     });
     await seedInventory(t.db, { projectId, branchId: main });
@@ -330,7 +334,7 @@ describe('the daily vulnerability digest', () => {
 
       expect(await run()).toEqual(NOTHING);
       expect(await items()).toEqual([]);
-      await recheckTargets(t.db, now);
+      await recheckTargets(t.db);
 
       expect(await run()).toEqual(NOTHING);
       expect(await items()).toEqual([{ vulnerabilityId: OLD, baseline: true, digestedAt: null }]);
@@ -694,7 +698,7 @@ describe('the daily vulnerability digest', () => {
       ]);
 
       await t.db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
-      await recheckTargets(t.db, now);
+      await recheckTargets(t.db);
       await run();
       expect(await rechecks()).toEqual([]);
     });
