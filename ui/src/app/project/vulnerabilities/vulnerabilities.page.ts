@@ -9,6 +9,7 @@ import { SessionStore } from '../../auth/session';
 import { inputValue } from '../../shared/forms';
 import { DateTimePipe } from '../../shared/date-time.pipe';
 import { Icon } from '../../shared/icon';
+import { closePopover } from '../../shared/popover';
 import { SeverityChips } from './severity-chips';
 import { type SeverityFilter, type StatusFilter, VulnerabilityList } from './vulnerability-list';
 import { CurrentProject } from '../current-project';
@@ -269,8 +270,7 @@ export class VulnerabilitiesPage {
 
   /** Closes a popover menu; jsdom has no Popover API. */
   protected close(menu: HTMLElement): void {
-    const popover = menu as Partial<Pick<HTMLElement, 'hidePopover'>>;
-    if (popover.hidePopover && menu.matches(':popover-open')) popover.hidePopover.call(menu);
+    closePopover(menu);
   }
 
   protected async change(menu: HTMLElement, versionId: string, tracking: Tracking): Promise<void> {

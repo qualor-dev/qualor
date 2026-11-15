@@ -13,6 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ApiError, problemMessage } from '../api/errors';
+import { wrapIndex } from './menu-keys';
 
 /** A person the picker suggests: what `GET /users/search` and the members list both carry. */
 export interface UserSuggestion {
@@ -36,12 +37,6 @@ const LIST_GAP_PX = 4;
 const LIST_MIN_PX = 112;
 
 type State = 'idle' | 'short' | 'loading' | 'results' | 'empty' | 'error';
-
-/** An index one step past either end wrapped to the other end of a list of `count`. */
-function wrapIndex(index: number, count: number): number {
-  if (index < 0) return count - 1;
-  return index >= count ? 0 : index;
-}
 
 /** Orders suggestions by username, by UTF-16 code units. */
 function byUsername(a: UserSuggestion, b: UserSuggestion): number {
