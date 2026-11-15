@@ -10573,7 +10573,8 @@
                       "additionalProperties": false
                     },
                     "inventory": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "false: no analysis of the branch, merge request or version has reported a dependency inventory yet"
                     },
                     "verdicts": {
                       "type": "boolean"

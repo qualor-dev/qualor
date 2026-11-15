@@ -31,7 +31,17 @@ export interface UpsertVersionInput {
  * Returns `'stale'`, changing nothing, when the stored version was analysed later than
  * `analyzedAt`: an older scan never replaces a newer inventory. A tag scan of a version taken from
  * a label is never stale: the tag is the release, whenever its job ran.
+ *
+ * A tag write is never `'kept'` (only a label write meets a tag version), hence its overload.
  */
+export async function upsertVersion(
+  tx: Executor,
+  input: UpsertVersionInput & { source: 'tag' },
+): Promise<ProjectVersionRow | 'stale'>;
+export async function upsertVersion(
+  tx: Executor,
+  input: UpsertVersionInput,
+): Promise<ProjectVersionRow | 'stale' | 'kept'>;
 export async function upsertVersion(
   tx: Executor,
   input: UpsertVersionInput,

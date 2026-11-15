@@ -155,6 +155,13 @@ describe('OpenAPI document (api.md §6.1)', () => {
       expect(list.responses['404']?.description).toContain('a merge request is not a target');
     });
 
+    it('describes the inventory field of the dependency list', () => {
+      const list = op('/api/v0/projects/{id}/dependencies', 'get');
+      const schema = list.responses['200']?.content?.['application/json']?.schema as
+        { properties?: Record<string, { description?: string }> } | undefined;
+      expect(schema?.properties?.inventory?.description).toContain('merge request or version');
+    });
+
     it('describes the review snapshot upload: gzip body, its content type, and every rejection (6I-2)', () => {
       const upload = op('/api/v0/analyses/{id}/review-snapshot', 'post');
       expect(statuses(upload)).toEqual([

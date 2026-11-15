@@ -64,8 +64,15 @@ const responseSchema = z.object({
   total: z.number().int(),
   /** The whole inventory of the branch or version, whatever the filters. */
   summary: summarySchema,
-  /** `false`: no analysis of the branch has reported a dependency inventory yet. */
-  inventory: z.boolean(),
+  /**
+   * `false`: no analysis of the branch, merge request or version has reported a dependency
+   * inventory yet.
+   */
+  inventory: z
+    .boolean()
+    .describe(
+      'false: no analysis of the branch, merge request or version has reported a dependency inventory yet',
+    ),
   /**
    * The rows carry the policy's `verdict`, and the `verdict` filter applies: the enterprise
    * feature license-policy is active and the project's organisation has a licence policy.

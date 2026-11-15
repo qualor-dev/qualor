@@ -5239,6 +5239,7 @@ export interface paths {
                                     count: number;
                                 }[];
                             };
+                            /** @description false: no analysis of the branch, merge request or version has reported a dependency inventory yet */
                             inventory: boolean;
                             verdicts: boolean;
                         };
