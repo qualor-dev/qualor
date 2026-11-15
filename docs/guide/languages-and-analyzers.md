@@ -867,7 +867,7 @@ about 131 MiB: see [GitLab](./gitlab.md#the-vulnerability-database-cache),
 
 | The cache directory is | The scanner |
 |---|---|
-| inside the checkout, as in the CI integrations | verifies it. It hashes the archive on every scan and uses it only when the sha256 matches a database the server lists, so a branch cannot plant a database there. It unpacks the archive into a temporary directory and never reads a `db/` there. The scan never reads its files, also with Trivy off and on a tag scan |
+| inside the checkout, as in the CI integrations | verifies it. It hashes the archive on every scan and uses it only when the sha256 matches a database the server lists, so a branch cannot plant a database there. It unpacks the archive into a temporary directory and never reads a `db/` there. The scan never reports or uses its files, also with Trivy off and on a tag scan. Gitleaks walks the whole checkout, but its findings in the cache are dropped |
 | outside the checkout, such as the default `~/.cache/qualor/trivy` | also keeps the unpacked database in `<cache>/db`, and trusts it by the digest it wrote next to it, without unpacking again. A directory outside the checkout was always trusted: keep it out of reach of jobs that run repository code |
 
 The instance admin sets how often a scanner downloads
