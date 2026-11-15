@@ -327,6 +327,128 @@ describe('VulnerabilitiesPage', () => {
       expect(text(rows(root)[2])).toContain('Pinned');
     });
 
+    it('is a menu of menu items', async () => {
+      const root = await render({ targets: TARGETS }, { permissions: SETTINGS });
+      const row = rows(root)[2];
+      expect(row?.querySelector('.row-menu-panel')?.getAttribute('role')).toBe('menu');
+      expect(row?.querySelector('.menu-trigger')?.getAttribute('aria-haspopup')).toBe('menu');
+      const items = [...(row?.querySelectorAll('.row-menu-panel button') ?? [])];
+      expect(items).toHaveLength(2);
+      for (const item of items) {
+        expect(item.getAttribute('role')).toBe('menuitem');
+        expect(item.getAttribute('tabindex')).toBe('-1');
+      }
+    });
+
+    describe('with the keyboard', () => {
+      const toggle = (state: 'open' | 'closed') =>
+        Object.assign(new Event('toggle'), { newState: state });
+      const key = (target: Element, name: string) => {
+        const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
+        target.dispatchEvent(event);
+        return event;
+      };
+      let root: HTMLElement;
+      let panel: HTMLElement;
+      let items: HTMLElement[];
+
+      beforeEach(async () => {
+        root = await render({ targets: TARGETS }, { permissions: SETTINGS });
+        document.body.append(root);
+        panel = rows(root)[2]?.querySelector('.row-menu-panel') as HTMLElement;
+        items = [...panel.querySelectorAll<HTMLElement>('button')];
+      });
+      afterEach(() => root.remove());
+
+      it('focuses the first item when the menu opens', () => {
+        panel.dispatchEvent(toggle('closed'));
+        expect(document.activeElement).not.toBe(items[0]);
+        panel.dispatchEvent(toggle('open'));
+        expect(document.activeElement).toBe(items[0]);
+      });
+
+      it('moves between the items with the arrow keys, Home and End', () => {
+        items[0]?.focus();
+        const steps: [string, number][] = [
+          ['ArrowDown', 1],
+          ['ArrowUp', 0],
+          ['ArrowUp', 1],
+          ['Home', 0],
+          ['End', 1],
+        ];
+        for (const [name, index] of steps) {
+          const event = key(document.activeElement as Element, name);
+          expect(event.defaultPrevented).toBe(true);
+          expect(document.activeElement).toBe(items[index]);
+        }
+      });
+
+      describe('and a popover', () => {
+        const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+        const original = { matches: proto['matches'], hidePopover: proto['hidePopover'] };
+        let hide: ReturnType<typeof vi.fn>;
+        beforeEach(() => {
+          hide = vi.fn();
+          proto['hidePopover'] = hide;
+          proto['matches'] = function (this: Element, selector: string) {
+            return selector === ':popover-open'
+              ? true
+              : (original.matches as (s: string) => boolean).call(this, selector);
+          };
+        });
+        afterEach(() => {
+          proto['matches'] = original.matches;
+          if (original.hidePopover) proto['hidePopover'] = original.hidePopover;
+          else delete proto['hidePopover'];
+        });
+
+        it('closes on Tab and keeps the Tab', () => {
+          items[0]?.focus();
+          const event = key(items[0] as Element, 'Tab');
+          expect(hide).toHaveBeenCalledTimes(1);
+          expect(event.defaultPrevented).toBe(false);
+        });
+
+        it('closes an open menu when the page or the table scrolls, or the window resizes', () => {
+          const scrolls: [EventTarget, string][] = [
+            [window, 'scroll'],
+            [window, 'resize'],
+            [root.querySelector('.panel-scroll') as Element, 'scroll'],
+          ];
+          for (const [target, type] of scrolls) {
+            hide.mockClear();
+            target.dispatchEvent(new Event(type));
+            expect(hide, type).toHaveBeenCalled();
+          }
+        });
+      });
+    });
+
+    it('disables the trigger and the items while a change runs', async () => {
+      const root = await render({ targets: TARGETS }, { permissions: SETTINGS });
+      let release!: (reply: { body: unknown }) => void;
+      server.on(
+        'PATCH',
+        `/api/v0/projects/${PROJECT}/versions/${V20}`,
+        () => new Promise((resolve) => (release = resolve)),
+      );
+      const pin = [...root.querySelectorAll('.row-menu-panel button')].find(
+        (b) => text(b) === 'Pin',
+      ) as HTMLButtonElement;
+      pin.click();
+      await settle();
+      const controls = () => [
+        ...root.querySelectorAll<HTMLButtonElement>('.row-menu-panel button, .menu-trigger'),
+      ];
+      expect(controls().length).toBeGreaterThan(0);
+      expect(controls().every((b) => b.disabled)).toBe(true);
+      expect(root.querySelector('.row-menu-panel')?.getAttribute('aria-busy')).toBe('true');
+      release({ body: {} });
+      await settle();
+      expect(controls().some((b) => b.disabled)).toBe(false);
+      expect(root.querySelector('.row-menu-panel')?.hasAttribute('aria-busy')).toBe(false);
+    });
+
     it('shows the error and keeps the table when a change is refused', async () => {
       const root = await render({ targets: TARGETS }, { permissions: SETTINGS });
       server.on('PATCH', `/api/v0/projects/${PROJECT}/versions/${V20}`, {

@@ -126,6 +126,7 @@
           <div
             class="panel-scroll"
             tabindex="0"
+            (scroll)="closeMenus()"
             role="group"
             aria-label="Branches and versions"
             i18n-aria-label="@@vuln.table.label"
@@ -301,6 +302,8 @@
         type="button"
         class="btn-quiet menu-trigger"
         [attr.popovertarget]="'vuln-menu-' + row.id"
+        aria-haspopup="menu"
+        [disabled]="busy()"
         [attr.aria-label]="menuLabel(row.name)"
         (click)="place(trigger, menu)"
       >
@@ -310,12 +313,21 @@
         #menu
         [id]="'vuln-menu-' + row.id"
         popover
-        role="group"
+        role="menu"
         class="menu-panel row-menu-panel"
         [attr.aria-label]="groupLabel(row.name)"
+        [attr.aria-busy]="busy() ? 'true' : null"
+        (keydown)="menuKey($event, menu)"
+        (toggle)="opened($event, menu)"
       >
         @for (c of choices(row.tracking); track c) {
-          <button type="button" (click)="change(menu, row.id, c)">
+          <button
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            [disabled]="busy()"
+            (click)="change(menu, row.id, c)"
+          >
             {{ choiceLabel(c, row.tracking) }}
           </button>
         }

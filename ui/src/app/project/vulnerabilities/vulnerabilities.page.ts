@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, resource, signal } from '@angular/core';
+import { Component, computed, ElementRef, inject, input, resource, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, type Params, RouterLink } from '@angular/router';
@@ -9,6 +9,7 @@ import { SessionStore } from '../../auth/session';
 import { inputValue } from '../../shared/forms';
 import { DateTimePipe } from '../../shared/date-time.pipe';
 import { Icon } from '../../shared/icon';
+import { menuIndex } from '../../shared/menu-keys';
 import { closePopover } from '../../shared/popover';
 import { SeverityChips } from './severity-chips';
 import { type SeverityFilter, type StatusFilter, VulnerabilityList } from './vulnerability-list';
@@ -54,9 +55,14 @@ function one(params: Params, key: string): string {
   imports: [DateTimePipe, Icon, NgTemplateOutlet, RouterLink, SeverityChips, VulnerabilityList],
   templateUrl: './vulnerabilities.page.html',
   styleUrl: './vulnerabilities.page.css',
+  host: {
+    '(window:scroll)': 'closeMenus()',
+    '(window:resize)': 'closeMenus()',
+  },
 })
 export class VulnerabilitiesPage {
   private readonly api = inject(Api);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly route = inject(ActivatedRoute);
   private readonly project = inject(CurrentProject);
   private readonly session = inject(SessionStore);
@@ -273,9 +279,39 @@ export class VulnerabilitiesPage {
     closePopover(menu);
   }
 
+  /** The menu popovers the page holds are in the top layer and do not follow a scroll: close them. */
+  protected closeMenus(): void {
+    for (const menu of this.host.nativeElement.querySelectorAll<HTMLElement>('.menu-panel')) {
+      this.close(menu);
+    }
+  }
+
+  /** Arrow keys, Home and End move between the items; Tab leaves the menu and closes it. */
+  protected menuKey(event: KeyboardEvent, menu: HTMLElement): void {
+    if (event.key === 'Tab') {
+      this.close(menu);
+      return;
+    }
+    const items = [...menu.querySelectorAll<HTMLElement>('[role=menuitem]:not(:disabled)')];
+    const next = menuIndex(
+      event.key,
+      items.indexOf(document.activeElement as HTMLElement),
+      items.length,
+    );
+    if (next === null) return;
+    event.preventDefault();
+    items[next]?.focus();
+  }
+
+  /** The popover is shown after the click handlers ran, so its first item takes focus on toggle. */
+  protected opened(event: Event, menu: HTMLElement): void {
+    if ((event as ToggleEvent).newState !== 'open') return;
+    menu.querySelector<HTMLElement>('[role=menuitem]:not(:disabled)')?.focus();
+  }
+
   protected async change(menu: HTMLElement, versionId: string, tracking: Tracking): Promise<void> {
-    this.close(menu);
     if (this.busy()) return;
+    this.close(menu);
     this.busy.set(true);
     this.error.set(null);
     try {
