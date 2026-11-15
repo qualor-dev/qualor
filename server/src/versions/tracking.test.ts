@@ -57,6 +57,46 @@ describe('computeTracking lines', () => {
     });
   });
 
+  it('frees a line slot for a pre-release-only line', () => {
+    expect(summary([v('3.1.0'), v('3.0.0'), v('2.9.0-rc.1')], lines(2))).toEqual({
+      '3.1.0#auto': 'T:newest_in_line',
+      '3.0.0#auto': 'T:newest_in_line',
+      '2.9.0-rc.1#auto': 'U:prerelease',
+    });
+    expect(summary([v('2.0.0-rc.1'), v('1.4.0'), v('1.3.0')], lines(1))).toEqual({
+      '2.0.0-rc.1#auto': 'U:prerelease',
+      '1.4.0#auto': 'T:newest_in_line',
+      '1.3.0#auto': 'U:older_line',
+    });
+  });
+
+  it('tracks a pinned version in the newest line', () => {
+    // The pinned release is the newest of its line: its auto sibling is replaced.
+    expect(summary([v('2.0.1', 'pinned'), v('2.0.0'), v('1.0.0')], lines(1))).toEqual({
+      '2.0.1#pinned': 'T:pinned',
+      '2.0.0#auto': 'U:replaced',
+      '1.0.0#auto': 'U:older_line',
+    });
+    // A newer auto release of the line is tracked too.
+    expect(summary([v('2.0.0', 'pinned'), v('2.0.1'), v('1.0.0')], lines(1))).toEqual({
+      '2.0.0#pinned': 'T:pinned',
+      '2.0.1#auto': 'T:newest_in_line',
+      '1.0.0#auto': 'U:older_line',
+    });
+  });
+
+  it('ranks 1.10 above 1.9', () => {
+    expect(summary([v('1.9.0'), v('1.10.0'), v('1.9.5')], lines(1))).toEqual({
+      '1.10.0#auto': 'T:newest_in_line',
+      '1.9.0#auto': 'U:older_line',
+      '1.9.5#auto': 'U:older_line',
+    });
+    expect(summary([v('1.9.9'), v('1.9.10')], lines(1))).toEqual({
+      '1.9.10#auto': 'T:newest_in_line',
+      '1.9.9#auto': 'U:replaced',
+    });
+  });
+
   it('breaks ties by the later analyzedAt', () => {
     const a = { ...v('2.3.4', 'auto', 1), id: 'a' };
     const b = { ...v('2.3.4', 'auto', 2), id: 'b' };

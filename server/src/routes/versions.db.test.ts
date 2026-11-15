@@ -201,6 +201,29 @@ describe('versions and vulnerability monitoring API (0.15)', () => {
     expect(bad.statusCode).toBe(422);
   });
 
+  it('answers 404 to a user outside the organisation', async () => {
+    const p = await project();
+    await addVersions(p.id, ['1.0.0']);
+    const [v] = await h.ctx.db
+      .select()
+      .from(projectVersions)
+      .where(eq(projectVersions.projectId, p.id));
+    const user = await createUser(h.ctx, { username: 'vapi-outsider' });
+    const outsider = await login(h.ctx, user.username, user.password);
+    const monitoring = `/projects/${p.id}/vulnerability-monitoring`;
+    const results = {
+      list: await call('GET', `/projects/${p.id}/versions`, outsider),
+      patch: await call('PATCH', `/projects/${p.id}/versions/${v!.id}`, outsider, {
+        tracking: 'pinned',
+      }),
+      read: await call('GET', monitoring, outsider),
+      save: await call('PUT', monitoring, outsider, SETTINGS),
+    };
+    for (const [name, res] of Object.entries(results)) expect(res.statusCode, name).toBe(404);
+    // Nothing changed.
+    expect((await call('GET', `/projects/${p.id}/versions`)).json().items[0].tracking).toBe('auto');
+  });
+
   it("treats another project's version as not found", async () => {
     const a = await project();
     const b = await project();
@@ -242,6 +265,62 @@ describe('versions and vulnerability monitoring API (0.15)', () => {
     ]);
     expect((await call('GET', `/projects/${p.id}/versions?limit=101`)).statusCode).toBe(422);
     expect((await call('GET', `/projects/${p.id}/versions?cursor=garbage`)).statusCode).toBe(422);
+  });
+
+  it('pages 120 versions with tied analysis times, each once', async () => {
+    const p = await project();
+    await addVersions(
+      p.id,
+      Array.from({ length: 100 }, (_, i) => `1.${i}.0`),
+    );
+    // 20 versions with one analysis time, between the 51st and the 50th minute: the tie spans
+    // the boundary of the first page of 50.
+    const tied = new Date(BASE + 50 * 60_000 + 30_000);
+    await h.ctx.db.insert(projectVersions).values(
+      Array.from({ length: 20 }, (_, i) => ({
+        projectId: p.id,
+        label: `2.0.${i}`,
+        source: 'tag' as const,
+        tag: `2.0.${i}`,
+        analyzedAt: tied,
+      })),
+    );
+    type Item = { id: string; tracked: boolean; trackingReason: string };
+    const pages = async (limit: number) => {
+      const items: Item[] = [];
+      let cursor: string | null = null;
+      do {
+        const query: string = cursor === null ? '' : `&cursor=${cursor}`;
+        const res = await call('GET', `/projects/${p.id}/versions?limit=${limit}${query}`);
+        expect(res.statusCode, res.body).toBe(200);
+        const page = res.json() as { items: Item[]; nextCursor: string | null };
+        items.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor !== null);
+      return items;
+    };
+    const by50 = await pages(50);
+    expect(by50).toHaveLength(120);
+    expect(new Set(by50.map((v) => v.id)).size).toBe(120);
+    const rows = await h.ctx.db
+      .select({ id: projectVersions.id, analyzedAt: projectVersions.analyzedAt })
+      .from(projectVersions)
+      .where(eq(projectVersions.projectId, p.id));
+    const newestFirst = rows
+      .sort((a, b) => {
+        const byTime = b.analyzedAt.getTime() - a.analyzedAt.getTime();
+        if (byTime !== 0) return byTime;
+        return b.id < a.id ? -1 : 1;
+      })
+      .map((r) => r.id);
+    expect(by50.map((v) => v.id)).toEqual(newestFirst);
+    const by100 = new Map((await pages(100)).map((v) => [v.id, v]));
+    for (const v of by50) {
+      expect([v.tracked, v.trackingReason], v.id).toEqual([
+        by100.get(v.id)?.tracked,
+        by100.get(v.id)?.trackingReason,
+      ]);
+    }
   });
 
   it('counts the packages of a version', async () => {

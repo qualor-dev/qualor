@@ -281,6 +281,21 @@ describe('GET /projects/{id}/dependencies (6M)', () => {
     );
   });
 
+  it('answers 404 to a user outside the organisation for a version inventory', async () => {
+    const q = await h.project('deps/version-outsider');
+    await q.ingestOk(
+      report(q, { branch: null, tag: 'v1.0.0', findings: [], files: [], dependencies: [] }),
+    );
+    const [version] = await h.ctx.db
+      .select()
+      .from(projectVersions)
+      .where(eq(projectVersions.projectId, q.id));
+    const outsider = await createUser(h.ctx, { username: 'deps-version-outsider' });
+    const session = await login(h.ctx, outsider.username, outsider.password);
+    const res = await get(`/projects/${q.id}/dependencies?version=${version!.id}`, session);
+    expect(res.statusCode).toBe(404);
+  });
+
   it('keeps the inventory of a version whose analysis was deleted', async () => {
     const q = await h.project('deps/version-analysis-gone');
     const analysisId = await q.ingestOk(
@@ -530,5 +545,28 @@ describe('GET /projects/{id}/dependencies with a licence policy (6M)', () => {
       headers: h.orgAdmin.headers,
     });
     expect(res.statusCode).toBe(422);
+  });
+
+  it('gives the verdicts of a version inventory', async () => {
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        branch: null,
+        tag: 'v1.0.0',
+        findings: [],
+        files: [],
+        dependencies: [dep('a-gpl', ['GPL-3.0-only']), dep('c-mit', ['MIT'])],
+      }),
+    );
+    const [version] = await h.ctx.db
+      .select()
+      .from(projectVersions)
+      .where(eq(projectVersions.projectId, p.id));
+    await setPolicy(STRONG);
+    expect(await verdicts(`version=${version!.id}`)).toEqual({
+      'a-gpl': 'forbidden',
+      'c-mit': 'allowed',
+    });
+    expect((await get(`version=${version!.id}&verdict=forbidden`)).total).toBe(1);
   });
 });
