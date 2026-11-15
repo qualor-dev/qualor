@@ -189,11 +189,14 @@ version, whatever the watch's branch choice.
 | Moment | What happens |
 |---|---|
 | A project's day one, once: the first time alerts cover it. That is the upgrade, its first analysis, or the first time the switches are on and the feature is active | Every vulnerability already matched is the baseline: on the project's Vulnerabilities tab, never in a digest. Its watchers get one exploited email for the KEV vulnerabilities already there |
-| A branch or version that starts being tracked later | What is matched then is its baseline. It sends no digest and no exploited email for those |
+| A branch or version that starts being tracked later | What is matched then is its baseline. It sends no digest for those, and no exploited email unless the first KEV download comes later |
 | KEV lists a vulnerability that is already matched | The exploited email goes out |
-| The feature or a switch is off, then on again | No new day one. What is matched then is the baseline, with no digest and no exploited email for it |
+| The first KEV download (with `vuln.priority`) | Every KEV vulnerability already matched gets one exploited email, on every tracked branch and version. It is no new baseline |
+| The feature or a switch is off, then on again | No new day one. What is matched then is the baseline. It sends no digest for those, and no exploited email unless the first KEV download comes later |
 
-A main branch replaced or renamed is not a new day one either.
+A main branch replaced or renamed is not a new day one either. A project with no alert targets
+when the server is upgraded to 0.16 (monitoring switched off, or `vuln.alerts` lapsed) counts its
+return as a new day one.
 
 A project's first digest waits for its baseline. Qualor records the project's branches and versions,
 re-checks them, and then takes the baseline. A branch or version waits until it has a dependency
