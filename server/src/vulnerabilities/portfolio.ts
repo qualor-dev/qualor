@@ -67,6 +67,7 @@ export async function portfolioVulnerabilityFacts(
   const { versionIds, branchIds } = await targetIdsOf(tx, projectIds, options.priority, result);
   if (versionIds.length === 0 && branchIds.length === 0) return result;
 
+  // Of the tracked branches only the main branch counts (`b.is_main`).
   const rows = await tx.execute<{ project_id: string; releases: number; exploited: number }>(sql`
     WITH r AS (${scopedRows(
       sql`(tv.version_id IN ${uuidList(versionIds)}
