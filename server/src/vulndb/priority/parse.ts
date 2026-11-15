@@ -133,49 +133,48 @@ export async function parseKev(
   body: Buffer,
   limits: PriorityLimits = {},
 ): Promise<KevFile | PriorityProblem> {
+  const text = await readText(body, limits.maxDataBytes ?? KEV_DATA_MAX_BYTES);
+  if (typeof text !== 'string') return text;
+  let json: unknown;
   try {
-    const text = await readText(body, limits.maxDataBytes ?? KEV_DATA_MAX_BYTES);
-    if (typeof text !== 'string') return text;
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return invalid('The KEV catalog is not valid JSON.');
-    }
-    const top = kevTop.safeParse(json);
-    if (!top.success) return invalid('The KEV catalog lacks its version, date or entries.');
-    const releasedAt = parseDateTime(top.data.dateReleased);
-    if (releasedAt === null) return invalid('The KEV catalog has no valid release date.');
-    const maxEntries = limits.maxEntries ?? KEV_MAX_ENTRIES;
-    if (top.data.vulnerabilities.length > maxEntries) {
-      return tooLarge(`The KEV catalog has more than ${maxEntries} entries.`);
-    }
-    const entries: KevEntry[] = [];
-    const seen = new Set<string>();
-    let skipped = 0;
-    for (const item of top.data.vulnerabilities) {
-      const parsed = kevEntry.safeParse(item);
-      if (!parsed.success) {
-        skipped++;
-        continue;
-      }
-      const id = parsed.data.cveID;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      entries.push({
-        vulnerabilityId: id,
-        dateAdded: parsed.data.dateAdded,
-        ransomware: parsed.data.knownRansomwareCampaignUse === 'Known',
-      });
-    }
-    if (entries.length === 0) return invalid('The KEV catalog has no valid entry.');
-    return { catalogVersion: top.data.catalogVersion, releasedAt, entries, skipped };
+    json = JSON.parse(text);
   } catch {
-    return invalid('The KEV catalog could not be read.');
+    return invalid('The KEV catalog is not valid JSON.');
   }
+  const top = kevTop.safeParse(json);
+  if (!top.success) return invalid('The KEV catalog lacks its version, date or entries.');
+  const releasedAt = parseDateTime(top.data.dateReleased);
+  if (releasedAt === null) return invalid('The KEV catalog has no valid release date.');
+  const maxEntries = limits.maxEntries ?? KEV_MAX_ENTRIES;
+  if (top.data.vulnerabilities.length > maxEntries) {
+    return tooLarge(`The KEV catalog has more than ${maxEntries} entries.`);
+  }
+  const entries: KevEntry[] = [];
+  const seen = new Set<string>();
+  let skipped = 0;
+  for (const item of top.data.vulnerabilities) {
+    const parsed = kevEntry.safeParse(item);
+    if (!parsed.success) {
+      skipped++;
+      continue;
+    }
+    const id = parsed.data.cveID;
+    if (seen.has(id)) {
+      skipped++;
+      continue;
+    }
+    seen.add(id);
+    entries.push({
+      vulnerabilityId: id,
+      dateAdded: parsed.data.dateAdded,
+      ransomware: parsed.data.knownRansomwareCampaignUse === 'Known',
+    });
+  }
+  if (entries.length === 0) return invalid('The KEV catalog has no valid entry.');
+  return { catalogVersion: top.data.catalogVersion, releasedAt, entries, skipped };
 }
 
-/** A decimal number in [0, 1], or null. */
+/** A decimal number in [0, 1], or null. The caller trims the cell. */
 function unit(value: string | undefined): number | null {
   // A long cell is refused before the regex runs, so a long digit run cannot backtrack.
   if (value === undefined || value.length > 32) return null;
@@ -189,38 +188,34 @@ export async function parseEpss(
   body: Buffer,
   limits: PriorityLimits = {},
 ): Promise<EpssFile | PriorityProblem> {
-  try {
-    const text = await readText(body, limits.maxDataBytes ?? PRIORITY_DATA_MAX_BYTES);
-    if (typeof text !== 'string') return text;
-    const maxLines = limits.maxLines ?? EPSS_MAX_LINES;
-    const read: EpssRead = {
-      scoreDate: null,
-      modelVersion: null,
-      headerSeen: false,
-      ids: [],
-      scores: [],
-      percentiles: [],
-      skipped: 0,
-      seen: new Set<string>(),
-    };
-    let lines = 0;
-    for (const line of linesOf(text)) {
-      if (++lines > maxLines) return tooLarge(`The EPSS file has more than ${maxLines} lines.`);
-      if (line.trim() === '') continue;
-      if (read.headerSeen) {
-        readEpssRow(line, read);
-        continue;
-      }
-      const problem = readEpssPreamble(line, read);
-      if (problem !== null) return problem;
+  const text = await readText(body, limits.maxDataBytes ?? PRIORITY_DATA_MAX_BYTES);
+  if (typeof text !== 'string') return text;
+  const maxLines = limits.maxLines ?? EPSS_MAX_LINES;
+  const read: EpssRead = {
+    scoreDate: null,
+    modelVersion: null,
+    headerSeen: false,
+    ids: [],
+    scores: [],
+    percentiles: [],
+    skipped: 0,
+    seen: new Set<string>(),
+  };
+  let lines = 0;
+  for (const line of linesOf(text)) {
+    if (++lines > maxLines) return tooLarge(`The EPSS file has more than ${maxLines} lines.`);
+    if (line.trim() === '') continue;
+    if (read.headerSeen) {
+      readEpssRow(line, read);
+      continue;
     }
-    if (!read.headerSeen) return invalid('The EPSS file has no header.');
-    if (read.ids.length === 0) return invalid('The EPSS file has no valid row.');
-    const { scoreDate, modelVersion, ids, scores, percentiles, skipped } = read;
-    return { scoreDate, modelVersion, ids, scores, percentiles, skipped };
-  } catch {
-    return invalid('The EPSS file could not be read.');
+    const problem = readEpssPreamble(line, read);
+    if (problem !== null) return problem;
   }
+  if (!read.headerSeen) return invalid('The EPSS file has no header.');
+  if (read.ids.length === 0) return invalid('The EPSS file has no valid row.');
+  const { scoreDate, modelVersion, ids, scores, percentiles, skipped } = read;
+  return { scoreDate, modelVersion, ids, scores, percentiles, skipped };
 }
 
 /** What {@link parseEpss} has read so far. */

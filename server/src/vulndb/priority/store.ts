@@ -10,12 +10,20 @@ const BATCH_ROWS = 5000;
  * Makes the KEV table list exactly `entries`, in one transaction (a savepoint when `db` is a
  * transaction already). An id the file lacks stays with `delisted_at` set; listing it again clears
  * it and keeps the first `listed_at`. `added` counts the ids that were not in the table, `relisted`
- * the delisted ones that came back.
+ * the delisted ones that came back. A repeated id counts once: its first entry wins, and `count`
+ * is the number of distinct ids.
  */
 export async function replaceKev(
   db: Executor,
-  entries: readonly KevEntry[],
+  all: readonly KevEntry[],
 ): Promise<{ count: number; added: number; relisted: number }> {
+  const entries: KevEntry[] = [];
+  const seen = new Set<string>();
+  for (const entry of all) {
+    if (seen.has(entry.vulnerabilityId)) continue;
+    seen.add(entry.vulnerabilityId);
+    entries.push(entry);
+  }
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulnerabilityPriority})`);
     const ids = entries.map((e) => e.vulnerabilityId);
@@ -34,8 +42,7 @@ export async function replaceKev(
           ${sql.param(part.map((e) => e.dateAdded))}::date[],
           ${sql.param(part.map((e) => e.ransomware))}::boolean[])
         ON CONFLICT (vulnerability_id) DO UPDATE
-          SET date_added = EXCLUDED.date_added, ransomware = EXCLUDED.ransomware,
-              delisted_at = NULL
+          SET date_added = EXCLUDED.date_added, ransomware = EXCLUDED.ransomware
         RETURNING (xmax = 0) AS inserted`);
       added += rows.filter((r) => r.inserted).length;
     }

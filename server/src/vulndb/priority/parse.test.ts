@@ -88,9 +88,15 @@ describe('parseKev', () => {
     const got = await parseKev(
       catalog([entry({ dateAdded: '2026-01-01' }), entry({ dateAdded: '2026-02-02' })]),
     );
+    expect(got).toMatchObject({ skipped: 1 });
     expect('entries' in got && got.entries).toEqual([
       { vulnerabilityId: 'CVE-2024-0001', dateAdded: '2026-01-01', ransomware: false },
     ]);
+  });
+
+  it('lets an unexpected error through', async () => {
+    await expect(parseKev(null as never)).rejects.toThrow();
+    await expect(parseEpss(null as never)).rejects.toThrow();
   });
 
   it.each([
@@ -192,7 +198,7 @@ describe('parseEpss', () => {
   });
 
   it('gives TOO_LARGE past the byte limit and the row limit', async () => {
-    const big = gzipSync(Buffer.from(text + 'CVE-2024-0002,0.1,0.1\n'.repeat(1)));
+    const big = gzipSync(Buffer.from(text + 'CVE-2024-0002,0.1,0.1\n'));
     expect(await parseEpss(big, { maxDataBytes: 40 })).toMatchObject({
       problem: { code: 'TOO_LARGE' },
     });

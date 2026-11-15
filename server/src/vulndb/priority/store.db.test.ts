@@ -23,6 +23,18 @@ const kev = (n: number, ransomware = false): KevEntry => ({
 });
 
 describe('replaceKev', () => {
+  it('keeps the first entry of a repeated id', async () => {
+    expect(await replaceKev(t.db, [kev(1), { ...kev(1), ransomware: true }])).toEqual({
+      count: 1,
+      added: 1,
+      relisted: 0,
+    });
+    const { rows } = await t.db.execute<{ ransomware: boolean }>(
+      sql`SELECT ransomware FROM vulnerability_kev WHERE vulnerability_id = ${kev(1).vulnerabilityId}`,
+    );
+    expect(rows).toEqual([{ ransomware: false }]);
+  });
+
   it('replaces the catalog, keeping listed_at of the ids that stay', async () => {
     const [a, b, c] = [kev(1), kev(2), kev(3)] as [KevEntry, KevEntry, KevEntry];
     expect(await replaceKev(t.db, [a, b])).toEqual({ count: 2, added: 2, relisted: 0 });
