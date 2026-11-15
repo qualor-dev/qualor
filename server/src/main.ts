@@ -526,7 +526,7 @@ async function main(): Promise<void> {
       // 4b: the exploited (KEV) vulnerability emails and the daily digest queue email and
       // deliveries (the mail and webhook workers send them). A pass reads the vulnerabilities of
       // every target re-checked since the last pass: after a full re-check that is every target,
-      // about 45 s at 2 000 projects (15.7 M rows); with nothing new, about 0.9 s. So it runs here
+      // about 35 s at 2 000 projects (15.7 M rows); with nothing new, about 0.9 s. So it runs here
       // and not on the analysis worker. It follows the re-checks in the queue order: an alert
       // reads what they and the update just wrote.
       ...alertHandlers({ ...notify, db: database.db, limits: () => edition.limits(), logger }),
