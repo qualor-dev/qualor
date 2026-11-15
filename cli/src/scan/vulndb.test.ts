@@ -826,6 +826,35 @@ describe('resolveVulnerabilityDb: the server’s inflate caps (B1-e, B1-e′)', 
     expect(databaseIn(next.dir)).toEqual(holds(NEW));
     await next.cleanup();
   });
+
+  it('after a slow unpack of a download, uses an accepted cached database that is unpacked already, without unpacking it (B1-e″)', async () => {
+    // An earlier scan unpacked OLD into <cache>/db.
+    const before = await fakeServer({ meta: meta(OLD), archives: [OLD.archive] });
+    const cache = fillCache(path.join(tmp(), 'cache'), OLD.archive);
+    const first = await choose({ endpoint: before.endpoint, cache });
+    expect(databaseIn(first.dir)).toEqual(holds(OLD));
+    await first.cleanup();
+    vi.mocked(readTarGz).mockClear();
+
+    const server = await fakeServer({
+      meta: meta(NEW, [NEW, OLD], 'every'),
+      archives: [NEW.archive],
+    });
+    const slow = await choose({
+      endpoint: server.endpoint,
+      cache,
+      unpackLimits: { deadlineMs: -1 },
+    });
+    expect(downloads(server.paths)).toHaveLength(1);
+    // The slow unpack of NEW only: OLD is used as it lies in <cache>/db.
+    expect(unpacks()).toBe(1);
+    expect(slow.dir).toBe(cache);
+    expect(databaseIn(slow.dir)).toEqual(holds(OLD));
+    expect(slow.warnings).toEqual([failed(TOO_SLOW, cached('2026-10-30'))]);
+    // The download was not kept: it never proved usable (row 6).
+    expect(readFileSync(path.join(cache, 'db.tar.gz')).equals(OLD.archive)).toBe(true);
+    await slow.cleanup();
+  });
 });
 
 describe('resolveVulnerabilityDb: a temporary directory that cannot be made (D13-2)', () => {

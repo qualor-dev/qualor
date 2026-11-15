@@ -303,15 +303,15 @@ async function sha256(fh: FileHandle): Promise<string> {
   return `sha256:${hash.digest('hex')}`;
 }
 
-type Failure = {
-  reason: string;
-  /** The archive itself is unusable (not a write error). */ bad: boolean;
-  /**
-   * Unpacking ran past its deadline (a slow disk, not the archive): the scan unpacks nothing more,
-   * and the archive is not bad, so the next scan tries it again.
-   */
-  slow?: true;
-};
+/**
+ * Why an archive could not be used:
+ * - `bad`: the archive itself is unusable (not a Trivy database, or past the inflate cap); the scan
+ *   never tries it again;
+ * - `write`: the copy could not be written (a full disk, say), not the archive's fault;
+ * - `slow`: unpacking ran past its deadline (a slow disk, not the archive): the scan unpacks nothing
+ *   more, and the archive is not bad, so the next scan tries it again.
+ */
+type Failure = { reason: string; kind: 'bad' | 'write' | 'slow' };
 
 /** The archive entries `unpack` reads: `trivy.db` streamed, `metadata.json` kept, no other. */
 const wantedEntry: TarWant = (name) => {
@@ -353,16 +353,16 @@ async function unpack(fh: FileHandle, db: string, limits: TarLimits): Promise<Fa
   } catch (err) {
     if (!(err instanceof TarError)) throw err;
     return err.limit === 'deadline'
-      ? { reason: TOO_SLOW, bad: false, slow: true }
-      : { reason: UNUSABLE, bad: true };
+      ? { reason: TOO_SLOW, kind: 'slow' }
+      : { reason: UNUSABLE, kind: 'bad' };
   }
   const meta = found.metadata;
-  if (!found.db || meta === null) return { reason: UNUSABLE, bad: true };
+  if (!found.db || meta === null) return { reason: UNUSABLE, kind: 'bad' };
   let parsed: unknown;
   try {
     parsed = JSON.parse(meta.toString('utf8'));
   } catch {
-    return { reason: UNUSABLE, bad: true };
+    return { reason: UNUSABLE, kind: 'bad' };
   }
   const value = parsed as { Version?: unknown; UpdatedAt?: unknown } | null;
   if (
@@ -372,7 +372,7 @@ async function unpack(fh: FileHandle, db: string, limits: TarLimits): Promise<Fa
     typeof value.UpdatedAt !== 'string' ||
     Number.isNaN(new Date(value.UpdatedAt).getTime())
   ) {
-    return { reason: UNUSABLE, bad: true };
+    return { reason: UNUSABLE, kind: 'bad' };
   }
   writeFileSync(path.join(db, 'metadata.json'), meta, { flag: 'wx', mode: 0o644 });
   return null;
@@ -517,9 +517,14 @@ class Choice {
   /**
    * Hashes the archive `file` from disk and, when `accept` takes its digest, extracts it from the
    * same open file (a concurrent rename cannot swap it in between). A rejected archive is never
-   * extracted. Never throws.
+   * extracted. With `unpack: false` only a copy `<cache>/db` holds already is used; nothing is
+   * unpacked. Never throws.
    */
-  async use(file: string | null, accept: (digest: string) => boolean): Promise<Used> {
+  async use(
+    file: string | null,
+    accept: (digest: string) => boolean,
+    { unpack: mayUnpack = true }: { unpack?: boolean } = {},
+  ): Promise<Used> {
     let fh: FileHandle | undefined;
     try {
       // A regular file only: never a link, a FIFO (which would block) or a directory.
@@ -541,7 +546,11 @@ class Choice {
         this.log.debug(`the cached vulnerability database archive (${digest}) is not used`);
         return { ok: false, digest };
       }
-      const placed = await this.extract(fh, digest);
+      const placed = await this.extract(fh, digest, mayUnpack);
+      if (placed === null) {
+        this.log.debug(`the cached vulnerability database archive (${digest}) is not unpacked`);
+        return { ok: false, digest };
+      }
       return 'reason' in placed
         ? { ok: false, digest, failure: placed }
         : { ok: true, digest, ...placed };
@@ -555,17 +564,20 @@ class Choice {
 
   /**
    * Where Trivy reads the verified archive (P4): `<cache>/db`, extracted once and reused while it
-   * matches, for a writable cache outside the checkout; else a private temporary copy.
+   * matches, for a writable cache outside the checkout; else a private temporary copy. Without
+   * `mayUnpack`, null unless `<cache>/db` holds it already.
    */
   private async extract(
     fh: FileHandle,
     digest: string,
-  ): Promise<{ dir: string; updatedAt: string } | Failure> {
+    mayUnpack: boolean,
+  ): Promise<{ dir: string; updatedAt: string } | Failure | null> {
     const cache = this.cache;
     if (cache !== null && !this.inside) {
       const updatedAt = unpackedDate(cache, digest);
       if (updatedAt !== null) return { dir: cache, updatedAt };
     }
+    if (!mayUnpack) return null;
     const shared = cache !== null && !this.inside && this.cacheWritable() ? cache : null;
     let staging: string | null = null;
     const discard = () => {
@@ -589,7 +601,7 @@ class Choice {
       const updatedAt = problem === null ? readDatabaseDate(staging) : null;
       if (problem !== null || updatedAt === null) {
         discard();
-        return problem ?? { reason: UNUSABLE, bad: true };
+        return problem ?? { reason: UNUSABLE, kind: 'bad' };
       }
       writeFileSync(path.join(db, MARKER), `${digest}\n`, { flag: 'wx', mode: 0o644 });
       if (shared === null) return { dir: staging, updatedAt };
@@ -603,7 +615,7 @@ class Choice {
     } catch (err) {
       this.log.debug(`cannot extract the vulnerability database: ${message(err)}`);
       discard();
-      return { reason: WRITE_FAILED, bad: false };
+      return { reason: WRITE_FAILED, kind: 'write' };
     }
   }
 
@@ -718,12 +730,12 @@ interface Attempts {
 function note(attempts: Attempts, used: Used, log: Logger): void {
   if (used.ok || used.failure === undefined) return;
   attempts.reason = used.failure.reason;
-  if (used.failure.slow === true) {
+  if (used.failure.kind === 'slow') {
     attempts.slow = true;
     log.debug(
       `unpacking ${used.digest ?? 'the archive'} took too long: this scan unpacks no other copy; the next scan tries it again`,
     );
-  } else if (used.failure.bad && used.digest !== null) {
+  } else if (used.failure.kind === 'bad' && used.digest !== null) {
     attempts.bad.add(used.digest);
     log.debug(`the archive ${used.digest} is not a Trivy database: not tried again in this scan`);
   }
@@ -852,12 +864,13 @@ async function served(
     const downloaded = await downloadCurrent(c, input, endpoint, current, attempts, writable);
     if (downloaded !== null) return downloaded;
   }
-  // After a slow unpack the scan takes its fallback at once: the next unpack would be as slow.
-  if (attempts.slow) return c.fallback(attempts.reason ?? TOO_SLOW);
-
   // The download failed: a cached archive the server still accepts (another scan may have just
-  // fetched the current one).
-  const again = await c.use(c.archive, (digest) => usable(attempts, digest));
+  // fetched the current one). After a slow unpack the scan unpacks nothing more (the next unpack
+  // on this disk would be as slow): only a copy `<cache>/db` holds already, else the fallback
+  // (ruling B1-e″).
+  const again = await c.use(c.archive, (digest) => usable(attempts, digest), {
+    unpack: !attempts.slow,
+  });
   if (again.ok) {
     return c.result(
       again.dir,
