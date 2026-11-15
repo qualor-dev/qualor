@@ -721,6 +721,72 @@ describe('install-go.sh (plan 9C)', () => {
   });
 });
 
+describe('filter-trivy-db.sh (0.16 debts D31-1, ruling B2-a)', () => {
+  const script = readFileSync('tools/analyzers/filter-trivy-db.sh', 'utf8');
+  const code = script
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('#'))
+    .join('\n');
+
+  it("builds the filter with install-go.sh's Go from its hash-pinned module, then filters and checks the database", () => {
+    expect(code).toMatch(/^set -eu$/m);
+    expect(code).toContain('DB="$PREFIX/share/trivy/db/trivy.db"');
+    expect(code).toContain('GO="$PREFIX/lib/go/bin/go"');
+    expect(code).toContain('CGO_ENABLED=0 GOTOOLCHAIN=local GOFLAGS="-trimpath -mod=readonly"');
+    expect(code).not.toMatch(/\bgo (get|install|mod)\b/);
+    const filter = code.indexOf('"$FILTER" "$DB"');
+    expect(filter).toBeGreaterThan(0);
+    expect(code.indexOf('"$FILTER" -check "$DB"')).toBeGreaterThan(filter);
+    // metadata.json stays as install.sh extracted it.
+    expect(code).not.toContain('metadata.json');
+  });
+
+  it('runs after install-go.sh in every GitHub job that installs the analyzers, before their tests', () => {
+    const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
+    const jobs: string[] = [];
+    for (const [name, job] of Object.entries(github.jobs)) {
+      const at = (run: string) => job.steps.findIndex((s) => s.run === run);
+      const install = job.steps.findIndex(
+        (s) => s.run?.endsWith('sh tools/analyzers/install.sh') === true,
+      );
+      const go = at('sudo sh tools/analyzers/install-go.sh');
+      if (install < 0 || go < install) continue;
+      jobs.push(name);
+      const filter = at('sudo sh tools/analyzers/filter-trivy-db.sh');
+      expect(filter, name).toBeGreaterThan(go);
+      const uses = job.steps.findIndex((s) => s.env?.['QUALOR_REQUIRE_ANALYZERS'] === '1');
+      expect(uses, name).toBeGreaterThan(filter);
+    }
+    expect(jobs).toEqual(['test', 'fixtures', 'cli-binary']);
+  });
+
+  it('runs after install-go.sh in every GitLab job or template that installs the analyzers', () => {
+    const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
+      string,
+      { before_script?: unknown[] }
+    >;
+    const jobs: string[] = [];
+    for (const [name, job] of Object.entries(gitlab)) {
+      const steps = job.before_script ?? [];
+      const install = steps.indexOf('sh tools/analyzers/install.sh');
+      const go = steps.indexOf('sh tools/analyzers/install-go.sh');
+      if (install < 0 || go < install) continue;
+      jobs.push(name);
+      expect(steps.indexOf('sh tools/analyzers/filter-trivy-db.sh'), name).toBeGreaterThan(go);
+    }
+    expect(jobs).toEqual(['.analyzers']);
+  });
+
+  it('runs after install-go.sh in both images', () => {
+    for (const file of ['deploy/scanner/Dockerfile', 'tools/analyzers/Dockerfile']) {
+      const text = readFileSync(file, 'utf8');
+      expect(text.indexOf('sh /tmp/filter-trivy-db.sh'), file).toBeGreaterThan(
+        text.indexOf('sh /tmp/install-go.sh'),
+      );
+    }
+  });
+});
+
 describe('install-cppcheck.sh (plan 9D)', () => {
   const script = readFileSync('tools/analyzers/install-cppcheck.sh', 'utf8');
 

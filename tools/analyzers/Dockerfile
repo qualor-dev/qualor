@@ -1,5 +1,6 @@
 # A local Linux environment with the analyzer toolchain CI installs (plan 1D Task 2): Node 22,
-# JDK 17 (PMD, SpotBugs, javac), PMD, SpotBugs with FindSecBugs, OpenGrep, Gitleaks, Trivy with its database,
+# JDK 17 (PMD, SpotBugs, javac), PMD, SpotBugs with FindSecBugs, OpenGrep, Gitleaks, Trivy with its database
+# (filtered to library packages by filter-trivy-db.sh, after install-go.sh),
 # Ruff, detekt, SwiftLint (its static build) and PHPStan (run by Debian's PHP 8.2 CLI, plan 9A)
 # from install.sh, and bun. Also the .NET 8 and
 # 10 SDKs and Roslynator from install-dotnet.sh (plan 2D), Qualor's sonarjs pass in
@@ -35,6 +36,11 @@ RUN QUALOR_RUBOCOP_SRC=/tmp/rubocop sh /tmp/install-rubocop.sh && rm -rf /tmp/ru
 COPY install-go.sh /tmp/
 COPY --chmod=0644 golang/run.mjs /tmp/golang/
 RUN QUALOR_GO_SRC=/tmp/golang sh /tmp/install-go.sh && rm -rf /tmp/golang /tmp/install-go.sh
+# Trivy's database, filtered to its library sources as deploy/scanner/Dockerfile and CI filter it
+# (0.16 debts D31-1; tools/analyzers/filter-trivy-db.sh builds the filter with the Go just installed).
+COPY filter-trivy-db.sh /tmp/
+COPY go-tools/trivy-db-filter/ /tmp/go-tools/trivy-db-filter/
+RUN sh /tmp/filter-trivy-db.sh && rm -rf /tmp/filter-trivy-db.sh /tmp/go-tools
 # cppcheck, built from its pinned tag archive as deploy/scanner/Dockerfile and CI build it
 # (plan 9D; tools/analyzers/install-cppcheck.sh, tools/ci.test.ts).
 COPY install-cppcheck.sh /tmp/

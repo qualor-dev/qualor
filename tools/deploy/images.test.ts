@@ -7,6 +7,23 @@ function baseImages(dockerfile: string): string[] {
   return [...readFileSync(dockerfile, 'utf8').matchAll(/^FROM (\S+)/gm)].map((m) => m[1] ?? '');
 }
 
+/**
+ * The modules a build module of tools/analyzers/go-tools requires (direct or indirect), after
+ * checking that go.sum holds both hashes of each (ruling G9-6).
+ */
+function hashPinnedModules(name: string): string[] {
+  const goMod = readFileSync(`tools/analyzers/go-tools/${name}/go.mod`, 'utf8');
+  const goSum = readFileSync(`tools/analyzers/go-tools/${name}/go.sum`, 'utf8');
+  const required = [
+    ...goMod.matchAll(/^\s*(?:require\s+)?([^\s()]+) (v\d\S*)(?:\s+\/\/ indirect)?\s*$/gm),
+  ].map((r) => [r[1] as string, r[2] as string] as const);
+  for (const [p, v] of required) {
+    expect(goSum, `${name}: ${p} ${v}`).toContain(`${p} ${v} h1:`);
+    expect(goSum, `${name}: ${p} ${v}/go.mod`).toContain(`${p} ${v}/go.mod h1:`);
+  }
+  return required.map(([p, v]) => `${p} ${v}`);
+}
+
 describe('image definitions (plan 1G)', () => {
   it('builds qualor/server from pinned bases and runs it as a non-root user', () => {
     const file = 'deploy/server/Dockerfile';
@@ -136,23 +153,15 @@ describe('image definitions (plan 1G)', () => {
     };
     for (const [name, m] of Object.entries(modules)) {
       const goMod = readFileSync(`tools/analyzers/go-tools/${name}/go.mod`, 'utf8');
-      const goSum = readFileSync(`tools/analyzers/go-tools/${name}/go.sum`, 'utf8');
       expect(
         goMod.split('\n').map((l) => l.trim()),
         name,
       ).toContain(`tool ${m.tool}`);
       // Every required module (direct or indirect) with both of its hashes in go.sum.
-      const required = [
-        ...goMod.matchAll(/^\s*(?:require\s+)?([^\s()]+) (v\d\S*)(?:\s+\/\/ indirect)?\s*$/gm),
-      ].map((r) => [r[1] as string, r[2] as string] as const);
       expect(
-        required.map(([p]) => p),
+        hashPinnedModules(name).map((r) => r.split(' ')[0]),
         name,
       ).toContain(m.raised);
-      for (const [p, v] of required) {
-        expect(goSum, `${name}: ${p} ${v}`).toContain(`${p} ${v} h1:`);
-        expect(goSum, `${name}: ${p} ${v}/go.mod`).toContain(`${p} ${v}/go.mod h1:`);
-      }
     }
     const gosecMod = readFileSync('tools/analyzers/go-tools/gosec/go.mod', 'utf8');
     expect(gosecMod).toContain(`github.com/securego/gosec/v2 v${version('GOSEC')}`);
@@ -160,6 +169,36 @@ describe('image definitions (plan 1G)', () => {
     const copy = text.indexOf('COPY --from=gotools /out/staticcheck /out/gosec /opt/qualor/bin/');
     expect(copy).toBeGreaterThan(text.indexOf('sh /tmp/install-go.sh'));
     expect(copy).toBeLessThan(text.lastIndexOf('\nFROM '));
+  });
+
+  it("filters Trivy's database with the gotools stage's trivy-db-filter, which stays out of the image (D31-1)", () => {
+    const text = readFileSync('deploy/scanner/Dockerfile', 'utf8');
+    const from = text.indexOf(' AS gotools');
+    const stage = text.slice(from, text.indexOf('\nFROM ', from));
+    // Built from its hash-pinned module (the stage's -mod=readonly), after its own tests.
+    expect(stage).toContain('GOFLAGS="-trimpath -mod=readonly"');
+    const build = stage.indexOf('go build -ldflags "-s -w" -o /out/trivy-db-filter .');
+    expect(stage.indexOf('RUN cd /src/go-tools/trivy-db-filter')).toBeGreaterThan(0);
+    expect(stage.indexOf('go test ./...')).toBeGreaterThan(
+      stage.indexOf('/src/go-tools/trivy-db-filter'),
+    );
+    expect(build).toBeGreaterThan(stage.indexOf('go test ./...'));
+    expect(hashPinnedModules('trivy-db-filter')).toContain('go.etcd.io/bbolt v1.5.0');
+    // The tools stage runs filter-trivy-db.sh with it after install-go.sh, then deletes both.
+    const copy = text.indexOf('COPY --from=gotools /out/trivy-db-filter /tmp/');
+    const run = text.indexOf(
+      'RUN QUALOR_TRIVY_DB_FILTER=/tmp/trivy-db-filter sh /tmp/filter-trivy-db.sh && rm /tmp/trivy-db-filter /tmp/filter-trivy-db.sh',
+    );
+    expect(copy).toBeGreaterThan(text.indexOf('sh /tmp/install-go.sh'));
+    expect(text).toContain('COPY tools/analyzers/filter-trivy-db.sh /tmp/');
+    expect(run).toBeGreaterThan(copy);
+    expect(run).toBeLessThan(text.lastIndexOf('\nFROM '));
+    // Nothing named trivy-db-filter is copied anywhere but /tmp, and the final stage never names it.
+    const copies = text
+      .split('\n')
+      .filter((l) => l.startsWith('COPY ') && l.includes('trivy-db-filter'));
+    expect(copies).toEqual(['COPY --from=gotools /out/trivy-db-filter /tmp/']);
+    expect(text.slice(text.lastIndexOf('\nFROM '))).not.toContain('trivy-db-filter');
   });
 
   it('accepts image vulnerabilities only with a reason and a review date', () => {

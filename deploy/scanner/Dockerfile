@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # The qualor/scanner image: the `qualor` CLI binary plus the pinned analyzer toolchain of
 # tools/analyzers/install.sh (PMD, SpotBugs (with the FindSecBugs plugin), OpenGrep, Gitleaks, Trivy with a snapshot of its
-# vulnerability database in /opt/qualor/share/trivy, Ruff, SwiftLint's static build (a musl
+# vulnerability database in /opt/qualor/share/trivy, filtered to library packages, Ruff, SwiftLint's static build (a musl
 # binary that needs no Swift runtime), detekt's CLI jar in /opt/qualor/lib/detekt, PHPStan's phar in
 # /opt/qualor/lib/phpstan), cppcheck (built from source, `install-cppcheck.sh`), Qualor's
 # sonarjs pass in /opt/qualor/sonarjs (eslint-plugin-sonarjs 2.0.4 on its own ESLint 9,
@@ -94,6 +94,11 @@ RUN mkdir -p /out \
     -o /out/gosec github.com/securego/gosec/v2/cmd/gosec \
   && /out/staticcheck -version | grep -F "staticcheck ${STATICCHECK_VERSION} " \
   && /out/gosec -version | grep -Fx "Version: ${GOSEC_VERSION}"
+# Qualor's Trivy database filter (0.16 debts D31-1), from its hash-pinned build module like the two
+# above: its tests first, then the binary that the tools stage runs once and deletes.
+RUN cd /src/go-tools/trivy-db-filter \
+  && go test ./... \
+  && go build -ldflags "-s -w" -o /out/trivy-db-filter .
 
 FROM node:22.23.4-bookworm@sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205abf1f5d6bf0913f3384 AS tools
 RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
@@ -128,6 +133,12 @@ COPY tools/analyzers/install-go.sh /tmp/
 COPY --chmod=0644 tools/analyzers/golang/run.mjs /tmp/golang/
 RUN QUALOR_GO_SRC=/tmp/golang sh /tmp/install-go.sh && rm -rf /tmp/golang /tmp/install-go.sh
 COPY --from=gotools /out/staticcheck /out/gosec /opt/qualor/bin/
+# Trivy's database, filtered to its library sources (0.16 debts D31-1, ruling B2-b):
+# filter-trivy-db.sh runs the gotools stage's filter over install.sh's snapshot and checks the
+# result, as the analyzers toolbox and CI do. The filter does not reach the image.
+COPY --from=gotools /out/trivy-db-filter /tmp/
+COPY tools/analyzers/filter-trivy-db.sh /tmp/
+RUN QUALOR_TRIVY_DB_FILTER=/tmp/trivy-db-filter sh /tmp/filter-trivy-db.sh && rm /tmp/trivy-db-filter /tmp/filter-trivy-db.sh
 # cppcheck (plan 9D, config.md §6.2), built from its pinned tag archive (no Linux release binary)
 # with this stage's g++ and make; only the binary and its library files reach /opt/qualor.
 COPY tools/analyzers/install-cppcheck.sh /tmp/

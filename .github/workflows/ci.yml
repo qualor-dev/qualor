@@ -73,6 +73,9 @@ jobs:
       # Plan 9C: Go, staticcheck, gosec and Qualor's Go runner; /opt/qualor/bin goes first on PATH
       # so the runner image's own Go (if any) does not shadow the pinned one.
       - run: sudo sh tools/analyzers/install-go.sh
+      # 0.16 debts D31-1: Trivy's database filtered to its library sources, as in the images
+      # (built with the Go just installed).
+      - run: sudo sh tools/analyzers/filter-trivy-db.sh
       # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
       - run: sudo sh tools/analyzers/install-cppcheck.sh
       - run: sudo sh tools/analyzers/install-clang-tidy.sh
@@ -129,6 +132,9 @@ jobs:
       # Plan 9C: Go, staticcheck, gosec and Qualor's Go runner; /opt/qualor/bin goes first on PATH
       # so the runner image's own Go (if any) does not shadow the pinned one.
       - run: sudo sh tools/analyzers/install-go.sh
+      # 0.16 debts D31-1: Trivy's database filtered to its library sources, as in the images
+      # (built with the Go just installed).
+      - run: sudo sh tools/analyzers/filter-trivy-db.sh
       # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
       - run: sudo sh tools/analyzers/install-cppcheck.sh
       - run: sudo sh tools/analyzers/install-clang-tidy.sh
@@ -174,6 +180,9 @@ jobs:
       # Plan 9C: Go, staticcheck, gosec and Qualor's Go runner; /opt/qualor/bin goes first on PATH
       # so the runner image's own Go (if any) does not shadow the pinned one.
       - run: sudo sh tools/analyzers/install-go.sh
+      # 0.16 debts D31-1: Trivy's database filtered to its library sources, as in the images
+      # (built with the Go just installed).
+      - run: sudo sh tools/analyzers/filter-trivy-db.sh
       # Plan 9D: cppcheck built from source, and clang-tidy (CI and the toolbox only).
       - run: sudo sh tools/analyzers/install-cppcheck.sh
       - run: sudo sh tools/analyzers/install-clang-tidy.sh

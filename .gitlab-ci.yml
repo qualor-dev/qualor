@@ -42,6 +42,7 @@ stages: [check]
     - sh tools/analyzers/install-weblint.sh
     - sh tools/analyzers/install-rubocop.sh
     - sh tools/analyzers/install-go.sh
+    - sh tools/analyzers/filter-trivy-db.sh
     - sh tools/analyzers/install-cppcheck.sh
     - sh tools/analyzers/install-clang-tidy.sh
     - sh tools/analyzers/install-qualor-rules.sh
