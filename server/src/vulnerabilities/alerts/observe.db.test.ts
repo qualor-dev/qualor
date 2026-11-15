@@ -174,8 +174,13 @@ describe('vulnerability alerts: the scope and the observe step', () => {
           })
           .returning(),
       ).id;
-    const vulnerable = (key: TargetKey, vulnerabilityId: string, packageName = 'lodash') =>
-      seedTargetRow(t.db, { projectId, ...key, packageName, vulnerabilityId });
+    /** A re-check's new row, and its check row moved (`{ recheck: false }` leaves it). */
+    const vulnerable = (
+      key: TargetKey,
+      vulnerabilityId: string,
+      packageName = 'lodash',
+      options?: { recheck?: boolean },
+    ) => seedTargetRow(t.db, { projectId, ...key, packageName, vulnerabilityId }, options);
     return { projectId, branch, version, vulnerable };
   };
 
@@ -387,7 +392,7 @@ describe('vulnerability alerts: the scope and the observe step', () => {
     expect(await targetRow({ versionId: p.v234 })).toEqual(unseeded);
     expect(await countOf(vulnerabilityAlertItems)).toBe(0);
     // A pair that appears before the next re-check is not an item yet.
-    await p.vulnerable({ branchId: p.main }, 'CVE-8', 'axios');
+    await p.vulnerable({ branchId: p.main }, 'CVE-8', 'axios', { recheck: false });
     expect(await pass(T5)).toEqual(counts());
     expect(await countOf(vulnerabilityAlertItems)).toBe(0);
     // The re-check after re-entry: whatever is matched then is the baseline, nothing is news.
@@ -417,7 +422,7 @@ describe('vulnerability alerts: the scope and the observe step', () => {
       observedAt: recordedAt(T4),
       seededAt: null,
     });
-    await p.vulnerable({ versionId: p.v234 }, 'CVE-10', 'axios');
+    await p.vulnerable({ versionId: p.v234 }, 'CVE-10', 'axios', { recheck: false });
     expect(await pass(T5)).toEqual(counts());
     expect(await itemsOf({ versionId: p.v234 })).toEqual([]);
     await rechecked({ versionId: p.v234 });

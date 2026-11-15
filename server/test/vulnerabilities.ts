@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { Executor } from '../src/db/client';
 import {
   analyses,
@@ -52,6 +52,10 @@ export async function seedMatch(
 /**
  * A `target_vulnerabilities` row of a branch or a version, and the match it joins (severity
  * `high` unless given). `firstSeenAt` defaults to now.
+ *
+ * A re-check writes a target's rows and its check row together, so the target's check row (if it
+ * has one) moves to `checked_at = now()` too, and the alert pass reads the target again (D18).
+ * `{ recheck: false }` leaves the check row: a row written without its re-check.
  */
 export async function seedTargetRow(
   db: Executor,
@@ -67,6 +71,7 @@ export async function seedTargetRow(
     ignored?: boolean;
     firstSeenAt?: Date;
   },
+  options: { recheck?: boolean } = {},
 ): Promise<void> {
   const packageVersion = row.packageVersion ?? '1.0.0';
   const ecosystem = row.ecosystem ?? 'npm';
@@ -90,6 +95,15 @@ export async function seedTargetRow(
     ignored: row.ignored ?? false,
     ...(row.firstSeenAt !== undefined && { firstSeenAt: row.firstSeenAt }),
   });
+  if (options.recheck === false) return;
+  await db
+    .update(vulnerabilityTargetChecks)
+    .set({ checkedAt: sql`now()` })
+    .where(
+      'branchId' in row
+        ? eq(vulnerabilityTargetChecks.branchId, row.branchId)
+        : eq(vulnerabilityTargetChecks.versionId, row.versionId),
+    );
 }
 
 /** A `vulnerability_target_checks` row: the target was re-checked, and "new" counts from the baseline. */

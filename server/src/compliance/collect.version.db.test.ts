@@ -115,19 +115,25 @@ describe('collectCompliance: the report of a version (0.15 plan 5, V12)', () => 
       baselineAt: new Date('2026-10-01T00:00:00Z'),
       checkedAt: new Date('2026-10-02T05:00:00Z'),
     });
-    await seedTargetRow(ctx.db, {
-      projectId: project.id,
-      versionId: oldVersion,
-      packageName: 'old',
-      vulnerabilityId: 'CVE-2026-0010',
-    });
+    // The check rows above carry the re-check times the report shows: the rows leave them.
+    await seedTargetRow(
+      ctx.db,
+      {
+        projectId: project.id,
+        versionId: oldVersion,
+        packageName: 'old',
+        vulnerabilityId: 'CVE-2026-0010',
+      },
+      { recheck: false },
+    );
     await seedRule(ctx.db, {
       key: 'trivy:CVE-2026-0001',
       name: 'Prototype pollution',
       quality: 'security',
       cwe: [1321],
     });
-    const row = (extra: Parameters<typeof seedTargetRow>[1]) => seedTargetRow(ctx.db, extra);
+    const row = (extra: Parameters<typeof seedTargetRow>[1]) =>
+      seedTargetRow(ctx.db, extra, { recheck: false });
     const base = { projectId: project.id, versionId: version };
     await row({
       ...base,
