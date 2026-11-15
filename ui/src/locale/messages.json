@@ -881,6 +881,7 @@
     "deps.transitive": "Transitive",
     "deps.directUnknown": "Not known",
     "deps.issuesLink": "Issues",
+    "deps.empty": " This branch or version has no packages. ",
     "deps.none": "No package matches.",
     "deps.pages": "Pages",
     "deps.range": "{$INTERPOLATION}–{$INTERPOLATION_1} of {$INTERPOLATION_2}",

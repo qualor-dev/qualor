@@ -144,6 +144,10 @@ links, and forbidden packages do not link to issues.
 Filter by **Licence**, **Licence group** or ecosystem, tick **Unknown only** or **Direct only**, or
 search by package name. Until a scan of the branch has recorded an inventory, the tab says so.
 
+When the last scan found no packages, the table says that the branch or version has no packages,
+not that no package matches the filters. The [troubleshooting table](./releases.md#troubleshooting)
+of Releases lists why a scan finds none.
+
 With a licence policy (Business or Enterprise), the tab adds a **Policy** column (**Allowed**,
 **Forbidden** or **Unknown**) and the **Forbidden only** filter. A forbidden package links to its
 issues. The column always shows the current policy, so a policy change shows at once.

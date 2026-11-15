@@ -260,7 +260,14 @@
             } @empty {
               <tr>
                 <td [attr.colspan]="answer.verdicts ? 7 : 6">
-                  <p class="deps-none" i18n="@@deps.none">No package matches.</p>
+                  <!-- The summary counts the whole inventory, whatever the filters. -->
+                  @if (answer.summary.total === 0) {
+                    <p class="deps-none" i18n="@@deps.empty">
+                      This branch or version has no packages.
+                    </p>
+                  } @else {
+                    <p class="deps-none" i18n="@@deps.none">No package matches.</p>
+                  }
                 </td>
               </tr>
             }

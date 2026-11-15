@@ -436,6 +436,19 @@ describe('DependenciesPage (6M §8)', () => {
     expect(root.querySelector('.deps-summary')).toBeNull();
   });
 
+  it('says an empty inventory has no packages, not that no package matches (D26-2)', async () => {
+    fake.rows = [];
+    const { root } = await render();
+    expect(text(root.querySelector('.deps-none'))).toBe('This branch or version has no packages.');
+    expect(text(root)).not.toContain('No package matches.');
+  });
+
+  it('says no package matches when a filter finds none in a non-empty inventory (D26-2)', async () => {
+    const { root } = await render('/?q=no-such-package');
+    expect(lastQuery()?.get('q')).toBe('no-such-package');
+    expect(text(root.querySelector('.deps-none'))).toBe('No package matches.');
+  });
+
   it('says why a version has no dependency list, with no table', async () => {
     fake.inventory = false;
     const { root } = await render(`/?version=${VERSION_ID}`);
