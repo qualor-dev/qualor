@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import type { AddressInfo, Socket } from 'node:net';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -24,6 +24,8 @@ import { downloadTimeouts } from './scanner-vulndb';
 
 /** currentDataset, made slow while `slow.ms` is set: the window in which a client can abort. */
 const slow = vi.hoisted(() => ({ ms: 0 }));
+/** How many dataset reads have reached their end: a download has yielded its last slice. */
+const readsDone = vi.hoisted(() => ({ count: 0 }));
 vi.mock('../vulndb/store', async (importOriginal) => {
   const actual = await importOriginal<typeof Store>();
   return {
@@ -31,6 +33,10 @@ vi.mock('../vulndb/store', async (importOriginal) => {
     currentDataset: async (...args: Parameters<typeof actual.currentDataset>) => {
       if (slow.ms > 0) await new Promise((r) => setTimeout(r, slow.ms));
       return actual.currentDataset(...args);
+    },
+    readDatasetChunks: async function* (...args: Parameters<typeof actual.readDatasetChunks>) {
+      yield* actual.readDatasetChunks(...args);
+      readsDone.count++;
     },
   };
 });
@@ -218,10 +224,20 @@ describe('/scanner/vulnerability-db (API)', () => {
       port = (ctx.app.server.address() as AddressInfo).port;
     });
 
-    const open = (hex: string): Promise<{ res: IncomingMessage; abort: () => void }> =>
+    /** A download; `fresh` opens a connection of its own, never a kept-alive one. */
+    const open = (
+      hex: string,
+      { fresh = false }: { fresh?: boolean } = {},
+    ): Promise<{ res: IncomingMessage; abort: () => void }> =>
       new Promise((resolve, reject) => {
         const req = httpRequest(
-          { host: '127.0.0.1', port, path: `${meta}/${hex}`, headers: asProject() },
+          {
+            host: '127.0.0.1',
+            port,
+            path: `${meta}/${hex}`,
+            headers: asProject(),
+            ...(fresh ? { agent: false } : {}),
+          },
           (res) => resolve({ res, abort: () => req.destroy() }),
         );
         req.on('error', (err) => {
@@ -368,6 +384,93 @@ describe('/scanner/vulnerability-db (API)', () => {
         });
         expect(received).toBe(big.length);
         expect(`sha256:${hash.digest('hex')}`).toBe(digest);
+      } finally {
+        downloadTimeouts.stallMs = before;
+      }
+    }, 60_000);
+
+    /**
+     * The server's side of the next connection passes each write on `delayMs` late, as the socket
+     * of a reader that takes a slice at a time does, and none at all once `stopped()`. The client
+     * itself reads at once, so no OS socket buffer decides the pace.
+     */
+    function throttleNextConnection(delayMs: number, stopped: () => boolean = () => false): void {
+      ctx.app.server.once('connection', (socket: Socket) => {
+        const write = socket._write.bind(socket);
+        const writev = socket._writev?.bind(socket);
+        const later = (pass: () => void) =>
+          setTimeout(() => {
+            if (!stopped()) pass();
+          }, delayMs);
+        socket._write = (chunk, encoding, callback) =>
+          later(() => write(chunk, encoding, callback));
+        if (writev) socket._writev = (chunks, callback) => later(() => writev(chunks, callback));
+      });
+    }
+
+    it('keeps a reader that takes the last slices slowly but steadily', async () => {
+      // Two slices. The stream yields the last one while the first is still going out (it reads
+      // one slice ahead), so two writes remain after the last yield: 4.3 s, longer than stallMs,
+      // while each write takes 2.15 s, less.
+      const archive = trivyArchive({ db: randomBytes(400 * 1024) });
+      const digest = await store(archive, true);
+      const before = downloadTimeouts.stallMs;
+      downloadTimeouts.stallMs = 3000;
+      try {
+        throttleNextConnection(2150);
+        const { res } = await open(digest.slice(7), { fresh: true });
+        expect(res.statusCode).toBe(200);
+        const hash = createHash('sha256');
+        let received = 0;
+        await new Promise<void>((resolve, reject) => {
+          res.on('data', (chunk: Buffer) => {
+            hash.update(chunk);
+            received += chunk.length;
+          });
+          res.on('end', resolve);
+          res.on('error', reject);
+          res.on('close', () => {
+            if (!res.complete) reject(new Error(`cut off after ${received} bytes`));
+          });
+        });
+        expect(received).toBe(archive.length);
+        expect(`sha256:${hash.digest('hex')}`).toBe(digest);
+      } finally {
+        downloadTimeouts.stallMs = before;
+      }
+    }, 60_000);
+
+    it('cuts off a reader that stops at the last slice, and frees its slot', async () => {
+      const big = trivyArchive({ db: randomBytes(2 * 1024 * 1024) });
+      const hex = (await store(big, true)).slice(7);
+      const before = downloadTimeouts.stallMs;
+      downloadTimeouts.stallMs = 500;
+      const reads = readsDone.count;
+      try {
+        // Takes a slice every 50 ms until the dataset has been read to its end, then nothing.
+        throttleNextConnection(50, () => readsDone.count > reads);
+        const first = await open(hex, { fresh: true });
+        expect(first.res.statusCode).toBe(200);
+        let received = 0;
+        const complete = new Promise<boolean>((resolve) => {
+          first.res.on('data', (chunk: Buffer) => {
+            received += chunk.length;
+          });
+          first.res.on('error', () => undefined);
+          first.res.on('close', () => resolve(first.res.complete));
+        });
+        // Only the server's stall timer can free the slot.
+        let status = 0;
+        for (let i = 0; i < 30 && status !== 200; i++) {
+          const next = await open(hex);
+          status = next.res.statusCode ?? 0;
+          next.abort();
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        expect(status).toBe(200);
+        expect(readsDone.count).toBeGreaterThan(reads);
+        expect(await complete).toBe(false);
+        expect(received).toBeLessThan(big.length);
       } finally {
         downloadTimeouts.stallMs = before;
       }

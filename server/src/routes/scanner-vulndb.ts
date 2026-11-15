@@ -165,6 +165,7 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         slots.release();
       };
       let yielded = 0;
+      let allYielded = false;
       async function* sliced(): AsyncGenerator<Buffer, void, undefined> {
         for await (const chunk of readDatasetChunks(deps.db, datasetId)) {
           for (let at = 0; at < chunk.length; at += SLICE_BYTES) {
@@ -173,19 +174,29 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             yield slice;
           }
         }
+        allYielded = true;
       }
       const stream = Readable.from(sliced());
       // A reader that takes no bytes for stallMs is cut off, and its slot freed. Progress is the
-      // bytes sliced() has yielded: Readable.from buffers at most 16 slices (4 MiB) ahead, so a
-      // reader that takes nothing stops the yields. (The socket's byte count is not used: under
-      // inject it is undefined.)
+      // bytes sliced() has yielded: Readable.from reads one slice ahead, so a reader that takes
+      // nothing stops the yields. After the last yield the last slices still go out, so progress
+      // is then the socket's byte count as well: a reader that takes them slowly keeps its slot,
+      // one that stops is cut off (Node's server has no idle timeout to do it). Under inject the
+      // count is undefined: the watch ends there, and the response's close frees the slot.
+      const progress = (): number | undefined => {
+        if (!allYielded) return yielded;
+        const written = reply.raw.socket?.bytesWritten;
+        return typeof written === 'number' ? yielded + written : undefined;
+      };
       const { stallMs } = downloadTimeouts;
-      let sent = yielded;
+      let sent = progress();
       let movedAt = Date.now();
       const watch = setInterval(
         () => {
-          const now = yielded;
-          if (now !== sent) {
+          const now = progress();
+          if (now === undefined) {
+            clearInterval(watch);
+          } else if (now !== sent) {
             sent = now;
             movedAt = Date.now();
           } else if (Date.now() - movedAt >= stallMs) {
