@@ -285,7 +285,7 @@ describe('WatchButton', () => {
     const { fixture, toggle, menu } = await render();
     toggle().click();
     await settle(fixture);
-    const hint = menu()!.querySelector('.hint');
+    const hint = menu()!.querySelector('.hint:not(#watch-vuln-hint)');
     expect(hint?.textContent).toContain(text);
     expect(hint?.querySelector('a')?.getAttribute('href') ?? null).toBe(
       blocker === 'preference_off' ? '/settings/notifications' : null,

@@ -246,7 +246,8 @@ export class WatchButton {
   }
 
   protected async stop(): Promise<void> {
-    if (this.busy() || !this.state()?.watching) return;
+    const before = this.state();
+    if (this.busy() || !before?.watching) return;
     const generation = this.generation;
     const id = this.projectId();
     this.busy.set(true);
@@ -257,12 +258,11 @@ export class WatchButton {
         this.api.client.DELETE('/api/v0/projects/{id}/watch', { params: { path: { id } } }),
       );
       if (generation !== this.generation) return;
-      const state = this.state();
       this.confirm({
         watching: false,
-        emailReady: state?.emailReady ?? false,
-        emailBlocker: state?.emailBlocker ?? null,
-        vulnerabilityAlerts: state?.vulnerabilityAlerts ?? false,
+        emailReady: before.emailReady,
+        emailBlocker: before.emailBlocker,
+        vulnerabilityAlerts: before.vulnerabilityAlerts,
       });
       this.close();
     } catch (err) {
