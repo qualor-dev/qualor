@@ -296,7 +296,8 @@ describe('readTarGz', () => {
       ['CRC', 8],
       ['ISIZE', 1],
     ])('rejects a bad %s even when read byte by byte', async (_what, fromEnd) => {
-      const bad = trivyArchive({ db: randomBytes(50_000) });
+      // A few KB: one piece per byte is one async step each, so a large archive starves under load.
+      const bad = trivyArchive({ db: randomBytes(2_000) });
       bad[bad.length - fromEnd] = (bad[bad.length - fromEnd] ?? 0) ^ 0xff;
       const error = await rejection(readPieces(bad));
       expect(error).toBeInstanceOf(TarError);
