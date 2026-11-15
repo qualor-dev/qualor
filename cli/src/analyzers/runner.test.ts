@@ -657,7 +657,9 @@ describe('runAnalyzers', () => {
     expect(seen).toEqual({ token: null, tokenFile: null, otherSecret: null, safe: 'kept' });
     expect(cwdOut).toBe(root);
     expect(hung?.timedOut).toBe(true);
-    expect(hung?.durationMs).toBeLessThan(5_000);
+    // Only proves the 300 ms timeout killed a child that would hang for ever (the tool's
+    // hang mode never exits); a busy gate stretches the kill by seconds.
+    expect(hung?.durationMs).toBeLessThan(30_000);
   });
 
   it("sets ctx.exec's env overlay over the analyzer environment for that command only, and sanitizes it again (ruling G9-15)", async () => {

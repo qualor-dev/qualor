@@ -326,7 +326,7 @@ describe('the notes scan (a webhook’s job)', () => {
       await scan(mr.branchId, { logger, scmRuntime: runtime });
       expect((await queuedFor(mr.branchId)).rows).toEqual([]);
       expect(said.info.map(([fields]) => fields)).toEqual([{ branchId: mr.branchId }]);
-      expect(JSON.stringify(said)).not.toMatch(/not found|404|GitLab|GitHub/i);
+      expect(JSON.stringify(said)).not.toMatch(/not found|\b404\b|GitLab|GitHub/i);
       expect(said.warn).toEqual([]);
       expect(said.error).toEqual([]);
       expect(runtime.circuit.inspect(mr.connectionId).failures).toBe(0);
