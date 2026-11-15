@@ -20,8 +20,11 @@ import { inputValue, isChecked } from '../../shared/forms';
 import { isUuid } from '../../shared/ids';
 import { Icon } from '../../shared/icon';
 import { clip } from '../../shared/text';
+import { SystemInfo } from '../../shell/system-info';
 import { type Branch, branchTitle, findBranch } from '../branches';
 import { codeFileLink } from '../code-links';
+import { CurrentProject } from '../current-project';
+import { ExportMenu, type ExportOption } from '../export-menu';
 
 type DependencyQuery = NonNullable<
   paths['/api/v0/projects/{id}/dependencies']['get']['parameters']['query']
@@ -137,11 +140,12 @@ function isShown(branch: Branch, wanted: string | null): boolean {
  * group, ecosystem, unknown only, direct only, a name search) and pages, all in the URL. While the
  * enterprise feature license-policy is active and the organisation has a policy, the rows carry the
  * policy's verdict: a Policy column and a Forbidden filter appear, and a forbidden entry links to
- * its issues. The branch is chosen as on the Issues tab (`?branch=<id>`).
+ * its issues. The branch is chosen as on the Issues tab (`?branch=<id>`). With the sbom feature,
+ * Export SBOM downloads the inventory shown.
  */
 @Component({
   selector: 'q-dependencies-page',
-  imports: [Icon, LabelPipe, RouterLink],
+  imports: [ExportMenu, Icon, LabelPipe, RouterLink],
   templateUrl: './dependencies.page.html',
   styleUrl: './dependencies.page.css',
 })
@@ -149,6 +153,8 @@ export class DependenciesPage {
   private readonly api = inject(Api);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly info = inject(SystemInfo);
+  private readonly project = inject(CurrentProject);
   readonly projectId = input.required<string>();
 
   private readonly params = toSignal(this.route.queryParams, { initialValue: {} as Params });
@@ -175,10 +181,12 @@ export class DependenciesPage {
         )
       ).items,
   });
+  private readonly versionList = computed(() =>
+    this.versions.hasValue() ? this.versions.value() : [],
+  );
   /** The versions the selector offers, newest first; the URL's own when it is not among them. */
   protected readonly versionOptions = computed(() => {
-    const list = this.versions.hasValue() ? this.versions.value() : [];
-    const options = list.map((v) => ({
+    const options = this.versionList().map((v) => ({
       id: v.id,
       title: v.tracked ? $localize`:@@deps.versionTracked:${v.label}:label: (tracked)` : v.label,
     }));
@@ -288,6 +296,28 @@ export class DependenciesPage {
       source.failed ? null : (source.value ?? previous?.value ?? null),
   });
   protected readonly loading = computed(() => this.answer.isLoading());
+  /** The project's key, which the export route takes. */
+  protected readonly projectKey = computed(() => this.project.current()?.key ?? '');
+  /**
+   * What Export SBOM downloads: the branch or version shown, while the sbom feature is active and
+   * it has an inventory. The route names a branch by its name and exports no merge request; it
+   * names a version by its label, known only for the newest 100 the selector lists.
+   */
+  protected readonly sbomOption = computed<ExportOption | null>(() => {
+    if (!this.info.features().includes('sbom') || !this.current()?.inventory) return null;
+    if (!this.projectKey()) return null;
+    const versionId = this.urlVersion();
+    if (versionId) {
+      const version = this.versionList().find((v) => v.id === versionId);
+      return version
+        ? { value: `version:${version.id}`, kind: 'version', name: version.label }
+        : null;
+    }
+    const branch = this.branch();
+    return branch && branch.kind !== 'merge_request'
+      ? { value: `branch:${branch.id}`, kind: 'branch', name: branch.name }
+      : null;
+  });
   protected readonly verdictLabels = {
     allowed: label('verdict', 'allowed'),
     forbidden: label('verdict', 'forbidden'),

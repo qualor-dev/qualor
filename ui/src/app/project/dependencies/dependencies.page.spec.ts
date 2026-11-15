@@ -14,6 +14,7 @@ import {
 } from '../../../testing/fake-server';
 import { SessionStore } from '../../auth/session';
 import type { Branch } from '../branches';
+import { CurrentProject } from '../current-project';
 import { DependenciesPage } from './dependencies.page';
 
 const PROJECT = 'p1';
@@ -462,5 +463,95 @@ describe('DependenciesPage (6M §8)', () => {
     expect(text(root.querySelector('[role="alert"]'))).toBe(
       'This item does not exist, or you cannot see it.',
     );
+  });
+
+  describe('Export SBOM (D26-1)', () => {
+    const systemInfo = (features: string[]) =>
+      server.on('GET', '/api/v0/system/info', {
+        body: { version: '0.16.0', edition: 'enterprise', features, extensions: [] },
+      });
+
+    beforeEach(() => {
+      systemInfo(['sbom']);
+      server.on('GET', `/api/v0/projects/${PROJECT}`, {
+        body: {
+          id: PROJECT,
+          organizationId: ORG_ID,
+          key: 'acme/x',
+          name: 'X',
+          permissions: [...VIEWER_PROJECT_PERMISSIONS],
+        },
+      });
+      TestBed.inject(CurrentProject).use(PROJECT);
+    });
+
+    const exportButton = (root: HTMLElement) =>
+      [...root.querySelectorAll('.deps-toolbar button')].find((b) => text(b) === 'Export SBOM');
+    const links = (root: HTMLElement) =>
+      [...root.querySelectorAll('#deps-export-sbom a')].map((a) => [
+        text(a),
+        a.getAttribute('href'),
+        a.hasAttribute('download'),
+      ]);
+
+    it('is not offered without the sbom feature', async () => {
+      systemInfo([]);
+      const { root } = await render();
+      expect(exportButton(root)).toBeUndefined();
+      expect(text(root)).not.toContain('SBOM');
+    });
+
+    it('is not offered without an inventory', async () => {
+      fake.inventory = false;
+      const { root } = await render();
+      expect(exportButton(root)).toBeUndefined();
+    });
+
+    it('is not offered for a merge request, which the route cannot export', async () => {
+      const { root } = await render(`/?branch=${MR_ID}`);
+      expect(lastQuery()?.get('mr')).toBe('42');
+      expect(exportButton(root)).toBeUndefined();
+    });
+
+    it('is not offered for a version past the newest 100, whose label is not known', async () => {
+      const { root } = await render(`/?version=0190a6c2-0000-7000-8000-0000000000c9`);
+      expect(root.querySelector('table')).not.toBeNull();
+      expect(exportButton(root)).toBeUndefined();
+    });
+
+    it('downloads the main branch in both formats, with no Target select', async () => {
+      const { root } = await render();
+      const button = exportButton(root);
+      expect(button?.getAttribute('popovertarget')).toBe('deps-export-sbom');
+      expect(root.querySelector('#deps-export-sbom select')).toBeNull();
+      expect(links(root)).toEqual([
+        [
+          'CycloneDX 1.6 (JSON)',
+          '/api/v0/projects/sbom?projectKey=acme%2Fx&branch=main&format=cyclonedx',
+          true,
+        ],
+        [
+          'SPDX 2.3 (JSON)',
+          '/api/v0/projects/sbom?projectKey=acme%2Fx&branch=main&format=spdx',
+          true,
+        ],
+      ]);
+    });
+
+    it('downloads the branch shown by its name', async () => {
+      const { root } = await render(`/?branch=${DEV_ID}`);
+      expect(links(root).map((l) => l[1])).toEqual([
+        '/api/v0/projects/sbom?projectKey=acme%2Fx&branch=develop&format=cyclonedx',
+        '/api/v0/projects/sbom?projectKey=acme%2Fx&branch=develop&format=spdx',
+      ]);
+    });
+
+    it('downloads a version by its label, not its title', async () => {
+      const { root } = await render(`/?version=${VERSION_ID}`);
+      expect(links(root).map((l) => l[1])).toEqual([
+        '/api/v0/projects/sbom?projectKey=acme%2Fx&version=2.1.0&format=cyclonedx',
+        '/api/v0/projects/sbom?projectKey=acme%2Fx&version=2.1.0&format=spdx',
+      ]);
+    });
   });
 });

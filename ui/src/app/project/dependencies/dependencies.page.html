@@ -59,6 +59,15 @@
       <span id="deps-ecosystem-error" class="field-error" role="alert">{{ message }}</span>
     }
   </form>
+  @if (sbomOption(); as option) {
+    <q-export-menu
+      kind="sbom"
+      menuId="deps-export-sbom"
+      [projectKey]="projectKey()"
+      [options]="[option]"
+      [selectable]="false"
+    />
+  }
 </div>
 
 <div class="deps-filters">

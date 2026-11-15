@@ -261,6 +261,10 @@ sit in the header of the tab. Each opens a menu: choose the **Target**, then a f
 A menu lists only the targets that can be exported: the tracked ones, then the untracked versions.
 A button with no such target is not shown. Without the feature the tab shows neither button.
 
+The [Dependencies tab](./dependency-licenses.md#the-dependencies-tab) has **Export SBOM** too. It
+downloads the branch or version the tab shows, with no **Target** to choose, also while monitoring
+is off.
+
 ### What an SBOM holds
 
 An SBOM lists every package of the target's dependency list, sorted by name, version and ecosystem.

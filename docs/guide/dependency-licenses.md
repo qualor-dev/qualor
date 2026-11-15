@@ -148,6 +148,11 @@ With a licence policy (Business or Enterprise), the tab adds a **Policy** column
 **Forbidden** or **Unknown**) and the **Forbidden only** filter. A forbidden package links to its
 issues. The column always shows the current policy, so a policy change shows at once.
 
+Business and Enterprise: **Export SBOM** downloads the dependency list of the branch or version
+shown, as CycloneDX 1.6 or SPDX 2.3, also while vulnerability monitoring is off. Merge requests have
+none. [What an SBOM holds](./dependency-vulnerabilities.md#what-an-sbom-holds) says what the file
+lists.
+
 ## The licence policy (Business and Enterprise)
 
 An organisation admin sets the policy in **Settings → Licence policy**. It applies to every project
