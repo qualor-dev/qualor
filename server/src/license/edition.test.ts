@@ -254,15 +254,14 @@ describe('createEdition (enterprise.md §7)', () => {
 
   it('activates the vulnerability features of a Business key and still says Business', () => {
     const vulnFeatures = ['vuln.priority', 'vuln.alerts', 'sbom'];
-    const businessBoot: BootLicense = {
-      source: 'environment',
-      keyHash: 'h',
-      verification: {
-        ok: true,
-        kid: 'test-a',
-        license: testPayload({ expires: '2027-10-01T00:00:00Z', features: [...BUSINESS_FEATURES] }),
-      },
-    };
+    const signer = testSigner();
+    const payload = testPayload({
+      expires: '2027-10-01T00:00:00Z',
+      features: [...BUSINESS_FEATURES],
+    });
+    const verification = verifyLicenseKey(signTest(signer, payload), verifyWith(signer, T0));
+    expect(verification.ok).toBe(true);
+    const businessBoot: BootLicense = { source: 'environment', keyHash: 'h', verification };
     const edition = createEdition({
       boot: businessBoot,
       plugins: {
