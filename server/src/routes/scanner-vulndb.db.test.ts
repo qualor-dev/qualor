@@ -26,6 +26,8 @@ import { downloadTimeouts } from './scanner-vulndb';
 const slow = vi.hoisted(() => ({ ms: 0 }));
 /** How many dataset reads have reached their end: a download has yielded its last slice. */
 const readsDone = vi.hoisted(() => ({ count: 0 }));
+/** While `pace.ms` is set, a dataset read yields `pace.bytes` at a time, each `pace.ms` late. */
+const pace = vi.hoisted(() => ({ ms: 0, bytes: 0 }));
 vi.mock('../vulndb/store', async (importOriginal) => {
   const actual = await importOriginal<typeof Store>();
   return {
@@ -35,7 +37,16 @@ vi.mock('../vulndb/store', async (importOriginal) => {
       return actual.currentDataset(...args);
     },
     readDatasetChunks: async function* (...args: Parameters<typeof actual.readDatasetChunks>) {
-      yield* actual.readDatasetChunks(...args);
+      for await (const chunk of actual.readDatasetChunks(...args)) {
+        if (pace.ms === 0) {
+          yield chunk;
+          continue;
+        }
+        for (let at = 0; at < chunk.length; at += pace.bytes) {
+          await new Promise((r) => setTimeout(r, pace.ms));
+          yield chunk.subarray(at, at + pace.bytes);
+        }
+      }
       readsDone.count++;
     },
   };
@@ -191,12 +202,17 @@ describe('/scanner/vulnerability-db (API)', () => {
     expect(digestOf(download.rawPayload)).toBe(digest);
   });
 
-  it('serves a large archive through inject without a stall cut', async () => {
+  it('serves a long download through inject without a stall cut', async () => {
     // Under inject the socket's bytesWritten stays undefined: progress is what the stream yields.
-    const big = trivyArchive({ db: randomBytes(48 * 1024 * 1024) });
+    // A watch that read only the socket's count (before D12-1) cut every download after stallMs.
+    // The source yields 256 KiB every 250 ms, so the 10 MiB take about 10 s, four times stallMs,
+    // and a timer that a loaded host delays still has 2.25 s before it would mistake a stall.
+    const big = trivyArchive({ db: randomBytes(10 * 1024 * 1024) });
     const digest = await store(big, true);
     const before = downloadTimeouts.stallMs;
-    downloadTimeouts.stallMs = 300;
+    downloadTimeouts.stallMs = 2500;
+    pace.ms = 250;
+    pace.bytes = 256 * 1024;
     try {
       const res = await ctx.app.inject({
         method: 'GET',
@@ -207,6 +223,7 @@ describe('/scanner/vulnerability-db (API)', () => {
       expect(digestOf(res.rawPayload)).toBe(digest);
     } finally {
       downloadTimeouts.stallMs = before;
+      pace.ms = 0;
     }
   }, 60_000);
 
