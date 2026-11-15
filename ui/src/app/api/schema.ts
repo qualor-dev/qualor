@@ -12555,7 +12555,7 @@ export interface paths {
                 };
             };
         };
-        /** Change the vulnerability database settings (instance admins); the mirror password is write-only: a string sets it, null removes it, absent keeps it */
+        /** Change the vulnerability database settings (instance admins); the mirror password is write-only: a string sets it, null removes it, absent keeps it; a password sent always counts as a change: the stored one cannot be compared */
         put: {
             parameters: {
                 query?: never;
@@ -13012,7 +13012,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                /** @description FORBIDDEN or INSUFFICIENT_SCOPE: instance admins only */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -13030,7 +13030,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Too large (REPORT_TOO_LARGE, BODY_TOO_LARGE) */
+                /** @description TOO_LARGE: the file is over QUALOR_VULNDB_UPLOAD_MAX_BYTES (default 1 GiB) */
                 413: {
                     headers: {
                         [name: string]: unknown;
@@ -13048,7 +13048,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                /** @description INVALID_DATABASE: the file is not a usable Trivy database, or the upload expired; `detail` says why */
                 422: {
                     headers: {
                         [name: string]: unknown;

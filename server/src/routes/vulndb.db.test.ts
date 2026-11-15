@@ -172,7 +172,13 @@ describe('/system/vulnerability-db (API)', () => {
     const removed = await put({ source: { kind: 'mirror', repository, password: null } });
     expect(removed.json().source.passwordSet).toBe(false);
     expect(await lastChanged()).toEqual(['source.password']);
+    // Leaving a mirror drops its stored password: a change of its own.
+    await put({ source: { kind: 'mirror', repository, password: 'sekret-pw-2' } });
+    const official = await put({ source: { kind: 'official' } });
+    expect(official.json().source).toEqual({ kind: 'official' });
+    expect(await lastChanged()).toEqual(['source.kind', 'source.password']);
     expect((await put({ source: { kind: 'upload' } })).json().source).toEqual({ kind: 'upload' });
+    expect(await lastChanged()).toEqual(['source.kind']);
     expect((await put({ source: { kind: 'official' }, enabled: false })).json()).toMatchObject({
       source: { kind: 'official' },
       status: 'off',
@@ -237,7 +243,7 @@ describe('/system/vulnerability-db (API)', () => {
     const a = 'registry.corp:5000/mirror/trivy-db:2';
     await put({ source: { kind: 'mirror', repository: a, username: 'u', password: 'pw' } });
     const sameHost = await put({
-      source: { kind: 'mirror', repository: 'REGISTRY.corp:5000/other/path:3'.toLowerCase() },
+      source: { kind: 'mirror', repository: 'registry.corp:5000/other/path:3' },
     });
     expect(sameHost.json().source).toMatchObject({ passwordSet: true, username: 'u' });
     expect(await lastChanged()).toEqual(['source.repository']);

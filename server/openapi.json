@@ -27589,7 +27589,7 @@
         }
       },
       "put": {
-        "summary": "Change the vulnerability database settings (instance admins); the mirror password is write-only: a string sets it, null removes it, absent keeps it",
+        "summary": "Change the vulnerability database settings (instance admins); the mirror password is write-only: a string sets it, null removes it, absent keeps it; a password sent always counts as a change: the stored one cannot be compared",
         "tags": [
           "system"
         ],
@@ -29456,7 +29456,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "description": "FORBIDDEN or INSUFFICIENT_SCOPE: instance admins only",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -29476,7 +29476,7 @@
             }
           },
           "413": {
-            "description": "Too large (REPORT_TOO_LARGE, BODY_TOO_LARGE)",
+            "description": "TOO_LARGE: the file is over QUALOR_VULNDB_UPLOAD_MAX_BYTES (default 1 GiB)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -29496,7 +29496,7 @@
             }
           },
           "422": {
-            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "description": "INVALID_DATABASE: the file is not a usable Trivy database, or the upload expired; `detail` says why",
             "content": {
               "application/problem+json": {
                 "schema": {

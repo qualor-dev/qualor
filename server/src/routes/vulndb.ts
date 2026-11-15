@@ -14,6 +14,7 @@ import { sendContinue } from '../http/expect-continue';
 import { closeAfterRefusal } from '../http/lingering-close';
 import { ProblemError } from '../http/problem';
 import { isoOrNull } from '../http/schemas';
+import { clientAborted } from '../ingest/upload';
 import { PRIORITY_FEATURE, priorityNotLicensed } from '../vulndb/priority/feature';
 import { PRIORITY_FILE_MAX_BYTES } from '../vulndb/priority/parse';
 import { readPriorityState, priorityStatus } from '../vulndb/priority/state';
@@ -173,7 +174,9 @@ function mirrorFieldsChanged(
   if ((was?.username ?? null) !== now.username) fields.push('source.username');
   if ((was?.kevUrl ?? null) !== now.kevUrl) fields.push('source.kevUrl');
   if ((was?.epssUrl ?? null) !== now.epssUrl) fields.push('source.epssUrl');
-  // A new password is a change; removing one only when there was one.
+  // A password sent (a string) always counts as a change, the same one again too: the stored one
+  // is encrypted with a random IV and cannot be compared. Removing one (null, or a move to another
+  // host) is a change only when there was one.
   const hadPassword = (was?.passwordEnc ?? null) !== null;
   const dropped = !passwordSent && hadPassword && now.passwordEnc === null;
   if (dropped || (passwordSent && (now.passwordEnc !== null || hadPassword))) {
@@ -212,6 +215,9 @@ function changedFields(
   if (after.source.kind === 'mirror') {
     const was = before.source.kind === 'mirror' ? before.source : null;
     fields.push(...mirrorFieldsChanged(was, after.source, passwordSent));
+  } else if (before.source.kind === 'mirror' && before.source.passwordEnc !== null) {
+    // Official or upload keeps no mirror: its stored password is gone.
+    fields.push('source.password');
   }
   if (before.scanners.enabled !== after.scanners.enabled) fields.push('scanners.enabled');
   if (before.scanners.policy !== after.scanners.policy) fields.push('scanners.policy');
@@ -346,7 +352,7 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       schema: {
         tags: ['system'],
         summary:
-          'Change the vulnerability database settings (instance admins); the mirror password is write-only: a string sets it, null removes it, absent keeps it',
+          'Change the vulnerability database settings (instance admins); the mirror password is write-only: a string sets it, null removes it, absent keeps it; a password sent always counts as a change: the stored one cannot be compared',
         body: settingsBody,
         response: { 200: settingsDto },
       },
@@ -462,7 +468,12 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
       config: {
         deferContinue: true,
         openapi: {
-          problems: [413, 415, 422],
+          problems: [403, 413, 415, 422],
+          problemDescriptions: {
+            403: 'FORBIDDEN or INSUFFICIENT_SCOPE: instance admins only',
+            413: 'TOO_LARGE: the file is over QUALOR_VULNDB_UPLOAD_MAX_BYTES (default 1 GiB)',
+            422: 'INVALID_DATABASE: the file is not a usable Trivy database, or the upload expired; `detail` says why',
+          },
           requestBody: {
             required: true,
             description:
@@ -521,6 +532,12 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
       });
       if ('problem' in stored) {
         if (stored.problem.code === 'TOO_LARGE') throw tooLargeProblem(maxBytes);
+        // The client hung up mid-upload: routine, and no file to judge. Only the response tells:
+        // a request is destroyed after a read to its end, or when the store stops reading early.
+        if (stored.problem.code === 'STREAM_FAILED' && reply.raw.destroyed) {
+          request.log.debug({ userId: principal.user.id }, 'vulndb upload aborted by the client');
+          throw clientAborted();
+        }
         throw new ProblemError(422, 'INVALID_DATABASE', 'The file is not a usable database', {
           detail: stored.problem.message,
         });
@@ -661,26 +678,21 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
       },
     ]);
 
-  app.put(
-    '/system/vulnerability-db/file/kev',
-    priorityUpload('kev').options,
-    async (request, reply) => {
-      const principal = requireInstanceAdmin(request);
-      await priorityUpload('kev').handle(request, reply, principal.user.id, (tx, details) =>
-        audit(tx, request, details),
-      );
-      return readDto();
-    },
-  );
-  app.put(
-    '/system/vulnerability-db/file/epss',
-    priorityUpload('epss').options,
-    async (request, reply) => {
-      const principal = requireInstanceAdmin(request);
-      await priorityUpload('epss').handle(request, reply, principal.user.id, (tx, details) =>
-        audit(tx, request, details),
-      );
-      return readDto();
-    },
-  );
+  const kev = priorityUpload('kev');
+  const epss = priorityUpload('epss');
+
+  app.put('/system/vulnerability-db/file/kev', kev.options, async (request, reply) => {
+    const principal = requireInstanceAdmin(request);
+    await kev.handle(request, reply, principal.user.id, (tx, details) =>
+      audit(tx, request, details),
+    );
+    return readDto();
+  });
+  app.put('/system/vulnerability-db/file/epss', epss.options, async (request, reply) => {
+    const principal = requireInstanceAdmin(request);
+    await epss.handle(request, reply, principal.user.id, (tx, details) =>
+      audit(tx, request, details),
+    );
+    return readDto();
+  });
 };

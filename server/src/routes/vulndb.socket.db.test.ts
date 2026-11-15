@@ -1,4 +1,4 @@
-import type { AddressInfo, Socket } from 'node:net';
+import net, { type AddressInfo, type Socket } from 'node:net';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -65,6 +65,15 @@ const kevFile = (ids: string[]): Buffer =>
     }),
   );
 
+/** Waits until `done()`, for at most 5 s. */
+async function until(done: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!done()) {
+    if (Date.now() > deadline) throw new Error('timed out waiting');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 /** One chunk of a `Transfer-Encoding: chunked` body. */
 const chunk = (data: Buffer): Buffer =>
   Buffer.concat([Buffer.from(`${data.length.toString(16)}\r\n`), data, Buffer.from('\r\n')]);
@@ -78,9 +87,19 @@ describe('vulnerability database uploads over a real socket', () => {
   let port: number;
   let admin: Session;
   let orgAdmin: Session;
+  /** The status of every answer to a Trivy upload, sent or not (the client may be gone). */
+  const answered: number[] = [];
 
   beforeAll(async () => {
-    ctx = await createTestContext();
+    ctx = await createTestContext({
+      beforeReady: (app) => {
+        app.addHook('onSend', async (request, reply, payload) => {
+          if (request.url.endsWith('/system/vulnerability-db/file'))
+            answered.push(reply.statusCode);
+          return payload;
+        });
+      },
+    });
     [admin, orgAdmin] = await sessions(ctx, 'vulndb-socket-org-admin');
     port = await listen(ctx);
   });
@@ -117,6 +136,34 @@ describe('vulnerability database uploads over a real socket', () => {
       );
       expect(exchange.sent()).toBe(true);
       expect(text).toMatch(/^HTTP\/1\.1 100 Continue\r\n\r\nHTTP\/1\.1 200 /);
+    });
+
+    it('answers no 422 to an upload the client aborted', async () => {
+      await ctx.db.delete(vulndbDatasets);
+      const before = answered.length;
+      const logsBefore = ctx.logs.length;
+      // Half of the declared megabyte, then the client hangs up.
+      await new Promise<void>((resolve) => {
+        const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+          socket.write(
+            head('/system/vulnerability-db/file', admin, [
+              'Content-Type: application/gzip',
+              `Content-Length: ${MiB}`,
+            ]),
+          );
+          socket.write(Buffer.alloc(MiB / 2, 1), () => setTimeout(() => socket.destroy(), 100));
+        });
+        socket.on('error', () => {});
+        socket.on('close', () => resolve());
+      });
+      await until(() => answered.length > before);
+      const logged = ctx.logs.slice(logsBefore).join('\n');
+      expect(logged).not.toContain('INVALID_DATABASE');
+      expect(logged).not.toContain('"statusCode":422');
+      expect(logged).not.toContain('request errored');
+      expect(await ctx.db.select().from(vulndbDatasets)).toHaveLength(0);
+      // Nobody reads it, but the answer is the abort's, not a bad file's.
+      expect(answered.at(-1)).toBe(499);
     });
 
     // Here, not with inject: the store stops reading the request early, and light-my-request's

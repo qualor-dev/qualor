@@ -98,7 +98,10 @@ export async function readVulndbSettings(db: Executor): Promise<VulndbSettings> 
   return onRead.parse(value) as VulndbSettings;
 }
 
-/** `password`: a string sets it, null removes it, absent keeps it; `username`, `kevUrl` and `epssUrl` likewise. */
+/**
+ * `password`: a string sets it, null removes it, absent keeps it; `username`, `kevUrl` and
+ * `epssUrl` likewise.
+ */
 export type VulndbSourceInput =
   | { kind: 'official' }
   | {
@@ -118,9 +121,12 @@ export interface VulndbSettingsPatch {
   scanners?: { enabled?: boolean; policy?: VulndbScannerPolicy };
 }
 
-/** The host[:port] of a repository: the part before the first slash, lowercased. */
+/**
+ * The host[:port] of a repository: the part before the first slash. Already lowercase:
+ * VULNDB_REPOSITORY_PATTERN admits no other, on write and on read.
+ */
 function registryHost(repository: string): string {
-  return repository.split('/')[0]?.toLowerCase() ?? '';
+  return repository.split('/')[0] ?? '';
 }
 
 /** The mirror password to store: absent keeps `kept`, null removes it, a string is encrypted. */
