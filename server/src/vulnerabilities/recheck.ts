@@ -897,15 +897,22 @@ async function recheckBatch(
  * has any more (`purls` is the run's set) go. The matches of a package some target still lists
  * stay, as an untracked target keeps its rows (R17); its mark goes, so the package is matched
  * again when a run needs it. Here and not in housekeeping: only a full run knows every inventory.
+ *
+ * The stale purls are found first and materialized, so the check against `target_vulnerabilities`
+ * (no index leads with `purl`) hashes that small set and scans the table once, instead of hashing
+ * the whole table (it spilled to disk at 2 M rows).
  */
 async function pruneUnused(db: Db, purls: ReadonlySet<string>): Promise<void> {
   const inRun = JSON.stringify([...purls]);
   await db.transaction(async (tx) => {
     await tx.execute(sql`
-      DELETE FROM vulnerability_matches m
-       WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${inRun}::jsonb) AS p(purl)
-                          WHERE p.purl = m.purl)
-         AND NOT EXISTS (SELECT 1 FROM target_vulnerabilities t WHERE t.purl = m.purl)`);
+      WITH stale AS MATERIALIZED (
+        SELECT DISTINCT m.purl FROM vulnerability_matches m
+         WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${inRun}::jsonb) AS p(purl)
+                            WHERE p.purl = m.purl))
+      DELETE FROM vulnerability_matches m USING stale s
+       WHERE m.purl = s.purl
+         AND NOT EXISTS (SELECT 1 FROM target_vulnerabilities t WHERE t.purl = s.purl)`);
     await tx.execute(sql`
       DELETE FROM matched_packages m
        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${inRun}::jsonb) AS p(purl)

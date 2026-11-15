@@ -733,6 +733,24 @@ describe('vulnerability re-checks', () => {
       expect(await markedPurls()).toEqual([PD]);
     });
 
+    it('prunes several stale purls and keeps one that an untracked target still lists', async () => {
+      await db().delete(projects);
+      await setup();
+      // Two more packages no inventory has, with two matches each: with the orphan, three go.
+      for (const purl of ['pkg:npm/stale-one@1.0.0', 'pkg:maven/org.example/stale-two@3.1']) {
+        await db()
+          .insert(vulnerabilityMatches)
+          .values([
+            { purl, vulnerabilityId: 'CVE-2026-0901', severity: 'high' },
+            { purl, vulnerabilityId: 'CVE-2026-0902', severity: 'medium' },
+          ]);
+        await db().insert(matchedPackages).values({ purl, datasetDigest: primary.digest });
+      }
+      expect(await recheck({ all: true })).toMatchObject({ kind: 'done' });
+      expect(await matchPurls()).toEqual([KEPT, PD].sort());
+      expect(await markedPurls()).toEqual([PD]);
+    });
+
     it('a re-check of some projects deletes nothing', async () => {
       const p = await setup();
       expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
