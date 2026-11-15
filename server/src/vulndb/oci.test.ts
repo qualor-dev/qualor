@@ -9,16 +9,16 @@ import { VERSION } from '../index';
 import { parseInternalHosts } from '../scm/url';
 import {
   DOCKER_MANIFEST_TYPE,
-  fetchHttpsFile,
-  fetchLayerDescriptor,
   OCI_MANIFEST_TYPE,
-  openBlob,
+  ociTesting,
   parseReference,
   TRIVY_LAYER_MEDIA_TYPE,
-  type HttpsFileOptions,
-  type OciOptions,
+  type HttpsFileTestOptions,
   type OciProblem,
+  type OciTestOptions,
 } from './oci';
+
+const { fetchHttpsFile, fetchLayerDescriptor, openBlob } = ociTesting;
 
 const sha256 = (bytes: Buffer | string): string =>
   `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
@@ -158,7 +158,7 @@ describe('the OCI client', () => {
   /** Another listed origin, over plain http: nothing may ever reach it. */
   let plain: Host;
   let behaviour: Behaviour;
-  let opts: OciOptions;
+  let opts: OciTestOptions;
   let ref: string;
   let untrust: () => void;
 
@@ -648,7 +648,7 @@ describe('fetchHttpsFile', () => {
     return [{ address: '127.0.0.1', family: 4 }];
   };
   const portOf = (host: Host): string => host.host.split(':')[1] ?? '';
-  const options = (more: Partial<HttpsFileOptions> = {}): HttpsFileOptions => ({
+  const options = (more: Partial<HttpsFileTestOptions> = {}): HttpsFileTestOptions => ({
     internalHosts: parseInternalHosts(`${files.host},${elsewhere.host}`),
     maxBytes: 1024 * 1024,
     scheme: 'http',

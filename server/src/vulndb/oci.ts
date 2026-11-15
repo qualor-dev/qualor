@@ -47,17 +47,21 @@ export interface OciAuth {
 export interface OciOptions {
   /** `config.vulndb.internalHosts`: only a request to one of these may reach a private address. */
   internalHosts: ReadonlySet<string>;
-  /**
-   * The registry origin's scheme; https when left out. No production caller and no setting or
-   * variable sets it (ruling R8: plain-http registries are not supported). Tests set `http` to
-   * run a plain-http fake registry. It covers the registry origin alone: a token realm or a
-   * redirect on any other origin must be https.
-   */
-  scheme?: 'https' | 'http';
   /** Tests substitute DNS; the default is the system resolver. */
   resolve?: Resolver;
   /** The caller gives up: the exchange (and a blob's stream) is cut. */
   signal?: AbortSignal;
+}
+
+/**
+ * The options of {@link ociTesting}. No production caller and no setting or variable sets
+ * `scheme` (ruling R8: plain-http registries are not supported). Tests set `http` to run a
+ * plain-http fake registry. It covers the registry origin alone: a token realm or a redirect on
+ * any other origin must be https.
+ */
+export interface OciTestOptions extends OciOptions {
+  /** The registry origin's scheme; https when left out. */
+  scheme?: 'https' | 'http';
 }
 
 export type OciProblemCode =
@@ -106,7 +110,7 @@ export function parseReference(ref: string): OciReference {
 
 /** Where one call's requests may go, and until when. */
 interface Reach {
-  opts: OciOptions;
+  opts: OciTestOptions;
   /** The first request's origin: `https://host` (`http://` only under a test's `scheme`). */
   origin: string;
   /** When the whole call must be over (epoch ms). */
@@ -473,7 +477,7 @@ async function toRegistry(
   return reach(session, path, accept, mode, maxBytes);
 }
 
-function sessionOf(ref: string, auth: OciAuth, opts: OciOptions): Session {
+function sessionOf(ref: string, auth: OciAuth, opts: OciTestOptions): Session {
   const parsed = parseReference(ref);
   return {
     ref: parsed,
@@ -545,10 +549,18 @@ function layerOf(
  * fetched after the registry's Bearer handshake (anonymous, or `auth` as HTTP Basic to the token
  * realm). Throws only for a `ref` that is not a reference.
  */
-export async function fetchLayerDescriptor(
+export function fetchLayerDescriptor(
   ref: string,
   auth: OciAuth,
   opts: OciOptions,
+): Promise<LayerDescriptor | OciProblem> {
+  return layerDescriptorOf(ref, auth, opts);
+}
+
+async function layerDescriptorOf(
+  ref: string,
+  auth: OciAuth,
+  opts: OciTestOptions,
 ): Promise<LayerDescriptor | OciProblem> {
   const session = sessionOf(ref, auth, opts);
   const { repository, reference } = session.ref;
@@ -579,11 +591,20 @@ export async function fetchLayerDescriptor(
  * are not checked against the digest here (storeDataset does that). Throws only for a `ref` that
  * is not a reference or a `digest` that is not sha256.
  */
-export async function openBlob(
+export function openBlob(
   ref: string,
   digest: string,
   auth: OciAuth,
   opts: OciOptions,
+): Promise<AsyncIterable<Buffer> | OciProblem> {
+  return blobOf(ref, digest, auth, opts);
+}
+
+async function blobOf(
+  ref: string,
+  digest: string,
+  auth: OciAuth,
+  opts: OciTestOptions,
 ): Promise<AsyncIterable<Buffer> | OciProblem> {
   if (!DIGEST_PATTERN.test(digest)) throw new Error('not a sha256 digest');
   const session = sessionOf(ref, auth, opts);
@@ -612,7 +633,10 @@ export interface HttpsFileOptions {
   signal?: AbortSignal;
   /** Tests substitute DNS; the default is the system resolver. */
   resolve?: Resolver;
-  /** Tests only, as in {@link OciOptions}: the URL's own origin may be plain http. */
+}
+
+/** The options of {@link ociTesting}: the URL's own origin may be plain http, as in {@link OciTestOptions}. */
+export interface HttpsFileTestOptions extends HttpsFileOptions {
   scheme?: 'http';
 }
 
@@ -626,9 +650,16 @@ export type HttpsFile =
  * no authorization and no header but the user agent and the validators. A 304 is `not_modified`;
  * a body over `maxBytes` is TOO_LARGE. Throws only for a `url` that is not a URL.
  */
-export async function fetchHttpsFile(
+export function fetchHttpsFile(
   url: string,
   options: HttpsFileOptions,
+): Promise<HttpsFile | OciProblem> {
+  return httpsFileOf(url, options);
+}
+
+async function httpsFileOf(
+  url: string,
+  options: HttpsFileTestOptions,
 ): Promise<HttpsFile | OciProblem> {
   const start = new URL(url);
   const session: Reach = {
@@ -658,3 +689,12 @@ export async function fetchHttpsFile(
     lastModified: single(got.headers['last-modified']) ?? null,
   };
 }
+
+/** The same calls with the test-only `scheme` option: a fake registry or file host over plain http. */
+export const ociTesting = {
+  fetchLayerDescriptor: (ref: string, auth: OciAuth, opts: OciTestOptions) =>
+    layerDescriptorOf(ref, auth, opts),
+  openBlob: (ref: string, digest: string, auth: OciAuth, opts: OciTestOptions) =>
+    blobOf(ref, digest, auth, opts),
+  fetchHttpsFile: (url: string, options: HttpsFileTestOptions) => httpsFileOf(url, options),
+};
