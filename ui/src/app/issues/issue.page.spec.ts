@@ -614,9 +614,15 @@ describe('IssuePage', () => {
       const error = root.querySelector('#issue-reason-error')!;
       expect(error.textContent?.trim()).toBe('Select a reason.');
       expect(error.getAttribute('role')).toBe('alert');
-      expect(root.querySelector('#issue-reason')!.getAttribute('aria-describedby')).toContain(
-        'issue-reason-error',
-      );
+      const select = root.querySelector<HTMLSelectElement>('#issue-reason')!;
+      expect(select.getAttribute('aria-describedby')).toContain('issue-reason-error');
+      expect(select.getAttribute('aria-invalid')).toBe('true');
+      expect(document.activeElement).toBe(select);
+
+      await choose(fixture, root, 'component_not_present');
+      expect(root.querySelector('#issue-reason-error')).toBeNull();
+      expect(select.hasAttribute('aria-invalid')).toBe(false);
+      expect(select.getAttribute('aria-describedby')).toBe('issue-reason-hint');
     });
 
     it('sends the chosen reason with False positive', async () => {

@@ -314,6 +314,8 @@ describe('IssuesPage', () => {
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       '1 issue changed. 1 issue needs a reason.',
     );
+    // The issue that needs a reason stays selected, for a second attempt with one.
+    expect(root.querySelector('form.bulk .label')?.textContent?.trim()).toBe('1 issue selected');
   });
 
   it('pluralises the issues that need a reason', async () => {

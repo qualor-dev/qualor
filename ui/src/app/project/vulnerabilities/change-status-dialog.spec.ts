@@ -281,6 +281,26 @@ describe('ChangeStatusDialog', () => {
     expect(d.saved).not.toHaveBeenCalled();
   });
 
+  it('maps COMMENT_REQUIRED to the comment field', async () => {
+    server.on('PUT', PUT, {
+      status: 422,
+      body: problem(422, 'COMMENT_REQUIRED', [{ path: 'body.comment', message: 'Required' }]),
+    });
+    const d = await open(vulnerabilityCard());
+    await d.choose('vuln-status', 'wont_fix');
+    await d.type('x');
+    d.save().click();
+    await settle(d.fixture);
+    const error = d.root.querySelector('#vuln-comment-error');
+    const comment = d.field('vuln-comment');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(comment?.getAttribute('aria-describedby')).toBe('vuln-comment-error');
+    expect(comment?.getAttribute('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(comment);
+    expect(d.isOpen()).toBe(true);
+    expect(d.saved).not.toHaveBeenCalled();
+  });
+
   it('shows another failure as an alert and keeps the dialog open', async () => {
     server.on('PUT', PUT, { status: 429, body: problem(429, 'RATE_LIMITED') });
     const d = await open(vulnerabilityCard());
