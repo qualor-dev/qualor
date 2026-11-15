@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, rowOf, test } from './fixtures';
 import {
   ENTERPRISE_STORAGE_STATE,
   ENTERPRISE_URL,
@@ -337,7 +337,7 @@ test('43 project vulnerabilities', async ({ page }) => {
     .getByRole('navigation', { name: 'Project' })
     .getByRole('link', { name: 'Vulnerabilities' })
     .click();
-  await expect(page.getByRole('row', { name: /^main/ }).getByText('1 new')).toBeVisible();
+  await expect(rowOf(page, 'main').getByText('1 new')).toBeVisible();
   await shootThemes(page, '43-project-vulnerabilities');
 });
 

@@ -71,7 +71,7 @@ test.describe('on a laptop with two organizations', () => {
     await expect
       .poll(async () => {
         barHeight = await page.evaluate(() => {
-          const h = document.querySelector('.app-header')!.getBoundingClientRect().height;
+          const h = (document.querySelector('.app-header') as HTMLElement).offsetHeight;
           const top = getComputedStyle(document.documentElement).getPropertyValue('--sticky-top');
           return top === `${h + 12}px` ? h : -1;
         });

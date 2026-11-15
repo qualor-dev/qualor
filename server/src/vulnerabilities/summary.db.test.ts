@@ -373,19 +373,23 @@ describe('the Vulnerabilities tab: target summary', () => {
     const { projectId } = await setup();
     const ask = () => readTargetSummary(t.db, projectId, { priority: false, sbom: false });
     expect(await ask()).toMatchObject({ monitoring: 'on', offBy: null });
-    await t.db
-      .update(projectVulnerabilitySettings)
-      .set({ enabled: false })
-      .where(eq(projectVulnerabilitySettings.projectId, projectId));
-    expect(await ask()).toMatchObject({ monitoring: 'off', offBy: 'project' });
-    await writeVulndbSettings(t.db, { enabled: false }, 'k'.repeat(32));
-    expect(await ask()).toMatchObject({ monitoring: 'off', offBy: 'instance' });
-    await t.db
-      .update(projectVulnerabilitySettings)
-      .set({ enabled: true })
-      .where(eq(projectVulnerabilitySettings.projectId, projectId));
-    expect(await ask()).toMatchObject({ monitoring: 'off', offBy: 'instance' });
-    await writeVulndbSettings(t.db, { enabled: true }, 'k'.repeat(32));
+    try {
+      await t.db
+        .update(projectVulnerabilitySettings)
+        .set({ enabled: false })
+        .where(eq(projectVulnerabilitySettings.projectId, projectId));
+      expect(await ask()).toMatchObject({ monitoring: 'off', offBy: 'project' });
+      await writeVulndbSettings(t.db, { enabled: false }, 'k'.repeat(32));
+      expect(await ask()).toMatchObject({ monitoring: 'off', offBy: 'instance' });
+      await t.db
+        .update(projectVulnerabilitySettings)
+        .set({ enabled: true })
+        .where(eq(projectVulnerabilitySettings.projectId, projectId));
+      expect(await ask()).toMatchObject({ monitoring: 'off', offBy: 'instance' });
+    } finally {
+      // The instance switch is shared by the tests after this one: restore it whatever failed.
+      await writeVulndbSettings(t.db, { enabled: true }, 'k'.repeat(32));
+    }
   });
 
   it('answers the dataset build time, or null without a dataset', async () => {

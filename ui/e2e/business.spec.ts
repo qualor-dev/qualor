@@ -410,7 +410,8 @@ test('a Business admin downloads the SBOM from the Dependencies tab', async ({ p
 
 // D26-2 (C-v): a branch whose analysis found no package, made here rather than in the shared seed
 // (a seeded branch would move the branch lists and counts other tests pin). An empty list is an
-// inventory: the tab says it is empty and still exports it.
+// inventory: the tab says it is empty and still exports it. The branch and its token stay on
+// purpose: the Business project runs last, on a database of its own.
 test('a branch with an empty inventory says it has no packages and exports its SBOM', async ({
   page,
   playwright,
