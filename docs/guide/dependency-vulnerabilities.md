@@ -48,7 +48,7 @@ A project with no released versions shows the CI snippets of
 
 | Column | Meaning |
 |---|---|
-| **Branch or version** | the name, with a **main** tag on the main branch, **Pinned** for a pinned version and "No dependency list" for a target without one |
+| **Branch or version** | the name, with a **main** tag on the main branch, **Pinned** for a pinned version and "No dependency list" for a target no scan has given one (a scan that finds no packages gives an empty list, which counts) |
 | **Critical**, **High**, **Medium** | the open vulnerabilities of that severity. Low and Unknown show in the list only |
 | **New** | "N new": see [New vulnerabilities](#new-vulnerabilities) |
 
@@ -147,7 +147,7 @@ The **Vulnerabilities** column of **Projects** shows each project at a glance.
 | "1 exploited" | the open vulnerabilities in KEV, on the main branch and the tracked versions, each id once. Business and Enterprise only |
 | "5 releases" | the tracked versions with an open vulnerability. It links to the tab |
 | the badge | see [New vulnerabilities](#new-vulnerabilities) |
-| "–" | monitoring is off for the project, or the main branch has no dependency list yet |
+| "–" | monitoring is off for the project, or no scan of the main branch has given a dependency list yet (an empty one counts: it shows "No critical or high") |
 
 Open means without a decision that closes it, and not ignored by `.trivyignore`.
 
@@ -164,9 +164,9 @@ versions it tracks, without you opening the tab.
 | Slack and Teams | the exploited vulnerabilities at once, and a section in the weekly digest ([Slack and Microsoft Teams notifications](./chat-notifications.md)) |
 | `vulnerabilities.found` webhook event | the same list as the digest, for generic webhooks ([Webhooks](./webhooks-and-api.md#webhooks)) |
 
-Only vulnerabilities found after the alert baseline count. The emails, their limits and the baseline
-in detail are in [Vulnerability emails](./email.md#vulnerability-emails). Every email has a link that stops them for
-all your watches.
+Only vulnerabilities found after the alert baseline count. The emails, their limits and the
+baseline in detail are in [Vulnerability emails](./email.md#vulnerability-emails). Every email has
+a link that stops them for all your watches.
 
 ## Statuses and reasons
 
