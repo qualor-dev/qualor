@@ -329,11 +329,34 @@ describe('vulnerability emails (4b)', () => {
     expect(digest([{ ...project(1), name: long(300) }]).subject.length).toBeLessThanOrEqual(300);
   });
 
+  it('clips the vulnerability id and the fixed version', () => {
+    const row = {
+      ...SAMPLE_VULNERABILITY_PROJECTS[0]!.rows[0]!,
+      vulnerabilityId: 'C'.repeat(300),
+      fixedVersion: 'F'.repeat(300),
+    };
+    const mail = digest([{ ...project(1), rows: [row] }]);
+    for (const part of [mail.html, mail.text]) {
+      expect(part).toContain('C'.repeat(39));
+      expect(part).not.toContain('C'.repeat(41));
+      expect(part).toContain('F'.repeat(59));
+      expect(part).not.toContain('F'.repeat(61));
+    }
+  });
+
   it('escapes names and titles', () => {
-    const row = { ...SAMPLE_VULNERABILITY_PROJECTS[0]!.rows[0]!, title: '<script>x</script>' };
+    const row = {
+      ...SAMPLE_VULNERABILITY_PROJECTS[0]!.rows[0]!,
+      title: '<script>x</script>',
+      fixedVersion: '<i>9</i>',
+    };
     const mail = digest([{ ...project(1), name: '<b>P</b>', rows: [row] }]);
     expect(mail.html).not.toContain('<script>');
     expect(mail.html).not.toContain('<b>P</b>');
+    expect(mail.html).not.toContain('<i>9</i>');
+    expect(mail.text).toContain('<b>P</b>');
+    expect(mail.text).toContain('<i>9</i>');
+    expect(mail.text).not.toContain('&lt;');
     expect(mail.subject).toBe('New vulnerabilities in <b>P</b>');
   });
 });
